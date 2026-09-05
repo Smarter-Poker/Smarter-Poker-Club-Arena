@@ -568,9 +568,16 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         }
       }
 
+      // `is_sitting_out` alongside `status` (2026-09-05). These are two
+      // different columns and only the boolean is wired up: trg_stamp_sit_out_at
+      // stamps `sit_out_at` from it, restoreSitOutsFromSeats rebuilds the
+      // sit-out from it after a restart, and TablePage's ten-second seat poll
+      // READS it. Writing `status` alone left all three blind - the sit-out had
+      // no clock, did not survive an engine restart, and the player's other
+      // devices never saw it.
       supabase
         .from('table_seats')
-        .update({ status: 'sitting_out' })
+        .update({ status: 'sitting_out', is_sitting_out: true })
         .eq('table_id', this.tableId)
         .eq('user_id', userId)
         .is('left_at', null)
@@ -580,6 +587,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         });
 
       this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+      /* The other devices have to be told here too (2026-09-05). The cash
+         mid-hand branch below re-broadcasts and this one did not, so a
+         tournament player who sat out from one device left every other client -
+         including their own second screen - holding a snapshot in which they
+         were still active. The seat legitimately stays theirs (a tournament
+         sit-out is blinded off by design); what changes is that everyone can
+         now see that it is sitting out. */
+      this.broadcastCurrentState();
       return { success: true, immediate: true };
     }
 
@@ -704,10 +719,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       if (opts.forced) this.forcedLeaves.add(userId);
       else this.forcedLeaves.delete(userId);
 
-      // Mark as leave_pending — processLeavePending will handle cashout at end of hand
+      // Mark as leave_pending — processLeavePending will handle cashout at end of hand.
+      // `is_sitting_out` goes with it (2026-09-05): it is the boolean the
+      // sit_out_at trigger, the restart restore and TablePage's seat poll all
+      // read. Writing `status` alone left a departing seat looking live to every
+      // one of them.
       supabase
         .from('table_seats')
-        .update({ leave_pending: true, status: 'sitting_out' })
+        .update({ leave_pending: true, status: 'sitting_out', is_sitting_out: true })
         .eq('table_id', this.tableId)
         .eq('user_id', userId)
         .is('left_at', null)
@@ -718,6 +737,14 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
       // Also mark in disconnect engine so they don't get dealt next hand
       this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+
+      /* THE OTHER DEVICES HAVE TO BE TOLD (Dan 2026-09-05). This branch emitted
+         `seat_left` and then stopped: no state re-broadcast, so every connected
+         client kept the snapshot in which this player was still in the hand.
+         Between-hands leaves have always re-broadcast (see both calls below);
+         the deferred path is the one a player actually hits when they leave
+         mid-hand, and it was the silent one. */
+      this.broadcastCurrentState();
 
       return { success: true, immediate: false };
     } else {
@@ -784,6 +811,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         teardown();
         emitSeatLeft();
         this.broadcastCurrentState();
+        this.wakeClusterGame('seat_left');
         return { success: true, immediate: true };
       }
 
@@ -795,6 +823,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         teardown();
         emitSeatLeft();
         this.broadcastCurrentState();
+        this.wakeClusterGame('seat_left');
         return { success: true, immediate: true };
       }
       if (res.code === 'LEAVE_LOCKED') {
@@ -1133,6 +1162,25 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         return { success: false, error: 'No cards to show' };
       }
       const valid = cardIndexes.filter((i) => Number.isInteger(i) && i >= 0 && i < heldCount);
+
+      /* ── AN EMPTY LIST IS A CLEAR, NOT AN ERROR (Dan 2026-09-05) ──────────
+         "THE EYE BALL STAYS LOCKED, YOU CAN NEVER UNLOCK IT OR UNSHOW."
+
+         There was no clear verb. The client sends its full current selection
+         every time, so un-picking the LAST card means sending `[]` - and that
+         landed here, found nothing valid, and returned 'No valid card
+         indexes'. ShowCardsService then made the empty case a local no-op to
+         avoid the error, which meant the client silently kept a selection the
+         player had just taken back: the badge went out, the card still turned
+         over at hand end, and there was no way to stop it.
+
+         Distinguish the two cases. An empty list is a deliberate "show
+         nothing"; a NON-empty list with nothing valid in it is a malformed
+         request and still an error. */
+      if (cardIndexes.length === 0) {
+        this.showHandCards?.delete(userId);
+        return { success: true, shownCardIndexes: [] };
+      }
       if (valid.length === 0) {
         return { success: false, error: 'No valid card indexes' };
       }

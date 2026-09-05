@@ -93,6 +93,7 @@ import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cache
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
+import type { CardPresentationMode } from '../presentation/cardPresentation';
 import { CommunityCards } from '../components/table/CommunityCards';
 import { DealerButton } from '../components/table/DealerButton';
 import { DealAnimation } from '../components/table/DealAnimation';
@@ -233,7 +234,7 @@ import {
   LeaveTableIcon,
 } from '../components/table/TableMenuIcons';
 import { useToast } from '../components/common/Toast';
-import { isVibrationAllowed, setVibrationAllowed } from '../utils/vibrationGate';
+import { isVibrationPreferred, setVibrationAllowed } from '../utils/vibrationGate';
 import SeatKnockoutLayer, {
   type SeatKnockoutHit,
   SKO_STAMP_AT_MS,
@@ -248,7 +249,7 @@ import SpinWheel, {
   parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
-import { spinRevealTotalMs, spinOddsTable } from '../config/spinSpec';
+import { spinRevealTotalMs } from '../config/spinSpec';
 import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
 import { tournamentService } from '../services/TournamentService';
@@ -622,6 +623,18 @@ interface TableState {
   bountyMap: Record<string, number>; // userId → current bounty value (for KO/PKO display)
   isBountyTournament: boolean;
   spinMultiplier?: number;
+  /**
+   * THE PRIZE THE WHEEL DREW (Dan 2026-09-05): "THE TOTAL PRIZE OR MULTIPLIER
+   * FOR THE SPIN NEEDS TO BE PRESENT ON THE FELT AFTER THE SPIN RUNS."
+   *
+   * The multiplier alone is an abstraction — it is the prize that a player
+   * actually wants on screen for the rest of the game. The engine already
+   * computes it, writes it to `tournaments.prize_pool` and puts it on the
+   * `spin_reveal` packet as `prize_pool`; nothing on the client had ever read
+   * either. Both are wired now, so the badge survives the wheel on the live
+   * path and is there on a rejoin.
+   */
+  spinPrizePool?: number;
   handForHand?: boolean;
   bubbleInfo?: { playersRemaining: number; paidPositions: number };
   /** Authoritative MTT milestone; activates the event-only broadcast skin. */
@@ -748,6 +761,7 @@ import {
   TABLE_BACKGROUND_REPEAT,
 } from '../lib/tableTheme';
 import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
+import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib/handHistoryLive';
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
@@ -790,6 +804,20 @@ const RIT_BOUNDARY_ACK_MS = 1500;
  * Dan's number, 2026-08-27: the Rabbit Hunt button stays up for "at least 2
  * full seconds" once it has appeared, even if the next hand starts inside that
  * window. Never extended past the server's own offer TTL.
+ *
+ * UNTIL 2026-09-05 THIS FLOOR WAS MEASURING A WINDOW NOBODY COULD SEE. The
+ * offer arrives at settlement and sets `isRabbitAvailable` immediately, so the
+ * floor started counting there - but the button RENDERS behind
+ * `!tableState.isHandInProgress`, and the engine did not broadcast a hand-free
+ * state until the entire completion hold had already elapsed. The button was
+ * therefore live and invisible for 4.5-7.4 seconds and then visible for
+ * whatever followed: boardClearMs, 500ms on a fold. Two guards, a 90-second
+ * server TTL and this floor, were both watching the wrong clock.
+ *
+ * The engine now rests HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS (1750ms) after
+ * the board clear, with the hand-free state already broadcast, so the visible
+ * window is 2250ms on a fold and 2650ms on a showdown and this floor finally
+ * fits inside the thing it was written to protect.
  */
 const RABBIT_MIN_VISIBLE_MS = 2000;
 
@@ -938,6 +966,18 @@ interface TablePageProps {
    * single-table mode (no MultiTablePage wrapper) behaves identically.
    */
   isActive?: boolean;
+  /**
+   * PHASE 2 AUDIT 2026-09-05: PAINTED, which is not the same as FOCUSED.
+   *
+   * In TILE VIEW MultiTablePage renders up to four tables at once and every
+   * one of them is on screen; only one is `isActive`. Deriving "visible" from
+   * "active" would have handed the other three the `off` presentation profile
+   * and their cards would have appeared with no animation at all - three of
+   * four tables silently animation-free, which CLAUDE.md 10.6 forbids
+   * outright. In SINGLE view the inactive slots really are `display: none`,
+   * and there `isVisible` is false and instant is correct (spec 47).
+   */
+  isVisible?: boolean;
   /**
    * Roadmap batch 3: per-table mute from the tab's long-press menu. Silences
    * every sound this table makes (ambient, bell, tick-tock) without touching
@@ -1177,6 +1217,9 @@ interface SpinDrawRow {
   spin_locked_tiers?: unknown;
   buy_in_amount?: number | string | null;
   started_at?: string | null;
+  /** The engine's own reveal anchor - see buildSpinDrawFromRow. */
+  spin_reveal_at?: string | null;
+  prize_pool?: number | string | null;
 }
 
 /**
@@ -1187,8 +1230,30 @@ interface SpinDrawRow {
 function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelData | null {
   const multiplier = Number(row?.spin_multiplier) || 0;
   if (multiplier <= 0) return null;
+  /* ── ANCHOR ON THE INSTANT THE ENGINE CHOSE (Dan 2026-09-05) ─────────────
+     Dan: "THERE IS NO SOUND EFFECT OR COUNT DOWN FOR THE SPIN ANIMATION."
+
+     This read `started_at`, and started_at is not the reveal anchor. The
+     engine anchors the wheel to the third payment plus the lead-in and
+     re-anchors to `now` whenever that has already passed
+     (spinRevealWouldSkipABeat), so what it broadcasts is always playable in
+     full. `started_at` is the row's own start stamp, and the engine's
+     telemetry measures the gap between them at a 4.2s p50 - against a 1000ms
+     lead-in and a 3000ms countdown. SpinWheel fires every beat behind
+     `elapsed` at once, so on this path the countdown and all three of its
+     beeps collapsed into one millisecond, every time. A silent spinner.
+
+     `spin_reveal_at` is that anchor, written by the engine on the same row
+     write that already carried `spin_reveal_lag_ms`. started_at stays as the
+     fallback for rows drawn before the column existed - the old behaviour,
+     for the games that already have it. */
+  const anchorMs = row?.spin_reveal_at ? Date.parse(row.spin_reveal_at) : NaN;
   const startedAtMs = row?.started_at ? Date.parse(row.started_at) : NaN;
-  const revealAtMs = Number.isFinite(startedAtMs) ? startedAtMs : null;
+  const revealAtMs = Number.isFinite(anchorMs)
+    ? anchorMs
+    : Number.isFinite(startedAtMs)
+      ? startedAtMs
+      : null;
   if (!spinRevealStillLive(revealAtMs)) return null;
   return {
     multiplier,
@@ -1300,6 +1365,7 @@ export default function TablePage({
   onTableInfoUpdate,
   isMultiTable = false,
   isActive = true,
+  isVisible = true,
   muted = false,
 }: TablePageProps = {}) {
   const addScreenIcon = useButtonImage('icon-addscreen');
@@ -2986,6 +3052,29 @@ export default function TablePage({
   // authoritative stacks in tableState are never modified.
   const [stackHoldReleased, setStackHoldReleased] = useState(false);
   const stackHoldReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * RUN-IT-TWICE PARITY 2026-09-05 — the pot ships PER BOARD, so the stack
+   * rises PER BOARD.
+   *
+   * `stackHoldReleased` above is one boolean for the whole hand. It is right
+   * for a single ship and wrong for every multi-board hand: the engine credits
+   * one merged total, the seat held all of it until the LAST board's fan
+   * landed, and the number then jumped the entire amount in one step. That is
+   * the reported "it does not ship the pot individually" — the chips fanned
+   * three times, the stack moved once.
+   *
+   * This is the per-player ledger of what has already been visually delivered,
+   * grown one award group at a time as each fan arrives (see `fireGroup`). The
+   * seat shows `total winnings − delivered`, so a player who takes two of
+   * three boards is seen going 0 → 2.73 → 5.46, exactly as the reference does
+   * (PokerBros RUN IT 3X recording, frame-verified 2026-09-05: awards land at
+   * t≈25.0s, t≈27.4s and t≈30.5s and the stack steps at each one).
+   *
+   * Purely visual, like the boolean: authoritative stacks in tableState are
+   * never touched. Reset at HAND_STARTED alongside `stackHoldReleased`.
+   */
+  const [stackReleasedByPlayer, setStackReleasedByPlayer] = useState<Record<string, number>>({});
+  const stackReleaseTimersRef = useRef<number[]>([]);
   /** Guards the diamond charge in handleBuyTimeBank against a double-tap. */
   const buyingTimeBankRef = useRef(false);
   /**
@@ -3625,18 +3714,80 @@ export default function TablePage({
    */
   const [shownCardIndexes, setShownCardIndexes] = useState<number[]>([]);
 
+  /**
+   * ─── TWO BUGS FIXED HERE ON 2026-09-05 ────────────────────────────────────
+   * Dan: "IT ONLY ALLOWS YOU TO SHOW 1, NEVER BOTH."
+   *
+   * 1. THE POST WAS INSIDE THE STATE UPDATER. A `setState` reducer must be
+   *    pure - React is free to call it more than once for one click, and does
+   *    under StrictMode - so a single tap could fire two unordered POSTs. The
+   *    engine REPLACES its stored set on each one, so when `[0]` landed after
+   *    `[0,1]` the player had marked two cards and one was shown. The
+   *    selection is computed from the ref here and sent exactly once, after.
+   *
+   * 2. THE INDEX WAS THE WRONG ARRAY'S. The click gives an index into what
+   *    SeatSlot RENDERED, and `cards_pre_sort` (default true, in code and in
+   *    the column) re-orders the hero's hand for display. The engine applies
+   *    the index to `player.cards` in DEALT order. So on essentially every
+   *    table, clicking the ace queued the deuce.
+   *
+   *    This repo has already fixed exactly this once - see
+   *    `handlePineappleDiscard` above and
+   *    `tests/pineapple-discard-picks-the-right-card.test.ts`: "Two different
+   *    arrays, one index. Clicking the six threw away the ace." The
+   *    translation ref it introduced was never wired to this second caller.
+   *    It is now, by identity, with the same display-index fallback for a
+   *    mid-hand mount that has no recorded order.
+   *
+   * State stays in DISPLAY space, because that is what paints the badge; only
+   * the payload is translated.
+   */
+  const shownCardIndexesRef = useRef<number[]>([]);
+  /**
+   * PER-HAND RESET, keyed on server truth rather than on one event.
+   *
+   * `tableState.handNumber` is maintained from every engine snapshot, so this
+   * fires for a reload, a mid-hand join, an observer becoming a player, and a
+   * dropped or coalesced HAND_STARTED - all the cases that left the previous
+   * hand's pick marked, and untouchable behind a face-down Card Slide hand.
+   * SeatSlot's own squeeze latch was already keyed this way; this is the same
+   * signal, so the badge and the cards can no longer disagree about which hand
+   * they belong to.
+   */
+  const shownPicksHandRef = useRef<number | null>(null);
+  useEffect(() => {
+    const hand = tableState.handNumber ?? 0;
+    if (shownPicksHandRef.current === hand) return;
+    shownPicksHandRef.current = hand;
+    shownCardIndexesRef.current = [];
+    setShownCardIndexes((prev) => (prev.length === 0 ? prev : []));
+  }, [tableState.handNumber]);
   const handleToggleShowCard = useCallback(
     (cardIndex: number) => {
-      setShownCardIndexes((prev) => {
-        const next = prev.includes(cardIndex)
-          ? prev.filter((i) => i !== cardIndex)
-          : [...prev, cardIndex].sort((a, b) => a - b);
-        // Fire-and-forget: the engine stores the full selection each time, so
-        // an un-click is expressed by sending the smaller list. A failure here
-        // costs a reveal, never the hand, so it must not block the UI.
-        if (tableId) void setShownCards(tableId, next);
-        return next;
-      });
+      const prev = shownCardIndexesRef.current;
+      const next = prev.includes(cardIndex)
+        ? prev.filter((i) => i !== cardIndex)
+        : [...prev, cardIndex].sort((a, b) => a - b);
+      shownCardIndexesRef.current = next;
+      setShownCardIndexes(next);
+      if (!tableId) return;
+
+      const display = tableStateRef.current.players.find((pl) => pl?.isHero)?.holeCards;
+      const engineOrder = heroEngineCardOrderRef.current;
+      const toEngineIndex = (di: number): number => {
+        const card = display?.[di];
+        if (!card || !engineOrder) return di;
+        const at = engineOrder.indexOf(`${card.rank}${card.suit}`);
+        return at < 0 ? di : at;
+      };
+      // Fire-and-forget: the engine stores the full selection each time, so an
+      // un-click is expressed by sending the smaller list - and an empty one,
+      // which is now a clear rather than an error. A failure here costs a
+      // reveal, never the hand, so it must not block the UI.
+      void setShownCards(
+        tableId,
+        next.map(toEngineIndex).sort((a, b) => a - b)
+      );
     },
     [tableId]
   );
@@ -4140,8 +4291,51 @@ export default function TablePage({
    * This is now ONE function, it clears the SEAT as well as the claim, and it
    * commits an object identity every time so the render cannot be skipped.
    */
+  /**
+   * ── A SEAT THIS DEVICE HAS ALREADY LEFT ──────────────────────────────────
+   *
+   * `left_at` is stamped only when the cash-out lands. Between the leave and
+   * settlement the row is still live, still `left_at IS NULL`, and the engine
+   * still carries the player in its roster - so EVERY path that claims a seat
+   * will re-adopt one the player has left:
+   *
+   *   - the mount restore reads the row and sets `heroSeat`
+   *   - the players[]/heroSeat invariant finds `p.id === userId` and sets it
+   *     straight back, one render later - this is what defeated the first
+   *     attempt at this fix
+   *   - the GAME_START resync recomputes it from the engine roster
+   *
+   * `heroSeat > 0` is the single predicate behind the fabricated "0.00 /
+   * SITTING OUT" hero and the "Seat Reserved, You'll Be Dealt In Next Hand"
+   * footer, which is exactly the felt Dan photographed on his phone after
+   * leaving the game on his desktop (2026-09-05).
+   *
+   * So the answer is not another guard at one of those sites; it is one fact
+   * all of them consult. Set when we observe our own row leaving, or when a
+   * seat_left names us; CLEARED only by deliberately taking a seat again, so
+   * it can never lock a player out of a seat they have just bought.
+   *
+   * DECLARED HERE, above applySeatRemoved, because that is its first reader and
+   * tests/no-tdz-in-table-route.law.test.ts does not allow a name to be read
+   * before its declaration on this route.
+   */
+  const leftSeatPendingRef = useRef(false);
+
   const applySeatRemoved = useCallback(
-    (reason?: string) => {
+    /* `announce` separates the two halves of this function, which used to be
+       welded together by the caller's `if (reason)` gate. Clearing the seat is
+       always right; SAYING something about it is only right when the player did
+       not ask for it. A voluntary leave seen from the player's OTHER device
+       must clear the seat (Dan 2026-09-05) and must not claim they "were
+       removed" — they left. Every existing caller keeps announcing, because
+       announcing is what they were doing before. */
+    (reason?: string, opts?: { announce?: boolean }) => {
+      const announce = opts?.announce !== false;
+      /* The seat is gone as far as this device is concerned. Latch it, or the
+         very next engine snapshot - which still carries this player until
+         settlement - walks it back in through the players[]/heroSeat
+         invariant. Cleared only by taking a seat again. */
+      leftSeatPendingRef.current = true;
       const heroId = String(userId ?? '');
       heroSeatRef.current = 0;
       sittingOutIdsRef.current.delete(heroId);
@@ -4162,7 +4356,7 @@ export default function TablePage({
       /* The notice, and the flag ONLY once it has actually gone out. It used to
          be set first, so any drop — a toast provider not yet mounted, a race on
          teardown — burned the one-shot and silenced the OTHER path too. */
-      if (!bootNoticeShownRef.current) {
+      if (announce && !bootNoticeShownRef.current) {
         const say = heartbeatToastRef.current?.info;
         if (typeof say === 'function') {
           const mapped = reason ? BOOT_EXPLANATIONS[reason] : undefined;
@@ -4479,16 +4673,6 @@ export default function TablePage({
    * until the player confirms the price, and nothing is charged until they do.
    */
   const [seatFirstConfirm, setSeatFirstConfirm] = useState<number | null>(null);
-  /* ENHANCEMENT 2026-08-29: the multiplier odds ladder on the Spin buy-in
-     sheet. Collapsed by default (the sheet has to fit 375px with the Buy In
-     button above the fold); resets closed whenever the sheet closes so the
-     next open starts compact. Derived from spinOddsTable - the one ladder -
-     so a retuned tier reprices this display by itself. */
-  const [spinOddsOpen, setSpinOddsOpen] = useState(false);
-  useEffect(() => {
-    if (seatFirstConfirm === null) setSpinOddsOpen(false);
-  }, [seatFirstConfirm]);
-
   /* ── THE DUPLICATE BUY-IN TIMER IS DELETED (2026-08-29, round 14) ─────────
    *
    * A second 60-second timer used to live here, and it is the "never registers
@@ -4950,10 +5134,38 @@ export default function TablePage({
   // Reference behavior: the panel slides in a beat AFTER the table settles
   // into "waiting" — not in the same frame as the all-in.
   const ritPanelOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Reference behavior: the POT counter decrements as each pot leaves the
-  // middle (every game — splits, side pots, RIT boards). When non-null this
-  // overrides the snapshot pot during the award sequence.
-  const [potShipRemaining, setPotShipRemaining] = useState<number | null>(null);
+  /**
+   * THE POT ROWS DURING A SEQUENCED AWARD (rewritten 2026-09-05).
+   *
+   * The old model was a single number that DECREMENTED as each group shipped,
+   * with every side-pot row wiped for the duration. Frame-by-frame review of
+   * the reference client (PokerBros, 2026-09-05) shows that is not what it
+   * does, in either respect:
+   *
+   *   • RUN IT 3X, pot 8.81 over three boards — the counter reads 8.81 before
+   *     the first ship and 8.81 again after it, and after the second. It never
+   *     ticks down. It goes away only when the hand is over.
+   *   • RUN IT TWICE + SPLIT POT, main 20.32 / side 1.95 / total 22.27 — both
+   *     rows stay up and readable for the whole sequence, and at t≈26.5s the
+   *     1.95 row DISAPPEARS on its own while 20.32 stays. The side pot had
+   *     just been paid out across both runs; the main pot had not.
+   *
+   * So: a pot row shows its FULL contested amount for as long as it owes
+   * anybody anything, and vanishes the moment it is fully paid across every
+   * run. That reads as "these are the pots this hand played for", and the
+   * disappearance of a row is the signal that one is settled — much clearer
+   * than one merged number sliding toward zero with the side pots hidden.
+   *
+   * null → no sequence in flight; render the live snapshot normally.
+   * non-null → frozen at POT_WIN (the snapshot zeroes the pot the moment the
+   *            engine settles, which on RIT is many seconds before the last
+   *            board is even revealed), with `retired` growing as pots land.
+   */
+  const [potShipView, setPotShipView] = useState<{
+    main: number;
+    sides: SidePot[];
+    retired: number[];
+  } | null>(null);
   // Reveal timeline: how many cards of each RIT board are face up right now.
   // rit_result arrives with the full boards; the reference client deals them
   // street by street (flop → pause → turn → pause → river, board by board),
@@ -5079,7 +5291,7 @@ export default function TablePage({
       ritFeltBannerTimerRef.current = null;
     }
     setRitFeltBanner(null);
-    setPotShipRemaining(null);
+    setPotShipView(null);
     /* THE TAB PILL (Dan 2026-09-04): "RUN IT / 0s Left" stayed red in the
        multi-table strip for the rest of the session. The deadline was set on
        rit_offer and cleared by ONE effect keyed on showRIT changing - but the
@@ -5138,6 +5350,22 @@ export default function TablePage({
      * TRIPLE-BOARD 2026-08-27: an optional third entry for board 3.
      */
     boardHandNames?: [string, string] | [string, string, string] | null;
+    /**
+     * THE SEAT LABEL FOLLOWS THE FEATURED RUN (2026-09-05).
+     *
+     * `handNames` above is ONE name per player for the whole hand. On a
+     * run-it-twice hand that is a mislabel waiting to happen: a player can win
+     * run 1 with Two Pair and run 3 with a Flush, and the seat then shows
+     * whichever name the merge happened to write first — for both runs, while
+     * the board row beside it correctly names the other hand.
+     *
+     * This is the per-run breakdown, indexed by board (0 = run 1), built from
+     * the `winners_by_board` the engine already sends. The seat reads the
+     * entry for the run currently on stage (`ritRevealedRuns`) and falls back
+     * to the merged name, so single-board hands and older payloads are
+     * untouched.
+     */
+    boardHandNamesByPlayer?: Array<Record<string, string>> | null;
     /**
      * WHICH HAND THESE WINNERS BELONG TO (Dan 2026-08-27: "cards dim like you
      * folded even though you are live in a hand").
@@ -6115,6 +6343,8 @@ export default function TablePage({
       if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
       for (const t of potAwardStaggerTimersRef.current) clearTimeout(t);
       if (stackHoldReleaseTimerRef.current) clearTimeout(stackHoldReleaseTimerRef.current);
+      // 2026-09-05: per-board stack releases must die with the page too.
+      for (const t of stackReleaseTimersRef.current) clearTimeout(t);
       // POKERBROS PARITY 2026-08-26: the RIT reveal timeline must die with
       // the page — a street reveal firing into an unmounted table is a leak.
       for (const t of ritRevealTimersRef.current) clearTimeout(t);
@@ -6985,6 +7215,21 @@ export default function TablePage({
   // All-in dramatic mode
   const [isAllInMode, setIsAllInMode] = useState(false);
 
+  /**
+   * PHASE 2 2026-09-05 (spec 36, 94, 115): which timing profile the board's
+   * reveals resolve to. A SPECTATOR is watching and nothing else - there is
+   * no action cadence to stay out of the way of - so they get the full
+   * presentation under their own profile id, which also keeps watched hands
+   * and played hands apart in the telemetry (their device mixes differ, and
+   * averaging them hides both).
+   *
+   * This is the ONLY thing the presentation layer is allowed to learn about
+   * the game (spec 28, 115): a mode name. No payout, blind level or wallet
+   * reaches it.
+   */
+  const boardPresentationMode: CardPresentationMode =
+    tableState.heroSeat > 0 ? (tableState.isTournament ? 'tournament' : 'cash') : 'spectator';
+
   // FIX 89: All-in equity display — shows equity percentages for all all-in players
   // Populated by server's 'all_in_equity' Realtime event, visible to all players/observers
   const [allInEquities, setAllInEquities] = useState<
@@ -7274,6 +7519,16 @@ export default function TablePage({
      means the newest. */
   const [handDetailFocusId, setHandDetailFocusId] = useState<string | null>(null);
   const [showHandHistory, setShowHandHistory] = useState(false);
+  /* Phase 1 (2026-09-05): when and for which table the list was fetched, so a
+     reopen inside the staleness window is instant and the engine's
+     `hand_history_saved` can land straight into it. See lib/handHistoryLive. */
+  const handHistoryFetchedAtRef = useRef<number | null>(null);
+  const handHistoryTableRef = useRef<string | null>(null);
+  const handHistoryStateRef = useRef<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+  handHistoryStateRef.current = handHistoryState;
+  /* Saved-hand ids that arrived WHILE the page fetch was in flight. The fetch
+     may have queried before the row landed, so they are applied after it. */
+  const pendingSavedIdsRef = useRef<string[]>([]);
 
   /**
    * STABLE CALLBACKS FOR TableModalsLayer (Dan 2026-08-27, stuck-announcement).
@@ -7312,19 +7567,46 @@ export default function TablePage({
   // cache. Both openers hydrate now.
   useEffect(() => {
     if ((!showHandHistory && !showHandDetail) || !userId || userId === 'guest') return;
+    /* INSTANT REOPEN (Phase 1). Fetch on the first open for this table, after
+       a failure, or when the list is stale enough that an event may have been
+       missed; otherwise the list on screen is the record plus every hand the
+       engine has announced since, and there is nothing to wait for. */
+    if (
+      !shouldRefetchHandHistory({
+        state: handHistoryStateRef.current,
+        fetchedAt: handHistoryFetchedAtRef.current,
+        fetchedTableId: handHistoryTableRef.current,
+        tableId,
+        now: Date.now(),
+      })
+    ) {
+      return;
+    }
     let cancelled = false;
+    // Another table's list must not linger under this table's name while it loads.
+    if (handHistoryTableRef.current !== (tableId ?? null)) setHandHistory([]);
     setHandHistoryState('loading');
     (async () => {
       try {
         // THIS table's hands, in play order (Dan 2026-09-04). See
         // HandHistoryService.getPlayerHands for what the missing tableId did.
-        const hands = await handHistoryService.getPlayerHands(userId, 50, { tableId });
+        const hands = await handHistoryService.getPlayerHands(userId, HAND_HISTORY_PAGE, {
+          tableId,
+        });
         if (cancelled) return;
         /* An empty answer is an answer. `hands.length > 0` used to gate this,
            which left whatever was on screen (a cache, another table's list) in
            place when the truth was "no hands here yet". */
         setHandHistory((hands || []).map((h) => adaptServiceHandToPanel(h, userId)));
+        handHistoryFetchedAtRef.current = Date.now();
+        handHistoryTableRef.current = tableId ?? null;
+        handHistoryStateRef.current = 'ready';
         setHandHistoryState('ready');
+        /* Hands the engine announced during the fetch: the query may have run
+           before their rows landed. Take them now (de-duplicated by id). */
+        const pending = pendingSavedIdsRef.current;
+        pendingSavedIdsRef.current = [];
+        for (const id of pending) void takeSavedHandRef.current(id);
       } catch (e) {
         if (cancelled) return;
         setHandHistoryState('failed');
@@ -7338,6 +7620,40 @@ export default function TablePage({
        container can change table, and a closure over the old id fetched the
        previous table's hands into this one. */
   }, [showHandHistory, showHandDetail, userId, tableId]);
+
+  /**
+   * LIVE REFRESH (Phase 1, 2026-09-05). The engine announces every saved hand
+   * by id; the list on screen takes it the moment it lands, without a
+   * close-and-reopen. Only once the list has been fetched for THIS table - a
+   * first open fetches the page anyway - and only for a viewer the row is
+   * readable by (an observer's read returns null under RLS and nothing
+   * changes). The same read fills the viewer's own cards and discards, so the
+   * new row carries everything the fetched ones do.
+   */
+  const takeSavedHand = useCallback(
+    async (savedId: string) => {
+      if (!userId || userId === 'guest' || !tableId) return;
+      if (handHistoryStateRef.current === 'loading') {
+        // The page fetch is in flight; it applies this id when it lands.
+        if (!pendingSavedIdsRef.current.includes(savedId)) pendingSavedIdsRef.current.push(savedId);
+        return;
+      }
+      if (handHistoryStateRef.current !== 'ready' || handHistoryTableRef.current !== tableId)
+        return;
+      try {
+        const row = await handHistoryService.getHand(savedId);
+        if (!row || row.table_id !== tableId) return;
+        const record = adaptServiceHandToPanel(row, userId);
+        setHandHistory((prev) => prependHand(prev, record));
+        handHistoryFetchedAtRef.current = Date.now();
+      } catch (e) {
+        reportError(e, 'TablePage.takeSavedHand');
+      }
+    },
+    [userId, tableId]
+  );
+  const takeSavedHandRef = useRef(takeSavedHand);
+  takeSavedHandRef.current = takeSavedHand;
 
   // Hand replay — resolve the most recent hand id lazily when the panel opens
   // rather than paying a lookup on every completed hand.
@@ -9240,7 +9556,11 @@ export default function TablePage({
       // authoritative and arrives before the player can realistically tap.
       if (eventType === 'hand_history_saved') {
         const savedId = handState.hand_id as string | undefined;
-        if (savedId) setLastHandId(savedId);
+        if (savedId) {
+          setLastHandId(savedId);
+          // Phase 1: the Previous Hand list takes the hand as it lands.
+          void takeSavedHandRef.current(savedId);
+        }
         return;
       }
 
@@ -10279,7 +10599,13 @@ export default function TablePage({
          Route it through `updateSetting` instead: that commits to the store,
          broadcasts under the key the stores accept, applies the gate through
          `applyGateChanges`, and pushes the column for cross-device. */
-      updateSetting('isHapticEnabled', !isVibrationAllowed());
+      /* `isVibrationPreferred()`, not the capability check. This computes the
+         NEW value by inverting the current one, so it has to read the
+         PREFERENCE - and the capability check also asks whether the device can
+         vibrate. On an iPhone that was false forever (no Vibration API), so this
+         menu item could only ever turn haptics ON: tapping "Vibrations" to mute
+         them set them to `!false` = true, every time. */
+      updateSetting('isHapticEnabled', !isVibrationPreferred());
     }
   });
 
@@ -10704,7 +11030,7 @@ export default function TablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -10878,6 +11204,23 @@ export default function TablePage({
               } else {
                 setSeatFirstBuyIn(null);
               }
+              /* ── THE ROW SAYS WHETHER PLAY HAS BEGUN (Dan 2026-09-05) ─────
+                 The `players.some(stack > 0)` clause was removed from the
+                 begun-latch today, because a seat has held its chips from the
+                 moment it was paid for since 2026-09-01 and the clause was
+                 reading a bought seat as a started game (see the latch effect
+                 for the whole account).
+                 That clause was also how a player ARRIVING at a game already
+                 in progress latched — a running table's seats hold chips. The
+                 button and the hand number cover it once a snapshot lands, but
+                 the tournament row answers it here, on the mount read, before
+                 any of that: a game out of the selling states has begun, full
+                 stop. Without this the bust watcher and `exitIfBusted` would
+                 stay disarmed on a rejoin until the first snapshot arrived. */
+              if (!openForSeats) {
+                playHasBegunRef.current = true;
+                setPlayHasBegun(true);
+              }
             }
             /**
              * ═════════════════════════════════════════════════════════════════
@@ -11019,6 +11362,7 @@ export default function TablePage({
               bountyMap: bountyErr ? prev.bountyMap : bMap,
               isBountyTournament: true,
               spinMultiplier: tournData.spin_multiplier || undefined,
+              spinPrizePool: Number(tournData.prize_pool) || undefined,
             }));
 
             // Subscribe to real-time bounty updates (store in ref for cleanup)
@@ -11061,6 +11405,7 @@ export default function TablePage({
             setTableState((prev) => ({
               ...prev,
               spinMultiplier: tournData.spin_multiplier,
+              spinPrizePool: Number(tournData.prize_pool) || undefined,
             }));
           }
 
@@ -12246,7 +12591,7 @@ export default function TablePage({
         const { data: existingSeats, error: seatsRestoreErr } = await supabase
           .from('table_seats')
           .select(
-            'seat_number, user_id, stack, status, horse_id, is_sitting_out, time_bank_remaining, time_bank_uses_remaining'
+            'seat_number, user_id, stack, status, horse_id, is_sitting_out, leave_pending, time_bank_remaining, time_bank_uses_remaining'
           )
           .eq('table_id', table.id)
           .is('left_at', null);
@@ -12401,13 +12746,36 @@ export default function TablePage({
               // seat is cleaned up by the engine's sit-out sweep.
               if (isHero) {
                 const heroStack = Number(seat.stack || 0);
-                resolvedHeroSeat = seat.seat_number;
-                if (heroStack <= 0) {
-                  console.warn(
+                /* A SEAT ON ITS WAY OUT IS NOT A SEAT YOU HOLD (Dan 2026-09-05).
+                   `left_at` is stamped only when the cash-out lands, so a seat
+                   the player has already left — one carrying `leave_pending`
+                   while its hand finishes — still reads as live here. Adopting
+                   it set `heroSeat`, and `heroSeat > 0` is the single predicate
+                   behind the fabricated "0.00 / SITTING OUT" hero and the
+                   "Seat Reserved, You'll Be Dealt In Next Hand" footer. That is
+                   the whole of what Dan's phone was showing after he left the
+                   game on his desktop. The row is still rendered — the seat IS
+                   occupied until settlement — it is simply no longer treated as
+                   this device's own seat. */
+                if ((seat as { leave_pending?: boolean }).leave_pending) {
+                  /* Record it, do not merely skip it. Skipping only holds until
+                     the next render: the players[]/heroSeat invariant would find
+                     this same row and adopt the seat straight back. */
+                  leftSeatPendingRef.current = true;
+                  console.debug(
                     '[Seat] Hero seat at',
                     seat.seat_number,
-                    'has stack=0 - bust-rebuy flow will prompt rebuy or clean up on decline'
+                    'is leave_pending - not claiming it; the leave is already in flight'
                   );
+                } else {
+                  resolvedHeroSeat = seat.seat_number;
+                  if (heroStack <= 0) {
+                    console.warn(
+                      '[Seat] Hero seat at',
+                      seat.seat_number,
+                      'has stack=0 - bust-rebuy flow will prompt rebuy or clean up on decline'
+                    );
+                  }
                 }
               }
             }
@@ -13193,6 +13561,12 @@ export default function TablePage({
   // (seat stolen, snapshot without hero), so this can never fight them.
   useEffect(() => {
     if (!userId || userId === 'guest') return;
+    /* A SEAT WE HAVE ALREADY LEFT IS NOT A DISAGREEMENT TO HEAL (2026-09-05).
+       The row survives until settlement stamps `left_at`, and the engine keeps
+       the player in its roster until the same moment, so `players[]` legally
+       still holds a row with this user's id. Adopting it here is what undid the
+       mount-time guard and put "Seat Reserved" back on Dan's phone. */
+    if (leftSeatPendingRef.current) return;
     const idx = tableState.players.findIndex((p) => p && p.id === userId);
     if (idx < 0) return; // not seated — nothing to assert
     const seatNum = idx + 1;
@@ -13367,9 +13741,36 @@ export default function TablePage({
           locked_tiers?: unknown;
           reveal_at?: number;
           hold_until?: number;
+          prize_pool?: number;
         };
         const mult = Number(d?.multiplier) || 0;
         if (!mult) break;
+        /* ── THE BADGE OUTLIVES THE WHEEL (Dan 2026-09-05) ──────────────────
+           "THE TOTAL PRIZE OR MULTIPLIER FOR THE SPIN NEEDS TO BE PRESENT ON
+           THE FELT AFTER THE SPIN RUNS."
+
+           The felt badge is gated on `tableState.spinMultiplier`, and this
+           handler — the LIVE path, the one every seated player takes — never
+           wrote it. Only the mount read did. So the badge appeared for someone
+           who refreshed into a running spin and never for the three players
+           who actually watched the wheel: `spinDraw` cleared on the wheel's
+           own onDone and the felt went back to saying nothing at all.
+
+           Written BEFORE the still-live check below on purpose. A reconnect
+           that arrives after the sequence is over must not re-open the wheel,
+           but it is still telling us what this table is playing for, and that
+           is precisely when the persistent badge is the only thing left to
+           carry it. */
+        setTableState((prev) =>
+          prev.spinMultiplier === mult &&
+          prev.spinPrizePool === (Number(d?.prize_pool) || undefined)
+            ? prev
+            : {
+                ...prev,
+                spinMultiplier: mult,
+                spinPrizePool: Number(d?.prize_pool) || prev.spinPrizePool,
+              }
+        );
         const revealTournamentId =
           (evt.data as { tournament_id?: string })?.tournament_id ||
           tableState.tournamentId ||
@@ -13662,6 +14063,10 @@ export default function TablePage({
               (sp: { seat?: number; user_id?: string }) =>
                 sp?.seat === claimed && sp.user_id && sp.user_id !== userId
             );
+          /* Same rule as the invariant above: the engine's roster still names a
+             player who has left but not yet settled, so a resync must not hand
+             them back the seat (2026-09-05). */
+          if (leftSeatPendingRef.current) syncedHeroSeat = 0;
           if (syncedHeroSeat > 0) heroSeatRef.current = syncedHeroSeat;
           else if (seatStolen) {
             heroSeatRef.current = 0;
@@ -13706,7 +14111,13 @@ export default function TablePage({
             // AUDIT 2026-08-19: only surrender the seat on proof it was taken
             // (see the heroSeatRef note above) — a hero waiting to be dealt in
             // is deliberately absent from this hand-scoped player list.
-            heroSeat: syncedHeroSeat > 0 ? syncedHeroSeat : seatStolen ? 0 : prev.heroSeat,
+            heroSeat: leftSeatPendingRef.current
+              ? 0
+              : syncedHeroSeat > 0
+                ? syncedHeroSeat
+                : seatStolen
+                  ? 0
+                  : prev.heroSeat,
           };
         });
         break;
@@ -13920,6 +14331,13 @@ export default function TablePage({
           stackHoldReleaseTimerRef.current = null;
         }
         setStackHoldReleased(false);
+        // 2026-09-05: the per-board release ledger is scoped to one hand too.
+        // A pending release from the previous hand firing into this one would
+        // credit a stack that is no longer holding anything.
+        for (const t of stackReleaseTimersRef.current) clearTimeout(t);
+        stackReleaseTimersRef.current = [];
+        setStackReleasedByPlayer({});
+        setPotShipView(null);
         // ANIMATION AUDIT 2026-08-19: the previous hand's 3s reset timer was
         // NEVER cancelled here. The server's fold-win inter-hand gap is
         // 2000ms, so on every fold-win that stale timer fired ~1s INTO the
@@ -14043,9 +14461,17 @@ export default function TablePage({
         }
         setShowHandRevealModal(false);
         // Fresh hand → reset the accumulated achievement outcome.
-        // Dan 2026-08-18: show-card picks are per hand. Clear them here so a
-        // card marked last hand is not still marked when the new one is dealt.
-        setShownCardIndexes([]);
+        /* The show-card picks used to be cleared HERE and only here. That is
+           the single-place-on-one-event shape this file has already been
+           burned by twice - see the note on `heroHandRef` (2026-09-01: "every
+           client that never receives that event - a mid-hand join, a reload, a
+           dropped frame, the websocket sequence gap that fires GAME_START -
+           sat on 0 for the rest of the hand") and DealAnimation's re-key. Both
+           moved onto `tableState.handNumber`, which is maintained from every
+           engine snapshot; this one was left behind, so a missed HAND_STARTED
+           left last hand's pick marked and untouchable. Dan: "IT STAYS LOCKED
+           FOR FUTURE HANDS AS WELL." The reset now lives in an effect keyed on
+           the hand number, below. */
         heroHandOutcomeRef.current = {
           dealtIn: false,
           showdown: false,
@@ -14672,6 +15098,10 @@ export default function TablePage({
                 potSize: outcome.potWon,
                 handRank: outcome.handRank || undefined,
                 showdown: outcome.showdown,
+                /* player_stats is keyed (user_id, club_id). Without the club
+                   the counter cannot be incremented truthfully - see the note
+                   in AchievementTriggerService.updateUserStats. */
+                clubId: actualClubIdRef.current || undefined,
               })
               .catch((e) => reportError(e, 'TablePage.achievementOnHandComplete'));
           }
@@ -15200,6 +15630,26 @@ export default function TablePage({
               ]
             : null;
 
+        /* PER-RUN SEAT LABELS 2026-09-05: the same record, keyed by player
+           instead of collapsed to one name per board. `boardHandNames` above
+           answers "what won board 2" — fine for a board row, useless for a
+           SEAT, because on a chop two players won board 2 with different
+           hands. This answers "what did THIS player have on run N", which is
+           what the seat is actually claiming when it prints a hand name. */
+        const boardHandNamesByPlayer: Array<Record<string, string>> | null =
+          winnersByBoard.length > 0
+            ? (() => {
+                const byBoard: Array<Record<string, string>> = [];
+                for (const wb of winnersByBoard) {
+                  const idx = (Number(wb.board) || 1) - 1;
+                  if (idx < 0) continue;
+                  if (!byBoard[idx]) byBoard[idx] = {};
+                  if (wb.hand_name && wb.user_id) byBoard[idx][wb.user_id] = wb.hand_name;
+                }
+                return byBoard;
+              })()
+            : null;
+
         /* SCOOP LABELS (spec §9.2/§13.3, 2026-08-28): derived AFTER settlement
            from the per-board winner record — one player sole-winning every
            board is a SCOOP (TRIPLE SCOOP on three boards); sole-winning two of
@@ -15401,6 +15851,7 @@ export default function TablePage({
             handNames: { ...prevWin.handNames, ...handNamesNow },
             amounts: mergedAmounts,
             boardHandNames: boardHandNames ?? prevWin.boardHandNames,
+            boardHandNamesByPlayer: boardHandNamesByPlayer ?? prevWin.boardHandNamesByPlayer,
           };
           setWinnerInfo(merged);
           // Write the mirror synchronously too. POT_WIN and HAND_COMPLETE can
@@ -15696,13 +16147,28 @@ export default function TablePage({
             board: number;
             /** This group's position among its own run's pots (0 = main). */
             rankInBoard: number;
+            /** Engine pot index this group pays from (0 = main pot). */
+            potIndex: number;
+            /**
+             * Per-player amounts this group delivers. The stack hold releases
+             * exactly these when the fan lands, so the seat rises board by
+             * board instead of once at the end (2026-09-05).
+             */
+            perPlayer: Record<string, number>;
           }
           const boardRankCounter = new Map<number, number>();
           const awardGroups: AwardGroupAnim[] = seqGroups.map((g) => {
             const boardNo = g.board >= 1 ? g.board : 1;
             const rankInBoard = boardRankCounter.get(boardNo) ?? 0;
             boardRankCounter.set(boardNo, rankInBoard + 1);
-            const anim: AwardGroupAnim = { events: [], floats: [], board: boardNo, rankInBoard };
+            const anim: AwardGroupAnim = {
+              events: [],
+              floats: [],
+              board: boardNo,
+              rankInBoard,
+              potIndex: Number.isFinite(g.potIndex) ? g.potIndex : 0,
+              perPlayer: {},
+            };
             for (const w of g.winners) {
               // Review fix 2026-08-25: pot_awards amounts are EXACT per-pot
               // shares — a 0 there is a real zero (a fully-raked micro pot),
@@ -15756,6 +16222,11 @@ export default function TablePage({
                 toY: winnerPos.y,
                 amount: share,
               });
+              // 2026-09-05: the same share, keyed by player, so the stack hold
+              // can release precisely this much when THIS fan lands. A player
+              // who wins the main and a side pot on the same board gets two
+              // entries and two visible steps, as they do in the reference.
+              anim.perPlayer[w.userId] = (anim.perPlayer[w.userId] ?? 0) + share;
             }
             return anim;
           });
@@ -15787,6 +16258,8 @@ export default function TablePage({
               floats: [],
               board: 1,
               rankInBoard: 0,
+              potIndex: 0,
+              perPlayer: {},
             };
             for (const wid of winnerIds) {
               const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
@@ -15801,6 +16274,7 @@ export default function TablePage({
                 toY: winnerPos.y,
                 amount: fallbackShare,
               });
+              fallback.perPlayer[wid] = (fallback.perPlayer[wid] ?? 0) + fallbackShare;
             }
             if (fallback.events.length > 0) {
               awardGroups.length = 0;
@@ -15809,13 +16283,63 @@ export default function TablePage({
           }
 
           if (awardGroups.some((g) => g.events.length > 0)) {
-            // Reference behavior (2026-08-26): when pots leave the middle as
-            // a SEQUENCE, the POT counter drops as each one departs — the
-            // number over the felt always says what is still in the middle.
-            // Only engaged for multi-beat sequences; a single ship keeps
-            // PotDisplay's own slide-and-fade.
+            /**
+             * PER-POT / PER-BOARD SHIPPING (rewritten 2026-09-05).
+             *
+             * `sequenced` means more than one beat, so the felt must narrate
+             * which pot is being paid and to whom, one beat at a time. Two
+             * things now happen on every beat instead of one merged jump at
+             * the end:
+             *
+             *   1. the winners of THIS group have THIS group's share released
+             *      onto their visible stack, ~700ms later when the fan lands;
+             *   2. when a pot has no beats left owing, its row leaves the pot
+             *      display.
+             *
+             * `potShipView` freezes the pot rows at this instant because the
+             * engine has already settled — on a run-it-twice hand the snapshot
+             * pot is zero many seconds before the last board is even revealed.
+             */
             const sequenced = awardGroups.length > 1;
-            if (sequenced) setPotShipRemaining(potAmount);
+            if (sequenced) {
+              const snapSides = tableStateRef.current.sidePots ?? [];
+              const snapMain = tableStateRef.current.pot;
+              // Prefer the live snapshot's pot rows (they carry the true
+              // pre-rake contested amounts and their own ids). If the snapshot
+              // has already been zeroed, fall back to reconstructing one row
+              // per pot index from the award groups themselves, so a split-pot
+              // hand still shows a main row and a side row rather than one
+              // merged number.
+              const haveSnapRows = snapMain > 0 || snapSides.length > 0;
+              let main = snapMain > 0 ? snapMain : potAmount;
+              let sides: SidePot[] = snapSides;
+              if (!haveSnapRows) {
+                const byPot = new Map<number, number>();
+                for (const g of awardGroups) {
+                  const total = g.floats.reduce((s, f) => s + (f.amount || 0), 0);
+                  byPot.set(g.potIndex, (byPot.get(g.potIndex) ?? 0) + total);
+                }
+                const idxs = [...byPot.keys()].sort((a, b) => a - b);
+                main = Math.round((byPot.get(0) ?? potAmount) * 100) / 100;
+                sides = idxs
+                  .filter((i) => i > 0)
+                  .map<SidePot>((i) => ({
+                    id: `rit-pot-${i}`,
+                    amount: Math.round((byPot.get(i) ?? 0) * 100) / 100,
+                    eligiblePlayers: [],
+                  }));
+              }
+              setPotShipView({ main, sides, retired: [] });
+            }
+            // How many beats each pot still owes. A pot's row is retired when
+            // this reaches zero — i.e. when it has paid every run, which is
+            // why the side pot in the reference recording vanishes while the
+            // main pot (still owing a second board) stays up.
+            const beatsLeftByPot = new Map<number, number>();
+            for (const g of awardGroups) {
+              if (g.events.length === 0) continue;
+              beatsLeftByPot.set(g.potIndex, (beatsLeftByPot.get(g.potIndex) ?? 0) + 1);
+            }
             const fireGroup = (g: AwardGroupAnim) => {
               if (g.events.length === 0) return;
               // Stamp the REAL start so the 5s safety sweep measures this fan
@@ -15829,12 +16353,41 @@ export default function TablePage({
               for (const plan of g.floats) {
                 spawnPotWinFloat(plan.fromX, plan.fromY, plan.toX, plan.toY, plan.amount);
               }
-              if (sequenced) {
-                const groupTotal = g.floats.reduce((s, f) => s + (f.amount || 0), 0);
-                setPotShipRemaining((prev) =>
-                  prev == null ? prev : Math.max(0, Math.round((prev - groupTotal) * 100) / 100)
+              /**
+               * THE STACK RISES WITH THIS FAN, NOT AT THE END OF THE HAND.
+               *
+               * Chip travel is ~600ms (createPotToWinnerEvent); 700 leaves the
+               * fan settled on the seat before the number moves. Releasing the
+               * group's own per-player shares — not the player's merged total
+               * — is what makes a two-of-three-boards winner step 0 → 2.73 →
+               * 5.46 instead of sitting at 0 and jumping once.
+               */
+              const landAt = 700 * getAnimationSpeed();
+              const releaseTimer = window.setTimeout(() => {
+                stackReleaseTimersRef.current = stackReleaseTimersRef.current.filter(
+                  (x) => x !== releaseTimer
                 );
-              }
+                setStackReleasedByPlayer((prev) => {
+                  const next = { ...prev };
+                  for (const [pid, amt] of Object.entries(g.perPlayer)) {
+                    if (!(amt > 0)) continue;
+                    next[pid] = Math.round(((next[pid] ?? 0) + amt) * 100) / 100;
+                  }
+                  return next;
+                });
+                if (sequenced) {
+                  const left = (beatsLeftByPot.get(g.potIndex) ?? 1) - 1;
+                  beatsLeftByPot.set(g.potIndex, left);
+                  if (left <= 0) {
+                    setPotShipView((prev) =>
+                      prev == null || prev.retired.includes(g.potIndex)
+                        ? prev
+                        : { ...prev, retired: [...prev.retired, g.potIndex] }
+                    );
+                  }
+                }
+              }, landAt);
+              stackReleaseTimersRef.current.push(releaseTimer);
               // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
               // #175 gated for multi-table: only play on the active tab
               if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playPotCollect();
@@ -15846,11 +16399,29 @@ export default function TablePage({
             // its ribbon lands, pots within the run staggered as usual. The
             // ribbon times come from the reveal timeline (ritRunRibbonAtRef).
             const ribbonTimes = ritRunRibbonAtRef.current;
+            /**
+             * DO NOT ALIGN TO RIBBONS WE CANNOT TRUST (2026-09-05).
+             *
+             * The board axis only exists on the wire inside `pot_awards`. Every
+             * degraded path — a legacy payload, the pot_index-only grouping,
+             * the synthesised fallback — stamps `board: 1` on everything
+             * because it has no better answer. Combined with a live multi-run
+             * ribbon timeline that meant EVERY group fired on run 1's ribbon:
+             * the entire pot shipped while boards 2..N were still face down.
+             *
+             * If several runs are being revealed but not one group claims a
+             * board past the first, the axis is missing rather than genuinely
+             * all-run-1. Fall back to the uniform stagger, which `shipDelayMs`
+             * has already anchored past the end of the whole reveal timeline.
+             */
+            const boardAxisTrusted =
+              ribbonTimes.length <= 1 || awardGroups.some((g) => g.board > 1);
+            const useRibbons = ribbonTimes.length > 0 && boardAxisTrusted;
             const speedNow = getAnimationSpeed();
             awardGroups.forEach((g, rank) => {
               const ribbonAt = ribbonTimes[g.board - 1];
               const groupDelay =
-                ribbonTimes.length > 0 && ribbonAt
+                useRibbons && ribbonAt
                   ? Math.max(0, ribbonAt - Date.now()) +
                     (HAND_COMPLETION.RIT_RIBBON_MS +
                       g.rankInBoard * HAND_COMPLETION.POT_AWARD_STAGGER_MS) *
@@ -15880,8 +16451,14 @@ export default function TablePage({
           // last run's ribbon, not the uniform stagger — mirror the delay
           // rule used to fire the groups above.
           const ribbonTimesForHold = ritRunRibbonAtRef.current;
+          // Mirrors `boardAxisTrusted` above: a ribbon timeline we refused to
+          // schedule against must not be used to size the final hold either,
+          // or the backstop release would fire before the real last beat.
+          const holdUsesRibbons =
+            ribbonTimesForHold.length > 0 &&
+            (ribbonTimesForHold.length <= 1 || awardGroups.some((g) => g.board > 1));
           const lastGroupDelay =
-            ribbonTimesForHold.length > 0 && awardGroups.length > 0
+            holdUsesRibbons && awardGroups.length > 0
               ? Math.max(
                   ...awardGroups.map((g) => {
                     const ribbonAt = ribbonTimesForHold[g.board - 1];
@@ -16179,15 +16756,31 @@ export default function TablePage({
         // being told is the part that reads as a bug even when the removal
         // was correct.
         //
-        // A voluntary leave carries no `reason` (the player knows why they
-        // left), so this only ever speaks for removals the player did not ask
-        // for, and only to the player it happened to.
+        // THE REASON GATE WAS THE BUG (Dan 2026-09-05). This used to read "a
+        // voluntary leave carries no `reason` (the player knows why they left),
+        // so this only ever speaks for removals the player did not ask for" —
+        // and that was true of the player's OWN device, which had already
+        // navigated to the lobby. It was false of every OTHER device signed in
+        // to the same account. Dan left a cash game on desktop; his phone,
+        // holding the same seat, never received a clearing signal because the
+        // event it needed arrived without a `reason` and was dropped here. The
+        // phone went on painting the last dealt hand, then a fabricated hero at
+        // "0.00" with a SITTING OUT badge and "Seat Reserved, You'll Be Dealt In
+        // Next Hand" over a seat he had already left.
+        //
+        // The seat is now cleared for ANY seat_left addressed to this user. The
+        // `reason` keeps its original job and only that job: deciding whether
+        // there is anything to TELL them. A voluntary leave needs no
+        // explanation, so it clears the seat silently.
         {
           const d = evt.data as { user_id?: string; reason?: string };
           const reason = d?.reason;
-          if (reason && userId && String(d?.user_id) === String(userId)) {
-            // Remembered for the poll fallback — see evictionReasonRef.
-            evictionReasonRef.current = reason;
+          if (userId && String(d?.user_id) === String(userId)) {
+            /* Remembered for the poll fallback — see evictionReasonRef. Only a
+               REAL reason is stored: now that this block runs for voluntary
+               leaves too (which carry none), assigning unconditionally would
+               wipe the reason a genuine eviction had just left here. */
+            if (reason) evictionReasonRef.current = reason;
 
             /* TELLING THEM IS HALF OF IT — THE SCREEN HAS TO AGREE (2026-08-28).
              *
@@ -16203,7 +16796,10 @@ export default function TablePage({
              * `heroSeat > 0` or on this id being in `sittingOutIdsRef`. The
              * ten-second seat read does the same thing for anyone who never
              * received this event; both are needed and they dedupe. */
-            applySeatRemoved(reason);
+            /* No reason means the player left of their own accord, so the seat
+               clears without a word. A reason means something happened TO them
+               and they are told what. */
+            applySeatRemoved(reason, { announce: Boolean(reason) });
           }
 
           /* ── THE TABLE LOSES THE BADGE TOO (2026-08-29) ──────────────────
@@ -17124,6 +17720,8 @@ export default function TablePage({
         // Paid. The seat is ours — paint it and close the sheet.
         const mySeat = res.seat_number ?? seatNumber;
         heroSeatRef.current = mySeat;
+        // Taking a seat is the one thing that clears the left-seat latch.
+        leftSeatPendingRef.current = false;
         seatAcquiredAtRef.current = Date.now();
         // A new seat is a clean slate: a later removal must be announced again.
         bootNoticeShownRef.current = false;
@@ -17179,22 +17777,49 @@ export default function TablePage({
    * noticed the moment a seat-first game stopped being a seat-first game.
    *
    * The signals are all state this page ALREADY receives, so no new socket, no
-   * new poll: the button has been drawn (SPIN_BUTTON), a hand has started
-   * (HAND_STARTED / GAME_START), or a seat that was bought at zero chips now
-   * holds a stack. That last one is decisive for a Spin specifically - a
-   * seat-first seat is a RESERVATION until the multiplier is known, because
-   * the starting stack is a property of the tier that has not been drawn yet,
-   * so a non-zero stack means the draw resolved and the game is running.
+   * new poll: the button has been drawn (SPIN_BUTTON) or a hand has started
+   * (HAND_STARTED / GAME_START). The tournament leaving REGISTERING is the
+   * third, and it arrives on the seat-first channel and the mount read.
+   *
+   * ── A PAID SEAT IS NOT A STARTED GAME (Dan 2026-09-05) ───────────────────
+   *
+   * Dan: "WHEN I TRY TO JOIN A SPIN THAT ALREADY HAS HORSES REGISTERED, I
+   * DON'T GET OR HAVE A 'SIT +' BUTTON AVAILABLE. BUT WHEN I SIT AT A SPIN
+   * FIRST ON AN EMPTY TABLE THE SPIN STARTS."
+   *
+   * A third signal used to sit here — `players.some(stack > 0)` — and its own
+   * comment explained why it was decisive: "a seat-first seat is a RESERVATION
+   * until the multiplier is known ... so a non-zero stack means the draw
+   * resolved". That was true when it was written on 2026-08-25. It stopped
+   * being true on 2026-09-01, when Dan asked for the opposite ("as soon as
+   * they buy in 300 chips should appear in their action box, not 0") and
+   * migration 20260901154500 made BOTH seating paths write
+   * `stack = starting_chips` at purchase — `fn_take_seat_and_buy_in` for a
+   * human and `fn_seat_horse_in_seat_first_game` for a horse, the same number
+   * in the same breath, because CLAUDE.md 10.5 requires it.
+   *
+   * So from that day a seat has held chips BEFORE the game starts, and this
+   * clause read the first bought seat as "play has begun". On a Spin the fleet
+   * usually buys the first seats, so the latch was already set before Dan ever
+   * opened the table: the D8 effect below cleared `seatFirstBuyIn`, `canSit`
+   * went false, and every open chair rendered as an inert EMPTY plate. Exactly
+   * the symptom he reports, and exactly why sitting FIRST at an empty table
+   * still worked — nothing had been bought yet at the moment he tapped.
+   *
+   * It cost more than the button. The D2 fallback that re-opens the wheel on a
+   * missed SPIN_REVEAL is gated on this latch too, so it burned all three of
+   * its attempts against a NULL multiplier while the game was still
+   * REGISTERING, and never ran again.
+   *
+   * A stack is no longer evidence of anything. The button, the hand and the
+   * tournament's own status are, and they are all still here.
    *
    * It latches. Play does not un-begin, and a latched boolean means the two
    * effects below run once rather than on every snapshot.
    */
   useEffect(() => {
     if (playHasBegun) return;
-    const begun =
-      tableState.dealerSeat > 0 ||
-      (tableState.handNumber ?? 0) > 0 ||
-      tableState.players.some((p) => p && Number(p.stack ?? 0) > 0);
+    const begun = tableState.dealerSeat > 0 || (tableState.handNumber ?? 0) > 0;
     if (begun) {
       /* The ref first, and synchronously: `exitIfBusted` reads it from a timer
          callback and must never see a stale false after play has started
@@ -17383,7 +18008,7 @@ export default function TablePage({
       attempts += 1;
       const { data, error } = await supabase
         .from('tournaments')
-        .select('spin_multiplier, spin_locked_tiers, buy_in_amount, started_at')
+        .select('spin_multiplier, spin_locked_tiers, buy_in_amount, started_at, spin_reveal_at')
         .eq('id', tournId)
         .maybeSingle();
       if (cancelled) return;
@@ -17749,7 +18374,7 @@ export default function TablePage({
       try {
         const { data, error } = await supabase
           .from('table_seats')
-          .select('user_id, is_sitting_out, sit_out_at')
+          .select('user_id, is_sitting_out, sit_out_at, leave_pending')
           .eq('table_id', tableId)
           .is('left_at', null);
         if (error || cancelled || !data) return;
@@ -17757,7 +18382,17 @@ export default function TablePage({
           user_id: string;
           is_sitting_out: boolean | null;
           sit_out_at: string | null;
+          leave_pending: boolean | null;
         }>;
+        /* `leave_pending` is read here for the same reason the mount restore
+           reads it: between the leave and settlement the row is still live and
+           `left_at IS NULL`, so this poll cannot otherwise tell a seat that is
+           LEAVING from one that is merely sitting out. Without it the engine's
+           new `is_sitting_out: true` on a departing seat paints the player a
+           full "You Are Sitting Out / I'm Back" bar with a five-minute eviction
+           countdown, on a seat they already left (Dan 2026-09-05). */
+        const heroRow = userId ? rows.find((r) => String(r.user_id) === String(userId)) : undefined;
+        if (heroRow?.leave_pending) leftSeatPendingRef.current = true;
         const stillSeated = new Set(rows.map((r) => String(r.user_id)).filter(Boolean));
 
         /**
@@ -17841,7 +18476,14 @@ export default function TablePage({
                of six lines and they had already drifted: this one carried no
                per-reason wording, so an eviction that arrived by poll rather
                than by socket said only the generic sentence. */
-            applySeatRemoved(evictionReasonRef.current);
+            /* …but it must not ANNOUNCE a removal that was a departure. If we
+               had already seen our own row carrying `leave_pending`, this seat
+               disappearing is our own completed leave, and "You Were Removed
+               From The Table" is simply untrue (Dan 2026-09-05). A real
+               eviction never sets that latch, so it still speaks. */
+            applySeatRemoved(evictionReasonRef.current, {
+              announce: !leftSeatPendingRef.current,
+            });
           }
         }
 
@@ -17858,7 +18500,12 @@ export default function TablePage({
             row.user_id === userId &&
             seatAcquiredAtRef.current != null &&
             Date.now() - seatAcquiredAtRef.current < 15_000;
-          if (row.is_sitting_out && !heroFreshJoin) sittingOutIdsRef.current.add(row.user_id);
+          /* A seat on its way out is not "sitting out" - the player left, and
+             telling them they are sitting out (with an I'm Back button and an
+             eviction clock) over a seat they left is the same false felt this
+             whole fix is about. */
+          if (row.is_sitting_out && !heroFreshJoin && !row.leave_pending)
+            sittingOutIdsRef.current.add(row.user_id);
           else sittingOutIdsRef.current.delete(row.user_id);
         }
 
@@ -18098,9 +18745,19 @@ export default function TablePage({
     value: !!v8Settings[m.key as keyof typeof v8Settings],
   }));
 
+  /**
+   * Dan 2026-09-05: "IT NEEDS A DISABLE OR HIDE OPTION IN THE TABLE SETTINGS
+   * FOR USERS THAT DON'T WANT IT POPPING UP." `rabbit_hunt_button` defaults to
+   * ON, so nobody loses an offer they had yesterday, and turning it off hides
+   * the button and nothing else. It deliberately does NOT shorten the engine's
+   * post-hand rest (HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS): that beat belongs
+   * to the table, not to one seat, and a pause that came and went with one
+   * player's preference would change everybody's pace and leak, from rhythm
+   * alone, that the deck still had cards in it (CLAUDE.md 10.5).
+   */
   const hudSlotControl: 'timebank' | 'rabbit' | null = isHeroTurnContext
     ? 'timebank'
-    : !tableState.isHandInProgress && isRabbitAvailable
+    : !tableState.isHandInProgress && isRabbitAvailable && v8Settings.rabbit_hunt_button
       ? 'rabbit'
       : null;
 
@@ -19558,6 +20215,24 @@ export default function TablePage({
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
       data-hero={tableState.players.some((p) => p?.isHero) ? 'true' : 'false'}
+      /* ── HOW MANY CHAIRS THIS TABLE HAS (Dan 2026-09-05) ──────────────────
+         "THE 6 HANDED TABLE SHOULDN'T BE AS TALL AS THE 9 HANDED TABLE, IT
+         SHOULD BE SHORTER SO THE AVATARS AT THE TOP DON'T HAVE TO BE SHRUNK
+         OR SQUISHED DOWN."
+
+         `.table-scaler` carried ONE `aspect-ratio: 605/1000` for every table
+         in the app, so a 6-max oval was drawn on exactly the 9-max canvas -
+         the same height, the same top-cap band, the same 56px avatar ceiling
+         under the BBJ banner, for a ring that has one seat up there instead
+         of three. CSS cannot count seats, so the count is published here and
+         TablePage.css shortens the canvas (and lifts the ceiling) for the
+         small rings. Clamped to the range the seat layouts actually cover so
+         an absent or nonsense cap degrades to the 9-max canvas, which is the
+         one every measurement in this file was taken on. */
+      data-seats={Math.min(
+        MAX_SUPPORTED_SEATS,
+        Math.max(2, Number(tableState.maxPlayers) || MAX_SUPPORTED_SEATS)
+      )}
       /* PUBLISHED CONTRACT — "none" | "waiting" | "active". See the
          heroActionState memo above for what each one means and why it is
          derived from the render conditions rather than restated. CSS collapses
@@ -20109,17 +20784,25 @@ export default function TablePage({
                 Fixed in RabbitHunt.css by reading --sp-hud-tile-size like its
                 two slot-mates do. Do not reintroduce a pixel square there.
 
-                ONE THING DELIBERATELY NOT CHANGED: the Rabbit Hunt branch keeps
-                `!tableState.isHandInProgress`. The 2-second minimum-visible
-                floor (RABBIT_MIN_VISIBLE_MS) defers the STATE, but this gate
-                still hides the button the instant the next hand starts, so on a
-                short inter-hand gap the floor buys less than its full two
-                seconds. That is the safe trade and not an oversight: a reveal
-                freezes the engine snapshot for 3s and paints cards onto the
-                board, so a button that outlives the hand boundary is a button
-                that can stall a live table. Lengthening the window means making
-                the reveal hand-safe first, which is a change to
-                handleRabbitReveal, not to this gate.
+                THE GATE STAYS; THE WINDOW MOVED (2026-09-05). This branch
+                still keeps `!tableState.isHandInProgress`, and for the reason
+                the previous note gave: a reveal freezes the engine snapshot
+                for 3s and paints cards onto the board, so a button that
+                outlives the hand boundary is a button that can stall a live
+                table. What that note got wrong was the conclusion - it treated
+                the short window as the price of the gate and pointed the next
+                agent at handleRabbitReveal.
+
+                The window was short because the ENGINE never left the player
+                any. The offer lands at settlement, but this gate cannot open
+                until the hand-free broadcast, which came only after the whole
+                completion hold; the button's entire visible life was
+                boardClearMs, half a second on a fold. Dan, 2026-09-05: "IT
+                CURRENTLY DOESN'T REALLY HAVE ENOUGH TIME TO CLICK AND USE."
+                The fix is HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS - 1750ms of
+                rest AFTER the board clear, so the time is given where this
+                gate is already open and where a snapshot freeze has no live
+                hand to starve. Nothing here had to become hand-unsafe.
 
                 `body.ca-raising` (TablePage.css) hides everything in this
                 corner while the raise overlay is open - checked, and it cannot
@@ -20558,8 +21241,9 @@ export default function TablePage({
                           tableId={tableId}
                           handId={tableState.handNumber}
                           boardIndex={board.boardIndex}
-                          gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                          gameMode={boardPresentationMode}
                           isFocused={isActive}
+                          isVisible={isVisible}
                         />
                       </div>
                     ))
@@ -20602,8 +21286,9 @@ export default function TablePage({
                         tableId={tableId}
                         handId={tableState.handNumber}
                         boardIndex={0}
-                        gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                        gameMode={boardPresentationMode}
                         isFocused={isActive}
+                        isVisible={isVisible}
                       />
                       {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
                           directly under board 1 like the reference — no label,
@@ -20635,8 +21320,9 @@ export default function TablePage({
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={1}
-                            gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                            gameMode={boardPresentationMode}
                             isFocused={isActive}
+                            isVisible={isVisible}
                           />
                         </div>
                       )}
@@ -20661,8 +21347,9 @@ export default function TablePage({
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={2}
-                            gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                            gameMode={boardPresentationMode}
                             isFocused={isActive}
+                            isVisible={isVisible}
                           />
                         </div>
                       )}
@@ -20799,6 +21486,18 @@ export default function TablePage({
                     >
                       <span className="spinMultiplierIcon">X</span>
                       <span className="spinMultiplierValue">{tableState.spinMultiplier}x</span>
+                      {/* Dan 2026-09-05: "THE TOTAL PRIZE OR MULTIPLIER FOR THE
+                          SPIN NEEDS TO BE PRESENT ON THE FELT AFTER THE SPIN
+                          RUNS." The multiplier is the abstraction; the prize is
+                          the number a player is actually playing for, so both
+                          ride the badge. Only when it is known — an older row
+                          with no prize_pool keeps the multiplier alone rather
+                          than printing a confident 0. */}
+                      {(tableState.spinPrizePool ?? 0) > 0 && (
+                        <span className="spinMultiplierPrize">
+                          {Math.round(tableState.spinPrizePool as number).toLocaleString()}
+                        </span>
+                      )}
                     </div>
                   )}
 
@@ -20940,11 +21639,24 @@ export default function TablePage({
           {/* Pot Display — click to toggle chips/BB */}
           <div className="pot-area">
             <PotDisplay
-              /* Reference behavior (2026-08-26): during a sequenced award the
-                 POT counter names what is STILL in the middle, dropping as
-                 each pot ships (splits, side pots, every RIT board). */
-              mainPot={potShipRemaining ?? tableState.pot}
-              sidePots={potShipRemaining != null ? [] : tableState.sidePots}
+              /* PokerBros parity 2026-09-05: during a sequenced award every
+                 pot this hand played for keeps its own row at its FULL
+                 contested amount, and a row disappears the moment that pot is
+                 fully paid across every run. The counter does not tick down
+                 and the side-pot rows are not hidden — see the potShipView
+                 declaration for the frame evidence. */
+              mainPot={
+                potShipView
+                  ? potShipView.retired.includes(0)
+                    ? 0
+                    : potShipView.main
+                  : tableState.pot
+              }
+              sidePots={
+                potShipView
+                  ? potShipView.sides.filter((_, i) => !potShipView.retired.includes(i + 1))
+                  : tableState.sidePots
+              }
               bigBlind={safeBB(tableState.blinds, 0)}
               displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
               onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
@@ -21107,7 +21819,11 @@ export default function TablePage({
               const held = pendingStackHold(
                 tableState.engineWinners,
                 displayPlayer.id,
-                stackHoldReleased
+                stackHoldReleased,
+                // 2026-09-05: what this player has already been PAID on screen.
+                // On a multi-board hand the hold shrinks board by board, so the
+                // seat steps up with each fan instead of jumping once at the end.
+                stackReleasedByPlayer
               );
               if (held > 0) {
                 displayPlayer = {
@@ -21373,9 +22089,19 @@ export default function TablePage({
                      labels both seats with their (identical) rank, and a
                      double-board split names each winner's hand. Falls back
                      to the shared name for older payloads. */
+                  /* PER-RUN SEAT LABELS 2026-09-05: on a run-it-twice hand the
+                     seat names the hand this player made on the run currently
+                     on stage. A player who takes run 1 with Two Pair and run 3
+                     with a Flush used to show one of those for both, beside a
+                     board row naming the other. `ritRevealedRuns` is 1-based
+                     and gates each run's own turn; before any run has taken
+                     the stage, and on every single-board hand, this falls
+                     through to the merged name exactly as before. */
                   winningHandName={
                     player && winnerInfo.playerIds.includes(player.id)
-                      ? winnerInfo.handNames[player.id] || winnerInfo.handName
+                      ? winnerInfo.boardHandNamesByPlayer?.[ritRevealedRuns - 1]?.[player.id] ||
+                        winnerInfo.handNames[player.id] ||
+                        winnerInfo.handName
                       : undefined
                   }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 15): light
@@ -21522,12 +22248,13 @@ export default function TablePage({
                   }}
                   isDealing={isSeatDealing}
                   isMucking={muckingSeats[idx] || false}
-                  /* COMPETITOR-PARITY 2026-08-19: Card Squeeze — hero only.
+                  /* CARD SLIDE (Dan 2026-09-04): the corner peel — hero only.
                      Force-reveal conditions (showdown stage) are folded in
-                     here; SeatSlot adds the per-seat ones (all-in, winner). */
+                     here; SeatSlot adds the per-seat ones (all-in, winner).
+                     Reads card_slide; card_squeeze is retired. */
                   cardSqueezeActive={
                     !!displayPlayer?.isHero &&
-                    v8Settings.card_squeeze &&
+                    v8Settings.card_slide &&
                     tableState.boardStage !== 'showdown'
                   }
                   handNumber={tableState.handNumber ?? 0}
@@ -21732,45 +22459,23 @@ export default function TablePage({
                 Seat Held For {buyInSecondsLeft}s
               </div>
             )}
-            {/* ENHANCEMENT 2026-08-29: the multiplier ladder, priced at THIS
-                stake. Spins only - a Heads-Up has no wheel. Every number is
-                derived from the one canonical ladder (spinOddsTable), so the
-                sheet can never advertise odds the draw does not use. The
-                prize is cost x multiplier: spin fee is 0 by construction
-                (rake lives inside the multiplier distribution), so cost IS
-                the buy-in the pool multiplies. */}
-            {seatFirstBuyIn.label === 'Spin' && (
-              <div className="seat-buyin-confirm__odds">
-                <button
-                  type="button"
-                  className="seat-buyin-confirm__odds-toggle"
-                  aria-expanded={spinOddsOpen}
-                  onClick={() => setSpinOddsOpen((v) => !v)}
-                >
-                  {spinOddsOpen ? 'Hide Multiplier Odds' : 'Show Multiplier Odds'}
-                </button>
-                {spinOddsOpen && (
-                  <div className="seat-buyin-confirm__odds-table" role="table">
-                    <div className="seat-buyin-confirm__odds-row seat-buyin-confirm__odds-row--head">
-                      <span>Wheel</span>
-                      <span>Prize Pool</span>
-                      <span>Odds</span>
-                      <span>Payout</span>
-                    </div>
-                    {spinOddsTable().map((row) => (
-                      <div className="seat-buyin-confirm__odds-row" key={row.multiplier}>
-                        <span>{row.multiplier}x</span>
-                        <span>
-                          {Math.round(seatFirstBuyIn.cost * row.multiplier).toLocaleString()}
-                        </span>
-                        <span>1 In {row.oneIn.toLocaleString()}</span>
-                        <span>{row.payoutLabel}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* ── NOBODY EVER SEES THE ODDS (Dan 2026-09-05, binding) ──────
+                Dan, verbatim: "HIDE THE MULTIPLIER ODDS, GET RIDE OF THAT ALL
+                TOGETHER, NOBODY SHOULD EVER VISIBLY SEE THAT."
+
+                A show/hide disclosure lived here from 2026-08-29 and printed
+                the whole ladder - every tier, its prize at this stake, its
+                frequency and its payout shape. It is gone, not collapsed and
+                not defaulted-closed: a toggle is still something a player can
+                see. (The retired strings are named in the spec, not here: a
+                comment quoting them verbatim defeats the grep that keeps them
+                out, and trips the guard itself.)
+
+                The ladder helper itself survives in src/config/spinSpec.ts,
+                because the fairness and ladder guards derive from it - it is
+                how the platform checks ITSELF. What it no longer has is a
+                render path, and tests/unit/spinOddsOnBuyInSheet.test.ts is
+                what stops it getting one back. */}
             <div className="seat-buyin-confirm__actions">
               <button
                 type="button"
@@ -22919,6 +23624,7 @@ export default function TablePage({
         heroId={userId || ''}
         loadState={handHistoryState}
         initialHandId={handDetailFocusId}
+        viewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
         /* Take the hand you are LOOKING AT. This was `onReplay={() => {...}}`
            — no parameter — and the replay modal resolves its own subject from
            `lastHandId`, which is filled by `getPlayerHands(userId, 1)`: the
@@ -23201,6 +23907,8 @@ export default function TablePage({
               return { ...prev, players: updatedPlayers, heroSeat: optimisticSeat };
             });
             heroSeatRef.current = optimisticSeat;
+            // Taking a seat is the one thing that clears the left-seat latch.
+            leftSeatPendingRef.current = false;
             setPendingSeat(null);
             seatedOptimistically = true;
           }
@@ -23327,6 +24035,8 @@ export default function TablePage({
                 // The seat + stack were already painted above, before this RPC
                 // was even sent. Nothing to do here but confirm the ref.
                 heroSeatRef.current = selectedSeat;
+                // Taking a seat is the one thing that clears the left-seat latch.
+                leftSeatPendingRef.current = false;
                 seatAcquiredAtRef.current = Date.now();
                 // A new seat is a clean slate: a later removal must be announced again.
                 bootNoticeShownRef.current = false;
@@ -23601,6 +24311,7 @@ export default function TablePage({
         showHandHistory={showHandHistory}
         handHistory={handHistory}
         handHistoryState={handHistoryState}
+        handHistoryViewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
         onCloseHandHistory={handleCloseHandHistory}
         onReplay={(hand) => {
           setLastHandId(hand.id);

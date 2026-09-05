@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { cardPresentationEngine } from './index';
+import { cardPresentationEngine } from './engineSingleton';
 import type { ActivePresentationView } from './CardPresentationEngine';
 
 const POLL_MS = 50;

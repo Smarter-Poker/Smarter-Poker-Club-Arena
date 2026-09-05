@@ -203,7 +203,13 @@
   left: 90%;
 }
 
-.player-avatar {
+/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
+   defined bare in several other stylesheets. Every stylesheet here is global
+   once imported, so whichever file loaded last won any property the owning
+   page did not itself declare - which is how a 32px admin icon button ended
+   up sizing the public dossier's player actions in production. Scoped to
+   this component's own container; its own appearance is unchanged. */
+.hand-replayer .player-avatar {
   width: 48px;
   height: 48px;
   background: linear-gradient(135deg, #3a4a6b 0%, #1e2a4a 100%);

@@ -80,13 +80,12 @@ describe('DailyChallengeService', () => {
     });
 
     it('should have positive requirements and a meaningful reward', () => {
-      // 2026-08-19 redesign: rewards are strictly diamonds (chipReward is 0
-      // across the pool). Assert the invariant that survives reward-mix
-      // changes: every challenge must require something and pay something.
+      // Dan 2026-09-05: a reward is diamonds, never chips. `chipReward` was
+      // removed from the pool entirely (migration 20260905114421 stopped the
+      // three RPCs crediting it), so "pays something" is now one number.
       for (const c of CHALLENGE_POOL) {
         expect(c.requirement).toBeGreaterThan(0);
-        expect(c.chipReward).toBeGreaterThanOrEqual(0);
-        expect((c.chipReward || 0) + (c.diamondReward || 0)).toBeGreaterThan(0);
+        expect(c.diamondReward).toBeGreaterThan(0);
       }
     });
 
@@ -193,11 +192,14 @@ describe('DailyChallengeService', () => {
       }
     });
 
-    it('pays chips on every challenge', () => {
-      // The whole feature read as broken because all 112 catalog rows paid
-      // chip_reward = 0 and only ever moved the diamond balance.
+    it('pays diamonds on every challenge, and offers no chip reward at all', () => {
+      // This test used to demand the OPPOSITE - `chipReward > 0` on every row,
+      // with a message reading "pays no chips" - while the comment six screens
+      // above it said rewards were strictly diamonds. Dan settled it on
+      // 2026-09-05: "NOTHING EVER 'EARNS CHIPS' ONLY EVER DIAMONDS."
       for (const c of ALL) {
-        expect(c.chipReward, `"${c.id}" pays no chips`).toBeGreaterThan(0);
+        expect(c.diamondReward, `"${c.id}" pays nothing`).toBeGreaterThan(0);
+        expect(c, `"${c.id}" still carries a chip reward`).not.toHaveProperty('chipReward');
       }
     });
   });
@@ -246,8 +248,10 @@ describe('DailyChallengeService', () => {
     });
 
     it('should have higher rewards than daily challenges', () => {
-      const maxDaily = Math.max(...CHALLENGE_POOL.map((c) => c.chipReward));
-      const minWeekly = Math.min(...WEEKLY_CHALLENGE_POOL.map((c) => c.chipReward));
+      // Measured in diamonds since 2026-09-05; the chip figures this compared
+      // are gone. The ladder itself is unchanged.
+      const maxDaily = Math.max(...CHALLENGE_POOL.map((c) => c.diamondReward));
+      const minWeekly = Math.min(...WEEKLY_CHALLENGE_POOL.map((c) => c.diamondReward));
       expect(minWeekly).toBeGreaterThanOrEqual(maxDaily);
     });
 
@@ -263,8 +267,8 @@ describe('DailyChallengeService', () => {
     });
 
     it('should have the highest rewards', () => {
-      const maxWeekly = Math.max(...WEEKLY_CHALLENGE_POOL.map((c) => c.chipReward));
-      const minMonthly = Math.min(...MONTHLY_CHALLENGE_POOL.map((c) => c.chipReward));
+      const maxWeekly = Math.max(...WEEKLY_CHALLENGE_POOL.map((c) => c.diamondReward));
+      const minMonthly = Math.min(...MONTHLY_CHALLENGE_POOL.map((c) => c.diamondReward));
       expect(minMonthly).toBeGreaterThanOrEqual(maxWeekly);
     });
 

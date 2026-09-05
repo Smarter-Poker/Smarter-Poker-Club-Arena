@@ -5,10 +5,6 @@
  * pipeline later without redesigning it.
  */
 
-import { CardPresentationEngine } from './CardPresentationEngine';
-import { createAnalyticsTelemetrySink } from './telemetry';
-import { getAnimationSpeed } from '../../utils/animationSpeed';
-
 export * from './types';
 export * from './profiles';
 export * from './animationKey';
@@ -16,9 +12,16 @@ export * from './resolveProfile';
 export { CardPresentationEngine } from './CardPresentationEngine';
 export type { ActivePresentationView } from './CardPresentationEngine';
 export { createAnalyticsTelemetrySink, TELEMETRY_SAMPLE_RATE } from './telemetry';
+export { SqueezeCard, squeezeHostProps, squeezeVars, type SqueezeCardProps } from './SqueezeCard';
+export { useCardSqueeze, streetForCount, type CardSqueezeState } from './useCardSqueeze';
+export { installEnvironmentInterrupts, RESIZE_SETTLE_MS } from './environmentInterrupts';
+export { preloadImage, resetPreloadCache, preloadCount } from './preload';
+export {
+  DEGRADED_FPS_THRESHOLD,
+  rafFrameSampler,
+  noopFrameSampler,
+  type FrameSample,
+  type FrameSamplerStart,
+} from './frameSampler';
 
-/** The one engine every board on the client shares. */
-export const cardPresentationEngine = new CardPresentationEngine({
-  telemetry: createAnalyticsTelemetrySink(),
-  speed: getAnimationSpeed,
-});
+export { cardPresentationEngine } from './engineSingleton';

@@ -104,7 +104,9 @@
 .sm-multiplier {
   font-size: 10px;
   font-weight: 600;
-  color: #fbbf24;
+  /* Dan 2026-09-05: "YELLOW ISN'T A SMARTER.POKER ALLOWED COLOR SCHEMA."
+     This was amber #fbbf24. Brass is the sanctioned warm accent. */
+  color: #d6ad52;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }

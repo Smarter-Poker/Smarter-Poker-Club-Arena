@@ -30,6 +30,7 @@ import { ScheduledTournamentService } from './services/ScheduledTournamentServic
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
+import { wsAuthRefusalPrometheusLines } from './transport/wsHelpers.js';
 import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
@@ -1506,6 +1507,57 @@ export class GameServer {
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.
       ...this.replicationMetrics.toPrometheus(),
+      // ── IS ANYBODY ACTUALLY PLAYING? (2026-09-04) ────────────────────
+      //
+      // THE BLIND SPOT THESE FILL. On 2026-09-03 a cron revoked Dan's session
+      // every 15 minutes and no human could hold a table socket for 22 hours.
+      // Every alert stayed green, and all of them were telling the truth: the
+      // engine dealt 5,700 hands per ten minutes, liveness was 1, no table was
+      // stalled. The fleet is horse-heavy, so `poker_active_players` read 6-8
+      // throughout - its normal value. Nothing distinguished "the fleet is
+      // busy" from "the fleet is busy and not one human is in it".
+      //
+      // THESE ARE DIAGNOSTIC GAUGES, AND DELIBERATELY NOT ALERTS. Measured
+      // before writing any rule: across 14 days only 15 distinct hours saw a
+      // human take a seat, and multi-DAY gaps are ordinary. So "zero humans
+      // seated" is this platform's NORMAL state, and an alert on it would page
+      // almost continuously and be muted within a day - the failure mode that
+      // makes a monitor worse than none. The alertable signal for this class is
+      // a FAILED ATTEMPT, which does not depend on how many people are online:
+      // one player retrying produces it. That is
+      // `poker_ws_auth_refused_total` and EngineRefusingSessions, above.
+      //
+      // What these are for is the question every incident starts with - "is
+      // anyone actually playing right now?" - answered on the dashboard in one
+      // glance instead of by reading /health by hand, which is how the
+      // 2026-09-03 outage was eventually found.
+      //
+      // Horses lose nothing here (CLAUDE.md 10.5). These do not change what a
+      // horse gets; they measure whether the human-only path - sign in, hold a
+      // socket, take a seat - still works, which is the one path a horse never
+      // exercises.
+      '# HELP poker_humans_seated Human (non-horse) players currently seated across the fleet',
+      '# TYPE poker_humans_seated gauge',
+      `poker_humans_seated ${liveness.reduce((n, t) => n + t.humans, 0)}`,
+      '# HELP poker_tables_with_humans Tables with at least one human seated',
+      '# TYPE poker_tables_with_humans gauge',
+      `poker_tables_with_humans ${liveness.filter((t) => t.humans > 0).length}`,
+      // Deliberately NOT a "human hands dealt" counter. That would need new
+      // monotonic state surviving table churn, and the question it answers -
+      // "is the table this human is at actually dealing?" - is already
+      // answered by poker_table_ms_since_progress above, per table, with no
+      // state at all. HumansSeatedButNotDealt joins the two.
+      '# HELP poker_human_tables_ms_since_progress_max Worst time-since-progress among tables with a human seated',
+      '# TYPE poker_human_tables_ms_since_progress_max gauge',
+      `poker_human_tables_ms_since_progress_max ${liveness
+        .filter((t) => t.humans > 0)
+        .reduce((m, t) => Math.max(m, t.msSinceProgress), 0)}`,
+      // ── AUTH REFUSALS (2026-09-04) ───────────────────────────────────
+      // Every socket Dan opened was refused for 22 hours and nothing paged,
+      // because a refused upgrade was not a number anywhere. Now it is.
+      // See transport/wsHelpers.ts and EngineRefusingSessions in
+      // infra/monitoring/alert-rules.yml.
+      ...wsAuthRefusalPrometheusLines(),
       // ── ACTION LATENCY, ALWAYS ON (Realtime programme Phase 1, 2026-09-04)
       // The number that defines how a table feels, scraped for the first
       // time. Two series (audience=human|horse), never per table. See

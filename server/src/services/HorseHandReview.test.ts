@@ -72,6 +72,10 @@ describe('buildReviewRows', () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].net_bb).toBe(27);
+    // 2026-09-05: every tag on a winning row is a `_won` mirror, never a leak.
+    for (const t of rows[0].leak_tags ?? []) {
+      expect(t, `a winning row carried the leak name ${t}`).toMatch(/_won$/);
+    }
     /*
      * UPDATED 2026-09-01. This used to assert an empty array. A winning hand
      * still carries no LEAK tag - that is the property worth pinning and it
@@ -82,7 +86,12 @@ describe('buildReviewRows', () => {
      * river_aggr_lost has no denominator, and it was the largest single line
      * in the 2026-08-31 audit at -97,229bb.
      */
-    const LEAK_TAGS = rows[0].leak_tags.filter((t: string) => t !== 'river_aggr_won');
+    // 2026-09-05: the filter is now the general naming rule rather than one
+    // hardcoded mirror. Every situation records both sides, so a winning row
+    // can carry several `_won` records; what it must never carry is a leak
+    // name. Filtering on the suffix is the invariant, and it is what keeps
+    // HorseSelfTuner - which matches exact loss-side strings - safe.
+    const LEAK_TAGS = rows[0].leak_tags.filter((t: string) => !t.endsWith('_won'));
     expect(LEAK_TAGS).toEqual([]);
     expect(rows[0].leak_tags).toContain('river_aggr_won');
   });
@@ -192,7 +201,24 @@ describe('detectLeaks', () => {
       heroActions: [{ action: 'call', stage: 'river', amount: 40 }],
       wentToShowdown: true,
     });
-    expect(tags).toEqual([]);
+    /*
+     * UPDATED 2026-09-05. The rule is no longer "a win carries nothing", it
+     * is "a win carries NO LEAK NAME - only `_won` mirrors".
+     *
+     * Every situation tag used to fire on losses alone, which left 21 of 23
+     * with no denominator: their totals measured how often a shape occurs in
+     * big pots, never whether the shape is a mistake. Ranking on that put
+     * river_aggr_lost first at -1,941,955bb; with its mirror, river
+     * aggression is +609,194bb and profitable in six of seven variants.
+     * Acting on the one-sided table would have tightened the horses off a
+     * winning line.
+     *
+     * So the pin is the naming rule, which is what keeps the self-tuner safe:
+     * it matches exact loss-side strings and must never see a win.
+     */
+    for (const t of tags) {
+      expect(t, `a winning hand carried the leak name ${t}`).toMatch(/_won$/);
+    }
   });
 });
 
@@ -248,9 +274,10 @@ describe('river aggression is recorded on both outcomes', () => {
   });
 
   it('a win carries the outcome record and NO leak tag', () => {
-    // The early return is load-bearing: every other tag in this file is a
-    // verdict that the hand was played badly, and a hand that won 60bb was
-    // not. Only the outcome-neutral line record crosses over.
+    // UPDATED 2026-09-05: the early return is GONE, deliberately. A winning
+    // hand records its situation under a `_won` name so the losing name has a
+    // denominator; what it must never carry is a LEAK name. This spot would
+    // trip preflop_stackoff on a loss, so it is the sharpest test of that.
     const tags = detectLeaks({
       netBB: 60,
       invested: 200, // would trip preflop_stackoff on a loss
@@ -263,7 +290,11 @@ describe('river aggression is recorded on both outcomes', () => {
     });
     expect(tags).not.toContain('preflop_stackoff');
     expect(tags).not.toContain('big_bet_fold');
-    expect(tags).toEqual([]);
+    // ...and it DOES carry the mirror, which is the whole point.
+    expect(tags).toContain('preflop_stackoff_won');
+    for (const t of tags) {
+      expect(t, `a winning hand carried the leak name ${t}`).toMatch(/_won$/);
+    }
   });
 
   it('a win without river aggression is tagged nothing at all', () => {

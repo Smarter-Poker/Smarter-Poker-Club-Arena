@@ -69,16 +69,16 @@ at ~:58, and `curl -s https://smarter.poker/hub/club-arena/build-info.json`
 
 ## 2. Production as read at 02:35 CDT
 
-| Measure                                                  | Value                                                                                                                                                  |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cash_games` rows / enabled / ticking in the last minute | 149 / 119 / 119                                                                                                                                        |
-| Games by state                                           | 97 live, 52 dormant                                                                                                                                    |
-| Cash tables outside a game                               | **0** (was 105 before Gate 7)                                                                                                                          |
-| Live cluster tables / seats on them / roster rows        | 149 / 303 / 298                                                                                                                                        |
-| Controller newest tick                                   | 02:34:39 CDT (ticks every 5 s, 8-wide pool)                                                                                                            |
-| Events, last 6 h                                         | move_planned 261, seat_moved 226, feeder_opened 81, feeder_live 12, feeder_abandoned 69, breaks 60, game_woken 129, game_dormant 139                    |
-| Events, last 1 h                                         | feeder_opened 12, feeder_live 2, feeder_abandoned 11, seat_moved 31 / planned 36, breaks 3                                                             |
-| Client bundle                                            | `ca_sha f167a9a7f` (main minus one docs-and-alerts commit)                                                                                             |
+| Measure                                                  | Value                                                                                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `cash_games` rows / enabled / ticking in the last minute | 149 / 119 / 119                                                                                                                      |
+| Games by state                                           | 97 live, 52 dormant                                                                                                                  |
+| Cash tables outside a game                               | **0** (was 105 before Gate 7)                                                                                                        |
+| Live cluster tables / seats on them / roster rows        | 149 / 303 / 298                                                                                                                      |
+| Controller newest tick                                   | 02:34:39 CDT (ticks every 5 s, 8-wide pool)                                                                                          |
+| Events, last 6 h                                         | move_planned 261, seat_moved 226, feeder_opened 81, feeder_live 12, feeder_abandoned 69, breaks 60, game_woken 129, game_dormant 139 |
+| Events, last 1 h                                         | feeder_opened 12, feeder_live 2, feeder_abandoned 11, seat_moved 31 / planned 36, breaks 3                                           |
+| Client bundle                                            | `ca_sha f167a9a7f` (main minus one docs-and-alerts commit)                                                                           |
 
 Two numbers in that table are the open defects in section 3: 11 of 12
 feeders opened in the last hour were abandoned, and roster (298) is five
@@ -162,7 +162,7 @@ behind seats (303).
 - **A transaction does not span two Supabase MCP calls.** One call, one
   `DO` block that ends in `RAISE EXCEPTION`; success means it committed.
   `execute_sql` DOES honour an explicit multi-statement `BEGIN ...
-  ROLLBACK` inside one call; that is how the probes above were run.
+ROLLBACK` inside one call; that is how the probes above were run.
 - **Pushing from the shared clone is refused by a guard; pushing from a
   worktree without `node_modules` skips tsc loudly.** Provision with
   `cp -Rc <clone>/node_modules <tree>/.nm.tmp && mv` for root and

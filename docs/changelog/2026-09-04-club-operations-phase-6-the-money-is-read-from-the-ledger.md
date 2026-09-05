@@ -285,6 +285,47 @@ and a club he is not a member of 403/42501; the insurance day rows now sum
 exactly to the headline (403 offers = 403); Supabase's security advisor reports
 **zero** anon-executable definer functions among everything this phase shipped.
 
+## What the browser walk found, and what it did not fix
+
+Two pages on the finance rail were failing in production in a way no code
+review would have shown, because both were index problems.
+
+**The Club Data players tab is fixed.** `ca_club_player_page` took 8,635ms cold
+and 384ms warm, so the first operator to open the tab after a quiet period got
+a 57014 timeout and everyone after them got a page.
+`club_member_daily_stats` (506,424 rows / 133 MB) carried `(club_id, user_id)`
+and `(stat_date, table_id, club_id)`, and every club report reads
+`(club_id, stat_date)` - a pair neither index leads with.
+`idx_cmds_club_date_user` was added in the 21:55 freeze; the same call now
+answers in **459ms** and `ca_club_player_breakdown` in **223ms**.
+
+**The bomb pot report is half fixed and I am not claiming the rest.** It had
+never rendered: `fn_club_bomb_pot_report` filters `hand_history` on
+`bomb_pot IS NOT NULL` with no index for it - 19,078 qualifying rows in 30 days
+out of 2.7M / 7.2 GB, **46 seconds** of sequential scan against an 8-second
+budget. `idx_hand_history_bomb_pot_created` went in with the other one and the
+core scan is now **489ms**, with the whole function at **684ms** as `postgres`.
+
+But called as `authenticated` - same session, same data, same warm cache - the
+function takes **9.7s and 17.3s**, and through PostgREST it still times out.
+The page still says "Could Not Load The Bomb Pot Report". Ruled out by
+measurement: the missing index (added), RLS inside the function (`SET
+row_security TO 'off'` changed nothing), a second overload (there is one), the
+`safeupdate` preload (absent in a psql test that was still slow). I do not yet
+know what it is, so it is written into phase 7 with everything measured rather
+than reported as fixed.
+
+**The rake panel stopped retrying a failing read.** While `ca_rake_snapshot`
+was timing out, the Club Data page re-issued it **seven times in fourteen
+seconds** - the money-event bus fires on every chip movement and this club
+moves chips constantly, so each event triggered another eight-second query for
+the database to run and abandon. It no longer refreshes from the bus while the
+last read is failing; the 60-second poll and the operator's Refresh still do.
+The read itself (`fn_ca_rake_by_agent`, 29.7 seconds, recomputing per-player
+rake for 61,156 hands on every load) is phase 7's first item, with the fix
+named: it is the same "stop recomputing, read the rollup" this phase did at
+club level.
+
 ## Still open after this phase
 
 - **`member_fee_rollup` is now frozen rather than dead.** The engine loop that

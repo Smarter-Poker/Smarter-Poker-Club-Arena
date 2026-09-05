@@ -352,6 +352,10 @@ export async function logHandHistory(params: {
       winners: params.winners,
       actions: params.actions,
       roster: params.roster,
+      // 2026-09-05: the rake is part of the result (horse_daily_nets.rake_bb),
+      // and the button places the blinds for horse_daily_play.
+      rakeAmount: params.rakeAmount,
+      buttonSeat: params.buttonSeat ?? null,
     });
   }
 

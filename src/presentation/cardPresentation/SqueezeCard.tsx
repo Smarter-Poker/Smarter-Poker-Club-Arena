@@ -56,7 +56,14 @@ export function squeezeHostProps(
    * will-change note in cardSqueeze.css. MDN: "switch will-change on and off
    * using script code before and after the change occurs."
    */
-  animating = true
+  animating = true,
+  /**
+   * VIP ALL-IN SQUEEZE 2026-09-05: the player's hold. `drag` while the card
+   * is theirs to open, `released` once they have (or the ceiling has), and
+   * undefined for every ordinary reveal. See the matching block in
+   * cardSqueeze.css; the board writes --rs-drag on the host from the pointer.
+   */
+  hold?: SqueezeHoldState
 ): {
   className: string;
   style: React.CSSProperties;
@@ -64,11 +71,13 @@ export function squeezeHostProps(
   'data-rs-sweep': 'on' | 'off';
   'data-rs-3d': 'on' | 'off';
   'data-rs-animating': 'on' | 'off';
+  'data-rs-hold': SqueezeHoldState | undefined;
   'data-motion': 'keep';
 } {
   return {
     className: 'card-squeeze-host',
     style: squeezeVars(p, boardIndex),
+    'data-rs-hold': p.interactive ? hold : undefined,
     /* AUDIT FIX 2026-09-05. Reduced motion swaps the turn for a cross-fade
        (cardSqueeze.css) that is supposed to last the reduced profile's 150ms,
        because the ENGINE holds the markup mounted for exactly that long. But
@@ -93,6 +102,9 @@ export function squeezeHostProps(
     'data-rs-3d': p.threeD ? 'on' : 'off',
   };
 }
+
+/** The player's hold on an interactive squeeze. */
+export type SqueezeHoldState = 'drag' | 'released';
 
 export interface SqueezeCardProps {
   /** The card back, rendered by the caller's own renderer. */

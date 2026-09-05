@@ -224,6 +224,100 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   THE PLAYER'S HAND ON THE CARD (VIP all-in squeeze, Dan 2026-09-05)
+   ═══════════════════════════════════════════════════════════════════════════
+   An interactive presentation passes through three host states, carried by
+   `data-rs-hold`:
+
+     (absent)    every ordinary reveal: the keyframes above, unchanged.
+     'drag'      the hold is the PLAYER'S. The snap keyframes are parked and
+                 the turning box follows one custom property, --rs-drag
+                 (0 = flat and face down, 1 = edge-on), which the board writes
+                 from the pointer on every move. Letting go below the
+                 threshold springs it flat again (the transition); while a
+                 finger is down (`data-rs-dragging='on'`) there is no
+                 transition, so the card tracks the hand with no lag.
+     'released'  the player opened it, OR the ceiling arrived. The snap runs
+                 NOW, from wherever --rs-drag left the card, with no prepare
+                 or hold delay in front of it: ccCardSqueezeFrom is the same
+                 four beats as ccCardSqueeze with its first frame at the
+                 dragged angle instead of flat.
+
+   Compositor-only throughout: transform and opacity. --rs-drag drives a
+   transform, never a width, so squeezing never lays out. `touch-action:
+   none` keeps a thumb on the card from scrolling the felt on a phone, where
+   95% of squeezes happen.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.card-squeeze-host.card-squeeze-host[data-rs-hold] {
+  touch-action: none;
+}
+
+.card-squeeze-host.card-squeeze-host[data-rs-hold='drag'] {
+  cursor: grab;
+}
+
+.card-squeeze-host.card-squeeze-host[data-rs-hold][data-rs-dragging='on'] {
+  cursor: grabbing;
+}
+
+.card-squeeze-host[data-rs-hold='drag'] .card-squeeze {
+  animation: none;
+  transform: rotateY(calc(var(--rs-drag, 0) * 90deg)) scale(calc(1 - var(--rs-drag, 0) * 0.015));
+  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.card-squeeze-host[data-rs-hold='drag'][data-rs-dragging='on'] .card-squeeze {
+  transition: none;
+}
+
+/* The edge shows as the card approaches edge-on, the shadow thins with it -
+   the same two cues the keyframes give at 28-37.5%, driven by the hand. */
+.card-squeeze-host[data-rs-hold='drag'] .card-squeeze__spine {
+  animation: none;
+  opacity: clamp(0, calc((var(--rs-drag, 0) - 0.6) * 2.5), 1);
+  transition: opacity 120ms linear;
+}
+
+.card-squeeze-host[data-rs-hold='drag'] .card-squeeze__shadow {
+  animation: none;
+  opacity: calc(1 - var(--rs-drag, 0) * 0.7);
+  transition: opacity 120ms linear;
+}
+
+.card-squeeze-host[data-rs-hold='released'] .card-squeeze {
+  animation: ccCardSqueezeFrom calc(var(--rs-flip, 0.25s) * var(--animation-speed, 1))
+    cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 0s;
+}
+
+.card-squeeze-host[data-rs-hold='released'] .card-squeeze__spine,
+.card-squeeze-host[data-rs-hold='released'] .card-squeeze__shadow {
+  animation-delay: 0s;
+}
+
+@keyframes ccCardSqueezeFrom {
+  0% {
+    transform: rotateY(calc(var(--rs-drag, 0) * 90deg)) scale(1);
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  37.5% {
+    transform: rotateY(90deg) scale(0.985);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  75% {
+    transform: rotateY(180deg) scale(1);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  90% {
+    transform: rotateY(180deg) scale(var(--rs-overshoot, 1.03));
+    animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+  }
+  100% {
+    transform: rotateY(180deg) scale(1);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    will-change: ON FOR THE TURN, OFF THE MOMENT IT ENDS (mobile pass 2026-09-05)
    ═══════════════════════════════════════════════════════════════════════════
    MDN is blunt about this property: "Use will-change as a last resort ...

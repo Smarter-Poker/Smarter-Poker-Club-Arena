@@ -262,6 +262,73 @@ describe('UnionWalletModal', () => {
     expect(screen.getByText('Wallet After 32,482.58')).toBeTruthy();
   });
 
+  /* THE PULL TAB, ONE TAB OVER FROM THE SEND BUG. Opened on the promo
+     wallet it used to call fn_union_clawback_from_club - club Club Bank to
+     union bank - and grew the promo figure on screen. A promo pull now comes
+     back from the club PROMO wallet, op-keyed; a bank pull stays on the bank
+     RPC and carries an op id too. */
+  it('pulls from the club promo wallet when opened on the promo wallet', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_clawback_promo_from_club')
+        return Promise.resolve({ data: { success: true, promo_after: 33000 }, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="promo" walletLabel="Promo Wallet" />);
+    await waitFor(() => expect(screen.getByText('Club JAQK')).toBeTruthy());
+    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
+    expect(screen.getAllByText('Pull From The Club Promo Wallet').length).toBe(2);
+    fireEvent.click(screen.getByText('Club JAQK'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '400' } });
+    fireEvent.click(screen.getByRole('button', { name: /pull from club jaqk/i }));
+    await waitFor(() =>
+      expect(rpc).toHaveBeenCalledWith(
+        'fn_union_clawback_promo_from_club',
+        expect.objectContaining({
+          p_union_id: 'un-1',
+          p_club_id: 'c-1',
+          p_amount: 400,
+          p_op_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        })
+      )
+    );
+    expect(rpc).not.toHaveBeenCalledWith('fn_union_clawback_from_club', expect.anything());
+    expect((await screen.findByRole('status')).textContent).toMatch(/promo wallet/i);
+    expect(screen.getByText('33,000.00')).toBeTruthy();
+  });
+
+  it('pulls from the club bank when opened on the union bank, with an op id', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_clawback_from_club')
+        return Promise.resolve({ data: { success: true, union_balance: 70000 }, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
+    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
+    fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
+    await waitFor(() =>
+      expect(rpc).toHaveBeenCalledWith(
+        'fn_union_clawback_from_club',
+        expect.objectContaining({ p_club_id: 'c-2', p_amount: 10, p_op_id: expect.any(String) })
+      )
+    );
+    expect(screen.getByText('70,000.00')).toBeTruthy();
+  });
+
+  it('refuses a pull from the rake wallet instead of pulling into the bank in silence', async () => {
+    render(<UnionWalletModal {...base} />);
+    await waitFor(() => expect(screen.getByText('Club JAQK')).toBeTruthy());
+    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
+    const row = screen.getByText('Club JAQK').closest('button') as HTMLButtonElement;
+    expect(row.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getAllByText('Not Available From Here').length).toBeGreaterThan(0);
+    expect(rpc).not.toHaveBeenCalledWith('fn_union_clawback_from_club', expect.anything());
+  });
+
   it('defaults the promo wallet to sending promo funds', async () => {
     render(<UnionWalletModal {...base} walletKey="promo" walletLabel="Promo Wallet" />);
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());

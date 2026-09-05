@@ -29,7 +29,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { clubSendRoute, UNION_WALLET_COLUMN } from '../src/components/union/unionWalletRoutes';
+import {
+  clubSendRoute,
+  clubPullRoute,
+  UNION_WALLET_COLUMN,
+} from '../src/components/union/unionWalletRoutes';
 import {
   cashierTabs,
   cashierRefusesSelfSend,
@@ -83,7 +87,7 @@ describe('the union modal routes a club send by the wallet that is open', () => 
   it('the rake wallet has no club route and says so, never drawing on the bank in silence', () => {
     const r = clubSendRoute('rake', 'chips');
     expect(r.kind).toBe('refused');
-    expect(r.kind === 'refused' && r.reason).toMatch(/Rake Wallet/);
+    expect(r.kind === 'refused' && r.reason).toMatch(/Rake Treasury Is Held In Trust/);
   });
 
   it('diamonds never go to a club', () => {
@@ -101,7 +105,7 @@ describe('the union modal routes a club send by the wallet that is open', () => 
     expect(unionModal).toMatch(/unionApi\.sendToClub\(\s*unionId,\s*target\.data\.id,\s*amt/);
     const clubBranch = unionModal.slice(
       unionModal.indexOf('const r = clubSendRoute(walletKey, kind);'),
-      unionModal.indexOf('setLiveBalance((prev) => prev - amt);')
+      unionModal.indexOf('Member Clawbacks Must Be Performed By The Club Owner')
     );
     expect(clubBranch).toContain("if (r.kind === 'refused') throw new Error(r.reason);");
     expect(clubBranch.indexOf('promoSend')).toBeLessThan(clubBranch.indexOf('sendToClub'));
@@ -114,6 +118,45 @@ describe('the union modal routes a club send by the wallet that is open', () => 
     expect(unionModal).toContain("'Into The Club Promo Wallet'");
     expect(unionModal).toContain("'Into The Club Bank'");
     expect(unionModal).toContain("'CLUB PROMO WALLET'");
+  });
+});
+
+describe('a pull comes back to the wallet that is open', () => {
+  it('the promo wallet pulls from the club promo wallet; the bank from the club bank', () => {
+    expect(clubPullRoute('promo')).toEqual({ kind: 'promo' });
+    expect(clubPullRoute('chips')).toEqual({ kind: 'bank' });
+    for (const w of ['rake', 'bbj', 'spin_reserve'] as const) {
+      expect(clubPullRoute(w).kind).toBe('refused');
+    }
+  });
+
+  it('the modal routes the pull and keys both calls on an op id', () => {
+    expect(unionModal).toContain(
+      "isPromoPull ? 'fn_union_clawback_promo_from_club' : 'fn_union_clawback_from_club'"
+    );
+    const pull = unionModal.slice(
+      unionModal.indexOf('const pr = clubPullRoute(walletKey);'),
+      unionModal.indexOf('if (onSent) onSent();')
+    );
+    expect(pull).toContain('p_op_id: opId');
+    expect(pull).toContain("if (pr.kind === 'refused') throw new Error(pr.reason);");
+    expect(pull).toMatch(/isPromoPull \? cb\.promo_after : cb\.union_balance/);
+  });
+
+  it('fn_union_clawback_promo_from_club is the inverse of the send, keyed and declared', () => {
+    const PULL = migration('a_promo_pull_comes_back_from_the_club_promo_wallet');
+    const b = fnBody(PULL, 'fn_union_clawback_promo_from_club');
+    expect(b).toMatch(/SET promo_balance = COALESCE\(promo_balance, 0\) - v_amt/);
+    expect(b).toMatch(/AND COALESCE\(promo_balance, 0\) >= v_amt/);
+    expect(b).toMatch(/SET promo_wallet = COALESCE\(promo_wallet, 0\) \+ v_amt/);
+    expect(b).not.toMatch(/chip_treasury/);
+    expect(b).toMatch(/fn_ca_declare_ledger\('promo', 'union_wallet', p_union_id/);
+    expect(b).toContain("'promo_wallet', 'credit', v_amt, v_after, 'promo_clawback', v_op");
+    expect(b).toContain("'union_promo_clawback'");
+    expect(b).toContain("'union lead access required'");
+    expect(PULL).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_union_clawback_promo_from_club\([^)]*\) FROM PUBLIC, anon;/
+    );
   });
 });
 
@@ -208,7 +251,15 @@ describe('every promo wallet carries a ledger', () => {
   });
 
   it('fn_promo_wallet_ledger knows all three promo accounts', () => {
-    const b = fnBody(LANDING, 'fn_promo_wallet_ledger');
+    // The definition production runs is the newest one (the verification
+    // pass re-shaped it so a million-row rake wallet is not re-summed).
+    const LEDGER = migration('the_union_ledger_totals_do_not_rescan_a_million_rake_rows');
+    // ...and the body production runs is the one after it: a sweep has no actor.
+    const CURRENT = migration('a_sweep_has_no_actor');
+    expect(fnBody(CURRENT, 'fn_promo_wallet_ledger')).toContain(
+      'case when t.created_by is null then null else'
+    );
+    const b = fnBody(LEDGER, 'fn_promo_wallet_ledger');
     expect(b).toContain("if p_scope = 'union' then");
     expect(b).toContain("if p_scope = 'club' then");
     expect(b).toContain("elsif p_scope = 'agent' then");
@@ -216,6 +267,18 @@ describe('every promo wallet carries a ledger', () => {
     expect(b).toContain('from chip_ledger l');
     // the club scope is gated on the Club Bank roles; the agent scope on membership
     expect(b).toContain('fn_can_use_club_bank(p_scope_id)');
+    // the rake wallet's totals ride the reconciliation checkpoint, and only
+    // the first page pays for totals at all
+    expect(b).toContain('from union_rake_ledger_checkpoint c');
+    expect(b).toMatch(/if v_offset = 0 then/);
+    expect(LEDGER).toContain("SET plan_cache_mode = 'force_custom_plan'");
+    expect(LEDGER).toContain('idx_uwt_union_wallet_created');
+    expect(LEDGER).toContain('idx_chip_ledger_promo_to');
+  });
+
+  it('a Load More page never wipes the totals the first page put on screen', () => {
+    expect(unionModal).toMatch(/if \(offset === 0 \|\| res\.totals\) setLedgerTotals/);
+    expect(cashier).toMatch(/if \(offset === 0 \|\| res\.totals\) setPromoLedgerTotals/);
   });
 });
 

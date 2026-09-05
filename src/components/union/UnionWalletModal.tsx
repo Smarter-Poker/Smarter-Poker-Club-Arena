@@ -46,12 +46,16 @@ import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { fmt } from '../../utils/format';
 import { unionApi } from '../../services/UnionApiService';
-import { clubSendRoute, UNION_WALLET_COLUMN, type UnionSendKind } from './unionWalletRoutes';
+import {
+  clubSendRoute,
+  clubPullRoute,
+  UNION_WALLET_COLUMN,
+  type UnionSendKind,
+} from './unionWalletRoutes';
 import '../wallet/WalletCashierModal.css';
 import './UnionWalletModal.css';
 
 export type UnionWalletKey = 'chips' | 'rake' | 'bbj' | 'promo' | 'spin_reserve';
-export { clubSendRoute, UNION_WALLET_COLUMN };
 
 export interface UnionWalletModalProps {
   isOpen: boolean;
@@ -116,6 +120,27 @@ function titleCase(raw: string): string {
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(' ');
+}
+
+/**
+ * The union-wallet API refuses a note carrying ; ' " or a backslash
+ * (SafeNotes in the World Hub contract). A club called "Dan's Room" would
+ * otherwise turn a valid send into a 400 with nothing on screen to say why.
+ */
+const apiNote = (s: string) => s.replace(/[;'"\\]/g, '').slice(0, 500);
+
+/** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
+function newOpId(): string {
+  try {
+    const c = globalThis.crypto as Crypto | undefined;
+    if (c?.randomUUID) return c.randomUUID();
+  } catch {
+    /* fall through */
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
 /** Ledger money, always to the hundredth: 5,000.00, never 5,000 beside 32,482.58. */
@@ -240,7 +265,12 @@ export function UnionWalletModal({
       }
       setLoading(false);
     });
-  }, [isOpen, unionId, walletKey, balance, readOnly]);
+    /* `balance` is deliberately NOT a dependency: onSent makes the dashboard
+       reload and pass a fresh balance, and re-running this reset on that would
+       wipe the success notice and the picked target the moment a send lands.
+       The live figure comes from the send's own response instead. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, unionId, walletKey]);
 
   /**
    * THE LEDGER TAB. fn_promo_wallet_ledger scope 'union' reads
@@ -273,8 +303,11 @@ export function UnionWalletModal({
           setLedger([]);
           return;
         }
-        setLedgerTotal(Number(res.total) || 0);
-        setLedgerTotals(res.totals ?? null);
+        /* Totals and the count are computed for the FIRST page only (a
+           million-row rake wallet does not re-sum on every Load More); a later
+           page answers null for both and the figures already on screen stand. */
+        if (offset === 0 || res.total != null) setLedgerTotal(Number(res.total) || 0);
+        if (offset === 0 || res.totals) setLedgerTotals(res.totals ?? null);
         setLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
       } catch (e) {
         reportError(e, 'UnionWalletModal.ledger_load_failed');
@@ -314,13 +347,27 @@ export function UnionWalletModal({
   }, [clubs, roster, search]);
 
   const route = clubSendRoute(walletKey, kind);
-  const clubRefusal = mode === 'send' && route.kind === 'refused' ? route.reason : null;
+  const pullRoute = clubPullRoute(walletKey);
+  const clubRefusal =
+    mode === 'send' && route.kind === 'refused'
+      ? route.reason
+      : mode === 'pull' && pullRoute.kind === 'refused'
+        ? pullRoute.reason
+        : null;
 
   const send = useCallback(async () => {
     const amt = Number(amount);
     if (!target || !Number.isFinite(amt) || amt <= 0 || busy) return;
     if (kind === 'diamonds' && amt !== Math.floor(amt)) {
       setNotice({ ok: false, text: 'Diamonds Must Be A Whole Number.' });
+      return;
+    }
+    /* The union-wallet API contract (PositiveChipAmount) FLOORS a club
+       amount. 250.5 would leave as 250 while this screen subtracted 250.5,
+       so a club send is whole chips here, before anything is sent. A member
+       send goes straight to the RPC, which accepts hundredths. */
+    if (target.type === 'club' && !Number.isInteger(amt)) {
+      setNotice({ ok: false, text: 'Club Sends Move In Whole Chips.' });
       return;
     }
     setBusy(true);
@@ -335,7 +382,7 @@ export function UnionWalletModal({
             p_kind: kind,
             p_amount: amt,
             p_source_wallet: kind === 'chips' ? chipSource : null,
-            p_note: `${walletLabel} to ${target.data.display_name || target.data.username || 'member'}`,
+            p_note: `${walletLabel} To ${target.data.display_name || target.data.username || 'Member'}`,
           });
           const res = (data ?? {}) as {
             success?: boolean;
@@ -356,7 +403,7 @@ export function UnionWalletModal({
                   : '';
           setNotice({
             ok: true,
-            text: `Sent ${fmt(amt)} ${kind} to ${who}.${landed ? landed + '.' : ''}`,
+            text: `Sent ${fmt(amt)} ${kind === 'chips' ? 'Chips' : kind === 'diamonds' ? 'Diamonds' : 'Promo Chips'} To ${who}.${landed ? landed + '.' : ''}`,
           });
           if (res.wallet_after != null) setLiveBalance(res.wallet_after);
         } else {
@@ -366,50 +413,89 @@ export function UnionWalletModal({
             /* THE PROMO ROUTE. Union promo wallet -> the club's PROMO WALLET
                (clubs.promo_balance), through fn_union_promo_send. Never the
                chip bank, never the club treasury: that is the 2026-09-05 bug. */
-            await unionApi.promoSend(
+            const sent = (await unionApi.promoSend(
               unionId,
               amt,
               'club',
               target.data.id,
-              `${walletLabel} To ${target.data.name} Promo Wallet`
-            );
+              apiNote(`${walletLabel} To ${target.data.name} Promo Wallet`)
+            )) as { promoAfter?: number | null };
             setNotice({
               ok: true,
               text: `Sent ${fmt(amt)} Promo Chips Into The ${target.data.name} Promo Wallet.`,
             });
+            // The wallet's figure after the send, from the row that moved it,
+            // rather than a subtraction on this screen.
+            if (typeof sent?.promoAfter === 'number') setLiveBalance(sent.promoAfter);
+            else setLiveBalance((prev) => prev - amt);
           } else {
-            await unionApi.sendToClub(
+            const sent = (await unionApi.sendToClub(
               unionId,
               target.data.id,
               amt,
-              `${walletLabel} To ${target.data.name} Club Bank`
-            );
+              apiNote(`${walletLabel} To ${target.data.name} Club Bank`)
+            )) as { unionBalanceAfter?: number | null };
             setNotice({
               ok: true,
               text: `Sent ${fmt(amt)} Chips Into The ${target.data.name} Club Bank.`,
             });
+            if (typeof sent?.unionBalanceAfter === 'number') setLiveBalance(sent.unionBalanceAfter);
+            else setLiveBalance((prev) => prev - amt);
           }
-          setLiveBalance((prev) => prev - amt);
         }
       } else {
         if (target.type === 'member') {
           throw new Error('Member Clawbacks Must Be Performed By The Club Owner.');
         } else {
-          const { data: cbRes, error: cbErr } = await supabase.rpc('fn_union_clawback_from_club', {
-            p_union_id: unionId,
-            p_club_id: target.data.id,
-            p_amount: amt,
-            p_notes: 'Union clawback',
-          });
+          /* A PULL COMES BACK TO THE WALLET THAT IS OPEN. The promo wallet
+             pulls from the club's Promo Wallet through
+             fn_union_clawback_promo_from_club; the union bank pulls from the
+             Club Bank through fn_union_clawback_from_club. Any other wallet is
+             refused above rather than quietly pulling into the bank. Both
+             calls carry an op id so a retried tap cannot pull twice. */
+          const pr = clubPullRoute(walletKey);
+          if (pr.kind === 'refused') throw new Error(pr.reason);
+          const opId = newOpId();
+          const isPromoPull = pr.kind === 'promo';
+          const { data: cbRes, error: cbErr } = await supabase.rpc(
+            isPromoPull ? 'fn_union_clawback_promo_from_club' : 'fn_union_clawback_from_club',
+            {
+              p_union_id: unionId,
+              p_club_id: target.data.id,
+              p_amount: amt,
+              p_notes: isPromoPull
+                ? apiNote(`${walletLabel} Pulled Back From ${target.data.name} Promo Wallet`)
+                : apiNote(`${walletLabel} Pulled Back From ${target.data.name} Club Bank`),
+              p_op_id: opId,
+            }
+          );
           if (cbErr) throw new Error(cbErr.message || 'Clawback failed');
-          if (cbRes && (cbRes as any).success === false) {
-            const msg = (cbRes as any).error || 'Clawback failed';
+          const cb = (cbRes ?? {}) as {
+            success?: boolean;
+            error?: string;
+            duplicate?: boolean;
+            promo_after?: number;
+            union_balance?: number;
+          };
+          if (cb.success === false) {
+            const msg = cb.error || 'Clawback failed';
             throw new Error(
-              msg.includes('insufficient') ? 'Club Has Insufficient Treasury Balance' : msg
+              msg.includes('insufficient club promo')
+                ? 'The Club Promo Wallet Does Not Hold That Much.'
+                : msg.includes('insufficient')
+                  ? 'Club Has Insufficient Treasury Balance'
+                  : msg
             );
           }
-          setNotice({ ok: true, text: `Clawed Back ${fmt(amt)} Chips From ${target.data.name}.` });
-          setLiveBalance((prev) => prev + amt);
+          setNotice({
+            ok: true,
+            text: isPromoPull
+              ? `Pulled ${fmt(amt)} Promo Chips Back From The ${target.data.name} Promo Wallet.`
+              : `Pulled ${fmt(amt)} Chips Back From The ${target.data.name} Club Bank.`,
+          });
+          const after = isPromoPull ? cb.promo_after : cb.union_balance;
+          if (typeof after === 'number') setLiveBalance(after);
+          else setLiveBalance((prev) => prev + amt);
         }
       }
       setAmount('');
@@ -429,7 +515,8 @@ export function UnionWalletModal({
     !target ||
     !(Number(amount) > 0) ||
     busy ||
-    (mode === 'send' && target.type === 'club' && route.kind === 'refused');
+    (mode === 'send' && target.type === 'club' && route.kind === 'refused') ||
+    (mode === 'pull' && target.type === 'club' && pullRoute.kind === 'refused');
 
   return (
     <div
@@ -553,7 +640,9 @@ export function UnionWalletModal({
                         <>
                           {filtered.clubs.map((c) => {
                             const on = target?.type === 'club' && target.data.id === c.id;
-                            const blocked = mode === 'send' && route.kind === 'refused';
+                            const blocked =
+                              (mode === 'send' && route.kind === 'refused') ||
+                              (mode === 'pull' && pullRoute.kind === 'refused');
                             return (
                               <button
                                 key={`club-${c.id}`}
@@ -575,7 +664,11 @@ export function UnionWalletModal({
                                   <span className="cbc-member-name">{c.name}</span>
                                   <span className="cbc-member-id">
                                     {mode === 'pull'
-                                      ? 'Pull From The Club Bank'
+                                      ? pullRoute.kind === 'promo'
+                                        ? 'Pull From The Club Promo Wallet'
+                                        : pullRoute.kind === 'bank'
+                                          ? 'Pull From The Club Bank'
+                                          : 'Not Available From Here'
                                       : route.kind === 'promo'
                                         ? 'Into The Club Promo Wallet'
                                         : route.kind === 'bank'
@@ -584,7 +677,8 @@ export function UnionWalletModal({
                                   </span>
                                 </div>
                                 <span className="uwm-club-tag">
-                                  {mode === 'send' && route.kind === 'promo'
+                                  {(mode === 'send' && route.kind === 'promo') ||
+                                  (mode === 'pull' && pullRoute.kind === 'promo')
                                     ? 'CLUB PROMO WALLET'
                                     : 'CLUB BANK'}
                                 </span>

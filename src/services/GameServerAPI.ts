@@ -85,7 +85,22 @@ async function engineFetch(url: string, init: RequestInit = {}): Promise<Respons
   try {
     const refreshed = await supabase.auth.refreshSession();
     const token = refreshed.data.session?.access_token ?? null;
-    if (!token) return resp;
+    if (!token) {
+      // 2026-09-05: the engine refused us and the refresh could not produce a
+      // token either. That is the 2026-09-03 shape - a session revoked out
+      // from under a live tab - and it is the point at which retrying is
+      // pointless. Ask GoTrue once (throttled inside the handler); a
+      // definitively dead session ends in a prompt and a sign-in rather than
+      // a table that spins forever. 'unknown' changes nothing.
+      // Lazy: this module is only needed once a request has already been
+      // refused, and a static import puts it in the entry chunk (CI, 2026-09-05).
+      void import('../lib/sessionRevoked')
+        .then((m) => m.handleEngineAuthRejection('http:401'))
+        .catch(() => {
+          /* a chunk that will not load must never sign anyone out */
+        });
+      return resp;
+    }
     const headers = {
       ...((init.headers as Record<string, string> | undefined) ?? {}),
       Authorization: `Bearer ${token}`,
@@ -467,7 +482,12 @@ export async function sendHeartbeat(
    * make the engine quieter about a player, never harsher, so a client that
    * never sends it is treated exactly as every client is treated today.
    */
-  opts?: { turnRendered?: boolean }
+  opts?: {
+    turnRendered?: boolean;
+    /** The bust-rebuy dialog is on screen: the engine's busted-seat sweep
+     *  waits for a player who is at the cashier (2026-09-04). */
+    rebuyPromptOpen?: boolean;
+  }
 ): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
   if (circuitBreaker.isOpen()) {
@@ -478,7 +498,11 @@ export async function sendHeartbeat(
     const response = await engineFetch(`${GAME_SERVER_URL}/heartbeat`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(opts?.turnRendered ? { tableId, turnRendered: true } : { tableId }),
+      body: JSON.stringify({
+        tableId,
+        ...(opts?.turnRendered ? { turnRendered: true } : {}),
+        ...(opts?.rebuyPromptOpen ? { rebuyPromptOpen: true } : {}),
+      }),
     });
     if (!response.ok) {
       circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.heartbeat');

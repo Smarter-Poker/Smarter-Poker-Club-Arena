@@ -149,3 +149,14 @@ Pinned in `tests/unit/theDoorIsNeverLocked.test.ts` ("the lobby comes first").
   describe.
 - `tests/unit/theDoorIsNeverLocked.test.ts` - the lobby comes first.
 - New: `tests/unit/replayFrames.test.ts`, `tests/unit/ritTimelineParity.test.ts`.
+
+## 4. Share link v3 (2026-09-05, follow-up on the recorded gap)
+
+`ShareableAction` gained `SB / BB / ANTE / STRADDLE / POST / RETURN / DISCARD`,
+so a shared hand's pot begins with the blinds in it and a returned uncalled bet
+comes back out; the adapter maps every stored verb. Money is in CENTS on the
+wire: every amount, stack, pot and winner share used to be `Math.round(chips)`,
+so a 0.02/0.05 hand shared as "RAISE" with no number and a pot of 0. v1 and v2
+links still decode as the whole chips they were written as. An unknown verb
+code is skipped rather than read as CHECK. `SharedHandReplayPage` labels the
+new verbs in words. Pinned in `tests/unit/ShareHand.codec.test.ts` ("v3").

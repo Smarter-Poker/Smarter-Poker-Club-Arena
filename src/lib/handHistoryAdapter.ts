@@ -396,6 +396,16 @@ const SHARE_ACTION: Record<string, ShareableAction['action']> = {
   raise: 'RAISE',
   allin: 'ALL_IN',
   all_in: 'ALL_IN',
+  /* v3 (2026-09-05): the forced money and the returned bet travel too, so the
+     recipient's pot starts with the blinds in it and an uncalled bet comes
+     back out. The DISCARD verb travels; the card never does. */
+  sb: 'SB',
+  bb: 'BB',
+  ante: 'ANTE',
+  straddle: 'STRADDLE',
+  post: 'POST',
+  return: 'RETURN',
+  discard: 'DISCARD',
 };
 
 export function panelHandToShareable(hand: PanelHandRecord, tableName: string): ShareableHand {
@@ -407,9 +417,7 @@ export function panelHandToShareable(hand: PanelHandRecord, tableName: string): 
       .map((a): ShareableAction | null => {
         const mapped = SHARE_ACTION[(a.action || '').toLowerCase()];
         const seat = seatOf.get(a.playerId);
-        /* `discard` (pineapple) has no ShareableAction member. Dropping it
-           keeps the shared hand honest rather than relabelling it as a CHECK,
-           which would show the recipient an action that never happened. */
+        // A verb the link cannot carry is dropped, never relabelled.
         if (!mapped || seat == null) return null;
         return { seat, action: mapped, amount: a.amount };
       })

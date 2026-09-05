@@ -33,7 +33,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { buildReplay, type ReplayModel } from '../utils/handReplay';
+import {
+  buildReplay,
+  replayInputFromRow,
+  type HandHistoryRowLike,
+  type ReplayModel,
+} from '../utils/handReplay';
 import { reportError } from '../utils/errorReporter';
 
 const COLUMNS = [
@@ -50,10 +55,12 @@ const COLUMNS = [
   'button_seat',
   'community_cards',
   'community_cards2',
+  'community_cards3',
   'rit_boards',
   'players',
   'actions',
   'winners',
+  'winners_by_board',
   'hole_cards',
   'showdown',
   'pots',
@@ -73,6 +80,9 @@ export function useHandReplayModel(handId: string | null | undefined): {
      this hook lives in a modal the player pages through hand by hand. */
   const cache = useRef<Map<string, ReplayModel> | null>(null);
   if (cache.current === null) cache.current = new Map<string, ReplayModel>();
+  /* Bounded. The modal that owns this hook is mounted for the whole session,
+     so an unbounded map kept every hand ever paged to. Oldest entry out. */
+  const CACHE_MAX = 40;
 
   useEffect(() => {
     if (!handId) {
@@ -113,55 +123,15 @@ export function useHandReplayModel(handId: string | null | undefined): {
 
         // The generated row type resolves to GenericStringError when the column
         // list is built at runtime, so this goes through `unknown` deliberately.
-        const row = data as unknown as Record<string, unknown>;
-        const built = buildReplay({
-          handNumber: (row.hand_number as number) ?? null,
-          playedAt: ((row.started_at as string) || (row.created_at as string)) ?? null,
-          gameVariant: (row.game_variant as string) ?? null,
-          smallBlind: Number(row.small_blind) || 0,
-          bigBlind: Number(row.big_blind) || 0,
-          potSize: Number(row.pot_size) || 0,
-          rakeAmount: Number(row.rake_amount) || 0,
-          bbjAmount: Number(row.bbj_amount) || 0,
-          buttonSeat: (row.button_seat as number) ?? null,
-          board: (row.community_cards as string[]) ?? [],
-          // rit_boards is boards 2..N of a run-it-twice; community_cards2 is the
-          // second board of a double-board bomb pot. Different features, both
-          // extra boards as far as the rundown is concerned.
-          extraBoards: [
-            ...(((row.rit_boards as string[][]) || []) as string[][]),
-            ...(row.community_cards2 ? [row.community_cards2 as string[]] : []),
-          ],
-          players: (((row.players as unknown[]) || []) as Array<Record<string, unknown>>).map(
-            (p) => ({
-              userId: String(p.userId ?? ''),
-              username: String(p.username ?? 'Player'),
-              seat: Number(p.seat),
-              stack: p.stack === undefined || p.stack === null ? null : Number(p.stack),
-            })
-          ),
-          actions: (((row.actions as unknown[]) || []) as Array<Record<string, unknown>>).map(
-            (a) => ({
-              seat: Number(a.seat),
-              userId: String(a.userId ?? ''),
-              action: String(a.action ?? ''),
-              amount: a.amount === undefined || a.amount === null ? 0 : Number(a.amount),
-              stage: (a.stage as string) ?? null,
-            })
-          ),
-          winners: (((row.winners as unknown[]) || []) as Array<Record<string, unknown>>).map(
-            (w) => ({
-              userId: String(w.userId ?? ''),
-              amount: Number(w.amount) || 0,
-              potIndex: Number(w.potIndex) || 0,
-              hand: (w.hand as { name?: string }) ?? null,
-            })
-          ),
-          holeCards: (row.hole_cards as Record<string, never[]>) ?? {},
-          showdown: (row.showdown as never[]) ?? null,
-          pots: (row.pots as never[]) ?? null,
-        });
+        // ONE MAPPER (2026-09-04): the same row->input mapping HandHistoryService
+        // uses, so a column read here is read there and a field added to one
+        // cannot be silently absent from the other.
+        const built = buildReplay(replayInputFromRow(data as unknown as HandHistoryRowLike));
 
+        if (cache.current!.size >= CACHE_MAX) {
+          const oldest = cache.current!.keys().next().value;
+          if (oldest !== undefined) cache.current!.delete(oldest);
+        }
         cache.current!.set(handId, built);
         setModel(built);
         setState('ready');

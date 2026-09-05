@@ -314,13 +314,26 @@ describe('2. a table over the cap drains through the engine, never a mid-hand cu
   it('the fleet reads settings and treats a retiring table as surplus', () => {
     // (Slice 2, 2026-09-05: the select also carries cluster_id and lifecycle,
     //  so the fleet can keep its hands off the controller's tables.)
-    expect(FLEET).toMatch(/current_players, created_at, settings, cluster_id, lifecycle'/);
+    expect(FLEET).toMatch(
+      /current_players, created_at, settings, cluster_id, lifecycle, role, main_index'/
+    );
     expect(FLEET).toMatch(
       /if \(isRetiringTable\(t as \{ settings\?: unknown \}\)\) \{\s*surplusTableIds\.add\(t\.id\);/
     );
   });
   it('the rotator walks one horse out per cycle through the engine, outside the realism cap', () => {
-    expect(ROTATOR).toMatch(/tables!inner\(id, big_blind, tournament_id, status, settings\)/);
+    // 2026-09-05: role / main_index / lifecycle joined the select for the
+    // horse seat-change pass (CLAUDE.md 10.5) - it has to know whether a
+    // chair is on Main 1, which has no seat change, and whether the table is
+    // closing. The columns this pin was written for (settings, for
+    // isRetiringTable, and cluster_id, for the drain below) are still there.
+    expect(ROTATOR).toMatch(
+      /tables!inner\(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle\)/
+    );
+    // 2026-09-05: and the drain never touches a cluster table.
+    expect(ROTATOR).toMatch(
+      /if \(t\?\.cluster_id\) continue;\s*if \(!isRetiringTable\(t\)\) continue;/
+    );
     const drain = ROTATOR.slice(
       ROTATOR.indexOf('A TABLE MARKED FOR RETIREMENT'),
       ROTATOR.indexOf('let departures = 0;')

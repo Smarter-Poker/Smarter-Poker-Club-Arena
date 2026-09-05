@@ -38,7 +38,7 @@ const FAQ_ITEMS: FAQItem[] = [
     category: 'Account',
     question: 'How Do I Delete My Account?',
     answer:
-      'Open Settings And Find Danger Zone. Delete Account Starts The Permanent Deletion Confirmation And Explains What Will Be Removed.',
+      'Open Settings, Then Account Data And Closure, And Choose Close Account. After You Confirm, Smarter Poker Permanently Deletes The Account. Settle Every Club Chip Balance And Leave Any Table First, Or The Request Is Refused.',
   },
   {
     category: 'Clubs',

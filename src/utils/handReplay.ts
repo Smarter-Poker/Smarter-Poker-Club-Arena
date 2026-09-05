@@ -71,7 +71,7 @@
  */
 
 import { toDeckCards, type StoredCard, type DeckCard } from './deckCards';
-import { bestFive, cardKey } from './handEvaluator';
+import { bestFive, bestLow, cardKey, isEightOrBetterVariant } from './handEvaluator';
 import { derivePositions, smallBlindSeat, bigBlindSeat } from './pokerPositions';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,6 +142,27 @@ export interface ReplayInput {
   showdown?: ReplayShowdownInput[] | null;
   pots?: { index?: number; amount?: number }[] | null;
   /**
+   * WHO WON EACH BOARD (hand_history.winners_by_board, 2026-09-04). Per
+   * (board, winner): 1-based board index, pre-rake share, the hand ON THAT
+   * board. Absent on single-board hands and rows older than the column.
+   */
+  winnersByBoard?:
+    | {
+        board?: number;
+        userId?: string;
+        user_id?: string;
+        amount?: number;
+        handName?: string;
+        /**
+         * HI-LO (2026-09-04, Previous Hand second sweep): true on the entry
+         * for the LOW half of a split pot. The engine writes one entry per
+         * (board, winner, half) on PLO8 / FLO8 hands; rows older than that
+         * carry no flag and are read as high.
+         */
+        low?: boolean;
+      }[]
+    | null;
+  /**
    * Set for rows whose `amount` is already incremental on EVERY verb. Nothing
    * the engine writes is; this exists so a fixture or an imported history can
    * declare itself rather than be mis-read as raise-to levels.
@@ -162,6 +183,20 @@ export interface ReplayInput {
    * that has no discard. A row with no entry renders exactly as it does today.
    */
   discardedCards?: Record<string, StoredCard> | null;
+  /**
+   * YOUR OWN CARDS ON A HAND THE TABLE NEVER SAW THEM (2026-09-04).
+   *
+   * `holeCards` is the table's record - showdown-revealed holdings only, by
+   * the server's design. `ca_hand_facts.hole_cards` holds the viewer's own
+   * cards on every hand they paid into, and is read through an RLS policy
+   * that returns nothing but the caller's rows, so this map can only ever
+   * hold ONE entry: the viewer's. It never adds a player to the showdown,
+   * never changes who is a winner, and never becomes a `show` row - the hand
+   * stays a fold-around or a muck exactly as the table saw it. What it does is
+   * let the rundown draw the viewer's own cards face-up, marked private,
+   * where before it drew backs or nothing.
+   */
+  privateHoleCards?: Record<string, StoredCard[]> | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,6 +250,12 @@ export interface ReplayRow {
    * or was never recorded.
    */
   discardedCard: DeckCard | null;
+  /**
+   * On the viewer's OWN fold: the cards they threw away, face-up, marked as
+   * theirs (see ReplayInput.privateHoleCards). Null on everyone else's fold
+   * and on every other verb - an opponent's fold stays face-down backs.
+   */
+  privateCards: DeckCard[] | null;
 }
 
 export interface ReplayStreet {
@@ -249,9 +290,25 @@ export interface ReplayShowdownRow {
   hole: DeckCard[] | null;
   /** The five that played, in poker-room order. Empty when not derivable. */
   made: DeckCard[];
-  /** Keys of the cards that play, for lighting them. */
-  playing: Set<string>;
+  /**
+   * Keys of the cards that play, for lighting them. An array, not a Set: the
+   * model is JSON-serialisable end to end so a record can travel through a
+   * cache or a message without a shape that `JSON.stringify` turns into `{}`.
+   */
+  playing: string[];
   handName: string;
+  /**
+   * HI-LO: true on the row for a player's qualifying LOW on a split-pot
+   * variant. High rows carry false. A PLO8 scoop produces two rows for one
+   * player, one per half, each with its own hand name and share.
+   */
+  low: boolean;
+  /**
+   * The cards drawn are the viewer's own, never shown to the table (see
+   * ReplayInput.privateHoleCards). The surface marks them so a face-up hand
+   * in a "Mucked" row is not read as a reveal.
+   */
+  holePrivate: boolean;
   /** Which board this row is for; 0 unless the hand ran more than once. */
   boardIndex: number;
   boardLabel: string | null;
@@ -290,8 +347,12 @@ export interface ReplayModel {
       net: number;
       hole: DeckCard[] | null;
       mucked: boolean;
+      /** The viewer's own cards on a hand they did not show. Null otherwise. */
+      privateHole: DeckCard[] | null;
     }
   >;
+  /** True on a split-pot (eight-or-better) variant: rows come in halves. */
+  hiLo: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -468,8 +529,24 @@ export function buildReplay(input: ReplayInput): ReplayModel {
   const board = toDeckCards(input.board);
   const extra = (input.extraBoards || []).map((b) => toDeckCards(b)).filter((b) => b.length > 0);
   const ritFromLog = ritBoardsFromActions(input.actions || []).map((b) => toDeckCards(b));
-  const boards = [board, ...extra, ...ritFromLog].filter((b) => b.length > 0);
+  /* ONE COPY OF EACH BOARD (2026-09-04 second sweep). The engine writes a
+     run-it-twice board BOTH as the `rit_boards` column and as a `rit_board_N:`
+     pseudo-action "for old readers", and this concatenated the two, so every
+     row written since the column existed listed each extra run twice. The
+     column is authoritative when it is present; the log is the fallback for
+     rows that predate it. And a board that is card-for-card identical to one
+     already listed is the same board, whatever the source. */
+  const seen = new Set<string>();
+  const boards: DeckCard[][] = [];
+  for (const b of [board, ...(extra.length > 0 ? extra : ritFromLog)]) {
+    if (b.length === 0) continue;
+    const sig = b.map(cardKey).join(',');
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    boards.push(b);
+  }
   if (boards.length === 0) boards.push([]);
+  const hiLo = isEightOrBetterVariant(input.gameVariant);
 
   // ── gross winnings, and the engine's own name for each winning hand ────────
   const wonByUser = new Map<string, number>();
@@ -530,6 +607,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         showsMuck: false,
         shownCards: null,
         discardedCard: null,
+        privateCards: null,
       });
     };
     post(sbSeat, Number(input.smallBlind) || 0, 'sb');
@@ -589,6 +667,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       showsMuck: false,
       shownCards: null,
       discardedCard: null,
+      privateCards: null,
     });
   };
 
@@ -661,6 +740,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
          render exactly as they did. */
       discardedCard:
         verb === 'discard' ? discardedCardFor(a.userId || bySeat.get(seat)?.userId) : null,
+      privateCards: null,
     });
   });
   settleStreet();
@@ -726,6 +806,21 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     const deck = toDeckCards(cards);
     if (deck.length > 0) holeByUser.set(uid, deck);
   }
+  /* The viewer's own unrevealed cards. Kept apart from `holeByUser` on
+     purpose: presence in THAT map is the reveal flag (it makes a `show` row and
+     a showdown seat), and a card the table never saw must do neither. */
+  const privateByUser = new Map<string, DeckCard[]>();
+  for (const [uid, cards] of Object.entries(input.privateHoleCards || {})) {
+    if (holeByUser.has(uid)) continue;
+    const deck = toDeckCards(cards);
+    if (deck.length > 0) privateByUser.set(uid, deck);
+  }
+  // The viewer's own fold draws their own cards; nobody else's does.
+  for (const r of rows) {
+    if (r.verb === 'fold' && r.userId && privateByUser.has(r.userId)) {
+      r.privateCards = privateByUser.get(r.userId) || null;
+    }
+  }
 
   const muckedByUser = new Map<string, boolean>();
   const revealOrder = new Map<string, number>();
@@ -761,6 +856,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       showsMuck: false,
       shownCards: hole,
       discardedCard: null,
+      privateCards: null,
     });
   }
 
@@ -849,12 +945,54 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     return Number(a.seat) - Number(b.seat);
   });
 
+  /* WHO WON EACH BOARD, when the row says (2026-09-04). Keyed `${board}|${uid}`
+     with the 1-based board index the writer uses. */
+  const perBoard = new Map<string, { amount: number; handName?: string }>();
+  for (const w of input.winnersByBoard || []) {
+    const uid = w.userId || w.user_id;
+    if (!uid) continue;
+    /* One key per (board, winner, half). A row older than the `low` flag has
+       no half and is read as high, which is what it was. */
+    perBoard.set(`${Number(w.board) || 1}|${uid}|${w.low ? 'lo' : 'hi'}`, {
+      amount: Number(w.amount) || 0,
+      handName: w.handName || undefined,
+    });
+  }
+  const hasPerBoard = perBoard.size > 0;
+  const hasLowAwards = [...perBoard.keys()].some((k) => k.endsWith('|lo'));
+
+  /* A SHOWDOWN ROW IS A PLAYER WHOSE CARDS WERE SHOWN, OR WHO MUCKED AT
+     SHOWDOWN (Dan 2026-09-04: "doesn't display the correct hands"). This used
+     to emit a row for EVERY player in the hand, on EVERY board - so a six-way
+     fold-around listed six seats of card backs under a "Showdown" heading. A
+     player with no cards on record and no showdown ruling folded earlier;
+     they are in the action log, not here. */
+  const atShowdown = ordered.filter((p) => holeByUser.has(p.userId) || muckedByUser.has(p.userId));
+
   boards.forEach((b, boardIndex) => {
-    for (const p of ordered) {
-      const hole = holeByUser.get(p.userId) || null;
+    for (const p of atShowdown) {
+      const publicHole = holeByUser.get(p.userId) || null;
+      const privateHole = privateByUser.get(p.userId) || null;
+      /* A mucked seat draws the viewer's OWN cards when the record has them,
+         marked private; anyone else's muck stays backs. The evaluation runs on
+         whichever is drawn, so the viewer sees what their muck was worth. */
+      const hole = publicHole || privateHole;
+      const holePrivate = !publicHole && !!privateHole;
       const made = hole ? bestFive(hole, b, input.gameVariant) : null;
       const won = wonByUser.get(p.userId) || 0;
       const inv = invested.get(Number(p.seat)) || 0;
+      const onThisBoard = perBoard.get(`${boardIndex + 1}|${p.userId}|hi`);
+      const lowOnThisBoard = perBoard.get(`${boardIndex + 1}|${p.userId}|lo`);
+      /* THE HAND ON THIS BOARD. The hand-level name (showdown / engine) is
+         board 1's; on a multi-board hand the row used to draw board 2's best
+         five under board 1's name. Per-board name first, then the local
+         evaluation against THIS board, then the hand-level name only for
+         board 1. */
+      const boardName =
+        onThisBoard?.handName ||
+        (boards.length > 1 && boardIndex > 0
+          ? made?.name || ''
+          : showdownName.get(p.userId) || engineHandName.get(p.userId) || made?.name || '');
       showdownRows.push({
         key: `sd-${boardIndex}-${p.userId}`,
         userId: p.userId,
@@ -862,23 +1000,69 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         seat: Number(p.seat),
         position: positions[Number(p.seat)] || '',
         hole,
+        holePrivate,
         made: made?.cards || [],
-        playing: new Set((made?.cards || []).map(cardKey)),
-        handName: titleCase(
-          showdownName.get(p.userId) || engineHandName.get(p.userId) || made?.name || ''
-        ),
+        playing: (made?.cards || []).map(cardKey),
+        handName: titleCase(boardName),
+        low: false,
         boardIndex,
-        boardLabel: boards.length > 1 ? `Board ${boardIndex + 1}` : null,
-        // The engine records ONE winners[] entry for the whole hand, not one per
-        // run. On a hand that ran twice the split between boards is not stored,
-        // so it is shown once against board one rather than invented for both.
-        net: boardIndex === 0 ? money(won - inv) : null,
+        boardLabel:
+          boards.length > 1
+            ? `Board ${boardIndex + 1}${hiLo ? ' High' : ''}`
+            : hiLo
+              ? 'High'
+              : null,
+        /* Per board when the record has it (the share of that board);
+           otherwise the whole-hand net once, against board one, rather than
+           invented for every board. On a hi-lo hand with per-half awards the
+           high row carries the high share and the low row the low share. */
+        net: hasPerBoard
+          ? onThisBoard
+            ? money(onThisBoard.amount)
+            : boards.length > 1 || hasLowAwards
+              ? null
+              : money(won - inv)
+          : boardIndex === 0
+            ? money(won - inv)
+            : null,
         // Names the pot this player actually contested. It was hard-coded to
         // "Main pot" for every row, which is a claim rather than a label the
         // moment a hand has a side pot.
         potLabel: potLabelFor(p.userId),
-        isWinner: won > 0,
+        // A one-board winner is not a winner on the other boards.
+        isWinner: hasPerBoard ? !!onThisBoard : won > 0,
       });
+
+      /* THE LOW HALF (hi-lo variants only). One extra row per player who
+         qualifies for a low on this board, or whom the record paid a low. The
+         name comes from the record when it has one and from the local
+         eight-or-better evaluation otherwise - the same evaluator the engine
+         awards with. A row without per-half awards cannot say who won the
+         low, and does not: `isWinner` stays false and the share blank rather
+         than guessed. */
+      if (hiLo) {
+        const low = hole ? bestLow(hole, b) : null;
+        if (low || lowOnThisBoard) {
+          showdownRows.push({
+            key: `sd-${boardIndex}-${p.userId}-lo`,
+            userId: p.userId,
+            name: p.username,
+            seat: Number(p.seat),
+            position: positions[Number(p.seat)] || '',
+            hole,
+            holePrivate,
+            made: low?.cards || [],
+            playing: (low?.cards || []).map(cardKey),
+            handName: lowOnThisBoard?.handName || low?.name || 'Low',
+            low: true,
+            boardIndex,
+            boardLabel: boards.length > 1 ? `Board ${boardIndex + 1} Low` : 'Low',
+            net: lowOnThisBoard ? money(lowOnThisBoard.amount) : null,
+            potLabel: potLabelFor(p.userId),
+            isWinner: !!lowOnThisBoard,
+          });
+        }
+      }
     }
   });
 
@@ -911,7 +1095,137 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         net: money(won - inv),
         hole: holeByUser.get(p.userId) || null,
         mucked: muckedByUser.get(p.userId) ?? !holeByUser.has(p.userId),
+        privateHole: privateByUser.get(p.userId) || null,
       };
     }),
+    hiLo,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE ROW -> INPUT MAPPER, shared by every reader of hand_history
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A `hand_history` row as PostgREST returns it. Every field optional: the
+ * mapper is fed by three different SELECT lists and must read what is there.
+ */
+export interface HandHistoryRowLike {
+  id?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  hand_number?: number | string | null;
+  game_variant?: string | null;
+  small_blind?: number | string | null;
+  big_blind?: number | string | null;
+  pot_size?: number | string | null;
+  rake_amount?: number | string | null;
+  bbj_amount?: number | string | null;
+  button_seat?: number | string | null;
+  community_cards?: unknown;
+  community_cards2?: unknown;
+  community_cards3?: unknown;
+  rit_boards?: unknown;
+  players?: unknown;
+  actions?: unknown;
+  winners?: unknown;
+  winners_by_board?: unknown;
+  hole_cards?: unknown;
+  showdown?: unknown;
+  pots?: unknown;
+}
+
+/**
+ * The one mapping from a stored row to `buildReplay`'s input.
+ *
+ * 2026-09-04 (Previous Hand second sweep): three readers each built this
+ * input by hand - HandHistoryService with half the fields (no extra boards,
+ * no showdown, no pots, no per-board winners, no jackpot fee), the replay
+ * hook with a different half (no discards), and HandReplay with none of it.
+ * A field added to one was silently absent from the others. Now there is one
+ * place a column is read, and a surface that wants the model calls this.
+ *
+ * `extras` carries what the row itself cannot: the viewer's own discard and
+ * the viewer's own unrevealed cards, both read through RLS-scoped tables by
+ * the caller and keyed by user id.
+ */
+export function replayInputFromRow(
+  row: HandHistoryRowLike,
+  extras: {
+    discardedCards?: Record<string, StoredCard> | null;
+    privateHoleCards?: Record<string, StoredCard[]> | null;
+  } = {}
+): ReplayInput {
+  const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  const cards = (v: unknown): StoredCard[] => arr(v) as StoredCard[];
+  const rec = (v: unknown): Record<string, unknown> =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  const players = arr(row.players).map((p) => {
+    const r = rec(p);
+    return {
+      userId: String(r.userId ?? ''),
+      username: String(r.username ?? 'Player'),
+      seat: Number(r.seat) || 0,
+      stack: r.stack === undefined || r.stack === null ? null : Number(r.stack),
+    };
+  });
+  const actions = arr(row.actions).map((a) => {
+    const r = rec(a);
+    return {
+      seat: Number(r.seat) || 0,
+      userId: String(r.userId ?? ''),
+      action: String(r.action ?? ''),
+      amount: r.amount === undefined || r.amount === null ? 0 : Number(r.amount),
+      stage: (r.stage as string | null | undefined) ?? null,
+    };
+  });
+  const winners = arr(row.winners).map((w) => {
+    const r = rec(w);
+    return {
+      userId: String(r.userId ?? ''),
+      amount: Number(r.amount) || 0,
+      potIndex: Number(r.potIndex) || 0,
+      hand: (r.hand as { name?: string } | null | undefined) ?? null,
+    };
+  });
+  const winnersByBoard = arr(row.winners_by_board).map((w) => {
+    const r = rec(w);
+    return {
+      board: Number(r.board) || 1,
+      userId: String(r.userId ?? r.user_id ?? ''),
+      amount: Number(r.amount) || 0,
+      handName: typeof r.handName === 'string' ? r.handName : undefined,
+      low: r.low === true,
+    };
+  });
+  const buttonRaw = Number(row.button_seat);
+  return {
+    handNumber: (row.hand_number as number | string | null | undefined) ?? null,
+    playedAt: row.started_at || row.created_at || null,
+    gameVariant: row.game_variant ?? null,
+    smallBlind: Number(row.small_blind) || 0,
+    bigBlind: Number(row.big_blind) || 0,
+    potSize: Number(row.pot_size) || 0,
+    rakeAmount: Number(row.rake_amount) || 0,
+    bbjAmount: Number(row.bbj_amount) || 0,
+    buttonSeat: Number.isFinite(buttonRaw) && buttonRaw > 0 ? buttonRaw : null,
+    board: cards(row.community_cards),
+    // rit_boards is boards 2..N of a run-it-twice; community_cards2/3 are the
+    // second and third boards of a bomb pot. Different features, both extra
+    // boards as far as the rundown is concerned.
+    extraBoards: [
+      ...arr(row.rit_boards).map((b) => cards(b)),
+      ...(arr(row.community_cards2).length ? [cards(row.community_cards2)] : []),
+      ...(arr(row.community_cards3).length ? [cards(row.community_cards3)] : []),
+    ],
+    players,
+    actions,
+    winners,
+    winnersByBoard: winnersByBoard.length ? winnersByBoard : null,
+    holeCards: (row.hole_cards as Record<string, StoredCard[]> | null | undefined) ?? {},
+    showdown: (row.showdown as ReplayShowdownInput[] | null | undefined) ?? null,
+    pots: (row.pots as { index?: number; amount?: number }[] | null | undefined) ?? null,
+    discardedCards: extras.discardedCards ?? null,
+    privateHoleCards: extras.privateHoleCards ?? null,
   };
 }

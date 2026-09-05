@@ -20,6 +20,7 @@
  * tested with jsdom. The React binding lives in hooks/useEngineTableState.
  */
 
+import { noteServerTime } from '../lib/serverClock';
 import jsonPatch from 'fast-json-patch';
 import { engineSocketMux, isMuxEnabled, CLOSE_MUX_SUPERSEDED } from './EngineSocketMux';
 import { handleEngineAuthRejection, isEngineAuthClose } from '../lib/sessionRevoked';
@@ -62,15 +63,46 @@ export interface ServerEventMessage {
    * and recorded fixtures omit it.
    */
   seq?: number;
+  /** Engine clock at send time (live or replay). See lib/serverClock. */
+  ts?: number;
+  payload: Record<string, unknown>;
+}
+/**
+ * 2026-09-04 (disconnect audit items 11 + 12): a frame for THIS player only,
+ * outside the public sequence. Hole cards and the engine's copy of the armed
+ * pre-action arrive this way; the engine re-sends both on RESYNC.
+ */
+export interface ServerUserEventMessage {
+  type: 'USER_EVENT';
+  tableId: string;
   payload: Record<string, unknown>;
 }
 export type ServerMessage =
   | ServerSnapshotMessage
   | ServerDeltaMessage
   | ServerPingMessage
-  | ServerEventMessage;
+  | ServerEventMessage
+  | ServerUserEventMessage;
 
 // WS close codes the server emits (mirrors CLOSE_* constants on server).
+/**
+ * Report a client-side connection failure to the engine.
+ *
+ * DYNAMICALLY IMPORTED ON PURPOSE (2026-09-05). A static import pulled the
+ * beacon - and the auth-token module it needs - into the ENTRY CHUNK, which
+ * every player downloads before first paint. CI caught it
+ * ("2 module(s) entered the entry chunk"). Telemetry about a broken socket
+ * must never be part of what a player waits for to see their first frame, so
+ * it loads only when something has actually gone wrong.
+ */
+function beacon(reason: 'auth_failed' | 'stale' | 'handshake_timeout' | 'closed'): void {
+  void import('./clientConnectionBeacon')
+    .then((m) => m.reportConnectionEvent(reason))
+    .catch(() => {
+      /* telemetry never disturbs the table */
+    });
+}
+
 export const CLOSE_AUTH_FAILED = 4401;
 
 /**
@@ -119,6 +151,13 @@ export interface EngineStateClientOptions {
    * rit_*, time_bank_*, bbj_*, etc). Payload is forwarded verbatim.
    */
   onEvent?: (payload: Record<string, unknown>) => void;
+  /**
+   * Called when a private USER_EVENT frame arrives (hole cards, pre-action).
+   * Delivered immediately, never queued or de-duplicated: the payload is
+   * idempotent by construction (a full statement of the player's cards or
+   * armed action) and the recipient's own guards decide what to do with it.
+   */
+  onUserEvent?: (payload: Record<string, unknown>) => void;
   /** Maximum reconnect attempts. Default: 10. */
   maxRetries?: number;
   /** Initial backoff ms. Default: 1000. */
@@ -136,6 +175,12 @@ export class EngineStateClient {
   private retryCount = 0;
   /** 2026-09-04: closes since the last successful open (see the constant above). */
   private handshakeFailures = 0;
+  /**
+   * 2026-09-04: the engine said 4404 for this table and we are on the slow
+   * ladder. While this is true the ladder announces 'idle', not
+   * 'reconnecting' - see scheduleReconnect and openOnceInner. Cleared on open.
+   */
+  private tableMissing = false;
   private reconnectTimer: number | null = null;
   private intentionalClose = false;
 
@@ -200,6 +245,7 @@ export class EngineStateClient {
     this.opts = {
       onStatus: () => undefined,
       onEvent: () => undefined,
+      onUserEvent: () => undefined,
       onError: () => undefined,
       maxRetries: 10,
       initialDelay: 1000,
@@ -311,7 +357,9 @@ export class EngineStateClient {
   }
 
   private async openOnceInner(): Promise<void> {
-    this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
+    if (!this.tableMissing) {
+      this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
+    }
     // 2026-08-22: getToken (supabase.auth.getSession) can REJECT — network
     // error, storage error, auth-js internal throw. This await used to be
     // unguarded, and because scheduleReconnect nulls its timer before calling
@@ -373,6 +421,7 @@ export class EngineStateClient {
       this.handshakeTimer = null;
       if (this.ws !== ws) return;
       if (ws.readyState === 0 /* CONNECTING */) {
+        beacon('handshake_timeout');
         try {
           ws.close();
         } catch {
@@ -388,6 +437,13 @@ export class EngineStateClient {
       // the live connection's state.
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      this.tableMissing = false;
+      // 2026-09-04: read BEFORE resetInbox(), which zeroes `seq`. Read after
+      // it, the `seq > 0` test below was always false and the RESYNC on
+      // reconnect had been dead code since 2026-08-25 - harmless only
+      // because the hub sends a SNAPSHOT on subscribe, and a hub that ever
+      // stopped would have frozen every reconnected table silently.
+      const hadState = this.seq > 0;
       // Review fix 2026-08-25: a fresh connection starts with an empty
       // inbound queue and a fresh event-seq epoch — the dead socket's
       // frames must not precede (or dedupe against) this connection's.
@@ -400,7 +456,7 @@ export class EngineStateClient {
       this.startWatchdog();
       // Server sends SNAPSHOT on subscribe — no explicit RESYNC needed on
       // first connect. On reconnect after a gap, we explicitly request one.
-      if (this.seq > 0) {
+      if (hadState) {
         try {
           ws.send(JSON.stringify({ type: 'RESYNC' }));
         } catch {
@@ -439,6 +495,9 @@ export class EngineStateClient {
       // Auth failure — bubble up to the host; do not retry with the same token
       if (e.code === CLOSE_AUTH_FAILED || isEngineAuthClose(e.code, e.reason)) {
         this.setStatus('auth_failed');
+        // Phase 2 (2026-09-05): the server counts what the browser saw.
+        // Throttled and fire-and-forget - it cannot delay the reconnect.
+        beacon('auth_failed');
         this.opts.onError({ code: e.code, reason: e.reason });
         // 2026-09-04: ask GoTrue whether the session is alive. 'revoked'
         // ends in a redirect to sign in (the page is leaving); anything else
@@ -456,6 +515,14 @@ export class EngineStateClient {
       // Announce 'idle' instead so the UI stays usable (e.g. for empty tables
       // or during engine restarts) while we keep retrying on the slow ladder.
       if (e.code === CLOSE_TABLE_NOT_FOUND) {
+        /* 2026-09-04: the 'idle' below was stomped one line later - every
+           scheduleReconnect() sets 'reconnecting', so a table the engine had
+           closed sat under "Reconnecting To The Table" for as long as the tab
+           was open (measured on production: a closed NLH Straddle table, the
+           banner for the whole 40s it was watched, SUBSCRIBE answered
+           TABLE_NOT_FOUND every time). The flag keeps the ladder honest:
+           it is polling for a table that may come back, and says nothing. */
+        this.tableMissing = true;
         this.setStatus('idle');
         this.opts.onError({ code: e.code, reason: e.reason });
         this.retryCount = Math.max(this.retryCount, 5); // start at ~16s+ delays
@@ -578,7 +645,18 @@ export class EngineStateClient {
       }
       return;
     }
+    if (msg.type === 'USER_EVENT') {
+      // Private, unsequenced, idempotent: straight through, never queued.
+      try {
+        this.opts.onUserEvent(msg.payload);
+      } catch (err) {
+        console.error('[EngineStateClient] onUserEvent listener threw', err);
+      }
+      return;
+    }
     if (msg.type === 'PING') {
+      // The engine's clock rides the keepalive; see lib/serverClock.
+      noteServerTime(msg.ts);
       // Keepalive never queues — answering late defeats its purpose.
       try {
         this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
@@ -610,6 +688,10 @@ export class EngineStateClient {
     while (this.inbox.length > 0) {
       const msg = this.inbox.shift()!;
       if (msg.type === 'EVENT') {
+        // BBJ build plan phase 1: every EVENT envelope carries the engine's
+        // clock at send time. Noted BEFORE dispatch so a listener that
+        // judges freshness (the jackpot gate) compares engine to engine.
+        noteServerTime((msg as { ts?: number }).ts);
         // Seq-based de-duplication (0/absent = legacy frame, always passes).
         const seq = (msg as { seq?: number }).seq;
         if (typeof seq === 'number' && seq > 0) {
@@ -754,6 +836,7 @@ export class EngineStateClient {
         this.opts.onError({
           reason: `engine silent for ${Math.round(silentFor / 1000)}s (${this.unansweredResyncs} unanswered resyncs) - forcing reconnect`,
         });
+        beacon('stale');
         this.lastInboundAt = Date.now(); // don't re-fire while the close lands
         this.unansweredResyncs = 0;
         // 2026-08-22: announce the truth. This path used to leave status at
@@ -846,7 +929,12 @@ export class EngineStateClient {
     // e.g. auto-refresh) — the backoff ladder keeps running at maxDelay
     // cadence forever underneath. A laptop waking from sleep or a phone
     // regaining signal reconnects on its own, however long it was gone.
-    if (this.retryCount >= this.opts.maxRetries) {
+    if (this.tableMissing) {
+      // A closed table is not a lost connection. The overlay for a table that
+      // stays 4404 (TableLoadFailureOverlay, "This Table Has Closed") is
+      // driven by the error count, not by this status.
+      this.setStatus('idle');
+    } else if (this.retryCount >= this.opts.maxRetries) {
       this.setStatus('failed');
       if (this.retryCount === this.opts.maxRetries) {
         this.opts.onError({ reason: 'max retries reached - still retrying in background' });

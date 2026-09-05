@@ -231,15 +231,25 @@
   margin-bottom: var(--cp-chip-overlap);
 }
 
-/* ---- Partial sliver: a sub-1 amount no chip on the ladder can represent ----
-   Stakes here run 0.25/0.5, and Dan's smallest chip is the white 1. Drawing a
-   full white chip for a 0.5 small blind would claim twice its value, and
-   drawing nothing leaves a player with money out looking like they have none.
-   A half-height translucent sliver is neither. See chipDenominations.ts. */
+/* ---- Sub-1 disc: a bet no chip on the ladder can represent ----
+   Dan 2026-09-04: "WHY ARE THE CHIPS OVAL SHAPED NOW PREFLOP INSTEAD OF
+   CIRCLES? THEY APPEAR NORMAL ON ALL OTHER STREETS... FIX THIS BUG."
+
+   This rule used to squash the disc to 55% height, dash its rim and fade it
+   to 75%, on the theory that a full white chip for a 0.5 blind "would claim
+   twice its value". At 0.10/0.25 stakes EVERY preflop bet is under 1 - the
+   0.10 blind, the 0.25 blind, a 0.50 open, the 0.25 call - so every chip on
+   the felt was an oval until the pot grew past a chip on the flop, and then
+   they all snapped round. That is the bug Dan saw. The value was never at
+   risk: .cp-amount prints the exact number beside the disc, and it is the
+   only thing on the felt that ever carried the value of a sub-1 bet.
+
+   A chip is a circle. The `partial` flag is kept on the element as data (the
+   breakdown still needs to know this disc stands in for a remainder so it
+   never draws a fourth chip beside a 7.5), but it changes nothing about how
+   the disc is drawn. See chipDenominations.ts. */
 .cp-chip--partial {
-  height: calc(var(--cp-chip-size) * 0.55);
-  opacity: 0.75;
-  border-style: dashed;
+  height: var(--cp-chip-size);
 }
 
 /* ---- Specular Highlight (top-left hot spot from overhead light) ---- */

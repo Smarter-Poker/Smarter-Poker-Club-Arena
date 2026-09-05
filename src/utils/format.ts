@@ -88,6 +88,45 @@ export const formatTableChips = (n: number | null | undefined): string => {
 };
 
 /**
+ * THE "+N" THAT RIDES WITH MONEY ARRIVING AT A SEAT (pot push, bounty,
+ * insurance). Dan 2026-08-29, binding: "THERE CAN NEVER BE 'ROUNDING' IT MUST
+ * ALWAYS BE DOWN TO THE CENT."
+ *
+ * Until 2026-09-04 this label was built inline as `Math.round(amount)` for
+ * anything >= 1, so a 7.50 bounty floated up as "+8" while the seat's own
+ * stack delta beside it said "+7.50" — two numbers for one payment. 401 of
+ * the 7,508 bounties paid since 08-28 (5.3%) carried cents and every one of
+ * them was shown rounded. Cash pots at penny stakes had the same problem.
+ *
+ * Rule: snap to cents FIRST (that kills engine float noise such as
+ * 12.500000001, which is sub-cent and not money), then whole chips read as
+ * whole chips and anything else keeps exactly two places. Same contract as
+ * SeatSlot's stack delta, so the two labels for one payment always agree.
+ *
+ * @example formatChipAward(1234)    -> "+1,234"
+ * @example formatChipAward(7.5)     -> "+7.50"
+ * @example formatChipAward(0.25)    -> "+0.25"
+ * @example formatChipAward(12.5000000001) -> "+12.50"
+ * @example formatChipAward(0)       -> "+0"
+ */
+export const formatChipAward = (amount: number | null | undefined): string => {
+  const v = Number(amount ?? 0);
+  if (!Number.isFinite(v)) return '+0';
+  // + 1e-7 before rounding: a binary double holds 17.955 as 17.95499999...,
+  // so a bare Math.round(x * 100) lands a half-cent DOWN. That is the exact
+  // defect the 2026-08-29 "payouts are exact to the cent" fix removed from
+  // the payout math; the label must not reintroduce it. The nudge is seven
+  // orders of magnitude below a cent, so it can only ever decide a tie.
+  const cents = Math.round(Math.abs(v) * 100 + 1e-7);
+  const sign = v < 0 ? '-' : '+';
+  if (cents % 100 === 0) return `${sign}${(cents / 100).toLocaleString('en-US')}`;
+  return `${sign}${(cents / 100).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+/**
  * Format a timestamp as a relative "time ago" string.
  * @example timeAgo("2026-03-17T10:00:00Z") → "2h ago"
  */

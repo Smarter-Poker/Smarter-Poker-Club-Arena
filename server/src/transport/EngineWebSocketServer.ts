@@ -812,6 +812,7 @@ export class EngineWebSocketServer {
     // but we need a stable .id field and a numeric readyState.
     const subscriber: HubSubscriber = {
       id: conn.id,
+      userId,
       get readyState() {
         return ws.readyState;
       },
@@ -1010,6 +1011,7 @@ export class EngineWebSocketServer {
       const self = this;
       const subscriber: HubSubscriber = {
         id: `${conn.id}:${tableId}`,
+        userId: conn.userId,
         get readyState() {
           return ws.readyState;
         },

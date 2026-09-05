@@ -16,22 +16,6 @@ import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { handleEngineAuthRejection } from '../lib/sessionRevoked';
 
-/**
- * 2026-09-04 - A REVOKED SESSION IS NOT A RECONNECT (see lib/sessionRevoked).
- *
- * The engine verifies every HTTP call with auth.getUser(), so a revoked
- * session answers 401 here too - on /heartbeat every few seconds, and on
- * /action the moment the player presses a button. Before this, that 401
- * became "Server error (401)" in a toast and nothing else; the player kept
- * pressing Call at a table that had already forgotten who they were. Now a
- * 401 asks GoTrue whether the session is alive (throttled inside the
- * handler, so a heartbeat storm is one question, not one per beat), and a
- * dead one ends in a sign-in prompt instead of a spinner.
- */
-function noteEngineResponse(response: { status: number }, source: string): void {
-  if (response.status === 401) void handleEngineAuthRejection(`http:${source}`);
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -51,13 +35,33 @@ const GAME_SERVER_URL =
  */
 async function getAuthHeaders(): Promise<Record<string, string>> {
   try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session?.access_token) {
+    /* 2026-09-04: THE TOKEN CACHE FIRST. This used to call
+       supabase.auth.getSession() and fall straight through to a request with
+       NO Authorization header when that came back empty - which it does for
+       the whole of a token refresh, and for the first moments after a page
+       reload while auth-js is still restoring the session from storage. The
+       engine answered 401 "Authentication required", and Dan read that toast
+       on "I'm Back" thirty seconds after reloading a table he was plainly
+       logged in to. getFreshAccessToken() is the path every socket already
+       uses: in-memory cache, then getSession() (which refreshes), then the
+       raw localStorage session. A refreshSession() is the last resort before
+       going out unauthenticated.
+
+       Imported lazily: this file is in the entry chunk and a static import
+       pulled authToken.ts (and its tree) into first paint - the entry-chunk
+       gate (scripts/ci/entry-chunk-delta.mjs) refused it. The call is on an
+       async path, so the import costs nothing the request was not already
+       waiting on, and the module is cached after the first. */
+    const { getFreshAccessToken } = await import('../lib/authToken');
+    let token = await getFreshAccessToken();
+    if (!token) {
+      const refreshed = await supabase.auth.refreshSession();
+      token = refreshed.data.session?.access_token ?? null;
+    }
+    if (token) {
       return {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${token}`,
       };
     }
   } catch (e) {
@@ -65,6 +69,41 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     // Silent — fall through to no-auth headers
   }
   return { 'Content-Type': 'application/json' };
+}
+
+/**
+ * fetch() against the engine with ONE retry on 401 (2026-09-04).
+ *
+ * A 401 from the engine means the request was refused before it ran, so
+ * replaying it is safe for every endpoint here, including /action. The retry
+ * asks auth-js for a refreshed session and re-sends with the new token; if
+ * there is no session to refresh, the original 401 is returned and the caller
+ * surfaces it as before. Every engine call in this file goes through it.
+ */
+async function engineFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const resp = await fetch(url, init);
+  if (resp.status !== 401) return resp;
+  try {
+    const refreshed = await supabase.auth.refreshSession();
+    const token = refreshed.data.session?.access_token ?? null;
+    if (!token) {
+      // 2026-09-05: the engine refused us and the refresh could not produce a
+      // token either. That is the 2026-09-03 shape - a session revoked out
+      // from under a live tab - and it is the point at which retrying is
+      // pointless. Ask GoTrue once (throttled inside the handler); a
+      // definitively dead session ends in a prompt and a sign-in rather than
+      // a table that spins forever. 'unknown' changes nothing.
+      void handleEngineAuthRejection('http:401');
+      return resp;
+    }
+    const headers = {
+      ...((init.headers as Record<string, string> | undefined) ?? {}),
+      Authorization: `Bearer ${token}`,
+    };
+    return await fetch(url, { ...init, headers });
+  } catch {
+    return resp;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -131,6 +170,17 @@ const circuitBreaker = {
 // back so heartbeats/actions are not refused by our own client (see reset()).
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => circuitBreaker.reset());
+}
+
+/**
+ * 2026-09-04: the engine socket coming back is the other signal the network
+ * is back - a laptop that never lost `navigator.onLine` but lost the route to
+ * the engine for 40s has a tripped breaker and no 'online' event to clear it.
+ * TablePage calls this on the socket's reconnect edge before its first
+ * heartbeat.
+ */
+export function resetEngineCircuitBreaker(): void {
+  circuitBreaker.reset();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -275,12 +325,11 @@ export async function submitAction(
     const BACKOFFS_MS = [300, 450, 700]; // 3 retries after the first attempt
     for (let attempt = 0; attempt <= BACKOFFS_MS.length; attempt++) {
       lastActionSentAt.set(tableId, Date.now());
-      const response = await fetch(`${GAME_SERVER_URL}/action`, {
+      const response = await engineFetch(`${GAME_SERVER_URL}/action`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ tableId, action, amount }),
       });
-      noteEngineResponse(response, 'action');
 
       if (response.ok) {
         const result = await response.json();
@@ -324,12 +373,11 @@ export function __resetActionSpacingForTests(): void {
 export async function activateTimeBank(tableId: string, _userId?: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/timebank`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/timebank`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
     });
-    noteEngineResponse(response, 'timebank');
 
     if (!response.ok) {
       return { success: false, error: `Server error (${response.status})` };
@@ -359,8 +407,7 @@ export async function getAvailableActions(
   try {
     const headers = await getAuthHeaders();
     // Server ignores the userId URL param and uses JWT — pass 'me' as placeholder
-    const response = await fetch(`${GAME_SERVER_URL}/actions/${tableId}/me`, { headers });
-    noteEngineResponse(response, 'actions');
+    const response = await engineFetch(`${GAME_SERVER_URL}/actions/${tableId}/me`, { headers });
 
     if (!response.ok) {
       return {
@@ -395,7 +442,7 @@ export async function getAvailableActions(
  */
 export async function getServerStatus(): Promise<ServerStatus | null> {
   try {
-    const response = await fetch(`${GAME_SERVER_URL}/health`);
+    const response = await engineFetch(`${GAME_SERVER_URL}/health`);
     if (!response.ok) return null;
     return (await response.json()) as ServerStatus;
   } catch (err) {
@@ -430,7 +477,12 @@ export async function sendHeartbeat(
    * make the engine quieter about a player, never harsher, so a client that
    * never sends it is treated exactly as every client is treated today.
    */
-  opts?: { turnRendered?: boolean }
+  opts?: {
+    turnRendered?: boolean;
+    /** The bust-rebuy dialog is on screen: the engine's busted-seat sweep
+     *  waits for a player who is at the cashier (2026-09-04). */
+    rebuyPromptOpen?: boolean;
+  }
 ): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
   if (circuitBreaker.isOpen()) {
@@ -438,12 +490,15 @@ export async function sendHeartbeat(
   }
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/heartbeat`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/heartbeat`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(opts?.turnRendered ? { tableId, turnRendered: true } : { tableId }),
+      body: JSON.stringify({
+        tableId,
+        ...(opts?.turnRendered ? { turnRendered: true } : {}),
+        ...(opts?.rebuyPromptOpen ? { rebuyPromptOpen: true } : {}),
+      }),
     });
-    noteEngineResponse(response, 'heartbeat');
     if (!response.ok) {
       circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.heartbeat');
       return { success: false, error: `Server error (${response.status})` };
@@ -521,12 +576,11 @@ export async function setPreAction(
   }
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/preaction`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/preaction`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, action, maxCallAmount }),
     });
-    noteEngineResponse(response, 'preaction');
     if (!response.ok) {
       // HTTP 400 = invalid pre-action (not player's turn, not in hand) —
       // this is an expected user-state mismatch, NOT a server bug. Do not
@@ -567,12 +621,11 @@ export async function addChips(
 ): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${GAME_SERVER_URL}/addchips`, {
+    const res = await engineFetch(`${GAME_SERVER_URL}/addchips`, {
       method: 'POST',
       headers,
       body: JSON.stringify(opId ? { tableId, amount, opId } : { tableId, amount }),
     });
-    noteEngineResponse(res, 'addchips');
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
@@ -615,12 +668,11 @@ export async function setSitOut(
 ): Promise<ActionResult & { willFoldNextHand?: boolean }> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/sitout`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/sitout`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, sitOut }),
     });
-    noteEngineResponse(response, 'sitout');
     /* READ THE BODY BEFORE JUDGING THE STATUS (2026-08-28).
      *
      * `handlers/sitout.ts` answers a refusal with HTTP 400 and the REASON in
@@ -652,12 +704,11 @@ export async function setSitOut(
 export async function toggleStraddle(tableId: string, enabled: boolean): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/straddle`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/straddle`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, enabled }),
     });
-    noteEngineResponse(response, 'straddle');
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
     return (await response.json()) as ActionResult;
   } catch (err: unknown) {
@@ -672,8 +723,7 @@ export async function toggleStraddle(tableId: string, enabled: boolean): Promise
 export async function getTableState(tableId: string): Promise<Record<string, unknown> | null> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/state/${tableId}`, { headers });
-    noteEngineResponse(response, 'state');
+    const response = await engineFetch(`${GAME_SERVER_URL}/state/${tableId}`, { headers });
     if (!response.ok) return null;
     return await response.json();
   } catch (err: unknown) {
@@ -706,7 +756,7 @@ export async function respondToRIT(
     if (options.runs !== undefined) body.runs = options.runs;
     if (options.response !== undefined) body.response = options.response;
 
-    const resp = await fetch(`${GAME_SERVER_URL}/rit`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/rit`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -735,7 +785,7 @@ export async function respondToInsurance(
 ): Promise<ActionResult & { status?: string; premium?: number; insuredAmount?: number }> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/insurance`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/insurance`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, response, coveragePercent, declineForHand }),
@@ -758,7 +808,7 @@ export async function previewInsurance(
 ): Promise<ActionResult & { premium?: number; insuredAmount?: number; coveragePercent?: number }> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(
+    const resp = await engineFetch(
       `${GAME_SERVER_URL}/insurance-preview?tableId=${encodeURIComponent(tableId)}&coveragePercent=${coveragePercent}`,
       { method: 'GET', headers }
     );
@@ -776,7 +826,7 @@ export async function previewInsurance(
 export async function showHand(tableId: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/showhand`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/showhand`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
@@ -797,7 +847,7 @@ export async function showHand(tableId: string): Promise<ActionResult> {
 export async function submitDiscard(tableId: string, cardIndex: number): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/discard`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/discard`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, cardIndex }),
@@ -817,7 +867,7 @@ export async function submitDiscard(tableId: string, cardIndex: number): Promise
 export async function notifyServerLeave(tableId: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/leave`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/leave`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
@@ -852,7 +902,7 @@ export async function notifyServerLeave(tableId: string): Promise<ActionResult> 
 export async function notifyServerRejectRebuy(tableId: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/reject_rebuy`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/reject_rebuy`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
@@ -886,7 +936,7 @@ export async function notifyServerRejectRebuy(tableId: string): Promise<ActionRe
 export async function postBBToEnter(tableId: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/post-bb`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/post-bb`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
@@ -931,7 +981,7 @@ export async function requestRabbitHunt(
 ): Promise<RabbitHuntResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/rabbit-hunt`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/rabbit-hunt`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, handNumber }),

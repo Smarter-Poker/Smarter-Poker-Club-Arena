@@ -1,29 +1,27 @@
 /**
- * Hand History Panel — Slide-out hand history with expandable details
+ * Hand History Panel  #SMARTERCASINOREALISM
  *
- * Dan 2026-08-23: "REMOVE THE YELLOW AND PURPLE." The tokens below come from
- * src/styles/club-engine.css, which main.tsx loads globally and is therefore
- * the ONLY sheet whose variables actually resolve at the table. globals.css
- * (--royal-blue) and design-system.css (--fb-blue) are not in the table's
- * import chain, so referencing them here would silently fall back to the
- * declared default and merely LOOK tokenised.
+ * The rail-side hand record: obsidian and gunmetal structure, machined chrome
+ * type, restrained broadcast blue for the live figure, brass only for what is
+ * yours. Rajdhani for the display figures, monospace for the eyebrows, Inter
+ * for body. No dashboard-style white cards; light mode is brushed-silver
+ * casino hardware with the same hierarchy.
  *
- * --hh-accent is the same #1877F2 every other table modal uses; the -rgb twin
- * exists so the translucent tints below never repeat the literal hex.
+ * Tokens are declared on the panel itself, mirroring the cashier's block
+ * (CashierTradePage.module.css), because club-engine.css is the only global
+ * sheet in the table's import chain and its tokens are the OLD club set.
+ *
+ * No hover effects anywhere (tests/no-hover-effects.law.test.ts); focus-visible
+ * and active are the sanctioned states. Motion is scaled by
+ * --animation-speed and collapses under prefers-reduced-motion.
  */
 
-/* The backdrop the panel never had.
- *
- * It rendered as a lone fixed div with no overlay behind it, so there was
- * nothing to tap: the only way out was a 32px X in the corner, and in the
- * installed app that X can sit under the status bar. It sits one layer under
- * the panel so a tap anywhere off the sheet closes it. */
 .hh-backdrop {
   position: fixed;
   inset: 0;
   z-index: 499;
-  background: rgba(0, 0, 0, 0.45);
-  animation: hhBackdropIn 0.2s ease;
+  background: rgba(2, 4, 7, 0.62);
+  animation: hhBackdropIn calc(0.2s * var(--animation-speed, 1)) ease;
 }
 
 @keyframes hhBackdropIn {
@@ -36,24 +34,43 @@
 }
 
 .hh-panel {
-  --hh-accent: #1877f2;
-  --hh-accent-rgb: 24, 119, 242;
+  --hh-void: #030609;
+  --hh-black: #080d12;
+  --hh-panel: #0c1118;
+  --hh-panel-raised: #111823;
+  --hh-gunmetal: #26333d;
+  --hh-chrome: #dce8f0;
+  --hh-steel: #b9cad7;
+  --hh-blue: #3aa8ff;
+  --hh-blue-hot: #8ad2ff;
+  --hh-brass: #d6ad52;
+  --hh-muted: #8391a1;
+  --hh-up: #3fb950;
+  --hh-down: #ff6b6b;
+  --hh-line: rgba(185, 202, 215, 0.12);
+  --hh-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  --hh-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  --hh-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(340px, 85vw);
-  background: var(--club-surface, #111318);
-  border-left: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  width: min(420px, 92vw);
   display: flex;
   flex-direction: column;
   z-index: 500;
-  animation: hhSlideIn 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  color: var(--hh-chrome);
+  font-family: var(--hh-body);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(58, 168, 255, 0.08), transparent 26rem),
+    linear-gradient(180deg, var(--hh-black) 0%, var(--hh-void) 70%, #020304 100%);
+  border-left: 1px solid var(--hh-gunmetal);
   box-shadow:
-    -8px 0 24px rgba(0, 0, 0, 0.4),
-    inset 1px 0 0 rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    -16px 0 40px rgba(0, 0, 0, 0.55),
+    inset 1px 0 0 rgba(185, 202, 215, 0.1);
+  animation: hhSlideIn calc(0.28s * var(--animation-speed, 1))
+    var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 @keyframes hhSlideIn {
@@ -65,7 +82,7 @@
   }
 }
 
-/* Grab handle — visible only where the panel is a bottom sheet. */
+/* Grab handle, visible only where the panel is a bottom sheet. */
 .hh-panel__grab {
   display: none;
   justify-content: center;
@@ -74,397 +91,389 @@
 }
 
 .hh-panel__grab span {
-  width: 36px;
+  width: 40px;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(185, 202, 215, 0.28);
 }
 
-/* Header */
+/* ── Header: machined plate ─────────────────────────────────────────────── */
 .hh-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 12px 16px;
   padding-top: calc(12px + env(safe-area-inset-top, 0px));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px) saturate(1.2);
-  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  border-bottom: 1px solid var(--hh-gunmetal);
+  background: linear-gradient(180deg, rgba(185, 202, 215, 0.06), transparent 60%), var(--hh-panel);
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.14);
+}
+
+.hh-panel__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hh-panel__eyebrow {
+  font-family: var(--hh-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--hh-blue);
 }
 
 .hh-panel__title {
-  font-size: 0.9375rem;
-  font-weight: 700;
-  color: #f3f4f6;
   margin: 0;
+  font-family: var(--hh-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hh-chrome);
 }
 
 .hh-panel__header-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
 }
 
-.hh-panel__export,
-.hh-panel__close {
-  width: 32px;
-  height: 32px;
+.hh-panel__iconbtn {
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  border: none;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.6);
+  border-radius: 4px;
+  border: 1px solid var(--hh-gunmetal);
+  background: linear-gradient(180deg, var(--hh-panel-raised), var(--hh-panel));
+  color: var(--hh-steel);
   cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
 }
 
-/* Session Stats Bar */
+.hh-panel__iconbtn:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.hh-panel__iconbtn:focus-visible {
+  outline: 2px solid var(--hh-blue);
+  outline-offset: 2px;
+}
+
+.hh-panel__iconbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Stats strip: what it counts, said first ────────────────────────────── */
 .hh-panel__stats {
-  display: flex;
-  gap: 2px;
-  padding: 8px 16px;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--hh-line);
+  background: rgba(8, 13, 18, 0.7);
+}
+
+.hh-panel__stats-scope {
+  font-family: var(--hh-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hh-muted);
+  margin-bottom: 8px;
+}
+
+.hh-panel__stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .hh-panel__stat {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 2px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--hh-line);
+  background: var(--hh-panel);
+  min-width: 0;
 }
 
 .hh-panel__stat-label {
-  font-size: 0.5625rem;
-  color: rgba(255, 255, 255, 0.4);
+  font-family: var(--hh-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--hh-muted);
+  white-space: nowrap;
 }
 
 .hh-panel__stat-value {
-  font-size: 0.8125rem;
+  font-family: var(--hh-display);
+  font-size: 15px;
   font-weight: 700;
-  color: #f3f4f6;
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--hh-chrome);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Hand list */
+.hh-panel__stat-value--up {
+  color: var(--hh-up);
+}
+
+.hh-panel__stat-value--down {
+  color: var(--hh-down);
+}
+
+.hh-panel__stat-value--flat {
+  color: var(--hh-steel);
+}
+
+/* ── The list ───────────────────────────────────────────────────────────── */
 .hh-panel__list {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 4px 0;
+  padding: 8px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .hh-panel__empty {
-  padding: 40px 16px;
+  padding: 48px 16px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 0.8125rem;
+  font-family: var(--hh-display);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: var(--hh-muted);
 }
 
-/* Hand Entry */
+.hh-panel__item {
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity calc(0.3s * var(--animation-speed, 1)) ease,
+    transform calc(0.3s * var(--animation-speed, 1)) ease;
+}
+
+.hh-panel__item--in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── One hand ───────────────────────────────────────────────────────────── */
 .hh-entry {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hh-line);
+  border-radius: 4px;
+  background: var(--hh-panel);
+  overflow: hidden;
+}
+
+.hh-entry--expanded {
+  border-color: rgba(58, 168, 255, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(58, 168, 255, 0.12);
 }
 
 .hh-entry__summary {
   width: 100%;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto 14px;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  background: transparent;
+  padding: 10px 12px;
   border: none;
-  color: #f3f4f6;
-  cursor: pointer;
-  font-size: 0.75rem;
+  background: transparent;
+  color: inherit;
   text-align: left;
-  transition: background 0.15s;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.hh-entry__summary:focus-visible {
+  outline: 2px solid var(--hh-blue);
+  outline-offset: -2px;
 }
 
 .hh-entry__num {
-  color: rgba(255, 255, 255, 0.4);
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  font-size: 0.6875rem;
-  min-width: 40px;
+  font-family: var(--hh-mono);
+  font-size: 11px;
+  color: var(--hh-blue);
+  letter-spacing: 0.04em;
 }
 
 .hh-entry__time {
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 0.6875rem;
+  font-family: var(--hh-mono);
+  font-size: 10px;
+  color: var(--hh-muted);
 }
 
 .hh-entry__pot {
-  flex: 1;
-  text-align: right;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.6875rem;
+  font-size: 12px;
+  color: var(--hh-steel);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.hh-entry__rake {
+  color: var(--hh-muted);
+}
+
+.hh-entry__tags {
+  display: flex;
+  gap: 4px;
+}
+
+.hh-entry__tag {
+  font-family: var(--hh-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(58, 168, 255, 0.35);
+  color: var(--hh-blue-hot);
+  background: rgba(58, 168, 255, 0.1);
+  white-space: nowrap;
+}
+
+.hh-entry__tag--quiet {
+  border-color: var(--hh-line);
+  color: var(--hh-muted);
+  background: transparent;
 }
 
 .hh-entry__result {
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-family: var(--hh-display);
+  font-size: 15px;
   font-weight: 700;
-  font-size: 0.75rem;
-  min-width: 52px;
-  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hh-entry__result--up {
+  color: var(--hh-up);
+}
+
+.hh-entry__result--down {
+  color: var(--hh-down);
+}
+
+.hh-entry__result--flat {
+  color: var(--hh-steel);
 }
 
 .hh-entry__chevron {
-  color: rgba(255, 255, 255, 0.3);
-  transition: transform 0.2s ease;
-  flex-shrink: 0;
+  display: flex;
+  color: var(--hh-muted);
+  transition: transform calc(0.2s * var(--animation-speed, 1)) ease;
 }
 
 .hh-entry__chevron--open {
   transform: rotate(180deg);
 }
 
-/* Expanded detail */
 .hh-entry__detail {
-  padding: 0 16px 12px;
-  animation: hhDetailFadeIn 0.2s ease;
+  padding: 4px 8px 10px;
+  border-top: 1px solid var(--hh-line);
+  background: var(--hh-black);
+  animation: hhDetailFadeIn calc(0.25s * var(--animation-speed, 1)) ease;
 }
 
 @keyframes hhDetailFadeIn {
   from {
     opacity: 0;
-    max-height: 0;
   }
   to {
     opacity: 1;
-    max-height: 500px;
   }
 }
 
-/* Showdown roster — one row per hand the table actually saw. */
-.hh-entry__showdown {
+.hh-entry__facts {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 6px 8px;
-  margin-bottom: 8px;
-  background: rgba(var(--hh-accent-rgb), 0.07);
-  border-radius: 6px;
-  border-left: 3px solid var(--hh-accent);
-}
-
-.hh-entry__shown {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.625rem;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
-}
-
-.hh-entry__shown--won .hh-entry__player-name {
-  color: var(--success-green, #3fb950);
-  font-weight: 700;
-}
-
-.hh-entry__holecards {
-  display: inline-flex;
-  gap: 3px;
-  flex-shrink: 0;
-}
-
-.hh-card {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  padding: 1px 3px;
-  border-radius: 3px;
-  background: #f6f6f4;
-  color: #17181c;
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  font-size: 0.625rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.hh-card--red {
-  color: #d0242b;
-}
-
-/* Blank cards must not read as a loading failure — see the component. */
-.hh-entry__notshown {
-  font-size: 0.5625rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-disabled, rgba(255, 255, 255, 0.3));
-  flex-shrink: 0;
-}
-
-/* The two money figures ride together at the right end of the row. The auto
-   margin lives on the wrapper, not on the chips: it used to sit on
-   .hh-entry__won, and with a second chip beside it the free space would split
-   between the two and strand the pair in the middle of the row. */
-.hh-entry__tail {
-  margin-left: auto;
-  display: inline-flex;
+  gap: 8px;
   align-items: baseline;
-  gap: 8px;
-  flex-shrink: 0;
+  padding: 6px 4px 8px;
+  font-size: 11px;
+  color: var(--hh-steel);
 }
 
-.hh-entry__won {
-  color: var(--success-green, #3fb950);
-  font-weight: 700;
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  flex-shrink: 0;
-}
-
-.hh-entry__net {
-  font-weight: 700;
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  flex-shrink: 0;
-}
-
-.hh-entry__hand {
-  color: var(--text-tertiary, rgba(255, 255, 255, 0.5));
-  font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Street */
-.hh-entry__street {
-  margin-bottom: 6px;
-}
-
-.hh-entry__street-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 3px;
-}
-
-.hh-entry__street-name {
-  font-size: 0.625rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.5);
+.hh-entry__facts-label {
+  font-family: var(--hh-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--hh-brass);
 }
 
-.hh-entry__street-cards {
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
-  font-size: 0.625rem;
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.06);
-  padding: 1px 6px;
-  border-radius: 4px;
+.hh-entry__facts-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.hh-entry__actions {
-  padding-left: 8px;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.hh-entry__action {
+.hh-entry__actions-row {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 1px 0;
-  font-size: 0.625rem;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 2px 0;
 }
 
-.hh-entry__player-name {
-  color: rgba(255, 255, 255, 0.6);
-  min-width: 60px;
-}
-
-.hh-entry__action-type {
-  font-weight: 600;
-  text-transform: capitalize;
-  min-width: 36px;
-}
-
-.hh-entry__action-amount {
-  color: rgba(255, 255, 255, 0.5);
-  font-family: 'JetBrains Mono', 'SF Mono', monospace;
-}
-
-/* ── Run It Twice ───────────────────────────────────────────────────────────
-   Production hand #3046089 ran three boards and this panel showed one. Every
-   board now gets a row and a run badge, in the same visual language the replay
-   already uses (HandReplay's RUN n badge). */
-.hh-runs {
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: rgba(var(--hh-accent-rgb), 0.07);
-  border-left: 3px solid var(--hh-accent);
-}
-
-.hh-runs__count {
-  margin-left: auto;
-  font-size: 0.5625rem;
+.hh-entry__btn {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--hh-gunmetal);
+  background: linear-gradient(180deg, var(--hh-panel-raised), var(--hh-panel));
+  color: var(--hh-chrome);
+  font-family: var(--hh-display);
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--hh-accent);
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
 }
 
-.hh-run {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 0;
+.hh-entry__btn--primary {
+  border-color: rgba(58, 168, 255, 0.6);
+  background: linear-gradient(180deg, #1f7fd6, #145ea3);
+  color: #f4f9ff;
 }
 
-.hh-run__badge {
-  min-width: 42px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--hh-accent);
-  color: var(--pure-white, #ffffff);
-  font-size: 0.5rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-align: center;
-  flex-shrink: 0;
+.hh-entry__btn:active {
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
-.hh-run__cards {
-  display: inline-flex;
-  gap: 3px;
-  flex-wrap: wrap;
+.hh-entry__btn:focus-visible {
+  outline: 2px solid var(--hh-blue);
+  outline-offset: 2px;
 }
 
-/* The cards every run shares — dealt before the players agreed to run again.
-   Dimmed so the eye lands on the part that actually differs between boards. */
-.hh-card--shared {
-  opacity: 0.42;
-}
-
-.hh-runs__note {
-  margin-top: 4px;
-  font-size: 0.5625rem;
-  line-height: 1.4;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-/* Responsive */
+/* ── 375px first ────────────────────────────────────────────────────────── */
 @media (max-width: 380px) {
+  .hh-panel__stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .hh-entry__summary {
-    padding: 8px 12px;
-    gap: 6px;
+    grid-template-columns: auto minmax(0, 1fr) auto 14px;
+  }
+
+  .hh-entry__time,
+  .hh-entry__tags {
+    display: none;
   }
 }
 
-/* ── Phones: a 3/4-height bottom sheet, not a cramped drawer ────────────────
-   At 381-640px the panel was a min(340px, 85vw) drawer pinned to the right
-   edge: too narrow to read, and with the backdrop above it there was still a
-   full-width strip of real estate doing nothing. As a bottom sheet the top
-   quarter of the screen is backdrop you can tap, which is the gesture people
-   reach for first. */
+/* ── Phones: a 3/4-height bottom sheet, not a cramped drawer ────────────── */
 @media (max-width: 640px) {
   .hh-panel {
     top: auto;
@@ -475,12 +484,13 @@
     height: 75vh;
     height: 75dvh;
     border-left: none;
-    border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
-    border-radius: 18px 18px 0 0;
+    border-top: 1px solid var(--hh-gunmetal);
+    border-radius: 12px 12px 0 0;
     box-shadow:
-      0 -8px 32px rgba(0, 0, 0, 0.5),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    animation: hhSlideUp 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+      0 -12px 40px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(185, 202, 215, 0.12);
+    animation: hhSlideUp calc(0.28s * var(--animation-speed, 1))
+      var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   }
 
   .hh-panel__grab {
@@ -488,8 +498,8 @@
   }
 
   /* Dan 2026-08-24, from an iPhone: "there is no padding at the top, so you
-     can't even X off the page." Same rule the lobby sheet carries — the header
-     pays back the top inset, so the close button is always reachable. */
+     can't even X off the page." The header pays back the top inset, so the
+     close button is always reachable. */
   .hh-panel__header {
     padding-top: calc(12px + env(safe-area-inset-top, 0px));
   }
@@ -505,21 +515,74 @@
 }
 
 /* Multi-table only: the tab strip is a real element the drawer used to paint
-   over. --sp-tabbar-h is TableTabBar.css's published height (it already
-   includes the top inset). Scoped to .multi-table-page on purpose: the
-   variable is declared on :root as soon as that stylesheet loads, so an
-   unscoped read would push the single-table drawer down by a bar that is not
-   on screen. */
+   over. --sp-tabbar-h is TableTabBar.css's published height. */
 @media (min-width: 641px) {
   .multi-table-page .hh-panel {
     top: var(--sp-tabbar-h, 0px);
   }
 }
 
+/* ── Light mode: brushed-silver casino hardware, same hierarchy ─────────── */
+[data-theme='light'] .hh-backdrop {
+  background: rgba(20, 35, 50, 0.38);
+}
+
+[data-theme='light'] .hh-panel {
+  --hh-void: #d9e0e6;
+  --hh-black: #e6ebef;
+  --hh-panel: #f1f4f7;
+  --hh-panel-raised: #ffffff;
+  --hh-gunmetal: #aab8c3;
+  --hh-chrome: #0d161d;
+  --hh-steel: #3f5261;
+  --hh-blue: #146bb3;
+  --hh-blue-hot: #0f5a99;
+  --hh-brass: #8a6a24;
+  --hh-muted: #5f7181;
+  --hh-up: #4dc660;
+  --hh-down: #c0392b;
+  --hh-line: rgba(20, 35, 50, 0.14);
+  background:
+    radial-gradient(circle at 90% 0%, rgba(20, 107, 179, 0.08), transparent 26rem),
+    linear-gradient(180deg, #eef2f5 0%, var(--hh-void) 100%);
+  box-shadow:
+    -16px 0 40px rgba(20, 35, 50, 0.18),
+    inset 1px 0 0 #fff;
+}
+
+[data-theme='light'] .hh-panel__header {
+  background: linear-gradient(180deg, #fff, var(--hh-panel));
+  box-shadow: inset 0 1px 0 #fff;
+}
+
+[data-theme='light'] .hh-panel__stats {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+[data-theme='light'] .hh-entry__tag {
+  background: rgba(20, 107, 179, 0.08);
+  border-color: rgba(20, 107, 179, 0.3);
+}
+
+[data-theme='light'] .hh-entry__btn--primary {
+  background: linear-gradient(180deg, #2a8ae0, #1b6cb5);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hh-panel,
-  .hh-backdrop {
+  .hh-backdrop,
+  .hh-entry__detail {
     animation: none;
+  }
+
+  .hh-panel__item,
+  .hh-entry__chevron {
+    transition: none;
+  }
+
+  .hh-panel__item {
+    opacity: 1;
+    transform: none;
   }
 }
 

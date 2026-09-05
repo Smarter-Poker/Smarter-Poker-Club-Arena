@@ -1027,16 +1027,38 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
      * already resolves the table engine. A second endpoint would be a second
      * thing to keep alive for the sake of one boolean.
      */
-    opts?: { turnRendered?: boolean }
+    opts?: {
+      turnRendered?: boolean;
+      /**
+       * 2026-09-04 (second sweep, Dan: "my rebuy said it failed to load ...
+       * and booted me"). The client is showing this player the bust-rebuy
+       * dialog right now. BUSTED_GRACE_MS starts on the first dealing-loop
+       * tick that sees a 0 stack - BEFORE the dialog has even rendered - so a
+       * player reading the sheet, retrying a balance read, or picking an
+       * amount was stood up under it. A seat whose owner is at the cashier is
+       * being defended, and the sweep waits while this is fresh.
+       */
+      rebuyPromptOpen?: boolean;
+    }
   ): {
     success: boolean;
     connected: boolean;
     gracePeriodRemaining: number;
   } {
+    /* 2026-09-04 (disconnect audit item 5): a SEATED player the FSM has never
+       met is registered here rather than ignored. registerPlayer() runs at
+       the deal, so a seat taken since boot at a table below the deal minimum
+       was untracked: every heartbeat returned early, /heartbeat answered
+       `connected: true` for a key it did not have, and the abandoned-seat
+       rule (which reads disconnectedAt) could never see them go. The same
+       on-demand registration sitOut() and notifyPageLeft() already do. A
+       spectator's heartbeat still registers nothing. */
+    this.registerSeatedPlayerOnDemand(userId);
     this.disconnectEngine.heartbeat(this.tableId, userId);
     if (opts?.turnRendered) {
       this.disconnectEngine.noteTurnRendered(this.tableId, userId);
     }
+    if (opts?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());
     const connected = this.disconnectEngine.isConnected(this.tableId, userId);
     return { success: true, connected, gracePeriodRemaining: 0 };
   }
@@ -1061,6 +1083,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * it is spent. Coming back (any heartbeat) clears it at no cost.
    */
   public notifyPageLeft(userId: string): void {
+    /* 2026-09-04: register on demand, as sitOut() does (DisconnectEngine.ts,
+       "chicken-and-egg deadlock"). markPageLeft() silently returned for a
+       player the FSM had never met - a seat taken since boot at a table that
+       has not dealt (registerPlayer runs at the deal), which is exactly the
+       quiet table where an abandoned seat matters most. The beacon was
+       answered {tracked: true} and nothing was tracked. Only a SEATED player
+       is registered; a spectator's beacon is still a no-op. */
+    this.registerSeatedPlayerOnDemand(userId);
     this.disconnectEngine.markPageLeft(this.tableId, userId);
   }
 
@@ -1069,7 +1099,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // not the player leaving — their HTTP heartbeat is a second transport, and
     // concluding on the first one alone fired a disconnect banner, a sound and
     // a haptic buzz at players who never went anywhere.
+    // 2026-09-04: registered on demand for the same reason as heartbeat() -
+    // the socket of a seat taken since boot at a quiet table closing was
+    // invisible to the FSM, so the seat could never become MISSING.
+    this.registerSeatedPlayerOnDemand(userId);
     this.disconnectEngine.markTransportGone(this.tableId, userId);
+  }
+
+  /**
+   * Register a player with the presence FSM if - and only if - they hold a
+   * seat at this table. The FSM normally meets a player at the deal
+   * (registerPlayer in dealHand); every signal that can arrive BEFORE a deal
+   * (heartbeat, socket close, /away, /sitout) routes through here so a quiet
+   * table tracks its seats the way a dealing one does. Idempotent:
+   * registerPlayer is a no-op for a known key.
+   */
+  protected registerSeatedPlayerOnDemand(userId: string): void {
+    if (this.seatedPlayers.some((p) => p.user_id === userId)) {
+      this.disconnectEngine.registerPlayer(this.tableId, userId);
+    }
   }
 
   /**
@@ -1484,11 +1532,33 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (this.timeBankActivatedThisTurn || this.timeBankEngine.isArmed(this.tableId, userId)) {
         this.timeBankEngine.playerActed(this.tableId, userId);
       }
+      // ── THE CLOCK STARTS BEFORE THE ACTION IS APPLIED (2026-09-05) ────
+      //
+      // It used to start AFTER this call, and that made
+      // poker_act_to_broadcast_ms measure the wrong thing entirely.
+      // performAction emits PLAYER_ACTION synchronously, whose handler calls
+      // broadcastCurrentState - so the broadcast for THIS action happened
+      // inside this call, observed the clock left armed by the PREVIOUS
+      // action, and recorded the gap between two actions. The published
+      // "median 808ms act-to-broadcast" was really the median interval
+      // between consecutive actions at a table, which is turn pacing and not
+      // latency at all.
+      //
+      // Armed here, the observation inside performAction measures what the
+      // name says: accepted -> every seat has it. Rejection disarms below,
+      // so a refused action cannot leave a live clock for the next broadcast
+      // to pick up.
+      const actClockWasArmed = this.lastActionAcceptedAtMs;
+      this.lastActionAcceptedAtMs = Date.now();
       const actionApplied = this.handController.performAction(
         seat,
         normalizedAction as any,
         amount
       );
+      if (!actionApplied) {
+        // Restore whatever was pending; this action contributed nothing.
+        this.lastActionAcceptedAtMs = actClockWasArmed;
+      }
       // SWEEP #4 FIX (2026-07-23): performAction returns false (it does NOT throw)
       // when the engine rejects an action the validator let through — most reachably
       // a `raise` that cannot legally reopen betting against a sub-full-raise all-in
@@ -1517,7 +1587,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // ── ADDITIVE observability (#5): actions-processed counter + act→broadcast timer start ──
       try {
         EngineMetrics.actionsTotal.inc(1, { table_id: this.tableId });
-        this.lastActionAcceptedAtMs = Date.now();
+        EngineMetrics.actionsFleetTotal.inc(1, {
+          audience: this.humansSeated() > 0 ? 'human' : 'horse',
+          format: this.tableFormat(),
+        });
+        // The act->broadcast clock is NOT armed here: by this line the
+        // broadcast for this action has already gone out (performAction
+        // drains PLAYER_ACTION synchronously). Arming here is what made the
+        // metric measure inter-action gaps. See the note at performAction.
       } catch {
         /* metrics must never affect gameplay */
       }
@@ -1883,7 +1960,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       canCheckForPreAction
     );
     if (!playerCanAct) {
-      // Player is disconnected or sitting out — DisconnectEngine will handle auto-action via callback
+      // Player is disconnected or sitting out — DisconnectEngine will handle
+      // auto-action via callback.
+      //
+      // 2026-09-04 (disconnect audit, item 1): PUBLISH THE CLOCK THAT IS
+      // REALLY RUNNING. The caller stamped the ordinary action_time deadline
+      // before invoking us, and the broadcast that follows this return read
+      // it - so every client drew a 15s ring for a seat the engine was about
+      // to act for in 350ms (sat out), or watched a 15s ring hit zero and
+      // then sat through the rest of a 30s countdown (disconnected). This
+      // runs synchronously before that broadcast (nothing above yields on
+      // this path), so the snapshot carries the deadline the engine holds.
+      const armed = this.disconnectEngine.armedAutoActionDeadlineMs(this.tableId, player.user_id);
+      if (armed > 0) {
+        const now = Date.now();
+        this.playerTurnStartTime = now;
+        this.playerTurnDuration = Math.max(0, (armed - now) / 1000);
+      }
       return;
     }
 
@@ -2050,6 +2143,15 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // AoF: tell the brain, instead of rewriting its answer afterwards. The
       // coercion below stays as the legality guarantee.
       allInOrFold: this.tableInfo?.all_in_or_fold === true,
+      // THE VPIP FLOOR (Dan 2026-09-04). A floored table stands a seat up
+      // after ten hands under the floor, horses included (10.5). The brain
+      // gets the floor and ITS OWN judged figure - the same numbers the
+      // eviction reads - and widens toward the floor like a regular would.
+      vpipFloor: this.vpipFloor(),
+      ownVpip: (() => {
+        const row = this.nitStatus.get(enginePlayer.user_id);
+        return row ? { hands: row.hands, vpip: row.vpip } : undefined;
+      })(),
       // V18 STRADDLE (2026-08-26): straddle posts are not ActionRecords, so
       // a straddled pot's preflop currentBet (2xBB) with an empty history
       // read as an OPEN RAISE and the fleet folded to dead money. Tell the
@@ -2305,7 +2407,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // froze with no clock", Turns.ts SWEEP #4); the horse path was missed.
       // Check the boolean and degrade the same way a rejected human action does:
       // check if free, else fold. A seat must never be left unacted.
+      // Same clock rule as the human path (2026-09-05): armed BEFORE the
+      // action, because the broadcast happens inside performAction.
       let applied = false;
+      const horseClockWasArmed = this.lastActionAcceptedAtMs;
+      this.lastActionAcceptedAtMs = Date.now();
       try {
         applied = handControllerRef.performAction(seat, action as any, amount);
       } catch (err) {
@@ -2322,7 +2428,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             ' - falling back to check/fold'
         );
         try {
-          // Bible V8 §1.7.4 preferCheckOverFold.
+          // Bible V8 §1.7.4 preferCheckOverFold. Re-arm: the rejected attempt
+          // above produced no broadcast, so the clock must start again for
+          // whichever of these two lands.
+          this.lastActionAcceptedAtMs = Date.now();
           applied =
             handControllerRef.performAction(seat, 'check' as any) ||
             handControllerRef.performAction(seat, 'fold' as any);
@@ -2333,8 +2442,31 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // Unconditional markProgress() here reset watchdogTrips even when all
       // three actions were rejected, hiding a genuine stall for a full window.
       if (applied) {
+        // Realtime programme Phase 1 (2026-09-04): a horse's action is timed
+        // exactly like a human's. This path bypasses _handlePlayerActionInner,
+        // so before this the act-to-broadcast clock started only for HTTP
+        // actions and the horse series could never fill - which also meant the
+        // engine's own baseline latency was invisible whenever no human sat.
+        // Same instrument, same clock, same treatment (CLAUDE.md 10.5).
+        //
+        // AUDIT FIX (2026-09-05): this sat above the check/fold fallback, so a
+        // horse whose intended action was REJECTED still reached the felt via
+        // the degrade and was neither counted nor timed. It now keys on the
+        // same `applied` that markProgress() does - the one place that already
+        // means "this seat acted", whichever of the three attempts landed.
+        try {
+          EngineMetrics.actionsFleetTotal.inc(1, {
+            audience: this.humansSeated() > 0 ? 'human' : 'horse',
+            format: this.tableFormat(),
+          });
+        } catch {
+          /* metrics must never affect gameplay */
+        }
         this.markProgress();
       } else {
+        // Nothing landed, so no broadcast carries this clock. Put back what
+        // was pending; a dead attempt must not become the next sample.
+        this.lastActionAcceptedAtMs = horseClockWasArmed;
         reportError(
           new Error(
             'Horse seat ' + seat + ' could not be acted - leaving stall visible to watchdog'

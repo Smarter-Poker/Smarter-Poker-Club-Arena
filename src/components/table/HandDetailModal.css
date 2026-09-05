@@ -1,61 +1,66 @@
-/* ═══════════════════════════════════════════════════════════════════════════════
-   HAND DETAIL MODAL — PokerBros-grammar hand breakdown (Dan 2026-08-21)
-   Dark panel, house-blue accents, mini playing cards, street sections, tab bar.
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-/* Dan 2026-08-23, verbatim: "REMOVE THE YELLOW AND PURPLE."
+/**
+ * Hand Detail Modal  #SMARTERCASINOREALISM
  *
- * The position badges (HJ/BTN/BB/UTG), the Pot header, the slider track and the
- * active tab pill were all gold (#f5c542 / #eab308), which is a colour that
- * exists nowhere else on smarter.poker — the modal read as a bolted-on
- * competitor screenshot sitting on top of a blue product.
+ * The dealer's hand-breakdown plate. Obsidian and gunmetal structure, chrome
+ * type, restrained broadcast blue for the active control, brass only for what
+ * is the viewer's own. Rajdhani display figures, monospace eyebrows, Inter
+ * body. Light mode is the same hierarchy in brushed silver.
  *
- * The palette below comes from src/styles/club-engine.css, which main.tsx
- * imports globally and is therefore the only token sheet that actually resolves
- * at the table. globals.css (--royal-blue) and design-system.css (--fb-blue)
- * are NOT in the table's import chain: naming them here would resolve to the
- * fallback every time and only look tokenised in the diff. #1877F2 is the house
- * accent every other table modal already uses; it is declared ONCE on the modal
- * root below, with an -rgb twin so the translucent tints never repeat the
- * literal hex. */
+ * Geometry (Dan 2026-08-27): a side panel filling three quarters of the WIDTH
+ * on desktop; on a phone a three-quarter-HEIGHT bottom sheet anchored to the
+ * bottom so the top quarter is a tappable backdrop and the header is nowhere
+ * near the status bar. Both pay the top inset, and the installed-app floor at
+ * the foot of the file makes that impossible to lose.
+ *
+ * No hover effects (tests/no-hover-effects.law.test.ts). Motion scales with
+ * --animation-speed and collapses under prefers-reduced-motion.
+ */
 
-/* Dan 2026-08-23: "when you click previous hands it's not displaying right, it
-   should open as a 3/4 screen popup left to right."
-
-   It was a 480px column centred in the viewport — a phone sheet shown on a
-   desktop table, so the street rows wrapped into a tall ribbon and the board
-   cards, action chips and pot all fought for the same narrow gutter. It now
-   fills three quarters of the width and slides in from the left, which is also
-   what makes the two-column body below possible. The 480px shape is kept as
-   the floor for real phones, where three quarters of 375px is unreadable. */
 .hdm-overlay {
   position: fixed;
   inset: 0;
   z-index: 1600;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(2, 4, 7, 0.66);
   display: flex;
   align-items: stretch;
   justify-content: flex-start;
 }
 
 .hdm-panel {
-  --hdm-accent: #1877f2;
-  --hdm-accent-rgb: 24, 119, 242;
+  --hdm-void: #030609;
+  --hdm-black: #080d12;
+  --hdm-panel: #0c1118;
+  --hdm-panel-raised: #111823;
+  --hdm-gunmetal: #26333d;
+  --hdm-chrome: #dce8f0;
+  --hdm-steel: #b9cad7;
+  --hdm-blue: #3aa8ff;
+  --hdm-blue-hot: #8ad2ff;
+  --hdm-brass: #d6ad52;
+  --hdm-muted: #8391a1;
+  --hdm-up: #3fb950;
+  --hdm-down: #ff6b6b;
+  --hdm-line: rgba(185, 202, 215, 0.12);
+  --hdm-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  --hdm-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  --hdm-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
   display: flex;
   flex-direction: column;
   width: 75vw;
   min-width: min(480px, 100vw);
   max-width: 100vw;
   height: 100%;
-  background: linear-gradient(
-    180deg,
-    var(--club-surface, #111318) 0%,
-    var(--club-black, #050507) 100%
-  );
-  border-right: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
-  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.5);
-  color: var(--text-primary, #ffffff);
-  animation: hdmSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--hdm-chrome);
+  font-family: var(--hdm-body);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(58, 168, 255, 0.08), transparent 30rem),
+    linear-gradient(180deg, var(--hdm-black) 0%, var(--hdm-void) 70%, #020304 100%);
+  border-right: 1px solid var(--hdm-gunmetal);
+  box-shadow:
+    16px 0 40px rgba(0, 0, 0, 0.55),
+    inset -1px 0 0 rgba(185, 202, 215, 0.1);
+  animation: hdmSlideIn calc(0.24s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes hdmSlideIn {
@@ -80,9 +85,7 @@
   }
 }
 
-/* Grab handle — the affordance that says "this drags". Shown only where the
-   panel IS a sheet; the component wires the pointer drag (past 100px closes,
-   the same threshold common/BottomSheet uses). */
+/* Grab handle, shown only where the panel IS a sheet. */
 .hdm-grab {
   display: none;
   justify-content: center;
@@ -93,441 +96,440 @@
 }
 
 .hdm-grab span {
-  width: 36px;
+  width: 40px;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(185, 202, 215, 0.28);
 }
 
-/* With real width available, the streets read as two columns instead of one
-   very long scroll, so a whole hand is visible without scrolling at all. */
-@media (min-width: 900px) {
-  .hdm-body {
-    column-count: 2;
-    column-gap: 18px;
-  }
-
-  .hdm-street {
-    break-inside: avoid;
-    -webkit-column-break-inside: avoid;
-  }
-}
-
-/* ── Header ──
-   The base panel is full height from top: 0, so it pays the top inset here
-   too — a landscape phone is wider than 640px and gets the side-panel
-   presentation, notch and all. The two blocks at the foot of this file layer
-   the phone-sheet and installed-app rules on top, in that order. */
+/* ── Header: machined plate ─────────────────────────────────────────────── */
 .hdm-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 6px;
+  gap: 12px;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 8px;
+  background: linear-gradient(180deg, rgba(185, 202, 215, 0.06), transparent 70%);
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.14);
 }
 
-/* ── Phones: a three-quarter-height bottom sheet ────────────────────────────
-   Dan 2026-08-27, verbatim: "the previous hand table when opened should only
-   be 3/4 page, and there needs to be the padding on the top like there is on
-   all Club Arena pages. You can't click the X. Also when it's 3/4 page you
-   should be able to click off to close as well."
+.hdm-header__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 
-   It took the whole screen: `width: 100vw; height: 100%` from `top: 0`. Two
-   consequences, both reported as one bug.
-
-   1. THE X WAS UNREACHABLE. Under viewport-fit=cover the first row of a
-      full-height fixed panel draws under the notch and the status bar, and
-      .hdm-header paid no top inset at all.
-   2. CLICKING OFF DID NOTHING. The overlay has always had onClick={onClose}
-      with the panel stopping the bubble — but a panel covering 100% of the
-      overlay leaves no backdrop to click. The gesture was wired to a target
-      that did not exist.
-
-   Three quarters of the HEIGHT, anchored to the bottom, fixes both: the top
-   quarter is backdrop you can actually hit, and the sheet's own header is
-   nowhere near the status bar. The desktop presentation (a side panel filling
-   three quarters of the WIDTH) is unchanged.
-
-   POSITION IN THE FILE IS LOAD-BEARING: this block must stay AFTER the
-   .hdm-header rule above, because that rule sets a `padding` SHORTHAND and a
-   shorthand resets padding-top. Above it, the header rule here would be dead. */
-@media (max-width: 640px) {
-  .hdm-overlay {
-    align-items: flex-end;
-    justify-content: stretch;
-  }
-
-  .hdm-panel {
-    width: 100vw;
-    min-width: 0;
-    height: 75vh;
-    /* dvh where it exists: 75vh of a browser's *largest* viewport can sit
-       under a collapsing URL bar. */
-    height: 75dvh;
-    border-right: none;
-    border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
-    border-radius: 18px 18px 0 0;
-    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
-    animation: hdmSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .hdm-grab {
-    display: flex;
-  }
-
-  /* The canonical Club Arena sheet-header rule (GameLobbyPanel.css). */
-  .hdm-header {
-    padding-top: calc(12px + env(safe-area-inset-top, 0px));
-  }
+.hdm-eyebrow {
+  font-family: var(--hdm-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--hdm-blue);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hdm-title {
-  font-size: 1rem;
-  font-weight: 800;
+  font-family: var(--hdm-display);
+  font-size: 1.2rem;
+  font-weight: 700;
   letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .hdm-header__actions {
   display: flex;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .hdm-icon-btn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--hdm-accent);
+  border-radius: 4px;
+  border: 1px solid var(--hdm-gunmetal);
+  background: linear-gradient(180deg, var(--hdm-panel-raised), var(--hdm-panel));
+  color: var(--hdm-steel);
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
+}
+
+.hdm-icon-btn:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.hdm-icon-btn:focus-visible {
+  outline: 2px solid var(--hdm-blue);
+  outline-offset: 2px;
 }
 
 .hdm-subheader {
   display: flex;
+  align-items: center;
   gap: 12px;
   padding: 0 14px 10px;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.55);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  font-family: var(--hdm-mono);
+  font-size: 11px;
+  color: var(--hdm-muted);
+  border-bottom: 1px solid var(--hdm-gunmetal);
+  font-variant-numeric: tabular-nums;
+}
+
+.hdm-variant {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(58, 168, 255, 0.35);
+  background: rgba(58, 168, 255, 0.1);
+  color: var(--hdm-blue-hot);
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .hdm-sn {
   margin-left: auto;
+  color: var(--hdm-blue);
 }
 
-/* ── Body ── */
+/* ── Body ───────────────────────────────────────────────────────────────── */
 .hdm-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 12px 16px;
+  padding: 10px 12px 16px;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Street section */
-.hdm-street {
-  margin-top: 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  overflow: hidden;
+.hdm-body:focus-visible {
+  outline: 2px solid var(--hdm-blue);
+  outline-offset: -2px;
 }
 
-.hdm-street__head {
+/* With real width, the shared rundown's streets read as two columns. */
+@media (min-width: 900px) {
+  .hdm-body .hdv {
+    display: block;
+    column-count: 2;
+    column-gap: 18px;
+  }
+
+  .hdm-body .hdv > * {
+    break-inside: avoid;
+    -webkit-column-break-inside: avoid;
+    margin-bottom: 8px;
+  }
+}
+
+.hdm-section-head {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #cfd3dd;
-}
-
-/* The street's own label. Weight and colour come from the head; what the label
-   needs of its own is a refusal to shrink, so a long one ("Run It Twice") keeps
-   its width when the board cards beside it are wide, and the pot on the far
-   right stays where the eye expects it. */
-.hdm-street__name {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  letter-spacing: 0.01em;
-}
-
-.hdm-street__pot {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.6);
-  font-weight: 600;
-}
-
-/* Action row */
-.hdm-row {
-  display: flex;
-  align-items: center;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 8px;
-  padding: 5px 10px;
-  font-size: 0.8rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 10px 4px 6px;
+  font-family: var(--hdm-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hdm-steel);
 }
 
-.hdm-row--hero {
-  background: rgba(var(--hdm-accent-rgb), 0.1);
+.hdm-section-count {
+  color: var(--hdm-muted);
+  letter-spacing: 0.08em;
 }
 
-/* Position badge (HJ / BTN / BB / UTG) — was solid gold. */
-.hdm-pos {
-  min-width: 34px;
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: var(--hdm-accent);
-  color: var(--pure-white, #ffffff);
-  font-size: 0.62rem;
-  font-weight: 800;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.hdm-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-
-.hdm-name--hero {
-  color: var(--hdm-accent);
-}
-
-.hdm-action {
-  padding: 1px 8px;
-  border-radius: 5px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: lowercase;
-  background: rgba(255, 255, 255, 0.1);
-  color: #dfe3ec;
-  flex-shrink: 0;
-}
-
-.hdm-action--fold {
-  background: rgba(107, 114, 128, 0.35);
-  color: #cbd0da;
-}
-.hdm-action--check {
-  background: rgba(63, 185, 80, 0.25);
-  color: #4dc660;
-}
-.hdm-action--call {
-  background: rgba(63, 185, 80, 0.3);
-  color: #4dc660;
-}
-/* Aggression chip — was amber. Matches getActionColor in HandHistoryPanel.tsx. */
-.hdm-action--bet,
-.hdm-action--raise {
-  background: rgba(var(--hdm-accent-rgb), 0.28);
-  color: #a8c8ff;
-}
-.hdm-action--allin {
-  background: rgba(239, 68, 68, 0.35);
-  color: #ff9d9d;
-}
-
-.hdm-amount {
-  min-width: 52px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  color: #ffffff;
-}
-
-.hdm-pot {
-  min-width: 56px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-/* Pot line */
+/* Pot line at the top of the summary */
 .hdm-potline {
   display: flex;
-  justify-content: space-between;
-  padding: 8px 12px;
-  margin-top: 10px;
-  border-radius: 10px;
-  background: rgba(var(--hdm-accent-rgb), 0.1);
-  border: 1px solid rgba(var(--hdm-accent-rgb), 0.28);
-  font-size: 0.82rem;
-  font-weight: 800;
-  color: var(--hdm-accent);
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hdm-line);
+  border-radius: 4px;
+  background: var(--hdm-panel);
+  font-variant-numeric: tabular-nums;
 }
 
-.hdm-potline--top {
-  justify-content: flex-end;
+.hdm-potline__label {
+  font-family: var(--hdm-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hdm-muted);
+}
+
+.hdm-potline__pots {
+  display: flex;
+  gap: 12px;
+  font-family: var(--hdm-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--hdm-chrome);
+}
+
+.hdm-potline__drop {
+  margin-left: auto;
+  font-family: var(--hdm-mono);
+  font-size: 10px;
+  color: var(--hdm-muted);
 }
 
 .hdm-empty {
-  padding: 20px 12px;
+  padding: 40px 24px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 0.82rem;
+  font-family: var(--hdm-display);
+  font-size: 15px;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+  color: var(--hdm-muted);
 }
 
-/* ── Mini cards ── */
-.hdm-cards {
-  display: inline-flex;
-  gap: 3px;
+.hdm-empty--inline {
+  padding: 18px 12px;
 }
 
-.hdm-card {
-  display: inline-flex;
-  flex-direction: column;
+/* ── Boards ─────────────────────────────────────────────────────────────── */
+.hdm-boards {
+  margin-top: 6px;
+}
+
+.hdm-board {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 32px;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--hdm-line);
   border-radius: 4px;
-  background: #f6f6f4;
-  color: #17181c;
-  line-height: 1;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  background: var(--hdm-panel);
+  margin-bottom: 4px;
 }
 
-.hdm-card--red {
-  color: #d0242b;
-}
-
-.hdm-card--back {
-  background: linear-gradient(
-    135deg,
-    var(--club-card, #22262f) 0%,
-    var(--club-elevated, #1a1d24) 100%
-  );
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-/* Card backs plus the reason they are backs. Two grey rectangles alone read as
-   a load failure, which is exactly how this screen was reported. */
-.hdm-hidden {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hdm-notshown {
-  font-size: 0.6rem;
-  font-weight: 700;
+.hdm-board__badge {
+  flex-shrink: 0;
+  min-width: 52px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(58, 168, 255, 0.35);
+  background: rgba(58, 168, 255, 0.1);
+  color: var(--hdm-blue-hot);
+  font-family: var(--hdm-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text-disabled, rgba(255, 255, 255, 0.3));
-  white-space: nowrap;
+  text-align: center;
 }
 
-.hdm-card__rank {
-  font-size: 0.72rem;
-  font-weight: 800;
-}
-
-.hdm-card__suit {
-  font-size: 0.66rem;
-  margin-top: 1px;
-}
-
-/* ── Showdown / summary rows ── */
-.hdm-showdown {
+.hdm-board__cards {
   display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+/* Cards every run shares recede; the divergence is what reads. */
+.hdm-board__cards .hdm-card--shared {
+  opacity: 0.45;
+  filter: grayscale(0.4);
+}
+
+/* ── Showdown rows ──────────────────────────────────────────────────────── */
+.hdm-showdown,
+.hdm-yours {
+  margin-top: 6px;
+}
+
+.hdm-sd {
+  display: grid;
+  grid-template-columns: minmax(84px, 1.1fr) minmax(0, 2fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   padding: 8px 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  margin-bottom: 4px;
+  border: 1px solid var(--hdm-line);
+  border-radius: 4px;
+  background: var(--hdm-panel);
 }
 
-.hdm-showdown--big {
-  margin-top: 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 10px 12px;
+.hdm-sd.is-winner {
+  border-color: rgba(63, 185, 80, 0.4);
+  box-shadow: inset 3px 0 0 var(--hdm-up);
 }
 
-.hdm-showdown__who {
+.hdm-sd.is-low {
+  background: rgba(58, 168, 255, 0.05);
+}
+
+.hdm-sd.is-you .hdm-sd__name {
+  color: var(--hdm-brass);
+}
+
+.hdm-sd__who {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 84px;
-}
-
-.hdm-showdown__hand {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  gap: 2px;
   min-width: 0;
 }
 
-.hdm-handname {
-  font-size: 0.76rem;
+.hdm-sd__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--hdm-display);
+  font-size: 15px;
   font-weight: 700;
-  color: #cfd3dd;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--hdm-chrome);
+  line-height: 1.1;
+  word-break: break-word;
 }
 
-/* Gross chips taken from the pot, sitting beside the net. Both are labelled:
-   an unlabelled 24 next to an unlabelled +12 is how one hand came to look like
-   two different hands across the two history surfaces. */
-.hdm-collected {
-  font-variant-numeric: tabular-nums;
+.hdm-sd__pos {
+  font-family: var(--hdm-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--hdm-muted);
+}
+
+.hdm-tag {
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--hdm-mono);
+  font-size: 8px;
   font-weight: 700;
-  font-size: 0.76rem;
-  color: var(--success-green, #3fb950);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 
-.hdm-net {
+.hdm-tag--low {
+  background: rgba(58, 168, 255, 0.18);
+  color: var(--hdm-blue-hot);
+}
+
+.hdm-tag--private {
+  background: rgba(214, 173, 82, 0.16);
+  color: var(--hdm-brass);
+}
+
+.hdm-sd__cards {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hdm-sd__cards .hdm-idle {
+  opacity: 0.4;
+  filter: grayscale(0.5);
+}
+
+.hdm-sd__cards .hdm-plays {
+  opacity: 1;
+}
+
+.hdm-sd__cards .hdm-private,
+.hdm-sd__cards .card-image.hdm-private {
+  outline: 1px dashed rgba(214, 173, 82, 0.6);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+.hdm-sd__handname {
+  margin-left: 4px;
+  font-family: var(--hdm-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--hdm-steel);
+}
+
+.hdm-sd__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.hdm-sd__collected {
+  font-family: var(--hdm-mono);
+  font-size: 10px;
+  color: var(--hdm-muted);
   font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.7);
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
-.hdm-net--win {
-  color: var(--success-green, #3fb950);
+.hdm-sd__net {
+  font-family: var(--hdm-display);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--hdm-steel);
+  min-height: 1em;
 }
 
-.hdm-net--loss {
-  color: var(--danger-red, #ff4757);
+.hdm-sd__net.is-up {
+  color: var(--hdm-up);
 }
 
-/* ── Hand navigator ── */
+.hdm-sd__net.is-down {
+  color: var(--hdm-down);
+}
+
+.hdm-sd__net.is-blank {
+  color: transparent;
+}
+
+.hdm-sd__pot {
+  font-family: var(--hdm-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hdm-muted);
+}
+
+/* ── Navigator: oldest to newest, newest at the right ───────────────────── */
 .hdm-nav {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--hdm-gunmetal);
+  background: var(--hdm-panel);
 }
 
 .hdm-nav__arrow {
-  background: none;
-  border: none;
-  color: var(--hdm-accent);
-  font-size: 1rem;
+  border: 1px solid var(--hdm-gunmetal);
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--hdm-panel-raised), var(--hdm-panel));
+  color: var(--hdm-blue);
+  font-size: 0.9rem;
   cursor: pointer;
-  padding: 4px 6px;
+  padding: 4px 10px;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
+}
+
+.hdm-nav__arrow:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.hdm-nav__arrow:focus-visible {
+  outline: 2px solid var(--hdm-blue);
+  outline-offset: 2px;
 }
 
 .hdm-nav__arrow:disabled {
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--hdm-muted);
+  opacity: 0.45;
   cursor: default;
 }
 
@@ -540,206 +542,203 @@
 }
 
 .hdm-nav__label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.65);
+  font-family: var(--hdm-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--hdm-steel);
+  font-variant-numeric: tabular-nums;
 }
 
-/* Bottom slider track — was gold. */
 .hdm-nav__track input[type='range'] {
   width: 100%;
-  accent-color: var(--hdm-accent);
+  accent-color: var(--hdm-blue);
 }
 
-/* ── Tabs ── */
+/* ── Tabs: two machined keys ────────────────────────────────────────────── */
 .hdm-tabs {
   display: flex;
   gap: 8px;
   padding: 8px 14px calc(10px + env(safe-area-inset-bottom, 0));
+  background: var(--hdm-panel);
 }
 
 .hdm-tab {
   flex: 1;
-  padding: 9px 0;
-  border-radius: 999px;
-  font-size: 0.85rem;
-  font-weight: 800;
-  cursor: pointer;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #cfd3dd;
-}
-
-/* Active "Hand Detail" / "Hand Summary" pill — was a gold gradient. */
-.hdm-tab--active {
-  background: var(--hdm-accent);
-  border-color: var(--hdm-accent);
-  color: var(--pure-white, #ffffff);
-}
-
-/* Empty state — see the "no completed hands yet" branch in the component. */
-.hdm-empty {
-  padding: 40px 24px;
-  text-align: center;
-  font-size: 0.86rem;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-/* ── Run It Twice ───────────────────────────────────────────────────────────
-   Same visual grammar as the replay's RUN n badge (HandReplay.tsx). */
-.hdm-runs {
-  border-color: rgba(var(--hdm-accent-rgb), 0.28);
-  background: rgba(var(--hdm-accent-rgb), 0.08);
-}
-
-.hdm-runs__count {
-  margin-left: auto;
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.07em;
+  padding: 10px 0;
+  border-radius: 4px;
+  font-family: var(--hdm-display);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--hdm-accent);
+  cursor: pointer;
+  background: linear-gradient(180deg, var(--hdm-panel-raised), var(--hdm-panel));
+  border: 1px solid var(--hdm-gunmetal);
+  color: var(--hdm-steel);
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
 }
 
-.hdm-run {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+.hdm-tab:active {
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
-.hdm-run__badge {
-  min-width: 46px;
-  padding: 2px 6px;
-  border-radius: 5px;
-  background: var(--hdm-accent);
-  color: var(--pure-white, #ffffff);
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-align: center;
-  flex-shrink: 0;
+.hdm-tab:focus-visible {
+  outline: 2px solid var(--hdm-blue);
+  outline-offset: 2px;
 }
 
-/* Cards every run shares: the board as it stood when the players agreed to run
-   it again. Dimmed so the divergence is what the eye lands on. */
-.hdm-card--shared {
-  opacity: 0.42;
+.hdm-tab--active {
+  background: linear-gradient(180deg, #1f7fd6, #145ea3);
+  border-color: rgba(58, 168, 255, 0.6);
+  color: #f4f9ff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 0 0 1px rgba(58, 168, 255, 0.15);
 }
 
-.hdm-runs__note {
-  padding: 4px 10px 8px;
-  font-size: 0.66rem;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-/* ── Loading, and the honest fallback ──────────────────────────────────────
-   The detail tab used to render the LEGACY street walk while the raw row was
-   still being fetched — the one whose figures this file documents as wrong —
-   and then swap silently. A skeleton says "not yet"; the notice below says
-   "these numbers are the reduced ones" rather than presenting them as equal. */
-.hdm-skeletons {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 0;
-}
-
-.hdm-skeleton {
-  height: 28px;
-  border-radius: 8px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200% 100%;
-  animation: hdm-shimmer 1.3s infinite;
-}
-
-@keyframes hdm-shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-/* Both animations named together: the sheet's slide-in (the feature branch's
-   .hdm-panel) and the skeleton's shimmer. Each side of the merge had listed
-   only its own selector, so keeping either alone would have left one animation
-   still running for a reader who asked for reduced motion. */
-@media (prefers-reduced-motion: reduce) {
-  .hdm-panel,
-  .hdm-skeleton {
-    animation: none;
-  }
-}
-
-.hdm-degraded {
-  margin-bottom: 8px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 149, 0, 0.3);
-  background: rgba(255, 149, 0, 0.08);
-  color: #ff9500;
-  font-size: 10.5px;
-  text-align: center;
-}
-
-/* PWA GUARANTEE. In an installed app the page draws under the status bar, and
-   on some devices env(safe-area-inset-top) resolves to 0 — so the env()
-   padding above silently vanishes and the close button goes back under the
-   clock. The floor makes that impossible.
-
-   LAST IN THE FILE ON PURPOSE. .hdm-header's own rule sets a `padding`
-   shorthand and a shorthand RESETS padding-top; equal specificity means source
-   order decides. Nothing that touches .hdm-header padding may be added below
-   this block. */
-@media (display-mode: standalone), (display-mode: fullscreen) {
-  .hdm-header {
-    padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
-  }
-}
-
-/* POLISH 1 (Dan 2026-08-30): "your rake on this hand" — weighted contributed
-   rake made per-player rake a real, cent-exact number, so the player can see
-   their own. Additive block in HandDetailView's footer slot; no existing rule
-   is modified and nothing animated is touched. */
+/* ── Your rake on this hand (Dan 2026-08-30) ────────────────────────────── */
 .hdm-rake-share {
   margin-top: 12px;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: var(--hdm-panel, #0c1118);
+  border: 1px solid var(--hdm-line, rgba(185, 202, 215, 0.12));
 }
+
 .hdm-rake-share__title {
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
+  font-family: var(--hdm-mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  opacity: 0.7;
+  color: var(--hdm-muted, #8391a1);
   margin-bottom: 6px;
 }
+
 .hdm-rake-share__rows {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
+
 .hdm-rake-share__row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
   font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
 }
+
 .hdm-rake-share__row span {
-  opacity: 0.75;
+  color: var(--hdm-steel, #b9cad7);
 }
+
 .hdm-rake-share__row.is-primary strong {
-  color: #f59e0b;
+  color: var(--hdm-brass, #d6ad52);
+}
+
+/* ── Phones: a three-quarter-height bottom sheet ────────────────────────── */
+@media (max-width: 640px) {
+  .hdm-overlay {
+    align-items: flex-end;
+    justify-content: stretch;
+  }
+
+  .hdm-panel {
+    width: 100vw;
+    min-width: 0;
+    height: 75vh;
+    height: 75dvh;
+    border-right: none;
+    border-top: 1px solid var(--hdm-gunmetal);
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.6);
+    animation: hdmSlideUp calc(0.24s * var(--animation-speed, 1)) cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .hdm-grab {
+    display: flex;
+  }
+
+  .hdm-header {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  }
+
+  .hdm-sd {
+    grid-template-columns: minmax(72px, 1fr) minmax(0, 1.6fr) auto;
+    gap: 6px 8px;
+  }
+
+  .hdm-potline__pots {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 380px) {
+  .hdm-sd {
+    grid-template-columns: 1fr auto;
+  }
+
+  .hdm-sd__cards {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ── Light mode: brushed silver, same hierarchy ─────────────────────────── */
+[data-theme='light'] .hdm-overlay {
+  background: rgba(20, 35, 50, 0.4);
+}
+
+[data-theme='light'] .hdm-panel {
+  --hdm-void: #d9e0e6;
+  --hdm-black: #e6ebef;
+  --hdm-panel: #f1f4f7;
+  --hdm-panel-raised: #ffffff;
+  --hdm-gunmetal: #aab8c3;
+  --hdm-chrome: #0d161d;
+  --hdm-steel: #3f5261;
+  --hdm-blue: #146bb3;
+  --hdm-blue-hot: #0f5a99;
+  --hdm-brass: #8a6a24;
+  --hdm-muted: #5f7181;
+  --hdm-up: #4dc660;
+  --hdm-down: #c0392b;
+  --hdm-line: rgba(20, 35, 50, 0.14);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(20, 107, 179, 0.08), transparent 30rem),
+    linear-gradient(180deg, #eef2f5 0%, var(--hdm-void) 100%);
+  box-shadow:
+    16px 0 40px rgba(20, 35, 50, 0.18),
+    inset -1px 0 0 #fff;
+}
+
+[data-theme='light'] .hdm-header {
+  background: linear-gradient(180deg, #fff, transparent 70%);
+  box-shadow: inset 0 1px 0 #fff;
+}
+
+[data-theme='light'] .hdm-variant,
+[data-theme='light'] .hdm-board__badge {
+  background: rgba(20, 107, 179, 0.08);
+  border-color: rgba(20, 107, 179, 0.3);
+}
+
+[data-theme='light'] .hdm-tab--active {
+  background: linear-gradient(180deg, #2a8ae0, #1b6cb5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hdm-panel {
+    animation: none;
+  }
+}
+
+/* PWA GUARANTEE: last in the file on purpose. The header's own rule sets a
+   `padding` shorthand, and a shorthand resets padding-top; equal specificity
+   means source order decides. Nothing that pads .hdm-header may follow. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .hdm-header {
+    padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
+  }
 }

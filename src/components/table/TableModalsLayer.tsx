@@ -53,7 +53,7 @@ import RebuyModal from './RebuyModal';
 import TournamentBreakScreen from './TournamentBreakScreen';
 import TournamentAnnouncementOverlay from './TournamentAnnouncementOverlay';
 import TournamentWinnerOverlay from './TournamentWinnerOverlay';
-import HandHistoryPanel, { type HandRecord } from './HandHistoryPanel';
+import HandHistoryPanel, { type HandRecord, type HandHistoryLoadState } from './HandHistoryPanel';
 import { ConfettiCanvas } from './ConfettiCanvas';
 import { ParticleSystem } from './ParticleSystem';
 // ChipAnimationManager is inline in TablePage — imported via parent
@@ -187,7 +187,6 @@ export interface TableModalsLayerProps {
    *  no longer a countdown. */
   sitOutSince: number | null;
   onCloseSitOut: () => void;
-  onReturnFromSitOut: () => void;
 
   // Wait List Modal
   showWaitList: boolean;
@@ -294,7 +293,9 @@ export interface TableModalsLayerProps {
 
   // Cashier
   showCashier: boolean;
-  accountBalance: number;
+  /** null = unknown (a failed read), never 0. See BuyInModal. */
+  accountBalance: number | null;
+  onRetryAccountBalance?: () => void;
   cashoutMinBuyIn: number;
   /** @deprecated unused by this layer — see the note on boardStage */
   buyInProcessingRef: React.MutableRefObject<boolean>;
@@ -318,6 +319,7 @@ export interface TableModalsLayerProps {
    */
   bustRebuyProcessing: boolean;
   onCancelBustRebuy: () => void;
+  onRetryBustBalance: () => void;
   onConfirmBustRebuy: (amount: number) => Promise<void>;
 
   showProfileModal: boolean;
@@ -448,8 +450,11 @@ export interface TableModalsLayerProps {
   // Hand History Panel
   showHandHistory: boolean;
   handHistory: HandRecord[];
+  handHistoryState?: HandHistoryLoadState;
   onCloseHandHistory: () => void;
   onReplay?: (hand: HandRecord) => void;
+  /** Open the Hand Detail modal at the hand passed in. */
+  onOpenHandDetail?: (hand: HandRecord) => void;
 
   /* Session Summary props REMOVED (Phase 2 audit 2026-08-22): the in-table
      SessionSummary modal was dead code — `showSessionSummary` was never set
@@ -518,7 +523,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showSitOut,
     sitOutSince,
     onCloseSitOut,
-    onReturnFromSitOut,
     // Wait List
     showWaitList,
     waitListPlayers,
@@ -590,6 +594,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Cashier
     showCashier,
     accountBalance,
+    onRetryAccountBalance,
     cashoutMinBuyIn,
     onCloseCashier,
     onAddChips,
@@ -597,6 +602,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     bustRebuyOpen,
     bustWalletBalance,
     onCancelBustRebuy,
+    onRetryBustBalance,
     onConfirmBustRebuy,
     showProfileModal,
     onCloseProfileModal,
@@ -653,8 +659,10 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Hand History
     showHandHistory,
     handHistory,
+    handHistoryState,
     onCloseHandHistory,
     onReplay,
+    onOpenHandDetail,
     // Session HUD
     showSessionHUD,
     onCloseSessionHUD,
@@ -797,21 +805,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       <SitOutModal
         isOpen={showSitOut}
         onClose={onCloseSitOut}
-        /**
-         * 2026-08-20: this closed the modal FIRST and then fired a
-         * `.catch()`-guarded sit-in. `GameServerAPI.setSitOut` never throws —
-         * it resolves `{ success: false, error }` — so a refused sit-in was
-         * completely silent and the player was returned to a felt they were
-         * still sitting out of. Close only after the server agrees.
-         */
-        /* REPORTS THE INTENT; TablePage owns the request.
-           This used to issue its own `setSitOut(tableId, false)`, which made two
-           implementations of "sit back in" — and only the other one was behind
-           the in-flight guard, so the out -> in -> out race was still reachable
-           by alternating THIS button with the table menu's Sit Out. It also let
-           the two buttons' local cleanup and failure toasts drift apart, which
-           they had. `handleSitBackIn` is now the single path. */
-        onReturn={onReturnFromSitOut}
+        /* The modal no longer offers "I'm Back" (Dan 2026-09-04: one button,
+           on the footer bar - TablePage's `handleSitBackIn`). */
         /**
          * 2026-08-20: was `() => navigate('/')`. "Leave Table" navigated away
          * without ever leaving the table — no cash-out, no seat release. The
@@ -1089,7 +1084,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         tableName={tableName}
         minBuyIn={minBuyIn}
         maxBuyIn={maxBuyIn}
-        accountBalance={bustWalletBalance ?? 0}
+        /* NULL STAYS NULL, here too (Dan 2026-09-04). The 2026-08-27 fix
+           made TablePage keep "unknown" as null; this `?? 0` turned it back
+           into "you have nothing" one file later, and the bust rebuy read as
+           INSUFFICIENT BALANCE for a player holding 495k. */
+        accountBalance={bustWalletBalance}
+        onRetryBalance={onRetryBustBalance}
         bigBlind={safeBB(blinds)}
         countdown={undefined}
         onTopUp={onTopUpAccount}
@@ -1106,6 +1106,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         })()}
         maxBuyIn={maxBuyIn}
         accountBalance={accountBalance}
+        onRetryBalance={onRetryAccountBalance}
         bigBlind={safeBB(blinds)}
         cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
         countdown={buyInSecondsLeft ?? undefined}
@@ -1287,7 +1288,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         onClose={onCloseHandHistory}
         hands={handHistory}
         heroId={userId || ''}
+        loadState={handHistoryState}
         onReplay={onReplay}
+        onOpenDetail={onOpenHandDetail}
       />
 
       {/* Session Summary modal REMOVED (Phase 2 audit 2026-08-22). It could

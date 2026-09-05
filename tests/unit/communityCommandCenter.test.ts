@@ -22,17 +22,20 @@ describe('Community Command Center information architecture', () => {
   });
 
   it('queries independent community indexes concurrently and exposes failures', () => {
-    expect(SEARCH).toContain('Promise.allSettled(tasks)');
+    expect(SEARCH).toContain('Promise.allSettled([');
     expect(SEARCH).toContain('setSearchError(');
     expect(SEARCH).toContain('role="alert"');
     expect(SEARCH).not.toContain('setRecentSearches((prev)');
   });
 
-  it('resolves Club Arena handles and falls back to a recent snapshot on total failure', () => {
-    expect(SEARCH).toContain('PLAYER_NAME_COLUMNS');
-    expect(SEARCH).toContain("playerDisplayName(player, 'arena')");
+  it('searches players through the privacy-aware RPC and falls back to a recent snapshot on total failure', () => {
+    // 2026-09-05: the raw `ilike` on profiles is gone. fn_search_players owns
+    // fuzzy player matching AND the discoverable preference; the page must
+    // not re-implement either.
+    expect(SEARCH).toContain('PlayerSearchService.search({');
+    expect(SEARCH).not.toContain('PLAYER_NAME_COLUMNS');
     expect(SEARCH).toContain('readSearchCache(normalized, category)');
-    expect(SEARCH).toContain('writeSearchCache(normalized, category, liveResults)');
+    expect(SEARCH).toContain('writeSearchCache(normalized, category, next)');
     expect(SEARCH).toContain("searchFreshness === 'cached'");
   });
 
@@ -59,7 +62,7 @@ describe('Community Command Center information architecture', () => {
 
 describe('Community Command Center interaction contracts', () => {
   it('hands every player message to the canonical Messenger compose contract', () => {
-    expect(SEARCH).toContain('`/messages?compose=${result.id}`');
+    expect(SEARCH).toContain('`/messages?compose=${player.id}`');
     expect(FRIENDS).toContain('`/messages?compose=${friend.user_id}`');
     expect(SEARCH).not.toContain('handleMessagePlayer');
     expect(FRIENDS).not.toContain('/messages/new?userId=');
@@ -130,7 +133,7 @@ describe('#SmarterCasinoRealism community surfaces', () => {
   it('shares one cinematic network anchor and avoids glassmorphism', () => {
     const hero = read('src/components/community/CommunitySurfaceHeader.module.css');
     const heroComponent = read('src/components/community/CommunitySurfaceHeader.tsx');
-    const searchCss = read('src/pages/SearchPage.css');
+    const searchCss = read('src/pages/SearchPage.module.css');
     const friendsCss = read('src/pages/FriendsPage.css');
     const modalCss = read('src/components/social/FriendChallengeModal.css');
 

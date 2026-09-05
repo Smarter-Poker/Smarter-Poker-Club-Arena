@@ -27,7 +27,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "Poker engine unreachable on {{ $labels.instance }}"
+          summary: 'Poker engine unreachable on {{ $labels.instance }}'
           description: |
             pm2-metrics has been unreachable for >1 minute. This means either
             the pm2 process is dead, the node is down, or the metrics module
@@ -51,7 +51,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "Engine has played zero hands in the last 10 minutes"
+          summary: 'Engine has played zero hands in the last 10 minutes'
           description: |
             No hands played during peak hours. Likely the dealer tick is
             blocked. Check engine-01 logs and pm2 list.
@@ -66,7 +66,7 @@ groups:
           severity: warning
           component: engine
         annotations:
-          summary: "Active table count dropped >50% vs 1h baseline"
+          summary: 'Active table count dropped >50% vs 1h baseline'
           description: |
             {{ $labels.instance }} reports {{ $value }} tables. Baseline was
             much higher. Investigate lobby.promote failures.
@@ -75,18 +75,13 @@ groups:
     interval: 30s
     rules:
 
-
   - name: postgres-health
     interval: 30s
     rules:
 
-
-
   - name: vercel-health
     interval: 60s
     rules:
-
-
 
   - name: host-health
     interval: 30s
@@ -99,7 +94,7 @@ groups:
           severity: warning
           component: infra
         annotations:
-          summary: "Disk <10% free on {{ $labels.host }}"
+          summary: 'Disk <10% free on {{ $labels.host }}'
 
       - alert: HostCPUSaturated
         expr: |
@@ -109,7 +104,7 @@ groups:
           severity: warning
           component: infra
         annotations:
-          summary: "CPU >85% on {{ $labels.host }} for 10m"
+          summary: 'CPU >85% on {{ $labels.host }} for 10m'
 
       - alert: HostMemoryPressure
         expr: |
@@ -119,7 +114,7 @@ groups:
           severity: warning
           component: infra
         annotations:
-          summary: "Available memory <10% on {{ $labels.host }}"
+          summary: 'Available memory <10% on {{ $labels.host }}'
 
   # ── REPLICATION (2026-09-04) ────────────────────────────────────────────
   # The realtime replication slot was 136 MB behind and climbing, and nothing
@@ -143,9 +138,9 @@ groups:
           severity: warning
           component: database
         annotations:
-          summary: "Realtime slot {{ $labels.slot }} is >256MB behind"
-          description: "Logical decoding is not keeping up with WAL. This compounds: a lagging slot reads WAL from disk rather than memory. Players see it as stale lobbies and late seat updates."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'Realtime slot {{ $labels.slot }} is >256MB behind'
+          description: 'Logical decoding is not keeping up with WAL. This compounds: a lagging slot reads WAL from disk rather than memory. Players see it as stale lobbies and late seat updates.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       - alert: ReplicationSlotCriticallyBehind
         expr: |
@@ -155,9 +150,9 @@ groups:
           severity: critical
           component: database
         annotations:
-          summary: "Realtime slot {{ $labels.slot }} is >1GB behind"
-          description: "At this point the slot is pinning WAL on disk and the instance is at risk of filling it. Do not restart the consumer blind - read the runbook."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'Realtime slot {{ $labels.slot }} is >1GB behind'
+          description: 'At this point the slot is pinning WAL on disk and the instance is at risk of filling it. Do not restart the consumer blind - read the runbook.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       # An inactive slot advances not at all and pins every WAL segment behind
       # it. Guarded, because the engine's own restart inside the :55 break can
@@ -171,9 +166,9 @@ groups:
           severity: critical
           component: database
         annotations:
-          summary: "Replication slot {{ $labels.slot }} has no consumer"
-          description: "A slot with no consumer never advances and holds every WAL segment after it on disk."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'Replication slot {{ $labels.slot }} has no consumer'
+          description: 'A slot with no consumer never advances and holds every WAL segment after it on disk.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       # The collector itself. A gauge that stopped being collected reads as a
       # perfectly healthy slot, which is the failure this whole family exists
@@ -187,9 +182,9 @@ groups:
           severity: warning
           component: database
         annotations:
-          summary: "Replication gauges are stale ({{ $value }}s)"
-          description: "fn_replication_slot_metrics has not returned successfully in over 10 minutes. The lag numbers on the dashboard are last-known-good, not current."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'Replication gauges are stale ({{ $value }}s)'
+          description: 'fn_replication_slot_metrics has not returned successfully in over 10 minutes. The lag numbers on the dashboard are last-known-good, not current.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       # Zero slots is not a quiet database - this database has two logical
       # slots. Zero means the collector cannot see pg_replication_slots.
@@ -202,10 +197,343 @@ groups:
           severity: critical
           component: database
         annotations:
-          summary: "No replication slots visible"
-          description: "The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'No replication slots visible'
+          description: 'The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
+  # ── Action latency (Realtime programme Phase 1, 2026-09-04) ──────────────
+  # poker_act_to_broadcast_ms is the time from a player's action being
+  # accepted to the new state reaching every seat - the number that defines
+  # how a table FEELS. It had never been scraped in production (the per-table
+  # version is gated off for cardinality). Labelled audience=human|horse and
+  # format=cash|spin|hu_sng|mtt. The human series is what pages; a fleet-wide
+  # p95 would be a horse number. BOTH RULES GROUP BY format (Dan 2026-09-05:
+  # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
+  # each alert on their own p95 instead of hiding inside a cash average.
+  #
+  # ⚠ THE 2026-09-05 NUMBERS BELOW MEASURED THE WRONG THING, AND THESE
+  # THRESHOLDS INHERIT THAT. The clock was armed AFTER performAction, whose
+  # synchronous PLAYER_ACTION handler had already broadcast - so every sample
+  # was the interval between two consecutive actions (turn pacing), not
+  # action-to-broadcast latency. Fixed the same day by arming before the
+  # action. The p50 808ms / p95 1843ms / p99 3755ms below therefore describe
+  # PACING, and 3000/6000 are deliberately generous placeholders chosen from
+  # them. RE-DERIVE both once a day of true latency data exists: the real
+  # numbers will be far smaller, and thresholds this loose would miss a real
+  # regression. LAW 6 pins them against whatever the recorded baseline says,
+  # so update the baseline and the law together.
+  #
+  # THE THRESHOLDS COME FROM THE MEASUREMENT, NOT FROM A WISH (2026-09-05).
+  # The first version of these rules guessed 500ms/1500ms before any data
+  # existed. The first hour of real data says the fleet normally runs:
+  #     p50 808ms   p90 1541ms   p95 1843ms   p99 3755ms   (24.3 actions/s)
+  # so 500ms was below the MEDIAN and 1500ms below the normal p95 - both would
+  # have fired permanently and been muted within a day, which is the failure
+  # this programme keeps finding in other people's monitors. 3s is above the
+  # normal p95 and below the normal p99; 6s is unambiguous.
+  #
+  # AND A SINGLE ACTION CANNOT RAISE AN ALARM. The guard was `> 0`, so one
+  # human action in ten minutes produced a p95 from a sample of one - and on
+  # a platform where humans are rare (15 hours with a human seat in 14 days)
+  # that is a false-alarm generator. 0.05/s is ~30 actions in the window.
+  #
+  # The BASELINE ITSELF is worth attention and is not an alert: 808ms median
+  # from action to broadcast, while the event loop is healthy (p99 54ms,
+  # equity governor not throttling). That is structural pacing in the
+  # broadcast path, not CPU starvation, and it is Phase 2 work to characterise.
+  # Guarded by the hourly maintenance break (CLAUDE.md 13.6).
+  - name: action-latency
+    interval: 30s
+    rules:
+      - alert: ActionLatencyDegraded
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
+          ) > 3000
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0.05
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: '{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms over 10m'
+          description: |
+            A player's action is taking more than half a second to reach the
+            other seats, sustained. Compare against the last deploy; check
+            event-loop lag and DB write latency on engine-01.
+          runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
+
+      - alert: ActionLatencyCritical
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
+          ) > 6000
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0.05
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: '{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms - the table is unplayable'
+          description: |
+            More than 1.5 s from action to broadcast at p95. At this point
+            turn timers are visibly wrong and players are acting on stale
+            state. Treat as an outage.
+          runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
+
+  # ── RECOVERED FROM engine-01, 2026-09-05 ────────────────────────────────
+  # These two groups - NINE alerts, all of them about money and settlement -
+  # existed ONLY as a hand-written file on the monitoring box. They were in no
+  # repository, so nothing versioned them, nothing reviewed them, and nothing
+  # could restore them. Worse, they were a landmine: deploy.sh SYMLINKS the
+  # live alert-rules.yml to this file, so the first person to run it would
+  # have silently deleted every alert below - including the ones that watch
+  # for hands failing to settle and for money alerts going unread.
+  #
+  # Copied here verbatim from /opt/smarter-poker-monitoring/alert-rules.yml so
+  # this file is a SUPERSET of what is live and a deploy can only add. See
+  # docs/REALTIME-CONNECTIONS-PROGRAMME.md, "Found during Phase 1".
+
+  - name: settlement
+    interval: 30s
+    rules:
+      - alert: HandsAreFailingToSettle
+        expr: |
+          poker_settlement_failure_rate > 0.02
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          page: sms
+          component: money
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of hands are failing to settle'
+          description: 'fn_ca_settle_hand_stacks_absolute is refusing hands whole. Read ca_settlements.error_detail for the reason before changing anything. The 2026-09-04 cause was a BEFORE UPDATE trigger on table_seats that cancelled no-op writes, making a correct seat write look like a failed one.'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+
+      # Baseline before the incident was 0.0-0.2%. A rate that merely doubles
+      # is worth knowing about long before it reaches a quarter of all hands.
+      - alert: SettlementFailuresAboveBaseline
+        expr: |
+          poker_settlement_failure_rate > 0.005
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: 'Settlement failure rate {{ $value | humanizePercentage }}, above the 0.2% baseline'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+
+      # No hands settling at all is not a quiet table - this platform settles
+      # ~500 hands a minute. The failure-rate gauge is ABSENT in this state, so
+      # it must be alerted on separately or the silence reads as health.
+      - alert: NoHandsAreSettling
+        expr: |
+          poker_settlement_window_hands == 0
+          and poker_settlement_metrics_stale_seconds < 300
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: money
+        annotations:
+          summary: 'No hand has settled in five minutes'
+          description: 'The collector is fresh and reports zero terminal settlements. Either the engine has stopped dealing or settlement is failing before it reaches a terminal state.'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+
+      - alert: SettlementsStuckMidStateMachine
+        expr: |
+          poker_settlement_stuck > 50
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: '{{ $value }} settlements are neither final nor failed'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+
+      - alert: SettlementMetricsBlind
+        expr: |
+          poker_settlement_metrics_stale_seconds > 600
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: 'Settlement gauges are stale ({{ $value }}s)'
+          description: 'fn_settlement_health has not returned in over ten minutes. Whether hands are settling is currently unknown, and unknown is what thirteen hours of this looked like.'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+
+  # ── MONEY HEALTH (2026-09-04) ───────────────────────────────────────────
+  # Two findings from one day, the same failure at two layers.
+  #
+  # financial_alerts held 1,345 unresolved rows - 656 distinct conditions, the
+  # oldest fifteen days old - and nothing had ever reported that the table has
+  # contents. Every reconciler and guard on the platform writes there and it
+  # works perfectly; nobody was ever told.
+  #
+  # And aaa_skip_noop_update was attached to table_seats with no migration and
+  # no review, breaking 139,153 hand settlements 0.65 seconds later. RULE 2
+  # already forbade it; nothing enforced it, because an object created by raw
+  # SQL leaves no row in schema_migrations for the existing guard to find.
+  #
+  # Gauges from server/src/services/MoneyHealthMetrics.ts.
+  - name: money-health
+    interval: 60s
+    rules:
+      # Any value above zero is an unreviewed schema change on a chip path.
+      # No `for:` grace beyond one scrape - this is the alert whose absence
+      # cost thirteen hours.
+      - alert: UndeclaredTriggerOnAMoneyTable
+        expr: |
+          poker_money_undeclared_triggers > 0
+        for: 2m
+        labels:
+          severity: critical
+          page: sms
+          component: money
+        annotations:
+          summary: '{{ $value }} undeclared trigger(s) on a money or seat table'
+          description: 'A trigger is live on table_seats, club_members, wallets, chip_ledger, tournaments, tournament_players or ca_settlements with no row in ca_declared_money_triggers. Run SELECT * FROM fn_undeclared_money_triggers(). Either it is a legitimate change missing its declaration, or it is an unreviewed one - and the last unreviewed one broke a third of all hand settlements.'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
+
+      # Criticals nobody has looked at in a day. Deliberately NOT the raw
+      # unresolved count: a critical raised a minute ago is the system working.
+      - alert: MoneyAlertsGoingUnread
+        expr: |
+          poker_financial_alerts_stale_critical > 25
+        for: 30m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: '{{ $value }} critical money alerts open longer than 24h'
+          description: "financial_alerts is accumulating criticals nobody has resolved. A deep backlog is dangerous mainly because it hides a real one - on 2026-09-04 it was 1,345 rows deep and contained five 'player was never paid' alerts, all of which had in fact been paid within thirty minutes."
+          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
+
+      - alert: MoneyAlertBacklogGrowing
+        expr: |
+          poker_financial_alerts_unresolved > 2000
+        for: 1h
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: '{{ $value }} unresolved money alerts'
+          description: 'Above the 1,345 the backlog stood at when it was first measured. Check poker_financial_alerts_distinct_conditions - if the row count is climbing and the condition count is not, the table is duplicating rather than finding new problems.'
+          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
+
+      - alert: MoneyHealthBlind
+        expr: |
+          poker_money_health_stale_seconds > 600
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: 'Money-health gauges are stale ({{ $value }}s)'
+          description: 'Neither the alert backlog nor the undeclared-trigger check has returned in over ten minutes. poker_money_undeclared_triggers is ABSENT rather than 0 in this state, deliberately - a zero here would be an all-clear the collector has not earned.'
+          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
+
+  # ── Action latency (Realtime programme Phase 1, 2026-09-04) ──────────────
+  # poker_act_to_broadcast_ms is the time from a player's action being
+  # accepted to the new state reaching every seat - the number that defines
+  # how a table FEELS. It had never been scraped in production (the per-table
+  # version is gated off for cardinality). Labelled audience=human|horse and
+  # format=cash|spin|hu_sng|mtt. The human series is what pages; a fleet-wide
+  # p95 would be a horse number. BOTH RULES GROUP BY format (Dan 2026-09-05:
+  # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
+  # each alert on their own p95 instead of hiding inside a cash average.
+  #
+  # ⚠ THE 2026-09-05 NUMBERS BELOW MEASURED THE WRONG THING, AND THESE
+  # THRESHOLDS INHERIT THAT. The clock was armed AFTER performAction, whose
+  # synchronous PLAYER_ACTION handler had already broadcast - so every sample
+  # was the interval between two consecutive actions (turn pacing), not
+  # action-to-broadcast latency. Fixed the same day by arming before the
+  # action. The p50 808ms / p95 1843ms / p99 3755ms below therefore describe
+  # PACING, and 3000/6000 are deliberately generous placeholders chosen from
+  # them. RE-DERIVE both once a day of true latency data exists: the real
+  # numbers will be far smaller, and thresholds this loose would miss a real
+  # regression. LAW 6 pins them against whatever the recorded baseline says,
+  # so update the baseline and the law together.
+  #
+  # THE THRESHOLDS COME FROM THE MEASUREMENT, NOT FROM A WISH (2026-09-05).
+  # The first version of these rules guessed 500ms/1500ms before any data
+  # existed. The first hour of real data says the fleet normally runs:
+  #     p50 808ms   p90 1541ms   p95 1843ms   p99 3755ms   (24.3 actions/s)
+  # so 500ms was below the MEDIAN and 1500ms below the normal p95 - both would
+  # have fired permanently and been muted within a day, which is the failure
+  # this programme keeps finding in other people's monitors. 3s is above the
+  # normal p95 and below the normal p99; 6s is unambiguous.
+  #
+  # AND A SINGLE ACTION CANNOT RAISE AN ALARM. The guard was `> 0`, so one
+  # human action in ten minutes produced a p95 from a sample of one - and on
+  # a platform where humans are rare (15 hours with a human seat in 14 days)
+  # that is a false-alarm generator. 0.05/s is ~30 actions in the window.
+  #
+  # The BASELINE ITSELF is worth attention and is not an alert: 808ms median
+  # from action to broadcast, while the event loop is healthy (p99 54ms,
+  # equity governor not throttling). That is structural pacing in the
+  # broadcast path, not CPU starvation, and it is Phase 2 work to characterise.
+  # Guarded by the hourly maintenance break (CLAUDE.md 13.6).
+
+  # ── What the player's browser saw (Realtime Phase 2, 2026-09-05) ─────────
+  # The client-side twin of the session-refusal rules: those count sockets the
+  # SERVER refused, these count sockets the CLIENT lost. On 2026-09-03 every
+  # one of Dan's reconnects and every twenty-second auto-reload happened in
+  # his browser and reached the platform as nothing, so every rule here stayed
+  # green for twenty-two hours. Per-user counting happens in the engine
+  # (observability/ClientConnectionEvents.ts); only bounded numbers are
+  # scraped, and no user id ever reaches Prometheus.
+  - name: client-connections
+    interval: 30s
+    rules:
+      # Dan's question, verbatim: "one player reconnecting more than N times an
+      # hour". N is 6, counted in a rolling hour by the engine.
+      - alert: PlayersReconnectingRepeatedly
+        expr: |
+          poker_ws_clients_reconnecting_badly > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: '{{ $value }} player(s) reconnecting repeatedly in the last hour'
+          description: |
+            At least one player's browser has lost its table socket more than
+            six times in an hour, sustained for ten minutes. The engine can
+            look perfectly healthy while this is true - that is exactly what
+            2026-09-03 looked like. Check poker_ws_client_reconnects_total by
+            reason: auth_failed points at sessions, stale at the link or the
+            engine going quiet, handshake_timeout at the edge.
+          runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
+
+      # One player having a bad night is a warning. The auto-reload failsafe
+      # firing at all is a different thing: it means a table sat dead for
+      # twenty seconds and the page reloaded itself under someone.
+      - alert: TablesAreReloadingThemselves
+        expr: |
+          increase(poker_ws_client_reconnects_total{reason="auto_reload"}[30m]) >= 3
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'The table auto-reload failsafe fired {{ $value }} times in 30 minutes'
+          description: |
+            TablePage reloads itself after the socket has been dead for twenty
+            seconds. It is a last resort, and it fired all night on 2026-09-03
+            without the platform knowing. Repeated firing means players are
+            being thrown out of tables, not recovering in them.
+          runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
   # ── Session refusals (2026-09-04) ────────────────────────────────────────
   # Dan's every table socket was refused with 401 for 22 hours - a World Hub
   # cron was signing his account out globally every 15 minutes - and nothing

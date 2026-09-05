@@ -86,6 +86,24 @@ export async function logHandHistory(params: {
     hand?: { name: string; ranking: number };
   }[];
   /**
+   * WHO WON EACH RUN (2026-09-04). `winners` is one aggregated entry per
+   * player - the whole paid total under BOARD 1's hand name - so a run-it-3-
+   * times hand where one player took Two Pair, a Straight and Trips was
+   * recorded as "Two Pair"; a split was two totals with no board on either
+   * (Dan, hand #6145364: "results that weren't accurate"). This is the
+   * per-board record the felt reads off pot_win, persisted. Amounts are the
+   * engine's pre-rake board shares. Written as NULL when there is one board,
+   * so ordinary rows are unchanged. Column: hand_history.winners_by_board.
+   */
+  winnersByBoard?: {
+    board: number;
+    userId: string;
+    amount: number;
+    handName?: string;
+    /** HI-LO: the entry for the low half. See HandEvent WINNERS.winnersByBoard. */
+    low?: boolean;
+  }[];
+  /**
    * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
    *
    * `winners[].potIndex` has been persisted since Bible V8 §2.7 and has been
@@ -230,6 +248,12 @@ export async function logHandHistory(params: {
     started_at: startedAtIso,
     ended_at: endedAtIso,
     winners: params.winners,
+    // Multi-board hands, and any hand with a LOW half (2026-09-04): those are
+    // the hands whose merged `winners` cannot tell the story. NULL keeps every
+    // other single-board row byte-identical.
+    winners_by_board: params.winnersByBoard?.some((w) => w.board > 1 || w.low)
+      ? params.winnersByBoard
+      : null,
     // Dan section 29. NULL rather than [] on a hand with no recorded
     // breakdown, so "this hand predates the column" and "this hand had one
     // uncontested pot" are not the same value to attributeKnockout().
@@ -305,6 +329,8 @@ export async function logHandHistory(params: {
       roster: params.roster,
       // The rule and its evidence must cover the same seats. See writeHandFacts.
       nitGame: params.nitGame,
+      // Bomb pots count as VPIP for everyone dealt in (Dan 2026-09-05).
+      isBombPot: Boolean(params.bombPot),
     });
     // (V16 deep-read observation moved ABOVE the handId gate — V28 audit.)
 

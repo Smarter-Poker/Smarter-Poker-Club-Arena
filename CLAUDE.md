@@ -378,6 +378,14 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - Realtime: WebSocket broadcasts to connected clients
 - RLS: Protects hole cards (users can only read own cards)
 - Schema changes MUST be SQL migration files in `supabase/migrations/`
+- **You do not choose the version. Ask for one:**
+  `bash scripts/reserve-migration-version.sh <lower_snake_case_slug>` prints the
+  path and creates the file. It checks this tree, `origin/main`, and every
+  sibling worktree on this machine, which is the one that matters - a migration
+  in another agent's tree is not on origin yet, so nothing you fetch can show it
+  to you. A hand-typed timestamp collided twice in one day on 2026-09-04, and
+  `20260831235992` and `20260831b` on main are what earlier agents reached for
+  when the obvious name was already taken.
 
 ### Production DDL policy (added 2026-08-31 after the PGRST002 503 outage — BINDING)
 
@@ -817,6 +825,29 @@ revert war ran for two days. If two laws (or two CLAUDE.md copies) demand
 opposite things, STOP and ask Dan; never write a third law and never delete
 the other side on your own authority.
 
+**A LAW IS SOMETHING WRITTEN DOWN. DEPLOYED CODE IS NOT A LAW.** The
+stop-and-ask above is for two WRITTEN rules in conflict — two sections of
+CLAUDE.md, two rows in `docs/LAWS.md`, a phase contract under `docs/`.
+Behaviour you observe in shipped code has no standing against any of them. It
+is evidence of what the platform currently does; it is never evidence of what
+it is supposed to do.
+
+So before you escalate, name both sides and say where each one is written. If
+one side turns out to be a filter, a branch or a default sitting in a file with
+nothing written behind it, you have not found a conflict between two laws. You
+have found the defect, and it is yours to fix under 10.9. Asking about it costs
+a day and returns the answer already in the file.
+
+On 2026-09-04 an agent stopped the horse audit to report that "two rules demand
+opposite things": the live collusion scan drops horse-versus-horse pairs, while
+PHASE5-CONTRACTS section 0 rule 4 says two horses colluding is a HorseBehavior
+defect an operator must see. Those were never two rules. Section 0 rule 4 opens
+by citing 10.5 and exists to restate it, and the suppression was an `is_horse`
+filter added to `collusion-scan.ts` three days earlier with no rule behind it
+at all — the same shortcut, in the same shape, that 10.5 was written about.
+One binding law, one violation of it, and a stopped job waiting on a ruling
+that 10.5 had already given.
+
 **2. INTENTIONAL REVERTS NEED A HUMAN.** The Silent Revert Guard no longer
 accepts `[allow-revert]` or the word "revert" in a commit message on its own —
 on 2026-08-31 an agent amended the token into its own message to get past the
@@ -928,7 +959,10 @@ plainly what you did. You do not open with a question.
 4. **You proved it in a transaction you rolled back first.** Section 11.5 is
    not softened by this grant, it is what makes the grant safe. The numbers you
    commit are the numbers the probe returned, and the migration asserts them so
-   it aborts if the board moved underneath you.
+   it aborts if the board moved underneath you. Read 11.5 rule 1 before you
+   write the probe: over the Supabase MCP a transaction does not span two
+   calls, so the three-call `BEGIN` / probe / `ROLLBACK` shape commits the
+   probe and reports success. One call, one self-aborting `DO` block.
 5. **You can write the paragraph.** One paragraph naming every affected player
    and why they got what they got. If you cannot write it, you do not
    understand the case well enough to settle it.
@@ -1160,7 +1194,31 @@ THE RULE:
 
 1. **A function that moves money is probed inside a transaction you ROLL BACK.**
    Not carefully, not on a test table — rolled back. `scripts/dev/probe-rpc.sql`
-   is the pattern; copy it.
+   is the pattern; copy it, and copy **the section that matches your transport**.
+
+   **A TRANSACTION DOES NOT SPAN TWO SUPABASE MCP CALLS.** One call is one
+   transaction, and the call boundary ends it whatever you wrote. So `BEGIN;`
+   in one call, the probe in the next, and `ROLLBACK;` in a third leaves the
+   probe alone in the middle **as its own committed transaction**, and the
+   ROLLBACK returns success having rolled back nothing. `Prefer: tx=rollback`
+   does not save you either — PostgREST honours it only under
+   `db-tx-end = rollback-allowed`, which this server does not set, so the
+   header is accepted and ignored. Measured on production 2026-09-04: two
+   consecutive MCP calls returned transaction ids 275731009 and 275731249, and
+   `txid_status()` reported the first as `aborted` at its own call boundary.
+
+   Until that date the header of `probe-rpc.sql` told agents the opposite —
+   "psql, or the Supabase MCP one statement at a time" — and on 2026-09-04 an
+   agent following it committed a `horse_job_runs` row for an analysis run
+   that never happened. It caught the row itself, because the run claimed 123
+   hands in 9ms. Nothing else would have.
+   - **psql** — section 1 of the file. `BEGIN` ... `ROLLBACK` across statements.
+   - **Supabase MCP** — section 2. ONE call containing ONE `DO` block that ends
+     by `RAISE EXCEPTION`. The raise aborts the single transaction the call
+     has, which is what undoes the fixtures and the RPC's writes together, and
+     the message returns to you as the call's error text. **An error is the
+     success case.** If such a probe returns success, it COMMITTED: go and look
+     at what it wrote and undo it deliberately.
 
 2. **What you want from the probe is the error message** — did the guard fire,
    and for the right reason. `GET STACKED DIAGNOSTICS` gives you that, and it

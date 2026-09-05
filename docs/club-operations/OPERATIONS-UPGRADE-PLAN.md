@@ -599,6 +599,25 @@ browser session that had just been getting 500s. Verified on production in a
 browser as the club owner: 18,690 bomb pots, 50 tables, the full per-table
 breakdown, where the page said "Could Not Load The Bomb Pot Report".
 
+**AND THE PHASE 7 GATE FOUND THAT THE FIX ONLY HELD UNTIL MID-MORNING.**
+`fn_ca_rake_by_agent` measured 490-983ms at 03:55 UTC and **3,402ms at 07:37**
+the same day, on the same club, with nothing changed - the live edge is the
+part of the window the daily rollup has not sealed, and today gets bigger every
+hour (9,288 rows on 09-01; 328,535 on 09-03). Bounding the scan to one day is
+only a fix while that day is small; the panel would have healed every morning
+and failed every evening.
+
+Fixed by giving the per-player figure what phase 6 gave the club-level one:
+`ca_club_rake_daily_user` in integer cents, kept exact by three statement-level
+triggers on `rake_attributions` (`20260905073943` for the table and backfill,
+which takes no lock; `20260905074228` for the triggers and the read together,
+inside the 07:55 freeze, because CREATE TRIGGER locks a table the engine writes
+on every raked hand). Measured after: **200 in 694-724ms from the browser on
+every range**, and the rollup agrees with the attributions to the cent on every
+day including the open one. Full account, with the off-by-one the snapshot
+comparison caught and the probe of mine that committed itself, in
+`docs/changelog/2026-09-05-club-operations-phase-7-gate.md`.
+
 THE LESSON THAT GENERALISES: a probe run as `postgres` against a
 `SECURITY DEFINER` function that gates on `auth.uid()` is not a faster version
 of the real call, it is a DIFFERENT call - usually a refusal. Set

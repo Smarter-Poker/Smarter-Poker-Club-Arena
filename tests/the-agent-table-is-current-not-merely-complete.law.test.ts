@@ -19,8 +19,9 @@ import { describe, expect, it } from 'vitest';
  *
  *   club_rake_rollup_complete   which (club, day) pairs are genuinely finished
  *   club_rake_daily_user        read ONLY for those days
- *   rake_attributions           the live edge - every day the marker has not
- *                               called complete, grouped per player
+ *   ca_club_rake_daily_user     the live edge - every day the marker has not
+ *                               called complete, kept exact per player by
+ *                               statement-level triggers on rake_attributions
  *
  * The live slice must stay disjoint from the rollup days or the window
  * double-counts, which is the mirror failure and reads as a club producing
@@ -45,12 +46,33 @@ import { describe, expect, it } from 'vitest';
  * the string still appears in the migration's own assertion that the function
  * must NOT call it, and a substring pin cannot tell those apart.
  *
+ * AND THE LIVE SOURCE MOVED ONCE MORE ON THE SAME DAY (20260905074228), for a
+ * reason that is the sharpest version of this law's own point. Reading the
+ * attributions directly measured 490ms at 03:55 and 3,402ms at 07:37 - the
+ * live edge is TODAY, and today gets bigger every hour, reaching a third of a
+ * million rows on a busy day. So the panel would have healed every morning and
+ * failed every evening: current, then not, then current again. The live half
+ * now reads `ca_club_rake_daily_user`, an incremental per-player rollup kept
+ * exact by statement-level triggers ON `rake_attributions` - the same rows,
+ * summed as they arrive instead of on every page load. The pins below check
+ * BOTH ends of that chain, because a rollup nothing maintains is exactly the
+ * silent zero this law exists to prevent.
+ *
  * Verified numerically when written, against Deep Stack Society: for today the
  * direct column summed to exactly what rake_records held for the club over the
  * same window, where the previous implementation returned an empty array.
  */
 
 const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
+
+/** Every migration that mentions a name, oldest first. */
+function migrationsMentioning(needle: string): string[] {
+  return readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => readFileSync(resolve(MIGRATIONS, f), 'utf8'))
+    .filter((sql) => sql.includes(needle));
+}
 
 /** The newest definition wins at deploy time, so it is the one under test. */
 function latestDefining(fnName: string): string {
@@ -82,14 +104,27 @@ describe('the agent table is current, not merely complete', () => {
     expect(body('fn_ca_rake_by_agent')).toContain('club_rake_rollup_complete');
   });
 
-  it('reads the attributions for what the rollup has not finished', () => {
+  it('reads the incremental rollup for what the sealed rollup has not finished', () => {
     const sql = body('fn_ca_rake_by_agent');
-    expect(sql, 'a rollup-only read is always wrong for today').toContain(
-      'FROM public.rake_attributions ra'
+    expect(sql, 'a sealed-days-only read is always wrong for today').toContain(
+      'public.ca_club_rake_daily_user du'
     );
-    expect(sql, 'the live edge is per player, like the rollup it stands in for').toContain(
-      'GROUP BY ra.player_id'
+    expect(sql, 'the live edge is per player, like the sealed days it stands in for').toContain(
+      'du.user_id'
     );
+  });
+
+  it('and something keeps that live rollup current, from the attributions themselves', () => {
+    // The other end of the chain. A live edge that reads a table nothing
+    // writes is a rollup-only read wearing a disguise, and it reads as zero.
+    const writers = migrationsMentioning('ca_club_rake_daily_user');
+    expect(writers.length, 'the rollup is declared somewhere').toBeGreaterThan(0);
+    const all = writers.join('\n');
+    expect(all).toContain('AFTER INSERT ON public.rake_attributions');
+    expect(all).toContain('AFTER UPDATE ON public.rake_attributions');
+    expect(all).toContain('AFTER DELETE ON public.rake_attributions');
+    // And it can never fail the hand it is counting.
+    expect(all).toContain('EXCEPTION WHEN OTHERS THEN');
   });
 
   it('does not re-derive a share per raked hand to get there', () => {
@@ -103,13 +138,17 @@ describe('the agent table is current, not merely complete', () => {
     );
   });
 
-  it('rounds the live edge the way the rollup rounds the finished days', () => {
-    // Same column, same rounding as fn_club_rake_rollup_day. Without this the
-    // live edge and the day that replaces it differ by fractions of a chip and
-    // the table appears to change its mind at midnight.
-    expect(body('fn_ca_rake_by_agent')).toContain(
-      'SUM(round(ra.rake_amount * 100)::bigint)::numeric / 100'
-    );
+  it('rounds the live edge the way the sealed days are rounded', () => {
+    // Same rounding as fn_club_rake_rollup_day: each row to a cent, then
+    // summed. Without this the live edge and the day that replaces it differ
+    // by fractions of a chip and the table appears to change its mind at
+    // midnight. It is accumulated now rather than summed in one pass, so the
+    // cents are stored as an integer and divided once - the same arithmetic in
+    // an order that cannot drift.
+    expect(body('fn_ca_rake_by_agent')).toContain('du.rake_cents::numeric / 100');
+    const writers = migrationsMentioning('ca_club_rake_daily_user').join('\n');
+    expect(writers).toContain('SUM(round(ra.rake_amount * 100))::bigint');
+    expect(writers).toContain('rake_cents  bigint');
   });
 
   it('covers a day the rollup skipped, so it is never silently zero', () => {

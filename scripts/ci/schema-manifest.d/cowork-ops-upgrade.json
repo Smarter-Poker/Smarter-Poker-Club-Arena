@@ -17,6 +17,8 @@
     "fn_ca_club_rake_daily_ledger_total",
     "fn_ca_club_rake_daily_rebuild",
     "fn_ca_club_rake_daily_rebuild_range",
+    "fn_ca_club_rake_daily_user_apply",
+    "fn_ca_club_rake_daily_user_rebuild_day",
     "fn_ca_dismiss_collusion_pair",
     "fn_club_anti_cheat_flags",
     "fn_club_settlement_frozen",
@@ -30,13 +32,17 @@
     "trg_agent_commission_rollup_change",
     "trg_agent_commission_rollup_insert",
     "trg_ca_club_rake_daily_change",
-    "trg_ca_club_rake_daily_insert"
+    "trg_ca_club_rake_daily_insert",
+    "trg_ca_club_rake_daily_user_change",
+    "trg_ca_club_rake_daily_user_delete",
+    "trg_ca_club_rake_daily_user_insert"
   ],
   "tables": [
     "agent_commission_unsettled_rollup",
     "ca_club_bomb_pot_complete",
     "ca_club_bomb_pot_daily",
     "ca_club_commission_daily",
-    "ca_club_rake_daily"
+    "ca_club_rake_daily",
+    "ca_club_rake_daily_user"
   ]
 }

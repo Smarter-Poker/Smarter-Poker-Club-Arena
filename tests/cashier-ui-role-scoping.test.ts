@@ -356,7 +356,13 @@ describe('the cashier never offers a recipient the server will refuse', () => {
     expect(cashierRefusesSelfSend('agent_wallet')).toBe(true);
     expect(cashierRefusesSelfSend('promo_wallet')).toBe(true);
     expect(cashierRefusesSelfSend('club_bank')).toBe(false);
-    expect(MODAL).toContain('const excludeSelf = cashierRefusesSelfSend(walletType)');
+    /* 2026-09-05: the promo cashier has two accounts. The CLUB'S promo pot is
+       club money and, like the Club Bank, may fund the owner's own float;
+       fn_club_promo_wallet_send accepts the caller. The agent's OWN float
+       still refuses a self-send. The modal passes the source it stands at. */
+    expect(cashierRefusesSelfSend('promo_wallet', 'club_pot')).toBe(false);
+    expect(cashierRefusesSelfSend('promo_wallet', 'own_float')).toBe(true);
+    expect(MODAL).toContain('const excludeSelf = cashierRefusesSelfSend(walletType, promoSource)');
   });
 
   it('a selected recipient who becomes ineligible is cleared, not left hidden', () => {
@@ -506,8 +512,8 @@ describe('the mode rules stay where a test can pin them', () => {
     expect(cashierTabs('agent_wallet')).toEqual(['send', 'claim']);
   });
 
-  it('a promo hand-out has no inverse, so it has no claim tab', () => {
-    expect(cashierTabs('promo_wallet')).toEqual(['send']);
+  it('a promo hand-out has no inverse, so it has no claim tab (it has a ledger since 2026-09-05)', () => {
+    expect(cashierTabs('promo_wallet')).toEqual(['send', 'ledger']);
   });
 
   it('the agent wallet funds a player or a downline float, and nothing else', () => {

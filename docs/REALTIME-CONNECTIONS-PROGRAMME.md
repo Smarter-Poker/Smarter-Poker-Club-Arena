@@ -53,6 +53,46 @@ plus a check that the box's rules match the repo's) is added to **Phase 7 -
 Guardrails**. Until then, an alert rule is not live because it merged; it is
 live when `/api/v1/rules` says so.
 
+## Every format, not just cash (Dan, 2026-09-05)
+
+Dan: "you need to fix the real time connection to the spins, heads up and
+mtt's as well. not just the cash game tables."
+
+**Checked first, because the answer changes the work.** Spins, SNGs,
+heads-up and MTTs are not a separate transport: there is ONE
+`ServerTableEngine` hierarchy and ONE table socket (`/ws/table/:id`), so
+every phase of this programme reaches all of them by construction. Two
+things were verified rather than assumed:
+
+- The MTT/Spin-specific realtime moment - a player MOVED by table balancing -
+  is wired end to end. The engine emits `seat_moved` with `to_table_id` on
+  the old table's socket, and `TablePage` follows it (`case 'SEAT_MOVED'`,
+  navigating or swapping the embedded id). I first searched for the
+  lower-case event name, found nothing, and nearly reported it missing; it
+  is normalised to upper case before the switch.
+- `TOURNAMENT_EVENT` on the channel socket, however, is **dead**. It is
+  emitted only by `POST /channels/tournament/:id/event`, which requires
+  `INTERNAL_API_KEY`, and its only caller is
+  `RealtimeChannelService.broadcastTournamentEvent` - a BROWSER method
+  sending a player's Supabase JWT, which that route always rejects. Nothing
+  server-side calls it. So `JOIN_TOURNAMENT` subscribes to a channel that
+  never delivers. Added to Phase 2.
+
+**What was genuinely missing, and is now fixed:** the latency instrument
+was labelled only by audience, so a Spin's p95, a heads-up SNG's and an
+MTT final table's were one indistinguishable number mixed in with cash.
+"Are Spins slow?" had no answer. `poker_act_to_broadcast_ms` and
+`poker_actions_fleet_total` now carry `format=cash|spin|hu_sng|mtt`, derived
+from the existing `TournamentBrainContext` (a synchronous cached read,
+already warmed per tournament table; heads-up comes from seats at one table,
+not a type string). Both alert rules group by `format`, so a slow Spin
+alerts on its own p95 instead of hiding inside a cash average. Four values,
+eight series with audience - still never a `table_id`.
+
+A tournament whose context has not loaded reports `mtt`, never `cash`:
+falling back to cash would file Spins and MTTs under cash and hide exactly
+what this label exists to show. The law pins that.
+
 ## Phase 1 audit (2026-09-05) - what a deep pass found after "done"
 
 Three real defects, all shipped, none of which any test would have caught:

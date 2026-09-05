@@ -1,3 +1,17 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   FRIEND LIST — #SmarterCasinoRealism (2026-09-05)
+
+   Dan: "YELLOW ISN'T A SMARTER.POKER ALLOWED COLOR SCHEMA."
+
+   The Add Friend control was a #fbbf24 -> #f59e0b amber pill, the search ring
+   glowed amber, and presence used a raw emerald. Those were the only warm
+   colours on the Network tab and they sat directly under a machined obsidian
+   credential. Amber is gone entirely; the add control is the same broadcast
+   blue as every other primary control on these surfaces, presence keeps a
+   green that matches the felt token, and the plate hardware matches the
+   profile it lives inside.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * 👥 FRIEND LIST PANEL — Premium Dark Theme CSS
@@ -9,7 +23,7 @@
   flex-direction: column;
   background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  border-radius: 4px;
   overflow: hidden;
   max-height: 400px;
   backdrop-filter: blur(10px) saturate(1.2);
@@ -35,13 +49,13 @@
 
 .onlineCount {
   font-size: 12px;
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.15);
+  color: #65d89b;
+  background: rgba(101, 216, 155, 0.16);
   padding: 4px 10px;
-  border-radius: 12px;
+  border-radius: 4px;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 8px rgba(101, 216, 155, 0.22);
 }
 
 /* Search Bar */
@@ -69,7 +83,7 @@
   outline: none;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 8px rgba(251, 191, 36, 0.2);
+    0 0 8px rgba(58, 168, 255, 0.22);
 }
 
 .searchBar input::placeholder {
@@ -79,15 +93,17 @@
 .addBtn {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  background: linear-gradient(180deg, #66c8ff, #238fc5);
   border: none;
-  border-radius: 20px;
-  color: #1a1a2e;
+  border-radius: 3px;
+  color: #031019;
   font-size: 20px;
   font-weight: 700;
   cursor: pointer;
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-  box-shadow: 0 0 12px rgba(251, 191, 36, 0.3);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.55),
+    0 0 14px rgba(58, 168, 255, 0.24);
 }
 /* Add Friend Row */
 .addFriendRow {
@@ -100,7 +116,7 @@
   flex: 1;
   padding: 10px 14px;
   background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  border: 1px solid rgba(58, 168, 255, 0.3);
   border-radius: 8px;
   color: white;
   font-size: 16px; /* was 14px; under 16px makes iOS zoom the page on focus */
@@ -113,20 +129,20 @@
   outline: none;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 8px rgba(59, 130, 246, 0.3);
+    0 0 8px rgba(58, 168, 255, 0.3);
 }
 
 .addFriendRow button {
   padding: 10px 16px;
-  background: #3b82f6;
+  background: #3aa8ff;
   border: none;
-  border-radius: 20px;
+  border-radius: 3px;
   color: white;
   font-weight: 600;
   cursor: pointer;
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
   box-shadow:
-    0 0 12px rgba(59, 130, 246, 0.3),
+    0 0 12px rgba(58, 168, 255, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   box-sizing: border-box;
 }
@@ -138,9 +154,9 @@
 .error {
   margin: 0 16px 12px;
   padding: 8px 12px;
-  background: rgba(239, 68, 68, 0.15);
+  background: rgba(255, 124, 124, 0.16);
   border-radius: 6px;
-  color: #ef4444;
+  color: #ff7c7c;
   font-size: 13px;
 }
 
@@ -219,7 +235,7 @@
 .playing {
   display: block;
   font-size: 11px;
-  color: #10b981;
+  color: #65d89b;
   margin-top: 2px;
 }
 
@@ -242,4 +258,33 @@
   cursor: pointer;
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* ── Light mode: brushed silver ──────────────────────────────────────── */
+
+:global([data-theme='light']) .panel {
+  border-color: #b7c3cc;
+  background: linear-gradient(145deg, #fbfcfd, #f3f6f8);
+  color: #0d161d;
+}
+
+:global([data-theme='light']) .header h3,
+:global([data-theme='light']) .name {
+  color: #0d161d;
+}
+
+:global([data-theme='light']) .searchBar input {
+  border-color: #9fb0bc;
+  background: #ffffff;
+  color: #0d161d;
+}
+
+:global([data-theme='light']) .friendRow {
+  border-color: #d5dde3;
+  background: #ffffff;
+}
+
+:global([data-theme='light']) .empty,
+:global([data-theme='light']) .status {
+  color: #55697a;
 }

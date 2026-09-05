@@ -1,0 +1,3 @@
+# tests/the-journal-replays-every-account.law.test.ts
+
+Chip standard Phase 7.1 (2026-09-05): every account keeps its own snapshot and the change between its two most recent readings must equal the journal's net for that account over the same interval; the first reading is a baseline and is never judged; the finding is the two-interval sum so a straddling leg cancels; prize_liability is excluded because tournament_escrow is its per-event balance with an hourly shadow, and a leg whose column cannot be keyed is reported as unkeyable rather than guessed; the replay moves nothing and escalates through a switch that only pages

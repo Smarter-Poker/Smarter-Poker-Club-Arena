@@ -1,4 +1,4 @@
--- 20260905160641_the_felt_colour_column_holds_only_felt_colours.sql
+-- 20260905160815_the_felt_colour_column_holds_only_felt_colours.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

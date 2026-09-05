@@ -19,7 +19,7 @@
 
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useCanOperateUnionNetwork } from '../../hooks/useCanOperateUnionNetwork';
+import { useCanOperateUnionNetwork } from '../../hooks/useCanCreateUnion';
 import { LoadingState } from '../common/EmptyState';
 
 export default function UnionNetworkGuard({ children }: { children: ReactNode }) {

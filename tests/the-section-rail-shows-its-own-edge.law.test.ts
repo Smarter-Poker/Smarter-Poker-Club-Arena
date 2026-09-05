@@ -81,7 +81,9 @@ describe('the union directory is offered only where the server says yes', () => 
   });
 
   it('asks the database, and fails closed', () => {
-    const hook = read('src/hooks/useCanOperateUnionNetwork.ts');
+    /* Both questions about the union allowlist live in one module, and that
+       module is already in the entry chunk - see the note in the file. */
+    const hook = read('src/hooks/useCanCreateUnion.ts');
     expect(hook).toContain('fn_can_i_operate_the_union_network');
     // No argument: the answer is about auth.uid(), so a browser cannot ask
     // about another account.
@@ -145,7 +147,17 @@ describe('the union directory is offered only where the server says yes', () => 
     for (const file of files) {
       // Dead code cannot offer anything; nothing imports Shell.tsx.
       if (file.endsWith('src/components/Shell.tsx')) continue;
-      const source = readFileSync(join(ROOT, file), 'utf8');
+      // `git ls-files` reads the index, which can name a file that is no
+      // longer on disk - a deletion staged after this run started, or one
+      // another test is mid-way through. A file that is not there offers
+      // nothing; it is not a failure. (Same ENOENT class as the migration
+      // fixtures, 2026-09-05.)
+      let source: string;
+      try {
+        source = readFileSync(join(ROOT, file), 'utf8');
+      } catch {
+        continue;
+      }
       const hits = [...source.matchAll(/(?:to=|path:\s*|navigate\()['"`]\/unions['"`]/g)];
       for (const hit of hits) {
         // A <Navigate> is a redirect target for an already-refused page, not an

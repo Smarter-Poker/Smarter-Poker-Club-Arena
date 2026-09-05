@@ -4,8 +4,7 @@ import {
   getArenaSectionNavigation,
 } from '../../config/arenaSectionNavigation';
 import styles from './ArenaSectionRail.module.css';
-import { useCanCreateUnion } from '../../hooks/useCanCreateUnion';
-import { useCanOperateUnionNetwork } from '../../hooks/useCanOperateUnionNetwork';
+import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCanCreateUnion';
 
 export default function ArenaSectionRail() {
   const location = useLocation();

@@ -86,8 +86,14 @@ interface ActivePresentation {
   /** What the animation on screen actually takes, which is not always the profile. */
   readonly expectedMs: number;
   readonly startedAt: number;
-  /** Speed-scaled phase end offsets, ms from startedAt. */
-  readonly ends: { prepare: number; hold: number; squeeze: number; reveal: number; settle: number };
+  /**
+   * Speed-scaled phase end offsets, ms from startedAt. Mutable for one
+   * reason: releaseHold() on an interactive presentation re-bases everything
+   * after `hold` to the instant the player opened the card.
+   */
+  ends: { prepare: number; hold: number; squeeze: number; reveal: number; settle: number };
+  /** The speed multiplier this presentation was scheduled at. */
+  readonly speedUsed: number;
   timer: ReturnType<typeof setTimeout> | null;
   /**
    * ROUND 2 2026-09-05: fires at the EDGE-ON instant, where the two
@@ -97,6 +103,15 @@ interface ActivePresentation {
    * runout is a full second earlier (the card is still face down then).
    */
   revealTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * VIP ALL-IN SQUEEZE 2026-09-05: interactive presentations only. Fires at
+   * the hold CEILING and announces `squeeze`, so the board can swap the
+   * player's drag-driven transform for the snap keyframes when the card opens
+   * on its own. releaseHold() fires the same announcement early and clears
+   * this. A non-interactive presentation never schedules it - its CSS runs
+   * the whole timeline from its own delay and needs no cue.
+   */
+  holdTimer: ReturnType<typeof setTimeout> | null;
   /** Cancel for the frame sampler, when this presentation was sampled. */
   stopSampling: (() => void) | null;
 }
@@ -244,8 +259,10 @@ export class CardPresentationEngine {
       expectedMs,
       startedAt,
       ends: { prepare, hold, squeeze, reveal, settle },
+      speedUsed: s,
       timer: null,
       revealTimer: null,
+      holdTimer: null,
       stopSampling: null,
     };
     entry.timer = setTimeout(
@@ -260,6 +277,14 @@ export class CardPresentationEngine {
       live.revealTimer = null;
       this.notify(key, 'reveal', this.now() - live.startedAt);
     }, Math.ceil(squeeze));
+    if (profile.interactive) {
+      entry.holdTimer = setTimeout(() => {
+        const live = this.active.get(key);
+        if (!live) return;
+        live.holdTimer = null;
+        this.notify(key, 'squeeze', this.now() - live.startedAt);
+      }, Math.ceil(hold));
+    }
     /* AUDIT FIX 2026-09-05: REGISTER FIRST. A sampler that completes
        synchronously - any injected one, and a plausible future rAF shim -
        landed in reportFrameSample before the entry existed and was silently
@@ -281,6 +306,50 @@ export class CardPresentationEngine {
       profile,
       durationMs: expectedMs + MOUNT_WINDOW_MARGIN_MS,
     };
+  }
+
+  /**
+   * VIP ALL-IN SQUEEZE 2026-09-05: the player opened the card. Only an
+   * interactive presentation still in `prepare` or `hold` answers to this;
+   * everything else is a no-op and returns false, so a late drag on a card
+   * that already snapped changes nothing. On success the hold ends NOW: the
+   * squeeze, reveal and settle offsets are re-based to this instant at the
+   * speed the presentation was scheduled with, the completion timer and the
+   * reveal-beat timer are rescheduled to match, and listeners hear `squeeze`.
+   * The engine still owns the clock and still never touches the pixels; the
+   * board switches its markup from the drag-driven transform to the snap
+   * keyframes when it hears this.
+   */
+  releaseHold(key: string): boolean {
+    const entry = this.active.get(key);
+    if (!entry || !entry.profile.interactive) return false;
+    const t = this.now() - entry.startedAt;
+    if (t >= entry.ends.hold) return false;
+    const s = entry.speedUsed;
+    const p = entry.profile;
+    const squeeze = t + p.squeezeMs * s;
+    const reveal = squeeze + p.revealMs * s;
+    const settle = reveal + p.settleMs * s;
+    entry.ends = { ...entry.ends, hold: t, squeeze, reveal, settle };
+    if (entry.holdTimer) clearTimeout(entry.holdTimer);
+    entry.holdTimer = null;
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.timer = setTimeout(
+      () => this.complete(key),
+      Math.ceil(settle - t + MOUNT_WINDOW_MARGIN_MS * s)
+    );
+    if (entry.revealTimer) clearTimeout(entry.revealTimer);
+    entry.revealTimer = setTimeout(
+      () => {
+        const live = this.active.get(key);
+        if (!live) return;
+        live.revealTimer = null;
+        this.notify(key, 'reveal', this.now() - live.startedAt);
+      },
+      Math.ceil(squeeze - t)
+    );
+    this.notify(key, 'squeeze', t);
+    return true;
   }
 
   /** The presentation ran its course; the persistent card is now the board. */
@@ -499,6 +568,8 @@ export class CardPresentationEngine {
     entry.timer = null;
     if (entry.revealTimer) clearTimeout(entry.revealTimer);
     entry.revealTimer = null;
+    if (entry.holdTimer) clearTimeout(entry.holdTimer);
+    entry.holdTimer = null;
     if (entry.stopSampling) entry.stopSampling();
     entry.stopSampling = null;
     this.active.delete(entry.key);

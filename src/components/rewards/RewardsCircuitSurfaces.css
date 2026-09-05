@@ -37,7 +37,7 @@
 /* The wallet takes the family's TEXT colour and nothing else, so it stays part
    of the set without having its designed ground overpainted. */
 .wallet-page {
-  color: #eaf3f9;
+  color: var(--realism-chrome-hot, #eaf3f9);
 }
 
 /* The wallet's three entries are gone from this list and the two below. They
@@ -149,8 +149,10 @@
 :is(.rakeback-page .rakeback-promo-banner, .promotions-page .daily-bonus-banner) {
   color: #ddf3ff !important;
   animation: none !important;
+  /* The last #3aa8ff in this sheet. The lit spine down a promo banner is the
+     same energy as the family header's spine and the wallet's readouts. */
   box-shadow:
-    inset 2px 0 0 #3aa8ff,
+    inset 2px 0 0 var(--realism-cyan, #3aa8ff),
     0 14px 34px rgba(0, 0, 0, 0.28) !important;
 }
 

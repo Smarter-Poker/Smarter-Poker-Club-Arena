@@ -192,7 +192,7 @@ function heroVpip(model: ReplayModel, heroId: string): boolean {
  * drop every zero, and know nothing about run-it-twice, the low half, rake
  * or the jackpot drop.
  */
-export function handToText(hand: HandRecord): string {
+function handToText(hand: HandRecord): string {
   const m = hand.replay;
   const lines: string[] = [];
   lines.push(

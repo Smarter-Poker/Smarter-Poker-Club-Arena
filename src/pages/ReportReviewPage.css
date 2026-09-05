@@ -1,10 +1,17 @@
+/* #SMARTERCASINOREALISM - the material layer. Tokens are defined once on :root
+   in src/styles/club-engine.css, which main.tsx loads; this sheet only consumes
+   them. The page is the club's conduct-report queue: staff filter the cases,
+   open one in the modal, add notes and action or dismiss it. The cut corners
+   are this page's own idiom and stay - a clip-path clips outer shadows away, so
+   clipped surfaces carry the bevel and cavity insets rather than the lift. */
+
 .report-review-page {
   min-height: 100vh;
   min-height: 100dvh;
   padding-bottom: var(--bottom-nav-clearance, 74px);
   overflow-x: clip;
-  background: #05070a;
-  color: #edf5fb;
+  background: var(--realism-obsidian);
+  color: var(--realism-chrome-hot);
   font-family: 'Roboto Condensed', system-ui, sans-serif;
 }
 .report-workspace {
@@ -22,7 +29,7 @@
 }
 .case-kicker {
   margin: 0 0 3px;
-  color: #657c8f;
+  color: var(--realism-muted);
   font-family: 'Rajdhani', system-ui, sans-serif;
   font-size: 0.7rem;
   font-weight: 700;
@@ -42,13 +49,17 @@
   gap: 4px;
   overflow-x: auto;
 }
+/* Milled face: lit top edge over a shallow drop. */
 .filter-tab {
   min-height: 44px;
   padding: 8px 15px;
-  border: 1px solid #2b3945;
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 2px;
-  background: #0d1218;
-  color: #8797a4;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  color: var(--realism-muted);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   font:
     700 0.78rem 'Rajdhani',
     system-ui,
@@ -58,17 +69,25 @@
   cursor: pointer;
   touch-action: manipulation;
 }
+/* The press, not a hover: on a phone the tap IS the feedback. */
+.filter-tab:active:not(:disabled),
+.report-error button:active:not(:disabled),
+.modal-header button:active:not(:disabled),
+.action-buttons .btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
 .filter-tab.active {
-  border-color: #3ba7ff;
+  border-color: var(--realism-cyan);
   background: #0a2740;
-  color: #e7f5ff;
-  box-shadow: inset 0 -2px 0 #3ba7ff;
+  color: var(--realism-chrome-hot);
+  box-shadow: inset 0 -2px 0 var(--realism-cyan);
 }
 .filter-tab:focus-visible,
 .report-card:focus-visible,
 .report-review-page button:focus-visible,
 .report-review-page textarea:focus-visible {
-  outline: 2px solid #75bdff;
+  outline: 2px solid var(--realism-cyan);
   outline-offset: 3px;
 }
 .reports-list {
@@ -76,6 +95,8 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+/* A case card is a plate in the queue. Its clip-path cuts the corners, which
+   also cuts any outer shadow, so the material here is all inset. */
 .report-card {
   position: relative;
   display: grid;
@@ -84,10 +105,11 @@
   min-height: 180px;
   padding: 18px;
   overflow: hidden;
-  border: 1px solid #26313d;
-  border-left: 2px solid #526474;
+  border: 1px solid var(--realism-gunmetal);
+  border-left: 2px solid var(--realism-gunmetal-lit);
   border-radius: 0;
-  background: #0d1218;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -99,12 +121,15 @@
   position: absolute;
   inset: auto 18px 0;
   height: 1px;
-  background: #3ba7ff;
+  background: var(--realism-cyan);
   opacity: 0;
-  box-shadow: 0 0 12px #3ba7ff;
+  box-shadow: 0 0 12px var(--realism-cyan);
 }
 .report-card:focus-visible::after {
   opacity: 1;
+}
+.report-card:active {
+  transform: translateY(1px);
 }
 .report-header {
   display: flex;
@@ -113,7 +138,7 @@
   gap: 12px;
 }
 .reason-label {
-  color: #f0f7fb;
+  color: var(--realism-chrome-hot);
   font:
     700 1.08rem 'Rajdhani',
     system-ui,
@@ -123,9 +148,10 @@
 }
 .status-badge {
   padding: 5px 8px;
-  border: 1px solid #44525c;
-  color: #9fafba;
-  background: #161d22;
+  border: 1px solid var(--realism-gunmetal-lit);
+  color: var(--realism-chrome);
+  background: var(--realism-panel-raised);
+  box-shadow: var(--realism-bevel);
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -133,7 +159,7 @@
 }
 .status-pending {
   border-color: #725a2a;
-  color: #efc66a;
+  color: var(--realism-gold);
   background: #261e0d;
 }
 .status-actioned {
@@ -142,13 +168,13 @@
   background: #2c1014;
 }
 .status-dismissed {
-  color: #83929e;
+  color: var(--realism-muted);
 }
 .report-players {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 13px;
-  color: #b7c4cd;
+  color: var(--realism-chrome);
 }
 .report-players span {
   min-width: 0;
@@ -157,18 +183,18 @@
 .report-players strong {
   display: block;
   margin-bottom: 3px;
-  color: #657b8c;
+  color: var(--realism-muted);
   font-size: 0.67rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .report-date {
-  color: #718493;
+  color: var(--realism-muted);
   font-size: 0.76rem;
 }
 .inspect-label {
   align-self: end;
-  color: #79b9ea;
+  color: var(--realism-cyan);
   font:
     700 0.72rem 'Rajdhani',
     system-ui,
@@ -182,9 +208,10 @@
   place-content: center;
   gap: 7px;
   padding: 30px;
-  border: 1px solid #26313d;
-  background: #0d1218;
-  color: #8495a2;
+  border: 1px solid var(--realism-gunmetal);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
+  color: var(--realism-muted);
   text-align: center;
   clip-path: polygon(
     0 0,
@@ -196,7 +223,7 @@
   );
 }
 .report-state strong {
-  color: #dbe7ef;
+  color: var(--realism-chrome-hot);
   font:
     700 1.1rem 'Rajdhani',
     system-ui,
@@ -212,8 +239,8 @@
   width: 10px;
   height: 10px;
   margin-bottom: 6px;
-  background: #3ba7ff;
-  box-shadow: 0 0 15px rgba(59, 167, 255, 0.9);
+  background: var(--realism-cyan);
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.9);
 }
 .report-error {
   border-left: 3px solid #ff5a5f;
@@ -223,10 +250,13 @@
   min-height: 44px;
   margin-top: 10px;
   padding: 9px 15px;
-  border: 1px solid #4d5f6c;
+  border: 1px solid var(--realism-gunmetal-lit);
   border-radius: 2px;
-  background: #172028;
-  color: #eef7fd;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+  color: var(--realism-chrome-hot);
   font:
     700 0.78rem 'Rajdhani',
     system-ui,
@@ -247,11 +277,13 @@
   width: min(100%, 620px);
   max-height: min(84vh, 760px);
   overflow-y: auto;
-  border: 1px solid #536473;
-  border-top: 2px solid #3ba7ff;
-  background: #0d1218;
+  border: 1px solid var(--realism-gunmetal-lit);
+  border-top: 2px solid var(--realism-cyan);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
   box-shadow:
-    0 0 0 1px #080b0f,
+    var(--realism-bevel),
+    var(--realism-cavity),
+    0 0 0 1px var(--realism-obsidian),
     0 20px 80px rgba(0, 0, 0, 0.68);
   clip-path: polygon(
     0 0,
@@ -271,16 +303,19 @@
   align-items: center;
   gap: 18px;
   padding: 18px 20px;
-  border-bottom: 1px solid #26313d;
-  background: #0d1218;
+  border-bottom: 1px solid var(--realism-gunmetal);
+  background: var(--realism-carbon);
 }
 .modal-header button {
   min-height: 44px;
   padding: 8px 13px;
-  border: 1px solid #3b4b58;
+  border: 1px solid var(--realism-gunmetal-lit);
   border-radius: 2px;
-  background: #151d24;
-  color: #c8d5de;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+  color: var(--realism-chrome);
   font:
     700 0.75rem 'Rajdhani',
     system-ui,
@@ -291,20 +326,22 @@
 .modal-body {
   padding: 20px;
 }
+/* The 1px grid gaps are the frame between the cells, so the background here is
+   the edge colour and each cell paints its own cavity over it. */
 .case-details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
   margin: 0;
-  background: #26313d;
-  border: 1px solid #26313d;
+  background: var(--realism-gunmetal);
+  border: 1px solid var(--realism-gunmetal);
 }
 .case-details > div {
   padding: 13px;
-  background: #090d12;
+  background: var(--realism-panel);
 }
 .case-details dt {
-  color: #657b8c;
+  color: var(--realism-muted);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -312,7 +349,7 @@
 }
 .case-details dd {
   margin: 5px 0 0;
-  color: #d8e4eb;
+  color: var(--realism-chrome-hot);
   overflow-wrap: anywhere;
 }
 .case-details .full-detail {
@@ -324,21 +361,23 @@
   margin-top: 18px;
 }
 .notes-field label {
-  color: #94a8b7;
+  color: var(--realism-muted);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+/* Cut INTO the modal, so the light falls on the inside of the top edge. */
 .notes-field textarea {
   width: 100%;
   min-height: 104px;
   padding: 12px;
   box-sizing: border-box;
-  border: 1px solid #354753;
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 2px;
-  background: #070b0f;
-  color: #eef6fb;
+  background: var(--realism-obsidian);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
+  color: var(--realism-chrome-hot);
   font:
     16px 'Roboto Condensed',
     system-ui,
@@ -356,6 +395,9 @@
   padding: 10px 13px;
   border: 1px solid;
   border-radius: 2px;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   font:
     700 0.8rem 'Rajdhani',
     system-ui,
@@ -370,13 +412,14 @@
   color: #ffb6ba;
 }
 .btn-secondary {
-  border-color: #384956;
-  background: #151d24;
-  color: #b8c5ce;
+  border-color: var(--realism-gunmetal-lit);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  color: var(--realism-chrome);
 }
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 @media (max-width: 680px) {
   .case-toolbar {
@@ -418,9 +461,20 @@
     max-height: 90dvh;
   }
 }
+/* Motion collapses, the material does not: every border, bevel and colour above
+   survives here, so a reduced-motion reviewer sees the same object held still. */
 @media (prefers-reduced-motion: reduce) {
   .report-card {
     transition: none;
+  }
+
+  .report-review-page *,
+  .report-review-page *::before,
+  .report-review-page *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -429,7 +483,7 @@
 .report-cap {
   margin: 0 0 10px;
   padding: 9px 12px;
-  color: #d9c49a;
+  color: var(--realism-gold);
   font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
   font-size: 0.78rem;
   font-weight: 700;

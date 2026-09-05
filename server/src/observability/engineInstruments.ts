@@ -124,6 +124,29 @@ export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'Player actions processed (labels: audience=human|horse, format=cash|spin|hu_sng|mtt)'
 );
 
+/**
+ * Duplicate suppression on `POST /action` (Phase 3 - 2026-09-05). Three
+ * series, no table and no user: `stored` is one intent reaching the engine,
+ * `replay` is a retry answered from memory instead of moving chips twice, and
+ * `conflict` is one key arriving with two different actions - which should be
+ * flat zero forever, and is the series to look at first if it is not.
+ */
+export const actionIdempotencyTotal: Counter = alwaysOnRegistry.counter(
+  'poker_action_idempotency_total',
+  'Actions seen by the /action duplicate guard (label: outcome=stored|replay|conflict)'
+);
+
+/**
+ * A metric that is absent and a metric that is zero look identical on a
+ * dashboard and mean opposite things - "nothing has been duplicated" versus
+ * "the guard is not deployed". Registering the three series at zero on import
+ * makes the difference readable from the first scrape. Counter.inc(0) is a
+ * legal no-op increment that creates the series.
+ */
+actionIdempotencyTotal.inc(0, { outcome: 'stored' });
+actionIdempotencyTotal.inc(0, { outcome: 'replay' });
+actionIdempotencyTotal.inc(0, { outcome: 'conflict' });
+
 /** Prometheus lines for the always-on fleet registry. */
 export function alwaysOnPrometheusLines(): string[] {
   return alwaysOnRegistry.renderPrometheus().split('\n').filter(Boolean);

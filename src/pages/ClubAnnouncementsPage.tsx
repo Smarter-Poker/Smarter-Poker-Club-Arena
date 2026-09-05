@@ -214,7 +214,11 @@ export default function ClubAnnouncementsPage() {
       }
 
       if (user?.id) {
-        const { data: membership } = await supabase
+        /* The error is read: a transient failure used to be identical to "you are
+         not staff here", quietly removing the composer and the pin and delete
+         controls with nothing said. It still fails closed - that is right - but
+         it says so now. */
+        const { data: membership, error: membershipErr } = await supabase
           .from('club_members')
           .select('role')
           .eq('club_id', resolvedId)
@@ -223,6 +227,7 @@ export default function ClubAnnouncementsPage() {
 
         if (getIsMounted && !getIsMounted()) return;
         const memberRole = membership?.role || '';
+        if (membershipErr) reportError(membershipErr, 'ClubAnnouncementsPage.role_lookup_failed');
         setIsAdmin(['owner', 'co_owner', 'admin'].includes(memberRole));
         if (['owner', 'co_owner', 'admin', 'agent'].includes(memberRole)) {
           setUserRole(memberRole as 'owner' | 'admin' | 'agent');
@@ -275,16 +280,24 @@ export default function ClubAnnouncementsPage() {
 
   const handleTogglePin = async (id: string, currentlyPinned: boolean) => {
     try {
-      const { error } = await supabase
+      /* `.select('id')`: an UPDATE that RLS refuses matches zero rows and
+         returns 204 with no error, so this used to reload the list and toast
+         "Announcement pinned" over a row whose pin had not moved - the reload
+         then repainted the OLD state underneath the success message. */
+      const { data: pinned, error } = await supabase
         .from('club_announcements')
         .update({ is_pinned: !currentlyPinned })
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
 
-      if (!error) {
+      if (error) {
+        toast.error('Failed to update pin status');
+      } else if (!pinned || pinned.length === 0) {
+        toast.error('That Pin Did Not Change. You May Not Have Permission To Change It.');
+        loadAnnouncements();
+      } else {
         loadAnnouncements();
         toast.success(currentlyPinned ? 'Announcement unpinned' : 'Announcement pinned');
-      } else {
-        toast.error('Failed to update pin status');
       }
     } catch (err) {
       reportError(err, 'ClubAnnouncementsPage.Failed_to_toggle_pin');
@@ -310,14 +323,20 @@ export default function ClubAnnouncementsPage() {
         const resolvedId = await resolveClubUUID(clubId);
         delQuery = delQuery.eq('club_id', resolvedId);
       }
-      const { error } = await delQuery;
+      /* Same reason as the pin above, and worse here: the line that removed the
+         announcement from local state ran on a refusal too, so the notice
+         vanished from the operator's screen and stayed live for every player. */
+      const { data: deleted, error } = await delQuery.select('id');
 
-      if (!error) {
+      if (error) {
+        toast.error('Failed to delete announcement');
+      } else if (!deleted || deleted.length === 0) {
+        toast.error('That Announcement Was Not Deleted. It May Belong To Another Club.');
+        loadAnnouncements();
+      } else {
         setAnnouncements((prev) => prev.filter((a) => a.id !== id));
         toast.success('Announcement deleted');
         if (clubId) masterBus.emit('ANNOUNCEMENT_CHANGED', { clubId, action: 'deleted' });
-      } else {
-        toast.error('Failed to delete announcement');
       }
     } catch (err) {
       reportError(err, 'ClubAnnouncementsPage.Failed_to_delete_announcement');

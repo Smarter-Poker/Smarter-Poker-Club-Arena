@@ -97,7 +97,24 @@ export interface OpponentStats {
   postAggr: number;
   postPassive: number;
   rChecks: number;
+  // ── V43 TEMPO READS (2026-09-05). The action log carries a timestamp on
+  // every record and nothing read it. A river bet of 20bb+ that reached
+  // showdown is classed by how fast it was made: snap (under 1.5 s since the
+  // previous action) or tank (8 s or more), and whether it was value.
+  /** river big bets made snap that reached showdown */
+  snapBetSD: number;
+  /** ... where the shown hand was two pair or better */
+  snapBetSDStrong: number;
+  /** river big bets made after a tank that reached showdown */
+  tankBetSD: number;
+  /** ... where the shown hand was two pair or better */
+  tankBetSDStrong: number;
 }
+
+/** V43: a bet within this many ms of the previous action is a snap. */
+export const SNAP_MS = 1500;
+/** V43: a bet this many ms or more after the previous action is a tank. */
+export const TANK_MS = 8000;
 
 const freshStats = (): OpponentStats => ({
   hands: 0,
@@ -125,6 +142,10 @@ const freshStats = (): OpponentStats => ({
   rChecks: 0,
   postAggr: 0,
   postPassive: 0,
+  snapBetSD: 0,
+  snapBetSDStrong: 0,
+  tankBetSD: 0,
+  tankBetSDStrong: 0,
 });
 
 /** Exploit multipliers derived from a specific opponent's tendencies. */
@@ -589,6 +610,10 @@ export class HorseMind {
         postAggr: keep(existing?.postAggr, num((r as { postAggr?: number }).postAggr)),
         postPassive: keep(existing?.postPassive, num((r as { postPassive?: number }).postPassive)),
         rChecks: keep(existing?.rChecks, num(r.rChecks)),
+        snapBetSD: keep(existing?.snapBetSD, num(r.snapBetSD)),
+        snapBetSDStrong: keep(existing?.snapBetSDStrong, num(r.snapBetSDStrong)),
+        tankBetSD: keep(existing?.tankBetSD, num(r.tankBetSD)),
+        tankBetSDStrong: keep(existing?.tankBetSDStrong, num(r.tankBetSDStrong)),
       });
       applied++;
     }
@@ -1382,7 +1407,17 @@ export class HorseMind {
    */
   static observeHandComplete(
     handKey: string,
-    actions: Array<{ userId?: string; action: string; amount?: number; stage: string }> | undefined,
+    actions:
+      | Array<{
+          userId?: string;
+          action: string;
+          amount?: number;
+          stage: string;
+          /** V43: the engine stamps Date.now() on every record; the tempo
+           *  read needs it. Optional so older callers and fixtures still type. */
+          timestamp?: number;
+        }>
+      | undefined,
     bigBlind: number,
     showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null
   ): void {
@@ -1468,7 +1503,13 @@ export class HorseMind {
           if (sd?.user_id) shown.set(sd.user_id, sd);
         }
         const counted = new Set<string>();
+        let prevTs: number | null = null;
         for (const a of actions) {
+          // V43: the gap since the previous action, whatever it was. The
+          // first record of the hand has no gap.
+          const ts = typeof a.timestamp === 'number' && isFinite(a.timestamp) ? a.timestamp : null;
+          const gap = ts !== null && prevTs !== null ? ts - prevTs : null;
+          if (ts !== null) prevTs = ts;
           if (a.stage !== 'river' || !a.userId || counted.has(a.userId)) continue;
           if (a.action !== 'bet' && a.action !== 'raise' && a.action !== 'all_in') continue;
           if ((a.amount ?? 0) < 20 * bb) continue;
@@ -1479,8 +1520,14 @@ export class HorseMind {
           s.bigBetSD++;
           // A mucked hand after betting big and being called LOST — that is
           // not value. Revealed hands are classified by name.
-          if (!sd.mucked && STRONG_HAND_NAMES.has((sd.hand_name ?? '').toLowerCase())) {
-            s.bigBetSDStrong++;
+          const strong = !sd.mucked && STRONG_HAND_NAMES.has((sd.hand_name ?? '').toLowerCase());
+          if (strong) s.bigBetSDStrong++;
+          if (gap !== null && gap >= 0 && gap <= SNAP_MS) {
+            s.snapBetSD++;
+            if (strong) s.snapBetSDStrong++;
+          } else if (gap !== null && gap >= TANK_MS) {
+            s.tankBetSD++;
+            if (strong) s.tankBetSDStrong++;
           }
         }
       }
@@ -1524,6 +1571,22 @@ export class HorseMind {
   /** Of their big river bets that reached showdown, the fraction that were
    *  real hands (two pair+). Null below a 5-showdown sample. High = their
    *  big bets mean it; low = they bomb with air. */
+  /** V43 TEMPO: how often this player's SNAP river big bets showed down as
+   *  value. Null below five observations - a tempo read on a handful of
+   *  hands is superstition, and superstition must not price a call. */
+  static snapBetValueTendency(id: string): number | null {
+    const s = this.stats.get(id);
+    if (!s || s.snapBetSD < 5) return null;
+    return s.snapBetSDStrong / s.snapBetSD;
+  }
+
+  /** V43 TEMPO: the same for river big bets made after a long tank. */
+  static tankBetValueTendency(id: string): number | null {
+    const s = this.stats.get(id);
+    if (!s || s.tankBetSD < 5) return null;
+    return s.tankBetSDStrong / s.tankBetSD;
+  }
+
   static bigBetValueTendency(id: string): number | null {
     const s = this.stats.get(id);
     if (!s || s.bigBetSD < 5) return null;

@@ -82,6 +82,27 @@ export interface CardAnimationProfile {
   readonly lightSweepEnabled: boolean;
   /** rotateY flip with two surfaces (true) or a flat crossfade (false). */
   readonly threeD: boolean;
+  /**
+   * THE SERVER IS HOLDING A STOPWATCH FOR THIS ONE (2026-09-05 audit).
+   *
+   * A normal reveal answers only to the player: --animation-speed stretches it
+   * and nothing else cares. The all-in run-out does not. The engine opens its
+   * equity gate exactly ALL_IN_STREET_REVEAL_MS after sending the street
+   * (ServerTableEngineRunout), and THE SERVER CANNOT KNOW A CLIENT'S SPEED, so
+   * it holds for speed 1. A player on Slow (1.5x) therefore had the winning
+   * percentages appear while the card that caused them was still face down -
+   * the exact spoiler Dan banned on 2026-08-28: "EQUITY CHANGES ONLY AFTER THE
+   * FLOP IS DISPLAYED, (NOT BEFORE OR DURING)". Raising the gap to 1750ms
+   * widened that gap by ~73%, which is how the audit found it.
+   *
+   * So a server-paced reveal clamps its speed to <= 1: still faster if the
+   * player asked for faster, never slower than the stopwatch it must finish
+   * inside. This is not a new rule - handCompletionSpec's RIT timeline already
+   * states it ("the client CLAMPS its reveal to speed <= 1 for this timeline
+   * only") and TablePage already does it with Math.min(1, getAnimationSpeed()).
+   * The animation still plays in full, so 10.6 is untouched.
+   */
+  readonly serverPaced?: boolean;
 }
 
 export interface ResolveProfileInput {

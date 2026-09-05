@@ -312,12 +312,24 @@ class FriendSuggestionServiceClass {
   }
 
   /**
-   * Get mutual friends between two users
+   * Mutual friends between two players, named and pictured for the ARENA.
+   *
+   * The RPC's columns are still called `username` and `avatar_url` - that is
+   * its published contract and renaming them would break every caller - but
+   * since migration 20260905154022 the VALUES arrive resolved: `username`
+   * carries `fn_arena_name` (alias -> username -> display_name) and
+   * `avatar_url` carries the arena portrait, falling back to the social photo
+   * only when a player has chosen no arena art.
+   *
+   * This mapper renames them on the way out precisely so no caller can read
+   * `friend.username` and paint a raw column. Until 2026-09-05 the public
+   * dossier did exactly that, and 1,004 of 1,313 players had an alias that
+   * differed from the username being shown in its place.
    */
   async getMutualFriends(
     userId: string,
     otherUserId: string
-  ): Promise<{ id: string; username: string; avatarUrl?: string }[]> {
+  ): Promise<{ id: string; arenaName: string; avatarUrl?: string }[]> {
     try {
       const session = readLocalSession();
       if (session?.userId !== userId) return [];
@@ -328,7 +340,7 @@ class FriendSuggestionServiceClass {
 
       return (profiles || []).map((p: any) => ({
         id: p.id as string,
-        username: p.username as string,
+        arenaName: (p.username as string) || 'Player',
         avatarUrl: p.avatar_url as string | undefined,
       }));
     } catch (err: unknown) {

@@ -192,9 +192,13 @@ describe('horses take seats, not just places on a list', () => {
 });
 
 describe('the last seat belongs to a human for a minute to two and a half', () => {
-  it('the window is 60 to 150 seconds (Dan 2026-09-03; was 180)', () => {
-    expect(recurring).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 60 \* 1000/);
-    expect(recurring).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 150 \* 1000/);
+  it('the window is 90 to 350 seconds (Dan 2026-09-05; was 60-150)', () => {
+    /* Widened after the week in which 31,153 Spins ran and FOUR had a human
+       in them. The floor moved because a player needs longer than a minute to
+       open the lobby, read the stakes and tap a seat; the ceiling because a
+       board open past six minutes stops reading as a room about to deal. */
+    expect(recurring).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 90 \* 1000/);
+    expect(recurring).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 350 \* 1000/);
   });
 
   it('is randomised per game, not a fixed tick, and not with the banned RNG', () => {

@@ -1,0 +1,247 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   VIP MEMBERSHIP PLATE — #SmarterCasinoRealism
+
+   Obsidian and gunmetal, chamfered plate edges, Rajdhani for the grade, and
+   ONE brass accent reserved for the membership itself. No gold gradients: the
+   plate this replaced painted #ffd700 borders and a gold glow around a "VIP
+   Diamond" card, and yellow is outside the schema (Dan 2026-09-05).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.vmp {
+  --vmp-obsidian: #030609;
+  --vmp-carbon: #080d12;
+  --vmp-raised: #0d141b;
+  --vmp-line: #26333d;
+  --vmp-chrome: #dce8f0;
+  --vmp-steel: #b9cad7;
+  --vmp-muted: #8fa2af;
+  --vmp-dim: #738692;
+  --vmp-blue: #3aa8ff;
+  --vmp-brass: #d6ad52;
+
+  margin: 0 0 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--vmp-line);
+  background:
+    linear-gradient(118deg, rgba(58, 168, 255, 0.04), transparent 42%),
+    linear-gradient(150deg, var(--vmp-raised), var(--vmp-carbon));
+  box-shadow: inset 0 1px rgba(185, 202, 215, 0.07);
+  clip-path: polygon(
+    10px 0,
+    100% 0,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    0 100%,
+    0 10px
+  );
+}
+
+.vmp__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--vmp-line);
+}
+
+.vmp__identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.vmp__eyebrow,
+.vmp__title {
+  color: #9fb1bd;
+  font:
+    800 0.66rem/1.2 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.vmp__grade {
+  color: var(--vmp-chrome);
+  font-family: Rajdhani, 'Segoe UI', system-ui, sans-serif;
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+}
+
+/* The one warm mark on the plate, and only for a membership that exists. */
+.vmp__grade[data-status='vip'],
+.vmp__grade[data-status='lifetime'] {
+  color: var(--vmp-brass);
+}
+
+.vmp__term {
+  color: var(--vmp-muted);
+  font-size: 0.76rem;
+}
+
+.vmp__points {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 240px;
+  margin: 0;
+  gap: 0.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+}
+
+.vmp__points div {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #1f2b34;
+  background: #060a0e;
+}
+
+.vmp__points dt {
+  color: var(--vmp-dim);
+  font:
+    700 0.58rem/1 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vmp__points dd {
+  margin: 0.22rem 0 0;
+  color: var(--vmp-chrome);
+  font-family: Rajdhani, 'Segoe UI', system-ui, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.vmp__unit {
+  color: var(--vmp-dim);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.vmp__section {
+  margin-top: 0.85rem;
+}
+
+.vmp__title {
+  margin: 0 0 0.55rem;
+}
+
+.vmp__allowances,
+.vmp__included {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: 0.45rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  list-style: none;
+}
+
+.vmp__allowance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #1f2b34;
+  background: #060a0e;
+}
+
+.vmp__allowanceLabel {
+  color: var(--vmp-steel);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.vmp__allowanceValue {
+  color: var(--vmp-chrome);
+  font-family: Rajdhani, 'Segoe UI', system-ui, sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.vmp__allowanceOf {
+  color: var(--vmp-dim);
+  font-family: inherit;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.vmp__meter {
+  display: block;
+  overflow: hidden;
+  height: 3px;
+  background: #16202a;
+}
+
+.vmp__meterFill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--vmp-blue), #66c8ff);
+  transition: width 0.4s ease-out;
+}
+
+.vmp__included li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.14rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #1f2b34;
+  background: #060a0e;
+}
+
+.vmp__includedLabel {
+  color: var(--vmp-steel);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.vmp__includedOtherwise {
+  color: var(--vmp-dim);
+  font-size: 0.65rem;
+}
+
+/* ── Light mode: brushed silver ──────────────────────────────────────────── */
+
+[data-theme='light'] .vmp {
+  --vmp-carbon: #f3f6f8;
+  --vmp-raised: #fbfcfd;
+  --vmp-line: #b7c3cc;
+  --vmp-chrome: #12202a;
+  --vmp-steel: #2a3a46;
+  --vmp-muted: #55697a;
+  --vmp-dim: #6b7d8b;
+  --vmp-blue: #1878c8;
+  --vmp-brass: #8a6614;
+}
+
+[data-theme='light'] .vmp__points div,
+[data-theme='light'] .vmp__allowance,
+[data-theme='light'] .vmp__included li {
+  border-color: #d5dde3;
+  background: #ffffff;
+}
+
+[data-theme='light'] .vmp__eyebrow,
+[data-theme='light'] .vmp__title {
+  color: #4d6272;
+}
+
+[data-theme='light'] .vmp__meter {
+  background: #dde5ea;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vmp__meterFill {
+    transition: none;
+  }
+}

@@ -1,8 +1,24 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  RAKEBACK PAGE — Metal UI Theme
- *  Brushed Steel + Green Glow Earnings
+ *  RAKEBACK PAGE / #SMARTERCASINOREALISM
+ *  Brushed steel, green-glow earnings, and now the house vocabulary
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * This page is one tab from the wallet in the Rewards Circuit, and it had
+ * independently arrived at the right idea: it already lit its live figures
+ * var(--realism-cyan, #00d4ff) and already put a hairline of light on its cards. What it did not
+ * share was the GREYS - #2a3a4a borders against the family's #27313c, var(--realism-muted, #6a7a8a)
+ * and var(--realism-chrome, #8a9aaa) labels against #7f8c9b, a #0a0a14 ground against #05070a.
+ * Nothing here was wrong on its own, and that is exactly how a family ends up
+ * subtly mismatched tab to tab.
+ *
+ * The palette now comes from --realism-* in club-engine.css, every var()
+ * carrying its previous literal as a fallback, and the surfaces gain the
+ * machined treatment the wallet established: a lit top edge over a cavity, so
+ * a card sits IN the page rather than on it.
+ *
+ * Layout, spacing and every breakpoint are untouched. No :hover (the law);
+ * press feedback lives in :active.
  */
 
 .rakeback-page {
@@ -16,7 +32,12 @@
      viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
   overflow-x: clip;
-  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
+  background: linear-gradient(
+    180deg,
+    var(--realism-obsidian, #0a0a14) 0%,
+    var(--realism-carbon, #0d1520) 50%,
+    var(--realism-obsidian, #0a0a14) 100%
+  );
   padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
@@ -69,16 +90,29 @@
   gap: 0.75rem;
 }
 
+/* The card was a translucent wash with a hairline of light on top - the bevel
+   without the cavity, so it read as a sheet laid ON the page. The cavity and
+   the lift put it IN the page: light on the top edge, shade under it, and a
+   shadow the panel casts on the ground behind it. */
 .summary-card {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%),
+    linear-gradient(
+      180deg,
+      var(--realism-panel-raised, #111925) 0%,
+      var(--realism-panel, #0b1017) 100%
+    );
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 2px solid #2a3a4a;
+  border: 2px solid var(--realism-gunmetal, #2a3a4a);
   border-radius: 12px;
   padding: 1rem;
   text-align: center;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow:
+    var(--realism-bevel, inset 0 1px 0 rgba(255, 255, 255, 0.06)),
+    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6)),
+    var(--realism-lift, 0 8px 24px rgba(0, 0, 0, 0.45));
 }
 .summary-card.main {
   display: flex;
@@ -138,7 +172,7 @@
 
 .card-label {
   font-size: 0.7rem;
-  color: #6a7a8a;
+  color: var(--realism-muted, #6a7a8a);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -151,21 +185,21 @@
   margin: 0 1rem;
   padding: 1rem;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(100, 100, 100, 0.02) 100%);
-  border: 1px solid #2a3a4a;
+  border: 1px solid var(--realism-gunmetal, #2a3a4a);
   border-radius: 12px;
-  border-left: 4px solid #00d4ff;
+  border-left: 4px solid var(--realism-cyan, #00d4ff);
 }
 
 .rakeback-info h3 {
   margin: 0 0 0.5rem;
   font-size: 1rem;
-  color: #00d4ff;
+  color: var(--realism-cyan, #00d4ff);
 }
 
 .rakeback-info p {
   margin: 0;
   font-size: 0.85rem;
-  color: #8a9aaa;
+  color: var(--realism-chrome, #8a9aaa);
   line-height: 1.5;
 }
 
@@ -180,7 +214,7 @@
 .rakeback-history h3 {
   margin: 0 0 1rem;
   font-size: 0.9rem;
-  color: #00d4ff;
+  color: var(--realism-cyan, #00d4ff);
   font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -200,7 +234,7 @@
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(100, 100, 100, 0.02) 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid #2a3a4a;
+  border: 1px solid var(--realism-gunmetal, #2a3a4a);
   border-radius: 12px;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -209,7 +243,7 @@
 .period-dates {
   flex: 1;
   font-size: 0.85rem;
-  color: #8a9aaa;
+  color: var(--realism-chrome, #8a9aaa);
 }
 
 .period-details {
@@ -219,12 +253,12 @@
 .rake-generated {
   display: block;
   font-size: 0.75rem;
-  color: #6a7a8a;
+  color: var(--realism-muted, #6a7a8a);
 }
 
 .rakeback-rate {
   font-size: 0.75rem;
-  color: #00d4ff;
+  color: var(--realism-cyan, #00d4ff);
   font-weight: 500;
 }
 
@@ -273,7 +307,7 @@
   display: flex;
   justify-content: center;
   padding: 2rem;
-  color: #6a7a8a;
+  color: var(--realism-muted, #6a7a8a);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -284,14 +318,14 @@
   margin: 0 1rem 1rem;
   padding: 1rem;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  border: 2px solid #2a3a4a;
+  border: 2px solid var(--realism-gunmetal, #2a3a4a);
   border-radius: 12px;
 }
 
 .rakeback-chart h3 {
   margin: 0 0 1rem;
   font-size: 0.9rem;
-  color: #00d4ff;
+  color: var(--realism-cyan, #00d4ff);
   font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   text-transform: uppercase;
   letter-spacing: 1px;

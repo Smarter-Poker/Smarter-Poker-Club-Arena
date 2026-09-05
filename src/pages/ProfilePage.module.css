@@ -1298,3 +1298,157 @@
     opacity: 1;
   }
 }
+
+/* ── Added 2026-09-04 (PR #3077): sessions, variants, group headings, chart ── */
+
+.groupHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.groupHeading h3 {
+  margin: 0;
+}
+
+.groupHeading small {
+  color: var(--identity-dim);
+  font:
+    700 0.62rem/1 'Roboto Condensed',
+    'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sessionList,
+.variantList {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sessionList li {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #1f2b34;
+  border-radius: 2px;
+  background: #060a0e;
+}
+
+.sessionList li > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.sessionList strong {
+  color: var(--identity-chrome);
+  font:
+    800 0.82rem/1.2 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.sessionList small {
+  color: var(--identity-dim);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sessionList li > span {
+  flex: 0 0 auto;
+  font:
+    800 0.9rem/1 'Rajdhani',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.variantList li {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1fr;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 0.75rem;
+  border: 1px solid #1f2b34;
+  border-radius: 2px;
+  background: #060a0e;
+  font:
+    800 0.76rem/1 'Rajdhani',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.variantList li span:first-child {
+  color: var(--identity-chrome);
+  text-transform: uppercase;
+}
+
+.variantList li span:nth-child(2),
+.variantList li span:last-child {
+  color: var(--identity-muted);
+}
+
+.historyContainer :global(.profit-chart) {
+  padding: 0.5rem 0.25rem 0;
+  border: 1px solid #1f2b34;
+  border-radius: 2px;
+  background: #060a0e;
+}
+
+.historyContainer :global(.profit-chart-empty) {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  padding: 1.6rem 1rem;
+  border: 1px dashed var(--identity-gunmetal);
+  border-radius: 2px;
+  color: var(--identity-muted);
+  text-align: center;
+}
+
+.historyContainer :global(.profit-chart-empty) span {
+  font-size: 1.6rem;
+  opacity: 0.4;
+}
+
+.historyContainer :global(.profit-chart-empty) strong {
+  color: var(--identity-chrome);
+  font:
+    700 0.78rem/1 'Roboto Condensed',
+    'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.historyContainer :global(.profit-chart-empty) small {
+  font-size: 0.7rem;
+}
+
+:global([data-theme='light']) .sessionList li,
+:global([data-theme='light']) .variantList li,
+:global([data-theme='light']) .historyContainer :global(.profit-chart) {
+  border-color: #c9d4dc;
+  background: #f4f7f9;
+}
+
+@media (max-width: 520px) {
+  .variantList li {
+    grid-template-columns: 1fr 1fr;
+    row-gap: 0.3rem;
+    padding: 0.55rem 0.75rem;
+  }
+}

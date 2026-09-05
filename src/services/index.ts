@@ -134,7 +134,7 @@ export { profileService } from './ProfileService';
 export { waitlistService } from './WaitlistService';
 
 // VIP Subscriptions & Feature Gating
-export { vipService, VIP_GOLD_LIMITS, FEATURE_PRICING } from './VIPService';
+export { vipService, VIP_MONTHLY_ALLOWANCES, FEATURE_PRICING } from './VIPService';
 export type { VIPStatus, VIPMonthlyLimits, VIPFeature, FeatureAccess } from './VIPService';
 
 // Player Notes

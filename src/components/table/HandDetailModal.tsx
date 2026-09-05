@@ -297,6 +297,15 @@ export function HandDetailModal({
     }
   }, [isOpen, initialHandId]);
 
+  /* PIN THE NEWEST TOO (Phase 1). With live refresh a hand can land while the
+     modal is open. "Newest" was resolved as index 0 on every render, so the
+     reader was moved onto the new hand mid-read. Once the list has a newest
+     hand, that hand becomes the subject by id; the navigator's total grows
+     and the arrows still reach the new one. */
+  useEffect(() => {
+    if (isOpen && subjectId === null && hands.length > 0) setSubjectId(hands[0].id);
+  }, [isOpen, subjectId, hands]);
+
   const index = useMemo(() => {
     if (!hands.length) return 0;
     if (subjectId) {

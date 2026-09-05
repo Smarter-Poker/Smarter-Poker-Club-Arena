@@ -42,3 +42,19 @@ the filter; if the viewer cannot read it, the page says so instead of failing.
 `tests/unit/previousHandPhase1.test.tsx`: the refetch rules, prepend ordering
 and cap, the deep link shape, the TablePage wiring, the observer copy in both
 surfaces, and the two copy controls writing the clipboard.
+
+## Deep-dive review before Phase 2 (same day)
+
+Four defects found in the phase's own code and fixed before publish:
+
+- A hand announced while the page fetch was in flight was dropped (the fetch
+  may have queried before the row landed). Such ids are queued and applied
+  after the fetch.
+- With live refresh, the modal opened "on the newest" resolved newest on every
+  render, so a landing hand moved the reader off the hand they were reading.
+  The newest is pinned by id at open; the navigator grows instead.
+- Switching table left the previous table's list under the new table's name
+  while the new list loaded. It is cleared first.
+- The archive refetched a linked hand by id every time `rows` changed (each
+  Load More). It fetches once.
+- The deep link's base path is pinned to the router's own `basename`.

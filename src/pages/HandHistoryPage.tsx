@@ -194,6 +194,8 @@ export default function HandHistoryPage() {
       return;
     }
     if (loading) return;
+    // Already fetched by id; a Load More changing `rows` is not a reason to refetch.
+    if (linkedRow?.id === linkedHandId) return;
     let alive = true;
     setLinkedState('loading');
     (async () => {
@@ -211,7 +213,7 @@ export default function HandHistoryPage() {
     return () => {
       alive = false;
     };
-  }, [linkedHandId, userId, rows, loading]);
+  }, [linkedHandId, userId, rows, loading, linkedRow]);
 
   /* The view model: the same record the table's panel renders, through the
      same adapter. Filters and the stats drill-down apply on top. A linked hand

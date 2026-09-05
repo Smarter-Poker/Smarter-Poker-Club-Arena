@@ -93,6 +93,15 @@ describe('the deep link', () => {
     );
   });
 
+  it("uses the router's own basename", () => {
+    const main = read('src/main.tsx');
+    const m = /basename="([^"]+)"/.exec(main);
+    expect(m).not.toBeNull();
+    expect(
+      handDeepLink('x', 'https://smarter.poker').startsWith(`https://smarter.poker${m![1]}/`)
+    ).toBe(true);
+  });
+
   it('is what the modal copies, and the archive reads', () => {
     expect(read('src/components/table/HandDetailModal.tsx')).toContain(
       "copyText('link', handDeepLink(hand.id))"
@@ -119,6 +128,18 @@ describe('TablePage takes the saved hand as it lands', () => {
       /if \(\s*handHistoryStateRef\.current !== 'ready' \|\|\s*handHistoryTableRef\.current !== tableId\s*\)\s*return;/
     );
     expect(page).toContain('if (!row || row.table_id !== tableId) return;');
+  });
+
+  it('a hand announced during the page fetch is applied after it, not dropped', () => {
+    expect(page).toContain("if (handHistoryStateRef.current === 'loading') {");
+    expect(page).toContain('pendingSavedIdsRef.current.push(savedId)');
+    expect(page).toContain('for (const id of pending) void takeSavedHandRef.current(id);');
+  });
+
+  it("another table's list is cleared before this table's loads", () => {
+    expect(page).toContain(
+      'if (handHistoryTableRef.current !== (tableId ?? null)) setHandHistory([]);'
+    );
   });
 
   it('opens without a fetch when the list is fresh', () => {
@@ -195,6 +216,23 @@ describe('the surfaces', () => {
     expect(document.querySelector('.hh-panel__empty')?.textContent).not.toMatch(
       /No Hands Recorded At This Table/
     );
+  });
+
+  it('a hand landing while the modal is open does not move the reader off the hand on screen', () => {
+    const newest = record();
+    const older = { ...record(), id: 'h-0', handNumber: 6 };
+    const { rerender } = render(
+      <HandDetailModal isOpen onClose={() => {}} hands={[newest, older]} heroId={HERO} />
+    );
+    expect(document.querySelector('.hdm-sn')?.textContent).toContain('#7');
+    const landed = { ...record(), id: 'h-2', handNumber: 8 };
+    rerender(
+      <HandDetailModal isOpen onClose={() => {}} hands={[landed, newest, older]} heroId={HERO} />
+    );
+    // Still on #7; the navigator now counts three and the newer arrow is live.
+    expect(document.querySelector('.hdm-sn')?.textContent).toContain('#7');
+    expect(document.querySelector('.hdm-nav__label')?.textContent).toBe('2/3');
+    expect((screen.getByLabelText('Newer Hand') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('the modal copies the hand number and the link', async () => {

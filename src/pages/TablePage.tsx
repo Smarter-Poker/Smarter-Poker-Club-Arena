@@ -7275,6 +7275,9 @@ export default function TablePage({
   const handHistoryTableRef = useRef<string | null>(null);
   const handHistoryStateRef = useRef<'idle' | 'loading' | 'ready' | 'failed'>('idle');
   handHistoryStateRef.current = handHistoryState;
+  /* Saved-hand ids that arrived WHILE the page fetch was in flight. The fetch
+     may have queried before the row landed, so they are applied after it. */
+  const pendingSavedIdsRef = useRef<string[]>([]);
 
   /**
    * STABLE CALLBACKS FOR TableModalsLayer (Dan 2026-08-27, stuck-announcement).
@@ -7329,6 +7332,8 @@ export default function TablePage({
       return;
     }
     let cancelled = false;
+    // Another table's list must not linger under this table's name while it loads.
+    if (handHistoryTableRef.current !== (tableId ?? null)) setHandHistory([]);
     setHandHistoryState('loading');
     (async () => {
       try {
@@ -7344,7 +7349,13 @@ export default function TablePage({
         setHandHistory((hands || []).map((h) => adaptServiceHandToPanel(h, userId)));
         handHistoryFetchedAtRef.current = Date.now();
         handHistoryTableRef.current = tableId ?? null;
+        handHistoryStateRef.current = 'ready';
         setHandHistoryState('ready');
+        /* Hands the engine announced during the fetch: the query may have run
+           before their rows landed. Take them now (de-duplicated by id). */
+        const pending = pendingSavedIdsRef.current;
+        pendingSavedIdsRef.current = [];
+        for (const id of pending) void takeSavedHandRef.current(id);
       } catch (e) {
         if (cancelled) return;
         setHandHistoryState('failed');
@@ -7371,6 +7382,11 @@ export default function TablePage({
   const takeSavedHand = useCallback(
     async (savedId: string) => {
       if (!userId || userId === 'guest' || !tableId) return;
+      if (handHistoryStateRef.current === 'loading') {
+        // The page fetch is in flight; it applies this id when it lands.
+        if (!pendingSavedIdsRef.current.includes(savedId)) pendingSavedIdsRef.current.push(savedId);
+        return;
+      }
       if (handHistoryStateRef.current !== 'ready' || handHistoryTableRef.current !== tableId)
         return;
       try {

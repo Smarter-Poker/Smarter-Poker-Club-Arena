@@ -312,6 +312,8 @@ import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
+import { MustMoveLobbyModal } from '../components/table/MustMoveLobbyModal';
+import { CashClusterHUD } from '../components/table/CashClusterHUD';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
 import HeroHubPanel from '../components/table/HeroHubPanel';
 import { CASH_TEMPLATES } from '../config/cashGames';
@@ -567,6 +569,12 @@ interface TableState {
    * a hand-made table, a fleet table and every tournament.
    */
   gameStyle: string | null;
+  /**
+   * THE MUST-MOVE GAME this table belongs to (Operation Table Stakes), or
+   * null. Drives the Must Move box in the upper-right corner and the lobby
+   * behind it (Dan 2026-09-05).
+   */
+  clusterId: string | null;
   /**
    * THE VPIP FLOOR (Dan 2026-09-05): "IF THEY HAVE AN ANTE OR VPIP
    * REQUIREMENT THAT SHOULD ALSO BE ON THE TABLE." The career VPIP a seat must
@@ -868,6 +876,15 @@ interface TablePageProps {
     raiseBounds?: string;
     /** Hero's current stack, for the aggregated session view. */
     heroStack?: number;
+    /**
+     * MUST-MOVE (Dan 2026-09-05): the hero's chair went to another table of
+     * the same game. An embedded instance cannot navigate - that opened a
+     * SECOND tab for the new table and left the old one behind - so it
+     * reports the destination and the container re-points THIS tab at it.
+     * Never a table switch: the hero's own table moved under them (the
+     * no-auto-table-switch law is about activeIndex, which this leaves alone).
+     */
+    movedToTableId?: string;
     /** Hero is sitting out at this table (drives the long-press menu's
      *  Sit Out / I'm Back label and the sit-out-everywhere control). */
     sittingOut?: boolean;
@@ -2046,6 +2063,7 @@ export default function TablePage({
       ante: 0,
       anteMode: null,
       gameStyle: null,
+      clusterId: null,
       vpipFloor: null,
       vpipWindow: null,
       handVariant: null,
@@ -6336,13 +6354,31 @@ export default function TablePage({
         reportError(error, 'TablePage.effective_buyin_reread');
         return;
       }
-      const d = (data ?? null) as { min?: unknown; floor_applied?: unknown } | null;
+      const d = (data ?? null) as {
+        min?: unknown;
+        floor_applied?: unknown;
+        barred_seconds?: unknown;
+      } | null;
+      /* BOOTED FOR LOW VPIP (Dan 2026-09-05): "THEY CAN'T JOIN THAT GAME
+         AGAIN FOR 2 HOURS." The door would refuse the buy-in anyway; the
+         sheet closes and says so first, so nobody drags a slider for nothing. */
+      const barredSecs = Number(d?.barred_seconds ?? 0);
+      if (barredSecs > 0) {
+        setShowBuyInModal(false);
+        toast.warning(
+          cashBuyInRefusalText(`VPIP_BARRED:${Math.ceil(barredSecs)}`) ??
+            'You Cannot Rejoin This Game Yet'
+        );
+        return;
+      }
       const floorMin = Number(d?.min ?? 0);
       setCashoutMinBuyIn(d?.floor_applied === true && floorMin > 0 ? floorMin : 0);
     })();
     return () => {
       live = false;
     };
+    // `toast` is the provider's stable object; the law test pins these three.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showBuyInModal, tableId, userId]);
 
   // Handle cashier add chips (deducts from wallet, adds to table stack)
@@ -10053,6 +10089,12 @@ export default function TablePage({
      (Dan 2026-08-28). Distinct from showTournamentInfo, which is the smaller
      four-tab summary now reached only from the hero hub's Stats tab. */
   const [showTournamentLobby, setShowTournamentLobby] = useState(false);
+  /* THE MUST MOVE LOBBY (Dan 2026-09-05): the cash counterpart, opened from
+     the Must Move box in the upper-right corner or the SEAT CHANGE button.
+     The refresh key is bumped by every seat-move event so the box re-reads
+     at once rather than on its next poll. */
+  const [showMustMoveLobby, setShowMustMoveLobby] = useState(false);
+  const [clusterRefreshKey, setClusterRefreshKey] = useState(0);
   const [standUpNextBB, setStandUpNextBB] = useState(false);
 
   const [sharedHandData, setSharedHandData] = useState<any>(null);
@@ -10440,6 +10482,8 @@ export default function TablePage({
         // One small read, fire-and-forget: the masthead prints it when it
         // lands and nothing waits on it.
         if (table.cluster_id) {
+          const clusterId = table.cluster_id;
+          setTableState((prev) => (prev.clusterId === clusterId ? prev : { ...prev, clusterId }));
           void (async () => {
             try {
               const { data: game, error: gameError } = await supabase
@@ -13285,6 +13329,7 @@ export default function TablePage({
        */
       case 'SEAT_MOVE_PENDING': {
         const d = evt.data as { user_id?: string; message?: string };
+        setClusterRefreshKey((k) => k + 1);
         if (d?.user_id !== userId || !d?.message) break;
         toast.info(d.message);
         break;
@@ -13296,8 +13341,26 @@ export default function TablePage({
        */
       case 'SEAT_MOVED': {
         const d = evt.data as { user_id?: string; to_table_id?: string };
+        setClusterRefreshKey((k) => k + 1);
         if (d?.user_id !== userId || !d?.to_table_id) break;
+        if (embeddedTableId) {
+          // The tab follows the chair; the container swaps the id.
+          onTableInfoUpdate?.({ movedToTableId: d.to_table_id });
+          break;
+        }
         navigate(`/table/${d.to_table_id}`, { replace: true });
+        break;
+      }
+      /**
+       * A SWAP SIDE HOLDING (Dan 2026-09-05): the hero's seat change is a
+       * swap, this table reached its hand boundary first, and they sit out
+       * of the deal until the other table finishes its hand.
+       */
+      case 'SEAT_MOVE_HELD': {
+        const d = evt.data as { user_id?: string; message?: string };
+        setClusterRefreshKey((k) => k + 1);
+        if (d?.user_id !== userId || !d?.message) break;
+        toast.info(d.message);
         break;
       }
 
@@ -19792,6 +19855,27 @@ export default function TablePage({
                 onOpen={() => setShowTournamentLobby(true)}
               />
             )}
+            {/* THE MUST MOVE BOX (Dan 2026-09-05): "JUST LIKE THE TOURNAMENTS
+                WITH A BOX IN THE RIGHT CORNER TO CLICK TO SEE ALL TABLES, CHIP
+                STACKS, HOW MANY PLAYERS ETC." Every must-move table carries
+                it; the SEAT CHANGE button under it appears only while the
+                database says the change is available. */}
+            {!tableState.isTournament && tableState.clusterId && (
+              <CashClusterHUD
+                gameId={tableState.clusterId}
+                refreshKey={clusterRefreshKey}
+                onOpenLobby={() => setShowMustMoveLobby(true)}
+                onSeatChange={() => setShowMustMoveLobby(true)}
+                onGoToTable={(dest) => {
+                  if (dest === tableId) return;
+                  if (embeddedTableId) {
+                    onTableInfoUpdate?.({ movedToTableId: dest });
+                    return;
+                  }
+                  navigate(`/table/${dest}`);
+                }}
+              />
+            )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
                 REMOVED (Dan 2026-08-30): the level bar itself opens the
                 tournament lobby, so a second button here was a duplicate. */}
@@ -20463,7 +20547,10 @@ export default function TablePage({
                               : `BOMB POT IN ${bombClockLabel}`
                             : tableState.bombPotIn === 1
                               ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                              : `BOMB POT IN ${tableState.bombPotIn}`}
+                              : /* Hands, said so (Dan 2026-09-05: inside the
+                                   last three minutes a timed bomb is "IN 1-5
+                                   HANDS" and the clock is gone). */
+                                `BOMB POT IN ${tableState.bombPotIn} HANDS`}
                   </div>
                 )}
 
@@ -23337,6 +23424,12 @@ export default function TablePage({
           alike, since `isTournament` is one test covering all of them. Mounted
           only while open, so a cash table pays nothing for it and the lobby's
           own realtime subscriptions do not exist until somebody asks. */}
+      <MustMoveLobbyModal
+        isOpen={showMustMoveLobby}
+        gameId={tableState.clusterId}
+        currentTableId={tableId}
+        onClose={() => setShowMustMoveLobby(false)}
+      />
       <TournamentLobbyModal
         isOpen={showTournamentLobby}
         tournamentId={tableState.tournamentId}

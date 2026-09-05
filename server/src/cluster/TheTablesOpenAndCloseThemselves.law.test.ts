@@ -525,3 +525,176 @@ describe('the deep dive after the first live cycle (20260905050000)', () => {
     }
   });
 });
+
+/**
+ * THE MUST MOVE LOBBY (Dan 2026-09-05, 20260905060000). The roster is the
+ * must-move order, a seat change once per stay (never from or to Main 1),
+ * swaps land both chairs at once, and the two entries: a seat change posts,
+ * a move by the game does not. The floor is for winners.
+ */
+const LOBBY = read(
+  'supabase/migrations/20260905060000_the_must_move_lobby_a_seat_change_and_the_order_you_joined.sql'
+);
+
+describe('the must move lobby: the roster is the order, the seat change is once, a swap is two', () => {
+  const tick = LOBBY.slice(LOBBY.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick'));
+  const exec = LOBBY.slice(
+    LOBBY.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_seat_move_execute'),
+    LOBBY.indexOf('-- ── The floor is for winners')
+  );
+
+  it('the roster row survives a move and closes when the last chair empties', () => {
+    expect(LOBBY).toMatch(/CREATE TABLE IF NOT EXISTS public\.cash_game_roster/);
+    expect(LOBBY).toMatch(/idx_cash_game_roster_open[\s\S]*WHERE left_at IS NULL/);
+    // The trigger lets a declared move through and never refuses a seat.
+    expect(LOBBY).toMatch(
+      /IF current_setting\('app\.cash_seat_move', true\) IS DISTINCT FROM 'on'[\s\S]*UPDATE public\.cash_game_roster SET left_at = now\(\)/
+    );
+    expect(LOBBY).toMatch(/EXCEPTION WHEN OTHERS THEN\s*RAISE WARNING 'fn_cash_game_roster_track/);
+    expect(LOBBY).toMatch(/AFTER INSERT OR UPDATE OF left_at, user_id ON public\.table_seats/);
+  });
+
+  it('the planner fills Main 1 from the whole list and orders by the roster, not the chair', () => {
+    expect(tick).toMatch(/\(t\.main_index = 1 AND c\.id <> t\.id\)/);
+    expect(tick).toMatch(
+      /ORDER BY c\.breaking DESC,\s*coalesce\(\(SELECT r2\.joined_at FROM public\.cash_game_roster r2/
+    );
+    // The break step too.
+    expect(tick).toMatch(
+      /ORDER BY coalesce\(\(SELECT r2\.joined_at FROM public\.cash_game_roster r2[\s\S]*?ts\.joined_at\),\s*ts\.joined_at\s*LOOP/
+    );
+    // Seat changes are planned after the mains are filled and before OPEN.
+    const seatChangeAt = tick.indexOf('fn_cash_seat_change_plan(g.id, v_now)');
+    expect(seatChangeAt).toBeGreaterThan(tick.indexOf('MUST-MOVE (1.3 s9.5)'));
+    expect(seatChangeAt).toBeLessThan(tick.indexOf('3. OPEN (18.3)'));
+  });
+
+  it('the list is everyone in the game but Main 1, in join order', () => {
+    expect(LOBBY).toMatch(
+      /fn_cash_game_must_move_list[\s\S]*?NOT \(t\.role = 'main' AND t\.main_index = 1\)[\s\S]*?ORDER BY r\.joined_at, r\.id/
+    );
+  });
+
+  it('a seat change is once per roster row, never from Main 1, never to Main 1', () => {
+    const door = LOBBY.slice(
+      LOBBY.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_seat_change_request')
+    );
+    expect(door).toMatch(/SEAT_CHANGE_NOT_FROM_MAIN/);
+    expect(door).toMatch(/SEAT_CHANGE_NEVER_TO_MAIN/);
+    expect(door).toMatch(/SEAT_CHANGE_USED/);
+    expect(door).toMatch(/UPDATE public\.cash_game_roster SET seat_change_used_at = now\(\)/);
+    // Cancel gives the button back; a planned move is already the engine's.
+    expect(door).toMatch(
+      /status = 'requested';\s*GET DIAGNOSTICS v_n = ROW_COUNT;[\s\S]*?SET seat_change_used_at = NULL/
+    );
+    // The door takes the tick's lock.
+    expect(door).toMatch(/FROM public\.cash_games WHERE id = p_game_id FOR UPDATE/);
+  });
+
+  it('a request takes an open chair on a table that is not Main 1, else swaps with a partner', () => {
+    const plan = LOBBY.slice(
+      LOBBY.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_seat_change_plan')
+    );
+    expect(plan).toMatch(/NOT \(c\.role = 'main' AND c\.main_index = 1\)/);
+    expect(plan).toMatch(/\(r\.to_table_id IS NULL OR c\.id = r\.to_table_id\)/);
+    expect(plan).toMatch(/\(r\.to_table_id IS NULL OR q\.from_table_id = r\.to_table_id\)/);
+    expect(plan).toMatch(/\(q\.to_table_id IS NULL OR q\.to_table_id = r\.from_table_id\)/);
+    expect(plan).toMatch(
+      /UPDATE public\.cash_seat_moves SET swap_move_id = v_move_b WHERE id = v_move_a/
+    );
+    expect(plan).toMatch(/'swap_planned'/);
+  });
+
+  it('a swap is not a reservation anywhere a pending move is counted', () => {
+    expect(LOBBY).toMatch(
+      /fn_cash_game_open_seats[\s\S]*?m\.state = 'pending' AND m\.swap_move_id IS NULL/
+    );
+    expect(tick).toMatch(
+      /m\.to_table_id = t\.id AND m\.state = 'pending' AND m\.swap_move_id IS NULL/
+    );
+    expect(FLEET).toMatch(/\.eq\('state', 'pending'\)\s*\.is\('swap_move_id', null\)/);
+  });
+
+  it('the swap holds the first side and lands both chairs from the second, in one transaction', () => {
+    const swap = LOBBY.slice(
+      LOBBY.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_seat_swap_execute'),
+      LOBBY.indexOf('-- ── The executor: entry by reason')
+    );
+    expect(swap).toMatch(/ORDER BY id FOR UPDATE/);
+    expect(swap).toMatch(/'waiting_partner', 'held', true/);
+    expect(swap).toMatch(/PERFORM set_config\('app\.cash_seat_move', 'on', true\)/);
+    expect(swap).toMatch(/WHERE id = b\.id;[\s\S]*?WHERE id = a\.id;/);
+    expect(swap).toMatch(/'swap', true/);
+    expect(exec).toMatch(
+      /IF m\.swap_move_id IS NOT NULL THEN\s*RETURN public\.fn_cash_seat_swap_execute\(m\.id\)/
+    );
+  });
+
+  it('entry by reason: a seat change posts, a move by the game does not', () => {
+    expect(exec).toMatch(
+      /v_hold := CASE WHEN m\.reason = 'seat_change' THEN 'waiting' ELSE 'moved' END/
+    );
+    expect(exec).toMatch(/v_agreed := \(m\.reason = 'seat_change'\)/);
+    expect(LOBBY).toMatch(
+      /entry_hold = ANY \(ARRAY\['waiting'::text, 'posting'::text, 'moved'::text\]\)/
+    );
+    // The engine honours both on arrival.
+    expect(DEALING).toMatch(
+      /entryHold === 'moved'[\s\S]*?persistEntryHold\(p\.user_id, \{ hold: null, agreed: false \}\)/
+    );
+    expect(DEALING).toMatch(
+      /entryHold === 'waiting' && entryAgreed[\s\S]*?this\.postBBWhenClear\.add\(p\.user_id\)/
+    );
+    // And on a restart before the first deal.
+    expect(BASE).toMatch(
+      /else if \(hold === 'moved'\)[\s\S]*?persistEntryHold\(p\.user_id, \{ hold: null, agreed: false \}\)/
+    );
+  });
+
+  it('a held swap side is out of the deal, and released when its move is gone', () => {
+    expect(BASE).toMatch(/protected heldForSwap: Set<string> = new Set\(\)/);
+    expect(DEALING).toMatch(
+      /!this\.waitingForBB\.has\(p\.user_id\) &&[\s\S]*?!this\.isHeldForSwap\(p\.user_id\)/
+    );
+    expect(BASE).toMatch(
+      /!this\.waitingForBB\.has\(p\.user_id\) &&\s*!this\.heldForSwap\.has\(p\.user_id\)/
+    );
+    expect(BASE).toMatch(
+      /for \(const uid of this\.heldForSwap\) \{\s*if \(!liveHeld\.has\(uid\)\) this\.heldForSwap\.delete\(uid\)/
+    );
+    expect(DEALING).toMatch(
+      /this\.knownPlayerIds\.delete\(id\);[\s\S]*?this\.heldForSwap\.delete\(id\)/
+    );
+    expect(BASE).toMatch(/type: 'seat_move_held'/);
+    // A swap landed from this side tells the partner's table.
+    expect(BASE).toMatch(
+      /this\.hub\?\.emitEvent\(m\.partner\.from_table_id, \{\s*type: 'seat_moved'/
+    );
+    expect(MOVES).toMatch(/res\.reason === 'waiting_partner' && res\.held/);
+  });
+
+  it('the floor is for winners: written only above the session baseline', () => {
+    const close = LOBBY.slice(
+      LOBBY.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_session_close')
+    );
+    expect(close).toMatch(
+      /IF v_s\.id IS NULL OR p_stack <= COALESCE\(v_s\.baseline, 0\) THEN RETURN; END IF;/
+    );
+    expect(LOBBY).toMatch(/COALESCE\(s\.baseline, 0\) >= c\.required_stack/);
+  });
+
+  it('the notices are title case with no em dash, and name the reason', () => {
+    expect(MOVES).toMatch(/Seat Change Granted\. Swapping To \$\{where\} After This Hand\./);
+    expect(MOVES).toMatch(/Seat Change Granted\. Moving To \$\{where\} After This Hand\./);
+    expect(MOVES).not.toMatch(/—/);
+    expect(BASE).toMatch(/Seat Change: Waiting For The Other Table To Finish Its Hand\./);
+  });
+
+  it('no temp table and no bare UPDATE or DELETE in any body (safeupdate)', () => {
+    const code = LOBBY.replace(/--.*$/gm, '');
+    expect(code).not.toMatch(/CREATE TEMP TABLE/);
+    for (const stmt of code.match(/\b(UPDATE|DELETE FROM) public\.\w+[\s\S]*?;/g) ?? []) {
+      expect(stmt, stmt.slice(0, 80)).toMatch(/\bWHERE\b/);
+    }
+  });
+});

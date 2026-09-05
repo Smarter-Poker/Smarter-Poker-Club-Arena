@@ -337,9 +337,15 @@ describe('the fleet: one predicate, asked for the count and for the chair', () =
     expect(seat.indexOf('const verdict = sitVerdictFor(')).toBeLessThan(
       seat.indexOf('const success = await this.seatHorse(')
     );
-    // no silent continue is left in the seat stage
+    // no silent continue is left in the seat stage. Two remain and both are
+    // counted: the verdict's refusal (above) and, since 2026-09-05, the
+    // lone-seat refusal that keeps a single horse off an EMPTY cluster table
+    // (loneSeatRefused++, noted in the diag as lone_seat_refused).
     const stage = seat.slice(0, seat.indexOf('const success = await this.seatHorse('));
-    expect(stage.match(/continue;/g)?.length).toBe(1);
+    expect(stage.match(/continue;/g)?.length).toBe(2);
+    expect(stage).toMatch(
+      /refusesLoneSeat\(\{[\s\S]*?\}\)\s*\)\s*\{\s*loneSeatRefused\+\+;\s*noteSkip\(diag, 'lone_seat_refused'\);\s*continue;/
+    );
   });
 
   it('the fleet emits the sizing telemetry only where it acts: computeHorseBuyIn takes a sink, the verdict collects', () => {

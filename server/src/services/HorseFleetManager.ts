@@ -74,6 +74,7 @@ import {
   isMutexRejection,
   sitVerdictFor,
   type SitSkipReason,
+  type SitVerdict,
   type SitVerdictContext,
 } from './HorseSitVerdict.js';
 import {
@@ -96,6 +97,7 @@ import {
   withheldReason,
   type FleetPolicy,
 } from './HorseFleetPolicy.js';
+import { DEALABLE_MINIMUM, refusesLoneSeat, seatsToDealable } from './HorseLoneTable.js';
 
 /**
  * Everything `resolveSeatClub` needs to answer "which wallet pays for this
@@ -1714,9 +1716,13 @@ export class HorseFleetManager {
       const unsittable = new Map<SitSkipReason, number>();
       const bump = (m: Map<SitSkipReason, number>, r: SitSkipReason) =>
         m.set(r, (m.get(r) ?? 0) + 1);
-      const noteSkip = (diag: OpeningFeederDiag | null, r: SitSkipReason) => {
+      const noteSkip = (diag: OpeningFeederDiag | null, r: SitSkipReason | 'lone_seat_refused') => {
         if (diag) diag.skipped[r] = (diag.skipped[r] ?? 0) + 1;
       };
+      /* NO LONE HORSE (2026-09-05): empty cluster tables the fleet left empty
+         this cycle because only one horse could sit there. Counted once per
+         table per cycle and logged once per cycle - see HorseLoneTable.ts. */
+      let loneSeatRefused = 0;
       for (const table of tablesToSeed) {
         let diag: OpeningFeederDiag | null = null;
         try {
@@ -1871,8 +1877,19 @@ export class HorseFleetManager {
              feeder exists because this fleet said two horses could sit; two
              sit, in this cycle, and the vibe takes over once it is live. */
           const openingFeeder = !!table.cluster_id && table.lifecycle === 'opening';
-          if (openingFeeder) {
-            seatTarget = Math.min(table.max_players, Math.max(seatTarget, 2));
+          /* ...AND SO IS EVERY OTHER CLUSTER TABLE AT 0 OR 1 (2026-09-05, NO
+             LONE HORSE). The opening-feeder rule above was the right rule for
+             the wrong set: measured the same afternoon, 47 of 140 live cluster
+             tables held exactly one horse (46 the only table of their game),
+             seated 253 minutes on average, 39 with no hand in thirty minutes.
+             A sparse table's vibe target can be 1, and once it is met nothing
+             adds a second. A cluster table is seeded to a dealable minimum or
+             not at all - see HorseLoneTable.ts; the refusal that keeps a single
+             horse off an EMPTY table is at the seat stage below. Non-cluster
+             tables keep their old arithmetic. */
+          const seedToDealable = !!table.cluster_id && currentCount < DEALABLE_MINIMUM;
+          if (openingFeeder || seedToDealable) {
+            seatTarget = Math.min(table.max_players, Math.max(seatTarget, DEALABLE_MINIMUM));
           }
           const seatsAllowed = capBySeatedCount(seatTarget, currentCount, policy.maxPerTable);
           if (seatsAllowed <= 0) {
@@ -1893,11 +1910,16 @@ export class HorseFleetManager {
           const humanNeedsRescue = humanAtTable && currentCount < 4;
           if (fill !== 'full' && !humanNeedsRescue) {
             seatsNeeded = Math.min(seatsNeeded, 1 + Math.floor(Math.random() * 2));
-            /* ...except the two that make an opening feeder live (see above). */
-            if (openingFeeder) {
-              seatsNeeded = Math.max(seatsNeeded, Math.min(seatsAllowed, 2 - currentCount));
-            }
           }
+          /* ...except the two that make a cluster table dealable (see
+             seedToDealable above): an opening feeder, and any cluster table at
+             0 or 1. Never above seatsAllowed. */
+          seatsNeeded = seatsToDealable({
+            clusterTable: !!table.cluster_id,
+            currentCount,
+            seatsNeeded,
+            seatsAllowed,
+          });
           /* The fleet-wide cap, spent down as the floor fills. Last, so it
              cannot be undone by anything above it. */
           seatsNeeded = Math.min(seatsNeeded, seatBudget);
@@ -2247,17 +2269,24 @@ export class HorseFleetManager {
             continue;
           }
 
-          // Seat each horse at an ACTUAL empty seat
-          let seated = 0;
+          /* THE ONE PREDICATE, asked for the chair. Wallet, buy-in (sized in
+             computeHorseBuyIn, shared with claimOfferedSeats), aggregate
+             ceiling and the Stable Hand mutex, in that order - the same
+             verdict the sittable pool above was built from. The telemetry the
+             decision carries is emitted HERE, once, where it is acted on; a
+             refusal is counted, never silent.
+
+             Asked for every selected horse BEFORE the first buy-in (the
+             verdict is side-effect free and per horse, so the answers are the
+             ones the old in-line loop would have given), because the lone-seat
+             refusal below needs to know how many will actually sit. */
+          const cleared: Array<{
+            horse: (typeof selectedHorses)[number];
+            seatNumber: number;
+            verdict: Extract<SitVerdict, { ok: true }>;
+          }> = [];
           for (let i = 0; i < selectedHorses.length; i++) {
             const horse = selectedHorses[i];
-            const seatNumber = emptySeats[i];
-            /* THE ONE PREDICATE, asked for the chair. Wallet, buy-in (sized
-               in computeHorseBuyIn, shared with claimOfferedSeats), aggregate
-               ceiling and the Stable Hand mutex, in that order - the same
-               verdict the sittable pool above was built from. The telemetry
-               the decision carries is emitted HERE, once, where it is acted
-               on; a refusal is counted, never silent. */
             const verdict = sitVerdictFor(horse.id, table, sitCtx);
             for (const e of verdict.telemetry) bankrollEvent(e);
             if (!verdict.ok) {
@@ -2269,6 +2298,30 @@ export class HorseFleetManager {
               noteSkip(diag, verdict.reason);
               continue;
             }
+            cleared.push({ horse, seatNumber: emptySeats[i], verdict });
+          }
+
+          /* NO LONE HORSE (2026-09-05). An EMPTY cluster table is seated to
+             two or not at all: one horse alone on it cannot deal, and the
+             fleet would then consider the table's target met and leave it as
+             the "1" the lobby showed for 253 minutes. The horse is not
+             refused anything a human is not - the OPORD holds a one-buyer
+             opening for a partner too. Counted and logged once per cycle. */
+          if (
+            refusesLoneSeat({
+              clusterTable: !!table.cluster_id,
+              currentCount,
+              sittable: cleared.length,
+            })
+          ) {
+            loneSeatRefused++;
+            noteSkip(diag, 'lone_seat_refused');
+            continue;
+          }
+
+          // Seat each horse at an ACTUAL empty seat
+          let seated = 0;
+          for (const { horse, seatNumber, verdict } of cleared) {
             const { seatClub, buyIn } = verdict;
             /* THE COUNTER THE MUTEX READS is written against the SAME key the
                mutex judged (see the takenKey write below). */
@@ -2426,6 +2479,13 @@ export class HorseFleetManager {
           `[HorseFleet] door: ${barredDropped} horse/table pair(s) barred from that game for ` +
             `low VPIP; ${floorUnaffordableDropped} holding a rejoin floor their roll cannot ` +
             `cover. Neither is tried, neither is counted as a buyer.`
+        );
+      }
+      if (loneSeatRefused > 0) {
+        console.log(
+          `[HorseFleet] lone_seat_refused=${loneSeatRefused}: empty cluster table(s) left empty ` +
+            `this cycle because only one horse could sit - a cluster table is seeded to two ` +
+            `or not at all (no lone horse).`
         );
       }
       if (mutexRefused.size > 0) {

@@ -320,3 +320,111 @@ table, ctx)` is the ONE predicate. Wallet (`resolveSeatClub`), buy-in
    braces say why, by reason, and the cycle's `seat stage skipped:` line
    totals the same reasons across the floor. A feeder that opens and gets
    nobody can no longer do so in silence.
+
+---
+
+## Part 2 (same day, 15:22 CDT): no lone horse
+
+### The measurement
+
+Of 140 live cash-cluster tables, **47 held exactly one horse** (46 of them the
+only table of their game), seated for **253 minutes on average**, and **39 of
+the 47 had dealt no hand in thirty minutes**. 26 more held two. The lobby
+therefore showed dozens of games with "1" player where nothing was happening,
+which is Dan's exact complaint.
+
+### The cause
+
+Two mechanisms, neither a rule anybody wrote down:
+
+- `occupancyTargetFor` (the V14 vibe) can return a `seatTarget` of 1 for a
+  sparse table, and the 1-2 per cycle trickle can leave a table at 1. Once the
+  target is met the fleet adds nobody, so the table sits at one for hours.
+- `HorseSessionRotator` skips any table below its population floor
+  (`tableSeats.length < 4 -> continue`). The floor exists so a healthy game is
+  not thinned, but a table at one is not a game, so the one horse that most
+  needed to leave was the one horse the rotator would never stand.
+
+A lone player cannot deal a hand. A human alone at a table nobody has joined
+for ten minutes racks up. Under 10.5 the fleet is the horse's input device and
+may decide exactly what a human would decide; the OPORD asks the same of humans
+at the door (a one-buyer opening hold waits for a partner; no ghost table).
+
+### The two rules (`server/src/services/HorseLoneTable.ts`, pure and tested)
+
+1. **A cluster table is seeded to a dealable minimum or not at all.** In
+   `HorseFleetManager`, any table with a `cluster_id` (any role, any lifecycle)
+   at 0 or 1 has its `seatTarget` floored to `DEALABLE_MINIMUM` (2) and its
+   `seatsNeeded` lifted to `min(seatsAllowed, 2 - currentCount)` after the
+   trickle - the rule the opening feeder already had, generalised
+   (`seatsToDealable`). At the seat stage the sit verdict is now asked for
+   every selected horse BEFORE the first buy-in (it is side-effect free and per
+   horse, so the answers are unchanged), and an EMPTY cluster table with fewer
+   than two cleared horses seats nobody this cycle (`refusesLoneSeat`), counted
+   as `lone_seat_refused` in the opening-feeder diag and logged once per cycle:
+   `[HorseFleet] lone_seat_refused=N: ...`. A table already at one (or with a
+   pending arrival, which `currentCount` includes) takes the one horse that
+   makes it two. Tables at two or more keep their trickle; non-cluster tables
+   are untouched.
+
+2. **A lone horse leaves a dead table.** In `HorseSessionRotator`, a new pass
+   (`standLoneHorses`) runs after the retirement drain and BEFORE the
+   discretionary loop, so the population floor cannot veto it. A horse that has
+   been the ONLY player at a cluster table for `LONE_TABLE_MINUTES` (10) with no
+   `hand_history` row for that table inside the window is stood up through the
+   same door a human uses, `engine.leaveTable()` (hand-boundary safe). The game
+   then goes dormant per OPORD 18.4 and its Main 1 stays open with 0. Exempt:
+   a table with a human seated (the horse is their opponent), a table with a
+   `cash_seat_moves` row pending INTO it (a partner is coming), an `opening`
+   feeder younger than `OPENING_FEEDER_GRACE_MINUTES` (3). Both database reads
+   fail CLOSED (an unreadable answer stands nobody). The count is exposed as
+   `rotator.loneStands` and logged per cycle when non-zero:
+   `[SessionRotator] loneStands=N - ...`, with one line per horse:
+   `[SessionRotator] horse=... leaving table=... - alone for M min with no
+hand dealt in 10 (lone stand)`.
+
+The two rules together cannot ping-pong: after a lone stand the table is at 0,
+and rule 1 seats two there or nobody.
+
+### Tests
+
+`server/src/services/HorseLoneTable.test.ts`: the seeding rule (an empty
+cluster table with one candidate seats nobody and reports the refusal; with two
+it seats two; a table at three still trickles; non-cluster untouched; the cap
+is never exceeded), the stand rule (lone 10 min no hand -> stood; lone 5 min ->
+stays; hand dealt inside the window -> stays; lone with human -> stays; lone
+with inbound pending move -> stays; opening feeder under 3 min -> stays, over
+-> the rule applies), and source contracts for the wiring in both services
+(verdict before buy-in, refusal before the seat loop, the pass ahead of the
+floor, the human door, the two fail-closed reads, the log lines).
+
+### How to verify (read, never assume)
+
+1. Tables holding exactly one seat, trending to zero within ~15 minutes of the
+   deploy (ten minutes of grace plus a rotator cycle):
+
+   ```sql
+   SELECT count(*) AS lone_tables
+     FROM public.tables t
+    WHERE t.cluster_id IS NOT NULL
+      AND t.is_deleted = false
+      AND t.lifecycle IN ('live', 'opening')
+      AND (SELECT count(*) FROM public.table_seats s
+            WHERE s.table_id = t.id AND s.left_at IS NULL) = 1;
+   ```
+
+   Before this change: 47. A residual handful is expected at any instant (a
+   horse whose partner just left, an opening feeder in its grace, a table with
+   a move pending into it); a number that holds above ten for an hour means one
+   of the two rules is not running.
+
+2. The engine log. `[SessionRotator] loneStands=N` in the first cycles after
+   the deploy (the backlog clearing), then rarely. `[HorseFleet]
+lone_seat_refused=N` whenever the fleet had only one sittable horse for an
+   empty cluster table; a cycle with neither line and a `lone_tables` count of
+   zero is the healthy state.
+
+3. No horse was stood from a table with a human at it: every `lone stand` line
+   names a table that held one seat at that moment, and
+   `cash_cluster_events` for the game shows `dormant` (18.4) rather than a
+   break with a person on it.

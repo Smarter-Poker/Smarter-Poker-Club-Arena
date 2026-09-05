@@ -520,7 +520,10 @@ const dockStateFor = (
  * before initialization" into the error boundary. tsc does not flag a
  * use-before-declare inside a nested callback; only rendering does. A pure
  * function belongs above the component, where there is nothing to be before.
- * Pinned by tests/no-tdz-in-table-route.law.test.ts.
+ * Pinned by tests/no-tdz-in-table-route.law.test.ts and, from the other side
+ * of the same outage, tests/unit/multiTablePageHelpersAreHoisted.test.ts (#3106
+ * hoisted it too; the two copies were then one too many, see #3110). ONE
+ * declaration, module scope, above the component - keep it that way.
  */
 export function parseTimed(v?: string): { kind: string; at: number } | null {
   if (!v) return null;

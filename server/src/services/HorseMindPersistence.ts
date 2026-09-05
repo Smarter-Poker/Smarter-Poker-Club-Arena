@@ -67,6 +67,11 @@ type DbRow = {
   river_bet_folds?: number;
   checks?: number;
   r_checks?: number;
+  /** V43 (2026-09-05): tempo reads - see 20260905210642_the_fleet_state_says_when_a_horse_last_acted_and_the_mind_remembers_tempo. */
+  snap_bet_sd?: number;
+  snap_bet_sd_strong?: number;
+  tank_bet_sd?: number;
+  tank_bet_sd_strong?: number;
   r_hands: number;
   r_folds: number;
   r_faced_aggr: number;
@@ -95,6 +100,10 @@ const toDb = (r: { user_id: string } & OpponentStats): DbRow => ({
   post_passive: r.postPassive,
   river_bet_opps: r.riverBetOpps,
   river_bet_folds: r.riverBetFolds,
+  snap_bet_sd: r.snapBetSD,
+  snap_bet_sd_strong: r.snapBetSDStrong,
+  tank_bet_sd: r.tankBetSD,
+  tank_bet_sd_strong: r.tankBetSDStrong,
   checks: r.checks,
   r_checks: r.rChecks,
   r_hands: r.rHands,
@@ -129,6 +138,10 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   // hydrate can only add information.
   riverBetOpps: r.river_bet_opps ?? 0,
   riverBetFolds: r.river_bet_folds ?? 0,
+  snapBetSD: r.snap_bet_sd ?? 0,
+  snapBetSDStrong: r.snap_bet_sd_strong ?? 0,
+  tankBetSD: r.tank_bet_sd ?? 0,
+  tankBetSDStrong: r.tank_bet_sd_strong ?? 0,
   rHands: r.r_hands,
   rFolds: r.r_folds,
   rFacedAggr: r.r_faced_aggr,
@@ -321,7 +334,7 @@ export async function hydrateHorseMindFromDb(): Promise<string | null> {
     const { data, error } = await supabase
       .from('horse_mind_stats')
       .select(
-        'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,r_checks,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at'
+        'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,snap_bet_sd,snap_bet_sd_strong,tank_bet_sd,tank_bet_sd_strong,r_checks,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at'
       )
       .order('hands', { ascending: false })
       .limit(HYDRATE_LIMIT);

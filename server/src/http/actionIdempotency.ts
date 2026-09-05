@@ -63,6 +63,14 @@
  * MEMORY IS BOUNDED THE SAME WAY `ClientConnectionEvents` is: a TTL, a hard
  * ceiling, and eviction of the oldest rather than growth. This runs on the one
  * core the engine has.
+ *
+ * ONE ACCEPTED BOUND, WRITTEN DOWN SO IT IS A DECISION AND NOT AN OVERSIGHT:
+ * this map is in memory and an engine restart loses it. A restart happens
+ * inside the announced :55 break with every table parked and the platform
+ * frozen (CLAUDE.md 13), and a key lives sixty seconds - so the exposure is a
+ * retry that crosses a restart at a moment when actions are refused anyway.
+ * The alternative, persisting keys to Postgres, puts a database write on the
+ * hot path of every action on a one-core engine. Not worth it.
  */
 
 import { actionIdempotencyTotal } from '../observability/engineInstruments.js';
@@ -107,6 +115,20 @@ interface RememberedAction {
   status: number;
   body: unknown;
   at: number;
+  /**
+   * Whether this key has already been counted as a replay / as a conflict.
+   *
+   * A METRIC A PLAYER CAN MOVE ON DEMAND IS THE PHASE 2 DEFECT AGAIN (audit
+   * fix, 2026-09-05). The lookup deliberately sits above the rate limiter, so
+   * an authenticated player could post one known key in a loop and drive
+   * either counter as high as they liked - and `conflict` is documented as
+   * "should be flat zero forever", which makes it exactly the series a false
+   * signal ruins. Counting once per KEY bounds both by the size of a map that
+   * is itself bounded, and it is the more meaningful number anyway: it counts
+   * INTENTS that were duplicated, not requests.
+   */
+  countedReplay: boolean;
+  countedConflict: boolean;
 }
 
 export type ActionKeyVerdict =
@@ -142,8 +164,21 @@ function storageKey(userId: string, tableId: string, key: string): string {
   return `${userId}|${tableId}|${key}`;
 }
 
+/**
+ * The intent a key names: the action and its amount.
+ *
+ * EVERY amount is stringified, not only a number (audit fix, 2026-09-05). The
+ * first version of this kept `typeof amount === 'number'` and folded anything
+ * else to the empty string, which meant a client that sent `"50"` and one that
+ * sent `"500"` produced the SAME fingerprint - so a retry carrying a different
+ * raise would have been answered with the first one's result. `submitAction`
+ * types the parameter as a number and would not do that, but the whole point
+ * of this file is to stop depending on a caller behaving; a coercion that
+ * silently discards the amount is precisely the wrong failure mode for the one
+ * field that decides how many chips move.
+ */
 export function actionFingerprint(action: string, amount: unknown): string {
-  const amt = typeof amount === 'number' && Number.isFinite(amount) ? amount : '';
+  const amt = amount === undefined || amount === null ? '' : String(amount);
   return `${String(action).toLowerCase()}|${amt}`;
 }
 
@@ -185,11 +220,20 @@ export function lookupAction(
     remembered.delete(storageKey(userId, tableId, key));
     return { kind: 'fresh' };
   }
+  // Counted once per key, never once per request: see `countedReplay` above.
+  // Whatever a client does with a key it already spent, it cannot move either
+  // series by more than one.
   if (hit.fingerprint !== fingerprint) {
-    actionIdempotencyTotal.inc(1, { outcome: 'conflict' });
+    if (!hit.countedConflict) {
+      hit.countedConflict = true;
+      actionIdempotencyTotal.inc(1, { outcome: 'conflict' });
+    }
     return { kind: 'conflict' };
   }
-  actionIdempotencyTotal.inc(1, { outcome: 'replay' });
+  if (!hit.countedReplay) {
+    hit.countedReplay = true;
+    actionIdempotencyTotal.inc(1, { outcome: 'replay' });
+  }
   return { kind: 'replay', status: hit.status, body: hit.body };
 }
 
@@ -212,7 +256,14 @@ export function rememberAction(
   body: unknown,
   now: number = Date.now()
 ): void {
-  remembered.set(storageKey(userId, tableId, key), { fingerprint, status, body, at: now });
+  remembered.set(storageKey(userId, tableId, key), {
+    fingerprint,
+    status,
+    body,
+    at: now,
+    countedReplay: false,
+    countedConflict: false,
+  });
   actionIdempotencyTotal.inc(1, { outcome: 'stored' });
   prune(now);
 }

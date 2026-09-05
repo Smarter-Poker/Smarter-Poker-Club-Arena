@@ -1,11 +1,27 @@
 /* ═══════════════════════════════════════════════════════════════
-   Cashier Page — Facebook Dark CSS Module
-   Matches MarketplacePage / SettingsPage design language
+   CASHIER PAGE - #SMARTERCASINOREALISM
+   ═══════════════════════════════════════════════════════════════
+
+   The classic cashier: club and personal balances, transfers, chip requests,
+   the high-value escrow flow, pending cash-outs and the transaction ledger.
+
+   Vocabulary: src/styles/club-engine.css, the block titled
+   "#SMARTERCASINOREALISM - THE MATERIAL LAYER". This is the sibling of
+   CashierTradePage.module.css and the two are meant to read as the same room:
+   panels are a lit top edge over a cavity, inputs are the cavity itself,
+   buttons carry a milled face and press on :active. There is no :hover rule
+   in this file and none may be added (tests/no-hover-effects.law.test.ts) -
+   on a phone the press IS the feedback.
+
+   Reds are verdicts and were not retoned: .quickLinkDanger, .messageError,
+   .txNegative, .confirmWarning and .btnDanger all still read as refusals.
+   The amber of .pendingBox, .connectionBanner and the confirm modal's frame
+   is a caution and stays amber.
    ═══════════════════════════════════════════════════════════════ */
 
 .page {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: #e4e6eb;
+  color: var(--realism-chrome);
 }
 
 /* ═══ Wallet Header ═══ */
@@ -26,10 +42,11 @@
   gap: 2px;
   margin-bottom: 20px;
   overflow-x: auto;
-  background: rgba(24, 25, 26, 0.6);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
   border-radius: 12px;
   padding: 4px;
-  border: 1px solid rgba(58, 59, 60, 0.5);
+  border: 1px solid var(--realism-gunmetal);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
@@ -43,7 +60,7 @@
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
-  color: #b0b3b8;
+  color: var(--realism-chrome);
   background: none;
   border: none;
   border-radius: 8px;
@@ -56,15 +73,15 @@
 }
 
 .tabActive {
-  color: #fff;
+  color: var(--realism-chrome-hot);
   background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
-  border: 1px solid #1877f2;
+  border: 1px solid var(--realism-blue);
   box-shadow:
     0 0 12px rgba(24, 119, 242, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    var(--realism-bevel);
   box-shadow:
     0 0 12px rgba(24, 119, 242, 0.15),
-    inset 0 -2px 0 #1877f2;
+    inset 0 -2px 0 var(--realism-blue);
   position: relative;
 }
 
@@ -88,7 +105,7 @@
 .quickLinkWarning {
   background: rgba(255, 184, 0, 0.1);
   border: 1px solid rgba(255, 184, 0, 0.25);
-  color: #6fdcff;
+  color: var(--realism-cyan);
 }
 
 .quickLinkDanger {
@@ -100,20 +117,22 @@
 .quickLinkPrimary {
   background: rgba(24, 119, 242, 0.1);
   border: 1px solid rgba(24, 119, 242, 0.25);
-  color: #1877f2;
+  color: var(--realism-blue);
 }
 
 /* ═══ Card / Panel ═══ */
+/* The room's main surface: it sits IN its frame, not on the page. Lit top
+   edge, cavity beneath it, gunmetal edge, and the lift that separates it from
+   the ground. Radius left at 14px - the 768px block below steps it to 12px
+   and that rhythm is the page's, not the material layer's to change. */
 .card {
-  background: linear-gradient(160deg, rgba(36, 37, 38, 0.95) 0%, rgba(28, 29, 30, 0.95) 100%);
-  border: 1px solid rgba(58, 59, 60, 0.5);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 14px;
   padding: 24px;
   margin-bottom: 20px;
   animation: cardIn 0.35s ease-out;
-  box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.3),
-    0 1px 4px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
 }
 
 @keyframes cardIn {
@@ -131,11 +150,11 @@
   font-size: 16px;
   font-weight: 800;
   margin: 0 0 18px;
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
   text-transform: capitalize;
   letter-spacing: 0.5px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(58, 59, 60, 0.5);
+  border-bottom: 1px solid var(--realism-gunmetal);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -149,7 +168,7 @@
   height: 32px;
   border-radius: 8px;
   background: rgba(24, 119, 242, 0.1);
-  color: #1877f2;
+  color: var(--realism-blue);
   font-size: 16px;
   flex-shrink: 0;
 }
@@ -170,18 +189,20 @@
 .formLabel {
   font-size: 11px;
   font-weight: 700;
-  color: #8b8d91;
+  color: var(--realism-muted);
   text-transform: capitalize;
   letter-spacing: 0.8px;
 }
 
+/* Inputs and selects are the inverse of a panel: a cavity cut into it, with
+   the shade falling from the top edge inward. */
 .select {
   width: 100%;
   padding: 12px 14px;
-  background: rgba(24, 25, 26, 0.8);
-  border: 1px solid rgba(58, 59, 60, 0.6);
+  background: linear-gradient(180deg, var(--realism-obsidian) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 10px;
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
   font-size: 16px; /* was 14px; under 16px makes iOS zoom the page on focus */
   font-weight: 500;
   outline: none;
@@ -192,41 +213,47 @@
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 32px;
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.5);
   transition: border-color 0.2s;
   box-sizing: border-box;
 }
 
 .select:focus {
-  border-color: rgba(24, 119, 242, 0.5);
-  box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
+  border-color: var(--realism-cyan);
+  box-shadow:
+    inset 0 1px 8px rgba(0, 0, 0, 0.5),
+    0 0 0 3px rgba(0, 212, 255, 0.14);
 }
 
 .select option {
-  background: #18191a;
-  color: #e4e6eb;
+  background: var(--realism-panel);
+  color: var(--realism-chrome-hot);
 }
 
 .input {
   width: 100%;
   padding: 12px 14px;
-  background: rgba(24, 25, 26, 0.8);
-  border: 1px solid rgba(58, 59, 60, 0.6);
+  background: linear-gradient(180deg, var(--realism-obsidian) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 10px;
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
   font-size: 16px;
   font-weight: 600;
   outline: none;
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.5);
   transition: border-color 0.2s;
   box-sizing: border-box;
 }
 
 .input:focus {
-  border-color: rgba(24, 119, 242, 0.5);
-  box-shadow: 0 0 0 3px rgba(24, 119, 242, 0.1);
+  border-color: var(--realism-cyan);
+  box-shadow:
+    inset 0 1px 8px rgba(0, 0, 0, 0.5),
+    0 0 0 3px rgba(0, 212, 255, 0.14);
 }
 
 .input::placeholder {
-  color: #6b7280;
+  color: var(--realism-muted);
 }
 
 /* ═══ Preset Buttons Grid ═══ */
@@ -238,13 +265,16 @@
 
 .presetBtn {
   padding: 10px 8px;
-  background: rgba(58, 59, 60, 0.4);
-  border: 1px solid rgba(58, 59, 60, 0.6);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 8px;
-  color: #b0b3b8;
+  color: var(--realism-chrome);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   transition: all 0.15s ease;
   text-align: center;
 }
@@ -253,7 +283,7 @@
 .btnPrimary {
   width: 100%;
   padding: 14px 24px;
-  background: linear-gradient(135deg, #1877f2 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--realism-blue) 0%, #2563eb 100%);
   color: #fff;
   border: none;
   border-radius: 12px;
@@ -261,7 +291,10 @@
   font-size: 15px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 12px rgba(24, 119, 242, 0.25);
+  box-shadow:
+    0 2px 12px rgba(24, 119, 242, 0.25),
+    var(--realism-bevel),
+    var(--realism-lift);
   text-transform: capitalize;
   letter-spacing: 0.5px;
 }
@@ -275,13 +308,16 @@
 
 .btnGhost {
   padding: 12px 20px;
-  background: transparent;
-  color: #b0b3b8;
-  border: 1px solid rgba(58, 59, 60, 0.6);
+  background: linear-gradient(180deg, rgba(39, 49, 60, 0.35), rgba(11, 16, 23, 0.5));
+  color: var(--realism-chrome);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 10px;
   font-weight: 600;
   font-size: 14px;
   cursor: pointer;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   transition: all 0.2s ease;
 }
 
@@ -295,11 +331,14 @@
   background: rgba(63, 208, 122, 0.1);
   border: 1px solid rgba(63, 208, 122, 0.3);
   border-radius: 8px;
-  color: #3fd07a;
+  color: var(--realism-green);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   width: 100%;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   transition: all 0.15s ease;
 }
 
@@ -336,7 +375,7 @@
 .messageSuccess {
   background: rgba(63, 208, 122, 0.08);
   border: 1px solid rgba(63, 208, 122, 0.2);
-  color: #3fd07a;
+  color: var(--realism-green);
 }
 
 .messageError {
@@ -348,15 +387,16 @@
 .messageInfo {
   background: rgba(255, 184, 0, 0.08);
   border: 1px solid rgba(255, 184, 0, 0.2);
-  color: #6fdcff;
+  color: var(--realism-cyan);
 }
 
 /* ═══ Transfer Preview ═══ */
 .transferPreview {
-  background: rgba(24, 25, 26, 0.6);
-  border: 1px solid rgba(58, 59, 60, 0.4);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 10px;
   padding: 12px 14px;
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
 }
 
 .previewRow {
@@ -364,27 +404,30 @@
   justify-content: space-between;
   padding: 4px 0;
   font-size: 13px;
-  color: #8b8d91;
+  color: var(--realism-muted);
 }
 
+/* The computed figures on the right are live data, so they read cyan. */
 .previewRow span:last-child {
   font-weight: 700;
-  color: #1877f2;
+  color: var(--realism-cyan);
   font-variant-numeric: tabular-nums;
 }
 
 /* ═══ Pending Cashouts ═══ */
+/* Amber frame kept - a pending cash-out is a caution, not a panel. */
 .pendingBox {
   padding: 12px;
   background: rgba(255, 184, 0, 0.06);
   border: 1px solid rgba(255, 184, 0, 0.2);
   border-radius: 10px;
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
 }
 
 .pendingTitle {
   font-size: 11px;
   font-weight: 700;
-  color: #6fdcff;
+  color: var(--realism-cyan);
   text-transform: capitalize;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
@@ -395,11 +438,11 @@
   justify-content: space-between;
   padding: 4px 0;
   font-size: 13px;
-  color: #b0b3b8;
+  color: var(--realism-chrome);
 }
 
 .pendingStatus {
-  color: #6fdcff;
+  color: var(--realism-cyan);
   font-size: 12px;
   font-weight: 600;
 }
@@ -416,7 +459,7 @@
 }
 
 .escrowTitle {
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
   font-size: 1.15rem;
   margin-bottom: 10px;
   font-weight: 800;
@@ -426,7 +469,7 @@
 }
 
 .escrowDesc {
-  color: #8b8d91;
+  color: var(--realism-muted);
   font-size: 14px;
   line-height: 1.6;
   max-width: 85%;
@@ -435,17 +478,18 @@
 }
 
 .escrowAmount {
-  color: #3fd07a;
+  color: var(--realism-green);
   font-size: 1rem;
   font-weight: 800;
 }
 
 .escrowChecklist {
-  background: rgba(24, 25, 26, 0.6);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
   padding: 20px;
   border-radius: 14px;
   margin-bottom: 24px;
-  border: 1px solid rgba(58, 59, 60, 0.4);
+  border: 1px solid var(--realism-gunmetal);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
 }
 
 .escrowCheckItem {
@@ -472,12 +516,12 @@
 
 .escrowCheckGreen {
   background: rgba(63, 208, 122, 0.12);
-  color: #3fd07a;
+  color: var(--realism-green);
 }
 
 .escrowCheckAmber {
   background: rgba(255, 184, 0, 0.12);
-  color: #6fdcff;
+  color: var(--realism-cyan);
   animation: checkPulse 2s ease-in-out infinite;
 }
 
@@ -493,7 +537,7 @@
 
 .escrowCheckLabel {
   font-size: 14px;
-  color: #e4e6eb;
+  color: var(--realism-chrome);
   font-weight: 500;
 }
 
@@ -528,9 +572,12 @@
   text-transform: capitalize;
   letter-spacing: 0.5px;
   transition: all 0.15s ease;
-  border: 1px solid rgba(58, 59, 60, 0.5);
-  background: rgba(24, 25, 26, 0.4);
-  color: #8b8d91;
+  border: 1px solid var(--realism-gunmetal);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  color: var(--realism-muted);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -538,7 +585,7 @@
 .txFilterActive {
   border-color: rgba(24, 119, 242, 0.4);
   background: rgba(24, 119, 242, 0.1);
-  color: #1877f2;
+  color: var(--realism-blue);
 }
 
 .txExportBtn {
@@ -547,7 +594,7 @@
   border-radius: 20px;
   border: 1px solid rgba(49, 162, 76, 0.3);
   background: rgba(49, 162, 76, 0.08);
-  color: #31a24c;
+  color: var(--realism-green);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -560,7 +607,7 @@
 .txEmpty {
   text-align: center;
   padding: 12px 0;
-  color: #6b7280;
+  color: var(--realism-muted);
   font-size: 14px;
 }
 
@@ -585,9 +632,9 @@
   border-radius: 10px;
   background: linear-gradient(
     90deg,
-    rgba(58, 59, 60, 0.4) 0%,
-    rgba(80, 82, 85, 0.4) 40%,
-    rgba(58, 59, 60, 0.4) 80%
+    var(--realism-panel) 0%,
+    var(--realism-gunmetal) 40%,
+    var(--realism-panel) 80%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
@@ -604,12 +651,12 @@
   display: block;
   font-size: 15px;
   font-weight: 600;
-  color: #8b8d91;
+  color: var(--realism-chrome);
   margin-bottom: 6px;
 }
 
 .txEmptyDesc {
-  color: #6b7280;
+  color: var(--realism-muted);
   font-size: 13px;
 }
 
@@ -623,6 +670,8 @@
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
+  /* Left at the 0.2 tint on purpose: gunmetal is the milled EDGE of a surface,
+     and a solid one on every row of a long ledger reads as stripes. */
   border-bottom: 1px solid rgba(58, 59, 60, 0.2);
   transition: all 0.15s ease;
   border-left: 3px solid transparent;
@@ -642,7 +691,7 @@
   font-size: 1.1rem;
   min-width: 28px;
   text-align: center;
-  color: #6b7280;
+  color: var(--realism-muted);
 }
 
 .txDetails {
@@ -656,14 +705,14 @@
 .txCategory {
   font-size: 11px;
   font-weight: 700;
-  color: #8b8d91;
+  color: var(--realism-muted);
   letter-spacing: 0.5px;
   text-transform: capitalize;
 }
 
 .txDesc {
   font-size: 13px;
-  color: #b0b3b8;
+  color: var(--realism-chrome);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -683,7 +732,7 @@
 }
 
 .txPositive {
-  color: #3fd07a;
+  color: var(--realism-green);
 }
 
 .txNegative {
@@ -693,14 +742,14 @@
 .txWallet {
   font-size: 10px;
   font-weight: 700;
-  color: #6b7280;
+  color: var(--realism-muted);
   text-transform: capitalize;
   letter-spacing: 0.3px;
 }
 
 .txTime {
   font-size: 11px;
-  color: #6b7280;
+  color: var(--realism-muted);
   white-space: nowrap;
   min-width: 55px;
   text-align: right;
@@ -710,7 +759,7 @@
 .tableContext {
   text-align: center;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--realism-muted);
   margin-top: 8px;
 }
 
@@ -902,9 +951,9 @@
 .skeletonBar {
   background: linear-gradient(
     90deg,
-    rgba(58, 59, 60, 0.4) 0%,
-    rgba(80, 82, 85, 0.4) 40%,
-    rgba(58, 59, 60, 0.4) 80%
+    var(--realism-panel) 0%,
+    var(--realism-gunmetal) 40%,
+    var(--realism-panel) 80%
   );
   background-size: 200% 100%;
   border-radius: 8px;
@@ -942,14 +991,18 @@
   }
 }
 
+/* Amber frame kept: this modal is the last stop before chips move. */
 .confirmModal {
-  background: linear-gradient(160deg, rgba(36, 37, 38, 0.98) 0%, rgba(28, 29, 30, 0.98) 100%);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
   border: 1px solid rgba(255, 184, 0, 0.3);
   border-radius: 16px;
   padding: 28px 24px;
   max-width: 400px;
   width: 90%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    var(--realism-bevel),
+    var(--realism-cavity);
   animation: cashierPageSlideUp 0.25s ease-out;
 }
 
@@ -967,21 +1020,22 @@
 .confirmTitle {
   font-size: 16px;
   font-weight: 800;
-  color: #6fdcff;
+  color: var(--realism-cyan);
   margin: 0 0 16px;
   text-align: center;
 }
 
 .confirmText {
   font-size: 14px;
-  color: #e4e6eb;
+  color: var(--realism-chrome);
   text-align: center;
   line-height: 1.5;
   margin: 0 0 8px;
 }
 
+/* The amount and the recipient are the readout this modal exists for. */
 .confirmText strong {
-  color: #1877f2;
+  color: var(--realism-chrome-hot);
 }
 
 .confirmWarning {
@@ -1003,16 +1057,20 @@
 .btnSecondary {
   flex: 1;
   padding: 12px 16px;
-  background: rgba(58, 59, 60, 0.4);
-  border: 1px solid rgba(58, 59, 60, 0.6);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 10px;
-  color: #b0b3b8;
+  color: var(--realism-chrome);
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   transition: all 0.15s ease;
 }
 
+/* Red, and staying red: this is the button that sends the chips. */
 .btnDanger {
   flex: 1;
   padding: 12px 16px;
@@ -1024,7 +1082,10 @@
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 12px rgba(239, 68, 68, 0.25);
+  box-shadow:
+    0 2px 12px rgba(239, 68, 68, 0.25),
+    var(--realism-bevel),
+    var(--realism-lift);
 }
 
 /* ═══ Load More Button ═══ */
@@ -1036,10 +1097,13 @@
   background: rgba(24, 119, 242, 0.06);
   border: 1px solid rgba(24, 119, 242, 0.2);
   border-radius: 10px;
-  color: #1877f2;
+  color: var(--realism-blue);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   transition: all 0.15s ease;
 }
 
@@ -1055,7 +1119,7 @@
   border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
-  color: #ffd76b;
+  color: var(--realism-gold);
   animation: connectionFadeIn 0.3s ease;
 }
 
@@ -1093,9 +1157,90 @@
 .btnPrimary:focus-visible,
 .btnSecondary:focus-visible,
 .btnDanger:focus-visible,
+.btnGhost:focus-visible,
+.btnSuccess:focus-visible,
+.presetBtn:focus-visible,
+.txFilterBtn:focus-visible,
+.txExportBtn:focus-visible,
+.quickLink:focus-visible,
 .select:focus-visible,
 .input:focus-visible,
 .loadMoreBtn:focus-visible {
-  outline: 2px solid #1877f2;
+  outline: 2px solid var(--realism-cyan);
   outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   THE PRESS
+
+   On a phone there is no hover, so this is the only confirmation a player
+   gets that the control took the tap: the button drops into its own cavity
+   and the top light goes out. No :hover rule exists in this file and none
+   may be added (tests/no-hover-effects.law.test.ts).
+   ═══════════════════════════════════════════════════════════════ */
+
+.tab:active,
+.presetBtn:active,
+.quickLink:active,
+.txFilterBtn:active,
+.txExportBtn:active,
+.loadMoreBtn:active,
+.btnGhost:active:not(:disabled),
+.btnSuccess:active:not(:disabled),
+.btnPrimary:active:not(:disabled),
+.btnSecondary:active:not(:disabled),
+.btnDanger:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+  filter: brightness(0.94);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   REDUCED MOTION
+
+   Motion collapses, meaning does not (CLAUDE.md 10.6). Scoped to this
+   sheet's own class names rather than a universal rule, so it cannot reach
+   an animation another stylesheet owns. The skeletons stop shimmering but
+   keep a solid panel face, so they still read as placeholders; .spinner is
+   deliberately left running, because it is the only signal that a transfer
+   is still in flight.
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .message,
+  .txRow,
+  .txSkeletonRow,
+  .modalOverlay,
+  .confirmModal,
+  .connectionBanner {
+    animation: none;
+  }
+
+  .connectionDot,
+  .escrowCheckAmber {
+    animation: none;
+  }
+
+  .skeletonBar,
+  .recipientSkeletonBar {
+    animation: none;
+    background: var(--realism-panel-raised);
+  }
+
+  .tab,
+  .quickLink,
+  .presetBtn,
+  .select,
+  .input,
+  .btnPrimary,
+  .btnGhost,
+  .btnSuccess,
+  .btnSecondary,
+  .btnDanger,
+  .txFilterBtn,
+  .txExportBtn,
+  .loadMoreBtn {
+    transition: none;
+  }
 }

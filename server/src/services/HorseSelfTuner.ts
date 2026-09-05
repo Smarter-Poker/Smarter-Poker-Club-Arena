@@ -34,7 +34,10 @@
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
 import { claimNightlyJob } from '../benchmark/HorseLeague.js';
-import type { HorseProfileMods } from '../engine/HorseLogic.js';
+import type { HorseProfileMods, LeakFamily } from '../engine/HorseLogic.js';
+
+/** The two VARIANT families the rollup splits by; 'tournament' is a format. */
+type VariantFamily = Exclude<LeakFamily, 'tournament'>;
 
 import { accumulatePlayStats, freshPlay, type HandRow, type PlayStats } from './HorsePlayStats.js';
 
@@ -318,6 +321,14 @@ export function diagnoseAndNudge(
     },
     reasons: reasons.length > 0 ? reasons : ['within winning benchmarks - no change'],
   };
+}
+
+/** V41: which family a review-rollup variant belongs to. Exported for tests. */
+export function leakFamilyOf(
+  variant: string | null | undefined
+): Exclude<LeakFamily, 'tournament'> {
+  const v = (variant || 'nlh').toLowerCase();
+  return v.startsWith('plo') || v === 'flo8' || v.includes('omaha') ? 'omaha' : 'holdem';
 }
 
 /** Public stat snapshot stored in the log (rates, not raw counters). */
@@ -658,6 +669,16 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
     // V40: reviewed hands per horse over the same window (the denominator
     // the brain divides the counts by).
     const leakHandsByHorse = new Map<string, number>();
+    // V41 (2026-09-05): the same, split by variant family. The pooled map
+    // let an NLH non-nut-flush tag inflate a horse's OMAHA stack-off load
+    // (PLO_STACKOFF_TAGS reads nonnut_flush_stackoff) and vice versa; the
+    // brain reads its own family first (HorseLogic.leakLoad).
+    const leaksByFamily = new Map<string, Record<VariantFamily, Record<string, number>>>();
+    const leakHandsByFamily = new Map<string, Record<VariantFamily, number>>();
+    // V41: the tournament FORMAT share, read straight from the review rows
+    // (the rollup has no format column). The cash-only tuner never looked at
+    // these: 61,955 rows a week, 23,921 tagged, read by nobody.
+    const tourneyLeaks = new Map<string, { reviewed: number; counts: Record<string, number> }>();
     try {
       const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
         .toISOString()
@@ -665,7 +686,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       for (let offset = 0; ; offset += 1000) {
         const { data, error } = await supabase
           .from('horse_review_rollup')
-          .select('horse_user_id, leak_counts, big_wins, big_losses')
+          .select('horse_user_id, game_variant, leak_counts, big_wins, big_losses')
           .gte('day', sinceDay)
           // Same unstable-pagination bug as the real-nets loop above, same
           // fix: horse_review_rollup is keyed (horse_user_id, day,
@@ -681,30 +702,65 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         if (!data || data.length === 0) break;
         for (const row of data as Array<{
           horse_user_id: string;
+          game_variant: string | null;
           leak_counts: Record<string, number> | null;
           big_wins: number | null;
           big_losses: number | null;
         }>) {
           // The rollup counts REVIEWED hands (20bb+ pots), which is the
           // population the tags are drawn from.
+          const reviewed = (Number(row.big_wins) || 0) + (Number(row.big_losses) || 0);
           leakHandsByHorse.set(
             row.horse_user_id,
-            (leakHandsByHorse.get(row.horse_user_id) ?? 0) +
-              (Number(row.big_wins) || 0) +
-              (Number(row.big_losses) || 0)
+            (leakHandsByHorse.get(row.horse_user_id) ?? 0) + reviewed
           );
+          const fam = leakFamilyOf(row.game_variant);
+          const fh = leakHandsByFamily.get(row.horse_user_id) ?? { omaha: 0, holdem: 0 };
+          fh[fam] += reviewed;
+          leakHandsByFamily.set(row.horse_user_id, fh);
           if (!row.leak_counts) continue;
           const acc = leaksByHorse.get(row.horse_user_id) ?? {};
+          const fams = leaksByFamily.get(row.horse_user_id) ?? { omaha: {}, holdem: {} };
           for (const [k, v] of Object.entries(row.leak_counts)) {
-            acc[k] = (acc[k] ?? 0) + (Number(v) || 0);
+            const n = Number(v) || 0;
+            acc[k] = (acc[k] ?? 0) + n;
+            fams[fam][k] = (fams[fam][k] ?? 0) + n;
           }
           leaksByHorse.set(row.horse_user_id, acc);
+          leaksByFamily.set(row.horse_user_id, fams);
         }
         if (data.length < 1000) break;
       }
     } catch (err) {
       reportError(err, 'HorseSelfTuner.leakTags');
       leaksByHorse.clear();
+      leaksByFamily.clear();
+      leakHandsByFamily.clear();
+    }
+    try {
+      const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
+        .toISOString()
+        .slice(0, 10);
+      const { data, error } = await supabase.rpc('fn_horse_tournament_leaks', {
+        p_since: sinceDay,
+      });
+      if (error) throw new Error(error.message);
+      for (const row of (data ?? []) as Array<{
+        horse_user_id: string;
+        reviewed: number | string;
+        leak_counts: Record<string, number> | null;
+      }>) {
+        const counts: Record<string, number> = {};
+        for (const [k, v] of Object.entries(row.leak_counts ?? {})) {
+          const n = Number(v) || 0;
+          if (n > 0) counts[k] = n;
+        }
+        tourneyLeaks.set(row.horse_user_id, { reviewed: Number(row.reviewed) || 0, counts });
+      }
+    } catch (err) {
+      // An upgrade, not a dependency: the night tunes without it.
+      reportError(err, 'HorseSelfTuner.tournamentLeaks');
+      tourneyLeaks.clear();
     }
 
     // ── 2026-09-05: EVERY HORSE, FROM ITS OWN ROWS ───────────────────────
@@ -791,10 +847,35 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         }
       }
       const leaksHands = leakHandsByHorse.get(horseId) ?? 0;
+      // V41: the family split travels with it.
+      const fams = leaksByFamily.get(horseId) ?? { omaha: {}, holdem: {} };
+      const famHands = leakHandsByFamily.get(horseId) ?? { omaha: 0, holdem: 0 };
+      const positive = (m: Record<string, number>): Record<string, number> => {
+        const out: Record<string, number> = {};
+        for (const [k, v] of Object.entries(m)) if ((Number(v) || 0) > 0) out[k] = Number(v);
+        return out;
+      };
+      const tl = tourneyLeaks.get(horseId);
+      const familyProfile = {
+        leaksOmaha: positive(fams.omaha),
+        leaksHandsOmaha: famHands.omaha,
+        leaksHoldem: positive(fams.holdem),
+        leaksHandsHoldem: famHands.holdem,
+        leaksTournament: tl ? positive(tl.counts) : {},
+        leaksHandsTournament: tl?.reviewed ?? 0,
+      };
+      const prev = prevMods as Record<string, unknown>;
       const prevLeaks = (prevMods as { leaks?: Record<string, number> }).leaks ?? {};
       const leaksChanged =
         JSON.stringify(prevLeaks) !== JSON.stringify(leakProfile) ||
-        ((prevMods as { leaksHands?: number }).leaksHands ?? 0) !== leaksHands;
+        ((prevMods as { leaksHands?: number }).leaksHands ?? 0) !== leaksHands ||
+        JSON.stringify(prev.leaksOmaha ?? {}) !== JSON.stringify(familyProfile.leaksOmaha) ||
+        JSON.stringify(prev.leaksHoldem ?? {}) !== JSON.stringify(familyProfile.leaksHoldem) ||
+        (prev.leaksHandsOmaha ?? 0) !== familyProfile.leaksHandsOmaha ||
+        (prev.leaksHandsHoldem ?? 0) !== familyProfile.leaksHandsHoldem ||
+        JSON.stringify(prev.leaksTournament ?? {}) !==
+          JSON.stringify(familyProfile.leaksTournament) ||
+        (prev.leaksHandsTournament ?? 0) !== familyProfile.leaksHandsTournament;
       const changed =
         mods.tightness !== (prevMods.tightness ?? 1) ||
         mods.aggression !== (prevMods.aggression ?? 1) ||
@@ -808,6 +889,12 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
             ...mods,
             leaks: leakProfile,
             leaksHands,
+            leaksOmaha: familyProfile.leaksOmaha,
+            leaksHandsOmaha: familyProfile.leaksHandsOmaha,
+            leaksHoldem: familyProfile.leaksHoldem,
+            leaksHandsHoldem: familyProfile.leaksHandsHoldem,
+            leaksTournament: familyProfile.leaksTournament,
+            leaksHandsTournament: familyProfile.leaksHandsTournament,
           };
           const { error: upErr } = await supabase
             .from('profiles')

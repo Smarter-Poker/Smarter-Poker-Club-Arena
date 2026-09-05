@@ -199,6 +199,59 @@ is an estate-wide gap, it needs a decision about direction rather than 165 files
 written by an agent guessing at intent, and it is raised here with the number
 attached.
 
+## 5. The money path, re-proved end to end after everything above
+
+Inside one transaction that was rolled back (11.5, in the `DO` block form that
+ends by raising, so the rollback is not optional):
+
+```
+approve #1        {"status":"approved","success":true,"replayed":false,
+                   "your_balance":619987.66,"their_balance":13755.83}
+approve #2        {"status":"approved","success":true,"replayed":true,
+  (the retry)      "transaction_id":"fdbcf3cd-...","amount":12.34}
+sends under the derived key: 1
+
+with a freeze declared  {"success":false,
+                         "error":"this club is squaring its books - approvals
+                                  resume when the settlement freeze lifts"}
+after lifting it        {"status":"approved","success":true,"replayed":false}
+```
+
+`clubs.settlement_locked` on production is still `false` afterwards, which is
+the rollback checked rather than assumed.
+
+Two notes on the probe itself, because both were mistakes worth keeping. It
+first reported "FREEZE DID NOT REFUSE": the function refuses **by returning**
+`{"success": false, ...}` rather than by raising, and my probe was watching for
+an exception. And the trigger behind it still cannot be exercised from psql -
+`session_user` there is `postgres`, which the guard treats as an internal
+caller by design - so what is proved here is the function's own check, with the
+trigger as the second line of defence for the paths that do not go through it.
+
+## The reads, as they stand at the end of the gate
+
+```
+                        psql        host curl (x6)      browser
+fn_club_bomb_pot_report 1.77s       0.99-2.07s          0.50-0.74s
+ca_rake_snapshot        0.92s       -                   1.43-2.16s
+fn_ca_rake_by_agent     0.70s
+```
+
+**And a residual that is named rather than declared fixed.** Three times during
+this gate a browser batch returned 500s at ~8.4s while the same calls measured
+under two seconds in psql at that moment and under two seconds from `curl`
+seconds later. 8s is exactly the `authenticated` role's `statement_timeout`, so
+when it fails it fails at the ceiling. Every structural cause is now gone -
+nothing re-derives a share per hand, no live edge scans a day - and what is
+left is variance in bursts.
+
+The largest measured component of what remains is the commission CTE: **425ms
+of `fn_ca_rake_by_agent`'s 703ms**, because `agent_commissions` has six indexes
+and none leads on `(club_id, created_at)`, so a seven-day question bitmap-scans
+694,941 rows. `20260905081020` adds a covering index for it, in the freeze,
+because that table takes a row per agent per raked hand. Taking 425ms out of
+the median is what moves the distribution away from the ceiling.
+
 ## Verified
 
 - Every phase 7 migration applied AND recorded, and the live function bodies

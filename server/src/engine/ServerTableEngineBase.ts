@@ -56,7 +56,11 @@ import {
   atomicCashout,
   markSeatAsLeft,
 } from '../services/supabase.js';
-import { collectNitEvictions } from '../services/supabase/nitGame.js';
+import {
+  collectNitEvictions,
+  collectNitStatus,
+  type NitSeatStatus,
+} from '../services/supabase/nitGame.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
 import { evaluateCashSessions, atomicCashoutVoluntary } from '../services/supabase/cashSessions.js';
 import {
@@ -3572,6 +3576,23 @@ export abstract class ServerTableEngineBase {
   protected bombPotScheduler = new BombPotScheduler();
 
   /**
+   * THE JUDGED VPIP OF EVERY SEAT (Dan 2026-09-04), refreshed at each hand
+   * boundary on a table that runs the floor. Read by the horse brain for its
+   * OWN row, so a horse at an Action / Madness table widens toward the floor
+   * instead of being stood up every ten hands (10.5: a horse obeys the floor
+   * identically, and obeying it means staying above it). Empty on a table
+   * with no rule, and after a failed read - the brain then plays its prior.
+   */
+  protected nitStatus: Map<string, NitSeatStatus> = new Map();
+
+  /** The floor a seat at this table must keep, percent; 0 when there is none. */
+  protected vpipFloor(): number {
+    if (this.tableInfo?.nit_game !== true) return 0;
+    const min = Number(this.tableInfo?.maintain_percent_min ?? 0);
+    return Number.isFinite(min) && min > 0 ? min : 0;
+  }
+
+  /**
    * FULL SCHEDULER PERSISTENCE (2026-08-28): last serialized scheduler state
    * written to tables.bomb_pot_sched_state — the change detector that keeps
    * the per-hand write down to one row only when something actually moved.
@@ -4049,6 +4070,10 @@ export abstract class ServerTableEngineBase {
     // eviction reasons live — including the start-up wait loop.
     const nitEvictable: string[] = [];
     if (this.tableInfo?.nit_game === true) {
+      // The board every seat is judged on, kept for the brain (Dan
+      // 2026-09-04). Read beside the eviction, at the same boundary, from the
+      // same rows, so what a horse steers by is what it is stood up on.
+      this.nitStatus = await collectNitStatus(this.tableId);
       const nits = await collectNitEvictions(this.tableId);
       for (const n of nits) {
         console.log(

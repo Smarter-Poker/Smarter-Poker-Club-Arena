@@ -165,13 +165,25 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     );
     expect(b7.ccTurnReveal).toBe(550);
 
-    // ── BEAT 8 — THE RIVER ─────────────────────────────────────────────────
+    // ── BEAT 8 — THE RIVER SQUEEZE ─────────────────────────────────────────
+    // RIVER SQUEEZE 2026-09-04: the river materialises FACE DOWN in its slot
+    // (ccRiverMaterialize, the prepare beat) and then snaps over through its
+    // edge on the two-surface flip (ccRiverSqueeze = squeeze + reveal +
+    // settle). Built exactly as CommunityCards renders it: the --squeeze
+    // card carries the desktop-cash defaults from :root, and the inner
+    // .community-cards__flip is what turns. 80 + 480 = the 560ms cash profile.
     const b8 = await beat(
       page,
-      `const d=document.createElement('div');d.className='community-cards__card community-cards__card--river';
-       d.style.setProperty('--card-index','4');$('bc').appendChild(d);`
+      `const d=document.createElement('div');d.className='community-cards__card community-cards__card--river community-cards__card--squeeze';
+       d.style.setProperty('--card-index','4');
+       const f=document.createElement('div');f.className='community-cards__flip';d.appendChild(f);
+       $('bc').appendChild(d);`
     );
-    expect(b8.ccRiverReveal).toBe(700);
+    expect(b8.ccRiverMaterialize, 'the river must materialise face down in its slot').toBe(80);
+    expect(b8.ccRiverSqueeze, 'the river must squeeze over through its edge').toBe(480);
+    // The JS mount window is the profile total + 100ms margin, and the board
+    // holds its newly-dealt window for at least 1400ms — both outlive 560ms.
+    expect(80 + 480).toBeLessThan(1400);
 
     // ── BEAT 9 — SHOWDOWN: hands turn over ─────────────────────────────────
     const b9 = await beat(

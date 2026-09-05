@@ -69,6 +69,7 @@ export interface HandDetailViewProps {
 
 const STREET_WORD: Record<string, string> = {
   preflop: 'Preflop',
+  pineapple_discard: 'At The Discard',
   flop: 'On The Flop',
   turn: 'On The Turn',
   river: 'On The River',

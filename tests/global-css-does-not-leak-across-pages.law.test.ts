@@ -118,11 +118,27 @@ describe('a global class name has exactly one owner', () => {
 
   it('does not grow the number of class names that can leak between pages', () => {
     // A collision only MATTERS when one file declares a property another does
-    // not: that property is the one that crosses components. 166 such classes
-    // remain outside the theme layer (measured 2026-09-05). The figure was 256
-    // when this law was written and counted src/styles/ too; excluding the
-    // deliberate app-wide sheets is what makes it mean "one component decides
-    // another component's layout" and nothing else.
+    // not: that property is the one that crosses components.
+    //
+    // 2026-09-05, second pass (the wallet's, kept verbatim because both fixes
+    // are real): "The tree measured 244 against a ceiling of 243 - main was RED
+    // on this law - and two of the leaks were the wallet's own. `.message` was
+    // declared bare by BOTH PlayerWalletPage.css and ChipTransferModal.css with
+    // different padding, weight and error red, so the send banner took whichever
+    // the player had loaded last; it is scoped to `.wallet-page .message` now.
+    // `.wallet-page` stopped being a second bare owner when
+    // RewardsCircuitSurfaces.css gave up overpainting the wallet's ground with
+    // `!important`."
+    //
+    // 2026-09-05, third pass: main went red because a SECOND `.btn-success`
+    // block in club-engine.css added `border-color` - a design system doing
+    // exactly its job, tripping a ratchet that was counting the theme layer as
+    // if it were a leak. That published a broken gate and stalled the bundle
+    // for 17 minutes. `src/styles/` is excluded now (see isThemeLayer), so the
+    // number counts one thing only: a COMPONENT deciding another COMPONENT's
+    // layout. It reads 164 with the wallet's two fixes included; it was 242 on
+    // the old basis and 256 when this law was written.
+    //
     // This is a ratchet, not a target: it may fall, never rise. Fixing one is
     // two lines - scope it to its container.
     // LOWER THIS NUMBER when you fix some; never raise it to make CI pass.
@@ -133,6 +149,6 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    expect(leakable).toBeLessThanOrEqual(166);
+    expect(leakable).toBeLessThanOrEqual(164);
   });
 });

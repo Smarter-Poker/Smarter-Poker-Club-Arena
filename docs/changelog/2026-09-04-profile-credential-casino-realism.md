@@ -323,7 +323,7 @@ it is the one thing a single "Hands" figure cannot say. Two tiles added
   - ledger) to replace five round trips on a cold mobile load.
 - `training_achievement_definitions` (threshold 0, icon_url null on every
   row) is a dead mirror of the client `ACHIEVEMENTS`; pick one source.
-- 166 component stylesheets still define a class bare that another component also defines, with a
+- 164 component stylesheets still define a class bare that another component also defines, with a
   property gap between them (down from 256). Each is a live cross-page
   collision and each is the same two-line fix; the law ratchets the count.
 

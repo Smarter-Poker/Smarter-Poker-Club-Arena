@@ -32,7 +32,10 @@ const env = Object.fromEntries(
 const SUPABASE_URL = env.VITE_SUPABASE_URL || 'https://kuklfnapbkmacvwxktbh.supabase.co';
 const SERVICE = env.SUPABASE_SERVICE_ROLE_KEY;
 const ANON = env.VITE_SUPABASE_ANON_KEY;
-const EMAIL = process.env.SP_EMAIL || 'daniel@bekavactrading.com';
+// 2026-09-04: no default. A script never wears a person's account; read
+// SP_EMAIL from .env.local (Dan: 'Always read from the .env.local files').
+const EMAIL = process.env.SP_EMAIL || env.SP_EMAIL || env.TEST_USER_EMAIL;
+if (!EMAIL) throw new Error('SP_EMAIL (or TEST_USER_EMAIL) is not set - refusing to guess an account');
 const BASE = 'https://smarter.poker/hub/club-arena';
 if (!SERVICE || !ANON) throw new Error('missing supabase keys in .env');
 

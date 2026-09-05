@@ -96,8 +96,10 @@ describe('the seat rebuild prunes, not just adds', () => {
        A required field is the one guard that cannot rot: it is checked on
        every build rather than by a regex somebody has to keep accurate. This
        assertion is deliberately about the TYPE, which is the whole mechanism. */
-    expect(CODE).toMatch(/\n\s*kind: 'table' \| 'lobby';/);
-    expect(CODE).not.toMatch(/kind\?: 'table' \| 'lobby';/);
+    /* 2026-09-04: a third kind, 'hub' (a World Hub page in a slot). Still
+       required - that is the mechanism this pin exists for. */
+    expect(CODE).toMatch(/\n\s*kind: 'table' \| 'lobby' \| 'hub';/);
+    expect(CODE).not.toMatch(/kind\?: 'table' \| 'lobby'/);
   });
 
   it('builds the URL tab with the same fields as the route effect', () => {

@@ -3,8 +3,24 @@
  * These rules alter presentation only. Live wallet, checkout, settlement,
  * reward, promotion, and inventory handlers remain owned by their pages.
  */
+/*
+ * THE WALLET IS NOT IN THIS LIST, AND THAT IS THE POINT (2026-09-05).
+ *
+ * It was, and the `!important` below meant the wallet's own ground - the
+ * cyan-lit vault written in PlayerWalletPage.css as the #SMARTERCASINOREALISM
+ * reference - HAD NEVER ONCE RENDERED. Measured on the live published page:
+ *
+ *   computed background-image   radial-gradient(... rgba(58,168,255,.09) ...)
+ *   the wallet's own rule       radial-gradient(... rgba(0,212,255,.08) ...)
+ *
+ * Both were in the cascade; this one won on `!important` alone. So the page the
+ * rest of the family is converging TOWARD was being repainted in the family's
+ * older blue, and every realism pass over it was invisible.
+ *
+ * The wallet owns its ground now. The other six destinations keep the shared
+ * convergence exactly as it was.
+ */
 :is(
-  .wallet-page,
   .transaction-history-page,
   .vip-page,
   .rakeback-page,
@@ -12,16 +28,29 @@
   .bonus-page,
   .achievements-page
 ) {
-  color: #eaf3f9;
+  color: var(--realism-chrome-hot, #eaf3f9);
   background:
-    radial-gradient(circle at 82% 4%, rgba(58, 168, 255, 0.09), transparent 28rem),
-    linear-gradient(180deg, #05080c 0%, #020407 100%) !important;
+    radial-gradient(circle at 82% 4%, rgba(0, 212, 255, 0.09), transparent 28rem),
+    linear-gradient(180deg, var(--realism-obsidian, #05080c) 0%, #020407 100%) !important;
 }
 
+/* The wallet takes the family's TEXT colour and nothing else, so it stays part
+   of the set without having its designed ground overpainted. */
+.wallet-page {
+  color: var(--realism-chrome-hot, #eaf3f9);
+}
+
+/* The wallet's three entries are gone from this list and the two below. They
+   named `.wallet-hero`, `.wallet-card-premium`, `.transfer-section`,
+   `.hero-btn` and `.transfer-btn` - the markup the wallet had BEFORE its
+   2026-09-05 rebuild. It renders `vault-hero`, `vault-panel` and `vault-btn`
+   now, so all five selectors had matched nothing since that day: dead rules
+   left behind by a rename.
+   They are not remapped onto the new names on purpose. These rules are
+   `!important`, and pointing them at `.vault-panel` would overpaint the
+   machined realism surface with the generic one - the same defect as the
+   ground above, one level down. The wallet's own sheet owns its panels. */
 :is(
-  .wallet-page .wallet-hero,
-  .wallet-page .wallet-card-premium,
-  .wallet-page .transfer-section,
   .transaction-history-page .summary-card,
   .transaction-history-page .transaction-row,
   .vip-page .current-status,
@@ -43,18 +72,33 @@
   .achievements-page .summary-stat,
   .achievements-page .streak-activity-header
 ) {
-  border: 1px solid #26333d !important;
+  /* THE MATERIAL BELONGS HERE, not in six page stylesheets fighting it.
+     These rules are `!important` by design - the sheet exists to converge the
+     family onto one surface - which means a page that writes its own panel
+     material loses. Measured 2026-09-05: RakebackPage.css had just been given
+     the machined realism treatment and none of it rendered, because
+     `.rakeback-page .summary-card` below overpaints it.
+     So the realism vocabulary lands in the CONVERGENCE layer, and all six
+     destinations take it at once and identically. Every var() carries the
+     previous literal as its fallback, so nothing moves if the global sheet is
+     ever absent. */
+  border: 1px solid var(--realism-gunmetal, #26333d) !important;
   border-radius: 4px !important;
-  background: linear-gradient(112deg, #101820 0%, #080d12 72%, #05080c 100%) !important;
+  background: linear-gradient(
+    112deg,
+    var(--realism-panel-raised, #101820) 0%,
+    var(--realism-panel, #080d12) 72%,
+    var(--realism-obsidian, #05080c) 100%
+  ) !important;
   box-shadow:
-    inset 0 1px 0 rgba(221, 243, 255, 0.055),
+    var(--realism-bevel, inset 0 1px 0 rgba(221, 243, 255, 0.055)),
+    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6)),
     0 14px 34px rgba(0, 0, 0, 0.26) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 
 :is(
-  .wallet-page .wallet-card-premium,
   .transaction-history-page .transaction-row,
   .rakeback-page .period-row,
   .promotions-page .promo-card,
@@ -66,7 +110,6 @@
 }
 
 :is(
-  .wallet-page .wallet-card-premium,
   .transaction-history-page .transaction-row,
   .rakeback-page .period-row,
   .promotions-page .promo-card,
@@ -78,12 +121,12 @@
   inset: auto 0 0;
   height: 1px;
   pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgba(58, 168, 255, 0.6), transparent);
+  /* The live-energy accent, from the same cyan the wallet and the family header
+     use. It read #3aa8ff here while the reference read #00d4ff. */
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.6), transparent);
 }
 
 :is(
-  .wallet-page .hero-btn,
-  .wallet-page .transfer-btn,
   .transaction-history-page .export-btn,
   .transaction-history-page .load-more-btn,
   .vip-page .vip-purchase-btn,
@@ -106,14 +149,15 @@
 :is(.rakeback-page .rakeback-promo-banner, .promotions-page .daily-bonus-banner) {
   color: #ddf3ff !important;
   animation: none !important;
+  /* The last #3aa8ff in this sheet. The lit spine down a promo banner is the
+     same energy as the family header's spine and the wallet's readouts. */
   box-shadow:
-    inset 2px 0 0 #3aa8ff,
+    inset 2px 0 0 var(--realism-cyan, #3aa8ff),
     0 14px 34px rgba(0, 0, 0, 0.28) !important;
 }
 
 @media (max-width: 640px) {
   :is(
-    .wallet-page .wallet-hero,
     .transaction-history-page .tx-summary,
     .vip-page .vip-section,
     .rakeback-page .rakeback-summary,

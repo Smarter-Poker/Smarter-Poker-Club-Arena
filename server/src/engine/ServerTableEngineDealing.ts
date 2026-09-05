@@ -218,6 +218,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // moment enough players are seated and never runs again — so a player
         // who was mid-buy-in at boot, or who joined during the wait, would be
         // dealt in despite the database saying they are sitting out.
+        //
+        // PRESENCE FOLLOWS THE PLAYER (2026-09-05): a mover's presence is
+        // adopted BEFORE the sit-out restore, because that restore registers
+        // the player and restoreFsmStates never clobbers a live entry. See
+        // ServerTableEngineBase.adoptMovedPresence.
+        this.adoptMovedPresence();
         this.restoreSitOutsFromSeats();
         await this.withStepBudget(
           'refresh_blinds',
@@ -271,6 +277,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // a chance to look at the seat before the deal. On the very first
         // iteration — cold start OR crash recovery — all seated players are
         // treated as the initial roster and none of that applies.
+        // A SEAT CHANGED (2026-09-05): an arrival or a departure seen in the
+        // rows this iteration wakes the game's ClusterController tick.
+        let rosterChanged = false;
         if (this.dealingLoopFirstIteration) {
           // Dan 2026-08-30: BEFORE the veteran seeding below, because that
           // seeding is what used to destroy the hold. Both halves of the fix
@@ -301,6 +310,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         } else {
           for (const p of this.seatedPlayers) {
             if (!this.knownPlayerIds.has(p.user_id)) {
+              rosterChanged = true;
               // CHIP CONTINUITY: a fresh arrival is a fresh session, even if
               // the mirror wrote this player off a moment ago.
               this.chipContinuity.welcome(p.user_id);
@@ -348,6 +358,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const currentIds = new Set(this.seatedPlayers.map((p) => p.user_id));
         for (const id of this.knownPlayerIds) {
           if (!currentIds.has(id)) {
+            rosterChanged = true;
             this.knownPlayerIds.delete(id);
             this.waitingForBB.delete(id);
             // A held swap side that is gone from the roster: the other table
@@ -358,6 +369,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.mustPostBB.delete(id);
           }
         }
+        if (rosterChanged) this.wakeClusterGame('seat_change');
         // POST-TO-ENTER RACE FIX 2026-08-27: a queued intent from someone no
         // longer seated (or never seated) is dead weight - drop it.
         for (const id of this.pendingPostToEnter) {
@@ -2769,6 +2781,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   /** How long a seat must sit at zero before it is released. */
   static readonly BUSTED_GRACE_MS = 10_000;
+  /**
+   * A heartbeat carrying `rebuyPromptOpen` within this window means the
+   * player is at the bust-rebuy dialog; the seat is not released while they
+   * are (2026-09-04 second sweep). Heartbeats run every few seconds, so this
+   * is two missed beats, not one. The map itself lives on the base class,
+   * because the heartbeat (Turns) writes it and this sweep (Dealing) reads it.
+   */
+  static readonly REBUY_PROMPT_HOLD_MS = 12_000;
 
   protected async standUpBustedCashPlayers(): Promise<void> {
     if (this.isTournamentTable()) return;
@@ -2805,6 +2825,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
          DEBITED already and is owed their chips, not their seat taken away. */
       if (this.pendingAddOns.has(player.user_id) || owed.has(player.user_id)) {
         this.bustedSince.delete(player.user_id);
+        continue;
+      }
+
+      /* The player is standing at the cashier. A fresh rebuy-prompt heartbeat
+         restarts the grace: the clock measures how long a seat sat at zero
+         with NOBODY minding it, not how long a human took to decide. */
+      const promptSeen = this.rebuyPromptOpenAt.get(player.user_id) ?? 0;
+      if (now - promptSeen < ServerTableEngineDealing.REBUY_PROMPT_HOLD_MS) {
+        this.bustedSince.set(player.user_id, now);
         continue;
       }
 
@@ -2847,6 +2876,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.straddleEngine.removePlayer(this.tableId, player.user_id);
         this.preActionEngine.removePlayer(this.tableId, player.user_id);
         this.bustedSince.delete(player.user_id);
+        this.rebuyPromptOpenAt.delete(player.user_id);
         removed.push(player.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy - seat ${player.seat_number} released`

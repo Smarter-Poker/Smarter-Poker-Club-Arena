@@ -95,7 +95,14 @@ export async function logHandHistory(params: {
    * engine's pre-rake board shares. Written as NULL when there is one board,
    * so ordinary rows are unchanged. Column: hand_history.winners_by_board.
    */
-  winnersByBoard?: { board: number; userId: string; amount: number; handName?: string }[];
+  winnersByBoard?: {
+    board: number;
+    userId: string;
+    amount: number;
+    handName?: string;
+    /** HI-LO: the entry for the low half. See HandEvent WINNERS.winnersByBoard. */
+    low?: boolean;
+  }[];
   /**
    * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
    *
@@ -241,8 +248,10 @@ export async function logHandHistory(params: {
     started_at: startedAtIso,
     ended_at: endedAtIso,
     winners: params.winners,
-    // Multi-board hands only; NULL keeps single-board rows byte-identical.
-    winners_by_board: params.winnersByBoard?.some((w) => w.board > 1)
+    // Multi-board hands, and any hand with a LOW half (2026-09-04): those are
+    // the hands whose merged `winners` cannot tell the story. NULL keeps every
+    // other single-board row byte-identical.
+    winners_by_board: params.winnersByBoard?.some((w) => w.board > 1 || w.low)
       ? params.winnersByBoard
       : null,
     // Dan section 29. NULL rather than [] on a hand with no recorded

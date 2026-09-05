@@ -1,751 +1,492 @@
 /**
- * ♠ CLUB ARENA — Hand Replay Viewer
- * premium-style hand history replay with timeline scrubbing
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  HAND REPLAY — the animated replay, off the one model  #SMARTERCASINOREALISM
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Reached from the table's Previous Hand modal and Hand History panel (REPLAY),
+ * and from the Hand Archive page. Two tabs:
+ *
+ *   REPLAY  — a felt, the seats where they sat, the board as it came, the pot
+ *             and each street's bets, stepping through the hand one action at
+ *             a time with a scrubber and play / pause. The frames come from
+ *             `buildReplayFrames(model)` - see utils/replayFrames.ts for the
+ *             four ways the old timeline lied.
+ *   RUNDOWN — the same `HandDetailView` the modal and the jackpot popup draw.
+ *
+ * 2026-09-04 (Previous Hand second sweep): this component used to keep a fifth
+ * hand shape of its own (`HandData`), map the service record into it by hand
+ * (dropping winners, per-board winners and rake on the way), draw the board
+ * once PER SEAT inside the player loop, index the board by step number, and
+ * hand `LiveHandReplayer2D` raw engine card strings whose `.suit.charAt` threw
+ * the moment the flop came. It renders `record.replay` now - the model built
+ * once by HandHistoryService - and nothing else.
+ *
+ * It NEVER fabricates a hand: a load failure is "Could Not Load This Hand", a
+ * missing row is "Hand Not Found", and neither ever draws a stand-in.
  */
 
-import { useState, useEffect, useRef, Suspense } from 'react';
-import type { Card, CardSuit, CardRank } from '../../types/database.types';
-import { CardImage } from '../table/CardImage';
-import { LiveHandReplayer2D } from './LiveHandReplayer2D';
-import type { Card as CardImageCard } from '../table/CardImage';
-import './HandReplay.css';
-import { useToast } from '../common/Toast';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CardImage, CardBack } from '../table/CardImage';
+import HandDetailView from '../handdetail/HandDetailView';
+import type { HandRecord as ServiceHandRecord } from '../../services/HandHistoryService';
+import type { ReplayModel } from '../../utils/handReplay';
+import { buildReplayFrames, frameSeats, type ReplayFrame } from '../../utils/replayFrames';
+import { blindLabel, gameTypeLabel, money, stamp } from '../../utils/handFormat';
+import { getAnimationSpeed } from '../../utils/animationSpeed';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import { reportError } from '../../utils/errorReporter';
-import { lazyWithRetry } from '../../utils/lazyWithRetry';
-
-// Lazy-load HandReplay3D — Three.js is large and only needed when 3D tab is opened
-const HandReplay3D = lazyWithRetry(() => import('./HandReplay3D'));
-
-export interface PlayerAction {
-  player_id: string;
-  street?: string;
-  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
-  amount?: number;
-  timestamp: number;
-}
-
-/**
- * The verbs a player CHOOSES. `hand_history.actions` also carries forced money
- * — sb, bb, ante, straddle, post — and the returned uncalled bet, all recorded
- * since 2026-08-27 so a hand can be rebuilt. None of them is a decision, so
- * none of them belongs in a replay's action timeline.
- */
-const VOLUNTARY_ACTIONS = new Set<string>([
-  'fold',
-  'check',
-  'call',
-  'bet',
-  'raise',
-  'all_in',
-  'discard',
-]);
-
-interface HandPlayer {
-  seat: number;
-  user_id: string;
-  username: string;
-  avatar_url: string | null;
-  position: 'UTG' | 'MP' | 'CO' | 'BTN' | 'SB' | 'BB';
-  hole_cards: Card[];
-  final_hand?: string; // "Two Pair", "One Pair", etc.
-  result: number; // +/- chips
-  is_winner: boolean;
-  /** SHOWDOWN POLISH 2026-08-25: the persisted reveal record (see
-      HandHistoryService.HandPlayer.showdown_reveal). */
-  showdown_reveal?: {
-    reveal_order: number;
-    mucked: boolean;
-    hand_name?: string;
-    hand_description?: string;
-  };
-}
-
-export interface HandData {
-  id: string;
-  serial_number: string;
-  played_at: string;
-  hand_number: number;
-  total_hands: number;
-  main_pot: number;
-  community_cards: Card[];
-  /** Round 2 (double board): board 2, absent on single-board hands. */
-  community_cards2?: Card[];
-  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3, absent below three boards. */
-  community_cards3?: Card[];
-  /** BOMB POT FACTS (spec §20): trigger reason / ante / boards / variant. */
-  bomb_pot?: {
-    trigger_reason?: string;
-    ante_amount?: number;
-    board_count?: number;
-    variant?: string;
-  } | null;
-  /**
-   * COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N in run order
-   * (board 1 is community_cards). Dealt AFTER the all-in locked, so they
-   * render only once the replay reaches the river step.
-   */
-  rit_boards?: Card[][];
-  players: HandPlayer[];
-  actions: PlayerAction[];
-}
+import './HandReplay.css';
 
 interface HandReplayProps {
   handId?: string;
-  handData?: HandData;
   onClose?: () => void;
 }
 
-// Helper to convert full suit name to abbreviation for CardImage
-const SUIT_ABBREV: Record<string, CardImageCard['suit']> = {
-  hearts: 'h',
-  diamonds: 'd',
-  clubs: 'c',
-  spades: 's',
-  h: 'h',
-  d: 'd',
-  c: 'c',
-  s: 's',
-};
-
-// Normalize rank for CardImage ('10' → 'T')
-function normalizeRank(rank: string): CardImageCard['rank'] {
-  if (rank === '10') return 'T';
-  return rank as CardImageCard['rank'];
+/** How many face-down cards an unrevealed seat shows: the variant's holding. */
+function holdingSize(model: ReplayModel): number {
+  const shown = model.players.find((p) => p.hole && p.hole.length > 0)?.hole?.length;
+  if (shown) return shown;
+  const v = String(model.gameVariant || '').toLowerCase();
+  if (v.startsWith('plo6')) return 6;
+  if (v.startsWith('plo5')) return 5;
+  if (v.startsWith('plo') || v.startsWith('flo')) return 4;
+  if (v.includes('pineapple')) return 3;
+  return 2;
 }
 
 /**
- * Convert a stored card to CardImage form.
- *
- * COMPLETENESS PASS 2026-08-26: production `hand_history.community_cards`
- * rows store ENGINE STRINGS ('8spades', '10hearts'), not {rank, suit}
- * objects — verified against a live row. This function only handled the
- * object form, so `card.rank` came back undefined and CardImage fell back
- * to its Ace-of-Spades placeholder for every board card in a replayed
- * hand_history row. Both forms are handled now (rit_boards uses the same
- * string format).
+ * Where each seat sits around the oval, as percentages of the felt. The hero
+ * (or, for an observer, the lowest seat) is at the bottom centre; the others
+ * keep their real clockwise order from there. Seats are placed by SEAT NUMBER
+ * on a ring the size of the table, never by array index - a six-handed hand on
+ * seats 1, 2, 3, 5, 8, 9 draws seat 8 where seat 8 sits.
  */
-function toCardImage(card: Card | string): CardImageCard {
-  if (typeof card === 'string') {
-    const m = /^(10|[2-9TJQKA])(hearts|diamonds|clubs|spades|[hdcs])$/.exec(card);
-    if (m) {
-      return { rank: normalizeRank(m[1]), suit: SUIT_ABBREV[m[2]] || 's' };
-    }
-    // Unparseable string — let CardImage's own guard warn and fall back.
-    return { rank: 'A', suit: 's' };
+function seatLayout(
+  seats: number[],
+  heroSeat: number | null
+): Record<number, { x: number; y: number; bx: number; by: number }> {
+  const out: Record<number, { x: number; y: number; bx: number; by: number }> = {};
+  if (seats.length === 0) return out;
+  const maxSeat = Math.max(...seats);
+  const ring = maxSeat <= 6 ? 6 : 9;
+  const anchor = heroSeat && seats.includes(heroSeat) ? heroSeat : Math.min(...seats);
+  for (const seat of seats) {
+    const offset = (seat - anchor + ring) % ring;
+    const angle = Math.PI / 2 + (offset / ring) * Math.PI * 2;
+    const x = 50 + 44 * Math.cos(angle);
+    const y = 50 + 40 * Math.sin(angle);
+    out[seat] = {
+      x,
+      y,
+      bx: 50 + 26 * Math.cos(angle),
+      by: 50 + 22 * Math.sin(angle),
+    };
   }
-  return {
-    rank: normalizeRank(card.rank),
-    suit: SUIT_ABBREV[card.suit] || 's',
-  };
+  return out;
 }
 
-// Position badge colors
-function getPositionColor(position: string): string {
-  switch (position) {
-    case 'BTN':
-      return '#10b981';
-    case 'SB':
-      return '#3b82f6';
-    case 'BB':
-      return '#f97316';
-    case 'UTG':
-      return '#ef4444';
-    case 'MP':
-      return '#8b5cf6';
-    case 'CO':
-      return '#22c55e';
-    default:
-      return '#6b7280';
-  }
+function Felt({
+  model,
+  frame,
+  heroId,
+}: {
+  model: ReplayModel;
+  frame: ReplayFrame;
+  heroId: string | null;
+}) {
+  const seats = frameSeats(model);
+  const hero = model.players.find((p) => p.userId === heroId);
+  const layout = useMemo(
+    () => seatLayout(seats, hero?.seat ?? null),
+    [seats.join(','), hero?.seat]
+  );
+  const backs = holdingSize(model);
+  const winners = new Set(model.showdown.filter((r) => r.isWinner).map((r) => r.seat));
+  for (const p of model.players) if (p.won > 0) winners.add(p.seat);
+
+  return (
+    <div className="hr-felt" aria-label={frame.caption}>
+      <div className="hr-felt__oval" />
+      <div className="hr-felt__centre">
+        <div className="hr-felt__pot">
+          <span className="hr-felt__pot-label">Pot</span>
+          <span className="hr-felt__pot-value">{money(frame.pot)}</span>
+        </div>
+        <div className="hr-felt__boards">
+          {[frame.board, ...frame.extraBoards].map((b, bi) => (
+            <div className="hr-felt__board" key={bi}>
+              {frame.extraBoards.length > 0 && (
+                <span className="hr-felt__board-badge">{bi === 0 ? 'Run 1' : `Run ${bi + 1}`}</span>
+              )}
+              {b.length === 0 ? (
+                <span className="hr-felt__board-empty">{bi === 0 ? frame.streetLabel : ''}</span>
+              ) : (
+                b.map((c, i) => <CardImage key={`${bi}-${i}`} card={c} size="sm" />)
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {model.players.map((p) => {
+        const pos = layout[p.seat];
+        if (!pos) return null;
+        const isHero = p.userId === heroId;
+        const isActive = frame.activeSeat === p.seat;
+        const isFolded = frame.folded.includes(p.seat);
+        const revealed = frame.revealed.includes(p.seat) && p.hole;
+        const showPrivate = isHero && !revealed && p.privateHole && p.privateHole.length > 0;
+        const bet = frame.committed[p.seat] || 0;
+        const stack = frame.stacks[p.seat];
+        const isWinner = frame.isShowdown && winners.has(p.seat);
+        return (
+          <div key={p.seat}>
+            <div
+              className={`hr-seat${isHero ? ' is-hero' : ''}${isActive ? ' is-active' : ''}${
+                isFolded ? ' is-folded' : ''
+              }${isWinner ? ' is-winner' : ''}`}
+              style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+            >
+              <div className="hr-seat__cards">
+                {revealed
+                  ? p.hole!.map((c, i) => <CardImage key={i} card={c} size="xs" />)
+                  : showPrivate
+                    ? p.privateHole!.map((c, i) => (
+                        <CardImage key={i} card={c} size="xs" className="hr-private" />
+                      ))
+                    : !isFolded &&
+                      Array.from({ length: backs }).map((_, i) => <CardBack key={i} size="xs" />)}
+              </div>
+              <div className="hr-seat__plate">
+                <span className="hr-seat__name">{p.username}</span>
+                <span className="hr-seat__meta">
+                  <span className="hr-seat__pos">{p.position}</span>
+                  <span className="hr-seat__stack">
+                    {stack === null || stack === undefined ? '' : money(stack)}
+                  </span>
+                </span>
+              </div>
+              {isActive && frame.row && (
+                <span className={`hr-seat__act hr-seat__act--${frame.row.verb}`}>
+                  {frame.row.label}
+                </span>
+              )}
+              {isFolded && !isActive && (
+                <span className="hr-seat__act hr-seat__act--fold">Fold</span>
+              )}
+              {showPrivate && <span className="hr-seat__private">Yours</span>}
+            </div>
+            {bet > 0 && (
+              <div className="hr-bet" style={{ left: `${pos.bx}%`, top: `${pos.by}%` }}>
+                {money(bet)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
-export default function HandReplay({
-  handId: propHandId,
-  handData: initialData,
-  onClose,
-}: HandReplayProps) {
-  // Support both prop-based and route-based usage
-  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+export default function HandReplay({ handId: propHandId, onClose }: HandReplayProps) {
+  // Route-based usage: /replay/<id>
   const pathParts = typeof window !== 'undefined' ? window.location.pathname.split('/') : [];
   const routeHandId = pathParts[pathParts.indexOf('replay') + 1];
   const handId = propHandId || routeHandId;
+  const { user } = useAuthUser();
+  const heroId = user?.id ?? null;
 
-  const [handData, setHandData] = useState<HandData | null>(initialData || null);
-  const [activeTab, setActiveTab] = useState<'summary' | 'detail' | '3d'>('summary');
-  const [is3DActive, setIs3DActive] = useState(false);
-  const [isLoading, setIsLoading] = useState(!initialData);
+  const [handData, setHandData] = useState<ServiceHandRecord | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   /* "We could not ask" is not the same as "there is no such hand". */
   const [loadFailed, setLoadFailed] = useState(false);
-  const [currentStep, setCurrentStep] = useState(1);
-  const [totalSteps, setTotalSteps] = useState(1);
-  const [controlsVisible, setControlsVisible] = useState(false);
-  const totalStepsRef = useRef(1);
+  const [tab, setTab] = useState<'replay' | 'rundown'>('replay');
+  const [step, setStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const toast = useToast();
-
-  const playbackRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Controls entrance animation
-  useEffect(() => {
-    setControlsVisible(false);
-    const timer = setTimeout(() => setControlsVisible(true), 200);
-    return () => clearTimeout(timer);
-  }, [isLoading]);
+  const playbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // Always load demo data for now (or fetch from API when handId is provided)
-    loadHandData();
-  }, [handId]);
-
-  useEffect(() => {
-    if (handData) {
-      let stages = 1; // preflop
-      let currentStreet = 'preflop';
-      for (const a of handData.actions) {
-        if (a.street && a.street !== currentStreet && a.street !== 'pineapple_discard') {
-          stages++;
-          currentStreet = a.street;
+    let alive = true;
+    (async () => {
+      setIsLoading(true);
+      setLoadFailed(false);
+      setStep(0);
+      setIsPlaying(false);
+      try {
+        if (!handId) {
+          // No handId: nothing to replay. Never invent one.
+          if (alive) setHandData(null);
+          return;
         }
-        stages++;
-      }
-      stages++; // showdown
-      setTotalSteps(stages);
-      totalStepsRef.current = stages;
-    }
-  }, [handData]);
-
-  // Cleanup interval on unmount to prevent memory leaks
-  useEffect(() => {
-    return () => {
-      if (playbackRef.current) clearInterval(playbackRef.current);
-    };
-  }, []);
-
-  const loadHandData = async () => {
-    setIsLoading(true);
-    setLoadFailed(false);
-    try {
-      if (handId) {
-        // Fetch real hand data from API
         const { handHistoryService } = await import('../../services/HandHistoryService');
         const data = await handHistoryService.getHand(handId);
-        if (data) {
-          // Map to HandData format
-          setHandData({
-            id: data.id,
-            serial_number: data.serial_number,
-            played_at: data.played_at,
-            hand_number: data.hand_number,
-            total_hands: data.total_hands,
-            main_pot: data.main_pot,
-            community_cards: data.community_cards,
-            community_cards2: data.community_cards2 ?? [],
-            community_cards3: data.community_cards3 ?? [],
-            bomb_pot: data.bomb_pot ?? null,
-            // COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N (board
-            // 1 is community_cards) — rendered as RUN rows at showdown.
-            rit_boards: data.rit_boards ?? [],
-            players: data.players.map((p) => ({
-              seat: p.seat,
-              user_id: p.user_id,
-              username: p.username,
-              avatar_url: p.avatar_url,
-              position: p.position as HandPlayer['position'],
-              hole_cards: p.hole_cards,
-              final_hand: p.final_hand,
-              result: p.result,
-              is_winner: p.is_winner,
-              showdown_reveal: p.showdown_reveal,
-            })),
-            /* FORCED MONEY IS NOT A REPLAYED ACTION (2026-08-27).
-               The engine now records the blinds, antes, straddles and the
-               returned uncalled bet in `actions`, which is what makes a hand
-               rebuildable — see server/src/engine/HandController.ts postBlinds.
-               The replay animates a player DECIDING something, and nobody
-               decides to post a blind, so those rows are filtered here rather
-               than widened into PlayerAction. The hand rundown, which does
-               want them, reads the row directly. */
-            actions: data.actions
-              .filter((a) => VOLUNTARY_ACTIONS.has(a.action))
-              .map((a) => ({
-                player_id: a.player_id,
-                action: a.action as PlayerAction['action'],
-                amount: a.amount,
-                street: (a as { street?: string }).street as 'PREFLOP' | 'FLOP' | 'TURN' | 'RIVER',
-                timestamp: a.timestamp,
-              })),
-          });
-        } else {
-          /* NOT FOUND. It used to render `getFallbackHandData()` here — a
-             hand-shaped fiction with invented players, invented hole cards and
-             an invented pot — and the same fiction again from the catch below.
-
-             This component is reachable from two live surfaces: "replay last
-             hand" at a real table (TableModalsLayer) and the routed hand
-             history page. So any load failure showed a player a hand that
-             never happened, indistinguishable from their own history. A hand
-             history is the evidentiary record of a poker game; inventing one
-             is worse than showing nothing by every measure that matters. */
-          setHandData(null);
-        }
-      } else {
-        // No handId: nothing to replay. Never invent one.
+        if (!alive) return;
+        /* NOT FOUND lands on null. It used to render a fallback hand here - a
+           hand-shaped fiction with invented players and an invented pot - and
+           the same fiction again from the catch below. A hand history is the
+           evidentiary record of a poker game; inventing one is worse than
+           showing nothing. */
+        setHandData(data ?? null);
+      } catch (error) {
+        if (!alive) return;
+        reportError(error, 'HandReplay.Failed_to_load_hand');
         setHandData(null);
+        setLoadFailed(true);
+      } finally {
+        if (alive) setIsLoading(false);
       }
-    } catch (error) {
-      reportError(error, 'HandReplay.Failed_to_load_hand');
-      setHandData(null);
-      setLoadFailed(true);
-    }
-    setIsLoading(false);
-  };
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [handId]);
 
-  const handlePlay = () => {
-    if (isPlaying) {
-      if (playbackRef.current) clearInterval(playbackRef.current);
+  const model = handData?.replay ?? null;
+  const frames = useMemo(() => (model ? buildReplayFrames(model) : []), [model]);
+  const last = Math.max(0, frames.length - 1);
+  const frame = frames[Math.min(step, last)] ?? null;
+
+  // Playback: one frame per beat, the beat scaled by the player's Animation Speed.
+  useEffect(() => {
+    if (playbackRef.current) clearTimeout(playbackRef.current);
+    if (!isPlaying || frames.length === 0) return;
+    if (step >= last) {
       setIsPlaying(false);
-    } else {
-      setIsPlaying(true);
-      playbackRef.current = setInterval(() => {
-        setCurrentStep((prev) => {
-          if (prev >= totalStepsRef.current) {
-            if (playbackRef.current) clearInterval(playbackRef.current);
-            setIsPlaying(false);
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, 1500);
+      return;
     }
-  };
+    const verb = frame?.row?.verb;
+    const beat = (verb ? 900 : 1400) * getAnimationSpeed();
+    playbackRef.current = setTimeout(() => setStep((s) => Math.min(last, s + 1)), beat);
+    return () => {
+      if (playbackRef.current) clearTimeout(playbackRef.current);
+    };
+  }, [isPlaying, step, last, frames.length, frame?.row?.verb]);
 
-  const handleStepChange = (step: number) => {
-    setCurrentStep(step);
-    if (playbackRef.current) clearInterval(playbackRef.current);
-    setIsPlaying(false);
-  };
+  const togglePlay = useCallback(() => {
+    if (step >= last) setStep(0);
+    setIsPlaying((p) => !p);
+  }, [step, last]);
 
-  const handlePrev = () => {
-    if (currentStep > 1) setCurrentStep((prev) => prev - 1);
-  };
-
-  const handleNext = () => {
-    if (currentStep < totalSteps) setCurrentStep((prev) => prev + 1);
-  };
-
-  const handleShare = async () => {
-    const shareUrl = `https://smarter.poker/hub/club-arena/replay/${handData?.id}`;
-    const shareText = `Check out this hand I played on Club Arena! #PlayPoker`;
-
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Club Arena Hand Replay',
-          text: shareText,
-          url: shareUrl,
-        });
-      } catch (err) {
-        reportError(err, 'HandReplay.Error');
-        copyToClipboard(shareUrl);
-      }
-    } else {
-      copyToClipboard(shareUrl);
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success('Link copied to clipboard!');
-  };
-
-  const formatDate = (date: string) => {
-    return new Date(date)
-      .toLocaleString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-      .replace(',', '');
-  };
-
-  // Round 2 (double board): the same street-slice logic for either board.
-  const sliceForStep = (cards: Card[]) => {
-    switch (currentStep) {
-      case 1:
-        return [];
-      case 2:
-        return cards.slice(0, 3);
-      case 3:
-        return cards.slice(0, 4);
-      default:
-        return cards;
-    }
-  };
-
-  // Get visible community cards based on current step
-  const getVisibleCommunityCards = () => {
-    if (!handData) return [];
-    switch (currentStep) {
-      case 1:
-        return []; // preflop
-      case 2:
-        return handData.community_cards.slice(0, 3); // flop
-      case 3:
-        return handData.community_cards.slice(0, 4); // turn
-      case 4:
-        return handData.community_cards; // river
-      default:
-        return handData.community_cards;
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (tab !== 'replay') return;
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      setStep((s) => Math.min(last, s + 1));
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      setStep((s) => Math.max(0, s - 1));
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      togglePlay();
     }
   };
 
   if (isLoading) {
     return (
-      <div className="hand-replay loading">
-        <div className="loader-spinner" />
-        <p>Loading Hand...</p>
+      <div className="hand-replay hand-replay--empty" aria-busy="true">
+        <div className="hand-replay__spinner" aria-hidden="true" />
+        <p className="hand-replay__empty-title">Loading Hand</p>
       </div>
     );
   }
 
-  if (loadFailed) {
+  if (!handData || !model) {
     return (
-      <div className="hand-replay error">
-        <p>Could Not Load This Hand</p>
-        <button onClick={() => void loadHandData()}>Retry</button>
-        {onClose && <button onClick={onClose}>Close</button>}
+      <div className="hand-replay hand-replay--empty">
+        <p className="hand-replay__empty-title">
+          {loadFailed ? 'Could Not Load This Hand' : 'Hand Not Found'}
+        </p>
+        <p className="hand-replay__empty-body">
+          {loadFailed
+            ? 'This Is A Loading Problem, Not A Missing Hand. Close And Try Again.'
+            : 'This Hand Is Not In The Record.'}
+        </p>
+        {onClose && (
+          <button type="button" className="hr-btn" onClick={onClose}>
+            Close
+          </button>
+        )}
       </div>
     );
   }
 
-  if (!handData) {
-    return (
-      <div className="hand-replay error">
-        <p>Hand Not Found</p>
-        {onClose && <button onClick={onClose}>Close</button>}
-      </div>
-    );
-  }
+  const variant = gameTypeLabel(model.gameVariant) || handData.game_type;
+  /* The persisted reveal record: who showed, who mucked, in what order. The
+     seat strip under the felt reads it so a mucked hand is labelled as one
+     (`player-hand-ranking--mucked`) rather than drawn as "no cards". */
+  const revealOf = new Map(handData.players.map((p) => [p.user_id, p.showdown_reveal] as const));
+  const foldedIds = new Set(
+    model.streets
+      .flatMap((st) => st.rows)
+      .filter((r) => r.verb === 'fold')
+      .map((r) => r.userId)
+  );
 
   return (
-    <div className="hand-replay">
-      {/* Header */}
-      <header className="replay-header">
-        <h1>HAND DETAIL</h1>
-        <div className="header-actions">
-          {/* STAR REMOVED 2026-08-20. It had no onClick, and there is nothing
-              behind it: no favourites table, no is_starred column, no service
-              method anywhere in the repo. HandReplay IS rendered (the table's
-              replay modal and HandHistoryPage), so players saw a favourite
-              affordance on their own hands and pressing it did nothing. A
-              favourites feature needs somewhere to store them first. */}
-          <button className="action-btn play" onClick={handlePlay}>
-            {isPlaying ? '▮' : '▶'}
+    <div className="hand-replay" onKeyDown={onKeyDown} tabIndex={0}>
+      <header className="hand-replay__header">
+        <div className="hand-replay__titles">
+          <span className="hand-replay__eyebrow">
+            {handData.table_name || 'Table'} · {blindLabel(model.smallBlind)} /{' '}
+            {blindLabel(model.bigBlind)}
+            {variant ? ` · ${variant}` : ''}
+          </span>
+          <h2 className="hand-replay__title">Hand #{handData.hand_number}</h2>
+          <span className="hand-replay__when">{stamp(model.playedAt)}</span>
+        </div>
+        <div className="hand-replay__tabs" role="tablist" aria-label="Replay View">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'replay'}
+            className={`hr-tab${tab === 'replay' ? ' hr-tab--active' : ''}`}
+            onClick={() => setTab('replay')}
+          >
+            Replay
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'rundown'}
+            className={`hr-tab${tab === 'rundown' ? ' hr-tab--active' : ''}`}
+            onClick={() => setTab('rundown')}
+          >
+            Rundown
           </button>
         </div>
       </header>
 
-      {/* Meta Info */}
-      <div className="replay-meta">
-        <span className="meta-date">{formatDate(handData.played_at)}</span>
-        <span className="meta-hand">
-          {handData.hand_number} / {handData.total_hands}
-        </span>
-        <span className="meta-sn">SN: {handData.serial_number}</span>
-      </div>
+      {tab === 'rundown' ? (
+        <div className="hand-replay__rundown" role="tabpanel">
+          <HandDetailView model={model} currentUserId={heroId} badge={variant} />
+        </div>
+      ) : (
+        <div className="hand-replay__stage" role="tabpanel">
+          {frame && <Felt model={model} frame={frame} heroId={heroId} />}
 
-      {/* Share Button */}
-      <div className="share-row">
-        <button className="share-btn" onClick={handleShare}>
-          Share
-        </button>
-      </div>
+          <div className="hand-replay__caption" aria-live="polite">
+            <span className="hand-replay__caption-street">{frame?.streetLabel}</span>
+            <span className="hand-replay__caption-text">{frame?.caption}</span>
+          </div>
 
-      {/* Main Pot */}
-      <div className="main-pot">
-        <span>Main Pot : </span>
-        <span className="pot-amount">{handData.main_pot.toLocaleString()}</span>
-      </div>
+          <div className="hand-replay__controls">
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon"
+              aria-label="First Step"
+              onClick={() => {
+                setIsPlaying(false);
+                setStep(0);
+              }}
+              disabled={step === 0}
+            >
+              &#9198;
+            </button>
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon"
+              aria-label="Previous Step"
+              onClick={() => {
+                setIsPlaying(false);
+                setStep((s) => Math.max(0, s - 1));
+              }}
+              disabled={step === 0}
+            >
+              &#9664;
+            </button>
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon hr-btn--play"
+              aria-label={isPlaying ? 'Pause' : 'Play'}
+              onClick={togglePlay}
+            >
+              {isPlaying ? '❚❚' : '▶'}
+            </button>
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon"
+              aria-label="Next Step"
+              onClick={() => {
+                setIsPlaying(false);
+                setStep((s) => Math.min(last, s + 1));
+              }}
+              disabled={step >= last}
+            >
+              &#9654;
+            </button>
+            <button
+              type="button"
+              className="hr-btn hr-btn--icon"
+              aria-label="Last Step"
+              onClick={() => {
+                setIsPlaying(false);
+                setStep(last);
+              }}
+              disabled={step >= last}
+            >
+              &#9197;
+            </button>
+            <div className="hand-replay__scrub">
+              <input
+                type="range"
+                min={0}
+                max={last}
+                value={Math.min(step, last)}
+                aria-label="Replay Position"
+                onChange={(e) => {
+                  setIsPlaying(false);
+                  setStep(Number(e.target.value));
+                }}
+              />
+              <span className="hand-replay__scrub-label">
+                {Math.min(step, last) + 1} / {frames.length}
+              </span>
+            </div>
+          </div>
 
-      {/* Players Table */}
-      {activeTab === 'summary' && (
-        <div className="players-table">
-          {/* SHOWDOWN POLISH 2026-08-25: when the reveal record exists, list
-            the showdown participants in the order the table revealed them —
-            aggressor first, then clockwise — with everyone else after. */}
-          {[...handData.players]
-            .sort((a, b) => {
-              const ao = a.showdown_reveal?.reveal_order ?? 99;
-              const bo = b.showdown_reveal?.reveal_order ?? 99;
-              return ao - bo || a.seat - b.seat;
-            })
-            .map((player) => (
-              <div
-                key={player.user_id}
-                className={`player-row ${player.is_winner ? 'winner' : ''}`}
-              >
-                {/* Name & Position */}
-                <div className="player-info">
-                  <span className="player-name">{player.username}</span>
+          {/* Who was in it, and how it ended for each of them. */}
+          <div className="hand-replay__seats">
+            {model.players.map((p) => {
+              const reveal = revealOf.get(p.userId);
+              const mucked =
+                reveal?.mucked === true ||
+                (!p.hole && model.showdown.some((r) => r.userId === p.userId));
+              const rows = model.showdown.filter(
+                (r) => r.userId === p.userId && r.boardIndex === 0
+              );
+              const high = rows.find((r) => !r.low);
+              const low = rows.find((r) => r.low);
+              return (
+                <div
+                  key={p.seat}
+                  className={`player-hand-ranking${p.won > 0 ? ' player-hand-ranking--won' : ''}${
+                    mucked ? ' player-hand-ranking--mucked' : ''
+                  }${p.userId === heroId ? ' player-hand-ranking--hero' : ''}`}
+                >
+                  <span className="player-hand-ranking__seat">{p.seat}</span>
+                  <span className="player-hand-ranking__name">{p.username}</span>
+                  <span className="player-hand-ranking__hand">
+                    {high?.hole
+                      ? `${high.handName}${low ? ` · ${low.handName}` : ''}`
+                      : mucked
+                        ? 'Mucked'
+                        : foldedIds.has(p.userId)
+                          ? 'Folded'
+                          : p.won > 0
+                            ? 'Took The Pot'
+                            : ''}
+                  </span>
                   <span
-                    className="player-position"
-                    style={{ backgroundColor: getPositionColor(player.position) }}
+                    className={`player-hand-ranking__net${p.net > 0 ? ' is-up' : p.net < 0 ? ' is-down' : ''}`}
                   >
-                    {player.position}
+                    {`${p.net > 0 ? '+' : p.net < 0 ? '-' : ''}${money(Math.abs(p.net))}`}
                   </span>
                 </div>
-
-                {/* Hole Cards */}
-                <div className="player-hole-cards">
-                  {player.hole_cards.length > 0 ? (
-                    player.hole_cards.map((card, idx) => (
-                      <div key={idx} className="card">
-                        <CardImage card={toCardImage(card)} size="xs" />
-                      </div>
-                    ))
-                  ) : (
-                    <>
-                      <div className="card back" />
-                      <div className="card back" />
-                    </>
-                  )}
-                </div>
-
-                {/* Hand Ranking (if shown) — SHOWDOWN POLISH 2026-08-25: prefer
-                the persisted reveal record (name + description), fall back to
-                the winner's hand name; a mucked participant reads MUCKED, with
-                no hand identity, exactly as the table showed it. */}
-                {player.showdown_reveal?.mucked ? (
-                  <div className="player-hand-ranking player-hand-ranking--mucked">Mucked</div>
-                ) : player.showdown_reveal?.hand_name || player.final_hand ? (
-                  <div className="player-hand-ranking">
-                    {player.showdown_reveal?.hand_name || player.final_hand}
-                    {player.showdown_reveal?.hand_description && (
-                      <span className="player-hand-description">
-                        {' '}
-                        {player.showdown_reveal.hand_description}
-                      </span>
-                    )}
-                  </div>
-                ) : null}
-
-                {/* BOMB POT FACTS (spec §20, 2026-08-28): the frozen trigger
-                    record, so a replay says what KIND of hand this was. */}
-                {handData.bomb_pot && (
-                  <div
-                    className="replay-bomb-facts"
-                    style={{
-                      display: 'flex',
-                      gap: 6,
-                      flexWrap: 'wrap',
-                      margin: '2px 0 6px',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      letterSpacing: '0.05em',
-                      color: '#ffcf7d',
-                    }}
-                  >
-                    <span>BOMB POT</span>
-                    {(handData.bomb_pot.board_count ?? 1) >= 2 && (
-                      <span>
-                        {(handData.bomb_pot.board_count ?? 2) >= 3
-                          ? 'TRIPLE BOARD'
-                          : 'DOUBLE BOARD'}
-                      </span>
-                    )}
-                    {handData.bomb_pot.variant && (
-                      <span>{handData.bomb_pot.variant.toUpperCase()}</span>
-                    )}
-                    {(handData.bomb_pot.ante_amount ?? 0) > 0 && (
-                      <span>{`ANTE ${handData.bomb_pot.ante_amount}`}</span>
-                    )}
-                    {handData.bomb_pot.trigger_reason && (
-                      <span>
-                        {/* 2026-08-29: was `.replace(/_/g,' ').toUpperCase()`,
-                            which printed the raw DB enum at the player — "EVERY
-                            N HANDS", "ONCE PER ORBIT", "BOMB POT ONLY", "MANUAL
-                            NEXT HAND". Two of those are engineering
-                            identifiers, not English, and "EVERY N HANDS" names
-                            a variable nobody outside this codebase has ever
-                            seen. The lobby already maps the same four values to
-                            readable labels (lobbyEntries.ts); this is the
-                            replay saying the same thing the lobby says. */}
-                        {(
-                          {
-                            every_n_hands: 'SCHEDULED',
-                            once_per_orbit: 'EVERY ORBIT',
-                            timed: 'ON THE CLOCK',
-                            bomb_pot_only: 'BOMB POT TABLE',
-                            manual_next_hand: 'CALLED BY THE HOST',
-                          } as Record<string, string>
-                        )[String(handData.bomb_pot.trigger_reason)] ??
-                          String(handData.bomb_pot.trigger_reason).replace(/_/g, ' ').toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Community Cards (repeated per row for visual) */}
-                <div className="community-cards-row">
-                  {getVisibleCommunityCards().map((card, idx) => (
-                    <div key={idx} className="card small">
-                      <CardImage card={toCardImage(card)} size="xs" />
-                    </div>
-                  ))}
-                </div>
-                {/* Round 2 (double board): board 2 under board 1, same street slice */}
-                {(handData.community_cards2?.length ?? 0) > 0 && (
-                  <div className="community-cards-row">
-                    {sliceForStep(handData.community_cards2!).map((card, idx) => (
-                      <div key={`b2-${idx}`} className="card small">
-                        <CardImage card={toCardImage(card)} size="xs" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {/* TRIPLE-BOARD BOMB POT 2026-08-27: board 3, same slice. */}
-                {(handData.community_cards3?.length ?? 0) > 0 && (
-                  <div className="community-cards-row">
-                    {sliceForStep(handData.community_cards3!).map((card, idx) => (
-                      <div key={`b3-${idx}`} className="card small">
-                        <CardImage card={toCardImage(card)} size="xs" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {/* COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N.
-                    Dealt AFTER the all-in locked, so they exist only from
-                    the river step onward — gated on board 1's slice being
-                    complete, labeled by run. */}
-                {(handData.rit_boards?.length ?? 0) > 0 &&
-                  getVisibleCommunityCards().length >= 5 &&
-                  handData.rit_boards!.map((board, bi) => (
-                    <div className="community-cards-row" key={`rit-${bi}`}>
-                      <span className="replay-run-badge">RUN {bi + 2}</span>
-                      {board.map((card, idx) => (
-                        <div key={`rit-${bi}-${idx}`} className="card small">
-                          <CardImage card={toCardImage(card)} size="xs" />
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-
-                {/* Result */}
-                <div className={`player-result ${player.result >= 0 ? 'positive' : 'negative'}`}>
-                  {player.result >= 0 ? '+' : ''}
-                  {player.result.toLocaleString()}
-                  <br />
-                  <span className="result-label">Main Pot</span>
-                </div>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {/* Playback Controls */}
-      <div
-        className="playback-controls"
-        style={{
-          opacity: controlsVisible ? 1 : 0,
-          transform: controlsVisible ? 'translateY(0)' : 'translateY(10px)',
-          transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-        }}
-      >
-        <span className="step-display">
-          {currentStep}/{totalSteps}
-        </span>
-      </div>
-
-      <div
-        className="playback-slider-row"
-        style={{
-          opacity: controlsVisible ? 1 : 0,
-          transform: controlsVisible ? 'translateY(0)' : 'translateY(10px)',
-          transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          transitionDelay: '0.05s',
-        }}
-      >
-        <button className="nav-arrow" onClick={handlePrev} disabled={currentStep <= 1}>
-          ◀
-        </button>
-        <input
-          type="range"
-          className="playback-slider"
-          min={1}
-          max={totalSteps}
-          value={currentStep}
-          onChange={(e) => handleStepChange(Number(e.target.value))}
-        />
-        <button className="nav-arrow" onClick={handleNext} disabled={currentStep >= totalSteps}>
-          ▶
-        </button>
-      </div>
-
-      {/* Tab Switcher */}
-      <div className="replay-tabs">
-        <button
-          className={`replay-tab ${activeTab === 'summary' ? 'active' : ''}`}
-          onClick={() => setActiveTab('summary')}
-        >
-          Hand Summary
-        </button>
-        <button
-          className={`replay-tab ${activeTab === 'detail' ? 'active' : ''}`}
-          onClick={() => setActiveTab('detail')}
-        >
-          Hand Detail
-        </button>
-        <button
-          className={`replay-tab ${activeTab === '3d' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('3d');
-            setIs3DActive(true);
-          }}
-        >
-          3D Replay
-        </button>
-      </div>
-
-      {/* 2D Live Replayer */}
-      {activeTab === 'detail' && (
-        <LiveHandReplayer2D handData={handData} currentStep={currentStep} totalSteps={totalSteps} />
-      )}
-
-      {/* 3D Replay Panel */}
-      {activeTab === '3d' && (
-        <div
-          style={{ height: '400px', marginTop: '12px', borderRadius: '12px', overflow: 'hidden' }}
-        >
-          <Suspense
-            fallback={
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  height: '100%',
-                  color: '#b0b3b8',
-                }}
-              >
-                Loading 3D Viewer...
-              </div>
-            }
-          >
-            <HandReplay3D
-              active={is3DActive}
-              seatCount={handData ? (Math.max(handData.players.length, 2) as 2 | 6 | 9) : 6}
-              feltColor="#0d5f2f"
-              orbitControls
-              speed={1}
-            />
-          </Suspense>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
   );
 }
-
-export { HandReplay };

@@ -18,6 +18,8 @@
  * The conservation tests below are the important ones: they are what catch the
  * class of bug that makes a stats page quietly lie.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 
 // The module imports a live Supabase client and the Sentry-backed error
@@ -578,5 +580,36 @@ describe('folded_to_three_bet counts only folds that answer the 3-bet', () => {
     const fb = deriveFlowFlags(B, actions, { boardLength: 0, returned: 0, nonFoldedCount: 2 });
     expect(fb.three_bet).toBe(true); // his FIRST raise was the 3-bet
     expect(fb.four_bet).toBe(false);
+  });
+});
+
+describe('bomb pots count as VPIP (Dan 2026-09-05)', () => {
+  it('the fact writer marks everyone dealt into a bomb hand as having put money in, and the log passes the flag', () => {
+    const facts = readFileSync(
+      resolve(__dirname, '../server/src/services/supabase/handFacts.ts'),
+      'utf8'
+    );
+    expect(facts).toMatch(/isBombPot\?: boolean;/);
+    expect(facts).toMatch(/if \(input\.isBombPot\) flags\.vpip = true;/);
+    const history = readFileSync(
+      resolve(__dirname, '../server/src/services/supabase/handHistory.ts'),
+      'utf8'
+    );
+    expect(history).toMatch(/isBombPot: Boolean\(params\.bombPot\),/);
+    // The rows already on file were corrected the same way.
+    const backfill = readFileSync(
+      resolve(__dirname, '../supabase/migrations/20260905063000_bomb_pots_count_as_vpip.sql'),
+      'utf8'
+    );
+    expect(backfill).toMatch(/SET vpip = true[\s\S]*h\.bomb_pot IS NOT NULL/);
+  });
+
+  it('a bomb hand with no preflop action still reads vpip=false from the log alone (the reason the flag exists)', () => {
+    const fb = deriveFlowFlags(
+      'u1',
+      [{ userId: 'u1', action: 'check', stage: 'flop', amount: 0 } as never],
+      { boardLength: 3, returned: 0, nonFoldedCount: 2 }
+    );
+    expect(fb.vpip).toBe(false);
   });
 });

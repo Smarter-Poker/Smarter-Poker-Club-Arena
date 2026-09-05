@@ -30,8 +30,12 @@ import type { CardAnimationProfile, CardPresentationPlatform, ResolveProfileInpu
 
 export function resolveCardAnimationProfile(input: ResolveProfileInput): CardAnimationProfile {
   const P = CARD_PRESENTATION_PROFILES;
-  if (input.reducedMotion) return P.reduced;
+  /* AUDIT FIX 2026-09-05: HIDDEN OUTRANKS REDUCED MOTION. A table nobody can
+     see should cost nothing at all, and `reduced` still schedules a 120ms
+     presentation with markup to mount and tear down. Both answers put the
+     correct card on the board; `off` is simply the cheaper way to say it. */
   if (input.focus === 'hidden') return P.off;
+  if (input.reducedMotion) return P.reduced;
   if (input.allIn) return P.allIn;
   if (input.focus === 'visible') return P.background;
   if (input.platform === 'mobile') return P.mobile;

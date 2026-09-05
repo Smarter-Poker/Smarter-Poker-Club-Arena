@@ -1495,7 +1495,29 @@ export const SeatSlot = memo(
     // is no double-tap shortcut any more (Dan: not click to reveal); the
     // keyboard path (Enter / Space) stays, because a peel is not a thing a
     // screen reader can do.
-    const [squeezeRevealed, setSqueezeRevealed] = useState(false);
+    /*
+     * WHY THIS IS "WHICH HAND IS OPEN" AND NOT A BOOLEAN (Dan 2026-09-05:
+     * "CARDS ARE FLASHED BEFORE YOU CAN PEEL THEM, THAT KINDA DEFEATS THE
+     * PURPOSE OF THE PEEL").
+     *
+     * It was `useState(false)` reset by two effects keyed on `handNumber` and
+     * on the hero's card count. An effect runs AFTER the render it belongs to,
+     * so the first render of a NEW hand still carried the PREVIOUS hand's
+     * `true`: the fresh hole cards painted FACE UP - with the hand-strength
+     * label under them - and only flipped face down one commit later. Caught
+     * on video, frames 4.6-5.2s: K-diamond / Q-heart, "King High", then the
+     * backs.
+     *
+     * Storing WHICH hand is open instead makes the reset part of the render
+     * rather than a consequence of it. A hand the latch does not name is face
+     * down in the first painted frame, and there is no window to flash in.
+     */
+    const [squeezeOpenForHand, setSqueezeOpenForHand] = useState<number | null>(null);
+    /**
+     * Double-tap hold, the same shape and for the same reason. Dan: "OR DOUBLE
+     * TAP, THAT LIFTS THEM SLIGHTLY (LIKE IN THE REAL VIDEO I SENT YOU)."
+     */
+    const [holdLiftForHand, setHoldLiftForHand] = useState<number | null>(null);
     const [squeezeHint, setSqueezeHint] = useState(false);
     const squeezeHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(
@@ -1574,7 +1596,9 @@ export const SeatSlot = memo(
       drag: { width: number; height: number; lift: number },
       targetProgress: number,
       ms: number,
-      done: () => void
+      /* Optional: a settle back to a HELD lift has nothing to clean up, and
+         passing `clearPeelVars` there would wipe the lift it just landed on. */
+      done?: () => void
     ) => {
       if (peelTweenRef.current != null) cancelAnimationFrame(peelTweenRef.current);
       if (peelTweenTimerRef.current != null) clearTimeout(peelTweenTimerRef.current);
@@ -1593,7 +1617,7 @@ export const SeatSlot = memo(
         peelTweenRef.current = null;
         peelTweenTimerRef.current = null;
         paintPeel(at(1));
-        done();
+        done?.();
       };
       const step = (now: number) => {
         if (finished) return;
@@ -1624,6 +1648,14 @@ export const SeatSlot = memo(
     // unmount (showdown / all-in force-reveal), and the stale >0.55 value made
     // the NEXT hand's first bare tap reveal the cards with no gesture at all.
     const heroCardCount = player?.isHero ? (player.holeCards?.length ?? 0) : 0;
+    /* Derived at RENDER time, never in an effect - see the note on
+       `squeezeOpenForHand`. Both conditions matter: a new hand number retires
+       the latch, and so does the hand being taken away (fold, muck, stand up),
+       which is the case the old card-count effect existed for. */
+    const squeezeRevealed =
+      squeezeOpenForHand !== null && squeezeOpenForHand === handNumber && heroCardCount > 0;
+    const holdLiftActive =
+      holdLiftForHand !== null && holdLiftForHand === handNumber && heroCardCount > 0;
     /**
      * ═══════════════════════════════════════════════════════════════════════
      *  THE TUTORIAL — the cards teach the gesture themselves, once
@@ -1668,7 +1700,8 @@ export const SeatSlot = memo(
     };
 
     const resetSqueeze = () => {
-      setSqueezeRevealed(false);
+      setSqueezeOpenForHand(null);
+      setHoldLiftForHand(null);
       peelRef.current = null;
       if (peelTweenRef.current != null) cancelAnimationFrame(peelTweenRef.current);
       if (peelTweenTimerRef.current != null) clearTimeout(peelTweenTimerRef.current);
@@ -1676,6 +1709,9 @@ export const SeatSlot = memo(
       peelTweenTimerRef.current = null;
       clearPeelVars();
     };
+    /* The latch itself is derived above and needs no effect. These clear the
+       IMPERATIVE half - the tween handles and the inline custom properties -
+       which a render cannot do. */
     useEffect(() => {
       if (heroCardCount === 0) resetSqueeze();
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1685,13 +1721,69 @@ export const SeatSlot = memo(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [handNumber]);
     const completeSqueeze = () => {
-      setSqueezeRevealed(true);
+      /* Dan 2026-09-05: "YOU SHOULD ALSO BE ABLE TO PEEL THEM ALL THE WAY
+         OPEN. WHEN THAT HAPPENS THEY STAY UP AND LIVE (LIKE A NORMAL RENDER
+         HERO CARD VIEW)." That is what this latch is: the hand is named as
+         open and renders as ordinary hero cards for the rest of it. */
+      setSqueezeOpenForHand(handNumber);
+      setHoldLiftForHand(null);
       peelRef.current = null;
       clearPeelVars();
       // No sound on open either - the whole peel is silent now.
     };
-    /** Progress past which a release opens the hand instead of dropping it. */
-    const PEEL_COMMIT = 0.45;
+
+    /**
+     * DOUBLE TAP: a small lift that STAYS, so you can read the indices without
+     * holding a finger on the cards - the way Dan holds a real pair tilted on
+     * the felt while he thinks. Tapping again puts them back down.
+     *
+     * Painted from an effect as well as from the gesture, because the CSS
+     * custom properties live on the row's inline style: a remount (a seat
+     * re-key, a table switch) gives us a fresh node with none of them, and the
+     * lift would silently vanish while the state still said it was held.
+     */
+    const HOLD_LIFT_PROGRESS = 0.34;
+    const toggleHoldLift = () => {
+      setHoldLiftForHand((prev) => (prev === handNumber ? null : handNumber));
+    };
+    useEffect(() => {
+      if (peelRef.current) return; // a live drag owns the vars
+      const row = squeezeRowRef.current;
+      if (!row) return;
+      if (holdLiftActive) {
+        const card = row.querySelector('.seat__card--squeeze');
+        const h = card ? card.getBoundingClientRect().height : 0;
+        paintPeel(
+          computePeel({
+            width: 1,
+            height: h || 1,
+            lift: liftAtProgress(h || 1, HOLD_LIFT_PROGRESS),
+          })
+        );
+      } else if (!squeezeRevealed) {
+        clearPeelVars();
+      }
+       
+    }, [holdLiftActive, squeezeRevealed, handNumber]);
+    /**
+     * Progress past which a release OPENS the hand for good instead of
+     * dropping it back on the felt.
+     *
+     * RAISED from 0.45 to 0.9 on 2026-09-05. Dan: "YOU SHOULD ALSO BE ABLE TO
+     * PEEL THEM ALL THE WAY OPEN. WHEN THAT HAPPENS THEY STAY UP AND LIVE."
+     * At 0.45 a glance committed the hand - you could not look without also
+     * turning the cards over, which is the opposite of what a peek is for. The
+     * three gestures now divide cleanly:
+     *
+     *   drag and hold        look, for as long as you hold
+     *   release under 0.9    back down on the felt, still face down
+     *   peel all the way     open and live for the rest of the hand
+     *   double tap           a small lift that stays until you tap again
+     */
+    const PEEL_COMMIT = 0.9;
+    /** Two taps inside this window are a double tap. */
+    const DOUBLE_TAP_MS = 300;
+    const lastTapAtRef = useRef(0);
     const squeezeHandlers: React.HTMLAttributes<HTMLDivElement> = {
       onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
         if (peelRef.current) return; // a second finger does not start a second peel
@@ -1713,17 +1805,21 @@ export const SeatSlot = memo(
            lifts and the fold travels UP the card. So the only thing that
            matters is how far the finger has moved upward from where it went
            down - not which corner it landed nearest. */
+        /* Continue FROM the double-tap lift if one is being held. Starting at
+           zero would drop the cards flat the instant a finger landed on them,
+           which reads as the app throwing away the look you already had. */
+        const heldLift = holdLiftActive ? liftAtProgress(rect.height, HOLD_LIFT_PROGRESS) : 0;
         peelRef.current = {
           width: rect.width,
           height: rect.height,
-          startY: e.clientY,
+          startY: e.clientY + heldLift,
           pointerId: e.pointerId,
           moved: false,
-          lifted: false,
-          lift: 0,
+          lifted: heldLift > 0,
+          lift: heldLift,
         };
         row.setAttribute('data-peeling', '');
-        paintPeel(flatPeel());
+        paintPeel(computePeel({ width: rect.width, height: rect.height, lift: heldLift }));
         // The card is picked up the moment it is touched.
         /* SILENT PEEL (Dan 2026-09-05: "remove the sound effect when you
            actually peel your card, its not needed"). The friction voice and
@@ -1776,8 +1872,22 @@ export const SeatSlot = memo(
         }
         peelRef.current = null;
         if (!drag.moved) {
-          // A tap: bounce the corner to show what the gesture is.
-          clearPeelVars();
+          const now = Date.now();
+          const isDoubleTap = now - lastTapAtRef.current <= DOUBLE_TAP_MS;
+          lastTapAtRef.current = isDoubleTap ? 0 : now;
+          if (isDoubleTap) {
+            /* Dan 2026-09-05: "OR DOUBLE TAP, THAT LIFTS THEM SLIGHTLY (LIKE
+               IN THE REAL VIDEO I SENT YOU)." Held until it is tapped again or
+               the hand ends; the effect above paints it. */
+            cardSlideTelemetry.peelStarted();
+            haptic.light();
+            toggleHoldLift();
+            return;
+          }
+          // A single tap: bounce the near edge to show what the gesture is.
+          // Never clear the vars while a lift is being held - that would drop
+          // the cards on the first tap of the double tap that raised them.
+          if (!holdLiftActive) clearPeelVars();
           setSqueezeHint(true);
           if (squeezeHintTimerRef.current) clearTimeout(squeezeHintTimerRef.current);
           squeezeHintTimerRef.current = setTimeout(() => {
@@ -1802,7 +1912,8 @@ export const SeatSlot = memo(
           // this to the line above is the only measure of whether the commit
           // threshold is set where a hand actually wants to let go.
           cardSlideTelemetry.peelAbandoned();
-          tweenPeel(drag, 0, 260, clearPeelVars);
+          const restingProgress = holdLiftActive ? HOLD_LIFT_PROGRESS : 0;
+          tweenPeel(drag, restingProgress, 260, holdLiftActive ? undefined : clearPeelVars);
         }
       },
       onPointerCancel: (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1810,7 +1921,8 @@ export const SeatSlot = memo(
         if (!drag) return;
         peelRef.current = null;
         (e.currentTarget as HTMLDivElement).removeAttribute('data-peeling');
-        tweenPeel(drag, 0, 200, clearPeelVars);
+        const restingProgress = holdLiftActive ? HOLD_LIFT_PROGRESS : 0;
+        tweenPeel(drag, restingProgress, 200, holdLiftActive ? undefined : clearPeelVars);
       },
       onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -3040,7 +3152,17 @@ export const SeatSlot = memo(
                 key={i}
                 className={
                   'seat__card-pick' +
-                  (showPickedCardIndexes?.includes(i) ? ' seat__card-pick--marked' : '')
+                  /* THE BADGE FOLLOWS THE CLICK. `--marked` draws a gold eye on
+                     the card's corner, and it used to render with no reference
+                     to squeeze state while BOTH handlers below early-return on
+                     `squeezeDown`. So a pick that outlived its hand sat there
+                     on the back of a face-down card, visibly on and completely
+                     inert - which is what "the eye ball stays locked, you can
+                     never unlock it" looked like. If you cannot click it, it
+                     does not claim to be clickable. */
+                  (showPickedCardIndexes?.includes(i) && !squeezeDown
+                    ? ' seat__card-pick--marked'
+                    : '')
                 }
                 /* AUDIT-2 FIX 2026-08-20: while the cards are face down in
                    squeeze mode this span must NOT be a focusable button — its

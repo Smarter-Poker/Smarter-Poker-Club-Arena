@@ -46,7 +46,11 @@ import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { secureRandomInt } from './CryptoRandom.js';
 import { drawFirstButtonSeat, headsUpButtonSeat } from './headsUpButton.js';
-import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
+import {
+  HAND_COMPLETION,
+  handCompletionHoldMs,
+  boardClearMs,
+} from '../config/handCompletionSpec.js';
 
 /**
  * The number of award groups the CLIENT will animate for this hand.
@@ -920,6 +924,26 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // Phase 2: board clear (clients animate the card/chip sweep).
           this.broadcastCurrentState(); // Sends clean state (no hand in progress)
           await this.sleep(boardClearMs(wentToShowdown));
+          // Phase 3: the hand RESTS (Dan 2026-09-05, "1.75 ... ON ALL HANDS
+          // UPON COMPLETION, GIVE USERS A CHANCE TO USE THE RABBIT HUNT").
+          //
+          // It sits HERE, after the broadcast above has told every client the
+          // hand is over, and not inside handCompletionHoldMs, for two
+          // reasons that are really one reason. The client renders the Rabbit
+          // Hunt button behind `!tableState.isHandInProgress`, so the offer
+          // it received at settlement is invisible until that clean state
+          // lands; and a reveal freezes the client's snapshot for three
+          // seconds, which is only safe once there is no live hand for the
+          // freeze to starve. Before this beat existed the button's whole
+          // visible life was boardClearMs - half a second on a fold.
+          //
+          // Unconditional. A rest that happened only when a rabbit hunt was
+          // purchasable would tell the whole table, from the rhythm alone,
+          // that the deck still had cards in it (CLAUDE.md 10.5: timing is
+          // part of the treatment). The per-user setting hides the BUTTON and
+          // never touches this sleep.
+          this.setLoopPhase('post_hand_rabbit_window');
+          await this.sleep(HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS);
 
           // ── Dan's Rebuy Pause (2026-08-24) ──
           // Give busted players 5 seconds to process the UI modal and hit rebuy before the next hand starts.

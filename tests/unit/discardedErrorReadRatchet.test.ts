@@ -69,7 +69,7 @@ const BASELINE = new Map<string, number>([
   // 12 -> 11 on 2026-09-03: phase 3 removed clawbackDistribution and
   // getRecentDistributions, a dead parallel implementation of agent undo whose
   // reads went nowhere anyway.
-  ['src/services/AgentService.ts', 11],
+  ['src/services/AgentService.ts', 7],
   ['src/pages/UnionDashboardPage.tsx', 10],
   ['src/services/UnionService.ts', 12],
   ['src/pages/AdminDashboardPage.tsx', 7],
@@ -173,7 +173,6 @@ const BASELINE = new Map<string, number>([
   ['src/pages/MarketplacePage.tsx', 1],
   ['src/pages/InvitePage.tsx', 1],
   ['src/pages/CreateUnionPage.tsx', 1],
-  ['src/pages/ClubFinancialsPage.tsx', 1],
   ['src/lib/authToken.ts', 1],
   ['src/hooks/useTableChat.ts', 1],
   ['src/hooks/useEffectiveRake.ts', 1],
@@ -198,6 +197,10 @@ const BASELINE = new Map<string, number>([
 const AUDITED_ZERO = [
   // 2026-09-04, phase 4: the profiles read now throws on error.
   'src/components/admin/ClubMemberManagement.tsx',
+  // 2026-09-04, phase 6: the page makes ONE gated RPC call and binds its
+  // error; the reads that used to discard one (rake, rakeback, invoices) are
+  // gone with the browser aggregation they fed.
+  'src/pages/ClubFinancialsPage.tsx',
   'src/services/TournamentService.ts',
   'src/services/TableService.ts',
   'src/pages/TablePage.tsx',

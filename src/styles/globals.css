@@ -146,7 +146,16 @@
      generous. It is the wrong number to stack a second fixed bar on, because
      Anything anchored at the clearance floats above the nav on a notched
      iPhone. Anchor stacked bars on THIS. */
-  --bottom-nav-stack-base: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  /* STACK BASE IS LIVE (Dan 2026-09-04): the height the footer OCCUPIES right
+     now - measured by ClubBottomNav, 0px while scroll has dropped it off the
+     edge, 0px when unmounted - so a fixed bar that stacks on it snaps to the
+     bottom edge the frame the footer leaves. --bottom-nav-clearance stays the
+     DESIGNED height: it is what page content reserves, and content must not
+     jump when the footer slides. Bars stack on this; pages pad with that. */
+  --bottom-nav-stack-base: var(
+    --ca-bottom-chrome-h,
+    calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px))
+  );
   --sidebar-width: 280px;
 
   /* ─────────────── FUTURISTIC METAL UI ─────────────── */

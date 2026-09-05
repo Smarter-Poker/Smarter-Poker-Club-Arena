@@ -863,6 +863,31 @@
   border-bottom: 0;
 }
 
+.rowSelf {
+  /* The viewer's own row: listed and searchable, never a recipient. */
+  cursor: default;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), transparent);
+}
+
+.rowYou {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid #4a5f72;
+  border-radius: 3px;
+  color: #a9bccb;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.checkboxNone {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+
 .rowSelected {
   background: linear-gradient(90deg, rgba(54, 169, 255, 0.14), rgba(54, 169, 255, 0.025));
   box-shadow: inset 2px 0 var(--cashier-blue);
@@ -1124,6 +1149,12 @@
   position: fixed;
   z-index: 50;
   right: max(14px, calc((100vw - 1280px) / 2 + 24px));
+  /* SNAP-LOCKED TO THE FOOTER (Dan 2026-09-04). --bottom-nav-stack-base is
+     the height the footer is OCCUPYING right now (see styles/globals.css):
+     measured while shown, 0px while scroll has dropped it off the edge, 0px
+     when unmounted. This bar sits on the footer when there is one and on the
+     bottom edge when there is not, moving on the same frame with no
+     transition, because the footer's rule is "real time instant change". */
   bottom: var(--bottom-nav-stack-base, 86px);
   left: max(14px, calc((100vw - 1280px) / 2 + 24px));
   display: grid;

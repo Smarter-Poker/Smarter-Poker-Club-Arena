@@ -97,6 +97,12 @@ export function describeRakeError(e: unknown): string {
   return safeErrorMessage(e, 'That request could not be completed.');
 }
 
+/** Live rake channels, one per club, shared by every subscriber on the page. */
+const rakeChannels = new Map<
+  string,
+  { channel: ReturnType<typeof supabase.channel>; listeners: Set<() => void> }
+>();
+
 export const AgentRakeService = {
   /** Agent roles the signed-in user holds. Empty → hide rake reporting entirely. */
   async getMyAgentRoles(): Promise<AgentRoleRow[]> {
@@ -152,22 +158,41 @@ export const AgentRakeService = {
    * Returns an unsubscribe function.
    */
   subscribeToRake(clubId: string | undefined, onChange: () => void): () => void {
-    const channel = supabase
-      .channel(`downline-rake-${clubId ?? 'all'}-${Math.random().toString(36).slice(2)}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'agent_commissions',
-          ...(clubId ? { filter: `club_id=eq.${clubId}` } : {}),
-        },
-        () => onChange()
-      )
-      .subscribe();
+    /* ONE CHANNEL PER CLUB, SHARED. The name used to carry a random suffix, so
+       every caller opened its own websocket subscription to the same
+       postgres_changes filter and a page with three rake panels held three.
+       Subscribers are counted; the channel is removed when the last one
+       leaves and recreated by the next. */
+    const key = clubId ?? 'all';
+    let shared = rakeChannels.get(key);
+    if (!shared) {
+      const listeners = new Set<() => void>();
+      const channel = supabase
+        .channel(`downline-rake-${key}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'agent_commissions',
+            ...(clubId ? { filter: `club_id=eq.${clubId}` } : {}),
+          },
+          () => listeners.forEach((fn) => fn())
+        )
+        .subscribe();
+      shared = { channel, listeners };
+      rakeChannels.set(key, shared);
+    }
+    shared.listeners.add(onChange);
 
     return () => {
-      void supabase.removeChannel(channel);
+      const current = rakeChannels.get(key);
+      if (!current) return;
+      current.listeners.delete(onChange);
+      if (current.listeners.size === 0) {
+        rakeChannels.delete(key);
+        void supabase.removeChannel(current.channel);
+      }
     };
   },
 };

@@ -175,6 +175,10 @@ interface PlayerPage {
 interface InvoiceRow {
   invoice_id: string;
   status: string;
+  /** Derived by the server: unpaid and past due_at. */
+  overdue: boolean;
+  paid_total: number;
+  outstanding: number;
   issued_at: string;
   due_at: string | null;
   amount: number;
@@ -191,7 +195,10 @@ const GAME_FILTERS: Array<{ id: GameFilter; label: string }> = [
   { id: 'OMAHA', label: 'Omaha' },
   { id: 'MIXED', label: 'Mixed' },
   { id: 'MTT', label: 'MTT' },
-  { id: 'SNG', label: 'Heads Up' },
+  // 'SNG' is a sit-and-go, which starts when its seats fill; it is not a
+  // heads-up game and this chip has said so since it was written. The filter
+  // matches ca_club_game_page's own game_class 'SNG'.
+  { id: 'SNG', label: 'Sit & Go' },
 ];
 
 const STAKES_FILTERS: Array<{ id: StakesFilter; label: string }> = [
@@ -2280,6 +2287,7 @@ export default function ClubDataPage() {
                       ? money(Math.abs(Number(inv.amount)))
                       : NO_VALUE}
                     {inv.status ? ` - ${invoiceStatusLabel(inv.status)}` : ''}
+                    {inv.overdue ? ' - Overdue' : ''}
                   </span>
                 </div>
               ))}
@@ -2322,6 +2330,36 @@ export default function ClubDataPage() {
             {latestInvoice.due_at ? ` - due ${String(latestInvoice.due_at).slice(0, 10)}` : ''}
             {latestInvoice.status ? ` - ${invoiceStatusLabel(latestInvoice.status)}` : ''}
           </div>
+
+          {/* PHASE 6 (2026-09-04): ca_club_union_invoices has computed
+              `overdue`, `paid_total` and `outstanding` since it was written
+              and this card rendered none of them, so the one question an
+              owner opens a statement to answer - how much of this is still
+              owed, and is it late - was on the wire and not on the screen.
+              Paid is only shown once something has been paid; outstanding is
+              shown whenever the statement is not settled. */}
+          {(latestInvoice.overdue ||
+            Number(latestInvoice.paid_total) > 0 ||
+            (latestInvoice.status !== 'paid' && Number(latestInvoice.outstanding) > 0)) && (
+            <div className={styles.invoiceStanding}>
+              {latestInvoice.overdue && (
+                <span className={styles.invoiceOverdue}>
+                  Overdue
+                  {latestInvoice.due_at
+                    ? ` Since ${String(latestInvoice.due_at).slice(0, 10)}`
+                    : ''}
+                </span>
+              )}
+              {Number(latestInvoice.paid_total) > 0 && (
+                <span>{money(Number(latestInvoice.paid_total))} Paid</span>
+              )}
+              {latestInvoice.status !== 'paid' && Number(latestInvoice.outstanding) > 0 && (
+                <span className={styles.invoiceOutstanding}>
+                  {money(Number(latestInvoice.outstanding))} Outstanding
+                </span>
+              )}
+            </div>
+          )}
 
           {showInvoiceDetail && latestInvoice.breakdown && (
             <div className={styles.invoiceLines} id="club-data-invoice-detail">

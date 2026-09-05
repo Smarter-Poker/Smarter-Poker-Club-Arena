@@ -437,6 +437,22 @@ const makeLobbyTab = (): TableInstance => ({
 
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
+/* `parseTimed` LIVED HERE TOO, AND main DID NOT COMPILE (2026-09-05).
+   Two agents fixed the same production outage the same day - the temporal
+   dead zone that put "Something Went Wrong" on every open table - and both
+   hoisted the helper to module scope, one here and one just above the
+   component. Neither branch conflicted textually, so git merged both copies
+   and origin/main carried two `function parseTimed` declarations: TS2393,
+   and `TypeScript Check` is a required check, so nothing could merge.
+   The exported declaration below the COMPONENT banner is the one kept, because
+   tests/no-tdz-in-table-route.law.test.ts looks for `export function
+   parseTimed(` by name. This duplicate is removed rather than the other.
+   Forward fix, no revert label (CLAUDE.md 10.8.2).
+   main later hoisted its own copy back to this position, which is how this
+   hunk came to conflict. Resolved the same way and for the same reason: one
+   declaration, the exported one below, which is what
+   tests/no-tdz-in-table-route.law.test.ts looks for by name. */
+
 /**
  * Parse a reported "kind:deadlineMs" channel into its parts.
  *
@@ -448,8 +464,8 @@ const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 
  * fired on the FIRST render with any table open. Every /table/:id on
  * production showed "Something Went Wrong" until this moved. A function
  * declaration is hoisted and has no temporal dead zone, so its position can
- * never matter again; tests/unit/multiTablePageHelpersAreHoisted.test.ts
- * pins it here.
+ * never matter again; tests/unit/multiTablePageHelpersAreHoisted.test.ts and
+ * tests/no-tdz-in-table-route.law.test.ts both pin it.
  */
 export function parseTimed(v?: string): { kind: string; at: number } | null {
   if (!v) return null;

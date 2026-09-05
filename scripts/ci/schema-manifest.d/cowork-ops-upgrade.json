@@ -24,10 +24,14 @@
     "fn_club_settlement_frozen",
     "fn_dispute_escalate",
     "fn_dispute_start_review",
+    "fn_list_player_reports",
+    "fn_promo_vault_delivery_for",
+    "fn_promotion_claim_takes_the_promotions_word",
     "fn_rebuild_agent_commission_rollup",
     "fn_rebuild_ca_club_commission_daily",
     "fn_refuse_operator_move_while_settling",
     "fn_review_anti_cheat_flag",
+    "fn_set_club_rules",
     "get_current_settlement_period",
     "trg_agent_commission_rollup_change",
     "trg_agent_commission_rollup_insert",
@@ -44,5 +48,8 @@
     "ca_club_commission_daily",
     "ca_club_rake_daily",
     "ca_club_rake_daily_user"
-  ]
+  ],
+  "columns": {
+    "promo_vault_records": ["op_id", "delivered_ref"]
+  }
 }

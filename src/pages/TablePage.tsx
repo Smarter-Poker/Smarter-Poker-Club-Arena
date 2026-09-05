@@ -7122,6 +7122,11 @@ export default function TablePage({
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
+  /** P4 2026-09-05: the tile's reveal handler while an offer is up; B runs it. */
+  const rabbitHotkeyRef = useRef<(() => void) | null>(null);
+  const registerRabbitHotkey = useCallback((handler: (() => void) | null) => {
+    rabbitHotkeyRef.current = handler;
+  }, []);
   /** Takes the Rabbit Hunt button down when the server's offer TTL runs out. */
   const rabbitExpiryTimerRef = useRef<number | null>(null);
   /** Dan 2026-08-26: the reveal itself must ALWAYS come down. Hand boundaries
@@ -19971,6 +19976,9 @@ export default function TablePage({
       void handleActionPanelAction(canCheckRightNow() ? 'check' : 'call');
     },
     onRaise: handleRaise,
+    /* P4 2026-09-05: B = Rabbit Hunt. The tile registers its handler only
+       while an offer is up, so this is a no-op the rest of the time. */
+    onRabbitHunt: () => rabbitHotkeyRef.current?.(),
     /* The SAME function the ALL IN button runs. Until 2026-08-28 this was
        `handleAllIn`, a second implementation that skipped VPIP/PFR counting and
        armed a legacy client-side RIT prompt the button never armed — so a shove
@@ -21028,6 +21036,7 @@ export default function TablePage({
                 rabbitDiamondCost={rabbitDiamondCost}
                 userId={userId === 'guest' ? null : userId}
                 onReveal={handleRabbitReveal}
+                registerHotkey={registerRabbitHotkey}
               />
             )}
             <PreviousHandCard

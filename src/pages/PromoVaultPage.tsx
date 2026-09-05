@@ -181,6 +181,11 @@ export default function PromoVaultPage() {
 
   const recordsLoadedRef = useRef(false);
 
+  /* One retry key per (item, recipient, quantity) attempt. Held until the send
+     either succeeds or is refused, so pressing Send again after a lost
+     response replays rather than sends twice. */
+  const grantOpIds = useRef<Map<string, string>>(new Map());
+
   const canManage = MANAGER_ROLES.includes(userRole);
 
   // Safety net: an empty vault is a better answer than a skeleton that never
@@ -372,6 +377,18 @@ export default function PromoVaultPage() {
   const handleGrant = useCallback(
     async (item: VaultItem, recipient: RosterMember, quantity: number) => {
       if (!resolvedClubId) return;
+      /* ONE KEY PER ATTEMPT, HELD ACROSS RETRIES. The send is idempotent on it
+         (20260905083005), so a response lost on the wire can be pressed again
+         without sending twice: the second call returns the first record with
+         `replayed` set and touches neither the stock nor the player. Keyed on
+         the item and recipient so a DIFFERENT send is never mistaken for a
+         retry of this one. */
+      const attemptKey = `${item.item_key}:${recipient.user_id}:${quantity}`;
+      let opId = grantOpIds.current.get(attemptKey);
+      if (!opId) {
+        opId = crypto.randomUUID();
+        grantOpIds.current.set(attemptKey, opId);
+      }
       try {
         const { data, error } = await supabase.rpc('ca_promo_vault_grant', {
           p_club_id: resolvedClubId,
@@ -379,13 +396,19 @@ export default function PromoVaultPage() {
           p_recipient_user_id: recipient.user_id,
           p_quantity: quantity,
           p_note: null,
+          p_op_id: opId,
         });
         if (error) throw error;
         const result = (data ?? {}) as Record<string, unknown>;
         if (result.success !== true) {
           toast.error(String(result.error ?? 'That Item Could Not Be Sent'));
+          /* An undeliverable item is not a failed attempt to retry - the stock
+             was never touched. Drop the key so a later, fixed attempt is its
+             own send rather than a replay of this refusal. */
+          grantOpIds.current.delete(attemptKey);
           return;
         }
+        grantOpIds.current.delete(attemptKey);
         setItems((prev) =>
           prev.map((i) =>
             i.item_key === item.item_key ? { ...i, quantity: num(result.remaining) } : i
@@ -394,7 +417,17 @@ export default function PromoVaultPage() {
         recordsLoadedRef.current = false;
         if (tab === 'records') void loadRecords();
         setGrantTarget(null);
-        toast.success(`Sent ${count(quantity)} ${item.label} To ${recipient.alias}`);
+        /* Say what the player actually received, not that a button was
+           pressed. Before 20260905083005 this said "Sent" and the recipient
+           got nothing at all. */
+        const uses = num(result.delivered_uses);
+        toast.success(
+          result.replayed === true
+            ? `Already Sent To ${recipient.alias}. Nothing Was Sent Twice.`
+            : uses > 0
+              ? `Sent ${count(quantity)} ${item.label} To ${recipient.alias}. ${count(uses)} Now On Their Account.`
+              : `Sent ${count(quantity)} ${item.label} To ${recipient.alias}`
+        );
       } catch (err) {
         reportError(err, 'PromoVaultPage.handleGrant');
         toast.error('That Item Could Not Be Sent');

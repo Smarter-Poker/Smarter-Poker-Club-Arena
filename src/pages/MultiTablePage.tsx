@@ -4199,6 +4199,11 @@ export default function MultiTablePage() {
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           isMultiTable={true}
                           isActive={idx === activeIndex && !hidden}
+                          /* TILE VIEW: every tile is painted, so every tile is
+                             VISIBLE - only one of them is focused. See
+                             TablePage's isVisible note; without this the three
+                             unfocused tiles would animate nothing at all. */
+                          isVisible={!hidden}
                           muted={mutedIds.includes(table.id)}
                         />
                       </TableErrorBoundary>
@@ -4464,6 +4469,11 @@ export default function MultiTablePage() {
                           // so single-table mode is muted too).
                           isMultiTable={tables.length > 1 || hidden}
                           isActive={idx === activeIndex && !hidden}
+                          /* SINGLE VIEW: an inactive slot carries
+                             `display: none` on its wrapper above, so it is
+                             genuinely off screen and instant is the right
+                             answer (spec 47). */
+                          isVisible={shouldRender && !hidden}
                         />
                       </TableErrorBoundary>
                     )}

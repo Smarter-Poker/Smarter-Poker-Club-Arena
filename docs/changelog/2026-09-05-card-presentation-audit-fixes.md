@@ -84,3 +84,45 @@ component, and both did.**
   new layout/decoration checks.
 - Each critical fix was additionally proven by running its new test against
   the pre-fix code and watching it fail.
+
+## Second pass, same day — finishing the audit's remainder
+
+The first pass fixed the CRITICAL and HIGH findings. Re-reading it afterwards
+turned up **a regression in my own fix**, plus the LOW/MEDIUM items I had left.
+
+### The regression: tile view is VISIBLE, not hidden
+
+I wired `isVisible={isActive}` on the four board sites. That is right in single
+view, where an inactive slot really is `display: none`. It is **wrong in tile
+view**, where `MultiTablePage` paints up to four tables at once and only one is
+`isActive` — three visible tables would have resolved the `off` profile and
+shown their cards with no animation at all. Three of four tables silently
+animation-free is precisely what CLAUDE.md 10.6 forbids.
+
+`TablePage` takes an explicit `isVisible` prop now and `MultiTablePage` decides
+it per view: `!hidden` for a painted tile, `shouldRender && !hidden` for a
+single-view slot. The `background` (compact) profile is reachable for the first
+time as a result — until now nothing could produce `focus: 'visible'`.
+
+### The rest of the audit
+
+| Item                                                                                                                                       | Fix                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `threeD` declared on every profile, read by nothing — `reduced.threeD: false` documented "a flat crossfade" that did not exist             | it reaches the DOM as `data-rs-3d`, and a flat reveal now shows no edge spine |
+| `audioEnabled` likewise — `background.audioEnabled: false` claimed an unfocused tile was silent when only the `playSounds` prop made it so | the resolved profile gates the cue as well                                    |
+| `MOUNT_WINDOW_MARGIN_MS` copied as a bare `100` in the component                                                                           | imported                                                                      |
+| An effect whose entire body wrote a ref nothing read                                                                                       | both gone                                                                     |
+| The preload cache `clear()`ed all 128 entries at the ceiling, so a player near the boundary re-decoded a card they had just decoded        | evicts one, oldest first                                                      |
+| The frame sampler started _before_ the entry was registered, so a synchronous sampler landed on nothing and was discarded                  | register first                                                                |
+| `reduced` outranked `off`, so a table nobody can see still scheduled a 120ms presentation                                                  | `off` decides first                                                           |
+| `engineSingleton`'s comment claimed the interrupts were "guarded for the test environment"; they are not, and that is deliberate           | the comment says what the code does                                           |
+
+A profile field nothing reads is a claim about behaviour that no code has to
+honour — worse than no field at all, because the next person to read the table
+believes it.
+
+### Verification (second pass)
+
+- `npx tsc --noEmit` clean; `vite build` clean.
+- vitest **9,457 passing**.
+- Playwright in real Chromium against this commit's own build: **38 passed**.

@@ -198,12 +198,18 @@ describe('a table nobody can see does not animate (spec 47)', () => {
 
   it('and TablePage actually passes it - the off profile is reachable in production', () => {
     // The one thing a render test here cannot prove. Four boards, four props.
+    //
+    // NOT derived from isActive: tile view paints four tables at once and
+    // only one is active, so `isVisible={isActive}` would have given three
+    // visible tables the `off` profile. MultiTablePage decides which is which
+    // and TablePage forwards it (see tests/unit/cardPresentation/auditFixes).
     const fs = require('node:fs') as typeof import('node:fs');
     const path = require('node:path') as typeof import('node:path');
     const tablePage = fs.readFileSync(
       path.resolve(__dirname, '../../src/pages/TablePage.tsx'),
       'utf8'
     );
-    expect((tablePage.match(/isVisible=\{isActive\}/g) || []).length).toBe(4);
+    expect((tablePage.match(/isVisible=\{isVisible\}/g) || []).length).toBe(4);
+    expect(tablePage).not.toContain('isVisible={isActive}');
   });
 });

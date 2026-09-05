@@ -18,6 +18,7 @@ import {
   cardPresentationEngine,
   detectPlatform,
   FLOP_FAN,
+  MOUNT_WINDOW_MARGIN_MS,
   preloadImage,
   SqueezeCard,
   squeezeHostProps,
@@ -437,7 +438,16 @@ function CommunityCardsComponent({
    * cancelled or interrupted squeeze still pays it (the card is on screen by
    * then, and the law is that every cue plays every time it is owed).
    */
-  const snapOwedRef = useRef<{ key: string | null; strength: 'light' | 'medium' } | null>(null);
+  const snapOwedRef = useRef<{
+    key: string | null;
+    strength: 'light' | 'medium';
+    /* AUDIT FIX 2026-09-05: the resolved profile's own say on audio. It was
+       declared on every profile and read by nothing, so
+       `background.audioEnabled: false` claimed an unfocused tile was silent
+       when only the `playSounds` prop made it so. Both gates apply now, and
+       the field is no longer a claim nothing has to honour. */
+    audioEnabled: boolean;
+  } | null>(null);
   /** The squeeze whose reveal beat the owed snap is waiting on, if any. */
   const pendingRevealKeyRef = useRef<string | null>(null);
   const playSoundsRef = useRef(playSounds);
@@ -446,12 +456,14 @@ function CommunityCardsComponent({
     const owed = snapOwedRef.current;
     if (!owed) return;
     snapOwedRef.current = null;
-    if (!playSoundsRef.current) return;
+    if (!playSoundsRef.current || !owed.audioEnabled) return;
     if (owed.strength === 'medium') haptic.medium();
     else haptic.light();
     if (soundService.isEnabled()) soundService.playCommunityCard();
   };
   const [squeeze, setSqueeze] = useState<SqueezePresentation | null>(null);
+  /** The profile the stage effect must read - state has not committed yet. */
+  const squeezeProfileRef = useRef<CardAnimationProfile | null>(null);
   const cancelActiveSqueeze = (reason: string) => {
     if (activeSqueezeRef.current) {
       cardPresentationEngine.cancel(activeSqueezeRef.current, reason);
@@ -466,7 +478,6 @@ function CommunityCardsComponent({
    */
   const rabbitCount = Math.max(0, Math.min(rabbitCards.length, 5 - visibleCount));
   const prevStageRef = useRef(stage);
-  const prevCardCountRef = useRef(cards.length);
   const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
   const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
@@ -474,12 +485,9 @@ function CommunityCardsComponent({
   const dealtAtRef = useRef(0);
   const [stageLabel, setStageLabel] = useState<string | null>(null);
 
-  // FIX 184: Removed duplicate haptic here — stage transition useEffect below already
-  // fires haptic on flop/turn/river. Having both caused double-haptic on every deal.
-  // Track card count for reference only (no haptic).
-  useEffect(() => {
-    prevCardCountRef.current = cards.length;
-  }, [cards.length]);
+  /* FIX 184 removed a duplicate haptic here; what it left behind was an
+     effect whose whole body wrote `prevCardCountRef`, which nothing ever
+     read. AUDIT 2026-09-05: both are gone. */
 
   // Track newly dealt cards — only new cards get deal animation, existing cards stay still
   useEffect(() => {
@@ -572,16 +580,19 @@ function CommunityCardsComponent({
             // and reads this key: a squeeze in flight owes its snap to the
             // reveal beat rather than to the street transition.
             pendingRevealKeyRef.current = result.key;
+            squeezeProfileRef.current = result.profile;
             setSqueeze({ key: result.key, profile: result.profile, index: slot });
           } else {
             // A flop pays its three snaps on the street, not on a reveal beat
             // that does not describe its shape - nothing is owed to a key.
             pendingRevealKeyRef.current = null;
+            squeezeProfileRef.current = result.profile;
           }
         } else if (squeezes) {
           // Duplicate / stale / hidden: the card is simply on screen, so the
           // cue has nothing to wait for.
           pendingRevealKeyRef.current = null;
+          squeezeProfileRef.current = null;
           newIndices.delete(slot);
           setSqueeze(null);
         } else {
@@ -606,7 +617,10 @@ function CommunityCardsComponent({
     if (visibleCount === prevCount && newlyDealtIndices.size > 0) {
       // A squeeze in flight keeps its own, possibly longer, window.
       if (squeeze) {
-        windowMs = Math.max(windowMs, Math.round((squeeze.profile.durationMs + 100) * speed));
+        windowMs = Math.max(
+          windowMs,
+          Math.round((squeeze.profile.durationMs + MOUNT_WINDOW_MARGIN_MS) * speed)
+        );
       }
       const remaining = Math.max(50, dealtAtRef.current + windowMs - Date.now());
       const timer = setTimeout(closeWindow, remaining);
@@ -725,6 +739,7 @@ function CommunityCardsComponent({
         snapOwedRef.current = {
           key: pendingRevealKeyRef.current,
           strength: stage === 'river' ? 'medium' : 'light',
+          audioEnabled: squeezeProfileRef.current?.audioEnabled ?? true,
         };
         if (!pendingRevealKeyRef.current) payStreetSnap();
       } else if (stage === 'showdown') {

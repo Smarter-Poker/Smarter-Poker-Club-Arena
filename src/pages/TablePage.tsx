@@ -953,6 +953,18 @@ interface TablePageProps {
    */
   isActive?: boolean;
   /**
+   * PHASE 2 AUDIT 2026-09-05: PAINTED, which is not the same as FOCUSED.
+   *
+   * In TILE VIEW MultiTablePage renders up to four tables at once and every
+   * one of them is on screen; only one is `isActive`. Deriving "visible" from
+   * "active" would have handed the other three the `off` presentation profile
+   * and their cards would have appeared with no animation at all - three of
+   * four tables silently animation-free, which CLAUDE.md 10.6 forbids
+   * outright. In SINGLE view the inactive slots really are `display: none`,
+   * and there `isVisible` is false and instant is correct (spec 47).
+   */
+  isVisible?: boolean;
+  /**
    * Roadmap batch 3: per-table mute from the tab's long-press menu. Silences
    * every sound this table makes (ambient, bell, tick-tock) without touching
    * the global sound switch or any other table. Haptics stay - mute is an
@@ -1339,6 +1351,7 @@ export default function TablePage({
   onTableInfoUpdate,
   isMultiTable = false,
   isActive = true,
+  isVisible = true,
   muted = false,
 }: TablePageProps = {}) {
   const addScreenIcon = useButtonImage('icon-addscreen');
@@ -20774,7 +20787,7 @@ export default function TablePage({
                           boardIndex={board.boardIndex}
                           gameMode={boardPresentationMode}
                           isFocused={isActive}
-                          isVisible={isActive}
+                          isVisible={isVisible}
                         />
                       </div>
                     ))
@@ -20819,7 +20832,7 @@ export default function TablePage({
                         boardIndex={0}
                         gameMode={boardPresentationMode}
                         isFocused={isActive}
-                        isVisible={isActive}
+                        isVisible={isVisible}
                       />
                       {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
                           directly under board 1 like the reference — no label,
@@ -20853,7 +20866,7 @@ export default function TablePage({
                             boardIndex={1}
                             gameMode={boardPresentationMode}
                             isFocused={isActive}
-                            isVisible={isActive}
+                            isVisible={isVisible}
                           />
                         </div>
                       )}
@@ -20880,7 +20893,7 @@ export default function TablePage({
                             boardIndex={2}
                             gameMode={boardPresentationMode}
                             isFocused={isActive}
-                            isVisible={isActive}
+                            isVisible={isVisible}
                           />
                         </div>
                       )}

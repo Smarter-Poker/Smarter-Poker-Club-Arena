@@ -257,13 +257,18 @@ export class CardPresentationEngine {
       live.revealTimer = null;
       this.notify(key, 'reveal', this.now() - live.startedAt);
     }, Math.ceil(squeeze));
+    /* AUDIT FIX 2026-09-05: REGISTER FIRST. A sampler that completes
+       synchronously - any injected one, and a plausible future rAF shim -
+       landed in reportFrameSample before the entry existed and was silently
+       discarded. The rAF sampler happens never to do it, which is exactly the
+       kind of accident that holds until it does not. */
+    this.active.set(key, entry);
+    this.lanes.set(lane, key);
     if (this.random() < this.frameSampleRate) {
       entry.stopSampling = this.frameSampler(settle, (sample) =>
         this.reportFrameSample(key, sample)
       );
     }
-    this.active.set(key, entry);
-    this.lanes.set(lane, key);
     this.telemetry({ ...base, event: 'animation_started' });
     this.notify(key, 'prepare', 0);
 

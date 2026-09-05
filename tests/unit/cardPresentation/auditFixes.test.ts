@@ -220,3 +220,75 @@ describe('no dead branch left in the phase machine', () => {
     expect((fn.match(/return 'settle';/g) || []).length).toBe(1);
   });
 });
+
+describe('profile fields that claimed behaviour now have behaviour', () => {
+  it('threeD reaches the DOM, so a flat reveal shows no edge', () => {
+    const card = read('src/presentation/cardPresentation/SqueezeCard.tsx');
+    expect(card).toContain("'data-rs-3d': p.threeD ? 'on' : 'off'");
+    const css = read('src/presentation/cardPresentation/cardSqueeze.css');
+    expect(css).toContain("[data-rs-3d='off'] .card-squeeze__spine");
+    // the one profile that claims a flat reveal
+    expect(CARD_PRESENTATION_PROFILES.reduced.threeD).toBe(false);
+    expect(CARD_PRESENTATION_PROFILES.cashDesktop.threeD).toBe(true);
+  });
+
+  it('audioEnabled gates the cue, not just the profile table', () => {
+    const tsx = read('src/components/table/CommunityCards.tsx');
+    expect(tsx).toContain('!owed.audioEnabled');
+    expect(tsx).toContain('audioEnabled: squeezeProfileRef.current?.audioEnabled ?? true');
+    // and the profile that claims silence is the unfocused tile
+    expect(CARD_PRESENTATION_PROFILES.background.audioEnabled).toBe(false);
+    expect(CARD_PRESENTATION_PROFILES.cashDesktop.audioEnabled).toBe(true);
+  });
+
+  it('the mount-window margin is the constant, not a second copy of 100', () => {
+    const tsx = read('src/components/table/CommunityCards.tsx');
+    expect(tsx).toContain('MOUNT_WINDOW_MARGIN_MS');
+    expect(tsx).not.toMatch(/durationMs \+ 100/);
+  });
+
+  it('no effect is left whose whole body writes a ref nothing reads', () => {
+    const tsx = read('src/components/table/CommunityCards.tsx');
+    const code = tsx.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toContain('prevCardCountRef');
+  });
+});
+
+describe('the preload cache evicts one, not all of them', () => {
+  it('is an LRU, so crossing the ceiling does not re-decode the deck in play', () => {
+    const src = read('src/presentation/cardPresentation/preload.ts');
+    expect(src).not.toContain('requested.clear();\n  requested.add');
+    expect(src).toContain('while (requested.size >= MAX_REMEMBERED)');
+    expect(src).toContain('requested.values().next().value');
+  });
+});
+
+describe('a synchronous frame sampler cannot be lost', () => {
+  it('the entry is registered before sampling starts', () => {
+    const src = read('src/presentation/cardPresentation/CardPresentationEngine.ts');
+    const body = src.slice(src.indexOf('presentCard('), src.indexOf('  complete('));
+    const register = body.indexOf('this.active.set(key, entry)');
+    const sample = body.indexOf('this.frameSampler(');
+    expect(register).toBeGreaterThan(-1);
+    expect(sample).toBeGreaterThan(-1);
+    expect(register, 'register before sampling').toBeLessThan(sample);
+  });
+});
+
+describe('tile view is VISIBLE, not hidden (my own regression)', () => {
+  const multi = read('src/pages/MultiTablePage.tsx');
+  const table = read('src/pages/TablePage.tsx');
+
+  it('a painted tile is visible even when it is not the focused one', () => {
+    // Four tiles are rendered at once; deriving visible from active would
+    // have handed three of them the `off` profile - three of four tables
+    // silently animation-free, which CLAUDE.md 10.6 forbids.
+    expect(multi).toContain('isVisible={!hidden}');
+    expect(multi).toContain('isVisible={shouldRender && !hidden}');
+    expect(table).toContain('isVisible?: boolean;');
+    expect(table).toContain('isVisible = true,');
+    expect((table.match(/isVisible=\{isVisible\}/g) || []).length).toBe(4);
+    // and the board no longer reads it off isActive
+    expect(table).not.toContain('isVisible={isActive}');
+  });
+});

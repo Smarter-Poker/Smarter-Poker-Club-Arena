@@ -211,6 +211,34 @@
   font-size: 0.6875rem;
 }
 
+/* THE STAKES MENU (Dan 2026-09-04): two labelled groups in one menu - Game
+   Style, then Sort. The eyebrow is a heading, not an item: no check, no
+   hover, no tab stop. */
+.lt-variant-menu__eyebrow {
+  padding: 6px 12px 2px;
+  color: #8b95a3;
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lt-variant-menu__eyebrow--sort {
+  margin-top: 4px;
+  border-top: 1px solid rgb(91 157 255 / 30%);
+  padding-top: 8px;
+}
+
+.lt-variant-menu__eyebrow + .lt-variant-menu__item {
+  border-top: 0;
+}
+
+.lt-stakes-menu {
+  min-width: 190px;
+}
+
 .lt-variant-menu__check {
   flex: 0 0 auto;
   width: 14px;

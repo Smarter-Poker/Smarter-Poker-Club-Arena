@@ -93,6 +93,8 @@ const RENDER_EXEMPT: Record<string, string> = {
   // fn_arena_name (migrations 20260903120000 / 121000 / 121500). The field
   // name is the RPC's contract; the value is already the alias.
   'src/components/modals/FindPlayerModal.tsx': 'fn_search_players returns the arena name',
+  // Same contract: /search consumes fn_search_players for players since 2026-09-05.
+  'src/pages/SearchPage.tsx': 'fn_search_players returns the arena name',
   'src/components/union/UnionWalletModal.tsx': 'fn_union_player_directory returns the arena name',
   'src/pages/UnionDashboardPage.tsx': 'fn_union_player_directory returns the arena name',
   'src/pages/ClubDetailPage.tsx': 'fn_list_pending_members returns the arena name',

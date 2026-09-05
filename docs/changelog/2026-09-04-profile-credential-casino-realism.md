@@ -40,6 +40,58 @@ not inferred.
 | 23  | Errors from two Supabase reads were discarded                                                                                            | ratchet baseline for ProfilePage tightened 1 -> 0                                                                                                     |
 | 24  | `src/pages/ProfilePage.css` (415 lines) imported by nothing                                                                              | deleted                                                                                                                                               |
 
+## Reconciled with PR #3041 (2026-09-05)
+
+A second agent audited the same routes in parallel from another of Dan's
+sessions and landed first (#3041: profile, public profile, settings and
+notifications, with two rulings this branch did not have: "THERE IS NO SUCH
+THING AS 'PLATINUM VIP'. JUST VIP, AND LIFETIME VIP", "THERE IS NOTHING
+UNLIMITED LIKE THROWABLES OR TIME BANKS", and "ABSOLUTELY ZERO ROUNDING
+ANYWHERE EVER"). Where the two passes overlapped, #3041's version is kept as
+the base and its rulings govern: the VIP plate reads `utils/vipStatus`
+(VIP / Lifetime VIP / none) and `VIP_GOLD_LIMITS`, never a points ladder; the
+alias editor is #3041's (`utils/aliasRules`, username + alias written
+together, 23505 on collision); the credential and dossier renders are
+`public/images/account/*`; every figure truncates.
+
+What this branch still adds on top of #3041, because #3041 did not touch it:
+
+| Fix                                                                                                                                                                                            | Where                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Streak multiplier mirrors `fn_get_streak_multiplier` (7 days = 1.5x, not 1.7x)                                                                                                                 | `utils/streakMultiplier.ts`, hero                   |
+| Achievement progress from the client definitions (`threshold` is 0 on every DB row: NaN bars)                                                                                                  | `achievementService` in the loader                  |
+| Cumulative P/L from the payload's settled `daily[]` series, not wallet flow                                                                                                                    | `ProfitChart` + Activity panel                      |
+| Recent sessions, by-variant results, WTSD, won-at-showdown, hours, worst hand, ITM, best finish, cashes, tournament net                                                                        | Snapshot + Activity panels, `utils/profileStats.ts` |
+| Lifetime hands in the rail; "Hands Analyzed" when the 750-hand window is capped                                                                                                                | telemetry rail                                      |
+| "Last Hand 12m Ago" from `coverage.last_hand_at` instead of a decorative "Profile Synced"                                                                                                      | hero status                                         |
+| Invented financial milestone badges removed; the two orphaned gamification components deleted                                                                                                  | Distinctions panel                                  |
+| Public dossier: arena record folded from `player_stats` (hands-weighted VPIP/PFR, tourneys, titles, clubs) replacing the "Level 1" badge that every row carried                                | `utils/arenaRecord.ts`                              |
+| Report reachable while a player is blocked                                                                                                                                                     | dossier actions                                     |
+| Float-safe truncation: `2183.7 * 100` is `218369.99999999997`, so a bare trunc printed `-2,183.69` for a ledger row of `-2,183.70`; a one-in-a-billion nudge toward the sign before truncating | `truncTo` in ProfilePage, `utils/format.ts`         |
+| A discarded Supabase error on the visibility refresh bound and reported; ratchet 1 -> 0                                                                                                        | ProfilePage                                         |
+
+The medallion-socket composition (the arena avatar set into the plate at its
+measured centre) that this branch built against its own renders is NOT carried
+over: #3041's renders are different geometry and the technique would need
+re-measuring against them. Recorded under "What is left" below.
+
+## What is left
+
+- Set the portrait INTO #3041's credential plate ring and the dossier folio
+  frame (measure the socket centre and size, `container-type: inline-size`
+  stage at the render's aspect, translate the medallion). The technique is in
+  this branch's history (commit 62f49ffd9, `PublicProfilePage.css`).
+- One RPC for the credential (`profiles` + `vip` flags + stats + achievements
+  - ledger) to replace five round trips on a cold mobile load.
+- `ProfileService.addVIPPoints` still writes a bronze/silver/gold `tier`
+  against `VIP_THRESHOLDS` that nothing reads and that contradicts Dan's
+  ruling; retire it.
+- `BonusService.getWheelStats` carries a third streak ladder (1.5x at 3-6,
+  2x at 7+) that matches neither the SQL nor the profile.
+- The mutual-friend chips still print social usernames on an arena surface.
+- `training_achievement_definitions` (threshold 0, icon_url null on every
+  row) is a dead mirror of the client `ACHIEVEMENTS`; pick one source.
+
 ## Design direction
 
 Palette: Obsidian `#05070a`, Carbon `#0d1218`, Gunmetal `#26333d`, Chrome

@@ -1,0 +1,117 @@
+/**
+ * STREAK MULTIPLIER — CSS
+ */
+
+.streak-multiplier {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-sm {
+  gap: 4px;
+}
+.sm-lg {
+  gap: 12px;
+}
+
+/* ── Flame Container ── */
+.sm-flame-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sm-flame {
+  font-size: 24px;
+  animation: flameWobble 1s ease-in-out infinite;
+  filter: drop-shadow(0 0 4px rgba(255, 100, 0, 0.5));
+}
+
+.sm-sm .sm-flame {
+  font-size: 16px;
+}
+.sm-lg .sm-flame {
+  font-size: 36px;
+}
+
+.sm-flame-inner {
+  position: absolute;
+  font-size: 16px;
+  animation: flameWobble 0.7s ease-in-out infinite reverse;
+  filter: drop-shadow(0 0 8px rgba(255, 200, 0, 0.6));
+}
+
+.sm-lg .sm-flame-inner {
+  font-size: 24px;
+}
+
+/* Intensity variations */
+.spark .sm-flame {
+  animation-duration: 2s;
+}
+.warm .sm-flame {
+  animation-duration: 1.5s;
+  filter: drop-shadow(0 0 6px rgba(255, 120, 0, 0.5));
+}
+.blazing .sm-flame {
+  animation-duration: 0.8s;
+  filter: drop-shadow(0 0 10px rgba(255, 80, 0, 0.7));
+}
+.inferno .sm-flame {
+  animation-duration: 0.5s;
+  filter: drop-shadow(0 0 14px rgba(255, 50, 0, 0.9));
+}
+
+@keyframes flameWobble {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  25% {
+    transform: translateY(-2px) scale(1.05) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-1px) scale(1.02);
+  }
+  75% {
+    transform: translateY(-3px) scale(1.06) rotate(3deg);
+  }
+}
+
+/* ── Info ── */
+.sm-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sm-streak-count {
+  font-size: 18px;
+  font-weight: 800;
+  color: #ff6b00;
+  font-variant-numeric: tabular-nums;
+}
+
+.sm-sm .sm-streak-count {
+  font-size: 14px;
+}
+.sm-lg .sm-streak-count {
+  font-size: 24px;
+}
+
+.sm-multiplier {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sm-sm .sm-multiplier {
+  font-size: 8px;
+}
+.sm-lg .sm-multiplier {
+  font-size: 12px;
+}

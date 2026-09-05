@@ -210,9 +210,11 @@ groups:
   # poker_act_to_broadcast_ms is the time from a player's action being
   # accepted to the new state reaching every seat - the number that defines
   # how a table FEELS. It had never been scraped in production (the per-table
-  # version is gated off for cardinality). Two series only: audience=human
-  # for tables with a human seated, audience=horse for the rest. The human
-  # series is what pages; a fleet-wide p95 would be a horse number.
+  # version is gated off for cardinality). Labelled audience=human|horse and
+  # format=cash|spin|hu_sng|mtt. The human series is what pages; a fleet-wide
+  # p95 would be a horse number. BOTH RULES GROUP BY format (Dan 2026-09-05:
+  # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
+  # each alert on their own p95 instead of hiding inside a cash average.
   # Guarded by the hourly maintenance break (CLAUDE.md 13.6).
   - name: action-latency
     interval: 30s
@@ -220,16 +222,16 @@ groups:
       - alert: ActionLatencyDegraded
         expr: |
           histogram_quantile(0.95,
-            sum by (le) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
+            sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
           ) > 500
-          and sum(rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
           unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning
           component: engine
         annotations:
-          summary: "Human tables: p95 act-to-broadcast {{ $value | humanize }}ms over 10m"
+          summary: "{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms over 10m"
           description: |
             A player's action is taking more than half a second to reach the
             other seats, sustained. Compare against the last deploy; check
@@ -239,18 +241,187 @@ groups:
       - alert: ActionLatencyCritical
         expr: |
           histogram_quantile(0.95,
-            sum by (le) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
+            sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
           ) > 1500
-          and sum(rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
           unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
         labels:
           severity: critical
           component: engine
         annotations:
-          summary: "Human tables: p95 act-to-broadcast {{ $value | humanize }}ms - the table is unplayable"
+          summary: "{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms - the table is unplayable"
           description: |
             More than 1.5 s from action to broadcast at p95. At this point
             turn timers are visibly wrong and players are acting on stale
             state. Treat as an outage.
           runbook: "docs/REALTIME-CONNECTIONS-PROGRAMME.md"
+
+  # ── RECOVERED FROM engine-01, 2026-09-05 ────────────────────────────────
+  # These two groups - NINE alerts, all of them about money and settlement -
+  # existed ONLY as a hand-written file on the monitoring box. They were in no
+  # repository, so nothing versioned them, nothing reviewed them, and nothing
+  # could restore them. Worse, they were a landmine: deploy.sh SYMLINKS the
+  # live alert-rules.yml to this file, so the first person to run it would
+  # have silently deleted every alert below - including the ones that watch
+  # for hands failing to settle and for money alerts going unread.
+  #
+  # Copied here verbatim from /opt/smarter-poker-monitoring/alert-rules.yml so
+  # this file is a SUPERSET of what is live and a deploy can only add. See
+  # docs/REALTIME-CONNECTIONS-PROGRAMME.md, "Found during Phase 1".
+
+  - name: settlement
+    interval: 30s
+    rules:
+      - alert: HandsAreFailingToSettle
+        expr: |
+          poker_settlement_failure_rate > 0.02
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          page: sms
+          component: money
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of hands are failing to settle"
+          description: "fn_ca_settle_hand_stacks_absolute is refusing hands whole. Read ca_settlements.error_detail for the reason before changing anything. The 2026-09-04 cause was a BEFORE UPDATE trigger on table_seats that cancelled no-op writes, making a correct seat write look like a failed one."
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      # Baseline before the incident was 0.0-0.2%. A rate that merely doubles
+      # is worth knowing about long before it reaches a quarter of all hands.
+      - alert: SettlementFailuresAboveBaseline
+        expr: |
+          poker_settlement_failure_rate > 0.005
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: "Settlement failure rate {{ $value | humanizePercentage }}, above the 0.2% baseline"
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      # No hands settling at all is not a quiet table - this platform settles
+      # ~500 hands a minute. The failure-rate gauge is ABSENT in this state, so
+      # it must be alerted on separately or the silence reads as health.
+      - alert: NoHandsAreSettling
+        expr: |
+          poker_settlement_window_hands == 0
+          and poker_settlement_metrics_stale_seconds < 300
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: money
+        annotations:
+          summary: "No hand has settled in five minutes"
+          description: "The collector is fresh and reports zero terminal settlements. Either the engine has stopped dealing or settlement is failing before it reaches a terminal state."
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      - alert: SettlementsStuckMidStateMachine
+        expr: |
+          poker_settlement_stuck > 50
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: "{{ $value }} settlements are neither final nor failed"
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      - alert: SettlementMetricsBlind
+        expr: |
+          poker_settlement_metrics_stale_seconds > 600
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: "Settlement gauges are stale ({{ $value }}s)"
+          description: "fn_settlement_health has not returned in over ten minutes. Whether hands are settling is currently unknown, and unknown is what thirteen hours of this looked like."
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+  # ── MONEY HEALTH (2026-09-04) ───────────────────────────────────────────
+  # Two findings from one day, the same failure at two layers.
+  #
+  # financial_alerts held 1,345 unresolved rows - 656 distinct conditions, the
+  # oldest fifteen days old - and nothing had ever reported that the table has
+  # contents. Every reconciler and guard on the platform writes there and it
+  # works perfectly; nobody was ever told.
+  #
+  # And aaa_skip_noop_update was attached to table_seats with no migration and
+  # no review, breaking 139,153 hand settlements 0.65 seconds later. RULE 2
+  # already forbade it; nothing enforced it, because an object created by raw
+  # SQL leaves no row in schema_migrations for the existing guard to find.
+  #
+  # Gauges from server/src/services/MoneyHealthMetrics.ts.
+  - name: money-health
+    interval: 60s
+    rules:
+      # Any value above zero is an unreviewed schema change on a chip path.
+      # No `for:` grace beyond one scrape - this is the alert whose absence
+      # cost thirteen hours.
+      - alert: UndeclaredTriggerOnAMoneyTable
+        expr: |
+          poker_money_undeclared_triggers > 0
+        for: 2m
+        labels:
+          severity: critical
+          page: sms
+          component: money
+        annotations:
+          summary: "{{ $value }} undeclared trigger(s) on a money or seat table"
+          description: "A trigger is live on table_seats, club_members, wallets, chip_ledger, tournaments, tournament_players or ca_settlements with no row in ca_declared_money_triggers. Run SELECT * FROM fn_undeclared_money_triggers(). Either it is a legitimate change missing its declaration, or it is an unreviewed one - and the last unreviewed one broke a third of all hand settlements."
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      # Criticals nobody has looked at in a day. Deliberately NOT the raw
+      # unresolved count: a critical raised a minute ago is the system working.
+      - alert: MoneyAlertsGoingUnread
+        expr: |
+          poker_financial_alerts_stale_critical > 25
+        for: 30m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: "{{ $value }} critical money alerts open longer than 24h"
+          description: "financial_alerts is accumulating criticals nobody has resolved. A deep backlog is dangerous mainly because it hides a real one - on 2026-09-04 it was 1,345 rows deep and contained five 'player was never paid' alerts, all of which had in fact been paid within thirty minutes."
+          runbook: "docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md"
+
+      - alert: MoneyAlertBacklogGrowing
+        expr: |
+          poker_financial_alerts_unresolved > 2000
+        for: 1h
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: "{{ $value }} unresolved money alerts"
+          description: "Above the 1,345 the backlog stood at when it was first measured. Check poker_financial_alerts_distinct_conditions - if the row count is climbing and the condition count is not, the table is duplicating rather than finding new problems."
+          runbook: "docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md"
+
+      - alert: MoneyHealthBlind
+        expr: |
+          poker_money_health_stale_seconds > 600
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: "Money-health gauges are stale ({{ $value }}s)"
+          description: "Neither the alert backlog nor the undeclared-trigger check has returned in over ten minutes. poker_money_undeclared_triggers is ABSENT rather than 0 in this state, deliberately - a zero here would be an all-clear the collector has not earned."
+          runbook: "docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md"
+
+  # ── Action latency (Realtime programme Phase 1, 2026-09-04) ──────────────
+  # poker_act_to_broadcast_ms is the time from a player's action being
+  # accepted to the new state reaching every seat - the number that defines
+  # how a table FEELS. It had never been scraped in production (the per-table
+  # version is gated off for cardinality). Labelled audience=human|horse and
+  # format=cash|spin|hu_sng|mtt. The human series is what pages; a fleet-wide
+  # p95 would be a horse number. BOTH RULES GROUP BY format (Dan 2026-09-05:
+  # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
+  # each alert on their own p95 instead of hiding inside a cash average.
+  # Guarded by the hourly maintenance break (CLAUDE.md 13.6).

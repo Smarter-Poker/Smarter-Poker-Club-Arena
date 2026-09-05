@@ -1,32 +1,25 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   PUBLIC PROFILE — Player Dossier  (#smarterCasinoRealism, 2026-09-04)
-
-   Signature: a purpose-rendered dossier plate (black anodised steel in a
-   chrome holder, empty portrait medallion lit from within, blue crystal at
-   the base, two chips) is the hero. On wide viewports the player's ARENA
-   AVATAR is set INTO the plate's medallion socket: the header is a container
-   the exact aspect of the render (3:2, top-aligned, width-fitted) and the
-   medallion is translated to the socket's measured centre (64.55%, 27.88%)
-   at the socket's measured width (10.35%). Below 900px the plate becomes a
-   dimmed backdrop and the medallion returns to the copy.
+   PUBLIC PROFILE — Player Dossier  (#SmarterCasinoRealism, 2026-09-04)
+   Same hardware as the owner's credential: obsidian plate, chrome bezel,
+   one blue core. Light mode is brushed silver.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .public-profile-page {
-  --public-bg: #05070a;
-  --public-panel: #0d1218;
-  --public-raised: #121a22;
+  --public-bg: #030609;
+  --public-panel: #080d12;
+  --public-raised: #0d141b;
   --public-line: #26333d;
-  --public-chrome: #b8c3cd;
-  --public-cyan: #00d4ff;
-  --public-blue: #4169e1;
-  --public-gold: #ffc93c;
-  --public-muted: #7f8f9d;
-  --public-danger: #ff5d6c;
-  --font-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
-  --font-label: 'Roboto Condensed', 'Rajdhani', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
+  --public-steel: #b9cad7;
+  --public-chrome: #dce8f0;
+  --public-text: #f4f8fb;
+  --public-muted: #8fa2af;
+  --public-blue: #3aa8ff;
+  --public-blue-soft: #77c9ff;
+  --public-veil: 3, 6, 9;
+  --public-control: linear-gradient(180deg, #121c24, #070c10);
+  --public-control-border: #465a67;
   width: 100%;
-  max-width: 1120px;
+  max-width: 680px;
   min-height: 100vh;
   min-height: 100dvh;
   margin: 0 auto;
@@ -34,17 +27,9 @@
   padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
   overflow-x: clip;
   background:
-    radial-gradient(60rem 26rem at 50% -8rem, rgba(65, 105, 225, 0.16), transparent 70%),
-    var(--public-bg);
-  color: #f2f6f9;
-  font-family: var(--font-body);
+    radial-gradient(circle at 50% 0, rgba(58, 168, 255, 0.1), transparent 34rem), var(--public-bg);
+  color: var(--public-text);
 }
-
-.public-profile-page :is(h1, h2, h3) {
-  margin: 0;
-}
-
-/* ── Loading / empty ─────────────────────────────────────────────────────── */
 
 .public-profile-page .public-profile-loading,
 .public-profile-page .public-profile-empty {
@@ -53,442 +38,319 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.9rem;
-  padding: 1rem;
+  gap: 0.75rem;
   color: var(--public-muted);
   text-align: center;
 }
 
-.public-profile-page .public-profile-empty {
-  border: 1px solid var(--public-line);
-  border-radius: 3px;
-  background: var(--public-panel);
+.public-profile-page .public-profile-empty .empty-icon {
+  color: var(--public-blue-soft);
+  font-size: 2.6rem;
+  opacity: 0.7;
 }
 
 .public-profile-page .public-profile-empty h2 {
-  color: #ffffff;
-  font: 700 1.45rem/1 var(--font-display);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.public-profile-page .public-profile-empty p {
-  max-width: 40ch;
   margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.public-profile-page .public-profile-empty-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem;
-}
-
-.public-profile-page .public-profile-eyebrow {
-  color: #6fd6ff;
-  font: 700 0.64rem/1 var(--font-label);
-  letter-spacing: 0.2em;
+  color: var(--public-text);
+  font:
+    800 1.45rem/1 'Rajdhani',
+    sans-serif;
   text-transform: uppercase;
 }
 
-/* ── Dossier plate ───────────────────────────────────────────────────────── */
+.public-profile-page .public-profile-empty .action-btn {
+  min-width: 160px;
+  margin-top: 0.5rem;
+}
+
+/* ── Dossier plate ────────────────────────────────────────────────────── */
 
 .public-profile-page .public-profile-header {
   position: relative;
   isolation: isolate;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 1rem;
-  min-height: 420px;
+  min-height: 390px;
   overflow: hidden;
-  padding: 1.15rem 1.35rem 0;
-  border: 1px solid #2f3d49;
-  border-radius: 3px;
+  padding: 2rem 1rem;
+  border: 1px solid var(--public-line);
+  border-radius: 4px;
   background: var(--public-bg);
-  box-shadow:
-    inset 0 1px 0 rgba(184, 195, 205, 0.12),
-    0 18px 40px rgba(0, 0, 0, 0.45);
   clip-path: polygon(
     0 0,
-    calc(100% - 22px) 0,
-    100% 22px,
+    calc(100% - 18px) 0,
+    100% 18px,
     100% 100%,
-    22px 100%,
-    0 calc(100% - 22px)
+    18px 100%,
+    0 calc(100% - 18px)
   );
+  box-shadow:
+    inset 0 1px rgba(185, 202, 215, 0.13),
+    0 28px 70px rgba(0, 0, 0, 0.48);
 }
 
 .public-profile-page .public-profile-header::before {
   content: '';
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: -2;
   background:
     linear-gradient(
-      90deg,
-      rgba(5, 7, 10, 0.96) 0%,
-      rgba(5, 7, 10, 0.78) 40%,
-      rgba(5, 7, 10, 0.1) 62%,
-      transparent 100%
+      0deg,
+      rgba(var(--public-veil), 0.98),
+      rgba(var(--public-veil), 0.42) 66%,
+      rgba(var(--public-veil), 0.55)
     ),
-    linear-gradient(0deg, rgba(5, 7, 10, 0.96) 0%, rgba(5, 7, 10, 0.3) 22%, transparent 45%);
+    linear-gradient(
+      90deg,
+      rgba(var(--public-veil), 0.72),
+      transparent,
+      rgba(var(--public-veil), 0.72)
+    );
+}
+
+.public-profile-page .public-profile-header::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  z-index: -1;
+  background: linear-gradient(90deg, transparent, var(--public-blue), transparent);
+  box-shadow: 0 -8px 22px rgba(58, 168, 255, 0.28);
 }
 
 .public-profile-page .public-profile-artwork {
   position: absolute;
   inset: 0;
-  z-index: -2;
-  overflow: hidden;
-}
-
-.public-profile-page .public-profile-artwork img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 50% 0;
-  filter: saturate(0.94) contrast(1.06);
-}
-
-.public-profile-page .public-profile-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem 1rem;
-}
-
-.public-profile-page .public-profile-presence {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 32px;
-  padding: 0 0.72rem;
-  border: 1px solid rgba(184, 195, 205, 0.32);
-  border-radius: 2px;
-  background: rgba(5, 7, 10, 0.78);
-  color: #dce8f0;
-  font: 700 0.62rem/1 var(--font-label);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.public-profile-page .public-profile-presence > span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #5b6b78;
-}
-
-.public-profile-page .public-profile-presence.is-live > span {
-  background: var(--public-cyan);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.9);
+  z-index: -3;
+  background-position: center 40%;
+  background-size: cover;
+  background-repeat: no-repeat;
+  filter: saturate(0.8) contrast(1.08) brightness(0.72);
+  transform: scale(1.015);
 }
 
 .public-profile-page .profile-hero {
-  display: grid;
-  justify-items: start;
-  gap: 0.6rem;
-  max-width: 48%;
-  min-width: 0;
+  display: flex;
+  min-height: 325px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  text-align: center;
 }
 
-.public-profile-page .profile-medallion {
-  width: 132px;
-  height: 132px;
-  padding: 5px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 210deg,
-    #e8eef2,
-    #6d7b86 22%,
-    #f4f7f9 40%,
-    #55636e 58%,
-    #d9e1e7 76%,
-    #6d7b86 90%,
-    #e8eef2
-  );
-  box-shadow:
-    0 0 0 1px #05070a,
-    0 0 0 3px rgba(0, 212, 255, 0.55),
-    0 0 34px rgba(0, 212, 255, 0.28),
-    0 22px 40px rgba(0, 0, 0, 0.6);
-}
-
-.public-profile-page .profile-medallion img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-  background: var(--public-panel);
-  box-shadow: inset 0 0 0 2px #05070a;
+.public-profile-page .public-profile-eyebrow {
+  position: absolute;
+  top: 1.1rem;
+  left: 1.2rem;
+  color: var(--public-blue-soft);
+  font:
+    800 0.62rem/1 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 .public-profile-page .profile-username {
-  overflow-wrap: anywhere;
-  color: #ffffff;
-  font: 700 clamp(2rem, 5vw, 3.2rem) / 0.95 var(--font-display);
-  letter-spacing: 0.04em;
+  margin: 0.45rem 0 0;
+  color: var(--public-text);
+  font:
+    800 clamp(2rem, 8vw, 3.4rem) / 0.9 'Rajdhani',
+    Inter,
+    sans-serif;
+  letter-spacing: -0.03em;
   text-transform: uppercase;
-  text-shadow:
-    0 0 26px rgba(0, 212, 255, 0.18),
-    0 4px 18px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 10px 28px rgba(0, 0, 0, 0.8);
+  overflow-wrap: anywhere;
 }
 
-.public-profile-page .profile-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 1rem;
-  color: var(--public-chrome);
-  font: 700 0.72rem/1.3 var(--font-label);
+.public-profile-page .profile-handle {
+  color: var(--public-blue-soft);
+  font:
+    700 0.7rem/1.2 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .public-profile-page .profile-bio {
-  max-width: 48ch;
-  margin: 0;
-  color: #d7e1e8;
-  font-size: 0.92rem;
-  line-height: 1.5;
+  max-width: 32rem;
+  margin: 0.4rem 0 0;
+  color: var(--public-steel);
+  font-size: 0.84rem;
+  line-height: 1.45;
 }
 
-.public-profile-page .profile-tags {
+.public-profile-page .profile-badges {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0.4rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  margin-top: 0.45rem;
 }
 
-.public-profile-page .profile-tags li {
-  padding: 0.3rem 0.55rem;
-  border: 1px solid rgba(0, 212, 255, 0.35);
+.public-profile-page .vip-badge,
+.public-profile-page .level-badge,
+.public-profile-page .member-since {
+  min-height: 29px;
+  padding: 0.38rem 0.55rem;
+  border: 1px solid rgba(185, 202, 215, 0.28);
   border-radius: 2px;
-  background: rgba(0, 212, 255, 0.08);
-  color: #8fe1ff;
-  font: 700 0.62rem/1 var(--font-label);
-  letter-spacing: 0.12em;
+  background: rgba(var(--public-veil), 0.76);
+  color: var(--public-chrome);
+  font:
+    800 0.62rem/1 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.065em;
   text-transform: uppercase;
+}
+
+.public-profile-page .vip-badge {
+  border-color: rgba(58, 168, 255, 0.55);
+  color: var(--public-blue-soft);
+}
+
+.public-profile-page .vip-badge--lifetime {
+  border-color: rgba(214, 173, 82, 0.6);
+  background: linear-gradient(145deg, rgba(214, 173, 82, 0.16), rgba(var(--public-veil), 0.8));
+  color: #ead9a8;
 }
 
 .public-profile-page .playing-at-badge {
   display: inline-flex;
+  min-height: 42px;
   align-items: center;
-  gap: 0.4rem;
-  min-height: 44px;
-  padding: 0 0.9rem;
-  border: 1px solid rgba(61, 220, 151, 0.55);
-  border-left: 3px solid #3ddc97;
-  border-radius: 2px;
-  background: rgba(13, 18, 24, 0.9);
-  color: #d7e1e8;
-  font: 700 0.7rem/1 var(--font-label);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(101, 216, 155, 0.45);
+  border-radius: 3px;
+  background: rgba(20, 100, 62, 0.17);
+  color: #80e6ad;
+  font-size: 0.72rem;
   cursor: pointer;
 }
 
-.public-profile-page .playing-at-badge strong {
-  color: #3ddc97;
+.public-profile-page .playing-at-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #65d89b;
+  box-shadow: 0 0 10px rgba(101, 216, 155, 0.9);
 }
 
 .public-profile-page .playing-at-badge--static {
   cursor: default;
 }
 
-.public-profile-page .player-status-text {
-  margin: 0;
-  color: var(--public-muted);
-  font-size: 0.82rem;
-  font-style: italic;
-}
-
-/* Record rail — integrated into the bottom of the plate */
-
-.public-profile-page .public-profile-record {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0 -1.35rem;
-  border-top: 1px solid #2f3d49;
-  background: rgba(5, 7, 10, 0.86);
-  box-shadow: inset 0 1px 0 rgba(184, 195, 205, 0.1);
-}
-
-.public-profile-page .public-profile-record > div {
-  display: grid;
-  gap: 0.3rem;
-  min-width: 0;
-  padding: 0.85rem 1rem;
-  border-right: 1px solid rgba(47, 61, 73, 0.9);
-}
-
-.public-profile-page .public-profile-record > div:last-child {
-  border-right: 0;
-}
-
-.public-profile-page .public-profile-record dt {
-  color: var(--public-muted);
-  font: 700 0.6rem/1 var(--font-label);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.public-profile-page .public-profile-record dd {
-  margin: 0;
-  overflow: hidden;
-  color: #ffffff;
-  font: 700 1.15rem/1 var(--font-display);
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ── Avatar INTO the socket (wide viewports) ─────────────────────────────── */
-
-@media (min-width: 900px) {
-  .public-profile-page .public-profile-header {
-    /* A 5:3 stage of a width-fitted, top-aligned 3:2 render: the socket
-       coordinates hold and the chips at the base stay in frame. */
-    container-type: inline-size;
-    aspect-ratio: 5 / 3;
-    max-height: 700px;
-  }
-
-  .public-profile-page .public-profile-header::before {
-    background:
-      linear-gradient(
-        90deg,
-        rgba(5, 7, 10, 0.94) 0%,
-        rgba(5, 7, 10, 0.72) 36%,
-        rgba(5, 7, 10, 0.06) 52%,
-        transparent 100%
-      ),
-      linear-gradient(0deg, rgba(5, 7, 10, 0.94) 0%, rgba(5, 7, 10, 0.2) 18%, transparent 36%);
-  }
-
-  .public-profile-page .profile-hero {
-    align-self: center;
-    padding-bottom: 1rem;
-  }
-
-  .public-profile-page .profile-medallion {
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1;
-    /* Socket centre (64.55%, 27.88%) of a width-fitted 3:2 render; the
-       socket spans 10.35% of the width. Translate from the medallion's centre.
-       27.88% of the render height is 18.587% of the render width. */
-    width: 9.9%;
-    height: auto;
-    aspect-ratio: 1;
-    padding: 0.35%;
-    transform: translate(calc(64.55cqw - 50%), calc(18.587cqw - 50%));
-    box-shadow:
-      0 0 0 1px #05070a,
-      0 0 0 2px rgba(0, 212, 255, 0.5),
-      0 0 40px rgba(0, 212, 255, 0.4),
-      0 22px 40px rgba(0, 0, 0, 0.6);
-  }
-}
-
-/* ── Actions console ─────────────────────────────────────────────────────── */
-
-.public-profile-page .profile-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-  padding: 0.5rem;
-  border: 1px solid var(--public-line);
-  border-radius: 3px;
-  background: linear-gradient(180deg, #121a22, #0a0f14);
-  box-shadow: inset 0 1px 0 rgba(184, 195, 205, 0.1);
-}
-
-.public-profile-page .action-btn {
-  flex: 1 1 140px;
-  min-height: 46px;
-  padding: 0 0.9rem;
-  border: 1px solid #3f505c;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #1a2430, #0d141b);
-  color: #dfe8ee;
-  font: 700 0.72rem/1 var(--font-label);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(184, 195, 205, 0.14),
-    0 2px 0 #05070a;
-  transition: transform 120ms ease;
-}
-
-.public-profile-page .action-btn:active {
-  transform: translateY(1px);
-}
-
-.public-profile-page .action-btn:disabled {
-  cursor: default;
-  opacity: 0.7;
-}
-
-.public-profile-page .action-btn:focus-visible,
-.public-profile-page .playing-at-badge:focus-visible,
-.public-profile-page .mutual-friend-chip:focus-visible {
-  outline: 2px solid var(--public-cyan);
+.public-profile-page .playing-at-badge:focus-visible {
+  outline: 2px solid #80e6ad;
   outline-offset: 2px;
 }
 
-.public-profile-page .add-friend-btn,
-.public-profile-page .accept-btn {
-  border-color: #3aa8ff;
-  background: linear-gradient(180deg, #2f7fdc, #1d4fb3);
-  color: #ffffff;
+.public-profile-page .player-status-text {
+  margin: 0.25rem 0 0;
+  color: #9fb1bd;
+  font-size: 0.75rem;
+  font-style: italic;
 }
 
+/* ── Action rail ──────────────────────────────────────────────────────── */
+
+.public-profile-page .profile-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.public-profile-page .action-btn {
+  min-height: 46px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--public-control-border);
+  border-radius: 3px;
+  background: var(--public-control);
+  color: var(--public-chrome);
+  font:
+    800 0.72rem/1 'Rajdhani',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.public-profile-page .action-btn:focus-visible {
+  border-color: var(--public-blue-soft);
+  color: #fff;
+  outline: none;
+  box-shadow: 0 0 16px rgba(58, 168, 255, 0.16);
+}
+
+.public-profile-page .action-btn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.public-profile-page .add-friend-btn,
+.public-profile-page .message-btn {
+  border-color: rgba(58, 168, 255, 0.55);
+  color: var(--public-blue-soft);
+}
+
+.public-profile-page .accept-btn,
 .public-profile-page .friends-btn {
-  border-color: rgba(61, 220, 151, 0.55);
-  color: #3ddc97;
+  border-color: rgba(101, 216, 155, 0.45);
+  color: #80e6ad;
 }
 
 .public-profile-page .pending-btn {
-  color: var(--public-gold);
+  border-color: rgba(214, 173, 82, 0.45);
+  color: #e4c170;
 }
 
 .public-profile-page .block-btn,
-.public-profile-page .report-btn {
-  color: #ffb3ba;
-}
-
 .public-profile-page .unblock-btn {
-  border-color: rgba(255, 93, 108, 0.6);
-  color: #ffb3ba;
+  border-color: rgba(255, 124, 124, 0.48);
+  color: #ff9a9a;
 }
 
-/* ── Mutual friends ──────────────────────────────────────────────────────── */
+/* Report sits beside Block but reads as the milder of the two: reporting asks
+   a human to look, blocking is the player acting alone. Amber, not red. */
+.public-profile-page .report-btn {
+  border-color: rgba(245, 166, 35, 0.48);
+  color: #f5a623;
+}
+
+/* ── Plates ───────────────────────────────────────────────────────────── */
 
 .public-profile-page .mutual-friends-section,
 .public-profile-page .profile-qr-section {
   margin-top: 0.75rem;
-  padding: 1rem 1.1rem;
+  padding: 1rem;
   border: 1px solid var(--public-line);
   border-radius: 3px;
   background:
-    linear-gradient(180deg, rgba(184, 195, 205, 0.05), transparent 38%), var(--public-panel);
-  box-shadow: inset 0 1px 0 rgba(184, 195, 205, 0.12);
+    linear-gradient(115deg, rgba(58, 168, 255, 0.035), transparent 38%),
+    linear-gradient(145deg, var(--public-raised), var(--public-panel));
+  box-shadow: inset 0 1px rgba(185, 202, 215, 0.07);
 }
 
 .public-profile-page .mutual-friends-section h3,
 .public-profile-page .profile-qr-section h3 {
-  margin-bottom: 0.75rem;
-  color: #ffffff;
-  font: 700 0.92rem/1 var(--font-display);
+  margin: 0 0 0.75rem;
+  color: #9fb1bd;
+  font:
+    800 0.7rem/1.2 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -501,139 +363,209 @@
 
 .public-profile-page .mutual-friend-chip {
   display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
   min-height: 44px;
-  padding: 0.3rem 0.8rem 0.3rem 0.3rem;
-  border: 1px solid var(--public-line);
-  border-radius: 2px;
-  background: #05070a;
-  color: #e6edf2;
-  font: 700 0.72rem/1 var(--font-label);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid #354752;
+  border-radius: 3px;
+  background: #070c10;
+  color: var(--public-chrome);
+  font-size: 0.74rem;
   cursor: pointer;
 }
 
+.public-profile-page .mutual-friend-chip:focus-visible {
+  border-color: var(--public-blue-soft);
+  outline: none;
+}
+
 .public-profile-page .mutual-avatar {
-  width: 34px;
-  height: 34px;
-  border: 1px solid #55636e;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #607684;
+  border-radius: 2px;
   object-fit: cover;
 }
 
-/* ── QR ──────────────────────────────────────────────────────────────────── */
-
 .public-profile-page .profile-qr-section {
-  display: grid;
-  justify-items: center;
   text-align: center;
 }
 
-.public-profile-page .profile-qr-frame,
-.public-profile-page .profile-qr-loading {
-  display: grid;
-  place-items: center;
-  width: 200px;
-  height: 200px;
-  padding: 0.5rem;
-  border: 1px solid #3f505c;
+.public-profile-page .profile-qr-image {
+  display: inline-flex;
+  width: 172px;
+  height: 172px;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 1px solid #8ca1af;
   border-radius: 3px;
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.08), transparent 50%), #05070a;
+  background: #fff;
   box-shadow:
-    inset 0 0 0 1px rgba(184, 195, 205, 0.12),
-    0 0 30px rgba(0, 212, 255, 0.12);
+    0 0 0 4px #060a0e,
+    0 0 0 5px rgba(58, 168, 255, 0.4);
 }
 
-.public-profile-page .profile-qr-frame svg {
+.public-profile-page .profile-qr-image svg {
   display: block;
-  width: 168px;
-  height: 168px;
+  width: 160px;
+  height: 160px;
 }
 
 .public-profile-page .qr-hint {
-  margin: 0.75rem 0 0;
-  color: var(--public-muted);
-  font: 700 0.62rem/1 var(--font-label);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  margin: 0.8rem 0 0;
+  color: #8496a2;
+  font-size: 0.68rem;
 }
 
-/* ── Responsive ──────────────────────────────────────────────────────────── */
+/* ── Light mode: brushed silver ──────────────────────────────────────── */
 
-@media (max-width: 899px) {
-  .public-profile-page .profile-hero {
-    max-width: 100%;
-    justify-items: center;
-    padding-top: 3.5rem;
-    text-align: center;
-  }
-
-  .public-profile-page .profile-badges,
-  .public-profile-page .profile-tags {
-    justify-content: center;
-  }
-
-  .public-profile-page .public-profile-header::before {
-    background: linear-gradient(
-      180deg,
-      rgba(5, 7, 10, 0.3) 0%,
-      rgba(5, 7, 10, 0.86) 34%,
-      rgba(5, 7, 10, 0.97) 100%
-    );
-  }
-
-  .public-profile-page .public-profile-artwork img {
-    object-position: 68% 20%;
-  }
+[data-theme='light'] .public-profile-page {
+  --public-bg: #e6ebef;
+  --public-panel: #f3f6f8;
+  --public-raised: #fbfcfd;
+  --public-line: #b7c3cc;
+  --public-steel: #3f5261;
+  --public-chrome: #1c2a35;
+  --public-text: #0d161d;
+  --public-muted: #55697a;
+  --public-blue: #1878c8;
+  --public-blue-soft: #146bb3;
+  --public-veil: 230, 235, 239;
+  --public-control: linear-gradient(180deg, #ffffff, #dfe6eb);
+  --public-control-border: #9fb0bc;
+  background:
+    radial-gradient(circle at 50% 0, rgba(24, 120, 200, 0.12), transparent 34rem), var(--public-bg);
 }
 
-@media (max-width: 760px) {
+[data-theme='light'] .public-profile-page .public-profile-artwork {
+  filter: saturate(0.7) contrast(1.02) brightness(1.05);
+}
+
+[data-theme='light'] .public-profile-page .profile-username {
+  text-shadow: 0 2px 14px rgba(255, 255, 255, 0.9);
+}
+
+[data-theme='light'] .public-profile-page .mutual-friend-chip {
+  background: #f7f9fb;
+  border-color: var(--public-line);
+}
+
+[data-theme='light'] .public-profile-page .mutual-friends-section h3,
+[data-theme='light'] .public-profile-page .profile-qr-section h3,
+[data-theme='light'] .public-profile-page .qr-hint {
+  color: #4d6272;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
   .public-profile-page {
-    padding: 0.75rem;
+    max-width: none;
+    padding: 0;
     padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
   }
 
-  .public-profile-page .public-profile-header {
-    min-height: 0;
-    padding: 1rem 1rem 0;
-    clip-path: polygon(
-      0 0,
-      calc(100% - 16px) 0,
-      100% 16px,
-      100% 100%,
-      16px 100%,
-      0 calc(100% - 16px)
-    );
+  .public-profile-page .public-profile-header,
+  .public-profile-page .mutual-friends-section,
+  .public-profile-page .profile-qr-section {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+    clip-path: none;
   }
 
-  .public-profile-page .public-profile-record {
-    margin: 0 -1rem;
-  }
-
-  .public-profile-page .action-btn {
-    flex-basis: calc(50% - 0.25rem);
+  .public-profile-page .profile-actions {
+    margin-right: 0.75rem;
+    margin-left: 0.75rem;
   }
 }
 
 @media (max-width: 480px) {
-  .public-profile-page .profile-medallion {
-    width: 112px;
-    height: 112px;
+  .public-profile-page .public-profile-header {
+    min-height: 410px;
   }
 
-  .public-profile-page .profile-username {
-    font-size: 2rem;
-  }
-
-  .public-profile-page .public-profile-record {
+  .public-profile-page .profile-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
-  .public-profile-page .public-profile-record > div {
-    padding: 0.7rem 0.8rem;
-    border-right: 1px solid rgba(47, 61, 73, 0.9);
+@media (max-width: 340px) {
+  .public-profile-page .profile-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-profile-page .public-profile-artwork,
+  .public-profile-page .action-btn,
+  .public-profile-page .mutual-friend-chip {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ── Arena record rail (added 2026-09-04, PR #3077) ─────────────────────────
+   player_stats folded across every club: real figures or a hyphen. */
+
+.public-profile-page .public-profile-record {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0.9rem 0 0;
+  border: 1px solid var(--public-line, #26333d);
+  border-radius: 2px;
+  background: rgba(3, 6, 9, 0.82);
+}
+
+.public-profile-page .public-profile-record > div {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border-right: 1px solid rgba(38, 51, 61, 0.9);
+}
+
+.public-profile-page .public-profile-record > div:last-child {
+  border-right: 0;
+}
+
+.public-profile-page .public-profile-record dt {
+  color: #8fa2af;
+  font:
+    700 0.58rem/1 'Roboto Condensed',
+    'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.public-profile-page .public-profile-record dd {
+  margin: 0;
+  overflow: hidden;
+  color: #f4f8fb;
+  font:
+    800 1.05rem/1 'Rajdhani',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-theme='light'] .public-profile-page .public-profile-record {
+  border-color: #c9d4dc;
+  background: rgba(244, 247, 249, 0.9);
+}
+
+[data-theme='light'] .public-profile-page .public-profile-record dd {
+  color: #0b1218;
+}
+
+@media (max-width: 480px) {
+  .public-profile-page .public-profile-record {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .public-profile-page .public-profile-record > div:nth-child(2n) {
@@ -641,16 +573,6 @@
   }
 
   .public-profile-page .public-profile-record > div:nth-child(-n + 2) {
-    border-bottom: 1px solid rgba(47, 61, 73, 0.9);
-  }
-
-  .public-profile-page .public-profile-record dd {
-    font-size: 1.02rem;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .public-profile-page .action-btn {
-    transition: none;
+    border-bottom: 1px solid rgba(38, 51, 61, 0.9);
   }
 }

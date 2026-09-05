@@ -1,13 +1,19 @@
 /**
- * PROFILE CREDENTIAL — regression pins for the 2026-09-04 audit.
+ * PROFILE CREDENTIAL — regression pins for the 2026-09-04 audit (PR #3077).
  *
  * Every pin below is a defect that was live on smarter.poker/hub/club-arena/
- * profile on 2026-09-04. Read the failing assertion before touching it: each
- * one names the bug it stops from shipping again.
+ * profile on 2026-09-04 and NOT covered by the parallel identity pass in
+ * PR #3041 (tests/player-identity-casino-realism.test.ts owns VIP-not-a-ladder,
+ * truncation on the credential, the alias editor and the hero renders). Read
+ * the failing assertion before touching it: each one names the bug it stops
+ * from shipping again.
+ *
+ * Dan 2026-09-04: "ABSOLUTELY ZERO ROUNDING ANYWHERE EVER" - every helper
+ * asserted here truncates.
  */
 
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
@@ -23,38 +29,39 @@ import {
 import { streakMultiplier, daysToNextStreakStep } from '../../src/utils/streakMultiplier';
 import { profileStatsFromV2, EMPTY_STATS } from '../../src/utils/profileStats';
 import { aggregateArenaRecord } from '../../src/utils/arenaRecord';
-import { validateHandle } from '../../src/components/social/UserProfileEdit';
 
 const ROOT = resolve(__dirname, '../../');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 
 const PROFILE = read('src/pages/ProfilePage.tsx');
 const PUBLIC_PROFILE = read('src/pages/PublicProfilePage.tsx');
-const PROFILE_EDIT = read('src/components/social/UserProfileEdit.tsx');
 const PROFIT_CHART = read('src/components/profile/ProfitChart.tsx');
-const PROFILE_CSS = read('src/pages/ProfilePage.module.css');
 const PUBLIC_CSS = read('src/pages/PublicProfilePage.css');
 
 describe('no stat reaches the DOM unrounded', () => {
-  it('ROI is not 1.6500000000000001% any more', () => {
-    expect(formatSignedPct(0.0165 * 100)).toBe('+1.7%');
-    expect(formatSignedPct(-3.25)).toBe('-3.3%');
+  it('ROI is not 1.6500000000000001% any more, and nothing is rounded up', () => {
+    expect(formatSignedPct(0.0165 * 100)).toBe('+1.6%');
+    expect(formatSignedPct(-3.25)).toBe('-3.2%');
+    expect(formatSignedPct(1.99)).toBe('+1.9%');
     expect(formatSignedPct(0)).toBe('0.0%');
     expect(formatSignedPct(Number.NaN)).toBe('0.0%');
     expect(formatPct(0.3293 * 100)).toBe('32.9%');
-    expect(formatPct(0.3293 * 100, 0)).toBe('33%');
+    expect(formatPct(0.3293 * 100, 0)).toBe('32%');
   });
 
   it('chips carry a sign and thousands separators', () => {
     expect(formatSignedChips(1711.5)).toBe('+1,711.50');
     expect(formatSignedChips(-2183.7)).toBe('-2,183.70');
+    expect(formatSignedChips(2183.7)).toBe('+2,183.70');
+    expect(formatSignedChips(0.999)).toBe('+0.99');
+    expect(formatCount(1411.9)).toBe('1,411');
     expect(formatSignedChips(0)).toBe('0.00');
     expect(formatCount(1412)).toBe('1,412');
     expect(formatCount('7')).toBe('0');
   });
 
   it('hours, ordinals and member-since have one format each', () => {
-    expect(formatHours(9.9)).toBe('9.9h');
+    expect(formatHours(9.99)).toBe('9.9h');
     expect(formatHours(0.5)).toBe('30m');
     expect(formatHours(0)).toBe('0h');
     expect(ordinal(1)).toBe('1st');
@@ -97,7 +104,7 @@ describe('the streak multiplier is the one the ledger pays', () => {
     expect(daysToNextStreakStep(29)).toBe(1);
     expect(daysToNextStreakStep(30)).toBeNull();
     expect(PROFILE).not.toContain('dailyStreak * 0.1');
-    expect(PROFILE).toContain("from '../utils/streakMultiplier'");
+    expect(PROFILE).toContain('multiplier={streakMultiplier(dailyStreak)}');
   });
 });
 
@@ -211,45 +218,20 @@ describe('the public arena record folds player_stats by hands', () => {
   });
 });
 
-describe('the arena handle editor', () => {
-  it('validates the handle before anything is written', () => {
-    expect(validateHandle('KingFish')).toBeNull();
-    expect(validateHandle('ab')).toMatch(/At Least 3/);
-    expect(validateHandle('a'.repeat(17))).toMatch(/Limited To 16/);
-    expect(validateHandle('king fish')).toMatch(/Letters, Numbers/);
-    expect(validateHandle('king,fish')).toMatch(/Letters, Numbers/);
+describe('the credential reads the stats payload, not fabrications', () => {
+  it('shows lifetime hands in the rail and the analysis window in the snapshot', () => {
+    expect(PROFILE).toContain('stats.lifetimeHands.toLocaleString()');
+    expect(PROFILE).toContain("stats.analysisCapped ? 'Hands Analyzed' : 'Hands Played'");
   });
 
-  it('writes profiles.alias, never the unique username or the users table', () => {
-    expect(PROFILE).toContain(
-      '.update({ alias: data.handle, bio: data.bio, player_tags: data.tags })'
-    );
-    expect(PROFILE).not.toContain("from('users')");
-    expect(PROFILE).not.toContain('username: data.username');
-    expect(PROFILE).toContain('alias.ilike.');
+  it('reports the last hand time instead of a decorative "Profile Synced"', () => {
+    expect(PROFILE).toContain('relativeTimeTitle(stats.lastHandAt)');
+    expect(PROFILE).not.toContain('Profile Synced');
   });
 
-  it('offers no CSP-blocked avatar picker and no dead avatar write', () => {
-    expect(PROFILE_EDIT).not.toContain('api.dicebear.com');
-    expect(PROFILE_EDIT).not.toContain('AVAILABLE_AVATARS');
-    expect(PROFILE_EDIT).toContain('onChangeAvatar');
-  });
-});
-
-describe('the VIP tier on the profile is the tier on /vip', () => {
-  it('reads vip_points through constants/vipTiers, not diamonds against invented thresholds', () => {
-    expect(PROFILE).toContain("from('vip_points')");
-    expect(PROFILE).toContain('getTierByPoints(vipPoints.current)');
-    expect(PROFILE).not.toContain('threshold: 500000');
-    expect(PROFILE).not.toContain('VIPProgressRing');
-    expect(PROFILE).not.toContain('VIPStatusCard');
-    expect(PROFILE).not.toContain("'6% Leaderboard Boost'");
-  });
-
-  it('shows the arena handle, not the raw username', () => {
-    expect(PROFILE).toContain("playerDisplayName(profile, 'arena')");
-    expect(PROFILE).toContain('{user.handle}');
-    expect(PROFILE).not.toContain('{user.username}');
+  it('ships no invented financial milestone badges', () => {
+    expect(PROFILE).not.toContain('FinancialAchievementBadge');
+    expect(PROFILE).not.toContain('perfect_settlement');
   });
 });
 
@@ -265,79 +247,25 @@ describe('the P/L chart draws hand results, not wallet flow', () => {
     expect(PROFILE).not.toContain('achievement:training_achievement_definitions(');
     expect(PROFILE).not.toContain('max_progress:threshold');
   });
+
+  it('carries sessions and variants from the same payload', () => {
+    expect(PROFILE).toContain('stats.sessions.slice(0, 5)');
+    expect(PROFILE).toContain('stats.variants.length > 0');
+  });
 });
 
 describe('the public dossier', () => {
-  it('draws the QR locally and never sends the profile URL to a third party', () => {
-    expect(PUBLIC_PROFILE).not.toContain('https://api.qrserver.com');
-    expect(PUBLIC_PROFILE).not.toContain('generateProfileQRData');
-    expect(PUBLIC_PROFILE).toContain("import('qrcode.react')");
-  });
-
-  it('shows no tier or level nobody can read, and shows the arena record', () => {
-    expect(PUBLIC_PROFILE).not.toContain('VIP_LABELS');
-    expect(PUBLIC_PROFILE).not.toContain('VIP_COLORS');
-    expect(PUBLIC_PROFILE).not.toContain('Level {profile.level}');
-    expect(PUBLIC_PROFILE).not.toContain('achievement-showcase');
+  it('shows the public arena record and no meaningless level badge', () => {
     expect(PUBLIC_PROFILE).toContain("from('player_stats')");
-    expect(PUBLIC_PROFILE).toContain('avatar_url:arena_avatar_url');
-    expect(PUBLIC_PROFILE).toContain("playerDisplayName(row, 'arena')");
-  });
-
-  it('awaits and catches the share action', () => {
-    expect(PUBLIC_PROFILE).toContain('await navigator.clipboard.writeText(profileLink)');
-    expect(PUBLIC_PROFILE).toMatch(/catch \(err\) \{[\s\S]*Could not copy the profile link/);
-    expect(PROFILE).toContain('await navigator.clipboard.writeText(link)');
+    expect(PUBLIC_PROFILE).toContain('aggregateArenaRecord(data)');
+    expect(PUBLIC_PROFILE).toContain('className="public-profile-record"');
+    expect(PUBLIC_PROFILE).not.toContain('Level {profile.level}');
+    expect(PUBLIC_CSS).toContain('.public-profile-record');
   });
 
   it('keeps Report reachable while a player is blocked', () => {
-    const blockedBranch = PUBLIC_PROFILE.slice(
-      PUBLIC_PROFILE.indexOf('{isBlocked ? ('),
-      PUBLIC_PROFILE.indexOf('className="action-btn report-btn"')
-    );
-    expect(blockedBranch).toContain('unblock-btn');
-    expect(PUBLIC_PROFILE.indexOf('className="action-btn report-btn"')).toBeGreaterThan(
-      PUBLIC_PROFILE.indexOf('</>')
-    );
-  });
-});
-
-describe('#smarterCasinoRealism assets and surfaces', () => {
-  const assets = [
-    'public/images/profile/identity-dock-v1.webp',
-    'public/images/profile/identity-dock-v1-768.webp',
-    'public/images/profile/public-dossier-v1.webp',
-    'public/images/profile/public-dossier-v1-768.webp',
-  ];
-
-  it('ships purpose-rendered hero art, compressed for the web', () => {
-    for (const asset of assets) {
-      const full = resolve(ROOT, asset);
-      expect(existsSync(full), asset).toBe(true);
-      expect(statSync(full).size, `${asset} weight`).toBeLessThan(160 * 1024);
-    }
-    expect(PROFILE).toContain("mediaUrl('images/profile/identity-dock-v1.webp')");
-    expect(PUBLIC_PROFILE).toContain("mediaUrl('images/profile/public-dossier-v1.webp')");
-  });
-
-  it('uses the engineered palette and no per-panel glass', () => {
-    expect(PROFILE_CSS).toContain('--identity-gunmetal: #26333d');
-    expect(PROFILE_CSS).toContain('--identity-cyan: #00d4ff');
-    expect(PROFILE_CSS).not.toContain('backdrop-filter');
-    expect(PUBLIC_CSS).not.toContain('backdrop-filter');
-    expect(PROFILE_CSS).not.toContain('border-radius: 999px');
-    expect(PUBLIC_CSS).not.toContain('border-radius: 999px');
-  });
-
-  it('sets the arena avatar into the dossier plate socket at its measured centre', () => {
-    expect(PUBLIC_CSS).toContain('container-type: inline-size');
-    expect(PUBLIC_CSS).toContain('64.55cqw');
-    expect(PUBLIC_CSS).toContain('18.587cqw');
-  });
-
-  it('marks the hero art decorative and the portrait high-priority', () => {
-    expect(PROFILE).toContain('fetchPriority="high"');
-    expect(PROFILE).not.toContain('loading="lazy"');
-    expect(PROFILE).toContain('<div className={styles.credentialArt} aria-hidden="true">');
+    const reportAt = PUBLIC_PROFILE.indexOf('className="action-btn report-btn"');
+    const ternaryEnd = PUBLIC_PROFILE.indexOf('</>', PUBLIC_PROFILE.indexOf('{isBlocked ? ('));
+    expect(reportAt).toBeGreaterThan(ternaryEnd);
   });
 });

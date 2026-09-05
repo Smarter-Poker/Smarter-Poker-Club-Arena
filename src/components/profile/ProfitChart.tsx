@@ -58,7 +58,7 @@ export default function ProfitChart({ series }: ProfitChartProps) {
             : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
           hands: Number(p.hands) || 0,
           profit,
-          cumulative: Math.round(cumulative * 100) / 100,
+          cumulative: Math.trunc(cumulative * 100) / 100,
         };
       });
   }, [series]);

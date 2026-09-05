@@ -104,8 +104,6 @@ const ALLOWED_ORPHANS: Record<string, string> = {
   hands: 'legacy redirect to /hand-history',
   'notification-center':
     'retired 2026-08-25 (Dan: "we need ONE DISPLAY") - redirects to /notifications',
-  'messages/:conversationId':
-    'reached from notification deep links - NotificationService builds `/messages/${conversationId}` from a row, which this scanner cannot see. Until 2026-09-04 a code comment in PublicProfilePage mentioning the path was what "linked" it',
   'messages/new': 'legacy redirect to the World Hub messenger, carrying the compose target',
   'messages/clubs': 'legacy redirect to the World Hub messenger',
   'messages/clubs/:conversationId':

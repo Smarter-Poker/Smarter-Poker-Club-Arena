@@ -1,0 +1,9 @@
+# Secret files — never commit these to the repo.
+# These must exist on the monitoring host but must NOT be in source control.
+# A bare `git add -A` on the host was one command away from leaking resend_key
+# into git history (2026-09-04 incident report).
+resend_key
+cron_secret
+.env
+# Timestamped backup files created by deploy.sh re-runs
+*.bak.*

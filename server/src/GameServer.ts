@@ -2711,6 +2711,21 @@ export class GameServer {
           if (!(await claimTable(row.table_id))) continue;
 
           if (startedThisSweep > 0) await this.sleep(ENGINE_START_STAGGER_MS);
+
+          // RE-CHECKED AFTER THE AWAITS (2026-09-05). The ClusterController
+          // wakes a seated Main 1 through ensureCashTableEngine on the same
+          // 5 s cadence this sweep runs on, and on the same trigger (a seat
+          // appeared). Between the `has` check above and this line are a
+          // lease round trip and the stagger sleep; a wake that lands inside
+          // that window put a second engine on the same table, and the `set`
+          // below overwrote the first, which kept dealing unreferenced. The
+          // on-demand door re-checks after its claim; so does this one now.
+          if (
+            this.tableEngines.has(row.table_id) ||
+            this.tableEngineStartPromises.has(row.table_id)
+          ) {
+            continue;
+          }
           startedThisSweep++;
 
           console.log(
@@ -4995,8 +5010,25 @@ export class GameServer {
       .finally(() => {
         this.tableEngineStartPromises.delete(tableId);
       });
-    this.tableEngineStartPromises.set(tableId, startPromise);
-    return startPromise;
+    /* ═══ READY IS NOT DEALING (2026-09-05) ═══
+       `start()` resolves when the dealing loop begins, i.e. once the table has
+       its AutoStart figure of players. Returning THAT here meant every
+       on-demand caller - GET /state, GET /actions, the WS ensureTable, the
+       cluster wake (its BUG 4 of 2026-09-05: one lone-seated Main 1 parked
+       the whole controller) - waited for a second player before it could
+       serve the first. What they need is `engine.ready`: row loaded,
+       sub-engines configured, waiting snapshot publishable. The start chain
+       above keeps running for its failure handling; only the promise the
+       caller gets has changed. `ready` settles false when start fails before
+       `waiting`, and true means the engine is in the map and publishing. */
+    void startPromise;
+    const readyPromise: Promise<boolean> = engine.ready.finally(() => {
+      if (this.tableEngineStartPromises.get(tableId) === readyPromise) {
+        this.tableEngineStartPromises.delete(tableId);
+      }
+    });
+    this.tableEngineStartPromises.set(tableId, readyPromise);
+    return readyPromise;
   }
 
   /**

@@ -88,6 +88,45 @@ export const formatTableChips = (n: number | null | undefined): string => {
 };
 
 /**
+ * THE "+N" THAT RIDES WITH MONEY ARRIVING AT A SEAT (pot push, bounty,
+ * insurance). Dan 2026-08-29, binding: "THERE CAN NEVER BE 'ROUNDING' IT MUST
+ * ALWAYS BE DOWN TO THE CENT."
+ *
+ * Until 2026-09-04 this label was built inline as `Math.round(amount)` for
+ * anything >= 1, so a 7.50 bounty floated up as "+8" while the seat's own
+ * stack delta beside it said "+7.50" — two numbers for one payment. 401 of
+ * the 7,508 bounties paid since 08-28 (5.3%) carried cents and every one of
+ * them was shown rounded. Cash pots at penny stakes had the same problem.
+ *
+ * Rule: snap to cents FIRST (that kills engine float noise such as
+ * 12.500000001, which is sub-cent and not money), then whole chips read as
+ * whole chips and anything else keeps exactly two places. Same contract as
+ * SeatSlot's stack delta, so the two labels for one payment always agree.
+ *
+ * @example formatChipAward(1234)    -> "+1,234"
+ * @example formatChipAward(7.5)     -> "+7.50"
+ * @example formatChipAward(0.25)    -> "+0.25"
+ * @example formatChipAward(12.5000000001) -> "+12.50"
+ * @example formatChipAward(0)       -> "+0"
+ */
+export const formatChipAward = (amount: number | null | undefined): string => {
+  const v = Number(amount ?? 0);
+  if (!Number.isFinite(v)) return '+0';
+  // + 1e-7 before rounding: a binary double holds 17.955 as 17.95499999...,
+  // so a bare Math.round(x * 100) lands a half-cent DOWN. That is the exact
+  // defect the 2026-08-29 "payouts are exact to the cent" fix removed from
+  // the payout math; the label must not reintroduce it. The nudge is seven
+  // orders of magnitude below a cent, so it can only ever decide a tie.
+  const cents = Math.round(Math.abs(v) * 100 + 1e-7);
+  const sign = v < 0 ? '-' : '+';
+  if (cents % 100 === 0) return `${sign}${(cents / 100).toLocaleString('en-US')}`;
+  return `${sign}${(cents / 100).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+/**
  * Format a timestamp as a relative "time ago" string.
  * @example timeAgo("2026-03-17T10:00:00Z") → "2h ago"
  */
@@ -152,25 +191,45 @@ export const pct = (n: number | null | undefined): string =>
    Every stat the profile renders arrives as a raw ratio or float from
    `ca_player_stats_overview_v2`. Multiplying a ratio by 100 in JavaScript
    yields 1.6500000000000001, and that exact string was on the live profile
-   hero next to "ROI". Nothing below lets a float reach the DOM unrounded. */
+   hero next to "ROI". Nothing below lets a float reach the DOM unrounded.
+
+   STANDING DIRECTIVE (Dan, 2026-09-04): "ABSOLUTELY ZERO ROUNDING ANYWHERE
+   EVER". Every helper here TRUNCATES toward zero; none may print a figure the
+   ledger never produced. */
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-/** "32.9%" from a value that is ALREADY a percentage (x100). */
-export const formatPct = (value: unknown, digits = 1): string =>
-  finite(value) ? `${value.toFixed(digits)}%` : '0%';
+/** Truncate toward zero to `digits` places, then print with exactly `digits`. */
+/* Binary floats: 2183.7 * 100 is 218369.99999999997 and a bare trunc prints
+   2,183.69 for a ledger figure of 2,183.70. Nudge one part in a billion toward
+   the sign before truncating; exact decimals stay exact. */
+const nudge = (v: number): number => v + Math.sign(v) * 1e-9;
 
-/** "+1.7%" / "-3.2%" / "0.0%" - explicit sign because the reader is a P/L. */
+const truncFixed = (value: number, digits: number): string => {
+  const factor = 10 ** digits;
+  return (Math.trunc(nudge(value) * factor) / factor).toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  });
+};
+
+/** "32.9%" from a value that is ALREADY a percentage (x100). Truncated. */
+export const formatPct = (value: unknown, digits = 1): string =>
+  finite(value) ? `${truncFixed(value, digits)}%` : '0%';
+
+/** "+1.6%" / "-3.2%" / "0.0%" - explicit sign because the reader is a P/L. */
 export const formatSignedPct = (value: unknown, digits = 1): string => {
   if (!finite(value)) return '0.0%';
-  const fixed = value.toFixed(digits);
+  const fixed = truncFixed(value, digits);
   return value > 0 ? `+${fixed}%` : `${fixed}%`;
 };
 
 /** "+1,711.50" / "-2,183.70" / "0.00" - chips, signed, thousands separators. */
 export const formatSignedChips = (value: unknown, digits = 2): string => {
   if (!finite(value)) return '0.00';
-  const fixed = Math.abs(value).toLocaleString('en-US', {
+  const factor = 10 ** digits;
+  const fixed = (Math.trunc(nudge(Math.abs(value)) * factor) / factor).toLocaleString('en-US', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
@@ -179,28 +238,29 @@ export const formatSignedChips = (value: unknown, digits = 2): string => {
   return fixed;
 };
 
-/** "1,711.50" - chips, unsigned. */
-export const formatChips = (value: unknown, digits = 2): string =>
-  finite(value)
-    ? value.toLocaleString('en-US', {
-        minimumFractionDigits: digits,
-        maximumFractionDigits: digits,
-      })
-    : '0.00';
+/** "1,711.50" - chips, unsigned, truncated. */
+export const formatChips = (value: unknown, digits = 2): string => {
+  if (!finite(value)) return '0.00';
+  const factor = 10 ** digits;
+  return (Math.trunc(nudge(value) * factor) / factor).toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+};
 
-/** "1,412" - whole counts. */
+/** "1,412" - whole counts (truncated, never rounded up). */
 export const formatCount = (value: unknown): string =>
-  finite(value) ? Math.round(value).toLocaleString('en-US') : '0';
+  finite(value) ? Math.trunc(value).toLocaleString('en-US') : '0';
 
-/** "-305.6" - BB/100, aggression factor and other ratios at fixed precision. */
+/** "-305.6" - BB/100, aggression factor and other ratios, truncated. */
 export const formatRatio = (value: unknown, digits = 1): string =>
-  finite(value) ? value.toFixed(digits) : (0).toFixed(digits);
+  finite(value) ? truncFixed(value, digits) : truncFixed(0, digits);
 
-/** "9.9h" / "48m" - hours played, compact. */
+/** "9.9h" / "48m" - hours played, compact, truncated. */
 export const formatHours = (hours: unknown): string => {
   if (!finite(hours) || hours <= 0) return '0h';
-  if (hours < 1) return `${Math.round(hours * 60)}m`;
-  return `${hours.toFixed(1)}h`;
+  if (hours < 1) return `${Math.trunc(hours * 60)}m`;
+  return `${truncFixed(hours, 1)}h`;
 };
 
 /**
@@ -236,7 +296,7 @@ export const formatMemberSince = (iso: string | null | undefined): string => {
 /** 1 -> "1st", 22 -> "22nd", 113 -> "113th"; "-" when there is no finish. */
 export const ordinal = (n: unknown): string => {
   if (!finite(n) || n <= 0) return '-';
-  const v = Math.round(n);
+  const v = Math.trunc(n);
   const mod100 = v % 100;
   if (mod100 >= 11 && mod100 <= 13) return `${v}th`;
   const suffix = ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[v % 10] ?? 'th';

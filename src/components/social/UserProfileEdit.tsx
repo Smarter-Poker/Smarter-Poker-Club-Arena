@@ -1,35 +1,32 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  USER PROFILE EDIT — Arena Identity
+ *  USER PROFILE EDIT — Customization
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * - Arena handle (profiles.alias - the name the tables call you)
- * - Bio / about me
- * - Player tags (e.g. "Aggressive", "Grinder"), up to three
+ * Deep profile customization.
+ * - Update Poker Alias (the arena handle: profiles.alias + profiles.username)
+ * - Edit Bio / About Me
+ * - Manage Player Tags (e.g., "Aggressive", "Grinder")
  *
- * 2026-09-04: the avatar picker that lived here is gone. It offered six
- * dicebear.com URLs that the production CSP (img-src) does not allow, so every
- * choice rendered as a broken image, and the page that opened this dialog
- * never wrote `avatarUrl` back anyway - a control that showed nothing and
- * saved nothing. Avatars are library art on `arena_avatar_url`, chosen in the
- * World Hub avatar studio the profile's "Change Avatar" button opens.
- *
- * The name field used to write `profiles.username`. That column carries a
- * case-insensitive unique index, so a taken name failed with a generic "could
- * not be saved", and the tables do not even read it first: the arena resolver
- * (`playerDisplayName`) reads `alias` before `username`. The field is the
- * alias now, and the caller checks availability before it writes.
+ * 2026-09-04: the dicebear avatar picker is gone. It let a player choose one
+ * of six external cartoon avatars, showed the choice in the dialog, and then
+ * nothing persisted it - ProfilePage never wrote avatarUrl (and must not: the
+ * arena avatar is library art written through AvatarService, the social photo
+ * belongs to the World Hub). A control that looks like it works and does
+ * nothing is a lie, so the portrait here is read-only and the caller owns the
+ * real avatar flow (ProfilePage opens AvatarGallery).
  */
 
 import React, { useState, useEffect, useId, useRef } from 'react';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import './UserProfileEdit.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { ALIAS_MAX, ALIAS_MIN, BIO_MAX, aliasProblem } from '../../utils/aliasRules';
 
 export interface UserProfileData {
   id: string;
-  /** Arena handle: profiles.alias. What the felt calls this player. */
-  handle: string;
+  username: string;
+  displayName: string;
   avatarUrl: string;
   bio: string;
   tags: string[];
@@ -40,20 +37,8 @@ export interface UserProfileEditProps {
   onClose: () => void;
   initialData: UserProfileData;
   onSave: (data: UserProfileData) => void | Promise<void>;
-  /** Opens the avatar studio; rendered as a real control beside the portrait. */
+  /** Optional: lets the caller open the real avatar flow from inside the dialog. */
   onChangeAvatar?: () => void;
-}
-
-export const HANDLE_MIN = 3;
-export const HANDLE_MAX = 16;
-export const HANDLE_PATTERN = /^[A-Za-z0-9_.-]+$/;
-
-export function validateHandle(raw: string): string | null {
-  const value = raw.trim();
-  if (value.length < HANDLE_MIN) return `Handle Needs At Least ${HANDLE_MIN} Characters`;
-  if (value.length > HANDLE_MAX) return `Handle Is Limited To ${HANDLE_MAX} Characters`;
-  if (!HANDLE_PATTERN.test(value)) return 'Letters, Numbers, Dot, Dash And Underscore Only';
-  return null;
 }
 
 const AVAILABLE_TAGS = [
@@ -78,6 +63,7 @@ export function UserProfileEdit({
   const [mounted, setMounted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [aliasTouched, setAliasTouched] = useState(false);
   const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialDataRef = useRef(initialData);
@@ -85,6 +71,7 @@ export function UserProfileEdit({
   const savingRef = useRef(saving);
   const titleId = useId();
   const aliasId = useId();
+  const aliasHintId = useId();
   const bioId = useId();
   initialDataRef.current = initialData;
   onCloseRef.current = onClose;
@@ -94,6 +81,7 @@ export function UserProfileEdit({
       setFormData(initialDataRef.current);
       setSaving(false);
       setSaveError('');
+      setAliasTouched(false);
       if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
       mountTimerRef.current = setTimeout(() => {
         mountTimerRef.current = null;
@@ -148,12 +136,13 @@ export function UserProfileEdit({
 
   if (!isOpen) return null;
 
+  const aliasError = aliasProblem(formData.username || '');
+  const showAliasError = aliasTouched && aliasError;
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const handle = sanitizeInput(formData.handle).trim();
-    const handleProblem = validateHandle(handle);
-    if (handleProblem) {
-      setSaveError(handleProblem);
+    if (aliasError) {
+      setAliasTouched(true);
       return;
     }
     setSaving(true);
@@ -161,7 +150,7 @@ export function UserProfileEdit({
     try {
       await onSave({
         ...formData,
-        handle,
+        username: sanitizeInput(formData.username).trim(),
         bio: sanitizeInput(formData.bio).trim(),
         tags: formData.tags,
       });
@@ -199,7 +188,10 @@ export function UserProfileEdit({
         }}
       >
         <div className="profile-header">
-          <h2 id={titleId}>Edit Profile</h2>
+          <div>
+            <span className="profile-eyebrow">Identity Record // Edit</span>
+            <h2 id={titleId}>Edit Profile</h2>
+          </div>
           <button
             type="button"
             className="close-btn"
@@ -217,66 +209,69 @@ export function UserProfileEdit({
               <img
                 decoding="async"
                 src={formData.avatarUrl || generateDefaultAvatar()}
-                alt="Current Arena Avatar"
+                alt=""
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = generateDefaultAvatar();
                 }}
               />
-              {onChangeAvatar && (
-                <button
-                  type="button"
-                  className="edit-avatar-btn"
-                  onClick={onChangeAvatar}
-                  aria-label="Open The Avatar Studio"
-                >
-                  Studio
-                </button>
-              )}
             </div>
             <p className="avatar-note">
-              Arena Avatars Are Library Art, Chosen In The Avatar Studio. Your Social Photo Is Never
-              Shown At The Tables.
+              {onChangeAvatar ? (
+                <button type="button" className="avatar-link" onClick={onChangeAvatar}>
+                  Change Table Avatar
+                </button>
+              ) : (
+                'Table Avatar Is Set From The Profile Page'
+              )}
             </p>
           </div>
 
-          <form onSubmit={handleSave} className="profile-form">
+          <form onSubmit={handleSave} className="profile-form" noValidate>
             <div className="form-group">
-              {/* Validation is validateHandle() on submit, not native pattern/
-                  minLength: the native path blocks the submit silently and
-                  never trims, so " RiverKing " could not be saved at all. */}
-              <label htmlFor={aliasId}>Arena Handle</label>
+              <label htmlFor={aliasId}>Poker Alias</label>
               <input
                 id={aliasId}
-                value={formData.handle || ''}
-                onChange={(e) => {
-                  setSaveError('');
-                  setFormData({ ...formData, handle: e.target.value });
-                }}
-                maxLength={HANDLE_MAX}
+                value={formData.username || ''}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                onBlur={() => setAliasTouched(true)}
+                maxLength={ALIAS_MAX}
+                required
                 autoFocus
                 autoComplete="nickname"
                 spellCheck={false}
-                aria-describedby={`${aliasId}-hint`}
+                aria-describedby={aliasHintId}
+                aria-invalid={showAliasError ? true : undefined}
               />
-              <small id={`${aliasId}-hint`} className="field-hint">
-                The Name Every Table Shows. {HANDLE_MIN}-{HANDLE_MAX} Characters, No Spaces.
-              </small>
+              <span
+                id={aliasHintId}
+                className={`field-hint${showAliasError ? ' field-hint--error' : ''}`}
+                role={showAliasError ? 'alert' : undefined}
+              >
+                {showAliasError
+                  ? aliasError
+                  : `${ALIAS_MIN}-${ALIAS_MAX} Characters. Letters, Numbers, Underscores. Shown At Every Table.`}
+              </span>
             </div>
 
             <div className="form-group">
-              <label htmlFor={bioId}>Bio (Max 100 Chars)</label>
+              <label htmlFor={bioId}>Bio</label>
               <textarea
                 id={bioId}
                 value={formData.bio}
                 onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                maxLength={100}
+                maxLength={BIO_MAX}
                 rows={3}
               />
+              <span className="field-hint field-hint--count" aria-live="polite">
+                {formData.bio.length} / {BIO_MAX}
+              </span>
             </div>
 
             <div className="form-group">
-              <label>Player Tags (Select Up To 3)</label>
-              <div className="tags-grid">
+              <span className="form-group-label" id={`${bioId}-tags`}>
+                Player Tags (Select Up To 3)
+              </span>
+              <div className="tags-grid" role="group" aria-labelledby={`${bioId}-tags`}>
                 {AVAILABLE_TAGS.map((tag) => (
                   <button
                     key={tag}

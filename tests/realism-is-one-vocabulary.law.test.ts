@@ -133,4 +133,40 @@ describe('the realism layer obeys the laws that outrank it', () => {
   it('never repaints the body, which Dan set to solid black', () => {
     expect(BLOCK).not.toMatch(/^\s*body\s*\{/m);
   });
+
+  it('contains NO universal selector, because one of them broke ten approved looks', () => {
+    /*
+     * The most expensive thing learned building this layer, so it is a pin
+     * rather than a paragraph.
+     *
+     * It shipped with `* { scrollbar-color }`, four `*::-webkit-scrollbar*`
+     * rules and a `:focus-visible` outline override - "chrome no module owns,
+     * so styling it globally is free". CSS Beat E2E disagreed: "all ten
+     * coordinated looks retain their mobile, tablet, light, dark, and
+     * final-table visuals" went red, and that spec compares THIRTY committed
+     * screenshots at maxDiffPixelRatio 0.02. ThemeSettingsModal.css carries 32
+     * overflow declarations, so a universal scrollbar width changed layout
+     * geometry inside every one of its scroll containers.
+     *
+     * Authorship was not a guess: main was green and the FIRST commit of this
+     * layer was red, carrying only this sheet, one module header and a CI
+     * script. By elimination the studio uses none of .card/.btn/.badge/
+     * .skeleton - its markup is BEM (`theme-asset__tier-badge`,
+     * `studio-game-preview__*`) - so the universal selectors were the only
+     * rules here that could reach it.
+     *
+     * A local A/B could NOT reproduce it, which is worth knowing too: macOS
+     * draws overlay scrollbars that take no layout space, so the spec passes
+     * both ways on a Mac and only Linux CI shows the shift. Reasoning about
+     * blast radius is not a substitute for the pixel baseline.
+     *
+     * Realism is OPT-IN. A page asks for it by reading --realism-*.
+     */
+    const universal = BLOCK.split('\n').filter((line) => /^\s*\*(::?[a-z-]+)*\s*[,{]/.test(line));
+    expect(
+      universal,
+      `universal selector(s) in the realism layer: ${universal.join(' | ')}`
+    ).toEqual([]);
+    expect(BLOCK).not.toMatch(/^\s*:focus-visible\s*\{/m);
+  });
 });

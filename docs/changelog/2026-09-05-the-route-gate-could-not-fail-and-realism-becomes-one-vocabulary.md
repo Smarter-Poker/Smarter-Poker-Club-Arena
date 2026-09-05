@@ -179,6 +179,46 @@ side by side. Now sourced from `--realism-*` with the previous literals as
 fallbacks, and its summary cards gained the cavity and lift so they sit IN the
 page rather than on it.
 
+## 6. The realism layer broke ten approved looks, and CI caught what reasoning had not
+
+Written down because it is the most expensive thing learned here.
+
+The layer shipped with `* { scrollbar-color }`, four `*::-webkit-scrollbar*`
+rules and a `:focus-visible` outline override. The reasoning: scrollbars and
+the focus ring are chrome no module owns, so styling them globally is free.
+
+**CSS Beat E2E, a required check, went red.** The failing spec is
+`customization-studios.spec.ts` > "all ten coordinated looks retain their
+mobile, tablet, light, dark, and final-table visuals", which compares **thirty
+committed screenshots** of the approved Table Studio looks at
+`maxDiffPixelRatio: 0.02`. `ThemeSettingsModal.css` carries 32 overflow
+declarations, so a universal `::-webkit-scrollbar { width: 10px }` changed
+scrollbar GEOMETRY inside every one of its scroll containers.
+
+**Authorship was measured, not assumed.** `main` was green on every run; the
+**first** commit of this layer was red, and it carried nothing but this
+stylesheet, one module header and a CI script. By elimination the studio uses
+none of `.card`/`.btn`/`.badge`/`.skeleton` - its markup is BEM
+(`theme-asset__tier-badge`, `studio-game-preview__*`) - so the universal
+selectors were the only rules of ours that could reach those baselines.
+
+**A local A/B could not reproduce it, and that matters.** Running the spec on
+this Mac passed BOTH with and without the rules (16.4s and 14.6s, exit 0),
+because macOS draws overlay scrollbars that occupy no layout space; only Linux
+CI reserves real width. Reasoning about blast radius - and even a local
+reproduction attempt - is not a substitute for the pixel baseline.
+
+**Fixed** by deleting all six rules. The tokens and the `.card`/`.btn`/
+`.badge`/`.skeleton` material stay, because those are opt-in by class.
+`tests/realism-is-one-vocabulary.law.test.ts` gained a pin that fails if any
+universal selector or `:focus-visible` override re-enters the layer, verified
+in both directions (red with one planted, green without).
+
+**The rule this leaves behind:** realism is OPT-IN. A page asks for it by
+reading `--realism-*`. It is never imposed from `*` in the one globally loaded
+stylesheet, which reaches every surface in the app - including approved artwork
+with pixel baselines.
+
 ## Verification
 
 - `npx tsc --noEmit`: exit 0.

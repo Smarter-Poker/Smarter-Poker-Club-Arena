@@ -1455,38 +1455,34 @@ input:checked + .toggle-slider.small::after {
   }
 }
 
-/* ── Focus: the keyboard ring is energy, and it outranks every border ────── */
+/* ── NO UNIVERSAL SELECTORS HERE, AND THAT IS THE LESSON ─────────────────── */
 
-:focus-visible {
-  outline-color: var(--realism-cyan);
-}
+/* This layer briefly carried `* { scrollbar-color }`, four
+   `*::-webkit-scrollbar*` rules and a `:focus-visible { outline-color }`
+   override, on the reasoning that scrollbars and the focus ring are chrome no
+   module owns, so styling them globally was free. It was not free, and CI
+   caught it where reasoning had not:
 
-/* ── The chrome the OS draws: scrollbars are part of the cabinet ─────────── */
+     CSS Beat E2E > "all ten coordinated looks retain their mobile, tablet,
+     light, dark, and final-table visuals"   ->   FAILED
 
-* {
-  scrollbar-color: var(--realism-gunmetal) transparent;
-}
+   That spec compares THIRTY COMMITTED SCREENSHOTS of the approved Table Studio
+   looks at `maxDiffPixelRatio: 0.02`. ThemeSettingsModal.css carries 32
+   overflow declarations and its own scrollbar styling, so a universal
+   `::-webkit-scrollbar { width: 10px }` changed scrollbar GEOMETRY inside every
+   one of its scroll containers - shifting layout, and the pixels, past that 2%
+   tolerance in ten approved looks at once.
 
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
+   The measurement that settles authorship: main was green, and the very FIRST
+   commit of this layer was red, carrying nothing but this sheet, one module
+   header and a CI script.
 
-*::-webkit-scrollbar-track {
-  background: rgba(5, 7, 10, 0.6);
-}
-
-*::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: var(--realism-gunmetal);
-  background-clip: content-box;
-}
-
-*::-webkit-scrollbar-thumb:active {
-  background: var(--realism-gunmetal-lit);
-  background-clip: content-box;
-}
+   THE RULE THIS LEAVES BEHIND. A universal selector in the one globally loaded
+   stylesheet reaches every surface in the app - including approved artwork with
+   pixel baselines, and including surfaces nobody thought to check. Realism is
+   OPT-IN: a page asks for it by reading --realism-*. It is never imposed from
+   `*`. If a later pass wants the scrollbars in gunmetal, it scopes them to a
+   container that owns its own look, and re-baselines nothing. */
 
 /* ── Reduced motion: the movement stops, the object does not flatten ─────── */
 

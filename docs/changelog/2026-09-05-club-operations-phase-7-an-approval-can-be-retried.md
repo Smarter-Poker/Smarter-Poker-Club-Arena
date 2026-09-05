@@ -221,8 +221,8 @@ after    ca_rake_snapshot   200 in  2,128ms / 2,577ms  (month, the page default)
 and the panel renders: 5 daily series points, 34 agent rows, 351,310.13 of
 direct rake and 183,266.92 of commission where it showed dashes.
 
-**The index ships separately, in `20260905042500`, and it is the only part
-that waits for the `:55` freeze.** `rake_attributions` takes a row per player
+**The index shipped separately, in `20260905042500`, and it was the only part
+that waited for the `:55` freeze - applied at 03:55:06 UTC, 74 MB.** `rake_attributions` takes a row per player
 per raked hand, so a plain `CREATE INDEX` on 1,131,048 rows / 456 MB blocks
 the engine's writers for the length of its scan, and `CREATE INDEX
 CONCURRENTLY` cannot run inside the single transaction a migration must be.
@@ -481,6 +481,25 @@ database. Nothing was wrong with the code. Sixty seconds later everything was
 neither is the 500 beside it - which is the same trap as measuring a cold path
 warm, in the opposite direction.
 
+### What it all comes to, measured from the browser at the end
+
+```
+                          before                    after
+ca_rake_snapshot   month  500 after ~8,200ms        200 in 1,157ms / 591ms
+                   year   500 after ~8,200ms        200 in   983ms
+                  quarter 500 after ~8,200ms        200 in   900ms
+fn_ca_rake_by_agent       29,700ms                        ~500ms
+fn_club_bomb_pot_report   500 after ~8,200ms        200 in 1,404ms (30d)
+                                                    200 in   885ms (365d)
+```
+
+Four things had to be true at once for that, and each was measured on its own:
+the breakdown had to stop re-deriving a share per raked hand; the bomb pot
+report had to stop reading twenty thousand wide rows; BOTH live edges had to be
+bounded by the days that are actually live rather than by the window; and the
+index the first of those wanted had to wait for a freeze it did not need to
+block on.
+
 ### Verified in a browser, on production, signed in as the club owner
 
 Both of the reads this phase was handed as broken now render:
@@ -514,7 +533,7 @@ Both of the reads this phase was handed as broken now render:
 - Migrations `20260905040100`, `20260905041500`, `20260905042100`,
   `20260905043000`, `20260905051000`, `20260905052000` and `20260905052500`,
   one transaction each, applied and recorded. `20260905042500` - the index
-  alone - is queued for the `:55` freeze. `20260905042500` - the index alone -
+  alone - was applied inside the 03:55 UTC maintenance freeze and recorded. `20260905042500` - the index alone -
   is queued for the `:55` freeze, because it is the only statement here that
   takes a lock on a table the engine writes on every raked hand.
 - `ca_rake_snapshot` read live through PostgREST as the club owner after the

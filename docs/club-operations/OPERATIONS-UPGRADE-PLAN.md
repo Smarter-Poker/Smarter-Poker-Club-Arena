@@ -649,12 +649,13 @@ where it was 500 after 8,200ms. The panel renders 5 daily series points, 34
 agent rows, 351,310.13 of direct rake and 183,266.92 of commission.
 
 The index is a second migration, `20260905042500_and_an_index_for_the_range_it_reads.sql`,
-QUEUED FOR THE NEXT `:55` FREEZE and not yet applied. It is the only statement
+**applied inside the 03:55 UTC maintenance freeze on 2026-09-05** (74 MB). It is the only statement
 of the two that takes a lock (1,131,048 rows / 456 MB, written on every raked
 hand), and the function change needed none - holding the fix back until the
-freeze would have left the panel failing for no reason. With the index, the
-remaining serial scan in `from_live` (573,468 heap rows to keep 14,091, 2.8s of
-what is left) becomes an index-only read of the same range.
+freeze would have left the panel failing for no reason. With the index and the
+live-edge bound below, `fn_ca_rake_by_agent` settled at **~500ms** and
+`ca_rake_snapshot` from the browser at **591-1,157ms on every range** - month,
+quarter and year alike - where the page had been getting 500 after 8.2s.
 
 The first apply FAILED and the reason is worth carrying forward: the migration
 asserted the new body no longer names `fn_rake_shares_for_record`, and the new

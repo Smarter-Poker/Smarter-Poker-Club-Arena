@@ -44,6 +44,7 @@ describe('leaderboard prize setup safety contract', () => {
     expect(menu).toContain('Owner Prize Tools');
     expect(menu).toContain('/leaderboard?setup=prizes&club=${rewardContextClubId}');
     expect(page).toContain("params.get('setup') !== 'prizes'");
+    expect(page).toContain('settings?.club_id === requestedClubId');
     expect(page).toContain('openedSetupLinkRef.current !== requestKey');
     expect(page).toContain('<LeaderboardPrizeWizard');
   });

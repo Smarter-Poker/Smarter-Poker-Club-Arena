@@ -11,6 +11,7 @@
 
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useUserStore } from '../../stores/useUserStore';
 import {
   clubParamToUuid,
   isConfirmedUnionClubId,
@@ -21,13 +22,14 @@ const CLUB_ROUTE = /^\/clubs\/([^/]+)/;
 
 export default function LastClubTracker() {
   const { pathname } = useLocation();
+  const userId = useUserStore((state) => state.user?.id ?? null);
 
   useEffect(() => {
     const match = CLUB_ROUTE.exec(pathname);
     if (!match) return;
     const segment = decodeURIComponent(match[1]);
     if (segment === 'create') return; // /clubs/create is not a club visit
-    const uuid = clubParamToUuid(segment);
+    const uuid = clubParamToUuid(segment, userId);
     if (!uuid) return;
 
     let cancelled = false;
@@ -52,7 +54,7 @@ export default function LastClubTracker() {
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [pathname, userId]);
 
   return null;
 }

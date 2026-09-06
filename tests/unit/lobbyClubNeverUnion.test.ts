@@ -42,6 +42,7 @@ import {
   isConfirmedUnionClubId,
   primeUnionFlags,
   clearUnionFlagCache,
+  writeCachedQuickLinkClubs,
 } from '../../src/utils/clubQuickLink';
 import { STORAGE_KEYS } from '../../src/lib/storage';
 
@@ -64,6 +65,7 @@ const CLUB_JAQK = {
   club_id: 90003,
   is_union: false,
 };
+const VIEWER_ID = 'cccccccc-0000-0000-0000-000000000004';
 
 beforeEach(() => {
   localStorage.clear();
@@ -136,11 +138,12 @@ describe('resolveLobbyClubId — the reported bug', () => {
   });
 
   it('falls back to the cached club list, unions filtered out', async () => {
-    localStorage.setItem(
-      STORAGE_KEYS.CLUBS_CACHE,
-      JSON.stringify([MIDWAY_UNION, CLUB_JAQK, SHARK_CLUB])
-    );
-    const club = await resolveLobbyClubId({ viewerClubId: null, tableClubId: MIDWAY_UNION.id });
+    writeCachedQuickLinkClubs(VIEWER_ID, [MIDWAY_UNION, CLUB_JAQK, SHARK_CLUB]);
+    const club = await resolveLobbyClubId({
+      userId: VIEWER_ID,
+      viewerClubId: null,
+      tableClubId: MIDWAY_UNION.id,
+    });
     expect(club).toBe(CLUB_JAQK.id);
   });
 });

@@ -7,7 +7,8 @@
  * in-cashier club switcher. One resolution rule everywhere:
  *
  *   last-visited club if the user is still a member, otherwise their first
- *   club. Unions are excluded — they are not cashier/marketplace destinations.
+ *   club. Unions are excluded from club-only links; an owned union treasury is
+ *   included in the Cashier wallet directory.
  *
  * LAST_CLUB is written by rememberLastClub(), which is called from the club
  * carousel, the quick-switch popovers, and LastClubTracker (any /clubs/:clubId
@@ -27,8 +28,10 @@ import { reportError } from './errorReporter';
 /** Minimal structural shape — UserClub and CashierPage club rows both satisfy it. */
 export interface QuickLinkClub {
   id: string;
+  slug?: string;
   name?: string;
   club_id?: number | string;
+  union_id?: string;
   logo_url?: string;
   /** Authoritative union flag from the `clubs` table. */
   is_union?: boolean;
@@ -72,6 +75,23 @@ export function eligibleQuickLinkClubs<T extends QuickLinkClub>(clubs: T[]): T[]
  */
 export function eligibleCashierWallets<T extends QuickLinkClub>(clubs: T[]): T[] {
   return clubs.filter((c) => !isUnionEntity(c) || c.is_owner === true);
+}
+
+/**
+ * Merge active club memberships with authoritative owned-union rows without
+ * duplicating a legacy union that also has a companion club membership.
+ */
+export function mergeCashierWalletDirectory<T extends QuickLinkClub>(
+  clubWallets: T[],
+  ownedUnionWallets: T[]
+): T[] {
+  const byId = new Map<string, T>();
+  for (const wallet of clubWallets) byId.set(wallet.id, wallet);
+  for (const wallet of ownedUnionWallets) {
+    const existing = byId.get(wallet.id);
+    byId.set(wallet.id, (existing ? { ...existing, ...wallet } : wallet) as T);
+  }
+  return eligibleCashierWallets(Array.from(byId.values()));
 }
 
 /** Resolve the Cashier tile without applying the clubs-only marketplace rule. */
@@ -138,7 +158,9 @@ let balanceCache: { userId: string; ts: number; balances: Map<string, number> } 
  * club_members read told the cashout modal the player has **0 chips in this
  * club** — Max prefilled 0, every percent button zeroed, and the local
  * `amount > balance` check refused a cashout the server would have allowed.
- * A stale cache still beats both answers, so it is returned when present.
+ * A stale cache for the SAME USER still beats both answers, so it is returned
+ * when present. Never cross that user boundary: an in-app account switch
+ * followed by a failed read must not expose the previous account's balances.
  *
  * Call clearClubChipBalanceCache() after any chip movement to force a refresh;
  * the quick-link surfaces do this off the MasterBus balance events.
@@ -159,7 +181,7 @@ export async function fetchClubChipBalances(userId: string): Promise<Map<string,
       .in('status', ACTIVE_MEMBER_STATUSES);
     if (error) {
       reportError(error, 'clubQuickLink.fetchClubChipBalances');
-      return balanceCache?.balances ?? null;
+      return balanceCache?.userId === userId ? balanceCache.balances : null;
     }
     const balances = new Map<string, number>();
     for (const row of data || []) {
@@ -169,7 +191,7 @@ export async function fetchClubChipBalances(userId: string): Promise<Map<string,
     return balances;
   } catch (err) {
     reportError(err, 'clubQuickLink.fetchClubChipBalances');
-    return balanceCache?.balances ?? null;
+    return balanceCache?.userId === userId ? balanceCache.balances : null;
   }
 }
 
@@ -236,33 +258,52 @@ export async function fetchQuickLinkClubs(userId: string): Promise<QuickLinkClub
  * Params may be a UUID or the 6-digit numeric club code; numeric codes are
  * resolved against the cached club list (no network) and dropped otherwise.
  */
-export function clubParamToUuid(param: string | undefined): string | null {
+export function clubParamToUuid(
+  param: string | undefined,
+  expectedUserId?: string | null
+): string | null {
   if (!param) return null;
   if (isUUID(param)) return param;
-  try {
-    const cached = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
-    if (!cached) return null;
-    const clubs: QuickLinkClub[] = JSON.parse(cached);
-    if (!Array.isArray(clubs)) return null;
-    const match = clubs.find((c) => String(c.club_id) === param);
-    return match && isUUID(match.id) ? match.id : null;
-  } catch {
-    return null;
-  }
+  const match = readCachedClubsRaw(expectedUserId).find((c) => String(c.club_id) === param);
+  return match && isUUID(match.id) ? match.id : null;
 }
 
-/** Read the lobby's cached club list, union-filtered. Empty when cold/corrupt. */
-export function readCachedQuickLinkClubs(): QuickLinkClub[] {
-  return eligibleQuickLinkClubs(readCachedClubsRaw());
+interface CachedClubDirectory {
+  userId: string;
+  clubs: QuickLinkClub[];
+}
+
+/**
+ * Persist the lobby directory with the account that authorized it. A bare
+ * array was readable by the next account during an in-app switch or expired
+ * session, exposing club affiliations before the network refresh finished.
+ */
+export function writeCachedQuickLinkClubs(userId: string, clubs: QuickLinkClub[]): void {
+  const envelope: CachedClubDirectory = { userId, clubs };
+  localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify(envelope));
+}
+
+/** Read a same-account cached club list, union-filtered. Empty when unscoped/corrupt. */
+export function readCachedQuickLinkClubs(expectedUserId?: string | null): QuickLinkClub[] {
+  return eligibleQuickLinkClubs(readCachedClubsRaw(expectedUserId));
 }
 
 /** Read the lobby's cached club list WITHOUT filtering unions out. */
-function readCachedClubsRaw(): QuickLinkClub[] {
+function readCachedClubsRaw(expectedUserId?: string | null): QuickLinkClub[] {
+  if (!expectedUserId) return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as QuickLinkClub[]) : [];
+    const parsed = JSON.parse(raw) as Partial<CachedClubDirectory>;
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      parsed.userId !== expectedUserId ||
+      !Array.isArray(parsed.clubs)
+    ) {
+      return [];
+    }
+    return parsed.clubs as QuickLinkClub[];
   } catch {
     return [];
   }
@@ -343,11 +384,29 @@ function cachedUnionFlag(club: QuickLinkClub): boolean | null {
   return null; // legacy row — carries no union signal at all
 }
 
+/**
+ * Union-ness is public routing metadata, so it may be reused from either the
+ * current scoped envelope or a legacy array without exposing that array's club
+ * names/list to a different account. This is intentionally the only unscoped
+ * cache read left in this module.
+ */
+function readCachedClubForUnionFlag(clubId: string): QuickLinkClub | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as QuickLinkClub[] | Partial<CachedClubDirectory>;
+    const clubs = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.clubs) ? parsed.clubs : [];
+    return clubs.find((club) => club.id === clubId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function lookupUnionFlag(clubId: string): Promise<boolean | null> {
   const cached = unionFlagCache.get(clubId);
   if (cached !== undefined) return cached;
 
-  const fromCache = readCachedClubsRaw().find((c) => c.id === clubId);
+  const fromCache = readCachedClubForUnionFlag(clubId);
   if (fromCache) {
     const flag = cachedUnionFlag(fromCache);
     if (flag !== null) {
@@ -411,6 +470,7 @@ export async function isConfirmedUnionClubId(clubId: string): Promise<boolean> {
  * Returns null when nothing survives; the caller then falls back to HomePage.
  */
 export async function resolveLobbyClubId(opts: {
+  userId?: string | null;
   viewerClubId?: string | null;
   tableClubId?: string | null;
 }): Promise<string | null> {
@@ -437,17 +497,19 @@ export async function resolveLobbyClubId(opts: {
  * is not already known is skipped and left for the async pass to settle.
  */
 export function resolveLobbyClubIdSync(opts: {
+  userId?: string | null;
   viewerClubId?: string | null;
   tableClubId?: string | null;
 }): string | null {
-  const cachedClubs = readCachedClubsRaw();
   const seen = new Set<string>();
   for (const candidate of lobbyClubCandidates(opts)) {
     if (seen.has(candidate)) continue;
     seen.add(candidate);
     let flag = unionFlagCache.get(candidate);
     if (flag === undefined) {
-      const row = cachedClubs.find((c) => c.id === candidate);
+      // Union-ness is public routing metadata. Read only the one candidate's
+      // explicit flag here; never hydrate another account's full directory.
+      const row = readCachedClubForUnionFlag(candidate);
       // cachedUnionFlag, not isUnionEntity: a legacy row carries no union
       // signal, and reading its silence as "not a union" is exactly how a
       // stale cache used to hand the union hub back as a lobby. Unknown stays
@@ -463,6 +525,7 @@ export function resolveLobbyClubIdSync(opts: {
 
 /** Candidate club ids for a lobby destination, best first, UUIDs only. */
 function lobbyClubCandidates(opts: {
+  userId?: string | null;
   viewerClubId?: string | null;
   tableClubId?: string | null;
 }): string[] {
@@ -470,6 +533,6 @@ function lobbyClubCandidates(opts: {
     opts.viewerClubId,
     opts.tableClubId,
     readLastClubId(),
-    ...readCachedQuickLinkClubs().map((c) => c.id),
+    ...readCachedQuickLinkClubs(opts.userId).map((c) => c.id),
   ].filter((c): c is string => !!c && isUUID(c));
 }

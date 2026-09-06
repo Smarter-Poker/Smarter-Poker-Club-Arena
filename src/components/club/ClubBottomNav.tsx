@@ -29,34 +29,53 @@ interface FooterDestination {
   to: string;
 }
 
+interface AccountResolvedClub {
+  userId: string | null;
+  clubId: string | null;
+}
+
 const APPROVED_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-v2.webp`;
 
 function useResolvedClubId(explicit?: string, routeClubId?: string | null): string | null {
   const { user } = useAuthUser();
-  const [resolved, setResolved] = useState<string | null>(
-    () => explicit || routeClubId || resolveTargetClub(readCachedQuickLinkClubs())?.id || null
-  );
+  const currentUserId = user?.id ?? null;
+  const [resolved, setResolved] = useState<AccountResolvedClub>(() => ({
+    userId: currentUserId,
+    clubId:
+      explicit ||
+      routeClubId ||
+      resolveTargetClub(readCachedQuickLinkClubs(currentUserId))?.id ||
+      null,
+  }));
 
   useEffect(() => {
     if (explicit || routeClubId) return;
 
-    const fromCache = resolveTargetClub(readCachedQuickLinkClubs())?.id ?? null;
+    const fromCache = resolveTargetClub(readCachedQuickLinkClubs(currentUserId))?.id ?? null;
     if (fromCache) {
-      setResolved(fromCache);
+      setResolved({ userId: currentUserId, clubId: fromCache });
       return;
     }
-    if (!user?.id) return;
+    setResolved({ userId: currentUserId, clubId: null });
+    if (!currentUserId) return;
 
+    const requestedUserId = currentUserId;
     let cancelled = false;
-    void fetchQuickLinkClubs(user.id).then((clubs) => {
-      if (!cancelled) setResolved(resolveTargetClub(clubs)?.id ?? null);
+    void fetchQuickLinkClubs(requestedUserId).then((clubs) => {
+      if (!cancelled) {
+        setResolved({ userId: requestedUserId, clubId: resolveTargetClub(clubs)?.id ?? null });
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [explicit, routeClubId, user?.id]);
+  }, [currentUserId, explicit, routeClubId]);
 
-  return explicit || routeClubId || resolved;
+  // Effects run after paint. Scope the rendered value too, otherwise an in-app
+  // account switch gives account B one frame of account A's club hrefs before
+  // the effect above clears the old state.
+  const sameAccountResolved = resolved.userId === currentUserId ? resolved.clubId : null;
+  return explicit || routeClubId || sameAccountResolved;
 }
 
 /**

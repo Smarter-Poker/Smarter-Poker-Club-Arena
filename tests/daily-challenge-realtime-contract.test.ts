@@ -104,6 +104,10 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     expect(page).not.toContain("table: 'user_daily_challenges'");
 
     expect(broadcastHook).toContain(".on('broadcast', { event }");
+    expect(broadcastHook).toContain('await supabase.realtime.setAuth()');
+    expect(broadcastHook.indexOf('await supabase.realtime.setAuth()')).toBeLessThan(
+      broadcastHook.indexOf('masterBus.getOrCreateChannel')
+    );
     expect(broadcastHook).toContain('masterBus.registerChannelFactory');
     expect(broadcastHook).toContain('masterBus.removeRegisteredChannel');
   });

@@ -16,6 +16,7 @@ import {
   listTableStudioStorefrontSkus,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
+  type CustomizationCertificationEnvironment,
   type StorefrontSku,
   type TemporaryCustomizationAccount,
 } from './support/temporaryCustomizationAccount';
@@ -41,19 +42,63 @@ function preview(studio: Locator) {
   return studio.locator('.studio-game-preview');
 }
 
+async function readAppearance(studio: Locator): Promise<Appearance> {
+  return preview(studio).evaluate((target) => ({
+    table: target.getAttribute('data-table-theme') || '',
+    background: target.getAttribute('data-background-theme') || '',
+    button: target.getAttribute('data-button-theme') || '',
+    cards: target.getAttribute('data-card-back') || '',
+  }));
+}
+
 async function expectAppearance(studio: Locator, appearance: Appearance) {
-  await expect(preview(studio)).toHaveAttribute('data-table-theme', appearance.table, {
-    timeout: RESPONSE_TIMEOUT,
-  });
-  await expect(preview(studio)).toHaveAttribute('data-background-theme', appearance.background, {
-    timeout: RESPONSE_TIMEOUT,
-  });
-  await expect(preview(studio)).toHaveAttribute('data-button-theme', appearance.button, {
-    timeout: RESPONSE_TIMEOUT,
-  });
-  await expect(preview(studio)).toHaveAttribute('data-card-back', appearance.cards, {
-    timeout: RESPONSE_TIMEOUT,
-  });
+  await expect
+    .poll(() => readAppearance(studio), {
+      timeout: RESPONSE_TIMEOUT,
+      message: 'The open Table Studio device never converged on the expected appearance.',
+    })
+    .toEqual(appearance);
+}
+
+async function expectPersistedAppearance(
+  environment: CustomizationCertificationEnvironment,
+  userId: string,
+  appearance: Appearance
+) {
+  await expect
+    .poll(
+      async () => {
+        const rows = await readServiceRows<{
+          game_type: string;
+          table_id: string;
+          background_id: string;
+          button_id: string;
+          cards_id: string;
+        }>(
+          environment,
+          'user_theme_settings',
+          new URLSearchParams({
+            select: 'game_type,table_id,background_id,button_id,cards_id',
+            user_id: `eq.${userId}`,
+            game_type: 'eq.ALL',
+          })
+        );
+        const row = rows.length === 1 ? rows[0] : null;
+        return row
+          ? {
+              table: row.table_id,
+              background: row.background_id,
+              button: row.button_id,
+              cards: row.cards_id,
+            }
+          : null;
+      },
+      {
+        timeout: RESPONSE_TIMEOUT,
+        message: 'The selected Table Studio appearance never became durable.',
+      }
+    )
+    .toEqual(appearance);
 }
 
 async function signInTemporaryAccount(
@@ -301,6 +346,7 @@ test.describe('production Table Studio commerce certification', () => {
         button: 'classic-white',
         cards: 'classic_red',
       };
+      await expectPersistedAppearance(environment, buyer.id, firstPurchaseAppearance);
       await expectAppearance(firstStudio, firstPurchaseAppearance);
       await expectAppearance(secondStudio, firstPurchaseAppearance);
 
@@ -395,6 +441,7 @@ test.describe('production Table Studio commerce certification', () => {
       await applyAsset(firstStudio, 'Scenes', 'Las Vegas');
       await applyAsset(firstStudio, 'Buttons', 'Amethyst Chip');
       await applyAsset(firstStudio, 'Cards', 'Premium Gold');
+      await expectPersistedAppearance(environment, buyer.id, FINAL_APPEARANCE);
       await expectAppearance(firstStudio, FINAL_APPEARANCE);
       await expectAppearance(secondStudio, FINAL_APPEARANCE);
 

@@ -48,6 +48,7 @@ import LobbyTable, {
 import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
+  countStylesOnBoard,
   isHiddenClusterMember,
   tournamentEntry,
   classifyTournament,
@@ -2775,6 +2776,20 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const showsTournaments = gameType === 'ALL' || TOURNAMENT_TYPES.includes(gameType);
   const showTournaments = TOURNAMENT_TYPES.includes(gameType);
 
+  /* THE STAKES MENU COUNTS STYLES (Dan 2026-09-05): games per style on THIS
+     tab, from the rows already loaded and BEFORE the style filter - so a
+     player who has narrowed the board to Action still reads how many Classic
+     and Madness games they are not looking at. One game counts once. */
+  const styleCounts = useMemo(
+    () =>
+      countStylesOnBoard(
+        (tables as unknown as LobbyTableRow[]).filter(
+          (t) => gameType === 'ALL' || cashKind(t) === gameType
+        )
+      ),
+    [tables, gameType]
+  );
+
   const filteredTables = useMemo(() => {
     if (!showsCash) return [];
 
@@ -5049,6 +5064,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 return {
                   styleChoices: sSpec.styles,
                   selectedStyles: sVal.styles ?? [],
+                  styleCounts,
                   onStylesChange: (styles: string[]) => {
                     haptic.selection();
                     const next: FilterStore = { ...advFilters, [gameType]: { ...sVal, styles } };
@@ -5231,6 +5247,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             setPanelOpen(false);
             spinQuickJoin({ id: t.id, name: t.name, buy_in_amount: t.buy_in_amount }, variant);
           }}
+          /* THE TICK FOR STAFF (Dan 2026-09-05): a club's staff read the
+             controller's last tick on a must-move game's lobby panel. Same
+             test as the notice board's editability. */
+          staff={isOwner || isClubStaff(userRole)}
           canDelete={
             (isOwner || userRole === 'admin' || userRole === 'co_owner') &&
             selectedEntry.players === 0 &&

@@ -59,6 +59,13 @@ const SEATING = read('server/src/engine/ServerTableEngineSeating.ts');
 const TICK_ALL = read(
   'supabase/migrations/20260906011318_the_feeder_tables_stay_within_one_player_of_each_other.sql'
 );
+/* `fn_cash_clusters_to_tick` is the OTHER function 20260906011113 re-declared,
+   and the balancer did not touch it - so its migration is still the live
+   definition of that one, and it keeps its own handle. Two functions changed
+   by one migration are two pins, not one. */
+const WORKLIST = read(
+  'supabase/migrations/20260906011113_the_worklist_reaches_the_game_the_repair_was_written_for.sql'
+);
 const METRICS = read('server/src/cluster/ClusterMetrics.ts');
 
 describe('the controller is wired on the leader, beside the fleet', () => {
@@ -998,9 +1005,9 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
      two are a gauge nothing set and a rested game nothing could wake. */
 
   it('a DISABLED game is on the worklist on lifecycle alone, so lifecycle_followed_status can reach it', () => {
-    const worklist = TICK_ALL.slice(
-      TICK_ALL.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_to_tick'),
-      TICK_ALL.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_to_tick')
+    const worklist = WORKLIST.slice(
+      WORKLIST.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_to_tick'),
+      WORKLIST.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_to_tick')
     );
     expect(worklist).toMatch(/AND \(g\.enabled OR EXISTS \(SELECT 1 FROM public\.tables t/);
     expect(worklist).toMatch(/AND t\.lifecycle <> 'closed'/);
@@ -1010,7 +1017,7 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
     const code = worklist.replace(/--.*$/gm, '');
     expect(code).not.toMatch(/status IN \('waiting'/);
     // And the migration proves it on the live rows before it commits.
-    expect(TICK_ALL).toMatch(
+    expect(WORKLIST).toMatch(
       /disabled game\(s\) with a live\/closed table are still off the worklist/
     );
   });

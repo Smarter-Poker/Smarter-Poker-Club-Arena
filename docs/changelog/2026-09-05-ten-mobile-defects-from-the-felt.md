@@ -414,3 +414,45 @@ would have been in the backstop written to honour it.
   it is a notice and up to two buttons, and a player sitting quietly in the main
   game has none of them; an empty `.cch-column` is invisible but still a
   `pointer-events: auto` node over the felt.
+
+---
+
+## 7. The one I caused, and how it was found
+
+**I REVERTED ANOTHER AGENT'S MIGRATION IN PRODUCTION, AND ALMOST SHIPPED IT.**
+
+Merging `origin/main` back into this branch conflicted on the cluster law test.
+Reading the conflict, not the test: migration **20260906011113** had
+re-declared `fn_cash_clusters_tick_all` WHOLE about three minutes before mine,
+adding
+
+- `rested_games` - identity rows for the games a pass RESTED, without which the
+  controller's per-game row map has no entry for a dormant game, and the 18.4
+  dealer wake is skipped for precisely the game a wake exists for;
+- `'state', w.state` on every result entry;
+- `eligible_horses` on the `controller_tick_error` payload, and an error entry
+  appended to `results`.
+
+My migration re-emitted the same function from the OLDER `20260905091025` body
+and applied two minutes after theirs, so every one of those was silently gone
+from production for about half an hour. Both migrations are green in isolation:
+each holds one file, each re-declares one function, and nothing fails until the
+second one lands. This is the same shape CLAUDE.md 4.5 describes for hand-picked
+migration versions, one level up - **two agents re-emitting one function**.
+
+Repaired in production the same hour (`fn_cash_clusters_tick_all` now carries
+their body verbatim plus the seven balance lines, verified line by line: seven
+added, none of theirs lost), and the migration file rewritten from the LIVE body
+so the repo says what the database says.
+
+**The rule that came out of it, written into the migration and the law test:**
+a migration that re-emits a WHOLE function must be written from the live body -
+ask the database (`SELECT md5(prosrc) ... WHERE proname = ...`) and diff it
+against whatever file you have open. The file you are working from is the body
+as it was when that file was written, which is not the same claim.
+
+The law test needed a second handle too: `20260906011113` changed TWO functions,
+and only one of them is now superseded. `TICK_ALL` reads this migration (the
+live `fn_cash_clusters_tick_all`); `WORKLIST` reads theirs (still the live
+`fn_cash_clusters_to_tick`). Two functions changed by one migration are two
+pins, not one. All 88 assertions in that file pass - theirs and mine together.

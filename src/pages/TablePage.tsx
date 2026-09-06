@@ -104,6 +104,12 @@ import { ActionClockSeconds, ActionClockWarning } from '../components/table/Acti
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
+import {
+  boardForRabbitReveal,
+  retainedBoardShows,
+  RABBIT_REVEAL_MIN_VISIBLE_MS,
+  type RetainedRabbitBoard,
+} from '../components/table/retainedRabbitBoard';
 import { normalizeCardBack } from '../components/table/CardImage';
 // (The rabbit-hunt artwork note that used to sit here moved to RabbitHunt.tsx,
 // which is where the image is now actually imported and rendered. It had been
@@ -2001,61 +2007,21 @@ export default function TablePage({
     lastUserEvent: engineLastUserEvent,
   } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
 
-  // RABBIT HUNT FREEZE 2026-08-25
-  const [rabbitHuntFreezeEnd, setRabbitHuntFreezeEnd] = useState<number>(0);
-  const [engineSnapshot, setEngineSnapshot] = useState<any>(null);
-  const [engineLastEvent, setEngineLastEvent] = useState<any>(null);
-  const frozenEventQueueRef = useRef<any[]>([]);
-  const frozenSnapshotRef = useRef<any>(null);
+  /**
+   * THE RABBIT HUNT FREEZE IS GONE (2026-09-05, P1 of the card presentation
+   * programme). From 2026-08-25 until today a reveal parked every engine
+   * snapshot and event here for three seconds and replayed them afterwards,
+   * so the finished board stayed up under the ghost cards. It also stopped
+   * the seats, the deal, the hero's action prompt and its clock - the engine's
+   * turn timer does not wait for a client. The reveal now keeps its OWN copy
+   * of the board it was bought against and the felt paints that copy while
+   * the live hand has nothing in the middle (src/components/table/
+   * retainedRabbitBoard.ts). Nothing is queued; the live pipeline is the raw
+   * socket, exactly as it is on every other page.
+   */
+  const engineSnapshot = rawEngineSnapshot;
+  const engineLastEvent = rawEngineLastEvent;
 
-  useEffect(() => {
-    frozenSnapshotRef.current = rawEngineSnapshot;
-    if (rabbitHuntFreezeEnd === 0 || Date.now() >= rabbitHuntFreezeEnd) {
-      setEngineSnapshot(rawEngineSnapshot);
-    }
-  }, [rawEngineSnapshot, rabbitHuntFreezeEnd]);
-
-  /* 2026-08-26 rabbit audit: `rabbitHuntFreezeEnd` is in this effect's deps,
-     so STARTING a freeze re-ran it with the SAME rawEngineLastEvent and pushed
-     a duplicate into the queue — every frozen event replayed twice. Track the
-     last event processed so each is routed exactly once. */
-  const lastRoutedEngineEventRef = useRef<any>(null);
-  useEffect(() => {
-    if (!rawEngineLastEvent) return;
-    if (lastRoutedEngineEventRef.current === rawEngineLastEvent) return;
-    lastRoutedEngineEventRef.current = rawEngineLastEvent;
-    if (rabbitHuntFreezeEnd > Date.now()) {
-      frozenEventQueueRef.current.push(rawEngineLastEvent);
-    } else {
-      setEngineLastEvent(rawEngineLastEvent);
-    }
-  }, [rawEngineLastEvent, rabbitHuntFreezeEnd]);
-
-  useEffect(() => {
-    if (rabbitHuntFreezeEnd === 0) return;
-    /* 2026-08-26 rabbit audit: an already-expired deadline used to `return`
-       without unfreezing — the freeze latched and the queue never drained if
-       this effect first evaluated late (background-tab throttling). Expired
-       now just means a zero-delay timer: the same unfreeze-and-replay runs. */
-    const msLeft = Math.max(0, rabbitHuntFreezeEnd - Date.now());
-
-    const t = setTimeout(() => {
-      setRabbitHuntFreezeEnd(0);
-      setEngineSnapshot(frozenSnapshotRef.current);
-
-      const playNextEvent = () => {
-        if (frozenEventQueueRef.current.length > 0) {
-          const ev = frozenEventQueueRef.current.shift();
-          setEngineLastEvent(ev);
-          if (frozenEventQueueRef.current.length > 0) {
-            setTimeout(playNextEvent, 50);
-          }
-        }
-      };
-      playNextEvent();
-    }, msLeft);
-    return () => clearTimeout(t);
-  }, [rabbitHuntFreezeEnd]);
   // Phase 1.2 PR-F: disconnect FSM states per userId, surfaced by the
   // engine WS payload. Drives DisconnectToast below.
   const [disconnectStates, setDisconnectStates] = useState<
@@ -7111,6 +7077,63 @@ export default function TablePage({
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
   const [rabbitRevealedCards, setRabbitRevealedCards] = useState<Card[]>([]);
+  /**
+   * P1 2026-09-05: the board a reveal was bought against, kept so the felt
+   * can go on showing it under the ghost cards while the NEXT hand's preflop
+   * plays live around it. Replaces the three-second snapshot freeze. See
+   * retainedRabbitBoard.ts for the rule that decides which board shows.
+   */
+  const [retainedRabbitBoard, setRetainedRabbitBoard] = useState<RetainedRabbitBoard | null>(null);
+  const retainedRabbitTimerRef = useRef<number | null>(null);
+  /** The last non-empty board the felt showed, and whose hand it belonged to. */
+  const lastBoardOfHandRef = useRef<{
+    handNumber: number;
+    cards: Card[];
+    stage: BoardStage;
+  } | null>(null);
+  const liveHandNumberRef = useRef(0);
+  liveHandNumberRef.current = tableState.handNumber ?? 0;
+  useEffect(() => {
+    if (tableState.communityCards.length > 0) {
+      lastBoardOfHandRef.current = {
+        handNumber: tableState.handNumber ?? 0,
+        cards: tableState.communityCards,
+        stage: tableState.boardStage,
+      };
+    }
+  }, [tableState.communityCards, tableState.boardStage, tableState.handNumber]);
+  useEffect(
+    () => () => {
+      if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+    },
+    []
+  );
+  const showRetainedRabbitBoard = retainedBoardShows(retainedRabbitBoard, {
+    handNumber: tableState.handNumber ?? 0,
+    cardCount: tableState.communityCards.length,
+  });
+  /* Stable array identities for the memoised board: a fresh spread per
+     render would defeat CommunityCards' own JSON compare for nothing. */
+  const retainedCards = useMemo(
+    () => (retainedRabbitBoard ? (retainedRabbitBoard.cards as Card[]) : []),
+    [retainedRabbitBoard]
+  );
+  const retainedRabbitCards = useMemo(
+    () => (retainedRabbitBoard ? (retainedRabbitBoard.rabbitCards as Card[]) : []),
+    [retainedRabbitBoard]
+  );
+  /* The HAND_STARTED event clears rabbitRevealedCards a render or two before
+     the new hand's SNAPSHOT moves the hand number and empties the board. In
+     that gap the live path would paint the finished board with no ghost
+     cards and the retained path would not have taken over yet - one flicker
+     per reveal. While the retained copy is for the hand still on the felt,
+     the live path borrows its ghost cards. */
+  const liveRabbitCards =
+    rabbitRevealedCards.length === 0 &&
+    retainedRabbitBoard !== null &&
+    retainedRabbitBoard.handNumber === (tableState.handNumber ?? 0)
+      ? retainedRabbitCards
+      : rabbitRevealedCards;
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
@@ -7206,8 +7229,22 @@ export default function TablePage({
       suit: suitMap[String(c.suit)] || 'h',
     }));
     setRabbitRevealedCards(parsedCards);
-    setRabbitHuntFreezeEnd(Date.now() + 3000);
-    // Unconditional dismissal: 3s frozen + 5s visible, then gone. Without
+    // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
+    // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
+    // without freezing anything. It yields the moment a newer hand has cards.
+    setRetainedRabbitBoard(
+      boardForRabbitReveal(
+        lastBoardOfHandRef.current,
+        rabbitHandNumberRef.current ?? liveHandNumberRef.current,
+        parsedCards
+      )
+    );
+    if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+    retainedRabbitTimerRef.current = window.setTimeout(() => {
+      retainedRabbitTimerRef.current = null;
+      setRetainedRabbitBoard(null);
+    }, RABBIT_REVEAL_MIN_VISIBLE_MS);
+    // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
     // this, a reveal on a table that never deals another hand stayed on the
     // board forever (the only other clears are hand-boundary resets).
     if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
@@ -18852,11 +18889,13 @@ export default function TablePage({
    *
    * Rabbit Hunt keeps `!tableState.isHandInProgress` as its own precondition,
    * and that is deliberate rather than redundant with the branch above it: a
-   * reveal FREEZES the engine snapshot for 3s and paints extra cards onto the
-   * live board (see handleRabbitReveal / rabbitHuntFreezeEnd). Offering that
-   * mid-hand would stall the table, so the gate is a safety rule about the
-   * REVEAL, not just about the slot. Do not drop it to make the button appear
-   * a snapshot earlier.
+   * reveal paints extra cards into the undealt slots of the board it was
+   * bought for (see handleRabbitReveal / retainedRabbitBoard.ts), and the
+   * server only sells the cards of a hand that is over. Offering it mid-hand
+   * would be offering something the server refuses, so the gate is a rule
+   * about the REVEAL, not just about the slot. Do not drop it to make the
+   * button appear a snapshot earlier. (Until 2026-09-05 a reveal also froze
+   * the engine snapshot for 3s; it no longer does - P1.)
    *
    * Pinned by tests/all-in-cannot-leave-and-the-hud-slot.test.ts.
    */
@@ -21449,12 +21488,20 @@ export default function TablePage({
                   ) : (
                     <>
                       <CommunityCards
-                        cards={tableState.communityCards}
-                        rabbitCards={rabbitRevealedCards}
+                        /* P1 2026-09-05: while a reveal's retained board is
+                           showing, the felt paints THAT copy (cards, stage,
+                           ghost cards, hand id) and the live hand plays on
+                           around it. See retainedBoardShows. */
+                        cards={showRetainedRabbitBoard ? retainedCards : tableState.communityCards}
+                        rabbitCards={
+                          showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards
+                        }
                         stage={
-                          bombPotHoldFlop && tableState.boardStage === 'flop'
-                            ? 'preflop'
-                            : tableState.boardStage
+                          showRetainedRabbitBoard
+                            ? retainedRabbitBoard!.stage
+                            : bombPotHoldFlop && tableState.boardStage === 'flop'
+                              ? 'preflop'
+                              : tableState.boardStage
                         }
                         highlightedIndices={winnerInfo.cardIndices}
                         winningHandName={winnerInfo.boardHandNames?.[0] || winnerInfo.handName}
@@ -21489,7 +21536,11 @@ export default function TablePage({
                            board so a duplicate snapshot never replays it and
                            a background table gets the compact profile. */
                         tableId={tableId}
-                        handId={tableState.handNumber}
+                        handId={
+                          showRetainedRabbitBoard
+                            ? retainedRabbitBoard!.handNumber
+                            : tableState.handNumber
+                        }
                         boardIndex={0}
                         gameMode={boardPresentationMode}
                         isFocused={isActive}

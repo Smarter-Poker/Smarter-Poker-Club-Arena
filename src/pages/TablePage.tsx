@@ -177,6 +177,7 @@ import { useSeatAddOnBubbles } from '../components/table/AddOnBubble';
 import { useTableVoice } from '../hooks/useTableVoice';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
+import { money } from '../utils/handFormat';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
 import { useTableEnvironment } from '../hooks/useTableEnvironment';
@@ -10796,6 +10797,53 @@ export default function TablePage({
           handNumber: Number(handState.hand_number) || 0,
           emittedAt: typeof handState.emitted_at === 'number' ? handState.emitted_at : undefined,
         });
+        return;
+      }
+
+      /* THE JACKPOT IS COMING, EVEN IF THE MONEY IS LATE (BBJ phase 2.2).
+         A hit the engine could not pay this instant - the :55 maintenance
+         freeze refuses every money write for five minutes, and that is the
+         ordinary cause - used to leave the table in SILENCE: `bbj_hit` had
+         gone out, the celebration waits on `bbj_payout_complete`, and that
+         never arrived. The players who had just taken and beaten a
+         qualifying hand saw the hand end normally and nothing else. The
+         payout itself is safe (the write-ahead claim and the reconciler);
+         this is only about telling them. */
+      if (eventType === 'bbj_payout_pending') {
+        if (
+          !shouldAnnounceBbjHit({
+            tableId: (handState.table_id as string) || tableId,
+            handNumber: handState.hand_number as number,
+            emittedAt: handState.emitted_at as number,
+          })
+        ) {
+          return;
+        }
+        toast.info('Bad Beat Jackpot Hit. Your Share Is Being Paid And Will Land Shortly.', 6000);
+        return;
+      }
+
+      /* And the other half of that promise: the reconciler landed it. The hand
+         is minutes old by now, so this is a notice rather than the ten second
+         celebration - every recipient also has a notification saying exactly
+         what they were paid and where it went (phase 1.1). */
+      if (eventType === 'bbj_payout_paid') {
+        if (
+          !shouldAnnounceBbjHit({
+            tableId: (handState.table_id as string) || tableId,
+            handNumber: handState.hand_number as number,
+            emittedAt: handState.emitted_at as number,
+          })
+        ) {
+          return;
+        }
+        const late = Number(handState.totalPayout);
+        toast.success(
+          Number.isFinite(late) && late > 0
+            ? `Bad Beat Jackpot Paid. $${money(late)} Has Been Shared Out.`
+            : 'Bad Beat Jackpot Paid. Your Share Has Landed.',
+          6000
+        );
         return;
       }
 

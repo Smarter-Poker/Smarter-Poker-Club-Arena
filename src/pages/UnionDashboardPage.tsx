@@ -68,6 +68,9 @@ function requestedUnionTab(value: string | null): UnionTab {
   return value && UNION_TABS.has(value as UnionTab) ? (value as UnionTab) : 'overview';
 }
 
+const UNION_DASHBOARD_ROW_SELECT =
+  'id, name, description, owner_id, created_at, member_count, settings, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next';
+
 // ── Union Dashboard Types ────────────────────────────────────
 interface UnionRow {
   id: string;
@@ -188,6 +191,10 @@ export default function UnionDashboardPage() {
   const [unionId, setUnionId] = useState<string | null>(routeUnionId || null);
   const [union, setUnion] = useState<UnionRow | null>(null);
   const [adminRole, setAdminRole] = useState<string | null>(null);
+  const [authorizedScope, setAuthorizedScope] = useState<{
+    userId: string;
+    unionId: string;
+  } | null>(null);
   /**
    * Dan 2026-08-22: clicking any union wallet opens it with a send-to-member
    * flow. Before this, the four wallet tiles were static divs.
@@ -309,7 +316,6 @@ export default function UnionDashboardPage() {
   >([]);
 
   const mountedRef = useIsMounted();
-  const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
 
   // Auto-clear success
   useEffect(() => {
@@ -320,10 +326,13 @@ export default function UnionDashboardPage() {
 
   // Auto-clear errors after 6s
   useEffect(() => {
-    if (!error) return;
+    // A fatal load/permission error is the page's gate, not a transient banner.
+    // Clearing it while `union` is still null would fall through to an empty
+    // operations surface after six seconds.
+    if (!error || !union) return;
     const t = setTimeout(() => setError(null), 6000);
     return () => clearTimeout(t);
-  }, [error]);
+  }, [error, union]);
 
   // ── Cache Invalidation on Union Change ─────────────────────
   useEffect(() => {
@@ -345,11 +354,14 @@ export default function UnionDashboardPage() {
   // The contextual route is authoritative. A user who moves between two union
   // workspaces in the same session must never keep the first union's cached ID.
   useEffect(() => {
-    if (!routeUnionId) return;
     ++dashLoadVersion.current;
-    setUnionId(routeUnionId);
+    setUnionId(routeUnionId || null);
+    setAuthorizedScope(null);
     setUnion(null);
     setAdminRole(null);
+    setError(null);
+    setSuccess(null);
+    setLoading(Boolean(user?.id && unionRef));
     setClubs([]);
     setAgents([]);
     setAdmins([]);
@@ -357,7 +369,14 @@ export default function UnionDashboardPage() {
     setBbjPool(null);
     setRecentPeriods([]);
     setPnlSettlements([]);
-  }, [routeUnionId]);
+    setRoster([]);
+    setApps([]);
+    setAppsLoaded(false);
+    setLeaveReqs([]);
+    setRakebackHistory([]);
+    setWalletModal(null);
+    setTreasuryModal(null);
+  }, [routeUnionId, unionRef, user?.id]);
 
   // ── Load Dashboard ─────────────────────────────────────────
   const loadDashboard = useCallback(
@@ -369,75 +388,72 @@ export default function UnionDashboardPage() {
           setLoading(true);
           setError(null);
         }
-        const id = uid || unionId;
+        const id = uid;
 
-        if (!id && user?.id) {
-          // Discover union
-          const { data: adminRow } = await supabase
-            .from('union_admins')
-            .select('union_id, role')
-            .eq('user_id', user.id)
-            .limit(1)
-            .maybeSingle();
-          let discoveredId = adminRow?.union_id || null;
-          let role = adminRow?.role || null;
+        if (!id || !user?.id) return;
 
-          if (!discoveredId) {
-            const { data: ownerRow } = await supabase
-              .from('unions')
-              .select('id')
-              .eq('owner_id', user.id)
-              .limit(1)
-              .maybeSingle();
-            discoveredId = ownerRow?.id || null;
-            if (discoveredId) role = 'union_lead';
-          }
+        // Authorize the ROUTED union before loading any operational data.
+        // The old routed branch skipped this entirely: owners lost their lead
+        // controls and any signed-in user could read a union's operations page.
+        const [unionResult, operatorResult] = await Promise.all([
+          supabase.from('unions').select(UNION_DASHBOARD_ROW_SELECT).eq('id', id).maybeSingle(),
+          // This SECURITY DEFINER predicate is the canonical owner/admin check.
+          // Reading union_admins directly is not equivalent: its RLS policy is
+          // scoped to club members, while an appointed union admin does not
+          // have to hold a club membership row.
+          supabase.rpc('fn_is_union_operator', {
+            p_union_id: id,
+            p_user_id: user.id,
+          }),
+        ]);
+        if (unionResult.error) throw unionResult.error;
+        if (operatorResult.error) throw operatorResult.error;
+        if (!unionResult.data) throw new Error('Union Not Found');
 
-          if (!discoveredId) {
-            if (isCurrent()) {
-              setError('You are not a union admin or owner.');
-              setLoading(false);
-            }
-            return;
-          }
+        const authorizedRole = unionResult.data.owner_id === user.id ? 'union_lead' : 'union_admin';
+        if (operatorResult.data !== true) {
           if (isCurrent()) {
-            setUnionId(discoveredId);
-            setAdminRole(role);
+            setAuthorizedScope(null);
+            setUnion(null);
+            setAdminRole(null);
+            setError('You are not a union admin or owner.');
           }
-          await loadUnionData(discoveredId, requestVersion);
-        } else if (id) {
-          await loadUnionData(id, requestVersion);
+          return;
         }
-      } catch (err: any) {
-        if (isCurrent()) setError(safeErrorMessage(err));
-        // Clear stale SWR cache on error to prevent ghost data
         if (isCurrent()) {
-          try {
-            sessionStorage.removeItem(`union_dashboard_swr_${user?.id}`);
-          } catch {
-            /* ignore */
-          }
+          setUnionId(id);
+          setAdminRole(authorizedRole);
+          setAuthorizedScope({ userId: user.id, unionId: id });
+        }
+        await loadUnionData(id, requestVersion, unionResult.data as UnionRow, authorizedRole);
+      } catch (err: any) {
+        if (isCurrent()) {
+          setAuthorizedScope(null);
+          setUnion(null);
+          setAdminRole(null);
+          setError(safeErrorMessage(err));
         }
       } finally {
         if (isCurrent()) setLoading(false);
       }
     },
-    [unionId, user?.id]
+    [user?.id]
   );
 
-  const loadUnionData = async (uid: string, requestVersion: number) => {
+  const loadUnionData = async (
+    uid: string,
+    requestVersion: number,
+    authorizedUnionRow: UnionRow,
+    authorizedRole: 'union_lead' | 'union_admin'
+  ) => {
     const isCurrent = () => mountedRef.current && dashLoadVersion.current === requestVersion;
-    // Load union info
-    const { data: unionRow, error: unionError } = await supabase
-      .from('unions')
-      .select(
-        'id, name, description, owner_id, created_at, member_count, settings, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-      )
-      .eq('id', uid)
-      .maybeSingle();
-    if (unionError) throw unionError;
-    if (!unionRow) throw new Error('Union Not Found');
-    if (isCurrent()) setUnion(unionRow);
+    // The authority read supplied this same row. Reusing it avoids a duplicate
+    // network round trip and guarantees no protected state paints first.
+    const unionRow = authorizedUnionRow;
+    if (isCurrent()) {
+      setUnion(unionRow);
+      setAdminRole(authorizedRole);
+    }
 
     // Load clubs in union
     const { data: unionClubs, error: unionClubsError } = await supabase
@@ -455,7 +471,7 @@ export default function UnionDashboardPage() {
     if (isCurrent()) setClubs(enrichedClubs);
 
     // Load agents across clubs
-    let loadedAgents: UnionAgent[] = []; // Hoisted for SWR cache write
+    let loadedAgents: UnionAgent[] = [];
     const clubIds = enrichedClubs.map((c) => c.id).filter(Boolean);
     if (clubIds.length > 0) {
       const { data: agentRows } = await supabase
@@ -554,66 +570,39 @@ export default function UnionDashboardPage() {
       .order('period_start', { ascending: false })
       .limit(12);
     if (isCurrent()) setPnlSettlements(pnlRows || []);
-
-    // SWR: cache successful load for instant display on revisit
-    if (isCurrent()) {
-      try {
-        sessionStorage.setItem(
-          `union_dashboard_swr_${user?.id}`,
-          JSON.stringify({
-            union: unionRow,
-            unionId: uid,
-            adminRole,
-            clubs: enrichedClubs.slice(0, 30),
-            agents: loadedAgents.slice(0, 30),
-            wallets: walletRow,
-            cachedAt: Date.now(),
-          })
-        );
-      } catch (e) {
-        reportError(e, 'UnionDashboardPage');
-        /* storage full */
-      }
-    }
   };
 
-  // ── Initial Load + SWR Cache ──────────────────────────────
+  // ── Initial Load ───────────────────────────────────────────
   useEffect(() => {
     if (!user?.id) return;
-    // SWR: show cached data instantly while fresh data loads
-    try {
-      const cached = sessionStorage.getItem(`union_dashboard_swr_${user.id}`);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        const cacheMatchesRoute = !routeUnionId || parsed.unionId === routeUnionId;
-        if (age < SWR_TTL_MS && parsed.union && cacheMatchesRoute) {
-          setUnion(parsed.union);
-          if (parsed.unionId) setUnionId(parsed.unionId);
-          if (parsed.adminRole) setAdminRole(parsed.adminRole);
-          if (parsed.clubs) setClubs(parsed.clubs);
-          if (parsed.agents) setAgents(parsed.agents);
-          if (parsed.wallets) setWallets(parsed.wallets);
-          setLoading(false); // Show cached data instantly
-        }
-      }
-    } catch (e) {
-      reportError(e, 'UnionDashboardPage.useEffect');
-      /* corrupt cache */
+    // A slug has a route identity before it has a database UUID. Never fall
+    // back to discovering an arbitrary union while that route is resolving.
+    if (unionRef && !routeUnionId) {
+      setLoading(true);
+      return;
     }
-    loadDashboard(routeUnionId);
-  }, [user?.id, loadDashboard, routeUnionId]);
+    void loadDashboard(routeUnionId);
+  }, [user?.id, loadDashboard, routeUnionId, unionRef]);
+
+  const authorizedUnionId =
+    user?.id &&
+    unionId &&
+    routeUnionId === unionId &&
+    authorizedScope?.userId === user.id &&
+    authorizedScope.unionId === unionId
+      ? unionId
+      : null;
 
   // ── Load Applications ──────────────────────────────────────
   const loadApps = useCallback(async () => {
-    if (!unionId) return;
+    if (!authorizedUnionId) return;
     try {
       // UNION AUDIT FIX 2026-07-21: the direct select used columns that do not
       // exist (applicant_id/notes/created_at vs live applicant_user_id/message/
       // applied_at) AND union_applications RLS only lets the APPLICANT read —
       // union leads always saw an empty tab. The union-application API lists
       // with the service role after a union-lead auth check.
-      const result = await unionApi.listApplications(unionId, appsFilter);
+      const result = await unionApi.listApplications(authorizedUnionId, appsFilter);
       const rows = ((result.applications as any[]) || []).map((a) => ({
         id: a.id,
         union_id: a.union_id,
@@ -631,54 +620,54 @@ export default function UnionDashboardPage() {
     } catch (_e) {
       /* silent */
     }
-  }, [unionId, appsFilter]);
+  }, [authorizedUnionId, appsFilter]);
 
   // ── Load leave requests (IMPROVE 2026-07-21) ───────────────
   const loadLeaveReqs = useCallback(async () => {
-    if (!unionId) return;
+    if (!authorizedUnionId) return;
     try {
-      const result = await unionApi.listLeaveRequests(unionId);
+      const result = await unionApi.listLeaveRequests(authorizedUnionId);
       if (mountedRef.current) {
         setLeaveReqs((result.leaveRequests as any[]) || []);
       }
     } catch (_e) {
       /* silent — non-leads may not have access */
     }
-  }, [unionId]);
+  }, [authorizedUnionId]);
 
   // ── Tab-based lazy loading ─────────────────────────────────
   useEffect(() => {
-    if (!unionId) return;
+    if (!authorizedUnionId) return;
     if (tab === 'applications' && !appsLoaded) {
       loadApps();
       loadLeaveReqs();
     }
-  }, [tab, unionId, appsLoaded, loadApps, loadLeaveReqs]);
+  }, [tab, authorizedUnionId, appsLoaded, loadApps, loadLeaveReqs]);
 
   // ── Union rakeback: history + on-demand distribution ──────────
   const loadRakebackHistory = useCallback(async () => {
-    if (!unionId) return;
+    if (!authorizedUnionId) return;
     try {
       const { data } = await supabase
         .from('union_rakeback_log')
         .select('id, period_start, period_end, total_rakeback, executed_at')
-        .eq('union_id', unionId)
+        .eq('union_id', authorizedUnionId)
         .order('executed_at', { ascending: false })
         .limit(12);
       if (mountedRef.current) setRakebackHistory(data || []);
     } catch (e) {
       reportError(e, 'UnionDashboardPage.loadRakebackHistory');
     }
-  }, [unionId, mountedRef]);
+  }, [authorizedUnionId, mountedRef]);
 
   useEffect(() => {
-    if (tab === 'treasury' && unionId) loadRakebackHistory();
-  }, [tab, unionId, loadRakebackHistory]);
+    if (tab === 'treasury' && authorizedUnionId) loadRakebackHistory();
+  }, [tab, authorizedUnionId, loadRakebackHistory]);
 
   // Distribute last week's cross-club rakeback. The server RPC is atomic +
   // idempotent (one payout per union+period), so a double-click is safe.
   const runUnionRakeback = useCallback(async () => {
-    if (!unionId || rakebackRunning) return;
+    if (!authorizedUnionId || rakebackRunning) return;
     // Previous ISO week: [last Monday 00:00 UTC, this Monday 00:00 UTC).
     //
     // TIMEZONE BUG (fixed 2026-08-20): this used getDay()/setHours(0,0,0,0)/
@@ -714,7 +703,11 @@ export default function UnionDashboardPage() {
 
     setRakebackRunning(true);
     try {
-      const res = await SettlementService.executeUnionRakeBack(unionId, periodStart, periodEnd);
+      const res = await SettlementService.executeUnionRakeBack(
+        authorizedUnionId,
+        periodStart,
+        periodEnd
+      );
       if (res.clubsPaid > 0) {
         masterBus.emit('SHOW_TOAST', {
           severity: 'info',
@@ -727,7 +720,7 @@ export default function UnionDashboardPage() {
         });
       }
       loadRakebackHistory();
-      loadDashboard(unionId);
+      loadDashboard(authorizedUnionId);
     } catch (e: any) {
       masterBus.emit('SHOW_TOAST', {
         severity: 'critical',
@@ -737,12 +730,12 @@ export default function UnionDashboardPage() {
     } finally {
       if (mountedRef.current) setRakebackRunning(false);
     }
-  }, [unionId, rakebackRunning, mountedRef, loadRakebackHistory, loadDashboard]);
+  }, [authorizedUnionId, rakebackRunning, mountedRef, loadRakebackHistory, loadDashboard]);
 
   // ── Bus Listeners ──────────────────────────────────────────
   useEffect(() => {
-    if (!unionId) return;
-    const refresh = () => loadDashboard(unionId);
+    if (!authorizedUnionId) return;
+    const refresh = () => loadDashboard(authorizedUnionId);
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 300),
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 300),
@@ -759,18 +752,23 @@ export default function UnionDashboardPage() {
       masterBus.subscribeDebounced('UNION_UPDATED', refresh, 300),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [unionId, loadDashboard]);
+  }, [authorizedUnionId, loadDashboard]);
 
   // ── Supabase Realtime — cross-user WebSocket updates ──
   useEffect(() => {
-    if (!unionId) return;
-    const channelKey = `union-dashboard-${unionId}`;
+    if (!authorizedUnionId) return;
+    const channelKey = `union-dashboard-${authorizedUnionId}`;
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'union_clubs', filter: `union_id=eq.${unionId}` },
-        () => loadDashboard(unionId)
+        {
+          event: '*',
+          schema: 'public',
+          table: 'union_clubs',
+          filter: `union_id=eq.${authorizedUnionId}`,
+        },
+        () => loadDashboard(authorizedUnionId)
       )
       .on(
         'postgres_changes',
@@ -778,35 +776,55 @@ export default function UnionDashboardPage() {
           event: '*',
           schema: 'public',
           table: 'union_applications',
-          filter: `union_id=eq.${unionId}`,
+          filter: `union_id=eq.${authorizedUnionId}`,
         },
-        () => loadDashboard(unionId)
+        () => loadDashboard(authorizedUnionId)
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'union_admins', filter: `union_id=eq.${unionId}` },
-        () => loadDashboard(unionId)
+        {
+          event: '*',
+          schema: 'public',
+          table: 'union_admins',
+          filter: `union_id=eq.${authorizedUnionId}`,
+        },
+        () => loadDashboard(authorizedUnionId)
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'union_wallets', filter: `union_id=eq.${unionId}` },
-        () => loadDashboard(unionId)
+        {
+          event: '*',
+          schema: 'public',
+          table: 'union_wallets',
+          filter: `union_id=eq.${authorizedUnionId}`,
+        },
+        () => loadDashboard(authorizedUnionId)
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'unions', filter: `id=eq.${unionId}` },
-        () => loadDashboard(unionId)
+        { event: '*', schema: 'public', table: 'unions', filter: `id=eq.${authorizedUnionId}` },
+        () => loadDashboard(authorizedUnionId)
       )
       // IMPROVE 2026-07-21: live jackpot — the BBJ tiles tick as engine
       // contributions land in the shared pool (every raked hand at union clubs).
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'bbj_pools', filter: `union_id=eq.${unionId}` },
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bbj_pools',
+          filter: `union_id=eq.${authorizedUnionId}`,
+        },
         (payload: { new?: Record<string, unknown> }) => {
           // A final queued event from the previous route can arrive while
           // React is cleaning up that channel. Never merge Union A's pool into
           // Union B just because both dashboard instances share this state.
-          if (mountedRef.current && payload.new && (!routeUnionId || routeUnionId === unionId)) {
+          if (
+            mountedRef.current &&
+            payload.new &&
+            routeUnionId === authorizedUnionId &&
+            authorizedScope?.userId === user?.id
+          ) {
             setBbjPool((prev) => ({ ...(prev || {}), ...(payload.new as any) }));
           }
         }
@@ -822,10 +840,12 @@ export default function UnionDashboardPage() {
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [unionId, loadDashboard, routeUnionId]);
+  }, [authorizedUnionId, authorizedScope?.userId, loadDashboard, routeUnionId, user?.id]);
 
   // ── Visibility Refresh — refresh on tab focus after 30s ──
-  useVisibilityRefresh(() => loadDashboard(unionId));
+  useVisibilityRefresh(() => {
+    if (authorizedUnionId) void loadDashboard(authorizedUnionId);
+  });
 
   // ── Computed ───────────────────────────────────────────────
   const isLead = adminRole === 'union_lead';
@@ -837,15 +857,15 @@ export default function UnionDashboardPage() {
    * NOT yet deployed. The two never double-count, and until now only the
    * undeployed half had a tile anywhere in the product.
    */
-  const unionSpins = useSpinsWallet(unionId, Boolean(unionId));
+  const unionSpins = useSpinsWallet(authorizedUnionId, Boolean(authorizedUnionId));
 
   // ── Union-wide player roster (Dan 2026-08-22: every player of every club,
   //    with their role — the union is for tracking, so it must SEE everyone). ──
   useEffect(() => {
-    if (tab !== 'players' || !unionId) return;
+    if (tab !== 'players' || !authorizedUnionId) return;
     setRosterLoading(true);
     void supabase
-      .rpc('fn_union_player_directory', { p_union_id: unionId })
+      .rpc('fn_union_player_directory', { p_union_id: authorizedUnionId })
       .then(({ data, error }) => {
         if (error) {
           reportError(error, 'UnionDashboard.roster_load_failed');
@@ -855,7 +875,7 @@ export default function UnionDashboardPage() {
         }
         setRosterLoading(false);
       });
-  }, [tab, unionId]);
+  }, [tab, authorizedUnionId]);
 
   const filteredRoster = useMemo(() => {
     const q = rosterSearch.trim().toLowerCase();
@@ -929,7 +949,9 @@ export default function UnionDashboardPage() {
   };
 
   // ── Loading State ──────────────────────────────────────────
-  if (loading) {
+  const routeResolutionPending = Boolean(unionRef && !routeUnionId);
+
+  if (loading || routeResolutionPending || (!authorizedUnionId && !error)) {
     return (
       <div className="admin-page">
         <div className="admin-container">
@@ -950,7 +972,7 @@ export default function UnionDashboardPage() {
     );
   }
 
-  if (error && !union) {
+  if (error && !authorizedUnionId) {
     const accessRestricted = /not a union admin|not.*owner/i.test(error);
     return (
       <div className="admin-page">

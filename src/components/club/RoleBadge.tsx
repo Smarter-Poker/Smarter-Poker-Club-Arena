@@ -56,8 +56,11 @@ export const ROLE_BADGE: Record<ClubRole, RoleBadgeSpec> = {
   },
   admin: {
     glyph: '◆', // filled diamond
-    color: '#4169E1',
-    wash: 'rgba(65, 105, 225, 0.18)',
+    // The original royal blue measured 4.07:1 against the Player Record's
+    // #070b0f role plate at the rendered 13.6px label size. Keep the same
+    // hierarchy hue while clearing WCAG AA's 4.5:1 text threshold.
+    color: '#5579E8',
+    wash: 'rgba(85, 121, 232, 0.18)',
     label: ROLE_LABEL.admin,
   },
   super_agent: {

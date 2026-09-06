@@ -105,7 +105,7 @@ describe('the union modal routes a club send by the wallet that is open', () => 
     expect(unionModal).toMatch(/unionApi\.sendToClub\(\s*unionId,\s*target\.data\.id,\s*amt/);
     const clubBranch = unionModal.slice(
       unionModal.indexOf('const r = clubSendRoute(walletKey, kind);'),
-      unionModal.indexOf('Member Clawbacks Must Be Performed By The Club Owner')
+      unionModal.indexOf('const pr = clubPullRoute(walletKey);')
     );
     expect(clubBranch).toContain("if (r.kind === 'refused') throw new Error(r.reason);");
     expect(clubBranch.indexOf('promoSend')).toBeLessThan(clubBranch.indexOf('sendToClub'));

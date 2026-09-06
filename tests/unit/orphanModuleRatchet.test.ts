@@ -17,25 +17,37 @@
  * quietly grow while somebody makes those calls.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const root = join(__dirname, '..', '..');
 const script = join(root, 'scripts', 'ci', 'report-orphan-modules.mjs');
 
-function report(): {
+interface OrphanReport {
   orphans: string[];
   guardedOrphans: Array<{ orphan: string }>;
   baseline: number;
-} {
+}
+
+function readReport(): OrphanReport {
   const out = execFileSync('node', [script, '--json'], { cwd: root, encoding: 'utf8' });
   return JSON.parse(out);
 }
 
 describe('orphan-module ratchet', () => {
+  let report: OrphanReport;
+
+  /* Building the import graph is intentionally comprehensive and can take
+     longer than Vitest's five-second per-test budget under full-suite load.
+     Compute it once with an explicit hook budget instead of repeating the
+     identical child process for every assertion. */
+  beforeAll(() => {
+    report = readReport();
+  }, 30_000);
+
   it('does not grow the set of unreachable modules', () => {
-    const { orphans, baseline } = report();
+    const { orphans, baseline } = report;
     expect(
       orphans.length,
       `Unreachable src/ modules went from ${baseline} to ${orphans.length}. A file nothing ` +
@@ -65,7 +77,7 @@ describe('orphan-module ratchet', () => {
      *
      * Slack keeps the ratchet honest without making it hostile: drift a little
      * and nothing happens, drift a lot and someone is told to reset it. */
-    const { orphans, baseline } = report();
+    const { orphans, baseline } = report;
     const SLACK = 10;
     expect(
       baseline - orphans.length,
@@ -78,7 +90,7 @@ describe('orphan-module ratchet', () => {
   it('still reports which orphans are guarded by tests', () => {
     // The dangerous subset is the whole reason this exists; if the reporter
     // stops distinguishing it, the report is just a list of file names.
-    const { guardedOrphans } = report();
+    const { guardedOrphans } = report;
     expect(Array.isArray(guardedOrphans)).toBe(true);
   });
 });

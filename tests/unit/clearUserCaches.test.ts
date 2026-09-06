@@ -18,6 +18,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { clearUserCaches, CLUB_HOME_CACHE_PREFIX } from '@/utils/clearUserCaches';
 import { SWR_CACHE_PREFIXES } from '@/utils/staleCacheReaper';
 import { STORAGE_KEYS } from '@/lib/storage';
+import {
+  CASHIER_RECOVERY_PREFIX,
+  CASHIER_REQUEST_RECOVERY_PREFIX,
+} from '@/services/CashierResilience';
+import { UNION_WALLET_RECOVERY_PREFIX } from '@/services/UnionWalletRecovery';
 
 describe('clearUserCaches', () => {
   beforeEach(() => {
@@ -50,6 +55,12 @@ describe('clearUserCaches', () => {
     localStorage.setItem('ca_saved_start_time_club-a', '1');
     localStorage.setItem('dismissed_announcements_club-a', '[]');
     localStorage.setItem('referral_club-a', 'x');
+    localStorage.setItem(`${CASHIER_RECOVERY_PREFIX}:user-a:club-a`, '{"private":true}');
+    localStorage.setItem(
+      `${CASHIER_REQUEST_RECOVERY_PREFIX}:user-a:club-a:intent-a`,
+      '{"private":true}'
+    );
+    localStorage.setItem(`${UNION_WALLET_RECOVERY_PREFIX}:user-a:union-a:chips`, '{}');
 
     clearUserCaches();
 
@@ -59,7 +70,10 @@ describe('clearUserCaches', () => {
         k.startsWith('hand_history_') ||
         k.startsWith('ca_saved_start_time_') ||
         k.startsWith('dismissed_announcements_') ||
-        k.startsWith('referral_')
+        k.startsWith('referral_') ||
+        k.startsWith(CASHIER_RECOVERY_PREFIX) ||
+        k.startsWith(CASHIER_REQUEST_RECOVERY_PREFIX) ||
+        k.startsWith(UNION_WALLET_RECOVERY_PREFIX)
     );
     expect(leftovers).toEqual([]);
   });

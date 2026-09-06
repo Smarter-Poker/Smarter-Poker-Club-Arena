@@ -2171,6 +2171,10 @@
     "horse_mind_stats": [
       "user_id"
     ],
+    "horse_mind_stats_scoped": [
+      "user_id",
+      "scope"
+    ],
     "horse_opponent_journals": [
       "horse_id",
       "opponent_id"
@@ -2207,6 +2211,10 @@
       "profile_id",
       "table_id"
     ],
+    "horse_solver_agreement": [
+      "run_date",
+      "reference"
+    ],
     "horse_source_assignments": [
       "horse_id",
       "source_name"
@@ -2214,6 +2222,11 @@
     "horse_sports_source_assignments": [
       "horse_id",
       "source_name"
+    ],
+    "horse_thread_state": [
+      "post_id",
+      "horse_id",
+      "reason"
     ],
     "horse_threat_intel": [
       "opponent_id"
@@ -2863,6 +2876,11 @@
     ],
     "poker_videos": [
       "title"
+    ],
+    "post_briefs": [
+      "post_id",
+      "kind",
+      "domain"
     ],
     "posted_clips": [
       "video_id",

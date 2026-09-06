@@ -42,14 +42,16 @@ describe('the complete route manifest inherits one global header', () => {
     // onto AntiCheatPage that the operations rail links.
     // +1 again for unions/:unionId/data - the union lead's own rake page,
     // which until now could only be reached by walking into a member club.
-    expect(allPaths).toHaveLength(132); // +2 management consoles, +1 financial decision harness
+    // +1 for clubs/:clubId/hand-review (Previous Hand phase 6): the flagged-hand
+    // queue and the audited hole-card lookup, beside Reports and Disputes.
+    expect(allPaths).toHaveLength(133); // +2 management consoles, +1 financial decision harness
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
     expect(allPaths).toContain('*');
   });
 
   it('puts every shell route under AppLayout', () => {
-    expect(shellPaths).toHaveLength(123); // +2: club and union table-management consoles, +1: union data
+    expect(shellPaths).toHaveLength(124); // +2: club and union table-management consoles, +1: union data, +1: hand review
     expect(APP_LAYOUT).toContain('{showGlobalHeader && <GlobalHeader />}');
   });
 
@@ -63,7 +65,7 @@ describe('the complete route manifest inherits one global header', () => {
       (path) => !applicable.has(path) && !intentionalExceptions.has(path)
     );
 
-    expect(applicable.size).toBe(124); // +2: club and union table-management consoles, +1: union data
+    expect(applicable.size).toBe(125); // +2: club and union table-management consoles, +1: union data, +1: hand review
     expect(unclassified).toEqual([]);
   });
 

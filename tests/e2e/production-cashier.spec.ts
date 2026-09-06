@@ -63,7 +63,18 @@ test.describe('Production Cashier Certification', () => {
     await expect(reconciliation.getByRole('button', { name: 'Reconcile Now' })).toBeEnabled({
       timeout: 30_000,
     });
-    await expect(reconciliation.getByText('Balances synchronized', { exact: true })).toBeVisible();
+    // The synchronization message belongs to the hero's live status region;
+    // the reconciliation console exposes the same successful state as its
+    // verified timestamp. Scoping this assertion to the console looked for a
+    // node that cannot exist and made a healthy production cashier fail its
+    // canary after hydration completed.
+    const cashierStatus = page
+      .getByRole('region', { name: 'Every Chip. Accounted For.' })
+      .getByRole('status');
+    await expect(cashierStatus).toHaveText(
+      /^(Balances synchronized|Cashier ready; loading the rest of the roster after [\d,]+ members)$/,
+      { timeout: 30_000 }
+    );
     await expect(reconciliation.getByText('Not Yet Verified', { exact: true })).toHaveCount(0);
 
     await expect(page.locator('text=Something went wrong')).toHaveCount(0);

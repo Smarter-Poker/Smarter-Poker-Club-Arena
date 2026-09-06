@@ -328,18 +328,7 @@ with main, and a timeout leaves the PR open for you to merge by hand.
 - Never run `vercel deploy` or `vercel --prod` in the Club Arena directory
 - Never push to or test on `club-arena.vercel.app`
 - Never call any deploy hook URL
-- Never add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`).
-  **The one sanctioned iframe is `src/components/table/HubFrame.tsx`** (Dan's
-  ruling 2026-09-04): a same-origin frame that shows a World Hub page
-  (Social, Media, Trivia, Training, the Hub itself) INSIDE a "+" tab, so the
-  tab strip and every running table stay mounted - "it's basically opening
-  up a new browser tab internally, it shouldn't be limited to just poker".
-  It uses no postMessage and no `window.parent` (same origin lets it read the
-  frame's location and listen on its document directly), it is the only
-  `<iframe>` element in `src/`, and `tests/hub-tab-is-a-browser-tab.law.test.ts`
-  keeps it that wide. Never embed Club Arena inside anything, never bridge with
-  postMessage, and never add a second frame: the rule is unchanged except for
-  that one file. `docs/changelog/2026-09-04-the-plus-tab-is-a-browser-tab.md`.
+- Never add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`)
 - Never add `VITE_` prefixed secret keys (use server-side API routes)
 - Never re-create `public/hub/club-arena/` in the World Hub. It was DELETED on
   2026-09-02 when Club Arena moved to its own origin, and Next.js serves
@@ -590,9 +579,7 @@ Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
 - Routing: SPA fallback rewrites unmatched routes to `index.html`
 - Auth: Same-origin Supabase session via `smarter-poker-auth` localStorage key
 
-NO iframe. NO postMessage. NO proxy. Everything from smarter.poker. (The one
-sanctioned iframe, `HubFrame`, frames smarter.poker's OWN World Hub pages
-inside a "+" tab - same origin, no bridge; see 1.3.)
+NO iframe. NO postMessage. NO proxy. Everything from smarter.poker.
 
 ---
 
@@ -883,6 +870,67 @@ be pruned (pushed branches lose nothing — the commits live on origin).
 
 ---
 
+## 10.82 MERGED IS NOT LANDED, AND A SECOND PUSH CAN VANISH (2026-09-06, BINDING)
+
+**`agent-autopilot.yml` squash-merges the moment the required checks pass.** On
+an asset-only or docs change that can be under two minutes. Push again after
+that and the branch moves, the pull request stays merged, `git push` exits 0,
+and your commits reach nobody.
+
+World Hub #1387 shipped **1 of its 3 commits** this way. The push said success.
+The PR said merged. The branch on GitHub genuinely held all three. A CI fix for
+a gate that had been red on `main` for two days, and the deletion of a component
+that fabricated player data, were simply not there - found hours later, by
+accident, while looking at something else.
+
+### The rules
+
+1. **A follow-up commit needs a NEW BRANCH off current `main`.** Not a second
+   push to the branch you already opened a pull request from.
+   `scripts/guard-merged-branch.sh` refuses that push from `.husky/pre-push` and
+   prints the recovery. It fails OPEN on a missing token, no network, or any
+   answer it cannot read, so it can never block you because GitHub is unwell.
+   Override, when you truly mean to move a merged branch:
+   `AGENT_MERGED_BRANCH_OK=1 git push ...`
+
+2. **Verify the FILES, never the tick.** `git fetch origin main` then
+   `git cat-file -e origin/main:<path>`. This is section 1.4's rule - only
+   production serving the sha counts as deployed - applied to merges, and for
+   the same reason: every intermediate signal can be true while the outcome is
+   false.
+
+3. **This gets worse as CI gets faster.** #3187 took the critical path from
+   ~6.8 to ~4 minutes. Every minute cut off CI widens the window in which an
+   agent is racing its own merge.
+
+---
+
+## 10.83 A CHECK THAT NOBODY CAN SEE IS NOT A CHECK (2026-09-06, BINDING)
+
+`Global Footer E2E` failed on **every** run on the World Hub's `main` from
+2026-09-04 and was found two days later by accident. It is not in the ruleset,
+so a red run blocked no merge, opened no issue, and coloured nothing anyone
+reads. Twenty-odd merges landed on top of it.
+
+None of its three failures was in the footer. Every footer assertion passed.
+They were marketplace tests that `npm run build` runs first: a retired Daily
+Pass still pinned, an `annual` -> `yearly` rename applied to the code and not
+its test, and two em dashes. **All three were correct changes that left one half
+behind** - the ordinary way a repo goes red, and exactly why somebody has to be
+told.
+
+`scripts/ci/check-main-is-green.mjs` (World Hub, in `publish-watchdog.yml`) now
+raises one issue for any workflow red on `main` past a threshold **with no open
+issue naming it**. It reports a workflow as `loud` when something already tracks
+it, so a watchdog raising its own alarm is not mistaken for a defect - the first
+run flagged `Publish Watchdog` doing precisely that, which would have taught
+everyone to ignore the detector inside a week.
+
+**If you add a workflow, either put it in the ruleset or accept that only this
+detector will ever tell you it broke.**
+
+---
+
 ## 10.85 NEVER SCHEDULE ANYTHING ON THE CLAUDE SCHEDULER (Dan, 2026-09-04, BINDING)
 
 **Dan, verbatim: "IF YOU ARE SCHEDULING ANYTHING TO 'RUN ON CLAUDE SCHEDULER' IT
@@ -1011,52 +1059,6 @@ with no explanation attached is the next agent's mystery.
   bank sees.
 - **Rewriting or deleting a settled record to make a number look tidy.** Correct
   it forward, with a row that says what changed. Never edit history quiet.
-
----
-
-## 10.10 A REVOKED SESSION IS NOT A RECONNECT, AND A SCRIPT NEVER WEARS A PERSON'S FACE (Dan 2026-09-04, BINDING)
-
-**What happened.** Every table Dan opened sat on "Reconnecting To The Table"
-for 22 hours while the engine dealt 5,700 hands per ten minutes. A World Hub
-cron (`/api/cron/login-probe`) had been pointed at his personal account and
-called a bare `signOut()` - scope GLOBAL - every 15 minutes, revoking every
-session he had. The engine's `auth.getUser()` got `session_not_found`, wrote
-a pre-handshake 401, the browser reported that as close 1006 (a dropped
-link), and the client reconnected with the same dead token forever. The
-lobby kept working because PostgREST checks JWT signatures, not sessions.
-Full timeline: `docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md`.
-
-**The rules, each with a law behind it:**
-
-1. **A synthetic probe, cron or script signs out with `{ scope: 'local' }`.**
-   Only the session it made. Never a bare `signOut()` outside the UI's own
-   Log Out. (`tests/a-script-never-wears-a-persons-face.law.test.ts`; World
-   Hub: `__tests__/synthetic-probes-never-sign-out-a-person.law.test.mjs`.)
-2. **A script never uses Dan's personal account.** Dan: "DON'T USE MY
-   ACCOUNT FOR THE CRON, USE THE OTHER 'GOD MODE ADMIN ACCOUNT' ... KEEP MY
-   ACCOUNT CLEAN." The platform service identity is `daniel@smarter.poker`
-   (role `god`, "Smarter.Poker Official"); its credentials live in
-   `.env.local` (`SP_EMAIL` / `TEST_USER_EMAIL`, and the World Hub's
-   `PROBE_LOGIN_EMAIL`) and in Vercel, never in a file. A script with no
-   account in its environment refuses to guess.
-3. **The engine refuses a dead session out loud.** An invalid token (GoTrue
-   401/403/404) completes the handshake and is closed with **4401 +
-   `auth:<code>`**; a token that could not be checked (GoTrue down, 5xx, 429) is a pre-handshake **503** the client keeps retrying. Never a bare
-   401 again, and never a 4401 for an auth outage - that would sign every
-   player out on a Supabase blip.
-   (`server/src/transport/aRevokedSessionIsRefusedOutLoud.law.test.ts`)
-4. **The client asks before it spins.** An auth close, three failed
-   handshakes in a row, or a 401 from any engine HTTP call asks GoTrue
-   whether the session is alive (`src/lib/sessionRevoked.ts`). "Could not
-   ask" keeps the reconnect ladder running forever - "the games can never
-   freeze or die" still holds for a live session on a bad link. A session
-   GoTrue rejects twice (getUser, then refresh) clears the local session
-   (scope local) and sends the player to `/auth/login?authError=no_session`
-   with a return path. (`tests/a-revoked-session-is-not-a-reconnect.law.test.ts`)
-5. **A refusal is a number.** `poker_ws_auth_refused_total{path,denied}` on
-   the always-on `/metrics`; `EngineRefusingSessions` (warning) and
-   `EngineCannotReachAuth` (critical) in `infra/monitoring/alert-rules.yml`.
-   Twenty-two hours of 401s paged nobody. Now it does.
 
 ---
 

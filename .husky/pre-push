@@ -22,6 +22,13 @@ set -e
 # next checkout or `git reset --hard` takes the lot with nobody warned.
 bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh" push
 
+# ── The pull request for this branch may already be MERGED (2026-09-06) ─────
+# Autopilot squash-merges the instant the required checks pass. A push after
+# that lands on a closed pull request, changes nothing, and EXITS 0 - which is
+# how World Hub #1387 shipped one of its three commits and nobody noticed for
+# hours. Runs early and costs one HTTP request; fails open on any doubt.
+bash "$(git rev-parse --show-toplevel)/scripts/guard-merged-branch.sh"
+
 REMOTE="$1"
 URL="$2"
 FAIL=0
@@ -290,17 +297,9 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   fi
 
   # 1. Merge conflict markers
-  #
-  # The separator git writes is EXACTLY seven equals signs on its own line, so
-  # that is what this matches. It used to accept seven OR MORE, which also
-  # matched an ASCII rule inside a fenced code block: the verbatim probe output
-  # in docs/changelog/2026-09-05-the-cluster-boards-are-a-rolled-back-probe-harness.md
-  # underlines its sections with 64 of them, so after that file landed on main
-  # every branch that merged main was refused a push for a conflict it did not
-  # have. Exactly seven still catches every real marker.
   for f in $FILES; do
     if [ -f "$f" ]; then
-      if grep -nE '^(<<<<<<< |>>>>>>> |={7}$)' "$f" >/dev/null 2>&1; then
+      if grep -nE '^(<<<<<<< |>>>>>>> |={7,}$)' "$f" >/dev/null 2>&1; then
         echo "[club-arena pre-push] BLOCKED: $f contains a merge-conflict marker"
         FAIL=1
       fi

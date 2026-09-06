@@ -14,7 +14,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup, fireEvent, screen, act } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { buildReplay } from '@/utils/handReplay';
+import { buildReplay, replayInputFromRow } from '@/utils/handReplay';
 import { buildReplayFrames } from '@/utils/replayFrames';
 import {
   ACTION_BEAT_MS,
@@ -114,6 +114,7 @@ describe('what moves between two frames', () => {
   it('nothing moves without a frame before it (a jump, a scrub, the first frame)', () => {
     expect(frameMotion(null, frames[at('row-a-1')], [1])).toEqual({
       chipsIn: null,
+      deadIn: null,
       sweep: [],
       flip: [],
       fold: null,
@@ -192,6 +193,110 @@ describe('what the acting seat was facing', () => {
   it('the big blind folding to nothing owes nothing', () => {
     // Seat 3 posted 2 and folds with 2 the high commitment: no price.
     expect(facingAt(...pair('row-a-0'))).toBeNull();
+  });
+});
+
+describe('dead money is in the pot, never in front of the seat', () => {
+  /* Found in the phase 3 deep dive by running the real records through the
+     pipeline. Both defects predate phase 3 and both are about money:
+
+     1. `replayInputFromRow` dropped the engine's `dead` flag, so only a row
+        whose verb was the literal string "ante" hit the fallback. A bomb
+        pot's `bomb_ante` was read as live money.
+     2. `buildReplayFrames` re-derived its own commitments and counted dead
+        money among them. On real tournament hand #6703996 the big blind was
+        drawn with 750 in front (400 blind + 350 ante) and phase 3's pot odds
+        then told every player facing that blind they owed 750. */
+  const ANTE_ROW = {
+    hand_number: 6703996,
+    game_variant: 'nlh',
+    small_blind: 200,
+    big_blind: 400,
+    pot_size: 2550,
+    button_seat: 4,
+    community_cards: [],
+    players: [
+      { seat: 5, userId: 'sb', username: 'CallFox', stack: 19061 },
+      { seat: 6, userId: 'bb', username: 'SlowViper', stack: 18628 },
+      { seat: 7, userId: 'utg', username: 'CoolerRanger', stack: 54730.5 },
+    ],
+    actions: [
+      { seat: 5, userId: 'sb', action: 'sb', amount: 200, stage: 'preflop', dead: false },
+      { seat: 6, userId: 'bb', action: 'bb', amount: 400, stage: 'preflop', dead: false },
+      { seat: 6, userId: 'bb', action: 'ante', amount: 350, stage: 'preflop', dead: true },
+      { seat: 7, userId: 'utg', action: 'fold', amount: 0, stage: 'preflop' },
+    ],
+    winners: [{ userId: 'bb', amount: 950, potIndex: 0 }],
+  };
+
+  const BOMB_ROW = {
+    hand_number: 6704153,
+    game_variant: 'nlh',
+    small_blind: 0.25,
+    big_blind: 0.5,
+    pot_size: 3,
+    button_seat: 2,
+    bomb_pot: { variant: 'nlh', ante_amount: 1.5, board_count: 2 },
+    community_cards: ['7spades', '2clubs', 'Jspades'],
+    community_cards2: ['8spades', '6spades', 'Qdiamonds'],
+    players: [
+      { seat: 2, userId: 'a', username: 'FlopFox', stack: 126.02 },
+      { seat: 3, userId: 'b', username: 'CheckMonk', stack: 73.91 },
+    ],
+    actions: [
+      { seat: 2, userId: 'a', action: 'bomb_ante', amount: 1.5, stage: 'preflop', dead: true },
+      { seat: 3, userId: 'b', action: 'bomb_ante', amount: 1.5, stage: 'preflop', dead: true },
+      { seat: 3, userId: 'b', action: 'bet', amount: 3.91, stage: 'flop' },
+      { seat: 2, userId: 'a', action: 'fold', amount: 0, stage: 'flop' },
+      { seat: 3, userId: 'b', action: 'return', amount: 3.91, stage: 'flop' },
+    ],
+    winners: [{ userId: 'b', amount: 2.85, potIndex: 0 }],
+  };
+
+  const framesOf = (row: unknown) =>
+    buildReplayFrames(buildReplay(replayInputFromRow(row as never, {})));
+
+  it('an ante is in the pot and not in the seat, so nobody is priced off it', () => {
+    const fr = framesOf(ANTE_ROW);
+    const ante = fr.find((f) => f.row?.verb === 'ante')!;
+    expect(ante.row!.dead).toBe(true);
+    expect(ante.pot).toBe(950);
+    // 400 in front of the big blind, not 750.
+    expect(ante.committed[6]).toBe(400);
+    const fold = fr.find((f) => f.row?.verb === 'fold')!;
+    expect(facingAt(ante, fold)).toMatchObject({ seat: 7, toCall: 400 });
+  });
+
+  it('the ante travels from the seat to the pot, and it is heard', () => {
+    const fr = framesOf(ANTE_ROW);
+    const i = fr.findIndex((f) => f.row?.verb === 'ante');
+    const m = frameMotion(fr[i - 1], fr[i], []);
+    expect(m.deadIn).toBe(6);
+    // It never becomes a bet pill in front of the seat.
+    expect(m.chipsIn).toBeNull();
+    expect(frameCue(fr[i - 1], fr[i])).toBe('chips');
+  });
+
+  it('a bomb pot posts antes and no blinds, and none are invented', () => {
+    const model = buildReplay(replayInputFromRow(BOMB_ROW as never, {}));
+    // Blind synthesis used to fire here (the log has no blind rows), adding an
+    // SB and a BB nobody posted: 3.75 against a stored pot of 3.00.
+    expect(model.rebuiltPot).toBe(3);
+    expect(model.reconciles).toBe(true);
+    const fr = buildReplayFrames(model);
+    expect(fr.some((f) => f.row?.verb === 'sb' || f.row?.verb === 'bb')).toBe(false);
+    expect(fr[fr.length - 1].pot).toBe(3);
+  });
+
+  it('a verb we have no word for still sounds when it moves chips', () => {
+    const fr = framesOf(BOMB_ROW);
+    const i = fr.findIndex((f) => f.row?.dead);
+    // `bomb_ante` is not in the verb table, so it renders as itself...
+    expect(fr[i].row!.verb).toBe('unknown');
+    expect(fr[i].row!.label).toBe('Bomb Ante');
+    // ...but 1.50 went into the middle, so the chip cue is owed.
+    expect(frameCue(fr[i - 1], fr[i])).toBe('chips');
+    expect(frameMotion(fr[i - 1], fr[i], []).deadIn).toBe(2);
   });
 });
 
@@ -341,6 +446,53 @@ describe('the replayer', () => {
       (document.querySelector('.hand-replay') as HTMLElement).style.getPropertyValue('--hr-rate')
     ).toBe('0.5');
     expect(screen.getByLabelText('Half Speed').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('arriving where you already are is not a step: no repeat cue, no repeat award', async () => {
+    await open();
+    fireEvent.click(screen.getByLabelText('Last Step'));
+    for (const fn of Object.values(sound)) fn.mockClear();
+    const root = document.querySelector('.hand-replay')!;
+    // ArrowRight is not disabled the way the Next button is; three presses on
+    // the final frame used to play the win fanfare three times and fly the pot
+    // to the winner three times, on a hand that had already ended.
+    fireEvent.keyDown(root, { key: 'ArrowRight' });
+    fireEvent.keyDown(root, { key: 'ArrowRight' });
+    fireEvent.keyDown(root, { key: 'ArrowRight' });
+    expect(sound.playWin).not.toHaveBeenCalled();
+    expect(sound.playPotCollect).not.toHaveBeenCalled();
+    expect(document.querySelector('.hr-pot-fly')).toBeNull();
+    // The same at the other end.
+    fireEvent.click(screen.getByLabelText('First Step'));
+    for (const fn of Object.values(sound)) fn.mockClear();
+    fireEvent.keyDown(root, { key: 'ArrowLeft' });
+    fireEvent.keyDown(root, { key: 'ArrowLeft' });
+    expect(Object.values(sound).some((fn) => fn.mock.calls.length > 0)).toBe(false);
+    expect(document.querySelector('.hand-replay__scrub-label')?.textContent).toBe(
+      `1 / ${frames.length}`
+    );
+  });
+
+  it('leaving the Replay tab stops playback, so no felt plays out of sight', async () => {
+    await open();
+    fireEvent.click(screen.getByLabelText('Play'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Rundown' }));
+    vi.useFakeTimers();
+    try {
+      for (const fn of Object.values(sound)) fn.mockClear();
+      await act(async () => {
+        vi.advanceTimersByTime(STREET_BEAT_MS * 6);
+      });
+      expect(Object.values(sound).some((fn) => fn.mock.calls.length > 0)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+    // Coming back, the hand is where it was left, not over.
+    fireEvent.click(screen.getByRole('tab', { name: 'Replay' }));
+    expect(document.querySelector('.hand-replay__scrub-label')?.textContent).toBe(
+      `1 / ${frames.length}`
+    );
+    expect(screen.getByLabelText('Play')).toBeTruthy();
   });
 
   it('playing steps frame by frame at the beat, and each step is a step', async () => {

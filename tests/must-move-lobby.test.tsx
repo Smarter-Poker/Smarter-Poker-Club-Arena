@@ -30,6 +30,7 @@ import {
   lobbyTableLabel,
   seatChangeRefusalText,
   seatChangeOutcomeText,
+  joinGameRefusalText,
   type CashGameLobby,
 } from '../src/services/cashGameLobby';
 
@@ -217,6 +218,31 @@ describe('the words', () => {
     );
     const src = readFileSync(resolve(__dirname, '../src/services/cashGameLobby.ts'), 'utf8');
     expect(src).not.toMatch(/—/);
+  });
+
+  /**
+   * THE GAME DOOR RAISES `GAME_BARRED:<seconds>` for a player booted for low
+   * VPIP (fn_cash_game_join), and until 2026-09-05 joinGameRefusalText had no
+   * entry for it: Take A Chair on the corner box refused without saying why
+   * or for how long, while the buy-in modal three taps away said both. It
+   * delegates to cashBuyInRefusalText rather than keeping a second copy of
+   * the sentence, so the two doors cannot end up describing one bar
+   * differently.
+   */
+  it('the join door names the VPIP bar and how long it lasts', () => {
+    expect(joinGameRefusalText({ message: 'GAME_BARRED:240' })).toBe(
+      'You Were Removed For Low VPIP. You May Rejoin This Game In 4 Minutes'
+    );
+    expect(joinGameRefusalText({ message: 'GAME_BARRED:30' })).toBe(
+      'You Were Removed For Low VPIP. You May Rejoin This Game In 1 Minute'
+    );
+    expect(joinGameRefusalText({ message: 'GAME_CLOSED: x' })).toBe(
+      'This Game Is Not Taking Players.'
+    );
+    // Nothing else is delegated: a buy-in sentence must not answer a join.
+    expect(joinGameRefusalText({ message: 'BUYIN_ABOVE_MAX: maximum (400)' })).toBe(
+      'The Game Could Not Seat You Right Now.'
+    );
   });
 
   it('says moved / swapping / listed with the number', () => {

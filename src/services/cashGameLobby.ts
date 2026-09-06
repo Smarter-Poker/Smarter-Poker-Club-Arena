@@ -9,6 +9,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { cashBuyInRefusalText } from '../lib/cashBuyIn';
 
 export interface LobbySeat {
   seat_number: number;
@@ -309,10 +310,31 @@ export const JOIN_GAME_REFUSALS: Record<string, string> = {
   NOT_AUTHENTICATED: 'Sign In To Join A Game.',
 };
 
+/**
+ * GAME_BARRED IS NOT IN THE TABLE ABOVE ON PURPOSE (2026-09-05). The door
+ * raises `GAME_BARRED:<seconds>` for a player booted for low VPIP, and the
+ * number is the whole message - "you may rejoin in 4 minutes" is an answer,
+ * "the game could not seat you right now" is not. `cashBuyInRefusalText`
+ * already writes that sentence for the buy-in door's identical VPIP_BARRED,
+ * so this asks IT rather than keeping a second copy of the wording and the
+ * seconds-to-minutes arithmetic: two copies of one sentence is how the two
+ * doors end up telling a player different things about the same bar.
+ *
+ * Until today this fell through to the generic line, so the Take A Chair
+ * button on CashClusterHUD refused a barred player without ever saying why
+ * or for how long, while the buy-in modal three taps away said both.
+ */
 export function joinGameRefusalText(err: unknown): string {
   const msg = String((err as { message?: string })?.message ?? err ?? '');
   const code = msg.split(':')[0]?.trim();
-  return (code && JOIN_GAME_REFUSALS[code]) || 'The Game Could Not Seat You Right Now.';
+  const mapped = code ? JOIN_GAME_REFUSALS[code] : undefined;
+  if (mapped) return mapped;
+  /* Only the bar is delegated. Asking the buy-in translator about EVERY
+     refusal would let a buy-in sentence answer a join question. */
+  if (code === 'GAME_BARRED') {
+    return cashBuyInRefusalText(msg) || 'You Cannot Rejoin This Game Yet.';
+  }
+  return 'The Game Could Not Seat You Right Now.';
 }
 
 /** The waitlist sentence (OPORD 1.4 s18.3: "Next table opens when one more player sits"). */

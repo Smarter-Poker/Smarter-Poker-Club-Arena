@@ -19,6 +19,7 @@ import {
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
+import { clusterMetrics } from './cluster/ClusterMetrics.js';
 import {
   TournamentRecurringService,
   mttPrestartHorseTarget,
@@ -30,7 +31,10 @@ import { ScheduledTournamentService } from './services/ScheduledTournamentServic
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
-import { wsAuthRefusalPrometheusLines } from './transport/wsHelpers.js';
+import {
+  wsAuthRefusalPrometheusLines,
+  wsProtocolRefusalPrometheusLines,
+} from './transport/wsHelpers.js';
 import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
@@ -1098,6 +1102,58 @@ export class GameServer {
     const deadStalledCount = tableLiveness.filter(
       (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 300_000
     ).length;
+    /**
+     * ── A MINORITY STALL IS NOT A DEAD PROCESS (2026-09-05) ────────────────
+     *
+     * The fix above went half way. It moved the death threshold from 120s to
+     * 300s so a wedged table's own recovery chain gets to finish first — but
+     * it kept the SHAPE: one table out of hundreds still condemns the whole
+     * process, and sp-autoheal then voids the in-flight hand on every other
+     * table to fix that one.
+     *
+     * MEASURED IN PRODUCTION, 763 consecutive minutes on 2026-09-05, from
+     * Prometheus rather than from reasoning:
+     *
+     *   poker_engine_liveness == 0 for 139 of 763 minutes   (18% of the day)
+     *   of those 139, stalled tables > 0 in 136             (98%)
+     *   of the 624 healthy minutes, stalled tables > 0 in 0 (0%)
+     *   the MODAL stalled count during a dead minute:  1
+     *
+     * So the fleet was declared dead for a fifth of the day, essentially
+     * always by a single table, while ~312 tables dealt normally. sp-autoheal
+     * acted on it five times that day — 16:06, 16:42, 17:49, 18:26, 19:04 UTC
+     * — every one an unannounced restart outside the :55 break, which §13
+     * exists precisely to abolish, and every one voiding live hands (§10.5:
+     * a horse's hand counts).
+     *
+     * It also broke deploys, which is how it was found: each bounce reset
+     * uptime, the deploy pipeline read uptime as "we just restarted", and
+     * coalesced. Production sat 3 commits behind for hours.
+     *
+     * THE RULE THIS FILE ALREADY ESTABLISHED, APPLIED ONE MORE TIME. Every
+     * correction above it says the same thing in a different costume: a
+     * signal may only kill the process when killing it costs less than
+     * leaving it. `barrenLeaderDead` states the test outright — "we own ZERO
+     * tables, so a restart voids no hand and drops no player". A stalled
+     * minority fails that test by definition, and it has its own, cheaper
+     * remedy: the per-table recovery chain (watchdog Tier 1-3 ->
+     * killForRestart -> zombie reaper -> discovery rebuild) rebuilds exactly
+     * the broken table without touching the other 311.
+     *
+     * So the process is dead only when the stall is the WHOLE fleet: every
+     * dealable, unpaused table has out-stalled the recovery chain. Then a
+     * restart voids nothing that was working, and it is the right answer.
+     *
+     * The other death signals are untouched and still cover the cases this
+     * one no longer reaches: a wedged discovery loop (discoveryLoopDead), a
+     * barren leader (barrenLeaderDead), and the database's own verdict that
+     * no hands are being dealt at all (dealRate.dbConfirmedDead) — that last
+     * one is the fleet-wide detector, asked of Postgres rather than of this
+     * process's opinion of itself, and it is the correct home for "nothing is
+     * dealing" precisely because it cannot be fooled by our own bookkeeping.
+     */
+    const dealableTableCount = tableLiveness.filter((t) => t.dealable >= 2 && !t.paused).length;
+    const wholeFleetStalled = dealableTableCount > 0 && deadStalledCount >= dealableTableCount;
     const discoveryStaleMs = Date.now() - this.lastDiscoveryOkAt;
     /**
      * ── A SLOW DATABASE IS NOT A DEAD PROCESS (2026-08-23) ──────────────────
@@ -1272,7 +1328,7 @@ export class GameServer {
        */
       liveness: !isLeader()
         ? 'standby'
-        : deadStalledCount > 0 || discoveryLoopDead || barrenLeaderDead || dealRate.dbConfirmedDead
+        : wholeFleetStalled || discoveryLoopDead || barrenLeaderDead || dealRate.dbConfirmedDead
           ? 'dead'
           : 'ok',
       /**
@@ -1311,6 +1367,19 @@ export class GameServer {
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
+      /**
+       * The numerator and denominator of the liveness verdict, published so
+       * the verdict can be argued with from outside the process (2026-09-05).
+       *
+       * Before this, `poker_engine_liveness` went to 0 and there was no way to
+       * ask WHY without shelling into the box: the answer turned out to be
+       * "one table out of 312" on 136 of the 139 minutes it happened. A death
+       * signal whose reason is not published is a death signal nobody can
+       * audit, and this one was killing production five times a day.
+       */
+      deadStalledCount,
+      dealableTableCount,
+      wholeFleetStalled,
       // 2026-09-04: is horse Monte Carlo being throttled to protect the loop?
       // scale < 1 means the core is saturated; see EquityLoadGovernor.ts.
       equityGovernor: equityGovernor.snapshot(),
@@ -1341,6 +1410,12 @@ export class GameServer {
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
+      // THE CLUSTER CONTROLLER'S LAST PASS (2026-09-05). On 2026-09-04 its
+      // latch stalled for eleven minutes with no log line; the only witness
+      // was cash_cluster_events read by hand. `lastPassAt` ageing while the
+      // leader is up is that stall, visible from outside the process. null
+      // on a standby: the controller runs on the leader only.
+      cluster: this.clusterController.isRunning ? clusterMetrics.healthSnapshot() : null,
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
@@ -1421,10 +1496,29 @@ export class GameServer {
       (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 120_000
     );
     const pausedCount = liveness.filter((t) => t.paused).length;
+    /**
+     * 2026-09-05: the gauge below used `stalled.length === 0` — the 120s
+     * VISIBILITY list — while getStatus() killed on the 300s list. Two
+     * thresholds, one name, and the metric Prometheus alerted on was not the
+     * one Docker acted on. Both now read the same rule, computed here from the
+     * same snapshot: dead only when the WHOLE dealable fleet has out-stalled
+     * the recovery chain. See the long note on `wholeFleetStalled` above.
+     */
+    const deadStalled = liveness.filter(
+      (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress > 300_000
+    );
+    const dealable = liveness.filter((t) => t.dealable >= 2 && !t.paused);
+    const fleetStalled = dealable.length > 0 && deadStalled.length >= dealable.length;
     const freeze: string[] = [
       '# HELP poker_stalled_tables Tables with 2+ dealable seats, not paused by design, and no progress for 2 minutes',
       '# TYPE poker_stalled_tables gauge',
       `poker_stalled_tables ${stalled.length}`,
+      '# HELP poker_dead_stalled_tables Tables that have out-stalled the whole per-table recovery chain (5 minutes)',
+      '# TYPE poker_dead_stalled_tables gauge',
+      `poker_dead_stalled_tables ${deadStalled.length}`,
+      '# HELP poker_dealable_tables Tables with 2+ dealable seats and not paused by design - the denominator of the liveness verdict',
+      '# TYPE poker_dealable_tables gauge',
+      `poker_dealable_tables ${dealable.length}`,
       '# HELP poker_paused_tables Tables paused on purpose (hand-for-hand/break) - excluded from stall detection',
       '# TYPE poker_paused_tables gauge',
       `poker_paused_tables ${pausedCount}`,
@@ -1451,7 +1545,7 @@ export class GameServer {
       '# HELP poker_discovery_loop_stalled_ms Milliseconds since the discovery loop last RAN (not since it last succeeded)',
       '# TYPE poker_discovery_loop_stalled_ms gauge',
       `poker_discovery_loop_stalled_ms ${Date.now() - this.lastDiscoveryAttemptAt}`,
-      '# HELP poker_engine_liveness 1 when no table is stalled and the discovery loop is running, else 0',
+      '# HELP poker_engine_liveness 1 unless the WHOLE dealable fleet has out-stalled recovery, or the discovery loop has stopped, else 0',
       '# TYPE poker_engine_liveness gauge',
       // Must match getStatus(): a slow database is not a dead process, so this
       // keys on whether the loop RAN, not on whether its last answer was good.
@@ -1464,8 +1558,12 @@ export class GameServer {
       // engine through twenty minutes of a completely dark fleet. Owning no
       // tables makes the ok-clock safe to read here: there is no in-flight
       // hand for a restart to void, which is the only reason it was banned.
+      // 2026-09-05: `stalled.length === 0` here meant ONE table out of 312
+      // reported the whole engine dead — and Docker acted on it, five times on
+      // the day this was measured, every one an unannounced restart outside
+      // the §13 break. It reads the same fleet-wide rule as getStatus() now.
       `poker_engine_liveness ${
-        stalled.length === 0 &&
+        !fleetStalled &&
         Date.now() - this.lastDiscoveryAttemptAt <= 60_000 &&
         !(this.tableEngines.size === 0 && Date.now() - this.lastDiscoveryOkAt > 600_000)
           ? 1
@@ -1559,6 +1657,7 @@ export class GameServer {
       // See transport/wsHelpers.ts and EngineRefusingSessions in
       // infra/monitoring/alert-rules.yml.
       ...wsAuthRefusalPrometheusLines(),
+      ...wsProtocolRefusalPrometheusLines(),
       // ── ACTION LATENCY, ALWAYS ON (Realtime programme Phase 1, 2026-09-04)
       // The number that defines how a table feels, scraped for the first
       // time. Two series (audience=human|horse), never per table. See

@@ -39,6 +39,13 @@ function isDead(o: {
   discoveryStaleMs?: number;
   /** 2026-08-30: tables this instance has actually adopted. */
   activeTables?: number;
+  /**
+   * 2026-09-05: dealable, unpaused tables — the DENOMINATOR of the stall
+   * verdict. Defaults to deadStalledCount so a caller that supplies only a
+   * stall count still describes a whole-fleet stall, which is what every test
+   * written before this date meant by it.
+   */
+  dealableTableCount?: number;
 }): boolean {
   const discoveryLoopDead =
     !o.stillBooting &&
@@ -46,7 +53,9 @@ function isDead(o: {
       (o.discoveryLoopStalledMs > 60_000 && !o.anyTableProgressedRecently));
   const barrenLeaderDead =
     !o.stillBooting && (o.activeTables ?? 1) === 0 && (o.discoveryStaleMs ?? 0) > 600_000;
-  return o.deadStalledCount > 0 || discoveryLoopDead || barrenLeaderDead || o.dbConfirmedDead;
+  const dealableTableCount = o.dealableTableCount ?? o.deadStalledCount;
+  const wholeFleetStalled = dealableTableCount > 0 && o.deadStalledCount >= dealableTableCount;
+  return wholeFleetStalled || discoveryLoopDead || barrenLeaderDead || o.dbConfirmedDead;
 }
 
 describe('engine liveness', () => {
@@ -93,9 +102,93 @@ describe('engine liveness', () => {
     ).toBe(true);
   });
 
-  it('still dies on a genuinely stalled table', () => {
+  it('still dies when the WHOLE dealable fleet has out-stalled recovery', () => {
+    // The only table that can be dealt is the stalled one. A restart voids
+    // nothing that was working, so it is the right answer.
     expect(
-      isDead({ deadStalledCount: 1, discoveryLoopStalledMs: 1_000, dbConfirmedDead: false })
+      isDead({
+        deadStalledCount: 1,
+        dealableTableCount: 1,
+        discoveryLoopStalledMs: 1_000,
+        dbConfirmedDead: false,
+      })
+    ).toBe(true);
+  });
+
+  /**
+   * ── A MINORITY STALL IS NOT A DEAD PROCESS (2026-09-05) ──────────────────
+   *
+   * This test used to assert the opposite: `deadStalledCount: 1` was dead,
+   * full stop, whatever else the fleet was doing. It is replaced deliberately
+   * and in the same commit as the code, because production measured the cost.
+   *
+   * 763 consecutive minutes of Prometheus on 2026-09-05:
+   *   liveness == 0 for 139 minutes (18% of the day)
+   *   stalled tables > 0 in 136 of those 139 (98%)
+   *   stalled tables > 0 in 0 of the 624 healthy minutes
+   *   modal stalled count during a dead minute: ONE
+   *
+   * sp-autoheal acted on that verdict five times that day - 16:06, 16:42,
+   * 17:49, 18:26, 19:04 UTC - each an unannounced restart outside the §13
+   * break, each voiding live hands on ~312 tables to fix one, and each also
+   * resetting uptime and so coalescing the deploy pipeline into shipping
+   * nothing (see tests/the-deploy-can-always-ship.law.test.ts).
+   *
+   * The single stalled table already has a cheaper remedy: watchdog Tier 1-3
+   * -> killForRestart -> zombie reaper -> discovery rebuild, which rebuilds
+   * that table alone. Killing the container is not an escalation of that, it
+   * is a strictly worse version of it applied to 311 innocent tables.
+   */
+  it('does NOT die because one table out of a dealing fleet is stalled (2026-09-05)', () => {
+    expect(
+      isDead({
+        deadStalledCount: 1,
+        dealableTableCount: 312,
+        discoveryLoopStalledMs: 1_000,
+        dbConfirmedDead: false,
+      })
+    ).toBe(false);
+  });
+
+  it('does NOT die on a large but partial stall - 79 of 312 was a real reading', () => {
+    // The worst minute measured on 2026-09-05 had 79 stalled tables. 233 were
+    // dealing. Restarting would have voided all 233 to fix the 79, which the
+    // per-table recovery was already working on.
+    expect(
+      isDead({
+        deadStalledCount: 79,
+        dealableTableCount: 312,
+        discoveryLoopStalledMs: 1_000,
+        dbConfirmedDead: false,
+      })
+    ).toBe(false);
+  });
+
+  it('an idle fleet with nothing dealable is not dead either', () => {
+    // Zero dealable tables is the overnight/empty-lobby state, not a stall.
+    // Guarding the denominator is what stops 0 >= 0 reading as "everything is
+    // stalled" and restarting an engine with nothing wrong with it.
+    expect(
+      isDead({
+        deadStalledCount: 0,
+        dealableTableCount: 0,
+        discoveryLoopStalledMs: 1_000,
+        dbConfirmedDead: false,
+      })
+    ).toBe(false);
+  });
+
+  it('the fleet-wide detector still fires - the database is the one that cannot be fooled', () => {
+    // Whole-fleet silence is what dbConfirmedDead is FOR, asked of Postgres
+    // rather than of this process's opinion of its own work. Narrowing the
+    // stall clause does not narrow this one.
+    expect(
+      isDead({
+        deadStalledCount: 0,
+        dealableTableCount: 312,
+        discoveryLoopStalledMs: 1_000,
+        dbConfirmedDead: true,
+      })
     ).toBe(true);
   });
 
@@ -261,6 +354,23 @@ describe('the rule in the source matches the rule tested here', () => {
     expect(bdef).toMatch(/stillBooting/);
     expect(bdef).toMatch(/tableEngines\.size === 0/);
     expect(bdef).toMatch(/discoveryStaleMs > 600_000/);
+
+    // 2026-09-05: the stall clause is FLEET-WIDE. `deadStalledCount > 0` in
+    // the liveness expression is the regression that had sp-autoheal restart
+    // production five times in one day on the word of a single table, and it
+    // must not come back by any spelling.
+    expect(
+      expr,
+      'liveness must not condemn the process on a raw stall count - see wholeFleetStalled'
+    ).not.toMatch(/deadStalledCount\s*>\s*0/);
+    expect(expr).toMatch(/wholeFleetStalled/);
+    const sdef = sliceStatement(src, 'const wholeFleetStalled');
+    expect(sdef, 'wholeFleetStalled definition missing').toBeTruthy();
+    // Both halves are the safety argument: a denominator that must be
+    // non-zero (an idle fleet is not a stalled one), and a comparison that
+    // requires EVERY dealable table to have out-stalled recovery.
+    expect(sdef).toMatch(/dealableTableCount > 0/);
+    expect(sdef).toMatch(/deadStalledCount >= dealableTableCount/);
   });
 
   it('the prometheus gauge agrees with getStatus', async () => {
@@ -271,6 +381,15 @@ describe('the rule in the source matches the rule tested here', () => {
     // The gauge is multi-line since 2026-08-30; read to the closing backtick.
     const expr = sliceBetween(src, 'poker_engine_liveness ${', '`,');
     expect(expr).toMatch(/lastDiscoveryAttemptAt/);
+    // 2026-09-05: the gauge read the 120s VISIBILITY list (`stalled`) while
+    // getStatus() killed on the 300s one - two thresholds under one name, so
+    // the series anybody alerted on was not the series Docker acted on. Both
+    // read the same fleet-wide verdict now.
+    expect(
+      expr,
+      'the gauge must not key on the 120s visibility list - use the same fleet verdict as getStatus()'
+    ).not.toMatch(/stalled\.length === 0/);
+    expect(expr).toMatch(/fleetStalled/);
     // It may read the ok-clock ONLY as part of the barren clause (zero tables
     // adopted). Bare use of it as the liveness signal is the 2026-08-23
     // regression and stays banned.

@@ -45,6 +45,7 @@ import {
   authRejectionReason,
   tokenDenial,
   recordWsAuthRefusal,
+  recordWsProtocolRefusal,
   type TokenVerdict,
   type TokenDenial,
 } from './wsHelpers.js';
@@ -81,6 +82,47 @@ export const CLOSE_TABLE_NOT_FOUND = 4404;
 export const CLOSE_RATE_LIMITED = 4429;
 export const CLOSE_SERVER_ERROR = 4500;
 export const CLOSE_BAD_REQUEST = 4400;
+
+/**
+ * ═══ THE PROTOCOL VERSION GATE (Realtime Phase 4, 2026-09-05) ══════════════
+ *
+ * The lowest client protocol this engine will serve. A socket arrives with
+ * `?v=<n>`; anything below this is refused with 4426 and the client fetches a
+ * new bundle.
+ *
+ * ZERO TODAY, AND THAT IS THE POINT. Every client is accepted, including the
+ * bundles that predate the parameter and send nothing - they read as 0. The
+ * gate is installed now, while it is a no-op, so that the day a frame changes
+ * shape there is somewhere to put the number. Without it the only options at
+ * that moment are to break stale tabs silently or to carry both frame shapes
+ * forever.
+ *
+ * WHY IT WILL BE NEEDED. Club Arena's origin keeps old assets deliberately
+ * (CLAUDE.md 1.1), so a tab opened yesterday is running yesterday's bundle
+ * against today's engine, mid-hand, right now. That is a feature - it stops
+ * a deploy 404ing a player's chunks - and it is exactly why the engine has to
+ * be able to say "not that old".
+ *
+ * RAISE IT IN THE SAME COMMIT AS THE FRAME CHANGE, never before: every tab
+ * below the new number is reloaded the moment this deploys.
+ */
+export const MIN_CLIENT_PROTOCOL = 0;
+
+/** Refused for speaking a protocol this engine no longer serves. */
+export const CLOSE_UPGRADE_REQUIRED = 4426;
+
+/**
+ * The protocol a socket claims, from `?v=`. Absent, malformed or negative all
+ * read as 0 - the version of every bundle that shipped before the parameter
+ * existed. Never NaN: a comparison against NaN is false, which would let a
+ * garbage value through the one gate meant to catch it.
+ */
+export function clientProtocolVersion(url: URL): number {
+  const raw = url.searchParams.get('v');
+  if (raw === null) return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 // Round 70 + 67/190: extract real client IP from x-forwarded-for chain.
 // Caddy sits in front of the engine, so socket.remoteAddress is always
@@ -262,6 +304,41 @@ function refuseUpgrade(
   });
 }
 
+/**
+ * Refuse a bundle older than this engine serves (Phase 4, 2026-09-05).
+ *
+ * Completes the handshake and closes 4426 for the same reason `refuseUpgrade`
+ * does it for auth: a pre-handshake status is close 1006 to the browser, and
+ * 1006 means "try again", which is the one thing a stale bundle must not do.
+ * The reason carries the number it needs to reach, so the close is readable in
+ * a console and in a log without cross-referencing anything.
+ *
+ * EXPORTED, and the counter is inside it (audit, 2026-09-05). The first
+ * version was private here and the channel server inlined its own copy of the
+ * same four lines - two implementations of one refusal, one of which would
+ * have been the one nobody updated. It also recorded nothing, which is the
+ * defect the auth counter beside it exists to remember: on the day
+ * MIN_CLIENT_PROTOCOL is raised, the wave of stale tabs being turned away is
+ * the one thing worth watching, and it would not have been a number anywhere.
+ */
+export function refuseProtocol(
+  wss: WebSocketServer,
+  req: IncomingMessage,
+  socket: import('stream').Duplex,
+  head: Buffer,
+  saw: number,
+  path: 'table' | 'multi' | 'channel'
+): void {
+  recordWsProtocolRefusal(path);
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    try {
+      ws.close(CLOSE_UPGRADE_REQUIRED, `upgrade_required:${saw}<${MIN_CLIENT_PROTOCOL}`);
+    } catch {
+      ws.terminate();
+    }
+  });
+}
+
 // ─── EngineWebSocketServer ────────────────────────────────────────────────────
 
 export class EngineWebSocketServer {
@@ -307,6 +384,35 @@ export class EngineWebSocketServer {
     httpServer.on('upgrade', (req, socket, head) => {
       // Parse URL relative to a dummy host — `req.url` is path+query only.
       const url = new URL(req.url || '/', 'http://localhost');
+
+      /* ═══ PROTOCOL GATE (Phase 4, 2026-09-05) ═══════════════════════════
+         Before auth and before any table work, because it is cheaper than
+         both and because a bundle we will not serve should not be charged a
+         token verification to find out.
+
+         REFUSED WITH A CLOSE FRAME, NOT AN HTTP STATUS. A status written
+         before the handshake reaches JavaScript as 1006 - the lesson of
+         2026-09-03, where a pre-handshake 401 was indistinguishable from a
+         dropped link and got retried for 22 hours. The same mistake here
+         would be a stale tab reconnecting forever instead of fetching the
+         bundle that would fix it. `refuseProtocol` completes the handshake
+         and closes 4426, which the client acts on.
+
+         A no-op while MIN_CLIENT_PROTOCOL is 0. */
+      if (
+        (url.pathname === '/ws/multi' || url.pathname.startsWith('/ws/table/')) &&
+        clientProtocolVersion(url) < MIN_CLIENT_PROTOCOL
+      ) {
+        refuseProtocol(
+          this.wss,
+          req,
+          socket,
+          head,
+          clientProtocolVersion(url),
+          url.pathname === '/ws/multi' ? 'multi' : 'table'
+        );
+        return;
+      }
 
       // ── Roadmap batch 6: multiplexed path ────────────────────────────
       // Auth-only at upgrade; every table-scoped gate runs per SUBSCRIBE.

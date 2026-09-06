@@ -239,16 +239,30 @@ COMMENT ON FUNCTION public.fn_cash_cluster_balance(uuid, timestamptz) IS
 
 -- ── The pass calls it ───────────────────────────────────────────────────
 -- Re-emitted in full (the house pattern: a migration owns the whole body it
--- changes). The ONLY differences from 20260905091025 are the balance call
--- inside each game's own sub-block, the two counters it feeds, and this note.
--- Inside the sub-block on purpose: a balance planner that throws must cost
--- that one game its pass, exactly as a failing tick does, and never the pass.
+-- changes), FROM THE LIVE BODY, which is 20260906011113's - not from
+-- 20260905091025's. The first draft of this migration was written from the
+-- older file and applied two minutes after 20260906011113, so it silently
+-- reverted that migration's work: `rested_games` (the identity rows a wake on
+-- a DORMANT game needs, without which the 18.4 dealer wake is skipped for
+-- precisely the game a wake is for), the per-result `state`, `eligible_horses`
+-- on the error payload, and the error entry appended to `results`. Production
+-- was repaired the same hour; this is the repaired body.
+--
+-- IF YOU RE-EMIT THIS FUNCTION AGAIN: ask the database for the live body
+-- first (`SELECT md5(prosrc) ... WHERE proname = 'fn_cash_clusters_tick_all'`)
+-- and diff it against whatever file you are working from. Two agents
+-- re-declared it inside three minutes on 2026-09-05.
+--
+-- The ONLY differences from the live body are the balance call inside each
+-- game's own sub-block, the two counters it feeds, and this note. Inside the
+-- sub-block on purpose: a balance planner that throws must cost that one game
+-- its pass, exactly as a failing tick does, and never the pass.
 CREATE OR REPLACE FUNCTION public.fn_cash_clusters_tick_all(p_eligible jsonb DEFAULT '{}'::jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
-AS $$
+AS $fn$
 DECLARE
   w record;
   v_now timestamptz := clock_timestamp();
@@ -261,6 +275,7 @@ DECLARE
   v_eligible integer;
   v_res jsonb;
   v_results jsonb := '[]'::jsonb;
+  v_rested_games jsonb := '[]'::jsonb;
   v_sqlstate text;
   v_message text;
 BEGIN
@@ -270,7 +285,7 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'skipped', 'frozen',
                               'games', 0, 'ticked', 0, 'errors', 0, 'rested', 0,
                               'balanced', 0,
-                              'results', '[]'::jsonb);
+                              'results', '[]'::jsonb, 'rested_games', '[]'::jsonb);
   END IF;
 
   FOR w IN
@@ -300,6 +315,17 @@ BEGIN
       OR w.last_tick_at < v_now - interval '30 seconds'
     ) THEN
       v_rested := v_rested + 1;
+      -- A RESTED GAME STILL ANSWERS "WHO ARE YOU" (2026-09-05). The controller
+      -- builds its per-game row map from what this pass returns, and a wake on
+      -- a game absent from that map cannot read `enabled` or find Main 1 - so
+      -- the 18.4 dealer wake was skipped for precisely the dormant game a wake
+      -- is for. Identity only; no result, because it was not ticked.
+      v_rested_games := v_rested_games || jsonb_build_object(
+        'game_id', w.game_id,
+        'main1_table_id', w.main1_table_id,
+        'enabled', w.enabled,
+        'state', w.state
+      );
       CONTINUE;
     END IF;
 
@@ -317,6 +343,7 @@ BEGIN
         'game_id', w.game_id,
         'main1_table_id', w.main1_table_id,
         'enabled', w.enabled,
+        'state', w.state,
         'balanced', coalesce(v_bal, 0),
         'result', coalesce(v_res, '{}'::jsonb)
       );
@@ -327,19 +354,30 @@ BEGIN
       v_errors := v_errors + 1;
       INSERT INTO public.cash_cluster_events (game_id, table_id, kind, payload)
       VALUES (w.game_id, w.main1_table_id, 'controller_tick_error',
-              jsonb_build_object('sqlstate', v_sqlstate, 'message', v_message));
+              jsonb_build_object('sqlstate', v_sqlstate, 'message', v_message,
+                                 'eligible_horses', v_eligible));
+      v_results := v_results || jsonb_build_object(
+        'game_id', w.game_id,
+        'main1_table_id', w.main1_table_id,
+        'enabled', w.enabled,
+        'state', w.state,
+        'error', jsonb_build_object('sqlstate', v_sqlstate, 'message', v_message)
+      );
     END;
   END LOOP;
 
-  RETURN jsonb_build_object('ok', true,
-                            'games', v_games,
-                            'ticked', v_ticked,
-                            'errors', v_errors,
-                            'rested', v_rested,
-                            'balanced', v_balanced,
-                            'results', v_results);
+  RETURN jsonb_build_object(
+    'ok', true,
+    'games', v_games,
+    'ticked', v_ticked,
+    'errors', v_errors,
+    'rested', v_rested,
+    'balanced', v_balanced,
+    'results', v_results,
+    'rested_games', v_rested_games
+  );
 END;
-$$;
+$fn$;
 
 REVOKE ALL ON FUNCTION public.fn_cash_clusters_tick_all(jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_cash_clusters_tick_all(jsonb) TO service_role;

@@ -615,6 +615,43 @@
   .hr-seat__name {
     font-size: 11px;
   }
+
+  /**
+   * A FOUR-CARD HOLDING DOES NOT FIT AN 82px SEAT, SO IT IS FANNED.
+   *
+   * Measured on the live share page at 375px (2026-09-05, a PLO8 hand):
+   * the seat is 82px and the card row was 106px - four 25px cards with 2px
+   * gaps - so it spilled 12px past the seat on EACH side. On the bottom seat
+   * that put the hero's own cards over the "Yours" badge and under the plate
+   * of the seat above, and the badge is the thing that says whose hand it is.
+   * Hold'em never showed it: two cards are 52px and fit with room to spare.
+   *
+   * A real four-card hand is held fanned, so that is what this does rather
+   * than shrinking the cards to illegibility. Cards overlap from the LEFT, so
+   * every rank and suit - which live in the top-left corner - stays visible;
+   * the widths below are chosen so each variant lands inside 82px:
+   *
+   *   2 cards (hold'em)     51px      no overlap, untouched
+   *   3 cards (pineapple)   61px
+   *   4 cards (PLO / PLO8)  79px
+   *   5 cards (PLO5)        81px
+   *   6 cards (PLO6)        80px
+   */
+  .hr-seat__cards {
+    gap: 1px;
+  }
+
+  .hr-seat__cards:has(> :nth-child(3)) > * + * {
+    margin-left: -8px;
+  }
+
+  .hr-seat__cards:has(> :nth-child(5)) > * + * {
+    margin-left: -12px;
+  }
+
+  .hr-seat__cards:has(> :nth-child(6)) > * + * {
+    margin-left: -15px;
+  }
 }
 
 /* ── Light mode: brushed silver, the felt stays a felt ─────────────────── */
@@ -733,7 +770,7 @@
 @keyframes hrChipSweep {
   to {
     left: var(--hr-pot-x, 50%);
-    top: var(--hr-pot-y, 38%);
+    top: var(--hr-pot-y, 43%);
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.7);
   }
@@ -742,6 +779,16 @@
 .hr-bet--sweep {
   pointer-events: none;
   animation: hrChipSweep calc(520ms * var(--hr-move)) cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
+/* Dead money travels from the seat to the pot without ever stopping in front
+   of the player. Same journey as the sweep, from a different starting point,
+   so it shares the keyframe. */
+.hr-bet--dead {
+  pointer-events: none;
+  color: var(--hr-brass);
+  border-color: rgba(214, 173, 82, 0.5);
+  animation: hrChipSweep calc(620ms * var(--hr-move)) cubic-bezier(0.4, 0, 0.6, 1) forwards;
 }
 
 /* The pot goes to the winner. */
@@ -948,6 +995,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* THE SEATS NEAREST THE RAIL ARE ANCHORED BY THEIR INNER EDGE, not centred on
+   it. A 96px plate centred at 6% of a 430px felt puts half of itself outside,
+   and the felt clips: on a seven-handed hand (real #6703996) the two widest
+   seats read "allHunter..." and "BarrelSage" with the rest cut off. Anchoring
+   the left seat's left edge and the right seat's right edge to its own point
+   keeps the whole plate on the felt at every table size. */
+.hr-seat--left {
+  transform: translate(0, -50%);
+}
+
+.hr-seat--right {
+  transform: translate(-100%, -50%);
+}
+
 /* Labels hang inward on the seats nearest the felt's edges: the felt clips. */
 .hr-seat--right .hr-facing {
   left: auto;
@@ -1057,7 +1118,8 @@
 }
 
 [data-theme='light'] .hr-facing,
-[data-theme='light'] .hr-pot-fly {
+[data-theme='light'] .hr-pot-fly,
+[data-theme='light'] .hr-seat__made {
   background: rgba(255, 255, 255, 0.92);
 }
 

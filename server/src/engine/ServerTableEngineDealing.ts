@@ -8,6 +8,8 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import { noteFire } from './BrainTelemetry.js';
+import { resolvePersona, wantsStraddle } from './HorsePersona.js';
 import { HandController } from './HandController.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
@@ -931,10 +933,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // reasons that are really one reason. The client renders the Rabbit
           // Hunt button behind `!tableState.isHandInProgress`, so the offer
           // it received at settlement is invisible until that clean state
-          // lands; and a reveal freezes the client's snapshot for three
-          // seconds, which is only safe once there is no live hand for the
-          // freeze to starve. Before this beat existed the button's whole
-          // visible life was boardClearMs - half a second on a fold.
+          // lands. (Until 2026-09-05 a reveal also froze the client's
+          // snapshot for three seconds, which was only safe with no live hand
+          // to starve; the reveal now paints on a retained copy of the board
+          // and freezes nothing - TablePage P1.) Before this beat existed the
+          // button's whole visible life was boardClearMs - half a second on a
+          // fold.
           //
           // Unconditional. A rest that happened only when a rabbit hunt was
           // purchasable would tell the whole table, from the rhythm alone,
@@ -1712,6 +1716,34 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const p = players.find((pl) => pl.seat_number === currentSeat);
         if (p) seatOrder.push({ seat: p.seat_number, playerId: p.user_id });
         currentSeat = this.getNextSeat(currentSeat, players);
+      }
+
+      // ═══ V48 VOLUNTARY STRADDLE (2026-09-05) ═══════════════════════════
+      // A horse has never posted a voluntary straddle. The layer that reads
+      // a straddled pot correctly shipped on 2026-08-26 (V18) and the fleet
+      // opened straddle tables on 2026-08-28, but nothing on the horse side
+      // ever ENROLLED, so every straddle at every table came from a human or
+      // from the host's mandatory setting. It is one of the most visible
+      // absences at a live table: the seat that never straddles, ever.
+      //
+      // The rate is the horse's own persona (HorsePersona.straddleRate,
+      // skewed the way real players are - most never, a few nearly always),
+      // and the answer is deterministic in (horse, hand): a replayed hand
+      // must straddle the same way twice, and a test must be able to assert
+      // the distribution. Humans are untouched - this only ever enrolls or
+      // unenrolls a horse, and the host's mandatory setting still overrides
+      // everything.
+      for (const entry of seatOrder) {
+        const seated = this.seatedPlayers.find((sp) => sp.user_id === entry.playerId);
+        if (!seated?.is_horse) continue;
+        try {
+          const persona = resolvePersona(seated.horse_profile, seated.user_id);
+          const wants = wantsStraddle(seated.user_id, handNumber, persona.straddleRate);
+          this.straddleEngine.toggleAutoStraddle(this.tableId, seated.user_id, wants);
+          if (wants) noteFire('v48_straddle_enrolled');
+        } catch {
+          /* a persona must never be able to stop a hand being dealt */
+        }
       }
 
       const stackMap = new Map(players.map((p) => [p.user_id, p.stack]));

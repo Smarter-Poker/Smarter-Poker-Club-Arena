@@ -85,7 +85,7 @@ describe('share variant covers the whole live catalogue', () => {
   it('offers no OFC variant at all', () => {
     const share = readSrc('src/components/table/ShareHand.tsx');
     expect(share).not.toContain("'OFC Pineapple'");
-    const page = readSrc('src/lib/handHistoryAdapter.ts');
+    const page = readSrc('src/lib/shareHandModel.ts');
     expect(page).not.toContain("includes('OFC')");
     // A legacy ofc_pineapple row still contains "PINEAPPLE", so it lands on
     // Pineapple - which is what those tables always actually were.
@@ -107,11 +107,14 @@ describe('share variant covers the whole live catalogue', () => {
   it('the one share mapping still uses these ordered rules, and the page uses it', () => {
     /* 2026-09-04: the page kept a weaker private copy of this mapping (no
        separator stripping, no OMAHA8 / HILO). It shares through the adapter's
-       `panelHandToShareable`, which calls the adapter's `toShareVariant`. */
+       `panelHandToShareable`, which calls `toShareVariant`.
+
+       PHASE 4 2026-09-05: the mapping lives in `lib/shareHandModel` now,
+       beside the producer that uses it, and the adapter re-exports it. */
     const pageSrc = readSrc('src/pages/HandHistoryPage.tsx');
     expect(pageSrc).toContain('panelHandToShareable(hand,');
     expect(pageSrc).not.toMatch(/function toShareVariant/);
-    const page = readSrc('src/lib/handHistoryAdapter.ts');
+    const page = readSrc('src/lib/shareHandModel.ts');
     const order = ['PINEAPPLE', 'SHORT', 'PLO8', 'PLO6', 'PLO5'];
     const positions = order.map((t) => page.indexOf(`includes('${t}')`));
     expect(positions.every((p) => p > -1)).toBe(true);
@@ -122,6 +125,23 @@ describe('share variant covers the whole live catalogue', () => {
     const barePlo = page.indexOf("includes('PLO') ||");
     expect(barePlo).toBeGreaterThan(-1);
     expect(page.indexOf("includes('PLO8')")).toBeLessThan(barePlo);
+  });
+
+  /**
+   * THE TABLE HAD ITS OWN LIST, AND IT NAMED FOUR OF THE SEVEN.
+   *
+   * Every fix above landed on the archive's producer. TablePage - which is
+   * where a player actually presses Share, on the hand they just played -
+   * kept `['NLH','PLO4','PLO5','PLO6'].includes(st.gameType) ? ... : 'NLH'`,
+   * so a PLO8 hand shared from the felt arrived as hold'em, and short deck
+   * and both pineapples arrived as hold'em too. A mapping with two callers
+   * is a mapping that will disagree with itself.
+   */
+  it('the live table shares through the same mapping, not a list of its own', () => {
+    const table = readSrc('src/pages/TablePage.tsx');
+    expect(table).toContain('toShareVariant(st.gameType)');
+    // The list as CODE. The comment above the fix quotes it, which is the point.
+    expect(table).not.toMatch(/\(\s*\[\s*'NLH',\s*'PLO4',\s*'PLO5',\s*'PLO6'\s*\]\s*as const\s*\)/);
   });
 });
 

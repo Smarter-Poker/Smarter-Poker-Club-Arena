@@ -50,6 +50,14 @@ import {
   type TokenVerdict,
 } from './wsHelpers.js';
 import { channelHub } from '../hub/ChannelHub.js';
+// One definition of the protocol gate for every socket on this engine. A
+// second copy of the number is how two sockets end up disagreeing about which
+// bundles they serve (Realtime Phase 4, 2026-09-05).
+import {
+  MIN_CLIENT_PROTOCOL,
+  clientProtocolVersion,
+  refuseProtocol,
+} from './EngineWebSocketServer.js';
 
 /** B13: how long a club-membership verdict may be reused. */
 const CLUB_MEMBERSHIP_TTL_MS = 60_000;
@@ -134,6 +142,21 @@ export class ChannelWebSocketServer {
 
       // Only handle our path — leave /ws/table/:tableId to EngineWebSocketServer
       if (url.pathname !== '/ws/channel') return;
+
+      /* Protocol gate (Realtime Phase 4, 2026-09-05), the same one the table
+         sockets carry and for the same reason: the origin keeps old assets, so
+         a tab from yesterday is talking to today's engine. Refused with a
+         CLOSE FRAME rather than an HTTP status, because a pre-handshake status
+         reaches the browser as 1006 and 1006 means "retry" - the one thing a
+         stale bundle must not do. A no-op while MIN_CLIENT_PROTOCOL is 0. */
+      if (clientProtocolVersion(url) < MIN_CLIENT_PROTOCOL) {
+        // The SHARED refusal, not a copy of it (audit, 2026-09-05): this
+        // inlined the same four lines, so the counter and any future change to
+        // how a refusal is written would have reached one socket and not the
+        // other.
+        refuseProtocol(this.wss, req, socket, head, clientProtocolVersion(url), 'channel');
+        return;
+      }
 
       const token = extractBearerToken(req.headers['sec-websocket-protocol']);
       if (!token) {

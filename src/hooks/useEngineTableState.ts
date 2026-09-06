@@ -43,9 +43,28 @@ export interface UseEngineTableStateResult {
 
 export function useEngineTableState(
   tableId: string | null | undefined,
-  opts?: { enabled?: boolean }
+  opts?: {
+    enabled?: boolean;
+    /**
+     * When the engine is expected back from a scheduled restart, as an epoch
+     * ms instant, or null when no break is running (Realtime Phase 4 audit,
+     * 2026-09-05).
+     *
+     * WHY THE HOOK NEEDS THIS AT ALL. The engine announces its break on a
+     * socket frame, and the transport reads it - but a frame only reaches the
+     * sockets that were subscribed when it was sent. A player who sits down at
+     * :54, one minute after the announcement and one minute before the engine
+     * goes away, receives nothing and their ladder escalates through the
+     * restart exactly as it did before Phase 4. That happens every hour.
+     *
+     * The break is a row in the database and `useMaintenanceBreak` already
+     * reads it on mount. This is the wire from that reading into the ladder.
+     */
+    scheduledRestartUntil?: number | null;
+  }
 ): UseEngineTableStateResult {
   const enabled = opts?.enabled ?? true;
+  const scheduledRestartUntil = opts?.scheduledRestartUntil ?? null;
   const [snapshot, setSnapshot] = useState<EngineSnapshot | null>(null);
   const [seq, setSeq] = useState<number>(0);
   const [status, setStatus] = useState<EngineConnectionStatus>('idle');
@@ -55,6 +74,15 @@ export function useEngineTableState(
 
   // Keep the client in a ref so effect cleanup can close it without re-render.
   const clientRef = useRef<EngineStateClient | null>(null);
+  /* Read inside the connect effect without joining its dependency list: a
+     break that starts while a table is open must not tear the socket down and
+     rebuild it. The effect below pushes every later value in. */
+  const scheduledRestartUntilRef = useRef<number | null>(scheduledRestartUntil);
+  scheduledRestartUntilRef.current = scheduledRestartUntil;
+
+  useEffect(() => {
+    clientRef.current?.noteScheduledRestart(scheduledRestartUntil);
+  }, [scheduledRestartUntil]);
 
   useEffect(() => {
     if (!tableId || !enabled) return;
@@ -77,6 +105,10 @@ export function useEngineTableState(
     });
 
     clientRef.current = client;
+    // Seed the window BEFORE connecting: a client mounting during a break must
+    // not spend its first three retries escalating before the effect below
+    // gets a turn.
+    client.noteScheduledRestart(scheduledRestartUntilRef.current);
     void client.connect();
 
     return () => {

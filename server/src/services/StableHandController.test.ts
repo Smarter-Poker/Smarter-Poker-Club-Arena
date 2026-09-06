@@ -635,8 +635,8 @@ describe('SOURCE LAW: the seeding cap can only ever refuse a NEW seat', () => {
    half of the planner was reasoning about an empty list.
    ══════════════════════════════════════════════════════════════════════════ */
 describe('planFloor - shape reads seats, not tables.status', () => {
-  const waitingButFull = (id: string) =>
-    table({ tableId: id, status: 'waiting', occupied: 6, maxPlayers: 6 });
+  const waitingButFull = (id: string, over: Partial<TableSnapshot> = {}) =>
+    table({ tableId: id, status: 'waiting', occupied: 6, maxPlayers: 6, ...over });
 
   it('counts a WAITING table that has six players at it', () => {
     const tables = Array.from({ length: 10 }, (_, i) => waitingButFull(`w${i}`));
@@ -667,12 +667,17 @@ describe('planFloor - shape reads seats, not tables.status', () => {
     expect(p.metrics[0].full).toBe(1);
   });
 
-  it('still excludes a table above the phase clamp', () => {
-    const tables = [waitingButFull('ok'), table({ tableId: 'big', status: 'waiting', bb: 50 })];
+  it('SHAPES a big-stake table now, because a seat at 25/50 is a body in a chair', () => {
+    /* This test used to assert the opposite: the shape filter carried the
+       invented 1/2 phase clamp, so every table above it was invisible to the
+       planner - its seats counted toward no bucket and no occupancy total.
+       Dan ended the clamp on 2026-09-05, and occupancy was always a fact
+       about SEATS. */
+    const tables = [waitingButFull('ok'), waitingButFull('big', { bb: 50, sb: 25 })];
     const p = planFloor(
       snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 180, tables }] })
     );
-    expect(p.metrics[0].full).toBe(1);
+    expect(p.metrics[0].full).toBe(2);
   });
 
   it('human yield never depended on this and still does not', () => {

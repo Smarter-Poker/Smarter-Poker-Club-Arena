@@ -59,9 +59,37 @@ export function reportError(error: unknown, context: string, extra?: Record<stri
     }
   }
 
-  err.message = `[${context}] ${err.message}`;
+  /**
+   * PREFIXING USED TO BE AN ASSIGNMENT, AND SOME ERRORS REFUSE ONE.
+   *
+   * `DOMException.message` is an accessor with no setter, and a DOMException
+   * IS an `instanceof Error`, so it reached this line as `err` and
+   * `err.message = ...` threw `TypeError: Cannot set property message of
+   * which has only a getter`. The throw happens INSIDE the reporter, which is
+   * only ever called from a catch block - so a handler that was being careful
+   * about a failure got a second, different failure thrown back out of it,
+   * and the original error was never reported at all.
+   *
+   * Every DOMException on the platform is in that class: `atob` on a
+   * truncated share link, a storage quota, an aborted fetch, clipboard,
+   * IndexedDB, Web Crypto. Found 2026-09-05 by decoding a corrupt share
+   * payload, which is exactly the case the decoder has a catch for.
+   *
+   * Copy rather than mutate. The reported error carries the context in its
+   * message either way; the caller's error object is left alone, which it
+   * should have been from the start.
+   */
+  let reported = err;
+  const prefixed = `[${context}] ${err.message}`;
+  try {
+    err.message = prefixed;
+  } catch {
+    reported = new Error(prefixed);
+    reported.name = err.name;
+    reported.stack = err.stack;
+  }
 
-  captureException(err, {
+  captureException(reported, {
     errorContext: { source: context, ...extra },
   });
 }

@@ -61,10 +61,19 @@ export class DailyMissionsPage {
     baseURL: string,
     account: TemporaryCustomizationAccount
   ): Promise<DailyMissionsPage> {
-    const localBundle = ['127.0.0.1', 'localhost'].includes(new URL(baseURL).hostname);
-    const { data: apiSession } = localBundle
-      ? await account.client.auth.getSession()
-      : { data: { session: null } };
+    /* The disposable account was already authenticated through Supabase when
+       it was created. Seed that exact, server-issued session into the shared
+       same-origin SSO key in every environment. Production previously threw
+       the known-good session away and raced the Hub login UI instead; after a
+       successful redirect the Club Arena bundle could mount before the Hub's
+       localStorage write, making the safety check observe "no user". Global
+       setup already certifies the Hub login UI with the standing E2E account.
+       This page-specific run must deterministically prove it is the isolated
+       account before it mutates mission state. */
+    const { data: apiSession } = await account.client.auth.getSession();
+    if (apiSession.session?.user.id !== account.id) {
+      throw new Error(`Reserved Daily Missions account ${account.id} has no matching API session.`);
+    }
     await context.addInitScript(
       ({ session, userId }) => {
         localStorage.setItem('club_arena_welcome_accepted', 'true');
@@ -73,9 +82,8 @@ export class DailyMissionsPage {
         // question as already answered so its deliberate 20-second modal does
         // not cover economy controls or invoke browser permission.
         localStorage.setItem(`sp_firstrun_notif_v2_${userId}`, String(Date.now()));
-        // The production Hub owns /auth/login. A standalone branch bundle has
-        // no Hub process, so seed the same shared SSO key from the already
-        // authenticated disposable-account client for local pre-publish UI.
+        // Hub and Club Arena use this same key on the same origin. Seeding the
+        // already-authenticated disposable account avoids a second login race.
         if (session) localStorage.setItem('smarter-poker-auth', JSON.stringify(session));
       },
       { session: apiSession.session, userId: account.id }
@@ -158,14 +166,18 @@ export class DailyMissionsPage {
     if (page.url().includes('/auth')) {
       throw new Error(`Temporary Daily Missions account ${account.id} did not remain signed in.`);
     }
-    const authenticatedUserId = await evaluateThroughNavigation(page, () => {
-      try {
-        const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || 'null');
+    let authenticatedUserId = '';
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      authenticatedUserId = await evaluateThroughNavigation(page, () => {
+        const raw = localStorage.getItem('smarter-poker-auth');
+        if (!raw) return '';
+        const session = JSON.parse(raw);
         return session?.user?.id || session?.currentSession?.user?.id || '';
-      } catch {
-        return '';
-      }
-    });
+      });
+      if (authenticatedUserId) break;
+      if (page.url().includes('/auth')) break;
+      await page.waitForTimeout(500);
+    }
     if (authenticatedUserId !== account.id) {
       throw new Error(
         `Daily Missions signed in as ${authenticatedUserId || 'no user'} instead of reserved account ${account.id}.`

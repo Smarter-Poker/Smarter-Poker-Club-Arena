@@ -29,6 +29,30 @@
  * The scanners below ignore braces and parens inside comments and string
  * literals, because behaviour cannot live in either. Offsets are preserved
  * while blanking, so every returned slice indexes the ORIGINAL source.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * AND SO DOES THE ANCHOR (2026-09-05). The same rule has to apply to where a
+ * window STARTS, not only to where it ends, and until today it did not: every
+ * scanner here found its anchor with `src.indexOf(needle)` on RAW source, so
+ * the first mention of `resumeDealing()` won - including one inside a comment
+ * five hundred lines above the method.
+ *
+ * That is not hypothetical. A comment added to `releasePauseGate()` explaining
+ * that "`resumeFromMaintenance()` and `resumeDealing()` funnel through this
+ * gate" made `sliceMethod(ENGINE_BASE, 'resumeDealing()')` return the body of
+ * releasePauseGate instead. Two pins in `tournamentRakeAndBreaks` went red, the
+ * methods they guard had not changed by a character, and the client suite is
+ * what publishes the bundle - the same shape as the 39-minute estate-wide
+ * publish outage this file's header was written about.
+ *
+ * The silent direction is worse here too: a negative assertion
+ * (`not.toMatch`) anchored on a comment reads a window that CANNOT contain the
+ * thing it forbids, and passes forever while guarding nothing.
+ *
+ * So anchors are located in the blanked copy. Behaviour cannot live in a
+ * comment or a string, which means a pin must never be able to aim at one.
+ * The practical guarantee for anyone writing prose in this repo: DOCUMENTING A
+ * METHOD CAN NEVER BREAK A TEST THAT PINS IT.
  */
 
 /**
@@ -42,6 +66,38 @@ export const blankNonCode = (src: string): string =>
     .replace(/'(?:\\.|[^'\\\n])*'/g, (m) => ' '.repeat(m.length))
     .replace(/"(?:\\.|[^"\\\n])*"/g, (m) => ' '.repeat(m.length))
     .replace(/`(?:\\.|[^`\\])*`/g, (m) => ' '.repeat(m.length));
+
+/**
+ * The offset of `needle` in CODE - skipping any occurrence that falls inside a
+ * comment or a string literal.
+ *
+ * `blankNonCode` preserves offsets, so a hit in the blanked copy is a valid
+ * index into the original. `occurrence` counts code hits only, which is what a
+ * caller passing `1` means: "the second real one", not "the second including
+ * the two in the docblock".
+ *
+ * FALLS BACK to the raw source when the needle appears nowhere in code. Some
+ * anchors legitimately ARE string literals - a SQL fragment, a CSS selector, a
+ * YAML key - and those callers were correct before this change and stay
+ * correct after it. The fallback is what makes this strictly an improvement:
+ * every pin that resolved before still resolves, and the ones that resolved to
+ * a comment now resolve to the code they were always meant to guard.
+ */
+const codeIndexOf = (cleaned: string, src: string, needle: string, occurrence = 0): number => {
+  let at = -1;
+  for (let i = 0; i <= occurrence; i++) {
+    at = cleaned.indexOf(needle, at + 1);
+    if (at < 0) break;
+  }
+  if (at >= 0) return at;
+
+  let raw = -1;
+  for (let i = 0; i <= occurrence; i++) {
+    raw = src.indexOf(needle, raw + 1);
+    if (raw < 0) return -1;
+  }
+  return raw;
+};
 
 const matchForward = (cleaned: string, from: number, open: '{' | '('): number => {
   const close = open === '{' ? '}' : ')';
@@ -88,10 +144,13 @@ const matchForward = (cleaned: string, from: number, open: '{' | '('): number =>
  * matching stays as the fallback for anything unformatted.
  */
 export const sliceMethod = (src: string, signature: string): string => {
-  const start = src.indexOf(signature);
-  if (start < 0) throw new Error(`sliceMethod: "${signature}" not found`);
-
   const cleaned = blankNonCode(src);
+  // Anchor in the blanked copy: a mention of the signature inside a comment or
+  // a string is prose ABOUT the method, never the method. See the note at the
+  // top of this file - this is the anchor half of the same rule.
+  const start = codeIndexOf(cleaned, src, signature);
+  if (start < 0) throw new Error(`sliceMethod: "${signature}" not found in code`);
+
   const lineStart = src.lastIndexOf('\n', start) + 1;
   const indent = /^[ \t]*/.exec(src.slice(lineStart, start))?.[0] ?? '';
 
@@ -128,8 +187,8 @@ export const sliceMethod = (src: string, signature: string): string => {
  * fields, which is the shape that silently stops covering the newest field.
  */
 export const sliceCall = (src: string, signature: string): string => {
-  const start = src.indexOf(signature);
-  if (start < 0) throw new Error(`sliceCall: "${signature}" not found`);
+  const start = codeIndexOf(blankNonCode(src), src, signature);
+  if (start < 0) throw new Error(`sliceCall: "${signature}" not found in code`);
   const cleaned = blankNonCode(src.slice(start));
   const end = matchForward(cleaned, 0, '(');
   return end < 0 ? src.slice(start) : src.slice(start, start + end + 1);
@@ -153,13 +212,10 @@ export const sliceEnclosingBlock = (
   occurrence = 0,
   levels = 1
 ): string => {
-  let at = -1;
-  for (let i = 0; i <= occurrence; i++) {
-    at = src.indexOf(needle, at + 1);
-    if (at < 0)
-      throw new Error(`sliceEnclosingBlock: "${needle}" occurrence ${occurrence} not found`);
-  }
   const cleaned = blankNonCode(src);
+  const at = codeIndexOf(cleaned, src, needle, occurrence);
+  if (at < 0)
+    throw new Error(`sliceEnclosingBlock: "${needle}" occurrence ${occurrence} not found in code`);
 
   // Walk backwards to the nearest '{' still open at `at`.
   let depth = 0;
@@ -284,8 +340,8 @@ export const sliceDollarQuoted = (sql: string, tag: string): string => {
  * catch.
  */
 export const sliceStatement = (src: string, anchor: string): string => {
-  const start = src.indexOf(anchor);
-  if (start < 0) throw new Error(`sliceStatement: "${anchor}" not found`);
+  const start = codeIndexOf(blankNonCode(src), src, anchor);
+  if (start < 0) throw new Error(`sliceStatement: "${anchor}" not found in code`);
   const cleaned = blankNonCode(src.slice(start));
   let depth = 0;
   for (let i = 0; i < cleaned.length; i++) {

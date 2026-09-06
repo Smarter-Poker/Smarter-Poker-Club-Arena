@@ -244,6 +244,24 @@ export function shareableFromModel(
   const highRow = (userId: string) =>
     model.showdown.find((r) => r.userId === userId && r.boardIndex === 0 && !r.low);
 
+  /**
+   * WHO ACTUALLY REACHED A SHOWDOWN.
+   *
+   * `ReplayModel.players[].mucked` is not that. It defaults to "this player
+   * has no hole cards on record", which on a FOLD-AROUND is everybody - the
+   * hand never got to a showdown and nobody mucked anything. Sending that flag
+   * as "mucked" put every folder on the wire as a muck, and the recipient's
+   * reconstruction treats a declared muck as a seat AT the showdown: a shared
+   * fold-around grew a Showdown section listing the seats that folded, which
+   * is the exact defect `atShowdown` in handReplay.ts was written to fix on
+   * 2026-09-04 ("a six-way fold-around listed six seats of card backs").
+   *
+   * The model's own showdown rows are the evidence of who was there. A player
+   * with a row and no cards mucked; a player with no row folded earlier and
+   * belongs in the action log, not the showdown.
+   */
+  const reachedShowdown = new Set(model.showdown.map((r) => r.userId));
+
   const players: ShareablePlayer[] = model.players.map((p) => {
     const shown = p.hole && p.hole.length ? p.hole : null;
     const player: ShareablePlayer = {
@@ -265,7 +283,10 @@ export function shareableFromModel(
        producer did not say". */
     player.isHero = p.userId === meta.heroUserId;
     player.isWinner = p.won > 0;
-    if (p.mucked) player.mucked = true;
+    if (p.mucked && reachedShowdown.has(p.userId)) player.mucked = true;
+    /* What they were PAID, which is not the sum of the per-board shares:
+       those are pre-rake and this is what left the pot. Both travel. */
+    if (p.won > 0) player.won = p.won;
     const high = highRow(p.userId);
     if (high?.handName) player.handName = high.handName;
     return player;
@@ -325,6 +346,9 @@ export function shareableFromModel(
   };
 
   if (discardActions.length) hand.discard = { actions: discardActions };
+  /* The showdown street carries the returned uncalled bet on this engine. */
+  const showdownActions = wireActions(model, 'showdown');
+  if (showdownActions.length) hand.showdown = { actions: showdownActions };
   /* Every board past the first: the run-it-twice runs, or the second and
      third boards of a double-board bomb pot. Read off the last street so a
      run that ended early carries what it actually ran to. */
@@ -388,6 +412,7 @@ export function replayFromShareable(hand: ShareableHand): ReplayModel {
     ...actionsOn('flop', hand.flop?.actions),
     ...actionsOn('turn', hand.turn?.actions),
     ...actionsOn('river', hand.river?.actions),
+    ...actionsOn('showdown', hand.showdown?.actions),
   ];
 
   const board: ShareableCard[] = [
@@ -407,11 +432,30 @@ export function replayFromShareable(hand: ShareableHand): ReplayModel {
     else holeCards[idOf(p.seat)] = p.cards;
   }
 
-  const winners: ReplayWinnerInput[] = (hand.winners || []).map((w) => ({
-    userId: idOf(w.seat),
-    amount: w.amount,
-    hand: w.hand ? { name: w.hand } : null,
-  }));
+  /**
+   * WHAT EACH PLAYER WAS PAID, which is not the sum of the per-board shares.
+   *
+   * v4 puts the payment on the player (`won`, post-rake, the record's own
+   * `winners[].amount`) and keeps `hand.winners` for the record's per-board
+   * and per-half BREAKDOWN, which is pre-rake. Reading the breakdown as the
+   * payment credited the winner of a raked run-it-twice hand with the rake as
+   * well - 52.24 where the pot paid 49.74 on production #6421788.
+   *
+   * A v1-v3 payload has no `won` on any player, and there its `winners` list
+   * IS the payment; that is the fallback, so an old link still pays correctly.
+   */
+  const paidPlayers = hand.players.filter((p) => (p.won ?? 0) > 0);
+  const winners: ReplayWinnerInput[] = paidPlayers.length
+    ? paidPlayers.map((p) => ({
+        userId: idOf(p.seat),
+        amount: p.won as number,
+        hand: p.handName ? { name: p.handName } : null,
+      }))
+    : (hand.winners || []).map((w) => ({
+        userId: idOf(w.seat),
+        amount: w.amount,
+        hand: w.hand ? { name: w.hand } : null,
+      }));
 
   /* Per-board and per-half awards, when the link carried them. Without this a
      run-it-twice hand pays one lump against board one and the second board

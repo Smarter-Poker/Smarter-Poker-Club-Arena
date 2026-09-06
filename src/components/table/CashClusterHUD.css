@@ -13,63 +13,12 @@
   pointer-events: auto;
 }
 
-.cash-cluster-hud-bar {
-  display: inline-flex;
-  align-items: stretch;
-  border-radius: 10px;
-  overflow: hidden;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  background: linear-gradient(180deg, #1b2a33 0%, #12212a 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  color: #e8f0f4;
-  user-select: none;
-  line-height: 1.1;
-  cursor: pointer;
-  min-height: 44px;
-  transform-origin: top right;
-}
-
-.cch-seg {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 5px 10px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  min-width: 52px;
-}
-
-.cch-seg:last-child {
-  border-right: none;
-}
-
-.cch-seg--title {
-  background: rgba(24, 119, 242, 0.28);
-}
-
-.cch-seg--me {
-  background: rgba(24, 119, 242, 0.18);
-}
-
-.cch-label {
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(232, 240, 244, 0.7);
-}
-
-.cch-value {
-  margin-top: 2px;
-  font-size: 15px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
+/* `.cash-cluster-hud-bar` and its `.cch-seg` / `.cch-label` / `.cch-value`
+   segments were DELETED on 2026-09-05. They painted the MUST MOVE / LOBBY /
+   PLAYERS / TABLES bar across the upper-right corner, on top of two seats.
+   Dan moved it into the action pill row as the single word LOBBY - see
+   `.mtp-lobby-btn` in MultiTablePage.css - so nothing on the felt needs it.
+   Do not restore a readout bar here. */
 
 .cch-seat-change {
   appearance: none;
@@ -95,10 +44,9 @@
 }
 
 /* THE FELT SAYS A MOVE IS COMING (Dan 2026-09-05): the pending-move sentence
-   under the bar, on the felt until the move executes. Solid blue, white,
+   in the corner, on the felt until the move executes. Solid blue, white,
    bold - the one thing in the corner that is a message rather than a
-   control. It wraps to two lines and is capped well inside a 375px screen
-   (the bar above it is 236px at that width). */
+   control. It wraps to two lines and is capped well inside a 375px screen. */
 .cch-move-notice {
   max-width: 240px;
   padding: 7px 10px;
@@ -121,17 +69,7 @@
   pointer-events: none;
 }
 
-@media (max-width: 900px) {
-  .cash-cluster-hud-bar {
-    transform: scale(0.88);
-  }
-}
-
 @media (max-width: 600px) {
-  .cash-cluster-hud-bar {
-    transform: scale(0.74);
-  }
-
   .cch-seat-change {
     font-size: 11px;
     padding: 0 10px;

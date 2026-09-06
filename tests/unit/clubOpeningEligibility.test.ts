@@ -7,21 +7,35 @@ import { hasNewClubOpeningChecklist } from '../../src/utils/clubOpeningEligibili
 describe('new club opening eligibility', () => {
   it('shows the checklist only for newly created standalone clubs', () => {
     expect(
-      hasNewClubOpeningChecklist({ opening_checklist_started_at: '2026-09-01T13:30:00Z' })
+      hasNewClubOpeningChecklist({ opening_checklist_started_at: '2026-09-01T13:30:00Z' }, null)
     ).toBe(true);
-    expect(hasNewClubOpeningChecklist({})).toBe(false);
+    expect(hasNewClubOpeningChecklist({}, null)).toBe(false);
     expect(
-      hasNewClubOpeningChecklist({
-        opening_checklist_started_at: '2026-09-01T13:30:00Z',
-        is_union: true,
-      })
+      hasNewClubOpeningChecklist(
+        {
+          opening_checklist_started_at: '2026-09-01T13:30:00Z',
+          is_union: true,
+        },
+        null
+      )
     ).toBe(false);
     expect(
-      hasNewClubOpeningChecklist({
-        opening_checklist_started_at: '2026-09-01T13:30:00Z',
-        union_id: 'union-id',
-      })
+      hasNewClubOpeningChecklist(
+        {
+          opening_checklist_started_at: '2026-09-01T13:30:00Z',
+          union_id: 'union-id',
+        },
+        'union-id'
+      )
     ).toBe(false);
+  });
+
+  it('fails closed until union scope is resolved and excludes union_clubs-only members', () => {
+    const club = { opening_checklist_started_at: '2026-09-01T13:30:00Z' };
+
+    expect(hasNewClubOpeningChecklist(club, undefined)).toBe(false);
+    expect(hasNewClubOpeningChecklist(club, 'union-from-membership-table')).toBe(false);
+    expect(hasNewClubOpeningChecklist(club, null)).toBe(true);
   });
 
   it('marks future inserts without backfilling any existing club or union', () => {

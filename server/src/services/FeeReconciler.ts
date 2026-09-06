@@ -36,7 +36,7 @@
 
 import { supabase } from './supabase.js';
 import { logBBJCollection } from './supabase.js';
-import { processBBJPayout, setBBJPayoutQueueWriter } from './supabase/bbj.js';
+import { processBBJPayout, setBBJPayoutQueue } from './supabase/bbj.js';
 import type { BBJPayoutParams } from './supabase/bbj.js';
 import { reportError } from './errorReporter.js';
 import { raiseFinancialAlert } from './financialAlerts.js';
@@ -140,10 +140,7 @@ const RECONCILE_BATCH = 250;
  * Registered with bbj.ts below so processBBJPayout can call it without a
  * static import in the other direction (bbj.ts is imported by this module).
  */
-export async function queueUnpaidBBJPayout(
-  params: BBJPayoutParams,
-  lastError: string
-): Promise<void> {
+export async function queueUnpaidBBJPayout(params: BBJPayoutParams, note: string): Promise<void> {
   let handId: string | null = null;
   try {
     const { data: hh } = await supabase
@@ -172,16 +169,29 @@ export async function queueUnpaidBBJPayout(
       num_players: params.dealtInPlayerIds.length,
       contributions: params as unknown as Record<string, unknown>,
       kind: 'bbj_payout',
-      last_error: lastError.slice(0, 500),
+      last_error: note.slice(0, 500),
     });
     if (!error) {
       console.warn(
-        `[BBJ] Queued unpaid jackpot for table ${params.tableId} hand #${params.handNumber} ` +
-          `(${params.dealtInPlayerIds.length} recipients) - the reconciler will re-drive it`
+        `[BBJ] Claimed jackpot payout for table ${params.tableId} hand #${params.handNumber} ` +
+          `(${params.dealtInPlayerIds.length} recipients): ${note}`
       );
       return;
     }
-    if (/duplicate|unique/i.test(error.message || '')) return; // already queued
+    if (/duplicate|unique/i.test(error.message || '')) {
+      /* WRITE-AHEAD MADE THIS THE ORDINARY PATH (phase 2.1). The claim is
+         written before the first attempt, so a later call finds its own row.
+         Refresh the note so the open row carries the CURRENT reason rather
+         than "not yet attempted". */
+      await supabase
+        .from('pending_fee_distributions')
+        .update({ last_error: note.slice(0, 500) })
+        .eq('table_id', params.tableId)
+        .eq('hand_number', params.handNumber)
+        .eq('kind', 'bbj_payout')
+        .is('resolved_at', null);
+      return;
+    }
     queueError = error.message || String(error);
     if (!TRANSIENT_DB_ERROR.test(queueError) || attempt === QUEUE_INSERT_ATTEMPTS) break;
     await new Promise((r) => setTimeout(r, QUEUE_BACKOFF_MS(attempt)));
@@ -196,7 +206,39 @@ export async function queueUnpaidBBJPayout(
     'FeeReconciler.bbj_payout_queue_failed'
   );
 }
-setBBJPayoutQueueWriter(queueUnpaidBBJPayout);
+
+/**
+ * Close a write-ahead claim once the outcome is known: the money landed, it
+ * had already landed, or nothing will ever be owed for this hand.
+ *
+ * Leaving a settled hand's claim open would have the drain re-drive a payout
+ * that is finished - harmless, because the RPC answers `already_paid`, but it
+ * would burn 25 attempts and end in a CRITICAL alert about a hand that paid
+ * correctly. An alarm that fires on success is how real alarms get ignored.
+ */
+export async function settleBBJPayoutClaim(params: BBJPayoutParams, note: string): Promise<void> {
+  const { error } = await supabase
+    .from('pending_fee_distributions')
+    .update({
+      resolved_at: new Date().toISOString(),
+      last_attempt_at: new Date().toISOString(),
+      last_error: note.slice(0, 500),
+    })
+    .eq('table_id', params.tableId)
+    .eq('hand_number', params.handNumber)
+    .eq('kind', 'bbj_payout')
+    .is('resolved_at', null);
+  if (error) {
+    /* Not fatal: the money is placed. The drain re-reads the row, the RPC
+       answers already_paid, and the bbj_payout branch resolves it. */
+    console.warn(
+      `[BBJ] Could not close the payout claim for table ${params.tableId} hand #${params.handNumber}:`,
+      error.message
+    );
+  }
+}
+
+setBBJPayoutQueue({ claim: queueUnpaidBBJPayout, settle: settleBBJPayoutClaim });
 
 /**
  * Durably record a fee that left the pot but could not be banked.
@@ -416,6 +458,10 @@ export async function reconcilePendingFees(): Promise<{
   for (const row of rows) {
     let ok = false;
     let failureMessage = '';
+    /* A jackpot that landed from the QUEUE rather than live. The table is told
+       when it does, so the celebration still happens - late, but it happens
+       (phase 2.2). */
+    let paidLate: { tableId: string; handNumber: number; totalPayout?: number } | null = null;
 
     // REVIEW FIX 2026-08-20 — the hole that kept this alert alive.
     //
@@ -493,7 +539,7 @@ export async function reconcilePendingFees(): Promise<{
             .eq('table_id', p.tableId)
             .is('left_at', null);
           const seatedNow = new Set((seats ?? []).map((s) => s.user_id as string));
-          const result = await processBBJPayout(
+          const outcome = await processBBJPayout(
             {
               tableId: p.tableId,
               clubId: p.clubId,
@@ -508,22 +554,26 @@ export async function reconcilePendingFees(): Promise<{
             },
             { fromQueue: true }
           );
-          // null here is EITHER "already paid" (the live attempt succeeded and
-          // only its response was lost - the RPC re-drove any missing credit)
-          // OR a repeat failure. Tell them apart by the ledger, not the return.
-          if (result) {
-            ok = true;
-          } else {
-            const { data: paid } = await supabase
-              .from('bbj_payouts')
-              .select('id')
-              .eq('table_id', p.tableId)
-              .eq('hand_number', Number(p.handNumber ?? row.hand_number))
-              .limit(1)
-              .maybeSingle();
-            ok = !!paid?.id;
-            if (!ok)
-              failureMessage = 'processBBJPayout returned null and no bbj_payouts row exists';
+          /* The outcome says which of the four happened (phase 2.1). Before it,
+             this branch got `null` for "already paid", "nothing to pay" and
+             "failed again" alike and had to ask the ledger which one it was -
+             and a write-ahead claim for a hand that can never pay (an empty
+             pool) would have re-driven all the way to a critical alert. */
+          ok =
+            outcome.status === 'paid' ||
+            outcome.status === 'already_paid' ||
+            outcome.status === 'nothing_to_pay';
+          if (outcome.status === 'paid' || outcome.status === 'already_paid') {
+            paidLate = {
+              tableId: p.tableId,
+              handNumber: Number(p.handNumber ?? row.hand_number),
+              totalPayout: outcome.status === 'paid' ? outcome.result.totalPayout : undefined,
+            };
+          }
+          if (outcome.status === 'nothing_to_pay') {
+            failureMessage = `nothing to pay (${outcome.reason}); claim closed`;
+          } else if (!ok) {
+            failureMessage = outcome.status === 'queued' ? outcome.lastError : 'unknown outcome';
           }
         }
       } else {
@@ -560,6 +610,37 @@ export async function reconcilePendingFees(): Promise<{
       // Leaving the row open is the safe direction: the next cycle re-drives it,
       // and both underlying operations are idempotent.
       reportError(updErr, 'FeeReconciler.mark_failed');
+    }
+
+    /* THE CELEBRATION STILL HAPPENS, LATE (BBJ phase 2.2). A jackpot the live
+       path could not pay - the :55 freeze is the ordinary cause - was
+       announced to the table as PENDING by the engine. This is the other half
+       of that promise: when the drain finally lands it, the table is told, so
+       the players see the payout instead of chips that simply appeared. The
+       engine that owns the table may be a different process by now; the hub is
+       per-process, so this reaches whoever is hosting it, and the retained
+       window carries it to a socket that reconnects. Never fatal: the money is
+       placed either way. */
+    if (ok && paidLate) {
+      try {
+        /* LAZY, and deliberately so. A static import of the transport here
+           pulls TableStateHub -> handFacts -> the real Supabase client into
+           module-init for every consumer of this file, which broke an
+           unrelated test with a temporal-dead-zone error on `reportError`
+           before it broke anything in production. A late payout is rare;
+           paying one import for it at call time is the right trade. */
+        const { tableStateHub } = await import('../transport/TableStateHub.js');
+        tableStateHub.emitEvent(paidLate.tableId, {
+          type: 'bbj_payout_paid',
+          table_id: paidLate.tableId,
+          hand_number: paidLate.handNumber,
+          totalPayout: paidLate.totalPayout,
+          emitted_at: Date.now(),
+          replay_until: Date.now() + 60_000,
+        });
+      } catch (e) {
+        console.warn('[BBJ] could not announce the late payout (money is placed):', e);
+      }
     }
 
     if (ok) {

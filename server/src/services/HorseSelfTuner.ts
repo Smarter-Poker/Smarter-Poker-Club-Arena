@@ -324,7 +324,9 @@ export function diagnoseAndNudge(
 }
 
 /** V41: which family a review-rollup variant belongs to. Exported for tests. */
-export function leakFamilyOf(variant: string | null | undefined): Exclude<LeakFamily, 'tournament'> {
+export function leakFamilyOf(
+  variant: string | null | undefined
+): Exclude<LeakFamily, 'tournament'> {
   const v = (variant || 'nlh').toLowerCase();
   return v.startsWith('plo') || v === 'flo8' || v.includes('omaha') ? 'omaha' : 'holdem';
 }

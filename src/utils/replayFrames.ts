@@ -131,7 +131,13 @@ export function buildReplayFrames(model: ReplayModel): ReplayFrame[] {
     for (const row of street.rows) {
       const seat = Number(row.seat);
       pot = money2(pot + row.amount);
-      if (row.amount !== 0 && !isShowdownStreet) {
+      /* DEAD forced money (an ante, a bomb-pot ante, the dead half of a dead
+         blind) is in the POT and never in front of the seat. Counting it as a
+         commitment drew a tournament big blind with 750 in front when 400 was
+         live, and Phase 3's pot odds then priced every call off that number.
+         The reconstruction has always known which rows are dead; since
+         2026-09-05 it says so on the row (`ReplayRow.dead`). */
+      if (row.amount !== 0 && !isShowdownStreet && !row.dead) {
         committed[seat] = money2((committed[seat] || 0) + row.amount);
       }
       if (row.stackAfter !== null) stacks[seat] = row.stackAfter;

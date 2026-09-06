@@ -144,15 +144,24 @@ describe('V41 tournament leak profile', () => {
   });
 
   it('the premium is capped at 0.03 and zero under the tagged bar', () => {
-    expect(tourneyLeakPremium({ leaksTournament: { preflop_stackoff: 9 }, leaksHandsTournament: 100 })).toBeCloseTo(0.0225, 5);
-    expect(tourneyLeakPremium({ leaksTournament: { preflop_stackoff: 40 }, leaksHandsTournament: 100 })).toBe(0.03);
-    expect(tourneyLeakPremium({ leaksTournament: { preflop_stackoff: 5 }, leaksHandsTournament: 100 })).toBe(0);
+    expect(
+      tourneyLeakPremium({ leaksTournament: { preflop_stackoff: 9 }, leaksHandsTournament: 100 })
+    ).toBeCloseTo(0.0225, 5);
+    expect(
+      tourneyLeakPremium({ leaksTournament: { preflop_stackoff: 40 }, leaksHandsTournament: 100 })
+    ).toBe(0.03);
+    expect(
+      tourneyLeakPremium({ leaksTournament: { preflop_stackoff: 5 }, leaksHandsTournament: 100 })
+    ).toBe(0);
     expect(tourneyLeakPremium(undefined)).toBe(0);
   });
 
   it('a tagged horse folds the bubble call-off at least as often as a clean one, and the receipt fires', () => {
     const clean = foldRate({});
-    const tagged = foldRate({ leaksTournament: { preflop_stackoff: 40 }, leaksHandsTournament: 100 });
+    const tagged = foldRate({
+      leaksTournament: { preflop_stackoff: 40 },
+      leaksHandsTournament: 100,
+    });
     expect(tagged).toBeGreaterThanOrEqual(clean);
     enableBrainTelemetry();
     const { hero, gs } = bubbleFacingJam();

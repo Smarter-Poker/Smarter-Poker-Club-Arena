@@ -25,6 +25,7 @@
  * login or a real player's identity.
  */
 import { chromium, type FullConfig } from '@playwright/test';
+import { createClient, type Session } from '@supabase/supabase-js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { ensureClubMembership } from './support/ensureClubMembership';
@@ -48,7 +49,23 @@ const EMPTY_STATE = { cookies: [], origins: [] };
  * consent is recorded anywhere server-side by either route.
  */
 const WELCOME_ACCEPTED_KEY = 'club_arena_welcome_accepted';
+const AUTH_STORAGE_KEY = 'smarter-poker-auth';
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+
+async function createDirectSession(email: string, password: string): Promise<Session | null> {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const publishableKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!supabaseUrl || !publishableKey) return null;
+
+  const client = createClient(supabaseUrl, publishableKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  if (error || !data.session) {
+    throw new Error(`direct Supabase login failed (${error?.message || 'no session returned'})`);
+  }
+  return data.session;
+}
 
 /**
  * The key above is duplicated from src/lib/storage.ts because global-setup runs
@@ -133,6 +150,16 @@ export default async function globalSetup(config: FullConfig) {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
 
+    /* Authenticate against the API before touching the Hub login form when the
+       Supabase public configuration is available. Production login chrome is
+       a separate deploy and has changed button semantics more than once; the
+       contract this suite needs is a valid Club Arena session, not a replay of
+       another application's form. The app and Hub deliberately share this
+       exact storage key, so seeding the SDK-issued session exercises the same
+       boot path a returning player uses. Local runs without API configuration
+       keep the UI-login fallback below. */
+    const directSession = await createDirectSession(email, password);
+
     /* Do NOT hardcode a login path. On production the arena is a base-path app
        inside the World Hub, and the sign-in page belongs to the HUB:
        /hub/club-arena/ bounces to /auth/login?redirect=... at the origin. The
@@ -146,7 +173,30 @@ export default async function globalSetup(config: FullConfig) {
     await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(6000);
 
-    if (!page.url().includes('/auth')) {
+    if (directSession) {
+      assertWelcomeKeyStillCurrent();
+      await page.evaluate(
+        ({ authKey, session, welcomeKey }) => {
+          localStorage.setItem(authKey, JSON.stringify(session));
+          localStorage.setItem(welcomeKey, 'true');
+        },
+        {
+          authKey: AUTH_STORAGE_KEY,
+          session: directSession,
+          welcomeKey: WELCOME_ACCEPTED_KEY,
+        }
+      );
+      await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await page.waitForTimeout(8_000);
+      if (page.url().includes('/auth')) {
+        signedOut('direct Supabase session did not survive application boot');
+        return;
+      }
+      authenticated = true;
+      console.log('[global-setup] direct Supabase session accepted by production.');
+    }
+
+    if (!authenticated && !page.url().includes('/auth')) {
       // Nothing to do — the app let us in without a session.
       await ctx.storageState({ path: STORAGE_STATE });
       console.log('[global-setup] app did not require sign-in; state saved as-is.');
@@ -158,50 +208,54 @@ export default async function globalSetup(config: FullConfig) {
        by `title`, so a `:has-text("Sign In")` locator matches nothing there.
        Prefer the titled submit, fall back to the form's first submit, which is
        what the arena's own AuthPage renders. */
-    const emailInput = page.locator('input[type="email"]').first();
-    const passwordInput = page.locator('input[type="password"]').first();
-    try {
-      await emailInput.waitFor({ state: 'visible', timeout: 30000 });
-    } catch {
-      signedOut(`no sign-in form at ${page.url()}`);
-      return;
-    }
-
-    await emailInput.fill(email, { timeout: 15000 });
-    await passwordInput.fill(password, { timeout: 15000 });
-
-    const titled = page.locator('button[type="submit"][title="Sign In"]').first();
-    const submit = (await titled.count())
-      ? titled
-      : page.locator('form button[type="submit"], button[type="submit"]').first();
-    await submit.click({ timeout: 15000 });
-
-    // Leaving /auth is the signal the credential was accepted.
-    await page.waitForURL((u) => !u.pathname.includes('/auth'), { timeout: 45000 }).catch(() => {});
-    await page.waitForTimeout(5000);
-
-    // Clear the first-run gate on this origin before the state is captured.
-    assertWelcomeKeyStillCurrent();
-    await page.evaluate((k) => {
+    if (!authenticated) {
+      const emailInput = page.locator('input[type="email"]').first();
+      const passwordInput = page.locator('input[type="password"]').first();
       try {
-        localStorage.setItem(k, 'true');
+        await emailInput.waitFor({ state: 'visible', timeout: 30000 });
       } catch {
-        /* storage disabled — the overlay stays, specs will report it. */
+        signedOut(`no sign-in form at ${page.url()}`);
+        return;
       }
-    }, WELCOME_ACCEPTED_KEY);
 
-    /* Prove the session actually works rather than trusting the click: load the
-       app fresh and confirm we are not bounced back to /auth. A storageState
-       captured from a failed login is worse than none — the specs would run,
-       land on /auth, skip anyway, and the log would claim they were
-       authenticated. */
-    await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await page.waitForTimeout(8000);
-    if (page.url().includes('/auth')) {
-      signedOut('login did not take');
-      return;
+      await emailInput.fill(email, { timeout: 15000 });
+      await passwordInput.fill(password, { timeout: 15000 });
+
+      const titled = page.locator('button[type="submit"][title="Sign In"]').first();
+      const submit = (await titled.count())
+        ? titled
+        : page.locator('form button[type="submit"], button[type="submit"]').first();
+      await submit.click({ timeout: 15000 });
+
+      // Leaving /auth is the signal the credential was accepted.
+      await page
+        .waitForURL((u) => !u.pathname.includes('/auth'), { timeout: 45000 })
+        .catch(() => {});
+      await page.waitForTimeout(5000);
+
+      // Clear the first-run gate on this origin before the state is captured.
+      assertWelcomeKeyStillCurrent();
+      await page.evaluate((k) => {
+        try {
+          localStorage.setItem(k, 'true');
+        } catch {
+          /* storage disabled — the overlay stays, specs will report it. */
+        }
+      }, WELCOME_ACCEPTED_KEY);
+
+      /* Prove the session actually works rather than trusting the click: load the
+         app fresh and confirm we are not bounced back to /auth. A storageState
+         captured from a failed login is worse than none — the specs would run,
+         land on /auth, skip anyway, and the log would claim they were
+         authenticated. */
+      await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await page.waitForTimeout(8000);
+      if (page.url().includes('/auth')) {
+        signedOut('login did not take');
+        return;
+      }
+      authenticated = true;
     }
-    authenticated = true;
 
     /* Confirm the gate is actually down. Seeding a key that the app no longer
        reads would look identical in the log while every spec kept failing on an

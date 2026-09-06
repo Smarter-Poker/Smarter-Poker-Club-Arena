@@ -1715,6 +1715,29 @@ jobs:
           # non-secret placeholders are the correct isolated CI configuration.
           VITE_SUPABASE_URL: https://example.supabase.co
           VITE_SUPABASE_ANON_KEY: footer-probe-ci
+          # ── ONE BUILD, THREE SUITES (2026-09-05) ───────────────────────────
+          #
+          # These two flags gate lazy-loaded dev showcase routes in App.tsx.
+          # Without them here, the two harness suites below could not use this
+          # build, so each started a Vite DEV server of its own and compiled
+          # the whole app again on demand. Measured on runs 8843 and 8844 that
+          # second compile was 141-200s - roughly HALF of this job, which is
+          # itself the critical path of every merge (CSS Beat p50 334s of a
+          # 6.8m ci.yml, and PR-to-merge p50 was also 6.8m: CI *is* the merge
+          # latency here).
+          #
+          # WHY THIS IS SAFE, and the reason the flags stay BUILD-time rather
+          # than becoming a runtime toggle: this bundle is thrown away. The
+          # `Production Build` job and `publish-club-arena.yml` both build
+          # WITHOUT these flags, so nothing a player downloads contains the
+          # harness routes. tests/one-build-three-suites.law.test.ts asserts
+          # they appear in this job and nowhere else - a flag like this leaking
+          # into the publisher is the one way this change could hurt.
+          #
+          # The beats are unaffected: two extra lazy routes change no CSS and
+          # no component the fixtures render.
+          VITE_CUSTOMIZATION_TEST_HARNESS: 'true'
+          VITE_FINANCIAL_DECISION_TEST_HARNESS: 'true'
         run: npm run build:ci
 
       # PER-RUNNER PREVIEW PORT (2026-09-04). 4173 was hardcoded, which was
@@ -1742,6 +1765,25 @@ jobs:
               kill -9 $PIDS 2>/dev/null || true
             fi
           done
+
+      # Serve one build to every suite. Started here rather than inside the
+      # beats step because it has to outlive that step: the two harness suites
+      # after it share this exact server, which is what removed the second
+      # compile from the critical path. Reaped by "Stop the shared preview"
+      # below, which runs on always().
+      - name: Serve one build to every suite
+        run: |
+          nohup npx vite preview --host 127.0.0.1 \
+            --port ${{ steps.preview-port.outputs.port }} --strictPort \
+            > /tmp/arena-preview.log 2>&1 &
+          echo $! > /tmp/arena-preview.pid
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena/index.html > /dev/null && exit 0
+            sleep 0.5
+          done
+          echo "::error::the preview never answered on port ${{ steps.preview-port.outputs.port }}"
+          cat /tmp/arena-preview.log
+          exit 1
 
       - name: Run the beats against this commit's CSS
         env:
@@ -1807,21 +1849,38 @@ jobs:
         # lacked a thumb target and the collapsed wallet disclosure exposed
         # fully clipped controls. It renders this commit's real lobby styles,
         # needs no credentials, and must block the same regression pre-merge.
+        #
+        # ── THE PREVIEW OUTLIVES THIS STEP NOW (2026-09-05) ─────────────────
+        # It used to be started here under `trap ... EXIT`, so it died with the
+        # step and the two harness suites below each had to start a Vite DEV
+        # server of their own and compile the app again. That second compile
+        # was 141-200s of every merge. The preview is started in its own step
+        # above and torn down in an always() step below; all three suites share
+        # it. See the note on "Serve one build to every suite".
         run: |
-          npx vite preview --host 127.0.0.1 --port ${{ steps.preview-port.outputs.port }} --strictPort > /tmp/arena-preview.log 2>&1 &
-          preview_pid=$!
-          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
-          for i in $(seq 1 20); do
-            curl -sf http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena/index.html > /dev/null && break
-            sleep 0.5
-          done
-          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/card-squeeze-visual-regression.spec.ts tests/e2e/card-squeeze-mobile.spec.ts tests/e2e/river-squeeze-interactive.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
 
       # Unlike the CSS fixtures above, this mounts the production Studio and
       # drives its real Supabase client through a deterministic browser mock.
-      # Its dedicated route redirects unless the test-harness flag is enabled.
+      # Its dedicated route redirects unless the test-harness flag is enabled -
+      # which the shared build below now carries, so this needs no server.
       - name: Table Studio real-component purchase, sync, and accessibility gate
+        env:
+          ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
         run: npm run test:e2e:customization
 
       - name: Insurance and Rabbit Hunt 375px decision gate
+        env:
+          ARENA_SHARED_PREVIEW_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}
         run: npm run test:e2e:financial-decisions
+
+      # if: always() because the preview is now started outside the step that
+      # uses it, so nothing else will reap it - and an orphaned --strictPort
+      # server would fail every later job on this runner. The port-reserve step
+      # above frees it defensively for the same reason; this is the tidy path.
+      - name: Stop the shared preview
+        if: always()
+        run: |
+          pid=$(cat /tmp/arena-preview.pid 2>/dev/null || echo "")
+          [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+          exit 0

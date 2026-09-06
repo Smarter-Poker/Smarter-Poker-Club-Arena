@@ -193,7 +193,12 @@ describe('the wiring: the horse presses the same button', () => {
     expect(ENGINE).not.toMatch(/from\(\s*'cash_seat_change_requests'/);
     expect(ROTATOR).not.toMatch(/from\(\s*'cash_seat_change_requests'/);
     expect(ROTATOR).not.toMatch(/from\(\s*'cash_game_roster'/);
-    expect(ROTATOR).not.toMatch(/from\(\s*'cash_seat_moves'/);
+    // 2026-09-05 (no lone horse): the rotator READS cash_seat_moves - is a
+    // partner pending into a lone table - and never writes it.
+    const moves = [...ROTATOR.matchAll(/from\(\s*'cash_seat_moves'\)([\s\S]{0,200})/g)];
+    expect(moves.length).toBe(1);
+    expect(moves[0][1]).toMatch(/^\s*\.select\('to_table_id'\)/);
+    expect(moves[0][1]).not.toMatch(/\.(insert|update|upsert|delete)\(/);
     expect(ROTATOR).not.toMatch(/\.rpc\(/);
   });
 

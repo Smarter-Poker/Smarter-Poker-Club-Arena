@@ -3758,14 +3758,37 @@
    twice over. Measured at 720px wide: cap 56 clears by 2.2px, cap 76 is 8.1px
    INSIDE the banner. The full-canvas rings (7, 8, 9) keep the 76px above.
 
-   0-3-0, so it beats the `.seat-wrapper--top .seat` pair without touching any
-   other seat. An empty seat is still exempt (the rule below this one): a SIT
-   plate has no character art to overflow. */
-.table-page[data-seats='2'] .seat-wrapper--top .seat,
-.table-page[data-seats='3'] .seat-wrapper--top .seat,
-.table-page[data-seats='4'] .seat-wrapper--top .seat,
-.table-page[data-seats='5'] .seat-wrapper--top .seat,
-.table-page[data-seats='6'] .seat-wrapper--top .seat {
+   :where() ON THE RING, AND THE WHOLE RULE DEPENDS ON IT (corrected 2026-09-05).
+
+   This shipped as five selectors of the form
+   `.table-page[data-seats='3'] .seat-wrapper--top .seat`, and the comment here
+   claimed they were 0-3-0. They are 0-4-0 - a class AND an attribute on the
+   same compound - and that beat BOTH rules below instead of neither:
+
+     .table-page--tournament .seat-wrapper--top .seat   0-3-0
+     .seat-wrapper--top .seat.seat--empty               0-3-0
+
+   TablePage puts `table-page--tournament` and `data-seats` on the SAME
+   element, and a Spin is a tournament with three seats, so the 56px cap
+   applied to every Spin - undoing the exact thing this session was asked to
+   fix ("THE AVATARS AT THE TOP DON'T HAVE TO BE SHRUNK OR SQUISHED DOWN"). It
+   capped empty SIT plates on small rings too, against Dan 2026-08-31.
+
+   `:where()` contributes ZERO specificity, so the selector is
+   `.table-page` (0-1-0) + `.seat-wrapper--top .seat` (0-2-0) = 0-3-0, which is
+   what the comment always claimed. It still beats the 0-2-0 pair above, and it
+   now TIES the two exemptions - which they win on source order, because they
+   are written after it. Specificity, not source order, is what a text pin
+   cannot see: tests/unit/topRailCapCascade.test.ts computes it. */
+.table-page:where(
+    [data-seats='2'],
+    [data-seats='3'],
+    [data-seats='4'],
+    [data-seats='5'],
+    [data-seats='6']
+  )
+  .seat-wrapper--top
+  .seat {
   --seat-avatar-base: min(var(--seat-avatar-full), 56px);
 }
 

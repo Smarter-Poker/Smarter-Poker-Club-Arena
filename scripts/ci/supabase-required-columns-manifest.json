@@ -418,6 +418,10 @@
       "window_hour",
       "action"
     ],
+    "ca_detector_registry": [
+      "source",
+      "owner"
+    ],
     "ca_diamond_balance_audit": [
       "user_id"
     ],
@@ -596,6 +600,10 @@
     "ca_incident_recipients": [
       "user_id"
     ],
+    "ca_kill_switch_policy": [
+      "detector",
+      "threshold_chips"
+    ],
     "ca_ledger_accounts": [
       "account_type",
       "side",
@@ -754,6 +762,10 @@
       "db_before",
       "engine_after",
       "written"
+    ],
+    "ca_settle_sources": [
+      "source",
+      "note"
     ],
     "ca_settlements": [
       "settlement_type",
@@ -2159,6 +2171,10 @@
     "horse_mind_stats": [
       "user_id"
     ],
+    "horse_mind_stats_scoped": [
+      "user_id",
+      "scope"
+    ],
     "horse_opponent_journals": [
       "horse_id",
       "opponent_id"
@@ -2195,6 +2211,10 @@
       "profile_id",
       "table_id"
     ],
+    "horse_solver_agreement": [
+      "run_date",
+      "reference"
+    ],
     "horse_source_assignments": [
       "horse_id",
       "source_name"
@@ -2203,12 +2223,21 @@
       "horse_id",
       "source_name"
     ],
+    "horse_thread_state": [
+      "post_id",
+      "horse_id",
+      "reason"
+    ],
     "horse_threat_intel": [
       "opponent_id"
     ],
     "horse_topic_cooldowns": [
       "author_id",
       "topic"
+    ],
+    "horse_tournament_daily": [
+      "horse_user_id",
+      "day"
     ],
     "idempotency_keys": [
       "key",
@@ -2847,6 +2876,11 @@
     ],
     "poker_videos": [
       "title"
+    ],
+    "post_briefs": [
+      "post_id",
+      "kind",
+      "domain"
     ],
     "posted_clips": [
       "video_id",

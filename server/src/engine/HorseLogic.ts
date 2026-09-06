@@ -61,7 +61,7 @@ import { SUITS, RANKS, RANK_VALUES, validateAction, calculateBettingState } from
 // V3 (2026-07-23): real-time opponent intelligence — live stats, range reading,
 // exploit adjustments, board texture, blockers. See HorseMind.ts.
 import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
-import { HorseMind } from './HorseMind.js';
+import { HorseMind, SNAP_MS, TANK_MS, readScopeOf } from './HorseMind.js';
 // V7 (2026-07-24): position-pair preflop mastery — 3-bet/4-bet bluffs, blind
 // vs blind, squeezes, stack depth, reshoves, ICM. See HorsePreflop.ts.
 import {
@@ -97,6 +97,7 @@ import { gtoFacingDefense, realizationFactor } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
+  setEquityDepth,
   fastRandom,
   variantInfo,
   type VariantInfo,
@@ -130,6 +131,8 @@ import { anteOrbitCostBB } from './AnteMath.js';
 // V35 (2026-09-02): the games are different games — per-variant preflop width
 // and postflop temperament, one row per game. See HorseVariantProfile.ts.
 import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
+import { handClassRead } from './HorseHandClasses.js';
+import { personaFromValue, followsSolver, type HorsePersonaV2 } from './HorsePersona.js';
 // V38 (2026-09-03): the EV engine — the arithmetic behind every choice, the
 // arbiter for the games with no solver export and for every river fold/call
 // the hold'em solver range did not answer. See HorseEvEngine.ts.
@@ -216,6 +219,16 @@ interface StyleParams {
    *  or no profile). Tightens the V40 pressure cap and the third-barrel
    *  restraint for a horse the review system keeps tagging. */
   ploStackoffLoad?: number;
+  /** V41: hold'em stack-off tag rate; the V20 pressure cap reads it. */
+  nlhStackoffLoad?: number;
+  /** V41: river raise-war / paid-off rate for this variant family. */
+  riverWarLoad?: number;
+  /** V41: limped-pot bloat rate for this variant family. */
+  limpBloatLoad?: number;
+  /** V41: extra ICM survival premium for a horse tagged for event stack-offs. */
+  tourneyLeakPremium?: number;
+  /** V48: the authored persona's solver adherence, 0.5..1 (1 = always). */
+  gtoAdherence?: number;
 }
 
 const STYLE_PARAMS: Record<HorseStyle, StyleParams> = {
@@ -280,6 +293,28 @@ export interface HorseProfileMods {
   leaks?: Record<string, number>;
   /** V40: reviewed hands the leak counts were taken over (the denominator). */
   leaksHands?: number;
+  /** V41 (2026-09-05): the same counts split by VARIANT FAMILY, so an NLH
+   *  non-nut-flush tag cannot inflate a horse's Omaha load and vice versa.
+   *  Written by the tuner alongside `leaks`; a load reads its own family
+   *  first and falls back to the pooled map for a profile written before
+   *  the split. */
+  leaksOmaha?: Record<string, number>;
+  leaksHandsOmaha?: number;
+  leaksHoldem?: Record<string, number>;
+  leaksHandsHoldem?: number;
+  /** V41 (2026-09-05): the tournament-FORMAT share, from
+   *  fn_horse_tournament_leaks (the rollup has no format column). Read by
+   *  the ICM premium: a horse the tagger keeps catching stacking off in
+   *  events pays a little more survival premium. */
+  leaksTournament?: Record<string, number>;
+  leaksHandsTournament?: number;
+  /**
+   * V48 (2026-09-05): the AUTHORED persona. Resolved through the same read
+   * boundary as the dials so there is exactly one place a horse_profile turns
+   * into behaviour, and bounded there (HorsePersona.resolvePersona). The
+   * self-tuner never writes it - ThePersonaSurvivesTheTuner.law.test.ts.
+   */
+  persona?: HorsePersonaV2;
 }
 
 /**
@@ -296,14 +331,126 @@ export const PLO_STACKOFF_TAGS = [
   'second_nut_flush_stackoff',
 ] as const;
 
-export function ploStackoffLoad(mods: HorseProfileMods | undefined): number {
-  if (!mods || !mods.leaks) return 0;
-  const hands = mods.leaksHands ?? 0;
-  if (hands < 40) return 0;
+/**
+ * V41 (2026-09-05): a tag load is `sum(counts of these tags) / reviewed
+ * hands`, read from the variant FAMILY's own map when the tuner has written
+ * one and from the pooled map otherwise. Under 40 reviewed hands it is 0: a
+ * rate on a handful of hands is noise, and noise must never move a decision.
+ */
+export type LeakFamily = 'omaha' | 'holdem' | 'tournament';
+
+export function leakLoad(
+  mods: HorseProfileMods | undefined,
+  tags: readonly string[],
+  family: LeakFamily
+): number {
+  if (!mods) return 0;
+  const scoped =
+    family === 'omaha'
+      ? mods.leaksOmaha
+      : family === 'holdem'
+        ? mods.leaksHoldem
+        : mods.leaksTournament;
+  const scopedHands =
+    family === 'omaha'
+      ? mods.leaksHandsOmaha
+      : family === 'holdem'
+        ? mods.leaksHandsHoldem
+        : mods.leaksHandsTournament;
+  // The tournament family never falls back to the pooled map: the pooled
+  // map is mostly cash, and cash verdicts are not event verdicts.
+  if (family === 'tournament' && !scoped) return 0;
+  const counts = scoped ?? mods.leaks;
+  const hands = scoped ? (scopedHands ?? 0) : (mods.leaksHands ?? 0);
+  if (!counts || hands < 40) return 0;
   let n = 0;
-  for (const t of PLO_STACKOFF_TAGS) n += Number(mods.leaks[t] ?? 0) || 0;
+  for (const t of tags) n += Number(counts[t] ?? 0) || 0;
   return n / hands;
 }
+
+export function ploStackoffLoad(mods: HorseProfileMods | undefined): number {
+  return leakLoad(mods, PLO_STACKOFF_TAGS, 'omaha');
+}
+
+/**
+ * V41: the hold'em stack-off tags - every one is "lost 20bb+ at showdown
+ * with a hand the board or the kicker ladder demotes". 3,423 of them in the
+ * week to 2026-09-05 at -58 to -101bb each, and until today none reached a
+ * decision. Read by the V20 pressure cap: a horse the tagger keeps catching
+ * treats a single pot-sized bet as pressure and its class ceiling sits lower.
+ */
+export const NLH_STACKOFF_TAGS = [
+  'top_pair_weak_kicker_stackoff',
+  'weak_kicker_trips_stackoff',
+  'straight_into_flush_stackoff',
+  'nonnut_straight_stackoff',
+  'underfull_stackoff',
+  'nonnut_flush_stackoff',
+  'coldcall_stackoff',
+] as const;
+
+export function nlhStackoffLoad(mods: HorseProfileMods | undefined): number {
+  return leakLoad(mods, NLH_STACKOFF_TAGS, 'holdem');
+}
+
+/**
+ * V41: river escalation the horse lost - it bet the river, got raised, and
+ * either re-raised (river_raise_war, -95.9bb average) or paid the raise off
+ * (river_raise_paidoff, -59.9bb). Read where a river raise is faced: a tagged
+ * horse gives the raise more respect and never re-raises without the nuts.
+ * Family-pooled by design: the line is the leak, not the card count.
+ */
+export const RIVER_WAR_TAGS = ['river_raise_war', 'river_raise_paidoff'] as const;
+
+export function riverWarLoad(mods: HorseProfileMods | undefined, family: LeakFamily): number {
+  return leakLoad(mods, RIVER_WAR_TAGS, family);
+}
+
+/**
+ * V41: entered for one big blind and lost 40bb+ (limped_pot_bloat, -77.8bb
+ * average, 4,592 in the week). Read postflop in a pot nobody raised
+ * preflop: a tagged horse's one-pair and two-pair hands are capped against a
+ * big bet, because a limped pot that grows a stack is the pattern itself.
+ */
+export const LIMP_BLOAT_TAGS = ['limped_pot_bloat'] as const;
+
+export function limpBloatLoad(mods: HorseProfileMods | undefined, family: LeakFamily): number {
+  return leakLoad(mods, LIMP_BLOAT_TAGS, family);
+}
+
+/**
+ * V41: the stack-off tags a tournament horse can earn, either family. 61,955
+ * tournament review rows a week (23,921 tagged) reached nothing before this;
+ * the cash-only tuner never read them. Read by the ICM premium: a tagged
+ * horse pays up to 0.03 more survival premium - it calls off less, jams less
+ * light, and bluffs less - in exactly the format where the verdicts came from.
+ */
+export const TOURNEY_STACKOFF_TAGS = [
+  'preflop_stackoff',
+  'coldcall_stackoff',
+  'top_pair_weak_kicker_stackoff',
+  'weak_kicker_trips_stackoff',
+  'nonnut_flush_stackoff',
+  'second_nut_flush_stackoff',
+  'dominated_straight_stackoff',
+  'plo_naked_trips_stackoff',
+  'plo_toppair_no_redraw_stackoff',
+] as const;
+
+export function tourneyStackoffLoad(mods: HorseProfileMods | undefined): number {
+  return leakLoad(mods, TOURNEY_STACKOFF_TAGS, 'tournament');
+}
+
+/** V41: the survival premium a tagged tournament horse adds (0 untagged). */
+export function tourneyLeakPremium(mods: HorseProfileMods | undefined): number {
+  const load = tourneyStackoffLoad(mods);
+  return load >= LEAK_LOAD_TAGGED ? Math.min(0.03, load * 0.25) : 0;
+}
+
+/** V41: a load at or above this is "the tagger keeps catching this horse". */
+export const LEAK_LOAD_TAGGED = 0.08;
+/** V41: river war / limp bloat are rarer shapes; their bar is lower. */
+export const LEAK_LOAD_TAGGED_LINE = 0.04;
 
 /**
  * Resolve any horse_profile value (string, jsonb object, null, legacy names)
@@ -364,6 +511,39 @@ export function resolveHorseStyle(
         const lh = obj.leaksHands ?? obj.leaks_hands;
         mods.leaksHands = typeof lh === 'number' && isFinite(lh) && lh > 0 ? lh : undefined;
       }
+    }
+    // V41: the family-split maps, same boundary rules. A family map is
+    // kept only with a positive denominator; counts alone are not a rate.
+    const counts = (raw: unknown): Record<string, number> | undefined => {
+      if (!raw || typeof raw !== 'object') return undefined;
+      const m: Record<string, number> = {};
+      for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (typeof v === 'number' && isFinite(v) && v >= 0) m[k] = v;
+      }
+      return m;
+    };
+    const hands = (v: unknown): number | undefined =>
+      typeof v === 'number' && isFinite(v) && v > 0 ? v : undefined;
+    const omaha = counts(obj.leaksOmaha);
+    const omahaHands = hands(obj.leaksHandsOmaha);
+    if (omaha && omahaHands !== undefined) {
+      mods.leaksOmaha = omaha;
+      mods.leaksHandsOmaha = omahaHands;
+    }
+    const holdem = counts(obj.leaksHoldem);
+    const holdemHands = hands(obj.leaksHandsHoldem);
+    if (holdem && holdemHands !== undefined) {
+      mods.leaksHoldem = holdem;
+      mods.leaksHandsHoldem = holdemHands;
+    }
+    // V48: the persona rides the same boundary as the dials - one place a
+    // horse_profile turns into behaviour, bounded per field.
+    mods.persona = personaFromValue(obj.persona, horseId);
+    const tourney = counts(obj.leaksTournament);
+    const tourneyHands = hands(obj.leaksHandsTournament);
+    if (tourney && tourneyHands !== undefined) {
+      mods.leaksTournament = tourney;
+      mods.leaksHandsTournament = tourneyHands;
     }
   }
 
@@ -1024,6 +1204,19 @@ function icmRisk(
   gs: HorseGameStateV2,
   stackBB: number,
   useV16Icm: boolean = true,
+  useV23End: boolean = true,
+  /** V41: the horse's own event verdicts, as extra premium (0 untagged). */
+  leakPremium: number = 0
+): number {
+  const base = icmRiskBase(gs, stackBB, useV16Icm, useV23End);
+  if (leakPremium > 0 && isTournamentMode(gs)) return base + leakPremium;
+  return base;
+}
+
+function icmRiskBase(
+  gs: HorseGameStateV2,
+  stackBB: number,
+  useV16Icm: boolean = true,
   useV23End: boolean = true
 ): number {
   lastIcmPath = 'legacy';
@@ -1381,6 +1574,26 @@ export interface HorseDecideOpts {
    *  board, and non-nut made hands stop firing pot on the turn and river.
    *  Disable to ablate (default: enabled). */
   v40Omaha?: boolean;
+  /** V41 (2026-09-05): the rest of the tag table reaches a decision - the
+   *  hold'em stack-off load into the V20 pressure cap, the river-war load
+   *  into the raise-facing respect and the V21 war gate, the limp-bloat
+   *  load into a cap for limped pots. Disable to ablate (default: enabled).
+   *  A horse with no leak profile is byte-identical either way. */
+  v41Leaks?: boolean;
+  /** V43 (2026-09-05): tempo reads - a river big bet priced by how fast it
+   *  was made against what this player's bets at that tempo have shown down
+   *  as. Disable to ablate (default: enabled). */
+  v43Tempo?: boolean;
+  /** V46 (2026-09-05): the Omaha / short-deck hand-class chart - AAxx
+   *  double-suited 3-bets, a rundown flats, AAA-x folds. Disable to ablate
+   *  (default: enabled). Hold'em is unaffected either way. */
+  v46Charts?: boolean;
+  /** V44 (2026-09-05): the SECOND LOOK. When set above 1, every Monte Carlo
+   *  read in this decision runs at that multiple of its budgeted sample. The
+   *  engine uses it to replay a close decision inside the think time it was
+   *  already going to spend; see ServerTableEngineTurns.scheduleHorseAction.
+   *  Never set on the fast path. */
+  deepEquity?: number;
 }
 
 /**
@@ -1503,6 +1716,17 @@ export class HorseLogic {
     opts: HorseDecideOpts = {}
   ): HorseDecision {
     try {
+      // V45 SCOPED READS: every read in this decision sees the bucket for
+      // this card family and table size (HorseMind.readStats). Cleared on
+      // every exit, including a throw.
+      HorseMind.setDecisionScope(
+        readScopeOf(
+          gameState.gameVariant,
+          Array.isArray(gameState.players)
+            ? gameState.players.filter((p) => !p.is_sitting_out).length
+            : 0
+        )
+      );
       // V3: ingest the action stream into the opponent-intelligence layer.
       // Wrapped so observation can never take down a decision.
       // V12: benchmark/league decisions pass mind:false — they must never
@@ -1512,6 +1736,17 @@ export class HorseLogic {
           HorseMind.observe(gameState.actionHistory, gameState.players);
         } catch {
           /* observation is best-effort */
+        }
+      }
+      // V44 SECOND LOOK: a deep replay runs the same path at a larger
+      // sample. Bracketed so a throw cannot leave the depth raised for the
+      // next horse to act.
+      if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
+        setEquityDepth(opts.deepEquity);
+        try {
+          return this.decideInternal(player, gameState, style, mods, opts);
+        } finally {
+          setEquityDepth(1);
         }
       }
       return this.decideInternal(player, gameState, style, mods, opts);
@@ -1534,6 +1769,8 @@ export class HorseLogic {
       return toCall === 0
         ? { action: 'check', thinkTime: 1500 }
         : { action: 'fold', thinkTime: 1500 };
+    } finally {
+      HorseMind.setDecisionScope(null);
     }
   }
 
@@ -1556,6 +1793,21 @@ export class HorseLogic {
     params.ploStackoffLoad = ploStackoffLoad(mods);
 
     const vi = variantInfo(gs.gameVariant);
+    // V41: the rest of the verdict, by this hand's variant family.
+    {
+      const fam41: LeakFamily = vi.isOmaha ? 'omaha' : 'holdem';
+      params.nlhStackoffLoad = nlhStackoffLoad(mods);
+      params.riverWarLoad = riverWarLoad(mods, fam41);
+      params.limpBloatLoad = limpBloatLoad(mods, fam41);
+      params.tourneyLeakPremium = (opts.v41Leaks ?? true) !== false ? tourneyLeakPremium(mods) : 0;
+      // V48: the authored persona reaches the solver consult.
+      params.gtoAdherence = mods.persona?.gtoAdherence ?? 1;
+      // PROOF OF RECEIPT: once per decision, preflop or postflop, only where
+      // the premium can reach a price (a tournament).
+      if (telemetryOn(opts) && params.tourneyLeakPremium > 0 && isTournamentMode(gs)) {
+        noteFire('v41_tourney_leak_read');
+      }
+    }
     const toCall = Math.max(0, gs.currentBet - player.bet);
 
     // V8: per-variant style overlays. The five styles were tuned on NLH;
@@ -1585,7 +1837,38 @@ export class HorseLogic {
     }
     // THE VPIP FLOOR (Dan 2026-09-04): widen toward the table's floor. Last,
     // so it scales whatever style, mood and variant already decided.
-    params.tightness *= vpipFloorMul(gs);
+    //
+    // TELEMETRY (2026-09-05). The layer shipped in #3034 with none, so on
+    // 2026-09-05 the daily audit could see `decide` firing 6,950,276 times and
+    // could not answer whether this layer had ever run - the telemetry_dark
+    // case the audit calls top priority, and the reason it took an outcome
+    // measurement on ca_hand_facts to establish the layer worked at all.
+    // Three counters, because the interesting failures are distinguishable:
+    // `_prior` means it is steering with no sample yet, `_closing` means the
+    // loop is reading the horse's own judged VPIP and still widening, and
+    // `_satisfied` means the horse is over the floor and its own style is
+    // back in charge. A floored table showing only `_prior` for ever means
+    // ownVpip is not reaching the brain.
+    {
+      const vfMul = vpipFloorMul(gs);
+      params.tightness *= vfMul;
+      if (telemetryOn(opts) && Number(gs.vpipFloor ?? 0) > 0) {
+        noteFire('vpip_floor');
+        const own = gs.ownVpip;
+        if (!own || own.hands < 3 || own.vpip === null || !Number.isFinite(own.vpip)) {
+          noteFire('vpip_floor_prior');
+        } else if (vfMul < 1) {
+          noteFire('vpip_floor_closing');
+        } else {
+          noteFire('vpip_floor_satisfied');
+        }
+        // Pinned at its limit means the floor is unreachable by widening -
+        // the state every Madness table was in before the floors were
+        // retiered to 30/50. If this fires in volume, a floor is set above
+        // what any strategy reaches and the table churns rather than runs.
+        if (vfMul <= 0.35) noteFire('vpip_floor_clamped');
+      }
+    }
 
     // V18: per-horse sizing-family personality, hashed from the id.
     if (opts.v18Families !== false) {
@@ -1856,13 +2139,34 @@ export class HorseLogic {
         });
         if (advice) {
           if (telemetryOn(opts)) noteFire('v27_gto_open_jam');
-          // The chart gives the mixed strategy; the horse rolls it. A 77%
-          // jam is jammed 77% of the time, not rounded to always.
-          const pushProb = advice.action === 'push' ? advice.freq : 1 - advice.freq;
-          if (fastRandom() < pushProb) return { action: 'all_in', thinkTime: 0 };
-          // SB folding still surrenders the small blind; check when free.
-          if (toCall <= 0) return { action: 'check', thinkTime: 0 };
-          return { action: 'fold', thinkTime: 0 };
+          // ═══ V48 PERSONA: gtoAdherence ═══════════════════════════════════
+          // Not every player takes the chart every time, and a fleet where
+          // every seat plays the identical solver line at 12bb is a fleet
+          // that reads as one player. A horse's adherence is authored (0.80
+          // to 1.00 by default, deterministic in its id); below 1 it
+          // sometimes declines the consult and answers with its own read -
+          // deterministically in (horse, hand, spot), so a replayed hand
+          // answers the same way twice and one hand can deviate on one node
+          // and follow the chart on the next.
+          const adh48 = params.gtoAdherence ?? 1;
+          // The hand's identity: the first action's timestamp is stable
+          // across every decision in the hand and different between hands -
+          // the same key HorseMind uses to dedupe a replayed history.
+          const hand48 = gs.actionHistory?.[0]?.timestamp ?? 0;
+          if (
+            adh48 < 1 &&
+            !followsSolver(player.user_id, hand48, `openjam:${chartDepthBB}`, adh48)
+          ) {
+            if (telemetryOn(opts)) noteFire('v48_gto_deviation');
+          } else {
+            // The chart gives the mixed strategy; the horse rolls it. A 77%
+            // jam is jammed 77% of the time, not rounded to always.
+            const pushProb = advice.action === 'push' ? advice.freq : 1 - advice.freq;
+            if (fastRandom() < pushProb) return { action: 'all_in', thinkTime: 0 };
+            // SB folding still surrenders the small blind; check when free.
+            if (toCall <= 0) return { action: 'check', thinkTime: 0 };
+            return { action: 'fold', thinkTime: 0 };
+          }
         }
       }
 
@@ -1952,7 +2256,13 @@ export class HorseLogic {
           );
           const uncallable38 = Math.max(0, toCall - effCall38);
           const pot38 = Math.max(0.01, gs.pot - uncallable38);
-          const riskAdd38 = icmRisk(gs, stackBB, opts.v16Icm !== false, opts.v23Endgame !== false);
+          const riskAdd38 = icmRisk(
+            gs,
+            stackBB,
+            opts.v16Icm !== false,
+            opts.v23Endgame !== false,
+            params.tourneyLeakPremium ?? 0
+          );
           const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
           const rake38 =
             (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs) ? rakeDrag(pot38, bb) : 0;
@@ -2038,7 +2348,13 @@ export class HorseLogic {
       sizingMultiplier: params.sizingMultiplier,
       isOmaha: vi.isOmaha,
       isPotLimit: vi.isPotLimit,
-      riskAdd: icmRisk(gs, stackBB, opts.v16Icm !== false, opts.v23Endgame !== false),
+      riskAdd: icmRisk(
+        gs,
+        stackBB,
+        opts.v16Icm !== false,
+        opts.v23Endgame !== false,
+        params.tourneyLeakPremium ?? 0
+      ),
       // NLH only: widening the iso range vs limpers is an NLH edge; PLO limped
       // pots play multiway/postflop where a wide iso bloats pots out of line.
       isoWiden: (opts.v10Iso ?? opts.v10) !== false && !vi.isOmaha ? 0.06 : 0,
@@ -2169,6 +2485,25 @@ export class HorseLogic {
       // V35: the game's own preflop width (PLO wider opens, narrower 3-bets;
       // 6+ wider still; fixed limit widest). Rides the v8 variant flag.
       variantShift: opts.v8 !== false ? variantPreflopShift(gs.gameVariant) : undefined,
+      // ═══ V46 (2026-09-05) ═══ the SHAPE of the hand, which the percentile
+      // cannot see. AAxx double-suited is the 3-bet anchor, a rundown flats,
+      // AAA-x is a fold the ladder rates highly. Hold'em returns the zero
+      // read, so this is byte-identical outside Omaha and short deck.
+      ...(() => {
+        if ((opts.v46Charts ?? true) === false) return {};
+        const read46 = handClassRead(player.cards, vi.isOmaha, vi.isShortDeck);
+        if (read46.cls === 'other' || read46.cls === 'sd_other') return {};
+        if (telemetryOn(opts)) {
+          noteFire('v46_class_read');
+          if (read46.foldAlways) noteFire('v46_class_fold');
+          else if (read46.neverThreeBet) noteFire('v46_class_never_3bet');
+        }
+        return {
+          classShift: read46.shift,
+          classNeverThreeBet: read46.neverThreeBet,
+          classFoldAlways: read46.foldAlways,
+        };
+      })(),
       // V37: preflop blockers — an ace or king in the hand.
       holdsAce: player.cards.some((hc) => hc.rank === 'A'),
       holdsKing: player.cards.some((hc) => hc.rank === 'K'),
@@ -2806,10 +3141,12 @@ export class HorseLogic {
           gs,
           gs.bigBlind > 0 ? stack / gs.bigBlind : 100,
           opts.v16Icm !== false,
-          opts.v23Endgame !== false
+          opts.v23Endgame !== false,
+          params.tourneyLeakPremium ?? 0
         )
       : 0;
     if (tele15 && useV7 && isTournamentMode(gs)) noteFire(`icm_${lastIcmPath}`);
+
     // V15: equities cluster tighter still with 5 and 6 hole cards, so the
     // per-opponent multiway tightening scales with hole count.
     const useV15 = opts.v15 !== false;
@@ -2958,6 +3295,35 @@ export class HorseLogic {
     // the classifier for pair / two pair / trips: which two pair, on what
     // board, and whether a pot-sized line beats it.
     const useV40 = (opts.v40Omaha ?? true) !== false;
+    // ═══ V41 (2026-09-05): THE REST OF THE TAG TABLE REACHES A DECISION ═══
+    const useV41 = (opts.v41Leaks ?? true) !== false;
+    const nlhLoad41 = params.nlhStackoffLoad ?? 0;
+    const warLoad41 = params.riverWarLoad ?? 0;
+    const limpLoad41 = params.limpBloatLoad ?? 0;
+    const taggedNlh41 = useV41 && nlhLoad41 >= LEAK_LOAD_TAGGED;
+    const taggedWar41 = useV41 && warLoad41 >= LEAK_LOAD_TAGGED_LINE;
+    const taggedLimp41 = useV41 && limpLoad41 >= LEAK_LOAD_TAGGED_LINE;
+    // A LIMPED POT: nobody raised preflop. The limped_pot_bloat tag is
+    // exactly "entered for one blind, lost a stack", so the read is the
+    // preflop history, not hero's own entry.
+    let limped41 = false;
+    if (taggedLimp41 && gs.actionHistory) {
+      let sawPre = false;
+      let raisedPre = false;
+      for (const a of gs.actionHistory) {
+        if (a.stage !== 'preflop') continue;
+        sawPre = true;
+        if (
+          a.action === 'bet' ||
+          a.action === 'raise' ||
+          (a.action === 'all_in' && a.isFullRaise === true)
+        ) {
+          raisedPre = true;
+          break;
+        }
+      }
+      limped41 = sawPre && !raisedPre;
+    }
     let made40: OmahaMadeInfo | null = null;
     if (useV40 && vi.isOmaha && cat >= 1 && cat <= 4) {
       try {
@@ -4417,23 +4783,54 @@ export class HorseLogic {
     // is on, the equity USED for the decision is capped by hand class.
     // Sets, straights and better are untouched — folding range-top hands to
     // pressure is a worse leak than the one this fixes.
-    if (useV20 && !vi.isOmaha && pressure20 >= 1 && cat >= 1 && cat <= 4) {
+    // ═══ V41 HOLD'EM LEAK HEAT ═══ pressure20 reads ONE street: a raise, a
+    // hero-bet-got-raised, a second all-in. The 3,423 tagged hold'em
+    // stack-offs were mostly the OTHER shape - bet, call, bet, call, bet,
+    // call - which never registers on it. A horse the tagger keeps catching
+    // reads the line the way V40 reads it in Omaha: every earlier barrel by
+    // this bettor, a pot-sized bet, and the tag itself each add a degree of
+    // heat, and the heat picks the V20 tier. An untagged horse is untouched.
+    let heat41 = pressure20;
+    if (taggedNlh41 && !vi.isOmaha && facingBet && potFrac >= 0.5 && cat >= 1 && cat <= 4) {
+      heat41 = Math.min(3, pressure20 + barrels40 + (potFrac >= 0.85 ? 1 : 0) + 1);
+      if (tele15) noteFire('v41_nlh_leak_read');
+    }
+    if (useV20 && !vi.isOmaha && heat41 >= 1 && cat >= 1 && cat <= 4) {
       const isSet20 =
         cat === 4 && player.cards.length === 2 && player.cards[0].rank === player.cards[1].rank;
       if (!isSet20) {
         const weakTrips = cat === 4; // trips via the board's pair
         let cap20 = Infinity;
-        if (pressure20 >= 3) cap20 = weakTrips ? 0.42 : cat === 3 ? 0.34 : 0.3;
-        else if (pressure20 === 2) cap20 = weakTrips ? 0.5 : cat === 3 ? 0.44 : 0.4;
+        if (heat41 >= 3) cap20 = weakTrips ? 0.42 : cat === 3 ? 0.34 : 0.3;
+        else if (heat41 === 2) cap20 = weakTrips ? 0.5 : cat === 3 ? 0.44 : 0.4;
         else if (potFrac >= 0.6 || seriousAllIns20 >= 1)
           cap20 = weakTrips ? 0.62 : cat === 3 ? 0.56 : 0.52;
         if (cap20 !== Infinity) {
+          // V41: the horse's own verdicts lower its ceiling a few points.
+          if (taggedNlh41 && heat41 > pressure20) cap20 -= Math.min(0.06, nlhLoad41 * 0.3);
           if (!isRiver) cap20 += 0.08; // outs to boats/better two pair remain
           eq15 = Math.min(eq15, Math.max(0.05, cap20));
           if (tele15 && eq15 < equity) noteFire('v20_pressure_cap');
         }
       }
     }
+    // ═══ V41 LIMPED-POT CAP ═══ in a pot nobody raised, a tagged horse's
+    // one-pair and two-pair hands are capped against a big bet: 4,592
+    // limped_pot_bloat hands in a week at -77.8bb each, and every one was
+    // a pair or two pair that kept calling in a pot that was meant to stay
+    // small. Sets and better are untouched.
+    if (limped41 && facingBet && potFrac >= 0.5 && cat >= 1 && cat <= 3) {
+      const cap41 =
+        (cat === 3 ? 0.5 : 0.4) - Math.min(0.06, limpLoad41 * 0.5) + (isRiver ? 0 : 0.08);
+      const before41 = eq15;
+      eq15 = Math.min(eq15, Math.max(0.05, cap41));
+      if (tele15) noteFire('v41_limp_bloat_read');
+      if (tele15 && eq15 < before41) noteFire('v41_limp_bloat_cap');
+    }
+    // V41: a tagged river-war horse never re-raises a river raise below a
+    // full house (either family); the capped equity decides call vs fold.
+    // Read here so the committed branch below honours it too.
+    const warGate41 = taggedWar41 && isRiver && raisedAfterAggr && cat <= 6;
 
     // ═══ V21 CAP FOR BOARD-DOMINATED "BIG" HANDS ═══ the V20 cap stopped at
     // cat 4 because straights and better looked like range-tops. The review
@@ -4596,7 +4993,9 @@ export class HorseLogic {
         const preferFlat15 =
           (useV15 && vi.isOmaha && nuts15 != null && !nutClass15) ||
           (useV21 && dominated21) ||
-          planCallOnly23;
+          planCallOnly23 ||
+          warGate41;
+        if (tele15 && warGate41) noteFire('v41_river_war_read');
         return toCall >= stack || preferFlat15
           ? { action: 'call', amount: toCall, thinkTime: 0 }
           : { action: 'all_in', thinkTime: 0 };
@@ -4658,12 +5057,14 @@ export class HorseLogic {
       const dryTop21 = ns21 != null && !ns21.flushPossible && ns21.maxStraightTop === 0;
       if (
         planCallOnly23 ||
+        warGate41 ||
         (useV21 &&
           !vi.isOmaha &&
           (dominated21 || (raisedAfterAggr && (cat <= 3 || (cat === 4 && !(set21 && dryTop21))))))
       ) {
         if (planCallOnly23 || isRiver || raisedAfterAggr || pressure20 >= 2) {
           if (tele15) noteFire('v21_war_gate');
+          if (tele15 && warGate41) noteFire('v41_river_war_read');
           return { action: 'call', amount: toCall, thinkTime: 0 };
         }
       }
@@ -4787,6 +5188,13 @@ export class HorseLogic {
     // V35: fixed limit calls lighter — the pot always lays the price.
     let respect = 2 - exploit.callDownMod + (params.callRespect ?? 0); // maniac 0.8, neutral 1, passive 1.15
     if (dangered) respect += 0.15;
+    // V41: a horse whose river bets keep getting raised and paid off gives
+    // the next river raise more respect. Only where the tag was earned:
+    // river, after hero's own aggression was raised.
+    if (taggedWar41 && isRiver && raisedAfterAggr) {
+      respect += Math.min(0.12, warLoad41 * 0.6);
+      if (tele15) noteFire('v41_river_war_read');
+    }
     // V12 ANTI-EXPLOIT: when the CURRENT street's bettor has been hunting
     // this horse specifically, their bets carry less real strength than the
     // line suggests — call down lighter until the hunt stops paying.
@@ -4816,6 +5224,45 @@ export class HorseLogic {
               if (tell >= 0.75) respect += 0.12;
               else if (tell <= 0.4) respect -= 0.1;
               if (telemetryOn(opts)) noteFire('v16_reads_tell');
+            }
+          }
+          // ═══ V43 TEMPO (2026-09-05) ═══ the action log has carried a
+          // timestamp on every record since the engine was written, and no
+          // read ever looked at it. How fast THIS bet was made, against what
+          // this player's bets at that tempo have shown down as. Same gate
+          // as the V16 tell: river, big sizing, a real sample. A human's
+          // snap-bet is the oldest tell in the game; a horse's tempo is
+          // randomised (V14), so the read learns nothing from the fleet and
+          // everything from a person.
+          if ((opts.v43Tempo ?? true) !== false && isRiver && potFrac >= 0.75) {
+            let betTs: number | null = null;
+            let prevTs: number | null = null;
+            for (const a of hist) {
+              const ts =
+                typeof a.timestamp === 'number' && isFinite(a.timestamp) ? a.timestamp : null;
+              if (
+                a.stage === street &&
+                a.userId === bettorId &&
+                (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+              ) {
+                betTs = ts;
+                break;
+              }
+              if (ts !== null) prevTs = ts;
+            }
+            const gap = betTs !== null && prevTs !== null ? betTs - prevTs : null;
+            if (gap !== null && gap >= 0) {
+              const tendency =
+                gap <= SNAP_MS
+                  ? HorseMind.snapBetValueTendency(bettorId)
+                  : gap >= TANK_MS
+                    ? HorseMind.tankBetValueTendency(bettorId)
+                    : null;
+              if (tendency !== null) {
+                if (tendency >= 0.75) respect += 0.08;
+                else if (tendency <= 0.4) respect -= 0.08;
+                if (telemetryOn(opts)) noteFire('v43_tempo_read');
+              }
             }
           }
         }

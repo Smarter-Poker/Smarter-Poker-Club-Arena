@@ -26,6 +26,7 @@
  * NEVER refer to the horses as "bots" — they are HORSES only.
  */
 
+import { scoreSolverAgreement } from './HorseSolverAgreement.js';
 import type { Card, SeatPlayer, HandStage, ActionRecord } from '../types.js';
 import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { HorseMind, type HorseMindSandbox } from '../engine/HorseMind.js';
@@ -776,6 +777,18 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // tiered aggressor sampler, the pair/two-pair/trips pressure cap and the
   // small-ball betting law, measured where the naked-aces call-down
   // happened (plo6) and on the widest-played Omaha card (plo4).
+  // V46 (2026-09-05): the hand-class chart. The league seats horses with the
+  // cards it deals, so this is one of the few layers self-play measures
+  // honestly: both arms see the same shapes, only one reads them.
+  { name: 'plo4_v46_classes', variant: 'plo4', pairs: 6000, a: {}, b: { v46Charts: false } },
+  { name: 'plo6_v46_classes', variant: 'plo6', pairs: 6000, a: {}, b: { v46Charts: false } },
+  {
+    name: 'shortdeck_v46_classes',
+    variant: 'short_deck',
+    pairs: 6000,
+    a: {},
+    b: { v46Charts: false },
+  },
   { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
   { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
@@ -824,6 +837,9 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v24PloDefense: false,
       v25PloTourney: false,
       v40Omaha: false,
+      v41Leaks: false,
+      v43Tempo: false,
+      v46Charts: false,
       mind: false,
       streetIQ: false,
       handReading: false,
@@ -1366,6 +1382,38 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       // Yield the event loop between matchups — production tables come first.
       await new Promise((res) => setTimeout(res, 250));
     }
+    // ═══ V47 SOLVER AGREEMENT (2026-09-05) ═══════════════════════════════
+    // The matchups above measure a DIFFERENCE between two configs. This is
+    // the absolute score, against the only reference in the building: the
+    // hold'em push/fold charts. It costs a few hundred synchronous decisions
+    // once a night, and it is the one number that can say the brain got
+    // WORSE without another config to compare it to.
+    try {
+      const agreement = scoreSolverAgreement();
+      if (agreement.reference) {
+        const { error } = await supabase.rpc('fn_horse_solver_agreement_add', {
+          p_rows: [
+            {
+              run_date: date,
+              reference: agreement.reference,
+              spots: agreement.spots,
+              agreement: round4(agreement.agreement),
+              pure_misses: agreement.pureMisses,
+            },
+          ],
+        });
+        if (error) throw new Error(error.message);
+        console.log(
+          `[HorseLeague] solver agreement ${round4(agreement.agreement)} over ${agreement.spots} ` +
+            `spots (${agreement.pureMisses} pure misses)`
+        );
+      } else {
+        console.log('[HorseLeague] solver agreement skipped - the chart store is empty here');
+      }
+    } catch (err) {
+      reportError(err, 'HorseLeague.agreement');
+    }
+
     console.log(
       `[HorseLeague] run ${date} finished: ${results.length}/${LEAGUE_MATCHUPS.length} matchups ` +
         `in ${Math.round((Date.now() - startedAt) / 1000)}s`
@@ -1380,6 +1428,7 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+const round4 = (n: number): number => Math.round(n * 10000) / 10000;
 
 function hash32(s: string): number {
   let h = 17;

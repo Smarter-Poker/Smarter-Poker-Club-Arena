@@ -97,7 +97,24 @@ export interface OpponentStats {
   postAggr: number;
   postPassive: number;
   rChecks: number;
+  // ── V43 TEMPO READS (2026-09-05). The action log carries a timestamp on
+  // every record and nothing read it. A river bet of 20bb+ that reached
+  // showdown is classed by how fast it was made: snap (under 1.5 s since the
+  // previous action) or tank (8 s or more), and whether it was value.
+  /** river big bets made snap that reached showdown */
+  snapBetSD: number;
+  /** ... where the shown hand was two pair or better */
+  snapBetSDStrong: number;
+  /** river big bets made after a tank that reached showdown */
+  tankBetSD: number;
+  /** ... where the shown hand was two pair or better */
+  tankBetSDStrong: number;
 }
+
+/** V43: a bet within this many ms of the previous action is a snap. */
+export const SNAP_MS = 1500;
+/** V43: a bet this many ms or more after the previous action is a tank. */
+export const TANK_MS = 8000;
 
 const freshStats = (): OpponentStats => ({
   hands: 0,
@@ -125,6 +142,10 @@ const freshStats = (): OpponentStats => ({
   rChecks: 0,
   postAggr: 0,
   postPassive: 0,
+  snapBetSD: 0,
+  snapBetSDStrong: 0,
+  tankBetSD: 0,
+  tankBetSDStrong: 0,
 });
 
 /** Exploit multipliers derived from a specific opponent's tendencies. */
@@ -209,13 +230,73 @@ export interface HorseMindSandbox {
   raisePlans: Map<string, RaiseResponsePlan>;
   /** V39: next-street outlooks — see noteOutlook. Sandboxed like plans. */
   outlooks: Map<string, { good: Set<string>; scare: Set<string> }>;
+  /** V45: the scoped overlay - sandboxed like stats, or a league run's
+   *  scoped counters would leak into the live fleet and into the next run. */
+  scoped: Map<string, OpponentStats>;
+  dirtyScoped: Set<string>;
 }
 
 /** V23: what hero decided AT BET TIME it would do about a raise. */
 export type RaiseResponsePlan = 'commit' | 'callOnce' | 'foldToRaise';
 
+/**
+ * ═══ V45 SCOPED READS (2026-09-05) ═══════════════════════════════════════
+ * A player's stats were one bucket across every game they played. A PLO6
+ * VPIP (structurally ~60%) polluted the same player's NLH read; heads-up
+ * stats polluted their 6-max read. The scope is the two things that change
+ * what a frequency MEANS: the card family (hold em or Omaha) and the table
+ * size (heads-up, short, full). Reads prefer the scoped bucket once it has
+ * SCOPE_MIN_HANDS; below that the pooled bucket answers, as it always did.
+ * The recency window (r*) stays pooled: it is a "did they just change
+ * gears" read and gears are not per-scope.
+ */
+export type ReadScope = `${'holdem' | 'omaha'}:${'hu' | 'short' | 'full'}`;
+
+/** Scoped hands before the scoped bucket outranks the pooled one. */
+export const SCOPE_MIN_HANDS = 40;
+
+export function readScopeOf(variant: string | null | undefined, dealtCount: number): ReadScope {
+  const v = (variant || 'nlh').toLowerCase();
+  const fam = v.startsWith('plo') || v === 'flo8' || v.includes('omaha') ? 'omaha' : 'holdem';
+  const size = dealtCount <= 2 ? 'hu' : dealtCount <= 5 ? 'short' : 'full';
+  return `${fam}:${size}`;
+}
+
+/** The lifetime counters a scope carries; recency and hands-dedupe stay pooled. */
+const SCOPED_FIELDS = [
+  'hands',
+  'vpip',
+  'pfr',
+  'threeBet',
+  'aggr',
+  'passive',
+  'folds',
+  'facedAggr',
+  'cbetOpps',
+  'cbetFolds',
+  'f3bOpps',
+  'f3bFolds',
+  'bigBetSD',
+  'bigBetSDStrong',
+  'riverBetOpps',
+  'riverBetFolds',
+  'checks',
+  'postAggr',
+  'postPassive',
+  'snapBetSD',
+  'snapBetSDStrong',
+  'tankBetSD',
+  'tankBetSDStrong',
+] as const;
+
 export class HorseMind {
   private static stats = new Map<string, OpponentStats>();
+  /** V45: the scoped overlay, keyed `${scope}|${userId}`. */
+  private static scoped = new Map<string, OpponentStats>();
+  /** V45: scoped keys changed since the last flush. */
+  private static dirtyScoped = new Set<string>();
+  /** V45: the scope of the decision in flight (set by HorseLogic.decide). */
+  private static decisionScope: ReadScope | null = null;
   /** dedupe of processed ActionRecords across repeated decide() calls */
   private static seenActions = new Set<string>();
   /** per (handKey|userId) preflop-participation flags already counted */
@@ -325,6 +406,9 @@ export class HorseMind {
         s = freshStats();
         this.stats.set(a.userId, s);
       }
+      // V45: the scoped bucket receives exactly what the pooled one does
+      // for this action, as a delta taken at the end of the iteration.
+      const before45 = isNew && this.decisionScope ? { ...s } : null;
 
       if (isNew) {
         this.dirty.add(a.userId); // V12: schedule for the next DB flush
@@ -446,6 +530,7 @@ export class HorseMind {
         }
         if (isAggr) streetBettor = a.userId;
       }
+      if (before45) this.applyScopedDelta(a.userId, before45, s);
 
       if (preflop && isAggr) preflopRaises++;
     }
@@ -502,6 +587,114 @@ export class HorseMind {
     return this.stats.get(userId);
   }
 
+  // ── V45 SCOPED READS ────────────────────────────────────────────────────
+
+  /** Set by HorseLogic.decide for the decision in flight; null outside one. */
+  static setDecisionScope(scope: ReadScope | null): void {
+    this.decisionScope = scope;
+  }
+
+  static currentScope(): ReadScope | null {
+    return this.decisionScope;
+  }
+
+  /** The scoped bucket for (scope, user), for tests and the persistence layer. */
+  static getScopedStats(userId: string, scope: ReadScope): OpponentStats | undefined {
+    return this.scoped.get(`${scope}|${userId}`);
+  }
+
+  /**
+   * What a READ sees: the scoped bucket when a scope is set and it has
+   * SCOPE_MIN_HANDS, else the pooled bucket. Every accessor below that
+   * prices a decision goes through here.
+   */
+  private static readStats(userId: string): OpponentStats | undefined {
+    if (this.decisionScope) {
+      const sc = this.scoped.get(`${this.decisionScope}|${userId}`);
+      if (sc && sc.hands >= SCOPE_MIN_HANDS) return sc;
+    }
+    return this.stats.get(userId);
+  }
+
+  private static scopedFor(userId: string, scope: ReadScope): OpponentStats {
+    const key = `${scope}|${userId}`;
+    let sc = this.scoped.get(key);
+    if (!sc) {
+      if (this.scoped.size >= MAX_TRACKED_PLAYERS * 4)
+        evictOldest(this.scoped, MAX_TRACKED_PLAYERS * 4);
+      sc = freshStats();
+      this.scoped.set(key, sc);
+    }
+    this.dirtyScoped.add(key);
+    return sc;
+  }
+
+  private static applyScopedDelta(
+    userId: string,
+    before: OpponentStats,
+    after: OpponentStats
+  ): void {
+    const scope = this.decisionScope;
+    if (!scope) return;
+    let touched = false;
+    let sc: OpponentStats | null = null;
+    for (const f of SCOPED_FIELDS) {
+      const d = after[f] - before[f];
+      if (d === 0) continue;
+      if (!sc) sc = this.scopedFor(userId, scope);
+      sc[f] += d;
+      touched = true;
+    }
+    void touched;
+  }
+
+  /** V45 persistence: scoped rows changed since the last flush. */
+  static exportDirtyScoped(): Array<{ user_id: string; scope: ReadScope } & OpponentStats> {
+    const out: Array<{ user_id: string; scope: ReadScope } & OpponentStats> = [];
+    for (const key of this.dirtyScoped) {
+      const sc = this.scoped.get(key);
+      if (!sc) continue;
+      const bar = key.indexOf('|');
+      out.push({ user_id: key.slice(bar + 1), scope: key.slice(0, bar) as ReadScope, ...sc });
+    }
+    this.dirtyScoped.clear();
+    return out;
+  }
+
+  static requeueDirtyScoped(keys: Array<{ user_id: string; scope: ReadScope }>): void {
+    for (const k of keys) {
+      const key = `${k.scope}|${k.user_id}`;
+      if (this.scoped.has(key)) this.dirtyScoped.add(key);
+    }
+  }
+
+  static dirtyScopedCount(): number {
+    return this.dirtyScoped.size;
+  }
+
+  /** V45 boot hydration; a row applies only when it knows more than memory. */
+  static importScoped(
+    rows: Array<{ user_id: string; scope: string } & Partial<OpponentStats>>
+  ): number {
+    let applied = 0;
+    const num = (v: unknown): number => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
+    for (const r of rows) {
+      if (!r || typeof r.user_id !== 'string' || typeof r.scope !== 'string') continue;
+      const key = `${r.scope}|${r.user_id}`;
+      const existing = this.scoped.get(key);
+      const incoming = num(r.hands);
+      if (existing && existing.hands >= incoming) continue;
+      if (this.scoped.size >= MAX_TRACKED_PLAYERS * 4 && !existing) continue;
+      const next = freshStats();
+      for (const f of SCOPED_FIELDS) {
+        next[f] = Math.max(existing ? existing[f] : 0, num((r as Record<string, unknown>)[f]));
+      }
+      this.scoped.set(key, next);
+      applied++;
+    }
+    return applied;
+  }
+
   /** Test hook: wipe all memory. */
   static reset(): void {
     this.stats.clear();
@@ -513,6 +706,9 @@ export class HorseMind {
     this.dirty.clear();
     this.pairs.clear();
     this.dirtyPairs.clear();
+    this.scoped.clear();
+    this.dirtyScoped.clear();
+    this.decisionScope = null;
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -524,7 +720,7 @@ export class HorseMind {
   static exportDirty(): Array<{ user_id: string } & OpponentStats> {
     const out: Array<{ user_id: string } & OpponentStats> = [];
     for (const id of this.dirty) {
-      const s = this.stats.get(id);
+      const s = this.readStats(id);
       if (s) out.push({ user_id: id, ...s });
     }
     this.dirty.clear();
@@ -589,6 +785,10 @@ export class HorseMind {
         postAggr: keep(existing?.postAggr, num((r as { postAggr?: number }).postAggr)),
         postPassive: keep(existing?.postPassive, num((r as { postPassive?: number }).postPassive)),
         rChecks: keep(existing?.rChecks, num(r.rChecks)),
+        snapBetSD: keep(existing?.snapBetSD, num(r.snapBetSD)),
+        snapBetSDStrong: keep(existing?.snapBetSDStrong, num(r.snapBetSDStrong)),
+        tankBetSD: keep(existing?.tankBetSD, num(r.tankBetSD)),
+        tankBetSDStrong: keep(existing?.tankBetSDStrong, num(r.tankBetSDStrong)),
       });
       applied++;
     }
@@ -713,6 +913,8 @@ export class HorseMind {
       plans: new Map(),
       raisePlans: new Map(),
       outlooks: new Map(),
+      scoped: new Map(),
+      dirtyScoped: new Set(),
     };
   }
 
@@ -732,8 +934,12 @@ export class HorseMind {
       plans: this.plans,
       raisePlans: this.raisePlans,
       outlooks: this.outlooks,
+      scoped: this.scoped,
+      dirtyScoped: this.dirtyScoped,
     };
     this.stats = sandbox.stats;
+    this.scoped = sandbox.scoped;
+    this.dirtyScoped = sandbox.dirtyScoped;
     this.seenActions = sandbox.seenActions;
     this.handFlags = sandbox.handFlags;
     this.dirty = sandbox.dirty;
@@ -755,6 +961,8 @@ export class HorseMind {
       this.plans = live.plans;
       this.raisePlans = live.raisePlans;
       this.outlooks = live.outlooks;
+      this.scoped = live.scoped;
+      this.dirtyScoped = live.dirtyScoped;
       this.sandboxDepth = 0;
     }
   }
@@ -948,7 +1156,7 @@ export class HorseMind {
       }
 
     // Adjust by observed tendencies (confidence-weighted).
-    const s = this.stats.get(userId);
+    const s = this.readStats(userId);
     if (s && s.hands >= 8) {
       const conf = Math.min(1, s.hands / 25);
       const pfrRate = s.pfr / s.hands;
@@ -1038,8 +1246,10 @@ export class HorseMind {
   // ───────────────────────────────────────────────────────────────────────
 
   static exploit(userId: string, recencyBlend: boolean = true): ExploitProfile {
-    const s = this.stats.get(userId);
+    const s = this.readStats(userId);
     if (!s || s.hands < 10) return NEUTRAL_EXPLOIT;
+    // V45: the recency window is pooled (gears are not per-scope).
+    const rec = this.stats.get(userId) ?? s;
 
     const conf = Math.min(1, s.hands / 30);
     const blend = (target: number) => 1 + (target - 1) * conf;
@@ -1064,11 +1274,11 @@ export class HorseMind {
     if (s.facedAggr >= 8) {
       const lifetime = s.folds / s.facedAggr;
       let foldRate = lifetime;
-      if (recencyBlend && s.rFacedAggr >= 6) {
-        const recent = s.rFolds / s.rFacedAggr;
-        const se = Math.sqrt(Math.max(0.04, lifetime * (1 - lifetime)) / s.rFacedAggr);
+      if (recencyBlend && rec.rFacedAggr >= 6) {
+        const recent = rec.rFolds / rec.rFacedAggr;
+        const se = Math.sqrt(Math.max(0.04, lifetime * (1 - lifetime)) / rec.rFacedAggr);
         if (Math.abs(recent - lifetime) > 2 * se) {
-          const wr = Math.min(0.5, s.rFacedAggr / 32);
+          const wr = Math.min(0.5, rec.rFacedAggr / 32);
           foldRate = (1 - wr) * lifetime + wr * recent;
         }
       }
@@ -1101,9 +1311,9 @@ export class HorseMind {
         ? s.postAggr / Math.max(1, s.postPassive)
         : s.aggr / Math.max(1, s.passive);
     let af = afLifetime;
-    const rN = s.rAggr + s.rPassive;
+    const rN = rec.rAggr + rec.rPassive;
     if (recencyBlend && rN >= 8) {
-      const recentAf = s.rAggr / Math.max(1, s.rPassive);
+      const recentAf = rec.rAggr / Math.max(1, rec.rPassive);
       if (Math.abs(recentAf - afLifetime) > Math.max(0.6, 0.5 * afLifetime)) {
         const wa = Math.min(0.5, rN / 40);
         af = (1 - wa) * afLifetime + wa * recentAf;
@@ -1223,7 +1433,7 @@ export class HorseMind {
   /** V23: fold-to-river-bet frequency (0..1), or null below an
    *  8-opportunity sample. Memory-only — see the OpponentStats note. */
   static riverFoldRate(id: string): number | null {
-    const s = this.stats.get(id);
+    const s = this.readStats(id);
     if (!s || s.riverBetOpps < 8) return null;
     return s.riverBetFolds / s.riverBetOpps;
   }
@@ -1382,10 +1592,27 @@ export class HorseMind {
    */
   static observeHandComplete(
     handKey: string,
-    actions: Array<{ userId?: string; action: string; amount?: number; stage: string }> | undefined,
+    actions:
+      | Array<{
+          userId?: string;
+          action: string;
+          amount?: number;
+          stage: string;
+          /** V43: the engine stamps Date.now() on every record; the tempo
+           *  read needs it. Optional so older callers and fixtures still type. */
+          timestamp?: number;
+        }>
+      | undefined,
     bigBlind: number,
-    showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null
+    showdown?: Array<{ user_id: string; mucked: boolean; hand_name?: string }> | null,
+    /** V45: the hand's scope (variant family x dealt count), so the deep
+     *  reads land in the scoped bucket too. Absent = pooled only. */
+    scope?: ReadScope | null
   ): void {
+    // V45: settlement runs outside any decision; the scope travels with the
+    // hand and is cleared on the way out.
+    const prevScope = this.decisionScope;
+    if (scope) this.decisionScope = scope;
     try {
       if (!actions || actions.length === 0 || !handKey) return;
       const flag = `fh|${handKey}`;
@@ -1394,6 +1621,10 @@ export class HorseMind {
       evictOldest(this.handFlags, MAX_HAND_FLAGS);
 
       const bb = bigBlind > 0 ? bigBlind : 1;
+      // V45: every increment on a touched player is mirrored into the
+      // scoped bucket at the end (delta of the snapshot taken on first
+      // touch), so the deep reads are scoped like the action counters.
+      const touchedBefore = new Map<string, OpponentStats>();
       const touch = (id: string): OpponentStats => {
         let s = this.stats.get(id);
         if (!s) {
@@ -1402,7 +1633,14 @@ export class HorseMind {
           this.stats.set(id, s);
         }
         this.dirty.add(id);
+        if (this.decisionScope && !touchedBefore.has(id)) touchedBefore.set(id, { ...s });
         return s;
+      };
+      const mirror = (): void => {
+        for (const [id, before] of touchedBefore) {
+          const after = this.stats.get(id);
+          if (after) this.applyScopedDelta(id, before, after);
+        }
       };
 
       // ── Preflop: opener vs 3-bettor ──
@@ -1468,7 +1706,13 @@ export class HorseMind {
           if (sd?.user_id) shown.set(sd.user_id, sd);
         }
         const counted = new Set<string>();
+        let prevTs: number | null = null;
         for (const a of actions) {
+          // V43: the gap since the previous action, whatever it was. The
+          // first record of the hand has no gap.
+          const ts = typeof a.timestamp === 'number' && isFinite(a.timestamp) ? a.timestamp : null;
+          const gap = ts !== null && prevTs !== null ? ts - prevTs : null;
+          if (ts !== null) prevTs = ts;
           if (a.stage !== 'river' || !a.userId || counted.has(a.userId)) continue;
           if (a.action !== 'bet' && a.action !== 'raise' && a.action !== 'all_in') continue;
           if ((a.amount ?? 0) < 20 * bb) continue;
@@ -1479,13 +1723,22 @@ export class HorseMind {
           s.bigBetSD++;
           // A mucked hand after betting big and being called LOST — that is
           // not value. Revealed hands are classified by name.
-          if (!sd.mucked && STRONG_HAND_NAMES.has((sd.hand_name ?? '').toLowerCase())) {
-            s.bigBetSDStrong++;
+          const strong = !sd.mucked && STRONG_HAND_NAMES.has((sd.hand_name ?? '').toLowerCase());
+          if (strong) s.bigBetSDStrong++;
+          if (gap !== null && gap >= 0 && gap <= SNAP_MS) {
+            s.snapBetSD++;
+            if (strong) s.snapBetSDStrong++;
+          } else if (gap !== null && gap >= TANK_MS) {
+            s.tankBetSD++;
+            if (strong) s.tankBetSDStrong++;
           }
         }
       }
+      mirror();
     } catch {
       /* full-hand observation is best-effort by contract */
+    } finally {
+      this.decisionScope = prevScope;
     }
   }
 
@@ -1493,7 +1746,7 @@ export class HorseMind {
    *  it - rAggr/(rAggr+rPassive) over the decayed recency window. Null
    *  below a real sample. High = the fleet just watched hero bet a lot. */
   static selfImageOf(id: string): number | null {
-    const s = this.stats.get(id);
+    const s = this.stats.get(id); // pooled: the image the whole table saw
     if (!s || s.rHands < 8) return null;
     // V28 AUDIT FIX: the denominator was rAggr + rPassive — bets and CALLS
     // only. Checks were counted nowhere, so a tight horse that bet 12 times
@@ -1509,14 +1762,14 @@ export class HorseMind {
 
   /** Fold-to-c-bet frequency (0..1), or null below a 10-opportunity sample. */
   static foldToCbetOf(id: string): number | null {
-    const s = this.stats.get(id);
+    const s = this.readStats(id);
     if (!s || s.cbetOpps < 10) return null;
     return s.cbetFolds / s.cbetOpps;
   }
 
   /** Fold-to-3-bet frequency (0..1), or null below an 8-opportunity sample. */
   static foldTo3BetOf(id: string): number | null {
-    const s = this.stats.get(id);
+    const s = this.readStats(id);
     if (!s || s.f3bOpps < 8) return null;
     return s.f3bFolds / s.f3bOpps;
   }
@@ -1524,8 +1777,24 @@ export class HorseMind {
   /** Of their big river bets that reached showdown, the fraction that were
    *  real hands (two pair+). Null below a 5-showdown sample. High = their
    *  big bets mean it; low = they bomb with air. */
+  /** V43 TEMPO: how often this player's SNAP river big bets showed down as
+   *  value. Null below five observations - a tempo read on a handful of
+   *  hands is superstition, and superstition must not price a call. */
+  static snapBetValueTendency(id: string): number | null {
+    const s = this.readStats(id);
+    if (!s || s.snapBetSD < 5) return null;
+    return s.snapBetSDStrong / s.snapBetSD;
+  }
+
+  /** V43 TEMPO: the same for river big bets made after a long tank. */
+  static tankBetValueTendency(id: string): number | null {
+    const s = this.readStats(id);
+    if (!s || s.tankBetSD < 5) return null;
+    return s.tankBetSDStrong / s.tankBetSD;
+  }
+
   static bigBetValueTendency(id: string): number | null {
-    const s = this.stats.get(id);
+    const s = this.readStats(id);
     if (!s || s.bigBetSD < 5) return null;
     return s.bigBetSDStrong / s.bigBetSD;
   }

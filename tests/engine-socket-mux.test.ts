@@ -61,6 +61,8 @@ const T1 = 'aaaaaaaa-1111-4111-8111-111111111111';
 const T2 = 'bbbbbbbb-2222-4222-8222-222222222222';
 
 let engineSocketMux: typeof import('../src/services/EngineSocketMux').engineSocketMux;
+/** Read from the module rather than hard-coded, so bumping it is one edit. */
+let PROTOCOL_VERSION: number;
 
 beforeEach(async () => {
   FakeWebSocket.instances = [];
@@ -68,7 +70,7 @@ beforeEach(async () => {
   vi.useFakeTimers();
   // Fresh module state per test — the mux is a singleton.
   vi.resetModules();
-  ({ engineSocketMux } = await import('../src/services/EngineSocketMux'));
+  ({ engineSocketMux, PROTOCOL_VERSION } = await import('../src/services/EngineSocketMux'));
 });
 
 afterEach(() => {
@@ -84,7 +86,13 @@ describe('EngineSocketMux', () => {
     const f2 = engineSocketMux.acquire('https://engine.example', T2, 'jwt');
     expect(FakeWebSocket.instances.length).toBe(1);
     const ws = lastSocket();
-    expect(ws.url).toBe('wss://engine.example/ws/multi');
+    /* The protocol version joined this URL in Realtime Phase 4 (2026-09-05):
+       the origin keeps old assets, so the engine has to be able to refuse a
+       bundle it will not serve, and the URL is the one place all three sockets
+       share. Asserted whole rather than loosened to a prefix - what this pin
+       is for is that there is ONE socket and it goes to the right place, and
+       that is still exactly what it says. */
+    expect(ws.url).toBe(`wss://engine.example/ws/multi?v=${PROTOCOL_VERSION}`);
     ws._open();
     const subs = ws.sent.map((s) => JSON.parse(s)).filter((m) => m.type === 'SUBSCRIBE');
     expect(subs.map((m) => m.tableId).sort()).toEqual([T1, T2].sort());

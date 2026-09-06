@@ -3541,10 +3541,57 @@ export default function TablePage({
     // refreshMaintenanceBreak is a stable useCallback, so this still runs once
     // per error rather than on every break countdown tick.
   }, [engineLastError, refreshMaintenanceBreak]);
+  /* ═══ A RELOAD CANNOT FIX A SIGN-IN (Realtime Phase 3, 2026-09-05) ════════
+     Why this flag has to exist at all: `auth_failed` is a status the client
+     passes THROUGH, not one it rests in. EngineStateClient sets it on a 4401
+     and then calls scheduleReconnect(), which immediately sets 'reconnecting'
+     and, at maxRetries, 'failed'. So by the time the auto-reload failsafe
+     twenty seconds below looks at the status, an auth refusal and a dead
+     Wi-Fi link are the same word: 'failed'.
+
+     That is how a browser ends up reloading itself every two minutes forever
+     against a socket that will refuse it every time - the 2026-09-03 shape,
+     and it is worse than useless: each reload throws away the felt, the
+     buy-in overlay and any pre-action the player had armed, then arrives at
+     exactly the same refusal.
+
+     Two distinct cases sit under one close code, and both are answered here:
+       - the session is genuinely dead: lib/sessionRevoked already probes
+         GoTrue, prompts and redirects, so this page must simply not reload
+         out from under that prompt;
+       - the session is ALIVE and the ENGINE is refusing it (its own auth
+         path broken, a rotated key, GoTrue unreachable from the box): the
+         ladder underneath keeps retrying and will reconnect the moment the
+         engine recovers. A reload adds nothing and costs the player their
+         table. This is the case nothing handled before today.
+
+     The flag is sticky for the outage and cleared only by a socket that
+     actually opens: an auth refusal followed by nine 1006s is still an auth
+     outage, and reading only the most recent close would forget that. */
+  const [engineRefusedAuth, setEngineRefusedAuth] = useState(false);
+  const engineRefusedAuthRef = useRef(false);
+  engineRefusedAuthRef.current = engineRefusedAuth;
+  useEffect(() => {
+    if (!engineLastError) return;
+    // Same predicate as lib/sessionRevoked.isEngineAuthClose. Inlined rather
+    // than imported so this page does not pull that module into the entry
+    // chunk every player downloads before first paint; the law pins the two
+    // copies as identical.
+    const isAuth =
+      engineLastError.code === 4401 || /^auth:/.test(String(engineLastError.reason || ''));
+    if (isAuth) setEngineRefusedAuth(true);
+  }, [engineLastError]);
+  useEffect(() => {
+    if (engineWsStatus === 'auth_failed') setEngineRefusedAuth(true);
+  }, [engineWsStatus]);
+
   useEffect(() => {
     if (engineWsStatus === 'connected') {
       notFoundCountRef.current = 0;
       tableClosedToastShownRef.current = false;
+      // A socket that reached OPEN is proof the engine accepted this token.
+      // Nothing weaker clears it (see the comment above).
+      setEngineRefusedAuth(false);
     }
   }, [engineWsStatus]);
 
@@ -3615,6 +3662,43 @@ export default function TablePage({
       // it every ~30s yanked the page out from under players choosing a seat
       // (observed live 2026-08-28). The socket connects when the game starts.
       if (seatFirstOpenRef.current) return;
+      /* DO NO HARM (Realtime Phase 3, 2026-09-05). The socket died for auth,
+         so a fresh page would present the same token to the same refusal and
+         land here again in twenty seconds - having discarded the felt, the
+         overlays and any armed pre-action on the way. Whichever of the two
+         auth cases this is, the reload is the wrong move: a dead session is
+         already being prompted and redirected by lib/sessionRevoked, and a
+         live session refused by the engine is recovered by the reconnect
+         ladder that is still running underneath.
+
+         Not silent, on either side. The player has the banner, which says
+         this is a sign-in problem rather than a lost connection, and the
+         platform gets `reload_suppressed` - the series that tells an on-call
+         engineer "these players cannot authenticate to a table", which is
+         the sentence nobody could say for twenty-two hours on 2026-09-03. */
+      if (engineRefusedAuthRef.current) {
+        void import('../services/clientConnectionBeacon')
+          .then((m) => m.reportConnectionEvent('reload_suppressed'))
+          .catch(() => {
+            /* telemetry never disturbs the table */
+          });
+        return;
+      }
+      /* THE SCHEDULED BREAK IS NOT A WEDGED SOCKET (Realtime Phase 4,
+         2026-09-05). The engine is deliberately down for two or three minutes
+         of every hour, and reloading the page under a player who was just
+         promised their seat would survive is the exact opposite of what the
+         break is for - it discards the felt, the overlays and any armed
+         pre-action, then arrives at a box that is still booting.
+
+         EngineStateClient already declines to reach 'failed' while it is
+         inside an announced restart, so this timer usually never fires during
+         a break. This is the case its signal cannot reach: a browser that
+         LOADED during the outage never received the maintenance frame,
+         because there was no socket to receive it on. `useMaintenanceBreak`
+         reads the break from the database for exactly that reader, and this
+         is the one guard that works with no engine at all. */
+      if (maintenanceBreakRef.current.active) return;
       const KEY = 'ca_ws_autoreload_at';
       const last = Number(sessionStorage.getItem(KEY) || 0);
       if (Date.now() - last < 120_000) return;
@@ -7030,6 +7114,11 @@ export default function TablePage({
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
+  /** P4 2026-09-05: the tile's reveal handler while an offer is up; B runs it. */
+  const rabbitHotkeyRef = useRef<(() => void) | null>(null);
+  const registerRabbitHotkey = useCallback((handler: (() => void) | null) => {
+    rabbitHotkeyRef.current = handler;
+  }, []);
   /** Takes the Rabbit Hunt button down when the server's offer TTL runs out. */
   const rabbitExpiryTimerRef = useRef<number | null>(null);
   /** Dan 2026-08-26: the reveal itself must ALWAYS come down. Hand boundaries
@@ -7354,12 +7443,30 @@ export default function TablePage({
    * Lifetime VIP; there is no other rung - docs/laws.d/vip-is-not-a-ladder.md).
    */
   const { isVIP: viewerIsVip } = useVIPStatus();
+  /**
+   * "ALL IN" MEANS IN THE RUN-OUT, NOT ONLY OUT OF CHIPS (audit 2026-09-05).
+   * The engine's ALL_IN_RUNOUT carries `getActivePlayers()` - every live
+   * hand, including the player who CALLED the shove with chips behind. That
+   * player has no more decisions and their money is in the middle exactly
+   * like the shover's, and they are in the equity list the server sends. A
+   * check on `status === 'all_in'` alone would have denied the perk to the
+   * covering player in every heads-up all-in, which is half of them. So:
+   * the hero is a run-out participant if the equity broadcast names them
+   * (by id, or by seat where the entry has no id), or their status says so.
+   */
+  const heroInRunout =
+    tableState.heroSeat > 0 &&
+    (tableState.players[tableState.heroSeat - 1]?.status === 'all_in' ||
+      allInEquities.some((e) => (e.userId ? e.userId === userId : e.seat === tableState.heroSeat)));
   const heroSqueezeEligible = viewerMaySqueeze({
-    heroAllIn:
-      tableState.heroSeat > 0 && tableState.players[tableState.heroSeat - 1]?.status === 'all_in',
+    heroAllIn: heroInRunout,
     isVip: viewerIsVip,
     settingOn: v8Settings.all_in_squeeze,
     runItMultiple: ritRunsThisHand > 1 || (ritResult?.boards?.length ?? 0) > 1,
+    /* Dan 2026-09-05: "THIS ISN'T ALLOWED ON BOMB POTS". bombPotActive is the
+       hand-level flag (BOMB_POT_TRIGGERED -> next HAND_STARTED); a second
+       board on the felt is the same fact from the other side. */
+    bombPot: bombPotActive || tableState.communityCards2.length > 0,
   });
   /**
    * While this viewer's squeezed card is still face down under their hand,
@@ -19845,6 +19952,9 @@ export default function TablePage({
       void handleActionPanelAction(canCheckRightNow() ? 'check' : 'call');
     },
     onRaise: handleRaise,
+    /* P4 2026-09-05: B = Rabbit Hunt. The tile registers its handler only
+       while an offer is up, so this is a no-op the rest of the time. */
+    onRabbitHunt: () => rabbitHotkeyRef.current?.(),
     /* The SAME function the ALL IN button runs. Until 2026-08-28 this was
        `handleAllIn`, a second implementation that skipped VPIP/PFR counting and
        armed a legacy client-side RIT prompt the button never armed — so a shove
@@ -20075,6 +20185,27 @@ export default function TablePage({
 
   // Guards the auto top-up against re-entry while a debit is still in flight.
   const autoTopUpInFlightRef = useRef(false);
+  /* ONE IDEMPOTENCY KEY PER AUTO TOP-UP, REUSED ACROSS RETRIES (Realtime
+     Phase 3 audit, 2026-09-05). Same shape as `bustRebuyKeyRef` above and as
+     CashierModal's `opIdRef`, and it was the one top-up path without it.
+
+     The Cashier audit (2026-08-27, P0-1) built the whole mechanism for the
+     lost-response case: `/addchips` keys the debit on `opId`, and the engine
+     falls back to `opId || randomUUID()` - so a caller that sends NOTHING gets
+     a fresh key on every attempt and no de-duplication at all. The MANUAL
+     cashier holds one; this automatic path did not.
+
+     `autoTopUpInFlightRef` below is not the same guard. It stops two attempts
+     OVERLAPPING; it cannot stop the case this key exists for - the debit
+     committed, the response was lost, the client threw, the flag was released,
+     and the very next snapshot still shows the stack short, so the effect
+     tops up again for the same shortfall. Without a key that is a second
+     debit for a shortfall the first one already covered.
+
+     Keyed by amount, exactly like the two siblings: a retry for the same
+     shortfall is the same purchase and de-duplicates; a genuinely different
+     shortfall is a different purchase and gets its own key. */
+  const autoTopUpKeyRef = useRef<{ amount: number; key: string } | null>(null);
 
   // --- NEW: Fully Functional Auto Top Up & Stand Up Next Big Blind ---
   useEffect(() => {
@@ -20161,9 +20292,15 @@ export default function TablePage({
           const topUpAmount = Math.min(maxBuyIn - currentStack, accountBalance ?? 0);
           if (topUpAmount > 0) {
             autoTopUpInFlightRef.current = true;
-            handleAddChips(topUpAmount)
+            if (!autoTopUpKeyRef.current || autoTopUpKeyRef.current.amount !== topUpAmount) {
+              autoTopUpKeyRef.current = { amount: topUpAmount, key: crypto.randomUUID() };
+            }
+            handleAddChips(topUpAmount, autoTopUpKeyRef.current.key)
               .then((res) => {
                 if (res && typeof window !== 'undefined') {
+                  // Spent: a later shortfall is a new purchase and needs a new
+                  // key, or a second top-up would replay the first one's.
+                  autoTopUpKeyRef.current = null;
                   toast?.success?.(`Auto Top Up: Added ${topUpAmount.toLocaleString()} Chips`);
                 }
               })
@@ -20902,6 +21039,7 @@ export default function TablePage({
                 rabbitDiamondCost={rabbitDiamondCost}
                 userId={userId === 'guest' ? null : userId}
                 onReveal={handleRabbitReveal}
+                registerHotkey={registerRabbitHotkey}
               />
             )}
             <PreviousHandCard
@@ -20999,7 +21137,11 @@ export default function TablePage({
                 {/* Sits directly above the wordmark, in felt coordinates, and
                     paints over everything on the surface. See the note in
                     .table-container above for why it moved off the top rail. */}
-                <TableConnectionBanner status={engineWsStatus} isActive={isActive} />
+                <TableConnectionBanner
+                  status={engineWsStatus}
+                  isActive={isActive}
+                  authRefused={engineRefusedAuth}
+                />
                 {/* The engine's verdict on THIS seat's presence, on the same
                     line. Defers to the socket banner whenever the socket is
                     down (Dan 2026-09-04: every connection message lives on

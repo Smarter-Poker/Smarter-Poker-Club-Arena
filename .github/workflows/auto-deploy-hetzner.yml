@@ -150,29 +150,39 @@ jobs:
     # the wait was silently the part that got squeezed - it expired 23 seconds
     # before the gate opened on run 33942233521 and shipped nothing. 40 holds
     # the worst observed build plus a full wait to the next :55 plus cutover.
+    # ── THE CEILING AND THE RESERVE ARE ONE DECISION (merged 2026-09-05) ──
     #
-    # 40 DID NOT HOLD IT EITHER, and the arithmetic says it never could
-    # (2026-09-05, second pass). The break gate's budget is this timeout MINUS
-    # the elapsed build MINUS a 300s cutover reserve, and it refuses to wait
-    # when the next :55 is further away than that. Build 8 minutes and the
-    # budget is 27; so any run reaching the gate more than 27 minutes before
-    # :55 - i.e. arriving before :28 - quits having shipped nothing. Measured
-    # the hour this was written: run 33985138036 (gate at 19:01, next break
-    # 3295s away, budget 1765s) and run 33986167969 (gate at 19:15, break
-    # 2429s away, budget 1654s). Both built everything and threw it away.
+    # Two fixes landed on this number the same day for different reasons, and
+    # BOTH are right. Taking either alone breaks the other.
     #
-    # That window is exactly where an OFF-CYCLE dispatch lands, which is what
-    # publish-watchdog fires when it notices the engine is behind main. The
-    # one mechanism whose whole job is to catch up a stale engine was
-    # arithmetically incapable of ever landing a deploy.
+    #   main:  CUTOVER_RESERVE_S 300 -> 540, because the proof step after the
+    #          promote may poll for four minutes before it fails, and the wait
+    #          must never be able to spend the minutes the proof needs.
+    #   here:  timeout 40 -> 55, because the gate's budget is
+    #          timeout - build - reserve, and at 40 it went NEGATIVE against a
+    #          build that had grown to 8-18 minutes: runs 33985138036 and
+    #          33986167969 both built everything and threw it away.
     #
-    # 55 covers the worst observed build (18m) plus a wait from a tick
-    # delivered as late as :20 plus the cutover reserve. It is a CEILING, not
-    # a cost: with the image-reuse step below, a run whose image is already
-    # staged reaches the gate in about a minute, so the common shape is a
-    # short wait, not a long one. tests/the-deploy-can-always-ship.law.test.ts
-    # pins this against the budget formula so the two can never disagree
-    # again - that disagreement is the whole defect.
+    # Raising the reserve without raising the ceiling takes 240s MORE out of
+    # the same budget - it makes the starvation this branch exists to fix
+    # strictly worse. So the ceiling is derived, not chosen:
+    #
+    #   the :35 tick must be able to ship on a COLD build
+    #     time from :35 to the :56 gate          1260s
+    #     worst build actually observed          1080s  (18 min)
+    #     cutover + verify + promote + proof      540s
+    #                                          = 2880s = 48 min  -> 55 covers it
+    #
+    #   and a run that only STAGES an image must be able to wait out any hour
+    #     staged run reaches the gate in          ~60s
+    #     55*60 - 60 - 540                      = 2700s = 45 min of wait
+    #
+    # So a cold build from :35 ships in its own run, and a push landing at any
+    # other minute stages its image and is cut over by the next :35 tick
+    # without rebuilding. One hour, worst case, and no build is ever wasted.
+    #
+    # tests/the-deploy-can-always-ship.law.test.ts pins the ARITHMETIC, not the
+    # literals, so neither number can be moved alone again.
     timeout-minutes: 55
 
     env:
@@ -199,6 +209,27 @@ jobs:
       # assumes zero elapsed and can hand itself more time than the job has.
       - name: Stamp the job start for the break-gate budget
         run: echo "DEPLOY_STARTED_AT=$(date -u +%s)" >> $GITHUB_ENV
+
+      # A DEPLOY THAT PROVES ITSELF, PART ONE (2026-09-05). On 2026-09-04/05 a
+      # run reported success and shipped nothing: the container came back on
+      # the OLD image and /health.version never changed. Every check below
+      # compares what the engine SAYS over HTTP against the target; none of
+      # them remembered what was running BEFORE, so "did not move" was
+      # indistinguishable from "moved". Recorded here, at the start, from the
+      # engine's own witness (engine_leader.engine_version, written by the
+      # running leader) with /health as the fallback. Best-effort: a failure
+      # here must never stop a deploy.
+      - name: Record the version production runs before the cutover
+        if: always()
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MODE: record
+        run: |
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/prove-engine-version-moved.mjs || echo "::warning::pre-cutover version not recorded"
 
       - name: Record that this deploy run started
         if: always()
@@ -695,14 +726,12 @@ jobs:
           # is stamped by the first step, so the build's real cost is subtracted
           # here instead of assumed - which is what made a fixed cap wrong twice
           # (14 min when builds were 5, then 15 min when the gate was 923s away).
-          # THE TIMEOUT AND THIS NUMBER ARE ONE DECISION, so they are read from
-          # one place. It was written `40 * 60` here while `timeout-minutes`
-          # said 40 above; the two then had to be changed together by hand, and
-          # the whole class of defect this step keeps producing is a budget that
-          # quietly stopped covering the thing it exists to cover.
-          # tests/the-deploy-can-always-ship.law.test.ts asserts these agree.
+          # THE TIMEOUT AND THESE NUMBERS ARE ONE DECISION, so they are read
+          # from one place and derived together. See the block above
+          # `timeout-minutes` for the arithmetic that produced both; changing
+          # either alone is the defect this step keeps re-producing.
           JOB_TIMEOUT_S=$(( 55 * 60 ))
-          CUTOVER_RESERVE_S=300     # cutover + verify + promote, measured at ~2-4 min
+          CUTOVER_RESERVE_S=540     # cutover + verify + promote (~2-4 min) + a 4-min proof that can fail
           ELAPSED_S=$(( NOW_EPOCH - ${DEPLOY_STARTED_AT:-$NOW_EPOCH} ))
           BUDGET_CAP_S=$(( JOB_TIMEOUT_S - ELAPSED_S - CUTOVER_RESERVE_S ))
           [ "$BUDGET_CAP_S" -lt 0 ] && BUDGET_CAP_S=0
@@ -985,6 +1014,35 @@ jobs:
           ~/hssh "docker tag $IMAGE_REPO:$SHA $IMAGE_REPO:current"
           echo ":current -> $SHA"
 
+      # A DEPLOY THAT PROVES ITSELF, PART TWO (2026-09-05). The verify step
+      # above asked the container and the proxy for a version. This asks the
+      # DATABASE: engine_leader.engine_version is written by the running
+      # leader itself every 10 s (claim_engine_leadership, INSTANCE_VERSION =
+      # GIT_COMMIT_SHA[0:8]), and cannot be served by a cache, a load balancer
+      # or an unmanaged twin. It polls for up to four minutes and FAILS THE
+      # JOB when the version still equals what PART ONE recorded - the
+      # 2026-09-05 shape exactly - or names a third build. Failing here
+      # triggers the ROLLBACK below, the same treatment the verify step gives
+      # a version mismatch: :current must never name a build the engine never
+      # reported running. Unreadable is NOT behind (the verify step already
+      # read /health), so no witness at all is a warning, never a rollback.
+      # scripts/ci/prove-engine-version-moved.mjs also raises the in-app
+      # notification publish-watchdog.sh raises, to the same recipients.
+      - name: 'PROVE the version moved: the engine wrote the new build, not just answered with it'
+        id: prove
+        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MODE: prove
+          TARGET_SHA: ${{ github.event.inputs.ref_sha || github.sha }}
+          TIMEOUT_S: '240'
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/prove-engine-version-moved.mjs
+
       - name: ROLLBACK — restore the last known-good image
         # Broadened from `steps.health.outcome == 'failure'`, which missed the
         # worse case: `Cut over` itself failing. engine-up.sh has already
@@ -1119,7 +1177,7 @@ jobs:
           REASON="already serving this commit"
           if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
             REASON="${{ steps.drain.outputs.gate_reason }}"
-            [ -z "$REASON" ] && REASON="the break gate declined without recording a reason — read the gate step's log"
+            [ -z "$REASON" ] && REASON="the break gate held; see the step log for which half"
           elif [ "${{ steps.dedupe.outputs.skip }}" = "true" ]; then
             REASON="coalescing — we restarted the engine too recently, or it is already on this commit"
           fi
@@ -1167,6 +1225,7 @@ jobs:
             echo "- Host before: \`${{ steps.pre.outputs.before_sha }}\`"
             echo "- Host after:  \`$AFTER_SHA\`"
             echo "- Verified serving that commit: \`${{ steps.health.outputs.verified || 'NO — see rollback step' }}\`"
+            echo "- Proved the version moved (engine_leader): \`${{ steps.prove.outcome || 'n/a' }}\` (was \`${PRE_CUTOVER_VERSION:-unknown}\` via ${PRE_CUTOVER_SOURCE:-unknown})"
             echo "- Engine uptime: ${{ steps.health.outputs.uptime || 'n/a' }}s"
             echo "- URL: $ENGINE_URL"
           } >> $GITHUB_STEP_SUMMARY
@@ -1189,7 +1248,7 @@ jobs:
           # here used to tell the watchdog a different commit than the one the
           # host actually checked out, tagged, and verified.
           TARGET_SHA: ${{ github.event.inputs.ref_sha || github.sha }}
-          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.health.outputs.verified == 'true' }}
+          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome != 'failure' }}
           RUN_ID: ${{ github.run_id }}
           RUN_ACTOR: ${{ github.event_name }}
           # ONE REASON, WRITTEN ONCE, READ EVERYWHERE. The drain branch used to
@@ -1204,6 +1263,7 @@ jobs:
             ${{ steps.dedupe.outputs.skip == 'true' && 'coalesced or already serving this commit'
              || (steps.drain.outputs.skip == 'true' && steps.drain.outputs.gate_reason)
              || steps.drain.outputs.skip == 'true' && 'the break gate declined without recording a reason'
+             || steps.prove.outcome == 'failure' && 'cutover verified over HTTP but engine_leader never reported the new version: the version did not move'
              || steps.health.outputs.verified == 'true' && 'deployed and verified serving this commit'
              || 'run ended without a verified cutover' }}
         run: |

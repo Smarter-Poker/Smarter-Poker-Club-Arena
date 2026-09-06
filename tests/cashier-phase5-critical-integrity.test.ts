@@ -50,18 +50,22 @@ describe('cashier Phase 5 production certification contracts', () => {
   it('runs an exact live database contract canary after every successful publish', () => {
     const workflow = source('.github/workflows/post-deploy-e2e.yml');
     const canary = source('scripts/verification-harness/cashier-release-contract.sql');
-    expect(workflow).toContain('Certify the live cashier database contract');
-    expect(workflow).toContain('-f scripts/verification-harness/cashier-release-contract.sql');
-    expect(workflow).toContain('-f scripts/verification-harness/cashier-telemetry-rls.sql');
+    const runner = source('scripts/verification-harness/certify-cashier-contract.mjs');
+    const stepStart = workflow.indexOf('- name: Certify the live cashier database contract');
+    const stepEnd = workflow.indexOf('\n      - name:', stepStart + 1);
+    const databaseContractStep = workflow.slice(stepStart, stepEnd);
+    expect(stepStart).toBeGreaterThanOrEqual(0);
+    expect(workflow).toContain('node scripts/verification-harness/certify-cashier-contract.mjs');
+    expect(databaseContractStep).not.toMatch(/^\s+psql(?:\s|\\)/m);
     expect(canary).toContain('md5(pg_get_functiondef(v_oid))');
     expect(canary).toContain("has_function_privilege('anon', v_oid, 'EXECUTE')");
     expect(canary).toContain('cashier_operations_insert_own');
     expect(canary).toContain('club_members_cashier_tree_idx');
     expect(canary).toContain("('20260831235992')");
-    const rlsProbe = source('scripts/verification-harness/cashier-telemetry-rls.sql');
-    expect(rlsProbe).toContain('SET LOCAL ROLE authenticated');
-    expect(rlsProbe).toContain('INSERT INTO public.cashier_operations');
-    expect(rlsProbe).toContain('ROLLBACK;');
+    expect(runner).toContain("await client.query('SET LOCAL ROLE authenticated')");
+    expect(runner).toContain('INSERT INTO public.cashier_operations');
+    expect(runner).toContain("await client.query('ROLLBACK')");
+    expect(runner).toContain('SUPABASE_DB_PASSWORD');
   });
 
   it('gives the deployed Trade cashier a dedicated authenticated assertion', () => {

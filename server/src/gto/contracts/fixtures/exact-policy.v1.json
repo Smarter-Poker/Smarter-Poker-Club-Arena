@@ -1,0 +1,892 @@
+{
+  "contractVersion": "smarter-poker.solver-policy.v1",
+  "policyVersion": "solver-policy-service.1.0.0",
+  "key": {
+    "contractVersion": "smarter-poker.solver-policy.v1",
+    "variant": "nlh",
+    "bettingStructure": "no_limit",
+    "tableSize": 2,
+    "positions": {
+      "hero": "BB",
+      "villains": [
+        "BTN"
+      ],
+      "button": "BTN",
+      "smallBlind": "BTN",
+      "bigBlind": "BB"
+    },
+    "stackVector": [
+      {
+        "seat": 0,
+        "position": "BB",
+        "stackChips": null,
+        "stackBb": 100,
+        "committedChips": 0,
+        "active": true,
+        "allIn": false
+      },
+      {
+        "seat": 1,
+        "position": "BTN",
+        "stackChips": null,
+        "stackBb": 100,
+        "committedChips": 0,
+        "active": true,
+        "allIn": false
+      }
+    ],
+    "blinds": {
+      "smallBlind": 1,
+      "bigBlind": 2,
+      "ante": 0,
+      "bigBlindAnte": 0,
+      "straddles": [],
+      "complete": true
+    },
+    "rake": {
+      "percent": 5,
+      "capChips": null,
+      "capBb": 2,
+      "noFlopNoDrop": false,
+      "complete": true
+    },
+    "tournamentUtility": {
+      "mode": "cash",
+      "model": null,
+      "playersRemaining": null,
+      "entrants": null,
+      "handForHand": false,
+      "complete": true
+    },
+    "payouts": [],
+    "bounties": [],
+    "street": "flop",
+    "board": [
+      "Jh",
+      "7d",
+      "2c"
+    ],
+    "holding": [
+      "As",
+      "Ks"
+    ],
+    "publicActionHistory": {
+      "complete": true,
+      "actions": []
+    },
+    "legalActions": [
+      {
+        "action": "bet",
+        "minChips": null,
+        "maxChips": null,
+        "exactChips": 525,
+        "allIn": false
+      },
+      {
+        "action": "check",
+        "minChips": null,
+        "maxChips": null,
+        "exactChips": 0,
+        "allIn": false
+      }
+    ],
+    "sidePotEligibility": {
+      "complete": true,
+      "pots": [
+        {
+          "id": "main",
+          "amountChips": 700,
+          "eligibleSeats": [
+            0,
+            1
+          ],
+          "heroEligible": true
+        }
+      ]
+    }
+  },
+  "kind": "exact",
+  "node": {
+    "semantics": "check_or_bet",
+    "sourceNode": "r:0",
+    "actor": "BB",
+    "potBb": 7,
+    "facingBetBb": 0
+  },
+  "actions": [
+    {
+      "id": "check",
+      "sourceCode": "c",
+      "family": "check",
+      "label": "Check",
+      "frequency": 0.6,
+      "legal": true,
+      "size": {
+        "unit": "none",
+        "chips": null,
+        "bigBlinds": null,
+        "potFraction": null,
+        "exact": false
+      },
+      "chipEvBb": null,
+      "tournamentUtilityEv": null
+    },
+    {
+      "id": "bet_75pct",
+      "sourceCode": "b525",
+      "family": "bet",
+      "label": "Bet 75% Pot",
+      "frequency": 0.4,
+      "legal": true,
+      "size": {
+        "unit": "pot_fraction",
+        "chips": 525,
+        "bigBlinds": 5.25,
+        "potFraction": 0.75,
+        "exact": true
+      },
+      "chipEvBb": null,
+      "tournamentUtilityEv": null
+    }
+  ],
+  "distribution": {
+    "check": 0.6,
+    "bet_75pct": 0.4
+  },
+  "legalSizes": [
+    {
+      "actionId": "bet_75pct",
+      "unit": "pot_fraction",
+      "chips": 525,
+      "bigBlinds": 5.25,
+      "potFraction": 0.75,
+      "exact": true
+    }
+  ],
+  "chipEv": {
+    "unit": "big_blinds",
+    "policy": 1.25,
+    "byAction": {
+      "check": null,
+      "bet_75pct": null
+    },
+    "measuredByAction": false
+  },
+  "tournamentUtilityEv": {
+    "unit": "utility",
+    "policy": null,
+    "byAction": {
+      "check": null,
+      "bet_75pct": null
+    },
+    "measuredByAction": false
+  },
+  "sourceArtifact": {
+    "system": "solved_spots_gold_v2",
+    "artifactId": "11111111-1111-4111-8111-111111111111",
+    "scenarioHash": "hu_cash_BB_100bb_Jh7d2c",
+    "solverVersion": "PioSOLVER 3.0",
+    "solverBinaryChecksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "machineId": "M1",
+    "pipelineCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "manifestVersion": "solver-pack.2026-09-06",
+    "manifestChecksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceArtifactChecksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "qualityStatus": "validated",
+    "auditedAt": "2026-09-06T12:00:00.000Z",
+    "provenanceComplete": true
+  },
+  "qualitySeal": "SOLVER_EXACT",
+  "validDomain": {
+    "completeKey": true,
+    "missingKeyDimensions": [],
+    "exactMatchDimensions": [
+      "all"
+    ],
+    "approximatedDimensions": [],
+    "exclusions": []
+  },
+  "confidence": {
+    "score": 1,
+    "level": "high"
+  },
+  "fallbackReason": null,
+  "rangeDistribution": {
+    "22": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "33": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "44": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "55": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "66": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "77": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "88": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "99": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "32s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "32o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "42s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "42o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "43s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "43o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "52s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "52o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "53s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "53o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "54s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "54o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "62s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "62o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "63s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "63o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "64s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "64o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "65s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "65o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "72s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "72o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "73s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "73o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "74s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "74o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "75s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "75o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "76s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "76o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "82s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "82o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "83s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "83o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "84s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "84o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "85s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "85o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "86s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "86o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "87s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "87o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "92s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "92o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "93s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "93o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "94s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "94o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "95s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "95o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "96s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "96o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "97s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "97o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "98s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "98o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "T2s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "T2o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "T3s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "T3o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "T4s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "T4o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "T5s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "T5o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "T6s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "T6o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "T7s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "T7o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "T8s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "T8o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "T9s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "T9o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "TT": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "J2s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "J2o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "J3s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "J3o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "J4s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "J4o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "J5s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "J5o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "J6s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "J6o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "J7s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "J7o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "J8s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "J8o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "J9s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "J9o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "JTs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "JTo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "JJ": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "Q2s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "Q2o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "Q3s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "Q3o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "Q4s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "Q4o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "Q5s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "Q5o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "Q6s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "Q6o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "Q7s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "Q7o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "Q8s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "Q8o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "Q9s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "Q9o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "QTs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "QTo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "QJs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "QJo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "QQ": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "K2s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "K2o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "K3s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "K3o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "K4s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "K4o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "K5s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "K5o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "K6s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "K6o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "K7s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "K7o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "K8s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "K8o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "K9s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "K9o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "KTs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "KTo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "KJs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "KJo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "KQs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "KQo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "KK": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    },
+    "A2s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "A2o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "A3s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "A3o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "A4s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "A4o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "A5s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "A5o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "A6s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "A6o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "A7s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "A7o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "A8s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "A8o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "A9s": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "A9o": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "ATs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "ATo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "AJs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "AJo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "AQs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "AQo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "AKs": {
+      "check": 0.6,
+      "bet_75pct": 0.4
+    },
+    "AKo": {
+      "check": 0.6,
+      "bet_75pct": 0.4000000000000001
+    },
+    "AA": {
+      "check": 0.6,
+      "bet_75pct": 0.39999999999999997
+    }
+  }
+}

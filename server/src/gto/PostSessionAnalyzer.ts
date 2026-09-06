@@ -12,8 +12,8 @@
  * truth for hand data) via HandEventAdapter — the same rows persisted to
  * `hand_history` feed both anti-cheat and GTO analysis.
  *
- * The solver source is injected: pass StubGtoSolverClient for tests/dev, or
- * WorldHubGtoSolverClient in production (see GtoSolverClient.ts seam).
+ * The solver source is injected: pass StubGtoSolverClient for tests and
+ * ArtifactGtoSolverClient for the production in-memory policy artifact.
  */
 
 import type { NormalizedAction, NormalizedHand } from '../integrity/types.js';

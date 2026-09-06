@@ -1,0 +1,186 @@
+/**
+ * TOMATO - keyframes. Every delay is from LANDING (launch + 233 ms); the
+ * comment on each stop gives the catalogue's ms from launch. Every duration
+ * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width (the rig viewBox), so the
+ * numbers below are the measured pixel offsets scaled by 100/40 (video 2's
+ * avatar was ~40 px wide, 1 px = 2.5 units).
+ *
+ * The timeline from landing:
+ *   0-34     the intact fruit at contact
+ *   34-67    SQUASH: one held frame, flat and semi-transparent
+ *   67       BURST: splat, stem and chunks appear
+ *   67-200   the splat pops 0.6 -> 1.13 -> 1.0; the chunks fly and stop
+ *   234-500  three drips grow to the chin
+ *   500-3267 residue, static, then the player cuts
+ *
+ * Every animated element carries `both`: a delayed element shows its 0%
+ * state (opacity 0) while it waits, and a finished element keeps its last
+ * frame for the residue. Nothing here fades out.
+ */
+
+/* -- THE SQUASH: contact (233), one flat frame (267), gone (300). Stepped so
+   each state is HELD like the reference's single frames, never blended. --- */
+.thr-tomato__squash {
+  transform-box: fill-box;
+  transform-origin: 50% 55%;
+  animation: thr-tomato-squash calc(0.067s * var(--animation-speed, 1)) steps(1, end) both;
+}
+
+@keyframes thr-tomato-squash {
+  0% {
+    /* 233: the fruit has just landed, intact, where the flight put it */
+    opacity: 1;
+    transform: translate(0, 0) scale(1, 1);
+  }
+  50% {
+    /* 267: flattened 1.5 x 0.5, semi-transparent, at x -0.08 u, y -0.27 u */
+    opacity: 0.55;
+    transform: translate(-8px, -27px) scale(1.5, 0.5);
+  }
+  100% {
+    /* 300: gone; the burst takes over */
+    opacity: 0;
+    transform: translate(-8px, -27px) scale(1.5, 0.5);
+  }
+}
+
+/* -- THE SPLAT: appears at 300 at 0.6x, overshoots to 1.13x, settles at 1.0
+   by 433 (the measured 30 px -> 34 px expansion), then never moves. ------- */
+.thr-tomato__splat {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-tomato-splat calc(0.133s * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.9, 0.3, 1) calc(0.067s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-tomato-splat {
+  0% {
+    /* 300: the burst, small */
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  3% {
+    opacity: 1;
+    transform: scale(0.62);
+  }
+  40% {
+    /* ~353: the overshoot */
+    opacity: 1;
+    transform: scale(1.13);
+  }
+  100% {
+    /* 433: settled at 0.85 u; static from here to the cut */
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* -- THE STEM AND LEAVES: pop with the burst, lying on the splat's centre-top. */
+.thr-tomato__stem {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-tomato-stem calc(0.133s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.9, 0.3, 1)
+    calc(0.067s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-tomato-stem {
+  0% {
+    /* 300 */
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  3% {
+    opacity: 1;
+    transform: scale(0.52);
+  }
+  40% {
+    /* ~353 */
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    /* 433 */
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* -- THE DRIPS: each grows DOWN from its own top (the splat's lower edge)
+   between 467 and 733. Delay and duration are set inline per drip so the
+   three run at different speeds and all reach the chin by 733. ----------- */
+.thr-tomato__drip {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+  opacity: 0;
+  animation: thr-tomato-drip calc(0.266s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.7, 1)
+    calc(0.234s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-tomato-drip {
+  0% {
+    /* 467: nothing below the rim yet */
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  2% {
+    opacity: 1;
+    transform: scaleY(0.02);
+  }
+  100% {
+    /* 733: the bulb is at the chin; held from here */
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+/* -- THE CHUNKS: thrown from the rim at the burst (300), 0.15-0.25 u
+   outward, decelerating, and FROZEN where they land by 433. Each carries its
+   final offset in --dx / --dy; the start is 62% of it (on the rim). -------- */
+.thr-tomato__chunk {
+  opacity: 0;
+  animation: thr-tomato-chunk calc(0.133s * var(--animation-speed, 1))
+    cubic-bezier(0.1, 0.7, 0.3, 1) calc(0.067s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-tomato-chunk {
+  0% {
+    /* 300: on the splat's rim */
+    opacity: 0;
+    transform: translate(calc(var(--dx) * 0.62), calc(var(--dy) * 0.62));
+  }
+  4% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.64), calc(var(--dy) * 0.64));
+  }
+  100% {
+    /* 433: landed; stays at full opacity for the residue */
+    opacity: 1;
+    transform: translate(var(--dx), var(--dy));
+  }
+}
+
+/* -- REDUCED MOTION: the settled splat, its drips, seeds and stem are simply
+   there. The squash is pure motion and goes; the chunks are drawn at their
+   final positions instead of flying to them. ------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .thr-tomato__squash {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .thr-tomato__splat,
+  .thr-tomato__stem,
+  .thr-tomato__drip {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .thr-tomato__chunk {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translate(var(--dx), var(--dy)) !important;
+  }
+}

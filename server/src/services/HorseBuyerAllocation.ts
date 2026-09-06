@@ -146,7 +146,14 @@ export function allocateBuyers(
     if (t.claim !== 'reserved') continue;
     const n = take({ ...t, seatsWanted: Math.min(t.seatsWanted, FEEDER_BUYERS_TO_GO_LIVE) });
     out.set(t.tableId, n);
-    if (t.clusterId) {
+    /* A reservation of ZERO is not a reservation (2026-09-06). A feeder that
+       has already reached two seated claims nothing (seatsWanted 0), and a
+       feeder whose pool was empty takes nothing; recording either as a held
+       claim made the game's probe below report 0 buyers for the rest of the
+       cycle however many horses could sit - so the SQL saw a game with an
+       opening feeder AND no demand. Only a claim that actually holds horses
+       clamps the game's count. */
+    if (t.clusterId && n > 0) {
       reservedByCluster.set(t.clusterId, (reservedByCluster.get(t.clusterId) ?? 0) + n);
     }
   }

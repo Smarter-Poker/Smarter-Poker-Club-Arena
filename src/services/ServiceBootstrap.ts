@@ -123,30 +123,20 @@ export async function bootServices(options?: {
     console.debug('[ServiceBootstrap] ✗ FinancialCronService failed:', err);
   }
 
-  // 5. Global lobby connection (2026-08-24). Warm the auth token cache, then
-  //    open the shared /ws/multi engine socket BEFORE any table is joined, so
-  //    the first join is a SUBSCRIBE frame (~30ms) instead of a TCP + TLS +
-  //    WS-upgrade handshake (~300-600ms). Fire-and-forget: failure here costs
-  //    nothing — the first acquire() simply opens the socket itself, which is
-  //    exactly the old cold path.
-  void (async () => {
-    try {
-      const { initAuthTokenCache, getFreshAccessToken } = await import('../lib/authToken');
+  // 5. Warm only the auth-token cache. Opening /ws/multi here made every
+  //    authenticated route depend on the game engine even when the player was
+  //    visiting Stats, Cashier, Challenges, or Settings. An engine deploy then
+  //    surfaced as a browser-level 502 on otherwise healthy non-game pages and
+  //    added a needless handshake to their load path. Table clients still call
+  //    acquire() when a player actually joins a game, using this warm token.
+  void import('../lib/authToken')
+    .then(({ initAuthTokenCache }) => {
       initAuthTokenCache();
-      const { isMuxEnabled, engineSocketMux } = await import('./EngineSocketMux');
-      if (!isMuxEnabled()) return;
-      const token = await getFreshAccessToken();
-      if (!token) return; // not logged in yet — first acquire covers it
-      const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
-      const engineUrl =
-        env?.VITE_GAME_SERVER_URL ||
-        (env?.PROD ? 'https://engine.smarter.poker' : 'http://localhost:8080');
-      engineSocketMux.prewarm(engineUrl, token);
-      console.debug('[ServiceBootstrap] ✓ Engine lobby socket pre-warmed');
-    } catch (err: unknown) {
-      console.debug('[ServiceBootstrap] ✗ Engine socket pre-warm skipped:', err);
-    }
-  })();
+      console.debug('[ServiceBootstrap] ✓ Engine auth-token cache warmed');
+    })
+    .catch((err: unknown) => {
+      console.debug('[ServiceBootstrap] ✗ Engine auth-token cache warm skipped:', err);
+    });
 
   booted = true;
 

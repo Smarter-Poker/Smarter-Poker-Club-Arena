@@ -118,6 +118,30 @@ export async function logHandHistory(params: {
    * fold-around hand look the same to a reader.
    */
   pots?: { index: number; amount: number; eligible: string[] }[];
+  /**
+   * THE BOMB POT'S OWN BREAKDOWN, WRITTEN WITH THE HAND AND NOT AFTER IT.
+   *
+   * One row per (pot layer, board, hi/lo side, winner). Until 2026-09-06 these
+   * were a SECOND write, fired after this one and deliberately unawaited so it
+   * could never fail a hand. That instinct is right for a hand in progress and
+   * wrong as an architecture: two writes with no transaction between them means
+   * one of them can be the only one that lands. Measured on production that
+   * hour: 3 of 125 bomb pots had no award units at all - the pot paid, the rake
+   * taken, and no record of which board or which player got which share.
+   *
+   * Passed here, they go through fn_ca_insert_hand_with_awards in ONE round
+   * trip and ONE transaction, so the hot path still costs exactly one request
+   * (which the retry-queue design below deliberately bought) and the breakdown
+   * can no longer be the half that goes missing.
+   */
+  bombAwardUnits?: {
+    pot_index: number;
+    board: number;
+    side: string;
+    user_id: string;
+    amount: number;
+    hand_name?: string | null;
+  }[];
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
   actions: {
     seat: number;
@@ -193,7 +217,7 @@ export async function logHandHistory(params: {
     hand_name?: string;
     hand_description?: string;
   }>;
-}): Promise<{ handId: string | null }> {
+}): Promise<{ handId: string | null; wroteAwardUnits: boolean }> {
   // Round 38 fix: stamp started_at/ended_at + RETURNING id so the caller
   // can FK rake_records.hand_id back to this hand_history row.
   const startedAtIso = params.startedAt
@@ -280,7 +304,17 @@ export async function logHandHistory(params: {
     ...(params.roster ? { has_human: params.roster.some((p) => !p.isHorse) } : {}),
   };
 
-  const handId = await insertHandHistoryRow(row, 'settlement');
+  const bombUnits = (params.bombAwardUnits ?? []).map((u) => ({
+    table_id: params.tableId,
+    hand_number: params.handNumber,
+    pot_index: u.pot_index,
+    board: u.board ?? 1,
+    side: u.side ?? 'high',
+    user_id: u.user_id,
+    amount: u.amount,
+    hand_name: u.hand_name ?? null,
+  }));
+  const handId = await insertHandHistoryRow(row, 'settlement', bombUnits);
   if (handId === null) {
     // Every in-line attempt failed. Hand it to the background queue rather
     // than losing the hand — see enqueueHandHistory().
@@ -374,7 +408,11 @@ export async function logHandHistory(params: {
     });
   }
 
-  return { handId };
+  /* wroteAwardUnits says the breakdown went in with the row, in one
+     transaction. False means the hand took the plain insert (no units to
+     carry, or the atomic call failed and the row is queued) - and the caller's
+     fallback upsert is then the only thing that will write them. */
+  return { handId, wroteAwardUnits: handId !== null && bombUnits.length > 0 };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -481,8 +519,37 @@ async function findExistingHandId(row: HandHistoryRow): Promise<string | null> {
  */
 async function insertHandHistoryRow(
   row: HandHistoryRow,
-  origin: 'settlement' | 'retry-queue'
+  origin: 'settlement' | 'retry-queue',
+  bombAwardUnits: Record<string, unknown>[] = []
 ): Promise<string | null> {
+  /* ONE TRANSACTION WHEN THERE IS A BREAKDOWN TO KEEP (2026-09-06).
+     fn_ca_insert_hand_with_awards writes the hand row and its bomb award units
+     together or writes neither. Still exactly ONE request, so the amplification
+     this function's header warns about is unchanged. Non-bomb hands - which is
+     nearly all of them - take the plain insert and are untouched. */
+  if (bombAwardUnits.length > 0) {
+    const { data, error } = await supabase.rpc('fn_ca_insert_hand_with_awards', {
+      p_row: row,
+      p_units: bombAwardUnits,
+    });
+    if (!error) return (data as string | null) ?? null;
+    if (error.code === '23505') {
+      const existing = await findExistingHandId(row);
+      if (existing) return existing;
+    }
+    if (origin === 'settlement') {
+      reportError(
+        new Error(
+          `[DB] atomic hand+award-unit insert failed for table ${row.table_id} ` +
+            `hand #${row.hand_number}: ${error.message ?? String(error)}. ` +
+            'Queued for background retry.'
+        ),
+        'logHandHistory.insert_with_awards_failed'
+      );
+    }
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('hand_history')
     .insert(row)

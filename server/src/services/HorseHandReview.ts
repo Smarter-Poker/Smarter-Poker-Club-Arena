@@ -70,9 +70,28 @@ export interface HorseReviewInput {
    *  Absent = 0 (older callers, tests); the tuner then falls back to the
    *  fleet-relative rule, which needs no rake at all. */
   rakeAmount?: number;
+  /**
+   * Bad-beat-jackpot fee dropped from this pot (2026-09-06).
+   *
+   * The other half of the house take. Measured on 2026-09-06 over 11,687 cash
+   * hands: horse net -10,797bb, attributed rake +9,020bb, residual -1,778bb,
+   * table BBJ drop 1,761bb. The fleet plays itself, so its result is zero
+   * minus the drop - and it is, once BOTH halves are counted.
+   */
+  bbjAmount?: number;
   /** Button seat, so HorsePlayStats can place the blinds the way the tuner's
    *  hand_history path always has. Absent = no blind reconstruction. */
   buttonSeat?: number | null;
+  /**
+   * The table's VPIP floor in percent, 0 when it has none (2026-09-06).
+   *
+   * A floored table stands a seat up after ten hands under the floor, horses
+   * included, so the brain widens toward it (HorseLogic.vpipFloorMul) and a
+   * horse there is REQUIRED to play 40-70% of hands. Its VPIP is therefore
+   * not comparable with the 19-32% winning-player band, and the frequency
+   * rows it produces are keyed apart so nothing judges the two together.
+   */
+  vpipFloor?: number;
 }
 
 const FLAG_BB = 20;
@@ -732,6 +751,8 @@ interface NetAcc {
   netBB: number;
   /** weighted-contributed rake paid, in bb (2026-09-05) */
   rakeBB: number;
+  /** weighted-contributed bad-beat-jackpot drop paid, in bb (2026-09-06) */
+  bbjBB: number;
 }
 
 const netAcc = new Map<string, NetAcc>();
@@ -760,22 +781,28 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
     // 2026-09-04 was the day's rake plus BBJ drop to within one percent, and
     // the tuner read it as 221 horses with broken dials. Same allocator as
     // rake_attributions / ca_hand_facts.rake_paid, so every ledger agrees.
-    const rakeShares = allocateWeightedShareCents(Number(input.rakeAmount ?? 0), [
-      ...input.contributions.entries(),
-    ]);
+    const contributions = [...input.contributions.entries()];
+    const rakeShares = allocateWeightedShareCents(Number(input.rakeAmount ?? 0), contributions);
+    // THE JACKPOT IS THE OTHER HALF OF THE DROP (2026-09-06). The note above
+    // named "rake plus BBJ drop" and only the rake was ever allocated, so the
+    // tuner still had 5.6 bb/100 of house take that it read as a leak. Same
+    // allocator, same contributions, so bbj_bb agrees with the money pipeline
+    // exactly as rake_bb does.
+    const bbjShares = allocateWeightedShareCents(Number(input.bbjAmount ?? 0), contributions);
     for (const p of input.roster) {
       if (!p.isHorse || !p.userId) continue;
       const invested = input.contributions.get(p.userId) ?? 0;
       const returned = returnedBy.get(p.userId) ?? 0;
       if (invested === 0 && returned === 0) continue; // dealt in but never posted
       const key = `${p.userId}|${day}|${input.gameVariant}|${format}`;
-      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0, rakeBB: 0 };
+      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0, rakeBB: 0, bbjBB: 0 };
       acc.hands += 1;
       acc.netBB += (returned - invested) / bb;
       acc.rakeBB += (rakeShares.get(p.userId) ?? 0) / bb;
+      acc.bbjBB += (bbjShares.get(p.userId) ?? 0) / bb;
       netAcc.set(key, acc);
     }
-    accumulateHorsePlay(input, day, format);
+    accumulateHorsePlay(input, day, format, Number(input.vpipFloor ?? 0) > 0);
     touchHorseSeats(input);
     if (netAcc.size > NET_ACC_MAX_KEYS) {
       // An outage has backed us up far beyond a realistic key space
@@ -811,6 +838,8 @@ export interface HorseNetRow {
   hands: number;
   net_bb: number;
   rake_bb: number;
+  /** the jackpot half of the drop, in bb (2026-09-06) */
+  bbj_bb: number;
 }
 
 export function drainHorseNets(max: number = NET_BATCH_MAX): HorseNetRow[] {
@@ -826,6 +855,7 @@ export function drainHorseNets(max: number = NET_BATCH_MAX): HorseNetRow[] {
       hands: acc.hands,
       net_bb: r2(acc.netBB),
       rake_bb: r2(acc.rakeBB),
+      bbj_bb: r2(acc.bbjBB),
     });
     netAcc.delete(key);
   }
@@ -848,10 +878,11 @@ async function flushHorseNets(): Promise<void> {
     // upsert makes the eventual retry safe.
     for (const row of rows) {
       const key = `${row.horse_user_id}|${row.day}|${row.game_variant}|${row.format}`;
-      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0, rakeBB: 0 };
+      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0, rakeBB: 0, bbjBB: 0 };
       acc.hands += row.hands;
       acc.netBB += row.net_bb;
       acc.rakeBB += row.rake_bb;
+      acc.bbjBB += row.bbj_bb;
       netAcc.set(key, acc);
     }
   }
@@ -872,7 +903,12 @@ const playAcc = new Map<string, PlayStats>();
 
 const playEnabled = (): boolean => process.env.HORSE_PLAY_ROLLUP_ENABLED !== 'false';
 
-function accumulateHorsePlay(input: HorseReviewInput, day: string, format: string): void {
+function accumulateHorsePlay(
+  input: HorseReviewInput,
+  day: string,
+  format: string,
+  floored: boolean
+): void {
   try {
     if (!playEnabled()) return;
     const tracked = new Set<string>();
@@ -898,7 +934,7 @@ function accumulateHorsePlay(input: HorseReviewInput, day: string, format: strin
     const delta = accumulatePlayStats([row], tracked, new Map());
     for (const [horse, d] of delta) {
       if (d.hands === 0) continue;
-      const key = `${horse}|${day}|${format}`;
+      const key = `${horse}|${day}|${format}|${floored ? 'f' : 'n'}`;
       const acc = playAcc.get(key);
       if (!acc) {
         playAcc.set(key, { ...d });
@@ -938,6 +974,9 @@ export interface HorsePlayRow {
   horse_user_id: string;
   day: string;
   format: string;
+  /** the table carried a VPIP floor, so these frequencies are not comparable
+   *  with the winning-player bands (2026-09-06) */
+  floored: boolean;
   hands: number;
   vpip: number;
   pfr: number;
@@ -957,11 +996,12 @@ export function drainHorsePlay(max: number = NET_BATCH_MAX): HorsePlayRow[] {
   const rows: HorsePlayRow[] = [];
   for (const [key, s] of playAcc) {
     if (rows.length >= max) break;
-    const [horse, day, format] = key.split('|');
+    const [horse, day, format, fl] = key.split('|');
     rows.push({
       horse_user_id: horse,
       day,
       format,
+      floored: fl === 'f',
       hands: s.hands,
       vpip: s.vpip,
       pfr: s.pfr,
@@ -987,7 +1027,7 @@ async function flushHorsePlay(): Promise<void> {
   if (error) {
     reportError(new Error(error.message), 'HorseHandReview.playFlushRpc');
     for (const row of rows) {
-      const key = `${row.horse_user_id}|${row.day}|${row.format}`;
+      const key = `${row.horse_user_id}|${row.day}|${row.format}|${row.floored ? 'f' : 'n'}`;
       const acc = playAcc.get(key);
       const back: PlayStats = {
         hands: row.hands,

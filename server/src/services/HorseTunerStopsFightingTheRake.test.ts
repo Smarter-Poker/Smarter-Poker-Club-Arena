@@ -60,7 +60,7 @@ describe('the regression rule judges the rake-adjusted result', () => {
     expect(r.mods.tightness).toBe(1.1);
     expect(r.mods.aggression).toBe(1.12);
     expect(r.mods.bluffFreq).toBe(0.9);
-    expect(r.reasons.join(' ')).toContain('after 29.0 rake');
+    expect(r.reasons.join(' ')).toContain('after 29.0 drop');
     expect(r.reasons.join(' ')).toContain("the game's edge, not a leak");
   });
 

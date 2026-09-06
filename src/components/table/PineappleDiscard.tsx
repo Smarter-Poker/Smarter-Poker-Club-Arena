@@ -23,6 +23,7 @@ import { useState, useEffect, useCallback } from 'react';
 // Use CardImage's own Card shape ('h'|'d'|'c'|'s' suits) — it is what the felt
 // renders and what mapEngineSnapshot normalises hero's hole cards into.
 import CardImage, { type Card, type DeckStyle } from './CardImage';
+import { cardWords } from '../../utils/cardWords';
 import { haptic } from '../../services/SoundService';
 import { serverNow } from '../../utils/serverClock';
 import './PineappleDiscard.css';
@@ -162,7 +163,15 @@ export function PineappleDiscard({
                 type="button"
                 className={`pineapple-discard__card${isSelected ? ' pineapple-discard__card--selected' : ''}`}
                 aria-pressed={isSelected}
-                aria-label={`Discard ${card.rank}${card.suit}`}
+                /* "Discard Ace Of Spades", not "Discard As".
+                   DEEP DIVE 2026-09-06: Phase 7 gave every card FACE its words
+                   and missed this one, which is the place they matter most.
+                   A button's aria-label REPLACES its content as the accessible
+                   name, so the corrected alt on the CardImage inside is never
+                   read here - the player choosing which card to throw away,
+                   against a timer that folds the hand if it runs out, heard
+                   the sprite's own field values. */
+                aria-label={`Discard ${cardWords(card)}`}
                 disabled={busy}
                 onClick={() => {
                   haptic.light();
@@ -213,7 +222,14 @@ export function PineappleDiscard({
             ? 'Discarding…'
             : selected === null
               ? 'Select A Card'
-              : `Discard ${cards[selected].rank}${cards[selected].suit}`}
+              : /* The CONFIRM button, and the last thing anybody reads before
+                   the card is gone. It printed "Discard As" / "Discard 2d" -
+                   on screen, for everyone, sighted or not, and not Title Cased
+                   either (CLAUDE.md 5.7). Found in the SHIPPED BUNDLE after
+                   the aria-label fifty lines above it had already been fixed:
+                   the sweep that found that one only looked at attributes, and
+                   this is visible text. */
+                `Discard ${cardWords(cards[selected])}`}
         </button>
       </div>
     </div>

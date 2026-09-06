@@ -22,6 +22,13 @@ const revisionReceiptMigration = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260901030800_daily_mission_revision_receipt.sql'),
   'utf8'
 );
+const certificationRepairMigration = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260906093500_daily_mission_certification_repairs.sql'
+  ),
+  'utf8'
+);
 
 describe('daily challenge dashboard contract', () => {
   it('snapshots the full assigned mission contract and makes it immutable', () => {
@@ -79,7 +86,7 @@ describe('daily challenge dashboard contract', () => {
   });
 
   it('wires the page to one dashboard receipt and the persistent vault', () => {
-    expect(service).toContain("supabase.rpc('get_daily_challenge_dashboard_v2'");
+    expect(service).toContain("supabase.rpc('get_daily_challenge_dashboard_v3'");
     expect(service).toContain('retryFetch(');
     expect(service).toContain('{ maxRetries: 2, baseDelayMs: 250 }');
     expect(page).toContain('dailyChallengeService.getDashboard(uid)');
@@ -89,7 +96,9 @@ describe('daily challenge dashboard contract', () => {
     expect(page).not.toContain('dailyChallengeService.getDiamondBalance(uid)');
     expect(page).toContain('const dashboard = await dailyChallengeService.getDashboard(userId);');
     expect(page).toContain('ready = dashboard.vault.items;');
-    expect(page).toContain('if (!userId || claimAllGuardRef.current) return;');
+    expect(page).toContain(
+      'if (!userId || claimAllGuardRef.current || economyGuardRef.current) return;'
+    );
     expect(page).toContain('claimAllGuardRef.current = true;');
     expect(page).toContain('claimAllGuardRef.current = false;');
     expect(page).not.toContain('const ready = rewardVault.items;');
@@ -103,13 +112,62 @@ describe('daily challenge dashboard contract', () => {
     expect(revisionReceiptMigration).toContain('FOR UPDATE;');
     expect(revisionReceiptMigration).toContain("jsonb_build_object('revision'");
     expect(revisionReceiptMigration).toContain('FROM PUBLIC, anon;');
-    expect(service).toContain('revision: Math.max(1, Number(payload.revision) || 1)');
+    expect(service).toContain(
+      "revision: readReceiptInteger(payload.revision, context, 'dashboard revision', 1)"
+    );
     expect(service).toContain('async getDashboardRevision(userId: string)');
   });
 
+  it('uses server UTC keys and rotates through the complete Daily catalog', () => {
+    const assignmentBody = certificationRepairMigration.slice(
+      certificationRepairMigration.indexOf(
+        'CREATE OR REPLACE FUNCTION public.fn_assign_current_challenge_period'
+      ),
+      certificationRepairMigration.indexOf(
+        'REVOKE ALL ON FUNCTION public.fn_assign_current_challenge_period'
+      )
+    );
+    expect(certificationRepairMigration).toContain(
+      'CREATE OR REPLACE FUNCTION public.get_daily_challenge_dashboard_v3()'
+    );
+    expect(certificationRepairMigration).toContain("transaction_timestamp() AT TIME ZONE 'utc'");
+    expect(assignmentBody).toContain("WHERE c.tier = 'daily'");
+    expect(assignmentBody).toContain('c.is_active');
+    expect(assignmentBody).toContain('PARTITION BY c.challenge_type');
+    expect(assignmentBody).not.toContain('buckets(reward, ordinal)');
+    expect(assignmentBody).not.toContain('c.diamond_reward = b.reward');
+    expect(certificationRepairMigration).toContain('ADD COLUMN IF NOT EXISTS is_active');
+    expect(certificationRepairMigration).toContain(
+      'Active Daily Mission catalog does not match the canonical 39/8/6 contract set'
+    );
+    expect(certificationRepairMigration).toContain('AND c.is_active');
+    expect(certificationRepairMigration).toContain(
+      'CREATE OR REPLACE FUNCTION public.reroll_daily_challenge'
+    );
+  });
+
+  it('assigns before locking the revision cursor and denies browser mutation authority', () => {
+    const v2Body = certificationRepairMigration.slice(
+      certificationRepairMigration.indexOf(
+        'CREATE OR REPLACE FUNCTION public.get_daily_challenge_dashboard_v2'
+      ),
+      certificationRepairMigration.indexOf(
+        'CREATE OR REPLACE FUNCTION public.get_daily_challenge_dashboard_v3'
+      )
+    );
+    expect(v2Body.indexOf('PERFORM public.assign_user_challenges')).toBeGreaterThan(-1);
+    expect(v2Body.indexOf('PERFORM public.assign_user_challenges')).toBeLessThan(
+      v2Body.indexOf('FOR UPDATE')
+    );
+    expect(certificationRepairMigration).toContain('FROM PUBLIC, anon, authenticated;');
+    expect(certificationRepairMigration).toContain(
+      "has_table_privilege('authenticated', 'public.daily_challenge_catalog', 'UPDATE')"
+    );
+  });
+
   it('Title Cases database copy at rest and again at the page boundary', () => {
-    expect(service).toContain('name: titleCase(row.name)');
-    expect(service).toContain('description: titleCase(row.description)');
+    expect(service).toContain('name: titleCase(name)');
+    expect(service).toContain('description: titleCase(description)');
     expect(titleCaseMigration).toContain("WHEN 'hands_10' THEN 'Play 10 Hands Today'");
     expect(titleCaseMigration).toContain("WHEN 'hands_25' THEN 'Play 25 Hands Today'");
     expect(titleCaseMigration).toContain("WHEN 'showdown_3' THEN 'Reach 3 Showdowns Today'");

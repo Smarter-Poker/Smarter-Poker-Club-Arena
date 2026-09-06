@@ -208,11 +208,9 @@ test.describe('the squeeze at 375px', () => {
   });
 
   test('reduced motion cross-fades rather than deleting the reveal', async ({ page }) => {
-    /* Reuse the page whose CSS the describe-level beforeEach already loaded.
-       Creating a second context fetched every production chunk twice inside
-       one 30-second test, so a slow CDN response timed out before this test
-       reached its first assertion. emulateMedia changes the same preference
-       on the already-loaded page and exercises the identical cascade. */
+    // Reuse the fixture page and the CSS loaded by beforeEach. Creating a
+    // second browser context repeated every production chunk fetch and made
+    // this one assertion consume the full 30-second test budget under load.
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mountPhoneBoard(page);
     const state = await page.evaluate(() => {

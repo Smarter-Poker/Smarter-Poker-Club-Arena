@@ -18,34 +18,6 @@ async function readableText(locator: ReturnType<Page['locator']>): Promise<strin
 }
 
 /**
- * Retire the current club-message revision before the shared authenticated
- * state is captured. The greeting is supposed to cover the lobby when a
- * player first enters; leaving it open in the fixture made unrelated click
- * tests correctly hit the modal instead of the controls behind it.
- *
- * This uses the same visible control a player uses. It neither suppresses the
- * feature globally nor guesses at a revision: the server records the current
- * revision for this user, and a future owner message will be eligible again.
- */
-export async function retireCurrentClubEntryMessage(page: Page): Promise<boolean> {
-  const dialog = page.getByRole('dialog', { name: /^Club Message From /i });
-  const appeared = await dialog
-    .waitFor({ state: 'visible', timeout: 10_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (!appeared) return false;
-
-  const dismiss = dialog.getByRole('button', {
-    name: 'Do Not Show Me This Message Again',
-    exact: true,
-  });
-  await dismiss.click({ timeout: 10_000 });
-  await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
-  console.log('[global-setup] current club-message revision retired for the E2E player.');
-  return true;
-}
-
-/**
  * Ensure the dedicated production E2E account can enter the club used by the
  * lobby suite. This deliberately uses the public join flow: it proves the same
  * route and RPC a player uses, without a service-role shortcut or a fabricated

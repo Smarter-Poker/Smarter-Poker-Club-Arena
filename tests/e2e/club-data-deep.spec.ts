@@ -1,66 +1,73 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
 const CLUB_DATA_PATH = 'clubs/shark-club/data';
+type ClubDataAccess = 'authorized' | 'restricted';
+
+async function openClubData(page: Page, testInfo: TestInfo): Promise<ClubDataAccess> {
+  const configuredBase = String(testInfo.project.use.baseURL || 'http://localhost:5173/');
+  const base = new URL(configuredBase);
+  test.skip(
+    ['localhost', '127.0.0.1'].includes(base.hostname) &&
+      (!process.env.SP_EMAIL || !process.env.SP_PASS),
+    'local Hub authentication is not configured'
+  );
+
+  await page.goto(new URL(CLUB_DATA_PATH, configuredBase).toString());
+  await page.waitForLoadState('domcontentloaded');
+  const gate = page.getByRole('heading', { name: /This Tool Is Restricted/i });
+  const workspace = page.getByRole('heading', { name: /Read The Room/i });
+  await expect
+    .poll(
+      async () =>
+        page.url().includes('/auth') || (await workspace.count()) > 0 || (await gate.count()) > 0,
+      { timeout: 60_000 }
+    )
+    .toBe(true);
+  test.skip(page.url().includes('/auth'), 'authenticated Club Data session is not configured');
+
+  if ((await gate.count()) > 0) {
+    await expect(gate).toBeVisible();
+    await expect(
+      page.getByText(/Current Club Role Does Not Include Finance Access/i)
+    ).toBeVisible();
+    return 'restricted';
+  }
+
+  await expect(workspace).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-page="club-data"]')).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Games' }).getByRole('listitem').first()).toBeVisible(
+    {
+      timeout: 60_000,
+    }
+  );
+  return 'authorized';
+}
+
+async function requireAuthorizedClubData(page: Page, testInfo: TestInfo): Promise<void> {
+  const access = await openClubData(page, testInfo);
+  test.skip(
+    access === 'restricted',
+    'the dedicated production account is a normal member without club-finance access'
+  );
+}
 
 test.describe('Club Data production experience', () => {
   test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
-  test.beforeEach(async ({ page }, testInfo) => {
-    const configuredBase = String(testInfo.project.use.baseURL || 'http://localhost:5173/');
-    const base = new URL(configuredBase);
-    test.skip(
-      ['localhost', '127.0.0.1'].includes(base.hostname) &&
-        (!process.env.SP_EMAIL || !process.env.SP_PASS),
-      'local Hub authentication is not configured'
-    );
-
-    await page.goto(new URL(CLUB_DATA_PATH, configuredBase).toString());
-    await page.waitForLoadState('domcontentloaded');
-    /* THE PERMISSION GATE IS A THIRD OUTCOME, AND IT USED TO BE A TIMEOUT.
-       Run 33567090010 went red here with "Timeout 60000ms exceeded while
-       waiting on the predicate", which says nothing at all. The artifact said
-       everything: the page had rendered "This Tool Is Restricted - Your
-       Current Club Role Does Not Include Finance Access" to an account that
-       is the OWNER of this club. The cause was ClubCapabilityGuard reading
-       "not yet loaded" as "denied" (fixed 2026-09-02); the reason it cost an
-       hour to find is that the suite reported a stopwatch instead of a
-       verdict. Poll for the gate too, then name it. */
-    const gate = () => page.getByRole('heading', { name: /This Tool Is Restricted/i });
-    await expect
-      .poll(
-        async () =>
-          page.url().includes('/auth') ||
-          (await page.getByRole('heading', { name: /Read The Room/i }).count()) > 0 ||
-          (await gate().count()) > 0,
-        { timeout: 60_000 }
-      )
-      .toBe(true);
-    test.skip(page.url().includes('/auth'), 'authenticated Club Data session is not configured');
-    /* The post-deploy harness now creates an isolated ordinary PLAYER. It must
-       not be promoted into finance merely to make a layout suite pass. Prove
-       the access boundary rendered cleanly, then report these staff-only
-       geometry cases as inapplicable. A configured staff account still runs
-       every assertion below. */
-    if ((await gate().count()) > 0) {
-      await expect(gate()).toBeVisible();
-      await expect(
-        page.getByText(/Current Club Role Does Not Include Finance Access/i)
-      ).toBeVisible();
-      test.skip(true, 'isolated production account is an ordinary club member');
+  test('renders the exact role-scoped Club Data decision', async ({ page }, testInfo) => {
+    const access = await openClubData(page, testInfo);
+    if (access === 'restricted') {
+      await expect(page.locator('[data-page="club-data"]')).toHaveCount(0);
+      return;
     }
-    await expect(page.getByRole('heading', { name: /Read The Room/i })).toBeVisible({
-      timeout: 60_000,
-    });
-    await expect(page.locator('[data-page="club-data"]')).toBeVisible();
-    await expect(
-      page.getByRole('list', { name: 'Games' }).getByRole('listitem').first()
-    ).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: 'Data Integrity' })).toBeVisible();
   });
 
   test('reflows without horizontal loss from desktop through 320px and 200% text', async ({
     page,
-  }) => {
+  }, testInfo) => {
+    await requireAuthorizedClubData(page, testInfo);
     await expect(page.getByRole('heading', { name: 'Data Integrity' })).toBeVisible();
     await expect(page.getByText('12 / 12')).toBeVisible({ timeout: 60_000 });
     for (const viewport of [
@@ -88,7 +95,10 @@ test.describe('Club Data production experience', () => {
     await expect(page.getByRole('tab', { name: 'Games' })).toBeVisible();
   });
 
-  test('keeps every visible control touch-safe and every text input iOS-safe', async ({ page }) => {
+  test('keeps every visible control touch-safe and every text input iOS-safe', async ({
+    page,
+  }, testInfo) => {
+    await requireAuthorizedClubData(page, testInfo);
     await page.setViewportSize({ width: 390, height: 844 });
     const shortTargets = await page
       .locator('[data-page="club-data"] button:visible')
@@ -119,7 +129,10 @@ test.describe('Club Data production experience', () => {
     expect(undersizedInputs).toEqual([]);
   });
 
-  test('supports the complete arrow-key tab flow with visible focus', async ({ page }) => {
+  test('supports the complete arrow-key tab flow with visible focus', async ({
+    page,
+  }, testInfo) => {
+    await requireAuthorizedClubData(page, testInfo);
     const games = page.getByRole('tab', { name: 'Games' });
     const players = page.getByRole('tab', { name: 'Players' });
     await games.focus();
@@ -131,8 +144,11 @@ test.describe('Club Data production experience', () => {
     await expect(games).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('operates sorting, pagination, players, and a verified manual refresh', async ({ page }) => {
+  test('operates sorting, pagination, players, and a verified manual refresh', async ({
+    page,
+  }, testInfo) => {
     test.setTimeout(180_000);
+    await requireAuthorizedClubData(page, testInfo);
     const gamesList = page.getByRole('list', { name: 'Games' });
     await expect(gamesList.getByRole('listitem').first()).toBeVisible();
 
@@ -197,8 +213,11 @@ test.describe('Club Data production experience', () => {
     }
   });
 
-  test('keeps verified rows through the 60-second recovery heartbeat', async ({ page }) => {
+  test('keeps verified rows through the 60-second recovery heartbeat', async ({
+    page,
+  }, testInfo) => {
     test.setTimeout(180_000);
+    await requireAuthorizedClubData(page, testInfo);
     const gamesList = page.getByRole('list', { name: 'Games' });
     const firstRow = gamesList.getByRole('listitem').first();
     await expect(firstRow).toBeVisible();
@@ -222,7 +241,10 @@ test.describe('Club Data production experience', () => {
     if (expandedCount) await expect(loadMore).toContainText(`- ${expandedCount} Of`);
   });
 
-  test('passes axe and remains operable in forced colors with reduced motion', async ({ page }) => {
+  test('passes axe and remains operable in forced colors with reduced motion', async ({
+    page,
+  }, testInfo) => {
+    await requireAuthorizedClubData(page, testInfo);
     const normal = await new AxeBuilder({ page }).include('[data-page="club-data"]').analyze();
     expect(
       normal.violations.filter((violation) =>

@@ -24,14 +24,11 @@
  * the account's one-time profile onboarding. Never point it at an owner/admin
  * login or a real player's identity.
  */
-import { chromium, type FullConfig } from '@playwright/test';
+import { chromium, type FullConfig, type Page } from '@playwright/test';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import {
-  ensureClubMembership,
-  retireCurrentClubEntryMessage,
-} from './support/ensureClubMembership';
+import { ensureClubMembership } from './support/ensureClubMembership';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 
 export const STORAGE_STATE = 'tests/e2e/.auth/state.json';
@@ -89,6 +86,45 @@ function assertWelcomeKeyStillCurrent() {
   } catch {
     /* Running outside the repo root — nothing to check against. */
   }
+}
+
+/**
+ * A club's first-entry message is intentionally a blocking, full-screen door.
+ * The production account joins the fixture club during global setup, so that
+ * door must be retired before its storage state is copied into every spec.
+ * Clicking the real preference control also exercises the server contract;
+ * checking its RPC response prevents a visually closed-but-not-persisted
+ * message from intercepting every later lobby click in a fresh context.
+ */
+async function dismissClubEntryMessage(page: Page): Promise<boolean> {
+  const dialog = page.getByRole('dialog', { name: /^Club Message From /i });
+  const dismiss = page.getByRole('button', {
+    name: 'Do Not Show Me This Message Again',
+    exact: true,
+  });
+  const appeared = await dismiss
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!appeared) return false;
+
+  const rpcResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/rest/v1/rpc/fn_dismiss_club_message'),
+    { timeout: 15_000 }
+  );
+  await dismiss.click({ timeout: 10_000 });
+  const response = await rpcResponse;
+  const result = (await response.json().catch(() => null)) as { ok?: boolean } | null;
+  if (!response.ok() || result?.ok !== true) {
+    throw new Error(
+      `Club entry message dismissal did not persist (${response.status()} ${JSON.stringify(result)})`
+    );
+  }
+  await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
+  console.log('[global-setup] fixture club message dismissed and persisted.');
+  return true;
 }
 
 /**
@@ -293,7 +329,7 @@ export default async function globalSetup(config: FullConfig) {
     // ever reaching the UI they claim to test. Use the public Join Club flow
     // once and prove the lobby is reachable before sharing this storageState.
     await ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID);
-    await retireCurrentClubEntryMessage(page);
+    await dismissClubEntryMessage(page);
 
     await ctx.storageState({ path: STORAGE_STATE });
     console.log('[global-setup] authenticated session saved — auth-gated specs will run.');

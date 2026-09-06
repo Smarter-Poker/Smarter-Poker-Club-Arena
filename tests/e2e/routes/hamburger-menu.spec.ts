@@ -194,25 +194,22 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     });
   }
 
-  test('offers Unions only to an allowed union-network operator', async ({ page }) => {
+  test('hides Unions and closes its direct route for the reserved certification account', async ({
+    page,
+  }) => {
     await navigateAndWait(page, '/');
     if (!(await openMenuOrSkip(page))) return;
 
-    const dialog = page.getByRole('dialog', { name: 'Club Arena' });
-    const unions = dialog.getByRole('button', { name: /^Unions(?:\s|$)/ }).first();
-    /* Allow the fail-closed capability RPC to settle. An allowlisted operator
-       gets a working door; every other account gets no misleading door and a
-       typed URL is redirected by the route guard. Both are deliberate. */
-    await page.waitForTimeout(3_000);
-    if (await unions.isVisible().catch(() => false)) {
-      await unions.click();
-      await expect(page).toHaveURL(/\/unions(?:[/?#]|$)/, { timeout: 10_000 });
-      return;
-    }
+    const unions = page
+      .getByRole('dialog', { name: 'Club Arena' })
+      .getByRole('button', { name: /^Unions(?:\s|$)/ });
+    await expect(unions).toHaveCount(0);
 
     await page.goto('unions');
     await expect(page).toHaveURL(/\/community(?:[/?#]|$)/, { timeout: 15_000 });
-    await expect(page.getByRole('heading', { name: 'Community Center' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Community Center' })).toBeVisible({
+      timeout: 15_000,
+    });
   });
 });
 

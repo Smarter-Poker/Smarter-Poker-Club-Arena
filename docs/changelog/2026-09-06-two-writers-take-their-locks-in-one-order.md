@@ -109,3 +109,50 @@ Another agent's migration at 14:47 ran a bare `DROP TRIGGER IF EXISTS ... ON
 public.clubs` in a retry loop and deadlocked 14 live table updates. That is
 CLAUDE.md section 2 (production DDL policy) and the guarded-DDL pattern in
 `20260906143315`; it is not a code path this changes.
+
+## Found by watching the fix: one seat-first repair at a time
+
+`20260906154248_one_seat_first_repair_runs_at_a_time`, applied 15:44 UTC.
+
+Three of the four deadlocks in the twelve minutes after `20260906152850`
+landed were a different cycle it had exposed, and one this function has had
+all along: `fn_repair_seat_first_games` loops over up to 25 games and seats
+several horses in each, and PostgREST runs the whole function in ONE
+transaction - so the locks from game 1 are still held while game 12 is being
+seated. Two concurrent passes visit games and horses in different orders and
+cycle (15:35:22, 15:37:49, 15:38:50, on `tournaments` tuples 18598,8 and
+18648,11). Before the M5 change the same function was deadlocking on the same
+shape against `atomic_deduct_wallet_and_log` and the old global reporting
+lock: the lock it cycles on changed, the loop did not.
+
+Ordering the loop does not fix it - the pass takes locks on two axes (the
+game row and the per-player advisory lock) and rebuilds its horse pool per
+club from live registrations, so two passes seconds apart do not see the same
+pool. Any total order over one axis leaves the other free to cycle. So the
+second pass does not run: `pg_try_advisory_xact_lock`, and a caller who
+cannot have it returns `skipped` immediately. Not the blocking form - a pass
+that waits is a pass that can deadlock on the wait.
+`TournamentRecurringService` calls this on a tick and reads only `repaired` /
+`horses_seated`, so a skipped pass is invisible and the next tick does the
+work.
+
+**The first draft of that migration aborted itself, correctly.** Its verify
+block held the lock and called the function expecting a skip; it did not
+skip, because a Postgres advisory lock is RE-ENTRANT within its own session -
+`pg_try_advisory_xact_lock` returns true to the holder. A single transaction
+can therefore never observe its own guard declining, and a probe that
+appeared to would have been testing nothing. The block now proves what it
+can (the guard is first, non-blocking, and returns zero work) and says in
+words that the cross-session skip is measured by the deadlock rate instead.
+
+## Also stated: who may execute the three replaced functions
+
+`20260906153725_the_three_lock_order_functions_state_who_may_execute_them`.
+`check-definer-authorization` blocked the push, correctly: three of the
+migrations replace SECURITY DEFINER writers and say nothing about who may
+call them, so a replay onto a database where the function does not yet exist
+would create them with EXECUTE held by PUBLIC. Production is not open - all
+three read `{postgres, service_role}` - but only because CREATE OR REPLACE
+preserves an existing ACL and because an `[autorevoke]` event trigger strips
+PUBLIC/anon here, and neither of those is in the repo. The migration states
+the grants explicitly and asserts them.

@@ -45,6 +45,7 @@ const m2 = read('tournament_chips_are_synced_in_one_order');
 const m3 = read('tournament_rake_settles_in_the_same_lock_order_as_cash_rake');
 const m4 = read('a_seat_cashout_locks_the_game_before_the_seat');
 const m5 = read('seating_a_horse_takes_the_missions_lock_before_the_game_row');
+const m7 = read('one_seat_first_repair_runs_at_a_time');
 
 /** The body of one CREATE OR REPLACE FUNCTION in a migration. */
 function body(sql: string, fn: string): string {
@@ -115,8 +116,25 @@ describe('two writers of the same money take their locks in one order', () => {
     expect(lock).toBeLessThan(game);
   });
 
-  it('none of the five moves a chip', () => {
-    for (const m of [m1, m2, m3, m4, m5]) {
+  it('6. only one seat-first repair pass runs at a time, and it declines rather than waits', () => {
+    // The repair loops over up to 25 games in ONE transaction, so every lock it
+    // takes is held to the end. Two passes cycle whatever order each uses -
+    // three deadlocks in the twelve minutes after m5 landed. A sweep has no
+    // reason to run twice at once, so the second caller returns immediately.
+    const b = body(m7.sql, 'fn_repair_seat_first_games');
+    const guard = b.indexOf('pg_try_advisory_xact_lock');
+    const loop = b.indexOf('FOR v_t IN');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(loop);
+    expect(b).toContain("'repaired', 0, 'horses_seated', 0");
+    // try_, never the blocking form: a pass that waits can deadlock on the wait
+    expect(b).not.toMatch(
+      /PERFORM\s+pg_advisory_xact_lock\(hashtextextended\('ca:seat-first-repair/
+    );
+  });
+
+  it('none of the six moves a chip', () => {
+    for (const m of [m1, m2, m3, m4, m5, m7]) {
       // a lock-order migration replaces function bodies; it never touches balances directly
       const outside = m.sql.replace(/CREATE OR REPLACE FUNCTION[\s\S]*?\$function\$;/g, '');
       // statements, not the quoted markers the verify blocks search for

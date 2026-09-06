@@ -331,8 +331,9 @@ service identity was not a member of either club that runs the live cash fleet.
 whether a player can hold a table**, and it would have paged forever while the
 platform was healthy. Fixed by making the picker mirror EVERY gate the upgrade
 applies, and by making the probe an ordinary `player` member of those two clubs
+
 - the alternative was a god-role bypass in the viewer gate, which is the shape
-of bug this programme exists to stop.
+  of bug this programme exists to stop.
 
 **Found here, recorded, NOT fixed here: five refusals are still written BEFORE
 the handshake** (not a club member, banned, seats-only table, IP conflict, and

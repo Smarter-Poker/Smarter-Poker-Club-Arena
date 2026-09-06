@@ -167,6 +167,8 @@ export async function logHandHistory(params: {
     user_id: string;
     amounts: Record<string, number>;
     magnitudes: Record<string, number>;
+    /** Exact threshold values; absent on rows written by older engines. */
+    values?: Partial<Record<'big_pots' | 'strong_hands', number[]>>;
   }>;
   /**
    * ASSISTANT FIX 2026-08-16: dealer/button seat for this hand.

@@ -126,6 +126,35 @@ describe('DailyChallengeService', () => {
         expect(WRITTEN_BY_APP[t], `challenge type "${t}" has no writer in the app`).toBeTruthy();
       }
     });
+
+    it('the server rotation reaches every Daily contract with five distinct types', () => {
+      const byType = new Map<string, typeof CHALLENGE_POOL>();
+      for (const challenge of CHALLENGE_POOL) {
+        const entries = byType.get(challenge.type) || [];
+        byType.set(
+          challenge.type,
+          [...entries, challenge].sort((a, b) => a.id.localeCompare(b.id))
+        );
+      }
+      const types = [...byType.keys()].sort();
+      const seen = new Set<string>();
+
+      // Mirrors 20260906093500_daily_mission_certification_repairs.sql.
+      for (let dayIndex = 0; dayIndex < 400; dayIndex += 1) {
+        const selection = types.flatMap((type, typeOrdinal) => {
+          const distance = (typeOrdinal - (dayIndex % types.length) + types.length) % types.length;
+          if (distance >= 5) return [];
+          const entries = byType.get(type)!;
+          const itemOrdinal = (Math.floor(dayIndex / types.length) + distance) % entries.length;
+          return [entries[itemOrdinal]];
+        });
+        expect(selection).toHaveLength(5);
+        expect(new Set(selection.map((challenge) => challenge.type)).size).toBe(5);
+        selection.forEach((challenge) => seen.add(challenge.id));
+      }
+
+      expect(seen).toEqual(new Set(CHALLENGE_POOL.map((challenge) => challenge.id)));
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════

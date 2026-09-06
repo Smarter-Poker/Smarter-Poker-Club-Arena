@@ -1289,11 +1289,15 @@ export class HorseFleetManager {
           id: string;
           user_id: string;
           tournament_id: string;
+          tournaments:
+            | { status: string; start_time: string | null }
+            | Array<{ status: string; start_time: string | null }>
+            | null;
         }>(
           (cursor, want) => {
             let q = supabase
               .from('tournament_players')
-              .select('id, user_id, tournament_id, tournaments!inner(status)')
+              .select('id, user_id, tournament_id, tournaments!inner(status, start_time)')
               .in('status', ['registered', 'playing'])
               .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
               .order('id', { ascending: true })
@@ -1328,7 +1332,20 @@ export class HorseFleetManager {
           for (const row of tournamentTablePage.rows) {
             if (row.tournament_id) tournamentByTableId.set(row.id, row.tournament_id);
           }
-          bookingLoad = buildBookingLoad(bookingPage.rows, tournamentByTableId, horseTables);
+          /* THE WINDOW (2026-09-06). The start time rides along so that
+             `buildBookingLoad` can apply the same sixty-minute window
+             `fn_concurrent_game_load` applies: a booking for an event more
+             than an hour out is a plan, not a game. Read once, here, so the
+             count and the chair see one clock. */
+          const withStart = bookingPage.rows.map((row) => {
+            const t = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
+            return {
+              user_id: row.user_id,
+              tournament_id: row.tournament_id,
+              start_time: t?.start_time ?? null,
+            };
+          });
+          bookingLoad = buildBookingLoad(withStart, tournamentByTableId, horseTables, Date.now());
         } else {
           beat.bookingsReadFailed = 1;
           console.warn(

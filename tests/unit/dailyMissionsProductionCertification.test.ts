@@ -114,7 +114,7 @@ describe('Daily Missions production certification', () => {
     expect(pageObject).toContain('sp_firstrun_notif_v2_${userId}');
     expect(pageObject).toContain('authenticatedUserId !== account.id');
     expect(pageObject).toContain("for (const tier of ['Daily', 'Weekly', 'Monthly'] as const)");
-    expect(pageObject).toContain('/^Reroll 10 Diamonds For .+$/');
+    expect(pageObject).toContain('/^Reroll 1 Diamond For .+$/');
     expect(spec).toContain('/^Confirm Reroll For /');
   });
 
@@ -122,8 +122,10 @@ describe('Daily Missions production certification', () => {
     const page = source('src/pages/DailyChallengesPage.tsx');
     const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
     const certification = source('tests/e2e/production-daily-missions.spec.ts');
-    expect(page).toContain('aria-label={`Reroll 10 Diamonds For ${c.name}`}');
-    expect(pageObject).toContain('name: /^Reroll 10 Diamonds For .+$/');
+    expect(page).toContain(
+      'aria-label={`Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`}'
+    );
+    expect(pageObject).toContain('name: /^Reroll 1 Diamond For .+$/');
     expect(certification).toContain('name: /^Confirm Reroll For /');
   });
 

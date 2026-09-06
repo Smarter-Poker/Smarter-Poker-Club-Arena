@@ -66,7 +66,8 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(page).toContain('Streak Freeze Applied');
     expect(page).toContain('streak.usedFreeze && streak.frozenDate');
     expect(page).toContain('<span className={styles.srOnly}>Diamonds</span>');
-    expect(page).toContain('10 Diamonds? Current Progress Will Be Replaced.');
+    expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
+    expect(page).toContain('Replaced.');
     expect(css).not.toMatch(/\.cardClaimed\s*\{[^}]*opacity:/s);
     const claimedState = css.slice(
       css.lastIndexOf(".challengeCard[data-mission-state='claimed']"),

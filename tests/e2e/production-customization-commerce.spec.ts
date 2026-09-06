@@ -230,6 +230,8 @@ test.describe('production Table Studio commerce certification', () => {
 
     const accounts: TemporaryCustomizationAccount[] = [];
     const contexts: BrowserContext[] = [];
+    let journeyFailure: unknown;
+    const cleanupFailures: unknown[] = [];
     try {
       const buyer = await createTemporaryCustomizationAccount(
         environment,
@@ -467,11 +469,32 @@ test.describe('production Table Studio commerce certification', () => {
         .eq('user_id', buyer.id);
       expect(leakedUnlockError).toBeNull();
       expect(leakedUnlocks).toEqual([]);
+    } catch (error) {
+      journeyFailure = error;
     } finally {
       await Promise.all(contexts.map((context) => context.close().catch(() => undefined)));
-      for (const account of accounts.reverse()) {
-        await cleanupTemporaryCustomizationAccount(environment, account);
-      }
+      const cleanupResults = await Promise.allSettled(
+        accounts
+          .reverse()
+          .map((account) => cleanupTemporaryCustomizationAccount(environment, account))
+      );
+      cleanupFailures.push(
+        ...cleanupResults.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
+      );
+    }
+
+    if (journeyFailure && cleanupFailures.length) {
+      throw new AggregateError(
+        [journeyFailure, ...cleanupFailures],
+        'Customization Commerce Journey And Cleanup Both Failed.'
+      );
+    }
+    if (journeyFailure) throw journeyFailure;
+    if (cleanupFailures.length) {
+      throw new AggregateError(
+        cleanupFailures,
+        'Customization Commerce Certification Cleanup Failed.'
+      );
     }
   });
 });

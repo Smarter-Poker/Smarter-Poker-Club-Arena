@@ -84,6 +84,7 @@ import type {
   RakeConfig,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { subscribeBombRequests, unsubscribeBombRequests } from '../services/BombRequestBus.js';
 import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
 import {
@@ -4074,37 +4075,28 @@ export abstract class ServerTableEngineBase {
    * not deleted, because a request must never be lost.
    */
   protected manualBombPushed = false;
-  private manualBombChannel: { unsubscribe: () => void } | null = null;
 
   /**
    * Open the manual-bomb listener. Idempotent, and a failure to subscribe is
    * survivable — the throttled column read still finds the request.
+   *
+   * 2026-09-06: this used to open a Realtime channel named `table:<id>` PER
+   * TABLE. One engine holds one Realtime socket and a socket caps at 100
+   * channels, so 76 bomb-pot tables plus a channel per live tournament put the
+   * engine permanently over the cap — 123,219 `ChannelRateLimitReached` errors
+   * in 24 hours, and an unknown share of tables not listening at all. Every
+   * table now registers on ONE shared channel (`engine:bomb-requests`) and the
+   * bus dispatches by `table_id`. See server/src/services/BombRequestBus.ts.
    */
   protected subscribeManualBomb(): void {
-    if (this.manualBombChannel) return;
-    try {
-      const ch = supabase
-        .channel(`table:${this.tableId}`)
-        .on('broadcast', { event: 'bomb_pot_manual_requested' }, () => {
-          this.manualBombPushed = true;
-        });
-      void ch.subscribe();
-      this.manualBombChannel = ch as unknown as { unsubscribe: () => void };
-    } catch (err) {
-      // Never fatal: the table deals fine, the manual bomb just arrives on the
-      // throttled read instead of instantly.
-      console.warn(`[BombPot] manual-bomb subscribe failed on ${this.tableId}:`, err);
-    }
+    subscribeBombRequests(this.tableId, () => {
+      this.manualBombPushed = true;
+    });
   }
 
-  /** Close it. Called from stop(); safe to call when never opened. */
+  /** Stop listening. Called from stop(); safe when never subscribed. */
   protected unsubscribeManualBomb(): void {
-    try {
-      this.manualBombChannel?.unsubscribe();
-    } catch {
-      /* a channel that will not close cannot hold up a table shutdown */
-    }
-    this.manualBombChannel = null;
+    unsubscribeBombRequests(this.tableId);
   }
 
   /**

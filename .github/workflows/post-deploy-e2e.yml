@@ -242,6 +242,18 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/ci/production-e2e-account.mjs create
 
+      # The Player Command route is intentionally staff-only. Give the brand
+      # new reserved identity a zero-balance admin membership before any
+      # browser starts. The helper refuses existing memberships and non-test
+      # identities; the always() sweep below removes this row with the account.
+      - name: Prepare isolated Player Command staff access
+        if: steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: node scripts/ci/production-e2e-account.mjs prepare-staff
+
       - name: Certify the live cashier database contract
         if: always() && steps.live.outputs.ready == 'true'
         env:
@@ -377,6 +389,12 @@ jobs:
           run_suite lobby.json tests/e2e/club-lobby.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           lobby_rc=$?; [ $lobby_rc -ne 0 ] && rc=$lobby_rc
 
+          # The exact Shark Club Players route from the six-phase audit. This
+          # is read-only, but gets an isolated real member from global-setup so
+          # it proves auth handoff, roster RPCs, controls and 375px rendering.
+          run_suite club-members.json tests/e2e/production-club-members.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          club_members_rc=$?; [ $club_members_rc -ne 0 ] && rc=$club_members_rc
+
           run_suite customization-realtime.json tests/e2e/production-customization-realtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           customization_realtime_rc=$?; [ $customization_realtime_rc -ne 0 ] && rc=$customization_realtime_rc
 
@@ -409,7 +427,7 @@ jobs:
             --reporter=line,json --workers=2 --retries=0
           sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
 
-          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  customization realtime exit=$customization_realtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  sweep exit=$sweep_rc"
+          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  sweep exit=$sweep_rc"
           exit $rc
 
       # THE RUN MUST NOT PASS BY NOT RUNNING.
@@ -426,6 +444,7 @@ jobs:
           e2e-report/cashier.json
           e2e-report/stats.json
           e2e-report/lobby.json
+          e2e-report/club-members.json
           e2e-report/customization-realtime.json
           e2e-report/customization-commerce.json
           e2e-report/daily-missions.json

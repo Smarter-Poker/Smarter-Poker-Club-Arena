@@ -47,8 +47,15 @@ export { accumulatePlayStats, type HandRow, type PlayStats } from './HorsePlaySt
 // 2. DIAGNOSE + 3. ADJUST — pure, unit-tested
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Winning-player benchmark bands (6-max cash). Outside the band = leak. */
-const BENCH = {
+/**
+ * Winning-player benchmark bands (6-max cash). Outside the band = leak.
+ *
+ * EXPORTED so TheTunerDoesNotFightTheFloor.law.test.ts can pin the numbers
+ * (2026-09-06). When a mass tightening shows up, the tempting fix is to widen
+ * this band; the right fix is to stop feeding it play the horse was REQUIRED
+ * to make. The law fails if the band moves.
+ */
+export const BENCH = {
   vpip: { lo: 0.19, hi: 0.32 },
   pfrOfVpip: { lo: 0.55, hi: 1.0 },
   foldTo3Bet: { lo: 0.35, hi: 0.62 },
@@ -95,6 +102,15 @@ export const MIN_REAL_HANDS_FOR_BB100 = 1500;
  *               (realBB100 + rakeBB100) is what a human means by "am I beating
  *               the game". A horse that is -32 raw and -3 adjusted is not
  *               broken; it is paying rake at a rake-heavy table.
+ *   bbjBB100    the OTHER half of the drop (horse_daily_nets.bbj_bb, added
+ *               2026-09-06). The note above said "rake plus BBJ drop" and only
+ *               the rake was ever allocated, so 5.6 bb/100 of house take was
+ *               still reaching this rule as though it were a leak. Measured
+ *               2026-09-06 over 11,687 cash hands: net -10,797bb, rake
+ *               +9,020bb, residual -1,778bb, table BBJ drop 1,761bb. A closed
+ *               system nets to zero minus the drop, and it does - once both
+ *               halves are counted the fleet's true result is 0.0 bb/100.
+ *               fn_audit_fleet_drop_identity asserts that nightly.
  *   fleetP25    the same-window rake-adjusted bb/100 below which the worst
  *               quarter of the 1,500-hand fleet sits. A horse the rule touches
  *               must be losing AFTER rake AND be in that quarter. On a night
@@ -107,6 +123,8 @@ export const MIN_REAL_HANDS_FOR_BB100 = 1500;
 export interface RegressionContext {
   /** rake paid, bb/100, over the same hands as realBB100 (positive number) */
   rakeBB100?: number | null;
+  /** jackpot drop paid, bb/100, over the same hands (positive number) */
+  bbjBB100?: number | null;
   /** fleet p25 of rake-adjusted bb/100 among 1,500-hand horses; null = unknown */
   fleetP25?: number | null;
   /** reviewed hands behind `leaks` (the V40 denominator); 0 = unknown */
@@ -287,7 +305,12 @@ export function diagnoseAndNudge(
   if (realBB100 !== null && realHands >= MIN_REAL_HANDS_FOR_BB100) {
     const rake =
       typeof ctx.rakeBB100 === 'number' && isFinite(ctx.rakeBB100) ? ctx.rakeBB100 : null;
-    const adjusted = rake !== null ? realBB100 + rake : realBB100;
+    const bbj = typeof ctx.bbjBB100 === 'number' && isFinite(ctx.bbjBB100) ? ctx.bbjBB100 : null;
+    // The DROP, not just the rake (2026-09-06). Either half may be absent -
+    // bbj_bb is younger than rake_bb and older rows carry 0 - so each is
+    // added only when it is a real number, and the reason names what it used.
+    const drop = rake !== null || bbj !== null ? (rake ?? 0) + (bbj ?? 0) : null;
+    const adjusted = drop !== null ? realBB100 + drop : realBB100;
     const p25 = typeof ctx.fleetP25 === 'number' && isFinite(ctx.fleetP25) ? ctx.fleetP25 : null;
     const losing = adjusted < REGRESS_BB100;
     const worstQuarter = p25 === null || adjusted < p25;
@@ -297,16 +320,16 @@ export function diagnoseAndNudge(
       bluffFreq = 1 + (bluffFreq - 1) / 2;
       reasons.push(
         `real bb100 ${realBB100.toFixed(1)}` +
-          (rake !== null ? ` (${adjusted.toFixed(1)} after ${rake.toFixed(1)} rake)` : '') +
+          (drop !== null ? ` (${adjusted.toFixed(1)} after ${drop.toFixed(1)} drop)` : '') +
           (p25 !== null ? ` under fleet p25 ${p25.toFixed(1)}` : '') +
           ` over ${realHands} exact-net hands - regress dials halfway to neutral`
       );
     } else if (realBB100 < REGRESS_BB100) {
       reasons.push(
         `real bb100 ${realBB100.toFixed(1)} is ` +
-          (rake !== null && !losing
-            ? `${adjusted.toFixed(1)} after ${rake.toFixed(1)} rake - the game's edge, not a leak`
-            : `not under fleet p25 ${(p25 ?? 0).toFixed(1)} - the table's rake, not a leak`) +
+          (drop !== null && !losing
+            ? `${adjusted.toFixed(1)} after ${drop.toFixed(1)} drop - the game's edge, not a leak`
+            : `not under fleet p25 ${(p25 ?? 0).toFixed(1)} - the table's drop, not a leak`) +
           ' - dials left alone'
       );
     }
@@ -454,13 +477,15 @@ export function stopHorseSelfTuner(): void {
  * tests. Pure.
  */
 export function fleetQuartile(
-  nets: Map<string, { hands: number; netBB: number; rakeBB: number }>,
+  nets: Map<string, { hands: number; netBB: number; rakeBB: number; bbjBB?: number }>,
   minHands: number = MIN_REAL_HANDS_FOR_BB100
 ): number | null {
   const xs: number[] = [];
   for (const rn of nets.values()) {
     if (rn.hands < minHands) continue;
-    xs.push(((rn.netBB + rn.rakeBB) / rn.hands) * 100);
+    // Drop-adjusted, both halves (2026-09-06). bbjBB is optional so older
+    // callers and fixtures keep their meaning exactly.
+    xs.push(((rn.netBB + rn.rakeBB + (rn.bbjBB ?? 0)) / rn.hands) * 100);
   }
   if (xs.length < 20) return null;
   xs.sort((a, b) => a - b);
@@ -493,11 +518,39 @@ async function loadPlayRows(
         )
         .gte('day', sinceDay)
         .in('format', ['cash', 'hu_cash'])
-        // Full unique key: (horse_user_id, day, format). See the note on the
-        // real-nets loop - an unstable page order drops rows.
+        /*
+         * ═══ THE FLOOR IS NOT A LEAK (2026-09-06, measured) ═══════════════
+         *
+         * A floored table stands a seat up after ten hands under its
+         * maintain_percent_min, horses included (10.5), so the brain widens
+         * toward it (vpipFloorMul) and a horse there is REQUIRED to play
+         * 40-70% of hands. Of the 72 cash tables the fleet played on
+         * 2026-09-05, 15 were floored at a mean of 49.3%.
+         *
+         * The tuner judges VPIP against the 19-32% winning-player band, and
+         * `tightness` is a GLOBAL dial. So a horse obeying a 60% floor was
+         * measured as "too loose", tightened everywhere, and then re-widened
+         * by the floor at the same table - while its play at ORDINARY tables
+         * got nittier every night. The loop is visible in the log:
+         *
+         *   2026-09-03  104 of 429 tightened for "too loose", fleet VPIP .277
+         *   2026-09-04  180 of 386                              fleet VPIP .312
+         *   2026-09-05  216 of 383  (56%)                       fleet VPIP .338
+         *
+         * That is the rake bug in a different input: a blended number judged
+         * against an unblended band. Floored rows are still written and are
+         * still on the panel; they are simply never fed to a band that
+         * assumes the horse was free to fold.
+         */
+        .eq('floored', false)
+        // Full unique key: (horse_user_id, day, format, floored). `floored`
+        // is ordered even though the filter pins it, because the key is what
+        // the paging law checks and a filter is not a key. See the note on
+        // the real-nets loop - an unstable page order drops rows.
         .order('horse_user_id', { ascending: true })
         .order('day', { ascending: true })
         .order('format', { ascending: true })
+        .order('floored', { ascending: true })
         .range(offset, offset + 999);
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;
@@ -596,7 +649,10 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
 
     // ── V16: real per-horse nets for the window (cash + hu_cash only — the
     // tuner is cash-only by design and tournament chips are not bb-comparable).
-    const realNets = new Map<string, { hands: number; netBB: number; rakeBB: number }>();
+    const realNets = new Map<
+      string,
+      { hands: number; netBB: number; rakeBB: number; bbjBB: number }
+    >();
     try {
       const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
         .toISOString()
@@ -604,7 +660,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       for (let offset = 0; ; offset += 1000) {
         const { data, error } = await supabase
           .from('horse_daily_nets')
-          .select('horse_user_id, hands, net_bb, rake_bb, format')
+          .select('horse_user_id, hands, net_bb, rake_bb, bbj_bb, format')
           .gte('day', sinceDay)
           .in('format', ['cash', 'hu_cash'])
           /*
@@ -644,11 +700,18 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
           hands: number;
           net_bb: number;
           rake_bb: number | null;
+          bbj_bb: number | null;
         }>) {
-          const acc = realNets.get(row.horse_user_id) ?? { hands: 0, netBB: 0, rakeBB: 0 };
+          const acc = realNets.get(row.horse_user_id) ?? {
+            hands: 0,
+            netBB: 0,
+            rakeBB: 0,
+            bbjBB: 0,
+          };
           acc.hands += row.hands ?? 0;
           acc.netBB += Number(row.net_bb ?? 0);
           acc.rakeBB += Number(row.rake_bb ?? 0);
+          acc.bbjBB += Number(row.bbj_bb ?? 0);
           realNets.set(row.horse_user_id, acc);
         }
         if (data.length < 1000) break;
@@ -818,6 +881,10 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       const rn = realNets.get(horseId);
       const realBB100 =
         rn && rn.hands >= MIN_REAL_HANDS_FOR_BB100 ? (rn.netBB / rn.hands) * 100 : null;
+      const bbjBB100 =
+        rn && rn.hands >= MIN_REAL_HANDS_FOR_BB100 && rn.bbjBB > 0
+          ? (rn.bbjBB / rn.hands) * 100
+          : null;
       const rakeBB100 =
         rn && rn.hands >= MIN_REAL_HANDS_FOR_BB100 && rn.rakeBB > 0
           ? (rn.rakeBB / rn.hands) * 100
@@ -830,6 +897,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         leaksByHorse.get(horseId) ?? null,
         {
           rakeBB100,
+          bbjBB100,
           fleetP25,
           leaksHands: leakHandsByHorse.get(horseId) ?? 0,
         }
@@ -917,8 +985,11 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
               real_hands: rn?.hands ?? 0,
               // 2026-09-05: the rake this horse paid, and what it did after it.
               rake_bb100: rakeBB100 !== null ? round4(rakeBB100) : -9999,
+              bbj_bb100: bbjBB100 !== null ? round4(bbjBB100) : -9999,
               adjusted_bb100:
-                realBB100 !== null && rakeBB100 !== null ? round4(realBB100 + rakeBB100) : -9999,
+                realBB100 !== null && rakeBB100 !== null
+                  ? round4(realBB100 + rakeBB100 + (bbjBB100 ?? 0))
+                  : -9999,
               fleet_p25_bb100: fleetP25 !== null ? round4(fleetP25) : -9999,
               // where this horse's frequencies came from: play rows or the stream
               study_source: fromPlayRows.has(horseId) ? 1 : 0,

@@ -23,7 +23,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { sliceMethod } from '../testHelpers/sourceWindow';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const ENGINE = readFileSync(join(__dirname, 'ServerTableEngine.ts'), 'utf8');
 

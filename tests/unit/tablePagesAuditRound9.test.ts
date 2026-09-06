@@ -147,8 +147,13 @@ describe('round 9: identity and display reads leave a trace', () => {
   it('the remaining display reads all report their failures', () => {
     for (const key of [
       'bbj_table_read_failed',
-      'bbj_pool_read_failed',
-      'bbj_hit_baseline_read_failed',
+      /* `bbj_pool_read_failed` and `bbj_hit_baseline_read_failed` left this
+         file with the reads themselves (BBJ phase 3.1/3.2, 2026-09-06): the
+         pool figure is now one shared poll (lib/bbjPoolFeed, which reports as
+         bbjPoolFeed.read_failed) and the hit-count baseline is gone entirely,
+         replaced by the bbj_winners INSERT. The rule is unchanged - every
+         display read leaves a trace - and it is pinned where the reads now
+         live, in bbjPoolFeed.test.ts and bbjHitFeed.test.ts. */
       'hole_card_recovery_read_failed',
       'masthead_viewer_club_read_failed',
       'seat_restore_read_failed',

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const insert = vi.fn().mockResolvedValue({ error: null });
+const { rpc } = vi.hoisted(() => ({ rpc: vi.fn().mockResolvedValue({ error: null }) }));
 vi.mock('../../src/lib/supabase', () => ({
-  supabase: { from: vi.fn(() => ({ insert })) },
+  supabase: { rpc },
 }));
 
 import {
@@ -12,7 +12,7 @@ import {
 } from '../../src/services/CashierOperationsTelemetry';
 
 describe('CashierOperationsTelemetry', () => {
-  beforeEach(() => insert.mockClear());
+  beforeEach(() => rpc.mockClear());
 
   it('retains every failure and samples routine successes', () => {
     expect(shouldRecordCashierOperation('batch_failed', 0.999)).toBe(true);
@@ -32,7 +32,7 @@ describe('CashierOperationsTelemetry', () => {
     expect(cashierReasonCode(new Error('private recipient data'))).toBe('error');
   });
 
-  it('writes a bounded failure row without amounts, targets, notes, or messages', async () => {
+  it('calls the server-owned RPC with bounded fields and no caller-selected identity', async () => {
     recordCashierOperation({
       userId: 'user-1',
       clubId: 'club-1',
@@ -44,20 +44,20 @@ describe('CashierOperationsTelemetry', () => {
       failureCount: 1,
       reasonCode: 'PGRST 204',
     });
-    await vi.waitFor(() => expect(insert).toHaveBeenCalledOnce());
-    expect(insert).toHaveBeenCalledWith({
-      user_id: 'user-1',
-      club_id: 'club-1',
-      event: 'batch_partial',
-      operation: 'send',
-      duration_ms: 300_000,
-      item_count: 30,
-      page_number: null,
-      success_count: 29,
-      failure_count: 1,
-      reason_code: 'pgrst_204',
-      sample_weight: 1,
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledOnce());
+    expect(rpc).toHaveBeenCalledWith('fn_record_cashier_operation', {
+      p_club_id: 'club-1',
+      p_event: 'batch_partial',
+      p_operation: 'send',
+      p_duration_ms: 300_000,
+      p_item_count: 30,
+      p_page_number: null,
+      p_success_count: 29,
+      p_failure_count: 1,
+      p_reason_code: 'pgrst_204',
     });
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty('user_id');
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty('sample_weight');
   });
 
   it('does not attempt a write without both signed-in user and club scope', () => {
@@ -73,6 +73,6 @@ describe('CashierOperationsTelemetry', () => {
       event: 'batch_failed',
       operation: 'send',
     });
-    expect(insert).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

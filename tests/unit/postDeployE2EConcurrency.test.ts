@@ -68,5 +68,10 @@ describe('post-deploy E2E concurrency', () => {
     expect(realtimeCertification).toContain(
       '[customization-realtime] persisted appearance survived a device reload'
     );
+    expect(realtimeCertification).toContain("pathname.endsWith('/rest/v1/user_theme_settings')");
+    expect(realtimeCertification.indexOf('const hydrated = page.waitForResponse')).toBeLessThan(
+      realtimeCertification.indexOf('await Promise.all([hydrated, open.click()])')
+    );
+    expect(realtimeCertification).toContain('await Promise.all([hydrated, open.click()])');
   });
 });

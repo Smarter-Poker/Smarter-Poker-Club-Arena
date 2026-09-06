@@ -34,7 +34,11 @@ export async function ensureClubMembership(
 ): Promise<boolean> {
   const clubUrl = new URL(`clubs/${clubId}`, baseURL).toString();
   await page.goto(clubUrl, {
-    waitUntil: 'domcontentloaded',
+    // The decision selector below is the real application-ready contract.
+    // Waiting for DOMContentLoaded first can stall for a full minute when an
+    // unrelated production asset is slow even though the SPA route has already
+    // committed and can render its lobby/recovery state.
+    waitUntil: 'commit',
     timeout: CLUB_ROUTE_TIMEOUT,
   });
 
@@ -53,7 +57,7 @@ export async function ensureClubMembership(
     } catch (routeError) {
       if (attempt + 1 < CLUB_ROUTE_ATTEMPTS) {
         console.warn(`[global-setup] club route exposed no terminal surface; reloading ${clubId}.`);
-        await page.reload({ waitUntil: 'domcontentloaded', timeout: CLUB_ROUTE_TIMEOUT });
+        await page.reload({ waitUntil: 'commit', timeout: CLUB_ROUTE_TIMEOUT });
         continue;
       }
 

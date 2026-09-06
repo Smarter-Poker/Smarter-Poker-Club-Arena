@@ -33,9 +33,9 @@
  * WHAT THIS LAW DOES NOT SAY
  *
  * Chips are still chips where chips are the SUBJECT rather than the reward: a
- * pot won at the table, a tournament stack, a reroll's COST, and a challenge
- * OBJECTIVE ("Win 2,500 Chips In Pots Today" is a thing you do, not a thing you
- * are given). This law guards the crediting, not the felt.
+ * pot won at the table, a tournament stack, and a challenge OBJECTIVE ("Win
+ * 2,500 Chips In Pots Today" is a thing you do, not a thing you are given).
+ * Rerolls cost Diamonds. This law guards the crediting, not the felt.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';

@@ -65,14 +65,14 @@
  */
 
 import type { Card } from '../types.js';
+import {
+  _clearChartPolicyArtifactsForTests,
+  hydrateChartPolicyArtifact,
+  lookupChartPolicyAdvice,
+  type ChartPolicyRow,
+} from '../gto/SolverPolicyArtifactLoader.js';
 
-export interface GtoChartRow {
-  game_type: string;
-  stack_depth: number;
-  hero_position: string;
-  villain_action: string;
-  hand_matrix: Record<string, Record<string, number>>;
-}
+export type GtoChartRow = ChartPolicyRow;
 
 export type GtoAdvice = {
   /** 'push' | 'fold' for opens; 'call' | 'fold' for BB defense. */
@@ -84,7 +84,7 @@ export type GtoAdvice = {
 };
 
 /** key: game|villain_action|position|depth */
-const charts = new Map<string, Record<string, Record<string, number>>>();
+let charts = new Map<string, Record<string, Record<string, number | null>>>();
 
 /** The depths that exist in the data. Snapping must match reality, not hope. */
 const CHART_DEPTHS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25];
@@ -99,18 +99,26 @@ function chartKey(game: string, villainAction: string, position: string, depth: 
 }
 
 export function setGtoCharts(rows: GtoChartRow[]): number {
-  let n = 0;
+  const next = new Map<string, Record<string, Record<string, number | null>>>();
   for (const r of rows) {
-    if (!r || typeof r.stack_depth !== 'number') continue;
-    if (!r.hand_matrix || typeof r.hand_matrix !== 'object') continue;
-    if (r.game_type !== 'Cash' && r.game_type !== 'Tournament') continue;
-    charts.set(
-      chartKey(r.game_type, r.villain_action, r.hero_position, r.stack_depth),
-      r.hand_matrix
-    );
-    n++;
+    if (
+      !r ||
+      typeof r.stack_depth !== 'number' ||
+      !r.hand_matrix ||
+      typeof r.hand_matrix !== 'object' ||
+      !['Cash', 'Tournament'].includes(r.game_type)
+    ) {
+      throw new Error('invalid_gto_chart_row');
+    }
+    const key = chartKey(r.game_type, r.villain_action, r.hero_position, r.stack_depth);
+    if (next.has(key)) throw new Error(`duplicate_gto_chart_row:${key}`);
+    next.set(key, r.hand_matrix);
   }
-  return n;
+  // Build and validate the canonical artifact first. Neither store changes if
+  // one row is malformed, so a bad hourly refresh keeps the last good policy.
+  hydrateChartPolicyArtifact(rows);
+  charts = next;
+  return next.size;
 }
 
 /** Test/ops hook — and the loader's "did anything hydrate" check. */
@@ -121,6 +129,7 @@ export function gtoChartCount(): number {
 /** Test seam. */
 export function _clearGtoCharts(): void {
   charts.clear();
+  _clearChartPolicyArtifactsForTests();
 }
 
 const RANK_ORDER: Record<string, number> = {
@@ -172,28 +181,22 @@ function lookup(
   villainAction: string,
   position: string,
   stackBB: number,
-  hand: string,
-  pushAction: string
+  hand: string
 ): GtoAdvice | null {
   const depth = snapDepth(stackBB);
-  const key = chartKey(game, villainAction, position, depth);
-  const matrix = charts.get(key);
-  if (!matrix) return null;
-
-  const entry = matrix[hand];
-  if (!entry) {
-    // AN ABSENT HAND IS A FOLD. The solver only lists hands with a non-fold
-    // branch; inventing a push frequency for 72o because it is "missing"
-    // would be exactly the guessing this module replaces.
-    return { action: 'fold', freq: 1, chart: key };
-  }
-
-  const push = Number(entry[pushAction]) || 0;
-  const fold = Number(entry.fold) || 0;
-  if (push <= 0 && fold <= 0) return { action: 'fold', freq: 1, chart: key };
-  return push >= fold
-    ? { action: pushAction, freq: push, chart: key }
-    : { action: 'fold', freq: fold, chart: key };
+  const advice = lookupChartPolicyAdvice({
+    gameType: game,
+    villainAction,
+    position,
+    depth,
+    hand,
+  });
+  if (!advice) return null;
+  return {
+    action: advice.action,
+    freq: advice.freq,
+    chart: chartKey(game, villainAction, position, depth),
+  };
 }
 
 /**
@@ -217,8 +220,7 @@ export function gtoOpenJam(args: {
     'fold_to_hero',
     args.position,
     args.stackBB,
-    args.hand,
-    'push'
+    args.hand
   );
 }
 
@@ -240,7 +242,6 @@ export function gtoBbVsSbJam(args: {
     'sb_push',
     'BB',
     args.effectiveBB,
-    args.hand,
-    'call'
+    args.hand
   );
 }

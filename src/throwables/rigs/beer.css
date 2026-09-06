@@ -1,0 +1,229 @@
+/**
+ * BEER — keyframes. Every delay is from LANDING (launch + 333 ms); the
+ * comment on each stop gives the catalogue's ms from launch. Every duration
+ * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width (the rig viewBox), so the
+ * numbers below are the measured pixel offsets scaled by 100/30 (video 1's
+ * avatar was ~30 px wide).
+ */
+
+/* ── MUG 1: landed right of centre, slides right, swings in, eases back ─── */
+.thr-beer__m1 {
+  animation: thr-beer-m1 calc(4.2s * var(--animation-speed, 1)) linear both;
+}
+
+@keyframes thr-beer-m1 {
+  0% {
+    /* 333: landed at +0.23 u */
+    transform: translate(23px, 0);
+  }
+  4.76% {
+    /* 533: the slide begins */
+    transform: translate(23px, 0);
+  }
+  20.64% {
+    /* 1200: just outside the avatar's right edge */
+    transform: translate(110px, 0);
+  }
+  25.4% {
+    /* 1400: held apart */
+    transform: translate(110px, 0);
+  }
+  29.38% {
+    /* 1567: the rims meet over the forehead. 76 units between the centres:
+       each glass is 48 wide, and the 15deg tilt brings each rim ~10 units
+       inward, so the rims touch and the bases stay apart. At 60 the two mugs
+       simply overlapped (caught in the darkroom, 2026-09-06). */
+    transform: translate(55px, -20px);
+  }
+  48.43% {
+    /* 2367: V hold ends */
+    transform: translate(55px, -20px);
+  }
+  64.29% {
+    /* 3033: rest pose, flanking the face */
+    transform: translate(83px, 5px);
+  }
+  100% {
+    transform: translate(83px, 5px);
+  }
+}
+
+.thr-beer__m1-tilt {
+  transform-box: fill-box;
+  transform-origin: 50% 70%;
+  animation: thr-beer-m1-tilt calc(4.2s * var(--animation-speed, 1)) ease-in-out both;
+}
+
+@keyframes thr-beer-m1-tilt {
+  0%,
+  4.76% {
+    transform: rotate(0deg);
+  }
+  20.64%,
+  25.4% {
+    /* leaning inward as it parks on the right */
+    transform: rotate(-10deg);
+  }
+  29.38%,
+  48.43% {
+    /* the V */
+    transform: rotate(-15deg);
+  }
+  64.29%,
+  100% {
+    transform: rotate(-6deg);
+  }
+}
+
+/* ── MUG 2: pops in on the LEFT at 900, then mirrors mug 1 ──────────────── */
+.thr-beer__m2 {
+  opacity: 0;
+  animation: thr-beer-m2 calc(3.633s * var(--animation-speed, 1)) linear
+    calc(0.567s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-beer-m2 {
+  0% {
+    /* 900: a dot on the left */
+    opacity: 0;
+    transform: translate(-57px, 10px) scale(0.1);
+  }
+  1.84% {
+    /* 967: full size with a 1.12x overshoot */
+    opacity: 1;
+    transform: translate(-57px, 10px) scale(1.12);
+  }
+  3% {
+    opacity: 1;
+    transform: translate(-57px, 10px) scale(1);
+  }
+  22.93% {
+    /* 1400: the swing begins */
+    opacity: 1;
+    transform: translate(-57px, 10px) scale(1);
+  }
+  27.52% {
+    /* 1567: the rims meet */
+    opacity: 1;
+    transform: translate(-21px, -20px) scale(1);
+  }
+  49.55% {
+    /* 2367 */
+    opacity: 1;
+    transform: translate(-21px, -20px) scale(1);
+  }
+  67.88% {
+    /* 3033: rest */
+    opacity: 1;
+    transform: translate(-43px, 5px) scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-43px, 5px) scale(1);
+  }
+}
+
+.thr-beer__m2-tilt {
+  transform-box: fill-box;
+  transform-origin: 50% 70%;
+  animation: thr-beer-m2-tilt calc(3.633s * var(--animation-speed, 1)) ease-in-out
+    calc(0.567s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-beer-m2-tilt {
+  0%,
+  22.93% {
+    transform: rotate(10deg);
+  }
+  27.52%,
+  49.55% {
+    transform: rotate(15deg);
+  }
+  67.88%,
+  100% {
+    transform: rotate(6deg);
+  }
+}
+
+/* ── THE CLINK PLUME: 1567 -> 2033, peak 1633-1733 ──────────────────────── */
+.thr-beer__plume {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-beer-plume calc(0.47s * var(--animation-speed, 1)) ease-out
+    calc(1.234s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-beer-plume {
+  0% {
+    opacity: 0;
+    transform: translate(0, 10px) scale(0.2);
+  }
+  15% {
+    /* 1637: the plume is up */
+    opacity: 1;
+    transform: translate(0, 0) scale(1.05);
+  }
+  35% {
+    /* 1733: peak */
+    opacity: 0.95;
+    transform: translate(0, -6px) scale(1.15);
+  }
+  100% {
+    /* 2033: gone */
+    opacity: 0;
+    transform: translate(0, -22px) scale(1.3);
+  }
+}
+
+/* The droplets fly on a small arc from the meeting point and burn out. Each
+   carries its own end point in --dx / --dy and its own delay inline. */
+.thr-beer__drop {
+  opacity: 0;
+  animation: thr-beer-drop calc(0.38s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.6, 0.4, 1)
+    calc(1.234s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-beer-drop {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.6);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.3), calc(var(--dy) * 0.55)) scale(1);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.75), calc(var(--dy) * 1.05)) scale(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), calc(var(--dy) * 0.85)) scale(0.5);
+  }
+}
+
+/* ── REDUCED MOTION: the two mugs simply sit in the rest pose; the plume and
+   the droplets are pure motion and go. ──────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .thr-beer__m1,
+  .thr-beer__m1-tilt,
+  .thr-beer__m2,
+  .thr-beer__m2-tilt {
+    animation: none !important;
+  }
+  .thr-beer__m1 {
+    transform: translate(83px, 5px);
+  }
+  .thr-beer__m2 {
+    opacity: 1;
+    transform: translate(-43px, 5px);
+  }
+  .thr-beer__plume,
+  .thr-beer__drop {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}

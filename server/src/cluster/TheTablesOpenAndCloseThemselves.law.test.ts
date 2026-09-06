@@ -442,8 +442,15 @@ describe('the fleet keeps its hands off cluster tables', () => {
        the ternary has one more branch. The claim is derived from `lifecycle`
        every cycle and stored nowhere, so it dies with the feeder. See
        HorseBuyerAllocation.test.ts for the allocation itself. */
-    expect(FLEET).toMatch(/countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE/);
-    expect(FLEET).toMatch(/claim: openingFeeder \? 'reserved' : countOnly \? 'probe' : 'seating',/);
+    /* 2026-09-06: a PROBE is a full table, not merely a table the fleet
+       stopped seating. `countOnly` is also set when the vibe target is met or
+       the trickle produced zero, and calling those a probe booked two horses
+       of shared capacity to answer a question the OPEN rule cannot act on
+       (it needs v_open_unreserved = 0). The claim follows the SEATS now. */
+    expect(FLEET).toMatch(/emptySeats\.length === 0\s*\?\s*FULL_TABLE_BUYER_PROBE/);
+    expect(FLEET).toMatch(
+      /claim: openingFeeder\s*\?\s*'reserved'\s*:\s*countOnly && emptySeats\.length === 0\s*\?\s*'probe'\s*:\s*'seating',/
+    );
     expect(FLEET).toMatch(
       /for \(const \[tableId, n\] of allocateBuyers\(clusterPools, capacityByHorse\)\) \{\s*nextEligible\.set\(tableId, n\);\s*\}\s*this\.lastEligibleByTable = nextEligible;/
     );
@@ -463,7 +470,9 @@ describe('the fleet keeps its hands off cluster tables', () => {
 
   it('a planned arrival holds its seat: pending moves count as occupied', () => {
     expect(FLEET).toMatch(
-      /\.from\('cash_seat_moves'\)\s*\.select\('to_table_id'\)\s*\.eq\('state', 'pending'\)/
+      // 2026-09-06: paged (keyset on id), so a truncated read can no longer
+      // UNDERCOUNT reservations and let the fleet fill a reserved seat.
+      /\.from\('cash_seat_moves'\)\s*\.select\('id, to_table_id'\)\s*\.eq\('state', 'pending'\)/
     );
     expect(FLEET).toMatch(
       /occupiedNumbers\.size \+ \(pendingMovesByTable\.get\(table\.id\) \?\? 0\)/

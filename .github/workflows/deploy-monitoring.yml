@@ -211,4 +211,14 @@ jobs:
           set -euo pipefail
           # Prometheus reloads asynchronously after the symlinks swap.
           sleep 20
-          node scripts/ci/check-alert-rules-match.mjs
+          if ! node scripts/ci/check-alert-rules-match.mjs; then
+            # A file bind mount follows the inode Docker resolved when the
+            # container started. If an older/manual deployment replaced that
+            # inode, /-/reload can truthfully return 200 while Prometheus keeps
+            # reading the detached file. Recreate only Prometheus to rebind the
+            # shipped rule files, then require the same read-back proof again.
+            echo "::warning::Prometheus accepted the reload but did not load the shipped rules; rebinding its file mounts."
+            ~/hssh "cd /opt/smarter-poker-monitoring && docker compose up -d --force-recreate prometheus"
+            sleep 15
+            node scripts/ci/check-alert-rules-match.mjs
+          fi

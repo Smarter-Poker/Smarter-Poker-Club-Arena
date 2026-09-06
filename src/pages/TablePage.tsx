@@ -2956,7 +2956,7 @@ export default function TablePage({
   // (SeatSlot bombPotAnte). Dan 2026-09-04: "THERE SHOULDN'T BE 'BOMB POT
   // PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD JUST BE SOMETHING ON THE
   // TABLE THAT SAYS 'BOMB POT'." So it now drives the ONE on-felt pill
-  // (.bomb-pot-eta--live below), which reads "BOMB POT" for the hand.
+  // (.bomb-pot-live below), which reads "BOMB POT" for the hand.
   const [bombPotActive, setBombPotActive] = useState(false);
   // IMPROVEMENT PASS 2026-08-20: in the reference capture the flop is dealt
   // only AFTER the bomb's explosion finishes — the engine, which skips
@@ -5708,12 +5708,43 @@ export default function TablePage({
   }, [ritBoardsView]);
 
   // POKERBROS PARITY 2026-08-26 (round 3): the double-board bomb pot's
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE WINNER DISPLAY BELONGS TO THIS HAND - ALL OF IT (2026-09-06)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan 2026-09-05: "THE 'WINS THE POT' ANIMATION IS GETTING STUCK AFTER HANDS
+   * SOME TIMES." The SEAT dim has been fenced on the hand number since
+   * 2026-08-27 (`winnerDisplayActive`, further down) because an out-of-order
+   * pot_win reads as a win on the hand now being played - Dan's "cards dim like
+   * you folded, even though you are live in a hand".
+   *
+   * ONE FENCE, EVERY SURFACE. The first pass of this fix (2026-09-05) put the
+   * test on the board's TEXT only, and left the board card highlight, the
+   * felt-wide winner flash, the pot award, and the seat's own isWinner /
+   * hand-name / hole-card props reading `winnerInfo` raw. That is the worse
+   * half: a stale pot_win still lit the live board's winning five, still dimmed
+   * every other face-up card, still flashed the felt and still popped a seat -
+   * while the sentence above them was (correctly) silent. Half a fence reads as
+   * a bug with extra steps.
+   *
+   * It is declared HERE, above the derivations that consume it, so the board
+   * highlight memos can carry it too and there is exactly one expression of the
+   * rule in this file. handNumber 0 is the reset's own empty stamp and counts
+   * as "show", exactly as the seat guard has always treated it, so nothing
+   * about an ordinary hand changes.
+   */
+  const winnerBandActive =
+    winnerInfo.playerIds.length > 0 &&
+    (winnerInfo.handNumber === 0 || winnerInfo.handNumber === (tableState.handNumber ?? 0));
+
   // SECOND board never highlighted its winning five — the engine's
   // card_indices describe board 1, so board 2 rendered every card at full
   // brightness while board 1 dimmed around its winners. Same client-side
   // derivation the RIT boards use: first winner with visible hole cards,
   // bestFive against board 2, map the played five back to board indices.
   const board2HighlightedIndices = useMemo(() => {
+    if (!winnerBandActive) return [];
     if (tableState.communityCards2.length < 5 || winnerInfo.playerIds.length === 0) return [];
     for (const wid of winnerInfo.playerIds) {
       const winnerPlayer = tableState.players.find((p) => p?.id === wid);
@@ -5733,6 +5764,7 @@ export default function TablePage({
     }
     return [];
   }, [
+    winnerBandActive,
     tableState.communityCards2,
     winnerInfo.playerIds,
     tableState.players,
@@ -5740,26 +5772,9 @@ export default function TablePage({
     tableState.gameType,
   ]);
 
-  /**
-   * THE BAND BELONGS TO THIS HAND (Dan 2026-09-05: "THE 'WINS THE POT'
-   * ANIMATION IS GETTING STUCK AFTER HANDS SOME TIMES").
-   *
-   * The SEAT label has been fenced on the hand number since 2026-08-27 (see
-   * `winnerDisplayActive` on SeatSlot) precisely because an out-of-order
-   * pot_win reads as a win on the hand now being played. The BOARD band was
-   * never given the same fence: it took `winnerInfo.handName` raw, so a label
-   * stamped with a different hand rendered over the felt anyway - the seats
-   * would go quiet while the band still said someone had won.
-   *
-   * Same test, one derivation, both surfaces. handNumber 0 is the reset's own
-   * empty stamp and is treated as "show", exactly as the seat guard treats it,
-   * so nothing about an ordinary hand changes. */
-  const winnerBandActive =
-    winnerInfo.playerIds.length > 0 &&
-    (winnerInfo.handNumber === 0 || winnerInfo.handNumber === (tableState.handNumber ?? 0));
-
   // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 highlights, same derivation.
   const board3HighlightedIndices = useMemo(() => {
+    if (!winnerBandActive) return [];
     if (tableState.communityCards3.length < 5 || winnerInfo.playerIds.length === 0) return [];
     for (const wid of winnerInfo.playerIds) {
       const winnerPlayer = tableState.players.find((p) => p?.id === wid);
@@ -5779,6 +5794,7 @@ export default function TablePage({
     }
     return [];
   }, [
+    winnerBandActive,
     tableState.communityCards3,
     winnerInfo.playerIds,
     tableState.players,
@@ -6580,19 +6596,41 @@ export default function TablePage({
        * chips it belongs to are still moving would be the animation law's
        * own complaint, in a backstop written to honour it.
        */
-      if (handCompleteTimerRef.current || potAwardAnimEndAtRef.current > Date.now()) {
+      if (
+        handCompleteTimerRef.current ||
+        potAwardAnimEndAtRef.current > Date.now() ||
+        /* AND THE THIRD CLOCK (2026-09-06). A run-it-twice/three reveal is the
+           longest thing on this table - past twenty seconds at a slow animation
+           speed - and on the client this backstop exists for (one that missed
+           HAND_COMPLETE) it has NO timer and NO award clock to point at. Without
+           this the backstop clears the label in the middle of the reveal, which
+           is the exact animation-law violation it was written to honour. */
+        ritRevealEndsAtRef.current > Date.now()
+      ) {
         winnerStuckTicksRef.current = 0;
         return;
       }
       winnerStuckTicksRef.current += 1;
       if (winnerStuckTicksRef.current < WINNER_STUCK_TICKS) return;
       winnerStuckTicksRef.current = 0;
-      const reset = handCompleteResetFnRef.current;
-      if (reset) {
-        handCompleteResetFnRef.current = null;
-        reset();
-        return;
-      }
+      /*
+       * TAKE THE BANNER DOWN. NOTHING ELSE. (corrected 2026-09-06)
+       *
+       * This used to prefer `handCompleteResetFnRef.current` - "so the board,
+       * pot, mucks and stack hold come down together". That was WRONG, and
+       * dangerously so: nothing on the normal path ever nulls that ref (the
+       * closure only nulls `handCompleteTimerRef`), so it almost always holds
+       * the PREVIOUS hand's reset. In the very case this watchdog is for - a
+       * late pot_win arriving after HAND_STARTED for the next hand - running it
+       * would blank `communityCards`, set `boardStage` to preflop and zero the
+       * POT of a hand being played, until the next engine broadcast repainted
+       * it. A backstop for a stuck label must never be able to erase a live
+       * board.
+       *
+       * So it clears exactly what it is about: the winner display. Everything
+       * else belongs to whoever owns the hand, and by this point that is the
+       * next hand, not this closure.
+       */
       setWinnerInfo({
         playerIds: [],
         handName: '',
@@ -6768,6 +6806,16 @@ export default function TablePage({
       return bombClockLabel === 'NEXT HAND'
         ? { text: `${prefix}BOMB POT NEXT HAND`, state: 'next' }
         : { text: `BOMB POT IN ${bombClockLabel}`, state: 'eta' };
+    /* THE ANNOUNCE WINDOW IS A HOST DECISION, AND IT WAS BEING TALKED OVER
+       (2026-09-06). `bombClockLabel` returns null for TWO different reasons:
+       this table has no timed bomb at all, or it has one and the host's
+       announce window has not opened yet (bomb_pot_announce_seconds). Falling
+       through to the hand-count branch treated those the same, so a host who
+       asked for quiet got a PULSING masthead line instead. The ordering came
+       over verbatim from the old felt pill, where it was a transient; it
+       matters more now that the line is permanent. A timed bomb inside its
+       quiet window says nothing. */
+    if (tableState.bombPotNextAt != null) return null;
     if (tableState.bombPotIn === 1) return { text: `${prefix}BOMB POT NEXT HAND`, state: 'next' };
     /* Hands, said so (Dan 2026-09-05: inside the last three minutes a timed
        bomb is "IN 1-5 HANDS" and the clock is gone). */
@@ -11046,6 +11094,14 @@ export default function TablePage({
      the button asks this table, by id, to open its own lobby. */
   useMasterBusSubscription('OPEN_MUST_MOVE_LOBBY', (event) => {
     if (event.tableId !== tableId) return;
+    /* NEVER OPEN A LOBBY THAT HAS NOTHING TO SHOW (2026-09-06). The button's
+       truth (the container's reported clusterId) and this modal's truth
+       (tableState.clusterId) arrive over two different channels and can
+       disagree for a beat - most easily right after a must-move re-points the
+       tab. Setting the flag with no cluster left it `true` against a modal that
+       renders null, so the lobby popped open unbidden when the cluster read
+       landed seconds later. Read from the ref, not from the closure. */
+    if (!tableStateRef.current?.clusterId) return;
     setShowMustMoveLobby(true);
   });
   const [standUpNextBB, setStandUpNextBB] = useState(false);
@@ -20789,7 +20845,7 @@ export default function TablePage({
 
          Embedded instances now fill their slot instead of the viewport; the
          route case is untouched. */
-      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
+      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
@@ -21883,7 +21939,7 @@ export default function TablePage({
                               ? 'preflop'
                               : tableState.boardStage
                         }
-                        highlightedIndices={winnerInfo.cardIndices}
+                        highlightedIndices={winnerBandActive ? winnerInfo.cardIndices : []}
                         winningHandName={
                           winnerBandActive
                             ? winnerInfo.boardHandNames?.[0] || winnerInfo.handName
@@ -22275,10 +22331,14 @@ export default function TablePage({
                  a true number to carry on a fold-around — where the running
                  total is 0 all hand and the pill used to slide a zero. Last
                  resort only; a live pot still wins. */
-              awardedPot={Object.values(winnerInfo.amounts || {}).reduce(
-                (s, a) => s + (Number(a) || 0),
-                0
-              )}
+              awardedPot={
+                winnerBandActive
+                  ? Object.values(winnerInfo.amounts || {}).reduce(
+                      (s, a) => s + (Number(a) || 0),
+                      0
+                    )
+                  : 0
+              }
             />
             {/* AUDIT FIX 2026-07-19: removed the duplicate PremiumPot —
                 it rendered the SAME pot total in the same .pot-area as
@@ -22667,7 +22727,9 @@ export default function TablePage({
                       ? tableState.bountyMap[player.id]
                       : undefined
                   }
-                  isWinner={player ? winnerInfo.playerIds.includes(player.id) : false}
+                  isWinner={
+                    winnerBandActive && player ? winnerInfo.playerIds.includes(player.id) : false
+                  }
                   /* POKERBROS PARITY 2026-08-26: table-wide dim flag — while
                      any winner is on display, every face-up card outside the
                      winning five dims to half brightness (losing shown hands
@@ -22681,11 +22743,13 @@ export default function TablePage({
                      Belt and braces with the fence on the merge itself - this
                      one holds even if some future path writes winnerInfo
                      without going through that merge. */
-                  winnerDisplayActive={
-                    winnerInfo.playerIds.length > 0 &&
-                    (winnerInfo.handNumber === 0 ||
-                      winnerInfo.handNumber === (tableState.handNumber ?? 0))
-                  }
+                  /* ONE EXPRESSION OF THE RULE (2026-09-06). This test used to
+                     be written out a second time, here. It is `winnerBandActive`
+                     now - the same const the board, the felt flash, the pot
+                     award and this seat's other winner props all read - because
+                     two copies of one rule is how the board kept lighting up
+                     after the seats had gone quiet. */
+                  winnerDisplayActive={winnerBandActive}
                   /* CHOP PARITY 2026-08-26: each winner's OWN hand name —
                      a hi-lo low winner labels as its low, a chopped pot
                      labels both seats with their (identical) rank, and a
@@ -22700,7 +22764,7 @@ export default function TablePage({
                      the stage, and on every single-board hand, this falls
                      through to the merged name exactly as before. */
                   winningHandName={
-                    player && winnerInfo.playerIds.includes(player.id)
+                    winnerBandActive && player && winnerInfo.playerIds.includes(player.id)
                       ? winnerInfo.boardHandNamesByPlayer?.[ritRevealedRuns - 1]?.[player.id] ||
                         winnerInfo.handNames[player.id] ||
                         winnerInfo.handName
@@ -22711,7 +22775,7 @@ export default function TablePage({
                      MULTI-BOARD PARITY 2026-08-26: on a run-it-multiple hand
                      the union of every board's winning hole cards. */
                   winningHoleCardIndexes={
-                    player && winnerInfo.playerIds.includes(player.id)
+                    winnerBandActive && player && winnerInfo.playerIds.includes(player.id)
                       ? ritWinnerHoleIndices[player.id]
                         ? [
                             ...new Set([

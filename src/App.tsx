@@ -121,6 +121,7 @@ const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
 const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'));
 const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
 const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
+const ClubHandReviewPage = lazyWithRetry(() => import('./pages/ClubHandReviewPage'));
 // INSURANCE REPORT 2026-08-28: staff-facing funnel + P&L for all-in insurance.
 const ClubInsuranceReportPage = lazyWithRetry(() => import('./pages/club/ClubInsuranceReportPage'));
 const ClubBombPotReportPage = lazyWithRetry(() => import('./pages/club/ClubBombPotReportPage'));
@@ -1516,6 +1517,18 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Report Review">
                           <ReportReviewPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/hand-review"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Hand Review">
+                          <ClubHandReviewPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

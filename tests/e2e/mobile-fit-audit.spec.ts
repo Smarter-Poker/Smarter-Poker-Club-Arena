@@ -165,63 +165,98 @@ test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
     }
     await page.waitForTimeout(2200);
 
-    if (page.url().includes('/auth')) {
-      skipped.push(route);
-      continue;
-    }
+    let result:
+      | {
+          scrollWidth: number;
+          vw: number;
+          overflow: number;
+          offenders: Array<{ sel: string; left: number; right: number; w: number }>;
+        }
+      | undefined;
+    let measurementError = '';
 
-    const result = await page.evaluate(() => {
-      const vw = window.innerWidth;
-      const doc = document.documentElement;
-      const overflow = doc.scrollWidth - vw;
+    /* Some guarded routes finish their redirect after domcontentloaded and
+       after the fixed settle above. A navigation can therefore destroy the
+       execution context between page.url() and page.evaluate(). Retry only
+       that transient browser condition against the page that actually lands;
+       every other evaluate error remains an unreachable route and fails the
+       strict audit below. */
+    for (let attempt = 0; attempt < 3 && !result; attempt += 1) {
+      await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+      if (page.url().includes('/auth')) break;
+      try {
+        result = await page.evaluate(() => {
+          const vw = window.innerWidth;
+          const doc = document.documentElement;
+          const overflow = doc.scrollWidth - vw;
 
-      // Name the widest offenders: elements that extend past the right edge
-      // (or start left of the left edge) by more than 2px. Skip elements that
-      // are inside an overflow-x container that itself fits — those scroll
-      // deliberately (tables, card rails).
-      const offenders: Array<{ sel: string; left: number; right: number; w: number }> = [];
-      if (overflow > 2) {
-        const fitsInScroller = (el: Element): boolean => {
-          let p = el.parentElement;
-          while (p && p !== document.body) {
-            const s = getComputedStyle(p);
-            if (
-              (s.overflowX === 'auto' || s.overflowX === 'scroll' || s.overflowX === 'hidden') &&
-              p.getBoundingClientRect().right <= vw + 2
-            ) {
-              return true;
-            }
-            p = p.parentElement;
-          }
-          return false;
-        };
-        const selectorFor = (el: Element): string => {
-          const id = (el as HTMLElement).id;
-          if (id) return `#${id}`;
-          const cls = Array.from(el.classList).slice(0, 2).join('.');
-          return `${el.tagName.toLowerCase()}${cls ? '.' + cls : ''}`;
-        };
-        const all = document.querySelectorAll('body *');
-        for (const el of all) {
-          const r = el.getBoundingClientRect();
-          if (r.width === 0) continue;
-          /* Elements ENTIRELY left of the viewport are parked drawers
+          // Name the widest offenders: elements that extend past the right edge
+          // (or start left of the left edge) by more than 2px. Skip elements that
+          // are inside an overflow-x container that itself fits — those scroll
+          // deliberately (tables, card rails).
+          const offenders: Array<{ sel: string; left: number; right: number; w: number }> = [];
+          if (overflow > 2) {
+            const fitsInScroller = (el: Element): boolean => {
+              let p = el.parentElement;
+              while (p && p !== document.body) {
+                const s = getComputedStyle(p);
+                if (
+                  (s.overflowX === 'auto' ||
+                    s.overflowX === 'scroll' ||
+                    s.overflowX === 'hidden') &&
+                  p.getBoundingClientRect().right <= vw + 2
+                ) {
+                  return true;
+                }
+                p = p.parentElement;
+              }
+              return false;
+            };
+            const selectorFor = (el: Element): string => {
+              const id = (el as HTMLElement).id;
+              if (id) return `#${id}`;
+              const cls = Array.from(el.classList).slice(0, 2).join('.');
+              return `${el.tagName.toLowerCase()}${cls ? '.' + cls : ''}`;
+            };
+            const all = document.querySelectorAll('body *');
+            for (const el of all) {
+              const r = el.getBoundingClientRect();
+              if (r.width === 0) continue;
+              /* Elements ENTIRELY left of the viewport are parked drawers
              (translateX(-100%) sidebars) — deliberately offscreen, and they
              cannot create rightward scroll. Only rightward escape counts. */
-          if (r.right <= 2) continue;
-          if (r.right > vw + 2 && !fitsInScroller(el)) {
-            offenders.push({
-              sel: selectorFor(el),
-              left: Math.round(r.left),
-              right: Math.round(r.right),
-              w: Math.round(r.width),
-            });
-            if (offenders.length >= 8) break;
+              if (r.right <= 2) continue;
+              if (r.right > vw + 2 && !fitsInScroller(el)) {
+                offenders.push({
+                  sel: selectorFor(el),
+                  left: Math.round(r.left),
+                  right: Math.round(r.right),
+                  w: Math.round(r.width),
+                });
+                if (offenders.length >= 8) break;
+              }
+            }
           }
+          return { scrollWidth: doc.scrollWidth, vw, overflow, offenders };
+        });
+      } catch (err) {
+        measurementError = String(err);
+        if (
+          !/execution context was destroyed|most likely because of a navigation/i.test(
+            measurementError
+          )
+        ) {
+          break;
         }
+        await page.waitForTimeout(350);
       }
-      return { scrollWidth: doc.scrollWidth, vw, overflow, offenders };
-    });
+    }
+
+    if (!result) {
+      if (page.url().includes('/auth')) skipped.push(route);
+      else unreachable.push(`${route}: ${measurementError.split('\n')[0] || 'no stable document'}`);
+      continue;
+    }
 
     if (result.overflow > 2) {
       violations.push({

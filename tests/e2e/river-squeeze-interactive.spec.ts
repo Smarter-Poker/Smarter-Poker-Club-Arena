@@ -233,7 +233,25 @@ test.describe('the river squeeze, with a real mouse', () => {
     await expect(host).toHaveAttribute('data-rs-hold', 'released', { timeout: 2000 });
     await page.waitForTimeout(700);
     const end = await rotationY(page, `${HOST} .card-squeeze`);
-    expect(Math.abs(Math.abs(end) - 180), `face up after release, got ${end}deg`).toBeLessThan(15);
+    if (Number.isFinite(end)) {
+      expect(Math.abs(Math.abs(end) - 180), `face up after release, got ${end}deg`).toBeLessThan(
+        15
+      );
+    } else {
+      /* Production can complete the presentation and replace the temporary
+         two-sided squeeze markup before this human-scale 700ms observation.
+         That is success, not an unmeasurable transform: the authoritative
+         fifth board card must have replaced it face-up. */
+      await expect(host, 'the finished squeeze host leaves the settled board').toHaveCount(0);
+      const cards = page.locator('.community-cards__card');
+      await expect(cards, 'the complete board remains after the squeeze').toHaveCount(5);
+      const river = cards.last();
+      await expect(river.locator('.card-squeeze')).toHaveCount(0);
+      await expect(
+        river.locator('.card-image:not(.card-image--back)').first(),
+        'the authoritative river face replaces the temporary squeeze'
+      ).toBeVisible();
+    }
   });
 
   test('a short drag springs it back face down', async ({ page }) => {

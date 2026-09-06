@@ -49,7 +49,14 @@ export type MemberRole =
   | 'member'
   | 'guest';
 
-export type MemberStatus = 'active' | 'pending' | 'suspended' | 'banned';
+export type MemberStatus =
+  | 'active'
+  | 'approved'
+  | 'pending'
+  | 'suspended'
+  | 'banned'
+  | 'rejected'
+  | 'left';
 
 export interface ClubMembership {
   id: string;
@@ -62,6 +69,8 @@ export interface ClubMembership {
   agentId?: string;
   parentAgentId?: string;
   notes?: string;
+  membershipLifecycleStatus?: 'active' | 'departed';
+  departedAt?: string | null;
   displayName?: string;
   avatarUrl?: string;
   isOnline?: boolean;
@@ -113,8 +122,11 @@ export const MembershipService = {
     const resolvedId = await resolveClubUUID(clubId);
     const { data, error } = await supabase
       .from('club_members')
-      .select('club_id, user_id, role, status, joined_at, invited_by, agent_id, notes')
+      .select(
+        'club_id, user_id, role, status, joined_at, invited_by, agent_id, notes, membership_lifecycle_status, departed_at'
+      )
       .eq('club_id', resolvedId)
+      .eq('membership_lifecycle_status', 'active')
       .order('joined_at', { ascending: false })
       .limit(QUERY_LIMITS.BULK);
 
@@ -147,6 +159,8 @@ export const MembershipService = {
       invitedBy: m.invited_by,
       agentId: m.agent_id,
       notes: m.notes,
+      membershipLifecycleStatus: m.membership_lifecycle_status as 'active' | 'departed',
+      departedAt: m.departed_at,
       displayName: playerDisplayName(profileMap[m.user_id]),
       avatarUrl: profileMap[m.user_id]?.avatar_url,
     }));
@@ -160,10 +174,11 @@ export const MembershipService = {
     const { data, error } = await supabase
       .from('club_members')
       .select(
-        'club_id, user_id, role, status, joined_at, invited_by, agent_id, parent_agent_id, notes'
+        'club_id, user_id, role, status, joined_at, invited_by, agent_id, parent_agent_id, notes, membership_lifecycle_status, departed_at'
       )
       .eq('club_id', resolvedId)
       .eq('user_id', userId)
+      .eq('membership_lifecycle_status', 'active')
       .maybeSingle();
 
     if (error || !data) return null;
@@ -178,6 +193,8 @@ export const MembershipService = {
       invitedBy: data.invited_by,
       agentId: data.agent_id,
       notes: data.notes,
+      membershipLifecycleStatus: data.membership_lifecycle_status as 'active' | 'departed',
+      departedAt: data.departed_at,
     };
   },
 
@@ -303,21 +320,35 @@ export const MembershipService = {
   },
 
   /**
-   * Remove member from club
+   * Mark a fully settled member as departed from a club.
+   *
+   * `club_members` is the player's club wallet, so browser-side DELETE is not
+   * an administrative shortcut. The server function locks the membership,
+   * refuses departure while any balance, seat, escrow, open request, ticket,
+   * tournament entry, agent wallet or hierarchy edge still depends on it, then
+   * preserves the row and role history with membership lifecycle `departed`,
+   * legacy access status `suspended`, and is_active=false.
    */
   async removeMember(clubId: string, userId: string): Promise<boolean> {
     const resolvedId = await resolveClubUUID(clubId);
-    const { error } = await supabase
-      .from('club_members')
-      .delete()
-      .eq('club_id', resolvedId)
-      .eq('user_id', userId);
+    const { data, error } = await supabase.rpc('fn_remove_settled_club_member', {
+      p_club_id: resolvedId,
+      p_user_id: userId,
+    });
 
-    if (!error) {
-      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    if (error) throw error;
+
+    const result = (Array.isArray(data) ? data[0] : data) as {
+      success?: boolean;
+      error?: string;
+    } | null;
+    if (!result?.success) {
+      throw new Error(result?.error || 'The Club Did Not Accept The Membership Departure');
     }
 
-    return !error;
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+
+    return true;
   },
 
   /**

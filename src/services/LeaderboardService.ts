@@ -107,6 +107,14 @@ export interface LeaderboardSettings {
   funding_source: 'union_promo_wallet' | 'club_promo_balance';
   funding_label: string;
   available_balance: number | null;
+  wallet_balance: number | null;
+  committed_balance: number | null;
+  current_program_commitment: number | null;
+  other_program_commitments: number | null;
+  available_uncommitted_balance: number | null;
+  publication_capacity: number | null;
+  committed_club_count: number | null;
+  funding_status: 'not_published' | 'disabled' | 'funded' | 'underfunded';
   can_manage: boolean;
   setup_complete: boolean;
   rewards_enabled: boolean;

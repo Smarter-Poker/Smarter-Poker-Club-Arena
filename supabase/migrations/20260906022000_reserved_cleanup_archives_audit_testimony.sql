@@ -1,6 +1,8 @@
 -- 20260906015012 introduced the current-schema cleanup RPC while this repair
 -- was in flight. Keep its complete deletion order, but replace its one direct
--- audit deletion with the immutable archive established at 20260906020000.
+-- audit deletion with the immutable archive recorded at 20260906021500. The
+-- archive DDL was applied first; the numeric key was moved after main claimed
+-- 20260906020000 for leaderboard settlement before this branch could publish.
 
 BEGIN;
 

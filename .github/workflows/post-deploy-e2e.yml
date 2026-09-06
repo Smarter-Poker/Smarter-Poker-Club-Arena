@@ -130,19 +130,6 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      # The estate runner carries the Playwright libraries, but unlike GitHub's
-      # hosted Ubuntu image it did not have the PostgreSQL client. That made the
-      # live database contract fail with `psql: command not found` before a
-      # single assertion ran. Keep the warm-runner fast path and install only
-      # when the executable is genuinely absent.
-      - name: Ensure PostgreSQL client is available
-        run: |
-          if ! command -v psql >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y postgresql-client
-          fi
-          psql --version
-
       # See the note in ci.yml: apt-get on every run is correct for a throwaway
       # hosted image and pure waste on a box where the libraries are permanent.
       - name: Install Chromium and WebKit

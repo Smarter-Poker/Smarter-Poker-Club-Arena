@@ -26,6 +26,8 @@ stale engine below the alarm threshold indefinitely.
 - The regression test now checks migration order, so any later complete
   watchdog replacement must either retain the continuous clock or fail the
   release gate.
+- The source filename matches the production migration ledger version
+  `20260906005803` exactly.
 
 ## Protected Data
 

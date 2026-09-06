@@ -114,6 +114,12 @@ interface HandReplayProps {
   /**
    * A hand supplied outright, instead of one to go and fetch. Set by the share
    * routes; when it is present nothing is read from the database.
+   *
+   * MEMOISE IT. A new `source` means a new hand, so it rewinds the replay to
+   * the first frame and stops playback - which is right when the hand really
+   * changed, and fatal if a caller builds the object inline: every render
+   * would hand over a new object, and the replay could never leave frame one.
+   * `SharedHandReplayPage` holds it in a `useMemo` keyed on the payload.
    */
   source?: ReplaySource | null;
   onClose?: () => void;

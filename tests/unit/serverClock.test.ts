@@ -7,23 +7,31 @@
  * It compared the engine's `emittedAt` against `Date.now()` on the device, so
  * a phone running two minutes fast saw every LIVE jackpot as ninety-plus
  * seconds old and refused it - silently, forever, with nothing to report.
- * lib/serverClock learns the engine's clock from every EVENT and PING frame
+ * utils/serverClock learns the engine's clock from every EVENT and PING frame
  * and the gate asks it for "now" instead.
+ *
+ * REPOINTED AND SIGN-FLIPPED (Realtime Phase 5, 2026-09-06). This exercised
+ * `lib/serverClock`, which was a SECOND `serverNow()` - same name, same
+ * meaning, opposite arithmetic to the one the turn ring uses, born a day
+ * earlier. The two are one now (see utils/serverClock), so these cases run
+ * against the surviving estimator and `clockOffsetMs` reports DEVICE minus
+ * ENGINE where `serverClockOffsetMs` reported engine minus device. Every
+ * behaviour asserted below is unchanged; only the sign of the number and the
+ * name of the function are.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   noteServerTime,
   serverNow,
-  serverClockOffsetMs,
-  serverClockHeardAt,
-  __resetServerClockForTests,
-} from '../../src/lib/serverClock';
+  clockOffsetMs,
+  __resetServerClock,
+} from '../../src/utils/serverClock';
 import { shouldAnnounceBbjHit, __resetBbjSeenForTests } from '../../src/lib/bbjHitOnce';
 
 const ENGINE_NOW = 1_800_000_000_000;
 
 beforeEach(() => {
-  __resetServerClockForTests();
+  __resetServerClock();
   __resetBbjSeenForTests();
   vi.useFakeTimers();
 });
@@ -35,14 +43,14 @@ describe('serverClock', () => {
   it('is the device clock until the engine has spoken', () => {
     vi.setSystemTime(ENGINE_NOW + 120_000);
     expect(serverNow()).toBe(ENGINE_NOW + 120_000);
-    expect(serverClockOffsetMs()).toBe(0);
-    expect(serverClockHeardAt()).toBe(0);
+    expect(clockOffsetMs()).toBe(0);
   });
 
   it('follows the engine once a frame carries its clock', () => {
     vi.setSystemTime(ENGINE_NOW + 120_000); // device two minutes fast
     noteServerTime(ENGINE_NOW);
-    expect(serverClockOffsetMs()).toBe(-120_000);
+    // Device minus engine: the phone is two minutes AHEAD.
+    expect(clockOffsetMs()).toBe(120_000);
     expect(serverNow()).toBe(ENGINE_NOW);
     vi.setSystemTime(ENGINE_NOW + 125_000);
     expect(serverNow()).toBe(ENGINE_NOW + 5_000);
@@ -54,8 +62,7 @@ describe('serverClock', () => {
     noteServerTime('soon');
     noteServerTime(0);
     noteServerTime(NaN);
-    expect(serverClockOffsetMs()).toBe(0);
-    expect(serverClockHeardAt()).toBe(0);
+    expect(clockOffsetMs()).toBe(0);
   });
 });
 

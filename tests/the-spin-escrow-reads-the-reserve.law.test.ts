@@ -113,6 +113,27 @@ describe('the spin escrow reads the reserve', () => {
     );
   });
 
+  it('LAW 4b: the drift check re-reads the balance right before the shadow (a payout landing mid-loop is not a finding)', () => {
+    const f = readdirSync(MIG).find((n) =>
+      /^\d{14}_the_drift_check_reads_the_balance_and_the_shadow_at_the_same\.sql$/.test(n)
+    );
+    if (!f) throw new Error('the drift re-read migration is not mirrored');
+    const s2 = readFileSync(resolve(MIG, f), 'utf8');
+    const start = s2.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_escrow_balance_drift(');
+    expect(start).toBeGreaterThan(-1);
+    const b = s2.slice(start, s2.indexOf('$function$;', start));
+    const reread = b.indexOf(
+      'SELECT * INTO r FROM public.tournament_escrow x WHERE x.tournament_id = r.tournament_id;'
+    );
+    expect(reread).toBeGreaterThan(-1);
+    expect(reread).toBeLessThan(
+      b.indexOf('SELECT * INTO e FROM public.fn_ca_tournament_escrow(r.tournament_id);')
+    );
+    expect(b).toMatch(
+      /abs\(r\.prize_balance - \(e\.prize_balance - r\.reserve_out \+ r\.reserve_in\)\) > 0\.01/
+    );
+  });
+
   it('LAW 5: spins stay tracked, not refused, and the refusal still reads enforced', () => {
     const apply = body('fn_ca_escrow_apply');
     expect(apply).toMatch(/\(p_tournament_id, NOT v_spin,/);

@@ -46,6 +46,16 @@ const ROUTER = strip(read('server/src/router.ts'));
 const HANDLER = strip(read('server/src/handlers/rabbithunt.ts'));
 const MIGRATION = read('supabase/migrations/20260825_fn_consume_rabbit_hunt.sql');
 const COMPONENT = strip(read('src/components/table/RabbitHunt.tsx'));
+/**
+ * P5 2026-09-05: the reveal itself moved into `useRabbitHuntReveal`, because
+ * the hand replayer buys the same thing and two implementations of a paid
+ * action drift. The tile still owns the artwork, the price badge and the
+ * counts; the money lives in the hook. Pins that describe the PURCHASE follow
+ * it there (CLAUDE.md 10.6: move the pin to the new mechanism, same commit).
+ */
+const REVEAL_HOOK = read('src/components/table/useRabbitHuntReveal.ts');
+/** The whole reveal path, wherever its parts happen to live. */
+const REVEAL_PATH = COMPONENT + '\n' + REVEAL_HOOK;
 const TABLE_PAGE = strip(read('src/pages/TablePage.tsx'));
 
 /**
@@ -277,7 +287,7 @@ describe('who is offered a hunt, and for how many cards', () => {
     expect(SETTLEMENT).toMatch(/uses_remaining/);
     expect(TABLE_PAGE).toMatch(/usesRemaining: result\.uses_remaining/);
     // The acknowledgement is the tile numeral now, not a toast - see below.
-    expect(COMPONENT).toMatch(/setPackRemaining\(result\.usesRemaining\)/);
+    expect(REVEAL_PATH).toMatch(/setPackRemaining\(result\.usesRemaining\)/);
     // And it has somewhere to land: the corner count falls back to the pack
     // when there is no VIP pool, or the number would be set and never drawn.
     expect(COMPONENT).toMatch(/vipRemaining \?\? packRemaining/);
@@ -290,12 +300,12 @@ describe('who is offered a hunt, and for how many cards', () => {
     // The count is not deleted, it MOVED - onto the tile, where it reads
     // BEFORE the press instead of being announced after the money has gone. A
     // toast repeating it is one more thing covering the felt at hand's end.
-    expect(COMPONENT).not.toMatch(/Left This Month/);
-    expect(COMPONENT).not.toMatch(/Left In Your Pack/);
-    expect(COMPONENT).not.toMatch(/Last Free Rabbit Hunt/);
+    expect(REVEAL_PATH).not.toMatch(/Left This Month/);
+    expect(REVEAL_PATH).not.toMatch(/Left In Your Pack/);
+    expect(REVEAL_PATH).not.toMatch(/Last Free Rabbit Hunt/);
     // What must NOT be swept away with it: a CHARGE is not a stock level, and
     // spending diamonds in silence is the bug this whole file exists for.
-    expect(COMPONENT).toMatch(/Diamonds Charged/);
+    expect(REVEAL_PATH).toMatch(/Diamonds Charged/);
     // The numeral stays on the button.
     expect(COMPONENT).toMatch(/rabbit-hunt__remaining/);
   });
@@ -396,8 +406,9 @@ describe('who is offered a hunt, and for how many cards', () => {
     // took 2.5s to finish drawing; the next hand starting inside that window
     // unmounted the panel and the player had paid for cards they never saw.
     // All cards are set at once and CSS staggers them.
-    expect(COMPONENT).toMatch(/setRevealedCards\(result\.cards\)/);
-    expect(COMPONENT).not.toMatch(/setTimeout\(resolve, 500\)/);
+    // The hook sets the cards in one go; the tile renders them.
+    expect(REVEAL_PATH).toMatch(/setCards\(result\.cards\)/);
+    expect(REVEAL_PATH).not.toMatch(/setTimeout\(resolve, 500\)/);
   });
 
   it('the VIP lookup can never disable the button', () => {

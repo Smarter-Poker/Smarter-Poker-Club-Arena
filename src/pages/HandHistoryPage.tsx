@@ -30,6 +30,7 @@ import { exportToCSV } from '../lib/export';
 import { masterBus } from '../core/MasterBus';
 import HandReplay from '../components/replay/HandReplay';
 import HandDetailView from '../components/handdetail/HandDetailView';
+import HandNoteEditor from '../components/handdetail/HandNoteEditor';
 import { ShareHand, type ShareableHand } from '../components/table/ShareHand';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -41,15 +42,53 @@ import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { filterHandsByStatsDrilldown, readStatsDrilldown } from '../lib/handHistoryDrilldown';
 import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
 import { gameTypeLabel, money } from '../utils/handFormat';
+import {
+  handMatchesQuery,
+  handQueryIsActive,
+  handSearchSubject,
+  type HandQuery,
+} from '../lib/handSearch';
+import { handNotesService, type HandNote } from '../services/HandNotesService';
+import { toPokerStarsFile } from '../utils/pokerStarsExport';
 
-type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
+/**
+ * PHASE 5 (2026-09-06): the chips are a QUERY now, not four hard-coded
+ * branches. Won / Lost / Big Pots keep their old meaning exactly - the query
+ * they build is what `lib/handSearch` was written from - and Showdown, All In
+ * and Noted join them. Every one of them, and the search box, run the same
+ * predicate the table's Previous Hand panel runs.
+ */
+type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots' | 'showdown' | 'all-in' | 'noted';
 const PAGE_SIZE = 25;
 const FILTERS: Array<{ id: HistoryFilter; label: string }> = [
   { id: 'all', label: 'All Hands' },
   { id: 'won', label: 'Won' },
   { id: 'lost', label: 'Lost' },
   { id: 'big-pots', label: 'Big Pots' },
+  { id: 'showdown', label: 'Showdown' },
+  { id: 'all-in', label: 'All In' },
+  { id: 'noted', label: 'Noted' },
 ];
+
+/** The chip, as a query the shared predicate understands. */
+function queryForFilter(filter: HistoryFilter): HandQuery {
+  switch (filter) {
+    case 'won':
+      return { outcome: 'won' };
+    case 'lost':
+      return { outcome: 'lost' };
+    case 'big-pots':
+      return { bigPots: true };
+    case 'showdown':
+      return { showdown: true };
+    case 'all-in':
+      return { allIn: true };
+    case 'noted':
+      return { noted: true };
+    default:
+      return {};
+  }
+}
 
 function formatDate(ts: number): string {
   const date = new Date(ts);
@@ -97,6 +136,9 @@ export default function HandHistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [filter, setFilter] = useState<HistoryFilter>('all');
+  /* Phase 5: the free-text term, and the caller's own notes keyed by hand id. */
+  const [search, setSearch] = useState('');
+  const [notes, setNotes] = useState<Map<string, HandNote>>(new Map());
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [replayId, setReplayId] = useState<string | null>(null);
   const [shareHand, setShareHand] = useState<ShareableHand | null>(null);
@@ -221,19 +263,87 @@ export default function HandHistoryPage() {
   const hands: HandRecord[] = useMemo(() => {
     if (!userId) return [];
     let list = filterHandsByStatsDrilldown(rows, statsDrilldown, userId);
-    if (filter === 'won')
-      list = list.filter((h) => (h.players.find((p) => p.user_id === userId)?.result ?? 0) > 0);
-    else if (filter === 'lost')
-      list = list.filter((h) => (h.players.find((p) => p.user_id === userId)?.result ?? 0) < 0);
-    else if (filter === 'big-pots')
-      list = list.filter((h) => h.replay.potTotal >= 100 * (h.replay.bigBlind || 1));
+    /* ONE predicate for the chip and the search box, over a subject built from
+       the model - so "showdown", "all in" and "won" mean here exactly what
+       they mean in the table's panel. */
+    const query: HandQuery = { ...queryForFilter(filter), text: search };
+    if (handQueryIsActive(query)) {
+      list = list.filter((h) => {
+        const note = notes.get(h.id);
+        return handMatchesQuery(
+          handSearchSubject(h.replay, {
+            heroUserId: userId,
+            handNumber: h.hand_number,
+            playedAtMs: new Date(h.played_at).getTime(),
+            note: note?.note,
+            tags: note?.tags,
+          }),
+          query
+        );
+      });
+    }
     if (linkedHandId) {
       const onPage = rows.find((r) => r.id === linkedHandId);
       const lead = onPage ?? linkedRow;
       if (lead && !list.some((h) => h.id === lead.id)) list = [lead, ...list];
     }
     return list.map((h) => adaptServiceHandToPanel(h, userId));
-  }, [rows, filter, statsDrilldown, userId, linkedHandId, linkedRow]);
+  }, [rows, filter, search, notes, statsDrilldown, userId, linkedHandId, linkedRow]);
+
+  /* The caller's own notes, once. RLS returns nobody else's, and a failure
+     returns an empty map rather than throwing - a hand history that will not
+     load because the notes service is unwell is the worse outcome. */
+  useEffect(() => {
+    if (!userId) return;
+    let alive = true;
+    handNotesService.listMine().then((map) => {
+      if (alive) setNotes(map);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [userId]);
+
+  /**
+   * EXPORT FOR A TRACKER. Writes the hands currently on screen in the
+   * PokerStars text format, and says how many it could not write and why -
+   * a bomb pot, a run-it-twice hand and Crazy Pineapple have no grammar in
+   * that format, and writing them anyway would put a hand the player never
+   * had into their database.
+   */
+  const exportForTracker = useCallback(() => {
+    const file = toPokerStarsFile(
+      hands.map((h) => ({
+        model: h.replay,
+        meta: {
+          handNumber: h.handNumber,
+          tableName: h.tableName ?? 'Club Arena',
+          playedAt: h.timestamp,
+          heroUserId: userId,
+          maxSeats: 9,
+        },
+      }))
+    );
+    if (!file.written) {
+      toast.error('None Of These Hands Can Be Written In That Format');
+      return;
+    }
+    const blob = new Blob([file.text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `club-arena-pokerstars-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    /* Revoking synchronously cancels the download on Firefox. */
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    toast.success(
+      file.skipped.length
+        ? `Exported ${file.written} Hands. ${file.skipped.length} Could Not Be Written In That Format.`
+        : `Exported ${file.written} Hands`
+    );
+  }, [hands, userId, toast]);
 
   // Open and scroll to the linked hand once it is on screen.
   useEffect(() => {
@@ -359,6 +469,41 @@ export default function HandHistoryPage() {
           { label: 'Biggest Pot', value: money(stats.biggestPot), tone: 'attention' },
         ]}
       />
+
+      <div className="hh-search">
+        <label className="hh-search__label" htmlFor="hh-search-input">
+          Find A Hand
+        </label>
+        <input
+          id="hh-search-input"
+          className="hh-search__input"
+          type="search"
+          value={search}
+          placeholder="Hand Number, Opponent, Tag Or Note"
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {(search || filter !== 'all') && (
+          <button
+            type="button"
+            className="hh-search__clear"
+            onClick={() => {
+              setSearch('');
+              setFilter('all');
+            }}
+          >
+            Clear
+          </button>
+        )}
+        <button
+          type="button"
+          className="hh-search__export"
+          onClick={exportForTracker}
+          disabled={hands.length === 0}
+          title="Export These Hands In The PokerStars Format"
+        >
+          Export For Tracker
+        </button>
+      </div>
 
       <div className="hh-filters" role="group" aria-label="Filter Loaded Hands">
         {FILTERS.map((f) => (
@@ -534,6 +679,18 @@ export default function HandHistoryPage() {
                       currentUserId={heroId}
                       badge={variant}
                       viewerFacts={hand.heroFacts}
+                    />
+                    <HandNoteEditor
+                      handId={hand.id}
+                      note={notes.get(hand.id) ?? null}
+                      onSaved={(handId, saved) =>
+                        setNotes((prev) => {
+                          const next = new Map(prev);
+                          if (saved) next.set(handId, saved);
+                          else next.delete(handId);
+                          return next;
+                        })
+                      }
                     />
                     <div className="hand-card__actions">
                       <button

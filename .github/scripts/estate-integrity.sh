@@ -70,11 +70,29 @@ SHARED_FILES=(
   .husky/reference-transaction
 )
 
-# World Hub's `main` is written directly by the Club Arena bundle sync, which
-# authenticates as GitHub App 4680372. That one bypass actor is the reason the
-# branch can be protected at all. Any OTHER bypass actor, in any repo, is
-# somebody having quietly turned a gate off.
-ALLOWED_BYPASS_APP_ID=4680372
+# NO REPO MAY HAVE A BYPASS ACTOR (2026-09-06).
+#
+# This used to read: "World Hub's `main` is written directly by the Club Arena
+# bundle sync, which authenticates as GitHub App 4680372. That one bypass actor
+# is the reason the branch can be protected at all."
+#
+# True when written on 2026-08-22. THE BUNDLE SYNC WAS DELETED ON 2026-09-03.
+# Club Arena publishes to its own origin now and commits nothing here;
+# `public/hub/club-arena/` is gone from World Hub `main` and
+# `tests/club-arena-is-a-rewrite.test.mjs` fails CI if it returns. Verified
+# 2026-09-06: the directory is absent and the law is present.
+#
+# The writer the exemption was carved for no longer writes. What App 4680372
+# still does is squash-merge pull requests, which needs no bypass - Club Arena
+# runs the same app against an EMPTY bypass list every day.
+#
+# It matters even though nothing abuses it. `queue-pr.sh` merges directly only
+# on CLEAN, never UNSTABLE, and that care is why nothing has gone wrong - but
+# it means the guarantee lives in a shell script's `case` rather than in GitHub
+# refusing. With no bypass actor the refusal is structural.
+#
+# REMOVE IT WITH: node scripts/ci/remove-world-hub-bypass.mjs --apply
+# (needs a token with Administration: Read and write; the ordinary one 404s.)
 
 PROBLEMS=()
 NOTES=()
@@ -114,13 +132,7 @@ for r in "${REPOS[@]}"; do
   # Bypass actors, the quiet way to disable everything above.
   N_BYPASS=$(printf '%s' "$BYPASS" | jq 'length')
   if [ "$N_BYPASS" -gt 0 ]; then
-    UNEXPECTED=$(printf '%s' "$BYPASS" | jq -r --argjson app "$ALLOWED_BYPASS_APP_ID" \
-      '[.[] | select(.actor_type != "Integration" or .actor_id != $app)] | length')
-    if [ "$r" = "Smarter-Poker-World-Hub" ]; then
-      [ "$UNEXPECTED" = "0" ] || add "**$r** — has a bypass actor that is not App \`$ALLOWED_BYPASS_APP_ID\`: \`$BYPASS\`. Only the bundle sync may bypass this branch."
-    else
-      add "**$r** — has $N_BYPASS bypass actor(s): \`$BYPASS\`. No repo except World Hub should have any, and World Hub's is only the bundle-sync App."
-    fi
+    add "**$r** — has $N_BYPASS bypass actor(s): \`$BYPASS\`. No repo may have any. World Hub's exemption existed for the Club Arena bundle sync, which was deleted on 2026-09-03, so nothing needs to bypass \`main\` anywhere any more. Remove with \`node scripts/ci/remove-world-hub-bypass.mjs --apply\` and a token carrying Administration: Read and write."
   fi
   note "$r: enforcement=$ENF rules=[$TYPES] checks=$NCHECKS bypass=$N_BYPASS"
 done

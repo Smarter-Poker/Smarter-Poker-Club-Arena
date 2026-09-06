@@ -81,11 +81,24 @@ BUILT 2026-09-05 (`feat/previous-hand-phase-4`); see
 
 ## Phase 5 of 7 - Find it, keep it, take it with you
 
-- Search and filters in the panel and the archive: hand number, opponent,
-  won / lost / showdown / all-in / big pots, variant, date range.
-- Notes and tags per hand (own rows, RLS), shown on the card and searchable.
-- Tracker-grade export: a true PokerStars-format writer off the model, so PT4
-  and Hand2Note import it; CSV keeps the current columns plus equity.
+BUILT 2026-09-06 (`feat/previous-hand-phase-5`); see
+`docs/changelog/2026-09-06-previous-hand-phase-5.md`.
+
+- Search and filters in the panel and the archive, as ONE predicate
+  (`lib/handSearch`) over a subject built from the model: hand number,
+  opponent, tag or note text; won / lost / showdown / all-in / big pots /
+  noted; variant and date range.
+- Notes and tags per hand: `ca_hand_notes`, one row per player per hand, RLS
+  on all four commands against `auth.uid()`, `authenticated` only. Shown under
+  the expanded hand and searchable. Verified against production in a
+  transaction that rolled itself back.
+- Tracker-grade export: `utils/pokerStarsExport` writes the PokerStars text
+  format off the model. It REFUSES what the format cannot say - no starting
+  stacks, a bomb pot, a run-it-twice hand, Crazy Pineapple - and says how many
+  it left out, rather than teaching a tracker something false. 21 of the
+  38-hand corpus export faithfully.
+- Reading the real output caught four format defects the tests had not: the
+  raise level, the blind order, a doubled showdown, and the fold wording.
 
 ## Phase 6 of 7 - Disputes and the operator's lookup
 

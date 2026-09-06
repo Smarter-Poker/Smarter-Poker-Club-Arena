@@ -102,8 +102,23 @@ export interface ClusterTickAllEntry {
   game_id: string;
   main1_table_id: string | null;
   enabled: boolean;
+  /** The worklist's `cash_games.state` for this game; feeds the state gauge. */
+  state?: string;
   result?: ClusterTickResult;
   error?: { sqlstate?: string; message?: string };
+}
+
+/**
+ * One entry of `rested_games` (20260906011113): a game the pass skipped
+ * because it was dormant, empty and unwanted. IDENTITY ONLY - it carries no
+ * `result`, because it was not ticked, and nothing in a pass may treat it as
+ * though it were.
+ */
+export interface ClusterTickAllRestedEntry {
+  game_id: string;
+  main1_table_id: string | null;
+  enabled: boolean;
+  state?: string;
 }
 
 export interface ClusterTickAllResult {
@@ -114,6 +129,8 @@ export interface ClusterTickAllResult {
   errors: number;
   rested: number;
   results: ClusterTickAllEntry[];
+  /** The games this pass let rest, so a wake on one can still find Main 1. */
+  rested_games: ClusterTickAllRestedEntry[];
 }
 
 /** What the controller needs from the outside; injected so it can be tested. */
@@ -185,6 +202,10 @@ export class ClusterController {
    * horse demand and to wake its dealer, and the per-game RPC is keyed by
    * game. Missing (a game the controller has not seen yet) means the wake
    * ticks with zero horses and leaves the dealer to the next pass.
+   *
+   * BUILT FROM BOTH ROSTERS (2026-09-05): the games the pass ticked AND the
+   * games it let rest. A rested game is the dormant one a wake is FOR, so
+   * leaving it out of this map is what made the wake skip its dealer.
    */
   private rowByGame = new Map<string, { main1_table_id: string | null; enabled: boolean }>();
 
@@ -372,18 +393,25 @@ export class ClusterController {
       summary.games = Number(pass.games ?? 0);
       summary.rested = Number(pass.rested ?? 0);
       const results = Array.isArray(pass.results) ? pass.results : [];
+      /* THE STATE GAUGE IS FED BY THE PASS ITSELF (2026-09-05). Every game
+         this pass SAW - ticked or rested - with the state the worklist read,
+         handed to recordPass so poker_cluster_games{state} is set from the
+         pass rather than left as a series nothing writes. */
+      const seen: ClusterRow[] = [];
 
       for (const entry of results) {
         if (!entry || typeof entry.game_id !== 'string') continue;
         const row: ClusterRow = {
           game_id: entry.game_id,
           main1_table_id: entry.main1_table_id ?? null,
+          state: typeof entry.state === 'string' ? entry.state : undefined,
           enabled: entry.enabled === true,
         };
         this.rowByGame.set(row.game_id, {
           main1_table_id: row.main1_table_id,
           enabled: row.enabled,
         });
+        seen.push(row);
         if (entry.error) {
           // The SQL caught it, rolled that game back, wrote the
           // controller_tick_error row and carried on. Reported here too so
@@ -402,13 +430,36 @@ export class ClusterController {
         await this.afterGameTick(row, (entry.result ?? {}) as ClusterTickResult, summary, 'pass');
       }
 
+      /* A RESTED GAME ANSWERS THE WAKE (2026-09-05, 20260906011113). A game
+         the SQL let rest appears in no `results` entry, so until this map was
+         also built from `rested_games` a wake on one found no row, read
+         `enabled` as false and skipped the 18.4 dealer wake - for exactly the
+         dormant game a wake exists to serve.
+         IDENTITY ONLY: no `afterGameTick`, no `summary.ticked`, and NOT added
+         to `summary.rested` either, which the SQL has already counted once. */
+      const restedRows = Array.isArray(pass.rested_games) ? pass.rested_games : [];
+      for (const entry of restedRows) {
+        if (!entry || typeof entry.game_id !== 'string') continue;
+        const row: ClusterRow = {
+          game_id: entry.game_id,
+          main1_table_id: entry.main1_table_id ?? null,
+          state: typeof entry.state === 'string' ? entry.state : undefined,
+          enabled: entry.enabled === true,
+        };
+        this.rowByGame.set(row.game_id, {
+          main1_table_id: row.main1_table_id,
+          enabled: row.enabled,
+        });
+        seen.push(row);
+      }
+
       summary.elapsedMs = Date.now() - startedAt;
       if (summary.elapsedMs > CLUSTER_TICK_MS) {
         console.warn(
           `[ClusterController] pass over ${summary.games} games took ${summary.elapsedMs}ms (cadence ${CLUSTER_TICK_MS}ms)`
         );
       }
-      clusterMetrics.recordPass(summary);
+      clusterMetrics.recordPass(summary, seen);
       this.lastSummary = summary;
       return summary;
     } finally {

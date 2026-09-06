@@ -45,9 +45,16 @@ const DEEP_DIVE = read(
   'supabase/migrations/20260905050000_the_move_survives_the_hand_and_a_game_seats_you_once.sql'
 );
 const SEATING = read('server/src/engine/ServerTableEngineSeating.ts');
+/* PIN MOVED 2026-09-05 (migration 20260906011113). `fn_cash_clusters_tick_all`
+   and `fn_cash_clusters_to_tick` were both re-declared WHOLE by that
+   migration, so 20260905091025 is no longer the live definition of either and
+   pinning it would pin a superseded function. Every assertion below reads the
+   current file; the three things that changed get their own block at the end
+   of this describe. */
 const TICK_ALL = read(
-  'supabase/migrations/20260905091025_one_tick_rpc_per_pass_and_dormant_games_rest.sql'
+  'supabase/migrations/20260906011113_the_worklist_reaches_the_game_the_repair_was_written_for.sql'
 );
+const METRICS = read('server/src/cluster/ClusterMetrics.ts');
 
 describe('the controller is wired on the leader, beside the fleet', () => {
   it('is constructed with the fleet census, the engine door and the engine map', () => {
@@ -978,6 +985,71 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
       /rpc\('fn_cash_cluster_tick', \{\s*p_game_id: gameId,\s*p_eligible_horses: eligible,/
     );
     expect(wake).not.toMatch(/fn_cash_clusters_tick_all/);
+  });
+
+  /* ── THE WORKLIST REACHES THE GAME THE REPAIR WAS WRITTEN FOR ───────────
+     20260906011113. Three findings, all in these two functions. The first is
+     a repair that could not reach the state it existed to repair; the other
+     two are a gauge nothing set and a rested game nothing could wake. */
+
+  it('a DISABLED game is on the worklist on lifecycle alone, so lifecycle_followed_status can reach it', () => {
+    const worklist = TICK_ALL.slice(
+      TICK_ALL.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_to_tick'),
+      TICK_ALL.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_to_tick')
+    );
+    expect(worklist).toMatch(/AND \(g\.enabled OR EXISTS \(SELECT 1 FROM public\.tables t/);
+    expect(worklist).toMatch(/AND t\.lifecycle <> 'closed'/);
+    // The status test is what stranded 14 games at lifecycle='live',
+    // status='closed' - never ticked once since the controller was built. The
+    // comments still NAME it, so the code is read with them stripped.
+    const code = worklist.replace(/--.*$/gm, '');
+    expect(code).not.toMatch(/status IN \('waiting'/);
+    // And the migration proves it on the live rows before it commits.
+    expect(TICK_ALL).toMatch(
+      /disabled game\(s\) with a live\/closed table are still off the worklist/
+    );
+  });
+
+  it("the pass returns every game's state and a roster of the games it rested", () => {
+    expect(fn).toMatch(/'state', w\.state/);
+    expect(fn).toMatch(/v_rested_games := v_rested_games \|\| jsonb_build_object\(/);
+    expect(fn).toMatch(/'rested_games', v_rested_games/);
+    // The rested entry is IDENTITY ONLY: no 'result' key on it.
+    const restedEntry = fn.slice(
+      fn.indexOf('v_rested_games := v_rested_games ||'),
+      fn.indexOf('CONTINUE;')
+    );
+    expect(restedEntry).not.toMatch(/'result'/);
+  });
+
+  it('the controller folds the rested roster into the row map, so a wake on a dormant game finds Main 1', () => {
+    expect(CONTROLLER).toMatch(/rested_games: ClusterTickAllRestedEntry\[\];/);
+    expect(CONTROLLER).toMatch(
+      /const restedRows = Array\.isArray\(pass\.rested_games\) \? pass\.rested_games : \[\];/
+    );
+    const pass = CONTROLLER.slice(
+      CONTROLLER.indexOf('async tick(): Promise<ClusterTickSummary>'),
+      CONTROLLER.indexOf('private async afterGameTick(')
+    );
+    const restedLoop = pass.slice(pass.indexOf('for (const entry of restedRows)'));
+    // Identity only: it teaches rowByGame and the gauge, and nothing else.
+    expect(restedLoop).toMatch(/this\.rowByGame\.set\(row\.game_id, \{/);
+    expect(restedLoop).not.toMatch(/afterGameTick/);
+    expect(restedLoop).not.toMatch(/summary\.ticked\+\+/);
+    // summary.rested is the SQL's own count, so a rested game is counted once.
+    expect(pass).toMatch(/summary\.rested = Number\(pass\.rested \?\? 0\);/);
+    expect(restedLoop).not.toMatch(/summary\.rested/);
+  });
+
+  it('poker_cluster_games{state} is set from the pass, not left as a series nothing writes', () => {
+    expect(METRICS).toMatch(
+      /recordPass\(summary: ClusterTickSummary, rows\?: ClusterRow\[\]\): void/
+    );
+    expect(CONTROLLER).toMatch(/clusterMetrics\.recordPass\(summary, seen\);/);
+    expect(CONTROLLER).toMatch(/const seen: ClusterRow\[\] = \[\];/);
+    expect(CONTROLLER).toMatch(
+      /state: typeof entry\.state === 'string' \? entry\.state : undefined,/
+    );
   });
 
   it('the engine wakes the game when a seat changes or a hand ends on a cluster table', () => {

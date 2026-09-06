@@ -78,6 +78,7 @@ import {
   type SitVerdictContext,
 } from './HorseSitVerdict.js';
 import {
+  applyStakeBandSupply,
   buyInBBFor,
   gameLaneFor,
   horseHash,
@@ -88,6 +89,7 @@ import {
   stakeBandAllows,
   stakeBandFor,
   stakeBandForBigBlind,
+  type HorseStakeBand,
 } from './HorseBehavior.js';
 import {
   applyBias,
@@ -1212,6 +1214,31 @@ export class HorseFleetManager {
       } catch (err) {
         beat.disabledGamesReadFailed = 1;
         reportError(err, 'HorseFleet.disabled_games_load_failed');
+      }
+
+      /* WHICH BANDS HAVE A GAME AT ALL (2026-09-05).
+         `fn_assign_horse_stake_bands` ranks the fleet by bb/100 and hands out
+         merit bands without ever asking which games exist. On 2026-09-05 that
+         put 100 horses in 'high' while every game with bb > 6 was switched
+         off - the six high games closed by an operator at 16:47 the day
+         before - and `stakeBandAllows` is a hard gate, so those 100 could sit
+         NOWHERE. Read from the table list this cycle already holds, minus the
+         tables the seeding loop below would refuse anyway; no extra query.
+         The band a horse is ASSIGNED is not touched (it is a merit record and
+         the switch is temporary); only the band it may SIT in moves, and only
+         downward. See effectiveStakeBandFor. */
+      const bandsWithAGame = new Set<HorseStakeBand>();
+      for (const t of tables) {
+        if (t.lifecycle === 'breaking' || t.lifecycle === 'closed') continue;
+        if (isTableOfDisabledGame(t, disabledGameIds)) continue;
+        bandsWithAGame.add(stakeBandForBigBlind(Number(t.big_blind)));
+      }
+      const bandSupply = applyStakeBandSupply(bandsWithAGame);
+      if (bandSupply.missing.length > 0) {
+        console.log(
+          `[HorseFleet] band supply: no enabled game in band(s) ${bandSupply.missing.join(', ')}; ` +
+            `${bandSupply.fallbacks} horse(s) seat one band down`
+        );
       }
 
       // V8: full horse-id set (any status) so we can tell HUMAN seats from

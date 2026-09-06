@@ -182,6 +182,24 @@
   cursor: default;
 }
 
+/* JOIN GAME, beside Close in the header (Dan 2026-09-05). It borrows the
+   .tlm-close geometry so the two buttons are the same height and touch
+   target, and wears the brand blue so it reads as the action rather than
+   the dismissal. margin-left:auto keeps the pair together on the right of
+   a space-between header that now has three children. */
+.mml-join {
+  margin-left: auto;
+  border-color: transparent;
+  background: #1877f2;
+  color: #fff;
+  font-weight: 800;
+}
+
+.mml-join:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .mml-btn--ghost {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.16);

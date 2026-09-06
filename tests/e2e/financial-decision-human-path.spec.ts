@@ -1,4 +1,4 @@
-import { expect, test, type Route } from '@playwright/test';
+import { expect, test, type BrowserContext, type Route } from '@playwright/test';
 
 const jsonHeaders = {
   'access-control-allow-origin': '*',
@@ -6,6 +6,58 @@ const jsonHeaders = {
   'access-control-allow-headers': 'authorization,apikey,content-type,prefer,x-client-info',
   'content-type': 'application/json',
 };
+
+const HARNESS_USER_ID = '11111111-2222-4333-8444-555555555555';
+
+/**
+ * The waitlist decision hands an authenticated player to a protected table
+ * route. Leaving this suite signed out made that final assertion race
+ * AuthGuard: depending on whether its async session check finished before the
+ * Enter key, the same run either reached the held seat or bounced to login.
+ *
+ * Seed a complete, non-production Supabase session before application boot.
+ * All REST/Auth traffic remains intercepted by noMoneyBackend, so this proves
+ * the real protected-route handoff without creating a player, membership, or
+ * financial write anywhere.
+ */
+async function seedHarnessSession(context: BrowserContext) {
+  await context.addInitScript(
+    ({ authKey, userId }) => {
+      const expiresAt = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+      const encode = (value: object) =>
+        btoa(JSON.stringify(value)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+      const accessToken = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({
+        aud: 'authenticated',
+        email: 'phase-five-harness@smarter.poker',
+        exp: expiresAt,
+        role: 'authenticated',
+        sub: userId,
+      })}.test-signature`;
+      const user = {
+        id: userId,
+        aud: 'authenticated',
+        role: 'authenticated',
+        email: 'phase-five-harness@smarter.poker',
+        app_metadata: { provider: 'email', providers: ['email'] },
+        user_metadata: { display_name: 'Phase Five Harness' },
+        created_at: new Date().toISOString(),
+      };
+
+      localStorage.setItem(
+        authKey,
+        JSON.stringify({
+          access_token: accessToken,
+          refresh_token: 'phase-five-harness-refresh-token',
+          expires_at: expiresAt,
+          expires_in: 24 * 60 * 60,
+          token_type: 'bearer',
+          user,
+        })
+      );
+    },
+    { authKey: 'smarter-poker-auth', userId: HARNESS_USER_ID }
+  );
+}
 
 async function noMoneyBackend(route: Route) {
   if (route.request().method() === 'OPTIONS') {
@@ -28,6 +80,7 @@ async function noMoneyBackend(route: Route) {
 test.beforeEach(async ({ context, page }) => {
   await context.route(/\/auth\/v1\/.*/, noMoneyBackend);
   await context.route(/\/rest\/v1\/.*/, noMoneyBackend);
+  await seedHarnessSession(context);
   await page.goto('dev/financial-decisions');
 });
 
@@ -91,4 +144,59 @@ test('Escape uses the final decline path once, then Rabbit Hunt announces price 
   await expect(rabbitButton).toBeDisabled();
   await expect(page.getByTestId('rabbit-request-count')).toHaveText('1');
   await expect(rabbitButton).toHaveCount(0);
+});
+
+test('A 60-second waitlist offer counts down, fits a phone, and hands off to the held seat', async ({
+  page,
+}) => {
+  await page.getByRole('dialog', { name: 'All-In Insurance' }).press('Escape');
+  await expect(page.getByRole('dialog', { name: 'All-In Insurance' })).toHaveCount(0);
+  await page.getByTestId('waitlist-seat-offer').click();
+
+  const card = page.getByTestId('waitlist-banner-card');
+  await expect(card).toBeVisible();
+  await expect(card).toHaveAttribute(
+    'aria-label',
+    /Your Seat Is Held For \d+ More Seconds\. Tap To Take It\./
+  );
+  await expect(card.getByText('Phase Five Hold Table')).toBeVisible();
+
+  // Measure the settled card, not the intentional overshoot in its 400ms
+  // entrance animation. The animation briefly travels below its final fixed
+  // position and made an otherwise-correct clearance check timing-dependent.
+  await card.evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+  });
+
+  const box = await card.boundingBox();
+  const viewport = await page.evaluate(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(viewport.width).toBe(375);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height - 52 - 12);
+
+  const countdown = page.getByTestId('waitlist-hold-countdown');
+  const readSeconds = async () =>
+    Number(((await countdown.innerText()).match(/:(\d{2})/) ?? [])[1]);
+  const first = await readSeconds();
+  await page.waitForTimeout(2_100);
+  const later = await readSeconds();
+  expect(first).toBeGreaterThan(later);
+  expect(first - later).toBeLessThanOrEqual(4);
+
+  const dismiss = card.getByRole('button', {
+    name: 'Dismiss The Waitlist Notice For Phase Five Hold Table',
+  });
+  const dismissHitArea = await dismiss.evaluate((button) => {
+    const pseudo = getComputedStyle(button, '::after');
+    return { width: pseudo.width, height: pseudo.height };
+  });
+  expect(dismissHitArea).toEqual({ width: '44px', height: '44px' });
+
+  await card.press('Enter');
+  await expect(page).toHaveURL(/\/table\/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\?buyin=1$/);
 });

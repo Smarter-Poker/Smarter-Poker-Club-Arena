@@ -30,7 +30,8 @@ describe('club lobby creation controls', () => {
     expect(page).toContain('canCreateClubGames && (');
     expect(page).toContain('GameCreationActions');
     expect(gameCreationGuard).toContain('fetchGameCreationAccess');
-    expect(gameCreationGuard).toContain('if (!access.allowed)');
+    expect(gameCreationGuard).toContain('if (!canUseStandaloneClubCreationRoute(access))');
+    expect(gameCreationGuard).toContain('Create Games From The Union Console');
     expect(tableConfig).toContain('const canBuildHere = access?.allowed === true');
   });
 
@@ -68,6 +69,19 @@ describe('club lobby creation controls', () => {
     expect(commandCss).toMatch(
       /\.club-lobby-machine\s*\{[^}]*width:\s*calc\(100% - 8px\)[^}]*max-width:\s*none/s
     );
+
+    const lastTargetRule = commandCss.lastIndexOf(
+      '.club-lobby-command-top .lobby-controls .game-bar__type,'
+    );
+    expect(lastTargetRule).toBeGreaterThan(mobileAnchor);
+    const finalTargetBlock = commandCss.slice(
+      lastTargetRule,
+      commandCss.indexOf('}', lastTargetRule)
+    );
+    expect(finalTargetBlock).toContain('.game-bar__filter-btn');
+    expect(finalTargetBlock).toContain('.quickprefs__chip');
+    expect(finalTargetBlock).toContain('min-height: 44px');
+    expect(finalTargetBlock).toContain('height: 44px');
   });
 
   it('routes every creation action through canonical table management', () => {

@@ -683,7 +683,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state(
     'vpipFloor',
     'the table VPIP floor a seat is stood up under after ten hands (Dan 2026-09-04)',
-    'HorseLogic.vpipFloorMul'
+    // Two consumers, and the second one is the point (2026-09-06): the floor
+    // does not only widen the brain, it travels to settlement and keys the
+    // horse_daily_play row apart, so no band ever judges required-loose play.
+    'HorseLogic.vpipFloorMul; ServerTableEngineSettlement -> HorseHandReview (horse_daily_play.floored)'
   ),
   state(
     'ownVpip',
@@ -750,16 +753,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_daily_nets',
     'nightly',
-    'HorseSelfTuner (real bb/100 and, since 2026-09-05, rake_bb -> the rake-adjusted regression rule); fn_run_horse_daily_audit',
-    'exact settlement nets + weighted-contributed rake per horse per day',
+    'HorseSelfTuner (real bb/100 and, since 2026-09-05, rake_bb and, since 2026-09-06, bbj_bb -> the DROP-adjusted regression rule and fleetQuartile); fn_run_horse_daily_audit; fn_audit_fleet_drop_identity (the closed-system assertion)',
+    'exact settlement nets + weighted-contributed rake AND bad-beat-jackpot drop per horse per day. net_bb + rake_bb + bbj_bb is the result before the house took anything, and on 2026-09-06 it came to zero over 31,186 seat-hands - the fleet plays itself, so it must',
     'V16',
     { dayColumn: 'day', freshnessDays: 1 }
   ),
   table(
     'horse_daily_play',
     'nightly',
-    'HorseSelfTuner (loadPlayRows: every horse studied from its own rows; HorseHandReview compiles them at settlement with HorsePlayStats)',
-    'per horse/day/format VPIP, PFR, 3-bet, fold-to-3-bet, saw flop, WWSF, postflop aggression',
+    'HorseSelfTuner (loadPlayRows: every horse studied from its own rows, floored = false only; HorseHandReview compiles them at settlement with HorsePlayStats); fn_horse_frequency_leaks; fn_audit_frequency_leaks (which reports the floored share so the exclusion stays visible)',
+    'per horse/day/format/floored VPIP, PFR, 3-bet, fold-to-3-bet, saw flop, WWSF, postflop aggression. `floored` splits play at a VPIP-floored table, where the horse was REQUIRED to be loose, away from play the winning-player bands may judge (2026-09-06)',
     '2026-09-05',
     { dayColumn: 'day', freshnessDays: 1 }
   ),
@@ -1370,7 +1373,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'v44_second_look',
     'ServerTableEngineTurns.scheduleHorseAction',
-    'a close call/fold/all-in was replayed at 6x the equity sample inside the think time',
+    'a close call/fold/all-in was replayed at 6x the equity sample inside the think time. When this reads 0, the v44_declined_* receipts below say WHICH gate closed - they partition every decision, so they and this one sum to `decide`',
     'V44',
     'decide',
     0.001
@@ -1379,6 +1382,53 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'v44_second_look_flipped',
     'ServerTableEngineTurns.scheduleHorseAction',
     'the deeper read overturned the fast answer',
+    'V44'
+  ),
+  /*
+   * WHY THE SECOND LOOK DID NOT HAPPEN (2026-09-06).
+   *
+   * On 2026-09-05 this ledger's own data_unread rule reported
+   * `v44_second_look fired 0 times against 2,121,841 decides (0.000%, expects
+   * >= 0.100%)`. It caught the dead layer, and then nobody could say WHICH of
+   * the five gates in secondLookPlan was closing - the plan returned a bare
+   * null. The five reasons want opposite fixes (governor = capacity;
+   * no_think_time = the tempo model; small_pot / action_shape = this ledger's
+   * 0.1% expectation being wrong), so guessing between them is how a layer
+   * stays dark for a week.
+   *
+   * They partition every horse decision: the gates are checked in order and
+   * exactly one receipt fires per declined decision, so the five counts plus
+   * v44_second_look sum to `decide`. No expectation is declared on any of
+   * them - a decline is an observation, not a promise.
+   */
+  receipt(
+    'v44_declined_not_facing_bet',
+    'ServerTableEngineTurns.secondLookPlan',
+    'no second look: the horse was not facing a bet, so there was no close call to re-read',
+    'V44'
+  ),
+  receipt(
+    'v44_declined_small_pot',
+    'ServerTableEngineTurns.secondLookPlan',
+    'no second look: the pot was under 20bb and not worth the deeper sample',
+    'V44'
+  ),
+  receipt(
+    'v44_declined_action_shape',
+    'ServerTableEngineTurns.secondLookPlan',
+    'no second look: the fast answer was a bet or raise, which the equity sample does not decide',
+    'V44'
+  ),
+  receipt(
+    'v44_declined_no_think_time',
+    'ServerTableEngineTurns.secondLookPlan',
+    'no second look: under 1500ms of think time to spend. A high count here is the tempo model, not the layer',
+    'V44'
+  ),
+  receipt(
+    'v44_declined_governor',
+    'ServerTableEngineTurns.secondLookPlan',
+    'no second look: EquityLoadGovernor was already shedding load (event-loop p50 over 40ms). A high count here is capacity, and it is the ONLY visibility the governor has outside the GameServer status payload',
     'V44'
   ),
   receipt(

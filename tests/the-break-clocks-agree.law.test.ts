@@ -35,6 +35,98 @@ const BREAK_SQL = read(
 );
 const HOOK = read('src/hooks/useMaintenanceBreak.ts');
 
+/**
+ * ═══ THE SOCKET CLOCKS AGREE TOO (Realtime Phase 5, 2026-09-06) ════════════
+ *
+ * A table socket is governed by four clocks that live in four files which
+ * cannot import each other, and one of them is not in this repository at all:
+ *
+ *   engine ping cadence   HEARTBEAT_INTERVAL_MS, both socket servers
+ *   engine patience       HEARTBEAT_TIMEOUT_MS, both socket servers
+ *   client patience       EngineStateClient.STALE_HARD_MS
+ *   the proxy             Caddy, on engine-01
+ *
+ * They only work because of the RELATIONSHIPS between them, and every one of
+ * those relationships is currently a coincidence that nothing checks:
+ *
+ *   - the engine pings more often than the client gives up, or a healthy
+ *     socket is torn down by its own client every minute;
+ *   - the engine pings more often than IT gives up, or it reaps a peer that
+ *     never had a chance to answer;
+ *   - the engine pings far more often than any proxy idle timeout, which is
+ *     the ONLY reason a Caddy in front of it has never closed a live table.
+ *
+ * MEASURED ON THE BOX, 2026-09-06: `/etc/caddy/Caddyfile` sets no timeout of
+ * any kind for `engine.smarter.poker` - it is `reverse_proxy localhost:8080`
+ * and nothing else - so Caddy v2.11.4's defaults apply and the 25-second ping
+ * keeps the connection far from any of them. That is a fact about a file this
+ * repository does not deploy, which is exactly why the relationship is pinned
+ * here rather than the number: if anyone ever gives that proxy an idle
+ * timeout, the safe range is written down beside the constant it has to clear.
+ */
+describe('the socket clocks agree, and clear any proxy idle timeout', () => {
+  const TABLE_WS = read('server/src/transport/EngineWebSocketServer.ts');
+  const CHANNEL_WS = read('server/src/transport/ChannelWebSocketServer.ts');
+  const STATE_CLIENT = read('src/services/EngineStateClient.ts');
+
+  /**
+   * Read a millisecond constant, accepting either a literal (`25_000`) or the
+   * readable product these files also use (`5 * 60_000`). Reading only the
+   * first form is how a pin quietly stops watching the constant it names: the
+   * regex misses, the match is null, and the test dies on a TypeError that
+   * looks like a broken test rather than a broken relationship.
+   */
+  const num = (src: string, name: string): number => {
+    const m = src.match(new RegExp(`${name} = ([0-9_]+)(?:\\s*\\*\\s*([0-9_]+))?`));
+    expect(m, `${name} is not in this file any more`).not.toBeNull();
+    const a = Number(m![1].replace(/_/g, ''));
+    const b = m![2] ? Number(m![2].replace(/_/g, '')) : 1;
+    return a * b;
+  };
+
+  const pingMs = num(TABLE_WS, 'HEARTBEAT_INTERVAL_MS');
+  const enginePatienceMs = num(TABLE_WS, 'HEARTBEAT_TIMEOUT_MS');
+  const clientPatienceMs = num(STATE_CLIENT, 'STALE_HARD_MS');
+
+  it('both socket servers ping on the same cadence and wait the same time', () => {
+    expect(num(CHANNEL_WS, 'HEARTBEAT_INTERVAL_MS')).toBe(pingMs);
+    expect(num(CHANNEL_WS, 'HEARTBEAT_TIMEOUT_MS')).toBe(enginePatienceMs);
+  });
+
+  it('the engine pings at least twice before it gives up on a peer', () => {
+    expect(enginePatienceMs).toBeGreaterThanOrEqual(pingMs * 2);
+  });
+
+  it('the engine pings at least twice before the CLIENT gives up', () => {
+    // Otherwise one dropped ping tears down a healthy table from the browser
+    // side, every time, and it looks like a flaky network.
+    expect(clientPatienceMs).toBeGreaterThanOrEqual(pingMs * 2);
+  });
+
+  it('the ping clears the smallest idle timeout a proxy is likely to have', () => {
+    /* Caddy on engine-01 sets none today (measured 2026-09-06), so this is a
+       margin against the future rather than the present. Sixty seconds is the
+       shortest idle timeout in common use; the ping has to be comfortably
+       under it, not merely under it, because the margin is what absorbs a
+       slow event loop on a one-core engine. */
+    const SHORTEST_LIKELY_PROXY_IDLE_MS = 60_000;
+    expect(pingMs * 2).toBeLessThan(SHORTEST_LIKELY_PROXY_IDLE_MS);
+  });
+
+  it('re-auth rides the heartbeat sweep, so it can never run more often than one', () => {
+    const reauthMs = num(TABLE_WS, 'REAUTH_INTERVAL_MS');
+    expect(reauthMs).toBeGreaterThan(pingMs);
+    // And the stagger is bounded by the period, or a socket could be pushed
+    // past its next due time indefinitely.
+    /* The stagger moved into `wsHelpers.staggeredReauthAt(intervalMs)` in the
+       Phase 5 audit, when the channel socket was given the same mechanism -
+       three sockets, one implementation. The table server passes its own
+       REAUTH_INTERVAL_MS in; the bound still has to be the period. */
+    expect(TABLE_WS).toContain('staggeredReauthAt(REAUTH_INTERVAL_MS)');
+    expect(read('server/src/transport/wsHelpers.ts')).toContain('Math.random() * intervalMs');
+  });
+});
+
 describe('the break minute is the same minute everywhere', () => {
   const engineMinute = Number(ENGINE.match(/BREAK_START_MINUTE = (\d+)/)![1]);
 

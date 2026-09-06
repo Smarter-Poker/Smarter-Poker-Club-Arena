@@ -70,7 +70,10 @@ function pagedReads(src: string): Array<{ table: string; block: string }> {
  */
 const UNIQUE_KEY: Record<string, string[]> = {
   horse_daily_nets: ['horse_user_id', 'day', 'game_variant', 'format'],
-  horse_daily_play: ['horse_user_id', 'day', 'format'],
+  // `floored` joined the key on 2026-09-06: a horse at a VPIP-floored
+  // table is required to play loose, so that play is accumulated apart
+  // from the play the winning-player bands may judge.
+  horse_daily_play: ['horse_user_id', 'day', 'format', 'floored'],
   horse_review_rollup: ['horse_user_id', 'day', 'game_variant'],
   table_seats: ['user_id', 'table_id'],
   // Two different paged reads hit this table with different filters: the

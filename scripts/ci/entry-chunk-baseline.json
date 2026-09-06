@@ -1,5 +1,5 @@
 {
-  "entry_gz_kb": 156,
+  "entry_gz_kb": 157,
   "modules": [
     "src/App.tsx",
     "src/components/ConnectionStatusBar.tsx",
@@ -132,7 +132,6 @@
     "src/lib/membershipWarmState.ts",
     "src/lib/pushClient.ts",
     "src/lib/rosterCache.ts",
-    "src/lib/serverClock.ts",
     "src/lib/statsCache.ts",
     "src/lib/storage.ts",
     "src/lib/supabase.ts",
@@ -200,6 +199,7 @@
     "src/utils/retryFetch.ts",
     "src/utils/safeErrorMessage.ts",
     "src/utils/sanitizeInput.ts",
+    "src/utils/serverClock.ts",
     "src/utils/soundGate.ts",
     "src/utils/staleCacheReaper.ts",
     "src/utils/titleCase.ts",

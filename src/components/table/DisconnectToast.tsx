@@ -44,6 +44,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import type { DisconnectFsmEntry } from '../../utils/mapEngineSnapshot';
 import { formatPopupText } from '../../utils/popupStyle';
+import { serverNow } from '../../utils/serverClock';
 import './DisconnectToast.css';
 
 export interface DisconnectToastProps {
@@ -65,8 +66,10 @@ export default function DisconnectToast({
   const state = entry?.state;
   const graceDeadline = entry?.graceDeadlineMs ?? null;
 
-  // Live countdown when MISSING. Uses the engine's absolute deadline, not
-  // a local duration — no drift under clock skew or tab wake.
+  // Live countdown when MISSING. Uses the engine's absolute deadline AND the
+  // engine's clock (serverNow) - no drift under clock skew or tab wake. It
+  // said "no drift under clock skew" while subtracting the device clock
+  // until 2026-09-06.
   const [remainingSec, setRemainingSec] = useState<number | null>(null);
   const rafRef = useRef<number | null>(null);
 
@@ -78,7 +81,7 @@ export default function DisconnectToast({
     let stopped = false;
     const tick = () => {
       if (stopped) return;
-      const ms = Math.max(0, graceDeadline - Date.now());
+      const ms = Math.max(0, graceDeadline - serverNow());
       setRemainingSec(Math.ceil(ms / 1000));
       if (ms > 0) {
         rafRef.current = window.setTimeout(tick, 250) as unknown as number;

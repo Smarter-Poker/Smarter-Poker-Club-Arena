@@ -45,14 +45,36 @@ const DEEP_DIVE = read(
   'supabase/migrations/20260905050000_the_move_survives_the_hand_and_a_game_seats_you_once.sql'
 );
 const SEATING = read('server/src/engine/ServerTableEngineSeating.ts');
-/* PIN MOVED 2026-09-05 (migration 20260906011113). `fn_cash_clusters_tick_all`
-   and `fn_cash_clusters_to_tick` were both re-declared WHOLE by that
-   migration, so 20260905091025 is no longer the live definition of either and
-   pinning it would pin a superseded function. Every assertion below reads the
-   current file; the three things that changed get their own block at the end
-   of this describe. */
+/* PIN MOVED 2026-09-05, TWICE IN THREE MINUTES, AND THAT IS THE POINT.
+   `fn_cash_clusters_tick_all` was re-declared WHOLE by 20260906011113 (which
+   added `rested_games`, the per-result `state`, and the error entry) and then
+   again by 20260906011318 (the balancer), which was written from the older
+   20260905091025 body and applied two minutes later - so it silently reverted
+   the first. Production was repaired the same hour and 20260906011318 now
+   carries BOTH: it is the live definition, so it is what this pins.
+
+   The lesson for whoever moves this next: a migration that re-emits a whole
+   function must be written from the LIVE body, not from the migration you
+   happen to have open. Ask the database (`md5(prosrc)`), then write. */
 const TICK_ALL = read(
+  'supabase/migrations/20260906011318_the_feeder_tables_stay_within_one_player_of_each_other.sql'
+);
+/* `fn_cash_clusters_to_tick` is the OTHER function 20260906011113 re-declared,
+   and the balancer did not touch it - so its migration is still the live
+   definition of that one, and it keeps its own handle. Two functions changed
+   by one migration are two pins, not one. */
+const WORKLIST = read(
   'supabase/migrations/20260906011113_the_worklist_reaches_the_game_the_repair_was_written_for.sql'
+);
+/* PIN MOVED 2026-09-05 (migration 20260906015029). `fn_cash_cluster_tick` was
+   re-declared WHOLE by that migration to raise the opening-feeder abandon
+   window from 3 minutes to 6, so 20260905050000 is no longer the live
+   definition of the abandon block and pinning it would pin a superseded
+   function. The feeder-abandon assertions below read the current file; every
+   other tick assertion in this describe still reads DEEP_DIVE, where the text
+   it pins is unchanged. */
+const FEEDER_WINDOW = read(
+  'supabase/migrations/20260906015029_an_opening_feeder_is_filled_before_it_is_abandoned.sql'
 );
 const METRICS = read('server/src/cluster/ClusterMetrics.ts');
 
@@ -614,12 +636,23 @@ describe('the deep dive after the first live cycle (20260905050000)', () => {
     expect(tick).toMatch(/d\.table_id = t\.id AND d\.user_id = ts\.user_id AND d\.left_at IS NULL/);
   });
 
-  it('an abandoned opening feeder closes, and OPEN waits two minutes after it', () => {
-    const tick = DEEP_DIVE.slice(
-      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick')
+  it('an abandoned opening feeder closes after SIX minutes, and OPEN waits two after it', () => {
+    /* THE WINDOW MOVED 2026-09-05, and this pin moved with it in the same
+       commit. Three minutes is shorter than one worst-case fleet seeding
+       cycle (57 to 118 seconds, on a 30-second tick) plus a tick interval, so
+       an opening feeder could be closed before the fleet's next cycle ever
+       reached it - and the fleet then bought into the closed row and was
+       refused TABLE_CLOSING, 15 times in 25 minutes. Measured that night: 22
+       feeder_opened, 4 feeder_live, 20 feeder_abandoned in one hour. Six
+       minutes is 148s (118 + 30) with a full cycle of margin.
+       The 2-minute rest after an abandon is deliberately NOT changed. */
+    const tick = FEEDER_WINDOW.slice(
+      FEEDER_WINDOW.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick')
     );
     expect(tick).toMatch(/'feeder_abandoned'/);
-    expect(tick).toMatch(/interval '3 minutes'/);
+    expect(tick).toMatch(
+      /coalesce\(tb\.opened_at, tb\.created_at\) < v_now - interval '6 minutes'/
+    );
     expect(tick).toMatch(/e\.kind = 'feeder_abandoned' AND e\.at > v_now - interval '2 minutes'/);
   });
 
@@ -993,9 +1026,9 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
      two are a gauge nothing set and a rested game nothing could wake. */
 
   it('a DISABLED game is on the worklist on lifecycle alone, so lifecycle_followed_status can reach it', () => {
-    const worklist = TICK_ALL.slice(
-      TICK_ALL.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_to_tick'),
-      TICK_ALL.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_to_tick')
+    const worklist = WORKLIST.slice(
+      WORKLIST.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_to_tick'),
+      WORKLIST.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_to_tick')
     );
     expect(worklist).toMatch(/AND \(g\.enabled OR EXISTS \(SELECT 1 FROM public\.tables t/);
     expect(worklist).toMatch(/AND t\.lifecycle <> 'closed'/);
@@ -1005,7 +1038,7 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
     const code = worklist.replace(/--.*$/gm, '');
     expect(code).not.toMatch(/status IN \('waiting'/);
     // And the migration proves it on the live rows before it commits.
-    expect(TICK_ALL).toMatch(
+    expect(WORKLIST).toMatch(
       /disabled game\(s\) with a live\/closed table are still off the worklist/
     );
   });
@@ -1066,5 +1099,102 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
     expect(BASE).toMatch(/this\.wakeClusterGame\('seat_move'\);/);
     // A leave that cashed out between hands (both doors).
     expect((SEATING.match(/this\.wakeClusterGame\('seat_left'\);/g) ?? []).length).toBe(2);
+  });
+});
+
+/**
+ * THE FEEDER TABLES STAY WITHIN ONE PLAYER OF EACH OTHER (Dan 2026-09-05,
+ * 20260906011318). Measured on NLH 0.05/0.10 Classic: 39 players over 5 tables
+ * seated 9/9/9/9/3, because nothing had ever moved a player SIDEWAYS - only up
+ * to the main game, and only out of a breaking table. Dan asked for the card
+ * room's own rule and it has three parts: the main game is fed and never
+ * balanced, the must-move tables are kept within ONE player of each other, and
+ * a predetermined order - not anyone's judgement - picks the table and the
+ * player.
+ */
+describe('the must-move tables balance themselves, and Main 1 is fed', () => {
+  const bal = TICK_ALL.slice(
+    TICK_ALL.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_balance'),
+    TICK_ALL.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_cluster_balance')
+  );
+
+  it('balances the pool of must-move tables and never the main game', () => {
+    // Main 1 is held full on purpose - that is what a must-move game IS.
+    expect(bal).toMatch(/AND NOT \(c\.role = 'main' AND c\.main_index = 1\)/);
+    // A breaking table is emptying already and an opening one has not started.
+    expect(bal).toMatch(/WHERE c\.lifecycle = 'live'\s*AND NOT c\.breaking/);
+  });
+
+  it('within one player is balanced; two is a move', () => {
+    expect(bal).toMatch(/hi\.n - lo\.n >= 2/);
+    /* AND NEVER TWO TABLES THAT CANNOT DEAL. A Main 2 with two players beside
+       a live table with none is a gap of two, and moving one leaves 1 and 1 -
+       two tables that cannot deal a hand, made out of one that could. A room
+       breaks a thin game rather than balancing it, and step 5 already does.
+       The source keeps 2, the destination reaches 2, or nothing moves. */
+    expect(bal).toMatch(/AND hi\.n >= 3\s*AND lo\.n >= 1/);
+    // Projected headcount, not the live one: the must-move step runs first in
+    // the same pass and its planned arrivals must already count.
+    expect(bal).toMatch(/WHERE m\.from_table_id = c\.id AND m\.state = 'pending'/);
+    expect(bal).toMatch(/WHERE m\.to_table_id = c\.id AND m\.state = 'pending'/);
+  });
+
+  it('a predetermined order picks the table, both ends of the chain', () => {
+    // The fullest gives up; ties to the newest table (a feeder has a null
+    // main_index, so NULLS FIRST on DESC puts the feeder end first).
+    expect(bal).toMatch(/ORDER BY n DESC, main_index DESC NULLS FIRST, created_at DESC LIMIT 1/);
+    // The shortest with a chair actually free receives; ties toward Main.
+    expect(bal).toMatch(/WHERE room > 0\s*ORDER BY n ASC, main_index ASC NULLS LAST/);
+  });
+
+  it('the last to arrive is the one asked to move, and never a busted or leaving seat', () => {
+    expect(bal).toMatch(/FROM public\.cash_game_roster r[\s\S]*?\) DESC,\s*ts\.joined_at DESC/);
+    expect(bal).toMatch(/AND coalesce\(ts\.stack, 0\) > 0/);
+    expect(bal).toMatch(/AND coalesce\(ts\.leave_pending, false\) = false/);
+    // One pending move per player, and a refusal gets a minute.
+    expect(bal).toMatch(/WHERE m\.player_id = ts\.user_id AND m\.state = 'pending'/);
+    expect(bal).toMatch(
+      /m\.state = 'cancelled'\s*AND m\.created_at > p_now - interval '60 seconds'/
+    );
+  });
+
+  it('LAW 10.5: a horse is balanced exactly like a human', () => {
+    expect(bal).not.toMatch(/is_horse/);
+  });
+
+  it('one move per game per pass, planned AFTER the tick, inside the same sub-block', () => {
+    const fn = TICK_ALL.slice(
+      TICK_ALL.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_tick_all'),
+      TICK_ALL.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_tick_all')
+    );
+    expect(fn).toMatch(
+      /v_res := public\.fn_cash_cluster_tick\(w\.game_id, v_eligible\);[\s\S]*?v_bal := public\.fn_cash_cluster_balance\(w\.game_id, v_now\);/
+    );
+    // The planner itself takes at most one player per call.
+    expect(bal).toMatch(/LIMIT 1\s*\),\s*ins AS \(/);
+  });
+
+  it("'balance' is a reason the row may carry and the notices name it", () => {
+    expect(TICK_ALL).toMatch(
+      /CHECK \(reason = ANY \(ARRAY\['must_move'::text, 'break'::text, 'seat_change'::text, 'balance'::text\]\)\)/
+    );
+    expect(MOVES).toMatch(
+      /export type SeatMoveReason = 'must_move' \| 'break' \| 'seat_change' \| 'balance';/
+    );
+    // Same sentence on the felt and in the lobby, title case, no em dash.
+    expect(MOVES).toMatch(/Balancing The Tables\. Moving To \$\{where\} After This Hand\./);
+    expect(read('src/services/cashGameLobby.ts')).toMatch(
+      /Balancing The Tables\. Moving To \$\{where\} After This Hand\./
+    );
+  });
+
+  it('is SECURITY DEFINER with a pinned search_path, and only the engine may call it', () => {
+    expect(bal).toMatch(/SECURITY DEFINER\s*SET search_path TO 'public', 'pg_temp'/);
+    expect(TICK_ALL).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_cash_cluster_balance\(uuid, timestamptz\) FROM PUBLIC, anon, authenticated;/
+    );
+    expect(TICK_ALL).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_cash_cluster_balance\(uuid, timestamptz\) TO service_role;/
+    );
   });
 });

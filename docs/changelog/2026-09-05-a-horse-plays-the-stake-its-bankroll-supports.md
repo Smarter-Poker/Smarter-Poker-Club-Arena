@@ -144,7 +144,7 @@ This is not two rules in conflict (CLAUDE.md 10.8). One side is written down
 twice, in the migration file and in the engine constant, and the two agree.
 The other is a constraint on the live table with nothing behind it in this
 repo. Fixed forward in
-`supabase/migrations/20260906003931_the_tourney_tag_can_hold_the_one_table_its_own_migration_dec.sql`
+`supabase/migrations/20260906004017_the_tourney_tag_can_hold_the_one_table_its_own_migration_dec.sql`
 (one transaction, one schema reload): the range becomes 0 to 4, the 473
 tourney rows are set to 1, `sh_tourney_only_one_table` is added, and a `DO`
 block aborts the whole thing if either did not land. Rollback is pasted in the

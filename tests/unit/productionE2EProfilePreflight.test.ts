@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { evaluateAcrossDocumentReplacement } from '../e2e/support/evaluateAcrossDocumentReplacement';
 import { ensurePlayableProfile } from '../e2e/support/ensurePlayableProfile';
 
 const source = (path: string) => readFileSync(resolve(__dirname, '../..', path), 'utf8');
@@ -126,12 +127,17 @@ describe('authenticated production account preflight', () => {
   });
 
   it('preflights the dedicated account through the real public club join flow', () => {
-    expect(source('tests/e2e/global-setup.ts')).toContain('ensureClubMembership(');
+    const setup = source('tests/e2e/global-setup.ts');
+    expect(setup).toContain('ensureClubMembership(');
+    expect(setup).toContain('dismissClubEntryMessage(page)');
+    expect(setup).toContain('/rest/v1/rpc/fn_dismiss_club_message');
+    expect(setup).toContain("name: 'Do Not Show Me This Message Again'");
     const helper = source('tests/e2e/support/ensureClubMembership.ts');
     expect(helper).toContain("getByRole('button', { name: 'Join Club', exact: true })");
     expect(helper).toContain("locator('.club-home')");
     expect(helper).toContain("locator('.invite-pending')");
     expect(helper).toContain("getByRole('button', { name: 'Try Again' })");
+    expect(helper).toContain("waitUntil: 'commit'");
     expect(helper).toContain('CLUB_ROUTE_ATTEMPTS');
     expect(helper).toContain('POST_JOIN_DECISION_SELECTOR');
     expect(helper).toContain("textContent({ timeout: 1_000 }).catch(() => '')");
@@ -165,5 +171,69 @@ describe('authenticated production account preflight', () => {
     expect(mobile).toContain('did not reach its scroll boundary');
     expect(mobile).toContain('clippedBottom <= clippedTop');
     expect(mobile).toContain('DOMRect.fromRect');
+
+    const mobileFit = source('tests/e2e/mobile-fit-audit.spec.ts');
+    expect(mobileFit).toContain('evaluateAcrossDocumentReplacement');
+    const documentReplacement = source('tests/e2e/support/evaluateAcrossDocumentReplacement.ts');
+    expect(documentReplacement).toContain('execution context was destroyed');
+    expect(documentReplacement).toContain('attempt <= 3');
+    expect(documentReplacement).toContain('document did not stabilize after navigation');
+
+    const riverSqueeze = source('tests/e2e/river-squeeze-interactive.spec.ts');
+    expect(riverSqueeze).toContain('settledRiver');
+    expect(riverSqueeze).toContain('settledRiverFaceUp');
+    expect(riverSqueeze).toContain(
+      'openedBeforeUnmount || (end.gone && end.settledRiver && end.settledRiverFaceUp)'
+    );
+    expect(riverSqueeze).toContain('released river did not settle face up');
+  });
+
+  it('measures the destination document after an auth or role redirect', async () => {
+    const destination = { scrollWidth: 375, vw: 375 };
+    const page = {
+      evaluate: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Execution context was destroyed because of navigation'))
+        .mockResolvedValueOnce(destination),
+      waitForLoadState: vi.fn().mockResolvedValue(undefined),
+      waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      evaluateAcrossDocumentReplacement(page as unknown as Page, () => destination)
+    ).resolves.toEqual(destination);
+    expect(page.evaluate).toHaveBeenCalledTimes(2);
+    expect(page.waitForLoadState).toHaveBeenCalledWith('domcontentloaded');
+    expect(page.waitForTimeout).toHaveBeenCalledWith(750);
+  });
+
+  it('does not retry a real geometry or application error', async () => {
+    const page = {
+      evaluate: vi.fn().mockRejectedValue(new Error('overflow probe is invalid')),
+      waitForLoadState: vi.fn(),
+      waitForTimeout: vi.fn(),
+    };
+
+    await expect(
+      evaluateAcrossDocumentReplacement(page as unknown as Page, () => undefined)
+    ).rejects.toThrow('overflow probe is invalid');
+    expect(page.evaluate).toHaveBeenCalledOnce();
+    expect(page.waitForLoadState).not.toHaveBeenCalled();
+  });
+
+  it('fails after three replaced documents instead of passing an unmeasured route', async () => {
+    const page = {
+      evaluate: vi
+        .fn()
+        .mockRejectedValue(new Error('Cannot find context with specified id after navigation')),
+      waitForLoadState: vi.fn().mockResolvedValue(undefined),
+      waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      evaluateAcrossDocumentReplacement(page as unknown as Page, () => undefined)
+    ).rejects.toThrow('Club Arena document did not stabilize after navigation');
+    expect(page.evaluate).toHaveBeenCalledTimes(3);
+    expect(page.waitForLoadState).toHaveBeenCalledTimes(3);
   });
 });

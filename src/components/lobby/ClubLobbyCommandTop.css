@@ -1222,8 +1222,11 @@
   .club-lobby-command-top .lobby-controls .game-bar__type,
   .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
   .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
-    min-height: 29px;
-    height: 29px;
+    /* Keep the compact casino control face, but give every mobile action the
+       full WCAG touch target. The old 29px lock left only 32px of reachable
+       space and made adjacent filters easy to hit by mistake. */
+    min-height: 44px;
+    height: 44px;
     padding: 0 5px;
     overflow: hidden;
     border: 1px solid #33414c;
@@ -1405,8 +1408,8 @@
   .club-lobby-command-top .lobby-controls .game-bar__type,
   .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
   .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
-    min-height: 29px;
-    height: 29px;
+    min-height: 44px;
+    height: 44px;
     padding: 0 5px;
     overflow: hidden;
     border: 1px solid #33414c;
@@ -2196,8 +2199,8 @@
   .club-lobby-command-top .lobby-controls .game-bar__type,
   .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
   .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
-    min-height: 29px;
-    height: 29px;
+    min-height: 44px;
+    height: 44px;
     padding: 0 5px;
     overflow: hidden;
     border: 1px solid #33414c;
@@ -2407,6 +2410,17 @@
     display: contents;
   }
 
+  /* The selector art stays compact, but the button itself must own the full
+     touch target. Earlier 29px declarations relied on overlapping pseudo
+     elements; adjacent rows covered those extensions and left only 32px that
+     a thumb could actually reach. */
+  .club-lobby-command-top .lobby-controls .game-bar__type,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    min-height: 44px;
+    height: 44px;
+  }
+
   .club-lobby-machine > .club-lobby-command-top > .club-lobby-command-top__controls {
     position: sticky;
     top: var(
@@ -2417,5 +2431,17 @@
     isolation: isolate;
     background: #03070a;
     box-shadow: 0 10px 24px rgb(0 0 0 / 78%);
+  }
+}
+
+/* FINAL MOBILE TOUCH LOCK — this must remain after every compact cabinet
+   variant above. The old last winner painted these controls at 29px and left
+   only 32px of reliable hit-test reach between neighbouring rows. */
+@media (max-width: 900px) {
+  .club-lobby-command-top .lobby-controls .game-bar__type,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    min-height: 44px;
+    height: 44px;
   }
 }

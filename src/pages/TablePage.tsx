@@ -955,6 +955,14 @@ interface TablePageProps {
      * no-auto-table-switch law is about activeIndex, which this leaves alone).
      */
     movedToTableId?: string;
+    /**
+     * THE LOBBY BUTTON (Dan 2026-09-05): the must-move game this table belongs
+     * to, or '' when it belongs to none. The action pill row shows its LOBBY
+     * button only for a table that HAS a lobby to open, and that row is drawn
+     * by the container, which has no other way to know. A string rather than
+     * `string | null` so the container's shallow !== bail-out (P1-2) holds.
+     */
+    clusterId?: string;
     /** Hero is sitting out at this table (drives the long-press menu's
      *  Sit Out / I'm Back label and the sit-out-everywhere control). */
     sittingOut?: boolean;
@@ -5065,7 +5073,7 @@ export default function TablePage({
   } | null>(null);
   useEffect(() => {
     if (!insuranceWaitingOn) return;
-    const ms = Math.max(0, insuranceWaitingOn.until - Date.now());
+    const ms = Math.max(0, insuranceWaitingOn.until - serverNow());
     const t = setTimeout(() => setInsuranceWaitingOn(null), ms + 500);
     return () => clearTimeout(t);
   }, [insuranceWaitingOn]);
@@ -5681,6 +5689,24 @@ export default function TablePage({
     tableState.gameType,
   ]);
 
+  /**
+   * THE BAND BELONGS TO THIS HAND (Dan 2026-09-05: "THE 'WINS THE POT'
+   * ANIMATION IS GETTING STUCK AFTER HANDS SOME TIMES").
+   *
+   * The SEAT label has been fenced on the hand number since 2026-08-27 (see
+   * `winnerDisplayActive` on SeatSlot) precisely because an out-of-order
+   * pot_win reads as a win on the hand now being played. The BOARD band was
+   * never given the same fence: it took `winnerInfo.handName` raw, so a label
+   * stamped with a different hand rendered over the felt anyway - the seats
+   * would go quiet while the band still said someone had won.
+   *
+   * Same test, one derivation, both surfaces. handNumber 0 is the reset's own
+   * empty stamp and is treated as "show", exactly as the seat guard treats it,
+   * so nothing about an ordinary hand changes. */
+  const winnerBandActive =
+    winnerInfo.playerIds.length > 0 &&
+    (winnerInfo.handNumber === 0 || winnerInfo.handNumber === (tableState.handNumber ?? 0));
+
   // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 highlights, same derivation.
   const board3HighlightedIndices = useMemo(() => {
     if (tableState.communityCards3.length < 5 || winnerInfo.playerIds.length === 0) return [];
@@ -5935,6 +5961,7 @@ export default function TablePage({
       gameCode: heroTabGameCode,
       decision: heroTabDecision,
       timeBank: heroTabTimeBank,
+      clusterId: tableState.clusterId ?? '',
     });
   }, [
     tableState.tableName,
@@ -5965,6 +5992,7 @@ export default function TablePage({
        learn the deadline at all, and a stale one could persist. */
     heroTabSitOutDeadlineMs,
     tableState.isTournament,
+    tableState.clusterId,
     onTableInfoUpdate,
   ]);
 
@@ -6153,7 +6181,7 @@ export default function TablePage({
       // 2026-08-28: prefer the engine's absolute deadline (survives transit
       // delay and reconnects); timeoutSeconds only as a fallback.
       const windowMs = insuranceOffer?.deadlineAt
-        ? Math.max(0, insuranceOffer.deadlineAt - Date.now())
+        ? Math.max(0, insuranceOffer.deadlineAt - serverNow())
         : (insuranceOffer?.timeoutSeconds || 15) * 1000;
       insuranceTimeoutRef.current = workerTimeout(() => {
         if (!isMounted.current) return;
@@ -6436,6 +6464,101 @@ export default function TablePage({
   // the reset can never wipe an award animation that is still in flight.
   const potAwardAnimEndAtRef = useRef(0);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE WIN BANNER ALWAYS COMES DOWN (Dan 2026-09-05, binding)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "THE 'WINS THE POT' ANIMATION IS GETTING STUCK AFTER HANDS SOME TIMES,
+   * THAT CAN'T HAPPEN, FIX THAT GLITCH."
+   *
+   * `winnerInfo` had exactly two ways down and both are events: the reset timer
+   * armed by HAND_COMPLETE, and the next HAND_STARTED. So a banner outlives its
+   * hand whenever neither arrives:
+   *
+   *   1. A LATE OR DUPLICATE pot_win. The extend block in POT_WIN is gated on
+   *      `handCompleteTimerRef.current`, and the reset NULLS that ref when it
+   *      runs. A pot_win landing after it therefore writes a fresh winnerInfo
+   *      and schedules NOTHING - the label then waits for a hand that may never
+   *      be dealt, because the table just broke, the hero stood up, or the game
+   *      closed. This is the common one.
+   *   2. A DROPPED hand_complete (socket reconnect between the two events): the
+   *      label is set and no reset was ever armed at all.
+   *
+   * This is the backstop for both, and it is deliberately NOT a fixed ceiling
+   * on how long a win may show. ANIMATION LAW (CLAUDE.md 10.6) says an
+   * animation plays for its full duration at the player's chosen speed, and a
+   * three-board run-it-twice hold legitimately runs past twenty seconds - a
+   * timeout tuned to "a bit longer than usual" would cut exactly the hand that
+   * deserves the celebration most.
+   *
+   * So the test is not elapsed time, it is whether ANYTHING IS SCHEDULED. While
+   * a reset timer is pending this does nothing whatsoever, however long the
+   * hold. It clears only after the banner has been up with no reset armed for
+   * WINNER_STUCK_TICKS consecutive checks - a state that cannot occur during a
+   * normal hand, since HAND_COMPLETE arms the timer ~3s BEFORE pot_win is even
+   * sent. It clears through `handCompleteResetFnRef` when one exists, so the
+   * board, pot, mucks and stack hold come down together exactly as they would
+   * have; the direct clear is only for case 2, where no closure was ever built.
+   */
+  const winnerStuckTicksRef = useRef(0);
+  useEffect(() => {
+    const shown = winnerInfo.playerIds.length > 0 || winnerInfo.handName.length > 0;
+    winnerStuckTicksRef.current = 0;
+    if (!shown) return undefined;
+    const WINNER_STUCK_TICK_MS = 2000;
+    const WINNER_STUCK_TICKS = 6;
+    /* THE HANDLE IS NOT NAMED `id`, AND THIS COMMENT MUST NOT SPELL THAT
+       CLEANUP LINE OUT EITHER. `aPaidSeatIsNeverEjected.test.ts` locates the
+       seat-eviction guard by the FIRST cleanup in this file that clears an
+       interval handle of that name, then reads the dependency array after it -
+       a paid seat must never be released by an interval that stopped
+       re-evaluating. This effect sits earlier in the file, so either a handle
+       or a quotation of that line steals the anchor and the guard's own pin
+       silently starts describing this watchdog instead. Both mistakes were
+       made here in turn, and the hook caught both. */
+    const watchdogId = window.setInterval(() => {
+      /*
+       * Something is going to take it down, OR the award sequence this label
+       * describes is still in flight. Either way, leave it alone.
+       *
+       * The second half matters in the one case the first half misses: a
+       * pot_win that lands AFTER the reset already ran has no timer to point
+       * at, but it still starts chip flights, and `potAwardAnimEndAtRef` is
+       * the instant the last of them lands. Clearing the label while the
+       * chips it belongs to are still moving would be the animation law's
+       * own complaint, in a backstop written to honour it.
+       */
+      if (handCompleteTimerRef.current || potAwardAnimEndAtRef.current > Date.now()) {
+        winnerStuckTicksRef.current = 0;
+        return;
+      }
+      winnerStuckTicksRef.current += 1;
+      if (winnerStuckTicksRef.current < WINNER_STUCK_TICKS) return;
+      winnerStuckTicksRef.current = 0;
+      const reset = handCompleteResetFnRef.current;
+      if (reset) {
+        handCompleteResetFnRef.current = null;
+        reset();
+        return;
+      }
+      setWinnerInfo({
+        playerIds: [],
+        handName: '',
+        handDescription: '',
+        lowWinnerLabel: '',
+        cardIndices: [],
+        holeCardIndices: {},
+        handNames: {},
+        amounts: {},
+        boardHandNames: null,
+        handNumber: 0,
+      });
+      setWinnerParticle((prev) => ({ ...prev, active: false }));
+    }, WINNER_STUCK_TICK_MS);
+    return () => window.clearInterval(watchdogId);
+  }, [winnerInfo]);
+
   // Unmount guard for all four CA-19..CA-22 animation timers.
   useEffect(() => {
     return () => {
@@ -6547,6 +6670,68 @@ export default function TablePage({
     const s = totalSec % 60;
     return `${m}:${String(s).padStart(2, '0')}`;
   }, [bombPotNextAtLive, bombClockNowMs, bombPotRules?.announceSeconds]);
+
+  /**
+   * ONE SENTENCE, TWO PLACES (Dan 2026-09-05).
+   *
+   * Dan, on the felt: the countdown "NEEDS TO BE MUCH SMALLER ... IT SHOULD BE
+   * UNDER THE BLINDS WHERE 'ACTION' IS LOCATED. AND SHOULD JUST BE A SMALL
+   * COUNTDOWN CLOCK", and the live label "IS COVERING THE TOP OF THE CARDS ...
+   * IT NEEDS TO BE HIGHER, AND SMALLER".
+   *
+   * Those are two different homes for what used to be one pill pinned at 27%
+   * of the felt - which is inside the board stack once a bomb deals two or
+   * three boards, hence the collision in Dan's capture. So the TEXT is decided
+   * once, here, and the two renderers below only choose where it hangs:
+   *   - waiting / only / counting down  -> a line in the masthead, under the
+   *     blinds beside ACTION, in the masthead's own tiny type;
+   *   - the bomb hand itself ('live')   -> a small pill above the boards.
+   * Deciding it twice is how the felt and the masthead would start disagreeing
+   * about whether a bomb is coming.
+   */
+  const bombPotBadge = useMemo<{ text: string; state: 'live' | 'next' | 'eta' } | null>(() => {
+    const boards = bombPotRules?.boardCount ?? 0;
+    const prefix =
+      boards >= 3
+        ? 'TRIPLE BOARD '
+        : boards === 2 || bombPotRules?.doubleBoard
+          ? 'DOUBLE BOARD '
+          : '';
+    if (bombPotActive) return { text: `${prefix}BOMB POT`, state: 'live' };
+    /* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits for
+       bomb_pot_min_players, and the engine held it in silence - the pill said
+       BOMB POT NEXT HAND and the table then dealt ordinary hands, forever,
+       with no explanation anywhere in the product. First, because it is the
+       truest thing the badge can say when it applies. */
+    if (tableState.bombPotWaitingFor != null)
+      return {
+        text: `BOMB POT WAITING FOR ${tableState.bombPotWaitingFor} PLAYERS`,
+        state: 'eta',
+      };
+    /* URGENCY IS NOT A STEADY STATE (2026-08-29): on a bomb_pot_only table the
+       scheduler reports 1 forever, so 'next' - the pulsing state - must not be
+       reachable here, or the badge pulses for the whole session. */
+    if (bombPotRules?.triggerMode === 'bomb_pot_only')
+      return { text: `${prefix}BOMB POT ONLY`, state: 'eta' };
+    if (bombClockLabel != null)
+      return bombClockLabel === 'NEXT HAND'
+        ? { text: `${prefix}BOMB POT NEXT HAND`, state: 'next' }
+        : { text: `BOMB POT IN ${bombClockLabel}`, state: 'eta' };
+    if (tableState.bombPotIn === 1) return { text: `${prefix}BOMB POT NEXT HAND`, state: 'next' };
+    /* Hands, said so (Dan 2026-09-05: inside the last three minutes a timed
+       bomb is "IN 1-5 HANDS" and the clock is gone). */
+    if (tableState.bombPotIn != null)
+      return { text: `BOMB POT IN ${tableState.bombPotIn} HANDS`, state: 'eta' };
+    return null;
+  }, [
+    bombPotActive,
+    bombClockLabel,
+    bombPotRules?.boardCount,
+    bombPotRules?.doubleBoard,
+    bombPotRules?.triggerMode,
+    tableState.bombPotIn,
+    tableState.bombPotWaitingFor,
+  ]);
 
   /**
    * MANUAL_NEXT_HAND (spec §2.1/§15.3): club staff can arm one bomb for the
@@ -7246,71 +7431,86 @@ export default function TablePage({
     rabbitFloorTimerRef.current = setTimeout(drop, RABBIT_MIN_VISIBLE_MS - shownFor);
   }, []);
 
-  const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
-    if (!tableId) return { success: false, error: 'Table Not Ready' };
+  /**
+   * P5 2026-09-05: takes an explicit hand number so the HAND REPLAYER can buy
+   * a reveal for an older hand (ClubWPT Gold parity - missing the window at
+   * the felt is no longer final). Omitted, it means "the hand the felt is
+   * offering", which is what the tile passes. The ENGINE decides whether that
+   * hand is still purchasable: the offer, its 90-second TTL, the table toggle,
+   * the board length, whether the caller was dealt in, and whether they have
+   * already bought it.
+   */
+  const handleRabbitReveal = useCallback(
+    async (handNumber?: number): Promise<RabbitHuntRevealResult> => {
+      if (!tableId) return { success: false, error: 'Table Not Ready' };
 
-    const result = await requestRabbitHunt(tableId, rabbitHandNumberRef.current ?? undefined);
-    if (!result.success || !result.cards?.length) {
-      // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
-      // remove the button, or topping up cannot be followed by a retry.
-      return { success: false, error: result.error };
-    }
+      const result = await requestRabbitHunt(
+        tableId,
+        handNumber ?? rabbitHandNumberRef.current ?? undefined
+      );
+      if (!result.success || !result.cards?.length) {
+        // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
+        // remove the button, or topping up cannot be followed by a retry.
+        return { success: false, error: result.error };
+      }
 
-    // Server card format (hearts/diamonds/clubs/spades) → client shorthand.
-    const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-      hearts: 'h',
-      diamonds: 'd',
-      clubs: 'c',
-      spades: 's',
-      h: 'h',
-      d: 'd',
-      c: 'c',
-      s: 's',
-    };
-    const parsedCards = result.cards.map((c) => ({
-      rank: String(c.rank) as any,
-      suit: suitMap[String(c.suit)] || 'h',
-    }));
-    setRabbitRevealedCards(parsedCards);
-    // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
-    // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
-    // without freezing anything. It yields the moment a newer hand has cards.
-    setRetainedRabbitBoard(
-      boardForRabbitReveal(
-        lastBoardOfHandRef.current,
-        rabbitHandNumberRef.current ?? liveHandNumberRef.current,
-        parsedCards
-      )
-    );
-    if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
-    retainedRabbitTimerRef.current = window.setTimeout(() => {
-      retainedRabbitTimerRef.current = null;
-      setRetainedRabbitBoard(null);
-    }, RABBIT_REVEAL_MIN_VISIBLE_MS);
-    // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
-    // this, a reveal on a table that never deals another hand stayed on the
-    // board forever (the only other clears are hand-boundary resets).
-    if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
-    rabbitRevealClearTimerRef.current = window.setTimeout(() => {
-      rabbitRevealClearTimerRef.current = null;
-      setRabbitRevealedCards([]);
-    }, 8000);
-    return {
-      success: true,
-      cards: parsedCards,
-      source: result.source,
-      diamondsSpent: result.diamonds_spent,
-      // The server counts the VIP monthly pool down on every reveal and has
-      // always returned it. It used to be dropped here, one line from the UI,
-      // which is why the button could say FREE on the 101st hunt and then
-      // silently charge five diamonds.
-      vipRemaining: result.vip_remaining,
-      // Uses left on a purchased pack. Without it a pack reveal spent neither
-      // diamonds nor a VIP use, so the player burned one of something they had
-      // paid for and nothing on screen acknowledged it.
-      usesRemaining: result.uses_remaining,
-    };
-  }, [tableId]);
+      // Server card format (hearts/diamonds/clubs/spades) → client shorthand.
+      const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
+        hearts: 'h',
+        diamonds: 'd',
+        clubs: 'c',
+        spades: 's',
+        h: 'h',
+        d: 'd',
+        c: 'c',
+        s: 's',
+      };
+      const parsedCards = result.cards.map((c) => ({
+        rank: String(c.rank) as any,
+        suit: suitMap[String(c.suit)] || 'h',
+      }));
+      setRabbitRevealedCards(parsedCards);
+      // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
+      // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
+      // without freezing anything. It yields the moment a newer hand has cards.
+      setRetainedRabbitBoard(
+        boardForRabbitReveal(
+          lastBoardOfHandRef.current,
+          rabbitHandNumberRef.current ?? liveHandNumberRef.current,
+          parsedCards
+        )
+      );
+      if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+      retainedRabbitTimerRef.current = window.setTimeout(() => {
+        retainedRabbitTimerRef.current = null;
+        setRetainedRabbitBoard(null);
+      }, RABBIT_REVEAL_MIN_VISIBLE_MS);
+      // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
+      // this, a reveal on a table that never deals another hand stayed on the
+      // board forever (the only other clears are hand-boundary resets).
+      if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
+      rabbitRevealClearTimerRef.current = window.setTimeout(() => {
+        rabbitRevealClearTimerRef.current = null;
+        setRabbitRevealedCards([]);
+      }, 8000);
+      return {
+        success: true,
+        cards: parsedCards,
+        source: result.source,
+        diamondsSpent: result.diamonds_spent,
+        // The server counts the VIP monthly pool down on every reveal and has
+        // always returned it. It used to be dropped here, one line from the UI,
+        // which is why the button could say FREE on the 101st hunt and then
+        // silently charge five diamonds.
+        vipRemaining: result.vip_remaining,
+        // Uses left on a purchased pack. Without it a pack reveal spent neither
+        // diamonds nor a VIP use, so the player burned one of something they had
+        // paid for and nothing on screen acknowledged it.
+        usesRemaining: result.uses_remaining,
+      };
+    },
+    [tableId]
+  );
 
   // Leaderboard state
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -9883,14 +10083,14 @@ export default function TablePage({
           // COUNTDOWN HONESTY 2026-08-28: the multi-table tab's background
           // countdown anchors to the ENGINE's deadline when it rides the
           // offer, not a seconds figure that is stale on arrival.
-          const insDeadline = Number(heroOffer.deadlineAt) || Date.now() + insSecs * 1000;
+          const insDeadline = Number(heroOffer.deadlineAt) || serverNow() + insSecs * 1000;
           setDecisionDeadline({ kind: 'insurance', at: insDeadline });
         } else {
           // Everyone else (players AND observers) sees the reference flow's
           // quiet status bar while the leader decides. Auto-expires with the
           // offer window so a missed decline event cannot strand it.
           const leaderName = String(serverOffers[0]?.username || 'Player');
-          setInsuranceWaitingOn({ username: leaderName, until: Date.now() + insSecs * 1000 });
+          setInsuranceWaitingOn({ username: leaderName, until: serverNow() + insSecs * 1000 });
         }
         return; // Don't process as regular state
       }
@@ -10789,6 +10989,14 @@ export default function TablePage({
      at once rather than on its next poll. */
   const [showMustMoveLobby, setShowMustMoveLobby] = useState(false);
   const [clusterRefreshKey, setClusterRefreshKey] = useState(0);
+  /* THE LOBBY BUTTON MOVED OFF THE FELT (Dan 2026-09-05): "THE LOBBY
+     RECTANGLE, NEEDS TO MOVE TO ... WHERE THE '4 SQUARE' BOX IS IN THE ACTION
+     PILL AREA. AND SAY 'LOBBY' ON IT." That row belongs to MultiTablePage, so
+     the button asks this table, by id, to open its own lobby. */
+  useMasterBusSubscription('OPEN_MUST_MOVE_LOBBY', (event) => {
+    if (event.tableId !== tableId) return;
+    setShowMustMoveLobby(true);
+  });
   const [standUpNextBB, setStandUpNextBB] = useState(false);
 
   const [sharedHandData, setSharedHandData] = useState<any>(null);
@@ -21449,6 +21657,29 @@ export default function TablePage({
                         </>
                       );
                     })()}
+                    {/* THE BOMB POT CLOCK, UNDER THE BLINDS (Dan 2026-09-05):
+                        "THE 'DOUBLE BOARD BOMB POT NEXT HAND' DISPLAY AND
+                        COUNTDOWN CLOCK NEEDS TO BE MUCH SMALLER ... IT SHOULD
+                        BE UNDER THE BLINDS WHERE 'ACTION' IS LOCATED. AND
+                        SHOULD JUST BE A SMALL COUNTDOWN CLOCK."
+
+                        So it is a masthead line like ANTE and VPIP, not a pill
+                        on the felt: same tiny type scale, same column, and it
+                        moves with --sp-brand-top when a two- or three-board
+                        stack pushes the masthead down. It sits below ACTION on
+                        both a cash table and a tournament because it lives in
+                        .table-brand__meta, outside the branch above. The live
+                        state is NOT here - it hangs off the board (see
+                        .bomb-pot-live). */}
+                    {bombPotBadge && bombPotBadge.state !== 'live' && (
+                      <span
+                        className={`table-brand__line table-brand__line--bomb${
+                          bombPotBadge.state === 'next' ? ' table-brand__line--bomb-next' : ''
+                        }`}
+                      >
+                        <span className="table-brand__bomb">{bombPotBadge.text}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
                 {/* Dan 2026-08-19 item 15: the pot moved OUT of .table-surface.
@@ -21583,20 +21814,26 @@ export default function TablePage({
                               : tableState.boardStage
                         }
                         highlightedIndices={winnerInfo.cardIndices}
-                        winningHandName={winnerInfo.boardHandNames?.[0] || winnerInfo.handName}
+                        winningHandName={
+                          winnerBandActive
+                            ? winnerInfo.boardHandNames?.[0] || winnerInfo.handName
+                            : undefined
+                        }
                         /* SHOWDOWN SYSTEM 2026-08-25 (spec section 14): the
                            engine's descriptive line under the hand name.
                            Single-board only — per-board labels already carry
                            their own hand names. */
                         winningHandDescription={
-                          winnerInfo.boardHandNames ? undefined : winnerInfo.handDescription
+                          !winnerBandActive || winnerInfo.boardHandNames
+                            ? undefined
+                            : winnerInfo.handDescription
                         }
                         /* SHOWDOWN POLISH 2026-08-25 (spec 33): the hi-lo
                            split's LOW WINNER line. Review fix: NOT gated on
                            boardHandNames — a double-board hi-lo hand has both
                            per-board names AND a low winner, and suppressing
                            the label hid a real winner's credit line. */
-                        lowWinnerLabel={winnerInfo.lowWinnerLabel}
+                        lowWinnerLabel={winnerBandActive ? winnerInfo.lowWinnerLabel : ''}
                         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                         cardBack={activeCardBack}
                         playSounds={ambientSoundsAllowed}
@@ -21644,7 +21881,11 @@ export default function TablePage({
                                 ? 'preflop'
                                 : tableState.boardStage
                             }
-                            winningHandName={winnerInfo.boardHandNames?.[1] || undefined}
+                            winningHandName={
+                              winnerBandActive
+                                ? winnerInfo.boardHandNames?.[1] || undefined
+                                : undefined
+                            }
                             /* POKERBROS PARITY 2026-08-26 (round 3): board 2
                                dims and lights exactly like board 1. */
                             highlightedIndices={board2HighlightedIndices}
@@ -21673,7 +21914,11 @@ export default function TablePage({
                                 ? 'preflop'
                                 : tableState.boardStage
                             }
-                            winningHandName={winnerInfo.boardHandNames?.[2] || undefined}
+                            winningHandName={
+                              winnerBandActive
+                                ? winnerInfo.boardHandNames?.[2] || undefined
+                                : undefined
+                            }
                             highlightedIndices={board3HighlightedIndices}
                             deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                             cardBack={activeCardBack}
@@ -21720,76 +21965,28 @@ export default function TablePage({
                       )}
                     </div>
                   )}
+
+                  {/* THE BOMB HAND ITSELF. Dan 2026-09-05: "THE 'DOUBLE BOARD
+                      BOMB POT' IS COVERING THE TOP OF THE CARDS ... IT NEEDS
+                      TO BE HIGHER, AND SMALLER, AND IT NEEDS TO BE
+                      SMARTER.POKER COLOR SCHEMA, NOT PINK."
+
+                      Only the LIVE state hangs on the felt now - every
+                      countdown state moved into the masthead under the blinds
+                      (.table-brand__line--bomb). And it is INSIDE
+                      .community-area, hanging off the stack's own top edge
+                      (bottom: 100% in CSS), for exactly the reason the scoop
+                      banner was moved in here on 2026-08-29: pinned at 27% of
+                      the felt it sat inside the two- and three-board stack,
+                      which is the only time this label is ever shown. An
+                      anchor cannot go stale; a percentage can. */}
+                  {bombPotBadge?.state === 'live' && (
+                    <div className="bomb-pot-live" aria-live="polite">
+                      <span className="bomb-pot-live__dot" />
+                      {bombPotBadge.text}
+                    </div>
+                  )}
                 </div>
-
-                {/* ROUND 3 (2026-08-20): bomb pot countdown — players see the
-                    forced ante coming instead of being ambushed by it. Server
-                    truth (tableState.bombPotIn from the snapshot).
-
-                    AND THE HAND ITSELF (Dan 2026-09-04): "THERE SHOULDN'T BE
-                    'BOMB POT PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD
-                    JUST BE SOMETHING ON THE TABLE THAT SAYS 'BOMB POT'." This
-                    pill used to hide while the bomb hand played and every seat
-                    grew a magenta "BOMB" pill instead. Those are gone; this
-                    ONE pill stays up through the hand and reads "BOMB POT"
-                    (with its board count), in the live colour. */}
-                {/* Gate on the SNAPSHOT value only — it is server truth and
-                    goes non-null the moment an owner enables bomb pots, while
-                    bombPotRules is a one-shot fetch that would hold the pill
-                    hostage until a page reload. */}
-                {(bombPotActive ||
-                  tableState.bombPotIn != null ||
-                  bombClockLabel != null ||
-                  tableState.bombPotWaitingFor != null) && (
-                  <div
-                    className={`bomb-pot-eta ${
-                      bombPotActive
-                        ? 'bomb-pot-eta--live'
-                        : // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
-                          // marks "the next hand is the bomb". On a bomb_pot_only
-                          // table the scheduler reports 1 forever, because every
-                          // hand is a bomb — so this pill pulsed for the entire
-                          // session on the one table where the fact is ordinary
-                          // rather than urgent, and the animation stopped meaning
-                          // anything on every other table by association.
-                          bombPotRules?.triggerMode !== 'bomb_pot_only' &&
-                            tableState.bombPotWaitingFor == null &&
-                            (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
-                          ? 'bomb-pot-eta--next'
-                          : ''
-                    }`}
-                  >
-                    <span className="bomb-pot-eta__dot" />
-                    {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
-                        board count (spec §15.2); bomb-only tables show a
-                        permanent identity pill rather than a countdown.
-                        TIMED CLOCK 2026-08-28: timed tables count down in
-                        m:ss to the engine's bomb_pot_next_at. */}
-                    {/* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits
-                        for bomb_pot_min_players, and the engine held it in
-                        silence — the pill said BOMB POT NEXT HAND and then the
-                        table dealt ordinary hands, indefinitely, with no
-                        explanation available anywhere in the product. This
-                        branch is first because it is the truest thing the pill
-                        can say when it applies. */}
-                    {bombPotActive
-                      ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT`
-                      : tableState.bombPotWaitingFor != null
-                        ? `BOMB POT WAITING FOR ${tableState.bombPotWaitingFor} PLAYERS`
-                        : bombPotRules?.triggerMode === 'bomb_pot_only'
-                          ? `${bombPotRules.boardCount >= 3 ? 'TRIPLE BOARD ' : bombPotRules.boardCount === 2 ? 'DOUBLE BOARD ' : ''}BOMB POT ONLY`
-                          : bombClockLabel != null
-                            ? bombClockLabel === 'NEXT HAND'
-                              ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                              : `BOMB POT IN ${bombClockLabel}`
-                            : tableState.bombPotIn === 1
-                              ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                              : /* Hands, said so (Dan 2026-09-05: inside the
-                                   last three minutes a timed bomb is "IN 1-5
-                                   HANDS" and the clock is gone). */
-                                `BOMB POT IN ${tableState.bombPotIn} HANDS`}
-                  </div>
-                )}
 
                 {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
                     gone. It printed the stakes a second and third time
@@ -23963,6 +24160,11 @@ export default function TablePage({
         loadState={handHistoryState}
         initialHandId={handDetailFocusId}
         viewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
+        /* P5 2026-09-05: the rest of the server's ninety seconds. The felt
+           shows the offer for ~2.5s; a player who missed it can buy the same
+           reveal here, through the same charging call. */
+        onRabbitHunt={handleRabbitReveal}
+        rabbitUserId={userId === 'guest' ? null : userId}
         /* Take the hand you are LOOKING AT. This was `onReplay={() => {...}}`
            — no parameter — and the replay modal resolves its own subject from
            `lastHandId`, which is filled by `getPlayerHands(userId, 1)`: the
@@ -24708,6 +24910,14 @@ export default function TablePage({
         gameId={tableState.clusterId}
         currentTableId={tableId}
         onClose={() => setShowMustMoveLobby(false)}
+        onGoToTable={(dest) => {
+          if (dest === tableId) return;
+          if (embeddedTableId) {
+            onTableInfoUpdate?.({ movedToTableId: dest });
+            return;
+          }
+          navigate(`/table/${dest}`);
+        }}
       />
       <TournamentLobbyModal
         isOpen={showTournamentLobby}

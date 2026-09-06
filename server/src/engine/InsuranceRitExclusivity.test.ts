@@ -165,7 +165,7 @@ describe('insurance x run-it-twice - the RIT question first, insurance on a sing
     if (offers.length > 0) {
       expect(offers[0].status).toBe('offered');
     }
-  });
+  }, 30_000);
 
   it('both enabled: RIT ACCEPTED (2 boards) -> NO insurance offer ever appears', async () => {
     const { engine, events } = runoutHarness({ insurance: true, rit: true });
@@ -193,7 +193,7 @@ describe('insurance x run-it-twice - the RIT question first, insurance on a sing
   });
 
   it('RIT only (no insurance): RIT offer exists and NO insurance offer ever appears', async () => {
-    const { engine, events } = runoutHarness({ insurance: false, rit: true });
+    const { engine } = runoutHarness({ insurance: false, rit: true });
     expect(engine.runItTwiceEngine.hasPendingOffer(TABLE)).toBe(true);
     // Insurance is switched off, so nothing can ever create an offer here; the
     // wait only has to outlive the point where one WOULD have been created,

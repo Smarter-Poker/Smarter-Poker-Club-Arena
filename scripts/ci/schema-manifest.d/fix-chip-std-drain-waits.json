@@ -1,0 +1,10 @@
+{
+  "_owner": "fix/chip-std-drain-waits",
+  "functions": [
+    "fn_ca_stable_dedupe_key",
+    "fn_ca_alert_resolution_reaches_the_incident",
+    "fn_ca_incident_resolution_reaches_the_alerts",
+    "fn_ca_insert_hand_with_awards",
+    "fn_ca_bomb_hand_keeps_its_award_units"
+  ]
+}

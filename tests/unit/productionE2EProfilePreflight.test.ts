@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { evaluateAcrossDocumentReplacement } from '../e2e/support/evaluateAcrossDocumentReplacement';
+import { ensureClubMembership } from '../e2e/support/ensureClubMembership';
 import { ensurePlayableProfile } from '../e2e/support/ensurePlayableProfile';
 
 const source = (path: string) => readFileSync(resolve(__dirname, '../..', path), 'utf8');
@@ -139,12 +140,48 @@ describe('authenticated production account preflight', () => {
     expect(helper).toContain("getByRole('button', { name: 'Try Again' })");
     expect(helper).toContain("waitUntil: 'commit'");
     expect(helper).toContain('CLUB_ROUTE_ATTEMPTS');
+    expect(helper).toContain('club navigation timed out; retrying');
+    expect(helper).toContain('did not commit after ${CLUB_ROUTE_ATTEMPTS} attempts');
     expect(helper).toContain('POST_JOIN_DECISION_SELECTOR');
     expect(helper).toContain("textContent({ timeout: 1_000 }).catch(() => '')");
     expect(helper).not.toContain(
       'await error.textContent())?.trim() || (await workspaceError.textContent()'
     );
     expect(helper).toContain('Visible copy:');
+  });
+
+  it('retries a club navigation that never commits before trusting the route', async () => {
+    const lobby = { isVisible: vi.fn().mockResolvedValue(true) };
+    const hidden = { isVisible: vi.fn().mockResolvedValue(false) };
+    const routeDecision = { waitFor: vi.fn().mockResolvedValue(undefined) };
+    const page = {
+      goto: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('upstream reset before commit'))
+        .mockResolvedValueOnce(null),
+      locator: vi.fn((selector: string) => {
+        if (selector === '.club-home') return lobby;
+        if (selector.includes('.club-home,')) return { first: () => routeDecision };
+        return hidden;
+      }),
+      getByRole: vi.fn((role: string) => {
+        if (role === 'alert') return { filter: () => hidden };
+        return hidden;
+      }),
+    };
+
+    await expect(
+      ensureClubMembership(
+        page as unknown as Page,
+        'https://smarter.poker/hub/club-arena/',
+        'fixture-club'
+      )
+    ).resolves.toBe(false);
+    expect(page.goto).toHaveBeenCalledTimes(2);
+    expect(routeDecision.waitFor).toHaveBeenCalledWith({
+      state: 'visible',
+      timeout: 60_000,
+    });
   });
 
   it('keeps production lobby and mobile audits aligned with the shipped surfaces', () => {

@@ -22,6 +22,31 @@ import { join } from 'path';
 const hist = readFileSync(join(__dirname, '..', 'services', 'supabase', 'handHistory.ts'), 'utf8');
 const settle = readFileSync(join(__dirname, 'ServerTableEngineSettlement.ts'), 'utf8');
 
+/**
+ * One statement, from `anchor` to the semicolon that closes it at depth zero.
+ *
+ * Inlined rather than imported: `tests/helpers/sourceWindow` lives in the
+ * CLIENT tree, and this server tree refuses cross-tree imports twice over (its
+ * ESM `.js` specifier guard and tsc's rootDir). Byte counts are forbidden by
+ * tests/unit/noFixedSizeSourceWindows.test.ts - which caught the first draft
+ * of this very assertion slicing `start + 2400`, which is the rule working.
+ * The window has to be the statement because the ternary chain gains a branch
+ * every time a fallback is added, and a fixed count slides off the newest one
+ * while staying green.
+ */
+function statementAt(src: string, anchor: string): string {
+  const start = src.indexOf(anchor);
+  if (start < 0) throw new Error(`statementAt: "${anchor}" not found`);
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    const c = src[i];
+    if (c === '{' || c === '(' || c === '[') depth++;
+    else if (c === '}' || c === ')' || c === ']') depth--;
+    else if (c === ';' && depth <= 0) return src.slice(start, i + 1);
+  }
+  return src.slice(start);
+}
+
 describe('the bomb breakdown travels with the hand', () => {
   it('the award units are written by the same call that writes the row', () => {
     expect(hist).toContain("supabase.rpc('fn_ca_insert_hand_with_awards'");
@@ -46,6 +71,25 @@ describe('the bomb breakdown travels with the hand', () => {
     );
     expect(build).toContain('snap.perPotAwards.map');
     expect(build).toContain('snap.bombPot && snap.perPotAwards.length > 0');
+  });
+
+  it('a bomb hand with winners but no per-pot awards still carries a breakdown the guard accepts', () => {
+    // 20260906143315 attached a DEFERRED constraint trigger: a bomb hand that
+    // distributed chips cannot commit without award units summing to the pot.
+    // An empty per-pot award array would therefore be refused twenty times by
+    // the retry queue and the hand lost outright. The winners list is the same
+    // money (966 of 966 bomb hands over six hours: sum(winners) == distributable
+    // to the cent), so it is the fallback source of units.
+    // Bounded by the statement, never by a byte count: the ternary chain
+    // grows every time a fallback is added, and a fixed window would slide
+    // off the newest one while staying green (tests/helpers/sourceWindow.ts).
+    const build = statementAt(settle, 'const bombAwardUnits =');
+    expect(build).toContain('snap.bombPot && (snap.winners?.length ?? 0) > 0');
+    expect(build).toContain('snap.winners.map((w) => ({');
+    expect(build).toContain('pot_index: w.potIndex ?? 0');
+    expect(build).toContain('amount: w.amount');
+    // and the defect is still reported, not hidden by the fallback
+    expect(settle).toContain("'ServerTableEngine.bomb_award_units_empty'");
   });
 
   it('the old fire-and-forget upsert only runs when the atomic write did not', () => {

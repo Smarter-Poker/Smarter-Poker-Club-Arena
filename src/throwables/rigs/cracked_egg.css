@@ -1,0 +1,127 @@
+/**
+ * CRACKED EGG - keyframes. Every delay is from LANDING (launch + 367 ms); the
+ * comment on each stop gives the catalogue's ms from launch. Every duration
+ * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width (the rig viewBox), so the
+ * numbers are the measured pixel offsets scaled by 100/40 (video 2's target
+ * avatar was ~40 px wide).
+ *
+ * The whole performance is a hard cut from an intact egg to a cracked one at
+ * +33 (one frame at 30 fps), then a static residue. The only motion after
+ * the crack is the whites running down the face (+33 to about +250) and a
+ * 100 ms settle on the yolk cap. Nothing scales in, nothing fades, nothing
+ * shakes.
+ */
+
+/* == THE INTACT EGG: sits on the head for one frame (367-400), then hidden
+   in one frame. steps(1, end) holds the 0% state for the whole 33 ms and
+   jumps to the 100% state at its end, where fill-mode keeps it. ========== */
+.thr-cracked_egg__egg {
+  animation: thr-cracked_egg-egg-hide calc(0.033s * var(--animation-speed, 1)) steps(1, end) both;
+}
+
+@keyframes thr-cracked_egg-egg-hide {
+  0% {
+    /* 367: intact at the top of the head */
+    opacity: 1;
+  }
+  100% {
+    /* 400: gone, replaced by the splat in the same frame */
+    opacity: 0;
+  }
+}
+
+/* == THE SPLAT (yolk, shell, whites): invisible for the first frame, then
+   ON at +33, in one frame, and held to the cut. ============================ */
+.thr-cracked_egg__splat {
+  animation: thr-cracked_egg-crack calc(0.033s * var(--animation-speed, 1)) steps(1, end) both;
+}
+
+@keyframes thr-cracked_egg-crack {
+  0% {
+    /* 367: nothing yet */
+    opacity: 0;
+  }
+  100% {
+    /* 400: CRACK, everything at once */
+    opacity: 1;
+  }
+}
+
+/* == THE YOLK CAP: appears at full size and settles 1.06 -> 1 over 100 ms
+   (+33 to +133). Not a scale-in: it is already whole on the crack frame. == */
+.thr-cracked_egg__yolk {
+  transform-box: fill-box;
+  transform-origin: 50% 60%;
+  animation: thr-cracked_egg-yolk-settle calc(0.1s * var(--animation-speed, 1)) ease-out
+    calc(0.033s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-cracked_egg-yolk-settle {
+  0% {
+    /* 400: a hair large */
+    transform: scale(1.06);
+  }
+  100% {
+    /* 500: at rest */
+    transform: scale(1);
+  }
+}
+
+/* == THE WHITES: each drip grows DOWN from its top (transform-origin at the
+   top of its own box) from +33, to its own length, then holds. The gloss
+   lines share the class and the origin so they grow with their drip. ====== */
+.thr-cracked_egg__drip {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+  animation: thr-cracked_egg-drip calc(0.217s * var(--animation-speed, 1)) ease-out
+    calc(0.033s * var(--animation-speed, 1)) both;
+}
+
+/* 433-633: the left drip, to y +30 */
+.thr-cracked_egg__drip--a {
+  animation-duration: calc(0.2s * var(--animation-speed, 1));
+}
+
+/* 433-650: the long centre drip, to y +40 (the chin) */
+.thr-cracked_egg__drip--b {
+  animation-duration: calc(0.217s * var(--animation-speed, 1));
+}
+
+/* 433-583: the short right drip, to y +10 */
+.thr-cracked_egg__drip--c {
+  animation-duration: calc(0.15s * var(--animation-speed, 1));
+}
+
+@keyframes thr-cracked_egg-drip {
+  0% {
+    /* 400: the drip is a line under the yolk */
+    transform: scaleY(0);
+  }
+  100% {
+    /* about 617: full length, held to the cut at 3500 */
+    transform: scaleY(1);
+  }
+}
+
+/* == REDUCED MOTION: the cracked state is simply there. The intact-egg frame
+   goes, the yolk sits at rest, the drips are at full length. =============== */
+@media (prefers-reduced-motion: reduce) {
+  .thr-cracked_egg__egg {
+    animation: none !important;
+    opacity: 0;
+  }
+  .thr-cracked_egg__splat {
+    animation: none !important;
+    opacity: 1;
+  }
+  .thr-cracked_egg__yolk {
+    animation: none !important;
+    transform: scale(1);
+  }
+  .thr-cracked_egg__drip {
+    animation: none !important;
+    transform: scaleY(1);
+  }
+}

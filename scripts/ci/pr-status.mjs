@@ -81,7 +81,34 @@ const ALL = has('--all');
 // asking twice costs one request - repeated log reads are the heavy endpoint
 // that exhausts the quota.
 const WANT_LOG = has('--log');
-const REPO = argOf('--repo', process.env.REPO || 'Smarter-Poker/Smarter-Poker-Club-Arena');
+/**
+ * Which repository am I asking about?
+ *
+ * This used to default to `Smarter-Poker/Smarter-Poker-Club-Arena`. That is
+ * fine in Club Arena and a trap everywhere else: AGENT-PLAYBOOK.md is
+ * byte-identical in seven repos, so the moment it started naming this tool,
+ * an agent in the World Hub running it with no arguments would have been told,
+ * confidently and in the right format, about Club Arena's pull requests.
+ *
+ * A wrong answer that looks right is the whole subject of this file's header,
+ * so the repo is DERIVED from the checkout instead. Explicit --repo or $REPO
+ * still win; a directory with no git remote gets no guess at all.
+ */
+function repoFromGitRemote() {
+  try {
+    const url = execSync('git remote get-url origin', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    // git@github.com:owner/name.git | https://github.com/owner/name(.git)
+    const m = url.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/);
+    return m ? `${m[1]}/${m[2]}` : null;
+  } catch {
+    return null;
+  }
+}
+
+const REPO = argOf('--repo', process.env.REPO || repoFromGitRemote());
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_PAT || process.env.GH_TOKEN;
 
 // A conclusion that is not one of these is a failure. Listing the GOOD ones
@@ -102,6 +129,15 @@ if (!TOKEN) {
     'no GITHUB_TOKEN / GH_PAT / GH_TOKEN in the environment.\n' +
       '  It lives in ~/Documents/club-arena/.env - load it with:\n' +
       "    export GITHUB_TOKEN=$(grep -m1 '^GITHUB_TOKEN=' ~/Documents/club-arena/.env | cut -d= -f2-)"
+  );
+}
+
+if (!REPO) {
+  die(
+    'could not tell which repository to ask about.\n' +
+      '  There is no `origin` remote here and neither --repo nor $REPO was given.\n' +
+      "  Guessing one would report, in a convincing format, on somebody else's\n" +
+      '  pull requests. Run this inside a checkout, or pass --repo owner/name.'
   );
 }
 

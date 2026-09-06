@@ -2367,24 +2367,28 @@ export default function MultiTablePage() {
    * club their chips and rake belong to — and it wins over the table's own
    * club_id precisely so a union table cannot drag them into the union.
    */
-  const commitHomeClub = useCallback(async (tableClubId: string | null) => {
-    const resolved = await resolveLobbyClubId({
-      viewerClubId: useUserStore.getState().currentClubId,
-      tableClubId,
-    });
-    // null means "nothing survived the union filter" — the lobby tab falls back
-    // to <HomePage>, which is a correct destination. Never store the union.
-    //
-    // But never DOWNGRADE either: once a real club is known, a later call with
-    // a cold cache must not blank it back to null. Both call sites can fire
-    // before the table lookup lands, and "no answer yet" is not "no club".
-    if (resolved === null && homeClubIdRef.current !== null) return homeClubIdRef.current;
-    if (homeClubIdRef.current !== resolved) {
-      homeClubIdRef.current = resolved;
-      setHomeClubId(resolved);
-    }
-    return resolved;
-  }, []);
+  const commitHomeClub = useCallback(
+    async (tableClubId: string | null) => {
+      const resolved = await resolveLobbyClubId({
+        userId: user?.id ?? null,
+        viewerClubId: useUserStore.getState().currentClubId,
+        tableClubId,
+      });
+      // null means "nothing survived the union filter" — the lobby tab falls back
+      // to <HomePage>, which is a correct destination. Never store the union.
+      //
+      // But never DOWNGRADE either: once a real club is known, a later call with
+      // a cold cache must not blank it back to null. Both call sites can fire
+      // before the table lookup lands, and "no answer yet" is not "no club".
+      if (resolved === null && homeClubIdRef.current !== null) return homeClubIdRef.current;
+      if (homeClubIdRef.current !== resolved) {
+        homeClubIdRef.current = resolved;
+        setHomeClubId(resolved);
+      }
+      return resolved;
+    },
+    [user?.id]
+  );
 
   const handleAddTable = useCallback(async () => {
     if (tables.length >= MAX_TABLES) {

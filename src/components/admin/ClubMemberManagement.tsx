@@ -209,18 +209,17 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
   };
 
   /**
-   * Removal is a hard DELETE of the membership row, and that row IS the
-   * member's club wallet: chip_balance, held_chips, locked_chips,
-   * promo_balance and credit_used all live on it (CLAUDE.md 11.5 - a probe
-   * on 2026-09-03 found the first member it picked holding 10,067.64). So:
-   * refused while the member holds anything or sits at a table, confirmed
-   * when they do not, and the deleted row count checked afterwards.
+   * The quick checks below explain obvious blockers before confirmation. The
+   * authoritative decision is still made by fn_remove_settled_club_member in
+   * the same transaction as the departure; balances or seats can change between
+   * this screen's read and the click, and the browser is never allowed to
+   * DELETE a wallet-bearing membership directly.
    */
   const kickMember = async (member: Member) => {
     if (busyId) return;
     if (member.chipsAtRisk > 0) {
       toast.error(
-        `${member.username} Holds Or Owes ${member.chipsAtRisk.toLocaleString()} Chips In This Club. Settle Them Before Removing The Membership.`
+        `${member.username} Holds Or Owes ${member.chipsAtRisk.toLocaleString()} Chips In This Club. Settle Them Before Marking The Membership Departed.`
       );
       return;
     }
@@ -235,31 +234,20 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
         return;
       }
       const confirmed = await confirmDialog({
-        title: 'Remove Member',
-        message: `Remove ${member.username} From The Club? They Hold No Chips And Are Not Seated.`,
-        confirmText: 'Remove',
+        title: 'Mark Member Departed',
+        message: `Mark ${member.username} As Departed From The Club? Access Ends, While Their Membership And Role History Stay Retained.`,
+        confirmText: 'Mark Departed',
         variant: 'danger',
       });
       if (!confirmed) return;
 
-      const { data, error } = await supabase
-        .from('club_members')
-        .delete()
-        .eq('club_id', resolvedId)
-        .eq('user_id', member.id)
-        .select('user_id');
+      await MembershipService.removeMember(resolvedId, member.id);
 
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        throw new Error('The Club Did Not Accept The Removal. Your Role May Not Allow It.');
-      }
-
-      if (isMounted.current) toast.success('Member Removed From Club');
-      masterBus.emit('CLUB_UPDATED', { clubId });
+      if (isMounted.current) toast.success('Member Marked Departed; History Retained');
       loadMembers();
     } catch (err) {
       reportError(err, 'ClubMemberManagement.kickMember');
-      if (isMounted.current) toast.error(safeErrorMessage(err, 'Failed To Remove Member'));
+      if (isMounted.current) toast.error(safeErrorMessage(err, 'Failed To Mark Member Departed'));
     } finally {
       if (isMounted.current) setBusyId(null);
     }

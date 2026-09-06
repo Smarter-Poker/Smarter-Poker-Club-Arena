@@ -423,3 +423,31 @@ export const sliceBetween = (src: string, from: string, to: string): string => {
   const end = src.indexOf(to, start + from.length);
   return end < 0 ? src.slice(start) : src.slice(start, end);
 };
+
+/**
+ * One markdown section: the heading whose text contains `headingText`, up to
+ * the next heading at the SAME OR SHALLOWER level.
+ *
+ * Added 2026-09-06, when `docs/runbooks/` gained a page that a law reads. A
+ * runbook section is exactly the shape this file exists for - "the part about
+ * close 1006" is a structure, and the `slice(at, at + 1400)` that stood in for
+ * it went stale the first time the section gained a paragraph.
+ *
+ * Sub-headings are kept, because a section owns them; a byte window would have
+ * cut one in half.
+ */
+export const sliceMarkdownSection = (md: string, headingText: string): string => {
+  const lines = md.split('\n');
+  const start = lines.findIndex((l) => /^#{1,6}\s/.test(l) && l.includes(headingText));
+  if (start < 0) throw new Error(`sliceMarkdownSection: no heading containing "${headingText}"`);
+  const level = (lines[start].match(/^#+/) as RegExpMatchArray)[0].length;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    const m = lines[i].match(/^(#{1,6})\s/);
+    if (m && m[1].length <= level) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(start, end).join('\n');
+};

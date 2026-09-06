@@ -348,7 +348,13 @@ export const ClubRosterService = {
           filtered_total: num(d.filtered_total),
         };
       },
-      { signal: query.signal, timeoutMs: 8_000 }
+      // The page owns one cold-load recovery. Do not stack the utility's three
+      // retries underneath it: aborting fetch does not guarantee that Postgres
+      // stops the already-started roster query, so the old 3 x 8s policy could
+      // leave several copies competing with the request meant to recover it.
+      // One 20s attempt lets a temporarily queued query finish and keeps the
+      // complete first-load + recovery path inside the 45s release budget.
+      { attempts: 1, signal: query.signal, timeoutMs: 20_000 }
     );
   },
 

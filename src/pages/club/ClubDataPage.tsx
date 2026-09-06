@@ -446,6 +446,11 @@ export default function ClubDataPage() {
   const params = useParams<{ clubId?: string }>();
   const [searchParams] = useSearchParams();
   const { user, isHydrating } = useAuthUser();
+  // Every protected read is account-scoped, not profile-object-scoped.
+  // IdentityDNA may replace the same user's object when delayed profile
+  // hydration or token renewal lands. Depending on that object restarted the
+  // first-page load and collapsed an operator's expanded ledger back to 100.
+  const userId = user?.id ?? null;
 
   const clubParam = params.clubId || searchParams.get('club') || '';
 
@@ -656,7 +661,7 @@ export default function ClubDataPage() {
   // never retry when the user arrives.
   useEffect(() => {
     let cancelled = false;
-    if (!clubParam || isUUID(clubParam) || isHydrating || !user) return;
+    if (!clubParam || isUUID(clubParam) || isHydrating || !userId) return;
     const myVersion = ++resolveVersion.current;
     const stale = () => cancelled || resolveVersion.current !== myVersion;
     withTimeout(resolveClubUUID(clubParam), 'Club lookup timed out')
@@ -687,10 +692,10 @@ export default function ClubDataPage() {
     return () => {
       cancelled = true;
     };
-  }, [clubParam, isHydrating, user]);
+  }, [clubParam, isHydrating, userId]);
 
   useEffect(() => {
-    if (!clubUuid || isHydrating || !user) return;
+    if (!clubUuid || isHydrating || !userId) return;
     let cancelled = false;
     const myVersion = ++clubNameVersion.current;
     const stale = () => cancelled || clubNameVersion.current !== myVersion;
@@ -708,11 +713,11 @@ export default function ClubDataPage() {
     return () => {
       cancelled = true;
     };
-  }, [clubUuid, isHydrating, user]);
+  }, [clubUuid, isHydrating, userId]);
 
   const load = useCallback(
     async (showSpinner: boolean, preserveOnError = false): Promise<boolean> => {
-      if (!clubUuid || isHydrating || !user) return false;
+      if (!clubUuid || isHydrating || !userId) return false;
       // Pagination owns its cursor while it is in flight. A heartbeat is a
       // recovery mechanism, not a reason to supersede that operator action.
       if (preserveOnError && gamesMoreRef.current) return true;
@@ -781,7 +786,7 @@ export default function ClubDataPage() {
         if (rpcError) {
           if (isAuthzError(rpcError)) {
             setError('You need to be an owner or admin of this club to see its data.');
-            removeClubDataCaches(user.id, clubUuid);
+            removeClubDataCaches(userId, clubUuid);
             setLedgerSource('cold');
           } else {
             reportError(rpcError, 'ClubDataPage.snapshot_rpc');
@@ -856,7 +861,7 @@ export default function ClubDataPage() {
           const cachedSnapshot = prefetchedRows.length
             ? { ...nextSnapshot, rows: [...rows, ...prefetchedRows] }
             : nextSnapshot;
-          writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
+          writeClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey, {
             snapshot: cachedSnapshot,
             cursor: prefetchedRows.length ? page!.next_cursor || null : nextCursor,
             hasMore: prefetchedRows.length ? Boolean(page!.has_more) : nextHasMore,
@@ -902,7 +907,7 @@ export default function ClubDataPage() {
               prefetchedGameRequestRef.current = null;
               if (!prefetchedPage) return;
               prefetchedGamePageRef.current = prefetchedPage;
-              writeClubDataCache<CachedGameLedger>(user.id, clubUuid, prefetchKey, {
+              writeClubDataCache<CachedGameLedger>(userId, clubUuid, prefetchKey, {
                 snapshot: { ...nextSnapshot, rows: [...rows, ...prefetchedPage.rows] },
                 cursor: prefetchedPage.nextCursor,
                 hasMore: prefetchedPage.hasMore,
@@ -934,18 +939,29 @@ export default function ClubDataPage() {
         }
       }
     },
-    [clubUuid, startDate, endDate, game, stakes, search, gameSort, isHydrating, user, gameCacheKey]
+    [
+      clubUuid,
+      startDate,
+      endDate,
+      game,
+      stakes,
+      search,
+      gameSort,
+      isHydrating,
+      userId,
+      gameCacheKey,
+    ]
   );
 
   useEffect(() => {
-    if (!clubUuid || isHydrating || !user) return;
-    const restoreKey = `${user.id}:${clubUuid}:${gameCacheKey}`;
+    if (!clubUuid || isHydrating || !userId) return;
+    const restoreKey = `${userId}:${clubUuid}:${gameCacheKey}`;
     if (restoredGameKeyRef.current === restoreKey) return;
     restoredGameKeyRef.current = restoreKey;
     restoredGameCacheHitRef.current = false;
-    const cached = readClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey);
+    const cached = readClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey);
     if (!cached?.snapshot || !auditClubDataSnapshot(cached.snapshot).renderable) {
-      if (cached) removeClubDataCaches(user.id, clubUuid);
+      if (cached) removeClubDataCaches(userId, clubUuid);
       return;
     }
     restoredGameCacheHitRef.current = true;
@@ -959,7 +975,7 @@ export default function ClubDataPage() {
     setLedgerSource('cached');
     const generatedAt = Date.parse(cached.snapshot.generated_at);
     setLastVerifiedAt(Number.isFinite(generatedAt) ? generatedAt : Date.now());
-  }, [clubUuid, gameCacheKey, isHydrating, user]);
+  }, [clubUuid, gameCacheKey, isHydrating, userId]);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -969,16 +985,16 @@ export default function ClubDataPage() {
   }, [snapshot]);
 
   useEffect(() => {
-    if (!clubUuid || isHydrating || !user) return;
+    if (!clubUuid || isHydrating || !userId) return;
     const restored = restoredGameCacheHitRef.current;
     void load(!restored, restored);
-  }, [load, clubUuid, gameCacheKey, isHydrating, user]);
+  }, [load, clubUuid, gameCacheKey, isHydrating, userId]);
 
   // Players are fetched only when that tab is open. It is a second scan over
   // the same window and there is no reason to pay for it on every visit.
   const loadPlayers = useCallback(
     async (preserveOnError = false): Promise<boolean> => {
-      if (!clubUuid || isHydrating || !user) return false;
+      if (!clubUuid || isHydrating || !userId) return false;
       // Pagination owns the cursor while it is in flight. A heartbeat is a
       // recovery mechanism, not a reason to invalidate that user action.
       if (preserveOnError && playersMoreRef.current) return true;
@@ -1030,7 +1046,7 @@ export default function ClubDataPage() {
         if (rpcError) {
           if (isAuthzError(rpcError)) {
             setPlayersError('You need to be an owner or admin of this club to see player data.');
-            removeClubDataCaches(user.id, clubUuid);
+            removeClubDataCaches(userId, clubUuid);
           } else {
             reportError(rpcError, 'ClubDataPage.players_rpc');
             setPlayersError(preserveOnError ? null : 'Could not load player data.');
@@ -1065,7 +1081,7 @@ export default function ClubDataPage() {
           setPlayerCursor(nextCursor);
           playerCursorRef.current = nextCursor;
           setPlayersHasMore(nextHasMore);
-          writeClubDataCache<CachedPlayerLedger>(user.id, clubUuid, playerCacheKey, {
+          writeClubDataCache<CachedPlayerLedger>(userId, clubUuid, playerCacheKey, {
             players: nextPlayers,
             cursor: nextCursor,
             hasMore: nextHasMore,
@@ -1084,17 +1100,17 @@ export default function ClubDataPage() {
         if (!stale()) setPlayersLoading(false);
       }
     },
-    [clubUuid, startDate, endDate, playerSort, isHydrating, user, playerCacheKey]
+    [clubUuid, startDate, endDate, playerSort, isHydrating, userId, playerCacheKey]
   );
 
   useEffect(() => {
     if (tab !== 'players') return;
-    if (!clubUuid || isHydrating || !user) return;
-    const restoreKey = `${user.id}:${clubUuid}:${playerCacheKey}`;
+    if (!clubUuid || isHydrating || !userId) return;
+    const restoreKey = `${userId}:${clubUuid}:${playerCacheKey}`;
     let preserveExistingRows = true;
     if (restoredPlayerKeyRef.current !== restoreKey) {
       restoredPlayerKeyRef.current = restoreKey;
-      const cached = readClubDataCache<CachedPlayerLedger>(user.id, clubUuid, playerCacheKey);
+      const cached = readClubDataCache<CachedPlayerLedger>(userId, clubUuid, playerCacheKey);
       if (cached?.players && Array.isArray(cached.players.players)) {
         setPlayers(cached.players);
         playersRef.current = cached.players;
@@ -1115,10 +1131,10 @@ export default function ClubDataPage() {
       }
     }
     void loadPlayers(preserveExistingRows);
-  }, [tab, loadPlayers, clubUuid, isHydrating, user, playerCacheKey]);
+  }, [tab, loadPlayers, clubUuid, isHydrating, userId, playerCacheKey]);
 
   const loadMoreGames = useCallback(async () => {
-    if (!clubUuid || gamesMoreRef.current || loading || isHydrating || !user) return;
+    if (!clubUuid || gamesMoreRef.current || loading || isHydrating || !userId) return;
     let prefetched = prefetchedGamePageRef.current;
     const pendingPrefetch = prefetchedGameRequestRef.current;
     if (!prefetched && pendingPrefetch?.key === gameCacheKey) {
@@ -1153,7 +1169,7 @@ export default function ClubDataPage() {
       setGameCursor(prefetched.nextCursor);
       gameCursorRef.current = prefetched.nextCursor;
       setGamesHasMore(prefetched.hasMore);
-      writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
+      writeClubDataCache<CachedGameLedger>(userId, clubUuid, gameCacheKey, {
         snapshot: nextSnapshot,
         cursor: prefetched.nextCursor,
         hasMore: prefetched.hasMore,
@@ -1198,7 +1214,7 @@ export default function ClubDataPage() {
             : 'Could Not Load More Games.'
         );
         if (isAuthzError(pageError)) {
-          removeClubDataCaches(user.id, clubUuid);
+          removeClubDataCaches(userId, clubUuid);
           setSnapshot(null);
           setGamesHasMore(false);
         }
@@ -1233,7 +1249,7 @@ export default function ClubDataPage() {
     gameCursor,
     gamesHasMore,
     isHydrating,
-    user,
+    userId,
     startDate,
     endDate,
     game,
@@ -1252,7 +1268,7 @@ export default function ClubDataPage() {
       playersMoreRef.current ||
       playersLoading ||
       isHydrating ||
-      !user
+      !userId
     )
       return;
     playersMoreRef.current = true;
@@ -1285,7 +1301,7 @@ export default function ClubDataPage() {
             : 'Could Not Load More Players.'
         );
         if (isAuthzError(pageError)) {
-          removeClubDataCaches(user.id, clubUuid);
+          removeClubDataCaches(userId, clubUuid);
           setPlayers(null);
           setPlayersHasMore(false);
         }
@@ -1318,7 +1334,7 @@ export default function ClubDataPage() {
     playersHasMore,
     playersLoading,
     isHydrating,
-    user,
+    userId,
     startDate,
     endDate,
     playerSort,
@@ -1402,7 +1418,7 @@ export default function ClubDataPage() {
 
   // near-real-time: re-poll on an interval and whenever the tab regains focus
   useEffect(() => {
-    if (!clubUuid || isHydrating || !user) return;
+    if (!clubUuid || isHydrating || !userId) return;
     // Roll `endDate` forward across UTC midnight. It was set once at mount, so
     // a page left open overnight polled YESTERDAY's window forever: the owner
     // watched live rake stop growing and the forward arrow silently arm itself.
@@ -1430,7 +1446,7 @@ export default function ClubDataPage() {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [clubUuid, isHydrating, user, load, loadPlayers]);
+  }, [clubUuid, isHydrating, userId, load, loadPlayers]);
 
   /**
    * Resolve the snapshot scopes once per club. Neither read returns money:
@@ -1452,7 +1468,7 @@ export default function ClubDataPage() {
    * absence is visible somewhere other than the screen.
    */
   useEffect(() => {
-    if (!clubUuid || isHydrating || !user) return;
+    if (!clubUuid || isHydrating || !userId) return;
     let dead = false;
     void (async () => {
       const next: RakeScope[] = [];
@@ -1510,10 +1526,10 @@ export default function ClubDataPage() {
     return () => {
       dead = true;
     };
-  }, [clubUuid, isHydrating, user]);
+  }, [clubUuid, isHydrating, userId]);
 
   const loadInvoices = useCallback(async (): Promise<boolean> => {
-    if (!clubUuid || isHydrating || !user) return false;
+    if (!clubUuid || isHydrating || !userId) return false;
     const myVersion = ++invoicesVersion.current;
     const stale = () => cancelledRef.current || invoicesVersion.current !== myVersion;
     setInvoicesLoading(true);
@@ -1534,13 +1550,13 @@ export default function ClubDataPage() {
         // Authorization failures are different: stale financial data must not
         // survive after access is revoked.
         if (isAuthzError(invErr)) setInvoices([]);
-        if (isAuthzError(invErr)) removeClubDataCaches(user.id, clubUuid);
+        if (isAuthzError(invErr)) removeClubDataCaches(userId, clubUuid);
         return false;
       } else {
         setInvoicesError(null);
         const rows = (data as InvoiceRow[]) || [];
         setInvoices(rows);
-        writeClubDataCache<InvoiceRow[]>(user.id, clubUuid, invoiceCacheKey, rows);
+        writeClubDataCache<InvoiceRow[]>(userId, clubUuid, invoiceCacheKey, rows);
         return true;
       }
     } catch (err) {
@@ -1551,14 +1567,14 @@ export default function ClubDataPage() {
     } finally {
       if (!stale()) setInvoicesLoading(false);
     }
-  }, [clubUuid, isHydrating, user]);
+  }, [clubUuid, isHydrating, userId]);
 
   useEffect(() => {
-    if (!clubUuid || isHydrating || !user) return;
-    const restoreKey = `${user.id}:${clubUuid}:${invoiceCacheKey}`;
+    if (!clubUuid || isHydrating || !userId) return;
+    const restoreKey = `${userId}:${clubUuid}:${invoiceCacheKey}`;
     if (restoredInvoiceKeyRef.current !== restoreKey) {
       restoredInvoiceKeyRef.current = restoreKey;
-      const cached = readClubDataCache<InvoiceRow[]>(user.id, clubUuid, invoiceCacheKey);
+      const cached = readClubDataCache<InvoiceRow[]>(userId, clubUuid, invoiceCacheKey);
       if (cached) {
         setInvoices(cached);
         setInvoicesLoading(false);
@@ -1570,7 +1586,7 @@ export default function ClubDataPage() {
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [clubUuid, isHydrating, user, loadInvoices]);
+  }, [clubUuid, isHydrating, userId, loadInvoices]);
 
   /**
    * Realtime is a low-latency invalidation signal, not a second source of
@@ -1581,8 +1597,8 @@ export default function ClubDataPage() {
    */
   const queueEventRefresh = useCallback(
     (scope: 'ledger' | 'invoices' | 'all') => {
-      if (!clubUuid || isHydrating || !user) return;
-      removeClubDataCaches(user.id, clubUuid);
+      if (!clubUuid || isHydrating || !userId) return;
+      removeClubDataCaches(userId, clubUuid);
       if (scope === 'ledger' || scope === 'all') pendingEventRefreshRef.current.ledger = true;
       if (scope === 'invoices' || scope === 'all') pendingEventRefreshRef.current.invoices = true;
       if (eventRefreshTimerRef.current) clearTimeout(eventRefreshTimerRef.current);
@@ -1602,11 +1618,11 @@ export default function ClubDataPage() {
         if (pending.invoices) void loadInvoices();
       }, 750);
     },
-    [clubUuid, isHydrating, user, load, loadPlayers, loadInvoices]
+    [clubUuid, isHydrating, userId, load, loadPlayers, loadInvoices]
   );
 
   const realtimeFilter = clubUuid ? `club_id=eq.${clubUuid}` : null;
-  const realtimeEnabled = Boolean(clubUuid && user && !isHydrating);
+  const realtimeEnabled = Boolean(clubUuid && userId && !isHydrating);
   const markRealtimeStatus = useCallback((feed: RealtimeFeed, status: string) => {
     const next: RealtimeFeedState =
       status === 'SUBSCRIBED'
@@ -1709,7 +1725,7 @@ export default function ClubDataPage() {
   );
 
   const refreshAll = useCallback(async () => {
-    if (manualRefreshingRef.current || !clubUuid || isHydrating || !user) return;
+    if (manualRefreshingRef.current || !clubUuid || isHydrating || !userId) return;
     manualRefreshingRef.current = true;
     setManualRefreshing(true);
     setRefreshNote('Refreshing Club Ledger.');
@@ -1737,7 +1753,7 @@ export default function ClubDataPage() {
         if (pending.invoices) void loadInvoices();
       }
     }
-  }, [clubUuid, isHydrating, user, load, loadInvoices, loadPlayers, tab]);
+  }, [clubUuid, isHydrating, userId, load, loadInvoices, loadPlayers, tab]);
 
   const exportCsv = useCallback(async () => {
     if (!clubUuid || exporting) return;
@@ -2041,7 +2057,7 @@ export default function ClubDataPage() {
       {clubUuid && (
         <RakeSnapshotPanel
           clubId={clubUuid}
-          userId={user?.id ?? null}
+          userId={userId}
           scopes={rakeScopes}
           refreshToken={lastVerifiedAt ?? 0}
         />

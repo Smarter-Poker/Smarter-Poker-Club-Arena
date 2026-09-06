@@ -66,6 +66,7 @@ describe('Daily Missions production certification', () => {
 
   it('hard-deletes all Daily Missions and reward-ledger fixture residue', () => {
     const helper = source('tests/e2e/support/temporaryCustomizationAccount.ts');
+    const spec = source('tests/e2e/production-daily-missions.spec.ts');
     for (const table of [
       'daily_mission_operations',
       'daily_challenge_progress_events',
@@ -77,6 +78,7 @@ describe('Daily Missions production certification', () => {
       'daily_challenge_dashboard_revisions',
       'user_daily_challenges',
       'challenge_streak_state',
+      'club_members',
       'user_notification_preferences',
       'notifications',
       'push_outbox',
@@ -84,9 +86,15 @@ describe('Daily Missions production certification', () => {
       'wallets',
       'chip_transactions',
       'audit_trail',
+      'table_waitlist',
+      'rate_limits',
     ]) {
       expect(helper).toContain(`'${table}'`);
     }
+    expect(helper).toContain("{ table: 'notifications', column: 'actor_id' as const }");
+    expect(helper).toContain("{ table: 'profiles', column: 'id' as const }");
+    expect(helper).toContain("{ table: 'users', column: 'id' as const }");
+    expect(spec).toContain('hand history: exact fixture row remains');
     expect(helper).toContain('reserved fixture residue remains after cleanup');
     // Certification owns and removes the exact UUID it creates. Listing the
     // entire Auth tenant first makes an unrelated damaged account capable of
@@ -114,7 +122,7 @@ describe('Daily Missions production certification', () => {
     expect(pageObject).toContain('sp_firstrun_notif_v2_${userId}');
     expect(pageObject).toContain('authenticatedUserId !== account.id');
     expect(pageObject).toContain("for (const tier of ['Daily', 'Weekly', 'Monthly'] as const)");
-    expect(pageObject).toContain('/^Reroll 10 Diamonds For .+$/');
+    expect(pageObject).toContain('/^Reroll 1 Diamond For .+$/');
     expect(spec).toContain('/^Confirm Reroll For /');
   });
 
@@ -122,9 +130,24 @@ describe('Daily Missions production certification', () => {
     const page = source('src/pages/DailyChallengesPage.tsx');
     const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
     const certification = source('tests/e2e/production-daily-missions.spec.ts');
-    expect(page).toContain('aria-label={`Reroll 10 Diamonds For ${c.name}`}');
-    expect(pageObject).toContain('name: /^Reroll 10 Diamonds For .+$/');
+    expect(page).toContain(
+      'aria-label={`Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`}'
+    );
+    expect(pageObject).toContain('name: /^Reroll 1 Diamond For .+$/');
     expect(certification).toContain('name: /^Confirm Reroll For /');
+  });
+
+  it('keeps a disconnected saved alert preference ahead of browser capability status', () => {
+    const page = source('src/pages/DailyChallengesPage.tsx');
+    const disconnectedStatus = page.indexOf(
+      ": deviceNeedsConnection\n        ? 'Preference On, Device Disconnected'"
+    );
+    const deniedStatus = page.indexOf(": permission === 'denied'", disconnectedStatus);
+    expect(disconnectedStatus).toBeGreaterThan(-1);
+    expect(deniedStatus).toBeGreaterThan(disconnectedStatus);
+    expect(page).toContain(
+      'Allow Notifications For Smarter Poker In Your Browser Settings, Then Reload.'
+    );
   });
 
   it('keeps every mission control above the fixed Club Arena footer', () => {

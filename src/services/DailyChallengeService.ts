@@ -71,6 +71,14 @@ export function isChallengeType(value: unknown): value is ChallengeType {
 export const BIG_POT_MIN = 500;
 
 /**
+ * The only client-side statement of the server-owned Daily Mission reroll
+ * price. The database still verifies this value before it can debit a wallet;
+ * exporting it keeps the card, confirmation, telemetry, and receipt parser
+ * from drifting apart.
+ */
+export const DAILY_MISSION_REROLL_COST = 1 as const;
+
+/**
  * Challenge types whose rows carry a magnitude `threshold`.
  *
  * The bump call sends a per-type measurement alongside the count, and
@@ -183,6 +191,7 @@ export interface ClaimBatchResult {
 export interface RerollResult {
   success: boolean;
   alreadyRerolled: boolean;
+  diamondsSpent?: number;
   challengeId?: string;
   challenge?: TieredUserChallenge;
   diamondBalance?: number;
@@ -1354,7 +1363,7 @@ class DailyChallengeServiceClass {
             p_user_id: userId,
             p_challenge_row_id: challengeRowId,
             p_expected_challenge_id: expectedChallengeId,
-            p_cost: 10,
+            p_cost: DAILY_MISSION_REROLL_COST,
             p_request_id: requestId,
           });
           if (receipt.error) {
@@ -1403,7 +1412,7 @@ class DailyChallengeServiceClass {
         'rerollChallenge',
         'reroll settlement total'
       );
-      if (diamondsSpent !== (alreadyRerolled ? 0 : 10)) {
+      if (diamondsSpent !== (alreadyRerolled ? 0 : DAILY_MISSION_REROLL_COST)) {
         return invalidDailyMissionReceipt('rerollChallenge', 'reroll settlement total');
       }
       const challengeId = readReceiptString(
@@ -1426,13 +1435,14 @@ class DailyChallengeServiceClass {
       );
       masterBus.emit('DIAMOND_BALANCE_CHANGED', {
         newBalance: diamondBalance,
-        delta: alreadyRerolled ? 0 : -10,
+        delta: diamondsSpent === 0 ? 0 : -diamondsSpent,
         source: 'daily_challenge_reroll',
       });
 
       return {
         success: true,
         alreadyRerolled,
+        diamondsSpent,
         challengeId,
         challenge,
         diamondBalance,

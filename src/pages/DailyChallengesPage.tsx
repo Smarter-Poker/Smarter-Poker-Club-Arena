@@ -20,6 +20,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
 import {
+  DAILY_MISSION_REROLL_COST,
   dailyChallengeService,
   type TieredUserChallenge,
   type Tier,
@@ -260,8 +261,14 @@ function ChallengeCard({
         ${claimed ? styles.cardClaimed : ''}
         ${celebrating ? styles.cardCelebrating : ''}
       `}
-      style={{ '--card-tier-color': TIER_COLORS[tier] } as React.CSSProperties}
+      style={
+        {
+          '--card-tier-color': TIER_COLORS[tier],
+          '--mission-progress': `${pct}%`,
+        } as React.CSSProperties
+      }
     >
+      <span className={styles.bevelFrame} aria-hidden="true" />
       <div className={styles.cardTopline}>
         <span>{TIER_LABELS[tier]} Challenge</span>
         <span className={styles.cardState}>
@@ -270,9 +277,18 @@ function ChallengeCard({
       </div>
 
       <div className={styles.cardHeader}>
-        <div className={styles.iconAssembly} aria-hidden="true">
-          <span className={styles.iconBox}>{TYPE_GLYPHS[c.type] || '\u2605'}</span>
+        <div
+          className={styles.iconAssembly}
+          data-mission-icon={c.type}
+          data-icon-state={claimed ? 'claimed' : done ? 'complete' : 'active'}
+          aria-hidden="true"
+        >
+          <span className={styles.iconOrbit} />
+          <span className={styles.iconBox}>
+            <span className={styles.iconGlyph}>{TYPE_GLYPHS[c.type] || '\u2605'}</span>
+          </span>
           <span className={styles.iconPulse} />
+          <span className={styles.iconScanner} />
         </div>
         <div className={styles.cardTitles}>
           <h3 className={styles.cardName}>{c.name}</h3>
@@ -370,11 +386,11 @@ function ChallengeCard({
                 className={styles.rerollButton}
                 onClick={() => onRequestReroll(challenge)}
                 disabled={rerolling || economyBusy || rerollConfirmationOpen}
-                aria-label={`Reroll 10 Diamonds For ${c.name}`}
+                aria-label={`Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`}
               >
                 Reroll{' '}
                 <span className={styles.buttonPrice}>
-                  <DiamondMark /> 10
+                  <DiamondMark /> {DAILY_MISSION_REROLL_COST}
                 </span>
               </button>
             </>
@@ -390,7 +406,8 @@ function ChallengeCard({
               }}
             >
               <span className={styles.rerollPrompt}>
-                Spend <DiamondMark /> 10 Diamonds? Current Progress Will Be Replaced.
+                Spend <DiamondMark /> {DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be
+                Replaced.
               </span>
               <button
                 type="button"
@@ -427,6 +444,7 @@ function MissionLoadingState() {
         aria-label="Loading Daily Challenges"
       >
         <section className={`${styles.hero} ${styles.loadingHero}`}>
+          <span className={styles.bevelFrame} aria-hidden="true" />
           <MissionHeroArtwork />
           <div className={styles.heroShade} />
           <div className={styles.heroCopy}>
@@ -457,6 +475,7 @@ function MissionUnavailableState({ message, onRetry }: { message: string; onRetr
     <StandardContentLayout className={styles.container}>
       <div className={styles.page}>
         <section className={`${styles.hero} ${styles.unavailableHero}`}>
+          <span className={styles.bevelFrame} aria-hidden="true" />
           <MissionHeroArtwork />
           <div className={styles.heroShade} />
           <div className={styles.heroCopy}>
@@ -466,6 +485,7 @@ function MissionUnavailableState({ message, onRetry }: { message: string; onRetr
           </div>
         </section>
         <section className={`${styles.emptyState} ${styles.unavailableState}`} role="alert">
+          <span className={styles.bevelFrame} aria-hidden="true" />
           <span className={styles.panelLabel}>Secure Ledger Connection</span>
           <h2>Challenge Ledger Unavailable</h2>
           <p>{message}</p>
@@ -634,14 +654,14 @@ function MissionAlertsPanel({ userId }: { userId: string }) {
     ? 'Checking Alert Link'
     : enabled && deviceConnected
       ? 'On For This Device'
-      : permission === 'denied'
-        ? 'Blocked In Browser Settings'
-        : unsupportedIos
-          ? 'Install App To Enable'
-          : unsupportedBrowser
-            ? 'Unavailable In This Browser'
-            : enabled
-              ? 'Preference On, Device Disconnected'
+      : deviceNeedsConnection
+        ? 'Preference On, Device Disconnected'
+        : permission === 'denied'
+          ? 'Blocked In Browser Settings'
+          : unsupportedIos
+            ? 'Install App To Enable'
+            : unsupportedBrowser
+              ? 'Unavailable In This Browser'
               : 'Off Until You Opt In';
 
   return (
@@ -1399,8 +1419,8 @@ export default function DailyChallengesPage() {
     async (challenge: TieredUserChallenge) => {
       if (!userId) return;
       if (rerollGuardRef.current.has(challenge.id) || economyGuardRef.current) return;
-      if (diamondBalance < 10) {
-        toast.error('Not Enough Diamonds. 10 Diamonds Required.');
+      if (diamondBalance < DAILY_MISSION_REROLL_COST) {
+        toast.error(`Not Enough Diamonds. ${DAILY_MISSION_REROLL_COST} Diamond Required.`);
         return;
       }
 
@@ -1443,7 +1463,7 @@ export default function DailyChallengesPage() {
         capture('daily_mission_rerolled', {
           tier: challenge.tier,
           replayed: result.alreadyRerolled,
-          diamond_cost: 10,
+          diamond_cost: result.diamondsSpent ?? 0,
         });
         recordDailyMissionOperation({
           userId,
@@ -1676,6 +1696,7 @@ export default function DailyChallengesPage() {
     return (
       <StandardContentLayout className={styles.container} title="Daily Challenges">
         <div className={styles.emptyState}>
+          <span className={styles.bevelFrame} aria-hidden="true" />
           <span className={styles.eyebrow}>Private Challenge Vault</span>
           <h2>
             {loadError ? 'Secure Session Check Failed' : 'Sign In To See Your Daily Challenges'}
@@ -1731,6 +1752,7 @@ export default function DailyChallengesPage() {
         inert={reward || confirmingFreeze ? true : undefined}
       >
         <section className={styles.hero} aria-labelledby="missions-title">
+          <span className={styles.bevelFrame} aria-hidden="true" />
           <MissionHeroArtwork />
           <div className={styles.heroShade} />
           <div className={styles.heroCopy}>
@@ -2036,6 +2058,7 @@ export default function DailyChallengesPage() {
           >
             {visible.length === 0 ? (
               <div className={styles.emptyState}>
+                <span className={styles.bevelFrame} aria-hidden="true" />
                 <h3>{loadError ? 'Challenge Ledger Offline' : 'No Challenges Assigned'}</h3>
                 <p>
                   {loadError
@@ -2121,6 +2144,7 @@ export default function DailyChallengesPage() {
               className={`${styles.celebrateCard} ${styles.freezeDialogCard}`}
               onClick={(event) => event.stopPropagation()}
             >
+              <span className={styles.bevelFrame} aria-hidden="true" />
               <img
                 className={styles.freezeDialogArtwork}
                 src={mediaUrl(MISSION_REWARD_ARTWORK)}
@@ -2191,6 +2215,7 @@ export default function DailyChallengesPage() {
               className={styles.celebrateCard}
               onClick={(event) => event.stopPropagation()}
             >
+              <span className={styles.bevelFrame} aria-hidden="true" />
               <img
                 className={styles.celebrateArtwork}
                 src={mediaUrl(MISSION_REWARD_ARTWORK)}

@@ -15,7 +15,8 @@ vi.mock('../src/core/MasterBus', () => ({
   masterBus: { emit },
 }));
 
-const { dailyChallengeService } = await import('../src/services/DailyChallengeService');
+const { DAILY_MISSION_REROLL_COST, dailyChallengeService } =
+  await import('../src/services/DailyChallengeService');
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const ROW = '22222222-2222-4222-8222-222222222222';
@@ -48,9 +49,9 @@ describe('daily challenge rerolls', () => {
           success: true,
           alreadyRerolled: false,
           requestId: params.p_request_id,
-          diamondsSpent: 10,
+          diamondsSpent: DAILY_MISSION_REROLL_COST,
           challengeId: 'hp_25',
-          diamondBalance: 490,
+          diamondBalance: 499,
           challenge: REROLLED_CHALLENGE,
         },
         error: null,
@@ -60,19 +61,20 @@ describe('daily challenge rerolls', () => {
     await expect(dailyChallengeService.rerollChallenge(USER, ROW, 'hp_10')).resolves.toMatchObject({
       success: true,
       alreadyRerolled: false,
+      diamondsSpent: 1,
       challengeId: 'hp_25',
-      diamondBalance: 490,
+      diamondBalance: 499,
     });
     expect(rpc).toHaveBeenCalledWith('reroll_daily_challenge', {
       p_user_id: USER,
       p_challenge_row_id: ROW,
       p_expected_challenge_id: 'hp_10',
-      p_cost: 10,
+      p_cost: DAILY_MISSION_REROLL_COST,
       p_request_id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
     });
     expect(emit).toHaveBeenCalledWith('DIAMOND_BALANCE_CHANGED', {
-      newBalance: 490,
-      delta: -10,
+      newBalance: 499,
+      delta: -1,
       source: 'daily_challenge_reroll',
     });
   });
@@ -86,7 +88,7 @@ describe('daily challenge rerolls', () => {
           requestId: params.p_request_id,
           diamondsSpent: 0,
           challengeId: 'hp_25',
-          diamondBalance: 490,
+          diamondBalance: 499,
           challenge: REROLLED_CHALLENGE,
         },
         error: null,
@@ -120,7 +122,7 @@ describe('daily challenge rerolls', () => {
             requestId: params.p_request_id,
             diamondsSpent: 0,
             challengeId: 'hp_25',
-            diamondBalance: 490,
+            diamondBalance: 499,
             challenge: REROLLED_CHALLENGE,
           },
           error: null,
@@ -141,9 +143,9 @@ describe('daily challenge rerolls', () => {
         success: true,
         alreadyRerolled: false,
         requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        diamondsSpent: 10,
+        diamondsSpent: DAILY_MISSION_REROLL_COST,
         challengeId: 'hp_25',
-        diamondBalance: 490,
+        diamondBalance: 499,
         challenge: REROLLED_CHALLENGE,
       },
       error: null,
@@ -359,6 +361,6 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(page).toContain('reward.diamonds.toLocaleString()');
     expect(page).toContain('aria-controls="mission-panel"');
     expect(page).toContain("event.key === 'ArrowRight'");
-    expect(page).toContain('Current Progress Will Be Replaced');
+    expect(page).toMatch(/Current Progress Will Be\s*\n\s*Replaced/);
   });
 });

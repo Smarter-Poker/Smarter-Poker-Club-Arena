@@ -368,7 +368,7 @@ describe('Daily Challenge dashboard safety boundary', () => {
   });
 
   it.each([
-    ['new purchase', false, 10],
+    ['new purchase', false, 1],
     ['replayed purchase', true, 0],
   ])(
     'rejects a %s reroll receipt that keeps the paid catalog contract',

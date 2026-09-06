@@ -537,7 +537,7 @@ test.describe('production Daily Missions certification', () => {
           .toEqual({ event_key: eventKey, amounts, magnitudes, threshold_values: thresholdValues });
       });
 
-      await test.step('reroll confirmation charges ten diamonds exactly once', async () => {
+      await test.step('reroll confirmation charges one diamond exactly once', async () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
         const reroll = await missions.firstRerollButton();
         await missions.placeControlInSafeViewport(reroll);
@@ -560,8 +560,9 @@ test.describe('production Daily Missions certification', () => {
           p_cost: number;
           p_request_id: string;
         };
+        expect(requestBody.p_cost).toBe(1);
         expect(requestBody.p_request_id).toMatch(/^[0-9a-f-]{36}$/i);
-        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 10);
+        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 1);
         await expect(confirmation).toHaveCount(0, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
 
         const { data: replay, error: replayError } = await account!.client.rpc(
@@ -575,7 +576,7 @@ test.describe('production Daily Missions certification', () => {
           requestId: requestBody.p_request_id,
           diamondsSpent: 0,
         });
-        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 10);
+        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 1);
 
         const receipts = await serviceRows<{ amount: number; reference_id: string }>(
           environment,
@@ -587,7 +588,7 @@ test.describe('production Daily Missions certification', () => {
           (row) => row.reference_id === `challenge_reroll:${requestBody.p_request_id}`
         );
         expect(rerolls).toHaveLength(1);
-        expect(Number(rerolls[0].amount)).toBe(-10);
+        expect(Number(rerolls[0].amount)).toBe(-1);
         const replayReceipts = await serviceRows<{ request_id: string }>(
           environment,
           'daily_challenge_reroll_receipts',
@@ -597,6 +598,124 @@ test.describe('production Daily Missions certification', () => {
         expect(
           replayReceipts.filter((row) => row.request_id === requestBody.p_request_id)
         ).toHaveLength(1);
+
+        const compatibilityRows = await serviceRows<{
+          id: string;
+          challenge_id: string;
+          completed: boolean;
+          claimed: boolean;
+        }>(environment, 'user_daily_challenges', account!.id, 'id,challenge_id,completed,claimed');
+        const compatibilityCandidates = compatibilityRows.filter(
+          (row) => !row.completed && !row.claimed && row.id !== requestBody.p_challenge_row_id
+        );
+        expect(compatibilityCandidates.length).toBeGreaterThanOrEqual(2);
+
+        const historical = compatibilityCandidates[0];
+        const historicalRequestId = randomUUID();
+        const compatibilityBalance = await diamondBalance(environment, account!.id);
+        await insertServiceRows(environment, 'daily_challenge_reroll_receipts', {
+          user_id: account!.id,
+          request_id: historicalRequestId,
+          challenge_row_id: historical.id,
+          expected_challenge_id: historical.challenge_id,
+          cost: 10,
+          result: {
+            success: true,
+            requestId: historicalRequestId,
+            alreadyRerolled: false,
+            challengeId: historical.challenge_id,
+            diamondBalance: compatibilityBalance,
+            diamondsSpent: 10,
+          },
+        });
+        const { data: historicalReplay, error: historicalReplayError } = await account!.client.rpc(
+          'reroll_daily_challenge',
+          {
+            p_user_id: account!.id,
+            p_challenge_row_id: historical.id,
+            p_expected_challenge_id: historical.challenge_id,
+            p_cost: 10,
+            p_request_id: historicalRequestId,
+          }
+        );
+        if (historicalReplayError) throw historicalReplayError;
+        expect(historicalReplay).toMatchObject({
+          success: true,
+          alreadyRerolled: true,
+          requestId: historicalRequestId,
+          diamondsSpent: 0,
+        });
+        await expect
+          .poll(() => diamondBalance(environment, account!.id))
+          .toBe(compatibilityBalance);
+
+        const stale = compatibilityCandidates[1];
+        const staleRequestId = randomUUID();
+        const { data: stalePrice, error: stalePriceError } = await account!.client.rpc(
+          'reroll_daily_challenge',
+          {
+            p_user_id: account!.id,
+            p_challenge_row_id: stale.id,
+            p_expected_challenge_id: stale.challenge_id,
+            p_cost: 10,
+            p_request_id: staleRequestId,
+          }
+        );
+        if (stalePriceError) throw stalePriceError;
+        expect(stalePrice).toMatchObject({
+          success: false,
+          error: 'reroll price changed; refresh and try again',
+        });
+        await expect
+          .poll(() => diamondBalance(environment, account!.id))
+          .toBe(compatibilityBalance);
+        const staleReceipts = await serviceRows<{ request_id: string }>(
+          environment,
+          'daily_challenge_reroll_receipts',
+          account!.id,
+          'request_id'
+        );
+        expect(staleReceipts.some((row) => row.request_id === staleRequestId)).toBe(false);
+      });
+
+      await test.step('legacy reroll defaults to one diamond and replays the retired price safely', async () => {
+        const assignments = await serviceRows<{
+          id: string;
+          challenge_id: string;
+          completed: boolean;
+          claimed: boolean;
+        }>(environment, 'user_daily_challenges', account!.id, 'id,challenge_id,completed,claimed');
+        const candidate = assignments.find((row) => !row.completed && !row.claimed);
+        expect(candidate).toBeTruthy();
+        const balanceBefore = await diamondBalance(environment, account!.id);
+        const legacyRequest = {
+          p_user_id: account!.id,
+          p_challenge_row_id: candidate!.id,
+          p_expected_challenge_id: candidate!.challenge_id,
+        };
+        const { data: freshLegacy, error: freshLegacyError } = await account!.client.rpc(
+          'reroll_daily_challenge',
+          legacyRequest
+        );
+        if (freshLegacyError) throw freshLegacyError;
+        expect(freshLegacy).toMatchObject({
+          success: true,
+          alreadyRerolled: false,
+          diamondsSpent: 1,
+        });
+        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 1);
+
+        const { data: oldPriceReplay, error: oldPriceReplayError } = await account!.client.rpc(
+          'reroll_daily_challenge',
+          { ...legacyRequest, p_cost: 10 }
+        );
+        if (oldPriceReplayError) throw oldPriceReplayError;
+        expect(oldPriceReplay).toMatchObject({
+          success: true,
+          alreadyRerolled: true,
+          diamondsSpent: 0,
+        });
+        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 1);
       });
 
       await test.step('different-card rerolls serialize across concurrent tabs', async () => {
@@ -613,7 +732,7 @@ test.describe('production Daily Missions certification', () => {
           p_user_id: account!.id,
           p_challenge_row_id: row.id,
           p_expected_challenge_id: row.challenge_id,
-          p_cost: 10,
+          p_cost: 1,
           p_request_id: randomUUID(),
         }));
         const results = await Promise.all(
@@ -625,14 +744,14 @@ test.describe('production Daily Missions certification', () => {
             success: true,
             alreadyRerolled: false,
             requestId: requests[index].p_request_id,
-            diamondsSpent: 10,
+            diamondsSpent: 1,
           });
         }
         const replacementIds = results.map(
           (result) => (result.data as JsonObject).challengeId as string
         );
         expect(new Set(replacementIds).size).toBe(2);
-        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 20);
+        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 2);
         await page.reload({ waitUntil: 'domcontentloaded' });
         await expect(page.getByText('Live Now')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
@@ -1117,6 +1236,17 @@ test.describe('production Daily Missions certification', () => {
           'hand_history',
           new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
         ).catch((error) => cleanupErrors.push(`hand history: ${(error as Error).message}`));
+        await readServiceRows<{ id: string }>(
+          environment,
+          'hand_history',
+          new URLSearchParams({ select: 'id', id: `eq.${certificationHandHistoryId}`, limit: '1' })
+        )
+          .then((rows) => {
+            if (rows.length > 0) cleanupErrors.push('hand history: exact fixture row remains');
+          })
+          .catch((error) =>
+            cleanupErrors.push(`hand history verification: ${(error as Error).message}`)
+          );
       }
       if (account) {
         await cleanupTemporaryCustomizationAccount(environment, account).catch((error) =>

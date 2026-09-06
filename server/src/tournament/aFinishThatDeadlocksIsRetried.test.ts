@@ -11,7 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { sliceEnclosingBlock } from '../../../tests/helpers/sourceWindow.js';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {

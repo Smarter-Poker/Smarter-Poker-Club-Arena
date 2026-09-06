@@ -13,6 +13,7 @@ import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { supabase } from '../lib/supabase';
 import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
+import { watchBbjPool } from '../lib/bbjPoolFeed';
 import { useAuthUser } from '../hooks/useAuthUser';
 import './AdminDashboardPage.css';
 import { confirmDialog } from '../components/common/confirmDialog';
@@ -230,6 +231,21 @@ export default function UnionDashboardPage() {
   const [rosterLoading, setRosterLoading] = useState(false);
   const [rosterSearch, setRosterSearch] = useState('');
   const [clubs, setClubs] = useState<EnrichedClub[]>([]);
+
+  /* THE JACKPOT TILE FOLLOWS THE SHARED POLL (BBJ phase 3.2, 2026-09-06).
+     `fn_bbj_pool_for_club` is union-aware server-side, so ANY club in this
+     union resolves to the union's own pool - which is why this can key off the
+     first club rather than re-implementing the union rule here for a fifth
+     time. Only `main_balance` moves on its own; every other column on the row
+     changes on an operator action, and loadDashboard already carries those. */
+  const anyUnionClubId = clubs[0]?.id as string | undefined;
+  useEffect(() => {
+    if (!anyUnionClubId) return;
+    return watchBbjPool(anyUnionClubId, (snap) => {
+      if (!mountedRef.current) return;
+      setBbjPool((prev) => (prev ? { ...prev, main_balance: snap.mainBalance } : prev));
+    });
+  }, [anyUnionClubId]);
   const [agents, setAgents] = useState<UnionAgent[]>([]);
   const [admins, setAdmins] = useState<UnionAdmin[]>([]);
   const [wallets, setWallets] = useState<UnionWallet | null>(null);
@@ -805,30 +821,14 @@ export default function UnionDashboardPage() {
         { event: '*', schema: 'public', table: 'unions', filter: `id=eq.${authorizedUnionId}` },
         () => loadDashboard(authorizedUnionId)
       )
-      // IMPROVE 2026-07-21: live jackpot — the BBJ tiles tick as engine
-      // contributions land in the shared pool (every raked hand at union clubs).
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'bbj_pools',
-          filter: `union_id=eq.${authorizedUnionId}`,
-        },
-        (payload: { new?: Record<string, unknown> }) => {
-          // A final queued event from the previous route can arrive while
-          // React is cleaning up that channel. Never merge Union A's pool into
-          // Union B just because both dashboard instances share this state.
-          if (
-            mountedRef.current &&
-            payload.new &&
-            routeUnionId === authorizedUnionId &&
-            authorizedScope?.userId === user?.id
-          ) {
-            setBbjPool((prev) => ({ ...(prev || {}), ...(payload.new as any) }));
-          }
-        }
-      )
+      /* THE LIVE JACKPOT TICK MOVED OFF REALTIME (BBJ phase 3.2, 2026-09-06).
+         `bbj_pools` updates on every raked hand at every union club - 40,219
+         updates in twenty-four hours, measured on production - and six
+         surfaces held a subscription to it so that a figure could be exact to
+         the second. The tiles now follow the same shared ten-second poll every
+         other jackpot surface uses (the effect below), which also stops this
+         dashboard paying for the firehose while it sits open in a background
+         tab. Everything else on the row still arrives through loadDashboard. */
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'UnionDashboardPage._Realtime_channel_error');

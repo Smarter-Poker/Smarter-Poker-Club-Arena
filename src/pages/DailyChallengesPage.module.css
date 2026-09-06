@@ -1322,10 +1322,9 @@
   width: min(100%, 430px);
   max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
-  padding: 38px 28px 28px;
+  padding: 0;
   border: 1px solid #9aabb6;
   background: #090d10;
   text-align: center;
@@ -1341,6 +1340,16 @@
     inset 0 0 48px rgba(85, 232, 255, 0.065),
     0 30px 90px #000;
   animation: rewardIn 0.35s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+
+.celebrateCardScroll {
+  position: relative;
+  z-index: 1;
+  max-height: inherit;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 38px 28px 28px;
 }
 
 .celebrateTitle {
@@ -1538,6 +1547,9 @@
 
 .freezeDialogCard {
   width: min(100%, 510px);
+}
+
+.freezeDialogCard > .celebrateCardScroll {
   padding-top: 24px;
 }
 
@@ -2615,7 +2627,7 @@
 
 .celebrateCard {
   width: min(100%, 480px);
-  padding: 0 30px 32px;
+  padding: 0;
   border-color: rgba(211, 168, 85, 0.7);
   border-radius: 0;
   background:
@@ -2626,6 +2638,10 @@
     inset 0 0 0 5px #030504,
     inset 0 0 0 6px rgba(184, 196, 201, 0.12),
     0 40px 110px #000;
+}
+
+.celebrateCardScroll {
+  padding: 0 30px 32px;
 }
 
 .celebrateArtwork {
@@ -2729,6 +2745,7 @@
   }
 
   .heroCopy {
+    width: 100%;
     min-height: 548px;
     padding: 236px 18px 20px;
   }
@@ -2775,6 +2792,9 @@
   .heroSeal {
     top: 16px;
     right: 12px;
+    bottom: auto;
+    min-width: 104px;
+    padding: 9px 12px;
   }
 
   .commandDeck,
@@ -2866,7 +2886,7 @@
     width: 100%;
   }
 
-  .celebrateCard {
+  .celebrateCardScroll {
     padding-inline: 20px;
   }
 
@@ -2918,6 +2938,9 @@
   .celebrateCard {
     max-height: calc(100vh - 24px);
     max-height: calc(100dvh - 24px);
+  }
+
+  .celebrateCardScroll {
     padding-bottom: 20px;
   }
 
@@ -2983,5 +3006,561 @@
   .unavailableHero,
   .unavailableHero .heroCopy {
     min-height: 420px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Precision Frame Closure
+
+   A rectangular CSS border is clipped before it can paint a chamfer. The old
+   cards and controls therefore stopped at every diagonal and looked broken.
+   These rails draw the full polygon explicitly, including each diagonal, so
+   every machined frame is one continuous circuit at every size.
+   -------------------------------------------------------------------------- */
+
+.bevelFrame {
+  --bevel-size: 9px;
+  --bevel-frame-color: rgba(184, 196, 201, 0.46);
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  display: block;
+  background:
+    linear-gradient(
+        to bottom right,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      0 0 / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(
+        to bottom right,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      100% 100% / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) var(--bevel-size) 0 /
+      calc(100% - var(--bevel-size)) 1px no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 100% 0 / 1px
+      calc(100% - var(--bevel-size)) no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 0 100% /
+      calc(100% - var(--bevel-size)) 1px no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 0 var(--bevel-size) / 1px
+      calc(100% - var(--bevel-size)) no-repeat;
+  pointer-events: none;
+}
+
+.hero > .bevelFrame {
+  --bevel-size: 12px;
+  --bevel-frame-color: rgba(211, 221, 225, 0.64);
+  background:
+    linear-gradient(
+        to bottom right,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      0 0 / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(
+        to bottom left,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      100% 0 / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(
+        to bottom right,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      100% 100% / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(
+        to bottom left,
+        transparent 42%,
+        var(--bevel-frame-color) 45%,
+        var(--bevel-frame-color) 55%,
+        transparent 58%
+      )
+      0 100% / var(--bevel-size) var(--bevel-size) no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) var(--bevel-size) 0 /
+      calc(100% - var(--bevel-size) - var(--bevel-size)) 1px no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 100% var(--bevel-size) / 1px
+      calc(100% - var(--bevel-size) - var(--bevel-size)) no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) var(--bevel-size) 100% /
+      calc(100% - var(--bevel-size) - var(--bevel-size)) 1px no-repeat,
+    linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 0 var(--bevel-size) / 1px
+      calc(100% - var(--bevel-size) - var(--bevel-size)) no-repeat;
+  box-shadow: inset 0 0 0 5px rgba(184, 196, 201, 0.035);
+}
+
+.challengeCard > .bevelFrame {
+  --bevel-frame-color: color-mix(in srgb, var(--card-tier-color) 48%, var(--mission-chrome));
+}
+
+.challengeCard[data-mission-state='complete'] > .bevelFrame {
+  --bevel-frame-color: color-mix(in srgb, var(--card-tier-color) 76%, var(--mission-chrome));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--card-tier-color) 24%, transparent));
+}
+
+.challengeCard[data-mission-state='claimed'] > .bevelFrame {
+  --bevel-frame-color: rgba(184, 196, 201, 0.35);
+}
+
+.emptyState,
+.celebrateCard {
+  position: relative;
+}
+
+.emptyState > .bevelFrame {
+  --bevel-size: 10px;
+}
+
+.celebrateCard > .bevelFrame {
+  --bevel-size: 12px;
+  --bevel-frame-color: rgba(211, 168, 85, 0.78);
+  filter: drop-shadow(0 0 6px rgba(211, 168, 85, 0.16));
+}
+
+.backButton,
+.playButton,
+.claimButton,
+.claimAllButton,
+.buyFreezeBtn,
+.confirmButton,
+.missionActionButton,
+.rerollButton,
+.cancelButton,
+.retryButton,
+.alertButton,
+.alertSecondaryButton,
+.celebrateButton {
+  --control-frame-color: rgba(184, 196, 201, 0.62);
+  position: relative;
+}
+
+.backButton::after,
+.playButton::after,
+.claimButton::after,
+.claimAllButton::after,
+.buyFreezeBtn::after,
+.confirmButton::after,
+.missionActionButton::after,
+.rerollButton::after,
+.cancelButton::after,
+.retryButton::after,
+.alertButton::after,
+.alertSecondaryButton::after,
+.celebrateButton::after {
+  --control-bevel-size: 7px;
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  background:
+    linear-gradient(
+        to bottom right,
+        transparent 40%,
+        var(--control-frame-color) 44%,
+        var(--control-frame-color) 56%,
+        transparent 60%
+      )
+      0 0 / var(--control-bevel-size) var(--control-bevel-size) no-repeat,
+    linear-gradient(
+        to bottom right,
+        transparent 40%,
+        var(--control-frame-color) 44%,
+        var(--control-frame-color) 56%,
+        transparent 60%
+      )
+      100% 100% / var(--control-bevel-size) var(--control-bevel-size) no-repeat,
+    linear-gradient(var(--control-frame-color), var(--control-frame-color))
+      var(--control-bevel-size) 0 / calc(100% - var(--control-bevel-size)) 1px no-repeat,
+    linear-gradient(var(--control-frame-color), var(--control-frame-color)) 100% 0 / 1px
+      calc(100% - var(--control-bevel-size)) no-repeat,
+    linear-gradient(var(--control-frame-color), var(--control-frame-color)) 0 100% /
+      calc(100% - var(--control-bevel-size)) 1px no-repeat,
+    linear-gradient(var(--control-frame-color), var(--control-frame-color)) 0
+      var(--control-bevel-size) / 1px calc(100% - var(--control-bevel-size)) no-repeat;
+  content: '';
+  pointer-events: none;
+}
+
+.backButton,
+.playButton,
+.claimButton,
+.claimAllButton,
+.buyFreezeBtn,
+.confirmButton,
+.missionActionButton,
+.alertButton,
+.celebrateButton {
+  --control-frame-color: color-mix(in srgb, var(--mission-blue) 76%, var(--mission-chrome));
+}
+
+.heroActions .playButton {
+  --control-frame-color: color-mix(in srgb, var(--mission-gold) 78%, var(--mission-chrome));
+}
+
+.challengeCard
+  :is(.missionActionButton, .claimButton, .rerollButton, .cancelButton, .confirmButton) {
+  --control-frame-color: color-mix(in srgb, var(--card-tier-color) 62%, var(--mission-chrome));
+}
+
+/* --------------------------------------------------------------------------
+   Live Mission Instrument Icons
+
+   Every mission emblem now reports real progress through its outer energy
+   circuit, changes cadence with mission state, and responds as one physical
+   control assembly when its card receives pointer or keyboard intent.
+   -------------------------------------------------------------------------- */
+
+.iconAssembly {
+  --icon-phase: -0.4s;
+  width: 56px;
+  height: 56px;
+  isolation: isolate;
+  perspective: 180px;
+}
+
+.iconAssembly[data-mission-icon='hands_won'] {
+  --icon-phase: -0.8s;
+}
+
+.iconAssembly[data-mission-icon='showdowns'] {
+  --icon-phase: -1.2s;
+}
+
+.iconAssembly[data-mission-icon='showdowns_won'] {
+  --icon-phase: -1.6s;
+}
+
+.iconAssembly[data-mission-icon='hands_won_no_showdown'] {
+  --icon-phase: -2s;
+}
+
+.iconAssembly[data-mission-icon='tournaments_played'] {
+  --icon-phase: -2.4s;
+}
+
+.iconAssembly[data-mission-icon='big_pots'] {
+  --icon-phase: -2.8s;
+}
+
+.iconAssembly[data-mission-icon='strong_hands'] {
+  --icon-phase: -3.2s;
+}
+
+.iconAssembly[data-mission-icon='chips_won'] {
+  --icon-phase: -3.6s;
+}
+
+.iconAssembly[data-mission-icon='friends_added'] {
+  --icon-phase: -4s;
+}
+
+.iconOrbit,
+.iconPulse,
+.iconScanner {
+  position: absolute;
+  pointer-events: none;
+}
+
+.iconOrbit {
+  z-index: 1;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from -90deg,
+    var(--card-tier-color) 0 var(--mission-progress),
+    rgba(184, 196, 201, 0.12) var(--mission-progress) 100%
+  );
+  -webkit-mask: radial-gradient(circle, transparent 63%, #000 65% 72%, transparent 74%);
+  mask: radial-gradient(circle, transparent 63%, #000 65% 72%, transparent 74%);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--card-tier-color) 34%, transparent));
+  animation: missionCircuitSignal 3.8s ease-in-out infinite;
+  animation-delay: var(--icon-phase);
+}
+
+.iconBox {
+  z-index: 3;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border: 0;
+  background: linear-gradient(
+    145deg,
+    #f1f7f8,
+    color-mix(in srgb, var(--card-tier-color) 72%, #65737a) 32%,
+    #273136 68%,
+    #d9e3e6
+  );
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  transition:
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 220ms ease;
+  transform-style: preserve-3d;
+}
+
+.iconBox::before {
+  position: absolute;
+  z-index: 0;
+  inset: 1px;
+  background:
+    radial-gradient(
+      circle at 42% 34%,
+      color-mix(in srgb, var(--card-tier-color) 14%, #0b1715),
+      #030504 69%
+    ),
+    #030504;
+  clip-path: inherit;
+  content: '';
+}
+
+.iconBox::after {
+  position: absolute;
+  z-index: 1;
+  inset: -65% -35%;
+  background: linear-gradient(
+    110deg,
+    transparent 38%,
+    rgba(240, 252, 255, 0.04) 43%,
+    rgba(240, 252, 255, 0.7) 49%,
+    rgba(85, 232, 255, 0.12) 54%,
+    transparent 60%
+  );
+  content: '';
+  transform: translateX(-58%) rotate(8deg);
+  animation: missionFacetSweep 4.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation-delay: var(--icon-phase);
+}
+
+.iconGlyph {
+  position: relative;
+  z-index: 2;
+  color: var(--card-tier-color);
+  font-size: 1.18rem;
+  line-height: 1;
+  text-shadow:
+    0 0 5px color-mix(in srgb, var(--card-tier-color) 78%, transparent),
+    0 1px 1px #000;
+  transition: transform 220ms ease;
+}
+
+.iconPulse {
+  z-index: 0;
+  inset: 4px;
+  border: 1px solid color-mix(in srgb, var(--card-tier-color) 30%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--card-tier-color) 13%, transparent);
+  animation: missionPulseRing 3.8s ease-out infinite;
+  animation-delay: var(--icon-phase);
+}
+
+.iconScanner {
+  z-index: 4;
+  top: 1px;
+  left: calc(50% - 1px);
+  width: 2px;
+  height: 8px;
+  border-radius: 2px;
+  background: #ecfcff;
+  box-shadow: 0 0 7px var(--card-tier-color);
+  transform-origin: 1px 27px;
+  animation: missionScannerOrbit 5.4s linear infinite;
+  animation-delay: var(--icon-phase);
+}
+
+.challengeCard:focus-within .iconBox {
+  filter: brightness(1.18)
+    drop-shadow(0 0 7px color-mix(in srgb, var(--card-tier-color) 35%, transparent));
+  transform: translateZ(10px) rotateX(7deg) rotateY(-7deg) scale(1.06);
+}
+
+.challengeCard:focus-within .iconGlyph {
+  transform: scale(1.08);
+}
+
+.iconAssembly[data-icon-state='complete'] .iconOrbit,
+.iconAssembly[data-icon-state='complete'] .iconScanner {
+  animation-duration: 2.2s;
+}
+
+.iconAssembly[data-icon-state='complete'] .iconBox {
+  filter: brightness(1.14)
+    drop-shadow(0 0 7px color-mix(in srgb, var(--card-tier-color) 32%, transparent));
+}
+
+.iconAssembly[data-icon-state='claimed'] :is(.iconOrbit, .iconPulse, .iconScanner),
+.iconAssembly[data-icon-state='claimed'] .iconBox::after {
+  animation-play-state: paused;
+}
+
+.inlineDiamond,
+.rewardGem {
+  transform-origin: 50% 58%;
+  animation: missionDiamondSignal 4.6s ease-in-out infinite;
+}
+
+.rewardGem {
+  animation-duration: 3.9s;
+}
+
+.alertIcon {
+  position: relative;
+  overflow: hidden;
+}
+
+.alertIcon::before,
+.alertIcon::after {
+  position: absolute;
+  content: '';
+  pointer-events: none;
+}
+
+.alertIcon::before {
+  inset: 4px;
+  border: 1px solid rgba(85, 232, 255, 0.24);
+  animation: missionAlertCircuit 3.6s ease-in-out infinite;
+}
+
+.alertIcon::after {
+  inset: -45%;
+  background: linear-gradient(90deg, transparent 42%, rgba(231, 252, 255, 0.55), transparent 58%);
+  animation: missionAlertSweep 4.2s ease-in-out infinite;
+}
+
+@keyframes missionCircuitSignal {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes missionFacetSweep {
+  0%,
+  22% {
+    opacity: 0;
+    transform: translateX(-58%) rotate(8deg);
+  }
+  38%,
+  55% {
+    opacity: 0.82;
+  }
+  72%,
+  100% {
+    opacity: 0;
+    transform: translateX(58%) rotate(8deg);
+  }
+}
+
+@keyframes missionPulseRing {
+  0% {
+    opacity: 0.58;
+    transform: scale(0.88);
+  }
+  58%,
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+  }
+}
+
+@keyframes missionScannerOrbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes missionDiamondSignal {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(85, 232, 255, 0.24));
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(85, 232, 255, 0.5));
+    transform: translateY(-1px) scale(1.045);
+  }
+}
+
+@keyframes missionAlertCircuit {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.84);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+@keyframes missionAlertSweep {
+  0%,
+  24% {
+    opacity: 0;
+    transform: translateX(-55%);
+  }
+  42% {
+    opacity: 0.52;
+  }
+  66%,
+  100% {
+    opacity: 0;
+    transform: translateX(55%);
+  }
+}
+
+@media (max-width: 680px) {
+  .hero > .bevelFrame {
+    --bevel-frame-color: rgba(211, 221, 225, 0.46);
+    display: block;
+    background:
+      linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 0 0 / 100% 1px no-repeat,
+      linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 100% 0 / 1px 100%
+        no-repeat,
+      linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 0 100% / 100% 1px
+        no-repeat,
+      linear-gradient(var(--bevel-frame-color), var(--bevel-frame-color)) 0 0 / 1px 100% no-repeat;
+  }
+
+  .challengeCard > .bevelFrame {
+    --bevel-size: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iconOrbit,
+  .iconPulse,
+  .iconScanner,
+  .iconBox::after,
+  .inlineDiamond,
+  .rewardGem,
+  .alertIcon::before,
+  .alertIcon::after {
+    animation: none;
+  }
+
+  .challengeCard:focus-within .iconBox,
+  .challengeCard:focus-within .iconGlyph,
+  .inlineDiamond,
+  .rewardGem {
+    transition: none;
+    transform: none;
+  }
+
+  .iconScanner {
+    opacity: 0.72;
   }
 }

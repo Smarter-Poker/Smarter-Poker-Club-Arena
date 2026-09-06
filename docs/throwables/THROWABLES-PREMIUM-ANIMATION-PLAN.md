@@ -952,97 +952,97 @@ bettered).
 
 ---
 
-## 5. The plan, in phases
+## 5. The build, in six phases (re-cut 2026-09-06: "BUILD ALL OF THESE FULL ANIMATIONS OUT IN PHASES ... START PHASE 1 NOW")
 
-Each phase ends with something a player can throw. Nothing in a later phase
-is needed to ship an earlier one. Estimates assume one engineer full time and
-one 2D animator (After Effects / Lottie) full time; a second animator halves
-phases 1-4. Sound work is a third stream and does not block the visuals
-(a placeholder cue is legal until phase 5; a missing cue is not).
+The animator in the earlier draft does not exist yet, so the build does not
+wait for one. Every rig is authored the way the knockout was: hand-drawn
+SVG parts (paths, gradients, `useId`-scoped defs), keyframes in
+`calc(<n>s * var(--animation-speed, 1))`, timed to the frame against the
+reference catalogue, photographed in a darkroom beside the measured beats.
+A rig is a React component pair (`Projectile`, `Payload`) that draws in
+avatar units and knows nothing about seats; the player knows about seats
+and nothing about the item. The spec in 3.2 is the contract between them,
+and the Lottie route in 3.1 stays open: a rig can be replaced by a Lottie
+file later without touching the player, the spec or the tests, because the
+beats are the contract, not the format.
 
-### Phase 0: foundation (engineer 1 week; animator onboarding in parallel)
+Each phase ships on its own branch, behind the catalogue's `enabled` flag
+where an item is not yet approved, and ends with a darkroom sheet Dan can
+look at. Nothing in a later phase is needed for an earlier one to be live.
 
-- Art direction is decided (section 6, ruling 1); the animator is briefed
-  with this document and the two reference files, and delivers the style
-  frame (beer + doge beside their renders) before anything else. Asset conventions written
-  down: 512 px composition, 30 fps, named markers per beat, three named
-  comps (`projectile`, `payload`, `residue`), colour palette, the seat plate
-  as a guide layer.
-- `src/throwables/spec.ts` (the schema from 3.2), `src/throwables/specs/`
-  (one file per item), a generated manifest, and `ThrowablePlayer`
-  (replaces the phase machine in `ThrowAnimation`): Lottie loading with the
-  canvas renderer, marker-driven beats, straight flight, blink-and-pop
-  arrival, seat-scaled sizing, speed law, table scoping. The old physics and
-  impact profiles remain behind a flag until phase 3 removes them.
-- `ThrowableSoundService` v2: sample loader, AudioContext scheduling, pan,
-  loops. TTS retired (`ThrowableVoice` deleted).
-- The sound pipeline from 3.3.1: `scripts/audio/throwable-cues.manifest.json`,
-  `scripts/audio/build-throwable-cues.mjs`, the Chatterbox line generator
-  (`scripts/audio/generate-throwable-voices.py`, reads the reference clip
-  path from `.env.local`), `CREDITS.md` generation, and
-  `tests/unit/throwableCuesAreLicensed.test.ts`. Dan's ten-second reference
-  clip and the Freesound API key are requested in the first phase-0 report.
-- `throwable_catalog` + `user_throwables` migration (via
-  `node scripts/new-migration.mjs`), `fn_use_throwable` tier checks,
-  `fn_purchase_throwable`, and the picker's badges, locks and purchase sheet.
-  Catalogue seeded with all 48 current ids at their decided tiers so nothing
-  a player owns today disappears; the 30-per-month member allowance
-  (ruling 3) lands in the same migration as a second constant in
-  `fn_use_throwable`.
-- `scripts/dev/preview-throwable.mjs` darkroom: spec -> harness beside the
-  reference frames at the four seat rungs.
-- Laws from 3.6 written first, `it.skip` where the asset does not exist yet,
-  un-skipped as each ships (CLAUDE.md 5.8).
+### Phase 1: the player, the pipeline, and the first four objects
 
-Acceptance: `beer` rebuilt end to end with a placeholder Lottie and the
-measured beats, throwable on the dev table, contact sheet beside the
-reference, at 56/66/84/104 px, 60 fps with eight in flight.
+- `src/throwables/spec.ts` (the schema), `src/throwables/registry.ts`
+  (id -> spec + rig; `hasRig(id)`), `src/components/table/ThrowablePlayer.tsx`
+  - `.css`: spawn on the thrower's face, straight constant-speed flight,
+    blink-and-pop arrival, payload mounted at the target in avatar units,
+    residue, hard cut, one `--animation-speed`, scoped to its own table, no
+    seat flinch and no table shake (ruling 6). `ThrowAnimationContainer`
+    routes rigged items to the player and everything else to the legacy
+    `ThrowAnimation`, so the 44 unrigged items keep working while the set is
+    rebuilt one rig at a time.
+- `src/services/ThrowableCueService.ts`: AudioBuffer loader + AudioContext
+  scheduler + pan + loops; a cue that has no file falls back to the legacy
+  procedural recipe for that cue and is counted, never silent.
+- The sound pipeline (3.3.1): manifest, `build-throwable-cues.mjs`
+  (ffmpeg: trim, -16 LUFS, Opus + AAC), `CREDITS.md`, the licence test.
+  First sources: Kenney's CC0 packs, which need no key. Freesound and the
+  Chatterbox voices land in phase 6 once Dan supplies the key and the clip.
+- Four object rigs to the measured beats: **beer**, **water_gun**,
+  **tomato**, **cracked_egg**.
+- `scripts/dev/preview-throwable.mjs`: a harness page per rig at the four
+  seat rungs (56 / 66 / 84 / 104 px) with the beat timestamps stepped by
+  hand, so a frame can be compared to the reference file's frame numbers.
+- Laws: `tests/throwables-always-play.law.test.ts` +
+  `tests/unit/throwableSpecs.test.ts` (grammar bounds and parity beats),
+  registered in `docs/laws.d/`.
 
-### Phase 1: reference parity, the objects (animator 2 weeks; engineer 1 week)
+### Phase 2: the remaining reference objects (14)
 
-The 16 object-rhythm items with a PokerBros twin: water_gun, beer,
-fireworks, horseshoe, trash_can, dice, champagne, snowman, trophy,
-cracked_egg, cake, banana_peel, cash_stack, poop, tomato, bomb, rose,
-missile. Each shipped with its spec, its Lottie, its cues (placeholder
-allowed), its darkroom sheet and its parity test. Ship in batches of four
-behind the catalogue's `enabled` flag; flip on when the sheet matches.
+fireworks, horseshoe (with the GOOD LUCK label), trash_can (the 2-7 gag),
+dice (hand + tumbling dice), champagne, snowman, trophy, cake, banana_peel,
+cash_stack, poop, bomb, rose, missile (the three-stage airstrike). Each
+with its spec, rig, cues and parity test; batches of four behind `enabled`.
 
-### Phase 2: reference parity, the characters and emoticons (animator 3 weeks; engineer 1 week)
+### Phase 3: the character rig and the emoticon rig (21)
 
-doge, bear, shark, chicken, rat_card, donkey, fish, and the 14 emoticons
-(five of them upgrades of existing ids, so no wire change). The emoticon set
-shares one rig (face, eyes, mouth, brows, hands) so the animator builds the
-rig once and the 14 performances are variations; budget the rig at a week
-and the performances at two.
+One face rig (head, eyes, brows, mouth, cheeks, hands, hat/prop slot)
+authored once, then doge, bear, shark, chicken, rat_card, donkey, fish and
+the 14 emoticons (5 of them upgrades of existing ids) as performances on
+it. The character rhythm (blink, pop with overshoot, 4 s performance) is
+implemented once in the player and reused by all 21.
 
-### Phase 3: our own 22 redesigned, old code deleted (animator 2 weeks; engineer 1 week)
+### Phase 4: our 17 no-twin items, and the old engine deleted
 
-Section 4C. When the last of the 48 original ids plays through the new
-player: delete the seven physics profiles, the nine impact profiles,
+pizza_slice, anvil, magnet, basketball, football, tennis_ball,
+bowling_ball, magic_8_ball, coffee, diamond, ufo, alien, robot, ghost,
+skull, lightning_bolt, rubber_duck, plus thumbs_up / thumbs_down / star as
+emoticons. When the last of the 48 original ids plays through the player:
+delete the seven physics profiles, the nine impact profiles,
 `ThrowableSignatures.css`, the CSS half of `ThrowAnimation.css`, the
-procedural recipes, the flood-fill cutout and the still renders' runtime
-path. Move every pin in `tests/animations-always-play.law.test.ts` that
-named a retired mechanism to its replacement in the same commit
-(CLAUDE.md 10.6).
+procedural recipes and the flood-fill cutout; move every pin that named a
+retired mechanism to its replacement in the same commit (CLAUDE.md 10.6);
+retire `throwTimeline.test.ts` for `throwableSpecs.test.ts`.
 
-### Phase 4: the new 16 + seasonal, and the store (animator 2 weeks; engineer 1 week)
+### Phase 5: entitlement, the store, and the 12 new items (+4 seasonal)
 
-Section 4D. Marketplace gets a Throwables shelf that sells premium items
-(diamonds) next to the existing packs; VIP page lists the VIP-only set as a
-benefit; the picker's purchase sheet deep-links to both. Seasonal items
-enabled by `season` with a date window.
+`throwable_catalog` + `user_throwables` + the tier checks in
+`fn_use_throwable` + `fn_purchase_throwable` + the 30/500 allowance
+(rulings 2 and 3), the picker's badges, locks, purchase sheet and Recently
+Used row, the marketplace shelf and the two packs; then crown, chip_rain,
+diamond_shower, velvet_rope, champagne_tower, standing_ovation, whale,
+to_the_moon (VIP) and tilt_meter, bad_beat_bandage, bubble_boy,
+slot_machine, energy_ball, sloth (premium), and the four seasonal items
+behind `season`.
 
-### Phase 5: sound library final, verification, launch (2 weeks, all streams)
+### Phase 6: the full sound library, the voices, device verification, launch
 
-Every placeholder cue replaced; loudness-normalised; the library size and the
-preload policy measured on a real phone; 60 fps at eight simultaneous
-throws on a 375 px device; every darkroom sheet reviewed by Dan; the free
-allowance ruling (section 6) applied; telemetry: throws per item per day,
-per-tier, purchase conversions, and a `throw_render_failed` counter (the
-animation law's "a paid throw must never vanish silently").
-
-Total: about ten weeks with one animator, six to seven with two. The
-engineering is roughly five weeks of the ten and is front-loaded.
+Every placeholder cue replaced from Freesound CC0 / Sonniss; the two
+recorded lines and every laugh generated with Chatterbox from Dan's clip;
+loudness pass; preload policy measured on a real phone; 60 fps at eight
+simultaneous throws on a 375 px device; every darkroom sheet reviewed;
+telemetry (throws per item per day, per tier, purchase conversion,
+`throw_render_failed`).
 
 ---
 

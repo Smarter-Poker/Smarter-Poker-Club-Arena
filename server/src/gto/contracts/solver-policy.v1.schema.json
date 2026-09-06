@@ -1,0 +1,1445 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smarter.poker/contracts/solver-policy/solver-policy.v1.schema.json",
+  "title": "Smarter Poker Solver Policy V1",
+  "description": "Cross-repository contract for one complete poker decision and its policy answer.",
+  "type": "object",
+  "required": [
+    "contractVersion",
+    "policyVersion",
+    "key",
+    "kind",
+    "node",
+    "actions",
+    "distribution",
+    "legalSizes",
+    "chipEv",
+    "tournamentUtilityEv",
+    "sourceArtifact",
+    "qualitySeal",
+    "validDomain",
+    "confidence",
+    "fallbackReason",
+    "rangeDistribution"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "smarter-poker.solver-policy.v1"
+    },
+    "policyVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "$ref": "#/$defs/policyKind"
+    },
+    "key": {
+      "$ref": "#/$defs/decisionKey"
+    },
+    "node": {
+      "$ref": "#/$defs/node"
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "legalSizes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/legalSize"
+      }
+    },
+    "chipEv": {
+      "$ref": "#/$defs/evEnvelope"
+    },
+    "tournamentUtilityEv": {
+      "$ref": "#/$defs/utilityEvEnvelope"
+    },
+    "sourceArtifact": {
+      "$ref": "#/$defs/sourceArtifact"
+    },
+    "qualitySeal": {
+      "$ref": "#/$defs/qualitySeal"
+    },
+    "validDomain": {
+      "$ref": "#/$defs/validDomain"
+    },
+    "confidence": {
+      "$ref": "#/$defs/confidence"
+    },
+    "fallbackReason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rangeDistribution": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "exact"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualitySeal": {
+            "const": "SOLVER_EXACT"
+          },
+          "sourceArtifact": {
+            "properties": {
+              "system": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^(?!.*[vV]1(?:[^0-9]|$)).+$"
+              },
+              "artifactId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "scenarioHash": {
+                "type": "string",
+                "minLength": 1
+              },
+              "solverVersion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "solverBinaryChecksum": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$"
+              },
+              "machineId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pipelineCommit": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{40}$"
+              },
+              "manifestVersion": {
+                "type": "string",
+                "minLength": 1
+              },
+              "manifestChecksum": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$"
+              },
+              "sourceArtifactChecksum": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$"
+              },
+              "qualityStatus": {
+                "const": "validated"
+              },
+              "auditedAt": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provenanceComplete": {
+                "const": true
+              }
+            },
+            "required": [
+              "system",
+              "artifactId",
+              "scenarioHash",
+              "solverVersion",
+              "solverBinaryChecksum",
+              "machineId",
+              "pipelineCommit",
+              "manifestVersion",
+              "manifestChecksum",
+              "sourceArtifactChecksum",
+              "qualityStatus",
+              "auditedAt",
+              "provenanceComplete"
+            ]
+          },
+          "validDomain": {
+            "properties": {
+              "completeKey": {
+                "const": true
+              },
+              "approximatedDimensions": {
+                "type": "array",
+                "maxItems": 0
+              }
+            },
+            "required": [
+              "completeKey",
+              "approximatedDimensions"
+            ]
+          },
+          "fallbackReason": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chipEv": {
+            "properties": {
+              "measuredByAction": {
+                "const": true
+              }
+            },
+            "required": [
+              "measuredByAction"
+            ]
+          }
+        },
+        "required": [
+          "chipEv"
+        ]
+      },
+      "then": {
+        "properties": {
+          "actions": {
+            "items": {
+              "properties": {
+                "chipEvBb": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "chipEvBb"
+              ]
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "actions": {
+            "items": {
+              "properties": {
+                "chipEvBb": {
+                  "const": null
+                }
+              },
+              "required": [
+                "chipEvBb"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "tournamentUtilityEv": {
+            "properties": {
+              "measuredByAction": {
+                "const": true
+              }
+            },
+            "required": [
+              "measuredByAction"
+            ]
+          }
+        },
+        "required": [
+          "tournamentUtilityEv"
+        ]
+      },
+      "then": {
+        "properties": {
+          "actions": {
+            "items": {
+              "properties": {
+                "tournamentUtilityEv": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "tournamentUtilityEv"
+              ]
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "actions": {
+            "items": {
+              "properties": {
+                "tournamentUtilityEv": {
+                  "const": null
+                }
+              },
+              "required": [
+                "tournamentUtilityEv"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "exact"
+            },
+            "qualitySeal": {
+              "enum": [
+                "SOLVER_EXACT"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "aggregated"
+            },
+            "qualitySeal": {
+              "enum": [
+                "SOLVER_AGGREGATED"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "derived"
+            },
+            "qualitySeal": {
+              "enum": [
+                "SOLVER_DERIVED_RESPONSE",
+                "LEGACY_UNVERIFIED"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "chart"
+            },
+            "qualitySeal": {
+              "enum": [
+                "CHART_AUDITED"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "curated"
+            },
+            "qualitySeal": {
+              "enum": [
+                "CURATED"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "heuristic"
+            },
+            "qualitySeal": {
+              "enum": [
+                "HEURISTIC"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "unavailable"
+            },
+            "qualitySeal": {
+              "enum": [
+                "UNAVAILABLE"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
+        }
+      ]
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "kind": {
+              "const": "unavailable"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "actions": {
+            "minItems": 1
+          },
+          "distribution": {
+            "minProperties": 1
+          }
+        }
+      }
+    },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "confidence": {
+              "properties": {
+                "score": {
+                  "const": 0
+                },
+                "level": {
+                  "const": "none"
+                }
+              },
+              "required": [
+                "score",
+                "level"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "confidence": {
+              "properties": {
+                "score": {
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 0.6
+                },
+                "level": {
+                  "const": "low"
+                }
+              },
+              "required": [
+                "score",
+                "level"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "confidence": {
+              "properties": {
+                "score": {
+                  "minimum": 0.6,
+                  "exclusiveMaximum": 0.9
+                },
+                "level": {
+                  "const": "medium"
+                }
+              },
+              "required": [
+                "score",
+                "level"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "confidence": {
+              "properties": {
+                "score": {
+                  "minimum": 0.9,
+                  "maximum": 1
+                },
+                "level": {
+                  "const": "high"
+                }
+              },
+              "required": [
+                "score",
+                "level"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "nullableNumber": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "policyKind": {
+      "enum": [
+        "exact",
+        "aggregated",
+        "derived",
+        "chart",
+        "curated",
+        "heuristic",
+        "unavailable"
+      ]
+    },
+    "qualitySeal": {
+      "enum": [
+        "SOLVER_EXACT",
+        "SOLVER_AGGREGATED",
+        "SOLVER_DERIVED_RESPONSE",
+        "CHART_AUDITED",
+        "CURATED",
+        "HEURISTIC",
+        "LEGACY_UNVERIFIED",
+        "UNAVAILABLE"
+      ]
+    },
+    "positions": {
+      "type": "object",
+      "required": [
+        "hero",
+        "villains",
+        "button",
+        "smallBlind",
+        "bigBlind"
+      ],
+      "properties": {
+        "hero": {
+          "type": "string"
+        },
+        "villains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "button": {
+          "type": "string"
+        },
+        "smallBlind": {
+          "type": "string"
+        },
+        "bigBlind": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stack": {
+      "type": "object",
+      "required": [
+        "seat",
+        "position",
+        "stackChips",
+        "stackBb",
+        "committedChips",
+        "active",
+        "allIn"
+      ],
+      "properties": {
+        "seat": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "position": {
+          "type": "string"
+        },
+        "stackChips": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "stackBb": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "committedChips": {
+          "type": "number"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "allIn": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "blindState": {
+      "type": "object",
+      "required": [
+        "smallBlind",
+        "bigBlind",
+        "ante",
+        "bigBlindAnte",
+        "straddles",
+        "complete"
+      ],
+      "properties": {
+        "smallBlind": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "bigBlind": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "ante": {
+          "type": "number"
+        },
+        "bigBlindAnte": {
+          "type": "number"
+        },
+        "straddles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "seat",
+              "amount"
+            ],
+            "properties": {
+              "seat": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "amount": {
+                "$ref": "#/$defs/nullableNumber"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "rake": {
+      "type": "object",
+      "required": [
+        "percent",
+        "capChips",
+        "capBb",
+        "noFlopNoDrop",
+        "complete"
+      ],
+      "properties": {
+        "percent": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "capChips": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "capBb": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "noFlopNoDrop": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tournamentUtility": {
+      "type": "object",
+      "required": [
+        "mode",
+        "model",
+        "playersRemaining",
+        "entrants",
+        "handForHand",
+        "complete"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "playersRemaining": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "entrants": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "handForHand": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "money": {
+      "type": "object",
+      "required": [
+        "place",
+        "amount",
+        "type"
+      ],
+      "properties": {
+        "place": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "amount": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "historyAction": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "street",
+        "actor",
+        "action",
+        "amountChips",
+        "amountBb",
+        "allIn"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "street": {
+          "enum": [
+            "preflop",
+            "flop",
+            "turn",
+            "river"
+          ]
+        },
+        "actor": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "amountChips": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "amountBb": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "allIn": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "actionHistory": {
+      "type": "object",
+      "required": [
+        "complete",
+        "actions"
+      ],
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/historyAction"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "legalAction": {
+      "type": "object",
+      "required": [
+        "action",
+        "minChips",
+        "maxChips",
+        "exactChips",
+        "allIn"
+      ],
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "minChips": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "maxChips": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "exactChips": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "allIn": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sidePot": {
+      "type": "object",
+      "required": [
+        "id",
+        "amountChips",
+        "eligibleSeats",
+        "heroEligible"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "amountChips": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "eligibleSeats": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "heroEligible": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sidePots": {
+      "type": "object",
+      "required": [
+        "complete",
+        "pots"
+      ],
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "pots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sidePot"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "decisionKey": {
+      "type": "object",
+      "required": [
+        "contractVersion",
+        "variant",
+        "bettingStructure",
+        "tableSize",
+        "positions",
+        "stackVector",
+        "blinds",
+        "rake",
+        "tournamentUtility",
+        "payouts",
+        "bounties",
+        "street",
+        "board",
+        "holding",
+        "publicActionHistory",
+        "legalActions",
+        "sidePotEligibility"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "smarter-poker.solver-policy.v1"
+        },
+        "variant": {
+          "type": "string"
+        },
+        "bettingStructure": {
+          "type": "string"
+        },
+        "tableSize": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 2
+        },
+        "positions": {
+          "$ref": "#/$defs/positions"
+        },
+        "stackVector": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stack"
+          }
+        },
+        "blinds": {
+          "$ref": "#/$defs/blindState"
+        },
+        "rake": {
+          "$ref": "#/$defs/rake"
+        },
+        "tournamentUtility": {
+          "$ref": "#/$defs/tournamentUtility"
+        },
+        "payouts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/money"
+          }
+        },
+        "bounties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/money"
+          }
+        },
+        "street": {
+          "enum": [
+            "preflop",
+            "flop",
+            "turn",
+            "river"
+          ]
+        },
+        "board": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[2-9TJQKA][cdhs]$"
+          }
+        },
+        "holding": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[2-9TJQKA][cdhs]$"
+          }
+        },
+        "publicActionHistory": {
+          "$ref": "#/$defs/actionHistory"
+        },
+        "legalActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/legalAction"
+          }
+        },
+        "sidePotEligibility": {
+          "$ref": "#/$defs/sidePots"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "required": [
+        "semantics",
+        "sourceNode",
+        "actor",
+        "potBb",
+        "facingBetBb"
+      ],
+      "properties": {
+        "semantics": {
+          "enum": [
+            "check_or_bet",
+            "facing_wager",
+            "preflop_unopened",
+            "preflop_facing_wager",
+            "terminal",
+            "unknown"
+          ]
+        },
+        "sourceNode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actor": {
+          "type": "string"
+        },
+        "potBb": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "facingBetBb": {
+          "$ref": "#/$defs/nullableNumber"
+        }
+      },
+      "additionalProperties": false
+    },
+    "size": {
+      "type": "object",
+      "required": [
+        "unit",
+        "chips",
+        "bigBlinds",
+        "potFraction",
+        "exact"
+      ],
+      "properties": {
+        "unit": {
+          "enum": [
+            "none",
+            "unknown",
+            "chips",
+            "big_blinds",
+            "pot_fraction",
+            "all_in"
+          ]
+        },
+        "chips": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "bigBlinds": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "potFraction": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "exact": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "required": [
+        "id",
+        "sourceCode",
+        "family",
+        "label",
+        "frequency",
+        "legal",
+        "size",
+        "chipEvBb",
+        "tournamentUtilityEv"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frequency": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "legal": {
+          "type": "boolean"
+        },
+        "size": {
+          "$ref": "#/$defs/size"
+        },
+        "chipEvBb": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "tournamentUtilityEv": {
+          "$ref": "#/$defs/nullableNumber"
+        }
+      },
+      "additionalProperties": false
+    },
+    "evEnvelope": {
+      "type": "object",
+      "required": [
+        "unit",
+        "policy",
+        "byAction",
+        "measuredByAction"
+      ],
+      "properties": {
+        "unit": {
+          "const": "big_blinds"
+        },
+        "policy": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "byAction": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/nullableNumber"
+          }
+        },
+        "measuredByAction": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "measuredByAction": {
+                "const": true
+              }
+            },
+            "required": [
+              "measuredByAction"
+            ]
+          },
+          "then": {
+            "properties": {
+              "byAction": {
+                "additionalProperties": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "byAction": {
+                "additionalProperties": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "utilityEvEnvelope": {
+      "type": "object",
+      "required": [
+        "unit",
+        "policy",
+        "byAction",
+        "measuredByAction"
+      ],
+      "properties": {
+        "unit": {
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "byAction": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/nullableNumber"
+          }
+        },
+        "measuredByAction": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "measuredByAction": {
+                "const": true
+              }
+            },
+            "required": [
+              "measuredByAction"
+            ]
+          },
+          "then": {
+            "properties": {
+              "byAction": {
+                "additionalProperties": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "byAction": {
+                "additionalProperties": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "sourceArtifact": {
+      "type": "object",
+      "required": [
+        "system",
+        "artifactId",
+        "scenarioHash",
+        "solverVersion",
+        "solverBinaryChecksum",
+        "machineId",
+        "pipelineCommit",
+        "manifestVersion",
+        "manifestChecksum",
+        "sourceArtifactChecksum",
+        "qualityStatus",
+        "auditedAt",
+        "provenanceComplete"
+      ],
+      "properties": {
+        "system": {
+          "type": "string"
+        },
+        "artifactId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scenarioHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "solverVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "solverBinaryChecksum": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machineId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pipelineCommit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manifestVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "manifestChecksum": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceArtifactChecksum": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "qualityStatus": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "auditedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provenanceComplete": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "validDomain": {
+      "type": "object",
+      "required": [
+        "completeKey",
+        "missingKeyDimensions",
+        "exactMatchDimensions",
+        "approximatedDimensions",
+        "exclusions"
+      ],
+      "properties": {
+        "completeKey": {
+          "type": "boolean"
+        },
+        "missingKeyDimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exactMatchDimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "approximatedDimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "confidence": {
+      "type": "object",
+      "required": [
+        "score",
+        "level"
+      ],
+      "properties": {
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "level": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "legalSize": {
+      "type": "object",
+      "required": [
+        "actionId",
+        "unit",
+        "chips",
+        "bigBlinds",
+        "potFraction",
+        "exact"
+      ],
+      "properties": {
+        "actionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit": {
+          "enum": [
+            "none",
+            "unknown",
+            "chips",
+            "big_blinds",
+            "pot_fraction",
+            "all_in"
+          ]
+        },
+        "chips": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "bigBlinds": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "potFraction": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "exact": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

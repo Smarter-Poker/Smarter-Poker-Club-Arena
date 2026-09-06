@@ -182,7 +182,31 @@ const HUB_HARD_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
  * from a live beat and animate against `reveal_at` rather than its own clock.
  */
 const HUB_MAX_EVENT_REPLAY_MS = 60_000;
-const HUB_MAX_RETAINED_EVENTS_PER_TABLE = 4;
+/**
+ * FOUR WAS TOO FEW THE MOMENT THE JACKPOT GREW A SECOND BEAT (2026-09-06).
+ *
+ * MEASURED, not guessed. Every emit on a cash table that asks to be retained
+ * is a Bad Beat Jackpot beat, and one jackpot hand can now produce five:
+ *
+ *     bbj_hit                ServerTableEngineSettlement (detection)
+ *     bbj_payout_pending     the money could not land now (BBJ phase 2.2)
+ *     bbj_payout_complete    the celebration
+ *     bbj_hit_global         the club-wide card
+ *     bbj_payout_paid        FeeReconciler, when the drain lands it late
+ *
+ * Three of those existed when the cap was written, so four had a whole beat of
+ * headroom. Phase 2 added two and did not revisit it, which made the splice
+ * below drop the OLDEST - `bbj_hit`, the one carrying the hand names the
+ * celebration is built from, and the one whose own retention comment says it
+ * exists so a player reconnecting through the hit still gets them.
+ *
+ * Eight is five plus a beat of headroom for the next one, and it is still a
+ * per-table bound on a map already capped at HUB_MAX_RETAINED_TABLES, so the
+ * worst case is 512 * 8 short-lived entries that expire on their own deadline
+ * within HUB_MAX_EVENT_REPLAY_MS. `aJackpotIsNeverLost` pins the arithmetic so
+ * the NEXT retained event has to come and read this.
+ */
+const HUB_MAX_RETAINED_EVENTS_PER_TABLE = 8;
 const HUB_MAX_RETAINED_TABLES = 512;
 
 /**

@@ -141,7 +141,7 @@ export const engineTracer = new Tracer({
 // Horses lose nothing here (CLAUDE.md 10.5): the same latency is observed for
 // every table; the label says who was watching, it does not change what any
 // seat gets.
-import { MetricsRegistry } from './Metrics.js';
+import { MetricsRegistry, type Gauge } from './Metrics.js';
 
 export const alwaysOnRegistry = new MetricsRegistry();
 
@@ -149,6 +149,38 @@ export const alwaysOnRegistry = new MetricsRegistry();
 export const actToBroadcastFleet: Histogram = alwaysOnRegistry.histogram(
   'poker_act_to_broadcast_ms',
   'Latency from a player action being accepted to the new state reaching every seat (ms). audience=human when a human is seated at the table, else horse; format=cash|spin|hu_sng|mtt'
+);
+
+/**
+ * THE CORE THAT LIMITS EVERYTHING, AS A NUMBER (2026-09-06).
+ *
+ * The engine is ONE Node core and CLAUDE.md calls that the ceiling. Until
+ * today the only measurement of it was `equityGovernor.snapshot()` inside the
+ * `/health` JSON - no time series, no chart, no alert, nothing to correlate a
+ * slow controller pass or a laggy table against. `HorseDataLedger` said so
+ * itself: "the ONLY visibility the governor has outside the GameServer status
+ * payload".
+ *
+ * These are gauges, not a histogram: the governor already keeps the
+ * percentiles (perf_hooks maintains the underlying histogram), so re-bucketing
+ * them here would cost work to say the same thing less precisely.
+ *
+ * The scale is published beside the delay on purpose. A p50 over 40 ms and a
+ * scale of 1 means the governor is not reacting; a scale below 1 with a low
+ * p50 means it is throttling on a reading nobody can see. Together they are
+ * self-checking; apart, each can lie.
+ */
+export const eventLoopDelayP50: Gauge = alwaysOnRegistry.gauge(
+  'poker_event_loop_delay_p50_ms',
+  'Event-loop delay p50 over the last second (ms). The engine is one core; this is what saturation looks like from inside it.'
+);
+export const eventLoopDelayP99: Gauge = alwaysOnRegistry.gauge(
+  'poker_event_loop_delay_p99_ms',
+  'Event-loop delay p99 over the last second (ms).'
+);
+export const equityGovernorScale: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_governor_scale',
+  'Horse Monte Carlo iteration scale the governor is applying (1 = full precision, 0.2 = floor). Below 1 means the core is shedding load.'
 );
 
 /** Actions processed, 2 series. */

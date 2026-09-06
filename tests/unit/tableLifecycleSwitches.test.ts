@@ -65,28 +65,42 @@ describe('the fleet closes no table; closing is the tick BREAK rule (Gate 7, 202
   });
 });
 
-describe('the lifecycle pass runs, and knows more than DEFAULT_TABLES', () => {
+describe('the lifecycle pass is GONE, and the fleet owns no table lifecycle (2026-09-06)', () => {
   const fleet = src('server/src/services/HorseFleetManager.ts');
 
-  it('is called on every cycle', () => {
-    expect(fleet).toContain('await this.runTableLifecyclePass();');
+  /* This block used to pin `runTableLifecyclePass` as "called on every cycle".
+     OPORD 1.4 s18.2 lists it for deletion beside spawnOverflowTables and
+     retireSurplusTables; those two went at Gate 7 and this one was left
+     running every 30 seconds for another day. Deleted now, for three reasons
+     measured on 2026-09-06:
+
+       - it had NOTHING to act on. Of 3,636 live cluster tables and 1,954
+         non-cluster cash tables, zero carry `auto_restart` or
+         `auto_create_table`; Gate 5's applier forces both false on every
+         cluster table each tick. Every pass was an RPC returning an empty set.
+       - its AUTO CREATE arm called `fn_clone_table_row`, which copied
+         `cluster_id`, `role`, `main_index` and `lifecycle` - so cloning a full
+         Main 1 produced a SECOND Main 1 of the same game, the shape that
+         opened 3,000 tables on one game on 2026-09-05.
+       - and the clone could not have worked anyway: `public.tables` has four
+         GENERATED columns, so its `INSERT ... SELECT *` raised 428C9 on every
+         call, which the arm's `EXCEPTION WHEN unique_violation` does not catch.
+
+     The cloner is fixed in the same PR (migration 20260906160550) so no caller
+     can repeat it. The block below is a TOMBSTONE: the comment stays in the
+     source precisely so the pass is not restored a fourth time. */
+  it('is not called, and the method is gone', () => {
+    expect(fleet).not.toContain('await this.runTableLifecyclePass();');
+    expect(fleet).not.toContain('private async runTableLifecyclePass');
   });
 
-  it('asks the database, which can see every flagged table', () => {
-    expect(fleet).toContain("supabase.rpc('fn_table_lifecycle_pass')");
+  it('the RPC is not referenced anywhere in the fleet', () => {
+    expect(fleet).not.toContain("supabase.rpc('fn_table_lifecycle_pass')");
+    expect(fleet).not.toContain('fn_table_lifecycle_pass');
   });
 
-  it('never lets a failed pass take the fleet cycle down with it', () => {
-    const body = fleet.slice(
-      fleet.indexOf('private async runTableLifecyclePass'),
-      fleet.indexOf('private async openPlannedTables')
-    );
-    expect(body.length).toBeGreaterThan(0);
-    expect(body.length).toBeLessThan(4000);
-    expect(body).toContain('try {');
-    expect(body).toContain('reportError(');
-    // Every failure path returns rather than throwing into the cycle.
-    expect(body).toContain('return;');
+  it('and it says why, so nobody restores it', () => {
+    expect(fleet).toContain('runTableLifecyclePass is GONE');
   });
 });
 

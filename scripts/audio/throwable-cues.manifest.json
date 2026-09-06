@@ -1,0 +1,88 @@
+{
+  "$comment": "THE ONE PLACE that says where every shipped throwable cue came from and under what licence. Edit this, then run `node scripts/audio/build-throwable-cues.mjs --sources <dir>` (needs ffmpeg). It writes public/sounds/throwables/<cue>.webm + .m4a, public/sounds/throwables/CREDITS.md and src/throwables/cueManifest.generated.ts. A `placeholder` cue has no file yet and names the legacy ThrowableSoundService recipe to play in its place; tests/unit/throwableCuesAreLicensed.test.ts counts them and refuses any licence not in `allowedLicenses`. Plan: docs/throwables/THROWABLES-PREMIUM-ANIMATION-PLAN.md 3.3.1.",
+  "outputDir": "public/sounds/throwables",
+  "allowedLicenses": ["CC0-1.0", "Sonniss-GDC-Royalty-Free", "Own-Recording"],
+  "loudness": { "integratedLufs": -16, "truePeakDb": -1 },
+  "sources": {
+    "kenney-casino-audio": {
+      "kind": "kenney",
+      "slug": "casino-audio",
+      "title": "Kenney - Casino Audio (1.1)",
+      "author": "Kenney Vleugels (kenney.nl)",
+      "license": "CC0-1.0",
+      "url": "https://kenney.nl/assets/casino-audio",
+      "dir": "casino-audio/Audio"
+    },
+    "kenney-impact-sounds": {
+      "kind": "kenney",
+      "slug": "impact-sounds",
+      "title": "Kenney - Impact Sounds (1.0)",
+      "author": "Kenney Vleugels (kenney.nl)",
+      "license": "CC0-1.0",
+      "url": "https://kenney.nl/assets/impact-sounds",
+      "dir": "impact-sounds/Audio"
+    },
+    "kenney-interface-sounds": {
+      "kind": "kenney",
+      "slug": "interface-sounds",
+      "title": "Kenney - Interface Sounds (1.0)",
+      "author": "Kenney Vleugels (kenney.nl)",
+      "license": "CC0-1.0",
+      "url": "https://kenney.nl/assets/interface-sounds",
+      "dir": "interface-sounds/Audio"
+    }
+  },
+  "cues": {
+    "pop_soft": {
+      "$comment": "beer: mug 2 pops in (reference: a soft pop, centroid ~1.9 kHz).",
+      "source": "kenney-interface-sounds",
+      "layers": [{ "file": "drop_001.ogg", "at": 0, "gain": 1 }],
+      "trimEnd": 0.35
+    },
+    "glass_clink_rattle": {
+      "$comment": "beer + champagne: the reference chime has six rattles at 0 / 133 / 380 / 466 / 600 / 733 ms and a 1.3 s ring-down. Built from five glass impacts layered at those offsets with decaying gain, plus the interface 'glass' tone underneath for the ring.",
+      "source": "kenney-impact-sounds",
+      "layers": [
+        { "file": "impactGlass_light_000.ogg", "at": 0, "gain": 1 },
+        { "file": "impactGlass_light_001.ogg", "at": 0.133, "gain": 0.85 },
+        { "file": "impactGlass_light_002.ogg", "at": 0.38, "gain": 0.6 },
+        { "file": "impactGlass_light_003.ogg", "at": 0.466, "gain": 0.7 },
+        { "file": "impactGlass_light_004.ogg", "at": 0.6, "gain": 0.5 },
+        { "file": "impactGlass_light_001.ogg", "at": 0.733, "gain": 0.4 },
+        { "source": "kenney-interface-sounds", "file": "glass_002.ogg", "at": 0.02, "gain": 0.35 }
+      ]
+    },
+    "drip_tick": {
+      "$comment": "cracked_egg: the faint tick as the white drips.",
+      "source": "kenney-interface-sounds",
+      "layers": [{ "file": "tick_002.ogg", "at": 0, "gain": 0.5 }],
+      "trimEnd": 0.25
+    },
+    "squirt_start": {
+      "$comment": "water_gun: the first squirt. Needs a Freesound CC0 water-pistol take (phase 6).",
+      "placeholder": true,
+      "fallback": "squirt"
+    },
+    "squirt_loop": {
+      "$comment": "water_gun: 2.5 s pump + hiss loop. Needs a Freesound CC0 take (phase 6).",
+      "placeholder": true,
+      "fallback": "squirt"
+    },
+    "drip": {
+      "$comment": "water_gun: the splat cutting off.",
+      "source": "kenney-interface-sounds",
+      "layers": [{ "file": "drop_003.ogg", "at": 0, "gain": 0.6 }],
+      "trimEnd": 0.3
+    },
+    "splat_wet": {
+      "$comment": "tomato + poop: one wet splat 33 ms after the visual burst. Needs a Freesound CC0 take (phase 6).",
+      "placeholder": true,
+      "fallback": "splat_wet"
+    },
+    "egg_crack": {
+      "$comment": "cracked_egg: the crack. Needs a Freesound CC0 take (phase 6).",
+      "placeholder": true,
+      "fallback": "egg_crack"
+    }
+  }
+}

@@ -197,7 +197,10 @@
           "villainAction"
         ],
         "approximatedDimensions": [],
-        "exclusions": ["no_postflop_use", "no_unmodeled_action_lines"]
+        "exclusions": [
+          "no_postflop_use",
+          "no_unmodeled_action_lines"
+        ]
       },
       "confidence": {
         "score": 0.92,

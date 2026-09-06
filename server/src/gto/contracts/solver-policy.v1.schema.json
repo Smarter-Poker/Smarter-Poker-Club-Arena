@@ -78,10 +78,16 @@
       "$ref": "#/$defs/confidence"
     },
     "fallbackReason": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "rangeDistribution": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": {
         "type": "object",
         "additionalProperties": {
@@ -100,7 +106,9 @@
             "const": "exact"
           }
         },
-        "required": ["kind"]
+        "required": [
+          "kind"
+        ]
       },
       "then": {
         "properties": {
@@ -187,7 +195,10 @@
                 "maxItems": 0
               }
             },
-            "required": ["completeKey", "approximatedDimensions"]
+            "required": [
+              "completeKey",
+              "approximatedDimensions"
+            ]
           },
           "fallbackReason": {
             "const": null
@@ -204,10 +215,14 @@
                 "const": true
               }
             },
-            "required": ["measuredByAction"]
+            "required": [
+              "measuredByAction"
+            ]
           }
         },
-        "required": ["chipEv"]
+        "required": [
+          "chipEv"
+        ]
       },
       "then": {
         "properties": {
@@ -218,7 +233,9 @@
                   "type": "number"
                 }
               },
-              "required": ["chipEvBb"]
+              "required": [
+                "chipEvBb"
+              ]
             }
           }
         }
@@ -232,7 +249,9 @@
                   "const": null
                 }
               },
-              "required": ["chipEvBb"]
+              "required": [
+                "chipEvBb"
+              ]
             }
           }
         }
@@ -247,10 +266,14 @@
                 "const": true
               }
             },
-            "required": ["measuredByAction"]
+            "required": [
+              "measuredByAction"
+            ]
           }
         },
-        "required": ["tournamentUtilityEv"]
+        "required": [
+          "tournamentUtilityEv"
+        ]
       },
       "then": {
         "properties": {
@@ -261,7 +284,9 @@
                   "type": "number"
                 }
               },
-              "required": ["tournamentUtilityEv"]
+              "required": [
+                "tournamentUtilityEv"
+              ]
             }
           }
         }
@@ -275,7 +300,9 @@
                   "const": null
                 }
               },
-              "required": ["tournamentUtilityEv"]
+              "required": [
+                "tournamentUtilityEv"
+              ]
             }
           }
         }
@@ -289,10 +316,15 @@
               "const": "exact"
             },
             "qualitySeal": {
-              "enum": ["SOLVER_EXACT"]
+              "enum": [
+                "SOLVER_EXACT"
+              ]
             }
           },
-          "required": ["kind", "qualitySeal"]
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
         },
         {
           "properties": {
@@ -300,10 +332,15 @@
               "const": "aggregated"
             },
             "qualitySeal": {
-              "enum": ["SOLVER_AGGREGATED"]
+              "enum": [
+                "SOLVER_AGGREGATED"
+              ]
             }
           },
-          "required": ["kind", "qualitySeal"]
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
         },
         {
           "properties": {
@@ -311,10 +348,16 @@
               "const": "derived"
             },
             "qualitySeal": {
-              "enum": ["SOLVER_DERIVED_RESPONSE", "LEGACY_UNVERIFIED"]
+              "enum": [
+                "SOLVER_DERIVED_RESPONSE",
+                "LEGACY_UNVERIFIED"
+              ]
             }
           },
-          "required": ["kind", "qualitySeal"]
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
         },
         {
           "properties": {
@@ -322,10 +365,15 @@
               "const": "chart"
             },
             "qualitySeal": {
-              "enum": ["CHART_AUDITED"]
+              "enum": [
+                "CHART_AUDITED"
+              ]
             }
           },
-          "required": ["kind", "qualitySeal"]
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
         },
         {
           "properties": {
@@ -333,10 +381,15 @@
               "const": "curated"
             },
             "qualitySeal": {
-              "enum": ["CURATED"]
+              "enum": [
+                "CURATED"
+              ]
             }
           },
-          "required": ["kind", "qualitySeal"]
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
         },
         {
           "properties": {
@@ -344,10 +397,15 @@
               "const": "heuristic"
             },
             "qualitySeal": {
-              "enum": ["HEURISTIC"]
+              "enum": [
+                "HEURISTIC"
+              ]
             }
           },
-          "required": ["kind", "qualitySeal"]
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
         },
         {
           "properties": {
@@ -355,10 +413,15 @@
               "const": "unavailable"
             },
             "qualitySeal": {
-              "enum": ["UNAVAILABLE"]
+              "enum": [
+                "UNAVAILABLE"
+              ]
             }
           },
-          "required": ["kind", "qualitySeal"]
+          "required": [
+            "kind",
+            "qualitySeal"
+          ]
         }
       ]
     },
@@ -370,7 +433,9 @@
               "const": "unavailable"
             }
           },
-          "required": ["kind"]
+          "required": [
+            "kind"
+          ]
         }
       },
       "then": {
@@ -397,7 +462,10 @@
                   "const": "none"
                 }
               },
-              "required": ["score", "level"]
+              "required": [
+                "score",
+                "level"
+              ]
             }
           }
         },
@@ -413,7 +481,10 @@
                   "const": "low"
                 }
               },
-              "required": ["score", "level"]
+              "required": [
+                "score",
+                "level"
+              ]
             }
           }
         },
@@ -429,7 +500,10 @@
                   "const": "medium"
                 }
               },
-              "required": ["score", "level"]
+              "required": [
+                "score",
+                "level"
+              ]
             }
           }
         },
@@ -445,7 +519,10 @@
                   "const": "high"
                 }
               },
-              "required": ["score", "level"]
+              "required": [
+                "score",
+                "level"
+              ]
             }
           }
         }
@@ -455,10 +532,21 @@
   "additionalProperties": false,
   "$defs": {
     "nullableNumber": {
-      "type": ["number", "null"]
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "policyKind": {
-      "enum": ["exact", "aggregated", "derived", "chart", "curated", "heuristic", "unavailable"]
+      "enum": [
+        "exact",
+        "aggregated",
+        "derived",
+        "chart",
+        "curated",
+        "heuristic",
+        "unavailable"
+      ]
     },
     "qualitySeal": {
       "enum": [
@@ -474,7 +562,13 @@
     },
     "positions": {
       "type": "object",
-      "required": ["hero", "villains", "button", "smallBlind", "bigBlind"],
+      "required": [
+        "hero",
+        "villains",
+        "button",
+        "smallBlind",
+        "bigBlind"
+      ],
       "properties": {
         "hero": {
           "type": "string"
@@ -536,7 +630,14 @@
     },
     "blindState": {
       "type": "object",
-      "required": ["smallBlind", "bigBlind", "ante", "bigBlindAnte", "straddles", "complete"],
+      "required": [
+        "smallBlind",
+        "bigBlind",
+        "ante",
+        "bigBlindAnte",
+        "straddles",
+        "complete"
+      ],
       "properties": {
         "smallBlind": {
           "$ref": "#/$defs/nullableNumber"
@@ -554,7 +655,10 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["seat", "amount"],
+            "required": [
+              "seat",
+              "amount"
+            ],
             "properties": {
               "seat": {
                 "type": "integer",
@@ -575,7 +679,13 @@
     },
     "rake": {
       "type": "object",
-      "required": ["percent", "capChips", "capBb", "noFlopNoDrop", "complete"],
+      "required": [
+        "percent",
+        "capChips",
+        "capBb",
+        "noFlopNoDrop",
+        "complete"
+      ],
       "properties": {
         "percent": {
           "$ref": "#/$defs/nullableNumber"
@@ -597,13 +707,23 @@
     },
     "tournamentUtility": {
       "type": "object",
-      "required": ["mode", "model", "playersRemaining", "entrants", "handForHand", "complete"],
+      "required": [
+        "mode",
+        "model",
+        "playersRemaining",
+        "entrants",
+        "handForHand",
+        "complete"
+      ],
       "properties": {
         "mode": {
           "type": "string"
         },
         "model": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "playersRemaining": {
           "$ref": "#/$defs/nullableNumber"
@@ -622,7 +742,11 @@
     },
     "money": {
       "type": "object",
-      "required": ["place", "amount", "type"],
+      "required": [
+        "place",
+        "amount",
+        "type"
+      ],
       "properties": {
         "place": {
           "type": "integer",
@@ -639,14 +763,27 @@
     },
     "historyAction": {
       "type": "object",
-      "required": ["sequence", "street", "actor", "action", "amountChips", "amountBb", "allIn"],
+      "required": [
+        "sequence",
+        "street",
+        "actor",
+        "action",
+        "amountChips",
+        "amountBb",
+        "allIn"
+      ],
       "properties": {
         "sequence": {
           "type": "integer",
           "minimum": 0
         },
         "street": {
-          "enum": ["preflop", "flop", "turn", "river"]
+          "enum": [
+            "preflop",
+            "flop",
+            "turn",
+            "river"
+          ]
         },
         "actor": {
           "type": "string"
@@ -668,7 +805,10 @@
     },
     "actionHistory": {
       "type": "object",
-      "required": ["complete", "actions"],
+      "required": [
+        "complete",
+        "actions"
+      ],
       "properties": {
         "complete": {
           "type": "boolean"
@@ -684,7 +824,13 @@
     },
     "legalAction": {
       "type": "object",
-      "required": ["action", "minChips", "maxChips", "exactChips", "allIn"],
+      "required": [
+        "action",
+        "minChips",
+        "maxChips",
+        "exactChips",
+        "allIn"
+      ],
       "properties": {
         "action": {
           "type": "string"
@@ -706,7 +852,12 @@
     },
     "sidePot": {
       "type": "object",
-      "required": ["id", "amountChips", "eligibleSeats", "heroEligible"],
+      "required": [
+        "id",
+        "amountChips",
+        "eligibleSeats",
+        "heroEligible"
+      ],
       "properties": {
         "id": {
           "type": "string"
@@ -729,7 +880,10 @@
     },
     "sidePots": {
       "type": "object",
-      "required": ["complete", "pots"],
+      "required": [
+        "complete",
+        "pots"
+      ],
       "properties": {
         "complete": {
           "type": "boolean"
@@ -775,7 +929,10 @@
           "type": "string"
         },
         "tableSize": {
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 2
         },
         "positions": {
@@ -809,7 +966,12 @@
           }
         },
         "street": {
-          "enum": ["preflop", "flop", "turn", "river"]
+          "enum": [
+            "preflop",
+            "flop",
+            "turn",
+            "river"
+          ]
         },
         "board": {
           "type": "array",
@@ -842,7 +1004,13 @@
     },
     "node": {
       "type": "object",
-      "required": ["semantics", "sourceNode", "actor", "potBb", "facingBetBb"],
+      "required": [
+        "semantics",
+        "sourceNode",
+        "actor",
+        "potBb",
+        "facingBetBb"
+      ],
       "properties": {
         "semantics": {
           "enum": [
@@ -855,7 +1023,10 @@
           ]
         },
         "sourceNode": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "actor": {
           "type": "string"
@@ -871,10 +1042,23 @@
     },
     "size": {
       "type": "object",
-      "required": ["unit", "chips", "bigBlinds", "potFraction", "exact"],
+      "required": [
+        "unit",
+        "chips",
+        "bigBlinds",
+        "potFraction",
+        "exact"
+      ],
       "properties": {
         "unit": {
-          "enum": ["none", "unknown", "chips", "big_blinds", "pot_fraction", "all_in"]
+          "enum": [
+            "none",
+            "unknown",
+            "chips",
+            "big_blinds",
+            "pot_fraction",
+            "all_in"
+          ]
         },
         "chips": {
           "$ref": "#/$defs/nullableNumber"
@@ -910,7 +1094,10 @@
           "minLength": 1
         },
         "sourceCode": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "family": {
           "type": "string",
@@ -942,7 +1129,12 @@
     },
     "evEnvelope": {
       "type": "object",
-      "required": ["unit", "policy", "byAction", "measuredByAction"],
+      "required": [
+        "unit",
+        "policy",
+        "byAction",
+        "measuredByAction"
+      ],
       "properties": {
         "unit": {
           "const": "big_blinds"
@@ -969,7 +1161,9 @@
                 "const": true
               }
             },
-            "required": ["measuredByAction"]
+            "required": [
+              "measuredByAction"
+            ]
           },
           "then": {
             "properties": {
@@ -994,7 +1188,12 @@
     },
     "utilityEvEnvelope": {
       "type": "object",
-      "required": ["unit", "policy", "byAction", "measuredByAction"],
+      "required": [
+        "unit",
+        "policy",
+        "byAction",
+        "measuredByAction"
+      ],
       "properties": {
         "unit": {
           "type": "string"
@@ -1021,7 +1220,9 @@
                 "const": true
               }
             },
-            "required": ["measuredByAction"]
+            "required": [
+              "measuredByAction"
+            ]
           },
           "then": {
             "properties": {
@@ -1066,37 +1267,70 @@
           "type": "string"
         },
         "artifactId": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "scenarioHash": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "solverVersion": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "solverBinaryChecksum": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "machineId": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "pipelineCommit": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "manifestVersion": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "manifestChecksum": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "sourceArtifactChecksum": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "qualityStatus": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "auditedAt": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "provenanceComplete": {
           "type": "boolean"
@@ -1146,7 +1380,10 @@
     },
     "confidence": {
       "type": "object",
-      "required": ["score", "level"],
+      "required": [
+        "score",
+        "level"
+      ],
       "properties": {
         "score": {
           "type": "number",
@@ -1154,21 +1391,40 @@
           "maximum": 1
         },
         "level": {
-          "enum": ["none", "low", "medium", "high"]
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high"
+          ]
         }
       },
       "additionalProperties": false
     },
     "legalSize": {
       "type": "object",
-      "required": ["actionId", "unit", "chips", "bigBlinds", "potFraction", "exact"],
+      "required": [
+        "actionId",
+        "unit",
+        "chips",
+        "bigBlinds",
+        "potFraction",
+        "exact"
+      ],
       "properties": {
         "actionId": {
           "type": "string",
           "minLength": 1
         },
         "unit": {
-          "enum": ["none", "unknown", "chips", "big_blinds", "pot_fraction", "all_in"]
+          "enum": [
+            "none",
+            "unknown",
+            "chips",
+            "big_blinds",
+            "pot_fraction",
+            "all_in"
+          ]
         },
         "chips": {
           "$ref": "#/$defs/nullableNumber"

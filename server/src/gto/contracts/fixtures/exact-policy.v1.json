@@ -8,7 +8,9 @@
     "tableSize": 2,
     "positions": {
       "hero": "BB",
-      "villains": ["BTN"],
+      "villains": [
+        "BTN"
+      ],
       "button": "BTN",
       "smallBlind": "BTN",
       "bigBlind": "BB"
@@ -59,8 +61,15 @@
     "payouts": [],
     "bounties": [],
     "street": "flop",
-    "board": ["Jh", "7d", "2c"],
-    "holding": ["As", "Ks"],
+    "board": [
+      "Jh",
+      "7d",
+      "2c"
+    ],
+    "holding": [
+      "As",
+      "Ks"
+    ],
     "publicActionHistory": {
       "complete": true,
       "actions": []
@@ -87,7 +96,10 @@
         {
           "id": "main",
           "amountChips": 700,
-          "eligibleSeats": [0, 1],
+          "eligibleSeats": [
+            0,
+            1
+          ],
           "heroEligible": true
         }
       ]
@@ -188,7 +200,9 @@
   "validDomain": {
     "completeKey": true,
     "missingKeyDimensions": [],
-    "exactMatchDimensions": ["all"],
+    "exactMatchDimensions": [
+      "all"
+    ],
     "approximatedDimensions": [],
     "exclusions": []
   },

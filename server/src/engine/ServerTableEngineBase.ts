@@ -1205,6 +1205,10 @@ export abstract class ServerTableEngineBase {
   // starting before DB stacks are synced (was fire-and-forget, risked stale stacks)
   protected postHandTasksPromise: Promise<void> | null = null;
 
+  // 2026-09-06: the drain's view of the same fact, cleared by the promise
+  // rather than by the next hand. See trackSettlementInFlight().
+  protected settlementInFlight: Promise<void> | null = null;
+
   // FIX 147: Bible V8 §6.3 — Periodic heartbeat check to detect disconnects mid-hand
   // Without this, disconnects are only detected between hands in dealingLoop().
   // Phase 1.2 PR-G-real: rescheduled every 10s through DeadlineScheduler instead
@@ -2958,6 +2962,49 @@ export abstract class ServerTableEngineBase {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * Is this hand's money still being written?
+   *
+   * postHandTasks is the settlement, the rake record and the hand history.
+   * `running` going false does not stop it - it is a promise already in
+   * flight, and it keeps writing until it resolves or the process dies.
+   *
+   * GameServer.drainHands() reads this. Before 2026-09-06 the drain counted
+   * a table as "parked at a hand boundary" the moment !isRunning(), so a
+   * SIGTERM at :55 - which arrives EVERY HOUR - could report a clean drain
+   * and exit with a settlement half-written. Postgres protects the atomicity
+   * of the settlement transaction itself; what it cannot protect is the rest
+   * of postHandTasks, which is exactly where the unbanked-rake and
+   * board_not_recorded detectors have been finding their work.
+   */
+  hasSettlementInFlight(): boolean {
+    return this.settlementInFlight !== null;
+  }
+
+  /**
+   * Follow one settlement promise to its end.
+   *
+   * `postHandTasksPromise` is cleared by the DEALING loop, at the top of the
+   * next hand - which is the wrong clock for a drain, because a table that
+   * stops between hands never runs that line again and would hold the drain
+   * open for its whole 18-second budget on every single restart. This field
+   * is cleared by the promise itself, so it answers "is money still moving"
+   * rather than "has the next hand started".
+   *
+   * Identity-checked on both settle paths: a later hand's barrier replaces
+   * this field, and a stale promise resolving afterwards must not clear a
+   * newer one.
+   */
+  protected trackSettlementInFlight(p: Promise<void> | null): void {
+    this.settlementInFlight = p;
+    if (!p) return;
+    const tracked = p;
+    const clear = (): void => {
+      if (this.settlementInFlight === tracked) this.settlementInFlight = null;
+    };
+    void tracked.then(clear, clear);
   }
   /**
    * Allocate this hand's GLOBAL hand number (2026-08-18).

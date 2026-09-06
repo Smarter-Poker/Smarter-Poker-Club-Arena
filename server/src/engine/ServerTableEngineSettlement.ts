@@ -339,6 +339,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     this.postHandTasksPromise = assignedByBody
       ? Promise.all([assignedByBody, guarded]).then(() => undefined)
       : guarded;
+    this.trackSettlementInFlight(this.postHandTasksPromise);
     return wholeSettlement;
   }
 
@@ -1048,6 +1049,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     this.postHandTasksPromise = priorBarrier
       ? Promise.all([priorBarrier, postTasks]).then(() => undefined)
       : postTasks;
+    this.trackSettlementInFlight(this.postHandTasksPromise);
     this.currentHandWinnerIds = [];
 
     // Rabbit Hunt: Broadcast captured remaining deck ONLY when the hand

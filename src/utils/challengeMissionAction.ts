@@ -5,6 +5,10 @@ export interface ChallengeMissionAction {
   path: string;
 }
 
+function unsupportedChallengeType(value: never): never {
+  throw new Error(`Unsupported Challenge Type: ${String(value)}`);
+}
+
 const CASH_GAME_ACTION: ChallengeMissionAction = {
   label: 'Find A Table',
   path: '/',
@@ -30,5 +34,10 @@ export function getChallengeMissionAction(type: ChallengeType): ChallengeMission
     case 'strong_hands':
     case 'chips_won':
       return CASH_GAME_ACTION;
+    default:
+      // The service rejects unknown server rows before render. Throw here as a
+      // final runtime boundary, while the `never` parameter makes adding a
+      // declared challenge type without its destination a compile-time error.
+      return unsupportedChallengeType(type);
   }
 }

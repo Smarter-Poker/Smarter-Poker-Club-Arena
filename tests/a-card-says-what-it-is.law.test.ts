@@ -32,12 +32,21 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 import { sliceBetween } from './helpers/sourceWindow';
 import { cardWords, cardsWords, FACE_DOWN_WORDS, RANK_WORD } from '../src/utils/cardWords';
 
 const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8');
+
+/** Every file under a directory, so the sweep below cannot miss a folder. */
+function* walk(dir: string): Generator<string> {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) yield* walk(full);
+    else yield full;
+  }
+}
 
 describe('a card says what it is', () => {
   it('spells the rank, never the letter on the sprite', () => {
@@ -103,9 +112,79 @@ describe('a card says what it is', () => {
     /* The board's region names every card in one sentence, so the cards
        inside it are hidden - otherwise the board is read out twice. */
     expect(felt).toMatch(/cardsWords\(cards\)/);
-    expect(felt).toMatch(/community-cards__container" aria-hidden="true"/);
     /* And it must not build its own sentence out of raw fields again. */
     expect(felt).not.toMatch(/\$\{c\.rank\} of \$\{c\.suit\}/);
+
+    /* THE HIDING IS PER CARD, NEVER ON THE CONTAINER (deep dive 2026-09-06).
+       This pin used to read `community-cards__container" aria-hidden="true"`
+       and it was GREEN while the felt was broken: `aria-hidden` is inherited,
+       one of those cards becomes the Squeeze To Reveal button, and hiding the
+       container took a focusable control out of the accessibility tree while
+       leaving it in the tab order. The pin was watching the MECHANISM, so it
+       could not see that the mechanism had swallowed a control.
+       The property is pinned where it can actually be observed - against the
+       rendered DOM, in tests/components/RiverSqueeze.test.tsx. Here we only
+       forbid the shape that caused it. */
+    expect(felt).not.toMatch(/community-cards__container"\s+aria-hidden/);
+    expect(felt).toMatch(/aria-hidden=\{host && interactiveHold \? undefined : true\}/);
+  });
+
+  it('no spoken label anywhere is built out of raw card fields', () => {
+    /* DEEP DIVE 2026-09-06. The phase fixed every card FACE and missed a
+       CONTROL: Crazy Pineapple's discard button said `Discard ${card.rank}${
+       card.suit}` - "Discard As" - and a button's aria-label REPLACES its
+       content as the accessible name, so the corrected alt on the CardImage
+       inside it was never read. The one card a player is asked to choose,
+       under a timer that folds the hand, was the one still read as the
+       sprite's field values.
+       One renderer was never the whole surface: a label is written by hand
+       anywhere somebody needs one, so the class has to be pinned, not the
+       instance. */
+    /* WIDENED 2026-09-06, after the first version of this pin shipped and was
+       still wrong. It matched only ATTRIBUTES (aria-label / alt / title), so
+       it passed while the CONFIRM BUTTON fifty lines below the label it had
+       just fixed still PRINTED "Discard As" - visible text, read by everyone,
+       the last thing anybody sees before the card is gone. Found by grepping
+       the shipped bundle, not the source.
+       So the rule is the property, not the shape: a raw rank immediately
+       followed by a raw suit is a card being named in field values, wherever
+       a player reads it.
+       `${c.rank}${String(c.suit).charAt(0)}` is deliberately NOT matched -
+       that is the plain-text hand summary a player COPIES, where poker
+       notation is the correct output and not speech. */
+    const attrOnly = /(aria-label|alt|title)=\{`[^`]*\$\{[^}]*\.(rank|suit)\b/;
+    /* A raw rank immediately followed by a raw suit, inside a template. */
+    const rawPair = /`[^`]*\$\{[^}]*\.rank\}\$\{[^}]*\.suit\}[^`]*`/g;
+
+    /**
+     * Is this template a SENTENCE, or an identity string?
+     *
+     * `${c.rank}${c.suit}` on its own is how this codebase keys a card - React
+     * keys, `indexOf` against the engine's card order, the PokerStars export's
+     * own notation. Those are correct and nobody reads them. Flagging them
+     * would put eight false positives in front of the next agent, and a law
+     * that cries wolf is a law that gets deleted.
+     *
+     * What makes the two real defects different is PROSE beside the pair:
+     * "Discard ${...}${...}". So strip the interpolations and look for a word.
+     */
+    const isSentence = (tpl: string) => /[A-Za-z]{2,}/.test(tpl.replace(/\$\{[^}]*\}/g, ''));
+
+    const offenders: string[] = [];
+    for (const rel of walk(resolve(__dirname, '../src'))) {
+      if (!rel.endsWith('.tsx')) continue;
+      const src = readFileSync(rel, 'utf8');
+      for (const line of src.split('\n')) {
+        /* `.rank` is also a LEADERBOARD position, which is a legitimate thing
+           to say out loud. Only card-shaped names count. */
+        const attr = attrOnly.test(line) && (/\.suit\b/.test(line) || /\bcard\.rank\b/.test(line));
+        const spokenPair = (line.match(rawPair) ?? []).some(isSentence);
+        if (attr || spokenPair) {
+          offenders.push(`${rel.split('/src/')[1]}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(offenders, 'a card named in raw field values where a player reads it').toEqual([]);
   });
 
   it('leaves the poker room its own words', () => {

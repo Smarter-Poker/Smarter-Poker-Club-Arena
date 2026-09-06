@@ -17,6 +17,16 @@
  *   read and the window's end lands in one interval and reverses in the next,
  *   so the finding is the two-interval sum (the BBJ meter's rule, and three
  *   player wallets demonstrated it while this was built).
+ * LAW 1b (gate) - AN ACCOUNT IS THE OWNER OF THE CHIPS, not the club that
+ *   happened to be on a leg: one union wallet is one account, a player's
+ *   account is their whole balance across every club, and the felt is ONE
+ *   pool (a seat move inside a cluster carries a stack between tables with no
+ *   leg, correctly). The first judged run filed 159 findings and every one was
+ *   this keying, not a chip.
+ * LAW 1c (gate) - A BALANCE THAT DOES NOT EXIST IS NOT ZERO: an owner with no
+ *   row is skipped, never judged against a fabricated zero.
+ * LAW 1d (gate) - THE NIGHTLY RUN READS ONE SNAPSHOT (REPEATABLE READ), so
+ *   the balances and the journal come from the same instant.
  * LAW 4 - WHAT IT DOES NOT REPLAY, IT SAYS. prize_liability is excluded
  *   because tournament_escrow is its per-event balance with an hourly shadow;
  *   a leg whose column cannot be keyed is counted and reported as unkeyable,
@@ -36,6 +46,16 @@ const file = readdirSync(MIG).find((n) =>
 );
 if (!file) throw new Error('the Phase 7.1 migration is not mirrored');
 const sql = readFileSync(resolve(MIG, file), 'utf8');
+const fnIn = (text: string, name: string): string => {
+  const start = text.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+  expect(start, `${name} is defined`).toBeGreaterThan(-1);
+  return text.slice(start, text.indexOf('$function$;', start));
+};
+const load = (re: RegExp): string => {
+  const f = readdirSync(MIG).find((n) => re.test(n));
+  if (!f) throw new Error(`not mirrored: ${re}`);
+  return readFileSync(resolve(MIG, f), 'utf8');
+};
 const fn = (name: string): string => {
   const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
   expect(start, `${name} is defined`).toBeGreaterThan(-1);
@@ -67,6 +87,36 @@ describe('the journal replays every account it named', () => {
     expect(r).toMatch(/v_two := v_this \+ COALESCE\(r\.prev_unexplained, 0\);/);
     expect(r).toMatch(/IF abs\(v_two\) > 0\.005 THEN/);
     expect(sql).toMatch(/unexplained {2}numeric,/);
+  });
+
+  it('LAW 1b: an account is keyed by the owner of the chips, and the felt is one pool', () => {
+    const g = load(/^\d{14}_the_replay_keys_an_account_by_what_owns_the_chips\.sql$/);
+    const a = fnIn(g, 'fn_ca_leg_accounts');
+    expect(a).toMatch(
+      /CASE WHEN s\.t = 'table_stack' THEN '00000000-0000-0000-0000-0000000fe17e'::uuid ELSE s\.id END AS owner/
+    );
+    expect(a).toMatch(/k\.t \|\| ':' \|\| k\.owner::text \|\| ':' \|\| k\.col AS account_key/);
+    expect(a).not.toMatch(/COALESCE\(k\.club_id::text, '-'\)/);
+    expect(fnIn(g, 'fn_ca_account_balance')).toMatch(
+      /FROM public\.club_members WHERE user_id = p_entity;/
+    );
+    expect(g).toMatch(/RAISE EXCEPTION 'the felt is not one account'/);
+  });
+
+  it('LAW 1c: a balance that does not exist is not zero', () => {
+    const g = load(/^\d{14}_the_replay_keys_an_account_by_what_owns_the_chips\.sql$/);
+    const b = fnIn(g, 'fn_ca_account_balance');
+    expect(b).toMatch(/A BALANCE THAT DOES NOT EXIST IS NOT ZERO/);
+    expect(b).toMatch(/IF COALESCE\(v_rows, 0\) = 0 THEN RETURN NULL; END IF;/);
+    // the felt always exists, even with every seat empty
+    expect(b).toMatch(/v_rows := 1; {2}-- the felt always exists/);
+  });
+
+  it('LAW 1d: the nightly run reads one snapshot', () => {
+    const g = load(/^\d{14}_the_replay_reads_the_balances_and_the_journal_at_one_instant\.sql$/);
+    expect(g).toMatch(/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;/);
+    expect(g).toMatch(/RAISE EXCEPTION 'the nightly replay does not ask for one snapshot'/);
+    expect(g).toMatch(/COMMENT ON FUNCTION public\.fn_ca_ledger_replay\(integer\) IS/);
   });
 
   it('LAW 4: what it does not replay, it says', () => {

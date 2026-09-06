@@ -47,7 +47,10 @@ import { CardImage, CardBack } from '../table/CardImage';
 import type { DeckCard } from '../../utils/deckCards';
 import { SqueezeCard, squeezeHostProps, useCardSqueeze } from '../../presentation/cardPresentation';
 import HandDetailView from '../handdetail/HandDetailView';
-import type { HandRecord as ServiceHandRecord } from '../../services/HandHistoryService';
+import type {
+  HandRecord as ServiceHandRecord,
+  HeroHandFacts,
+} from '../../services/HandHistoryService';
 import type { ReplayModel } from '../../utils/handReplay';
 import { buildReplayFrames, frameSeats, type ReplayFrame } from '../../utils/replayFrames';
 import {
@@ -71,8 +74,48 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { reportError } from '../../utils/errorReporter';
 import './HandReplay.css';
 
+/**
+ * A HAND THIS COMPONENT CAN RENDER, whatever it arrived on.
+ *
+ * PHASE 4 2026-09-05. There were two replayers on this platform: this one, and
+ * a second on the public share routes with its own hand shape, its own board
+ * indexed by step number and no reconstruction behind it at all. There is one
+ * now, and this type is the seam - the model plus the five facts the header
+ * and the seat strip read that are not IN the model.
+ *
+ * A hand fetched from the database fills it from the row. A hand that arrived
+ * inside a share link fills it from the link, with no database read at all,
+ * which is what lets a recipient who never played the hand (or who is not
+ * logged in) watch it.
+ */
+export interface ReplaySource {
+  model: ReplayModel;
+  tableName: string | null;
+  handNumber: string | number | null;
+  /** Printed when the model's variant key is one this reader cannot name. */
+  gameType?: string | null;
+  /**
+   * WHOSE SEAT THE FELT IS ANCHORED ON, and whose rows the rundown marks.
+   *
+   * The signed-in viewer, on a hand read from the database. On a SHARED hand
+   * it is the sharer: the recipient is a different person (or nobody at all),
+   * and without this the felt anchored on the lowest seat and the hand was
+   * replayed from a chair nobody was sitting in.
+   */
+  viewerId?: string | null;
+  /** Who showed and who mucked, keyed by user id, when a record says so. */
+  reveals?: Record<string, { mucked?: boolean } | null | undefined>;
+  /** The viewer's own all-in equity / EV facts, for the rundown (Phase 2). */
+  viewerFacts?: HeroHandFacts | null;
+}
+
 interface HandReplayProps {
   handId?: string;
+  /**
+   * A hand supplied outright, instead of one to go and fetch. Set by the share
+   * routes; when it is present nothing is read from the database.
+   */
+  source?: ReplaySource | null;
   onClose?: () => void;
 }
 
@@ -511,13 +554,21 @@ function Felt({
   );
 }
 
-export default function HandReplay({ handId: propHandId, onClose }: HandReplayProps) {
+export default function HandReplay({
+  handId: propHandId,
+  source: propSource = null,
+  onClose,
+}: HandReplayProps) {
   // Route-based usage: /replay/<id>
   const pathParts = typeof window !== 'undefined' ? window.location.pathname.split('/') : [];
   const routeHandId = pathParts[pathParts.indexOf('replay') + 1];
-  const handId = propHandId || routeHandId;
+  /* A hand handed to us outright is never also fetched. Reading the route for
+     an id while holding a whole hand is how the share page would have gone
+     and asked the database for a hand its viewer is not allowed to read, and
+     replaced a perfectly good replay with "Hand Not Found". */
+  const handId = propSource ? undefined : propHandId || routeHandId;
   const { user } = useAuthUser();
-  const heroId = user?.id ?? null;
+  const authId = user?.id ?? null;
 
   const [handData, setHandData] = useState<ServiceHandRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -559,10 +610,17 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
   useEffect(() => {
     let alive = true;
     (async () => {
-      setIsLoading(true);
       setLoadFailed(false);
       setCursor({ step: 0, motion: false });
       setIsPlaying(false);
+      /* A hand supplied outright is already here: no fetch, and no loading
+         state to sit in. */
+      if (propSource) {
+        setHandData(null);
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
       try {
         if (!handId) {
           // No handId: nothing to replay. Never invent one.
@@ -590,9 +648,33 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
     return () => {
       alive = false;
     };
-  }, [handId]);
+  }, [handId, propSource]);
 
-  const model = handData?.replay ?? null;
+  /**
+   * ONE SOURCE, whichever door the hand came through. A fetched row is
+   * folded into the same shape a share link arrives in, so everything below
+   * this line reads one thing and there is no second branch to keep in step.
+   */
+  const source: ReplaySource | null = useMemo(() => {
+    if (propSource) return propSource;
+    if (!handData?.replay) return null;
+    const reveals: Record<string, { mucked?: boolean } | undefined> = {};
+    for (const p of handData.players) reveals[p.user_id] = p.showdown_reveal;
+    return {
+      model: handData.replay,
+      tableName: handData.table_name ?? null,
+      handNumber: handData.hand_number ?? null,
+      gameType: handData.game_type ?? null,
+      reveals,
+      viewerId: authId,
+      viewerFacts: handData.players.find((p) => p.user_id === authId)?.facts ?? null,
+    };
+  }, [propSource, handData, authId]);
+
+  const model = source?.model ?? null;
+  /* The seat this replay is read FROM. The signed-in viewer on their own
+     hand; the sharer on a hand that arrived in a link. */
+  const heroId = source?.viewerId ?? null;
   const frames = useMemo(() => (model ? buildReplayFrames(model) : []), [model]);
   const jumps = useMemo(() => streetJumps(frames), [frames]);
   const winnerSeats = useMemo(() => (model ? winnerSeatsOf(model) : []), [model]);
@@ -690,7 +772,7 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
     );
   }
 
-  if (!handData || !model) {
+  if (!source || !model) {
     return (
       <div className="hand-replay hand-replay--empty">
         <p className="hand-replay__empty-title">
@@ -710,11 +792,11 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
     );
   }
 
-  const variant = gameTypeLabel(model.gameVariant) || handData.game_type;
+  const variant = gameTypeLabel(model.gameVariant) || source.gameType || '';
   /* The persisted reveal record: who showed, who mucked, in what order. The
      seat strip under the felt reads it so a mucked hand is labelled as one
      (`player-hand-ranking--mucked`) rather than drawn as "no cards". */
-  const revealOf = new Map(handData.players.map((p) => [p.user_id, p.showdown_reveal] as const));
+  const revealOf = new Map(Object.entries(source.reveals || {}));
   const foldedIds = new Set(
     model.streets
       .flatMap((st) => st.rows)
@@ -733,11 +815,15 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
       <header className="hand-replay__header">
         <div className="hand-replay__titles">
           <span className="hand-replay__eyebrow">
-            {handData.table_name || 'Table'} · {blindLabel(model.smallBlind)} /{' '}
+            {source.tableName || 'Table'} · {blindLabel(model.smallBlind)} /{' '}
             {blindLabel(model.bigBlind)}
             {variant ? ` · ${variant}` : ''}
           </span>
-          <h2 className="hand-replay__title">Hand #{handData.hand_number}</h2>
+          <h2 className="hand-replay__title">
+            {source.handNumber == null || source.handNumber === ''
+              ? 'Shared Hand'
+              : `Hand #${source.handNumber}`}
+          </h2>
           <span className="hand-replay__when">{stamp(model.playedAt)}</span>
         </div>
         <div className="hand-replay__tabs" role="tablist" aria-label="Replay View">
@@ -768,7 +854,7 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
             model={model}
             currentUserId={heroId}
             badge={variant}
-            viewerFacts={handData.players.find((p) => p.user_id === heroId)?.facts}
+            viewerFacts={source.viewerFacts}
           />
         </div>
       ) : (

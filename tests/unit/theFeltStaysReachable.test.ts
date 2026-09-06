@@ -93,7 +93,7 @@ describe('money actions do not use OS dialogs', () => {
     expect(src).not.toContain('payoutLeaderboardPeriod');
     expect(src).toContain('<LeaderboardPrizeWizard');
     expect(src).toContain(
-      'Published Rules Activate At The Dates Shown. Publication Does Not Move Chips.'
+      'Published Rules Activate At The Dates Shown. Settlement Uses The Recorded Promo Wallet After The Period Closes.'
     );
   });
 });

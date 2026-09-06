@@ -67,16 +67,24 @@ describe('the bundle surface stays narrow', () => {
     expect(src).toMatch(/import\s*\{[\s\S]*?\}\s*from\s*['"]@sentry\/react['"]/);
   });
 
-  it('the 3D replay takes gsap-core, not the gsap barrel with CSSPlugin', () => {
-    const specs = importsOf(join(SRC, 'components/replay/HandReplay3D.tsx'));
-    expect(specs).toContain('gsap/gsap-core');
-    expect(specs).not.toContain('gsap');
-  });
-
-  it('nothing else in src imports gsap at all', () => {
+  /**
+   * PHASE 4 2026-09-05: gsap left the app entirely.
+   *
+   * Its one consumer was `HandReplay3D`, the 3D felt behind the platform's
+   * SECOND hand replayer on `/share/hand/:handId`. That page renders the same
+   * `HandReplay` as the table and the archive now, so the 3D replay, its
+   * snapshot type and the three analysis widgets beside it were retired
+   * rather than kept as a parallel reading of the same hand.
+   *
+   * The pin stays, pointed the other way: gsap is a dependency nothing
+   * imports, and an `import gsap from 'gsap'` anywhere brings back a 63 kB
+   * source (7 kB gzipped) whose CSSPlugin exists to tween DOM styles this app
+   * animates in CSS.
+   */
+  it('nothing in src imports gsap at all', () => {
     const users = files
       .filter((f) => importsOf(f).some((s) => s === 'gsap' || s.startsWith('gsap/')))
       .map((f) => relative(process.cwd(), f));
-    expect(users).toEqual(['src/components/replay/HandReplay3D.tsx']);
+    expect(users).toEqual([]);
   });
 });

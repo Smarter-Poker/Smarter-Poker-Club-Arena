@@ -118,11 +118,28 @@ archive has.
 
 ## Phase 6 of 7 - Disputes and the operator's lookup
 
+BUILT 2026-09-06 (`feat/previous-hand-phase-6`); see
+`docs/changelog/2026-09-06-previous-hand-phase-6.md`.
+
 - Flag a hand: one button files the hand id and a note with the club's
-  operators; the player sees its status.
-- Operator hand lookup in the club operations console: any hand at the club's
-  tables by number, all hole cards, under an audited godmode read with the
-  reader, the hand and the reason logged.
+  operators; the player sees its status. `ca_hand_flags` has no write policy
+  at all - `fn_ca_flag_hand` derives the club FROM THE HAND and refuses a hand
+  the caller was not dealt into, and `fn_ca_resolve_hand_flag` will not close
+  one without a note the player can read.
+- Operator hand lookup at `/clubs/:clubId/hand-review`, beside Reports and
+  Disputes: any hand at the club's tables by number, every seat's holding,
+  under an audited read. Triage is STAFF, the cards are CONTROL, and the log
+  cannot be skipped - the audit row is written in the same transaction that
+  returns the cards, `audit_trail` REVOKEs INSERT from `authenticated`, and no
+  other path reaches another player's cards. Rendered by the ONE replayer
+  through `replayInputFromRow`'s `privateHoleCards` seam.
+- Found on the way: the first version read the holdings from
+  `table_hole_cards`, which is pruned every six hours (~29 hours of rows) - it
+  would have returned an EMPTY card map for every hand old enough to be
+  disputed, which reads as "nobody was holding anything". The durable store is
+  `ca_hand_facts` (1,672 unshown holdings recoverable in an 800-hand sample).
+  And `audit_trail.target_id` is a uuid, not the TEXT its own migration
+  declares, so both writers would have thrown on every call.
 
 ## Phase 7 of 7 - Accessibility, devices, performance
 

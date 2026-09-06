@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { sliceEnclosingBlock } from '../../../tests/helpers/sourceWindow.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -82,20 +83,21 @@ describe('a manager past the grace is the thing that is stuck', () => {
   });
 
   it('the watchdog stops and drops the overstayed manager, then recovers through the same door', () => {
-    const i = SERVER.indexOf(
+    /* The window is the loop body the guard lives in, not a byte count:
+       tests/helpers/sourceWindow, and the publish outage its header records. */
+    const loop = sliceEnclosingBlock(
+      SERVER,
       'managerHasOverstayed(dwell.seenAt.get(String(stuck.id)), Date.now())'
     );
-    expect(i).toBeGreaterThan(0);
-    const after = SERVER.slice(i, i + 1500);
-    expect(after).toContain('lingering.stop();');
-    expect(after).toContain('this.tournamentEngines.delete(String(stuck.id));');
-    expect(after).toContain(
+    expect(loop).toContain('lingering.stop();');
+    expect(loop).toContain('this.tournamentEngines.delete(String(stuck.id));');
+    expect(loop).toContain(
       "await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);"
     );
     // The drop happens BEFORE the has() test that gates recovery, so the
     // recovery that follows is the ordinary one.
-    expect(after.indexOf('this.tournamentEngines.delete(String(stuck.id));')).toBeLessThan(
-      after.indexOf('if (!this.tournamentEngines.has(stuck.id))')
+    expect(loop.indexOf('this.tournamentEngines.delete(String(stuck.id));')).toBeLessThan(
+      loop.indexOf('if (!this.tournamentEngines.has(stuck.id))')
     );
   });
 });

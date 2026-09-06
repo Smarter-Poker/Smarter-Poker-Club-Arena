@@ -16,89 +16,54 @@
  * Decoding the payload that already travels inside the link fixes both at
  * once: the route exists, and the viewer needs no database read at all, so a
  * recipient who never played the hand (or is logged out) can watch it.
+ *
+ * PHASE 4 2026-09-05 — AND NOW THEY WATCH IT ON THE SAME REPLAYER. This page
+ * used to render its own flat list of streets: seat numbers, verbs and
+ * amounts down the page, with no felt, no motion, no run-it-twice board, no
+ * rake and no way to step through anything. It rebuilds the sharer's model
+ * from the link (`replayFromShareable` -> `buildReplay`, the one
+ * reconstruction) and hands it to `HandReplay`, which is the component the
+ * table, the archive and the modal all open. There is one replayer now.
+ *
+ * NOTHING HERE READS THE DATABASE. The model is built from the payload, which
+ * is what makes the link work for a recipient who is not signed in.
  */
 
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-
-/** The word a reader expects for each wire verb (v3 adds the forced money). */
-const ACTION_LABEL: Record<string, string> = {
-  FOLD: 'Fold',
-  CHECK: 'Check',
-  CALL: 'Call',
-  BET: 'Bet',
-  RAISE: 'Raise',
-  ALL_IN: 'All In',
-  SB: 'Posts SB',
-  BB: 'Posts BB',
-  ANTE: 'Posts Ante',
-  STRADDLE: 'Straddles',
-  POST: 'Posts',
-  RETURN: 'Uncalled, Returned',
-  DISCARD: 'Discards',
-};
-function actionLabel(action: string): string {
-  return ACTION_LABEL[action] || action;
-}
 import { decodeHandFromUrl, type ShareableHand } from '../../components/table/ShareHand';
+import HandReplay, { type ReplaySource } from '../../components/replay/HandReplay';
+import { replayFromShareable, shareUserId } from '../../lib/shareHandModel';
+import { reportError } from '../../utils/errorReporter';
+import './SharedHandReplayPage.css';
 
-const SUIT_GLYPH: Record<string, string> = { h: '♥', d: '♦', c: '♣', s: '♠' };
-const SUIT_RED = (suit: string) => suit === 'h' || suit === 'd';
-
-function Card({ card }: { card: { rank: string; suit: string } }) {
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minWidth: 34,
-        padding: '6px 8px',
-        margin: '0 3px',
-        borderRadius: 6,
-        background: '#fff',
-        color: SUIT_RED(card.suit) ? '#d32029' : '#111',
-        fontWeight: 800,
-        fontSize: '1rem',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.45)',
-      }}
-    >
-      {card.rank}
-      {SUIT_GLYPH[card.suit] ?? card.suit}
-    </span>
-  );
-}
-
-function Street({
-  label,
-  cards,
-  actions,
-}: {
-  label: string;
-  cards?: Array<{ rank: string; suit: string }>;
-  actions?: Array<{ seat: number; action: string; amount?: number }>;
-}) {
-  if (!actions?.length && !cards?.length) return null;
-  return (
-    <section style={{ marginTop: 18 }}>
-      <h3 style={{ margin: '0 0 6px', fontSize: '0.8rem', letterSpacing: 1, opacity: 0.7 }}>
-        {label.toUpperCase()}
-      </h3>
-      {!!cards?.length && (
-        <div style={{ marginBottom: 8 }}>
-          {cards.map((c, i) => (
-            <Card key={i} card={c} />
-          ))}
-        </div>
-      )}
-      {actions?.map((a, i) => (
-        <div key={i} style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-          Seat {a.seat} - {actionLabel(a.action)}
-          {a.amount ? ` ${a.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : ''}
-        </div>
-      ))}
-    </section>
-  );
+function sourceFrom(hand: ShareableHand): ReplaySource | null {
+  try {
+    const model = replayFromShareable(hand);
+    /* A payload that decodes but holds no players is not a hand. Better an
+       honest "not readable" than a felt with nobody at it. */
+    if (!model.players.length) return null;
+    const hero = hand.players.find((p) => p.isHero);
+    const reveals: Record<string, { mucked?: boolean }> = {};
+    for (const p of hand.players) {
+      if (p.mucked) reveals[shareUserId(p.seat)] = { mucked: true };
+    }
+    return {
+      model,
+      tableName: hand.tableName || null,
+      handNumber: hand.handNumber ?? null,
+      gameType: hand.variant,
+      /* The SHARER's seat, not the reader's. The reader may be anybody. */
+      viewerId: hero ? shareUserId(hero.seat) : null,
+      reveals,
+      /* All-in equity and EV are the sharer's own private facts and do not
+         travel in a link. Absent, rather than reconstructed from the board. */
+      viewerFacts: null,
+    };
+  } catch (e) {
+    reportError(e, 'SharedHandReplayPage.Failed_to_build_model');
+    return null;
+  }
 }
 
 export default function SharedHandReplayPage() {
@@ -109,16 +74,17 @@ export default function SharedHandReplayPage() {
     () => (encoded ? decodeHandFromUrl(encoded) : null),
     [encoded]
   );
+  const source = useMemo(() => (hand ? sourceFrom(hand) : null), [hand]);
 
-  if (!hand) {
+  if (!hand || !source) {
     return (
-      <div style={{ padding: 32, color: '#fff', textAlign: 'center' }}>
-        <h1 style={{ fontSize: '1.3rem' }}>This Replay Link Is Not Readable</h1>
-        <p style={{ opacity: 0.75 }}>
+      <div className="shared-replay shared-replay--empty">
+        <h1 className="shared-replay__title">This Replay Link Is Not Readable</h1>
+        <p className="shared-replay__body">
           The Link May Have Been Truncated When It Was Copied. Ask For It Again, Or Open The Hand
           From Your Own Hand History.
         </p>
-        <Link to="/" style={{ color: '#ffd700' }}>
+        <Link className="shared-replay__link" to="/">
           Go To The Lobby
         </Link>
       </div>
@@ -128,90 +94,9 @@ export default function SharedHandReplayPage() {
   const hero = hand.players.find((p) => p.isHero);
 
   return (
-    <div
-      style={{
-        width: '100%',
-        maxWidth: 640,
-        margin: '0 auto',
-        padding: 20,
-        paddingBottom: 'max(70px, env(safe-area-inset-bottom))',
-        boxSizing: 'border-box',
-        overflowX: 'hidden',
-        color: '#fff',
-      }}
-    >
-      <header style={{ borderBottom: '1px solid rgba(255,255,255,0.14)', paddingBottom: 12 }}>
-        <h1 style={{ margin: 0, fontSize: '1.25rem' }}>{hand.tableName || 'Shared Hand'}</h1>
-        <div style={{ opacity: 0.7, fontSize: '0.85rem' }}>
-          {hand.variant} · {hand.stakes} ·{' '}
-          {hand.timestamp ? new Date(hand.timestamp).toLocaleString() : ''}
-        </div>
-      </header>
-
-      <div
-        style={{
-          marginTop: 16,
-          padding: '12px 14px',
-          borderRadius: 10,
-          background: 'rgba(255,215,0,0.08)',
-          border: '1px solid rgba(255,215,0,0.25)',
-        }}
-      >
-        <strong style={{ color: '#ffd700' }}>Pot {hand.potTotal.toLocaleString()}</strong>
-        {!!hand.winners?.length && (
-          <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-            Won By{' '}
-            {hand.winners.map((w) => `seat ${w.seat} (${w.amount.toLocaleString()})`).join(', ')}
-          </div>
-        )}
-      </div>
-
-      <section style={{ marginTop: 18 }}>
-        <h3 style={{ margin: '0 0 6px', fontSize: '0.8rem', letterSpacing: 1, opacity: 0.7 }}>
-          PLAYERS
-        </h3>
-        {hand.players.map((p) => (
-          <div
-            key={p.seat}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '4px 0',
-              fontWeight: p.isHero ? 700 : 400,
-            }}
-          >
-            <span style={{ minWidth: 58, opacity: 0.65 }}>Seat {p.seat}</span>
-            <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
-              {p.name}
-              {p.isHero ? ' (Hero)' : ''}
-              {p.isWinner ? ' ★' : ''}
-            </span>
-            {!!p.cards?.length && (
-              <span>
-                {p.cards.map((c, i) => (
-                  <Card key={i} card={c} />
-                ))}
-              </span>
-            )}
-          </div>
-        ))}
-      </section>
-
-      <Street label="Preflop" actions={hand.preflop} />
-      <Street label="Flop" cards={hand.flop?.cards} actions={hand.flop?.actions} />
-      <Street
-        label="Turn"
-        cards={hand.turn?.card ? [hand.turn.card] : undefined}
-        actions={hand.turn?.actions}
-      />
-      <Street
-        label="River"
-        cards={hand.river?.card ? [hand.river.card] : undefined}
-        actions={hand.river?.actions}
-      />
-
-      <footer style={{ marginTop: 28, opacity: 0.6, fontSize: '0.8rem' }}>
+    <div className="shared-replay">
+      <HandReplay source={source} />
+      <footer className="shared-replay__footer">
         {hero ? `Shared From ${hero.name}'s Hand History · ` : ''}Smarter Poker
       </footer>
     </div>

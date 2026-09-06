@@ -73,11 +73,14 @@ const CAPS: ClubNavigationCapabilities = {
 const ALLOWED_ORPHANS: Record<string, string> = {
   // ── Entry points that arrive from OUTSIDE the app ────────────────────────
   'share/hand/:handId':
-    'external share URL - ShareableHighlight builds it for links sent off-platform',
+    "a hand's own address - Copy Link on the replay writes it, and a player bookmarks it; " +
+    'reads hand_history, so it is for the people who played the hand',
   'clubs/create': 'legacy redirect to /?create=club, kept so old links resolve',
 
   // ── Developer and diagnostic surfaces, never advertised to players ───────
-  replay: 'developer hand-replayer harness',
+  replay:
+    'where a SHARED hand opens - ShareHand builds /replay?h=<payload>, which carries the ' +
+    'hand inside the link so a recipient needs no account and no database read',
   sim: 'developer simulation harness',
   'dev/footer': 'developer showcase',
   'dev/customization': 'developer showcase',

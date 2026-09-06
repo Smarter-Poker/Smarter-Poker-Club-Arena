@@ -16,7 +16,7 @@
  * decoration.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(__dirname, '..', '..');
@@ -27,6 +27,8 @@ const RECORDER = 'scripts/ci/record-engine-deploy-attempt.mjs';
 const MIGRATION = 'supabase/migrations/20260901123315_deploy_truth_lives_in_the_database.sql';
 const ZERO_ENGINE_FIX =
   'supabase/migrations/20260902103000_deploy_truth_cannot_mistake_zero_for_healthy.sql';
+const CONTINUOUS_BEHIND_FIX =
+  'supabase/migrations/20260906005803_deploy_truth_keeps_the_continuous_behind_clock.sql';
 
 describe('the deploy pipeline reports what it actually did', () => {
   it('records deploy truth on every run, including the runs that ship nothing', () => {
@@ -135,6 +137,35 @@ describe('zero engine rows are an outage, not an all-clear', () => {
     );
     expect(sql).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_ca_engine_deploy_truth_watch\(\)\s+FROM PUBLIC, anon, authenticated;/
+    );
+  });
+});
+
+describe('later watchdog repairs cannot reset the engine-behind clock', () => {
+  const sql = read(CONTINUOUS_BEHIND_FIX);
+
+  it('measures one continuous mismatch episode across changing target shas', () => {
+    expect(sql).toMatch(/left\(a\.target_sha, 8\) <> left\(v_running, 8\)/);
+    expect(sql).toMatch(
+      /SELECT max\(b\.at\)[\s\S]*left\(b\.target_sha, 8\) = left\(v_running, 8\)/
+    );
+    expect(sql).toContain('EXECUTE replace(v_definition, v_vulnerable, v_continuous)');
+  });
+
+  it('runs after every full watchdog definition in migration order', () => {
+    const migrationDir = resolve(root, 'supabase', 'migrations');
+    const migrations = readdirSync(migrationDir)
+      .filter((name) => name.endsWith('.sql'))
+      .sort();
+    const fullDefinitions = migrations.filter((name) =>
+      readFileSync(resolve(migrationDir, name), 'utf8').includes(
+        'CREATE OR REPLACE FUNCTION public.fn_ca_engine_deploy_truth_watch()'
+      )
+    );
+
+    expect(fullDefinitions.length).toBeGreaterThan(0);
+    expect(migrations.indexOf(CONTINUOUS_BEHIND_FIX.split('/').at(-1)!)).toBeGreaterThan(
+      migrations.indexOf(fullDefinitions.at(-1)!)
     );
   });
 });

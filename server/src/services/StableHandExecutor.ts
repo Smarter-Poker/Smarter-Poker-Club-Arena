@@ -145,13 +145,17 @@ export const BANK_CHECK_EVERY_MS = 15 * 60_000;
 /**
  * THE TWO FLAGS, AND WHY THEY MUST NEVER BE THE SAME ONE.
  *
- * `retire_when_empty` is the estate's existing, proven retirement mechanism
- * (Dan 2026-09-03, "close any tables over 2/5"): HorseFleetManager stops
- * seeding the table, HorseSessionRotator walks its horses out, and
- * retireSurplusTables closes it once it is GENUINELY EMPTY - a table with
- * anybody at it is left alone and retired on a later cycle. That is exactly
- * "drain first, never kick anyone", and it is what the permanent exotic and
- * limit trim uses.
+ * `retire_when_empty` is the estate's DRAIN (Dan 2026-09-03, "close any
+ * tables over 2/5"): HorseFleetManager stops seeding the table and
+ * HorseSessionRotator walks its horses out, one horse a cycle, never kicking
+ * anybody. It is what the permanent exotic and limit trim uses.
+ *
+ * IT NO LONGER CLOSES ANYTHING (2026-09-05). retireSurplusTables closed the
+ * drained row and Gate 7 deleted it: a cash table is closed only by its game's
+ * ClusterController. Since every cash table is now a cluster table and
+ * planClose never proposes one (StableHandController skips t.clusterId),
+ * plan.close is empty in production and this writes nothing. If it ever does
+ * write the flag again, the table drains and then stays open.
  *
  * It is also PERMANENT BY DESIGN. ensureAllTablesExist reopens a closed table
  * unless it carries this flag, specifically so a deliberate retirement is not
@@ -505,9 +509,9 @@ export class StableHandExecutor {
 
     /* THE PERMANENT TRIM FIRST. Dan 2026-09-04: "yes close all those tables.
        drain first, and never kick anyone." Marking the flag IS the drain: the
-       fleet stops seeding it, the rotator walks its horses out, and the
-       retirement pass closes it only once it is genuinely empty. Nothing here
-       cashes a seat out. */
+       fleet stops seeding it and the rotator walks its horses out. Nothing
+       here cashes a seat out, and nothing here closes a row - see RETIRE_FLAG
+       above for what Gate 7 removed. */
     const retired = await this.setTableFlag(plan.close, RETIRE_FLAG, budget);
     budget -= retired;
     if (retired > 0) {

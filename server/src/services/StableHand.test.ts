@@ -42,7 +42,11 @@ import {
   availableOf,
   mayRebuyInSeat,
   isBroke,
-  stakeIsLegalThisPhase,
+  stakeIsWithinLadder,
+  stakeIsOnLadder,
+  LADDER_MAX_BB,
+  highestStakeSupported,
+  rollSupportsStake,
   stakeSpreadAllowed,
   // booking
   mayBookWin,
@@ -196,11 +200,18 @@ describe('T6/T7 - exotics are capped at 2 per variant per host and 1/2', () => {
     expect(plan.doNotAutoReopen).toEqual(['hi']);
   });
 
-  it('T7 cannot open a third table of a variant, nor anything above 1/2', () => {
+  it('T7 cannot open a third table of a variant, nor an EXOTIC above 1/2', () => {
     const plan = planExoticTrim([mk('a', 2, 6), mk('b', 2, 6)], 500);
     expect(plan.mayOpen).toBe(0);
+    /* The exotic ceiling is its own rule (OPORD section 6) about how much
+       Pineapple / Short Deck / PLO8o supply the floor carries, and it is
+       UNTOUCHED by the 2026-09-05 removal of the phase clamp. That clamp was
+       about which stake a horse's bankroll licenses; this is about how many
+       exotic tables exist. NLHE and PLO are not exotic and run the whole
+       ladder. */
     expect(EXOTIC_MAX_BB).toBe(2);
-    expect(stakeIsLegalThisPhase(5)).toBe(false);
+    expect(planExoticTrim([mk('big', 5, 6)], 500).close).toEqual(['big']);
+    expect(stakeIsWithinLadder(5)).toBe(true);
   });
 
   it('leaves the floor empty when there are fewer than four tagged legal horses', () => {
@@ -350,16 +361,39 @@ describe('T11/T12 - seat cap and the phase clamp', () => {
       })
     ).toBe('seat_cap');
   });
-  it('T12 rejects 2/5 and 5/10 however rich the wallet', () => {
-    expect(evaluateSit({ ...baseSit, bb: 5, available: 10_000_000, buyIn: 500 })).toBe(
-      'stake_above_phase_cap'
-    );
-    expect(evaluateSit({ ...baseSit, bb: 10, available: 10_000_000, buyIn: 1000 })).toBe(
-      'stake_above_phase_cap'
-    );
-    // 10,000 licenses 2/5 on the 20-buy-in rule. The clamp still wins.
-    expect(isLicensed(10_000, 5)).toBe(false);
+  it('T12 - THERE IS NO CAP: a rich wallet plays 2/5 and 5/10, a thin one does not', () => {
+    /* Dan, 2026-09-05: "THERE ISN'T A 'CAP'. HORSES CAN ONLY PLAY ABOVE 1/2
+       IF THEY HAVE THE 'PROPER BANKROLL' TO PLAY A BIGGER STAKE." This test
+       used to assert the opposite, and the assertion was the bug. */
+    expect(evaluateSit({ ...baseSit, bb: 5, available: 10_000_000, buyIn: 500 })).toBe('ok');
+    expect(evaluateSit({ ...baseSit, bb: 10, available: 10_000_000, buyIn: 1000 })).toBe('ok');
+    expect(evaluateSit({ ...baseSit, bb: 50, available: 10_000_000, buyIn: 5000 })).toBe('ok');
+
+    // 10,000 licenses 2/5 on the 20-buy-in rule, and now it gets it.
+    expect(isLicensed(10_000, 5)).toBe(true);
     expect(isLicensed(10_000, 2)).toBe(true);
+    // ...but the bankroll is a real gate, not a formality.
+    expect(isLicensed(9_999, 5)).toBe(false);
+    expect(evaluateSit({ ...baseSit, bb: 5, available: 9_999, buyIn: 500 })).toBe('brm');
+
+    // The ladder's own top rung is the only ceiling left.
+    expect(LADDER_MAX_BB).toBe(50);
+    expect(stakeIsWithinLadder(50)).toBe(true);
+    expect(stakeIsWithinLadder(100)).toBe(false);
+    expect(evaluateSit({ ...baseSit, bb: 100, available: 10_000_000, buyIn: 10_000 })).toBe(
+      'stake_above_ladder_top'
+    );
+  });
+
+  it('T12b - the ladder carries every stake the platform deals', () => {
+    // Measured from cash_games on 2026-09-05. 0.13/0.25 and 2.00/4.00 are
+    // strays on rungs whose canonical blinds are 0.10/0.25 and 2.00/5.00;
+    // every gate keys on the BIG blind, and both big blinds are here.
+    [0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50].forEach((bb) =>
+      expect(stakeIsOnLadder(bb)).toBe(true)
+    );
+    expect(stakeIsOnLadder(4)).toBe(false);
+    expect(stakeIsWithinLadder(4)).toBe(true);
   });
 });
 
@@ -703,7 +737,9 @@ describe('bankroll arithmetic (Sections 8.3 - 8.10)', () => {
     expect(isLicensed(10_000, 0.1)).toBe(true); // 200
     expect(isLicensed(10_000, 0.5)).toBe(true); // 1,000
     expect(isLicensed(10_000, 2)).toBe(true); // 4,000
-    expect(isLicensed(10_000, 5)).toBe(false); // phase clamp, not money
+    expect(isLicensed(10_000, 5)).toBe(true); // 10,000 - exactly 20 BI of 2/5
+    expect(isLicensed(9_999, 5)).toBe(false); // one chip short of 20 BI of 2/5
+    expect(isLicensed(10_000, 10)).toBe(false); // 20,000 needed for 5/10
     expect(isLicensed(3_999, 2)).toBe(false); // one chip short of 20 BI
   });
   it('allows four 100bb tables at 1/2 inside the 50 percent commit cap', () => {
@@ -804,11 +840,9 @@ describe('the bankroll-unknown policy keeps the 2026-08-31 fix intact', () => {
   });
   it('and the Stable Hand gate itself never fails open, because the RPC cannot see its rules', () => {
     // atomic_table_buyin checks solvency. It does not know the licence, the
-    // commit cap, the phase clamp, the sit cap or the mutex.
+    // commit cap, the bankroll licence, the sit cap or the mutex.
     expect(evaluateSit({ ...baseSit, available: 3_999 })).toBe('brm');
-    expect(evaluateSit({ ...baseSit, bb: 5, available: 10_000_000, buyIn: 500 })).toBe(
-      'stake_above_phase_cap'
-    );
+    expect(evaluateSit({ ...baseSit, bb: 5, available: 9_999, buyIn: 500 })).toBe('brm');
     expect(evaluateSit({ ...baseSit, sitsOnKeyToday: 99 })).toBe('sit_cap');
   });
 });
@@ -846,14 +880,99 @@ describe('Section 7.2 - variants and stakes', () => {
     expect(assignPreferredStakes('a')).toEqual(assignPreferredStakes('a'));
   });
 
-  it('gives every horse legal, adjacent stakes inside the phase clamp', async () => {
-    const { assignPreferredStakes, stakeSpreadAllowed, stakeIsLegalThisPhase } =
+  it('gives every horse ladder stakes that are adjacent to each other', async () => {
+    const { assignPreferredStakes, stakeSpreadAllowed, stakeIsOnLadder } =
       await import('./StableHand.js');
     for (let i = 0; i < 300; i++) {
       const st = assignPreferredStakes(`h-${i}`);
-      st.forEach((bb) => expect(stakeIsLegalThisPhase(bb)).toBe(true));
+      st.forEach((bb) => expect(stakeIsOnLadder(bb)).toBe(true));
       if (st.length === 2) expect(stakeSpreadAllowed(st[0], st[1])).toBe(true);
     }
+  });
+
+  /* ────────────────────────────────────────────────────────────────────────
+     A HORSE PLAYS THE STAKE ITS BANKROLL SUPPORTS (Dan, 2026-09-05).
+     Every pin here is the bug that shipped: 1,000 horses tagged for nothing
+     above 1/2, and 20+ 2/5 games with no candidate to seat.
+     ──────────────────────────────────────────────────────────────────────── */
+  it('tags a rich horse for a big stake, and never tags one it cannot fund', async () => {
+    const { assignPreferredStakes, rollSupportsStake } = await import('./StableHand.js');
+    const rich = Array.from({ length: 400 }, (_, i) =>
+      assignPreferredStakes(`rich-${i}`, { roll: 5_000_000 })
+    );
+    const top = rich.map((st) => Math.max(...st));
+    // With a roll that funds every rung, the draw alone decides, so the whole
+    // ladder is used - including the rungs the clamp made unreachable.
+    expect(top.some((bb) => bb >= 5)).toBe(true);
+    expect(top.some((bb) => bb >= 10)).toBe(true);
+    expect(top.some((bb) => bb <= 0.5)).toBe(true);
+
+    // Nothing is ever tagged above what the roll funds, at any roll.
+    [1_000, 6_400, 25_000, 120_000, 900_000, 5_000_000].forEach((roll) => {
+      for (let i = 0; i < 200; i++) {
+        assignPreferredStakes(`h-${i}`, { roll }).forEach((bb) => {
+          if (bb === 0.02) return; // the cheapest rung is the broke floor
+          expect(rollSupportsStake(roll, bb)).toBe(true);
+        });
+      }
+    });
+  });
+
+  it('a poor horse stays in the micros however the hash falls', async () => {
+    const { assignPreferredStakes } = await import('./StableHand.js');
+    for (let i = 0; i < 300; i++) {
+      // 300 chips: 20 buy-ins of 0.05/0.10 and nothing above it.
+      const st = assignPreferredStakes(`h-${i}`, { roll: 300 });
+      expect(Math.max(...st)).toBeLessThanOrEqual(0.1);
+    }
+  });
+
+  it('applies the horse temperament bar, so a tag cannot outrun the seat gate', async () => {
+    const { assignPreferredStakes, rollSupportsStake } = await import('./StableHand.js');
+    // A nit needs 40 buy-ins where the licence needs 20: 25,000 chips buys
+    // 5/10 on the licence alone (20,000) and does not buy it for a nit (40,000).
+    expect(rollSupportsStake(25_000, 10, 20)).toBe(true);
+    expect(rollSupportsStake(25_000, 10, 40)).toBe(false);
+    for (let i = 0; i < 300; i++) {
+      assignPreferredStakes(`h-${i}`, { roll: 25_000, buyInsToSit: 40 }).forEach((bb) => {
+        if (bb === 0.02) return;
+        expect(rollSupportsStake(25_000, bb, 40)).toBe(true);
+      });
+    }
+  });
+
+  it('is deterministic in (horseId, seed) at a fixed roll, and the roll only ever lowers it', async () => {
+    const { assignPreferredStakes } = await import('./StableHand.js');
+    for (let i = 0; i < 100; i++) {
+      const id = `h-${i}`;
+      expect(assignPreferredStakes(id, { roll: 250_000 })).toEqual(
+        assignPreferredStakes(id, { roll: 250_000 })
+      );
+      const poor = Math.max(...assignPreferredStakes(id, { roll: 5_000 }));
+      const rich = Math.max(...assignPreferredStakes(id, { roll: 5_000_000 }));
+      expect(poor).toBeLessThanOrEqual(rich);
+    }
+  });
+
+  it('there is ONE band function, and it is the four-band one', async () => {
+    const { stakeBandOf, STAKE_BANDS, STAKE_MIX } = await import('./StableHand.js');
+    const { stakeBandForBigBlind } = await import('./HorseBehavior.js');
+    [0.02, 0.1, 0.5, 1, 2, 4, 5, 6, 10, 20, 50].forEach((bb) =>
+      expect(stakeBandOf(bb)).toBe(stakeBandForBigBlind(bb))
+    );
+    expect(STAKE_BANDS).toEqual(['micro', 'low', 'mid', 'high']);
+    expect(STAKE_BANDS.reduce((n, b) => n + STAKE_MIX[b], 0)).toBeCloseTo(1, 6);
+    // The old three-band names are gone. 'top' was the clamp's own band.
+    expect(STAKE_BANDS).not.toContain('top');
+  });
+
+  it('highestStakeSupported is the ceiling, and it is the seat gate rule', async () => {
+    const { highestStakeSupported } = await import('./StableHand.js');
+    expect(highestStakeSupported(10)).toBeNull();
+    expect(highestStakeSupported(40)).toBe(0.02);
+    expect(highestStakeSupported(10_000)).toBe(5);
+    expect(highestStakeSupported(100_000)).toBe(50);
+    expect(highestStakeSupported(100_000, 40)).toBe(20);
   });
 });
 

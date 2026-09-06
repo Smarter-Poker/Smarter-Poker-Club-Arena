@@ -119,6 +119,56 @@ groups:
             fires even if the per-table progress accounting is itself broken,
             so it is the backstop for a bug in the freeze detector.
 
+      # ── EVERY RESTART IS ANNOUNCED, OR IT IS AN INCIDENT (2026-09-05) ────
+      #
+      # §13 is unambiguous: the engine restarts at :55, inside a break the
+      # players were told about at :53, with every table parked. A restart at
+      # any other moment voids in-flight hands on every table this process
+      # owns (§10.5 - a horse's hand counts) and drops every socket with no
+      # warning to anybody.
+      #
+      # NOTHING WATCHED FOR THAT. EngineTableRebuildChurn below needs FOUR
+      # restarts inside thirty minutes; the real pattern on 2026-09-05 was one
+      # restart every 35-70 minutes - 16:06, 16:42, 17:49, 18:26, 19:04 UTC,
+      # five unannounced restarts in a day, every one of them under the
+      # threshold and therefore silent. They were found only because they were
+      # also breaking deploys, which is not a detector, it is a coincidence.
+      #
+      # This asks the only question §13 leaves room for: did the engine restart
+      # while no break was running? `resets()` counts counter resets, i.e. real
+      # process restarts - `changes()` counts every scrape and fires forever on
+      # a healthy engine (measured 2026-08-16: changes()=118, resets()=3).
+      #
+      # The 8m lookback is longer than the 5-minute break on purpose: a deploy
+      # restart lands at ~:57 and the break began at :55, so the guard still
+      # sees the break samples that preceded it. A restart with no break within
+      # eight minutes had no announcement behind it, whoever caused it.
+      - alert: EngineRestartedOutsideTheBreak
+        expr: |
+          resets(poker_uptime_seconds[8m]) > 0
+          unless max_over_time(poker_maintenance_break_active[8m]) == 1
+        for: 1m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: "The engine restarted with no maintenance break running"
+          description: |
+            Production restarted outside the announced :55 break, so in-flight
+            hands were voided and every player was dropped without warning.
+            This is a §13 violation whatever caused it.
+
+            Start with `docker logs sp-autoheal` on the engine host: autoheal
+            restarts on the Docker HEALTHCHECK, which reads
+            poker_engine_liveness. If liveness went to 0 first, the engine
+            condemned itself - check poker_dead_stalled_tables against
+            poker_dealable_tables, because a MINORITY of stalled tables must
+            never read as a dead process (that was the 2026-09-05 defect, and
+            server/src/engineLiveness.test.ts pins the rule).
+
+            If liveness stayed 1, autoheal is not the cause: look for an OOM
+            kill, a host reboot, or a hand-run `docker restart`.
+
       # ── The watchdog escalating repeatedly means something is wrong that
       #    recovery is only papering over.
       - alert: EngineTableRebuildChurn

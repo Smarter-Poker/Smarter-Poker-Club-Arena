@@ -150,10 +150,40 @@ jobs:
     # the wait was silently the part that got squeezed - it expired 23 seconds
     # before the gate opened on run 33942233521 and shipped nothing. 40 holds
     # the worst observed build plus a full wait to the next :55 plus cutover.
-    # 45 (2026-09-05): the proof step after the promote may poll for four
-    # minutes before it fails, and CUTOVER_RESERVE_S grew by the same four so
-    # the wait can never spend the minutes the proof needs to be heard.
-    timeout-minutes: 45
+    # ── THE CEILING AND THE RESERVE ARE ONE DECISION (merged 2026-09-05) ──
+    #
+    # Two fixes landed on this number the same day for different reasons, and
+    # BOTH are right. Taking either alone breaks the other.
+    #
+    #   main:  CUTOVER_RESERVE_S 300 -> 540, because the proof step after the
+    #          promote may poll for four minutes before it fails, and the wait
+    #          must never be able to spend the minutes the proof needs.
+    #   here:  timeout 40 -> 55, because the gate's budget is
+    #          timeout - build - reserve, and at 40 it went NEGATIVE against a
+    #          build that had grown to 8-18 minutes: runs 33985138036 and
+    #          33986167969 both built everything and threw it away.
+    #
+    # Raising the reserve without raising the ceiling takes 240s MORE out of
+    # the same budget - it makes the starvation this branch exists to fix
+    # strictly worse. So the ceiling is derived, not chosen:
+    #
+    #   the :35 tick must be able to ship on a COLD build
+    #     time from :35 to the :56 gate          1260s
+    #     worst build actually observed          1080s  (18 min)
+    #     cutover + verify + promote + proof      540s
+    #                                          = 2880s = 48 min  -> 55 covers it
+    #
+    #   and a run that only STAGES an image must be able to wait out any hour
+    #     staged run reaches the gate in          ~60s
+    #     55*60 - 60 - 540                      = 2700s = 45 min of wait
+    #
+    # So a cold build from :35 ships in its own run, and a push landing at any
+    # other minute stages its image and is cut over by the next :35 tick
+    # without rebuilding. One hour, worst case, and no build is ever wasted.
+    #
+    # tests/the-deploy-can-always-ship.law.test.ts pins the ARITHMETIC, not the
+    # literals, so neither number can be moved alone again.
+    timeout-minutes: 55
 
     env:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -245,12 +275,60 @@ jobs:
           # engine restarted 5 times in one hour as a merge train landed —
           # each restart voids in-flight hands and costs ~2 minutes of table
           # rehydration (4404s), even with nobody human seated. A restart is
-          # only allowed once the running engine is at least 20 minutes old;
-          # a younger engine defers, and the NEXT push or the hourly catch-up
-          # lands a newer HEAD that contains this commit anyway. Manual
-          # workflow_dispatch (the force path) bypasses the spacing gate.
+          # only allowed once the last restart WE performed is at least 20
+          # minutes old; a younger one defers, and the next tick lands a newer
+          # HEAD that contains this commit anyway. Manual workflow_dispatch
+          # (the force path) bypasses the spacing gate.
           MIN_RESTART_SPACING_SEC=1200
+          #
+          # ── ASK THE LEDGER, NOT THE PROCESS (2026-09-05) ──────────────────
+          #
+          # This read `/health.uptime` until today. Uptime answers "when did
+          # this process start"; the gate is asking "when did WE last bounce
+          # production". Those are the same number only if nothing else ever
+          # restarts the engine, and something does.
+          #
+          # MEASURED on the live box the day this was written: sp-autoheal
+          # restarted the engine FIVE times - 16:06, 16:42, 17:49, 18:26,
+          # 19:04 UTC - none a deploy, none inside the announced break. Each
+          # reset uptime to zero, and every deploy arriving in the next twenty
+          # minutes read a young engine and coalesced. Run 33981313111
+          # (attempt 134, 17:33:36Z) is the recorded case: it coalesced on a
+          # 900s uptime against a commit production was not serving.
+          #
+          # The note below already predicted this and its bypass only covers an
+          # UNHEALTHY engine or one with zero tables - a healthy engine bounced
+          # by its own sidecar is precisely what slips through. So the spacing
+          # clock now comes from ca_engine_deploy_attempts, which only this
+          # pipeline writes and which nothing on the host can move.
+          #
+          # NEVER / ERR both mean "do not coalesce". Failing closed here means
+          # declining to ship, which is the failure this change exists to
+          # remove, and the real protection is downstream anyway: the break
+          # gate still refuses to restart outside an announced :55 window.
+          # Spacing is a courtesy; the break is the law.
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          SINCE_SHIPPED=$(node scripts/ci/last-shipped-engine-deploy.mjs 2>/dev/null | tail -1 || echo ERR)
+          case "$SINCE_SHIPPED" in ''|*[!0-9]*) SINCE_SHIPPED_N=-1 ;; *) SINCE_SHIPPED_N=$SINCE_SHIPPED ;; esac
+          # Uptime is still READ, because it is what the summary and the
+          # off-break-restart detector below report. It is no longer what the
+          # gate decides on.
           UPTIME=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("uptime"); print("ERR" if v is None else int(float(v)))' 2>/dev/null || echo ERR)
+          #
+          # ── AN OFF-BREAK RESTART IS AN INCIDENT, NOT A DETAIL ─────────────
+          #
+          # If the engine is younger than the last deploy we performed, then
+          # something other than this pipeline restarted production - outside
+          # the announced break, with no warning to any player, voiding every
+          # in-flight hand on every table it owned (§10.5: horses' hands too).
+          # Until today nothing anywhere said so; it was visible only as a
+          # deploy that mysteriously coalesced. Now it is an annotation on the
+          # run and a row the watchdog can read.
+          if [ "$UPTIME" != "ERR" ] && [ "$SINCE_SHIPPED_N" -gt 0 ] \
+             && [ "$UPTIME" -lt "$SINCE_SHIPPED_N" ]; then
+            echo "unplanned_restart=true" >> $GITHUB_OUTPUT
+            echo "::warning title=UNPLANNED RESTART::Production has been up ${UPTIME}s but our last deploy was ${SINCE_SHIPPED_N}s ago, so something restarted the engine that was NOT a deploy and NOT the announced :55 break. Check sp-autoheal (docker logs sp-autoheal) and poker_engine_liveness - a restart nobody announced voids every in-flight hand."
+          fi
 
           # 2026-08-24: COALESCING MUST NOT PROTECT A BROKEN ENGINE.
           #
@@ -282,7 +360,7 @@ jobs:
 
           if [ "${{ github.event_name }}" != "workflow_dispatch" ] \
              && [ "$UNHEALTHY" = "false" ] \
-             && [ "$UPTIME" != "ERR" ] && [ "$UPTIME" -lt "$MIN_RESTART_SPACING_SEC" ]; then
+             && [ "$SINCE_SHIPPED_N" -ge 0 ] && [ "$SINCE_SHIPPED_N" -lt "$MIN_RESTART_SPACING_SEC" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             # WARNING, not notice: this run is about to finish GREEN having
             # deployed NOTHING, and an agent reading `gh run list` sees only
@@ -290,11 +368,11 @@ jobs:
             # in the run header and in `gh run view` without anyone thinking
             # to read the log of a successful run. See the NOT DEPLOYED step
             # at the end of this job, which exists for the same reason.
-            echo "::warning title=NOT DEPLOYED::Engine restarted only ${UPTIME}s ago (< ${MIN_RESTART_SPACING_SEC}s) and is healthy with ${TABLES} tables — coalescing. This run shipped NOTHING. The catch-up schedule lands $SHORT within ${MIN_RESTART_SPACING_SEC}s."
+            echo "::warning title=NOT DEPLOYED::We restarted the engine only ${SINCE_SHIPPED_N}s ago (< ${MIN_RESTART_SPACING_SEC}s) and it is healthy with ${TABLES} tables — coalescing. This run shipped NOTHING. The catch-up schedule lands $SHORT within ${MIN_RESTART_SPACING_SEC}s."
             exit 0
           fi
           echo "skip=false" >> $GITHUB_OUTPUT
-          echo "Production serves '${VER:-unreadable}' (uptime ${UPTIME}s), deploying $SHORT."
+          echo "Production serves '${VER:-unreadable}' (uptime ${UPTIME}s, our last deploy ${SINCE_SHIPPED}s ago), deploying $SHORT."
 
       # See design note 7. Cheap (~1 min) and it is the only thing standing
       # between a failing engine test and production.
@@ -499,9 +577,46 @@ jobs:
           # They are 100755 now; this is belt and braces.
           ~/hssh "chmod +x $REPO_DIR/server/scripts/*.sh"
 
-      - name: Build immutable image
+      # ── THE IMAGE FOR A SHA IS BUILT ONCE, THEN IT IS STAGED ─────────────
+      #
+      # A tag is immutable here by design (note 1): `club-arena-engine:<sha>`
+      # is the SAME BYTES every time, because the Dockerfile is fed nothing but
+      # that commit's tree and GIT_COMMIT_SHA. So rebuilding one that already
+      # exists on the host is 5-18 minutes spent reproducing a file that is
+      # already sitting there.
+      #
+      # It is not a micro-optimisation, it is the fix for the defect this
+      # workflow shipped for three days (2026-09-05). The break gate downstream
+      # refuses to wait when the next :55 is further away than the job's
+      # remaining budget, and the build is what eats that budget. A run that
+      # built for 8 minutes reached the gate with 27 minutes of budget and a
+      # break 55 minutes away, so it quit - having produced the image. The next
+      # run rebuilt the same image, for the same 8 minutes, and quit for the
+      # same reason. Measured: runs 33985138036 and 33986167969, back to back,
+      # both carrying aa6b6387, both green, both shipped nothing.
+      #
+      # With the build skipped, a retry reaches the gate in about a minute and
+      # its whole budget is available for the wait. That is what turns an
+      # off-cycle dispatch from "arithmetically incapable of landing" into
+      # "stages the image, and the :35 tick finishes the job".
+      #
+      # SAFE BECAUSE THE TAG IS THE COMMIT. There is no cache-key subtlety to
+      # get wrong: if `club-arena-engine:<sha>` exists, it was built from <sha>
+      # by this same step, and the cutover verifies the running build reports
+      # that sha anyway before :current moves (notes 5 and 6). A --force-rebuild
+      # dispatch input is deliberately NOT offered: `docker rmi` on the host is
+      # the escape hatch, and it costs one command instead of a permanent
+      # option nobody remembers the meaning of.
+      - name: Build immutable image (or adopt the one already staged)
+        id: image
         if: steps.dedupe.outputs.skip != 'true'
         run: |
+          if ~/hssh "docker image inspect $IMAGE_REPO:$SHA >/dev/null 2>&1"; then
+            echo "reused=true" >> $GITHUB_OUTPUT
+            echo "::notice title=IMAGE ALREADY STAGED::$IMAGE_REPO:$SHA is already on the host - skipping the build and handing its minutes to the break gate."
+            exit 0
+          fi
+          echo "reused=false" >> $GITHUB_OUTPUT
           ~/hssh "cd $REPO_DIR/server && docker build \
             --build-arg GIT_COMMIT_SHA=$SHA \
             -t $IMAGE_REPO:$SHA ."
@@ -611,17 +726,28 @@ jobs:
           # is stamped by the first step, so the build's real cost is subtracted
           # here instead of assumed - which is what made a fixed cap wrong twice
           # (14 min when builds were 5, then 15 min when the gate was 923s away).
-          JOB_TIMEOUT_S=$(( 45 * 60 ))
+          # THE TIMEOUT AND THESE NUMBERS ARE ONE DECISION, so they are read
+          # from one place and derived together. See the block above
+          # `timeout-minutes` for the arithmetic that produced both; changing
+          # either alone is the defect this step keeps re-producing.
+          JOB_TIMEOUT_S=$(( 55 * 60 ))
           CUTOVER_RESERVE_S=540     # cutover + verify + promote (~2-4 min) + a 4-min proof that can fail
           ELAPSED_S=$(( NOW_EPOCH - ${DEPLOY_STARTED_AT:-$NOW_EPOCH} ))
           BUDGET_CAP_S=$(( JOB_TIMEOUT_S - ELAPSED_S - CUTOVER_RESERVE_S ))
           [ "$BUDGET_CAP_S" -lt 0 ] && BUDGET_CAP_S=0
-          echo "break gate budget: job elapsed ${ELAPSED_S}s, ${BUDGET_CAP_S}s left for the wait" 
+          echo "break gate budget: job elapsed ${ELAPSED_S}s, ${BUDGET_CAP_S}s left for the wait"
           POLL_S=15
           if [ "$SECS_TO_GATE" -gt "$BUDGET_CAP_S" ]; then
-            echo "::warning title=Break is out of reach::The next maintenance break is ${SECS_TO_GATE}s away, beyond this run's ${BUDGET_CAP_S}s budget. Not sleeping to reach the same answer - the next tick carries this commit."
+            # NOT "shipped nothing". The image for this commit is now staged on
+            # the host, so the next tick skips the build entirely and reaches
+            # this gate in about a minute with its whole budget intact. That is
+            # the difference between a run that wasted itself and a run that did
+            # the expensive half of the work - and it is why this is a notice
+            # rather than a warning, and why the reason recorded below says so
+            # instead of blaming the break for never opening.
+            echo "::notice title=IMAGE STAGED, CUTOVER DEFERRED::The next maintenance break is ${SECS_TO_GATE}s away, beyond this run's ${BUDGET_CAP_S}s budget. $IMAGE_REPO:$SHA is built and on the host; the next window cuts over without rebuilding."
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "gate_reason=the next break is ${SECS_TO_GATE}s away, beyond this run's budget" >> $GITHUB_OUTPUT
+            echo "gate_reason=image staged for ${SHA:0:8}; the next break is ${SECS_TO_GATE}s away, beyond this run's budget, so the next window cuts over" >> $GITHUB_OUTPUT
             exit 0
           fi
           # +90s of margin past the flag so a slow park does not lose the run.
@@ -803,8 +929,8 @@ jobs:
           # break genuinely stops firing that is an engine bug and it should be
           # loud, not routed around.
           echo "skip=true" >> $GITHUB_OUTPUT
-          echo "gate_reason=the maintenance break never opened for a restart" >> $GITHUB_OUTPUT
-          echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart within 14 minutes, so nothing was deployed. Production is ${BEHIND_MIN}m behind main. A break was ${BREAK_RUNNING} running during the wait. If it was NOT, the engine's break scheduler is not firing (check the engine log for '[MaintenanceBreak]') - that is an engine bug and no deploy will land until it is fixed. The next window retries automatically, and engine-watchdog.sh raises a tracked issue once a window has passed without the engine catching up."
+          echo "gate_reason=the maintenance break never opened for a restart (a break was ${BREAK_RUNNING} running during the wait)" >> $GITHUB_OUTPUT
+          echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart within the ${ATTEMPTS} polls this run had budget for, so nothing was deployed. Production is ${BEHIND_MIN}m behind main. A break was ${BREAK_RUNNING} running during the wait. If it was NOT, the engine's break scheduler is not firing (check the engine log for '[MaintenanceBreak]') - that is an engine bug and no deploy will land until it is fixed. The next window retries automatically, and engine-watchdog.sh raises a tracked issue once a window has passed without the engine catching up."
           exit 0
 
       - name: Cut over to the new image
@@ -1013,7 +1139,7 @@ jobs:
       # and this name is unmissable there. Cheap, needs no new permissions,
       # and cannot itself fail the deploy.
       - name: 'DID NOT DEPLOY — this run shipped nothing'
-        if: steps.window.outputs.open == 'false' || steps.dedupe.outputs.skip == 'true' || steps.drain.outputs.skip == 'true'
+        if: steps.dedupe.outputs.skip == 'true' || steps.drain.outputs.skip == 'true'
         run: |
           # 2026-08-31: THE REASON MUST NAME THE GATE THAT ACTUALLY HELD.
           # The restart-window gate shipped without being added here, so a run
@@ -1023,23 +1149,37 @@ jobs:
           # warning goes and investigates the spacing gate, and the spacing
           # gate is fine. A wrong reason costs more than no reason, because it
           # is confidently wrong and it is the first thing anybody reads.
-          # 2026-09-05: THE BREAK GATE NOW HAS TWO ANSWERS AND THIS KNEW ONLY
-          # THE OLD ONE. `steps.drain` used to be a hands-in-flight drain gate,
-          # and the line below still said so - but it has not had a
-          # hands-in-flight skip path since the maintenance break landed. Its
-          # two skips today are "the break never opened" and "the next break is
-          # further away than this run's budget", and run 33991470437 reported
-          # the second of those as "hands are still in flight" while the
-          # database, three steps later, recorded a third story. That is the
-          # exact failure the comment above is about, so the step now exports
-          # `gate_reason` on BOTH paths and this reads it instead of guessing.
+          #
+          # ── AND IT WAS WRONG AGAIN, IN BOTH DIRECTIONS (2026-09-05) ───────
+          #
+          # 1. `steps.window` DOES NOT EXIST. The restart-window gate was
+          #    deleted when Dan moved the restart to the hourly :55 break
+          #    (§13), and this branch outlived it. A missing step's output is
+          #    the empty string, never 'false', so the branch was unreachable -
+          #    dead code that read as a live gate and, worse, told the next
+          #    agent that a 7am/7pm Chicago window still governs deploys. §13
+          #    exists because that exact stale sentence sent an agent to
+          #    "fix" the current behaviour back. Deleted.
+          #
+          # 2. The drain gate now has THREE outcomes and this printed one
+          #    sentence for all of them - and the sentence it printed,
+          #    "hands are still in flight", is not any of them. Measured on
+          #    run 33986167969: the step warning said hands were in flight,
+          #    the summary and the database both said the break never opened,
+          #    and the truth was that the run had refused to WAIT for a break
+          #    that had not started yet. Three answers, one run, and the loudest
+          #    one was the only one that was false.
+          #
+          # So the gate now hands up the reason it actually took
+          # (`steps.drain.outputs.gate_reason`) and this step prints THAT. The
+          # hard-coded strings survive only as the fallback for a gate that
+          # skipped without saying why, which is itself worth seeing.
           REASON="already serving this commit"
-          if [ "${{ steps.window.outputs.open }}" = "false" ]; then
-            REASON="outside the 7am/7pm America/Chicago restart window — dispatch with force=true to land it now"
-          elif [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
-            REASON="${{ steps.drain.outputs.gate_reason || 'the break gate held; see the step log for which half' }}"
+          if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
+            REASON="${{ steps.drain.outputs.gate_reason }}"
+            [ -z "$REASON" ] && REASON="the break gate held; see the step log for which half"
           elif [ "${{ steps.dedupe.outputs.skip }}" = "true" ]; then
-            REASON="coalescing — the engine restarted too recently, or it is already on this commit"
+            REASON="coalescing — we restarted the engine too recently, or it is already on this commit"
           fi
           {
             echo "## THIS RUN DEPLOYED NOTHING"
@@ -1050,12 +1190,16 @@ jobs:
             echo "because \`$SHA\` reached production. Do not treat this tick as"
             echo "proof the engine is running your code."
             echo ""
-            echo "It lands on the next catch-up (every 20 minutes, matching"
-            echo "MIN_RESTART_SPACING_SEC) or on the next push. To land it now:"
+            echo "It lands on the next hourly tick (:35, cutting over inside the"
+            echo ":55 break). There is no 20-minute catch-up any more - that"
+            echo "sentence outlived the schedule it described. To land it now:"
             echo ""
             echo '```'
-            echo "gh workflow run auto-deploy-hetzner.yml --ref main"
+            echo "gh workflow run auto-deploy-hetzner.yml --ref main -f force=true"
             echo '```'
+            echo ""
+            echo "\`force=true\` restarts OUTSIDE the announced break and voids"
+            echo "in-flight hands. Without it a dispatch still waits for :55."
             echo ""
             echo "Verify what is ACTUALLY running before believing anything:"
             echo ""
@@ -1073,8 +1217,10 @@ jobs:
           {
             echo "## Auto-deploy summary"
             echo "- Trigger: ${{ github.event_name }}"
-            echo "- Deduped (already serving this commit): ${{ steps.dedupe.outputs.skip || 'n/a' }}"
-            echo "- Deferred by drain gate (humans seated): ${{ steps.drain.outputs.skip || 'n/a' }}"
+            echo "- Deduped (already serving this commit, or we restarted it too recently): ${{ steps.dedupe.outputs.skip || 'n/a' }}"
+            echo "- Deferred by the break gate: ${{ steps.drain.outputs.skip || 'n/a' }}${{ steps.drain.outputs.gate_reason && format(' — {0}', steps.drain.outputs.gate_reason) || '' }}"
+            echo "- Image: ${{ steps.image.outputs.reused == 'true' && 'reused the staged build' || steps.image.outputs.reused == 'false' && 'built by this run' || 'not reached' }}"
+            echo "- Unplanned (non-deploy, non-break) restart seen: ${{ steps.dedupe.outputs.unplanned_restart || 'no' }}"
             echo "- Deploying: \`$SHA\`"
             echo "- Host before: \`${{ steps.pre.outputs.before_sha }}\`"
             echo "- Host after:  \`$AFTER_SHA\`"
@@ -1105,9 +1251,18 @@ jobs:
           SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome != 'failure' }}
           RUN_ID: ${{ github.run_id }}
           RUN_ACTOR: ${{ github.event_name }}
+          # ONE REASON, WRITTEN ONCE, READ EVERYWHERE. The drain branch used to
+          # hard-code 'the maintenance break never opened for a restart' for
+          # every way the gate could decline, so the ledger disagreed with the
+          # run's own warning (run 33986167969) and 23 rows in
+          # ca_engine_deploy_attempts blamed a break that had never been
+          # reached. It now records the gate's own words - the same string the
+          # DID NOT DEPLOY step prints - so the run, the summary and the
+          # database can no longer tell three different stories.
           REASON: >-
             ${{ steps.dedupe.outputs.skip == 'true' && 'coalesced or already serving this commit'
-             || steps.drain.outputs.skip == 'true' && (steps.drain.outputs.gate_reason || 'the maintenance break never opened for a restart')
+             || (steps.drain.outputs.skip == 'true' && steps.drain.outputs.gate_reason)
+             || steps.drain.outputs.skip == 'true' && 'the break gate declined without recording a reason'
              || steps.prove.outcome == 'failure' && 'cutover verified over HTTP but engine_leader never reported the new version: the version did not move'
              || steps.health.outputs.verified == 'true' && 'deployed and verified serving this commit'
              || 'run ended without a verified cutover' }}

@@ -101,16 +101,24 @@ describe('the jackpot subscription watches the row the jackpot came from', () =>
     );
   });
 
-  it('filters bbj_pools by that id, not by a re-derived scope', () => {
-    // A NON-MEMBER in a union club's lobby gets `not_a_member`, which carries
-    // the jackpot (so the banner is right at mount) but no union_id - so the
-    // old filter fell through to `club_id=eq.<club>`, that club's RETIRED pool
-    // row, which never emits again. Right and frozen is worse than absent.
-    expect(WALLET).toContain('`id=eq.${bbjPoolId}`');
-    const filterIdx = WALLET.indexOf('`id=eq.${bbjPoolId}`');
-    const around = WALLET.slice(filterIdx - 200, filterIdx + 200);
-    expect(around, 'the club_id form must remain only as the pre-fetch fallback').toContain(
-      'club_id=eq.'
+  it('reads the jackpot from the one shared source, not a scope of its own', () => {
+    /* THE DEFECT THIS GUARDED IS NOW STRUCTURALLY IMPOSSIBLE (BBJ phase 3.2,
+       2026-09-06). It pinned the wallet's own `bbj_pools` subscription to
+       `id=eq.${bbjPoolId}`, because re-deriving the scope from currentUnionId
+       sent a NON-MEMBER in a union club's lobby to that club's RETIRED pool
+       row - a figure that was right at mount and then frozen for ever, which
+       is worse than absent.
+
+       There is no subscription to mis-scope any more. That row updated 40,219
+       times in twenty-four hours (measured on production) and six surfaces
+       each watched it; the wallet now follows the shared ten-second poll,
+       whose scope is resolved SERVER-side by fn_bbj_pool_for_club - the same
+       function the union rule lives in, rather than a fifth re-implementation
+       of it. What is pinned is that the wallet does not go back to deriving
+       its own. */
+    expect(WALLET).toMatch(/watchBbjPool\(resolvedId,/);
+    expect(WALLET, 'the wallet must not re-open a bbj_pools subscription').not.toMatch(
+      /table: 'bbj_pools'/
     );
   });
 

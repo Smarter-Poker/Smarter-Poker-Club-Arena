@@ -1737,6 +1737,15 @@ export class GameServer {
     const deadline = Date.now() + Math.max(maxWaitMs, 0);
     const atBoundary = (e: (typeof engines)[number]): boolean => {
       try {
+        /* A STOPPED ENGINE IS NOT A DRAINED ONE WHILE ITS MONEY IS STILL
+           MOVING. The stopped-engine shortcut below stood alone until
+           2026-09-06, so the
+           moment the dealing loop exited the table counted as parked - even
+           with postHandTasks (settlement, rake record, hand history) still
+           writing. The drain then reported "N/N parked", the process exited,
+           and whatever had not been written was not written. At :55 every
+           hour. */
+        if (e.hasSettlementInFlight()) return false;
         return e.isWaitingForHandForHand() || e.isPausedByDesign() || !e.isRunning();
       } catch {
         return true; // unreadable: do not let it hold the drain open

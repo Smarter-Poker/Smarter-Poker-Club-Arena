@@ -1,4 +1,4 @@
--- 20260906141022_daily_mission_rerolls_cost_one_diamond.sql
+-- 20260906134133_daily_mission_rerolls_cost_one_diamond.sql
 --
 -- A Daily Mission reroll costs one Diamond. The previous ten-Diamond price
 -- was too close to the value of the replacement mission and made the control

@@ -71,13 +71,12 @@ export function isChallengeType(value: unknown): value is ChallengeType {
 export const BIG_POT_MIN = 500;
 
 /**
- * Authoritative client-side mirror of the database reroll price.
- *
- * The RPC rejects stale prices before touching the wallet. Keeping the UI,
- * request, receipt validation, and balance event on this one exported value
- * prevents those client surfaces from drifting independently again.
+ * The only client-side statement of the server-owned Daily Mission reroll
+ * price. The database still verifies this value before it can debit a wallet;
+ * exporting it keeps the card, confirmation, telemetry, and receipt parser
+ * from drifting apart.
  */
-export const DAILY_MISSION_REROLL_COST = 1;
+export const DAILY_MISSION_REROLL_COST = 1 as const;
 
 /**
  * Challenge types whose rows carry a magnitude `threshold`.
@@ -192,6 +191,7 @@ export interface ClaimBatchResult {
 export interface RerollResult {
   success: boolean;
   alreadyRerolled: boolean;
+  diamondsSpent?: number;
   challengeId?: string;
   challenge?: TieredUserChallenge;
   diamondBalance?: number;
@@ -1415,6 +1415,16 @@ class DailyChallengeServiceClass {
       if (diamondsSpent !== (alreadyRerolled ? 0 : DAILY_MISSION_REROLL_COST)) {
         return invalidDailyMissionReceipt('rerollChallenge', 'reroll settlement total');
       }
+      // A durable replay proves settlement, but its stored assignment and
+      // balance may be older than actions completed in another tab. Return
+      // only the acknowledgment and let the page reload the live dashboard.
+      if (alreadyRerolled) {
+        return {
+          success: true,
+          alreadyRerolled: true,
+          diamondsSpent: 0,
+        };
+      }
       const challengeId = readReceiptString(
         result.challengeId,
         'rerollChallenge',
@@ -1433,15 +1443,14 @@ class DailyChallengeServiceClass {
         'rerollChallenge',
         'diamond balance'
       );
-      masterBus.emit('DIAMOND_BALANCE_CHANGED', {
-        newBalance: diamondBalance,
-        delta: alreadyRerolled ? 0 : -DAILY_MISSION_REROLL_COST,
-        source: 'daily_challenge_reroll',
-      });
+      // Even a fresh response can arrive after a newer reroll or wallet event
+      // from another tab. Validate the settlement payload, but never publish
+      // its point-in-time projection; the page reconciles the live dashboard.
 
       return {
         success: true,
         alreadyRerolled,
+        diamondsSpent,
         challengeId,
         challenge,
         diamondBalance,

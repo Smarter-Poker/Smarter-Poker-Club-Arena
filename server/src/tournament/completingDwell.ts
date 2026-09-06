@@ -70,3 +70,29 @@ export function selectCompletingDue(
 
   return { due, seenAt };
 }
+
+/**
+ * A MANAGER THAT NEVER CAME BACK DOES NOT HIDE A STUCK ROW (2026-09-06).
+ *
+ * The watchdog skipped any COMPLETING row whose id was still in
+ * `tournamentEngines`, on the theory that a live manager was finishing it.
+ * On 2026-09-06 three events finished at 15:01, 15:06 and 15:07 UTC, paid
+ * their winners, settled their rake, and then deadlocked on the
+ * COMPLETING -> COMPLETED update. `finishTournament` logged "left for
+ * recoverStuckCompletingTournaments" and never logged again - it did not
+ * reach `stop()`, `running` stayed true, the manager stayed registered, and
+ * the watchdog walked past all three every pass for fifty minutes while
+ * TournamentCompletedUnpaid and SpinPrizeUnpaid paged on rows that were
+ * paid. An operator flipped them by hand.
+ *
+ * So a manager's presence is trusted for one grace period past the dwell
+ * and no longer. After that the row is treated as unmanaged: the manager is
+ * stopped and dropped, and recovery - idempotent, keyed per place and per
+ * user - finishes what it started.
+ */
+export const COMPLETING_MANAGED_GRACE_MS = 2 * COMPLETING_DWELL_MS;
+
+export function managerHasOverstayed(firstSeenAt: number | undefined, now: number): boolean {
+  if (firstSeenAt === undefined) return false;
+  return now - firstSeenAt >= COMPLETING_MANAGED_GRACE_MS;
+}

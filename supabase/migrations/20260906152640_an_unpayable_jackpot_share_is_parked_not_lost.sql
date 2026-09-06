@@ -1,7 +1,16 @@
--- 20260906152329_an_unpayable_jackpot_share_is_parked_not_lost.sql
+-- 20260906152640_an_unpayable_jackpot_share_is_parked_not_lost.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
+--
+-- RENAMED FROM 20260906152329. The Supabase MCP assigns its own version when
+-- it applies a migration, and it recorded this one as 20260906152640. A file
+-- whose version is not the version the database recorded is a migration that
+-- would be applied a SECOND time by any rebuild from these files, and
+-- check-applied-migrations-are-recorded.mjs can only tie the two together by
+-- name. Renaming to the applied version makes both match, which is what the
+-- three earlier files in this series (20260905011253, 20260905012341,
+-- 20260905015308) already do.
 --
 -- ═══════════════════════════════════════════════════════════════════════════
 --  ONE UNPAYABLE SHARE NO LONGER COSTS EVERYONE ELSE THEIR JACKPOT

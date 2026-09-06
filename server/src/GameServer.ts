@@ -36,7 +36,12 @@ import {
   wsProtocolRefusalPrometheusLines,
   wsTrustLimitPrometheusLines,
 } from './transport/wsHelpers.js';
-import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
+import {
+  alwaysOnPrometheusLines,
+  equityGovernorScale,
+  eventLoopDelayP50,
+  eventLoopDelayP99,
+} from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
@@ -87,7 +92,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // GameServer had four tournament-cancel paths; all four are gone. Nothing in
 // this file cancels a tournament any more — it fills, resumes or settles.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
-import { selectCompletingDue } from './tournament/completingDwell.js';
+import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
 import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
@@ -97,6 +102,7 @@ import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
+import { solverPolicyArtifactStatus } from './gto/SolverPolicyArtifactLoader.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -600,6 +606,13 @@ export class GameServer {
     // Initialize Sentry FIRST so all subsequent errors are captured
     initSentry();
 
+    /* THE CORE IS MEASURED FROM BOOT (2026-09-06). The governor used to take
+       a reading only when a horse computed equity, so a loop saturated by
+       anything else - settlement, broadcasts, a boot adopting 195 tables -
+       was never sampled, which is exactly when it should be shedding load.
+       Unref'd, so it can never hold the process open. */
+    equityGovernor.startSampling();
+
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(' SMARTER POKER GAME SERVER - Starting...');
     if (testTableId) {
@@ -918,6 +931,10 @@ export class GameServer {
   }
 
   async stop(): Promise<void> {
+    // The governor's sampler is unref'd, so this is tidiness rather than a
+    // leak - but a stopped engine should not keep reading a loop it no
+    // longer drives.
+    equityGovernor.stopSampling();
     this.running = false;
     console.log('[GameServer] Shutting down...');
 
@@ -1420,6 +1437,9 @@ export class GameServer {
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
+      // Public liveness for the cross-repository solver contract. Counts and
+      // versions only; no ranges or private decision data leave the process.
+      solverPolicyArtifact: solverPolicyArtifactStatus(),
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
@@ -1665,6 +1685,17 @@ export class GameServer {
       // time. Two series (audience=human|horse), never per table. See
       // observability/engineInstruments.ts and ActionLatency* in
       // infra/monitoring/alert-rules.yml.
+      // THE CORE, READ AT SCRAPE TIME (2026-09-06). The governor's own
+      // one-second timer keeps these fresh; this only copies the current
+      // reading onto the gauges the scrape renders, so /metrics can never
+      // show a number older than the last sample.
+      ...(() => {
+        const g = equityGovernor.snapshot();
+        eventLoopDelayP50.set(Number.isFinite(g.p50Ms) ? g.p50Ms : 0);
+        eventLoopDelayP99.set(Number.isFinite(g.p99Ms) ? g.p99Ms : 0);
+        equityGovernorScale.set(Number.isFinite(g.scale) ? g.scale : 1);
+        return [];
+      })(),
       ...alwaysOnPrometheusLines(),
       // ── WHAT THE PLAYER'S BROWSER SAW (Phase 2, 2026-09-05) ──────────
       // The client-side twin of poker_ws_auth_refused_total: that counts
@@ -3553,6 +3584,24 @@ export class GameServer {
           const dueIds = new Set(dwell.due);
           for (const stuck of stuckTournaments || []) {
             if (!dueIds.has(String(stuck.id))) continue;
+            /* A MANAGER THAT NEVER CAME BACK (2026-09-06). See
+               managerHasOverstayed. Past the grace the registered manager is
+               the thing that is stuck, not the thing that will fix it. */
+            const lingering = this.tournamentEngines.get(String(stuck.id));
+            if (lingering && managerHasOverstayed(dwell.seenAt.get(String(stuck.id)), Date.now())) {
+              reportError(
+                new Error(
+                  `[GameServer] ${stuck.name} (${String(stuck.id).slice(0, 8)}) has been COMPLETING past the managed grace with its manager still registered - its finish never returned. Stopping the manager and recovering.`
+                ),
+                'GameServer.completing_manager_overstayed'
+              );
+              try {
+                lingering.stop();
+              } catch (stopErr) {
+                reportError(stopErr, 'GameServer.completing_manager_stop_failed');
+              }
+              this.tournamentEngines.delete(String(stuck.id));
+            }
             if (!this.tournamentEngines.has(stuck.id)) {
               // No active engine managing this tournament - it's truly stuck.
               // TOURNEY-AUDIT 2026-07-24: recovery now PAYS remaining players

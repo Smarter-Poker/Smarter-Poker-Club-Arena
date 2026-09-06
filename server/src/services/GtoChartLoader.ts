@@ -20,6 +20,7 @@
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import { setGtoCharts, gtoChartCount, type GtoChartRow } from '../engine/GtoCharts.js';
+import { solverPolicyArtifactStatus } from '../gto/SolverPolicyArtifactLoader.js';
 
 const REFRESH_MS = 60 * 60_000;
 const BOOT_DELAY_MS = 15_000;
@@ -31,12 +32,15 @@ export async function loadGtoCharts(): Promise<number> {
   try {
     const { data, error } = await supabase
       .from('memory_charts_gold')
-      .select('game_type, stack_depth, hero_position, villain_action, hand_matrix');
+      .select(
+        'chart_id, game_type, stack_depth, hero_position, villain_action, hand_matrix, created_at'
+      );
     if (error) throw new Error(error.message);
 
     const applied = setGtoCharts((data ?? []) as GtoChartRow[]);
     console.log(
-      `[GtoChartLoader] ${applied} solver charts loaded (${gtoChartCount()} in the store)`
+      `[GtoChartLoader] ${applied} solver charts loaded (${gtoChartCount()} rows, ` +
+        `${solverPolicyArtifactStatus().charts.count} canonical policies)`
     );
     return applied;
   } catch (err) {

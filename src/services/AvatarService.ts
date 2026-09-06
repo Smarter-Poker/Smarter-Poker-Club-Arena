@@ -93,8 +93,11 @@ const DEFAULT_AVATAR_SVG = generateDefaultAvatar();
 function normalizeAvatarUrl(url: string): string {
   if (!url) return url;
 
-  // 1. Hub native paths: /avatars/vip/slug.png -> /avatars/table/vip_slug@2x.webp
-  const hubMatch = url.match(/^\/avatars\/(vip|free)\/([^/.]+)\.png$/i);
+  // 1. Hub native paths: /avatars/vip/slug.webp -> /avatars/table/vip_slug@2x.webp
+  // The unified API originally returned PNG and now returns WebP. Accept both
+  // contracts so a catalog format rollout cannot save lower-resolution square
+  // art when the table-optimized portrait exists.
+  const hubMatch = url.match(/^\/avatars\/(vip|free)\/([^/.]+)\.(?:png|webp)$/i);
   if (hubMatch) {
     return `/avatars/table/${hubMatch[1]}_${hubMatch[2]}@2x.webp`;
   }
@@ -392,12 +395,19 @@ class AvatarServiceClass {
       const hubAvatars = await response.json();
 
       const avatars: Avatar[] = hubAvatars.map((entry: any) => {
-        // Generate thumb URL exactly as the Hub's normalizeAvatarUrl does,
-        // to match the legacy 'free_shark' / 'vip_wolf' pattern.
+        // Generate the table-art URL from the source path. The Hub catalog now
+        // returns WebP, and a few promotional entries deliberately have a
+        // FREE entitlement while their art still lives in /avatars/vip/. The
+        // source directory therefore owns the file path; entry.tier continues
+        // to own access/category semantics below.
         const tierLower = (entry.tier || 'free').toLowerCase();
-        const slugMatch = entry.image.match(/\/([^/.]+)\.png$/i);
-        const slug = slugMatch ? slugMatch[1] : entry.id;
-        const thumbUrl = `/avatars/table/${tierLower}_${slug}@2x.webp`;
+        const libraryPathMatch = entry.image.match(
+          /\/avatars\/(vip|free)\/([^/?#.]+)\.(?:png|webp)(?:[?#].*)?$/i
+        );
+        const slugMatch = entry.image.match(/\/([^/?#.]+)\.(?:png|webp)(?:[?#].*)?$/i);
+        const assetTier = libraryPathMatch?.[1]?.toLowerCase() || tierLower;
+        const slug = libraryPathMatch?.[2] || slugMatch?.[1] || entry.id;
+        const thumbUrl = `/avatars/table/${assetTier}_${slug}@2x.webp`;
 
         return {
           id: entry.id,

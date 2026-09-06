@@ -196,6 +196,97 @@ copy of the identity gate; accepting any frame instead of `SNAPSHOT`; not
 closing the socket; pointing the probe at an HTTP path instead of `/ws/table/`;
 a paging threshold of zero; the schedule entry deleted.
 
+## The deep audit (same day) - four defects, all in what had just been built
+
+The phase was pushed and then audited before moving on. Everything below was
+found after "done" and fixed in the same branch.
+
+### 1. The migration would have FAILED on apply, taking the function with it
+
+`club_members` carries **34 triggers**. One of them,
+`trg_club_members_require_explicit_join`, refuses any insert that does not
+declare where the membership came from:
+
+```
+MEMBERSHIP_REQUIRES_JOIN: Club Members Can Only Be Added Through Join A Club
+```
+
+The migration did not declare one, so it would have aborted on apply - and
+because a migration is one transaction, `fn_probe_table_candidate` would not
+have been created either. The probe would then have failed on its RPC every
+five minutes, reporting a platform that was completely healthy.
+
+Proved BOTH directions with self-aborting probes (CLAUDE.md 11.5, one call, one
+`DO` block ending in `RAISE EXCEPTION`, an error being the success case):
+
+| probe | result |
+| --- | --- |
+| the migration exactly as written | `MEMBERSHIP_REQUIRES_JOIN` - aborts |
+| with `set_config('app.club_membership_source','join_club', true)` | `inserted=2`, both `player/active` |
+
+Fixed by setting that value the way `fn_join_club` sets it around the real
+join, and by writing the same column list `fn_join_club_membership_impl`
+writes, so the row is indistinguishable from a player who joined through the
+UI. The other 33 triggers were each checked rather than assumed: the approval
+gate returns early for a non-`authenticated` caller, the automated-player guard
+only fires for a horse or `is_bot`, the four-club limit is not reached, and
+`zz_freeze_guard` carries an explicit carve-out - "a membership row carrying no
+chips is identity, not money" - so a `:55` break cannot abort the apply.
+
+The migration now also ENDS with an assertion: if the probe identity is not a
+member of both fleet clubs, the apply fails rather than reporting success and
+leaving a blind probe behind.
+
+### 2. The happy path had never actually been run
+
+Every earlier verification stopped at a refusal. So the migration was applied,
+and the probe's own `openTableSocket` - extracted verbatim from the shipped
+file - was run against production with the service account's real credentials:
+
+```
+outcome: "ok", opened: true, snapshot: true, open_ms: 1630, snapshot_ms: 1630, frames: ["SNAPSHOT"]
+```
+
+**That is the first time in this programme that anything has proven, from
+outside, that a player can hold a table.** The four viewer gates cost ~1.6 s,
+comfortably inside the 15 s timeout.
+
+The same run also confirmed Phase 3 / CLAUDE.md 10.10 rule 3 working in
+production: a deliberately stale token produced a completed handshake and a
+`4401 auth:http_400` close, not a bare pre-handshake 401.
+
+### 3. The probe was shipping a law violation
+
+`__tests__/a-probe-that-cannot-run-says-so.law.test.mjs` requires every probe
+under `pages/api/cron/` to route its "missing env" early return through
+`unconfiguredProbe()`, which writes a `failed` heartbeat FIRST and then returns
+the 500 - because a probe that writes no row is indistinguishable from one that
+was never scheduled, and a dashboard cannot draw a red badge for a row that
+does not exist. That is recovery-probe's 2026-09-04 defect. The new probe
+hand-wrote its own `{ status: 'unconfigured' }` and the law was red. Fixed;
+both probe laws green.
+
+### 4. Two outcomes existed in code and in no runbook
+
+`construct_failed` and `closed_before_snapshot` could be reported and had no
+section in the runbook - an outcome is the diagnosis, so an unlisted one is a
+page with no page to turn to. Both documented, and the set is now
+`PROBE_OUTCOMES`, pinned BOTH ways: every outcome the code produces must be
+registered, and every registered outcome must be produced. Writing that pin
+immediately caught a second problem - two outcomes hidden inside a ternary,
+which the scan could not see - so the ternary became two explicit branches.
+Three mutations, three reds.
+
+### Also checked, and correct
+
+- `maxDuration: 60` is already used by sixteen other routes on this plan.
+- The heartbeat insert was run against the real `probe_heartbeats` table inside
+  a rolled-back transaction: accepted, `occurred_at` defaults.
+- The live Open Claw dispatcher is byte-identical to `main`, the service is
+  active, and the deploy key and server IP both resolve - so
+  `bash scripts/deploy-openclaw.sh` will work the moment the World Hub PR
+  merges. **That deploy is the one manual step this phase leaves.**
+
 ## Found during Phase 6, recorded and NOT fixed here
 
 **Five refusals are still written before the handshake, and every one reaches

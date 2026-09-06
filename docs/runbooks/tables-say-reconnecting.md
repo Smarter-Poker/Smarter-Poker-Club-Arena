@@ -253,6 +253,21 @@ For the probe specifically, `fn_probe_table_candidate` only offers tables with
 at least 3 hands in the last 10 minutes, precisely so that "no snapshot" cannot
 mean "quiet table". If you widen that function, you break that guarantee.
 
+### Probe outcome `closed_before_snapshot`
+
+The socket opened, the engine accepted it, and then it closed with a code that
+has no section of its own above - before any `SNAPSHOT`. Read
+`details.steps.socket.close_code` in the heartbeat and go to that code's
+section; if it is not in this page, that is a bug in this page and
+`tests/every-refusal-has-a-runbook.law.test.ts` should have caught it.
+
+### Probe outcome `construct_failed`
+
+`new WebSocket(...)` threw before a connection was even attempted - a malformed
+URL or a runtime with no global `WebSocket`. Nothing is wrong with the
+platform; `ENGINE_URL` or the probe's own runtime is. Check the error text in
+the heartbeat.
+
 ### Probe outcome `handshake_timeout`
 
 The socket neither opened nor closed within 15 seconds. That is a black hole -

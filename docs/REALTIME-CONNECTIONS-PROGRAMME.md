@@ -253,12 +253,39 @@ never got the same treatment. It is an engine change with a client half, so it
 is the first item for the phase 6 audit; the runbook documents how to diagnose
 it by hand meanwhile.
 
-**Verification.** The socket path is proven end to end as far as the gate:
-sign-in as the service identity, real `wss://` upgrade to the live engine with
-the subprotocol-carried token, the refusal classified correctly as `refused` /
-1006, and the underlying `403` confirmed by hand. The HAPPY path needs the
-membership row this phase's migration adds, so it is recorded below once the
-migration has landed and a run has been read from `probe_heartbeats`.
+## Phase 6 audit (2026-09-06) - four defects, all in what had just been built
+
+1. **The migration would have FAILED on apply.** `club_members` carries 34
+   triggers and `trg_club_members_require_explicit_join` refuses any insert
+   that does not declare its source - so the migration would have aborted, and
+   with it `fn_probe_table_candidate`, leaving the probe to fail every five
+   minutes against a healthy platform. Proved both directions with self-
+   aborting probes (11.5): as written it raises `MEMBERSHIP_REQUIRES_JOIN`;
+   with `set_config('app.club_membership_source','join_club', true)` - the
+   value `fn_join_club` sets around the real join - both rows insert. The
+   migration now ends with an assertion, so an apply cannot report success
+   while leaving the probe blind.
+2. **The happy path had never been run.** Every earlier verification stopped at
+   a refusal. The migration was applied and the probe's own `openTableSocket`,
+   extracted verbatim from the shipped file, was run against production:
+   `outcome: "ok"`, socket open in 1630 ms, `SNAPSHOT` received. **That is the
+   first time in this programme that anything has proven, from outside, that a
+   player can hold a table.**
+3. **The probe was shipping a law violation** - it hand-wrote its
+   `unconfigured` response instead of `unconfiguredProbe()`, which writes the
+   heartbeat FIRST. `a-probe-that-cannot-run-says-so.law` was red.
+4. **Two outcomes existed in code and in no runbook.** Both documented; the set
+   is now `PROBE_OUTCOMES`, pinned in both directions, which immediately caught
+   two more outcomes hidden inside a ternary.
+
+**Verification.** Client half: `fn_probe_table_candidate` live, the service
+identity a member of both fleet clubs with zero chips, and a real `wss://`
+socket to a live table returning `SNAPSHOT` in 1.63 s. Engine half: nothing to
+deploy - the probe runs outside the engine, which is the point. **Remaining
+manual step: `bash scripts/deploy-openclaw.sh` once the World Hub PR merges**,
+or the schedule exists in the repo and not on the box (World Hub CLAUDE.md
+11.3). The live dispatcher was checked and is currently byte-identical to
+`main`, so there is no pre-existing drift to untangle.
 
 ## Phase 5 - Trust and limits (2026-09-06)
 

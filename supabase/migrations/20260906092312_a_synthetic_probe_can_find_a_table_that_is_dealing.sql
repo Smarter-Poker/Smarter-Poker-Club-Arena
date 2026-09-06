@@ -138,12 +138,42 @@ GRANT EXECUTE ON FUNCTION public.fn_probe_table_candidate(uuid) TO service_role;
 -- Two clubs rather than one on purpose: if either club's tables all close, the
 -- probe still has somewhere to look, and a probe with nowhere to look reports
 -- the fleet as not dealing.
+--
+-- THE `set_config` BELOW IS LOAD-BEARING AND THE FIRST DRAFT DID NOT HAVE IT.
+-- `club_members` carries 34 triggers, and `trg_club_members_require_explicit_join`
+-- refuses ANY insert that does not declare where the membership came from:
+--
+--     MEMBERSHIP_REQUIRES_JOIN: Club Members Can Only Be Added Through Join A Club
+--
+-- so this migration would have aborted on apply, taking the function above with
+-- it. Found by probing it inside a self-aborting transaction (CLAUDE.md 11.5)
+-- rather than by shipping it and watching. `fn_join_club` sets exactly this
+-- value around the real join; the platform's own join path is what we are
+-- imitating, so we imitate all of it - the column list below is the one
+-- `fn_join_club_membership_impl` writes, down to `rank_level` and
+-- `orange_ball_status`, so the row is indistinguishable from a player who
+-- joined through the UI. `fn_join_club` itself cannot be called here: it reads
+-- `auth.uid()`, and a migration has no session user.
+--
+-- The other 33 triggers were checked and pass: `fn_membership_approval_gate`
+-- returns early for any caller that is not `authenticated`/`anon`;
+-- `fn_ca_reject_automated_user_club_row` only fires for a horse or `is_bot`;
+-- the four-club limit is not reached (this is the account's second and third);
+-- and `zz_freeze_guard` carries an explicit carve-out - "a membership row
+-- carrying no chips is identity, not money. This table, INSERT only, zero
+-- balance" - so a `:55` maintenance break cannot abort this apply.
 -- ───────────────────────────────────────────────────────────────────────────
-INSERT INTO public.club_members (club_id, user_id, role, status, chip_balance, is_bot, notes)
+SELECT set_config('app.club_membership_source', 'join_club', true);
+
+INSERT INTO public.club_members
+  (club_id, user_id, role, status, tier, rank_level, orange_ball_status, chip_balance, is_bot, notes)
 SELECT c.id,
        u.id,
        'player',
        'active',
+       'bronze',
+       0,
+       'cold',
        0,
        false,
        'Platform service identity. Member so the Realtime phase-6 table-socket probe can open an observer socket like any player; holds no chips and never takes a seat.'
@@ -155,5 +185,28 @@ WHERE u.email = 'daniel@smarter.poker'
     '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'   -- Deep Stack Society
   )
 ON CONFLICT (club_id, user_id) DO NOTHING;
+
+SELECT set_config('app.club_membership_source', '', true);
+
+-- The apply must not report success if the probe still cannot see a table.
+DO $assert$
+DECLARE v_clubs int;
+BEGIN
+  SELECT count(*) INTO v_clubs
+  FROM public.club_members m
+  JOIN auth.users u ON u.id = m.user_id
+  WHERE u.email = 'daniel@smarter.poker'
+    AND m.status IN ('active', 'approved')
+    AND m.club_id IN (
+      'fade0000-0000-0000-0000-000000000001',
+      '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'
+    );
+  IF v_clubs <> 2 THEN
+    RAISE EXCEPTION
+      'The probe identity is a member of % of the 2 fleet clubs. It would be blind, and a blind probe reports its own blindness as an outage.',
+      v_clubs;
+  END IF;
+END
+$assert$;
 
 COMMIT;

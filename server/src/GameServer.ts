@@ -2505,6 +2505,25 @@ export class GameServer {
           const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
           const recentActivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
           // Find stale RUNNING tournaments with no recent hand activity
+          /**
+           * TWELVE HOURS OF PLAYING, NOT TWELVE HOURS OF EXISTING
+           * (2026-09-06). This asked `created_at`, which for a scheduled or
+           * recurring event is when the ROW was written, not when the cards
+           * went in the air. Measured on production the day this was fixed:
+           * 94 RUNNING tournaments, 5 of them "stale" by `created_at` and
+           * ZERO by `started_at` - all five created on 09-03 as scheduled
+           * rows, started this morning, at level 4 and level 10 of 40, and
+           * dealing 100+ hands an hour while this sweep sized them up for
+           * settlement every time the engine booted.
+           *
+           * Only the hand-activity check below stood between five healthy
+           * games (21-28 players, 405 to 600 in prize pools) and being
+           * ranked by chipstack and paid out. One quiet hour - a stall, a
+           * long break, a slow Postgres - and the wrong axis becomes an
+           * outage. `started_at` is the question this sweep is actually
+           * asking; `created_at` remains the fallback for a row that somehow
+           * never recorded one.
+           */
           const { data: staleTourneys } = await supabase
             .from('tournaments')
             // payout_structure / variant / tournament_type / spin_multiplier
@@ -2512,10 +2531,12 @@ export class GameServer {
             // structural question the recovery will ask before it claims the
             // row. See the guard below.
             .select(
-              'id, name, payout_structure, variant, tournament_type, spin_multiplier, prize_pool'
+              'id, name, started_at, created_at, payout_structure, variant, tournament_type, spin_multiplier, prize_pool'
             )
             .eq('status', 'RUNNING')
-            .lt('created_at', twelveHoursAgo);
+            .or(
+              `started_at.lt.${twelveHoursAgo},and(started_at.is.null,created_at.lt.${twelveHoursAgo})`
+            );
           for (const t of staleTourneys || []) {
             const { data: recentHands, error } = await supabase
               .from('hand_history')

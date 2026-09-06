@@ -90,3 +90,27 @@ describe('the guard the sweep now shares with the recovery', () => {
     expect(fieldIsStillLive({ livePlayers: 90, paidPlaces: 0 })).toBe(false);
   });
 });
+
+/**
+ * TWELVE HOURS OF PLAYING, NOT TWELVE HOURS OF EXISTING (2026-09-06).
+ *
+ * The sweep selected on `created_at`, which for a scheduled or recurring
+ * event is when the row was written. Measured the day this was fixed: 94
+ * RUNNING tournaments, five "stale" by `created_at` and ZERO by
+ * `started_at` - all five created 09-03, started that morning, at level 4
+ * and 10 of 40, dealing 100+ hands an hour, with 21-28 players and 405 to
+ * 600 in prize pools. Only the hand-activity check stood between them and
+ * being ranked by chipstack and paid out.
+ */
+describe('staleness is measured from when the cards went in the air', () => {
+  it('selects on started_at, and falls back to created_at only when it is null', () => {
+    expect(sweep).toContain('started_at.lt.');
+    expect(sweep).toContain('and(started_at.is.null,created_at.lt.');
+    // The old predicate is gone: created_at is no longer a bare filter.
+    expect(sweep).not.toMatch(/\.lt\('created_at', twelveHoursAgo\)/);
+  });
+
+  it('reads both columns, so the row it judges carries the clock it judged by', () => {
+    expect(sweep).toContain('started_at, created_at');
+  });
+});

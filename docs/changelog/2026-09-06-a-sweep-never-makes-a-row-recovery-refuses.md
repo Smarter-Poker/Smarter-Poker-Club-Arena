@@ -61,6 +61,27 @@ Nothing else moves. A genuinely finished game - nobody left, or fewer left
 than places - takes exactly the path it took before, which is the path that
 pays the places out.
 
+## And it was asking the wrong clock
+
+The same read selected on `created_at`. For a scheduled or recurring event
+that is when the ROW was written, not when the cards went in the air.
+Measured on production while writing this, at 11:02 CDT:
+
+    94 tournaments RUNNING
+     5 "stale" by created_at
+     0 stale by started_at
+
+All five were created on 09-03 as scheduled rows, **started this morning**,
+sat at level 4 and level 10 of 40, and were dealing over a hundred hands an
+hour each while this sweep sized them up for settlement at every engine boot -
+which is every hour, at :55. Between them they held 21 to 28 players and 405
+to 600 in prize pools. The only thing standing between five healthy games and
+being ranked by chipstack was the hand-activity check; one quiet hour and the
+wrong axis becomes an outage.
+
+It now selects on `started_at`, with `created_at` as the fallback for a row
+that never recorded one.
+
 ## Why the guard is not simply reused inside the recovery instead
 
 It already is. The recovery refuses correctly; refusing is all it can do,

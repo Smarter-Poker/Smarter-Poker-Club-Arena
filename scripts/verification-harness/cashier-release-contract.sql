@@ -12,6 +12,9 @@ DECLARE
   v_oid oid;
   v_actual_hash text;
   v_missing text;
+  v_request_source text;
+  v_telemetry_source text;
+  v_telemetry_oid oid;
 BEGIN
   SELECT string_agg(required.version, ', ' ORDER BY required.version)
   INTO v_missing
@@ -20,7 +23,8 @@ BEGIN
       ('20260830235990'),
       ('20260831235990'),
       ('20260831235991'),
-      ('20260831235992')
+      ('20260831235992'),
+      ('20260906093024')
   ) AS required(version)
   WHERE NOT EXISTS (
     SELECT 1
@@ -134,23 +138,65 @@ BEGIN
     RAISE EXCEPTION 'cashier performance index contract drift';
   END IF;
 
+  SELECT lower(prosrc)
+    INTO v_request_source
+    FROM pg_proc
+   WHERE oid = to_regprocedure('public.fn_request_chips(uuid,numeric,text,uuid)');
+  IF v_request_source IS NULL OR v_request_source NOT LIKE '%if p_op_id is null then%' THEN
+    RAISE EXCEPTION 'cashier request idempotency contract drift';
+  END IF;
+
+  v_telemetry_oid := to_regprocedure(
+    'public.fn_record_cashier_operation(uuid,text,text,integer,integer,integer,integer,integer,text)'
+  );
+  IF v_telemetry_oid IS NULL
+     OR NOT (SELECT prosecdef FROM pg_proc WHERE oid = v_telemetry_oid)
+     OR NOT coalesce((SELECT proconfig @> ARRAY['search_path=public, pg_temp']
+                      FROM pg_proc WHERE oid = v_telemetry_oid), false)
+     OR has_function_privilege('anon', v_telemetry_oid, 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', v_telemetry_oid, 'EXECUTE')
+     OR NOT has_function_privilege('service_role', v_telemetry_oid, 'EXECUTE') THEN
+    RAISE EXCEPTION 'cashier telemetry RPC contract drift';
+  END IF;
+  SELECT lower(prosrc) INTO v_telemetry_source FROM pg_proc WHERE oid = v_telemetry_oid;
+  IF v_telemetry_source NOT LIKE '%auth.uid()%'
+     OR v_telemetry_source NOT LIKE '%fn_club_cashier_scope%'
+     OR v_telemetry_source NOT LIKE '%cashier_operation%' THEN
+    RAISE EXCEPTION 'cashier telemetry identity/scope/rate contract drift';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM pg_class
     WHERE oid = 'public.cashier_operations'::regclass AND relrowsecurity
-  ) OR NOT EXISTS (
+  ) OR EXISTS (
     SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'cashier_operations'
-      AND policyname = 'cashier_operations_insert_own' AND cmd = 'INSERT'
-      AND with_check LIKE '%auth.uid()%'
+      AND cmd = 'INSERT'
   ) THEN
     RAISE EXCEPTION 'cashier telemetry RLS contract drift';
   END IF;
 
-  IF NOT has_table_privilege('authenticated', 'public.cashier_operations', 'INSERT')
+  IF has_table_privilege('authenticated', 'public.cashier_operations', 'INSERT')
      OR has_table_privilege('authenticated', 'public.cashier_operations', 'SELECT')
+     OR has_sequence_privilege('authenticated', 'public.cashier_operations_id_seq', 'USAGE')
      OR NOT has_table_privilege('service_role', 'public.v_cashier_health_hourly', 'SELECT')
      OR has_table_privilege('authenticated', 'public.v_cashier_health_hourly', 'SELECT') THEN
     RAISE EXCEPTION 'cashier telemetry ACL drift';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'rate_limits'
+      AND cmd IN ('INSERT', 'UPDATE', 'DELETE')
+  ) OR has_table_privilege('anon', 'public.rate_limits', 'SELECT')
+     OR has_table_privilege('anon', 'public.rate_limits', 'INSERT')
+     OR has_table_privilege('anon', 'public.rate_limits', 'UPDATE')
+     OR has_table_privilege('anon', 'public.rate_limits', 'DELETE')
+     OR has_table_privilege('authenticated', 'public.rate_limits', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.rate_limits', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.rate_limits', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.rate_limits', 'DELETE') THEN
+    RAISE EXCEPTION 'cashier limiter access boundary drift';
   END IF;
 END;
 $cashier_contract$;

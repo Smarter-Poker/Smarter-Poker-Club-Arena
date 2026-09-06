@@ -900,6 +900,218 @@ be pruned (pushed branches lose nothing — the commits live on origin).
 
 ---
 
+## 10.82 MERGED IS NOT LANDED, AND A SECOND PUSH CAN VANISH (2026-09-06, BINDING)
+
+**`agent-autopilot.yml` squash-merges the moment the required checks pass.** On
+an asset-only or docs change that can be under two minutes. Push again after
+that and the branch moves, the pull request stays merged, `git push` exits 0,
+and your commits reach nobody.
+
+World Hub #1387 shipped **1 of its 3 commits** this way. The push said success.
+The PR said merged. The branch on GitHub genuinely held all three. A CI fix for
+a gate that had been red on `main` for two days, and the deletion of a component
+that fabricated player data, were simply not there - found hours later, by
+accident, while looking at something else.
+
+### The rules
+
+1. **A follow-up commit needs a NEW BRANCH off current `main`.** Not a second
+   push to the branch you already opened a pull request from.
+   `scripts/guard-merged-branch.sh` refuses that push from `.husky/pre-push` and
+   prints the recovery. It fails OPEN on a missing token, no network, or any
+   answer it cannot read, so it can never block you because GitHub is unwell.
+   Override, when you truly mean to move a merged branch:
+   `AGENT_MERGED_BRANCH_OK=1 git push ...`
+
+2. **Verify the FILES, never the tick.** `git fetch origin main` then
+   `git cat-file -e origin/main:<path>`. This is section 1.4's rule - only
+   production serving the sha counts as deployed - applied to merges, and for
+   the same reason: every intermediate signal can be true while the outcome is
+   false.
+
+3. **This gets worse as CI gets faster.** #3187 took the critical path from
+   ~6.8 to ~4 minutes. Every minute cut off CI widens the window in which an
+   agent is racing its own merge.
+
+---
+
+## 10.83 A CHECK THAT NOBODY CAN SEE IS NOT A CHECK (2026-09-06, BINDING)
+
+`Global Footer E2E` failed on **every** run on the World Hub's `main` from
+2026-09-04 and was found two days later by accident. It is not in the ruleset,
+so a red run blocked no merge, opened no issue, and coloured nothing anyone
+reads. Twenty-odd merges landed on top of it.
+
+None of its three failures was in the footer. Every footer assertion passed.
+They were marketplace tests that `npm run build` runs first: a retired Daily
+Pass still pinned, an `annual` -> `yearly` rename applied to the code and not
+its test, and two em dashes. **All three were correct changes that left one half
+behind** - the ordinary way a repo goes red, and exactly why somebody has to be
+told.
+
+`scripts/ci/check-main-is-green.mjs` raises one issue for any workflow red on
+`main` past a threshold **with no open issue naming it**. It reports a workflow
+as `loud` when something already tracks it, so a watchdog raising its own alarm
+is not mistaken for a defect - the first run flagged `Publish Watchdog` doing
+precisely that, which would have taught everyone to ignore the detector inside
+a week. It counts only `failure`: a `cancelled` run is the publisher being
+superseded by a newer merge, and paging on that would cry wolf several times an
+hour.
+
+**CORRECTED 2026-09-06, the same day this section was written.** It said "(World
+Hub, in `publish-watchdog.yml`)" and stopped there, so this paragraph - in CLUB
+ARENA's CLAUDE.md - described a guard watching a different repo. **Club Arena
+did not have it.** Every agent reading this file was told something was watching
+when nothing was, which is worse than the gap itself. Both repos run it now,
+each in its own `publish-watchdog.yml`, on `ubuntu-latest` so the alarm never
+shares a failure domain with the boxes it watches.
+
+What it found on its first Club Arena run, three workflows red with no issue
+naming any of them: `CI - Build & Type Safety` (1.4h), `Applied Migrations Are
+Recorded` (1.0h), and `Deploy Monitoring` (0.3h). **The third is the whole
+argument.** `check-alert-rules-match.mjs` could not read the running rules off
+engine-01 and refused to pass - doing exactly what 10.84 built it to do - and
+the refusal reached nobody. A check behaving perfectly is worthless if its
+result has no reader.
+
+**If you add a workflow, either put it in the ruleset or accept that only this
+detector will ever tell you it broke.**
+
+---
+
+## 10.86 A SIGNAL THAT ANSWERS WHEN IT DOES NOT KNOW (2026-09-06, BINDING)
+
+Read this before writing any check, probe, guard, watchdog or status report.
+It is the common cause behind 10.82, 10.83, 10.84 and a day of red CI, and it
+keeps being re-derived one incident at a time.
+
+**The estate's failure mode is no longer a missing detector. It is a detector
+that answers confidently when it cannot tell.** Every one of these was found in
+a single day, and not one was carelessness - each is a reasonable component
+giving a well-formed answer it had no business giving:
+
+| what answered                        | what it said                                     | what was true                           |
+| ------------------------------------ | ------------------------------------------------ | --------------------------------------- |
+| `GET /commits/:sha/status`           | `pending`, HTTP 200                              | red for fifteen hours                   |
+| `GET /commits/:sha/check-runs`       | 403 -> `.check_runs` is `undefined` -> `\|\| []` | "nothing failed"                        |
+| a wait budget equal to `testTimeout` | `Test timed out in 10000ms`                      | names no cause; the assertion never ran |
+| `pr-status.mjs` on a 403             | "the token lacks a scope"                        | rate limited; the token was fine        |
+| the `--all` mergeability read        | every branch clean                               | eight conflicted                        |
+| CLAUDE.md 11.0                       | "the GitHub MCP returns Bad credentials"         | it works                                |
+| AGENT-PLAYBOOK's CI section          | four `gh` commands                               | `gh` is not installed here              |
+| this section, 10.83                  | "a detector raises the issue"                    | not in this repo it did not             |
+
+### The four rules
+
+1. **"I could not tell" is a distinct outcome and must have its own name.**
+   Never fold it into pending, green, empty, zero or silence. `pr-status.mjs`
+   exits `3` for UNKNOWN and a law forbids it sharing a code with RUNNING or
+   GREEN. If your check has two outcomes it is probably wrong; most have three.
+
+2. **Never coerce an unreadable answer into an empty one.** `(await
+res.json()).check_runs` on a 403 body is `undefined`, and `undefined || []`
+   reads as good news. Check `res.ok` first, every time.
+
+3. **A guard must have a reader, and you must name them.** Ask, before you
+   merge it: who sees this when it fires, and by what path? "It goes red in
+   Actions" is not a reader. If it is not in the ruleset, `check-main-is-green`
+   is the reader - confirm the workflow is on `main` where it can see it. An
+   alarm that runs where `gh` is absent, or files an issue with a token lacking
+   `issues: write`, is a guard with no reader at all.
+
+4. **A fix that leaves the same trap one level up has not landed.** This is the
+   subtle one and it caught good work twice in a day. Two agents correctly
+   de-flaked a fixed `sleep` into a conditional wait, and both set the budget to
+   the ceiling they had just read - the wait got robust, the headroom went to
+   zero. The playbook correctly diagnosed the `checks:read` 403 and then offered
+   four commands that do not exist on this machine. **When you fix something,
+   ask what the next person will reach for, and check that it works.**
+
+### And put an expiry on any claim about the environment
+
+"The GitHub MCP is dead", "`gh` is installed", "`list_migrations` is fine" are
+claims about a world that changes without touching this repo. A note that
+retires a working tool costs more than the outage that prompted it, because
+every agent afterwards reads it as current and routes around something that
+works. **Date the claim, and re-check it in one call before you route around
+anything.** One call is always cheaper than the detour.
+
+---
+
+## 10.84 AGENTS NEVER SET A CREDENTIAL, AND NEVER HAND-WRITE WHAT A MONITOR READS (2026-09-06, BINDING)
+
+Two rules, one lesson: **the things that watch this platform are configuration,
+and configuration an agent edits by hand is configuration nobody can see.**
+Both were written by the Realtime Connections Programme's phase 7, from the two
+halves of the 2026-09-03 outage.
+
+### 1. An agent never SETS a credential. It reads where one lives, or it stops.
+
+The twenty-two hours began with **one environment variable**. Somebody put
+Dan's own address into `PROBE_LOGIN_EMAIL` in Vercel, the login probe signed in
+as him every fifteen minutes and called a global `signOut()`, and every table he
+opened said "Reconnecting To The Table" until somebody noticed by hand.
+
+So: an agent may READ a credential from the place AGENT-PLAYBOOK.md names
+(`.env.local`, `.env`, the Keychain entry, the Vercel dashboard), and may say
+which place a value belongs in. An agent may NOT write, rotate, paste or
+"correct" a credential in Vercel, Supabase, GitHub Actions, a `.env` on a
+server, or anywhere else - not even to fix an outage it can see. Those edits
+are Dan's, and they are the one class of change where being wrong is invisible
+to every test in this repo.
+
+If a credential is wrong, say which one, say where it lives, and say what value
+SHAPE it should have (an address under `@probe.smarter.poker`, the service
+identity, a 64-character secret). Never the value.
+
+Corollary, already law in the World Hub
+(`__tests__/synthetic-probes-never-sign-out-a-person.law.test.mjs`): a probe
+pointed at the wrong identity refuses to run rather than running as the wrong
+person. Code that guesses is worse than code that stops.
+
+### 2. Never hand-write what a monitor reads.
+
+Phase 1 found, and phase 7 fixed, alert rules on engine-01 that were not the
+alert rules in this repo **in both directions**. Measured on 2026-09-06: 72
+alerts running, 79 declared here, **15 declared and never loaded** - among them
+`EngineRefusingSessions` and `EngineCannotReachAuth`, the two written in phase 1
+so that this exact outage would page somebody - and **8 running that this repo
+had never seen**, hand-authored on the box with good reasoning and a changelog
+reference that was never committed.
+
+Nobody was careless. THREE LISTS had to agree and nothing checked them:
+`prometheus.yml`'s `rule_files`, `docker-compose.yml`'s mounts, and
+`deploy.sh`'s symlink loop - which named four of the seven, so four rule files
+could only ever be changed by hand.
+
+THE RULES:
+
+- **A monitoring change is a pull request in `infra/monitoring/`,** then
+  `bash infra/monitoring/deploy.sh` on the box. Never an editor on engine-01.
+  `deploy.sh` symlinks this repo over the live files, so a hand-written rule is
+  not merely undocumented - **it is deleted by the next deploy**, which is how
+  the 2026-09-04 cron and postgres rules were nearly lost.
+- **An empty alert group is worse than no group.** It reads as coverage. Delete
+  the heading with a comment saying where the coverage really lives (the
+  `vercel-health` note in `alert-rules.yml` is the worked example), or fill it.
+- **A rule is not live because it merged.** It is live when
+  `curl -s localhost:9090/api/v1/rules` says so.
+  `scripts/ci/check-alert-rules-match.mjs` asks, and refuses to be silently
+  green when it cannot reach the stack.
+- **The canary is not decoration.** `MonitoringCanary` fires unconditionally so
+  that its ABSENCE is the signal - without it, "no alerts" and "no monitoring"
+  are the same observation, and they were the same observation for twenty-two
+  hours.
+- **Derive a threshold, do not guess one, and write the measurement beside it.**
+  `EngineRefusingSessions` shipped as `>= 6 in 15m`; measured against the live
+  series before it was ever loaded, the ordinary p95 was 9.2 and the daily max
+  32.3, so it would have fired for ever on nothing but expiring tokens. An
+  alarm that is always on is an alarm that gets muted.
+
+Pinned by `tests/what-a-monitor-reads-is-what-the-repo-says.law.test.ts`.
+
+---
+
 ## 10.85 NEVER SCHEDULE ANYTHING ON THE CLAUDE SCHEDULER (Dan, 2026-09-04, BINDING)
 
 **Dan, verbatim: "IF YOU ARE SCHEDULING ANYTHING TO 'RUN ON CLAUDE SCHEDULER' IT
@@ -1104,10 +1316,32 @@ and `api.github.com` is reachable. Then:
 - **Rebasing your branch onto main is refused by a ref-guard hook.** Use
   `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
 
-**The GitHub MCP (`mcp__github__*`) returns `Bad credentials` as of
-2026-09-01.** Every call fails, including read-only ones. Do not debug it and
-do not build a plan around it; use the host terminal. If you are reading this
-long after that date, one call will tell you whether it is back.
+**The GitHub MCP (`mcp__github__*`) WORKS again, verified 2026-09-06.** This
+paragraph said it returned `Bad credentials` on every call and told you not to
+debug it. That was true on 2026-09-01 and stale by the 6th, when
+`get_file_contents` on `server/vitest.config.ts` returned the file. A note that
+retires a working tool costs more than the outage did: it is read as current by
+every agent after it. **Check before you route around anything this file calls
+dead - one call is cheaper than the detour.** The host terminal remains correct
+for everything, and is still the only route for `git push`.
+
+**The Supabase MCP works, but `list_migrations` will blow your context.** This
+database holds **3,713** migrations and the tool returns every one of them WITH
+its SQL - 296,122 characters, saved to a temp file you then have to slice in
+80,000-character spans. Nothing about that answers the question you had. Ask
+Postgres directly instead:
+
+```
+mcp__...__execute_sql:
+  select count(*) from supabase_migrations.schema_migrations;
+  select version, name from supabase_migrations.schema_migrations
+    order by version desc limit 20;
+  select 1 from supabase_migrations.schema_migrations where version = '<v>';
+```
+
+Same rule for any MCP tool over a large table: a targeted read is not a
+workaround, it is the correct call. Reserve the bulk tool for when you truly
+need all of it.
 
 **Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
 `supabase-columns-manifest.json`.** They are nightly snapshots and were the

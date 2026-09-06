@@ -25,7 +25,6 @@
 
 import { supabase } from '../lib/supabase';
 import { normaliseRole, type ClubRole } from '../types/clubRoles';
-import { reportError } from '../utils/errorReporter';
 
 /** PostgREST hands back `numeric` as a string. Make it a number, exactly once. */
 function num(value: unknown): number {
@@ -348,13 +347,13 @@ export const ClubRosterService = {
           filtered_total: num(d.filtered_total),
         };
       },
-      // The page owns one cold-load recovery. Do not stack the utility's three
-      // retries underneath it: aborting fetch does not guarantee that Postgres
-      // stops the already-started roster query, so the old 3 x 8s policy could
-      // leave several copies competing with the request meant to recover it.
-      // One 20s attempt lets a temporarily queued query finish and keeps the
-      // complete first-load + recovery path inside the 45s release budget.
-      { attempts: 1, signal: query.signal, timeoutMs: 20_000 }
+      // Give one request the complete release budget. Aborting fetch does not
+      // guarantee that Postgres stops the already-started query: two 20s
+      // attempts repeatedly left the first query running, started a competing
+      // copy, and then abandoned that copy too. A single patient attempt lets
+      // transient pool pressure clear without multiplying database work and
+      // still leaves the page time to expose its explicit retry control.
+      { attempts: 1, signal: query.signal, timeoutMs: 40_000 }
     );
   },
 

@@ -133,7 +133,7 @@ export default function UnionSkinGuard() {
     (async () => {
       // A 6-digit club code resolves from the cached list; one that cannot be
       // resolved is left alone rather than guessed at.
-      const clubUuid = isUUID(segment) ? segment : clubParamToUuid(segment);
+      const clubUuid = isUUID(segment) ? segment : clubParamToUuid(segment, storeUserId);
       if (!clubUuid) return;
 
       if (!(await isConfirmedUnionClubId(clubUuid))) return; // ordinary club
@@ -147,6 +147,7 @@ export default function UnionSkinGuard() {
       // Eject. The destination is the same rule the "+" button and every table
       // exit now use: the club they entered through, never a union.
       const destination = await resolveLobbyClubId({
+        userId,
         viewerClubId: useUserStore.getState().currentClubId,
         tableClubId: null,
       });

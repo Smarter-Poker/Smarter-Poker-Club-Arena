@@ -15,6 +15,16 @@
 **Updated By:** Claude (settings-toggle honesty sweep + time-bank / crash-recovery re-verification)
 **Total Fixes:** 226
 
+### 2026-09-06 Leaderboard Phase 4 Release Certification
+
+The Production Mobile-Fit Sweep Now Reports Each Of Its 81 Routes As An
+Independent Playwright Case, So One Slow Route Cannot Discard Every Completed
+Verdict. The Orphan-Module Ratchet Reuses One Import-Graph Report Instead Of
+Spawning The Same Expensive Scan Three Times. Phase 4 Settlement Funding,
+Receipt, Retry, Read-Model, And Browser-Authority Invariants Were Reverified.
+This Certification Work Moves No Chips And Does Not Change A Bible V8
+Table-Game Compliance Row.
+
 ### 2026-09-06 Leaderboard Phase 4 Settlement Truth
 
 Leaderboard Settlement Now Uses Only The Responsible Union Or Standalone Club

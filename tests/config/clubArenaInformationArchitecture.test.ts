@@ -139,7 +139,7 @@ describe('Club Arena information architecture', () => {
     expect(redirectSource).toContain("destination === 'invite'");
     expect(redirectSource).toContain('`/clubs/${target.id}/${destination}`');
     expect(redirectSource).toContain('{ replace: true }');
-    expect(redirectSource).toContain('readCachedQuickLinkClubs()');
+    expect(redirectSource).toContain('readCachedQuickLinkClubs(user.id)');
     expect(redirectSource).toContain('CLUB_RESOLUTION_TIMEOUT_MS');
   });
 

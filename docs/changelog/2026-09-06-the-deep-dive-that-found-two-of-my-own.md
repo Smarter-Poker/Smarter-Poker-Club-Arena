@@ -110,3 +110,55 @@ here and in the roadmap.
 | bomb repair crons                                                   | 0                                |
 
 Board: **323 open at the start of the day, 86 now; criticals 135 to 25.**
+
+---
+
+## Second pass: CI was red the whole time, and two more of mine
+
+Dan asked for the verification again. The first thing it found is that my own
+report was wrong: I said "auto-merge armed, checks pending". **`CI — Build &
+Type Safety` had already FAILED, on three consecutive pushes.** Nothing of this
+work was on `main` and nothing was published. I had read `mergeable_state:
+unknown` as "still running" instead of asking the checks themselves.
+
+### 3. A second way to lose the same breakdown
+
+`insertHandHistoryRow` got the atomic path. The **background retry queue did
+not**: `QueuedHand` held `{row, attempts, queuedAt, bytes}` and the drain called
+`insertHandHistoryRow(entry.row, 'retry-queue')` with no units at all. So a bomb
+hand that missed its first attempt was replayed with no award units, written
+with no award units, and the settlement-side fallback I had pointed at this case
+in a comment had returned long before.
+
+The queue carries `units` now, `enqueueHandHistory` takes them, and the drain
+replays them.
+
+### 4. `wroteAwardUnits` was true when nothing had been written
+
+`handId !== null && bombUnits.length > 0` is also true on the duplicate-recovery
+path — where the RPC failed 23505, **rolled back whole**, and we returned an
+existing hand id. The caller then skipped its fallback because the flag said the
+units were written. `insertHandHistoryRow` now returns `{id, wroteUnits}` and
+only its own success sets it.
+
+### Also fixed on the way
+
+- `void tracked.then(clear, clear)` tripped `noUnhandledRejections.law` — the
+  two-arg form handles rejection, but the law reads `void ....then(` and asks
+  for a visible `.catch`, and a reader deserves the same answer the linter gets.
+  Now `.then(clear).catch(clear)`.
+- **The schema-manifest fragment I never wrote.** CLAUDE.md 11.0 says declare
+  what you created under `scripts/ci/schema-manifest.d/`; I skipped it, so five
+  live functions read as unapplied against a nightly snapshot that had not yet
+  seen them.
+- **`check-migrations-applied` now subtracts what the branch drops.**
+  `ca_expected_cron_jobs` and `fn_ca_cron_roster_watch` were created by one
+  migration and dropped by another in the same branch, after Dan's no-cron
+  ruling. Both genuinely ran, both are genuinely gone, the live schema is
+  correct — and the gate failed anyway. Its only escapes were to lie in a
+  manifest fragment (the nightly turns that red within a day) or to put a
+  `BACKFILLED` marker on a file that was not backfilled. A gate whose only exits
+  are dishonest is a gate somebody routes around, so it learned the case
+  instead: a branch that creates a thing and drops it again declares nothing.
+
+Full server suite after all of it: **431 files, 6,192 tests, all passing.**

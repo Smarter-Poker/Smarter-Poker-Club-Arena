@@ -59,7 +59,10 @@ describe('the bomb breakdown travels with the hand', () => {
 
   it('logHandHistory reports whether the breakdown went in with the row', () => {
     expect(hist).toContain('wroteAwardUnits: boolean');
-    expect(hist).toContain('wroteAwardUnits: handId !== null && bombUnits.length > 0');
+    // narrowed 2026-09-06: the old form (handId !== null && bombUnits.length)
+    // was TRUE on the duplicate-recovery path, where the RPC had rolled back
+    // and this call wrote nothing - which skipped the fallback and lost them.
+    expect(hist).toContain('wroteAwardUnits: wroteUnitsAtomically');
   });
 
   /* WHY THIS FILE GREW A BEHAVIOURAL TEST (2026-09-06).
@@ -102,6 +105,26 @@ describe('the bomb breakdown travels with the hand', () => {
     expect(mig).not.toMatch(
       /INSERT INTO public\.hand_history\s*\n\s*SELECT \* FROM jsonb_populate_record/
     );
+  });
+
+  /* THE RETRY QUEUE WAS A SECOND WAY TO LOSE THE SAME THING (2026-09-06).
+     The hot path got the atomic insert and the queue did not: a bomb hand that
+     missed its first attempt was replayed with no units, written with no units,
+     and the settlement-side fallback had returned long before. Found in the
+     deep dive, by following the paths rather than the happy one. */
+  it('the retry queue carries the breakdown with the row it holds', () => {
+    expect(hist).toContain('units: Record<string, unknown>[];');
+    expect(hist).toContain('enqueueHandHistory(row, bombUnits);');
+    expect(hist).toMatch(/pendingHands\.push\(\{[^}]*units: structuredClone\(units\)/);
+    expect(hist).toContain("insertHandHistoryRow(entry.row, 'retry-queue', entry.units ?? [])");
+  });
+
+  it('wroteAwardUnits means WE wrote them, not that a row exists', () => {
+    // the duplicate-recovery path returns an existing hand id after its RPC
+    // rolled back; reporting true there skips the fallback and loses the units
+    expect(hist).toContain('return { id: existing, wroteUnits: false };');
+    expect(hist).toContain('wroteAwardUnits: wroteUnitsAtomically');
+    expect(hist).toContain('wroteUnits: true');
   });
 
   it('no repair cron is the answer here', () => {

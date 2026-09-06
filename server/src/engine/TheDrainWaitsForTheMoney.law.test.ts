@@ -49,7 +49,11 @@ describe('the drain waits for the money', () => {
     expect(base).toContain(
       'if (this.settlementInFlight === tracked) this.settlementInFlight = null;'
     );
-    expect(base).toContain('void tracked.then(clear, clear);');
+    // .then(clear).catch(clear), not .then(clear, clear): the two-arg form
+    // handles rejection identically but noUnhandledRejections.law reads
+    // `void ....then(` and asks for a visible .catch. Changed 2026-09-06 when
+    // that law caught this file.
+    expect(base).toContain('void tracked.then(clear).catch(clear);');
   });
 
   it('both settle paths register their barrier with the tracker', () => {

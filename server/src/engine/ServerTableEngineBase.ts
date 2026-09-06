@@ -3004,7 +3004,11 @@ export abstract class ServerTableEngineBase {
     const clear = (): void => {
       if (this.settlementInFlight === tracked) this.settlementInFlight = null;
     };
-    void tracked.then(clear, clear);
+    /* .then(clear).catch(clear) rather than .then(clear, clear): the two-arg
+       form handles rejection just as well, but noUnhandledRejections.law reads
+       `void ....then(` and asks for a visible .catch, and a reader scanning for
+       one deserves the same answer the linter gets. */
+    void tracked.then(clear).catch(clear);
   }
   /**
    * Allocate this hand's GLOBAL hand number (2026-08-18).

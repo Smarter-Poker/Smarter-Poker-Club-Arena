@@ -314,11 +314,13 @@ export async function logHandHistory(params: {
     amount: u.amount,
     hand_name: u.hand_name ?? null,
   }));
-  const handId = await insertHandHistoryRow(row, 'settlement', bombUnits);
+  const inserted = await insertHandHistoryRow(row, 'settlement', bombUnits);
+  const handId = inserted.id;
+  const wroteUnitsAtomically = inserted.wroteUnits;
   if (handId === null) {
     // Every in-line attempt failed. Hand it to the background queue rather
     // than losing the hand — see enqueueHandHistory().
-    enqueueHandHistory(row);
+    enqueueHandHistory(row, bombUnits);
   }
 
   // V28 AUDIT FIX (2026-08-29): the opponent-model observation used to sit
@@ -412,7 +414,11 @@ export async function logHandHistory(params: {
      transaction. False means the hand took the plain insert (no units to
      carry, or the atomic call failed and the row is queued) - and the caller's
      fallback upsert is then the only thing that will write them. */
-  return { handId, wroteAwardUnits: handId !== null && bombUnits.length > 0 };
+  /* Only the atomic insert's own success counts. The duplicate-recovery path
+     inside insertHandHistoryRow returns an EXISTING hand id after its RPC
+     rolled back, so the units in this call were never written - reporting true
+     there would skip the caller's fallback and lose them. */
+  return { handId, wroteAwardUnits: wroteUnitsAtomically };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -521,7 +527,7 @@ async function insertHandHistoryRow(
   row: HandHistoryRow,
   origin: 'settlement' | 'retry-queue',
   bombAwardUnits: Record<string, unknown>[] = []
-): Promise<string | null> {
+): Promise<{ id: string | null; wroteUnits: boolean }> {
   /* ONE TRANSACTION WHEN THERE IS A BREAKDOWN TO KEEP (2026-09-06).
      fn_ca_insert_hand_with_awards writes the hand row and its bomb award units
      together or writes neither. Still exactly ONE request, so the amplification
@@ -532,10 +538,13 @@ async function insertHandHistoryRow(
       p_row: row,
       p_units: bombAwardUnits,
     });
-    if (!error) return (data as string | null) ?? null;
+    if (!error) return { id: (data as string | null) ?? null, wroteUnits: true };
     if (error.code === '23505') {
+      /* An earlier attempt landed and its response was lost. Its units went in
+         with it - but THIS call's did not, because the RPC rolled back whole,
+         so wroteUnits stays false and the caller's fallback still runs. */
       const existing = await findExistingHandId(row);
-      if (existing) return existing;
+      if (existing) return { id: existing, wroteUnits: false };
     }
     if (origin === 'settlement') {
       reportError(
@@ -547,7 +556,7 @@ async function insertHandHistoryRow(
         'logHandHistory.insert_with_awards_failed'
       );
     }
-    return null;
+    return { id: null, wroteUnits: false };
   }
 
   const { data, error } = await supabase
@@ -556,13 +565,13 @@ async function insertHandHistoryRow(
     .select('id')
     .maybeSingle();
 
-  if (!error) return data?.id ?? null;
+  if (!error) return { id: data?.id ?? null, wroteUnits: false };
 
   // A duplicate means an earlier attempt landed after all (its response was
   // lost). PostgREST returns the Postgres SQLSTATE verbatim in the body.
   if (error.code === '23505') {
     const existing = await findExistingHandId(row);
-    if (existing) return existing;
+    if (existing) return { id: existing, wroteUnits: false };
   }
 
   if (origin === 'settlement') {
@@ -575,7 +584,7 @@ async function insertHandHistoryRow(
       'logHandHistory.insert_failed'
     );
   }
-  return null;
+  return { id: null, wroteUnits: false };
 }
 
 // ── Background retry queue ────────────────────────────────────────────────────
@@ -593,6 +602,17 @@ async function insertHandHistoryRow(
 
 interface QueuedHand {
   row: HandHistoryRow;
+  /**
+   * THE BREAKDOWN RIDES WITH THE ROW (2026-09-06).
+   *
+   * Without this the queue was a second way to lose exactly what the atomic
+   * insert exists to protect: a bomb hand that missed its first attempt was
+   * replayed here with no award units, written with no award units, and the
+   * settlement-side fallback that would have caught it had returned long
+   * before. The hand came back; the record of which board and which player won
+   * which share did not.
+   */
+  units: Record<string, unknown>[];
   attempts: number;
   queuedAt: number;
   bytes: number;
@@ -662,7 +682,7 @@ function estimateBytes(row: HandHistoryRow): number {
   return n;
 }
 
-function enqueueHandHistory(row: HandHistoryRow): void {
+function enqueueHandHistory(row: HandHistoryRow, units: Record<string, unknown>[] = []): void {
   if (row.hand_number < GLOBAL_HAND_NUMBER_FLOOR) {
     // Not reachable today — allocateGlobalHandNumber refuses to deal rather than
     // return a number below the floor — but a silent `return` here would be a
@@ -706,7 +726,13 @@ function enqueueHandHistory(row: HandHistoryRow): void {
     }
   }
 
-  pendingHands.push({ row: held, attempts: 0, queuedAt: Date.now(), bytes });
+  pendingHands.push({
+    row: held,
+    units: structuredClone(units),
+    attempts: 0,
+    queuedAt: Date.now(),
+    bytes,
+  });
   pendingBytes += bytes;
 }
 
@@ -761,7 +787,8 @@ export function onHandHistoryRecovered(
 async function processQueuedHand(entry: QueuedHand, summary: DrainSummary): Promise<void> {
   entry.attempts++;
   let handId = await findExistingHandId(entry.row);
-  if (!handId) handId = await insertHandHistoryRow(entry.row, 'retry-queue');
+  if (!handId)
+    handId = (await insertHandHistoryRow(entry.row, 'retry-queue', entry.units ?? [])).id;
 
   if (handId) {
     summary.written++;

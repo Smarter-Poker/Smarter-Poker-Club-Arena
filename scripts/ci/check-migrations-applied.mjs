@@ -174,6 +174,36 @@ function declaredObjects(sql) {
   };
 }
 
+/** Objects the branch DROPS.
+ *
+ * A branch that creates a table and then drops it again declares nothing, and
+ * this gate used to report both halves as missing from the live schema - which
+ * is true, and is exactly what the author intended.
+ *
+ * Found 2026-09-06. A migration scheduled two repair sweeps and a roster table
+ * to watch them; Dan ruled that no cron may monitor or repair chip drift, so a
+ * later migration in the same branch dropped all of it. Both objects genuinely
+ * ran and are genuinely gone, the live schema is correct, and the gate failed
+ * anyway - so the only ways past it were to lie in a schema-manifest fragment
+ * (which the nightly refresh would turn red within a day) or to put a
+ * BACKFILLED marker on a file that was not backfilled. A gate whose only
+ * escapes are dishonest is a gate somebody routes around.
+ *
+ * Scoped to the branch's OWN migrations: dropping something an earlier commit
+ * created is not covered here and is still checked by everything else. */
+function droppedObjects(sql) {
+  const clean = sql.replace(/--[^\n]*/g, '').replace(/'(?:[^']|'')*'/g, "''");
+  const fns = [
+    ...clean.matchAll(/drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi),
+  ].map((m) => m[1]);
+  const tables = [
+    ...clean.matchAll(
+      /drop\s+(?:materialized\s+)?(?:table|view)\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi
+    ),
+  ].map((m) => m[1]);
+  return { fns: new Set(fns), tables: new Set(tables) };
+}
+
 /** What this file already declared at the base commit, as lookup sets.
  *  null when the file is new on this branch — then everything in it is new. */
 function declaredAtBase(base, file) {
@@ -222,6 +252,17 @@ function main() {
     return;
   }
 
+  /* Everything this branch drops, across ALL its migrations, gathered before
+     the loop: the create and the drop are usually in different files, and the
+     file that creates is checked before the file that drops is even read. */
+  const branchDropped = { fns: new Set(), tables: new Set() };
+  for (const file of files) {
+    if (!existsSync(join(REPO, file))) continue;
+    const d = droppedObjects(readFileSync(join(REPO, file), 'utf8'));
+    for (const f of d.fns) branchDropped.fns.add(f);
+    for (const t of d.tables) branchDropped.tables.add(t);
+  }
+
   const problems = [];
   for (const file of files) {
     if (!existsSync(join(REPO, file))) continue;
@@ -251,10 +292,14 @@ function main() {
     const isNew = (kind, key) => !before || !before[kind].has(key);
 
     for (const fn of now.fns) {
-      if (isNew('fns', fn) && !liveFns.has(fn)) problems.push([file, 'function', fn]);
+      if (isNew('fns', fn) && !liveFns.has(fn) && !branchDropped.fns.has(fn)) {
+        problems.push([file, 'function', fn]);
+      }
     }
     for (const t of now.tables) {
-      if (isNew('tables', t) && !liveTables.has(t)) problems.push([file, 'table/view', t]);
+      if (isNew('tables', t) && !liveTables.has(t) && !branchDropped.tables.has(t)) {
+        problems.push([file, 'table/view', t]);
+      }
     }
     if (liveColumns) {
       for (const [t, c] of now.columns) {

@@ -53,6 +53,53 @@ function perfNow(): number {
     : Date.now();
 }
 
+/**
+ * Why a decision did NOT earn a V44 second look (2026-09-06).
+ *
+ * Named rather than boolean because the five gates fail for opposite causes
+ * and want opposite fixes - see ServerTableEngineTurns.secondLookPlan.
+ */
+export type SecondLookDecline =
+  | 'not_facing_bet'
+  | 'small_pot'
+  | 'action_shape'
+  | 'no_think_time'
+  | 'governor';
+
+export type SecondLookPlan =
+  | { ok: true; afterMs: number }
+  | { ok: false; reason: SecondLookDecline };
+
+/**
+ * One telemetry key per gate, fired as LITERALS.
+ *
+ * A lookup table would be tidier and would break the ledger law
+ * (HorseDataLedger.test.ts greps the source for each registered receipt's
+ * firing site). That law is right: a receipt reachable only through an
+ * indirection is a receipt nobody can find from its name, which is how a key
+ * outlives the code that fired it. So this is a switch, and every key is one
+ * grep from its gate.
+ */
+export function noteSecondLookDecline(reason: SecondLookDecline): void {
+  switch (reason) {
+    case 'not_facing_bet':
+      noteFire('v44_declined_not_facing_bet');
+      return;
+    case 'small_pot':
+      noteFire('v44_declined_small_pot');
+      return;
+    case 'action_shape':
+      noteFire('v44_declined_action_shape');
+      return;
+    case 'no_think_time':
+      noteFire('v44_declined_no_think_time');
+      return;
+    case 'governor':
+      noteFire('v44_declined_governor');
+      return;
+  }
+}
+
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /**
    * Dan 2026-08-20: a queued pre-action (auto-check / auto-fold / auto-call)
@@ -168,14 +215,34 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     bigBlind: number,
     thinkTimeMs: number,
     governorScale: number
-  ): { afterMs: number } | null {
-    if (toCall <= 0) return null;
-    if (pot < ServerTableEngineTurns.SECOND_LOOK_MIN_POT_BB * Math.max(bigBlind, 0.01)) return null;
+  ): SecondLookPlan {
+    /*
+     * ═══ A DECLINE IS AN OBSERVATION (2026-09-06) ═════════════════════════
+     *
+     * This returned a bare null, and on 2026-09-05 the daily audit reported
+     * `v44_second_look fired 0 times against 2,121,841 decides (0.000%,
+     * ledger expects >= 0.100%)`. The ledger caught the dead layer, which is
+     * what it is for - and then nobody could say WHICH of the five gates was
+     * closing, because a null carries no reason.
+     *
+     * Five gates, and they fail for opposite causes. `governor` means the box
+     * is saturated and the answer is capacity. `no_think_time` means the
+     * horses are acting too fast for a second look to fit and the answer is
+     * the tempo model. `small_pot` or `action_shape` mean the layer is simply
+     * rarer than the ledger's 0.1% expectation and the answer is the
+     * expectation. Guessing between those is how a layer stays dark for a
+     * week; the reason is one string, and it turns tomorrow's audit line into
+     * a diagnosis.
+     */
+    if (toCall <= 0) return { ok: false, reason: 'not_facing_bet' };
+    if (pot < ServerTableEngineTurns.SECOND_LOOK_MIN_POT_BB * Math.max(bigBlind, 0.01))
+      return { ok: false, reason: 'small_pot' };
     if (decision.action !== 'call' && decision.action !== 'fold' && decision.action !== 'all_in')
-      return null;
-    if (thinkTimeMs < ServerTableEngineTurns.SECOND_LOOK_MIN_THINK_MS) return null;
-    if (governorScale < 1) return null;
-    return { afterMs: Math.min(400, Math.floor(thinkTimeMs / 3)) };
+      return { ok: false, reason: 'action_shape' };
+    if (thinkTimeMs < ServerTableEngineTurns.SECOND_LOOK_MIN_THINK_MS)
+      return { ok: false, reason: 'no_think_time' };
+    if (governorScale < 1) return { ok: false, reason: 'governor' };
+    return { ok: true, afterMs: Math.min(400, Math.floor(thinkTimeMs / 3)) };
   }
 
   /**
@@ -2351,7 +2418,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       thinkTimeMs,
       equityGovernor.current()
     );
-    if (secondLook) {
+    if (!secondLook.ok) {
+      // One receipt per declined decision, naming the gate that closed. See
+      // secondLookPlan for why a bare null was not good enough.
+      noteSecondLookDecline(secondLook.reason);
+    }
+    if (secondLook.ok) {
       const deepTimer = setTimeout(() => {
         try {
           if (!handControllerRef || handControllerRef !== this.handController || !this.running)

@@ -81,33 +81,57 @@ function rowToNote(row: {
 
 export const handNotesService = {
   /**
-   * Every note the caller has, newest first. Used by the archive to show which
-   * hands are noted and to search their text without a round trip per card.
+   * The caller's notes on THESE hands, exactly.
+   *
+   * This replaced a `listMine(limit = 500)` that took the caller's newest N,
+   * which is the wrong shape for the question a surface actually asks - "does
+   * THIS hand have a note". A note older than the cap was missing from the
+   * map, so its hand read as un-noted, the Noted chip skipped it, a note
+   * search could not find words the player had written, and the editor opened
+   * blank over a note that was there. Asking by id cannot do any of that: the
+   * answer covers exactly the hands on screen, however old their notes are.
    *
    * A failure returns an EMPTY MAP, never throws: a note is an enrichment, and
    * a hand history that will not load because a note service is unwell is a
-   * worse outcome than a hand history with no notes on it.
+   * worse outcome than a hand history with no notes on it. The EDITOR does not
+   * share that tolerance - it asks again for itself, because it is the one
+   * thing here that can overwrite a row.
+   *
+   * Chunked because a URL has a length and `.in()` builds one; the archive can
+   * hold several hundred hands after enough Load More.
    */
-  async listMine(limit = 500): Promise<Map<string, HandNote>> {
+  async listFor(handIds: string[]): Promise<Map<string, HandNote>> {
+    const out = new Map<string, HandNote>();
+    const ids = [...new Set(handIds.filter(Boolean))];
+    if (ids.length === 0) return out;
+    const CHUNK = 200;
     try {
-      const { data, error } = await supabase
-        .from('ca_hand_notes')
-        .select('hand_id, note, tags, updated_at')
-        .order('updated_at', { ascending: false })
-        .limit(limit);
-      if (error) throw error;
-      const out = new Map<string, HandNote>();
-      for (const row of data ?? []) out.set(row.hand_id, rowToNote(row));
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const { data, error } = await supabase
+          .from('ca_hand_notes')
+          .select('hand_id, note, tags, updated_at')
+          .in('hand_id', ids.slice(i, i + CHUNK));
+        if (error) throw error;
+        for (const row of data ?? []) out.set(row.hand_id, rowToNote(row));
+      }
       return out;
     } catch (error) {
-      reportError(error, 'HandNotesService.listMine');
-      return new Map();
+      reportError(error, 'HandNotesService.listFor');
+      return out;
     }
   },
 
-  /** One hand's note, or null when there is none (or it could not be read). */
-  async getOne(handId: string): Promise<HandNote | null> {
-    if (!handId) return null;
+  /**
+   * One hand's note, AND whether the question was actually answered.
+   *
+   * The `ok` is not decoration. A save is an upsert, so it REPLACES whatever
+   * row is there; an editor that cannot tell "there is no note" from "I could
+   * not find out" will show an empty box over a note that exists and write
+   * over it on the next save. `ok: false` means the caller must not treat the
+   * blank as the truth.
+   */
+  async getOne(handId: string): Promise<{ ok: boolean; note: HandNote | null }> {
+    if (!handId) return { ok: false, note: null };
     try {
       const { data, error } = await supabase
         .from('ca_hand_notes')
@@ -115,10 +139,10 @@ export const handNotesService = {
         .eq('hand_id', handId)
         .maybeSingle();
       if (error) throw error;
-      return data ? rowToNote(data) : null;
+      return { ok: true, note: data ? rowToNote(data) : null };
     } catch (error) {
       reportError(error, 'HandNotesService.getOne');
-      return null;
+      return { ok: false, note: null };
     }
   },
 

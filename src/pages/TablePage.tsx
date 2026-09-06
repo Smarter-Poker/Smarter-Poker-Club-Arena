@@ -224,7 +224,36 @@ import PreActionBar from '../components/table/PreActionBar';
 // default import this line used to carry was unused. TablePage builds the
 // payload, so it needs the types.
 import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
+import { toShareVariant } from '../lib/shareHandModel';
 import TableMenu from '../components/table/TableMenu';
+
+/**
+ * The engine's verb -> the verb a share link carries. ONE TABLE, and a verb
+ * with no entry is DROPPED: this used to be a ternary chain whose final `else`
+ * was ALL_IN, so every blind, ante, straddle, returned bet and discard was
+ * shared as an all-in for the amount of the blind. Keys are the engine's own
+ * words, normalised for spacing.
+ */
+const LIVE_SHARE_VERB: Record<string, ShareableAction['action']> = {
+  fold: 'FOLD',
+  check: 'CHECK',
+  call: 'CALL',
+  bet: 'BET',
+  raise: 'RAISE',
+  all_in: 'ALL_IN',
+  allin: 'ALL_IN',
+  sb: 'SB',
+  small_blind: 'SB',
+  bb: 'BB',
+  big_blind: 'BB',
+  ante: 'ANTE',
+  bomb_ante: 'ANTE',
+  straddle: 'STRADDLE',
+  post: 'POST',
+  return: 'RETURN',
+  uncalled: 'RETURN',
+  discard: 'DISCARD',
+};
 import {
   SitOutIcon,
   RebuyIcon,
@@ -15110,28 +15139,35 @@ export default function TablePage({
             rank: c.rank,
             suit: c.suit,
           });
+          /**
+           * EVERY VERB THAT IS NOT ONE OF FIVE USED TO BE SHARED AS ALL IN.
+           *
+           * This was a ternary chain ending in `: 'ALL_IN'`, so a small blind,
+           * a big blind, an ante, a straddle, a returned uncalled bet and a
+           * pineapple discard all reached the recipient as ALL IN - carrying
+           * the blind's own amount. Share link v3 put the forced money on the
+           * wire in September and the archive's producer sent it correctly;
+           * the TABLE, which is where a player actually presses Share, was
+           * still relabelling it. One table, and a verb it cannot carry is
+           * DROPPED rather than renamed into a different action.
+           */
           const asShareAction = (a: {
             seat: number;
             action: string;
             amount?: number;
-          }): ShareableAction => {
-            const raw = (a.action || '').toLowerCase();
-            const mapped: ShareableAction['action'] =
-              raw === 'fold'
-                ? 'FOLD'
-                : raw === 'check'
-                  ? 'CHECK'
-                  : raw === 'call'
-                    ? 'CALL'
-                    : raw === 'bet'
-                      ? 'BET'
-                      : raw === 'raise'
-                        ? 'RAISE'
-                        : 'ALL_IN';
-            return { seat: a.seat, action: mapped, amount: a.amount };
+          }): ShareableAction | null => {
+            const mapped = LIVE_SHARE_VERB[(a.action || '').toLowerCase().replace(/[\s-]/g, '_')];
+            if (!mapped) return null;
+            const out: ShareableAction = { seat: a.seat, action: mapped, amount: a.amount };
+            /* An ante is dead money: in the pot, never in front of the seat. */
+            if (mapped === 'ANTE') out.dead = true;
+            return out;
           };
           const byStreet = (name: string) =>
-            handActionsRef.current.filter((a) => a.street === name).map(asShareAction);
+            handActionsRef.current
+              .filter((a) => a.street === name)
+              .map(asShareAction)
+              .filter((a): a is ShareableAction => a !== null);
 
           const winnerSeats = new Set<number>();
           const winnerRows: { seat: number; amount: number }[] = [];
@@ -15165,14 +15201,27 @@ export default function TablePage({
             .filter(Boolean) as ShareableHand['players'];
 
           if (sharePlayers.length > 0) {
-            const variant: ShareableHand['variant'] = (
-              ['NLH', 'PLO4', 'PLO5', 'PLO6'] as const
-            ).includes(st.gameType as any)
-              ? (st.gameType as ShareableHand['variant'])
-              : 'NLH';
+            /* THE TABLE KNEW FOUR OF THE SEVEN GAMES. This list was
+               ['NLH','PLO4','PLO5','PLO6'] with everything else falling to
+               NLH, so a PLO8 hand shared from the felt reached the recipient
+               as hold'em - which changes how many cards each seat holds and
+               whether the pot splits - and short deck and both pineapples went
+               the same way. `toShareVariant` is the mapping the archive has
+               always used; there is one of it now. */
+            const variant: ShareableHand['variant'] = toShareVariant(st.gameType);
             const flopActions = byStreet('flop');
             const turnActions = byStreet('turn');
             const riverActions = byStreet('river');
+            /* RUN IT TWICE: boards two and up, so a link to a hand that ran
+               three ways does not arrive showing one. Board one is the
+               ordinary board above. Read from the ref, which is current -
+               `ritResult` in this closure is whatever it was when the handler
+               was created. */
+            const runs = ritResultRef.current?.boards || [];
+            const extraBoards = runs
+              .slice(1)
+              .map((b) => (normalizeCards(b) as Card[]).map(asShareCard))
+              .filter((b) => b.length > 0);
             setSharedHandData({
               id: `${tableId || 'table'}-${st.handNumber ?? heroHandRef.current ?? 0}`,
               tableName: st.tableName || 'Club Arena',
@@ -15196,6 +15245,22 @@ export default function TablePage({
                   : undefined,
               potTotal: st.pot || 0,
               winners: winnerRows,
+              /* v4 (2026-09-05). What the LIVE snapshot knows: the hand's own
+                 number, the boards a run-it-twice hand actually ran, and
+                 whether this was a bomb pot - which posts antes and no
+                 blinds, and which a recipient's reconstruction would
+                 otherwise "correct" by inventing the blinds it cannot find.
+                 What it does not know is the rake and the jackpot drop: the
+                 engine settles those after the felt clears. Share the same
+                 hand from Previous Hand a moment later and they travel too -
+                 that producer reads the saved model. */
+              handNumber: st.handNumber ?? null,
+              extraBoards,
+              bombPot:
+                handActionsRef.current.some((a) => (a.action || '').toLowerCase() === 'ante') &&
+                !handActionsRef.current.some((a) =>
+                  ['sb', 'bb', 'small_blind', 'big_blind'].includes((a.action || '').toLowerCase())
+                ),
             } satisfies ShareableHand);
           }
         } catch (e) {

@@ -325,10 +325,17 @@ export function topUpAllowance(args: {
  * per table cannot see that — it answers the same way for the first table and
  * the fourth.
  *
- * The ceiling is three single-table shares: enough to multi-table normally,
- * short of the point where one bad session across four tables is the roll.
+ * The ceiling is FOUR single-table shares (2026-09-06; it was three). Dan's
+ * rule is four tables at once, and `MAX_TABLES_PER_HORSE` is four, but three
+ * shares made a fourth full buy-in arithmetically impossible for any horse
+ * whose per-table cap binds: the fleet logged `aggregate_exposure` for 277
+ * horse/table pairs every cycle and the sittable pool for an opening feeder
+ * was routinely the horses that were asleep. Four shares is four tables at the
+ * per-table cap and no more; the per-table cap and the stop-loss still hold on
+ * each table, so one bad session across four tables is still four shares of
+ * the roll, not the roll.
  */
-export const AGGREGATE_EXPOSURE_MULTIPLE = 3;
+export const AGGREGATE_EXPOSURE_MULTIPLE = 4;
 
 export function canOpenAnotherTable(args: {
   bankroll: number;

@@ -114,7 +114,11 @@ used_versions() {
 }
 
 taken="$(used_versions | sort -u)"
-is_taken() { printf '%s\n' "$taken" | grep -qx "$1"; }
+# A large version set can make grep exit as soon as it finds a match while
+# printf is still writing. Under pipefail that turns a real match into SIGPIPE
+# status 141, so the caller incorrectly treats a reserved version as free.
+# Feed grep through stdin redirection instead; no producer can be cut off.
+is_taken() { grep -qx "$1" <<< "$taken"; }
 
 version="$(date -u +%Y%m%d%H%M%S)"
 if is_taken "$version"; then

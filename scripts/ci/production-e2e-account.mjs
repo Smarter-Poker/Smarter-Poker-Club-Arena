@@ -161,8 +161,8 @@ export async function cleanupProductionE2EAccount({
  * to open staff-only Club Arena surfaces. The account is created immediately
  * before this call and must have no membership yet: refusing an existing row
  * keeps this helper from ever changing a real player's role or balance.
- * fn_sweep_test_account removes this zero-balance fixture with the identity at
- * the end of the post-deploy job.
+ * cleanup_reserved_certification_account removes this zero-balance fixture
+ * with the identity at the end of the post-deploy job.
  */
 export async function prepareProductionE2EStaffMembership({
   environment = process.env,

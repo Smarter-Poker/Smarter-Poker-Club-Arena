@@ -100,7 +100,13 @@ describe('closing is the tick BREAK rule, in SQL, and the database refuses a tab
 
 describe('what survives: a draining non-cluster table is not seeded', () => {
   it('surplus tables are skipped by the seeding loop', () => {
-    expect(SRC).toContain('if (surplusTableIds.has(table.id)) continue;');
+    /* 2026-09-06: the skip now NAMES itself on an opening feeder's diagnostic
+       (`withheld = 'surplus_draining'`) before continuing - the diag is opened
+       above these guards so a structurally skipped feeder is no longer silent.
+       Same predicate, same continue. */
+    expect(SRC).toMatch(
+      /if \(surplusTableIds\.has\(table\.id\)\) \{\s*if \(diag\) diag\.withheld = 'surplus_draining';\s*continue;\s*\}/
+    );
   });
 
   it('a cluster table is never surplus, whatever flag it carries', () => {

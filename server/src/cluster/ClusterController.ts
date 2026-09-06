@@ -218,7 +218,28 @@ export class ClusterController {
    * games it let rest. A rested game is the dormant one a wake is FOR, so
    * leaving it out of this map is what made the wake skip its dealer.
    */
-  private rowByGame = new Map<string, { main1_table_id: string | null; enabled: boolean }>();
+  private rowByGame = new Map<
+    string,
+    { main1_table_id: string | null; enabled: boolean; seenAtPass: number }
+  >();
+  /**
+   * Passes completed, so a row can say how long it has been since the worklist
+   * last vouched for it.
+   *
+   * THE MAP NEVER FORGOT (2026-09-06). Every pass wrote into `rowByGame` and
+   * nothing ever removed from it, so a game that leaves the worklist - deleted,
+   * or every table closed - kept its `main1_table_id` for the life of the
+   * process. `tickGame` (the wake path) reads that id and asks the fleet how
+   * many horses could sit at a table that may no longer exist. A stale answer
+   * is worse than none: it is an answer nobody can tell is stale.
+   *
+   * Pruned by AGE rather than by absence from one pass, deliberately. A game
+   * missing from a single worklist read is the transient that
+   * `rested_games` was added to survive (2026-09-05); a game missing from
+   * twenty consecutive passes - about a hundred seconds - is gone.
+   */
+  private passCount = 0;
+  private static readonly ROW_STALE_PASSES = 20;
 
   constructor(private readonly deps: ClusterControllerDeps) {}
 
@@ -375,6 +396,7 @@ export class ClusterController {
     }
     this.inTick = true;
     this.tickStartedAt = startedAt;
+    this.passCount++;
     try {
       const rpc = this.deps.rpc ?? supabase.rpc.bind(supabase);
 
@@ -433,6 +455,7 @@ export class ClusterController {
         this.rowByGame.set(row.game_id, {
           main1_table_id: row.main1_table_id,
           enabled: row.enabled,
+          seenAtPass: this.passCount,
         });
         seen.push(row);
         if (entry.error) {
@@ -472,8 +495,19 @@ export class ClusterController {
         this.rowByGame.set(row.game_id, {
           main1_table_id: row.main1_table_id,
           enabled: row.enabled,
+          seenAtPass: this.passCount,
         });
         seen.push(row);
+      }
+
+      /* A row the worklist has not vouched for in ROW_STALE_PASSES passes is
+         dropped - see the note on rowByGame. `tickGame` then answers "I have
+         no row for this game" instead of pointing the fleet at a table id that
+         may have been closed an hour ago. */
+      for (const [gameId, held] of this.rowByGame) {
+        if (this.passCount - held.seenAtPass > ClusterController.ROW_STALE_PASSES) {
+          this.rowByGame.delete(gameId);
+        }
       }
 
       summary.elapsedMs = Date.now() - startedAt;

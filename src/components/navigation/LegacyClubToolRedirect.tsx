@@ -59,7 +59,7 @@ export default function LegacyClubToolRedirect({
     // The lobby has already verified and cached these memberships. Reusing
     // that answer makes a legacy Players door immediate and avoids another
     // production round trip on the most common path.
-    const cachedTarget = resolveTargetClub(readCachedQuickLinkClubs(), readLastClubId());
+    const cachedTarget = resolveTargetClub(readCachedQuickLinkClubs(user.id), readLastClubId());
     if (cachedTarget) {
       const cachedPath =
         destination === 'invite'

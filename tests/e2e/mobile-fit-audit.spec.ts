@@ -122,31 +122,20 @@ for (const sub of CLUB_SUBROUTES) {
   ROUTES.push(`clubs/${clubId}${sub ? '/' + sub : ''}`);
 }
 
-interface Violation {
-  route: string;
-  scrollWidth: number;
-  viewport: number;
-  offenders: Array<{ sel: string; left: number; right: number; w: number }>;
-}
+const STRICT = Boolean(process.env.MOBILE_FIT_STRICT || process.env.CI);
 
-test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
-  /* Budget per route, not a flat cap. Production run 34024252195 reached all
-     81 routes but the last route was interrupted by the old 18.2-minute cap:
-     173 assertions had passed and the browser was closed while the final
-     document was settling. Navigation latency belongs to each route, so use
-     the same 16s allowance as the other production mobile audits plus three
-     minutes for authentication, redirects and final report persistence. This
-     stays below the workflow's 42-minute outer deadline while ensuring the
-     sweep reports a geometry verdict instead of a harness timeout. */
-  test.setTimeout(ROUTES.length * 16_000 + 180_000);
-  await page.setViewportSize({ width: 375, height: 812 });
-
-  const violations: Violation[] = [];
-  const skipped: string[] = [];
-  const unreachable: string[] = [];
-
+test.describe('Club Arena Mobile Fit At 375px', () => {
+  /* One test used to walk all 81 routes serially. Production run 34024252195
+     proved why that shape cannot certify anything: 173 other checks passed,
+     then this single test hit its 18.2-minute cap and discarded the completed
+     route verdicts. Independent cases retain every verdict, identify the exact
+     route that failed, and let the configured workers share the read-only scan. */
   for (const route of ROUTES) {
-    /* A route that redirects the moment it mounts (a guard bouncing you to a
+    test(`${route || 'home'} has no horizontal page overflow`, async ({ page }) => {
+      test.setTimeout(30_000);
+      await page.setViewportSize({ width: 375, height: 812 });
+
+      /* A route that redirects the moment it mounts (a guard bouncing you to a
        club, /auth, or a default tab) ABORTS the in-flight navigation, and
        page.goto rejects with net::ERR_ABORTED. That is not a layout defect
        and it is not a broken route — it is the SPA doing its job, and the
@@ -157,103 +146,101 @@ test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
        So: never let navigation failure end the sweep. Wait for whatever did
        land and measure that; only record a route as unreachable if the page
        is left with nothing to measure. */
-    try {
-      await page.goto(route === '' ? '.' : route, { waitUntil: 'domcontentloaded' });
-    } catch (err) {
-      const msg = String(err);
-      if (!msg.includes('ERR_ABORTED')) {
-        unreachable.push(`${route}: ${msg.split('\n')[0]}`);
-        continue;
-      }
-      /* Redirected. Give the replacement route the same settle below. */
-    }
-    await page.waitForTimeout(2200);
-
-    if (page.url().includes('/auth')) {
-      skipped.push(route);
-      continue;
-    }
-
-    const result = await evaluateAcrossDocumentReplacement(page, () => {
-      const vw = window.innerWidth;
-      const doc = document.documentElement;
-      const overflow = doc.scrollWidth - vw;
-
-      // Name the widest offenders: elements that extend past the right edge
-      // (or start left of the left edge) by more than 2px. Skip elements that
-      // are inside an overflow-x container that itself fits — those scroll
-      // deliberately (tables, card rails).
-      const offenders: Array<{ sel: string; left: number; right: number; w: number }> = [];
-      if (overflow > 2) {
-        const fitsInScroller = (el: Element): boolean => {
-          let p = el.parentElement;
-          while (p && p !== document.body) {
-            const s = getComputedStyle(p);
-            if (
-              (s.overflowX === 'auto' || s.overflowX === 'scroll' || s.overflowX === 'hidden') &&
-              p.getBoundingClientRect().right <= vw + 2
-            ) {
-              return true;
-            }
-            p = p.parentElement;
+      try {
+        await page.goto(route === '' ? '.' : route, { waitUntil: 'domcontentloaded' });
+      } catch (err) {
+        const msg = String(err);
+        if (!msg.includes('ERR_ABORTED')) {
+          console.log('MOBILE_FIT_AUDIT ' + JSON.stringify({ route, unreachable: msg }));
+          if (STRICT) {
+            throw new Error(`${route || 'home'} failed to load: ${msg.split('\n')[0]}`);
           }
-          return false;
-        };
-        const selectorFor = (el: Element): string => {
-          const id = (el as HTMLElement).id;
-          if (id) return `#${id}`;
-          const cls = Array.from(el.classList).slice(0, 2).join('.');
-          return `${el.tagName.toLowerCase()}${cls ? '.' + cls : ''}`;
-        };
-        const all = document.querySelectorAll('body *');
-        for (const el of all) {
-          const r = el.getBoundingClientRect();
-          if (r.width === 0) continue;
-          /* Elements ENTIRELY left of the viewport are parked drawers
+          return;
+        }
+        /* Redirected. Give the replacement route the same settle below. */
+      }
+      await page.waitForTimeout(2200);
+
+      if (page.url().includes('/auth')) {
+        console.log('MOBILE_FIT_AUDIT ' + JSON.stringify({ route, skipped: 'auth' }));
+        test.skip(true, `${route || 'home'} requires an authenticated session`);
+        return;
+      }
+
+      const result = await evaluateAcrossDocumentReplacement(page, () => {
+        const vw = window.innerWidth;
+        const doc = document.documentElement;
+        const overflow = doc.scrollWidth - vw;
+
+        // Name the widest offenders: elements that extend past the right edge
+        // (or start left of the left edge) by more than 2px. Skip elements that
+        // are inside an overflow-x container that itself fits — those scroll
+        // deliberately (tables, card rails).
+        const offenders: Array<{ sel: string; left: number; right: number; w: number }> = [];
+        if (overflow > 2) {
+          const fitsInScroller = (el: Element): boolean => {
+            let p = el.parentElement;
+            while (p && p !== document.body) {
+              const s = getComputedStyle(p);
+              if (
+                (s.overflowX === 'auto' || s.overflowX === 'scroll' || s.overflowX === 'hidden') &&
+                p.getBoundingClientRect().right <= vw + 2
+              ) {
+                return true;
+              }
+              p = p.parentElement;
+            }
+            return false;
+          };
+          const selectorFor = (el: Element): string => {
+            const id = (el as HTMLElement).id;
+            if (id) return `#${id}`;
+            const cls = Array.from(el.classList).slice(0, 2).join('.');
+            return `${el.tagName.toLowerCase()}${cls ? '.' + cls : ''}`;
+          };
+          const all = document.querySelectorAll('body *');
+          for (const el of all) {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0) continue;
+            /* Elements ENTIRELY left of the viewport are parked drawers
              (translateX(-100%) sidebars) — deliberately offscreen, and they
              cannot create rightward scroll. Only rightward escape counts. */
-          if (r.right <= 2) continue;
-          if (r.right > vw + 2 && !fitsInScroller(el)) {
-            offenders.push({
-              sel: selectorFor(el),
-              left: Math.round(r.left),
-              right: Math.round(r.right),
-              w: Math.round(r.width),
-            });
-            if (offenders.length >= 8) break;
+            if (r.right <= 2) continue;
+            if (r.right > vw + 2 && !fitsInScroller(el)) {
+              offenders.push({
+                sel: selectorFor(el),
+                left: Math.round(r.left),
+                right: Math.round(r.right),
+                w: Math.round(r.width),
+              });
+              if (offenders.length >= 8) break;
+            }
           }
         }
-      }
-      return { scrollWidth: doc.scrollWidth, vw, overflow, offenders };
-    });
-
-    if (result.overflow > 2) {
-      violations.push({
-        route,
-        scrollWidth: result.scrollWidth,
-        viewport: result.vw,
-        offenders: result.offenders,
+        return { scrollWidth: doc.scrollWidth, vw, overflow, offenders };
       });
-    }
-  }
 
-  console.log(
-    'MOBILE_FIT_AUDIT ' +
-      JSON.stringify({ violations, skipped, unreachable, routesChecked: ROUTES.length }, null, 1)
-  );
+      const violation =
+        result.overflow > 2
+          ? {
+              route,
+              scrollWidth: result.scrollWidth,
+              viewport: result.vw,
+              offenders: result.offenders,
+            }
+          : null;
 
-  if (process.env.MOBILE_FIT_STRICT || process.env.CI) {
-    expect(
-      violations,
-      `Routes with horizontal overflow at 375px:\n${violations
-        .map((v) => `  ${v.route}: ${v.scrollWidth}px wide (${v.offenders[0]?.sel ?? '?'})`)
-        .join('\n')}`
-    ).toEqual([]);
+      console.log(
+        'MOBILE_FIT_AUDIT ' + JSON.stringify({ route, violation, routesChecked: 1 }, null, 1)
+      );
 
-    /* A route that could not be loaded AT ALL was not measured, and an
-       unmeasured route passing silently is how a suite ends up asserting
-       nothing (this repo has done that twice). Report it separately from a
-       layout violation, because the fix is a different one. */
-    expect(unreachable, `Routes that failed to load:\n  ${unreachable.join('\n  ')}`).toEqual([]);
+      if (STRICT) {
+        expect(
+          violation,
+          `${route || 'home'} is ${result.scrollWidth}px wide at ${result.vw}px ` +
+            `(${result.offenders[0]?.sel ?? 'unknown offender'})`
+        ).toBeNull();
+      }
+    });
   }
 });

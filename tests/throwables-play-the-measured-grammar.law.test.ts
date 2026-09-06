@@ -1,0 +1,157 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  LAW: A RIGGED THROWABLE PLAYS THE MEASURED GRAMMAR (2026-09-06, phase 1)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan: "CURRENTLY THEY ARE JUST EMOJI'S THAT DON'T DO ANYTHING, WE NEED TO ADD
+ * IN THE FULL FRAME BY FRAME ANIMATION FOR EACH AND EVERY SINGLE ONE."
+ *
+ * Thirty-one PokerBros throws were measured at 30 fps and every one of them
+ * obeys the same grammar (plan section 1.1). This law pins the MECHANISMS that
+ * make it playable, so the next agent cannot quietly reintroduce the thing
+ * that made the old system read as stickers: a long arc, a squash, and a stain.
+ *
+ * Every pin below is either a decision Dan made on 2026-09-06 (the seven
+ * rulings in plan section 6) or a bug this pass actually found. If your change
+ * turns one red, you are re-shipping it. Per CLAUDE.md 10.6, if you replace a
+ * mechanism with a better one, MOVE THE PIN in the same commit and say so.
+ */
+import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+
+const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+const PLAYER = code(read('src/components/table/ThrowablePlayer.tsx'));
+const PLAYER_CSS = code(read('src/components/table/ThrowablePlayer.css'));
+const CONTAINER = code(read('src/components/table/ThrowAnimation.tsx'));
+const SPEC = code(read('src/throwables/spec.ts'));
+
+describe('LAW: the flight is straight, and short', () => {
+  it('translates the projectile in a LINEAR line, with no arc keyframe', () => {
+    // The reference never arcs: 20-25 px per frame in a straight line, and
+    // every millisecond it does not spend travelling it spends performing.
+    // The legacy engine had seven physics profiles (arc, lob, spiral, swoop);
+    // none of them may come back through this player.
+    expect(PLAYER_CSS).toMatch(/@keyframes thr-flight[\s\S]*?translate: var\(--thr-from-x\)/);
+    expect(PLAYER_CSS).toMatch(/animation: thr-flight [^;]*linear/);
+    expect(PLAYER_CSS, 'an arc height would mean a parabola').not.toMatch(
+      /--arc-height|arc-height/
+    );
+  });
+
+  it('reads the flight time from the SPEC, never from a physics profile', () => {
+    expect(PLAYER).toMatch(/spec\.flight\.ms/);
+    expect(PLAYER, 'the player must not carry a physics table').not.toMatch(
+      /PHYSICS|'lob'|'swoop'|'spiral'|'fastball'/
+    );
+  });
+});
+
+describe('LAW: the throw is one clock, at the speed the player chose', () => {
+  it('reads the Animation Speed ONCE per throw', () => {
+    // Read per-use, a setting changed mid-flight desynchronises a throw that
+    // is already in the air. The knockout and the legacy throwables both
+    // learned this; the memo is `useMemo(() => getAnimationSpeed(), [])`.
+    expect(PLAYER).toMatch(/const speed = useMemo\(\(\) => getAnimationSpeed\(\), \[\]\)/);
+  });
+
+  it('multiplies every phase timer by it', () => {
+    expect(PLAYER).toMatch(/setTimeout\(fn, Math\.max\(0, ms \* speed\)\)/);
+  });
+
+  it('scales every duration in the player stylesheet by the same variable', () => {
+    const decls = PLAYER_CSS.match(/animation:\s*[^;]+;/g) || [];
+    expect(decls.length).toBeGreaterThan(3);
+    for (const d of decls) {
+      if (/animation:\s*none/.test(d)) continue;
+      expect(d, `'${d.trim()}' does not scale`).toMatch(/var\(--animation-speed/);
+    }
+  });
+
+  it('hands the same speed to the sound, on the AudioContext clock', () => {
+    // Not four setTimeouts: a main thread laying out a table drifts a timer by
+    // tens of milliseconds and the priority window then eats the late arrival.
+    expect(PLAYER).toMatch(/scheduleCues\(spec\.audio, \{[\s\S]*?speed,/);
+    const SOUND = code(read('src/services/ThrowableSoundService.ts'));
+    expect(SOUND).toMatch(/src\.start\(Math\.max\(startAt, now\)\)/);
+    expect(SOUND).toMatch(/const t0 = ctx\.currentTime/);
+  });
+});
+
+describe('LAW: a throwable never moves the seat (Dan, ruling 6)', () => {
+  it('the player neither flinches a seat nor shakes a table', () => {
+    // The reference never moves the avatar; everything happens in the overlay.
+    // A throw lands while a hand is live, and the target's cards, stack and
+    // action badge must not move under it. The KNOCKOUT keeps its flinch,
+    // which is a different event: a seat really is changing.
+    expect(PLAYER, 'the throwable player must not flinch a seat').not.toMatch(
+      /seat--throw-flinch|seat--ko-flinch/
+    );
+    expect(PLAYER, 'the throwable player must not shake a table').not.toMatch(/--shake/);
+  });
+
+  it('never eats a click', () => {
+    expect(PLAYER_CSS).toMatch(/\.thr \{[^}]*pointer-events: none/);
+  });
+});
+
+describe('LAW: the payload is measured in AVATAR UNITS, on this table', () => {
+  it('measures the unit off the target seat, scoped to this table', () => {
+    // A bare document.querySelector hits the first matching seat in DOM order,
+    // which in a multi-table view is somebody else's table. ThrowAnimation and
+    // SeatKnockout both learned this the hard way.
+    expect(PLAYER).toMatch(/closest\('\.table-page'\)/);
+    expect(PLAYER).toMatch(/\[data-seat-num="\$\{seatNumber\}"\] \.seat__avatar/);
+  });
+
+  it('falls back to a sane unit rather than drawing at zero', () => {
+    expect(PLAYER).toMatch(/return 84;/);
+  });
+});
+
+describe('LAW: a paid throw is never silent and never invisible', () => {
+  it('reports a throw whose target seat cannot be resolved', () => {
+    // The item was paid for and broadcast. A render that draws nothing must
+    // say so, or the failure is invisible.
+    expect(PLAYER).toMatch(/AnimationLaw\.throw_target_unresolved/);
+  });
+
+  it('completes even when it cannot draw, so the parent never leaks it', () => {
+    expect(PLAYER).toMatch(/onCompleteRef\.current\(\)/);
+  });
+
+  it('a cue with no file falls back to the legacy recipe and is COUNTED', () => {
+    const SOUND = code(read('src/services/ThrowableSoundService.ts'));
+    expect(SOUND).toMatch(/cuePlaceholdersPlayed \+= 1/);
+    expect(SOUND).toMatch(/get placeholderCuesPlayed/);
+    expect(PLAYER).toMatch(/playPlaceholder/);
+  });
+});
+
+describe('LAW: the migration seam stays honest', () => {
+  it('routes a rigged item to the player and everything else to the legacy engine', () => {
+    // One container, two engines, for exactly as long as the rebuild takes.
+    // A table can show one of each side by side; neither may swallow the other.
+    expect(CONTAINER).toMatch(/riggedThrowable\(event\.throwable\.id\)/);
+    expect(CONTAINER).toMatch(/rigged \? \(/);
+    expect(CONTAINER).toMatch(/<ThrowablePlayer/);
+    expect(CONTAINER).toMatch(/<ThrowAnimation/);
+  });
+
+  it('the grammar bounds live in ONE place, as data', () => {
+    // So the specs test, the darkroom and this law cannot disagree about what
+    // the reference said.
+    expect(SPEC).toMatch(/export const THROWABLE_GRAMMAR/);
+    expect(SPEC).toMatch(/flightMs: \{ min: 133, max: 400 \}/);
+  });
+
+  it('the landing is defined ONCE, and it is where the player mounts the payload', () => {
+    // THE BUG THIS PINS: water_gun's rig counted its delays from
+    // "flight + the blink-pop", the player mounts at `flight.ms`, and every
+    // beat in it fired 100 ms early. One definition, used by both.
+    expect(SPEC).toMatch(/export function throwableLandingMs/);
+    expect(PLAYER).toMatch(/throwableLandingMs\(spec\)/);
+  });
+});

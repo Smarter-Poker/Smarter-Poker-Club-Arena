@@ -30,6 +30,7 @@ import { exportToCSV } from '../lib/export';
 import { masterBus } from '../core/MasterBus';
 import HandReplay from '../components/replay/HandReplay';
 import HandDetailView from '../components/handdetail/HandDetailView';
+import HandNoteEditor from '../components/handdetail/HandNoteEditor';
 import { ShareHand, type ShareableHand } from '../components/table/ShareHand';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -41,15 +42,48 @@ import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { filterHandsByStatsDrilldown, readStatsDrilldown } from '../lib/handHistoryDrilldown';
 import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
 import { gameTypeLabel, money } from '../utils/handFormat';
+import { filterBySubjects, handSearchSubject, type HandQuery } from '../lib/handSearch';
+import { handNotesService, type HandNote } from '../services/HandNotesService';
+import { toPokerStarsFile } from '../utils/pokerStarsExport';
 
-type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
+/**
+ * PHASE 5 (2026-09-06): the chips are a QUERY now, not four hard-coded
+ * branches. Won / Lost / Big Pots keep their old meaning exactly - the query
+ * they build is what `lib/handSearch` was written from - and Showdown, All In
+ * and Noted join them. Every one of them, and the search box, run the same
+ * predicate the table's Previous Hand panel runs.
+ */
+type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots' | 'showdown' | 'all-in' | 'noted';
 const PAGE_SIZE = 25;
 const FILTERS: Array<{ id: HistoryFilter; label: string }> = [
   { id: 'all', label: 'All Hands' },
   { id: 'won', label: 'Won' },
   { id: 'lost', label: 'Lost' },
   { id: 'big-pots', label: 'Big Pots' },
+  { id: 'showdown', label: 'Showdown' },
+  { id: 'all-in', label: 'All In' },
+  { id: 'noted', label: 'Noted' },
 ];
+
+/** The chip, as a query the shared predicate understands. */
+function queryForFilter(filter: HistoryFilter): HandQuery {
+  switch (filter) {
+    case 'won':
+      return { outcome: 'won' };
+    case 'lost':
+      return { outcome: 'lost' };
+    case 'big-pots':
+      return { bigPots: true };
+    case 'showdown':
+      return { showdown: true };
+    case 'all-in':
+      return { allIn: true };
+    case 'noted':
+      return { noted: true };
+    default:
+      return {};
+  }
+}
 
 function formatDate(ts: number): string {
   const date = new Date(ts);
@@ -97,6 +131,17 @@ export default function HandHistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [filter, setFilter] = useState<HistoryFilter>('all');
+  /* Phase 5: the free-text term, and the caller's own notes keyed by hand id. */
+  const [search, setSearch] = useState('');
+  /* Phase 5 promised a variant and a date range beside the free text. The
+     predicate has always understood all three; until the deep dive nothing
+     rendered a control for the last two, so two of its terms could not be
+     reached by a player at all. */
+  const [variant, setVariant] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [notes, setNotes] = useState<Map<string, HandNote>>(new Map());
+  const [notesKnown, setNotesKnown] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [replayId, setReplayId] = useState<string | null>(null);
   const [shareHand, setShareHand] = useState<ShareableHand | null>(null);
@@ -221,19 +266,136 @@ export default function HandHistoryPage() {
   const hands: HandRecord[] = useMemo(() => {
     if (!userId) return [];
     let list = filterHandsByStatsDrilldown(rows, statsDrilldown, userId);
-    if (filter === 'won')
-      list = list.filter((h) => (h.players.find((p) => p.user_id === userId)?.result ?? 0) > 0);
-    else if (filter === 'lost')
-      list = list.filter((h) => (h.players.find((p) => p.user_id === userId)?.result ?? 0) < 0);
-    else if (filter === 'big-pots')
-      list = list.filter((h) => h.replay.potTotal >= 100 * (h.replay.bigBlind || 1));
+    /* ONE predicate for the chip and the search box, over a subject built from
+       the model - so "showdown", "all in" and "won" mean here exactly what
+       they mean in the table's panel. */
+    const query: HandQuery = {
+      ...queryForFilter(filter),
+      text: search,
+      variant: variant || undefined,
+      from: from || undefined,
+      to: to || undefined,
+    };
+    list = filterBySubjects(
+      list,
+      (h) => {
+        const note = notes.get(h.id);
+        return handSearchSubject(h.replay, {
+          heroUserId: userId,
+          handNumber: h.hand_number,
+          playedAtMs: new Date(h.played_at).getTime(),
+          note: note?.note,
+          tags: note?.tags,
+        });
+      },
+      query
+    );
     if (linkedHandId) {
       const onPage = rows.find((r) => r.id === linkedHandId);
       const lead = onPage ?? linkedRow;
       if (lead && !list.some((h) => h.id === lead.id)) list = [lead, ...list];
     }
     return list.map((h) => adaptServiceHandToPanel(h, userId));
-  }, [rows, filter, statsDrilldown, userId, linkedHandId, linkedRow]);
+  }, [
+    rows,
+    filter,
+    search,
+    variant,
+    from,
+    to,
+    notes,
+    statsDrilldown,
+    userId,
+    linkedHandId,
+    linkedRow,
+  ]);
+
+  /* Only the variants the loaded hands actually contain: a menu that offers a
+     game the player has not played is a filter that can only disappoint. */
+  const variantsPresent = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const r of rows) {
+      /* The MODEL's own variant key, which is the field the predicate
+         compares - not the service row's upper-cased `game_type`, or the menu
+         could offer a value the filter cannot match. */
+      const key = r.replay.gameVariant || '';
+      if (key && !seen.has(key)) seen.set(key, gameTypeLabel(key) || key.toUpperCase());
+    }
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [rows]);
+
+  /**
+   * The caller's own notes on the hands ON SCREEN. RLS returns nobody else's,
+   * and a failure returns an empty map rather than throwing - a hand history
+   * that will not load because the notes service is unwell is the worse
+   * outcome.
+   *
+   * Asked BY ID rather than "my newest 500". The cap was the wrong shape for
+   * the question this map answers: a note older than the cap was missing, so
+   * its hand read as un-noted, the Noted chip skipped it, and a note search
+   * could not find words the player had written. Load More widens the ask.
+   */
+  const noteIdKey = rows.map((r) => r.id).join('|') + (linkedRow ? `|${linkedRow.id}` : '');
+  useEffect(() => {
+    if (!userId) return;
+    const ids = noteIdKey ? noteIdKey.split('|').filter(Boolean) : [];
+    if (ids.length === 0) return;
+    let alive = true;
+    void handNotesService.listFor(ids).then((map) => {
+      if (!alive) return;
+      setNotes(map);
+      /* The answer covered exactly these hands, so a hand missing from it has
+         no note - which the editor may rely on rather than asking again. */
+      setNotesKnown(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [userId, noteIdKey]);
+
+  /**
+   * EXPORT FOR A TRACKER. Writes the hands currently on screen in the
+   * PokerStars text format, and says how many it could not write and why -
+   * a bomb pot, a run-it-twice hand and Crazy Pineapple have no grammar in
+   * that format, and writing them anyway would put a hand the player never
+   * had into their database.
+   */
+  const exportForTracker = useCallback(() => {
+    const file = toPokerStarsFile(
+      hands.map((h) => ({
+        model: h.replay,
+        meta: {
+          handNumber: h.handNumber,
+          tableName: h.tableName ?? 'Club Arena',
+          playedAt: h.timestamp,
+          heroUserId: userId,
+          /* The TABLE's own size, read from the table row. A constant 9 wrote
+             every heads-up and three-handed hand into a tracker as full ring,
+             and those are different games in every statistic it keeps. */
+          maxSeats: h.tableMaxSeats ?? undefined,
+        },
+      }))
+    );
+    if (!file.written) {
+      toast.error('None Of These Hands Can Be Written In That Format');
+      return;
+    }
+    const blob = new Blob([file.text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `club-arena-pokerstars-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    /* Revoking synchronously cancels the download on Firefox. */
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    toast.success(
+      file.skipped.length
+        ? `Exported ${file.written} Hands. ${file.skipped.length} Could Not Be Written In That Format.`
+        : `Exported ${file.written} Hands`
+    );
+  }, [hands, userId, toast]);
 
   // Open and scroll to the linked hand once it is on screen.
   useEffect(() => {
@@ -360,6 +522,75 @@ export default function HandHistoryPage() {
         ]}
       />
 
+      <div className="hh-search">
+        <label className="hh-search__label" htmlFor="hh-search-input">
+          Find A Hand
+        </label>
+        <input
+          id="hh-search-input"
+          className="hh-search__input"
+          type="search"
+          value={search}
+          placeholder="Hand Number, Opponent, Tag Or Note"
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {variantsPresent.length > 1 && (
+          <select
+            className="hh-search__select"
+            aria-label="Game"
+            value={variant}
+            onChange={(e) => setVariant(e.target.value)}
+          >
+            <option value="">Any Game</option>
+            {variantsPresent.map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        )}
+        <input
+          className="hh-search__date"
+          type="date"
+          aria-label="From This Date"
+          value={from}
+          max={to || undefined}
+          onChange={(e) => setFrom(e.target.value)}
+        />
+        <input
+          className="hh-search__date"
+          type="date"
+          aria-label="To This Date"
+          value={to}
+          min={from || undefined}
+          onChange={(e) => setTo(e.target.value)}
+        />
+        {(search || variant || from || to || filter !== 'all') && (
+          <button
+            type="button"
+            className="hh-search__clear"
+            onClick={() => {
+              setSearch('');
+              setVariant('');
+              setFrom('');
+              setTo('');
+              setFilter('all');
+            }}
+          >
+            Clear
+          </button>
+        )}
+        <button
+          type="button"
+          className="hh-search__export"
+          onClick={exportForTracker}
+          disabled={hands.length === 0}
+          title="Export These Hands In The PokerStars Format"
+        >
+          Export For Tracker
+        </button>
+      </div>
+
       <div className="hh-filters" role="group" aria-label="Filter Loaded Hands">
         {FILTERS.map((f) => (
           <button
@@ -461,13 +692,24 @@ export default function HandHistoryPage() {
             <span className="hh-empty__suits" aria-hidden="true">
               ♠♥♦♣
             </span>
+            {/* SAY WHICH ONE NARROWED IT. A player who typed a search and is
+                told to "choose another filter" looks at the chips, which are
+                not what hid their hand. */}
             <p className="hh-empty__title">
-              {rows.length > 0 ? 'No Loaded Hands Match This Filter' : 'No Hands Recorded Yet'}
+              {rows.length === 0
+                ? 'No Hands Recorded Yet'
+                : search
+                  ? 'No Loaded Hands Match That Search'
+                  : variant || from || to
+                    ? 'No Loaded Hands Match Those Dates Or That Game'
+                    : 'No Loaded Hands Match This Filter'}
             </p>
             <p className="hh-empty__body">
-              {rows.length > 0
-                ? 'Load More Hands Or Choose Another Filter.'
-                : 'Play Some Poker And Your Hand History Will Appear Here.'}
+              {rows.length === 0
+                ? 'Play Some Poker And Your Hand History Will Appear Here.'
+                : search
+                  ? 'Load More Hands, Or Try A Different Hand Number, Opponent Or Tag.'
+                  : 'Load More Hands Or Widen The Filter.'}
             </p>
           </div>
         ) : (
@@ -534,6 +776,19 @@ export default function HandHistoryPage() {
                       currentUserId={heroId}
                       badge={variant}
                       viewerFacts={hand.heroFacts}
+                    />
+                    <HandNoteEditor
+                      handId={hand.id}
+                      note={notes.get(hand.id) ?? null}
+                      noteKnown={notesKnown}
+                      onSaved={(handId, saved) =>
+                        setNotes((prev) => {
+                          const next = new Map(prev);
+                          if (saved) next.set(handId, saved);
+                          else next.delete(handId);
+                          return next;
+                        })
+                      }
                     />
                     <div className="hand-card__actions">
                       <button

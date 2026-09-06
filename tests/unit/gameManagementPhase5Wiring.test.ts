@@ -42,6 +42,12 @@ describe('Table Management Phase 5 wiring laws', () => {
     expect(page).not.toMatch(/navigate\(`\/clubs\/\$\{[a-zA-Z]+\}\/create-table/);
   });
 
+  it('opens every header creator from ticker or message management without dropping a draft', () => {
+    expect(page).toContain("if (!(await changeSurface('games'))) return;");
+    expect(page).toContain('navigate(path);');
+    expect(page).toContain('onNavigate={(path) => void openCreationFromHeader(path)}');
+  });
+
   it('ships keyboard focus, high-contrast, reduced-motion, and target-size support', () => {
     expect(page).toContain('useFocusTrap');
     expect(page).toContain('useDialogEscape(true');

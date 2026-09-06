@@ -331,6 +331,8 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
     rake: Number(h.rake) || 0,
     bbjFee: Number(h.bbj_fee) || 0,
     tableName: h.table_name,
+    /* The table's real seat count, for the tracker export's `N-max`. */
+    tableMaxSeats: h.table_max_seats ?? null,
     bombPot: h.bomb_pot ?? null,
     /* Phase 2: the viewer's own all-in / EV facts, when the record has them. */
     heroFacts: (h.players || []).find((p) => p.user_id === heroId)?.facts,

@@ -174,6 +174,8 @@ describe('authenticated production account preflight', () => {
 
     const mobileFit = source('tests/e2e/mobile-fit-audit.spec.ts');
     expect(mobileFit).toContain('evaluateAcrossDocumentReplacement');
+    expect(mobileFit).toContain('ROUTES.length * 16_000 + 180_000');
+    expect(mobileFit).not.toContain('ROUTES.length * 12_000 + 120_000');
     const documentReplacement = source('tests/e2e/support/evaluateAcrossDocumentReplacement.ts');
     expect(documentReplacement).toContain('execution context was destroyed');
     expect(documentReplacement).toContain('attempt <= 3');

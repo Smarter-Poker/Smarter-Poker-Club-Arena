@@ -79,8 +79,19 @@ describe('the engine SENDS which board cards won', () => {
 });
 
 describe('the client RENDERS the highlight', () => {
-  it('the board is passed the winner card indices', () => {
-    expect(TABLE_PAGE).toMatch(/highlightedIndices=\{winnerInfo\.cardIndices\}/);
+  it('the board is passed the winner card indices, for THIS hand only', () => {
+    /* PIN MOVED 2026-09-06. This required the bare
+       `highlightedIndices={winnerInfo.cardIndices}`. That literal was the
+       defect: unfenced, a pot_win belonging to an earlier hand lit the live
+       board's winning five and dimmed every other face-up card - Dan's
+       2026-08-27 "cards dim like you folded, even though you are live in a
+       hand", which the SEAT dim had been fenced against and the board had not.
+       The prop is still passed and still comes from `winnerInfo.cardIndices`;
+       it is now gated on `winnerBandActive`, the single hand-number fence every
+       winner surface reads. */
+    expect(TABLE_PAGE).toMatch(
+      /highlightedIndices=\{winnerBandActive \? winnerInfo\.cardIndices : \[\]\}/
+    );
   });
 
   it('it reads the field the engine actually emits', () => {

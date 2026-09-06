@@ -1230,8 +1230,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const tournamentModalOpen =
     requestedCreate === 'event' || requestedCreate === 'spin' || requestedCreate === 'sng';
 
-  const changeSurface = async (nextSurface: ManagementSurface) => {
-    if (nextSurface === surface) return;
+  const changeSurface = async (nextSurface: ManagementSurface): Promise<boolean> => {
+    if (nextSurface === surface) return true;
     if (
       surfaceDirty &&
       !(await confirmDialog({
@@ -1239,9 +1239,19 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         variant: 'danger',
       }))
     )
-      return;
+      return false;
     setSurfaceDirty(false);
     setSurface(nextSurface);
+    return true;
+  };
+
+  const openCreationFromHeader = async (path: string) => {
+    // These controls stay visible on all three management sections. A URL
+    // change alone does not unmount Ticker or Messages, so explicitly return
+    // to the Game Board before opening its embedded creator. Reuse the same
+    // draft guard as the section tabs so this shortcut cannot discard work.
+    if (!(await changeSurface('games'))) return;
+    navigate(path);
   };
 
   const closeGame = async (game: ManagedGame) => {
@@ -1391,7 +1401,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               </>
             )}
           </div>
-          <GameCreationActions managementPath={managementPath} />
+          <GameCreationActions
+            managementPath={managementPath}
+            onNavigate={(path) => void openCreationFromHeader(path)}
+          />
         </div>
       </header>
 

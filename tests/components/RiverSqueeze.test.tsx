@@ -55,6 +55,21 @@ const squeezing = (c: HTMLElement) => c.querySelector<HTMLElement>('.card-squeez
 const riverCard = (c: HTMLElement) => c.querySelector<HTMLElement>('.community-cards__card--river');
 const turnCard = (c: HTMLElement) => c.querySelector<HTMLElement>('.community-cards__card--turn');
 
+/**
+ * Is this element hidden from a screen reader by ITSELF or by any ancestor?
+ *
+ * `aria-hidden` is inherited down the whole subtree, which is the part that is
+ * easy to forget: an element can carry a perfect `role` and `aria-label` and
+ * still be absent from the accessibility tree because something above it is
+ * hidden. Walking up is the only way to see it.
+ */
+const hiddenFromReader = (el: HTMLElement | null): boolean => {
+  for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+    if (n.getAttribute('aria-hidden') === 'true') return true;
+  }
+  return false;
+};
+
 describe('the squeeze on the board', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -246,6 +261,21 @@ describe('the squeeze on the board', () => {
     const card = riverCard(container)!;
     expect(card.dataset.rsHold).toBe('drag');
     expect(card.getAttribute('aria-label')).toBe('Squeeze To Reveal');
+    /* PHASE 7 DEEP DIVE 2026-09-06 — a control the keyboard can reach must be
+       a control the reader can hear.
+       Phase 7 put `aria-hidden="true"` on `.community-cards__container` so the
+       board was not announced twice: once as the region's sentence and again
+       card by card. But the squeeze lives ON a board card, and when it is live
+       that card IS the control - role="button", tabIndex 0, its own label.
+       aria-hidden is inherited, so hiding the container took the control out of
+       the accessibility tree while leaving it in the TAB ORDER: focus landed on
+       something that announced nothing. That is the very defect this phase was
+       written to remove, reintroduced by the fix for a different one. */
+    expect(card.getAttribute('role')).toBe('button');
+    expect(card.tabIndex).toBe(0);
+    expect(hiddenFromReader(card), 'the squeeze control is inside an aria-hidden subtree').toBe(
+      false
+    );
     act(() => {
       vi.advanceTimersByTime(p.prepareMs + 300);
     });
@@ -548,8 +578,13 @@ describe('the squeeze on the board', () => {
     act(() => {
       rerender(<CommunityCards {...props()} cards={BOARD} stage="river" />);
     });
+    /* PHASE 7 (2026-09-06): the words changed, the claim did not. This region
+       built its sentence from the RAW fields - "7 of c" is the rank letter and
+       the suit LETTER, which is what a screen reader was actually being read.
+       It speaks through `cardWords` now, so the river is "Seven Of Clubs".
+       Still asserting the river specifically, which is what spec 50 is about. */
     expect(container.querySelector('[role="region"]')!.getAttribute('aria-label')).toContain(
-      '7 of c'
+      'Seven Of Clubs'
     );
   });
 });

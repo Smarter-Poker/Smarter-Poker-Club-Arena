@@ -196,7 +196,9 @@ export class DailyMissionsPage {
       waitUntil: 'domcontentloaded',
       timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
     });
-    await expect(this.page.getByRole('heading', { name: 'Daily Missions', level: 1 })).toBeVisible({
+    await expect(
+      this.page.getByRole('heading', { name: 'Daily Challenges', level: 1 })
+    ).toBeVisible({
       timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
     });
     await expect(this.page.locator('#daily-missions')).toHaveAttribute('aria-busy', 'false', {
@@ -263,7 +265,7 @@ export class DailyMissionsPage {
     for (const tier of ['Daily', 'Weekly', 'Monthly'] as const) {
       await this.chooseTier(tier);
       const candidate = this.page
-        .getByRole('button', { name: /^Reroll .+ For 10 Diamonds$/ })
+        .getByRole('button', { name: /^Reroll 10 Diamonds For .+$/ })
         .first();
       if (await candidate.isVisible().catch(() => false)) return candidate;
     }

@@ -304,7 +304,7 @@ export function UnionWalletModal({
        reload and pass a fresh balance, and re-running this reset on that would
        wipe the success notice and the picked target the moment a send lands.
        The live figure comes from the send's own response instead. */
-     
+
     return () => {
       if (isCurrent()) ++directoryLoadVersion.current;
     };

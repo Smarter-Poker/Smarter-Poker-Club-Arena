@@ -676,3 +676,29 @@
     animation: none;
   }
 }
+
+/* ── Past a hundred rows ──────────────────────────────────────────────────────
+ *
+ * PHASE 7 (2026-09-06). "Virtualise the archive past 100 hands", implemented
+ * as `content-visibility` rather than as hand-rolled windowing, deliberately:
+ *
+ *   - these rows EXPAND. A card holding a full rundown is many times the
+ *     height of a collapsed one, and a windowing list that guesses heights on
+ *     a list whose rows change height is the version that jumps under the
+ *     player's thumb mid-scroll. That is a worse bug than the one it fixes.
+ *   - the browser already knows what is on screen. `content-visibility: auto`
+ *     lets it skip layout and paint for a card that is not, which is the
+ *     actual saving, with no scroll maths of ours to get wrong.
+ *   - `contain-intrinsic-size` is a COLLAPSED card, so the scrollbar is the
+ *     right length before anything is measured.
+ *   - where it is unsupported nothing breaks: every card simply renders, which
+ *     is exactly what happened before.
+ *
+ * Measured beside it: the model each card draws is built ONCE by the service
+ * (0.376ms per hand), not per render, so the cost past a hundred rows is the
+ * DOM and this is what addresses it.
+ */
+.hand-card--deferred {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 132px;
+}

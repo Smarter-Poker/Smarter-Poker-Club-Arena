@@ -39,6 +39,28 @@ whichever test the next agent notices first.
   point they reach a PLAYER. Every promo wallet carries a ledger
   (`fn_promo_wallet_ledger`). The union modal routes a club send by the wallet
   that is open: `union-promo-goes-to-the-promo-wallet.law.test.ts`.
+- **The rake treasury has no club route (ruled 2026-09-05, chip standard under
+  CLAUDE.md 10.9, handed back by Dan):** the union rake wallet is held IN TRUST
+  for the member clubs and leaves ONLY through the weekly union close
+  (`20260820b_rake_only_to_treasury`,
+  `20260903161443_the_weekly_union_close_pays_from_the_rake_treasury_and_only_from_it`;
+  `fn_union_move_rake_to_chips_atomic` retired). A manual rake-to-club send
+  would spend money that belongs to the clubs on a basis nobody attributed, so
+  it is not built: the union modal refuses it with a sentence and points at the
+  Union Bank (`clubSendRoute`, `union-promo-goes-to-the-promo-wallet.law.test.ts`).
+  Do not add a route.
+- **A satellite seat is ordinary money in the target's escrow (ruled
+  2026-09-05, chip standard under CLAUDE.md 10.9, handed back by Dan; Phase
+  5.3):** the seat's value moves from the satellite's own pool into the
+  target's escrow on the `tourney:<satellite>:seat:<user>:pool_transfer` leg.
+  A qualifier who unregisters is refunded it in cash like any entry; a
+  cancelled target refunds every qualifier in cash like every other entrant
+  (`20260905200041_a_cancelled_target_refunds_the_satellite_seat_it_holds`);
+  a winner who already holds the target seat, bought with their own chips or
+  won in a different satellite, is paid the seat's value in cash
+  (`20260905195011_a_cash_entrant_who_wins_a_seat_is_paid_the_seat_in_cash`).
+  There is no ticket and no separate ticket liability: the escrow already
+  holds it.
 - **Hamburger menu artwork (resolved 2026-09-01, PR #2432):** the hamburger
   STAYS on every drawer trigger. "Em bars" in Dan's 2026-08-20 instruction
   means EM DASHES (U+2014) in player-facing copy — a punctuation rule, not an

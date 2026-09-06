@@ -1066,13 +1066,13 @@ class TournamentService {
     // the entry FEE to the rake_records fee ledger (what the finalize
     // settlement actually credits to the club/union), and bumps
     // current_players + prize_pool.
-    const { data: rpcResult, error: rpcError } = await retryAsync(
-      () => supabase.rpc('fn_register_for_tournament', { p_tournament_id: tournamentId }),
-      3
-    );
-    if (rpcError) {
-      throw new Error(`Tournament registration failed: ${rpcError.message}`);
-    }
+    /* Registration debits a wallet and creates a seat. It is not safe to
+       replay without an idempotency key, so make one mutation attempt. If the
+       response is lost after commit, reconcile by reading the authoritative
+       registration row instead of charging again. */
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('fn_register_for_tournament', {
+      p_tournament_id: tournamentId,
+    });
     const res = rpcResult as {
       ok: boolean;
       reason?: string;
@@ -1080,7 +1080,26 @@ class TournamentService {
       cost?: number;
       mystery_bounty?: number | null;
     } | null;
-    if (!res?.ok || !res.registration_id) {
+    let registrationId = res?.registration_id;
+    if (rpcError) {
+      const { data: reconciled, error: reconcileError } = await supabase
+        .from('tournament_players')
+        .select('id')
+        .eq('tournament_id', tournamentId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (reconcileError || !reconciled?.id) {
+        reportError(rpcError, 'TournamentService.registration_result_unconfirmed', {
+          tournamentId,
+          userId,
+          reconcileError: reconcileError?.message,
+        });
+        throw new Error(
+          'Could Not Confirm Tournament Registration. Please Refresh Before Trying Again.'
+        );
+      }
+      registrationId = String(reconciled.id);
+    } else if (!res?.ok || !registrationId) {
       throw new Error(registerReasonText(res?.reason));
     }
 
@@ -1090,7 +1109,7 @@ class TournamentService {
       .select(
         'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
       )
-      .eq('id', res.registration_id)
+      .eq('id', registrationId)
       .maybeSingle();
     if (error || !data) {
       reportError(error, 'TournamentService.Could_not_refetch_registered_player');

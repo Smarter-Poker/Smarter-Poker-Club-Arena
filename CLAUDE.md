@@ -244,13 +244,30 @@ cannot change protection rules. The script says which of the two is missing.
 
 ### 1.2.5 HOW A PUSH LANDS NOW (changed 2026-08-21)
 
-The command is unchanged:
+**READ 1.1 FIRST - IT IS THE ROUTE, AND THIS SECTION IS THE SCRIPT'S HISTORY.**
+Clarified 2026-09-06, because the two read as competing instructions and an
+agent has to pick one:
+
+- **1.1 step 2 is what you do**: work on a branch in your own worktree and
+  `git push origin HEAD:refs/heads/<branch>`. `agent-open-pr.yml` opens the
+  pull request, autopilot merges it. That is the whole job.
+- **This section is about landing on `main` directly**, which the ruleset no
+  longer permits from any client.
+
+The command:
 
     bash scripts/git-safe-push.sh "feat(ca): what changed"
 
-What it does underneath is not. main is protected by a ruleset now, so the
-script pushes a branch, opens a pull request, waits for the required checks and
-merges it. You do not open the PR yourself and you do not push to main directly.
+What it does depends on where you are, and this used to be written as if it had
+one behaviour. On a FEATURE BRANCH it simply pushes, hook included - identical
+to 1.1 step 2, and it does NOT open a pull request. Only when you are on `main`
+does it route through `scripts/ci/pr-push.mjs`, which opens the pull request and
+waits, because main is protected by a ruleset and a direct push is refused.
+
+It does not use `gh` for any of that, and it must not: **`gh` is not installed
+on this Mac** (11.0 has said so correctly all along, while AGENT-PLAYBOOK.md
+claimed the opposite until 2026-09-06). It reads `GITHUB_TOKEN` from
+`~/Documents/club-arena/.env` and talks to the REST API directly.
 
 VERIFIED AGAINST THE LIVE API 2026-08-28, because two other places in this repo
 say the opposite and they are the stale ones. Ruleset `main protection`
@@ -880,6 +897,67 @@ why something is BLOCKED is fine. Sitting in a loop is not.
 any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
 you care about only in a worktree: commit and push it, or it will eventually
 be pruned (pushed branches lose nothing — the commits live on origin).
+
+---
+
+## 10.82 MERGED IS NOT LANDED, AND A SECOND PUSH CAN VANISH (2026-09-06, BINDING)
+
+**`agent-autopilot.yml` squash-merges the moment the required checks pass.** On
+an asset-only or docs change that can be under two minutes. Push again after
+that and the branch moves, the pull request stays merged, `git push` exits 0,
+and your commits reach nobody.
+
+World Hub #1387 shipped **1 of its 3 commits** this way. The push said success.
+The PR said merged. The branch on GitHub genuinely held all three. A CI fix for
+a gate that had been red on `main` for two days, and the deletion of a component
+that fabricated player data, were simply not there - found hours later, by
+accident, while looking at something else.
+
+### The rules
+
+1. **A follow-up commit needs a NEW BRANCH off current `main`.** Not a second
+   push to the branch you already opened a pull request from.
+   `scripts/guard-merged-branch.sh` refuses that push from `.husky/pre-push` and
+   prints the recovery. It fails OPEN on a missing token, no network, or any
+   answer it cannot read, so it can never block you because GitHub is unwell.
+   Override, when you truly mean to move a merged branch:
+   `AGENT_MERGED_BRANCH_OK=1 git push ...`
+
+2. **Verify the FILES, never the tick.** `git fetch origin main` then
+   `git cat-file -e origin/main:<path>`. This is section 1.4's rule - only
+   production serving the sha counts as deployed - applied to merges, and for
+   the same reason: every intermediate signal can be true while the outcome is
+   false.
+
+3. **This gets worse as CI gets faster.** #3187 took the critical path from
+   ~6.8 to ~4 minutes. Every minute cut off CI widens the window in which an
+   agent is racing its own merge.
+
+---
+
+## 10.83 A CHECK THAT NOBODY CAN SEE IS NOT A CHECK (2026-09-06, BINDING)
+
+`Global Footer E2E` failed on **every** run on the World Hub's `main` from
+2026-09-04 and was found two days later by accident. It is not in the ruleset,
+so a red run blocked no merge, opened no issue, and coloured nothing anyone
+reads. Twenty-odd merges landed on top of it.
+
+None of its three failures was in the footer. Every footer assertion passed.
+They were marketplace tests that `npm run build` runs first: a retired Daily
+Pass still pinned, an `annual` -> `yearly` rename applied to the code and not
+its test, and two em dashes. **All three were correct changes that left one half
+behind** - the ordinary way a repo goes red, and exactly why somebody has to be
+told.
+
+`scripts/ci/check-main-is-green.mjs` (World Hub, in `publish-watchdog.yml`) now
+raises one issue for any workflow red on `main` past a threshold **with no open
+issue naming it**. It reports a workflow as `loud` when something already tracks
+it, so a watchdog raising its own alarm is not mistaken for a defect - the first
+run flagged `Publish Watchdog` doing precisely that, which would have taught
+everyone to ignore the detector inside a week.
+
+**If you add a workflow, either put it in the ruleset or accept that only this
+detector will ever tell you it broke.**
 
 ---
 

@@ -537,7 +537,7 @@ test.describe('production Daily Missions certification', () => {
           .toEqual({ event_key: eventKey, amounts, magnitudes, threshold_values: thresholdValues });
       });
 
-      await test.step('reroll confirmation charges ten diamonds exactly once', async () => {
+      await test.step('reroll confirmation charges one Diamond exactly once', async () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
         const reroll = await missions.firstRerollButton();
         await missions.placeControlInSafeViewport(reroll);
@@ -560,7 +560,7 @@ test.describe('production Daily Missions certification', () => {
         ).toMatchObject({
           success: true,
           alreadyRerolled: false,
-          diamondsSpent: 10,
+          diamondsSpent: 1,
         });
         const requestBody = response.request().postDataJSON() as {
           p_user_id: string;
@@ -571,12 +571,12 @@ test.describe('production Daily Missions certification', () => {
         };
         expect(requestBody.p_request_id).toMatch(/^[0-9a-f-]{36}$/i);
         expect(receipt.requestId).toBe(requestBody.p_request_id);
-        expect(receipt.diamondBalance).toBe(balanceBefore - 10);
+        expect(receipt.diamondBalance).toBe(balanceBefore - 1);
         await expect
           .poll(() => diamondBalance(environment, account!.id), {
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
           })
-          .toBe(balanceBefore - 10);
+          .toBe(balanceBefore - 1);
         await expect(confirmation).toHaveCount(0, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
 
         const { data: replay, error: replayError } = await account!.client.rpc(
@@ -590,7 +590,7 @@ test.describe('production Daily Missions certification', () => {
           requestId: requestBody.p_request_id,
           diamondsSpent: 0,
         });
-        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 10);
+        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 1);
 
         const receipts = await serviceRows<{ amount: number; reference_id: string }>(
           environment,
@@ -602,7 +602,7 @@ test.describe('production Daily Missions certification', () => {
           (row) => row.reference_id === `challenge_reroll:${requestBody.p_request_id}`
         );
         expect(rerolls).toHaveLength(1);
-        expect(Number(rerolls[0].amount)).toBe(-10);
+        expect(Number(rerolls[0].amount)).toBe(-1);
         const replayReceipts = await serviceRows<{ request_id: string }>(
           environment,
           'daily_challenge_reroll_receipts',
@@ -628,7 +628,7 @@ test.describe('production Daily Missions certification', () => {
           p_user_id: account!.id,
           p_challenge_row_id: row.id,
           p_expected_challenge_id: row.challenge_id,
-          p_cost: 10,
+          p_cost: 1,
           p_request_id: randomUUID(),
         }));
         const results = await Promise.all(
@@ -640,14 +640,14 @@ test.describe('production Daily Missions certification', () => {
             success: true,
             alreadyRerolled: false,
             requestId: requests[index].p_request_id,
-            diamondsSpent: 10,
+            diamondsSpent: 1,
           });
         }
         const replacementIds = results.map(
           (result) => (result.data as JsonObject).challengeId as string
         );
         expect(new Set(replacementIds).size).toBe(2);
-        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 20);
+        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 2);
         await page.reload({ waitUntil: 'domcontentloaded' });
         await expect(page.getByText('Live Now')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,

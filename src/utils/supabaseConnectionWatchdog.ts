@@ -74,9 +74,7 @@ class SupabaseConnectionWatchdog {
     this.started = false;
   }
 
-  /**
-   * Check Supabase connectivity by making a lightweight REST ping.
-   */
+  /** Check Supabase connectivity through GoTrue's successful health route. */
   private async checkHealth(): Promise<void> {
     if (!navigator.onLine) {
       this.markFailure();
@@ -89,8 +87,8 @@ class SupabaseConnectionWatchdog {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), PING_TIMEOUT);
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/`, {
-        method: 'HEAD',
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/health`, {
+        method: 'GET',
         headers: {
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
         },
@@ -98,31 +96,15 @@ class SupabaseConnectionWatchdog {
       });
       clearTimeout(timeout);
 
-      /* ANY HTTP response proves the network path and the service are alive,
-         which is the only thing this watchdog measures. It is a CONNECTIVITY
-         check, not an authorization one.
-
-         This used to accept 200 and 404 only. `HEAD /rest/v1/` answers 401 to
-         every caller — verified against production 2026-08-20 with the legacy
-         anon JWT, with the sb_publishable_ key, and with an Authorization
-         header alongside either. PostgREST's root simply does not authorize.
-
-         So the check could never pass, on any deploy, ever. Five failures at
-         5s/10s/20s put every client into markDisconnected() within ~45s of
-         load: WS_DISCONNECTED on the master bus, the "realtime down" chip lit
-         on the multi-table page, ConnectionIndicator showing "Reconnecting…"
-         — all on a perfectly healthy connection. And because markConnected()
-         was unreachable, the realtime re-subscribe and the offline-queue
-         replay it guards never ran, so a REAL drop could not recover through
-         the component built to recover from it.
-
-         5xx is the one class of status that means the service itself is
-         failing; everything below it means the server answered us. */
-      if (response.status >= 500) {
+      // GoTrue's authenticated health route returns a quiet 2xx response. The
+      // former bare PostgREST-root probe returned 401 by design, which made
+      // every healthy page emit a failed-resource console error after eight
+      // seconds and falsely failed production certification.
+      if (response.ok) {
+        this.markConnected();
+      } else {
         this.markFailure();
         this.scheduleRetry();
-      } else {
-        this.markConnected();
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {

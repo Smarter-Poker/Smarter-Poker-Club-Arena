@@ -9,6 +9,12 @@ const original = read(
 const recertified = read(
   'supabase/migrations/20260906113000_phase_2_published_contracts_recertified.sql'
 );
+const satelliteRecertified = read(
+  'supabase/migrations/20260906123632_table_management_readiness_recognizes_every_satellite_guaran.sql'
+);
+const completeContracts = read(
+  'supabase/migrations/20260906124733_published_tournament_contracts_include_every_creator_promise.sql'
+);
 const service = read('src/services/GameManagementService.ts');
 const managementPage = read('src/pages/GameManagementPage.tsx');
 
@@ -19,6 +25,10 @@ describe('Table Management Phase 2 remains a published promise', () => {
     expect(recertified).toContain('DROP CONSTRAINT %I');
     expect(recertified).toContain('idx_managed_game_contract_versions_hash');
     expect(original).toContain('v_last_hash IS NOT DISTINCT FROM v_hash');
+    expect(satelliteRecertified).toContain('pg_advisory_xact_lock');
+    expect(satelliteRecertified).not.toContain(
+      'ON CONFLICT ON CONSTRAINT managed_game_contract_version_game_kind_game_id_contract_ha_key'
+    );
   });
 
   it('enforces append-only history against updates and deletes, including privileged writes', () => {
@@ -26,6 +36,26 @@ describe('Table Management Phase 2 remains a published promise', () => {
     expect(recertified).toContain('BEFORE UPDATE OR DELETE');
     expect(recertified).toContain('Published game contract versions are immutable');
     expect(recertified).toContain('Published game contract versions cannot be deleted');
+  });
+
+  it('versions every creator-controlled tournament promise and corrects existing ledgers', () => {
+    for (const field of [
+      'description',
+      'payout_percent',
+      'free_buy',
+      'addon_from_start',
+      'satellite_target',
+      'mystery_bounty_profile',
+      'mystery_bounty_activation',
+      'mystery_bounty_activation_value',
+      'mystery_bounty_pool_percent',
+      'mystery_bounty_regular_pool_percent',
+      'mystery_bounty_top_percent',
+    ]) {
+      expect(completeContracts).toContain(`'${field}', p_row -> '${field}'`);
+    }
+    expect(completeContracts).toContain("'contract_schema_recertification'");
+    expect(completeContracts).toContain('l.contract_hash IS DISTINCT FROM');
   });
 
   it('evaluates the exact contract row that is transitioning into play', () => {
@@ -54,6 +84,36 @@ describe('Table Management Phase 2 remains a published promise', () => {
     expect(recertified).toContain('v_effective_guarantee := greatest');
   });
 
+  it('recognizes every satellite shape used by the overlay writer', () => {
+    expect(satelliteRecertified).toContain("v_variant = 'satellite'");
+    expect(satelliteRecertified).toContain("v_tournament_type = 'SATELLITE'");
+    expect(satelliteRecertified).toContain('OR v_target IS NOT NULL');
+    expect(satelliteRecertified).toContain(
+      'COALESCE(t.satellite_target_id, t.satellite_target) IS NOT NULL'
+    );
+    expect(satelliteRecertified).toContain('NOT v_is_satellite');
+  });
+
+  it('rechecks publication when a satellite promise or funding scope changes', () => {
+    const trigger = satelliteRecertified.slice(
+      satelliteRecertified.indexOf('CREATE TRIGGER trg_tournaments_publish_readiness'),
+      satelliteRecertified.indexOf('REVOKE ALL ON FUNCTION')
+    );
+    for (const field of [
+      'guaranteed_prize',
+      'club_id',
+      'union_id',
+      'is_private',
+      'variant',
+      'tournament_type',
+      'satellite_target_id',
+      'satellite_target',
+      'satellite_seats',
+    ]) {
+      expect(trigger).toContain(field);
+    }
+  });
+
   it('uses the same union-versus-club funding decision as the overlay writer', () => {
     expect(recertified).toContain('v_union := CASE WHEN v_private THEN NULL ELSE v_row_union END;');
     expect(recertified).toContain("v_bank_type := 'union'");
@@ -66,6 +126,8 @@ describe('Table Management Phase 2 remains a published promise', () => {
     expect(service).toContain('effectiveGuarantee: numberValue(raw?.effective_guarantee)');
     expect(managementPage).toContain('Effective Guarantee');
     expect(managementPage).toContain('Satellite Seat Value');
+    expect(managementPage).toContain('effectiveGuarantee.toLocaleString()');
+    expect(managementPage).toContain('satelliteSeatGuarantee.toLocaleString()');
   });
 
   it('keeps every new definer helper private and asserts the installed shape', () => {

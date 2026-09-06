@@ -339,6 +339,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     this.postHandTasksPromise = assignedByBody
       ? Promise.all([assignedByBody, guarded]).then(() => undefined)
       : guarded;
+    this.trackSettlementInFlight(this.postHandTasksPromise);
     return wholeSettlement;
   }
 
@@ -1048,6 +1049,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     this.postHandTasksPromise = priorBarrier
       ? Promise.all([priorBarrier, postTasks]).then(() => undefined)
       : postTasks;
+    this.trackSettlementInFlight(this.postHandTasksPromise);
     this.currentHandWinnerIds = [];
 
     // Rabbit Hunt: Broadcast captured remaining deck ONLY when the hand
@@ -1450,10 +1452,32 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           })),
           winners: snap.winners,
           showdownResults: snap.showdownResults,
+          pots: snap.pots,
+          perPotAwards: snap.perPotAwards,
         });
+
+        /* THE BOMB BREAKDOWN TRAVELS WITH THE HAND (2026-09-06).
+           These used to be written after the hand row, unawaited, so the
+           breakdown could be the half that did not land - 3 of 125 bomb pots
+           in one measured hour had no award units at all. Handed to
+           logHandHistory they commit in the same transaction as the row they
+           describe, through fn_ca_insert_hand_with_awards, in the same single
+           request the hot path always cost. */
+        const bombAwardUnits =
+          snap.bombPot && snap.perPotAwards.length > 0
+            ? snap.perPotAwards.map((a) => ({
+                pot_index: a.potIndex,
+                board: a.board ?? 1,
+                side: a.low ? 'low' : 'high',
+                user_id: a.userId,
+                amount: a.amount,
+                hand_name: a.hand?.name ?? null,
+              }))
+            : undefined;
 
         const result = await logHandHistory({
           tableId: this.tableId,
+          bombAwardUnits,
           nitGame: this.tableInfo.nit_game === true,
           // THE FLOOR TRAVELS WITH THE HAND (2026-09-06). A horse at a
           // floored table is REQUIRED to play above it (10.5, vpipFloorMul),
@@ -1646,9 +1670,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               'ServerTableEngine.bomb_award_ledger_write_failed'
             );
           };
-          void writeAwardUnits().catch((err: unknown) =>
-            reportError(err, 'ServerTableEngine.bomb_award_ledger_write_threw')
-          );
+          /* LAST RESORT ONLY (2026-09-06). The units are now written inside
+             the hand's own transaction above, so by the time we get here they
+             already exist and this upsert conflicts and does nothing. It is
+             kept for exactly one case: a hand row that reached the database
+             through the background retry queue, which replays a stored row and
+             has no units to carry. Anything it actually writes is therefore a
+             signal that the atomic path did not run - not routine traffic. */
+          if (!result.wroteAwardUnits) {
+            void writeAwardUnits().catch((err: unknown) =>
+              reportError(err, 'ServerTableEngine.bomb_award_ledger_write_threw')
+            );
+          }
         }
 
         // ── Dan 2026-08-15 (item 3): tell the clients the hand's row id ──

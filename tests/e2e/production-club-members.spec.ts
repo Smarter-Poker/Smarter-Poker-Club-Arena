@@ -421,11 +421,9 @@ test.describe('Production Shark Club Players', () => {
       )
       .toBe(true);
 
-    // These are the four product modes promised by PlayerStatisticsPage:
-    // rolling 1/7/30-day windows plus an explicit custom span. The old canary
-    // waited for "Overall" and "7 Days", neither of which exists on this
-    // club-scoped page, and consumed the full test timeout after the page had
-    // loaded successfully. Exercise every real control instead.
+    // Player Statistics owns a calendar-oriented range selector. Keep this
+    // production contract aligned with the controls the page actually ships,
+    // rather than the older Member Management range labels.
     for (const range of ['Day', 'Week', 'Month', 'Custom']) {
       const control = page.getByRole('button', { name: range, exact: true });
       await control.click();

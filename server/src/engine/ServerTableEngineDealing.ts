@@ -138,7 +138,37 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               this.markProgress();
             }
           }
-          if (!settled) {
+          /* THREE WAYS OUT OF THAT LOOP, AND ONLY ONE OF THEM IS AN INCIDENT.
+             Until 2026-09-06 this branch treated all of them as the same
+             thing and said so in a critical financial alert: "settlement
+             for hand #N exceeded 300s; dealing resumed while it ran".
+
+             Every one of the fifteen alerts on the board said that, and
+             every one of them carried waitedMs: 30000. THIRTY SECONDS, in
+             a message claiming three hundred, on a loop whose own
+             condition (waited < maxWaitMs) was still true - so the loop
+             had not timed out at all. It exited on the OTHER condition,
+             `this.running`, which goes false when the engine is stopping.
+
+             They were shutdowns. Three of them (2026-09-05 16:07, 17:50,
+             2026-09-06 04:10), five tables each, every table in one
+             second - a single SIGTERM fanned out five ways, filed as five
+             independent money-integrity incidents. Nothing had exceeded
+             anything and dealing had not resumed, because the process was
+             on its way down. A guard that cries about the wrong thing gets
+             ignored, and this one was drowning the real ones. */
+          if (!settled && !this.running) {
+            /* The engine is stopping with this hand's settlement still in
+               flight. That is NOT this loop's problem to report - it is the
+               drain's problem to WAIT for, and GameServer.drainHands() now
+               refuses to call this table parked until the promise settles
+               (hasSettlementInFlight). Say it once, at info, so the shutdown
+               is legible in the log, and let the drain do its job. */
+            console.log(
+              `[ServerTableEngine ${this.tableId}] stopping with hand #${this.handCount} ` +
+                `settlement in flight after ${waited / 1000}s - the drain owns it from here`
+            );
+          } else if (!settled) {
             reportError(
               new Error(
                 `postHandTasks still running after ${maxWaitMs / 1000}s - dealing resumes; ` +
@@ -149,12 +179,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             void raiseFinancialAlert(
               'critical',
               'ServerTableEngine.settlement_barrier_abandoned',
-              `Table ${this.tableId}: settlement for hand #${this.handCount} exceeded ${maxWaitMs / 1000}s; dealing resumed while it ran`,
-              { tableId: this.tableId, handNumber: this.handCount, waitedMs: waited }
+              `Table ${this.tableId}: settlement for hand #${this.handCount} ran ${waited / 1000}s ` +
+                `(cap ${maxWaitMs / 1000}s); dealing resumed while it ran`,
+              {
+                tableId: this.tableId,
+                handNumber: this.handCount,
+                waitedMs: waited,
+                capMs: maxWaitMs,
+                reason: 'barrier_timeout',
+              }
             );
             this.markProgress();
           }
           if (this.postHandTasksPromise === pending) this.postHandTasksPromise = null;
+          if (this.postHandTasksPromise === null) this.trackSettlementInFlight(null);
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -2383,6 +2421,33 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
     );
     const tbExtras = await this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id));
+    /**
+     * THE ENGINE MAY HAVE BEEN TORN DOWN DURING THAT AWAIT (2026-09-06).
+     *
+     * That RPC is the one await between `new HandController(...)` above and
+     * `this.handController!.onEvent(...)` below, and both `stop()` and
+     * `killForRestart()` set `this.handController = null` - a table that broke
+     * or closed under the cluster controller, an engine superseded by its
+     * replacement, the :55 cut-over. The `!` then dereferenced null:
+     *
+     *     TypeError: Cannot read properties of null (reading 'onEvent')
+     *       at ServerTableEngineDealing.js:2363  (dealHand)
+     *
+     * four times in three hours on 2026-09-06, every one a table the cluster
+     * controller had just broken. Nothing was dealt (start() is inside the
+     * promise, after the listener), so the only harm was a stack trace with a
+     * misleading name and one wasted attempt on the dealing loop's retry
+     * ladder - but a hand that was torn down is not a hand to deal, and a
+     * stopped engine must not go on to arm timers and write a snapshot for a
+     * controller its successor owns. Leave quietly; the loop sees `running`.
+     */
+    if (!this.handController || !this.running) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] hand ${handNumber} not dealt - the engine was ` +
+          `stopped while the time banks were being read`
+      );
+      return;
+    }
     for (const p of hcPlayers) {
       this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
       // Only initialize time bank if player is NEW (don't reset existing pool per session)

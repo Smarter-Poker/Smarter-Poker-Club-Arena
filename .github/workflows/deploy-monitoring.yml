@@ -1,0 +1,214 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  A MONITORING CHANGE DEPLOYS ITSELF
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Realtime Connections Programme, phase 7 - guardrails.
+#
+# Phase 1 found, and phase 7 fixed, alert rules on engine-01 that were not the
+# alert rules in this repo IN BOTH DIRECTIONS - 15 declared here and never
+# loaded, 8 running that this repo had never seen. The root cause was
+# mechanical (three file lists that had to agree and nothing checked them), and
+# `deploy.sh` fixes that half.
+#
+# THIS FILE FIXES THE OTHER HALF: nobody had to remember. `deploy.sh` existed
+# the whole time and was documented as "run as root on the box", so the repo's
+# rules reached production exactly as often as a person thought to go and run
+# it - which, measured over the drift, was never. A deploy step that depends on
+# somebody remembering is the same class of thing as a rule nobody loaded.
+#
+# So: any merge to `main` that touches `infra/monitoring/**` deploys it, and
+# then ASKS PROMETHEUS whether it worked rather than assuming. If the box ends
+# up running something other than what this repo declares, the job goes red and
+# says which alerts differ.
+#
+# The manual path still exists for a box that has fallen over - run it with
+# workflow_dispatch, or `bash infra/monitoring/deploy.sh` as root on the host.
+name: Deploy Monitoring (on infra/monitoring changes)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/monitoring/**'
+      - '.github/workflows/deploy-monitoring.yml'
+  workflow_dispatch:
+
+# One at a time. Two deploys racing would leave the symlinks half-swapped.
+concurrency:
+  group: deploy-monitoring
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_USER: root
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Same key handling as auto-deploy-hetzner.yml, for the same reasons -
+      # both secret names are accepted because the two repos disagreed on it,
+      # and the host key is PINNED rather than scanned: ssh-keyscan opens five
+      # parallel probes, four of which disconnect pre-auth, and fail2ban counts
+      # those as four failures and bans the runner for 24 hours.
+      - name: Setup SSH key
+        env:
+          SSH_KEY_CANONICAL: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          SSH_KEY_LEGACY: ${{ secrets.HETZNER_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          if [ -n "$SSH_KEY_CANONICAL" ]; then
+            printf '%s\n' "$SSH_KEY_CANONICAL" > ~/.ssh/id_deploy
+          elif [ -n "$SSH_KEY_LEGACY" ]; then
+            echo "::warning::Falling back to HETZNER_SSH_KEY."
+            printf '%s\n' "$SSH_KEY_LEGACY" > ~/.ssh/id_deploy
+          else
+            echo "::error::Neither HETZNER_SSH_PRIVATE_KEY nor HETZNER_SSH_KEY is set."
+            exit 1
+          fi
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null \
+            || { echo "::error::The Hetzner deploy key is not a valid private key."; exit 1; }
+          echo "${{ secrets.HETZNER_HOST_KEY }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          test -s ~/.ssh/known_hosts \
+            || { echo "::error::HETZNER_HOST_KEY is empty or unset - every ssh below would fail."; exit 1; }
+          printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
+            "$SSH_USER" "$HETZNER_HOST" > ~/hssh
+          chmod +x ~/hssh
+          # PLAIN `ssh root@host` MUST USE THE SAME KEY (2026-09-06).
+          # check-alert-rules-match.mjs execs `ssh $ENGINE_MONITORING_SSH`
+          # with no -i, so on the first run of this workflow the verify step
+          # died with "Permission denied (publickey)" - exit 2, red for the
+          # wrong reason, with the Deploy step above it green having
+          # deployed nothing. The host entry makes the bare form work.
+          {
+            echo "Host $HETZNER_HOST"
+            echo "  User $SSH_USER"
+            echo "  IdentityFile ~/.ssh/id_deploy"
+            echo "  IdentitiesOnly yes"
+            echo "  BatchMode yes"
+            echo "  ConnectTimeout 20"
+          } >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      # WHAT IS RUNNING BEFORE WE TOUCH IT. If the box is running rules this
+      # repo has never seen, deploying would DELETE them - deploy.sh symlinks
+      # this repo over the live files. That is how the 2026-09-04 cron and
+      # postgres rules were nearly lost, and it is the one failure mode this
+      # job must never cause.
+      - name: Refuse to delete rules this repo has never seen
+        run: |
+          set -euo pipefail
+          ~/hssh "curl -sf --max-time 20 http://localhost:9090/api/v1/rules" > /tmp/before.json \
+            || { echo "::error::Could not read the running rules. Not deploying blind."; exit 1; }
+          node - <<'EOF'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const MON = 'infra/monitoring';
+          const prom = fs.readFileSync(path.join(MON, 'prometheus.yml'), 'utf8');
+          const block = (prom.split(/^rule_files:/m)[1] ?? '').split(/\n(?=[a-z_]+:)/)[0];
+          const files = [...block.matchAll(/^\s+-\s+(\S+\.yml)\s*$/gm)].map((m) => m[1].split('/').pop());
+          const declared = new Set();
+          for (const f of files) {
+            const p = path.join(MON, f);
+            if (!fs.existsSync(p)) continue;
+            const txt = fs.readFileSync(p, 'utf8').replace(/^\s*#[^\n]*$/gm, '');
+            for (const m of txt.matchAll(/^\s*-\s*alert:\s*(\S+)\s*$/gm)) declared.add(m[1]);
+          }
+          const running = new Set();
+          for (const g of JSON.parse(fs.readFileSync('/tmp/before.json', 'utf8')).data.groups) {
+            for (const r of g.rules) if (r.type === 'alerting') running.add(r.name);
+          }
+          const orphans = [...running].filter((a) => !declared.has(a)).sort();
+          console.log(`running ${running.size}, declared ${declared.size}`);
+          if (orphans.length) {
+            console.error('::error::These alerts are running on the box and are NOT in this repo.');
+            console.error('Deploying would delete them. Bring them in here first.');
+            for (const a of orphans) console.error(`  ${a}`);
+            process.exit(1);
+          }
+          console.log('No orphans - every running alert is declared here. Safe to deploy.');
+          EOF
+
+      # THE SAME HAZARD, FOR THE ROUTING. deploy.sh symlinks alertmanager.yml
+      # too, and the audit found the live file carried a `pager-sms` receiver
+      # and a `page="sms"` route that this repo did not - the 3am pager. A
+      # deploy would have deleted paging outright, silently, and the rules
+      # check above would have said nothing because it only reads alerts.
+      - name: Refuse to delete routing this repo has never seen
+        run: |
+          set -euo pipefail
+          ~/hssh "cat /opt/smarter-poker-monitoring/alertmanager.yml" > /tmp/live-am.yml \
+            || { echo "::error::Could not read the live alertmanager.yml. Not deploying blind."; exit 1; }
+          test -s /tmp/live-am.yml \
+            || { echo "::error::The live alertmanager.yml is empty."; exit 1; }
+          python3 - <<'PYEOF'
+          import re, sys
+          def shape(path):
+              txt = re.sub(r'^\s*#[^\n]*$', '', open(path).read(), flags=re.M)
+              return (
+                  set(re.findall(r'^\s*-\s*name:\s*(\S+)', txt, re.M)),
+                  set(re.findall(r'-\s*(\w+="[^"]+")', txt)),
+              )
+          live_r, live_m = shape('/tmp/live-am.yml')
+          repo_r, repo_m = shape('infra/monitoring/alertmanager.yml')
+          lost_r, lost_m = sorted(live_r - repo_r), sorted(live_m - repo_m)
+          print(f'live receivers {len(live_r)}, repo {len(repo_r)}; live matchers {len(live_m)}, repo {len(repo_m)}')
+          if lost_r or lost_m:
+              print('::error::Deploying would REMOVE routing that is live on the box.')
+              for r in lost_r: print(f'  receiver: {r}')
+              for m in lost_m: print(f'  route matcher: {m}')
+              print('Bring it into infra/monitoring/alertmanager.yml first.')
+              sys.exit(1)
+          print('No routing would be lost.')
+          PYEOF
+
+      # SHIP THE CHECKOUT, THEN RUN deploy.sh FROM IT (2026-09-06).
+      # The step used to `curl raw.githubusercontent.com/.../deploy.sh | bash`
+      # on the box. This repository is PRIVATE: raw answers 404, bash reads an
+      # empty stdin and exits 0, and the step reported SUCCESS having done
+      # nothing - on its first run, 12:23 UTC, the morning the cluster
+      # controller was down 65 minutes with ClusterPassErrors declared here and
+      # not loaded there. deploy.sh's own git clone fails the same way on a box
+      # with no credentials. So the runner, which HAS the files, sends them.
+      - name: Ship infra/monitoring to the box
+        run: |
+          set -euo pipefail
+          echo "${{ github.sha }} ${{ github.ref_name }} $(date -u +%Y-%m-%dT%H:%M:%SZ)" > infra/monitoring/.deployed-from
+          # Staged, then copied IN PLACE. docker-compose.yml bind-mounts the
+          # rule files one by one, and a bind mount of a file follows the
+          # inode: a file that is unlinked and recreated (tar's default) is a
+          # file the running container never sees again until it restarts.
+          # `cp` opens the existing file and truncates it, so the inode - and
+          # the mount - survive, and the reload in deploy.sh reads new bytes.
+          tar -C . -cf - infra/monitoring \
+            | ~/hssh "rm -rf /opt/smarter-poker-monitoring-src.incoming && mkdir -p /opt/smarter-poker-monitoring-src.incoming && tar -C /opt/smarter-poker-monitoring-src.incoming -xf -"
+          ~/hssh "mkdir -p /opt/smarter-poker-monitoring-src/infra/monitoring \
+            && cp -R /opt/smarter-poker-monitoring-src.incoming/infra/monitoring/. /opt/smarter-poker-monitoring-src/infra/monitoring/ \
+            && rm -rf /opt/smarter-poker-monitoring-src.incoming \
+            && test -f /opt/smarter-poker-monitoring-src/infra/monitoring/prometheus.yml \
+            && cat /opt/smarter-poker-monitoring-src/infra/monitoring/.deployed-from"
+      - name: Deploy
+        run: |
+          set -euo pipefail
+          # No pipe on this line: a pipe would report the pager's exit, not the deploy's.
+          ~/hssh "MONITORING_SRC_FROM_CHECKOUT=1 bash /opt/smarter-poker-monitoring-src/infra/monitoring/deploy.sh" 2>&1
+
+      # VERIFY BY READING. A green deploy step is not a loaded rule - the same
+      # lesson as "a green deploy run is not a deployment" one layer down.
+      - name: The box is running what this repo declares
+        env:
+          ENGINE_MONITORING_SSH: ${{ env.SSH_USER }}@${{ secrets.HETZNER_HOST }}
+        run: |
+          set -euo pipefail
+          # Prometheus reloads asynchronously after the symlinks swap.
+          sleep 20
+          node scripts/ci/check-alert-rules-match.mjs

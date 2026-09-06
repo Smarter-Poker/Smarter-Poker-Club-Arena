@@ -59,6 +59,13 @@ const SEATING = read('server/src/engine/ServerTableEngineSeating.ts');
 const TICK_ALL = read(
   'supabase/migrations/20260906011318_the_feeder_tables_stay_within_one_player_of_each_other.sql'
 );
+/* PIN MOVED 2026-09-06 (migration 20260906150956, "a pass commits what it
+   did"). `fn_cash_clusters_tick_all` was re-declared WHOLE from the live body
+   (md5 8dadda13170127ec2b571790d198d79e, 20260906011318's) to add the 5.5 s
+   budget, the 2 s lock bound and the oldest-ticked-first order, so THAT file
+   is now the live definition of the pass. `fn_cash_cluster_balance` was not
+   touched and TICK_ALL above still pins it. Two functions, two handles. */
+const TICK_ALL_PASS = read('supabase/migrations/20260906150956_a_pass_commits_what_it_did.sql');
 /* `fn_cash_clusters_to_tick` is the OTHER function 20260906011113 re-declared,
    and the balancer did not touch it - so its migration is still the live
    definition of that one, and it keeps its own handle. Two functions changed
@@ -913,9 +920,9 @@ describe('gate 5: the snapshot is the rule on every table', () => {
  * N RPCs for N games again.
  */
 describe('one tick RPC per pass, a rest for dormant games, and a wake on seat change', () => {
-  const fn = TICK_ALL.slice(
-    TICK_ALL.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_tick_all'),
-    TICK_ALL.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_tick_all')
+  const fn = TICK_ALL_PASS.slice(
+    TICK_ALL_PASS.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_tick_all'),
+    TICK_ALL_PASS.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_tick_all')
   );
 
   it('the SQL runs the worklist itself and calls the per-game tick for each due game', () => {
@@ -961,15 +968,60 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
       /IF public\.fn_platform_frozen\(\) THEN\s*RETURN jsonb_build_object\('ok', false, 'skipped', 'frozen'/
     );
     expect(fn).toMatch(/SECURITY DEFINER\s*SET search_path TO 'public', 'pg_temp'/);
-    expect(TICK_ALL).toMatch(
+    expect(TICK_ALL_PASS).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_cash_clusters_tick_all\(jsonb\) FROM PUBLIC, anon, authenticated;/
     );
-    expect(TICK_ALL).toMatch(
+    expect(TICK_ALL_PASS).toMatch(
       /GRANT EXECUTE ON FUNCTION public\.fn_cash_clusters_tick_all\(jsonb\) TO service_role;/
     );
     // One transaction (production DDL policy).
-    expect((TICK_ALL.match(/^BEGIN;$/gm) ?? []).length).toBe(1);
-    expect((TICK_ALL.match(/^COMMIT;$/gm) ?? []).length).toBe(1);
+    expect((TICK_ALL_PASS.match(/^BEGIN;$/gm) ?? []).length).toBe(1);
+    expect((TICK_ALL_PASS.match(/^COMMIT;$/gm) ?? []).length).toBe(1);
+  });
+
+  /**
+   * A PASS COMMITS WHAT IT DID (2026-09-06, 20260906150956). The engine's role
+   * has an 8 s statement_timeout; a pass that crossed it was rolled back whole
+   * (nine times in three hours, mean 1,187 ms, max 7,993 ms, while the work
+   * itself is ~3.3 s for every game). The pass now stops STARTING games at a
+   * budget, defers the rest as identity rows, orders the worklist oldest-
+   * ticked first so a deferred game is next in line, and bounds one lock
+   * wait so a held row costs one game, never the pass.
+   */
+  it('stops starting games at 5.5 s, defers the rest, and they are first next pass', () => {
+    expect(fn).toMatch(/v_budget interval := interval '5500 milliseconds';/);
+    expect(fn).toMatch(
+      /IF clock_timestamp\(\) - v_now > v_budget THEN\s*v_deferred := v_deferred \+ 1;/
+    );
+    // Deferred games ride with the rested ones so the controller's map is complete.
+    expect(fn).toMatch(/'rested_games', v_rested_games \|\| v_deferred_games/);
+    expect(fn).toMatch(/'deferred', v_deferred,/);
+    // Oldest-ticked first, never creation order: a budget with creation order
+    // would defer the same tail every pass.
+    expect(fn).toMatch(/ORDER BY g\.last_tick_at NULLS FIRST, g\.created_at/);
+    expect(fn).not.toMatch(/ORDER BY g\.created_at\s*$/m);
+    // The budget is checked AFTER the rest test: a resting game is rested, a
+    // deferred game was due.
+    const rest = fn.indexOf("OR w.last_tick_at < v_now - interval '30 seconds'");
+    const budget = fn.indexOf('IF clock_timestamp() - v_now > v_budget THEN');
+    const tick = fn.indexOf('v_res := public.fn_cash_cluster_tick(w.game_id, v_eligible);');
+    expect(rest).toBeGreaterThan(0);
+    expect(budget).toBeGreaterThan(rest);
+    expect(tick).toBeGreaterThan(budget);
+  });
+
+  it('bounds one lock wait to 2 s, transaction-locally, inside the per-game sub-block', () => {
+    expect(fn).toMatch(/v_lock_wait text := '2000ms';/);
+    expect(fn).toMatch(/PERFORM set_config\('lock_timeout', v_lock_wait, true\);/);
+    // Set before the loop, so every game's sub-block is under it and a 55P03
+    // lands in the EXCEPTION WHEN OTHERS below as a controller_tick_error row.
+    expect(fn.indexOf("set_config('lock_timeout'")).toBeLessThan(fn.indexOf('FOR w IN'));
+  });
+
+  it('the controller reads deferred, warns on it, and publishes it as a gauge', () => {
+    expect(CONTROLLER).toMatch(/summary\.deferred = Number\(pass\.deferred \?\? 0\);/);
+    expect(CONTROLLER).toMatch(/due game\(s\) deferred to the next pass/);
+    expect(read('server/src/cluster/ClusterMetrics.ts')).toMatch(/'poker_cluster_pass_deferred'/);
   });
 
   it('no temp table and no bare UPDATE or DELETE in the body (safeupdate)', () => {
@@ -1170,9 +1222,9 @@ describe('the must-move tables balance themselves, and Main 1 is fed', () => {
   });
 
   it('one move per game per pass, planned AFTER the tick, inside the same sub-block', () => {
-    const fn = TICK_ALL.slice(
-      TICK_ALL.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_tick_all'),
-      TICK_ALL.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_tick_all')
+    const fn = TICK_ALL_PASS.slice(
+      TICK_ALL_PASS.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_tick_all'),
+      TICK_ALL_PASS.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_tick_all')
     );
     expect(fn).toMatch(
       /v_res := public\.fn_cash_cluster_tick\(w\.game_id, v_eligible\);[\s\S]*?v_bal := public\.fn_cash_cluster_balance\(w\.game_id, v_now\);/

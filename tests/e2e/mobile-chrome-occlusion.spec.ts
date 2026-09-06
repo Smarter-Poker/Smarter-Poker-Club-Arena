@@ -40,6 +40,7 @@ const ROUTES = [
   'wallet',
   'settings',
   'friends',
+  'leaderboard',
   `clubs/${CLUB}`,
   `clubs/${CLUB}/members`,
   `clubs/${CLUB}/rules`,
@@ -130,247 +131,256 @@ test.beforeEach(async ({ page }) => {
   }, WELCOME_ACCEPTED_KEY);
 });
 
-test('no chrome covers reachable content at 375px', async ({ page }) => {
-  test.setTimeout(ROUTES.length * 15_000 + 120_000);
-  await page.setViewportSize({ width: 375, height: 812 });
+for (const route of ROUTES) {
+  test(`${route} has no chrome covering reachable content at 375px`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 375, height: 812 });
 
-  const occlusions: Occlusion[] = [];
-  const skipped: string[] = [];
-  const noChrome: string[] = [];
+    const occlusions: Occlusion[] = [];
+    const skipped: string[] = [];
+    const noChrome: string[] = [];
 
-  for (const route of ROUTES) {
     try {
       await page.goto(route, { waitUntil: 'domcontentloaded' });
     } catch (err) {
       if (!String(err).includes('ERR_ABORTED')) {
         skipped.push(`${route}: navigation failed`);
-        continue;
       }
     }
     await page.waitForTimeout(2600);
     if (page.url().includes('/auth')) {
       skipped.push(route);
-      continue;
     }
     const pathname = new URL(page.url()).pathname.replace(/\/$/, '');
     if (pathname !== CLUB_ARENA_PATH && !pathname.startsWith(`${CLUB_ARENA_PATH}/`)) {
       /* Some Club Arena links intentionally hand off to another World Hub
-         application (club Messages opens Messenger). That destination owns
-         its own chrome and has its own audits; measuring it against Club
-         Arena's fixed bottom-nav contract produces a cross-app false alarm. */
+       application (club Messages opens Messenger). That destination owns
+       its own chrome and has its own audits; measuring it against Club
+       Arena's fixed bottom-nav contract produces a cross-app false alarm. */
       skipped.push(`${route}: routes outside Club Arena to ${pathname}`);
-      continue;
     }
 
-    const found = await evaluateAcrossDocumentReplacement(
-      page,
-      async ({ SLACK }) => {
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
+    if (skipped.length === 0) {
+      const found = await evaluateAcrossDocumentReplacement(
+        page,
+        async ({ SLACK }) => {
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
 
-        const bars = Array.from(document.querySelectorAll('nav,header,div,footer'));
-        const isWide = (b: DOMRect) => b.width > vw * 0.8 && b.height > 24;
-        const topBar = bars.find((el) => {
-          const s = getComputedStyle(el);
-          if (s.position !== 'fixed' && s.position !== 'sticky') return false;
-          const b = el.getBoundingClientRect();
-          return b.top <= 2 && b.bottom > 8 && b.bottom < vh * 0.3 && isWide(b);
-        });
-        const bottomBar = bars.find((el) => {
-          const s = getComputedStyle(el);
-          if (s.position !== 'fixed') return false;
-          const b = el.getBoundingClientRect();
-          return b.bottom >= vh - 3 && b.height > 40 && b.height < 160 && isWide(b);
-        });
+          const bars = Array.from(document.querySelectorAll('nav,header,div,footer'));
+          const isWide = (b: DOMRect) => b.width > vw * 0.8 && b.height > 24;
+          const topBar = bars.find((el) => {
+            const s = getComputedStyle(el);
+            if (s.position !== 'fixed' && s.position !== 'sticky') return false;
+            const b = el.getBoundingClientRect();
+            return b.top <= 2 && b.bottom > 8 && b.bottom < vh * 0.3 && isWide(b);
+          });
+          const bottomBar = bars.find((el) => {
+            const s = getComputedStyle(el);
+            if (s.position !== 'fixed') return false;
+            const b = el.getBoundingClientRect();
+            return b.bottom >= vh - 3 && b.height > 40 && b.height < 160 && isWide(b);
+          });
 
-        const root = document.querySelector('#main-content') || document.body;
+          const root = document.querySelector('#main-content') || document.body;
 
-        /* Content, for this purpose, is a LEAF that a person can read or
+          /* Content, for this purpose, is a LEAF that a person can read or
            press. Anything living inside a fixed layer (the bars themselves,
            a parked drawer, a modal) is chrome, not page content. */
-        const leaves = () => {
-          const out: Array<{ el: Element; b: DOMRect }> = [];
-          for (const el of root.querySelectorAll('*')) {
-            if (el.children.length > 0) continue;
-            if (el.closest('[aria-hidden="true"]')) continue;
-            const s = getComputedStyle(el);
-            if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
-            let b = el.getBoundingClientRect();
-            if (b.width === 0 || b.height === 0) continue;
-            if (b.right <= 0 || b.left >= vw) continue;
-            const txt = (el.textContent || '').trim();
-            const pressable = Boolean(
-              el.closest(
-                'button,a[href],input,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="switch"],[tabindex]:not([tabindex="-1"])'
-              )
-            );
-            const meaningfulImage =
-              el.tagName === 'IMG' && Boolean((el.getAttribute('alt') || '').trim());
-            if (!txt && !pressable && !meaningfulImage) continue;
+          const leaves = () => {
+            const out: Array<{ el: Element; b: DOMRect }> = [];
+            for (const el of root.querySelectorAll('*')) {
+              if (el.children.length > 0) continue;
+              if (el.closest('[aria-hidden="true"]')) continue;
+              const s = getComputedStyle(el);
+              if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
+              let b = el.getBoundingClientRect();
+              if (b.width === 0 || b.height === 0) continue;
+              if (b.right <= 0 || b.left >= vw) continue;
+              const txt = (el.textContent || '').trim();
+              const pressable = Boolean(
+                el.closest(
+                  'button,a[href],input,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="switch"],[tabindex]:not([tabindex="-1"])'
+                )
+              );
+              const meaningfulImage =
+                el.tagName === 'IMG' && Boolean((el.getAttribute('alt') || '').trim());
+              if (!txt && !pressable && !meaningfulImage) continue;
 
-            /* MEASURE THE GLYPHS, NOT THE BOX. A text leaf inside a flex row
+              /* MEASURE THE GLYPHS, NOT THE BOX. A text leaf inside a flex row
                stretches to the row's height by default, so its BOX can run
                hundreds of pixels past text that actually sits at the top —
                the jackpot page's empty-state <p> reported 704px "covered"
                while every word of it was plainly visible. A Range over the
                text node gives the rectangle the reader can actually see. */
-            if (txt && el.firstChild && el.firstChild.nodeType === 3) {
-              const range = document.createRange();
-              range.selectNodeContents(el);
-              const rb = range.getBoundingClientRect();
-              if (rb.width > 0 && rb.height > 0) b = rb;
-            }
-            let clippedTop = b.top;
-            let clippedRight = b.right;
-            let clippedBottom = b.bottom;
-            let clippedLeft = b.left;
-            let p: Element | null = el;
-            let inFixed = false;
-            while (p && p !== root) {
-              const ps = getComputedStyle(p);
-              if (ps.position === 'fixed') {
-                inFixed = true;
-                break;
+              if (txt && el.firstChild && el.firstChild.nodeType === 3) {
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                const rb = range.getBoundingClientRect();
+                if (rb.width > 0 && rb.height > 0) b = rb;
               }
-              const clipsX = /(auto|scroll|hidden|clip)/.test(ps.overflowX);
-              const clipsY = /(auto|scroll|hidden|clip)/.test(ps.overflowY);
-              if (clipsX || clipsY) {
-                const pb = p.getBoundingClientRect();
-                if (clipsX) {
-                  clippedLeft = Math.max(clippedLeft, pb.left);
-                  clippedRight = Math.min(clippedRight, pb.right);
+              let clippedTop = b.top;
+              let clippedRight = b.right;
+              let clippedBottom = b.bottom;
+              let clippedLeft = b.left;
+              let p: Element | null = el;
+              let inFixed = false;
+              while (p && p !== root) {
+                const ps = getComputedStyle(p);
+                if (ps.position === 'fixed') {
+                  inFixed = true;
+                  break;
                 }
-                if (clipsY) {
-                  clippedTop = Math.max(clippedTop, pb.top);
-                  clippedBottom = Math.min(clippedBottom, pb.bottom);
+                const clipsX = /(auto|scroll|hidden|clip)/.test(ps.overflowX);
+                const clipsY = /(auto|scroll|hidden|clip)/.test(ps.overflowY);
+                if (clipsX || clipsY) {
+                  const pb = p.getBoundingClientRect();
+                  if (clipsX) {
+                    clippedLeft = Math.max(clippedLeft, pb.left);
+                    clippedRight = Math.min(clippedRight, pb.right);
+                  }
+                  if (clipsY) {
+                    clippedTop = Math.max(clippedTop, pb.top);
+                    clippedBottom = Math.min(clippedBottom, pb.bottom);
+                  }
                 }
+                p = p.parentElement;
               }
-              p = p.parentElement;
+              if (inFixed) continue;
+              if (clippedRight <= clippedLeft || clippedBottom <= clippedTop) continue;
+              b = DOMRect.fromRect({
+                x: clippedLeft,
+                y: clippedTop,
+                width: clippedRight - clippedLeft,
+                height: clippedBottom - clippedTop,
+              });
+              out.push({ el, b });
             }
-            if (inFixed) continue;
-            if (clippedRight <= clippedLeft || clippedBottom <= clippedTop) continue;
-            b = DOMRect.fromRect({
-              x: clippedLeft,
-              y: clippedTop,
-              width: clippedRight - clippedLeft,
-              height: clippedBottom - clippedTop,
-            });
-            out.push({ el, b });
-          }
-          return out;
-        };
+            return out;
+          };
 
-        const describe = (el: Element, b: DOMRect, covered: number) => ({
-          coveredPx: Math.round(covered),
-          sel:
-            el.tagName.toLowerCase() +
-            (el.className ? '.' + String(el.className).split(' ')[0].slice(0, 26) : ''),
-          text: (el.textContent || '').trim().slice(0, 34).replace(/\s+/g, ' '),
-        });
+          const describe = (el: Element, b: DOMRect, covered: number) => ({
+            coveredPx: Math.round(covered),
+            sel:
+              el.tagName.toLowerCase() +
+              (el.className ? '.' + String(el.className).split(' ')[0].slice(0, 26) : ''),
+            text: (el.textContent || '').trim().slice(0, 34).replace(/\s+/g, ' '),
+          });
 
-        const hits: Array<{ edge: 'top' | 'bottom' } & ReturnType<typeof describe>> = [];
+          const hits: Array<{ edge: 'top' | 'bottom' } & ReturnType<typeof describe>> = [];
 
-        /* The app deliberately enables smooth scrolling. `window.scrollTo`
+          /* The app deliberately enables smooth scrolling. `window.scrollTo`
                therefore returned while long pages were still moving, and the
                old fixed 350/450ms sleeps measured ordinary mid-page content as
                if it were the unreachable final row. Move the real scrolling
                element synchronously and verify the boundary instead of timing
                an animation whose duration grows with the page. */
-        const scrollingElement = document.scrollingElement ?? document.documentElement;
-        const scrollingStyle = (scrollingElement as HTMLElement).style;
-        const scrollInstantlyTo = async (top: number) => {
-          const previousScrollBehavior = scrollingStyle.scrollBehavior;
-          scrollingStyle.scrollBehavior = 'auto';
-          scrollingElement.scrollTop = top;
-          await new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-          );
-          scrollingStyle.scrollBehavior = previousScrollBehavior;
-        };
-
-        // ── TOP: at rest, nothing should already be under the header.
-        await scrollInstantlyTo(0);
-        if (topBar) {
-          const headerBottom = topBar.getBoundingClientRect().bottom;
-          let worst: ReturnType<typeof describe> | null = null;
-          for (const { el, b } of leaves()) {
-            const covered = headerBottom - b.top;
-            if (covered > SLACK && b.bottom > 0) {
-              const d = describe(el, b, covered);
-              if (!worst || d.coveredPx > worst.coveredPx) worst = d;
-            }
-          }
-          if (worst) hits.push({ edge: 'top', ...worst });
-        }
-
-        // ── BOTTOM: only provable once the page cannot scroll further.
-        if (bottomBar) {
-          let stableBottomSamples = 0;
-          // Live sections can append an RPC-backed history after DOMContentLoaded.
-          // A single scroll then measures an obsolete maximum and can report a
-          // middle row as "unreachable" even though more page exists below it.
-          // Require two consecutive height/bottom samples; if live content
-          // never settles, fail as an indeterminate audit instead of passing.
-          for (let attempt = 1; attempt <= 6; attempt += 1) {
-            const heightBefore = scrollingElement.scrollHeight;
-            await scrollInstantlyTo(heightBefore);
-            await new Promise((r) => setTimeout(r, 350));
-            const heightAfter = scrollingElement.scrollHeight;
-            const maxScrollTop = Math.max(0, heightAfter - scrollingElement.clientHeight);
-            const reachedBottom = Math.abs(scrollingElement.scrollTop - maxScrollTop) <= SLACK;
-            stableBottomSamples =
-              reachedBottom && heightAfter === heightBefore ? stableBottomSamples + 1 : 0;
-            if (stableBottomSamples >= 2) break;
-          }
-          if (stableBottomSamples < 2) {
-            throw new Error(
-              'Club Arena document height did not settle at its reachable bottom; the mobile chrome audit did not reach its scroll boundary.'
+          const scrollingElement = document.scrollingElement ?? document.documentElement;
+          const scrollingStyle = (scrollingElement as HTMLElement).style;
+          const scrollInstantlyTo = async (top: number) => {
+            const previousScrollBehavior = scrollingStyle.scrollBehavior;
+            scrollingStyle.scrollBehavior = 'auto';
+            scrollingElement.scrollTop = top;
+            await new Promise<void>((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
             );
-          }
-          const navTop = bottomBar.getBoundingClientRect().top;
-          let worst: ReturnType<typeof describe> | null = null;
-          for (const { el, b } of leaves()) {
-            if (b.top >= vh) continue; // below the fold entirely, not on screen
-            const covered = b.bottom - navTop;
-            if (covered > SLACK) {
-              const d = describe(el, b, covered);
-              if (!worst || d.coveredPx > worst.coveredPx) worst = d;
-            }
-          }
-          if (worst) hits.push({ edge: 'bottom', ...worst });
-        }
+            scrollingStyle.scrollBehavior = previousScrollBehavior;
+          };
 
-        return { hits, hadTop: !!topBar, hadBottom: !!bottomBar };
-      },
-      { SLACK }
+          // ── TOP: at rest, nothing should already be under the header.
+          await scrollInstantlyTo(0);
+          if (topBar) {
+            const headerBottom = topBar.getBoundingClientRect().bottom;
+            let worst: ReturnType<typeof describe> | null = null;
+            for (const { el, b } of leaves()) {
+              const covered = headerBottom - b.top;
+              if (covered > SLACK && b.bottom > 0) {
+                const d = describe(el, b, covered);
+                if (!worst || d.coveredPx > worst.coveredPx) worst = d;
+              }
+            }
+            if (worst) hits.push({ edge: 'top', ...worst });
+          }
+
+          // ── BOTTOM: only provable once the page cannot scroll further.
+          if (bottomBar) {
+            let stableBottomSamples = 0;
+            // Live sections can append an RPC-backed history after DOMContentLoaded.
+            // A single scroll then measures an obsolete maximum and can report a
+            // middle row as "unreachable" even though more page exists below it.
+            // Require two consecutive height/bottom samples; if live content
+            // never settles, fail as an indeterminate audit instead of passing.
+            for (let attempt = 1; attempt <= 6; attempt += 1) {
+              const heightBefore = scrollingElement.scrollHeight;
+              await scrollInstantlyTo(heightBefore);
+              await new Promise((r) => setTimeout(r, 350));
+              const heightAfter = scrollingElement.scrollHeight;
+              const maxScrollTop = Math.max(0, heightAfter - scrollingElement.clientHeight);
+              const reachedBottom = Math.abs(scrollingElement.scrollTop - maxScrollTop) <= SLACK;
+              stableBottomSamples =
+                reachedBottom && heightAfter === heightBefore ? stableBottomSamples + 1 : 0;
+              if (stableBottomSamples >= 2) break;
+            }
+            if (stableBottomSamples < 2) {
+              throw new Error(
+                'Club Arena document height did not settle at its reachable bottom; the mobile chrome audit did not reach its scroll boundary.'
+              );
+            }
+            const navTop = bottomBar.getBoundingClientRect().top;
+            let worst: ReturnType<typeof describe> | null = null;
+            for (const { el, b } of leaves()) {
+              if (b.top >= vh) continue; // below the fold entirely, not on screen
+              const covered = b.bottom - navTop;
+              if (covered > SLACK) {
+                const d = describe(el, b, covered);
+                if (!worst || d.coveredPx > worst.coveredPx) worst = d;
+              }
+            }
+            if (worst) hits.push({ edge: 'bottom', ...worst });
+          }
+
+          return { hits, hadTop: !!topBar, hadBottom: !!bottomBar };
+        },
+        { SLACK }
+      );
+
+      // The replacement document may be an intentional cross-app handoff. The
+      // first pathname check ran before the publish reload; classify the settled
+      // destination again before applying Club Arena's chrome contract to it.
+      const settledPathname = new URL(page.url()).pathname.replace(/\/$/, '');
+      if (
+        settledPathname !== CLUB_ARENA_PATH &&
+        !settledPathname.startsWith(`${CLUB_ARENA_PATH}/`)
+      ) {
+        skipped.push(`${route}: routes outside Club Arena to ${settledPathname}`);
+      } else {
+        if (!found.hadTop && !found.hadBottom) noChrome.push(route);
+        for (const h of found.hits) {
+          occlusions.push({
+            route,
+            edge: h.edge,
+            coveredPx: h.coveredPx,
+            sel: h.sel,
+            text: h.text,
+          });
+        }
+      }
+    }
+
+    console.log(
+      'MOBILE_CHROME_OCCLUSION ' +
+        JSON.stringify({ occlusions, skipped, noChrome, routesChecked: 1 }, null, 1)
     );
 
-    // The replacement document may be an intentional cross-app handoff. The
-    // first pathname check ran before the publish reload; classify the settled
-    // destination again before applying Club Arena's chrome contract to it.
-    const settledPathname = new URL(page.url()).pathname.replace(/\/$/, '');
-    if (settledPathname !== CLUB_ARENA_PATH && !settledPathname.startsWith(`${CLUB_ARENA_PATH}/`)) {
-      skipped.push(`${route}: routes outside Club Arena to ${settledPathname}`);
-      continue;
+    if (process.env.MOBILE_FIT_STRICT || process.env.CI) {
+      expect(
+        occlusions,
+        `Chrome covering content at 375px (reserve var(--bottom-nav-clearance)):\n${occlusions
+          .map(
+            (o) => `  ${o.route} [${o.edge}] ${o.coveredPx}px under the bar: ${o.sel} "${o.text}"`
+          )
+          .join('\n')}`
+      ).toEqual([]);
     }
-
-    if (!found.hadTop && !found.hadBottom) noChrome.push(route);
-    for (const h of found.hits) {
-      occlusions.push({ route, edge: h.edge, coveredPx: h.coveredPx, sel: h.sel, text: h.text });
-    }
-  }
-
-  console.log(
-    'MOBILE_CHROME_OCCLUSION ' +
-      JSON.stringify({ occlusions, skipped, noChrome, routesChecked: ROUTES.length }, null, 1)
-  );
-
-  if (process.env.MOBILE_FIT_STRICT || process.env.CI) {
-    expect(
-      occlusions,
-      `Chrome covering content at 375px (reserve var(--bottom-nav-clearance)):\n${occlusions
-        .map((o) => `  ${o.route} [${o.edge}] ${o.coveredPx}px under the bar: ${o.sel} "${o.text}"`)
-        .join('\n')}`
-    ).toEqual([]);
-  }
-});
+  });
+}

@@ -8,12 +8,12 @@ repo, in both directions.**
 
 ## What was actually true, measured before anything was changed
 
-| | |
-| --- | --- |
-| alerts running on the box | **72** |
+|                                        |        |
+| -------------------------------------- | ------ |
+| alerts running on the box              | **72** |
 | alerts declared in `infra/monitoring/` | **79** |
-| declared here and NEVER LOADED | **15** |
-| running that this repo had never seen | **8** |
+| declared here and NEVER LOADED         | **15** |
+| running that this repo had never seen  | **8**  |
 
 The 15 include **`EngineRefusingSessions`** and **`EngineCannotReachAuth`** -
 the two alerts this programme wrote in phase 1 so that the outage it exists to
@@ -117,10 +117,78 @@ Its first run, before the deploy, reported exactly the table above.
   of the "something checks for it" pin read the whole checker file and passed
   when the checker was pointed at a different alertname, because the header
   still mentioned the canary. A pin satisfied by prose is not a pin.
-- **CLAUDE.md 10.84**, two rules from the two halves of the outage: *an agent
-  never SETS a credential* (the twenty-two hours began with one environment
+- **CLAUDE.md 10.84**, two rules from the two halves of the outage: _an agent
+  never SETS a credential_ (the twenty-two hours began with one environment
   variable, and an agent may read where a credential lives and say what shape it
-  should have, never write one), and *never hand-write what a monitor reads*.
+  should have, never write one), and _never hand-write what a monitor reads_.
+
+## The deep audit (same day) - and the one that would have deleted the pager
+
+Phase 7 was pushed and then audited before the programme was called finished.
+Three defects, and the first is the worst thing found in the whole programme.
+
+### 1. A deploy would have DELETED THE 3AM PAGER
+
+`deploy.sh` symlinks `alertmanager.yml` over the live one exactly as it does
+the rule files. The live file carried a **`pager-sms` receiver and a
+`page="sms"` route that this repo did not have** - the pager added on the box
+on 2026-09-04, which posts to the World Hub and texts a phone. Its comment even
+cites `tests/the-pager-list-is-exactly-six.test.ts` **in this repo**, and that
+test does not exist here either: the work was done on the box and neither the
+config nor its test was ever committed.
+
+So the next `deploy.sh` would have removed paging outright, silently. And the
+rule-orphan guard added earlier in this phase would have said nothing, because
+it only reads alerts.
+
+Worse: **the automation added in this phase would have done it unattended.**
+Fixed by bringing the box's `alertmanager.yml` in verbatim (it is a strict
+superset - the diff has no lines the repo had and the box lacked), and by
+adding a second guard to the deploy workflow that reads the live routing and
+refuses if any receiver or route matcher would be lost. Verified against
+production both ways: it passes today, and with the pager receiver or the
+`page="sms"` matcher removed from the repo it exits 1 and names what would go.
+
+### 2. The canary would have emailed ops every hour, for ever
+
+`alertmanager.yml`'s top-level fallthrough receiver is `email-critical`, and
+there was no route matching `severity="canary"`. `MonitoringCanary` fires
+unconditionally by design - so it would have reached the default receiver and
+mailed ops on every `repeat_interval`, for ever. **Alert fatigue manufactured
+by the thing built to prevent alert fatigue**, and it was live in the repo for
+about an hour. It now has an explicit route to `null-receiver`, and the law
+pins it.
+
+### 3. I ended the last report by asking Dan to run a command
+
+That was wrong twice: World Hub RULE 0 says shipping is never something an
+agent hands to a human, and more importantly **a deploy that depends on
+somebody remembering is the same class of thing as a rule nobody loaded**,
+which is this phase's entire finding. `deploy.sh` had existed the whole time,
+documented as "run as root on the box", and the repo's rules reached production
+exactly as often as a person thought to go and run it.
+
+`.github/workflows/deploy-monitoring.yml` now deploys on any merge to `main`
+touching `infra/monitoring/**`, guards both hazards above first, and then
+verifies by reading - twenty seconds for Prometheus to reload, then
+`check-alert-rules-match.mjs`, which also fails if Alertmanager is not holding
+the canary. A green deploy step is not a loaded rule.
+
+### Also checked, and correct
+
+- `promtool check rules` on **all seven** rule files: SUCCESS, 96 rules.
+  `amtool check-config`: route, 2 inhibit rules, 4 receivers.
+- Against `origin/main`, `alert-rules.yml` gained the 8 rescued alerts, the
+  canary and the volume backstop, **removed nothing**, and **no shared alert's
+  `expr` changed**.
+- `deploy.sh`'s symlink list gained three rule files and dropped nothing.
+- The merged-branch guard did its job: the follow-up push to the merged
+  `realtime/phase-7-guardrails` was REFUSED, not stranded (CLAUDE.md 10.82),
+  so this work is on a new branch off `main`.
+
+Four more mutations on the extended law, four reds: the pager receiver renamed,
+the `page="sms"` matcher removed, the canary pointed at `email-critical`, and
+the routing guard deleted from the workflow.
 
 ## Still open, recorded rather than quietly fixed
 

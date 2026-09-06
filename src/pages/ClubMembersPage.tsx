@@ -1030,7 +1030,7 @@ function MemberRow({
   const initial = (member.alias || '?')[0]?.toUpperCase() ?? '?';
   const status = member.is_seated ? 'At A Table' : member.is_online ? 'Online' : 'Offline';
   return (
-    <article
+    <div
       className={`member-row${member.is_seated ? ' member-row--seated' : member.is_online ? ' member-row--online' : ''}`}
       role="listitem"
       aria-posinset={position}
@@ -1116,7 +1116,7 @@ function MemberRow({
           &rsaquo;
         </span>
       </button>
-    </article>
+    </div>
   );
 }
 

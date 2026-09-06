@@ -3219,6 +3219,46 @@ export abstract class ServerTableEngineBase {
 
   /** Shared by both resume paths: wake the loop sitting on the gate. */
   private releasePauseGate(): void {
+    /**
+     * ── THE PROGRESS CLOCK IS THAWED, NOT BURNED (2026-09-05) ──────────────
+     *
+     * CLAUDE.md §13 rule 4: "Deadlines are thawed, not burned. If you add a
+     * wall-clock deadline a player can lose to, add it to fn_thaw_platform in
+     * the same PR, or a five-minute break silently eats it."
+     *
+     * `lastProgressAtMs` is exactly such a deadline and it was never thawed.
+     * It keeps running while a table is deliberately parked, so at :00 every
+     * table on the fleet stops being `paused` — which is what excludes it from
+     * the stall predicate — and reappears already carrying the whole break as
+     * "no progress". Not a climb; a jump, from invisible to five minutes stale
+     * in one tick.
+     *
+     * MEASURED over 24 hours on 2026-09-05, from Prometheus:
+     *
+     *   the twelve largest stall spikes ALL fell between HH:00:07 and HH:00:37
+     *   peak 120 tables at 18:00:22, the instant poker_paused_tables went 343 -> 0
+     *   49.5% of ALL stalled table-seconds in the day sat in minute :00
+     *   55.4% in :00-:03
+     *   first-observed stall values cluster hard at 433-446s - one break plus
+     *     the in-break restart, arriving whole
+     *
+     * Downstream that lie was expensive: it fed `poker_stalled_tables`, and
+     * through it `liveness`, and sp-autoheal restarted production five times
+     * in one day on the strength of it. Fixing the liveness rule stopped the
+     * restarts (see engineLiveness.test.ts); this stops the false reading that
+     * caused them.
+     *
+     * It belongs HERE rather than in either caller because both resume paths -
+     * `resumeFromMaintenance()` and `resumeDealing()` - funnel through this
+     * gate, so one line covers the maintenance break and hand-for-hand alike,
+     * and any third pause authority added later inherits it for free.
+     *
+     * This is not "hiding" a stall. The table has been parked ON PURPOSE and
+     * every second of that is already published as `poker_paused_tables`. The
+     * clock measures time a table should have been dealing and was not; time
+     * it was told not to deal is not that.
+     */
+    this.markProgress();
     this.pausedSinceMs = 0;
     this.lastPauseAlarmAtMs = 0;
     this.pauseMaxWaitMs = null;
@@ -3412,7 +3452,38 @@ export abstract class ServerTableEngineBase {
     // A table the maintenance break is holding is paused on purpose. That is
     // the whole meaning of this function, so it belongs here rather than at
     // each of the four call sites.
-    return this.handForHandPaused || this.maintenancePaused || this.tableFSM.state === 'paused';
+    //
+    // ── A DEAL HOLD IS A PAUSE BY DESIGN TOO (2026-09-05) ────────────────
+    //
+    // `dealHoldUntilMs` is the third authority that stops a table on purpose,
+    // and it was the only one this predicate did not know about. It is what
+    // holds the first deal under a Spin reveal, and what holds a seat-first
+    // tournament table between its seats selling and its advertised start.
+    //
+    // MEASURED on the live fleet, table row created -> tournament start_time:
+    //   96e2d84f (5 Chip Spin PLO5)        2287s
+    //   eadb2242 (NLH Heads-Up 50)         2212s
+    //   d3b1c215 (50 Chip Deep Stack Spin) 3078s
+    //
+    // Through every one of those windows the table has two or more dealable
+    // seats, is not `paused`, and its progress clock is running - so it reads
+    // as stalled for up to fifty-one minutes while doing exactly what it was
+    // told. A live poll of two such tables caught 56 stalled samples, and all
+    // 56 had a dealing loop that had moved within the last two seconds. Not
+    // one was wedged. That population is the whole of the long tail behind
+    // "modal stalled count of 1", and it is the reason a third of the fleet's
+    // tables logged at least one stall in twelve hours.
+    //
+    // Held, not broken - the same distinction the rest of this function
+    // exists to make. The hold has a published deadline; when it expires the
+    // table deals or it becomes a genuine stall, and either way the answer
+    // arrives on its own.
+    return (
+      this.handForHandPaused ||
+      this.maintenancePaused ||
+      this.dealHoldUntilMs > Date.now() ||
+      this.tableFSM.state === 'paused'
+    );
   }
 
   /** Ms spent in the current by-design pause; 0 when not paused. */

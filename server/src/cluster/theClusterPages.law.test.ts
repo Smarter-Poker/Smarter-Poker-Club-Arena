@@ -49,31 +49,37 @@ const controllerWith = (rpc: Rpc, frozen = () => false) =>
 
 /* PIN MOVED 2026-09-05: the pass is ONE call to fn_cash_clusters_tick_all
    (#3119), which returns every game's tick result; the per-game RPC is no
-   longer made by the pass. */
+   longer made by the pass.
+   PIN MOVED AGAIN 2026-09-05 (migration 20260906011113): the pass carries
+   `state` on every entry and a `rested_games` roster, so the state gauge is
+   fed by the pass and the games it let rest are in it too. */
 const okRpc = (actions: unknown[] = []) =>
   vi.fn(async (fn: string) => {
     if (fn === 'fn_cash_clusters_tick_all')
       return {
         data: {
           ok: true,
-          games: 2,
+          games: 3,
           ticked: 2,
           errors: 0,
-          rested: 0,
+          rested: 1,
           results: [
             {
               game_id: 'g1',
               main1_table_id: 't1',
               enabled: true,
+              state: 'live',
               result: { ok: true, actions, seated_total: 0 },
             },
             {
               game_id: 'g2',
               main1_table_id: 't2',
               enabled: true,
+              state: 'live',
               result: { ok: true, actions, seated_total: 0 },
             },
           ],
+          rested_games: [{ game_id: 'g3', main1_table_id: 't3', enabled: true, state: 'dormant' }],
         },
         error: null,
       };
@@ -89,10 +95,18 @@ describe('LAW 1 - a tick is scraped', () => {
     const s = await c.tick();
     expect(s.ticked).toBe(2);
     expect(clusterMetrics.passesTotal.get()).toBe(before + 1);
-    expect(clusterMetrics.passGames.get()).toBe(2);
-    /* poker_cluster_games{state} is fed from worklist rows carrying `state`;
-       the one-RPC pass (#3119) returns per-game results without it, so the
-       gauge is not asserted here until fn_cash_clusters_tick_all carries state. */
+    expect(clusterMetrics.passGames.get()).toBe(3);
+    /* poker_cluster_games{state} IS ASSERTED NOW (2026-09-05). The pin used to
+       say the gauge could not be checked here because the one-RPC pass
+       returned no `state`; migration 20260906011113 put `state` on every entry
+       and added the rested roster, and the controller hands both to
+       recordPass - so the Grafana panel is fed by the pass itself, and a game
+       the pass RESTED is counted exactly once, in its own state. */
+    expect(clusterMetrics.games.get({ state: 'live' })).toBe(2);
+    expect(clusterMetrics.games.get({ state: 'dormant' })).toBe(1);
+    expect(alwaysOnPrometheusLines().join('\n')).toMatch(
+      /^poker_cluster_games\{state="dormant"\} 1$/m
+    );
     expect(clusterMetrics.actionsTotal.get({ kind: 'feeder_opened' })).toBeGreaterThanOrEqual(2);
     expect(clusterMetrics.actionsTotal.get({ kind: 'moves_planned' })).toBeGreaterThanOrEqual(2);
     const text = alwaysOnPrometheusLines().join('\n');
@@ -137,7 +151,15 @@ describe('LAW 3 - the released latch is counted', () => {
           return new Promise(() => {}); // the wedged pass
         }
         return {
-          data: { ok: true, games: 0, ticked: 0, errors: 0, rested: 0, results: [] },
+          data: {
+            ok: true,
+            games: 0,
+            ticked: 0,
+            errors: 0,
+            rested: 0,
+            results: [],
+            rested_games: [],
+          },
           error: null,
         };
       }

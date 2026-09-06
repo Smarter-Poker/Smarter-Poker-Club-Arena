@@ -50,6 +50,13 @@ describe('temporary customization account cleanup', () => {
 
     await expect(cleanupStaleTemporaryCustomizationAccounts(environment, 0)).resolves.toBe(1);
 
+    const profileQuery = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('/rest/v1/profiles?')
+    );
+    expect(decodeURIComponent(String(profileQuery?.[0]))).toContain(
+      'email.not.like.ca-customization-cert-postdeploy-*@example.invalid'
+    );
+
     const cleanupCalls = fetchMock.mock.calls.filter(
       ([input, init]) =>
         String(input).includes('/rest/v1/rpc/cleanup_reserved_certification_account') &&

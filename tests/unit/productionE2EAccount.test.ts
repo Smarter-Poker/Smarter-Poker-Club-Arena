@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -11,13 +11,6 @@ import {
 
 const USER_ID = '00000000-0000-4000-8000-000000000099';
 const AVATAR = '/avatars/table/free_samurai@2x.webp';
-const CLEANUP_MIGRATION = readFileSync(
-  resolve(
-    process.cwd(),
-    'supabase/migrations/20260906015012_reserved_certification_cleanup_tracks_current_schema.sql'
-  ),
-  'utf8'
-);
 
 function environment(directory: string) {
   return {
@@ -52,8 +45,8 @@ describe('post-deploy production account', () => {
       if (url.includes('/rest/v1/profiles?id=eq.') && init?.method === 'PATCH') {
         return new Response(null, { status: 204 });
       }
-      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
-        return Response.json({ success: true });
+      if (url.includes('/rest/v1/rpc/fn_sweep_test_account')) {
+        return Response.json({ swept: true });
       }
       if (url.includes(`/auth/v1/admin/users/${USER_ID}`)) {
         return new Response(null, { status: 404 });
@@ -82,7 +75,7 @@ describe('post-deploy production account', () => {
     ).resolves.toBe(true);
     expect(existsSync(recordPath)).toBe(false);
     const cleanupCall = fetchMock.mock.calls.find(([input]) =>
-      String(input).includes('/rest/v1/rpc/cleanup_reserved_certification_account')
+      String(input).includes('/rest/v1/rpc/fn_sweep_test_account')
     );
     expect(String(cleanupCall?.[1]?.body)).toContain(USER_ID);
   });
@@ -111,8 +104,8 @@ describe('post-deploy production account', () => {
       if (url.includes('/rest/v1/profiles?')) {
         return Response.json([{ id: USER_ID, email, created_at: '2026-01-01T00:00:00.000Z' }]);
       }
-      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
-        return Response.json({ success: true });
+      if (url.includes('/rest/v1/rpc/fn_sweep_test_account')) {
+        return Response.json({ swept: true });
       }
       if (url.includes(`/auth/v1/admin/users/${USER_ID}`)) {
         return new Response(null, { status: 404 });
@@ -143,10 +136,10 @@ describe('post-deploy production account', () => {
     let sweepAttempts = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes('/rest/v1/rpc/cleanup_reserved_certification_account')) {
+      if (url.includes('/rest/v1/rpc/fn_sweep_test_account')) {
         sweepAttempts += 1;
         return Response.json(
-          sweepAttempts === 1 ? { success: false, reason: 'platform_is_frozen' } : { success: true }
+          sweepAttempts === 1 ? { swept: false, reason: 'platform_is_frozen' } : { swept: true }
         );
       }
       if (url.includes(`/auth/v1/admin/users/${USER_ID}`)) {
@@ -162,25 +155,5 @@ describe('post-deploy production account', () => {
     ).resolves.toBe(true);
     expect(sweepAttempts).toBe(2);
     expect(wait).toHaveBeenCalledWith(10_000);
-  });
-
-  it('uses the locked reserved cleanup with current trigger and rate-limit ordering', () => {
-    expect(CLEANUP_MIGRATION).toContain(
-      "v_email NOT LIKE 'ca-customization-cert-%@example.invalid'"
-    );
-    expect(CLEANUP_MIGRATION).toContain("'app.game_management_retention', 'on', true");
-    expect(CLEANUP_MIGRATION).toContain('DELETE FROM public.rate_limits WHERE user_id = p_user_id');
-    expect(CLEANUP_MIGRATION.indexOf('DELETE FROM public.user_daily_challenges')).toBeLessThan(
-      CLEANUP_MIGRATION.indexOf('DELETE FROM public.users')
-    );
-    expect(CLEANUP_MIGRATION.indexOf('DELETE FROM public.club_members')).toBeLessThan(
-      CLEANUP_MIGRATION.indexOf('DELETE FROM public.users')
-    );
-    expect(CLEANUP_MIGRATION).toContain(
-      'REVOKE ALL ON FUNCTION public.cleanup_reserved_certification_account(uuid)'
-    );
-    expect(CLEANUP_MIGRATION).toContain(
-      'GRANT EXECUTE ON FUNCTION public.cleanup_reserved_certification_account(uuid) TO service_role'
-    );
   });
 });

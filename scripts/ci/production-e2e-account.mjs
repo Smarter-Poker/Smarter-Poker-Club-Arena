@@ -126,11 +126,11 @@ export async function cleanupProductionE2EAccount({
   for (let attempt = 0; attempt < 37; attempt += 1) {
     result = await serviceRequest(
       configuration,
-      '/rest/v1/rpc/cleanup_reserved_certification_account',
+      '/rest/v1/rpc/fn_sweep_test_account',
       { method: 'POST', body: JSON.stringify({ p_user_id: account.id }) },
       fetchImpl
     );
-    if (result?.success === true) break;
+    if (result?.swept === true || result?.reason === 'already_removed') break;
     if (result?.reason !== 'platform_is_frozen' || attempt === 36) {
       throw new Error(
         `Guarded test-account sweep refused ${account.id}: ${String(result?.reason || 'unknown')}`

@@ -71,6 +71,18 @@
   font: inherit;
 }
 
+.hh-search__select,
+.hh-search__date {
+  padding: 7px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--hha-gunmetal);
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  min-width: 0;
+}
+
 .hh-search__clear,
 .hh-search__export {
   padding: 8px 12px;
@@ -98,6 +110,13 @@
   .hh-search__input {
     order: -1;
     flex-basis: 100%;
+  }
+
+  /* 375px: the game and the two dates share a row under the field rather
+     than pushing the buttons off the edge. */
+  .hh-search__select,
+  .hh-search__date {
+    flex: 1 1 30%;
   }
 }
 

@@ -1,0 +1,3 @@
+# tests/throwables-play-the-measured-grammar.law.test.ts
+
+A rigged throwable plays the grammar measured off thirty-one PokerBros throws at 30 fps (straight linear flight from the spec, one Animation Speed read once and handed to the CSS and the AudioContext clock, avatar units measured off the target seat scoped to this table, a paid throw that cannot draw reports itself, a cue with no file falls back and is counted) and never moves the seat (Dan ruling 6, 2026-09-06). Pins the migration seam that routes rigged ids to ThrowablePlayer and the rest to the legacy ThrowAnimation, the single THROWABLE_GRAMMAR bounds, and the single definition of LANDING that the water_gun rig's 100 ms offset bug came from.

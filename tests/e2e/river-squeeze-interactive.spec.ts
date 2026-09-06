@@ -35,7 +35,16 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 
-const BASE = process.env.ARENA_BASE_URL || 'http://localhost:4178';
+/* BASE_URL is what playwright.config.ts and the CI job actually set; this file
+   read only ARENA_BASE_URL, so in the "Live Production E2E" job it fell through
+   to localhost:4178 - a port nothing listens on there - and all 16 specs failed
+   with ERR_CONNECTION_REFUSED on EVERY run of main from 2026-09-04. That job
+   exists to answer "is main green" and it had been answering "no" about itself.
+   /sim is a real route (src/App.tsx) and serves 200 in production, so honouring
+   BASE_URL turns sixteen self-inflicted reds into real production coverage.
+   Trailing slash stripped because every use below appends an absolute path. */
+const RAW = process.env.ARENA_BASE_URL || process.env.BASE_URL || 'http://localhost:4178';
+const BASE = RAW.replace(/\/+$/, '');
 const HOST = '.card-squeeze-host';
 
 function rotationYFromTransform(transform: string | null): number {

@@ -79,7 +79,9 @@ describe('LAW 1 - one builder, both sockets', () => {
       'utf8'
     );
     expect(chan).toContain('clientProtocolVersion(url) < MIN_CLIENT_PROTOCOL');
-    expect(chan).toContain('CLOSE_UPGRADE_REQUIRED');
+    // Through the SHARED refusal, which is where the counter lives. It used to
+    // inline its own close (audit, 2026-09-05).
+    expect(chan).toContain('refuseProtocol(this.wss, req, socket, head');
     // Imported, never redefined: a second copy of the number is how two
     // sockets end up disagreeing about which bundles they serve.
     expect(chan).not.toMatch(/const (MIN_CLIENT_PROTOCOL|CLOSE_UPGRADE_REQUIRED) =/);
@@ -128,6 +130,63 @@ describe('LAW 2 - refused with a close frame, not an HTTP status', () => {
   it('4426 is the same number on both sides', () => {
     expect(CLOSE_UPGRADE_REQUIRED).toBe(4426);
     expect(CLIENT).toContain('export const CLOSE_UPGRADE_REQUIRED = 4426;');
+  });
+});
+
+/**
+ * LAW 2b - A REFUSAL IS A NUMBER (audit, 2026-09-05).
+ *
+ * The auth counter next to this one exists because twenty-two hours of
+ * refusals were not a number anywhere. The protocol gate shipped with exactly
+ * that defect: it refused a socket and recorded nothing. On the day
+ * `MIN_CLIENT_PROTOCOL` is raised, the wave of stale tabs being turned away is
+ * the ONE thing worth watching - it tells you whether it is draining (tabs
+ * fetching a new bundle, as designed) or flat (tabs reloading into the same
+ * refusal, which would be a loop) - and it would have been invisible.
+ */
+describe('LAW 2b - a protocol refusal is counted and exposed', () => {
+  const HELPERS = readFileSync(join(ROOT, 'server', 'src', 'transport', 'wsHelpers.ts'), 'utf8');
+  const GAME_SERVER = readFileSync(join(ROOT, 'server', 'src', 'GameServer.ts'), 'utf8');
+
+  it('the refusal records it, and there is one refusal to record it in', () => {
+    const fn = sliceMethod(SERVER, 'export function refuseProtocol(');
+    expect(fn).toContain('recordWsProtocolRefusal(path)');
+    // Counted BEFORE the handshake completes, so a close that throws is still
+    // counted - the number is about the decision, not about the delivery.
+    expect(fn.indexOf('recordWsProtocolRefusal(path)')).toBeLessThan(
+      fn.indexOf('wss.handleUpgrade(')
+    );
+  });
+
+  it('every socket uses that one refusal rather than its own copy', () => {
+    const chan = readFileSync(
+      join(ROOT, 'server', 'src', 'transport', 'ChannelWebSocketServer.ts'),
+      'utf8'
+    );
+    expect(chan).toContain('refuseProtocol(this.wss, req, socket, head');
+    // The inlined copy is gone: no second place writes a 4426 close.
+    expect(chan).not.toContain('CLOSE_UPGRADE_REQUIRED,');
+    expect((SERVER.match(/ws\.close\(CLOSE_UPGRADE_REQUIRED/g) ?? []).length).toBe(1);
+  });
+
+  it('all three paths are labelled, so the wave can be told apart', () => {
+    expect(SERVER).toContain("url.pathname === '/ws/multi' ? 'multi' : 'table'");
+    const chan = readFileSync(
+      join(ROOT, 'server', 'src', 'transport', 'ChannelWebSocketServer.ts'),
+      'utf8'
+    );
+    expect(chan).toContain("'channel'");
+  });
+
+  it('it is exposed on the always-on metrics, at zero, from the first scrape', () => {
+    expect(HELPERS).toContain('poker_ws_protocol_refused_total');
+    const lines = sliceMethod(HELPERS, 'export function wsProtocolRefusalPrometheusLines()');
+    // Every path is emitted, so a zero is visible rather than absent - an
+    // absent series and a zero one mean opposite things on a dashboard.
+    expect(lines).toContain("for (const path of ['table', 'multi', 'channel'] as const)");
+    expect(lines).toContain('poker_ws_protocol_refused_total{path=');
+    // Rendered beside the auth counter, on the exposition that is never gated.
+    expect(GAME_SERVER).toContain('...wsProtocolRefusalPrometheusLines(),');
   });
 });
 
@@ -202,6 +261,17 @@ describe('LAW 5 - the client answers 4426 with new bytes', () => {
     expect(util).toContain('serviceWorker');
     expect(util).toContain('caches.delete');
     expect(util).toContain("searchParams.set('_cb'");
+  });
+
+  it('only one of them reloads, however many facades saw the close', () => {
+    /* The multiplexed socket carries every table, so one 4426 closes four
+       facades at once and each client answers it - four concurrent
+       service-worker unregistrations and Cache Storage purges racing on a page
+       that is leaving anyway (audit, 2026-09-05). */
+    expect(CLIENT).toContain('let reloadingForNewBundle = false;');
+    const fn = sliceMethod(CLIENT, 'function reloadForNewBundle(): Promise<void> {');
+    expect(fn).toContain('if (reloadingForNewBundle) return Promise.resolve();');
+    expect(fn).toContain('reloadingForNewBundle = true;');
   });
 
   it('and it stops the ladder rather than reconnecting into the same refusal', () => {

@@ -23,7 +23,14 @@ import {
 
 describe('a pin bounded by structure cannot be outrun by the code it watches', () => {
   it('takes the whole method however far the body grows', () => {
-    const src = ['class X {', '  private go() {', '    const a = 1;', '    return a;', '  }', '}'].join('\n');
+    const src = [
+      'class X {',
+      '  private go() {',
+      '    const a = 1;',
+      '    return a;',
+      '  }',
+      '}',
+    ].join('\n');
     const body = sliceMethod(src, 'private go(');
     expect(body).toContain('return a;');
     expect(body).not.toContain('class X');
@@ -50,12 +57,28 @@ describe('a pin bounded by structure cannot be outrun by the code it watches', (
   });
 
   it('REGRESSION: `}> {` at the signature indent is not the closing line', () => {
-    const src = ['class X {', '  m(): Promise<{', '    a: 1;', '  }> {', '    KEEP;', '  }', '}'].join('\n');
+    const src = [
+      'class X {',
+      '  m(): Promise<{',
+      '    a: 1;',
+      '  }> {',
+      '    KEEP;',
+      '  }',
+      '}',
+    ].join('\n');
     expect(sliceMethod(src, 'm(): Promise<{')).toContain('KEEP');
   });
 
   it('ignores braces inside comments and strings', () => {
-    const src = ['class X {', '  m() {', "    const s = '}';", '    // }', '    KEEP;', '  }', '}'].join('\n');
+    const src = [
+      'class X {',
+      '  m() {',
+      "    const s = '}';",
+      '    // }',
+      '    KEEP;',
+      '  }',
+      '}',
+    ].join('\n');
     expect(sliceMethod(src, 'm() {')).toContain('KEEP');
   });
 
@@ -77,14 +100,26 @@ describe('a pin bounded by structure cannot be outrun by the code it watches', (
   it('takes the innermost block around a needle, so a negative assertion stays honest', () => {
     // The point of the innermost bound: a fixed forward window would run past
     // this object into the next one and read the very field it asserts absent.
-    const src = ['broadcast({', "  type: 'available',", '  count: 2,', '});', 'other({ leaked: 1 });'].join('\n');
+    const src = [
+      'broadcast({',
+      "  type: 'available',",
+      '  count: 2,',
+      '});',
+      'other({ leaked: 1 });',
+    ].join('\n');
     const b = sliceEnclosingBlock(src, "type: 'available'");
     expect(b).toContain('count: 2');
     expect(b).not.toContain('leaked');
   });
 
   it('takes one CSS rule, not a guessed number of characters', () => {
-    const css = ['.a {', '  /* a comment that pushes things down */', '  animation: none;', '}', '.b { color: red; }'].join('\n');
+    const css = [
+      '.a {',
+      '  /* a comment that pushes things down */',
+      '  animation: none;',
+      '}',
+      '.b { color: red; }',
+    ].join('\n');
     const rule = sliceCssRule(css, '.a {');
     expect(rule).toContain('animation: none');
     expect(rule).not.toContain('color: red');
@@ -143,7 +178,15 @@ describe('statement and YAML pins are bounded by their own shape', () => {
   });
 
   it('takes a YAML job by indentation, however many keys it gains', () => {
-    const y = ['jobs:', '  build:', '    needs: prep', '    env:', '      A: 1', '  other:', '    needs: nope'].join('\n');
+    const y = [
+      'jobs:',
+      '  build:',
+      '    needs: prep',
+      '    env:',
+      '      A: 1',
+      '  other:',
+      '    needs: nope',
+    ].join('\n');
     const b = sliceYamlBlock(y, '  build:');
     expect(b).toContain('needs: prep');
     expect(b).toContain('A: 1');
@@ -153,9 +196,102 @@ describe('statement and YAML pins are bounded by their own shape', () => {
 
 describe('a section is bounded by the section after it', () => {
   it('runs from one marker to the next, not for N characters', () => {
-    const sql = ['-- GUARD 1: kill switch', "  IF x THEN RETURN 'disabled'; END IF;", '-- GUARD 2: other', "  RETURN 'other';"].join('\n');
+    const sql = [
+      '-- GUARD 1: kill switch',
+      "  IF x THEN RETURN 'disabled'; END IF;",
+      '-- GUARD 2: other',
+      "  RETURN 'other';",
+    ].join('\n');
     const g1 = sliceBetween(sql, 'GUARD 1', 'GUARD 2');
     expect(g1).toContain("'disabled'");
     expect(g1).not.toContain("'other'");
+  });
+});
+
+describe('prose about a method can never be mistaken for the method', () => {
+  /**
+   * The regression that produced this suite, 2026-09-05. A comment added to
+   * `releasePauseGate()` mentioned `resumeDealing()` by name; every scanner
+   * anchored with a raw `indexOf`, so the pin on resumeDealing sliced the
+   * comment's owner instead and two correct methods went red. The client suite
+   * publishes the bundle, so a pin that can be broken by documentation is a pin
+   * that can stop the estate from shipping.
+   */
+  const SRC = [
+    'class Engine {',
+    '  /**',
+    '   * Both resumeFromMaintenance() and resumeDealing() funnel through here.',
+    '   */',
+    '  private releasePauseGate(): void {',
+    '    this.holdBeforeNextHand = false;',
+    '  }',
+    '',
+    '  private resumeDealing(): void {',
+    '    if (this.maintenancePaused) return;',
+    '    this.releasePauseGate();',
+    '  }',
+    '}',
+  ].join('\n');
+
+  it('sliceMethod anchors on the definition, not on a comment naming it', () => {
+    const body = sliceMethod(SRC, 'resumeDealing()');
+    expect(body).toContain('if (this.maintenancePaused) return;');
+    expect(body).toContain('this.releasePauseGate();');
+    // The give-away of the bug: the comment's owner leaking into the window.
+    expect(body).not.toContain('this.holdBeforeNextHand = false;');
+  });
+
+  it('a string literal cannot anchor a pin either', () => {
+    const src = [
+      'class X {',
+      '  private log(): void {',
+      "    console.log('go() was called');",
+      '    const decoy = 1;',
+      '  }',
+      '',
+      '  private go(): void {',
+      '    const real = 2;',
+      '  }',
+      '}',
+    ].join('\n');
+    const body = sliceMethod(src, 'go()');
+    expect(body).toContain('const real = 2;');
+    expect(body).not.toContain('const decoy = 1;');
+  });
+
+  it('NEGATIVE assertions are the dangerous half: a comment window forbids nothing', () => {
+    // A pin anchored on the comment would read a window with no `await` in it
+    // and pass forever, which is the silent direction this file exists to stop.
+    const src = [
+      'class X {',
+      '  /** unsafeWrite() must never await inside the lock. */',
+      '  private describe(): void {',
+      '    const note = 1;',
+      '  }',
+      '',
+      '  private unsafeWrite(): void {',
+      '    await this.db.commit();',
+      '  }',
+      '}',
+    ].join('\n');
+    const body = sliceMethod(src, 'unsafeWrite()');
+    expect(body).toContain('await this.db.commit();');
+  });
+
+  it('the fallback keeps string anchors working - a CSS selector, a SQL fragment', () => {
+    // Anchors that legitimately ARE text must still resolve, or this change
+    // would break more than it fixed.
+    expect(sliceCssRule('.a { color: red; }', '.a')).toContain('color: red');
+    expect(sliceSqlStatement('CREATE INDEX i ON t (c);', 'CREATE INDEX')).toContain('ON t (c);');
+  });
+
+  it('occurrence counting skips comment mentions, so index 0 is the first REAL one', () => {
+    const src = [
+      'const x = {',
+      '  // seatCount: 9 is the old default',
+      '  seatCount: 6,',
+      '};',
+    ].join('\n');
+    expect(sliceEnclosingBlock(src, 'seatCount:', 0)).toContain('seatCount: 6');
   });
 });

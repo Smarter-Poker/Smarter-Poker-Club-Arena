@@ -19,7 +19,7 @@ import {
   bucketOf,
   neediestStakeBand,
   stakeBandOf,
-  stakeIsLegalThisPhase,
+  emptyBandSeats,
   yieldDelayMs,
   yieldCount,
   pickYieldVictims,
@@ -209,7 +209,14 @@ export interface HostMetrics {
  * a waiting player was always served. Everything else was blind.
  */
 function shapedTables(h: HostSnapshot): TableSnapshot[] {
-  return h.tables.filter((t) => t.status !== 'closed' && stakeIsLegalThisPhase(t.bb));
+  /* THE STAKE FILTER IS GONE (2026-09-05). It read `stakeIsLegalThisPhase`,
+     the invented 1/2 clamp, so every 2/5 and above table on the host was
+     invisible to the shape half of the planner: its seats counted toward
+     nothing, its buckets were never shaped and its humans were served only
+     by the yield pass. Occupancy is a fact about SEATS, and a seat at 2/5 is
+     a body in a chair exactly as a seat at 0.25/0.50 is. Anything reaching
+     here is already a real, open, playable cash table. */
+  return h.tables.filter((t) => t.status !== 'closed');
 }
 
 export function planFloor(snap: FloorSnapshot): FloorPlan {
@@ -355,10 +362,9 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
             );
           });
         } else {
-          const bandSeats: Record<StakeBand, number> = { micro: 0, low: 0, top: 0 };
+          const bandSeats = emptyBandSeats();
           running.forEach((t) => {
-            const b = stakeBandOf(t.bb);
-            if (b) bandSeats[b] += t.occupied;
+            bandSeats[stakeBandOf(t.bb)] += t.occupied;
           });
           plan.open.push({
             hostId: host.hostId,
@@ -392,10 +398,9 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
         );
         const stillShort = short - absorbable.length;
         if (stillShort > 0 && roomForMore) {
-          const bandSeats: Record<StakeBand, number> = { micro: 0, low: 0, top: 0 };
+          const bandSeats = emptyBandSeats();
           running.forEach((t) => {
-            const b = stakeBandOf(t.bb);
-            if (b) bandSeats[b] += t.occupied;
+            bandSeats[stakeBandOf(t.bb)] += t.occupied;
           });
           plan.open.push({
             hostId: host.hostId,
@@ -609,8 +614,14 @@ export type { ShapeBucket };
  *
  * The HIGHEST rung inside the band, because the alternative - the lowest - puts
  * every new micro table at 0.01/0.02, and a floor whose new games are always
- * its cheapest is not a floor anybody grows into. Never above the phase clamp
- * by construction: `stakeBandOf` returns null past it, so no band maps there.
+ * its cheapest is not a floor anybody grows into.
+ *
+ * Since 2026-09-05 the ladder runs to 25/50 and the bands are the canonical
+ * four, so the rung a band opens at is: micro 0.25/0.50, low 1/2, mid 2/5,
+ * high 25/50. Nothing here can reach above the ladder's top rung, and the
+ * open path itself is still the most cautious thing in the fleet - one table
+ * per host per cycle, never at the occupancy cap, never at night, and only
+ * when the host has no game of that variant at that stake at all.
  */
 export function stakeForBand(band: StakeBand): { sb: number; bb: number } | null {
   const inBand = STAKE_LADDER.filter((s) => stakeBandOf(s.bb) === band);

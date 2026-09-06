@@ -933,10 +933,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // reasons that are really one reason. The client renders the Rabbit
           // Hunt button behind `!tableState.isHandInProgress`, so the offer
           // it received at settlement is invisible until that clean state
-          // lands; and a reveal freezes the client's snapshot for three
-          // seconds, which is only safe once there is no live hand for the
-          // freeze to starve. Before this beat existed the button's whole
-          // visible life was boardClearMs - half a second on a fold.
+          // lands. (Until 2026-09-05 a reveal also froze the client's
+          // snapshot for three seconds, which was only safe with no live hand
+          // to starve; the reveal now paints on a retained copy of the board
+          // and freezes nothing - TablePage P1.) Before this beat existed the
+          // button's whole visible life was boardClearMs - half a second on a
+          // fold.
           //
           // Unconditional. A rest that happened only when a rabbit hunt was
           // purchasable would tell the whole table, from the rhythm alone,

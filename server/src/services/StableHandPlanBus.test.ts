@@ -16,7 +16,7 @@ import {
 } from './StableHandPlanBus.js';
 import { stakeForBand } from './StableHandController.js';
 import type { FloorPlan } from './StableHandController.js';
-import { MIDWAY_UNION_ID, PHASE_MAX_BB, stakeBandOf, variantLabel } from './StableHand.js';
+import { LADDER_MAX_BB, MIDWAY_UNION_ID, stakeBandOf, variantLabel } from './StableHand.js';
 
 const NOW = Date.UTC(2026, 8, 4, 14, 0, 0);
 
@@ -121,15 +121,16 @@ describe('the stake a new table opens at', () => {
   it('is the highest rung inside the band, not the cheapest', () => {
     // A floor whose new games are always its cheapest is not a floor anybody
     // grows into.
-    expect(stakeForBand('micro')).toEqual({ sb: 0.05, bb: 0.1 });
-    expect(stakeForBand('low')).toEqual({ sb: 0.25, bb: 0.5 });
-    expect(stakeForBand('top')).toEqual({ sb: 1, bb: 2 });
+    expect(stakeForBand('micro')).toEqual({ sb: 0.25, bb: 0.5 });
+    expect(stakeForBand('low')).toEqual({ sb: 1, bb: 2 });
+    expect(stakeForBand('mid')).toEqual({ sb: 2, bb: 5 });
+    expect(stakeForBand('high')).toEqual({ sb: 25, bb: 50 });
   });
 
-  it('is never above the phase clamp, by construction', () => {
-    for (const band of ['micro', 'low', 'top'] as const) {
+  it('is never above the ladder top rung, by construction', () => {
+    for (const band of ['micro', 'low', 'mid', 'high'] as const) {
       const s = stakeForBand(band)!;
-      expect(s.bb).toBeLessThanOrEqual(PHASE_MAX_BB);
+      expect(s.bb).toBeLessThanOrEqual(LADDER_MAX_BB);
       expect(stakeBandOf(s.bb)).toBe(band);
     }
   });

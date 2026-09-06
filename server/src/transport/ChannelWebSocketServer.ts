@@ -55,8 +55,8 @@ import { channelHub } from '../hub/ChannelHub.js';
 // bundles they serve (Realtime Phase 4, 2026-09-05).
 import {
   MIN_CLIENT_PROTOCOL,
-  CLOSE_UPGRADE_REQUIRED,
   clientProtocolVersion,
+  refuseProtocol,
 } from './EngineWebSocketServer.js';
 
 /** B13: how long a club-membership verdict may be reused. */
@@ -150,14 +150,11 @@ export class ChannelWebSocketServer {
          reaches the browser as 1006 and 1006 means "retry" - the one thing a
          stale bundle must not do. A no-op while MIN_CLIENT_PROTOCOL is 0. */
       if (clientProtocolVersion(url) < MIN_CLIENT_PROTOCOL) {
-        const saw = clientProtocolVersion(url);
-        this.wss.handleUpgrade(req, socket, head, (ws) => {
-          try {
-            ws.close(CLOSE_UPGRADE_REQUIRED, `upgrade_required:${saw}<${MIN_CLIENT_PROTOCOL}`);
-          } catch {
-            ws.terminate();
-          }
-        });
+        // The SHARED refusal, not a copy of it (audit, 2026-09-05): this
+        // inlined the same four lines, so the counter and any future change to
+        // how a refusal is written would have reached one socket and not the
+        // other.
+        refuseProtocol(this.wss, req, socket, head, clientProtocolVersion(url), 'channel');
         return;
       }
 

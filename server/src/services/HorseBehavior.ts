@@ -216,6 +216,14 @@ export type HorseStakeBand = 'micro' | 'low' | 'mid' | 'high';
  *     low     0.50/1.00, 1.00/2.00          <- where the fleet's own configs live
  *     mid     2.00/4.00, 2.00/5.00, 3.00/6.00
  *     high    5.00/10.00, 10.00/25.00, 25.00/50.00
+ *
+ * THIS IS THE CANONICAL BAND FUNCTION (2026-09-05). StableHand used to carry
+ * a second, three-band one (micro / low / top, and null above 2) that
+ * disagreed with this one at every stake above 1/2. It is gone; StableHand
+ * re-exports this as `stakeBandOf`, so a band means the same thing to the
+ * seat gate, the tagger, the planner and `fn_assign_horse_stake_bands`.
+ * Change a boundary here and you have changed it everywhere, which is the
+ * point.
  */
 export function stakeBandForBigBlind(bigBlind: number): HorseStakeBand {
   const bb = Number(bigBlind);

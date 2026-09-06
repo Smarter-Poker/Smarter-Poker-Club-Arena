@@ -63,9 +63,12 @@ describe('LAW 1 - the transport reads the announcement', () => {
   });
 
   it('the client latches the window off that frame, plus a grace', () => {
-    const block = sliceEnclosingBlock(CLIENT, 'this.restartWindowUntil = resumeAt > 0');
+    // The frame goes through the SAME door as the database reading below, so
+    // the two cannot disagree about which wins (audit, 2026-09-05).
+    const block = sliceEnclosingBlock(CLIENT, 'this.noteScheduledRestart(p.resume_expected_at)');
     expect(block).toContain('resume_expected_at');
-    expect(block).toContain('RESTART_WINDOW_GRACE_MS');
+    const setter = sliceMethod(CLIENT, 'noteScheduledRestart(resumeExpectedAt: number');
+    expect(setter).toContain('RESTART_WINDOW_GRACE_MS');
   });
 
   it('the grace expires, so one announcement cannot disable the failsafe forever', () => {
@@ -149,12 +152,75 @@ describe('LAW 5 - the page refuses to reload during a break, with no socket need
 
 describe('LAW 6 - additive: an engine without the field changes nothing', () => {
   it('a frame with no resume_expected_at leaves the window closed', () => {
-    const block = sliceEnclosingBlock(CLIENT, 'this.restartWindowUntil = resumeAt > 0');
-    expect(block).toMatch(/typeof p\.resume_expected_at === 'number' \? p\.resume_expected_at : 0/);
-    expect(block).toContain('resumeAt > 0 ? resumeAt + RESTART_WINDOW_GRACE_MS : 0');
+    const setter = sliceMethod(CLIENT, 'noteScheduledRestart(resumeExpectedAt: number');
+    expect(setter).toContain("typeof resumeExpectedAt !== 'number'");
+    expect(setter).toContain('!Number.isFinite(resumeExpectedAt)');
+    expect(setter).toContain('resumeExpectedAt <= 0');
   });
 
   it('and the field starts at zero, which means no window', () => {
     expect(CLIENT).toMatch(/private restartWindowUntil = 0;/);
+  });
+});
+
+/**
+ * LAW 7 - THE FRAME REACHES ONLY THE SOCKETS THAT WERE THERE.
+ *
+ * The break broadcasts once at :53 and once at :55, and `TableStateHub`
+ * delivers to CURRENT subscribers; it retains an event for a late joiner only
+ * if the event asks, and never for more than HUB_MAX_EVENT_REPLAY_MS (sixty
+ * seconds), which does not span a seven-minute break.
+ *
+ * So a player who sat down at :54 - every hour, the population most likely to
+ * need this - learned nothing, their window stayed shut, and Phase 4 did
+ * nothing for them. The database is the authority on the break (CLAUDE.md 13
+ * rule 3) and `useMaintenanceBreak` already reads it; this is the wire from
+ * that reading into the ladder.
+ */
+describe('LAW 7 - a player who joins after the announcement is covered too', () => {
+  const HOOK = readFileSync(join(ROOT, 'src', 'hooks', 'useEngineTableState.ts'), 'utf8');
+
+  it('the transport accepts a restart it was told about from outside', () => {
+    expect(CLIENT).toMatch(/noteScheduledRestart\(resumeExpectedAt: number \| null \| undefined\)/);
+  });
+
+  it('it is monotonic, so a stale read cannot shorten a live window', () => {
+    const setter = sliceMethod(CLIENT, 'noteScheduledRestart(resumeExpectedAt: number');
+    expect(setter).toContain(
+      'if (until > this.restartWindowUntil) this.restartWindowUntil = until'
+    );
+  });
+
+  it('the hook wires the break into the client, and seeds it before connecting', () => {
+    expect(HOOK).toContain('scheduledRestartUntil');
+    const code = blankNonCode(HOOK);
+    const seed = code.indexOf('client.noteScheduledRestart(scheduledRestartUntilRef.current)');
+    const connect = code.indexOf('void client.connect()');
+    expect(seed, 'the window is not seeded at mount').toBeGreaterThan(-1);
+    expect(seed, 'seeded AFTER connecting, so the first retries still escalate').toBeLessThan(
+      connect
+    );
+  });
+
+  it('a later break is pushed in without tearing the socket down', () => {
+    // The value is read through a ref inside the connect effect and pushed by
+    // its own effect: joining the connect effect's deps would rebuild the
+    // socket the moment a break started.
+    expect(HOOK).toContain('scheduledRestartUntilRef');
+    expect(HOOK).toMatch(
+      /useEffect\(\(\) => \{\s*clientRef\.current\?\.noteScheduledRestart\(scheduledRestartUntil\);\s*\}, \[scheduledRestartUntil\]\)/
+    );
+    expect(HOOK).toMatch(/\}, \[tableId, enabled\]\);/);
+  });
+
+  it('TablePage passes the DATABASE-backed break, and reads it before the socket', () => {
+    expect(TABLE_PAGE).toContain(
+      'scheduledRestartUntil: maintenanceBreak.active ? maintenanceBreak.breakEndsAtMs : null'
+    );
+    const code = blankNonCode(TABLE_PAGE);
+    expect(
+      code.indexOf('useMaintenanceBreak()'),
+      'the break must be read before the socket that consumes it'
+    ).toBeLessThan(code.indexOf('useEngineTableState('));
   });
 });

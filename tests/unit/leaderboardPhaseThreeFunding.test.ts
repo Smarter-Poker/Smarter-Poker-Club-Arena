@@ -12,7 +12,7 @@ const migration = readFileSync(
 const settlementRepair = readFileSync(
   join(
     __dirname,
-    '../../supabase/migrations/20260906020000_leaderboard_settlement_follows_the_published_period.sql'
+    '../../supabase/migrations/20260906022137_leaderboard_settlement_follows_the_published_period.sql'
   ),
   'utf8'
 );

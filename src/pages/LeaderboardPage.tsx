@@ -825,12 +825,13 @@ export default function LeaderboardPage() {
     if (
       scope !== 'my-clubs' ||
       !rewardPlan?.rewards_enabled ||
+      settings?.funding_status !== 'funded' ||
       rewardPlan.payout_metric !== metric
     ) {
       return new Map<number, number>();
     }
     return new Map(rewardPlan.prizes.map((prize) => [prize.rank, prize.amount]));
-  }, [metric, rewardPlan, scope]);
+  }, [metric, rewardPlan, scope, settings?.funding_status]);
 
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3);
@@ -1254,12 +1255,18 @@ export default function LeaderboardPage() {
           <div className="lb-prize-program-copy">
             <span className="lb-prize-program-kicker">Owner Prize Circuit</span>
             <h2>
-              {settings.rewards_enabled ? 'Prize Program Published' : 'Prize Program Disabled'}
+              {settings.rewards_enabled && settings.funding_status === 'funded'
+                ? 'Prize Program Published And Funded'
+                : settings.rewards_enabled
+                  ? 'Prize Program Funding Required'
+                  : 'Prize Program Disabled'}
             </h2>
             <p>
-              {settings.rewards_enabled
+              {settings.rewards_enabled && settings.funding_status === 'funded'
                 ? `${settings.program_funding_label || settings.funding_label} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${METRIC_OPTIONS.find((option) => option.value === settings.payout_metric)?.label || 'Profit'}.`
-                : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
+                : settings.rewards_enabled
+                  ? `Planned Prizes Are Hidden Until ${settings.program_funding_label || settings.funding_label} Covers Every Published Commitment.`
+                  : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
             </p>
           </div>
           <dl className="lb-prize-program-totals">
@@ -1295,7 +1302,9 @@ export default function LeaderboardPage() {
           )}
           <span className="lb-prize-program-safety" role={rewardPlanError ? 'status' : undefined}>
             {rewardPlanError ||
-              'Published Rules Activate At The Dates Shown. Publication Does Not Move Chips.'}
+              (settings.funding_status === 'underfunded'
+                ? 'Planned Prize Badges Are Hidden Until The Promo Wallet Is Fully Funded.'
+                : 'Published Rules Activate At The Dates Shown. Settlement Uses The Recorded Promo Wallet After The Period Closes.')}
           </span>
         </section>
       )}

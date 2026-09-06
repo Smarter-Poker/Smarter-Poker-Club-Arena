@@ -311,25 +311,60 @@ DISPATCHED="no"
 NOW_TS=$(date -u +%s)
 NEXT_WINDOW_EPOCH=$(window_at_or_after "$NOW_TS")
 NEXT_WINDOW_LOCAL=$(chicago_stamp "$NEXT_WINDOW_EPOCH")
-# Every hour is a restart window now, but the deploy's break gate only polls
-# for about 14 minutes before giving up with BREAK NEVER OPENED. A dispatch at
-# :10 therefore burns a runner for a quarter of an hour and provably ships
-# nothing - and an alarm claiming "a retry has been dispatched" when the retry
-# cannot work is worse than one that says nothing. Dispatch only when the next
-# :55 is close enough that the run will still be alive and waiting when the
-# break opens; otherwise say when the window comes and let the deploy's own
-# :40/:45/:50 crons take it.
+# ── A DISPATCH IS WORTH MAKING EVEN WHEN THE BREAK IS FAR AWAY (2026-09-05) ──
+#
+# This used to refuse to dispatch unless the next :55 was within 13 minutes,
+# on the reasoning that a run which cannot reach the break "provably ships
+# nothing" and an alarm claiming a retry when the retry cannot work is worse
+# than silence. The reasoning was right and the conclusion had become wrong,
+# because both halves of it moved:
+#
+#   * the deploy no longer rebuilds an image it already has, so a run that
+#     cannot reach the break STAGES `club-arena-engine:<sha>` on the host and
+#     the next :35 tick cuts over in about a minute instead of eighteen. The
+#     "wasted" run does the expensive half of the work;
+#   * the 13-minute rule was itself feeding the failure. It concentrated every
+#     dispatch into :42-:47, where the run then spent 8-18 minutes building and
+#     arrived at the gate AFTER the break it was aimed at. Measured 2026-09-05:
+#     runs 33985138036 and 33986167969 did exactly that, back to back, both
+#     green, both shipped nothing.
+#
+# So dispatch whenever the engine is behind, and say honestly which of the two
+# things this dispatch is going to do. The cost of being wrong is now one
+# minute of runner time, not fifteen.
+#
+# The threshold below is the deploy's own budget, not a guess: timeout minus a
+# cold build minus the cutover reserve. Keep it in step with
+# auto-deploy-hetzner.yml - tests/the-deploy-can-always-ship.law.test.ts pins
+# that the deploy's arithmetic works, and this number is how this script
+# describes it.
 MINS_TO_WINDOW=$(( (NEXT_WINDOW_EPOCH - NOW_TS) / 60 ))
-if [ "$MINS_TO_WINDOW" -le 13 ]; then
-  if gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
-    DISPATCHED="yes"
-    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break)"
+CUTOVER_REACH_MIN=${CUTOVER_REACH_MIN:-30}
+if gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
+  if [ "$MINS_TO_WINDOW" -le "$CUTOVER_REACH_MIN" ]; then
+    DISPATCHED="yes - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, inside the run's wait budget, so this dispatch should cut over"
+    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break - should cut over)"
   else
-    say "::error::could not dispatch $DEPLOY_WORKFLOW -- the engine is behind and this run could not even try to fix it."
+    DISPATCHED="yes - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, beyond the run's wait budget, so this dispatch stages the image and the :35 tick cuts over"
+    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break - stages the image for the next tick)"
   fi
 else
-  DISPATCHED="no - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, past the deploy's 14-minute wait budget"
-  say "  not dispatching: the break gate would give up before $NEXT_WINDOW_LOCAL. The deploy's own :40/:45/:50 crons cover that window."
+  say "::error::could not dispatch $DEPLOY_WORKFLOW -- the engine is behind and this run could not even try to fix it."
+fi
+
+# ── THE PIPELINE'S OWN ACCOUNT OF WHY (2026-09-05) ──────────────────────────
+# Staleness says the engine is behind. It has never said WHY, and the answer
+# has been sitting in ca_engine_deploy_attempts the whole time - 52 of 98
+# attempts over the three days to 2026-09-05 reported success having shipped
+# nothing, each with a recorded reason nobody was reading. Pasting that table
+# into the issue turns two hours of reading the ledger by hand into the first
+# thing the next person sees. Best-effort by design: no DATABASE_URL, no pg,
+# no rows, and $LEDGER is simply empty. A watchdog must never fail because its
+# optional evidence was unavailable.
+LEDGER=""
+if [ -n "${DATABASE_URL:-}" ]; then
+  npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+  LEDGER=$(node "$(dirname "$0")/deploy-ship-rate.mjs" 2>/dev/null || echo "")
 fi
 
 BODY=$(cat <<EOF
@@ -352,16 +387,18 @@ this issue at all means a break has already opened since the commit and passed
 without the engine catching up.
 
 **Why a green deploy is not an answer.** \`auto-deploy-hetzner.yml\` coalesces a
-restart inside MIN_RESTART_SPACING_SEC and exits 0, and the drain gate defers
-while hands are in flight and exits 0. Both are correct and both report success,
-so the deploy run being green tells you nothing about what production runs. A
-run of 11-20s shipped nothing; a real deploy takes about five minutes.
+restart inside MIN_RESTART_SPACING_SEC of the last deploy WE shipped and exits 0,
+and the break gate defers until the engine parks every table at :${RESTART_MINUTE}
+and exits 0. Both are correct and both report success, so the deploy run being
+green tells you nothing about what production runs. A run of 11-20s shipped
+nothing; a real deploy takes about five minutes.
+
+$LEDGER
 
 **If this is still open on the next sweep**, the deploy is being refused rather
-than deferred. Read the newest \`Auto-Deploy Hetzner Engine\` run: the drain gate
-holds while hands are in flight and gives up only after the 6h staleness cap,
-and the coalesce gate holds for 1200s after a restart. Anything else is a real
-failure and will be in that log.
+than deferred, and the table above says by which gate. Every run also records
+its own reason in \`ca_engine_deploy_attempts\` and prints it under the step
+named \`DID NOT DEPLOY\`, so start there rather than reading the whole log.
 
 This issue closes itself when the engine catches up.
 EOF

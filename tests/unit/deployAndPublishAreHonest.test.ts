@@ -54,9 +54,23 @@ describe('the engine deploy tells the truth when it skips', () => {
        blocked by the window reported "coalescing - the engine restarted too
        recently" while the engine had been up 45 minutes. A wrong reason costs
        more than no reason: it is confidently wrong, and it is the first line
-       anybody reads. */
+       anybody reads.
+
+       THERE ARE TWO GATES NOW, NOT THREE (2026-09-05). `steps.window` was
+       deleted when Dan moved the restart to the hourly :55 maintenance break -
+       CLAUDE.md section 13, dated ONE DAY after the 2026-08-31 instruction this
+       file quotes below, and it says in terms: "If you read anything - in this
+       repo, another repo, or a stale worktree - saying the engine restarts at
+       7am and 7pm ... that text is OLD. This section wins."
+
+       This assertion was that text. It REQUIRED a branch on a step that no
+       longer exists, and a missing step's output is the empty string, never
+       'false' - so the branch it demanded was unreachable even while it was
+       present. Keeping it would have done what section 13 was written about:
+       sent the next agent to restore a gate Dan deleted, in order to make a
+       test pass. */
     expect(HETZNER).toMatch(
-      /if: steps\.window\.outputs\.open == 'false' \|\| steps\.dedupe\.outputs\.skip == 'true' \|\| steps\.drain\.outputs\.skip == 'true'/
+      /if: steps\.dedupe\.outputs\.skip == 'true' \|\| steps\.drain\.outputs\.skip == 'true'/
     );
   });
 
@@ -83,19 +97,51 @@ describe('the engine deploy tells the truth when it skips', () => {
    * time of day announced a spacing problem that did not exist. Whoever reads
    * that goes and investigates a gate that is working correctly.
    */
-  it('reports the restart window as the reason, before coalescing', () => {
+  it('reports the gate that actually held, and never the deleted window', () => {
     expect(HETZNER, 'the reason block exists').toContain('REASON="already serving this commit"');
     /* Bounded by the STRUCTURE - the if/elif chain, from its first assignment
        to the `fi` that closes it - not by a byte count. One more elif branch
        would outrun any magic number here, and the pin would then either go red
        for no reason or, worse, stay green while watching nothing. */
     const block = sliceBetween(HETZNER, 'REASON="already serving this commit"', '\n          fi');
-    const windowAt = block.indexOf('steps.window.outputs.open');
+
+    // The break gate is the one that holds a run now, and it hands its OWN
+    // reason up rather than being guessed at from the outside. Run
+    // 33991470437 is why: the step warning said hands were in flight, the
+    // summary said the break never opened, and the truth was that the run had
+    // refused to WAIT for a break that had not started. Three answers, one
+    // run, and the loudest was the only false one.
+    const drainAt = block.indexOf('steps.drain.outputs.skip');
+    const gateReasonAt = block.indexOf('gate_reason');
     const coalesceAt = block.indexOf('coalescing');
-    expect(windowAt, 'the window is one of the reasons').toBeGreaterThan(-1);
+    expect(drainAt, 'the break gate is one of the reasons').toBeGreaterThan(-1);
+    expect(gateReasonAt, 'and it supplies its own reason').toBeGreaterThan(-1);
     expect(coalesceAt, 'coalescing is still a reason').toBeGreaterThan(-1);
-    expect(windowAt, 'and the window is checked FIRST').toBeLessThan(coalesceAt);
-    expect(block).toMatch(/force=true/);
+    expect(drainAt, 'the gate that held is read FIRST').toBeLessThan(coalesceAt);
+
+    // NEGATIVE, and this is the half that matters. CLAUDE.md section 13 says
+    // the 7am/7pm text is old and must not come back; a stale sentence sitting
+    // in the repo is what re-teaches it. So the workflow must not mention the
+    // deleted step or the window it belonged to, anywhere outside a comment.
+    const code = HETZNER.split('\n')
+      .filter((line) => !/^\s*#/.test(line))
+      .join('\n');
+    expect(code, 'steps.window was deleted with the restart window').not.toMatch(
+      /steps\.window\.outputs/
+    );
+    expect(code, 'the 7am/7pm Chicago window is not how restarts work').not.toMatch(
+      /7am\/7pm|America\/Chicago restart window/
+    );
+
+    // The escape hatch is asserted against the STEP, not the if/elif chain.
+    // It reads `force=true` in the run summary, which is where an operator
+    // actually meets it - and it used to be pinned here only because the
+    // deleted window branch happened to mention it inside the chain. Pinning
+    // it where it lives means deleting a branch cannot quietly remove the one
+    // line that tells a human how to land the deploy now.
+    const step = sliceYamlEntry(HETZNER, "name: 'DID NOT DEPLOY");
+    expect(step, 'the operator is told how to land it now').toMatch(/force=true/);
+    expect(step, 'and what forcing costs').toMatch(/voids/);
   });
 
   /**

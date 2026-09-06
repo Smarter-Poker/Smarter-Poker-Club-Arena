@@ -43,6 +43,10 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain('interceptedRealtimeSockets');
     expect(spec).toContain('isDailyMissionRevisionFrame');
     expect(spec).toContain('observedRevisionFrames');
+    expect(spec).toContain('never mints chips');
+    expect(spec).toContain("'diamond_transactions'");
+    expect(spec).toContain('challenge_claim_batch:${requestBody.p_request_id}:diamonds');
+    expect(spec).not.toContain("'wallet_credit_idempotency',\n          account!.id");
     expect(spec).toMatch(
       /expect\(\s*advanced\.length,\s*'the catch-all mission event must advance at least one contract'\s*\)\.toBeGreaterThan\(0\)/
     );
@@ -190,7 +194,11 @@ describe('Daily Missions production certification', () => {
        the navigation instead of being deleted. */
     const helper = source('tests/e2e/support/DailyMissionsPage.ts');
     expect(helper).toContain('async function evaluateThroughNavigation');
-    expect(helper).toMatch(/const authenticatedUserId = await evaluateThroughNavigation\(/);
+    expect(helper).toMatch(/authenticatedUserId = await evaluateThroughNavigation\(/);
+
+    expect(helper).toContain('await account.client.auth.getSession()');
+    expect(helper).toContain("localStorage.setItem('smarter-poker-auth', JSON.stringify(session))");
+    expect(helper).not.toContain('const localBundle =');
 
     // ...and ONLY for that family of errors. A wrong account or bad JSON must
     // still throw on the first attempt rather than being retried into silence.

@@ -183,8 +183,14 @@ describe('a seat call on a disabled game is not answered', () => {
     expect(SEED).toMatch(/surplusTableIds,\s*seatBudget,\s*rejoin,\s*disabledGameIds\s*\)/);
   });
 
-  it('one predicate, two callers - no second copy of the rule', () => {
-    expect((SRC.match(/isTableOfDisabledGame\(/g) || []).length).toBe(2);
+  /* PIN MOVED 2026-09-05: THREE callers now, still one predicate. The third
+     is the stake-band supply scan, which asks which bands have a game to sit
+     in and must refuse a disabled game's tables for the same reason the
+     seeding loop does - a game the operator switched off is not supply. The
+     thing this test guards is unchanged and is the second line: nobody reads
+     `disabledGameIds` directly. */
+  it('one predicate, three callers - no second copy of the rule', () => {
+    expect((SRC.match(/isTableOfDisabledGame\(/g) || []).length).toBe(3);
     expect(SRC).not.toMatch(/disabledGameIds\.has\(/);
   });
 });

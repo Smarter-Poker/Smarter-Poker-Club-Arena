@@ -139,7 +139,19 @@ function closeMeansAuth(code: number | undefined, reason: string | undefined): b
  * a socket has already been refused, and a static import would put it in the
  * chunk every player downloads before first paint.
  */
+/**
+ * Single-flight (audit, 2026-09-05). The multiplexed socket carries every
+ * table, so one 4426 closes every facade at once and each EngineStateClient
+ * answers it - four tables, four concurrent service-worker unregistrations and
+ * four Cache Storage purges racing each other on a page that is leaving
+ * anyway. The first one wins the navigation; the rest are noise. Latched
+ * rather than debounced: there is no second attempt to make.
+ */
+let reloadingForNewBundle = false;
+
 function reloadForNewBundle(): Promise<void> {
+  if (reloadingForNewBundle) return Promise.resolve();
+  reloadingForNewBundle = true;
   return import('../utils/lazyWithRetry')
     .then((m) => m.hardReload())
     .catch(() => {
@@ -796,10 +808,11 @@ export class EngineStateClient {
       (msg.payload as { type?: string } | undefined)?.type === 'maintenance_break'
     ) {
       const p = msg.payload as { resume_expected_at?: number | null };
-      const resumeAt = typeof p.resume_expected_at === 'number' ? p.resume_expected_at : 0;
-      // An engine that has not learned to send it leaves this at 0 and the
-      // ladder behaves exactly as it did before - the frame is additive.
-      this.restartWindowUntil = resumeAt > 0 ? resumeAt + RESTART_WINDOW_GRACE_MS : 0;
+      // An engine that has not learned to send it changes nothing - the frame
+      // is additive, and noteScheduledRestart ignores a missing number.
+      // Through the same door as the database reading, so the two cannot
+      // disagree about which of them wins (it is the later one).
+      this.noteScheduledRestart(p.resume_expected_at);
     }
     if (msg.type === 'USER_EVENT') {
       // Private, unsequenced, idempotent: straight through, never queued.
@@ -1073,6 +1086,36 @@ export class EngineStateClient {
         }
         this.scheduleReconnect();
       });
+  }
+
+  /**
+   * Tell the transport about a scheduled restart it did not hear about itself.
+   *
+   * THE FRAME REACHES ONLY THE SOCKETS THAT WERE THERE (audit, 2026-09-05).
+   * The break broadcasts once at :53 and once at :55, and `TableStateHub`
+   * delivers an event to CURRENT subscribers - it retains one for a late
+   * joiner only if the event asks, and only for sixty seconds
+   * (HUB_MAX_EVENT_REPLAY_MS), which does not span a seven-minute break.
+   *
+   * So a player who sits down at :54, every single hour, learned nothing:
+   * their window stayed closed, their ladder escalated, and Phase 4 did
+   * nothing for the one population most likely to need it.
+   *
+   * The database is the authority on the break (CLAUDE.md 13 rule 3 - it is
+   * the single row in `engine_maintenance_break`), `useMaintenanceBreak`
+   * already reads it on mount for exactly the reader a socket cannot reach,
+   * and this is the wire from that reading to this ladder. One mechanism,
+   * sourced from the row, rather than a second weaker copy of the frame.
+   *
+   * Idempotent and monotonic: the later of what we hold and what we are told,
+   * so a frame and a database read cannot fight, and a stale read cannot
+   * shorten a window the engine has already extended.
+   */
+  noteScheduledRestart(resumeExpectedAt: number | null | undefined): void {
+    if (typeof resumeExpectedAt !== 'number' || !Number.isFinite(resumeExpectedAt)) return;
+    if (resumeExpectedAt <= 0) return;
+    const until = resumeExpectedAt + RESTART_WINDOW_GRACE_MS;
+    if (until > this.restartWindowUntil) this.restartWindowUntil = until;
   }
 
   /**

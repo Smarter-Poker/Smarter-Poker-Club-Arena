@@ -60,6 +60,25 @@ async function expectAppearance(studio: Locator, appearance: Appearance) {
     .toEqual(appearance);
 }
 
+async function expectPreviewAvatarsLoaded(studio: Locator) {
+  const avatars = preview(studio).locator('.studio-game-preview__seat > img');
+  await expect(avatars).toHaveCount(6, { timeout: RESPONSE_TIMEOUT });
+  await expect
+    .poll(
+      () =>
+        avatars.evaluateAll((images) =>
+          images.every(
+            (image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+          )
+        ),
+      {
+        timeout: RESPONSE_TIMEOUT,
+        message: 'Table Studio preview avatars did not resolve to real image assets.',
+      }
+    )
+    .toBe(true);
+}
+
 async function expectPersistedAppearance(
   environment: CustomizationCertificationEnvironment,
   userId: string,
@@ -155,6 +174,7 @@ async function openStudio(page: Page): Promise<Locator> {
     timeout: RESPONSE_TIMEOUT,
   });
   await expect(studio.getByText('Table Art Live')).toBeVisible({ timeout: RESPONSE_TIMEOUT });
+  await expectPreviewAvatarsLoaded(studio);
   return studio;
 }
 

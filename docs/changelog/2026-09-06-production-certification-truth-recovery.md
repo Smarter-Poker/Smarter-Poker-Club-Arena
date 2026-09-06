@@ -15,6 +15,9 @@ misclassified as a product failure:
 - Chromium reports a rejected Sentry envelope as a console resource error when
   the collector rate-limits telemetry. The Cashier gates treated that collector
   backpressure as a failed Club Arena resource.
+- The Hub avatar catalog moved from PNG to WebP, but Club Arena's thumbnail
+  parser still recognized only PNG. Table Studio therefore requested six
+  generated 404 paths for its gameplay-preview portraits.
 
 ## Repair
 
@@ -31,6 +34,14 @@ misclassified as a product failure:
   organization, project, HTTPS origin, and envelope path. Every other 4xx/5xx,
   app/Supabase/CDN resource failure, malformed URL, and network error remains
   critical.
+- Avatar thumbnails accept the Hub's legacy PNG and current WebP contracts and
+  derive the physical asset tier from the catalog path. Entitlement tier still
+  comes from catalog metadata, so promotional FREE access to VIP-directory art
+  remains intact while the image URL resolves to the file that actually exists.
+- A failed individual preview portrait now falls back to the neutral seat
+  silhouette rather than exposing a browser broken-image glyph. Production
+  journeys require all six portraits to decode successfully, so that fallback
+  is resilience for players rather than a way for certification to pass.
 
 No route, player setting, checkout handler, Supabase policy, Realtime channel,
 or application error policy changed. These changes make the production gates
@@ -40,6 +51,9 @@ identify the failing layer without weakening the product contract.
 
 - The focused console policy suite covers the accepted envelope and 221
   rejection cases.
+- Every table-art URL derived from all 97 current Hub catalog entries returns
+  HTTP 200; component and mapping tests cover decoded art and the neutral
+  per-image failure fallback.
 - Changed-file ESLint, TypeScript `--noEmit`, Playwright discovery, and diff
   integrity pass.
 - The unmodified commerce journey completed against the current live build;

@@ -352,6 +352,23 @@
   color: var(--text-secondary, #b0b8c4);
 }
 
+/* The viewer's own row says so in words, not only in colour (Dan
+   2026-09-05: every entry shows its name and its place, the hero's row
+   highlighted). */
+.mml-list-you {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #1877f2;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
 @media (min-width: 900px) {
   .mml-seats {
     grid-template-columns: repeat(3, 1fr);

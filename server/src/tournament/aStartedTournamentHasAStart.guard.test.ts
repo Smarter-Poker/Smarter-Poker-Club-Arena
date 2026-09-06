@@ -47,7 +47,7 @@ describe('the RUNNING flip confirms that a start was actually written', () => {
 
   it('a live row with no start gets one, guarded so it cannot overwrite', () => {
     const loop = flipLoop();
-    expect(loop).toContain("if (!confirmRow?.started_at)");
+    expect(loop).toContain('if (!confirmRow?.started_at)');
     expect(loop).toMatch(/\.is\(\s*'started_at',\s*null\s*\)/);
   });
 

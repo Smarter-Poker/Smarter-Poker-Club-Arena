@@ -10,7 +10,9 @@ import {
 const ROOT = resolve(__dirname, '../..');
 const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const RECERTIFICATION = '20260906132537_phase_3_managed_command_integrity_recertified.sql';
+const EVIDENCE_INVARIANT = '20260906135711_phase_3_command_receipt_evidence_is_self_consistent.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');
+const evidenceInvariant = readFileSync(resolve(MIGRATIONS, EVIDENCE_INVARIANT), 'utf8');
 const service = readFileSync(resolve(ROOT, 'src/services/GameManagementService.ts'), 'utf8');
 const page = readFileSync(resolve(ROOT, 'src/pages/GameManagementPage.tsx'), 'utf8');
 const migrationSources = readdirSync(MIGRATIONS)
@@ -36,6 +38,25 @@ function latestDefinition(functionName: string): { file: string; source: string 
   }
 
   if (!latest) throw new Error(`No migration defines ${functionName}`);
+  return latest;
+}
+
+function latestAuthenticatedPrivilege(functionName: string): string {
+  let latest = '';
+  for (const { source } of migrationSources) {
+    for (const statement of source.split(';')) {
+      const normalized = statement.replace(/\s+/g, ' ').trim().toLowerCase();
+      if (
+        normalized.includes(functionName.toLowerCase()) &&
+        normalized.includes('authenticated') &&
+        (normalized.includes('grant execute on function') ||
+          normalized.includes('revoke all on function'))
+      ) {
+        latest = normalized;
+      }
+    }
+  }
+  if (!latest) throw new Error(`No authenticated privilege statement found for ${functionName}`);
   return latest;
 }
 
@@ -71,21 +92,52 @@ describe('Table Management Phase 3 remains exactly once', () => {
       'GRANT EXECUTE ON FUNCTION public.fn_execute_managed_game_command('
     );
     expect(recertification).toContain('TO authenticated, service_role;');
+    expect(latestAuthenticatedPrivilege('fn_execute_managed_game_command')).toContain(
+      'grant execute on function'
+    );
+    expect(latestAuthenticatedPrivilege('fn_update_managed_game')).toContain(
+      'revoke all on function'
+    );
+    expect(latestAuthenticatedPrivilege('fn_close_managed_game')).toContain(
+      'revoke all on function'
+    );
+  });
+
+  it('makes terminal receipt evidence self-consistent in the database', () => {
+    expect(evidenceInvariant).toContain(
+      'ADD CONSTRAINT managed_game_command_receipt_evidence_consistent'
+    );
+    expect(evidenceInvariant).toContain("'ok', status = 'succeeded'");
+    expect(evidenceInvariant).toContain("'command_id', command_id");
+    expect(evidenceInvariant).toContain("'command_status', status");
+    expect(evidenceInvariant).toContain("'expected_version', expected_version");
+    expect(evidenceInvariant).toContain("'version_before', contract_version_before");
+    expect(evidenceInvariant).toContain("'version_after', contract_version_after");
+    expect(evidenceInvariant).toContain('VALIDATE CONSTRAINT');
   });
 
   it('accepts no successful browser response without terminal receipt evidence', () => {
-    expect(service).toContain('isTerminalCommandResult(result, commandId)');
+    expect(service).toContain('isTerminalCommandResult(result, commandId, expectedVersion)');
     expect(service).toContain("result.command_status === 'succeeded'");
     expect(service).toContain("result.command_status === 'rejected'");
     expect(service).toContain('result.command_id === commandId');
+    expect(service).toContain('result.expected_version === expectedVersion');
+    expect(service).toContain("result?.ok === true && result.command_status === 'succeeded'");
+    expect(service).toContain("result?.ok === false && result.command_status === 'rejected'");
     expect(service).toContain('The command response did not contain terminal receipt evidence.');
   });
 
   it('treats thrown requests and partial receipts as ambiguous, then reconciles', () => {
     expect(service).toContain('requestError = error;');
-    expect(service).toContain('isTerminalCommandResult(result.receipt, commandId)');
+    expect(service).toContain(
+      'isTerminalCommandResult(result.receipt, commandId, expectedVersion)'
+    );
     expect(service).toContain('for (let attempt = 0; attempt < 2; attempt += 1)');
-    expect(service).toContain('const reconciled = await reconcileCommand(commandId)');
+    expect(service).toContain(
+      'const reconciled = await reconcileCommand(commandId, expectedVersion)'
+    );
+    expect(service).toContain('await withCommandTimeout(');
+    expect(service).toContain('MANAGED_GAME_COMMAND_TIMEOUT_MS = 15_000');
   });
 
   it('keys in-flight row commands by game kind and UUID', () => {

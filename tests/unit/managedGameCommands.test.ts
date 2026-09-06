@@ -72,8 +72,11 @@ describe('ambiguous responses reconcile without polling or duplicate work', () =
     expect(service).toContain('const commandId = uuid()');
     expect(service).toContain('for (let attempt = 0; attempt < 2; attempt += 1)');
     expect(service).toContain("rpc('fn_get_managed_game_command_receipt'");
-    expect(service).toContain('const reconciled = await reconcileCommand(commandId)');
-    expect(service).not.toMatch(/setInterval|setTimeout/);
+    expect(service).toContain(
+      'const reconciled = await reconcileCommand(commandId, expectedVersion)'
+    );
+    expect(service).toContain('MANAGED_GAME_COMMAND_TIMEOUT_MS = 15_000');
+    expect(service).not.toContain('setInterval');
   });
 
   it('bounds operator receipt reads and applies normal game authority', () => {

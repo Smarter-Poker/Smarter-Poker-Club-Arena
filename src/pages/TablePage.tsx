@@ -3650,6 +3650,21 @@ export default function TablePage({
           });
         return;
       }
+      /* THE SCHEDULED BREAK IS NOT A WEDGED SOCKET (Realtime Phase 4,
+         2026-09-05). The engine is deliberately down for two or three minutes
+         of every hour, and reloading the page under a player who was just
+         promised their seat would survive is the exact opposite of what the
+         break is for - it discards the felt, the overlays and any armed
+         pre-action, then arrives at a box that is still booting.
+
+         EngineStateClient already declines to reach 'failed' while it is
+         inside an announced restart, so this timer usually never fires during
+         a break. This is the case its signal cannot reach: a browser that
+         LOADED during the outage never received the maintenance frame,
+         because there was no socket to receive it on. `useMaintenanceBreak`
+         reads the break from the database for exactly that reader, and this
+         is the one guard that works with no engine at all. */
+      if (maintenanceBreakRef.current.active) return;
       const KEY = 'ca_ws_autoreload_at';
       const last = Number(sessionStorage.getItem(KEY) || 0);
       if (Date.now() - last < 120_000) return;
@@ -20209,6 +20224,27 @@ export default function TablePage({
 
   // Guards the auto top-up against re-entry while a debit is still in flight.
   const autoTopUpInFlightRef = useRef(false);
+  /* ONE IDEMPOTENCY KEY PER AUTO TOP-UP, REUSED ACROSS RETRIES (Realtime
+     Phase 3 audit, 2026-09-05). Same shape as `bustRebuyKeyRef` above and as
+     CashierModal's `opIdRef`, and it was the one top-up path without it.
+
+     The Cashier audit (2026-08-27, P0-1) built the whole mechanism for the
+     lost-response case: `/addchips` keys the debit on `opId`, and the engine
+     falls back to `opId || randomUUID()` - so a caller that sends NOTHING gets
+     a fresh key on every attempt and no de-duplication at all. The MANUAL
+     cashier holds one; this automatic path did not.
+
+     `autoTopUpInFlightRef` below is not the same guard. It stops two attempts
+     OVERLAPPING; it cannot stop the case this key exists for - the debit
+     committed, the response was lost, the client threw, the flag was released,
+     and the very next snapshot still shows the stack short, so the effect
+     tops up again for the same shortfall. Without a key that is a second
+     debit for a shortfall the first one already covered.
+
+     Keyed by amount, exactly like the two siblings: a retry for the same
+     shortfall is the same purchase and de-duplicates; a genuinely different
+     shortfall is a different purchase and gets its own key. */
+  const autoTopUpKeyRef = useRef<{ amount: number; key: string } | null>(null);
 
   // --- NEW: Fully Functional Auto Top Up & Stand Up Next Big Blind ---
   useEffect(() => {
@@ -20295,9 +20331,15 @@ export default function TablePage({
           const topUpAmount = Math.min(maxBuyIn - currentStack, accountBalance ?? 0);
           if (topUpAmount > 0) {
             autoTopUpInFlightRef.current = true;
-            handleAddChips(topUpAmount)
+            if (!autoTopUpKeyRef.current || autoTopUpKeyRef.current.amount !== topUpAmount) {
+              autoTopUpKeyRef.current = { amount: topUpAmount, key: crypto.randomUUID() };
+            }
+            handleAddChips(topUpAmount, autoTopUpKeyRef.current.key)
               .then((res) => {
                 if (res && typeof window !== 'undefined') {
+                  // Spent: a later shortfall is a new purchase and needs a new
+                  // key, or a second top-up would replay the first one's.
+                  autoTopUpKeyRef.current = null;
                   toast?.success?.(`Auto Top Up: Added ${topUpAmount.toLocaleString()} Chips`);
                 }
               })

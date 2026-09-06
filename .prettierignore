@@ -22,3 +22,11 @@ scripts/ci/supabase-columns-manifest.json
 # here is the whole fix; the generator already writes it with the same
 # `JSON.stringify(x, null, 2)` as the other two.
 scripts/ci/supabase-required-columns-manifest.json
+
+# Generated and checksummed by World Hub as the canonical cross-repository
+# solver-policy contract. Club Arena verifies these exact bytes at boot/tests;
+# formatting either copy independently would invalidate the published checksum.
+server/src/gto/contracts/solver-policy.v1.schema.json
+server/src/gto/contracts/fixtures/chart-policy.v1.json
+server/src/gto/contracts/fixtures/exact-policy.v1.json
+server/src/gto/contracts/fixtures/chart-policy-artifact.v1.json

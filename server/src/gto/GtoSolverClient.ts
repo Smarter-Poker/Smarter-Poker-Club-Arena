@@ -1,19 +1,20 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  GTO SOLVER CLIENT — interface + stub + World Hub adapter seam
+ *  GTO SOLVER CLIENT: interface, test stub, and local artifact adapter
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * FOUNDATION MODULE. The REAL solver output lives in the World Hub pipeline
  * (Smarter-Poker-World-Hub: solverRanges.js → SolverScenarioGenerator →
  * ScenarioDatabase, per GTO-WIZARD-CLONE-PLAN.md). This module defines the
- * CONTRACT the PostSessionAnalyzer consumes, ships a working in-memory STUB, and
- * documents the WorldHub adapter seam (a thin fetcher you wire to the World Hub
- * DB / HTTP in follow-up work).
+ * CONTRACT the PostSessionAnalyzer consumes. Production policy lookup uses the
+ * versioned artifact loader and never performs network I/O on an action clock.
  *
  * The analyzer looks up strategies by `scenario_hash`. `computeScenarioHash`
  * produces a stable hash from a normalized Scenario so the same decision maps to
  * the same solved node on both sides of the pipeline.
  */
+
+import { lookupSolverPolicy } from './SolverPolicyArtifactLoader.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Contract
@@ -121,8 +122,46 @@ export class StubGtoSolverClient implements GtoSolverClient {
   }
 }
 
+/**
+ * Reads the immutable artifact map. A policy without measured per-action EV
+ * cannot feed an EV-loss analyzer and fails closed instead of inventing EV.
+ */
+export class ArtifactGtoSolverClient implements GtoSolverClient {
+  async lookup(scenarioHash: string): Promise<SolverStrategy | null> {
+    const policy = lookupSolverPolicy({ scenarioHash });
+    if (!policy || policy.kind === 'unavailable' || policy.chipEv.measuredByAction !== true)
+      return null;
+    const actions = policy.actions.map((action) => ({
+      action: action.family,
+      frequency: action.frequency,
+      ev: action.chipEvBb,
+    }));
+    if (actions.some((action) => !Number.isFinite(action.ev))) return null;
+    // PostSessionAnalyzer currently observes action families but not the exact
+    // wager size. Two canonical actions in one family would make its fallback
+    // match arbitrary, so withhold the policy rather than mis-score a hand.
+    if (new Set(actions.map((action) => action.action)).size !== actions.length) return null;
+    return {
+      scenarioHash,
+      actions: actions as SolverActionStrategy[],
+      meta: {
+        contractVersion: policy.contractVersion,
+        policyVersion: policy.policyVersion,
+        qualitySeal: policy.qualitySeal,
+        sourceArtifact: policy.sourceArtifact,
+      },
+    };
+  }
+
+  async lookupBatch(scenarioHashes: string[]): Promise<Map<string, SolverStrategy | null>> {
+    const result = new Map<string, SolverStrategy | null>();
+    for (const hash of scenarioHashes) result.set(hash, await this.lookup(hash));
+    return result;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// World Hub adapter (documented seam — NEEDS INFRA to be production-ready)
+// Optional off-clock fetch adapter. Never use this from HorseLogic.decide().
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

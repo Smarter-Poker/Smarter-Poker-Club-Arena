@@ -47,6 +47,13 @@ describe('Cashier request, membership departure, and club retirement boundaries'
     expect(SQL.match(/\bbegin\s*;/g)).toHaveLength(1);
     expect(SQL.match(/\bcommit\s*;/g)).toHaveLength(1);
     expect(SQL).toContain("set local lock_timeout = '5s'");
+    const clubsLock = SQL.indexOf('lock table public.clubs in access exclusive mode');
+    const membersLock = SQL.indexOf('lock table public.club_members in access exclusive mode');
+    const requestsLock = SQL.indexOf('lock table public.chip_requests in access exclusive mode');
+    expect(clubsLock).toBeGreaterThan(-1);
+    expect(clubsLock).toBeLessThan(membersLock);
+    expect(membersLock).toBeLessThan(requestsLock);
+    expect(requestsLock).toBeLessThan(SQL.indexOf('alter table public.chip_requests'));
   });
 
   it('removes both permissive chip-request policy names before replacing them', () => {

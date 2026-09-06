@@ -20,6 +20,11 @@ shape concern.
 `supabase/migrations/20260906091646_cashier_requests_and_membership_deletes_are_server_owned.sql`
 is an additive, lock-bounded, single-transaction repair.
 
+The migration pre-acquires the club, membership, and request tables in canonical
+writer order. This prevents live cashier traffic from forming a lock cycle while
+the atomic schema repair is waiting to begin; the five-second acquisition budget
+still rolls the whole attempt back under sustained load.
+
 - It drops both chip-request policy names and creates exactly one authenticated
   SELECT policy. A row is visible only to its requester, its named approver, or
   a caller for whom `fn_club_cashier_scope` returns `all` (owner, co-owner, or

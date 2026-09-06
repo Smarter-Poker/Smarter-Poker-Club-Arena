@@ -31,6 +31,16 @@ BEGIN;
 
 SET LOCAL lock_timeout = '5s';
 
+-- Acquire the three hot parent/account tables in the same order as club and
+-- cashier writers before changing any one of them. Without this preflight the
+-- migration held chip_requests while waiting for club_members, while a live
+-- cashier transaction held club_members and waited for chip_requests: the
+-- database correctly detected and rolled back that deadlock. A five-second
+-- timeout keeps this an all-or-nothing retry during sustained traffic.
+LOCK TABLE public.clubs IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.club_members IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.chip_requests IN ACCESS EXCLUSIVE MODE;
+
 -- ---------------------------------------------------------------------------
 -- Chip-request visibility: one permissive SELECT policy, no legacy OR arm.
 -- ---------------------------------------------------------------------------

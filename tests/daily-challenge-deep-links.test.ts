@@ -8,8 +8,7 @@ const authGuard = readFileSync(resolve(__dirname, '../src/components/auth/AuthGu
 
 describe('Daily Challenge cycle deep links', () => {
   it('routes Daily, Weekly, and Monthly as bookmarkable subpages', () => {
-    expect(app).toContain('path="challenges"');
-    expect(app).toContain('path="challenges/:cycle"');
+    expect(app).toContain('path="challenges/:cycle?"');
     expect(page).toContain("cycle === 'daily' || cycle === 'weekly' || cycle === 'monthly'");
     expect(page).toContain('navigate(`/challenges/${tier}`)');
     expect(page).toContain('data-mission-cycle={activeTier}');

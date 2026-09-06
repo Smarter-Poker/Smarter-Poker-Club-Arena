@@ -3,7 +3,7 @@
 ## Changed
 
 - Rebuilt the Daily Missions route as a responsive Club Arena casino floor with generated wide, mobile, and reward-pedestal art, clear period navigation, reward presentation, loading and failure states, and keyboard-safe dialogs.
-- Declared the base ledger and cycle subpages as explicit routes, removed forbidden hover-only feedback, restored focus after idempotent claims, and set an accurate browser title.
+- Kept the base ledger and cycle subpages bookmarkable through one optional route, taught the retained-navigation audit to recognize that route shape, removed forbidden hover-only feedback, restored focus after idempotent claims, and set an accurate browser title.
 - Moved the client to the server-clock version 3 dashboard contract, strict response validation, request-bound reroll receipts, atomic batch claims, server-confirmed balances, and private completion broadcasts.
 - Preserved challenge deep links through authentication and removed the table-page pre-seed call that duplicated server assignment work on the gameplay path.
 - Added exact per-pot and winning-hand threshold values to settled-hand mission projections so mixed pots, chopped pots, multi-board awards, and high/low awards advance only the challenges they actually satisfy.

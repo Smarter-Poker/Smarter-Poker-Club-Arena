@@ -209,3 +209,29 @@ restating settled earnings is a decision to be taken deliberately.
 Carried into Phase 8: 8.2 (the bust rebuy goes through the pending ledger),
 8.3 (the PITR drill), 8.4 (`chip_ledger` partitioning before December), 8.5
 (the engine settles a hand in one transaction).
+
+### 8.3 - the PITR drill (status: MEASURED, restore rehearsal still open)
+
+Measured on production 2026-09-06 02:48 UTC, because a chip and balance reset
+must not be the first time anyone asks whether the platform can be put back.
+
+| what                  | reading                                             |
+| --------------------- | --------------------------------------------------- |
+| `wal_level`           | `logical`                                           |
+| `archive_mode`        | `on`                                                |
+| `archive_command`     | `/usr/bin/admin-mgr wal-push %p` (wal-g)            |
+| `archive_timeout`     | 120 seconds - the worst-case RPO                    |
+| WAL segments archived | 22,358                                              |
+| **archive failures**  | **0**, since the counter was reset 2026-09-02 21:04 |
+| last archive          | 10 seconds before the reading                       |
+| database size         | 126 GB                                              |
+
+So point-in-time recovery is armed and healthy, and the recovery point is at
+worst two minutes behind. What is NOT yet done is a rehearsal: restoring to a
+branch and proving the restored copy reconciles. That is the remaining half of
+8.3 and it costs a 126 GB restore.
+
+**It is also not the right safety net for the reset.** A reset should be
+reversible by construction - the closing position of every account recorded
+before anything is zeroed - rather than by rolling the whole platform back two
+minutes at a time. PITR is the net under the net.

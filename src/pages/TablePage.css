@@ -1844,6 +1844,8 @@
   left: 50%;
   transform: translateX(-50%);
   margin-bottom: 6px;
+  /* Above the pot total if they ever meet, never under it. */
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1865,6 +1867,23 @@
   white-space: nowrap;
   z-index: 6;
   pointer-events: none;
+}
+
+/* A ONE-BOARD BOMB HANGS THE OTHER WAY (2026-09-06).
+   `[data-boards]` is set by TablePage only when there is MORE than one board,
+   so this selector is exactly the single-board bomb pot - and nothing enforced
+   that the label only appears on multi-board hands: `bombPotActive` is true for
+   a boardCount of 1 too. On one board the stack sits at `top: 42.5%` and its
+   top edge lands in the same band as `.pot-area` (`top: 32.99%`), so hanging
+   the marker above it puts it on the pot total.
+   Below the stack is free on exactly this hand: `.bomb-scoop-banner` is the
+   only other thing anchored there and it appears ONLY on a multi-board hand.
+   So the two never contend, on any board count. */
+.table-page:not([data-boards]) .bomb-pot-live {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 6px;
 }
 
 .bomb-pot-live__dot {

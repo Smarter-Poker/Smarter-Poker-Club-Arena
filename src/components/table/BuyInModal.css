@@ -241,7 +241,13 @@
   writing-mode: vertical-lr;
   direction: rtl;
   width: 6px;
-  height: 168px;
+  /* THE TRACK GIVES WAY BEFORE THE BUTTONS DO (2026-09-06). A fixed 168px was
+     fine on 375x812 - the screen the layout note below was measured on - and
+     overflowed a 375-tall landscape phone, where the sheet has no max-height
+     and the overlay does not scroll, so BUY CHIPS ended up off-screen and
+     unreachable. The track is the one element here that can shrink without
+     losing meaning, so it is the one that does. */
+  height: clamp(96px, 26dvh, 168px);
   padding: 0;
   /* The fill the horizontal track never had: `--slider-percent` is set inline
      by the component and, until now, was read by nothing at all - the element

@@ -21,6 +21,7 @@ import { masterBus } from '../core/MasterBus';
 import { triggerHaptic } from '../services/HapticService';
 import {
   dailyChallengeService,
+  DAILY_MISSION_REROLL_COST,
   type TieredUserChallenge,
   type Tier,
   type ChallengeType,
@@ -370,11 +371,11 @@ function ChallengeCard({
                 className={styles.rerollButton}
                 onClick={() => onRequestReroll(challenge)}
                 disabled={rerolling || economyBusy || rerollConfirmationOpen}
-                aria-label={`Reroll 10 Diamonds For ${c.name}`}
+                aria-label={`Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`}
               >
                 Reroll{' '}
                 <span className={styles.buttonPrice}>
-                  <DiamondMark /> 10
+                  <DiamondMark /> {DAILY_MISSION_REROLL_COST}
                 </span>
               </button>
             </>
@@ -390,7 +391,8 @@ function ChallengeCard({
               }}
             >
               <span className={styles.rerollPrompt}>
-                Spend <DiamondMark /> 10 Diamonds? Current Progress Will Be Replaced.
+                Spend <DiamondMark /> {DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be
+                Replaced.
               </span>
               <button
                 type="button"
@@ -1399,8 +1401,8 @@ export default function DailyChallengesPage() {
     async (challenge: TieredUserChallenge) => {
       if (!userId) return;
       if (rerollGuardRef.current.has(challenge.id) || economyGuardRef.current) return;
-      if (diamondBalance < 10) {
-        toast.error('Not Enough Diamonds. 10 Diamonds Required.');
+      if (diamondBalance < DAILY_MISSION_REROLL_COST) {
+        toast.error('Not Enough Diamonds. 1 Diamond Required.');
         return;
       }
 

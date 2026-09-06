@@ -9,6 +9,13 @@ const migration = readFileSync(
   ),
   'utf8'
 );
+const rerollPriceMigration = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260906141022_daily_mission_rerolls_cost_one_diamond.sql'
+  ),
+  'utf8'
+);
 const engineProjection = readFileSync(
   resolve(__dirname, '../server/src/engine/dailyMissionEvents.ts'),
   'utf8'
@@ -144,6 +151,24 @@ describe('Daily Missions database safety certification', () => {
     expect(migration).toContain(
       'CREATE FUNCTION public.reroll_daily_challenge(\n  p_user_id uuid,\n  p_challenge_row_id uuid,\n  p_expected_challenge_id text,\n  p_cost integer DEFAULT 10'
     );
+  });
+
+  it('publishes the production one-Diamond price without rewriting settled history', () => {
+    expect(rerollPriceMigration.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(rerollPriceMigration.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(rerollPriceMigration).toContain('REROLL_COST constant integer := 1;');
+    expect(rerollPriceMigration).toContain('p_cost integer DEFAULT 1');
+    expect(rerollPriceMigration).toContain('CHECK (cost IN (1, 10))');
+    expect(rerollPriceMigration).toContain("'diamondsSpent', REROLL_COST");
+
+    const receiptLookup = rerollPriceMigration.indexOf(
+      'FROM public.daily_challenge_reroll_receipts'
+    );
+    const currentPriceGuard = rerollPriceMigration.indexOf(
+      'IF p_cost IS DISTINCT FROM REROLL_COST'
+    );
+    expect(receiptLookup).toBeGreaterThanOrEqual(0);
+    expect(currentPriceGuard).toBeGreaterThan(receiptLookup);
   });
 
   it('honors every recorded frozen gap but consumes at most one new freeze per calculation', () => {

@@ -599,7 +599,22 @@ describe('ROUND 7 (2026-08-29) — the audit sweep', () => {
     // bomb" pulse ran for the whole session on the one table where that fact
     // is ordinary — and stopped meaning anything everywhere else by
     // association.
-    expect(PAGE).toMatch(/bombPotRules\?\.triggerMode !== 'bomb_pot_only' &&/);
+    //
+    // PIN MOVED 2026-09-05. The suppression used to be a `!== 'bomb_pot_only'`
+    // conjunct inside the pill's className ternary. The pill was split in two
+    // (a masthead line for every countdown state, a small marker on the board
+    // for the bomb hand) and the text is now decided once, in `bombPotBadge`,
+    // as an ordered ladder. Same guarantee, stated as ORDER: the bomb_pot_only
+    // branch returns before any branch that can produce the pulsing 'next'
+    // state, so that state is unreachable on such a table.
+    const ladder = PAGE.slice(
+      PAGE.indexOf('const bombPotBadge = useMemo'),
+      PAGE.indexOf('MANUAL_NEXT_HAND (spec §2.1/§15.3)')
+    );
+    expect(ladder).toMatch(
+      /if \(bombPotRules\?\.triggerMode === 'bomb_pot_only'\)\s*return \{ text: `\$\{prefix\}BOMB POT ONLY`, state: 'eta' \};/
+    );
+    expect(ladder.indexOf("=== 'bomb_pot_only'")).toBeLessThan(ladder.indexOf("state: 'next'"));
   });
 });
 
@@ -653,8 +668,16 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     expect(fn).toMatch(/bomb_pot_waiting_for: waitingFor/);
     expect(PAGE).toMatch(/BOMB POT WAITING FOR \$\{tableState\.bombPotWaitingFor\} PLAYERS/);
     // And it is not URGENT — the pulse means "next hand", and a bomb that is
-    // waiting on players is not coming next hand.
-    expect(PAGE).toMatch(/tableState\.bombPotWaitingFor == null &&/);
+    // waiting on players is not coming next hand. PIN MOVED 2026-09-05 with
+    // the one above: the guard is the ladder's order now, not a conjunct.
+    const ladder = PAGE.slice(
+      PAGE.indexOf('const bombPotBadge = useMemo'),
+      PAGE.indexOf('MANUAL_NEXT_HAND (spec §2.1/§15.3)')
+    );
+    expect(ladder).toMatch(/if \(tableState\.bombPotWaitingFor != null\)/);
+    expect(ladder.indexOf('bombPotWaitingFor != null')).toBeLessThan(
+      ladder.indexOf("state: 'next'")
+    );
   });
 
   it('the manual bomb is PUSHED, not polled every hand', () => {

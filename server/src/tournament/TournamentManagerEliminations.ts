@@ -23,6 +23,11 @@ import { buildRecipientClaims } from './mysteryBountyDraw.js';
 import { buildPrizeLadder, prizeRankOf, isMysteryCollectMode } from './mysteryPrizeLadder.js';
 import { attributeKnockout } from './knockoutAttribution.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
+import {
+  COMPLETED_FLIP_ATTEMPTS,
+  COMPLETED_FLIP_BACKOFF_MS,
+  isTransientFlipError,
+} from './completedFlip.js';
 import { computePlacePrize } from './payoutMath.js';
 import { settleTournamentObligation, TRANSPORT_REFUSAL } from './settleObligation.js';
 import {
@@ -3853,23 +3858,43 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // leaves the event in COMPLETING — which is harmless, because the recovery
     // watchdog finds it and finishes it idempotently — but SILENT, so nobody
     // learns that the normal finish path is failing to close its own events.
-    const { error: completedErr } = await supabase
-      .from('tournaments')
-      .update({
-        status: 'COMPLETED',
-        ended_at: new Date().toISOString(),
-        // 2026-08-20: clear the break flags on the way out. endBreak() is what
-        // normally resets them, and it never runs if the event finishes DURING
-        // a break -- leaving COMPLETED tournaments permanently flagged
-        // on_break=true (3 of them, one showing 1,231 minutes "on break").
-        // Harmless to play, since nothing resumes a COMPLETED event, but it
-        // makes a finished tournament read as stuck to anything inspecting
-        // these columns.
-        on_break: false,
-        break_ends_at: null,
-      })
-      .eq('id', this.tournamentId)
-      .eq('status', 'COMPLETING'); // Guard: only COMPLETING → COMPLETED
+    /**
+     * A FINISH THAT DEADLOCKS IS RETRIED (2026-09-06). This update fires
+     * fn_clear_seats_on_game_end, which closes every seat of the event, while
+     * a table engine may be cashing one of those seats out
+     * (atomic_seat_cashout_locked) - 40P01 five times in one hour on
+     * 2026-09-06 (b88db8d6, 80fdff30, db05ecf2, 40102ace, ab102e3d), every
+     * one a paid event left in COMPLETING. A deadlock victim is chosen in
+     * milliseconds and the other side commits; the same statement a moment
+     * later succeeds. Three attempts, short backoff, then the watchdog - which
+     * now also refuses to be hidden by this manager (managerHasOverstayed).
+     */
+    let completedErr: { message?: string; code?: string } | null = null;
+    for (let attempt = 1; attempt <= COMPLETED_FLIP_ATTEMPTS; attempt++) {
+      const { error } = await supabase
+        .from('tournaments')
+        .update({
+          status: 'COMPLETED',
+          ended_at: new Date().toISOString(),
+          // 2026-08-20: clear the break flags on the way out. endBreak() is what
+          // normally resets them, and it never runs if the event finishes DURING
+          // a break -- leaving COMPLETED tournaments permanently flagged
+          // on_break=true (3 of them, one showing 1,231 minutes "on break").
+          // Harmless to play, since nothing resumes a COMPLETED event, but it
+          // makes a finished tournament read as stuck to anything inspecting
+          // these columns.
+          on_break: false,
+          break_ends_at: null,
+        })
+        .eq('id', this.tournamentId)
+        .eq('status', 'COMPLETING'); // Guard: only COMPLETING → COMPLETED
+      completedErr = error;
+      if (!error || !isTransientFlipError(error)) break;
+      console.warn(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED attempt ${attempt} of ${COMPLETED_FLIP_ATTEMPTS} hit ${error.code ?? '?'} (${error.message}) - retrying`
+      );
+      await new Promise((r) => setTimeout(r, COMPLETED_FLIP_BACKOFF_MS * attempt));
+    }
     if (completedErr) {
       reportError(
         new Error(

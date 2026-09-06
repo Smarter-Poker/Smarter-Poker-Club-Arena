@@ -30,6 +30,9 @@ fully reachable by a direct authenticated RPC from an affiliated club admin.
 - Added a chronological migration-law test so a later function redefinition
   cannot silently revive either regression while the original Phase 1 file
   stays green.
+- Rewired the persistent header creation controls so Add Table, Event, Spins,
+  and Sit N Go return from Ticker or Club Messages to the Game Board before
+  opening the embedded creator, while preserving unsaved-draft confirmation.
 
 ## Publication
 

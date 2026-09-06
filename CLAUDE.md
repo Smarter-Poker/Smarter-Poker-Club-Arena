@@ -1239,10 +1239,32 @@ and `api.github.com` is reachable. Then:
 - **Rebasing your branch onto main is refused by a ref-guard hook.** Use
   `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
 
-**The GitHub MCP (`mcp__github__*`) returns `Bad credentials` as of
-2026-09-01.** Every call fails, including read-only ones. Do not debug it and
-do not build a plan around it; use the host terminal. If you are reading this
-long after that date, one call will tell you whether it is back.
+**The GitHub MCP (`mcp__github__*`) WORKS again, verified 2026-09-06.** This
+paragraph said it returned `Bad credentials` on every call and told you not to
+debug it. That was true on 2026-09-01 and stale by the 6th, when
+`get_file_contents` on `server/vitest.config.ts` returned the file. A note that
+retires a working tool costs more than the outage did: it is read as current by
+every agent after it. **Check before you route around anything this file calls
+dead - one call is cheaper than the detour.** The host terminal remains correct
+for everything, and is still the only route for `git push`.
+
+**The Supabase MCP works, but `list_migrations` will blow your context.** This
+database holds **3,713** migrations and the tool returns every one of them WITH
+its SQL - 296,122 characters, saved to a temp file you then have to slice in
+80,000-character spans. Nothing about that answers the question you had. Ask
+Postgres directly instead:
+
+```
+mcp__...__execute_sql:
+  select count(*) from supabase_migrations.schema_migrations;
+  select version, name from supabase_migrations.schema_migrations
+    order by version desc limit 20;
+  select 1 from supabase_migrations.schema_migrations where version = '<v>';
+```
+
+Same rule for any MCP tool over a large table: a targeted read is not a
+workaround, it is the correct call. Reserve the bulk tool for when you truly
+need all of it.
 
 **Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
 `supabase-columns-manifest.json`.** They are nightly snapshots and were the

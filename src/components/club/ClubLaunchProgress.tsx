@@ -15,20 +15,37 @@ export interface ClubLaunchTask {
 }
 
 interface Props {
+  clubId: string;
+  viewerId: string;
   clubName: string;
   openingBank: number;
   tasks: ClubLaunchTask[];
 }
 
-export default function ClubLaunchProgress({ clubName, openingBank, tasks }: Props) {
-  const storageKey = `club-launch-skips:${clubName}`;
-  const [skippedIds, setSkippedIds] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(storageKey) || '[]');
-    } catch {
-      return [];
-    }
-  });
+function readSkippedIds(storageKey: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export default function ClubLaunchProgress({
+  clubId,
+  viewerId,
+  clubName,
+  openingBank,
+  tasks,
+}: Props) {
+  /* IDs, never display names: two clubs may share a name, a club may be
+     renamed, and two operators can use the same browser. The parent keys this
+     component by the same identity tuple so React cannot carry one club's
+     in-memory skips into another club during route-param navigation. */
+  const storageKey = `club-launch-skips:${clubId}:${viewerId}`;
+  const [skippedIds, setSkippedIds] = useState<string[]>(() => readSkippedIds(storageKey));
   const resolvedTasks = tasks.map((task) => ({
     ...task,
     skipped: !task.complete && skippedIds.includes(task.id),
@@ -109,7 +126,13 @@ export default function ClubLaunchProgress({ clubName, openingBank, tasks }: Pro
                     onClick={() =>
                       setSkippedIds((current) => {
                         const next = current.includes(task.id) ? current : [...current, task.id];
-                        localStorage.setItem(storageKey, JSON.stringify(next));
+                        try {
+                          localStorage.setItem(storageKey, JSON.stringify(next));
+                        } catch {
+                          /* Storage can be disabled or full. The current
+                             session still resolves the step; persistence is
+                             best effort and must never crash the checklist. */
+                        }
                         return next;
                       })
                     }

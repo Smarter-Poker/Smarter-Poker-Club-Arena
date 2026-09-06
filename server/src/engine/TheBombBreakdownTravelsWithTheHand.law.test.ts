@@ -62,6 +62,48 @@ describe('the bomb breakdown travels with the hand', () => {
     expect(hist).toContain('wroteAwardUnits: handId !== null && bombUnits.length > 0');
   });
 
+  /* WHY THIS FILE GREW A BEHAVIOURAL TEST (2026-09-06).
+     Every assertion above passed while fn_ca_insert_hand_with_awards was
+     INCAPABLE OF INSERTING A ROW: it used jsonb_populate_record over a NULL
+     base, which supplies an explicit NULL for every column the caller did not
+     name, and an explicit NULL overrides a DEFAULT - so hand_history.id came
+     out NULL against a NOT NULL column and the function failed 23502 on every
+     call. Reading the code told me the wiring was right. It was. The thing on
+     the other end of the wire did not work.
+
+     So the migration that defines a money-path function now CALLS it against
+     the real table inside the migration, checks what it wrote, and rolls that
+     back - and aborts the migration if it cannot. This test pins that habit,
+     because the next author will be as sure as I was. */
+  it('the migration that defines the atomic insert proves it against the real table', () => {
+    const mig = readFileSync(
+      join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        'supabase',
+        'migrations',
+        '20260906113554_the_atomic_hand_insert_lets_the_defaults_apply_and_proves_it.sql'
+      ),
+      'utf8'
+    );
+    // it calls the function for real
+    expect(mig).toContain('public.fn_ca_insert_hand_with_awards(');
+    // it checks a DEFAULT actually applied, which is the bug it exists for
+    expect(mig).toContain('created_at is NULL - the defaults are still being overridden');
+    // it checks the units landed with the row
+    expect(mig).toContain('expected 1 award unit written with the row');
+    // and it undoes itself
+    expect(mig).toContain('ca_verify_rollback');
+    expect(mig).toContain('the probe row survived its rollback');
+    // the insert names only the supplied columns, so defaults survive
+    expect(mig).toContain('p_row ? c.column_name');
+    expect(mig).not.toMatch(
+      /INSERT INTO public\.hand_history\s*\n\s*SELECT \* FROM jsonb_populate_record/
+    );
+  });
+
   it('no repair cron is the answer here', () => {
     // the fix is the transaction, not a sweep that follows it around
     expect(settle).not.toMatch(/cron\.schedule\(\s*'bomb/);

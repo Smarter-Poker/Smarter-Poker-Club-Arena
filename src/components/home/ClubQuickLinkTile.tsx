@@ -64,10 +64,15 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [balances, setBalances] = useState<Map<string, number> | null>(null);
+  // The account that produced `balances`. Authentication can change without
+  // unmounting HomePage; never paint the previous account's resolved values
+  // during the next account's request.
+  const [balanceOwnerId, setBalanceOwnerId] = useState<string | null>(null);
   const [balancesLoading, setBalancesLoading] = useState(false);
   const [balancesError, setBalancesError] = useState(false);
   const [balanceNonce, setBalanceNonce] = useState(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const retryRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
@@ -89,7 +94,17 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   // Per-club chip balances — lazy-loaded when the popover opens, and re-read
   // when a chip movement invalidates the memo while the popover is open
   useEffect(() => {
-    if (!menuOpen || !user?.id) return;
+    if (!menuOpen) return;
+    if (!user?.id) {
+      setBalances(null);
+      setBalanceOwnerId(null);
+      setBalancesLoading(false);
+      setBalancesError(false);
+      return;
+    }
+    const requestedUserId = user.id;
+    setBalances(null);
+    setBalanceOwnerId(requestedUserId);
     // An owner may legitimately have a union-only directory. Union treasury
     // balances are rendered by the union wallet itself, so do not issue an
     // unrelated club_members read (or show a false balance failure) here.
@@ -102,9 +117,10 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
     let live = true;
     setBalancesLoading(true);
     setBalancesError(false);
-    void fetchClubChipBalances(user.id)
+    void fetchClubChipBalances(requestedUserId)
       .then((b) => {
         if (!live) return;
+        setBalanceOwnerId(requestedUserId);
         setBalances(b);
         setBalancesError(b === null);
       })
@@ -164,6 +180,14 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
     if (menuOpen) itemRefs.current[activeIndex]?.focus();
   }, [menuOpen, activeIndex]);
 
+  // The Retry control sits before the ARIA menu. Tab intentionally dismisses
+  // the popover, so without managed focus a keyboard user could never reach it.
+  // Focus it when the balance read fails; Arrow navigation still moves back to
+  // the wallet rows through the existing active-index handler.
+  useEffect(() => {
+    if (menuOpen && balancesError) retryRef.current?.focus();
+  }, [menuOpen, balancesError]);
+
   const handlePointerDown = useCallback(() => {
     if (!hasSwitch) return;
     longPressFired.current = false;
@@ -220,6 +244,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   );
 
   const clubName = targetClub?.name || undefined;
+  const visibleBalances = balanceOwnerId === user?.id ? balances : null;
   // Drop refs for rows that no longer exist (club left / list shrank)
   itemRefs.current.length = clubs.length;
 
@@ -289,7 +314,20 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
             {!balancesLoading && balancesError && (
               <div className={styles.cashierSwitchStatus} role="alert">
                 Wallet Balances Unavailable.
-                <button type="button" onClick={retryBalances}>
+                <button
+                  ref={retryRef}
+                  type="button"
+                  onClick={retryBalances}
+                  onKeyDown={(event) => {
+                    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const index =
+                      event.key === 'ArrowUp' || event.key === 'End' ? clubs.length - 1 : 0;
+                    setActiveIndex(index);
+                    itemRefs.current[index]?.focus();
+                  }}
+                >
                   Retry
                 </button>
               </div>
@@ -331,9 +369,9 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
                     {isUnionEntity(club) && (
                       <span className={styles.cashierSwitchItemBalance}>Union Wallet</span>
                     )}
-                    {!isUnionEntity(club) && balances?.has(club.id) && (
+                    {!isUnionEntity(club) && visibleBalances?.has(club.id) && (
                       <span className={styles.cashierSwitchItemBalance}>
-                        {(balances.get(club.id) as number).toLocaleString()} Chips
+                        {(visibleBalances.get(club.id) as number).toLocaleString()} Chips
                       </span>
                     )}
                     {!isUnionEntity(club) && !balancesLoading && balancesError && (

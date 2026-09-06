@@ -1,0 +1,8 @@
+{
+  "_owner": "codex/leaderboard-phase3-completion",
+  "functions": [
+    "fn_enforce_leaderboard_program_funding",
+    "fn_leaderboard_funding_summary",
+    "fn_leaderboard_program_commitment"
+  ]
+}

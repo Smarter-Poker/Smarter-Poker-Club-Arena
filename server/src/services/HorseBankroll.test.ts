@@ -243,11 +243,15 @@ describe('AGGREGATE EXPOSURE - four tables is not four independent decisions', (
     ).toBe(true);
   });
 
-  it('a fourth table is refused once the ceiling is reached', () => {
-    // ceiling = 10,000 * 5% * 3 = 1,500
+  it('a fifth share is refused once the ceiling is reached', () => {
+    // ceiling = 10,000 * 5% * 4 = 2,000 (2026-09-06: four shares, Dan's four
+    // tables; it was three, which made the fourth full buy-in impossible)
     expect(
-      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1400, nextBuyIn: 200, policy: std })
+      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1900, nextBuyIn: 200, policy: std })
     ).toBe(false);
+    expect(
+      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1500, nextBuyIn: 500, policy: std })
+    ).toBe(true);
   });
 
   it('the ceiling scales with the roll - a big bankroll multi-tables freely', () => {

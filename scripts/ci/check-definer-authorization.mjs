@@ -72,6 +72,26 @@
  * TRIGGER FUNCTIONS ARE OUT OF SCOPE. `RETURNS trigger` cannot be invoked as an
  * RPC; Postgres refuses it outside a trigger context, so the grant is inert.
  *
+ * SO IS `RETURNS event_trigger`, for exactly the same reason, and until
+ * 2026-09-06 this file did not say so: the test was `/RETURNS\s+trigger\b/`,
+ * which does not match `event_trigger`, so every event-trigger function that
+ * writes a log row was reported as a SECURITY DEFINER writer a browser could
+ * reach. `ca_log_ddl_event` and `ca_log_ddl_drop` blocked a push that way.
+ * Postgres refuses `SELECT ca_log_ddl_event()` with "can only be called in a
+ * sql_drop event trigger function" whatever the grant says, so the finding was
+ * never actionable - and an unactionable BLOCKED is how a gate teaches people
+ * to reach for --no-verify.
+ *
+ * Both of that finding's premises were false, and the second is worth knowing
+ * for its own sake: the live ACL on those two functions is
+ * `{postgres=X, service_role=X}` - no browser role holds EXECUTE. "Silence
+ * means open" is right for CREATE FUNCTION and WRONG for CREATE OR REPLACE of
+ * a function that already exists, because a replace PRESERVES the existing
+ * grants rather than resetting them to the default. This check reads migration
+ * text, not the catalogue, so it cannot see that; the conservative reading is
+ * still the right default, but it is the reason a migration that only replaces
+ * a body can be reported as opening something it never touched.
+ *
  * ESCAPE HATCH. scripts/ci/definer-authorization.allowlist.json, which carries
  * a written reason per entry, under two separate keys: `reviewedExceptions`
  * for rule 1 and `anonPublicSurface` for rule 2. Two functions are in the
@@ -309,7 +329,7 @@ export function unauthorisedWriters(sql, allowlist = new Set(), grantSql = sql) 
   const out = [];
   for (const fn of declaredFunctions(clean)) {
     if (!/SECURITY\s+DEFINER/i.test(fn.header)) continue;
-    if (/RETURNS\s+trigger\b/i.test(fn.header)) continue;
+    if (/RETURNS\s+(?:event_)?trigger\b/i.test(fn.header)) continue;
     if (!/(?:^|[^a-z_])(?:insert\s+into|update\s+[a-z_"]|delete\s+from)/i.test(fn.body)) continue;
     if (!browserReachable(grants, fn.name)) continue;
     /* ASKING, THEN ACCEPTING THE CALLER'S ANSWER, IS NOT ASKING (2026-08-31).
@@ -391,7 +411,7 @@ export function anonReadableDefiners(sql, allowlist = new Set(), grantSql = sql)
   const out = [];
   for (const fn of declaredFunctions(clean)) {
     if (!/SECURITY\s+DEFINER/i.test(fn.header)) continue;
-    if (/RETURNS\s+trigger\b/i.test(fn.header)) continue;
+    if (/RETURNS\s+(?:event_)?trigger\b/i.test(fn.header)) continue;
     if (!anonReachable(grants, fn.name)) continue;
     if (/auth\.(?:uid|role|jwt)\s*\(/i.test(fn.body)) continue;
     if (allowlist.has(fn.name)) continue;

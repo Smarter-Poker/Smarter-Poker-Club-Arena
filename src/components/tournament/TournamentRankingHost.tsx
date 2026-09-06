@@ -252,13 +252,13 @@ export function TournamentRankingHost() {
            own primary-table election bias. */
         let q = supabase
           .from('tournaments')
-          .select('id')
+          .select('id, current_players, max_players')
           .eq('status', 'REGISTERING')
           .eq('buy_in_amount', origin.buy_in_amount)
           .eq('game_type', origin.game_type)
           .neq('id', tournamentId)
           .order('created_at', { ascending: true })
-          .limit(1);
+          .limit(6);
         if (origin.club_id) q = q.eq('club_id', origin.club_id);
         q =
           String(origin.variant) === 'spin'
@@ -267,7 +267,9 @@ export function TournamentRankingHost() {
         const { data: siblings, error: siblingErr } = await q;
         if (siblingErr) throw siblingErr;
 
-        const sibling = siblings?.[0];
+        const sibling = siblings?.find(
+          (candidate) => Number(candidate.current_players ?? 0) < Number(candidate.max_players ?? 0)
+        );
         if (!sibling) {
           fallback();
           return;

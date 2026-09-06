@@ -156,3 +156,31 @@ three read `{postgres, service_role}` - but only because CREATE OR REPLACE
 preserves an existing ACL and because an `[autorevoke]` event trigger strips
 PUBLIC/anon here, and neither of those is in the repo. The migration states
 the grants explicitly and asserts them.
+
+## And a proof that proved nothing
+
+`20260906154804_the_seat_first_repair_states_who_may_execute_it` carries the
+same REVOKE/GRANT for `fn_repair_seat_first_games` - and writing it is how the
+vacuous verify in `20260906153725` was found.
+
+That migration checked its three functions with
+
+```sql
+WHERE (p.proname, pg_get_function_identity_arguments(p.oid)) IN (
+        ('fn_sync_tournament_chips', 'uuid, jsonb'), ...)
+```
+
+`pg_get_function_identity_arguments` returns parameter NAMES as well as types
+
+- `p_tournament_id uuid, p_updates jsonb`. The `IN` matched nothing, the loop
+  ran zero times, every assertion inside it was skipped, and the migration
+  printed `DEFINER_GRANTS_STATED` having checked no function at all. The REVOKE
+  and GRANT statements were correct and did apply (Postgres resolves
+  `FUNCTION public.f(uuid, jsonb)` by type), so the live grants were right the
+  whole time - but the proof beside them was empty. CLAUDE.md 10.86: a check
+  that answers confidently when it has not looked.
+
+Corrected forward, not edited: `20260906153725` stays byte-identical to what
+ran, and the new migration re-asserts all four functions with a predicate that
+matches **and a count** - `IF v_seen <> 4 THEN RAISE` - so it cannot pass over
+an empty set again.

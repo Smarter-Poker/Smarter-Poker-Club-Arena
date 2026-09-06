@@ -91,13 +91,44 @@ async function main() {
     );
     if (r.args) console.error(`  ${''.padEnd(40)} (${r.args})`);
   }
-  console.error('\n  Close it:');
-  console.error('    REVOKE ALL ON FUNCTION public.<name>(<args>) FROM public, anon, authenticated;');
-  console.error('    GRANT EXECUTE ON FUNCTION public.<name>(<args>) TO service_role;');
-  console.error('\n  Or, if a browser genuinely needs it, record the decision WITH ITS REASON:');
+  // ── FIRST, NOT LAST (2026-09-06) ────────────────────────────────────────
+  // This block used to open with the REVOKE. On 2026-09-06 the four routines
+  // it reported were `fn_is_video_library_asset_eligible`,
+  // `fn_is_video_library_lineage_eligible` and two overloads of
+  // `legacy_transition_eligible` — and every one of them is called BY AN RLS
+  // POLICY on `video_library_videos`, `social_posts` and `social_reels`.
+  //
+  // A policy expression is evaluated as the CALLER, so the caller needs
+  // EXECUTE on the functions inside it. Running the first remedy on those four
+  // would have made every anonymous and logged-in read of the public video
+  // feed fail with "permission denied for function". The check was right that
+  // they are browser-reachable; the remedy it led with was an outage.
+  //
+  // That is 10.86 rule 4: when you fix something, ask what the next person
+  // will reach for. The next person reaches for the first command printed.
+  console.error('\n  BEFORE YOU REVOKE ANYTHING, ask whether an RLS policy calls it.');
+  console.error('  A policy expression runs as the CALLER, so the caller needs EXECUTE on');
+  console.error('  every function inside it. Revoking a policy helper does not close a');
+  console.error('  console - it takes the table offline for everyone the policy was letting');
+  console.error('  in. Four of these were exactly that on 2026-09-06.');
+  console.error('');
+  console.error('    select pol.polrelid::regclass as on_table, pol.polname');
+  console.error('      from pg_policy pol');
+  console.error("     where pg_get_expr(pol.polqual, pol.polrelid) ~* '<name>'");
+  console.error("        or pg_get_expr(pol.polwithcheck, pol.polrelid) ~* '<name>';");
+  console.error('');
+  console.error('  IF A POLICY CALLS IT, a browser genuinely needs it. Record the decision');
+  console.error('  with the policies named as the reason:');
   console.error(
     "    INSERT INTO public.ca_browser_definer_allowlist(proname, reason) VALUES ('<name>', '<why>');"
   );
+  console.error('');
+  console.error('  IF NOTHING CALLS IT FROM A POLICY and no client calls it either, close it:');
+  console.error('    REVOKE ALL ON FUNCTION public.<name>(<args>) FROM public, anon, authenticated;');
+  console.error('    GRANT EXECUTE ON FUNCTION public.<name>(<args>) TO service_role;');
+  console.error('');
+  console.error('  IF A PLAYER SHOULD SEE THEIR OWN ROWS, scope it on auth.uid() inside the');
+  console.error('  function instead. That satisfies this check without a grant decision.');
   console.error('');
   process.exit(1);
 }

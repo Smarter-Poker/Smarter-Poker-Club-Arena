@@ -1,0 +1,4 @@
+{
+  "_owner": "realtime/phase-6-prove-it-from-outside - 20260906092312, the synthetic table-socket probe needs a table it may actually open (Realtime Programme phase 6). Applied to production 2026-09-06 ~10:12 UTC via the Supabase MCP apply_migration; the base snapshot predates it. Verified live the same minute: fn_probe_table_candidate(<service identity>) returned a running table, and a real wss:// socket to it delivered a SNAPSHOT in 1630 ms.",
+  "functions": ["fn_probe_table_candidate"]
+}

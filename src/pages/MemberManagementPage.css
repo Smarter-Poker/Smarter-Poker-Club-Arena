@@ -88,7 +88,7 @@
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 1.2px;
-  text-transform: uppercase;
+  text-transform: none;
   font-family: 'Rajdhani', system-ui, sans-serif;
   color: var(--ca-text);
 }
@@ -116,7 +116,7 @@
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.8px;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--ca-text-faint);
 }
 
@@ -222,7 +222,7 @@
 
 .mm-field__label {
   font-size: 0.65rem;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.6px;
   color: var(--ca-text-faint);
 }
@@ -408,7 +408,7 @@
 
 .mm-date span {
   font-size: 0.62rem;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.5px;
   color: var(--ca-text-faint);
 }
@@ -585,7 +585,7 @@
 .mm-roles__current-label {
   font-size: 0.72rem;
   color: var(--ca-text-faint);
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.5px;
 }
 
@@ -874,7 +874,7 @@
   font-size: 0.8rem;
   font-weight: 900;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
   cursor: pointer;
 }
 
@@ -891,7 +891,7 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   NARROW SCREENS — 375px is the design width
+   NARROW SCREENS - 375px is the design width
    ───────────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 400px) {
@@ -982,4 +982,501 @@
   font: inherit;
   font-size: 0.78rem;
   cursor: pointer;
+}
+
+/* Players Tab Casino Realism Pass: Player Credential And Audited Ledger */
+.member-mgmt-page {
+  --ca-bg-0: #05070a;
+  --ca-bg-1: #091019;
+  --ca-surface: rgba(11, 17, 23, 0.96);
+  --ca-surface-hi: rgba(21, 29, 38, 0.98);
+  --ca-border: #27313c;
+  --ca-border-hi: #566575;
+  --ca-text: #f4f7fa;
+  --ca-text-dim: #aab6c1;
+  --ca-text-faint: #7f8d9a;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: calc(var(--bottom-nav-clearance, 74px) + 24px);
+  font-family: Inter, 'Segoe UI', system-ui, sans-serif;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.01) 1px, transparent 1px), var(--ca-bg-0);
+  background-size: 52px 52px;
+}
+
+.mm-header {
+  width: min(1180px, calc(100vw - 24px));
+  margin: 0 auto;
+  padding: 12px 0;
+  border-bottom-color: rgba(86, 101, 117, 0.55);
+  background: linear-gradient(180deg, rgba(5, 7, 10, 0.98), rgba(5, 7, 10, 0.9));
+}
+
+.mm-back,
+.mm-range__confirm,
+.mm-notes__discard,
+.mm-notes__save,
+.mm-roles__confirm-yes,
+.mm-roles__confirm-no,
+.mm-roles__funding-option,
+.mm-downline__show-more,
+.mm-nav__row,
+.mm-roles__option {
+  min-height: 44px;
+  border-radius: 4px;
+}
+
+.mm-back {
+  border-color: #566575;
+  background: linear-gradient(180deg, #17212b, #0a0f14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 3px 0 #020304;
+  color: var(--ca-text);
+}
+
+.mm-title {
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: none;
+}
+
+.mm-credential {
+  position: relative;
+  width: min(1180px, calc(100vw - 24px));
+  min-height: 310px;
+  margin: 14px auto 18px;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid #566575;
+  background: #05070a;
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%, 0 12px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 20px 48px rgba(0, 0, 0, 0.38);
+}
+
+.mm-credential::after {
+  position: absolute;
+  z-index: 4;
+  right: 22px;
+  bottom: 18px;
+  width: 84px;
+  height: 4px;
+  content: '';
+  background: repeating-linear-gradient(90deg, var(--ca-gold) 0 3px, transparent 3px 9px);
+  opacity: 0.72;
+}
+
+.mm-credential__art,
+.mm-credential__shade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mm-credential__art {
+  z-index: -2;
+  object-fit: cover;
+  object-position: 72% 50%;
+  opacity: 0.9;
+}
+
+.mm-credential__shade {
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    rgba(5, 7, 10, 0.99) 0%,
+    rgba(5, 7, 10, 0.95) 42%,
+    rgba(5, 7, 10, 0.48) 68%,
+    rgba(5, 7, 10, 0.1) 100%
+  );
+}
+
+.mm-credential__content {
+  display: flex;
+  min-height: 310px;
+  max-width: 660px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 34px clamp(22px, 4vw, 48px);
+}
+
+.mm-eyebrow,
+.mm-section-heading span {
+  color: var(--ca-gold);
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.mm-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 13px;
+}
+
+.mm-avatar {
+  width: 78px;
+  height: 78px;
+  flex-basis: 78px;
+  border-radius: 12px 2px 12px 2px;
+  border-color: #718190;
+  background: linear-gradient(145deg, #202b36, #070a0e);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+.mm-alias {
+  margin: 3px 0 0;
+  color: var(--ca-text);
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  line-height: 0.95;
+}
+
+.mm-username {
+  margin-top: 4px;
+  color: var(--ca-text-dim);
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: 0.88rem;
+}
+
+.mm-presence {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  padding: 3px 9px;
+  border: 1px solid #566575;
+  background: rgba(4, 7, 10, 0.78);
+  color: var(--ca-text-dim);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.mm-presence::before {
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  content: '';
+  border-radius: 50%;
+  background: #66727e;
+  box-shadow: 0 0 0 2px rgba(102, 114, 126, 0.2);
+}
+
+.mm-presence--online,
+.mm-presence--seated {
+  border-color: rgba(0, 212, 255, 0.56);
+  color: #8deaff;
+}
+
+.mm-presence--online::before,
+.mm-presence--seated::before {
+  background: var(--ca-cyan);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.75);
+}
+
+.mm-player-id {
+  padding: 8px 11px;
+  border-radius: 2px;
+  border-color: rgba(255, 201, 60, 0.52);
+  background: rgba(20, 14, 4, 0.72);
+  color: #ffe29b;
+  font-size: 0.8rem;
+}
+
+.mm-credential__note {
+  max-width: 530px;
+  margin: 20px 0 0;
+  color: var(--ca-text-dim);
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.mm-ledger-grid {
+  display: grid;
+  width: min(1180px, calc(100vw - 24px));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 auto;
+}
+
+.mm-card,
+.mm-range,
+.mm-nav {
+  min-width: 0;
+  margin: 0;
+}
+
+.mm-card {
+  position: relative;
+  padding: 20px;
+  border-radius: 2px;
+  border-color: #34414e;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 34%), rgba(10, 15, 20, 0.97);
+  box-shadow:
+    inset 3px 0 0 rgba(86, 101, 117, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: none;
+}
+
+.mm-card__title,
+.mm-field__label,
+.mm-variant__label,
+.mm-roles__current-label,
+.mm-date span {
+  color: #9ba8b5;
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: none;
+}
+
+.mm-card__title {
+  margin-bottom: 12px;
+  color: var(--ca-gold);
+  font-size: 0.82rem;
+}
+
+.mm-range,
+.mm-downline,
+.mm-roles,
+.mm-nav {
+  grid-column: 1 / -1;
+}
+
+.mm-range {
+  padding: 18px 20px;
+  border: 1px solid #34414e;
+  background: #090e13;
+}
+
+.mm-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mm-section-heading h2 {
+  margin: 0;
+  color: var(--ca-text);
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.mm-range__tabs {
+  padding: 4px;
+  border: 1px solid #27313c;
+  background: #040608;
+}
+
+.mm-range__tabs button {
+  border-width: 1px;
+  border-radius: 2px;
+  background: #0b1117;
+  color: var(--ca-text-dim);
+}
+
+.mm-range__tabs button.active {
+  border-color: var(--ca-cyan);
+  background: linear-gradient(180deg, #19dcff, #0299bc);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  color: #021116;
+}
+
+.mm-field input,
+.mm-date input {
+  min-height: 46px;
+  border-radius: 2px;
+  border-color: #455463;
+  background: #070b0f;
+  color: var(--ca-text);
+}
+
+.mm-stat,
+.mm-info {
+  min-height: 42px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(86, 101, 117, 0.3);
+}
+
+.mm-stat__value,
+.mm-info__value,
+.mm-downline__fees {
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 1.02rem;
+  letter-spacing: 0.02em;
+}
+
+.mm-downline__row {
+  width: 100%;
+  min-height: 52px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mm-downline__row:focus-visible,
+.mm-downline__show-more:focus-visible,
+.mm-range__confirm:focus-visible,
+.mm-roles__confirm-yes:focus-visible,
+.mm-roles__confirm-no:focus-visible,
+.mm-roles__funding-option:focus-visible {
+  outline: 3px solid var(--ca-cyan);
+  outline-offset: 2px;
+}
+
+.mm-downline__open {
+  color: var(--ca-cyan);
+  font-size: 1.25rem;
+}
+
+.mm-roles__option,
+.mm-roles__rates,
+.mm-roles__confirm,
+.mm-roles__fund {
+  border-radius: 2px;
+  background: #070b0f;
+}
+
+.mm-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.mm-nav__row {
+  min-height: 72px;
+  padding: 14px 16px;
+  border: 1px solid #455463;
+  background: linear-gradient(180deg, #16212a, #080c10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    0 4px 0 #020304;
+}
+
+.mm-nav__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mm-nav__label {
+  color: var(--ca-text);
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.mm-nav__detail {
+  color: var(--ca-text-dim);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 760px) {
+  .mm-credential {
+    min-height: 330px;
+  }
+
+  .mm-credential__art {
+    object-position: 67% 50%;
+    opacity: 0.68;
+  }
+
+  .mm-credential__shade {
+    background: linear-gradient(90deg, rgba(5, 7, 10, 0.98), rgba(5, 7, 10, 0.8));
+  }
+
+  .mm-credential__content {
+    min-height: 330px;
+    padding: 28px 20px;
+  }
+
+  .mm-ledger-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mm-card,
+  .mm-range,
+  .mm-downline,
+  .mm-roles,
+  .mm-nav {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 430px) {
+  .mm-header,
+  .mm-credential,
+  .mm-ledger-grid {
+    width: min(100% - 16px, 1180px);
+  }
+
+  .mm-identity {
+    align-items: flex-start;
+  }
+
+  .mm-player-id {
+    width: max-content;
+    margin: 4px 0 0;
+  }
+
+  .mm-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .mm-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+}
+
+@media (max-height: 620px) and (orientation: landscape) {
+  .mm-credential,
+  .mm-credential__content {
+    min-height: 230px;
+  }
+
+  .mm-credential__content {
+    padding-block: 20px;
+  }
+
+  .mm-credential__note {
+    margin-top: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-credential *,
+  .mm-ledger-grid * {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms !important;
+  }
 }

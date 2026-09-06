@@ -367,29 +367,23 @@ describe('Daily Challenge dashboard safety boundary', () => {
     expect(mocks.emit).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['new purchase', false, 1],
-    ['replayed purchase', true, 0],
-  ])(
-    'rejects a %s reroll receipt that keeps the paid catalog contract',
-    async (_, replayed, spent) => {
-      mocks.rpc.mockResolvedValue({
-        data: {
-          success: true,
-          alreadyRerolled: replayed,
-          requestId: REQUESTED_ID,
-          diamondsSpent: spent,
-          challengeId: 'daily_0',
-          challenge: mission('daily', 0, { id: REQUESTED_ID }),
-          diamondBalance: 90,
-        },
-        error: null,
-      });
+  it('rejects a fresh reroll receipt that keeps the paid catalog contract', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        success: true,
+        alreadyRerolled: false,
+        requestId: REQUESTED_ID,
+        diamondsSpent: 1,
+        challengeId: 'daily_0',
+        challenge: mission('daily', 0, { id: REQUESTED_ID }),
+        diamondBalance: 90,
+      },
+      error: null,
+    });
 
-      await expect(
-        dailyChallengeService.rerollChallenge(USER_ID, REQUESTED_ID, 'daily_0')
-      ).resolves.toMatchObject({ success: false });
-      expect(mocks.emit).not.toHaveBeenCalled();
-    }
-  );
+    await expect(
+      dailyChallengeService.rerollChallenge(USER_ID, REQUESTED_ID, 'daily_0')
+    ).resolves.toMatchObject({ success: false });
+    expect(mocks.emit).not.toHaveBeenCalled();
+  });
 });

@@ -85,7 +85,7 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   it('keeps cold-error recovery above the fold and animates only enabled intent surfaces', () => {
     const finalUnavailableRule = css.slice(css.lastIndexOf('.unavailableHero'));
     expect(finalUnavailableRule).toContain('min-height: 420px');
-    expect(css).toContain('.challengeCard:is(:hover, :focus-within) .iconBox');
+    expect(css).toContain('.challengeCard:focus-within .iconBox');
     expect(css).toContain('.buyFreezeBtn:not(:disabled):active');
     expect(css).toContain('.rerollButton:not(:disabled):active');
   });

@@ -72,14 +72,10 @@ describe('daily challenge rerolls', () => {
       p_cost: DAILY_MISSION_REROLL_COST,
       p_request_id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
     });
-    expect(emit).toHaveBeenCalledWith('DIAMOND_BALANCE_CHANGED', {
-      newBalance: 499,
-      delta: -1,
-      source: 'daily_challenge_reroll',
-    });
+    expect(emit).not.toHaveBeenCalled();
   });
 
-  it('treats a replay as success without announcing a second charge', async () => {
+  it('acknowledges a replay without publishing its potentially stale projection', async () => {
     rpc.mockImplementation((_name: string, params: Record<string, unknown>) =>
       Promise.resolve({
         data: {
@@ -96,11 +92,8 @@ describe('daily challenge rerolls', () => {
     );
 
     const result = await dailyChallengeService.rerollChallenge(USER, ROW, 'hp_10');
-    expect(result.alreadyRerolled).toBe(true);
-    expect(emit).toHaveBeenCalledWith(
-      'DIAMOND_BALANCE_CHANGED',
-      expect.objectContaining({ delta: 0 })
-    );
+    expect(result).toEqual({ success: true, alreadyRerolled: true, diamondsSpent: 0 });
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('reuses one request id when PostgreSQL selects it as a deadlock victim', async () => {
@@ -135,6 +128,7 @@ describe('daily challenge rerolls', () => {
     });
     expect(requestIds).toHaveLength(2);
     expect(requestIds[0]).toBe(requestIds[1]);
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('rejects a receipt that is not bound to this reroll request', async () => {

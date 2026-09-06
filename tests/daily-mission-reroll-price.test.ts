@@ -9,6 +9,9 @@ const service = read('src/services/DailyChallengeService.ts');
 const migration = read(
   'supabase/migrations/20260906141022_daily_mission_rerolls_cost_one_diamond.sql'
 );
+const replayHardening = read(
+  'supabase/migrations/20260906145129_daily_mission_reroll_replay_proof_and_current_projection.sql'
+);
 const pageObject = read('tests/e2e/support/DailyMissionsPage.ts');
 const production = read('tests/e2e/production-daily-missions.spec.ts');
 
@@ -25,7 +28,7 @@ describe('Daily Mission one-Diamond reroll contract', () => {
     expect(service).toContain('export const DAILY_MISSION_REROLL_COST = 1 as const');
     expect(service).toContain('p_cost: DAILY_MISSION_REROLL_COST');
     expect(service).toContain('alreadyRerolled ? 0 : DAILY_MISSION_REROLL_COST');
-    expect(service).toContain('delta: diamondsSpent === 0 ? 0 : -diamondsSpent');
+    expect(service).toContain('never publish');
     expect(service).toContain('diamondsSpent,');
 
     expect(page).toContain('diamondBalance < DAILY_MISSION_REROLL_COST');
@@ -80,5 +83,48 @@ describe('Daily Mission one-Diamond reroll contract', () => {
     expect(production).toContain('toBe(balanceBefore - 1)');
     expect(production).toContain('toBe(-1)');
     expect(production).toContain('toBe(balanceBefore - 2)');
+  });
+
+  it('never publishes a stored replay projection and requires legacy settlement proof', () => {
+    expect(service).toContain('if (alreadyRerolled)');
+    expect(service).toContain('let the page reload the live dashboard');
+    expect(page).toContain("await loadChallenges(userId, 'silent')");
+    expect(replayHardening).toContain("'refreshRequired', true");
+    expect(replayHardening).toContain('daily_challenge_reroll_receipts receipt');
+    expect(replayHardening).toContain('receipt.cost = p_cost');
+    expect(replayHardening).toContain('p_cost IS NULL OR p_cost NOT IN (1, 10)');
+    expect(replayHardening).toContain(
+      "'challenge_reroll:' || p_challenge_row_id::text || ':' || p_expected_challenge_id"
+    );
+    expect(replayHardening).toContain("journal.transaction_type = 'daily_challenge_reroll'");
+    expect(replayHardening).toContain("journal.type = 'daily_challenge_reroll'");
+    expect(replayHardening).toContain(
+      "journal.metadata ->> 'challenge_row_id' = p_challenge_row_id::text"
+    );
+    expect(replayHardening).toContain(
+      "journal.metadata ->> 'from_challenge_id' = p_expected_challenge_id"
+    );
+    expect(replayHardening).toContain('IF v_has_replay_proof THEN');
+    expect(replayHardening).toContain('NULL::text');
+    expect(production).toContain("expect(replay).not.toHaveProperty('diamondBalance')");
+    expect(production).toContain('inventedExpectedId');
+    expect(production).toContain('p_cost: -2147483648');
+    expect(production).toContain('cycledReceiptRequestId');
+    expect(production).toContain('daily_mission_legacy_journal_replay');
+    expect(production).toContain("transaction_type: 'daily_challenge_reroll'");
+  });
+
+  it('reconciles every successful response before painting its potentially older projection', () => {
+    const handler = page.slice(
+      page.indexOf('const handleReroll = useCallback'),
+      page.indexOf('const handleClaimAll = useCallback')
+    );
+    expect(handler).toContain("await loadChallenges(userId, 'silent')");
+    expect(handler).not.toContain('setDiamondBalance(result.diamondBalance)');
+    expect(handler).not.toContain('result.challenge!');
+    expect(handler).toContain(
+      "masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_reroll', userId })"
+    );
+    expect(service).toContain('the page reconciles the live dashboard');
   });
 });

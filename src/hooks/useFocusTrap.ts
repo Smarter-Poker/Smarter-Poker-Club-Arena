@@ -17,7 +17,10 @@ import { useRef, useEffect, useCallback } from 'react';
 const FOCUSABLE_SELECTORS =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(isActive: boolean) {
+export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
+  isActive: boolean,
+  initialFocusSelector?: string
+) {
   const containerRef = useRef<T>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -39,7 +42,11 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(isActive: b
        walked on to the first tabbable element in document order, which is the
        page BEHIND the portal. aria-modal does not stop keyboard focus, so the
        trap simply leaked. */
-    if (!containerRef.current.contains(document.activeElement)) {
+    const activeElement = document.activeElement as HTMLElement | null;
+    const activeElementIsTabbable = Array.from(focusableElements).includes(
+      activeElement as HTMLElement
+    );
+    if (!containerRef.current.contains(activeElement) || !activeElementIsTabbable) {
       e.preventDefault();
       (e.shiftKey ? lastFocusable : firstFocusable).focus();
       return;
@@ -66,14 +73,24 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(isActive: b
     // Remember what was focused before the trap
     previousFocusRef.current = document.activeElement as HTMLElement;
 
-    // Focus the first focusable element inside the container
+    // A dialog can nominate a heading near its top so short viewports do not
+    // auto-scroll past the context merely because the first button is lower.
     const focusableElements =
       containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
+    const initialFocus = initialFocusSelector
+      ? containerRef.current.querySelector<HTMLElement>(initialFocusSelector)
+      : focusableElements[0];
     let rafId: number | null = null;
-    if (focusableElements.length > 0) {
+    if (initialFocus) {
       // Small delay to allow the modal animation to start
       rafId = requestAnimationFrame(() => {
-        focusableElements[0]?.focus();
+        if (initialFocusSelector) {
+          initialFocus.focus({ preventScroll: true });
+        } else {
+          // Preserve the original contract for every existing caller: when the
+          // first actionable control is off-screen, focusing it also reveals it.
+          initialFocus.focus();
+        }
       });
     }
 
@@ -85,7 +102,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(isActive: b
       // Restore focus to the previously focused element
       previousFocusRef.current?.focus();
     };
-  }, [isActive, handleKeyDown]);
+  }, [isActive, handleKeyDown, initialFocusSelector]);
 
   return containerRef;
 }

@@ -1415,6 +1415,16 @@ class DailyChallengeServiceClass {
       if (diamondsSpent !== (alreadyRerolled ? 0 : DAILY_MISSION_REROLL_COST)) {
         return invalidDailyMissionReceipt('rerollChallenge', 'reroll settlement total');
       }
+      // A durable replay proves settlement, but its stored assignment and
+      // balance may be older than actions completed in another tab. Return
+      // only the acknowledgment and let the page reload the live dashboard.
+      if (alreadyRerolled) {
+        return {
+          success: true,
+          alreadyRerolled: true,
+          diamondsSpent: 0,
+        };
+      }
       const challengeId = readReceiptString(
         result.challengeId,
         'rerollChallenge',
@@ -1433,11 +1443,9 @@ class DailyChallengeServiceClass {
         'rerollChallenge',
         'diamond balance'
       );
-      masterBus.emit('DIAMOND_BALANCE_CHANGED', {
-        newBalance: diamondBalance,
-        delta: diamondsSpent === 0 ? 0 : -diamondsSpent,
-        source: 'daily_challenge_reroll',
-      });
+      // Even a fresh response can arrive after a newer reroll or wallet event
+      // from another tab. Validate the settlement payload, but never publish
+      // its point-in-time projection; the page reconciles the live dashboard.
 
       return {
         success: true,

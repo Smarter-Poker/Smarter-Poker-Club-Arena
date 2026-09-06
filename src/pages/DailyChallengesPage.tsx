@@ -815,8 +815,8 @@ export default function DailyChallengesPage() {
     diamondBalance: number;
     returnFocusId: string;
   } | null>(null);
-  const celebrateDialogRef = useFocusTrap(!!reward);
-  const freezeDialogRef = useFocusTrap(confirmingFreeze);
+  const celebrateDialogRef = useFocusTrap(!!reward, '#challenge-reward-title');
+  const freezeDialogRef = useFocusTrap(confirmingFreeze, '#freeze-purchase-title');
   useInertAppShell(!!reward || confirmingFreeze);
 
   const loadRequestRef = useRef(0);
@@ -1451,15 +1451,6 @@ export default function DailyChallengesPage() {
         }
         setConfirmingRerollId(null);
         mutationEpochRef.current += 1;
-        if (result.diamondBalance != null) setDiamondBalance(result.diamondBalance);
-        if (!result.challenge) {
-          toast.error('The Replacement Challenge Receipt Was Incomplete. Refreshing...');
-          loadChallenges(userId, 'silent');
-          return;
-        }
-        setChallenges((prev) =>
-          prev.map((item) => (item.id === challenge.id ? result.challenge! : item))
-        );
         capture('daily_mission_rerolled', {
           tier: challenge.tier,
           replayed: result.alreadyRerolled,
@@ -1473,8 +1464,16 @@ export default function DailyChallengesPage() {
           itemCount: 1,
         });
         toast.success(
-          result.alreadyRerolled ? 'Challenge Already Replaced.' : 'New Challenge Ready.'
+          result.alreadyRerolled
+            ? 'Challenge Already Replaced. Refreshing The Live Ledger.'
+            : 'New Challenge Ready. Refreshing The Live Ledger.'
         );
+        // The receipt projection may predate a newer action in another tab.
+        // Paint only a freshly read, revision-bearing dashboard snapshot.
+        await loadChallenges(userId, 'silent');
+        // Global wallet surfaces perform their own authoritative profile read.
+        // This keeps them wired even when the profile realtime frame is lost.
+        masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_reroll', userId });
       } catch (err) {
         reportError(err, 'DailyChallengesPage.reroll_failed');
         recordDailyMissionOperation({
@@ -2142,50 +2141,53 @@ export default function DailyChallengesPage() {
             <div
               ref={freezeDialogRef}
               className={`${styles.celebrateCard} ${styles.freezeDialogCard}`}
+              data-dialog-card="fixed-frame"
               onClick={(event) => event.stopPropagation()}
             >
-              <span className={styles.bevelFrame} aria-hidden="true" />
-              <img
-                className={styles.freezeDialogArtwork}
-                src={mediaUrl(MISSION_REWARD_ARTWORK)}
-                alt=""
-                width="640"
-                height="474"
-                decoding="async"
-                aria-hidden="true"
-              />
-              <span className={styles.panelLabel}>Streak Protection Desk</span>
-              <h2 id="freeze-purchase-title" className={styles.celebrateTitle}>
-                Secure A Streak Freeze?
-              </h2>
-              <p id="freeze-purchase-description" className={styles.freezeDialogDescription}>
-                One Freeze Protects Your Current Run Through One Missed Daily Challenge Cycle.
-              </p>
-              <div className={styles.freezePurchaseLedger}>
-                <div>
-                  <span>Vault Price</span>
-                  <strong className={styles.balanceWithGem}>
-                    <DiamondMark /> 5,000 Diamonds
-                  </strong>
+              <span className={styles.bevelFrame} data-dialog-frame="fixed" aria-hidden="true" />
+              <div className={styles.celebrateCardScroll} data-dialog-scroll="true">
+                <img
+                  className={styles.freezeDialogArtwork}
+                  src={mediaUrl(MISSION_REWARD_ARTWORK)}
+                  alt=""
+                  width="640"
+                  height="474"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <span className={styles.panelLabel}>Streak Protection Desk</span>
+                <h2 id="freeze-purchase-title" className={styles.celebrateTitle} tabIndex={-1}>
+                  Secure A Streak Freeze?
+                </h2>
+                <p id="freeze-purchase-description" className={styles.freezeDialogDescription}>
+                  One Freeze Protects Your Current Run Through One Missed Daily Challenge Cycle.
+                </p>
+                <div className={styles.freezePurchaseLedger}>
+                  <div>
+                    <span>Vault Price</span>
+                    <strong className={styles.balanceWithGem}>
+                      <DiamondMark /> 5,000 Diamonds
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Balance After Purchase</span>
+                    <strong className={styles.balanceWithGem}>
+                      <DiamondMark /> {Math.max(0, diamondBalance - 5000).toLocaleString()} Diamonds
+                    </strong>
+                  </div>
                 </div>
-                <div>
-                  <span>Balance After Purchase</span>
-                  <strong className={styles.balanceWithGem}>
-                    <DiamondMark /> {Math.max(0, diamondBalance - 5000).toLocaleString()} Diamonds
-                  </strong>
+                <div className={styles.freezeDialogActions}>
+                  <button
+                    type="button"
+                    className={styles.cancelButton}
+                    onClick={dismissFreezePurchase}
+                  >
+                    Keep My Diamonds
+                  </button>
+                  <button type="button" className={styles.confirmButton} onClick={handleBuyFreeze}>
+                    Buy Streak Freeze
+                  </button>
                 </div>
-              </div>
-              <div className={styles.freezeDialogActions}>
-                <button
-                  type="button"
-                  className={styles.cancelButton}
-                  onClick={dismissFreezePurchase}
-                >
-                  Keep My Diamonds
-                </button>
-                <button type="button" className={styles.confirmButton} onClick={handleBuyFreeze}>
-                  Buy Streak Freeze
-                </button>
               </div>
             </div>
           </div>,
@@ -2213,51 +2215,54 @@ export default function DailyChallengesPage() {
             <div
               ref={celebrateDialogRef}
               className={styles.celebrateCard}
+              data-dialog-card="fixed-frame"
               onClick={(event) => event.stopPropagation()}
             >
-              <span className={styles.bevelFrame} aria-hidden="true" />
-              <img
-                className={styles.celebrateArtwork}
-                src={mediaUrl(MISSION_REWARD_ARTWORK)}
-                alt=""
-                width="640"
-                height="474"
-                decoding="async"
-                aria-hidden="true"
-              />
-              <h2 id="challenge-reward-title" className={styles.celebrateTitle}>
-                Reward Settled
-              </h2>
-              <p id="challenge-reward-description" className={styles.celebrateName}>
-                {reward.name}
-              </p>
-
-              <div className={styles.celebratePayouts} role="group" aria-label="Rewards Earned">
-                {reward.diamonds > 0 && (
-                  <div className={styles.celebrateDiamondPayout}>
-                    <span className={styles.celebratePayoutValue}>
-                      +{reward.diamonds.toLocaleString()}
-                    </span>
-                    <span className={styles.celebratePayoutLabel}>
-                      {reward.diamonds === 1 ? 'Diamond' : 'Diamonds'}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {reward.diamonds > 0 && (
-                <p className={styles.celebrateBalance}>
-                  New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
+              <span className={styles.bevelFrame} data-dialog-frame="fixed" aria-hidden="true" />
+              <div className={styles.celebrateCardScroll} data-dialog-scroll="true">
+                <img
+                  className={styles.celebrateArtwork}
+                  src={mediaUrl(MISSION_REWARD_ARTWORK)}
+                  alt=""
+                  width="640"
+                  height="474"
+                  decoding="async"
+                  aria-hidden="true"
+                />
+                <h2 id="challenge-reward-title" className={styles.celebrateTitle} tabIndex={-1}>
+                  Reward Settled
+                </h2>
+                <p id="challenge-reward-description" className={styles.celebrateName}>
+                  {reward.name}
                 </p>
-              )}
 
-              <p className={styles.celebrateReceipt} role="status">
-                Added To Your Club Arena Diamond Balance
-              </p>
+                <div className={styles.celebratePayouts} role="group" aria-label="Rewards Earned">
+                  {reward.diamonds > 0 && (
+                    <div className={styles.celebrateDiamondPayout}>
+                      <span className={styles.celebratePayoutValue}>
+                        +{reward.diamonds.toLocaleString()}
+                      </span>
+                      <span className={styles.celebratePayoutLabel}>
+                        {reward.diamonds === 1 ? 'Diamond' : 'Diamonds'}
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-              <button className={styles.celebrateButton} onClick={dismissReward}>
-                Continue
-              </button>
+                {reward.diamonds > 0 && (
+                  <p className={styles.celebrateBalance}>
+                    New Balance: {reward.diamondBalance.toLocaleString()} Diamonds
+                  </p>
+                )}
+
+                <p className={styles.celebrateReceipt} role="status">
+                  Added To Your Club Arena Diamond Balance
+                </p>
+
+                <button className={styles.celebrateButton} onClick={dismissReward}>
+                  Continue
+                </button>
+              </div>
             </div>
           </div>,
           document.body

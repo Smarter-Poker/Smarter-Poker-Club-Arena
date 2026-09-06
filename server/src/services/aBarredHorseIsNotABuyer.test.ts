@@ -174,20 +174,33 @@ describe('a buyer is counted once', () => {
     );
   });
 
-  it('capacity is the tag ceiling minus the tables the horse already sits at, recorded once per horse', () => {
+  /* PIN MOVED 2026-09-06. Capacity was the tag ceiling minus the horse's live
+     seats. It is now the TIGHTER of that and the platform's four-game limit,
+     which counts tournament bookings too - the rule the database was enforcing
+     10,577 times in four hours while this arithmetic said the horse was free.
+     Same place, same "once per horse", one function instead of a subtraction:
+     see HorseGameLoad. */
+  it('capacity is what the database would allow, recorded once per horse', () => {
     const cand = SEED.slice(
       SEED.indexOf('const candidateHorses'),
       SEED.indexOf('// V8 ACTIVITY WINDOWS')
     );
     expect(cand).toMatch(
-      /if \(!capacityByHorse\.has\(h\.id\)\) \{\s*capacityByHorse\.set\(\s*h\.id,\s*Math\.max\(0, tagMaxTables\(tag, MAX_TABLES_PER_HORSE\) - \(tablesForHorse\?\.size \?\? 0\)\)\s*\);/
+      /if \(!capacityByHorse\.has\(h\.id\)\) \{\s*capacityByHorse\.set\(h\.id, remainingGameCapacity\(gameLoad\)\);\s*\}/
     );
+    expect(cand).toContain('ownCashCeiling: tagMaxTables(tag, MAX_TABLES_PER_HORSE),');
+    expect(cand).toContain('seats: tablesForHorse?.size ?? 0,');
+    expect(cand).toContain('bookings: bookingLoad.get(h.id) ?? 0,');
   });
 
+  /* PIN MOVED 2026-09-06: the same two branches, plus the third the
+     reservation added - an OPENING feeder asks for the two 18.3 promotes it
+     at, ahead of every other table. */
   it('a FULL table asks for two - the open rule threshold - and a table with room asks for its open seats', () => {
     expect(SEED).toMatch(
-      /seatsWanted: countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE\s*:\s*Math\.max\(0, Number\(table\.max_players\) - currentCount\)/
+      /seatsWanted: openingFeeder\s*\?\s*feederClaim\s*:\s*countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE\s*:\s*Math\.max\(0, Number\(table\.max_players\) - currentCount\)/
     );
+    expect(SEED).toContain('Math.max(0, FEEDER_BUYERS_TO_GO_LIVE - currentCount)');
   });
 
   it('the horses a table actually took lead its pool, so the allocation replays the cycle', () => {

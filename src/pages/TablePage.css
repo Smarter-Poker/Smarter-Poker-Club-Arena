@@ -1844,6 +1844,8 @@
   left: 50%;
   transform: translateX(-50%);
   margin-bottom: 6px;
+  /* Above the pot total if they ever meet, never under it. */
+  z-index: 6;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1865,6 +1867,23 @@
   white-space: nowrap;
   z-index: 6;
   pointer-events: none;
+}
+
+/* A ONE-BOARD BOMB HANGS THE OTHER WAY (2026-09-06).
+   `[data-boards]` is set by TablePage only when there is MORE than one board,
+   so this selector is exactly the single-board bomb pot - and nothing enforced
+   that the label only appears on multi-board hands: `bombPotActive` is true for
+   a boardCount of 1 too. On one board the stack sits at `top: 42.5%` and its
+   top edge lands in the same band as `.pot-area` (`top: 32.99%`), so hanging
+   the marker above it puts it on the pot total.
+   Below the stack is free on exactly this hand: `.bomb-scoop-banner` is the
+   only other thing anchored there and it appears ONLY on a multi-board hand.
+   So the two never contend, on any board count. */
+.table-page:not([data-boards]) .bomb-pot-live {
+  bottom: auto;
+  top: 100%;
+  margin-bottom: 0;
+  margin-top: 6px;
 }
 
 .bomb-pot-live__dot {
@@ -2298,6 +2317,15 @@
 .spectator-footer-bar[data-state='sitting-out'] {
   justify-content: space-between;
   gap: 12px;
+}
+
+.spectator-footer-bar[data-state='reserved'] {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.spectator-footer-bar[data-state='reserved'] .spectator-footer-bar__label {
+  min-width: 0;
 }
 
 .spectator-footer-bar__cta {
@@ -4297,6 +4325,23 @@ button.post-bb-overlay-button {
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   animation: seatBuyInConfirmIn 0.18s ease-out;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-height: 560px) {
+  .seat-buyin-confirm {
+    align-items: flex-start;
+    padding: 10px;
+  }
+  .seat-buyin-confirm__card {
+    max-height: calc(100dvh - 20px);
+    padding: 16px 18px 14px;
+  }
+  .seat-buyin-confirm__actions {
+    margin-top: 12px;
+  }
 }
 @keyframes seatBuyInConfirmIn {
   from {
@@ -4384,6 +4429,57 @@ button.post-bb-overlay-button {
   background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
   border: 1px solid rgba(255, 255, 255, 0.18);
   color: #fff;
+}
+
+.spin-heads-up-note {
+  position: absolute;
+  z-index: 260;
+  left: 50%;
+  top: clamp(76px, 13vh, 126px);
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border: 1px solid rgba(126, 211, 255, 0.5);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(20, 29, 38, 0.96), rgba(6, 10, 15, 0.96));
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.48),
+    inset 0 1px rgba(255, 255, 255, 0.12);
+  color: #d8f4ff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  animation: spinHeadsUpNote 1.5s ease both;
+}
+
+.seat-fill-status {
+  color: rgba(198, 232, 248, 0.78);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+}
+
+@keyframes spinHeadsUpNote {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  18%,
+  78% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin-heads-up-note {
+    animation: none;
+  }
 }
 
 /* ── Dan 2026-08-24 (iPhone screenshots), table proportions on phones ──────
@@ -4695,6 +4791,23 @@ button.post-bb-overlay-button {
 
   .spectator-footer-bar__label {
     font-size: 0.8125rem;
+  }
+
+  .spectator-footer-bar[data-state='reserved'] {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  .spectator-footer-bar[data-state='reserved'] .spectator-footer-bar__label {
+    flex: 1 1 calc(100% - 118px);
+    text-align: left;
+  }
+
+  .seat-fill-status {
+    order: 3;
+    flex: 1 0 100%;
+    text-align: center;
+    white-space: normal;
   }
 }
 

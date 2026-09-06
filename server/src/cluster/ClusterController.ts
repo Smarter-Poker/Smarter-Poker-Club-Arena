@@ -128,8 +128,15 @@ export interface ClusterTickAllResult {
   ticked: number;
   errors: number;
   rested: number;
+  /** Games that were due and NOT started because the pass reached its budget
+   *  (20260906150956). They ride in `rested_games` as identity rows and are
+   *  first in line next pass. Absent on the older function. */
+  deferred?: number;
+  /** The SQL's own wall clock for the pass, ms. Absent on the older function. */
+  elapsed_ms?: number;
   results: ClusterTickAllEntry[];
-  /** The games this pass let rest, so a wake on one can still find Main 1. */
+  /** The games this pass let rest (and, since 20260906150956, deferred), so a
+   *  wake on one can still find Main 1. */
   rested_games: ClusterTickAllRestedEntry[];
 }
 
@@ -155,6 +162,10 @@ export interface ClusterTickSummary {
   ticked: number;
   /** Games the worklist let rest this pass (dormant, empty, no horse wanted). */
   rested: number;
+  /** Games due this pass that the SQL did not start, because the pass reached
+   *  its 5.5 s budget under the role's 8 s statement_timeout. A pass commits
+   *  what it did; these are first next pass. */
+  deferred: number;
   woken: number;
   errors: number;
   skippedFrozen: boolean;
@@ -303,6 +314,7 @@ export class ClusterController {
       games: 0,
       ticked: 0,
       rested: 0,
+      deferred: 0,
       woken: 0,
       errors: 0,
       skippedFrozen: false,
@@ -392,6 +404,17 @@ export class ClusterController {
       if (pass.skipped === 'frozen') return this.frozenSkip(summary, startedAt);
       summary.games = Number(pass.games ?? 0);
       summary.rested = Number(pass.rested ?? 0);
+      summary.deferred = Number(pass.deferred ?? 0);
+      if (summary.deferred > 0) {
+        /* Not an error: the pass committed everything it started. But a
+           pass that defers is a pass that is slow, and a pass that defers
+           EVERY time is a controller running behind its cadence. The gauge
+           below carries it; this line names the number. */
+        console.warn(
+          `[ClusterController] pass reached its budget after ${Number(pass.elapsed_ms ?? 0)}ms: ` +
+            `${summary.deferred} due game(s) deferred to the next pass`
+        );
+      }
       const results = Array.isArray(pass.results) ? pass.results : [];
       /* THE STATE GAUGE IS FED BY THE PASS ITSELF (2026-09-05). Every game
          this pass SAW - ticked or rested - with the state the worklist read,

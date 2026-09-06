@@ -32,7 +32,7 @@ vi.mock('../financialAlerts.js', () => ({
   raiseFinancialAlert: (...a: unknown[]) => raiseFinancialAlert(...a),
 }));
 
-import { processBBJPayout, setBBJPayoutQueueWriter, resolveJackpotSiblingClubIds } from './bbj.js';
+import { processBBJPayout, setBBJPayoutQueue, resolveJackpotSiblingClubIds } from './bbj.js';
 
 const POOL = 'f9806a7f-e7a2-47d2-a676-36336e3a5337';
 const PARAMS = {
@@ -79,7 +79,7 @@ function appliedRow(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
-  setBBJPayoutQueueWriter(null);
+  setBBJPayoutQueue(null);
   from.mockImplementation((name: string) => {
     if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
     if (name === 'bbj_pools')
@@ -102,14 +102,17 @@ async function run(p = processBBJPayout(PARAMS)) {
 describe('the happy path is unchanged', () => {
   it('pays once and returns the shares the RPC applied', async () => {
     rpc.mockResolvedValueOnce({ data: [appliedRow()], error: null });
-    const result = await run();
-    expect(result).toEqual({
-      totalPayout: 26099.19,
-      loserShare: 13049.59,
-      winnerShare: 6524.8,
-      tableShare: 6524.8,
-      perPlayerShare: 2174.93,
-      poolId: POOL,
+    const outcome = await run();
+    expect(outcome).toEqual({
+      status: 'paid',
+      result: {
+        totalPayout: 26099.19,
+        loserShare: 13049.59,
+        winnerShare: 6524.8,
+        tableShare: 6524.8,
+        perPlayerShare: 2174.93,
+        poolId: POOL,
+      },
     });
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc.mock.calls[0][0]).toBe('bbj_atomic_payout_v2');
@@ -121,7 +124,7 @@ describe('the happy path is unchanged', () => {
       data: [appliedRow({ applied: false, already_paid: true, recovered: true })],
       error: null,
     });
-    expect(await run()).toBeNull();
+    expect(await run()).toEqual({ status: 'already_paid' });
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(raiseFinancialAlert).not.toHaveBeenCalled();
   });
@@ -138,8 +141,8 @@ describe('a transient failure is retried, and the second attempt pays', () => {
     rpc
       .mockResolvedValueOnce({ data: null, error: { message } })
       .mockResolvedValueOnce({ data: [appliedRow()], error: null });
-    const result = await run();
-    expect(result?.totalPayout).toBe(26099.19);
+    const outcome = await run();
+    expect(outcome.status === 'paid' && outcome.result.totalPayout).toBe(26099.19);
     expect(rpc).toHaveBeenCalledTimes(2);
     expect(raiseFinancialAlert).not.toHaveBeenCalled();
   });
@@ -157,27 +160,43 @@ describe('a transient failure is retried, and the second attempt pays', () => {
       return table({ data: null, error: null });
     });
     rpc.mockResolvedValueOnce({ data: [appliedRow()], error: null });
-    const result = await run();
-    expect(result?.poolId).toBe(POOL);
+    const outcome = await run();
+    expect(outcome.status === 'paid' && outcome.result.poolId).toBe(POOL);
     expect(poolReads).toBe(2);
   });
 });
 
 describe('when every attempt fails, the hit is queued and alarmed, never dropped', () => {
-  it('queues the full parameter set and raises a CRITICAL alert carrying it', async () => {
-    const queued: unknown[] = [];
-    setBBJPayoutQueueWriter(async (params, lastError) => {
-      queued.push({ params, lastError });
+  it('claims BEFORE trying, refreshes the note after, and raises a CRITICAL alert', async () => {
+    const queued: Array<{ params: unknown; note: string }> = [];
+    setBBJPayoutQueue({
+      claim: async (params, note) => {
+        queued.push({ params, note });
+      },
+      settle: async () => undefined,
     });
     rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
 
-    expect(await run()).toBeNull();
+    const outcome = await run();
+    expect(outcome.status).toBe('queued');
+    expect(outcome.status === 'queued' && outcome.lastError).toContain('fetch failed');
 
     // Four attempts, not one.
     expect(rpc).toHaveBeenCalledTimes(4);
-    // The durable copy...
-    expect(queued).toHaveLength(1);
-    expect((queued[0] as { params: unknown }).params).toEqual(PARAMS);
+
+    /* TWO claims, and that is the write-ahead working (phase 2.1). The first
+       goes on disk BEFORE the first attempt, while the money is still in the
+       pool - so a process killed mid-payout still leaves a record that a
+       jackpot was owed, which is the one gap the queue could not close when
+       the row was only written after everything had already failed. The
+       second refreshes that row's note with the real error. Both carry the
+       full parameter set a human needs to re-drive it. */
+    expect(queued).toHaveLength(2);
+    expect(queued[0].params).toEqual(PARAMS);
+    expect(queued[0].note).toContain('write-ahead');
+    expect(queued[1].params).toEqual(PARAMS);
+    expect(queued[1].note).toContain('fetch failed');
+
     // ...and the loud one, with everything a human needs to re-drive it.
     expect(raiseFinancialAlert).toHaveBeenCalledTimes(1);
     const [severity, source, message, context] = raiseFinancialAlert.mock.calls[0];
@@ -188,38 +207,79 @@ describe('when every attempt fails, the hit is queued and alarmed, never dropped
     expect(context).toMatchObject({ ...PARAMS, attempts: 4, queued: true });
   });
 
-  it('a non-retryable refusal is not retried and not queued (retrying cannot change it)', async () => {
-    const queue = vi.fn();
-    setBBJPayoutQueueWriter(queue);
+  it('a paid jackpot CLOSES its claim, so the drain never re-drives a settled hand', async () => {
+    const claim = vi.fn();
+    const settle = vi.fn();
+    setBBJPayoutQueue({ claim, settle });
+    rpc.mockResolvedValueOnce({ data: [appliedRow()], error: null });
+
+    expect((await run()).status).toBe('paid');
+    expect(claim).toHaveBeenCalledTimes(1);
+    expect(String(claim.mock.calls[0][1])).toContain('write-ahead');
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(String(settle.mock.calls[0][1])).toContain('paid 26099.19');
+  });
+
+  it('a replay closes the claim too - the money was already placed', async () => {
+    const settle = vi.fn();
+    setBBJPayoutQueue({ claim: vi.fn(), settle });
+    rpc.mockResolvedValueOnce({
+      data: [appliedRow({ applied: false, already_paid: true, recovered: true })],
+      error: null,
+    });
+
+    expect(await run()).toEqual({ status: 'already_paid' });
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(String(settle.mock.calls[0][1])).toContain('already paid');
+  });
+
+  it('a non-retryable refusal is not retried, and its claim is CLOSED rather than left open', async () => {
+    const claim = vi.fn();
+    const settle = vi.fn();
+    setBBJPayoutQueue({ claim, settle });
     rpc.mockResolvedValue({
       data: null,
       error: { message: 'bbj payout percent 0 out of range (0,100]' },
     });
-    expect(await run()).toBeNull();
+
+    expect(await run()).toEqual({ status: 'nothing_to_pay', reason: 'rpc_refused' });
     expect(rpc).toHaveBeenCalledTimes(1);
-    expect(queue).not.toHaveBeenCalled();
+    /* The write-ahead claim is made before anyone can know the hand is
+       unpayable, so what matters is that it is SETTLED. An open claim for a
+       hand that can never pay would be re-driven 25 times and end in a
+       CRITICAL alert about nothing - and an alarm that fires on correct
+       behaviour is how real alarms get ignored. */
+    expect(claim).toHaveBeenCalledTimes(1);
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(String(settle.mock.calls[0][1])).toContain('nothing to pay');
   });
 
-  it('an empty pool is final: nothing to pay, nothing to queue', async () => {
+  it('an empty pool is final: nothing to pay, and the claim is closed', async () => {
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: null }, error: null });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 0, backup_balance: 500 }, error: null });
       return table({ data: null, error: null });
     });
-    const queue = vi.fn();
-    setBBJPayoutQueueWriter(queue);
-    expect(await run()).toBeNull();
+    const claim = vi.fn();
+    const settle = vi.fn();
+    setBBJPayoutQueue({ claim, settle });
+
+    expect(await run()).toEqual({ status: 'nothing_to_pay', reason: 'no_pool_or_empty' });
     expect(rpc).not.toHaveBeenCalled();
-    expect(queue).not.toHaveBeenCalled();
+    expect(claim).toHaveBeenCalledTimes(1);
+    expect(settle).toHaveBeenCalledTimes(1);
   });
 
-  it('a re-drive from the queue does not re-queue itself or re-alarm; the reconciler owns the row', async () => {
-    const queue = vi.fn();
-    setBBJPayoutQueueWriter(queue);
+  it('a re-drive from the queue neither claims nor settles nor re-alarms; the reconciler owns the row', async () => {
+    const claim = vi.fn();
+    const settle = vi.fn();
+    setBBJPayoutQueue({ claim, settle });
     rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
-    expect(await run(processBBJPayout(PARAMS, { fromQueue: true }))).toBeNull();
-    expect(queue).not.toHaveBeenCalled();
+
+    expect((await run(processBBJPayout(PARAMS, { fromQueue: true }))).status).toBe('queued');
+    expect(claim).not.toHaveBeenCalled();
+    expect(settle).not.toHaveBeenCalled();
     expect(raiseFinancialAlert).not.toHaveBeenCalled();
   });
 });

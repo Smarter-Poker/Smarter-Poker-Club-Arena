@@ -1,0 +1,194 @@
+/*
+ * FLAG THIS HAND — Phase 6.
+ *
+ * Every rule is scoped under `.hand-flag`, the only bare class here. See
+ * tests/global-css-does-not-leak-across-pages.law.test.ts for what happens
+ * when a component's private class names are left global, and
+ * tests/no-hover-effects.law.test.ts for why there is no :hover below.
+ */
+
+.hand-flag {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hand-flag__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hand-flag__prompt {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.hand-flag__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hand-flag__title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #d6ad52;
+}
+
+.hand-flag__private {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.hand-flag__text {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.hand-flag__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.hand-flag__btn {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(214, 173, 82, 0.5);
+  background: rgba(214, 173, 82, 0.16);
+  color: #f2e2bb;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hand-flag__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.hand-flag__cancel {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ── Once it is filed ─────────────────────────────────────────────────────── */
+
+.hand-flag--filed {
+  border-color: rgba(214, 173, 82, 0.32);
+}
+
+.hand-flag__status {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.hand-flag__status.is-open {
+  color: #e8c977;
+  border-color: rgba(232, 201, 119, 0.45);
+}
+
+.hand-flag__status.is-under_review {
+  color: #7fb6e8;
+  border-color: rgba(127, 182, 232, 0.45);
+}
+
+.hand-flag__status.is-resolved {
+  color: #4dc660;
+  border-color: rgba(77, 198, 96, 0.45);
+}
+
+.hand-flag__status.is-dismissed {
+  color: #c9c9c9;
+  border-color: rgba(201, 201, 201, 0.35);
+}
+
+.hand-flag__yours {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
+.hand-flag__reply {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border-left: 3px solid rgba(214, 173, 82, 0.55);
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.hand-flag__reply-label {
+  display: block;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.hand-flag__reply-body {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.hand-flag__waiting {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  opacity: 0.6;
+}
+
+.hand-flag__status-line {
+  min-height: 1.1em;
+  margin-top: 6px;
+  font-size: 0.76rem;
+}
+
+.hand-flag__ok {
+  color: #4dc660;
+  font-size: 0.76rem;
+}
+
+.hand-flag__bad {
+  color: #e28b7a;
+}
+
+@media (max-width: 480px) {
+  .hand-flag__actions {
+    flex-direction: column-reverse;
+  }
+
+  .hand-flag__actions > * {
+    width: 100%;
+  }
+}

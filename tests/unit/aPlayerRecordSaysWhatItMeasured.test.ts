@@ -202,11 +202,11 @@ describe('the roster', () => {
     expect(ROSTER).not.toMatch(/if \(loading\) return;\s+if \(!filters\.includes\(filter\)\)/);
   });
 
-  it('bounds realtime-triggered recovery', () => {
-    expect(ROSTER).toContain('scheduleConnectionRecovery(2);');
-    expect(ROSTER).not.toMatch(
-      /setRealtimeConnection\('degraded'\);\s+scheduleConnectionRecovery\(\);/
-    );
+  it('reloads only after realtime confirms that it recovered', () => {
+    const channelError = sliceMethod(ROSTER, 'onSubscriptionError: () => {');
+    expect(channelError).not.toContain('scheduleConnectionRecovery');
+    expect(channelError).not.toContain('latestLoadRef');
+    expect(ROSTER).toContain('if (recovered) scheduleStructuralRefresh();');
   });
 
   it('no longer advances a rollup nothing reads', () => {
@@ -215,7 +215,7 @@ describe('the roster', () => {
   });
 
   it('does not announce "0 Results" before the first page', () => {
-    expect(ROSTER).toMatch(/\{loading && !hasPaintedRoster\s*\?\s*'Loading\.\.\.'/);
+    expect(ROSTER).toMatch(/\{loading && !hasVerifiedDirectory\s*\?\s*'Loading\.\.\.'/);
   });
 
   it('surfaces the export refusal the server gave', () => {

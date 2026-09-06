@@ -6,15 +6,16 @@ const ROOT = resolve(__dirname, '../..');
 const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const RECERTIFICATION = '20260906091511_phase_1_table_management_authority_recertified.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');
+const migrationSources = readdirSync(MIGRATIONS)
+  .filter((name) => name.endsWith('.sql'))
+  .sort()
+  .map((file) => ({ file, source: readFileSync(resolve(MIGRATIONS, file), 'utf8') }));
 
 function latestDefinition(functionName: string): { file: string; source: string } {
   let latest: { file: string; source: string } | null = null;
   const marker = `CREATE OR REPLACE FUNCTION public.${functionName}`;
 
-  for (const file of readdirSync(MIGRATIONS)
-    .filter((name) => name.endsWith('.sql'))
-    .sort()) {
-    const source = readFileSync(resolve(MIGRATIONS, file), 'utf8');
+  for (const { file, source } of migrationSources) {
     const start = source.lastIndexOf(marker);
     if (start >= 0) {
       const tail = source.slice(start);

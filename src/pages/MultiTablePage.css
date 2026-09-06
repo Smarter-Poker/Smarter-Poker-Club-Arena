@@ -475,18 +475,33 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    must-move table; on every other table the 4-square keeps the corner it has
    had since 2026-08-30 and nothing moves.
    ───────────────────────────────────────────────────────────────────────────── */
+/* ONE NUMBER, DECLARED ONCE (2026-09-06). The shift below used to be written
+   as a literal `62px` while the button itself only had `min-width: 62px` plus
+   12px of padding either side - so its REAL width was ~68px and the gap between
+   the two buttons was 0-4px, closing to an overlap as soon as a reader's font
+   scale grew the label. A width the layout depends on cannot be a floor: it is
+   a fixed width now, stated once, and both the shift and the strip's reserved
+   band are computed from it. */
+.multi-table-page__tab-bar-wrapper,
+.tile-toggle-btn,
+.mtp-lobby-btn {
+  --mtp-edge: 6px;
+  --mtp-lobby-w: 76px;
+  --mtp-tile-w: 40px;
+}
+
 .mtp-lobby-btn {
   position: fixed;
   top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 5px);
-  right: 6px;
+  right: var(--mtp-edge);
   z-index: 210;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 40px;
   min-height: 40px;
-  min-width: 62px;
-  padding: 0 12px;
+  width: var(--mtp-lobby-w);
+  padding: 0 6px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 10px;
   background: rgba(24, 119, 242, 0.16);
@@ -500,16 +515,17 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   flex-shrink: 0;
 }
 
-/* 6px inset + 62px of LOBBY + 6px between the two. Stated as a sum so the
-   relationship survives a change to either number. */
+/* The inset, the LOBBY button's real width, and the gap between the two. */
 .tile-toggle-btn--shifted {
-  right: calc(6px + 62px + 6px);
+  right: calc(var(--mtp-edge) + var(--mtp-lobby-w) + var(--mtp-edge));
 }
 
 /* The strip and the P&L chip must not slide under the pair. The base wrapper
    rule reserves 50px for the 4-square alone; this reserves the pair. */
 .multi-table-page__tab-bar-wrapper--with-lobby {
-  padding-right: calc(6px + 62px + 6px + 40px + 6px);
+  padding-right: calc(
+    var(--mtp-edge) + var(--mtp-lobby-w) + var(--mtp-edge) + var(--mtp-tile-w) + var(--mtp-edge)
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

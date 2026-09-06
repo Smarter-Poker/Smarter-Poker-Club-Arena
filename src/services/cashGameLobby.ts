@@ -58,7 +58,7 @@ export interface LobbyPendingMove {
   to_table_name: string | null;
   to_role: string | null;
   to_main_index: number | null;
-  reason: 'must_move' | 'break' | 'seat_change' | string;
+  reason: 'must_move' | 'break' | 'seat_change' | 'balance' | string;
   announced: boolean;
   swap: boolean;
   held: boolean;
@@ -163,6 +163,12 @@ export function pendingMoveNotice(move: LobbyPendingMove | null | undefined): st
   const where = pendingMoveDestination(move);
   if (move.reason === 'break') {
     return `This Table Is Closing. Moving To ${where} After This Hand.`;
+  }
+  /* THE ROOM EVENED THE TABLES (Dan 2026-09-05). Same words the engine uses
+     (seatMoves.ts): the felt and the lobby must never describe one move two
+     ways. It is not a promotion and it is not a closure, so it says neither. */
+  if (move.reason === 'balance') {
+    return `Balancing The Tables. Moving To ${where} After This Hand.`;
   }
   if (move.reason === 'seat_change') {
     if (move.held) return 'Seat Change: Waiting For The Other Table To Finish Its Hand.';

@@ -66,6 +66,45 @@ const WATCHDOG_TICK_MS = 10_000;
 export const CLOSE_MUX_SUPERSEDED = 4901;
 
 /**
+ * ═══ THE PROTOCOL VERSION (Realtime Phase 4, 2026-09-05) ═══════════════════
+ *
+ * What this bundle speaks, sent as `?v=` on the socket URL.
+ *
+ * IN THE URL, NOT A FRAME. The multiplexed socket does have a SUBSCRIBE frame
+ * and the per-table socket does not - the table is named by the path and the
+ * engine sends a SNAPSHOT on connect - so a frame would cover one socket and
+ * not the other, and would arrive after the connection had already been
+ * accepted. The URL is the one place both sockets share and the one moment the
+ * engine can still refuse.
+ *
+ * WHY IT EXISTS BEFORE IT IS NEEDED. Club Arena's origin keeps old assets on
+ * purpose (CLAUDE.md 1.1), so a tab open since yesterday is running
+ * yesterday's bundle against today's engine, mid-hand. Today the engine
+ * accepts every version and this costs one query parameter. The day a frame
+ * changes shape, `MIN_CLIENT_PROTOCOL` on the engine goes up by one, and
+ * instead of a stale tab misreading a frame in a way nobody can debug it is
+ * closed with 4426 and told to go and fetch the new bytes.
+ *
+ * A version this bundle does not send is read by the engine as 0, so the
+ * mechanism reaches the bundles that predate it too - which is the entire
+ * population it exists for.
+ */
+export const PROTOCOL_VERSION = 1;
+
+/**
+ * Build an engine socket URL carrying this bundle's protocol version.
+ *
+ * ONE function for both sockets on purpose. A version that rode on only the
+ * multiplexed socket would be worse than none: the engine would refuse the
+ * stale bundles that happened to be muxed and silently serve the ones behind
+ * the `ca_ws_mux='0'` kill switch.
+ */
+export function engineSocketUrl(baseUrl: string, path: string): string {
+  const sep = path.includes('?') ? '&' : '?';
+  return `${baseUrl.replace(/^http/, 'ws')}${path}${sep}v=${PROTOCOL_VERSION}`;
+}
+
+/**
  * Mux flag. DEFAULT ON as of 2026-08-24 (Dan: kill the per-join TLS handshake
  * globally — every table join must be a SUBSCRIBE frame on the already-open
  * lobby socket, not a fresh wss:// negotiation). `ca_ws_mux`:
@@ -340,7 +379,11 @@ class EngineSocketMuxImpl {
 
   private ensureSocket(): void {
     if (this.ws && this.ws.readyState <= WebSocket.OPEN) return; // CONNECTING or OPEN
-    const url = this.baseUrl.replace(/^http/, 'ws') + '/ws/multi';
+    // Carries this bundle's protocol version, from the same helper the
+    // per-table socket uses (Realtime Phase 4): a version on only one of the
+    // two sockets would refuse the stale bundles that happened to be muxed
+    // and silently serve the ones that were not.
+    const url = engineSocketUrl(this.baseUrl, '/ws/multi');
     let ws: WebSocket;
     try {
       ws = new WebSocket(url, ['bearer', this.token]);

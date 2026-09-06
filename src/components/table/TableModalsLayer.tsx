@@ -300,8 +300,23 @@ export interface TableModalsLayerProps {
   /** @deprecated unused by this layer — see the note on boardStage */
   buyInProcessingRef: React.MutableRefObject<boolean>;
   onCloseCashier: () => void;
-  /** Must report whether the chips actually moved — see CashierModal.onAddChips. */
-  onAddChips: (amount: number) => Promise<boolean>;
+  /**
+   * Must report whether the chips actually moved — see CashierModal.onAddChips.
+   *
+   * THE `opId` IS PART OF THE SIGNATURE (Realtime Phase 3 audit, 2026-09-05).
+   * This declared one parameter while CashierModal calls it with two, and the
+   * key survived only because this layer happens to forward the same function
+   * object rather than wrapping it: TypeScript accepts a one-parameter
+   * function where a two-parameter one is expected, so nothing complained.
+   *
+   * That is a latent double-debit. The day anyone writes
+   * `onAddChips={(a) => onAddChips(a)}` here - the most ordinary edit in the
+   * world - the idempotency key the Cashier audit (2026-08-27, P0-1) added is
+   * silently dropped, every top-up gets a fresh server-side key, and a lost
+   * response debits the player twice. Declaring it makes that edit fail to
+   * compile instead of failing in a wallet.
+   */
+  onAddChips: (amount: number, opId?: string) => Promise<boolean>;
 
   // Bust Rebuy
   bustRebuyOpen: boolean;

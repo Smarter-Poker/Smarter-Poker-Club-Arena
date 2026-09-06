@@ -22,7 +22,12 @@
 
 import { noteServerTime } from '../lib/serverClock';
 import jsonPatch from 'fast-json-patch';
-import { engineSocketMux, isMuxEnabled, CLOSE_MUX_SUPERSEDED } from './EngineSocketMux';
+import {
+  engineSocketMux,
+  isMuxEnabled,
+  CLOSE_MUX_SUPERSEDED,
+  engineSocketUrl,
+} from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
 
@@ -119,6 +124,36 @@ function closeMeansAuth(code: number | undefined, reason: string | undefined): b
 }
 
 /**
+ * Fetch a genuinely new bundle after a 4426 (Realtime Phase 4, 2026-09-05).
+ *
+ * `hardReload` rather than `location.reload()`, and REUSED rather than
+ * re-written: Dan, 2026-08-19, "a plain window.location.reload() does NOT fix
+ * a stale chunk" - the page is running an old index.html, and reloading
+ * re-serves that same cached document from the service worker, the bfcache or
+ * the edge, straight back into the same refusal. The one implementation lives
+ * in `utils/lazyWithRetry`, which drops the service worker, purges Cache
+ * Storage and navigates with a cache-busting query. A second copy of that
+ * reasoning is how two mechanisms end up disagreeing.
+ *
+ * Loaded lazily like every other recovery module here: it is needed only once
+ * a socket has already been refused, and a static import would put it in the
+ * chunk every player downloads before first paint.
+ */
+function reloadForNewBundle(): Promise<void> {
+  return import('../utils/lazyWithRetry')
+    .then((m) => m.hardReload())
+    .catch(() => {
+      // The recovery module itself could not be fetched, which is usually the
+      // same staleness. A plain reload is worse but is better than nothing.
+      try {
+        window.location.reload();
+      } catch {
+        /* nothing left to try */
+      }
+    });
+}
+
+/**
  * Ask GoTrue whether the session is still alive, loading the prober lazily.
  * Resolves 'unknown' if the module cannot be loaded, so a chunk that fails to
  * arrive can never sign a player out.
@@ -149,6 +184,47 @@ export const CLOSE_TABLE_NOT_FOUND = 4404;
 export const CLOSE_RATE_LIMITED = 4429;
 export const CLOSE_SERVER_ERROR = 4500;
 export const CLOSE_BAD_REQUEST = 4400;
+
+/**
+ * The engine cannot serve the protocol this bundle speaks. Distinct from every
+ * other close code because it is the ONE case where reloading the page is the
+ * correct answer rather than the lazy one: the fix is genuinely new bytes.
+ */
+export const CLOSE_UPGRADE_REQUIRED = 4426;
+
+/**
+ * How often to try while the engine is inside an ANNOUNCED restart window.
+ *
+ * The normal ladder doubles to a 30s cap, which is right for an outage of
+ * unknown length and wrong for one whose end time the server has already told
+ * us: a table that could have come back at :58:02 sits dead until :58:30 for
+ * no reason. Five seconds is frequent enough that nobody notices the gap and
+ * far too slow to be a storm - a few hundred sockets, once every five seconds,
+ * against a box that is either up or not.
+ */
+export const RESTART_POLL_MS = 5_000;
+
+/**
+ * How long past the announced return to keep treating a dead socket as the
+ * scheduled restart.
+ *
+ * The engine is back at ~:58 and the break ends at :00, but a slow boot, a
+ * long drain or a wave-scheduled resume can run over. Past this, the window
+ * has stopped being an explanation and the normal ladder - with its escalation
+ * to 'failed' and everything that hangs off it - takes back over. It has to
+ * expire, or one announcement would disable the failsafe forever.
+ */
+export const RESTART_WINDOW_GRACE_MS = 90_000;
+
+/* The protocol version and the URL builder live in EngineSocketMux and are
+   re-exported here, where a reader looks for them. Not because that is the
+   tidier home - it is not - but because this module already imports that one,
+   so defining them here would make the two import each other, and a cycle
+   between a class and the singleton it acquires from breaks at module-init
+   time rather than at a call site anyone would suspect. A third module would
+   be cleaner still and costs an entry-chunk slot that every player downloads
+   before first paint for two constants. */
+export { PROTOCOL_VERSION, engineSocketUrl } from './EngineSocketMux';
 
 export type EngineConnectionStatus =
   | 'idle'
@@ -205,6 +281,14 @@ export class EngineStateClient {
    * 'reconnecting' - see scheduleReconnect and openOnceInner. Cleared on open.
    */
   private tableMissing = false;
+  /**
+   * 2026-09-05 (Phase 4): epoch ms until which a dead socket is EXPECTED,
+   * because the engine announced a scheduled restart on the maintenance frame.
+   * Zero means no window - which is what an engine that does not send
+   * `resume_expected_at` leaves it at, so the ladder behaves exactly as it did
+   * before against any engine that has not shipped this yet.
+   */
+  private restartWindowUntil = 0;
   private reconnectTimer: number | null = null;
   private intentionalClose = false;
 
@@ -409,7 +493,7 @@ export class EngineStateClient {
       return;
     }
 
-    const wsUrl = this.opts.baseUrl.replace(/^http/, 'ws') + '/ws/table/' + this.opts.tableId;
+    const wsUrl = engineSocketUrl(this.opts.baseUrl, '/ws/table/' + this.opts.tableId);
     // Subprotocol carries auth. Two entries: the literal "bearer", then the JWT.
     //
     // Roadmap batch 6 (2026-08-21), DEFAULT ON since 2026-08-24: all tables
@@ -562,6 +646,19 @@ export class EngineStateClient {
         return;
       }
 
+      /* 2026-09-05 (Phase 4): this bundle is older than the engine will
+         serve. The ONE close code where reloading is the right answer and
+         not the lazy one - the fix is genuinely new bytes, and no amount of
+         reconnecting will produce them. Stop the ladder and hand it to the
+         host, which knows how to fetch a fresh bundle rather than a fresh
+         copy of the same one. */
+      if (e.code === CLOSE_UPGRADE_REQUIRED) {
+        this.setStatus('idle');
+        this.opts.onError({ code: e.code, reason: e.reason || 'upgrade_required' });
+        void reloadForNewBundle();
+        return;
+      }
+
       // 2026-08-22: the server told us to slow down — honour it instead of
       // rejoining the thundering herd at the fast end of the ladder.
       if (e.code === CLOSE_RATE_LIMITED) {
@@ -574,8 +671,18 @@ export class EngineStateClient {
       // assuming the network and ask GoTrue. Sits below the coded branches
       // on purpose: 4404 / 4901 / 4429 each mean something specific and
       // keep their own handling.
+      //
+      // 2026-09-05 (Phase 4): NOT during an announced restart. Three failed
+      // handshakes in a row is the shape of the 2026-09-03 outage, which is
+      // why it asks GoTrue - but when the engine has told us it is restarting
+      // we already know why the socket will not open, and asking anyway sends
+      // every connected browser at auth in the same few seconds to be told
+      // something we were told first.
       this.handshakeFailures++;
-      if (this.handshakeFailures >= HANDSHAKE_FAILURES_BEFORE_SESSION_CHECK) {
+      if (
+        this.handshakeFailures >= HANDSHAKE_FAILURES_BEFORE_SESSION_CHECK &&
+        !this.inAnnouncedRestart()
+      ) {
         this.checkSessionThenReconnect(`table:${e.code}x${this.handshakeFailures}`);
         return;
       }
@@ -668,6 +775,31 @@ export class EngineStateClient {
         console.error('[EngineStateClient] onEvent listener threw', err);
       }
       return;
+    }
+    /* ═══ THE RESTART HANDOFF (Realtime Phase 4, 2026-09-05) ════════════════
+       The engine announces its scheduled break on this same event, and until
+       today nothing on the TRANSPORT read it - the frame went straight past
+       to TablePage, which drew a countdown while the ladder underneath
+       treated the coming three-minute silence as a box that had died.
+
+       What that cost, every hour: the ladder doubles 1s, 2s, 4s ... 30s,
+       reaches maxRetries at about three minutes, announces 'failed', and
+       TablePage's twenty-second failsafe reloads the page - under a player
+       who had just been promised their seat would survive. On the way it
+       asks GoTrue whether the session is still alive, because three failed
+       handshakes in a row is the shape of the 2026-09-03 outage. Here it is
+       not, and the server has already said so.
+
+       Read it here, then fall through: TablePage still gets the frame. */
+    if (
+      msg.type === 'EVENT' &&
+      (msg.payload as { type?: string } | undefined)?.type === 'maintenance_break'
+    ) {
+      const p = msg.payload as { resume_expected_at?: number | null };
+      const resumeAt = typeof p.resume_expected_at === 'number' ? p.resume_expected_at : 0;
+      // An engine that has not learned to send it leaves this at 0 and the
+      // ladder behaves exactly as it did before - the frame is additive.
+      this.restartWindowUntil = resumeAt > 0 ? resumeAt + RESTART_WINDOW_GRACE_MS : 0;
     }
     if (msg.type === 'USER_EVENT') {
       // Private, unsequenced, idempotent: straight through, never queued.
@@ -943,9 +1075,38 @@ export class EngineStateClient {
       });
   }
 
+  /**
+   * Is the engine inside a restart it announced to us?
+   *
+   * Pure, and read from the clock every time rather than latched, so a window
+   * that has passed stops explaining anything - `RESTART_WINDOW_GRACE_MS` is
+   * what keeps one announcement from disabling the failsafe forever.
+   */
+  private inAnnouncedRestart(): boolean {
+    return this.restartWindowUntil > 0 && Date.now() < this.restartWindowUntil;
+  }
+
   private scheduleReconnect(): void {
     if (this.reconnectTimer !== null) return;
     this.retryCount++;
+    /* ═══ A SCHEDULED RESTART IS NOT A FAILURE (Phase 4, 2026-09-05) ═══════
+       The engine told us it is going away and when it will be back, so for
+       that window this is a WAIT, not an outage. Two things change and
+       nothing else does:
+
+         - the status never reaches 'failed', which is what TablePage's
+           twenty-second failsafe watches. Without this the platform reloads
+           every seated player's page once an hour, on a schedule, in the
+           middle of a break they were promised their seat would survive.
+         - the delay is a flat poll instead of a doubling ladder. The ladder
+           is right for an outage of unknown length; here the server has
+           already told us the length, and a table that could return at
+           :58:02 should not sit dead until :58:30 because the ladder had
+           reached its 30s step.
+
+       The ladder underneath is untouched, and the moment the window lapses
+       every escalation it owns comes back. */
+    const waitingOutARestart = !this.tableMissing && this.inAnnouncedRestart();
     // ── Dan 2026-08-21 ("the games can never freeze or die"): NEVER stop
     // trying. The old code went terminally 'failed' after maxRetries and the
     // table sat dead until a manual refresh. Now maxRetries only marks the
@@ -958,6 +1119,8 @@ export class EngineStateClient {
       // stays 4404 (TableLoadFailureOverlay, "This Table Has Closed") is
       // driven by the error count, not by this status.
       this.setStatus('idle');
+    } else if (waitingOutARestart) {
+      this.setStatus('reconnecting');
     } else if (this.retryCount >= this.opts.maxRetries) {
       this.setStatus('failed');
       if (this.retryCount === this.opts.maxRetries) {
@@ -966,10 +1129,12 @@ export class EngineStateClient {
     } else {
       this.setStatus('reconnecting');
     }
-    const base = Math.min(
-      this.opts.initialDelay * Math.pow(2, Math.min(this.retryCount, 10) - 1),
-      this.opts.maxDelay
-    );
+    const base = waitingOutARestart
+      ? RESTART_POLL_MS
+      : Math.min(
+          this.opts.initialDelay * Math.pow(2, Math.min(this.retryCount, 10) - 1),
+          this.opts.maxDelay
+        );
     const jitter = Math.random() * base * 0.3;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
@@ -1477,7 +1642,11 @@ export class EngineChannelClient {
       return;
     }
 
-    const wsUrl = this.opts.baseUrl.replace(/^http/, 'ws') + '/ws/channel';
+    // Same builder as the two table sockets (Phase 4). This one carries club
+    // presence, the lobby and financial updates rather than a hand, but its
+    // frames can change shape just as theirs can, and a version on two of the
+    // three sockets is the same "worse than none" this builder exists to stop.
+    const wsUrl = engineSocketUrl(this.opts.baseUrl, '/ws/channel');
     let ws: WebSocket;
     try {
       ws = new WebSocket(wsUrl, ['bearer', token]);

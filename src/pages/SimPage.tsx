@@ -56,6 +56,23 @@ const SimPage: React.FC = () => {
     const n = Number(new URLSearchParams(window.location.search).get('cards'));
     return n >= 4 && n <= 6 ? n : 0;
   }, []);
+  /* THE VIP ALL-IN SQUEEZE ON THE SIM FELT (2026-09-05, verification).
+     `?squeeze=1` presents the board as it is presented to a player who is
+     all-in, holds a VIP card and has the perk on - the ONLY combination that
+     resolves the interactive `all-in` profile. Without it the sim board is an
+     ordinary board, which is what every other seat sees.
+
+     This exists because the squeeze had NO end-to-end coverage: the component
+     tests run in happy-dom (no pointer capture, no real CSS) and the e2e
+     spec drove hand-written markup rather than the real component, so a
+     defect that only appears in a browser could not be seen by anything.
+     tests/e2e/river-squeeze-interactive.spec.ts drives THIS. */
+  const squeezeSim = useMemo(
+    () =>
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('squeeze') === '1',
+    []
+  );
   const step: SimStep = scenario.steps[stepIdx];
   const state: SimViewState = step.state;
 
@@ -156,7 +173,17 @@ const SimPage: React.FC = () => {
 
           {/* Community cards */}
           <div className="sim-page__community">
-            <CommunityCards cards={state.communityCards} stage={state.boardStage} />
+            <CommunityCards
+              cards={state.communityCards}
+              stage={state.boardStage}
+              /* The squeeze needs an identity and a hand that does not change
+                 as the player steps, so turn -> river reads as one hand
+                 dealing its next street - exactly the real sequence. */
+              tableId={squeezeSim ? 'sim-squeeze' : undefined}
+              handId={squeezeSim ? scenarioIdx + 1 : undefined}
+              slowReveal={squeezeSim}
+              squeezeEligible={squeezeSim}
+            />
           </div>
 
           {/* Winner hand-strength label — visible only at showdown / hand complete */}

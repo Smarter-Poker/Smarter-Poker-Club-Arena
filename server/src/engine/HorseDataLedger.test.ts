@@ -59,6 +59,12 @@ const BRAIN_FILES = [
   'engine/GtoPostflopV31.ts',
   'engine/GtoFacingDefenseV32.ts',
   'engine/HorseEvEngine.ts',
+  // V44: the second look fires its receipts from the one call site that is
+  // a live horse at a live table.
+  'engine/ServerTableEngineTurns.ts',
+  // V48: the voluntary straddle is decided at the deal, which is the only
+  // place that knows the hand number and the seat order.
+  'engine/ServerTableEngineDealing.ts',
 ];
 const BRAIN_SOURCE = BRAIN_FILES.map(read).join('\n');
 

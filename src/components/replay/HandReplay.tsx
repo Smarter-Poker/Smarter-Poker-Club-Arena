@@ -23,6 +23,23 @@
  *
  * It NEVER fabricates a hand: a load failure is "Could Not Load This Hand", a
  * missing row is "Hand Not Found", and neither ever draws a stand-in.
+ *
+ * PHASE 3 2026-09-05 - THE REPLAYER MOVES. Stepping FORWARD one frame plays
+ * what happened between the two frames: chips slide from the seat to its bet
+ * spot, a new street sweeps the street's bets into the pot, a shown hand
+ * flips face-up, a fold goes to the muck, and the pot travels to whoever won
+ * it. Each carries the felt's own sound cue (SoundService - never a second
+ * sound set). A jump or a scrub moves nothing: motion is owed to a step, and
+ * a scrub to the river must not replay every bet on the way. Every duration
+ * scales with the player's Animation Speed AND the replay's own rate
+ * (half / normal / double, remembered per viewer); neither can switch motion
+ * off, and under prefers-reduced-motion the global collapse lands every
+ * element on its final frame - the meaning stays, the travel goes.
+ *
+ * Also on the felt since Phase 3: the dealer button, what the acting seat was
+ * FACING (chips to call, pot odds) read off the frame before its decision, and
+ * the made-hand label under the viewer's seat (and any revealed seat) street
+ * by street. The rules behind all of it are pure, in utils/replayMotion.ts.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -33,8 +50,23 @@ import HandDetailView from '../handdetail/HandDetailView';
 import type { HandRecord as ServiceHandRecord } from '../../services/HandHistoryService';
 import type { ReplayModel } from '../../utils/handReplay';
 import { buildReplayFrames, frameSeats, type ReplayFrame } from '../../utils/replayFrames';
+import {
+  REPLAY_RATES,
+  facingAt,
+  frameCue,
+  frameMotion,
+  preflopHoleLabel,
+  readReplayRate,
+  replayBeatMs,
+  streetJumps,
+  writeReplayRate,
+  type FrameMotion,
+  type ReplayCue,
+  type ReplayRate,
+} from '../../utils/replayMotion';
 import { blindLabel, gameTypeLabel, money, stamp } from '../../utils/handFormat';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
+import { soundService } from '../../services/SoundService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { reportError } from '../../utils/errorReporter';
 import './HandReplay.css';
@@ -66,8 +98,11 @@ function holdingSize(model: ReplayModel): number {
 function seatLayout(
   seats: number[],
   heroSeat: number | null
-): Record<number, { x: number; y: number; bx: number; by: number }> {
-  const out: Record<number, { x: number; y: number; bx: number; by: number }> = {};
+): Record<number, { x: number; y: number; bx: number; by: number; dx: number; dy: number }> {
+  const out: Record<
+    number,
+    { x: number; y: number; bx: number; by: number; dx: number; dy: number }
+  > = {};
   if (seats.length === 0) return out;
   const maxSeat = Math.max(...seats);
   const ring = maxSeat <= 6 ? 6 : 9;
@@ -76,12 +111,18 @@ function seatLayout(
     const offset = (seat - anchor + ring) % ring;
     const angle = Math.PI / 2 + (offset / ring) * Math.PI * 2;
     const x = 50 + 44 * Math.cos(angle);
-    const y = 50 + 40 * Math.sin(angle);
+    /* 36, not 40: at 40 the bottom seat's plate ran past the felt's clipped
+       edge and its made-hand label (Phase 3) was cut off entirely. */
+    const y = 50 + 36 * Math.sin(angle);
     out[seat] = {
       x,
       y,
       bx: 50 + 26 * Math.cos(angle),
       by: 50 + 22 * Math.sin(angle),
+      // The dealer button sits between the seat and its bet spot, a little
+      // clockwise so it never covers the chips.
+      dx: 50 + 40 * Math.cos(angle + 0.3),
+      dy: 50 + 30 * Math.sin(angle + 0.3),
     };
   }
   return out;
@@ -160,13 +201,99 @@ function ReplayBoard({
   );
 }
 
+/**
+ * The felt's own cues, by name. One cue per frame stepped into; the gate,
+ * priority window and the player's sound setting all live in SoundService.
+ */
+function playCue(cue: ReplayCue, amount: number, bigBlind: number) {
+  switch (cue) {
+    case 'deal':
+      soundService.playDeal();
+      break;
+    case 'community':
+      soundService.playCommunityCard();
+      break;
+    case 'chips':
+      soundService.playChips();
+      break;
+    case 'raise':
+      soundService.playRaise(amount, bigBlind);
+      break;
+    case 'check':
+      soundService.playCheck();
+      break;
+    case 'fold':
+      soundService.playFold();
+      break;
+    case 'all_in':
+      soundService.playAllIn();
+      break;
+    case 'discard':
+      soundService.playDiscard();
+      break;
+    case 'show':
+      soundService.playShowdown();
+      break;
+    case 'win':
+      soundService.playWin();
+      soundService.playPotCollect();
+      break;
+    default:
+      break;
+  }
+}
+
+/** The seats a pot went to: the showdown's winners, or whoever the record says was paid. */
+function winnerSeatsOf(model: ReplayModel): number[] {
+  const winners = new Set(model.showdown.filter((r) => r.isWinner).map((r) => Number(r.seat)));
+  for (const p of model.players) if (p.won > 0) winners.add(Number(p.seat));
+  return [...winners];
+}
+
+/** The dealer button's seat: the record's, or the seat the positions name as the button. */
+function buttonSeatOf(model: ReplayModel, seats: number[]): number | null {
+  if (model.buttonSeat !== null && seats.includes(Number(model.buttonSeat))) {
+    return Number(model.buttonSeat);
+  }
+  const named = model.players.find((p) => p.position === 'BTN');
+  return named ? Number(named.seat) : null;
+}
+
+/**
+ * The made hand a seat's cards show on THIS frame's street: the model's own
+ * per-street evaluation (the same evaluator that names the showdown), the
+ * showdown's name on the final frame, and before the flop the holding itself.
+ */
+function madeLabelFor(
+  model: ReplayModel,
+  frame: ReplayFrame,
+  userId: string,
+  hole: DeckCard[] | null
+): string | null {
+  if (!hole || hole.length === 0) return null;
+  if (frame.key === 'deal' || frame.streetKey === 'preflop') return preflopHoleLabel(hole);
+  const street = model.streets.find((st) => st.key === frame.streetKey);
+  const made = street?.madeHands.find((m) => m.userId === userId)?.name;
+  if (made) return made;
+  if (frame.isShowdown) {
+    const row = model.showdown.find((r) => r.userId === userId && r.boardIndex === 0 && !r.low);
+    return row?.handName ?? null;
+  }
+  return null;
+}
+
 function Felt({
   model,
   frame,
+  prev,
+  motion,
   heroId,
 }: {
   model: ReplayModel;
   frame: ReplayFrame;
+  /** The frame before this one, for what the acting seat was facing. */
+  prev: ReplayFrame | null;
+  motion: FrameMotion;
   heroId: string | null;
 }) {
   const seats = useMemo(() => frameSeats(model), [model]);
@@ -174,14 +301,24 @@ function Felt({
   const heroSeat = hero?.seat ?? null;
   const layout = useMemo(() => seatLayout(seats, heroSeat), [seats, heroSeat]);
   const backs = holdingSize(model);
-  const winners = new Set(model.showdown.filter((r) => r.isWinner).map((r) => r.seat));
-  for (const p of model.players) if (p.won > 0) winners.add(p.seat);
+  const winners = useMemo(() => new Set(winnerSeatsOf(model)), [model]);
+  const buttonSeat = buttonSeatOf(model, seats);
+  const buttonPos = buttonSeat !== null ? layout[buttonSeat] : null;
+  const facing = facingAt(prev, frame);
+  /* Where chips travel to and from: the pot pill's own centre, measured on the
+     felt (43% of its height, boards below it). Close enough that the pill has
+     faded out before the last few pixels could be noticed. */
+  const potPos = { x: 50, y: 43 };
 
   return (
-    <div className="hr-felt" aria-label={frame.caption}>
+    <div
+      className="hr-felt"
+      aria-label={frame.caption}
+      style={{ '--hr-pot-x': `${potPos.x}%`, '--hr-pot-y': `${potPos.y}%` } as React.CSSProperties}
+    >
       <div className="hr-felt__oval" />
       <div className="hr-felt__centre">
-        <div className="hr-felt__pot">
+        <div className={`hr-felt__pot${motion.potTo.length > 0 ? ' hr-felt__pot--award' : ''}`}>
           <span className="hr-felt__pot-label">Pot</span>
           <span className="hr-felt__pot-value">{money(frame.pot)}</span>
         </div>
@@ -210,6 +347,16 @@ function Felt({
         </div>
       </div>
 
+      {buttonPos && (
+        <span
+          className="hr-button"
+          aria-label={`Dealer Button, Seat ${buttonSeat}`}
+          style={{ left: `${buttonPos.dx}%`, top: `${buttonPos.dy}%` }}
+        >
+          D
+        </span>
+      )}
+
       {model.players.map((p) => {
         const pos = layout[p.seat];
         if (!pos) return null;
@@ -217,37 +364,64 @@ function Felt({
         const isActive = frame.activeSeat === p.seat;
         const isFolded = frame.folded.includes(p.seat);
         const revealed = frame.revealed.includes(p.seat) && p.hole;
-        const showPrivate = isHero && !revealed && p.privateHole && p.privateHole.length > 0;
+        /* PHASE 3: the viewer sees their OWN cards from the deal, whether the
+           hand went to showdown (`hole`) or not (`privateHole`). Until Phase 3
+           a player replaying their own hand watched two card backs in their
+           seat until the showdown frame. Everyone else's stay face-down until
+           the record shows them. */
+        const own = isHero ? (p.hole ?? p.privateHole) : null;
+        const showPrivate = !revealed && !!own && own.length > 0;
         const bet = frame.committed[p.seat] || 0;
         const stack = frame.stacks[p.seat];
         const isWinner = frame.isShowdown && winners.has(p.seat);
+        const folding = motion.fold === p.seat;
+        // A seat whose cards were already face-up (the viewer's own) has nothing to flip.
+        const flipping = motion.flip.includes(p.seat) && !isHero;
+        const chipsIn = motion.chipsIn === p.seat;
+        const deadIn = motion.deadIn === p.seat ? (frame.row?.amount ?? 0) : 0;
+        const sweeping = motion.sweep.includes(p.seat) ? (prev?.committed[p.seat] ?? 0) : 0;
+        const awarded = motion.potTo.includes(p.seat);
+        const known = revealed ? p.hole : showPrivate ? own : null;
+        const made = known ? madeLabelFor(model, frame, p.userId, known) : null;
+        const isFacing = facing?.seat === p.seat;
+        /* Which edge of the felt the seat is near, so the labels that hang
+           off a seat hang INWARD. The felt clips; a badge hung outward on the
+           cut-off seat was half gone (seen in the Phase 3 harness). */
+        const side = `${pos.x > 66 ? ' hr-seat--right' : pos.x < 34 ? ' hr-seat--left' : ''}${
+          pos.y > 75 ? ' hr-seat--bottom' : pos.y < 25 ? ' hr-seat--top' : ''
+        }`;
         return (
           <div key={p.seat}>
             <div
-              className={`hr-seat${isHero ? ' is-hero' : ''}${isActive ? ' is-active' : ''}${
+              className={`hr-seat${side}${isHero ? ' is-hero' : ''}${isActive ? ' is-active' : ''}${
                 isFolded ? ' is-folded' : ''
               }${isWinner ? ' is-winner' : ''}`}
               style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
             >
-              <div className="hr-seat__cards">
+              <div
+                className={`hr-seat__cards${flipping ? ' hr-seat__cards--flip' : ''}${
+                  folding ? ' hr-seat__cards--fold' : ''
+                }`}
+              >
                 {revealed
                   ? p.hole!.map((c, i) => <CardImage key={i} card={c} size="xs" />)
                   : showPrivate
-                    ? p.privateHole!.map((c, i) => (
+                    ? own!.map((c, i) => (
                         <CardImage key={i} card={c} size="xs" className="hr-private" />
                       ))
-                    : !isFolded &&
+                    : (!isFolded || folding) &&
                       Array.from({ length: backs }).map((_, i) => <CardBack key={i} size="xs" />)}
               </div>
               <div className="hr-seat__plate">
                 <span className="hr-seat__name">{p.username}</span>
                 <span className="hr-seat__meta">
                   <span className="hr-seat__pos">{p.position}</span>
-                  <span className="hr-seat__stack">
+                  <span className={`hr-seat__stack${awarded ? ' hr-seat__stack--grow' : ''}`}>
                     {stack === null || stack === undefined ? '' : money(stack)}
                   </span>
                 </span>
               </div>
+              {made && <span className="hr-seat__made">{made}</span>}
               {isActive && frame.row && (
                 <span className={`hr-seat__act hr-seat__act--${frame.row.verb}`}>
                   {frame.row.label}
@@ -257,10 +431,77 @@ function Felt({
                 <span className="hr-seat__act hr-seat__act--fold">Fold</span>
               )}
               {showPrivate && <span className="hr-seat__private">Yours</span>}
+              {isFacing && facing && (
+                <span className="hr-facing" aria-label="What This Seat Was Facing">
+                  <span className="hr-facing__call">To Call {money(facing.toCall)}</span>
+                  <span className="hr-facing__odds">
+                    Pot Odds {facing.potOddsPct}% · {facing.ratio}
+                  </span>
+                </span>
+              )}
             </div>
             {bet > 0 && (
-              <div className="hr-bet" style={{ left: `${pos.bx}%`, top: `${pos.by}%` }}>
+              <div
+                /* Remounted on the frame the chips arrive, so the slide plays
+                   once, from the seat; a bet already sitting there keeps its
+                   key and does not move again. */
+                key={chipsIn ? `bet-${p.seat}-${frame.key}` : `bet-${p.seat}`}
+                className={`hr-bet${chipsIn ? ' hr-bet--in' : ''}`}
+                style={
+                  {
+                    left: `${pos.bx}%`,
+                    top: `${pos.by}%`,
+                    '--hr-from-x': `${pos.x}%`,
+                    '--hr-from-y': `${pos.y}%`,
+                  } as React.CSSProperties
+                }
+              >
                 {money(bet)}
+              </div>
+            )}
+            {deadIn > 0 && (
+              /* Dead money (an ante) goes from the seat straight to the pot.
+                 It is never in front of the player, so it never becomes a bet
+                 pill - it just travels. */
+              <div
+                key={`dead-${p.seat}-${frame.key}`}
+                className="hr-bet hr-bet--dead"
+                aria-hidden="true"
+                style={
+                  {
+                    left: `${pos.x}%`,
+                    top: `${pos.y}%`,
+                  } as React.CSSProperties
+                }
+              >
+                {money(deadIn)}
+              </div>
+            )}
+            {sweeping > 0 && (
+              <div
+                key={`sweep-${p.seat}-${frame.key}`}
+                className="hr-bet hr-bet--sweep"
+                aria-hidden="true"
+                style={{ left: `${pos.bx}%`, top: `${pos.by}%` } as React.CSSProperties}
+              >
+                {money(sweeping)}
+              </div>
+            )}
+            {awarded && p.won > 0 && (
+              <div
+                key={`award-${p.seat}-${frame.key}`}
+                className="hr-pot-fly"
+                aria-hidden="true"
+                style={
+                  {
+                    left: `${potPos.x}%`,
+                    top: `${potPos.y}%`,
+                    '--hr-to-x': `${pos.x}%`,
+                    '--hr-to-y': `${pos.y}%`,
+                  } as React.CSSProperties
+                }
+              >
+                {money(p.won)}
               </div>
             )}
           </div>
@@ -283,16 +524,44 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
   /* "We could not ask" is not the same as "there is no such hand". */
   const [loadFailed, setLoadFailed] = useState(false);
   const [tab, setTab] = useState<'replay' | 'rundown'>('replay');
-  const [step, setStep] = useState(0);
+  /* Where we are, and whether we STEPPED here (one frame forward) or jumped.
+     Motion and sound are owed to a step; a jump or a scrub shows the frame. */
+  const [cursor, setCursor] = useState<{ step: number; motion: boolean }>({
+    step: 0,
+    motion: false,
+  });
+  const step = cursor.step;
   const [isPlaying, setIsPlaying] = useState(false);
+  const [rate, setRate] = useState<ReplayRate>(() =>
+    readReplayRate(typeof window !== 'undefined' ? window.localStorage : null)
+  );
   const playbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const go = useCallback((next: number | ((s: number) => number), motion: boolean) => {
+    setCursor((c) => {
+      const step = typeof next === 'function' ? next(c.step) : next;
+      /* ARRIVING WHERE YOU ALREADY ARE IS NOT A STEP. Without this, holding
+         ArrowRight on the last frame handed back a new cursor object every
+         press, and each one re-ran the arrival effect: the win fanfare played
+         again and the pot flew to the winner again, on a hand that had already
+         ended. Same shape at frame 0 with ArrowLeft. Returning the SAME object
+         is what makes it a no-op - a new object with equal fields still
+         re-renders and still re-fires the effect. */
+      if (step === c.step) return c;
+      return { step, motion };
+    });
+  }, []);
+  const chooseRate = useCallback((r: ReplayRate) => {
+    setRate(r);
+    writeReplayRate(typeof window !== 'undefined' ? window.localStorage : null, r);
+  }, []);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setIsLoading(true);
       setLoadFailed(false);
-      setStep(0);
+      setCursor({ step: 0, motion: false });
       setIsPlaying(false);
       try {
         if (!handId) {
@@ -325,38 +594,87 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
 
   const model = handData?.replay ?? null;
   const frames = useMemo(() => (model ? buildReplayFrames(model) : []), [model]);
+  const jumps = useMemo(() => streetJumps(frames), [frames]);
+  const winnerSeats = useMemo(() => (model ? winnerSeatsOf(model) : []), [model]);
   const last = Math.max(0, frames.length - 1);
-  const frame = frames[Math.min(step, last)] ?? null;
+  const at = Math.min(step, last);
+  const frame = frames[at] ?? null;
+  /* The frame before this one: always available for "what was this seat
+     facing", but motion and sound read it only when we stepped here. */
+  const prevFrame = at > 0 ? frames[at - 1] : null;
+  const motionPrev = cursor.motion ? prevFrame : null;
+  const motion = useMemo(
+    () => (frame ? frameMotion(motionPrev, frame, winnerSeats) : null),
+    [motionPrev, frame, winnerSeats]
+  );
 
-  // Playback: one frame per beat, the beat scaled by the player's Animation Speed.
+  // The cue the frame we stepped into owes, from the felt's own sound set.
+  useEffect(() => {
+    if (!frame || !motionPrev || !model) return;
+    const cue = frameCue(motionPrev, frame);
+    if (cue) playCue(cue, Math.abs(frame.row?.amount ?? 0), model.bigBlind);
+    // One cue per arrival at a frame, not per re-render of it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cursor]);
+
+  /* Leaving the Replay tab stops playback. It used to keep stepping behind
+     the Rundown: the felt nobody could see played its chip and card cues to
+     the end, and coming back showed the hand already over. */
+  useEffect(() => {
+    if (tab !== 'replay') setIsPlaying(false);
+  }, [tab]);
+
+  // Playback: one frame per beat, scaled by the player's Animation Speed and
+  // the replay's own rate. Each tick is a STEP, so it moves and sounds.
   useEffect(() => {
     if (playbackRef.current) clearTimeout(playbackRef.current);
-    if (!isPlaying || frames.length === 0) return;
+    if (!isPlaying || tab !== 'replay' || frames.length === 0) return;
     if (step >= last) {
       setIsPlaying(false);
       return;
     }
-    const verb = frame?.row?.verb;
-    const beat = (verb ? 900 : 1400) * getAnimationSpeed();
-    playbackRef.current = setTimeout(() => setStep((s) => Math.min(last, s + 1)), beat);
+    const beat = replayBeatMs(frame, getAnimationSpeed(), rate);
+    playbackRef.current = setTimeout(() => go((s) => Math.min(last, s + 1), true), beat);
     return () => {
       if (playbackRef.current) clearTimeout(playbackRef.current);
     };
-  }, [isPlaying, step, last, frames.length, frame?.row?.verb]);
+  }, [isPlaying, tab, step, last, frames.length, frame, rate, go]);
 
   const togglePlay = useCallback(() => {
-    if (step >= last) setStep(0);
+    if (step >= last) go(0, false);
     setIsPlaying((p) => !p);
-  }, [step, last]);
+  }, [step, last, go]);
+
+  const stepForward = useCallback(() => {
+    setIsPlaying(false);
+    go((s) => Math.min(last, s + 1), true);
+  }, [last, go]);
+  const stepBack = useCallback(() => {
+    setIsPlaying(false);
+    go((s) => Math.max(0, s - 1), false);
+  }, [go]);
+  const jumpTo = useCallback(
+    (index: number) => {
+      setIsPlaying(false);
+      go(Math.max(0, Math.min(last, index)), false);
+    },
+    [last, go]
+  );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (tab !== 'replay') return;
     if (e.key === 'ArrowRight') {
       e.preventDefault();
-      setStep((s) => Math.min(last, s + 1));
+      stepForward();
     } else if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      setStep((s) => Math.max(0, s - 1));
+      stepBack();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      jumpTo(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      jumpTo(last);
     } else if (e.key === ' ') {
       e.preventDefault();
       togglePlay();
@@ -405,7 +723,13 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
   );
 
   return (
-    <div className="hand-replay" onKeyDown={onKeyDown} tabIndex={0}>
+    <div
+      className="hand-replay"
+      onKeyDown={onKeyDown}
+      tabIndex={0}
+      /* The replay's own rate; every motion duration divides by it in CSS. */
+      style={{ '--hr-rate': rate } as React.CSSProperties}
+    >
       <header className="hand-replay__header">
         <div className="hand-replay__titles">
           <span className="hand-replay__eyebrow">
@@ -449,11 +773,31 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
         </div>
       ) : (
         <div className="hand-replay__stage" role="tabpanel">
-          {frame && <Felt model={model} frame={frame} heroId={heroId} />}
+          {frame && motion && (
+            <Felt model={model} frame={frame} prev={prevFrame} motion={motion} heroId={heroId} />
+          )}
 
           <div className="hand-replay__caption" aria-live="polite">
             <span className="hand-replay__caption-street">{frame?.streetLabel}</span>
             <span className="hand-replay__caption-text">{frame?.caption}</span>
+          </div>
+
+          {/* Street jumps: land on the deal, or the first frame of a street. */}
+          <div className="hand-replay__jumps" role="group" aria-label="Jump To Street">
+            {jumps.map((j) => {
+              const current = j.key === 'deal' ? at === 0 : at > 0 && frame?.streetKey === j.key;
+              return (
+                <button
+                  key={j.key}
+                  type="button"
+                  className={`hr-jump${current ? ' hr-jump--current' : ''}`}
+                  aria-pressed={current}
+                  onClick={() => jumpTo(j.index)}
+                >
+                  {j.label}
+                </button>
+              );
+            })}
           </div>
 
           <div className="hand-replay__controls">
@@ -461,10 +805,7 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
               type="button"
               className="hr-btn hr-btn--icon"
               aria-label="First Step"
-              onClick={() => {
-                setIsPlaying(false);
-                setStep(0);
-              }}
+              onClick={() => jumpTo(0)}
               disabled={step === 0}
             >
               &#9198;
@@ -473,10 +814,7 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
               type="button"
               className="hr-btn hr-btn--icon"
               aria-label="Previous Step"
-              onClick={() => {
-                setIsPlaying(false);
-                setStep((s) => Math.max(0, s - 1));
-              }}
+              onClick={stepBack}
               disabled={step === 0}
             >
               &#9664;
@@ -493,10 +831,7 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
               type="button"
               className="hr-btn hr-btn--icon"
               aria-label="Next Step"
-              onClick={() => {
-                setIsPlaying(false);
-                setStep((s) => Math.min(last, s + 1));
-              }}
+              onClick={stepForward}
               disabled={step >= last}
             >
               &#9654;
@@ -505,10 +840,7 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
               type="button"
               className="hr-btn hr-btn--icon"
               aria-label="Last Step"
-              onClick={() => {
-                setIsPlaying(false);
-                setStep(last);
-              }}
+              onClick={() => jumpTo(last)}
               disabled={step >= last}
             >
               &#9197;
@@ -520,14 +852,25 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
                 max={last}
                 value={Math.min(step, last)}
                 aria-label="Replay Position"
-                onChange={(e) => {
-                  setIsPlaying(false);
-                  setStep(Number(e.target.value));
-                }}
+                onChange={(e) => jumpTo(Number(e.target.value))}
               />
               <span className="hand-replay__scrub-label">
-                {Math.min(step, last) + 1} / {frames.length}
+                {at + 1} / {frames.length}
               </span>
+            </div>
+            <div className="hand-replay__rate" role="group" aria-label="Replay Speed">
+              {REPLAY_RATES.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  className={`hr-rate${rate === r ? ' hr-rate--current' : ''}`}
+                  aria-pressed={rate === r}
+                  aria-label={r === 0.5 ? 'Half Speed' : r === 1 ? 'Normal Speed' : 'Double Speed'}
+                  onClick={() => chooseRate(r)}
+                >
+                  {r === 0.5 ? '½×' : `${r}×`}
+                </button>
+              ))}
             </div>
           </div>
 

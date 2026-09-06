@@ -169,6 +169,91 @@ recurrences in the 23,855 draws since 2026-09-02.**
 
 ---
 
+## 3b. The ROOT CAUSE of the lost stamp, which section 3 did not fix
+
+Dan, after reading section 3: "BACK PAYING DOESN'T MATTER AS LONG AS THE BUG IS
+FIXED AT THE ROOT CAUSE AND WON'T HAPPEN AGAIN."
+
+He was right to push. Section 3 fixed the last link of a chain of four. Here is
+the whole chain, read off the rows, because every link is a decision that looks
+reasonable in isolation.
+
+**1. The draw happened.** All four sold their third seat at 2026-09-01
+20:45:40..20:45:56 and `spin_reserve_ledger` holds a `jackpot_draw` row for
+each at 20:45:58..20:46:34, booking 2x, 2x, 3x, 3x. The money moved.
+
+**2. Then every write the engine made to `tournaments` was lost - all of it.**
+Not a partial patch. All four still carry the pre-draw placeholder:
+`payout_structure` `[{"place":1,"percentage":100}]`, `spin_reveal_lag_ms` NULL,
+`spin_reveal_at` NULL, `spin_multiplier` NULL, `started_at` NULL. **Seventeen
+sibling spins created in the same twenty minutes also lost `started_at`**, so
+whatever failed was that engine in that window, not anything about spins. 21
+spins with a NULL start across 08-31 and 09-01; **zero in the ~24,000 spins
+since 09-02.** What broke is not recoverable from the data now, and it has not
+recurred. What IS fixable is that it became permanent, and that is links 3 and 4.
+
+**3. The engine's own recovery lives in process memory and died nine minutes
+later.** `TournamentManagerBase.scheduleSpinRowRepair` re-applies the identical
+patch twelve times, five seconds apart - about one minute - on unref'd timers.
+The engine restarts at :55 of every hour (CLAUDE.md 13). These drew at :46. Its
+own comment says that at exhaustion the row "genuinely needs
+`fn_spin_repair_missing_multiplier` or a human".
+
+**4. And that named last resort could not see them.** It gated on
+`started_at IS NOT NULL`. A spin whose writes were lost has no start. The
+documented backstop was unreachable for precisely the rows that reached it.
+
+### What migration `20260905165154` closes
+
+**A. `fn_spin_sweep_unbooked` carried the identical blindness one function
+over**: `AND t.started_at > now() - make_interval(...)`. `NULL > anything` is
+NULL, which is not true, so a spin with no start was invisible to the sweep as
+well - in the loop AND in the `remaining` gauge whose whole job is to say a
+backlog exists. Both now read `COALESCE(started_at, created_at)`, as does the
+ordering.
+
+**B. A lost stamp can no longer age out of its own repair.** The repair is a
+quarter-hour cron with a 240-minute lookback. Those four were stranded for
+three hours forty-six minutes and finished **fourteen minutes** inside that
+window. An engine that came back an hour later would have pushed them outside
+it permanently, and the only remaining path would have been a human noticing. A
+spin that has a booked `jackpot_draw` and no multiplier is broken by
+definition, at any age, so it is now always in scope. The set is self-draining
+
+- the pass that finds one repairs it - so this cannot become an unbounded scan.
+  It is zero right now.
+
+### What was considered and deliberately not done
+
+The first design moved the stamp inside `fn_spin_settle_game`, so the draw and
+the stamp would be one transaction and could never diverge. That is the
+structurally cleanest answer and it was dropped after reading the table:
+`tournaments` carries **twenty-five triggers**, several of which raise on an
+UPDATE (`fn_guard_registered_tournament_contract` raises 55000 on a contract
+change once a player has registered; `fn_spin_ladder_is_the_drawn_one` fires on
+every UPDATE). A stamp that failed there would fail the SETTLEMENT, which is
+the money leg. That is strictly worse than the bug being fixed. The durable
+backstop runs every five and fifteen minutes forever and does not care whether
+an engine lived or died.
+
+`started_at` is also not backfilled on the 21 completed spins that lack it.
+They are finished and correctly stamped; the only witness to when they began is
+the draw time, and writing an inferred start onto a settled record to tidy a
+column is what 10.9 forbids.
+
+### The guard
+
+`tests/config/spinStampCannotHideFromItsRepair.test.ts`, in the
+`satelliteDoubleQualification.guard` style: it finds the LATEST migration
+defining each function and pins it, so a future migration that reintroduces the
+gate fails here rather than in production four days later. Five pins, and both
+negative pins were checked against the pre-fix text to confirm they actually
+catch it rather than passing vacuously. SQL comments are stripped first - the
+migration's own explanation contains the banned clause as prose, and a rule
+cannot be enforced by a sentence about it.
+
+---
+
 ## 4. A correction: nothing was minted
 
 Earlier in this session I reported that 214 of 620 cancelled spins had refunded

@@ -25,7 +25,7 @@
  */
 
 import { supabase } from './supabase.js';
-import { HorseMind, type OpponentStats } from '../engine/HorseMind.js';
+import { HorseMind, type ReadScope, type OpponentStats } from '../engine/HorseMind.js';
 import { reportError } from './errorReporter.js';
 
 const FLUSH_INTERVAL_MS = 5 * 60 * 1000;
@@ -67,6 +67,11 @@ type DbRow = {
   river_bet_folds?: number;
   checks?: number;
   r_checks?: number;
+  /** V43 (2026-09-05): tempo reads - see 20260905210642_the_fleet_state_says_when_a_horse_last_acted_and_the_mind_remembers_tempo. */
+  snap_bet_sd?: number;
+  snap_bet_sd_strong?: number;
+  tank_bet_sd?: number;
+  tank_bet_sd_strong?: number;
   r_hands: number;
   r_folds: number;
   r_faced_aggr: number;
@@ -95,6 +100,10 @@ const toDb = (r: { user_id: string } & OpponentStats): DbRow => ({
   post_passive: r.postPassive,
   river_bet_opps: r.riverBetOpps,
   river_bet_folds: r.riverBetFolds,
+  snap_bet_sd: r.snapBetSD,
+  snap_bet_sd_strong: r.snapBetSDStrong,
+  tank_bet_sd: r.tankBetSD,
+  tank_bet_sd_strong: r.tankBetSDStrong,
   checks: r.checks,
   r_checks: r.rChecks,
   r_hands: r.rHands,
@@ -129,6 +138,10 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   // hydrate can only add information.
   riverBetOpps: r.river_bet_opps ?? 0,
   riverBetFolds: r.river_bet_folds ?? 0,
+  snapBetSD: r.snap_bet_sd ?? 0,
+  snapBetSDStrong: r.snap_bet_sd_strong ?? 0,
+  tankBetSD: r.tank_bet_sd ?? 0,
+  tankBetSDStrong: r.tank_bet_sd_strong ?? 0,
   rHands: r.r_hands,
   rFolds: r.r_folds,
   rFacedAggr: r.r_faced_aggr,
@@ -316,12 +329,14 @@ export async function hydrateHorseMindFromDb(): Promise<string | null> {
   // a pairs failure must never cost the stats hydration (or vice versa).
   pairsNewestFlush = null;
   const pairsApplied = await hydrateHorsePairsFromDb();
+  // V45: the scoped overlay rides the same boot call, same fail-safe.
+  await hydrateHorseMindScopedFromDb();
   try {
     const t0 = Date.now();
     const { data, error } = await supabase
       .from('horse_mind_stats')
       .select(
-        'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,r_checks,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at'
+        'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,snap_bet_sd,snap_bet_sd_strong,tank_bet_sd,tank_bet_sd_strong,r_checks,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at'
       )
       .order('hands', { ascending: false })
       .limit(HYDRATE_LIMIT);
@@ -366,6 +381,89 @@ export async function hydrateHorseMindFromDb(): Promise<string | null> {
   }
 }
 
+// ═══ V45 SCOPED ROWS (2026-09-05) ═══ same shape as the pooled flush, its own
+// table, its own RPC, its own fail-safe: a scoped failure never costs the
+// pooled flush and vice versa. No recency columns travel (they stay pooled).
+type ScopedDbRow = Omit<
+  DbRow,
+  'r_hands' | 'r_folds' | 'r_faced_aggr' | 'r_aggr' | 'r_passive' | 'r_checks'
+> & {
+  scope: ReadScope;
+};
+
+const toScopedDb = (r: { user_id: string; scope: ReadScope } & OpponentStats): ScopedDbRow => {
+  const base = toDb(r);
+  const { r_hands, r_folds, r_faced_aggr, r_aggr, r_passive, r_checks, ...rest } = base;
+  void r_hands;
+  void r_folds;
+  void r_faced_aggr;
+  void r_aggr;
+  void r_passive;
+  void r_checks;
+  return { ...rest, scope: r.scope };
+};
+
+export async function flushHorseMindScoped(): Promise<{ flushed: number; failed: number }> {
+  const rows = HorseMind.exportDirtyScoped();
+  if (rows.length === 0) return { flushed: 0, failed: 0 };
+  let flushed = 0;
+  let failed = 0;
+  for (let i = 0; i < rows.length; i += FLUSH_CHUNK) {
+    const chunk = rows.slice(i, i + FLUSH_CHUNK);
+    try {
+      const { error } = await supabase.rpc('upsert_horse_mind_stats_scoped', {
+        rows: chunk.map(toScopedDb),
+      });
+      if (error) throw new Error(error.message || 'upsert_horse_mind_stats_scoped failed');
+      flushed += chunk.length;
+    } catch (err) {
+      let recovered = 0;
+      for (const row of chunk) {
+        try {
+          const { error } = await supabase.rpc('upsert_horse_mind_stats_scoped', {
+            rows: [toScopedDb(row)],
+          });
+          if (error) throw new Error(error.message);
+          recovered++;
+        } catch {
+          /* drop the offender, keep the queue moving */
+        }
+      }
+      flushed += recovered;
+      failed += chunk.length - recovered;
+      reportError(err, 'HorseMindPersistence.flushScoped');
+    }
+  }
+  return { flushed, failed };
+}
+
+/** V45 boot hydration of the scoped overlay. Best-effort; returns rows applied. */
+export async function hydrateHorseMindScopedFromDb(): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from('horse_mind_stats_scoped')
+      .select(
+        'user_id,scope,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,snap_bet_sd,snap_bet_sd_strong,tank_bet_sd,tank_bet_sd_strong'
+      )
+      .order('hands', { ascending: false })
+      .limit(HYDRATE_LIMIT * 3);
+    if (error) throw new Error(error.message || 'horse_mind_stats_scoped read failed');
+    if (!data || data.length === 0) return 0;
+    const applied = HorseMind.importScoped(
+      (data as Array<ScopedDbRow>).map((r) => ({
+        ...fromDb({ ...r, r_hands: 0, r_folds: 0, r_faced_aggr: 0, r_aggr: 0, r_passive: 0 }),
+        scope: r.scope,
+        user_id: r.user_id,
+      }))
+    );
+    console.log(`[HorseMind] scoped hydration: ${applied}/${data.length} scoped profiles restored`);
+    return applied;
+  } catch (err) {
+    reportError(err, 'HorseMindPersistence.hydrateScoped');
+    return 0;
+  }
+}
+
 /** Start the periodic flush loop. Idempotent. */
 export function startHorseMindPersistence(): void {
   if (flushTimer) return;
@@ -375,7 +473,7 @@ export function startHorseMindPersistence(): void {
     // an empty set, flush nothing, and exit — losing up to five minutes of
     // learning. stopHorseMindPersistence() now awaits this first.
     inFlight = (async () => {
-      await Promise.all([flushHorseMind(), flushHorseMindPairs()]);
+      await Promise.all([flushHorseMind(), flushHorseMindPairs(), flushHorseMindScoped()]);
     })().finally(() => {
       inFlight = null;
     });
@@ -402,5 +500,5 @@ export async function stopHorseMindPersistence(): Promise<void> {
   }
   // Run both together: sequential awaits inside the caller's 20s shutdown race
   // meant the pair flush was always the first thing sacrificed.
-  await Promise.all([flushHorseMind(), flushHorseMindPairs()]);
+  await Promise.all([flushHorseMind(), flushHorseMindPairs(), flushHorseMindScoped()]);
 }

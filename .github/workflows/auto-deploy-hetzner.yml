@@ -150,7 +150,10 @@ jobs:
     # the wait was silently the part that got squeezed - it expired 23 seconds
     # before the gate opened on run 33942233521 and shipped nothing. 40 holds
     # the worst observed build plus a full wait to the next :55 plus cutover.
-    timeout-minutes: 40
+    # 45 (2026-09-05): the proof step after the promote may poll for four
+    # minutes before it fails, and CUTOVER_RESERVE_S grew by the same four so
+    # the wait can never spend the minutes the proof needs to be heard.
+    timeout-minutes: 45
 
     env:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -176,6 +179,27 @@ jobs:
       # assumes zero elapsed and can hand itself more time than the job has.
       - name: Stamp the job start for the break-gate budget
         run: echo "DEPLOY_STARTED_AT=$(date -u +%s)" >> $GITHUB_ENV
+
+      # A DEPLOY THAT PROVES ITSELF, PART ONE (2026-09-05). On 2026-09-04/05 a
+      # run reported success and shipped nothing: the container came back on
+      # the OLD image and /health.version never changed. Every check below
+      # compares what the engine SAYS over HTTP against the target; none of
+      # them remembered what was running BEFORE, so "did not move" was
+      # indistinguishable from "moved". Recorded here, at the start, from the
+      # engine's own witness (engine_leader.engine_version, written by the
+      # running leader) with /health as the fallback. Best-effort: a failure
+      # here must never stop a deploy.
+      - name: Record the version production runs before the cutover
+        if: always()
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MODE: record
+        run: |
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/prove-engine-version-moved.mjs || echo "::warning::pre-cutover version not recorded"
 
       - name: Record that this deploy run started
         if: always()
@@ -587,8 +611,8 @@ jobs:
           # is stamped by the first step, so the build's real cost is subtracted
           # here instead of assumed - which is what made a fixed cap wrong twice
           # (14 min when builds were 5, then 15 min when the gate was 923s away).
-          JOB_TIMEOUT_S=$(( 40 * 60 ))
-          CUTOVER_RESERVE_S=300     # cutover + verify + promote, measured at ~2-4 min
+          JOB_TIMEOUT_S=$(( 45 * 60 ))
+          CUTOVER_RESERVE_S=540     # cutover + verify + promote (~2-4 min) + a 4-min proof that can fail
           ELAPSED_S=$(( NOW_EPOCH - ${DEPLOY_STARTED_AT:-$NOW_EPOCH} ))
           BUDGET_CAP_S=$(( JOB_TIMEOUT_S - ELAPSED_S - CUTOVER_RESERVE_S ))
           [ "$BUDGET_CAP_S" -lt 0 ] && BUDGET_CAP_S=0
@@ -779,6 +803,7 @@ jobs:
           # break genuinely stops firing that is an engine bug and it should be
           # loud, not routed around.
           echo "skip=true" >> $GITHUB_OUTPUT
+          echo "gate_reason=the maintenance break never opened for a restart" >> $GITHUB_OUTPUT
           echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart within 14 minutes, so nothing was deployed. Production is ${BEHIND_MIN}m behind main. A break was ${BREAK_RUNNING} running during the wait. If it was NOT, the engine's break scheduler is not firing (check the engine log for '[MaintenanceBreak]') - that is an engine bug and no deploy will land until it is fixed. The next window retries automatically, and engine-watchdog.sh raises a tracked issue once a window has passed without the engine catching up."
           exit 0
 
@@ -862,6 +887,35 @@ jobs:
           # only ever name a build that answered /health with its own SHA.
           ~/hssh "docker tag $IMAGE_REPO:$SHA $IMAGE_REPO:current"
           echo ":current -> $SHA"
+
+      # A DEPLOY THAT PROVES ITSELF, PART TWO (2026-09-05). The verify step
+      # above asked the container and the proxy for a version. This asks the
+      # DATABASE: engine_leader.engine_version is written by the running
+      # leader itself every 10 s (claim_engine_leadership, INSTANCE_VERSION =
+      # GIT_COMMIT_SHA[0:8]), and cannot be served by a cache, a load balancer
+      # or an unmanaged twin. It polls for up to four minutes and FAILS THE
+      # JOB when the version still equals what PART ONE recorded - the
+      # 2026-09-05 shape exactly - or names a third build. Failing here
+      # triggers the ROLLBACK below, the same treatment the verify step gives
+      # a version mismatch: :current must never name a build the engine never
+      # reported running. Unreadable is NOT behind (the verify step already
+      # read /health), so no witness at all is a warning, never a rollback.
+      # scripts/ci/prove-engine-version-moved.mjs also raises the in-app
+      # notification publish-watchdog.sh raises, to the same recipients.
+      - name: 'PROVE the version moved: the engine wrote the new build, not just answered with it'
+        id: prove
+        if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MODE: prove
+          TARGET_SHA: ${{ github.event.inputs.ref_sha || github.sha }}
+          TIMEOUT_S: '240'
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/prove-engine-version-moved.mjs
 
       - name: ROLLBACK — restore the last known-good image
         # Broadened from `steps.health.outcome == 'failure'`, which missed the
@@ -969,11 +1023,21 @@ jobs:
           # warning goes and investigates the spacing gate, and the spacing
           # gate is fine. A wrong reason costs more than no reason, because it
           # is confidently wrong and it is the first thing anybody reads.
+          # 2026-09-05: THE BREAK GATE NOW HAS TWO ANSWERS AND THIS KNEW ONLY
+          # THE OLD ONE. `steps.drain` used to be a hands-in-flight drain gate,
+          # and the line below still said so - but it has not had a
+          # hands-in-flight skip path since the maintenance break landed. Its
+          # two skips today are "the break never opened" and "the next break is
+          # further away than this run's budget", and run 33991470437 reported
+          # the second of those as "hands are still in flight" while the
+          # database, three steps later, recorded a third story. That is the
+          # exact failure the comment above is about, so the step now exports
+          # `gate_reason` on BOTH paths and this reads it instead of guessing.
           REASON="already serving this commit"
           if [ "${{ steps.window.outputs.open }}" = "false" ]; then
             REASON="outside the 7am/7pm America/Chicago restart window — dispatch with force=true to land it now"
           elif [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
-            REASON="drain gate — hands are still in flight"
+            REASON="${{ steps.drain.outputs.gate_reason || 'the break gate held; see the step log for which half' }}"
           elif [ "${{ steps.dedupe.outputs.skip }}" = "true" ]; then
             REASON="coalescing — the engine restarted too recently, or it is already on this commit"
           fi
@@ -1015,6 +1079,7 @@ jobs:
             echo "- Host before: \`${{ steps.pre.outputs.before_sha }}\`"
             echo "- Host after:  \`$AFTER_SHA\`"
             echo "- Verified serving that commit: \`${{ steps.health.outputs.verified || 'NO — see rollback step' }}\`"
+            echo "- Proved the version moved (engine_leader): \`${{ steps.prove.outcome || 'n/a' }}\` (was \`${PRE_CUTOVER_VERSION:-unknown}\` via ${PRE_CUTOVER_SOURCE:-unknown})"
             echo "- Engine uptime: ${{ steps.health.outputs.uptime || 'n/a' }}s"
             echo "- URL: $ENGINE_URL"
           } >> $GITHUB_STEP_SUMMARY
@@ -1037,12 +1102,13 @@ jobs:
           # here used to tell the watchdog a different commit than the one the
           # host actually checked out, tagged, and verified.
           TARGET_SHA: ${{ github.event.inputs.ref_sha || github.sha }}
-          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.health.outputs.verified == 'true' }}
+          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.health.outputs.verified == 'true' && steps.prove.outcome != 'failure' }}
           RUN_ID: ${{ github.run_id }}
           RUN_ACTOR: ${{ github.event_name }}
           REASON: >-
             ${{ steps.dedupe.outputs.skip == 'true' && 'coalesced or already serving this commit'
-             || steps.drain.outputs.skip == 'true' && 'the maintenance break never opened for a restart'
+             || steps.drain.outputs.skip == 'true' && (steps.drain.outputs.gate_reason || 'the maintenance break never opened for a restart')
+             || steps.prove.outcome == 'failure' && 'cutover verified over HTTP but engine_leader never reported the new version: the version did not move'
              || steps.health.outputs.verified == 'true' && 'deployed and verified serving this commit'
              || 'run ended without a verified cutover' }}
         run: |

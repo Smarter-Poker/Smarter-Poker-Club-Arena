@@ -97,11 +97,15 @@ describe('a server-paced reveal never runs slower than the stopwatch', () => {
     }
   });
 
-  it('marks the all-in profile, and ONLY the all-in profile, as server paced', () => {
+  it('marks the all-in profiles, and ONLY those, as server paced', () => {
+    /* 2026-09-05: `allInReduced` joined it - the same beats and the same
+       server-paced ceiling for a viewer with Reduce Motion on, who used to be
+       handed `reduced` (no hold at all) and therefore had nothing to squeeze.
+       Both are paced by the engine; nothing else is. */
     const paced = Object.entries(CARD_PRESENTATION_PROFILES)
       .filter(([, p]) => p.serverPaced)
       .map(([k]) => k);
-    expect(paced).toEqual(['allIn']);
+    expect(paced).toEqual(['allIn', 'allInReduced']);
   });
 
   it('clamps the PIXELS too, not just the JS window', () => {
@@ -109,8 +113,18 @@ describe('a server-paced reveal never runs slower than the stopwatch', () => {
     // same --animation-speed, so an unclamped stylesheet would still be
     // turning the card after the engine had unmounted it.
     const SRC = read('src/presentation/cardPresentation/SqueezeCard.tsx');
+    /* IT WRITES --rs-speed, NOT --animation-speed (fixed 2026-09-05). The old
+       form redefined --animation-speed in terms of ITSELF, which is a
+       self-reference and therefore invalid at computed-value time: measured
+       in Chromium the property computed to the empty string on the host and
+       every descendant, so every duration fell back to speed 1 and this clamp
+       never ran at all. A separate property reads the player's speed without
+       being it, so there is no cycle. */
     expect(SRC).toMatch(
-      /serverPaced\s*\?\s*\{\s*'--animation-speed':\s*'min\(1, var\(--animation-speed, 1\)\)'/
+      /serverPaced\s*\?\s*\{\s*'--rs-speed':\s*'min\(1, var\(--animation-speed, 1\)\)'/
+    );
+    expect(SRC, 'never self-referential again').not.toContain(
+      "'--animation-speed': 'min(1, var(--animation-speed, 1))'"
     );
   });
 });

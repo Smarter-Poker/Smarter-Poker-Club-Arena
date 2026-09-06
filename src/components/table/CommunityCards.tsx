@@ -290,45 +290,81 @@ function CardFace({
     if (el) el.setAttribute('data-rs-dragging', on ? 'on' : 'off');
   };
   const interactiveHold = hold === 'drag';
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!interactiveHold || dragRef.current) return;
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    const el = e.currentTarget;
-    dragRef.current = {
-      id: e.pointerId,
-      x: e.clientX,
-      y: e.clientY,
-      width: el.getBoundingClientRect().width,
-    };
-    try {
-      el.setPointerCapture(e.pointerId);
-    } catch {
-      /* capture is a nicety; the move handler still works on the element */
-    }
-    setDragging(true);
-    e.preventDefault();
+  /**
+   * THE GESTURE LIVES ON THE WINDOW, NOT ON THE CARD (fixed 2026-09-05).
+   *
+   * It used to rely on `setPointerCapture` plus React's handlers on the card
+   * itself, and that lost the gesture in two measured ways:
+   *
+   *   - a drag begun in the card's first ~100ms, while the host is still
+   *     running its materialise animation, delivered the pointerdown and then
+   *     no moves at all. Reproduced in chromium: --rs-drag stayed unset and
+   *     the card did not turn.
+   *   - the card is 58px wide on a desktop and smaller on a phone, and the
+   *     travel a full squeeze needs is most of that. A thumb WILL leave the
+   *     card, and a capture that did not take leaves the squeeze frozen
+   *     halfway with no way to finish it.
+   *
+   * Listening on the window for the life of the gesture removes both. The
+   * capture call stays as a nicety where it works; nothing depends on it.
+   * Cleanup runs on pointerup, pointercancel, and unmount, so no listener
+   * outlives the card.
+   */
+  const releaseRef = useRef(onRelease);
+  releaseRef.current = onRelease;
+  const detachRef = useRef<(() => void) | null>(null);
+  const detach = () => {
+    detachRef.current?.();
+    detachRef.current = null;
   };
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current;
-    if (!d || d.id !== e.pointerId) return;
-    writeDrag(squeezeDragProgress(e.clientX - d.x, e.clientY - d.y, d.width));
-  };
-  const endDrag = (e: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
-    const d = dragRef.current;
-    if (!d || d.id !== e.pointerId) return;
+  useEffect(() => detach, []);
+  const finishDrag = (cancelled: boolean) => {
+    if (!dragRef.current) return;
     dragRef.current = null;
+    detach();
     setDragging(false);
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      /* already released */
-    }
-    if (!cancelled && interactiveHold && progressRef.current >= SQUEEZE_RELEASE_THRESHOLD) {
-      onRelease();
+    if (!cancelled && progressRef.current >= SQUEEZE_RELEASE_THRESHOLD) {
+      releaseRef.current();
       return;
     }
     // Below the threshold (or a cancelled pointer): the card springs flat.
     writeDrag(0);
+  };
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!interactiveHold || dragRef.current) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const el = e.currentTarget;
+    /* The host is mid-materialise for its first 100ms, and a scaled box is a
+       lying box: measure the card's UNSCALED width so a squeeze started on
+       the first frame needs the same travel as one started a second later. */
+    const rect = el.getBoundingClientRect();
+    const scaleX = el.offsetWidth > 0 ? rect.width / el.offsetWidth : 1;
+    const width = scaleX > 0.05 ? rect.width / scaleX : rect.width;
+    dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, width };
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture is a nicety; the window listeners below are the mechanism */
+    }
+    const move = (ev: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d || d.id !== ev.pointerId) return;
+      writeDrag(squeezeDragProgress(ev.clientX - d.x, ev.clientY - d.y, d.width));
+    };
+    const up = (ev: PointerEvent) => {
+      if (dragRef.current && dragRef.current.id !== ev.pointerId) return;
+      finishDrag(ev.type === 'pointercancel');
+    };
+    window.addEventListener('pointermove', move, { passive: true });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    detachRef.current = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+    setDragging(true);
+    e.preventDefault();
   };
   // A keyboard user has no squeeze to perform, but the card is theirs to
   // open all the same: Enter or Space opens it from flat.
@@ -344,8 +380,11 @@ function CardFace({
   useEffect(() => {
     if (hold !== 'drag') {
       dragRef.current = null;
+      detach();
       setDragging(false);
     }
+    // `detach` is stable in effect: it only reads a ref.
+     
   }, [hold]);
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
@@ -407,9 +446,6 @@ function CardFace({
       data-rs-animating={host ? host['data-rs-animating'] : undefined}
       data-rs-hold={host ? host['data-rs-hold'] : undefined}
       onPointerDown={host && interactiveHold ? onPointerDown : undefined}
-      onPointerMove={host && interactiveHold ? onPointerMove : undefined}
-      onPointerUp={host && interactiveHold ? (e) => endDrag(e, false) : undefined}
-      onPointerCancel={host && interactiveHold ? (e) => endDrag(e, true) : undefined}
       onKeyDown={host && interactiveHold ? onKeyDown : undefined}
       role={host && interactiveHold ? 'button' : undefined}
       tabIndex={host && interactiveHold ? 0 : undefined}
@@ -741,9 +777,10 @@ function CommunityCardsComponent({
             reducedMotion: prefersReducedMotion(),
             allIn: slowReveal,
             // VIP ALL-IN SQUEEZE 2026-09-05: the viewer's right, AND the
-            // board's - a re-run board never squeezes (Dan: "SHOULD NEVER
-            // APPEAR ON RUN IT 2X OR 3X"), whatever the page computed.
-            squeeze: boardMaySqueeze(squeezeEligible, runs),
+            // board's - a re-run board or a second/third board never
+            // squeezes (Dan: "NEVER APPEAR ON RUN IT 2X OR 3X", and "NOT
+            // ALLOWED ON BOMB POTS"), whatever the page computed.
+            squeeze: boardMaySqueeze(squeezeEligible, runs, boardIndex),
           }
         );
         if (result.status === 'started') {

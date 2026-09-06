@@ -59,6 +59,7 @@ import {
   topUpAllowance,
 } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
+import { LONE_TABLE_MINUTES, loneStandVerdict } from './HorseLoneTable.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -140,6 +141,17 @@ export class HorseSessionRotator {
     'GAME_NOT_FOUND',
   ]);
 
+  /**
+   * NO LONE HORSE (2026-09-05): horses stood up by the last cycle because they
+   * had been the only player at a cluster table for LONE_TABLE_MINUTES with no
+   * hand dealt. Exposed for the cycle log and the beat; see standLoneHorses.
+   */
+  private lastLoneStands = 0;
+
+  get loneStands(): number {
+    return this.lastLoneStands;
+  }
+
   private static breakKey(tableId: string, userId: string): string {
     return `${tableId}:${userId}`;
   }
@@ -210,7 +222,9 @@ export class HorseSessionRotator {
           // role / main_index / lifecycle joined the list on 2026-09-05 for the
           // seat-change pass: it must know whether this chair is on Main 1
           // (which has no seat change) and whether the table is closing.
-          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle)'
+          // created_at joined 2026-09-05 for the lone-horse pass: an opening
+          // feeder younger than its grace window is being filled, not dead.
+          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -466,12 +480,42 @@ export class HorseSessionRotator {
       }
     }
 
-    let departures = 0;
-    let breakTaken = false;
     /* Who this cycle has already committed to moving or resting. A horse in
        here is "about to leave" for the seat-change pass below, and a player
        halfway out of the door does not ask the floor to reseat them. */
     const departedThisCycle = new Set<string>();
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A LONE HORSE LEAVES A DEAD TABLE (NO LONE HORSE, 2026-09-05)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Measured 15:22 CDT: 47 of 140 live cluster tables held exactly one
+     * horse, seated 253 minutes on average, 39 of them with no hand in thirty
+     * minutes. The population floor in the loop below (`length < 4 ->
+     * continue`) skipped every one of them, because it protects a game from
+     * being thinned - and a table at one is not a game. A person alone at a
+     * table nobody has joined for ten minutes racks up; so does the horse,
+     * through the same door (engine.leaveTable, hand-boundary safe), and the
+     * game goes dormant with its Main 1 open at 0, which is the designed
+     * state. Outside the realism cap for the same reason the retirement drain
+     * is: this is not a healthy floor thinning itself.
+     */
+    this.lastLoneStands = await this.standLoneHorses(byTable, horseIds, departedThisCycle).catch(
+      (err) => {
+        reportError(err, 'HorseSessionRotator.loneStands');
+        return 0;
+      }
+    );
+    if (this.lastLoneStands > 0) {
+      console.log(
+        `[SessionRotator] loneStands=${this.lastLoneStands} - horse(s) alone at a cluster table ` +
+          `for ${LONE_TABLE_MINUTES}+ min with no hand dealt left it (no lone horse)`
+      );
+    }
+
+    let departures = 0;
+    let breakTaken = false;
     for (const [tableId, tableSeats] of byTable) {
       if (departures >= GLOBAL_DEPARTURES_PER_CYCLE) break;
       // A retiring table was handled above; nothing discretionary happens on
@@ -730,6 +774,124 @@ export class HorseSessionRotator {
     await this.considerSeatChanges(byTable, horseIds, humansWaiting, departedThisCycle).catch(
       (err) => reportError(err, 'HorseSessionRotator.seatChange')
     );
+  }
+
+  /**
+   * The lone-horse pass. Cheap facts first (one seat, a horse, a cluster
+   * table, a live engine, seated long enough, not a fresh opening feeder),
+   * then ONE read each for the two facts the seat row does not carry - a move
+   * pending INTO the table, and a hand dealt there inside the window - and
+   * only for the tables that survived the cheap gates. Both reads fail
+   * CLOSED: an unreadable answer stands nobody up, and the pass runs again in
+   * ninety seconds. Returns how many horses it stood.
+   */
+  private async standLoneHorses(
+    byTable: Map<string, any[]>,
+    horseIds: Set<string>,
+    departedThisCycle: Set<string>
+  ): Promise<number> {
+    const now = Date.now();
+    type LoneTable = { tableId: string; seat: any; t: any; minutesSeated: number };
+    const candidates: LoneTable[] = [];
+    for (const [tableId, tableSeats] of byTable) {
+      const t = tableSeats[0]?.tables;
+      if (!t?.cluster_id || tableSeats.length !== 1) continue;
+      const seat = tableSeats[0];
+      // A PERSON alone at a table is not the fleet's to stand up. (With one
+      // seat, humanPresent means the one seat is not a horse.)
+      if (!horseIds.has(seat.user_id)) continue;
+      if (!this.getEngine(tableId)) continue;
+      const minutesSeated = (now - new Date(seat.joined_at).getTime()) / 60000;
+      const pre = loneStandVerdict({
+        clusterTable: true,
+        seatedCount: tableSeats.length,
+        humanPresent: false,
+        inboundPending: false,
+        lifecycle: t.lifecycle ?? null,
+        tableAgeMinutes: (now - new Date(t.created_at ?? 0).getTime()) / 60000,
+        minutesSeated,
+        minutesSinceLastHand: null,
+      });
+      if (pre !== 'stand') continue;
+      candidates.push({ tableId, seat, t, minutesSeated });
+    }
+    if (candidates.length === 0) return 0;
+
+    const tableIds = candidates.map((c) => c.tableId);
+    /* A PARTNER IS COMING: any must-move or seat change pending into one of
+       these tables holds its horse in place. */
+    const inboundRead = await selectInChunks<{ to_table_id: string }>(
+      tableIds,
+      (batch) =>
+        supabase
+          .from('cash_seat_moves')
+          .select('to_table_id')
+          .eq('state', 'pending')
+          .in('to_table_id', batch),
+      'HorseSessionRotator.loneInbound'
+    );
+    if (!inboundRead.complete) return 0;
+    const inbound = new Set(inboundRead.rows.map((r) => r.to_table_id));
+
+    /* A HAND WAS DEALT: the most recent hand at each table inside the window.
+       `hand_history.created_at` is written when the hand is dealt, so a table
+       with no row in the last LONE_TABLE_MINUTES has dealt nothing in it. */
+    const since = new Date(now - LONE_TABLE_MINUTES * 60_000).toISOString();
+    const handsRead = await selectInChunks<{ table_id: string; created_at: string }>(
+      tableIds,
+      (batch) =>
+        supabase
+          .from('hand_history')
+          .select('table_id, created_at')
+          .in('table_id', batch)
+          .gte('created_at', since),
+      'HorseSessionRotator.loneHands'
+    );
+    if (!handsRead.complete) return 0;
+    const lastHandAt = new Map<string, number>();
+    for (const h of handsRead.rows) {
+      const ts = new Date(h.created_at).getTime();
+      if (!Number.isFinite(ts)) continue;
+      lastHandAt.set(h.table_id, Math.max(lastHandAt.get(h.table_id) ?? 0, ts));
+    }
+
+    let stood = 0;
+    for (const c of candidates) {
+      const last = lastHandAt.get(c.tableId);
+      const verdict = loneStandVerdict({
+        clusterTable: true,
+        seatedCount: 1,
+        humanPresent: false,
+        inboundPending: inbound.has(c.tableId),
+        lifecycle: c.t.lifecycle ?? null,
+        tableAgeMinutes: (now - new Date(c.t.created_at ?? 0).getTime()) / 60000,
+        minutesSeated: c.minutesSeated,
+        minutesSinceLastHand: last === undefined ? null : (now - last) / 60000,
+      });
+      if (verdict !== 'stand') continue;
+      const engine = this.getEngine(c.tableId);
+      if (!engine) continue;
+      const userId = String(c.seat.user_id);
+      try {
+        // THE SAME DOOR A HUMAN USES. No hand can be in flight at a table of
+        // one, so this cashes out immediately; if one somehow is, leaveTable
+        // folds and cashes out at the hand boundary like any other leave.
+        const result = await engine.leaveTable(userId);
+        if (result.success) {
+          stood++;
+          departedThisCycle.add(`${c.tableId}:${userId}`);
+          this.breaks.delete(HorseSessionRotator.breakKey(c.tableId, userId));
+          console.log(
+            `[SessionRotator] horse=${userId.slice(0, 8)} leaving table=${c.tableId.slice(0, 8)} ` +
+              `- alone for ${Math.round(c.minutesSeated)} min with no hand dealt in ` +
+              `${LONE_TABLE_MINUTES} (lone stand)`
+          );
+        }
+      } catch (err) {
+        reportError(err, 'HorseSessionRotator.loneLeave');
+      }
+    }
+    return stood;
   }
 
   /**

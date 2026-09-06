@@ -71,6 +71,15 @@ export function isChallengeType(value: unknown): value is ChallengeType {
 export const BIG_POT_MIN = 500;
 
 /**
+ * Authoritative client-side mirror of the database reroll price.
+ *
+ * The RPC rejects stale prices before touching the wallet. Keeping the UI,
+ * request, receipt validation, and balance event on this one exported value
+ * prevents those client surfaces from drifting independently again.
+ */
+export const DAILY_MISSION_REROLL_COST = 1;
+
+/**
  * Challenge types whose rows carry a magnitude `threshold`.
  *
  * The bump call sends a per-type measurement alongside the count, and
@@ -1354,7 +1363,7 @@ class DailyChallengeServiceClass {
             p_user_id: userId,
             p_challenge_row_id: challengeRowId,
             p_expected_challenge_id: expectedChallengeId,
-            p_cost: 10,
+            p_cost: DAILY_MISSION_REROLL_COST,
             p_request_id: requestId,
           });
           if (receipt.error) {
@@ -1403,7 +1412,7 @@ class DailyChallengeServiceClass {
         'rerollChallenge',
         'reroll settlement total'
       );
-      if (diamondsSpent !== (alreadyRerolled ? 0 : 10)) {
+      if (diamondsSpent !== (alreadyRerolled ? 0 : DAILY_MISSION_REROLL_COST)) {
         return invalidDailyMissionReceipt('rerollChallenge', 'reroll settlement total');
       }
       const challengeId = readReceiptString(
@@ -1426,7 +1435,7 @@ class DailyChallengeServiceClass {
       );
       masterBus.emit('DIAMOND_BALANCE_CHANGED', {
         newBalance: diamondBalance,
-        delta: alreadyRerolled ? 0 : -10,
+        delta: alreadyRerolled ? 0 : -DAILY_MISSION_REROLL_COST,
         source: 'daily_challenge_reroll',
       });
 

@@ -682,10 +682,23 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
 
   it('the manual bomb is PUSHED, not polled every hand', () => {
     // One round trip at the top of every hand on every bomb table, forever,
-    // for a flag that is false essentially always. The RPC now broadcasts on
-    // the table topic the engine already holds open.
+    // for a flag that is false essentially always. The RPC broadcasts instead.
     expect(BASE).toMatch(/protected subscribeManualBomb\(\)/);
-    expect(BASE).toMatch(/event: 'bomb_pot_manual_requested'/);
+    // PIN MOVED 2026-09-06. The broadcast used to be heard on a channel named
+    // `table:<id>`, opened PER TABLE. One engine holds one Realtime socket and
+    // a socket caps at 100 channels, so 76 bomb tables plus one channel per
+    // live tournament put the engine permanently over the cap: 123,219
+    // ChannelRateLimitReached errors in 24 hours, and past the cap the joins
+    // did not exist at all - so the tables this test was protecting were the
+    // ones NOT listening. It is one shared channel now, dispatched by
+    // table_id, and the event name lives with it.
+    const BUS = read('server/src/services/BombRequestBus.ts');
+    expect(BUS).toMatch(/BOMB_REQUEST_EVENT = 'bomb_pot_manual_requested'/);
+    expect(BUS).toMatch(/BOMB_REQUEST_TOPIC = 'engine:bomb-requests'/);
+    expect(BASE).toMatch(/subscribeBombRequests\(this\.tableId/);
+    // Exactly one shared channel: a regression to per-table would reintroduce
+    // the cap breach, so the bus must never build a topic from a table id.
+    expect(BUS).not.toMatch(/channel\(`table:/);
     // The poll is DEMOTED, not deleted — a broadcast is best-effort and an
     // engine that restarted between the click and the hand never hears it, so
     // the throttled refresh (already happening) latches the column.

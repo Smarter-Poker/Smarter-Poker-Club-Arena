@@ -387,7 +387,7 @@ export async function createTemporaryCustomizationAccount(
 async function assertRowsRemoved(
   environment: CustomizationCertificationEnvironment,
   table: string,
-  column: 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id' | 'actor_id',
+  column: 'id' | 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id' | 'actor_id',
   userId: string
 ): Promise<void> {
   const rows = await readServiceRows<{ id?: string }>(
@@ -506,6 +506,7 @@ async function cleanupTemporaryCustomizationAccountOnce(
     'daily_challenge_freeze_entitlements',
     'user_daily_challenges',
     'challenge_streak_state',
+    'club_members',
     'user_notification_preferences',
     'notifications',
     // Deleting mission state intentionally bumps the dashboard revision. This
@@ -523,13 +524,21 @@ async function cleanupTemporaryCustomizationAccountOnce(
     'diamond_transactions',
     'diamond_wallets',
     'signup_errors',
+    'table_waitlist',
+    'rate_limits',
   ];
 
   const relatedTables = [
     { table: 'push_outbox', column: 'recipient_user_id' as const },
+    { table: 'notifications', column: 'actor_id' as const },
     { table: 'chip_transactions', column: 'from_user_id' as const },
     { table: 'chip_transactions', column: 'to_user_id' as const },
     { table: 'audit_trail', column: 'actor_id' as const },
+  ];
+
+  const identityTables = [
+    { table: 'profiles', column: 'id' as const },
+    { table: 'users', column: 'id' as const },
   ];
 
   await callGuardedCertificationCleanup(environment, account.id).catch((error) =>
@@ -537,6 +546,7 @@ async function cleanupTemporaryCustomizationAccountOnce(
   );
 
   for (const { table, column } of [
+    ...identityTables,
     ...relatedTables,
     ...userTables.map((table) => ({ table, column: 'user_id' as const })),
   ]) {

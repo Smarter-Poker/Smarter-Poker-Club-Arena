@@ -12,7 +12,7 @@ import {
   WATCHED_COLUMNS,
   clampBuyin,
   CSV_BOM,
-  blockingDeletionReason,
+  blockingRetirementReason,
   clubAssetPathFromPublicUrl,
   csvSafeCell,
   privateClubNeedsApproval,
@@ -196,31 +196,67 @@ describe('CSV_BOM', () => {
   });
 });
 
-describe('blockingDeletionReason', () => {
-  const clean = { members: 3, runningTables: 0, walletChips: 0 };
+describe('blockingRetirementReason', () => {
+  const clean = {
+    members: 3,
+    runningTables: 0,
+    activeTournaments: 0,
+    walletChips: 0,
+    diamonds: 0,
+    inventoryItems: 0,
+    openObligations: 0,
+    unionAffiliated: false,
+    alreadyRetired: false,
+  };
 
-  it('allows deletion of a settled, idle club', () => {
-    expect(blockingDeletionReason(clean)).toBeNull();
+  it('allows retirement of a settled, idle standalone club', () => {
+    expect(blockingRetirementReason(clean)).toBeNull();
   });
 
   it('blocks while tables are running', () => {
-    // tables.club_id is ON DELETE CASCADE: deleting the club would drop
-    // running tables with players seated. Midway Union had 56 of them.
-    const r = blockingDeletionReason({ ...clean, runningTables: 56 });
+    const r = blockingRetirementReason({ ...clean, runningTables: 56 });
     expect(r).toMatch(/56 running tables/);
   });
 
   it('uses the singular for one table', () => {
-    expect(blockingDeletionReason({ ...clean, runningTables: 1 })).toMatch(/1 running table /);
+    expect(blockingRetirementReason({ ...clean, runningTables: 1 })).toMatch(/1 running table /);
+  });
+
+  it('blocks active tournaments independently of cash tables', () => {
+    expect(blockingRetirementReason({ ...clean, activeTournaments: 2 })).toMatch(
+      /2 active tournaments/
+    );
   });
 
   it('blocks while the club wallet still holds chips', () => {
-    expect(blockingDeletionReason({ ...clean, walletChips: 12500 })).toMatch(/12,500 chips/);
+    expect(blockingRetirementReason({ ...clean, walletChips: 12500 })).toMatch(/12,500 chips/);
   });
 
-  it('reports running tables before wallet chips', () => {
-    const r = blockingDeletionReason({ members: 1, runningTables: 2, walletChips: 500 });
-    expect(r).toMatch(/running table/);
+  it('blocks club/member diamonds and Promo Vault inventory', () => {
+    expect(blockingRetirementReason({ ...clean, diamonds: 90 })).toMatch(/90 diamonds/);
+    expect(blockingRetirementReason({ ...clean, inventoryItems: 3 })).toMatch(
+      /3 items.*Promo Vault/
+    );
+  });
+
+  it('blocks while a zero-value request is still open', () => {
+    expect(blockingRetirementReason({ ...clean, openObligations: 1 })).toMatch(
+      /1 open .*obligation/
+    );
+  });
+
+  it('blocks canonical union affiliation before value checks', () => {
+    const r = blockingRetirementReason({
+      ...clean,
+      unionAffiliated: true,
+      runningTables: 2,
+      walletChips: 500,
+    });
+    expect(r).toMatch(/Leave the union/);
+  });
+
+  it('reports an idempotently retired club as read-only', () => {
+    expect(blockingRetirementReason({ ...clean, alreadyRetired: true })).toMatch(/already retired/);
   });
 });
 

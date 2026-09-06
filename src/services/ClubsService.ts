@@ -761,7 +761,7 @@ async function _getUserMembershipsUncached(
         .select(
           `
       club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
-      club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, is_union, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
+      club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, is_union, requires_approval, owner_id, union_id, lifecycle_status, retired_at, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
         )
         .eq('user_id', userId)
@@ -784,7 +784,11 @@ async function _getUserMembershipsUncached(
     throw new Error('Failed to get memberships');
   }
 
-  const memberships = (data || []) as unknown as (ClubMember & { club: Club })[];
+  // Membership/history rows survive retirement by design. They must not put a
+  // retired estate back into the active lobby carousel.
+  const memberships = ((data || []) as unknown as (ClubMember & { club: Club })[]).filter(
+    (membership) => (membership.club as Club | null)?.lifecycle_status !== 'retired'
+  );
 
   // Enrich with LIVE member counts via grouped-count RPC
   // The clubs.member_count column is a denormalized counter that can go stale
@@ -944,89 +948,60 @@ export async function getClubLeaderboard(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CLUB DELETION
+// CLUB RETIREMENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Delete a club (owner only)
- * Removes all members first, then deletes the club
+ * Retire a settled, idle club through the server-owned atomic boundary.
+ *
+ * The typed name is deliberately supplied by the caller and forwarded verbatim.
+ * Refetching the saved name here would turn a confirmation control into a bypass.
  */
-export async function deleteClub(clubId: string): Promise<void> {
+export async function retireClub(
+  clubId: string,
+  confirmedName: string,
+  reason?: string
+): Promise<void> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
+  if (!confirmedName.trim()) throw new Error('Type the club name to confirm retirement');
 
   // Resolve to UUID first — clubId from URL may be integer (e.g., "25450")
   const resolvedId = await resolveClubUUID(clubId);
 
-  // Verify ownership
-  const { data: club, error: clubError } = await supabase
-    .from('clubs')
-    .select('owner_id')
-    .eq('id', resolvedId)
-    .maybeSingle();
-
-  if (clubError || !club) {
-    throw new Error('Club not found');
-  }
-
-  if (club.owner_id !== user.user.id) {
-    throw new Error('Only the owner can delete this club');
-  }
-
-  // Delete all members first (cascade should handle this, but explicit is safer)
-  /* The member sweep is best-effort by design (the club DELETE cascades), so a
-     zero-row result here is legitimate - a club with no members has none to
-     remove. What was NOT legitimate was being unable to tell that from a
-     refusal, so the count is read and a refusal is reported rather than
-     assumed successful. The club delete below is the one that must have
-     removed a row. */
-  const { data: removedMembers, error: memberErr } = await supabase
-    .from('club_members')
-    .delete()
-    .eq('club_id', resolvedId)
-    .select('user_id');
-  if (memberErr) {
-    reportError(memberErr, 'ClubsService.Failed_to_remove_members_before_club_del');
-    throw new Error('Failed to remove club members');
-  }
-  if (!removedMembers) {
-    reportError(
-      new Error('club_members delete returned no rows array'),
-      'ClubsService.Member_sweep_returned_nothing'
-    );
-  }
-
-  /* THE ONE THAT MATTERS: the club DELETE asks for the row it removed.
-     Without that, a zero-row delete - a policy narrower than the owner check
-     above, a foreign key that refuses, a row already gone - returned 204 with
-     no error, and the caller then toasted "Club deleted successfully" and
-     navigated to /clubs, away from the only screen that could have shown the
-     club still sitting there. The returned row is the only evidence. */
-  const { data: deleted, error } = await supabase
-    .from('clubs')
-    .delete()
-    .eq('id', resolvedId)
-    .select('id');
-
+  /* The preview is guidance. The RPC re-authorizes the current owner and
+     repeats every check under locks before changing lifecycle state. */
+  const { data, error } = await supabase.rpc('fn_retire_settled_club', {
+    p_club_id: resolvedId,
+    p_confirm_name: confirmedName,
+    p_reason: reason ?? null,
+  });
   if (error) {
-    reportError(error, 'ClubsService.Delete_club_failed');
-    throw new Error('Failed to delete club');
-  }
-  if (!deleted || deleted.length === 0) {
-    throw new Error(
-      'The club was not deleted. Nothing was removed - check that you still own it and that it has no rows blocking removal.'
-    );
+    reportError(error, 'ClubsService.Retire_club_failed');
+    throw error;
   }
 
-  // Emit bus events so all open lobby/carousel tabs refresh immediately
+  const result = (Array.isArray(data) ? data[0] : data) as {
+    success?: boolean;
+    error?: string;
+  } | null;
+  if (!result?.success) {
+    throw new Error(result?.error || 'The Club Did Not Accept The Retirement');
+  }
+
+  // CLUB_LEFT removes it from active lobby surfaces; the membership row itself
+  // remains available to retained history/audit views.
   try {
     const { masterBus } = await import('../core/MasterBus');
-    masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'club_deleted' });
-    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'club_deleted' });
+    masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'club_retired' });
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'club_retired' });
   } catch (e) {
-    console.warn('[ClubsService] deleteClub: bus emit failed (non-critical):', e);
+    console.warn('[ClubsService] retireClub: bus emit failed (non-critical):', e);
   }
 }
+
+/** @deprecated Use retireClub; owner-facing hard deletion no longer exists. */
+export const deleteClub = retireClub;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ✏️ CLUB UPDATE
@@ -1352,6 +1327,7 @@ export const ClubsService = {
   rememberInviteCode,
   redeemStoredInviteCode,
   leave: leaveClub,
+  retire: retireClub,
   delete: deleteClub,
   getUserMemberships,
   getMembers: getClubMembers,

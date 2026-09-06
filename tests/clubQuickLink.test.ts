@@ -20,6 +20,7 @@ vi.mock('@/lib/supabase', () => ({
 import {
   eligibleQuickLinkClubs,
   eligibleCashierWallets,
+  mergeCashierWalletDirectory,
   resolveCashierWallet,
   isUnionEntity,
   resolveTargetClub,
@@ -27,6 +28,7 @@ import {
   rememberLastClub,
   clubParamToUuid,
   readCachedQuickLinkClubs,
+  writeCachedQuickLinkClubs,
   fetchClubChipBalances,
   fetchQuickLinkClubs,
   clearClubChipBalanceCache,
@@ -105,6 +107,23 @@ describe('eligibleCashierWallets', () => {
     const owned = { ...U_FLAG, is_owner: true };
     expect(resolveCashierWallet([A, owned], owned.id)).toEqual(owned);
   });
+
+  it('merges a canonical owned union without duplicating its legacy companion row', () => {
+    const legacyUnion = { ...U_FLAG, is_owner: true, slug: 'legacy-slug' };
+    const canonicalUnion = {
+      ...U_FLAG,
+      is_owner: true,
+      entity_type: 'union' as const,
+      slug: 'canonical-slug',
+      union_id: U_FLAG.id,
+    };
+
+    expect(mergeCashierWalletDirectory([A, legacyUnion, B], [canonicalUnion])).toEqual([
+      A,
+      { ...legacyUnion, ...canonicalUnion },
+      B,
+    ]);
+  });
 });
 
 describe('resolveTargetClub', () => {
@@ -146,15 +165,19 @@ describe('rememberLastClub / readLastClubId', () => {
 });
 
 describe('readCachedQuickLinkClubs', () => {
-  it('returns the union-filtered cached list', () => {
-    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, U_FLAG, B]));
-    expect(readCachedQuickLinkClubs().map((c) => c.id)).toEqual([A.id, B.id]);
+  it('returns the union-filtered cache only to the account that wrote it', () => {
+    writeCachedQuickLinkClubs(USER, [A, U_FLAG, B]);
+    expect(readCachedQuickLinkClubs(USER).map((c) => c.id)).toEqual([A.id, B.id]);
+    expect(readCachedQuickLinkClubs('eeeeeeee-0000-0000-0000-000000000099')).toEqual([]);
+    expect(readCachedQuickLinkClubs()).toEqual([]);
   });
 
-  it('is empty on a cold or corrupt cache', () => {
-    expect(readCachedQuickLinkClubs()).toEqual([]);
+  it('is empty on a cold, legacy-unscoped, or corrupt cache', () => {
+    expect(readCachedQuickLinkClubs(USER)).toEqual([]);
+    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, B]));
+    expect(readCachedQuickLinkClubs(USER)).toEqual([]);
     localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, '{not json');
-    expect(readCachedQuickLinkClubs()).toEqual([]);
+    expect(readCachedQuickLinkClubs(USER)).toEqual([]);
   });
 });
 
@@ -222,6 +245,18 @@ describe('fetchClubChipBalances', () => {
     }
   });
 
+  it("never returns another user's cached balances when an account-switch read fails", async () => {
+    const nextUser = 'dddddddd-0000-0000-0000-000000000043';
+    inMock.mockResolvedValue({ data: [{ club_id: A.id, chip_balance: 7 }], error: null });
+    await fetchClubChipBalances(USER);
+
+    inMock.mockResolvedValue({ data: null, error: { message: 'next user read failed' } });
+    const balances = await fetchClubChipBalances(nextUser);
+
+    expect(balances).toBeNull();
+    expect(inMock).toHaveBeenCalledTimes(2);
+  });
+
   it('exposes the bus events that should invalidate it', () => {
     expect(CHIP_BALANCE_EVENTS).toContain('CASHIER_BALANCE_CHANGED');
     expect(CHIP_BALANCE_EVENTS).toContain('CHIPS_DISTRIBUTED');
@@ -268,8 +303,9 @@ describe('clubParamToUuid', () => {
   });
 
   it('resolves a numeric club code via the cached club list', () => {
-    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, B]));
-    expect(clubParamToUuid('22222')).toBe(B.id);
+    writeCachedQuickLinkClubs(USER, [A, B]);
+    expect(clubParamToUuid('22222', USER)).toBe(B.id);
+    expect(clubParamToUuid('22222', 'eeeeeeee-0000-0000-0000-000000000099')).toBeNull();
   });
 
   it('drops numeric codes it cannot resolve', () => {
@@ -279,6 +315,6 @@ describe('clubParamToUuid', () => {
   it('handles undefined and corrupt cache', () => {
     expect(clubParamToUuid(undefined)).toBeNull();
     localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, '{not json');
-    expect(clubParamToUuid('22222')).toBeNull();
+    expect(clubParamToUuid('22222', USER)).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 
 const ACCOUNT_PREFIX = 'ca-customization-cert-';
+const SHARED_POST_DEPLOY_PREFIX = 'ca-customization-cert-postdeploy-';
 
 export type CustomizationCertificationEnvironment = {
   supabaseUrl: string;
@@ -395,7 +396,11 @@ export async function cleanupStaleTemporaryCustomizationAccounts(
     'profiles',
     new URLSearchParams({
       select: 'id,email,created_at',
-      email: `like.${ACCOUNT_PREFIX}*@example.invalid`,
+      // The post-deploy workflow owns one shared login for the entire sweep.
+      // It can be older than this helper's five-minute orphan threshold by the
+      // time commerce starts, but it is still active. Its own always() cleanup
+      // and next-run recovery own that namespace; never reap it mid-suite.
+      and: `(email.like.${ACCOUNT_PREFIX}*@example.invalid,email.not.like.${SHARED_POST_DEPLOY_PREFIX}*@example.invalid)`,
       created_at: `lte.${cutoff}`,
       order: 'created_at.asc',
       limit: String(STALE_FIXTURE_CLEANUP_LIMIT + 1),

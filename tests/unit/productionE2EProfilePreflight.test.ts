@@ -109,7 +109,11 @@ describe('authenticated production account preflight', () => {
   });
 
   it('probes a protected layout route and exposes the server-backed decision', () => {
-    expect(source('tests/e2e/global-setup.ts')).toContain("new URL('notifications', baseURL)");
+    const setup = source('tests/e2e/global-setup.ts');
+    expect(setup).toContain("new URL('notifications', baseURL)");
+    expect(setup).toContain("const AUTH_STORAGE_KEY = 'smarter-poker-auth'");
+    expect(setup).toContain('client.auth.signInWithPassword({ email, password })');
+    expect(setup).toContain('localStorage.setItem(authKey, JSON.stringify(session))');
     expect(source('tests/e2e/production-customization-realtime.spec.ts')).toContain(
       "new URL('notifications', baseURL)"
     );

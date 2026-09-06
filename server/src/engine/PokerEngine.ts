@@ -952,11 +952,18 @@ export function determineWinners(
 
   if (activePlayers.length === 1) {
     const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
-    perPotOut?.push({
-      userId: activePlayers[0].user_id,
-      potIndex: 0,
-      low: false,
-      amount: totalPot,
+    // Preserve every pot layer even though the public Winner[] deliberately
+    // remains aggregated. Daily Missions, knockout attribution, and the visual
+    // settlement ledger consume this unmerged collector; collapsing a main pot
+    // plus side pots into index 0 made those durable facts incomplete whenever
+    // action ended in folds.
+    pots.forEach((pot, potIndex) => {
+      perPotOut?.push({
+        userId: activePlayers[0].user_id,
+        potIndex,
+        low: false,
+        amount: pot.amount,
+      });
     });
     return [{ userId: activePlayers[0].user_id, amount: totalPot, potIndex: 0 }];
   }

@@ -3,15 +3,19 @@ import {
   expect,
   test,
   type BrowserContext,
+  type Locator,
   type Request,
   type Response,
 } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
 import {
   callServiceRpc,
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
+  deleteServiceRows,
+  insertServiceRows,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
   type CustomizationCertificationEnvironment,
@@ -23,6 +27,84 @@ const LOAD_BUDGET_MS = 12_000;
 const DASHBOARD_RPC_BUDGET_MS = 8_000;
 
 type JsonObject = Record<string, unknown>;
+
+const BANNED_UI_DASHES = /[\u2012-\u2015]/;
+const COPY_ATTRIBUTES = [
+  'alt',
+  'aria-description',
+  'aria-label',
+  'aria-valuetext',
+  'placeholder',
+  'title',
+] as const;
+
+type RuntimeCopyEntry = {
+  source: string;
+  value: string;
+};
+
+function lowercaseWordStarts(value: string): string[] {
+  const offenders = new Set<string>();
+  const wordStart = /(^|[^A-Za-z0-9'\u2019])([a-z])/g;
+
+  for (const match of value.matchAll(wordStart)) {
+    const boundary = match[1];
+    const index = (match.index ?? 0) + boundary.length;
+    // Apostrophes inside contractions and possessives do not open a new word.
+    if (
+      (boundary === "'" || boundary === '\u2019') &&
+      index >= 2 &&
+      /[A-Za-z0-9]/.test(value[index - 2])
+    ) {
+      continue;
+    }
+    const token = value.slice(index).match(/^[A-Za-z][A-Za-z0-9'\u2019/-]*/)?.[0];
+    if (token) offenders.add(token);
+  }
+
+  return [...offenders];
+}
+
+async function runtimeCopyEntries(surface: Locator): Promise<RuntimeCopyEntry[]> {
+  return surface.evaluate((root, attributes) => {
+    const element = root as HTMLElement;
+    const entries: RuntimeCopyEntry[] = element.innerText
+      .split(/\n+/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) => ({ source: 'Visible Text', value }));
+    const nodes = [element, ...element.querySelectorAll<HTMLElement>('*')];
+
+    for (const node of nodes) {
+      if (node.closest('[hidden], [aria-hidden="true"]')) continue;
+      for (const attribute of attributes) {
+        const value = node.getAttribute(attribute)?.trim();
+        if (value) {
+          entries.push({
+            source: `${node.tagName.toLowerCase()}[${attribute}]`,
+            value,
+          });
+        }
+      }
+    }
+
+    return entries;
+  }, COPY_ATTRIBUTES);
+}
+
+async function expectCertifiedDailyChallengeCopy(surface: Locator, label: string): Promise<void> {
+  await expect(surface).toBeVisible();
+  const entries = await runtimeCopyEntries(surface);
+  expect(entries.length, `${label} must expose player-facing copy to certify`).toBeGreaterThan(0);
+
+  const bannedDashes = entries.filter(({ value }) => BANNED_UI_DASHES.test(value));
+  expect(bannedDashes, `${label} contains a banned U+2012-U+2015 dash`).toEqual([]);
+
+  const lowercaseStarts = entries.flatMap(({ source, value }) =>
+    lowercaseWordStarts(value).map((word) => ({ source, value, word }))
+  );
+  expect(lowercaseStarts, `${label} contains words that do not start with a capital`).toEqual([]);
+}
 
 function isDailyMissionRevisionFrame(message: string | Buffer): boolean {
   try {
@@ -145,6 +227,10 @@ async function completeEveryAssignedMission(
         friends_added: 2_500,
       },
       p_magnitudes: { big_pots: 1_000_000_000, strong_hands: 10 },
+      p_values: {
+        big_pots: Array.from({ length: 2_500 }, () => 1_000_000_000),
+        strong_hands: Array.from({ length: 2_500 }, () => 10),
+      },
       p_occurred_at: new Date().toISOString(),
     },
     true
@@ -184,7 +270,9 @@ test.describe('production Daily Missions certification', () => {
     const environment = requireCustomizationCertificationEnvironment();
     const contexts: BrowserContext[] = [];
     let account: TemporaryCustomizationAccount | null = null;
+    let certificationHandHistoryId: string | null = null;
     const report: JsonObject = {};
+    const cleanupErrors: string[] = [];
 
     try {
       account = await createTemporaryCustomizationAccount(environment, 'missions', 7_000);
@@ -235,7 +323,7 @@ test.describe('production Daily Missions certification', () => {
         const onRequest = (request: Request) => {
           if (
             new URL(request.url()).pathname.endsWith(
-              '/rest/v1/rpc/get_daily_challenge_dashboard_v2'
+              '/rest/v1/rpc/get_daily_challenge_dashboard_v3'
             )
           ) {
             dashboardRequests.push(request);
@@ -298,6 +386,157 @@ test.describe('production Daily Missions certification', () => {
         await expect(page.locator('[id^="mission-card-"]')).not.toHaveCount(0);
       });
 
+      await test.step('every challenge cycle is a durable direct subpage with certified copy', async () => {
+        const waitForCycle = async (cycle: 'daily' | 'weekly' | 'monthly') => {
+          await expect(
+            page.getByRole('heading', { name: 'Daily Challenges', level: 1 })
+          ).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+          const surface = page.locator('#daily-missions');
+          await expect(surface).toHaveAttribute('aria-busy', 'false', {
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          });
+          await expect(surface).toHaveAttribute('data-mission-cycle', cycle);
+          await expect(
+            page.getByRole('tab', { name: new RegExp(`^${cycle}`, 'i') })
+          ).toHaveAttribute('aria-selected', 'true');
+          await expectCertifiedDailyChallengeCopy(surface, `${cycle} Challenge Subpage`);
+        };
+
+        const dailyURL = new URL('challenges/daily', baseURL);
+        await page.goto(dailyURL.toString(), {
+          waitUntil: 'domcontentloaded',
+          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        });
+        await waitForCycle('daily');
+        await expect(page).toHaveURL(dailyURL.toString());
+
+        const weeklyURL = new URL('challenges/weekly', baseURL);
+        weeklyURL.searchParams.set('source', 'certification');
+        weeklyURL.hash = 'mission-board-title';
+        await page.goto(weeklyURL.toString(), {
+          waitUntil: 'domcontentloaded',
+          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        });
+        await waitForCycle('weekly');
+        await expect(page).toHaveURL(weeklyURL.toString());
+
+        const monthlyURL = new URL('challenges/monthly', baseURL);
+        await page.goto(monthlyURL.toString(), {
+          waitUntil: 'domcontentloaded',
+          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        });
+        await waitForCycle('monthly');
+        await expect(page).toHaveURL(monthlyURL.toString());
+
+        await page.goBack({
+          waitUntil: 'domcontentloaded',
+          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        });
+        await waitForCycle('weekly');
+        await expect(page).toHaveURL(weeklyURL.toString());
+
+        await page.reload({
+          waitUntil: 'domcontentloaded',
+          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        });
+        await waitForCycle('weekly');
+        await expect(page).toHaveURL(weeklyURL.toString());
+
+        await missions.chooseTier('Monthly');
+        await waitForCycle('monthly');
+        await expect(page).toHaveURL(monthlyURL.toString());
+        await page.goBack();
+        await waitForCycle('weekly');
+        await expect(page).toHaveURL(weeklyURL.toString());
+
+        const malformedURL = new URL('challenges/not-a-cycle', baseURL);
+        const challengesURL = new URL('challenges', baseURL);
+        await page.goto(malformedURL.toString(), {
+          waitUntil: 'domcontentloaded',
+          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        });
+        await page.waitForURL(
+          (url) => url.pathname === challengesURL.pathname && url.search === '' && url.hash === '',
+          { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+        );
+        await waitForCycle('daily');
+
+        // Leave the stateful certification on its canonical base route before
+        // the first economy mutation, so later assertions do not inherit a
+        // history-only navigation or a fragment scroll position.
+        await missions.open();
+        await expect(page).toHaveURL(challengesURL.toString());
+      });
+
+      await test.step('the settled-hand trigger preserves mixed exact threshold candidates', async () => {
+        certificationHandHistoryId = randomUUID();
+        const occurredAt = new Date().toISOString();
+        const handNumber =
+          1_700_000_000 +
+          (Number.parseInt(certificationHandHistoryId.replaceAll('-', '').slice(0, 7), 16) %
+            100_000_000);
+        const amounts = {
+          hands_played: 1,
+          hands_won: 1,
+          hands_won_no_showdown: 1,
+          chips_won: 600,
+          big_pots: 2,
+          strong_hands: 2,
+        };
+        const magnitudes = { big_pots: 500, strong_hands: 7 };
+        const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };
+
+        const inserted = await insertServiceRows<{ id: string }>(environment, 'hand_history', {
+          id: certificationHandHistoryId,
+          table_id: null,
+          tournament_id: null,
+          hand_number: handNumber,
+          game_variant: 'nlh',
+          small_blind: 1,
+          big_blind: 2,
+          pot_size: 600,
+          rake_amount: 0,
+          community_cards: [],
+          winners: [],
+          players: [],
+          actions: [],
+          started_at: occurredAt,
+          ended_at: occurredAt,
+          has_human: false,
+          daily_mission_events: [
+            {
+              user_id: account!.id,
+              amounts,
+              magnitudes,
+              values: thresholdValues,
+            },
+          ],
+        });
+        expect(inserted).toHaveLength(1);
+        expect(inserted[0]).toMatchObject({ id: certificationHandHistoryId });
+
+        const eventKey = `hand:${certificationHandHistoryId}`;
+        await expect
+          .poll(
+            async () => {
+              const receipts = await serviceRows<{
+                event_key: string;
+                amounts: JsonObject;
+                magnitudes: JsonObject;
+                threshold_values: JsonObject;
+              }>(
+                environment,
+                'daily_challenge_progress_events',
+                account!.id,
+                'event_key,amounts,magnitudes,threshold_values'
+              );
+              return receipts.find((receipt) => receipt.event_key === eventKey) ?? null;
+            },
+            { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+          )
+          .toEqual({ event_key: eventKey, amounts, magnitudes, threshold_values: thresholdValues });
+      });
+
       await test.step('reroll confirmation charges ten diamonds exactly once', async () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
         const reroll = await missions.firstRerollButton();
@@ -305,24 +544,53 @@ test.describe('production Daily Missions certification', () => {
         await reroll.click();
         const confirmation = page.getByRole('group', { name: /^Confirm Reroll For / });
         await expect(confirmation).toBeVisible();
+        await expectCertifiedDailyChallengeCopy(confirmation, 'Reroll Confirmation');
         const replace = confirmation.getByRole('button', { name: 'Replace' });
-        let settled = false;
-        for (let attempt = 1; attempt <= 3 && !settled; attempt += 1) {
-          await replace.click({ timeout: 10_000 });
-          settled = await expect
-            .poll(() => diamondBalance(environment, account!.id), { timeout: 20_000 })
-            .toBe(balanceBefore - 10)
-            .then(() => true)
-            .catch(() => false);
-          if (!settled) {
-            // A lost response leaves the guarded confirmation in place. The
-            // same row/expected-challenge replay key makes a manual retry safe.
-            await expect(replace).toBeEnabled({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
-          }
-        }
-        expect(settled).toBe(true);
-        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 10);
+        const rerollResponse = page.waitForResponse(
+          (response) => response.url().includes('/rest/v1/rpc/reroll_daily_challenge'),
+          { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+        );
+        await replace.dblclick({ timeout: 10_000 });
+        const response = await rerollResponse;
+        expect(response.ok()).toBe(true);
+        const receipt = (await response.json()) as JsonObject;
+        expect(
+          receipt,
+          `The Reroll RPC Returned An Unsettled Receipt: ${JSON.stringify(receipt)}`
+        ).toMatchObject({
+          success: true,
+          alreadyRerolled: false,
+          diamondsSpent: 10,
+        });
+        const requestBody = response.request().postDataJSON() as {
+          p_user_id: string;
+          p_challenge_row_id: string;
+          p_expected_challenge_id: string;
+          p_cost: number;
+          p_request_id: string;
+        };
+        expect(requestBody.p_request_id).toMatch(/^[0-9a-f-]{36}$/i);
+        expect(receipt.requestId).toBe(requestBody.p_request_id);
+        expect(receipt.diamondBalance).toBe(balanceBefore - 10);
+        await expect
+          .poll(() => diamondBalance(environment, account!.id), {
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          })
+          .toBe(balanceBefore - 10);
         await expect(confirmation).toHaveCount(0, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+
+        const { data: replay, error: replayError } = await account!.client.rpc(
+          'reroll_daily_challenge',
+          requestBody
+        );
+        if (replayError) throw replayError;
+        expect(replay).toMatchObject({
+          success: true,
+          alreadyRerolled: true,
+          requestId: requestBody.p_request_id,
+          diamondsSpent: 0,
+        });
+        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 10);
 
         const receipts = await serviceRows<{ amount: number; reference_id: string }>(
           environment,
@@ -330,12 +598,63 @@ test.describe('production Daily Missions certification', () => {
           account!.id,
           'amount,reference_id'
         );
-        const rerolls = receipts.filter((row) => row.reference_id?.startsWith('challenge_reroll:'));
+        const rerolls = receipts.filter(
+          (row) => row.reference_id === `challenge_reroll:${requestBody.p_request_id}`
+        );
         expect(rerolls).toHaveLength(1);
         expect(Number(rerolls[0].amount)).toBe(-10);
+        const replayReceipts = await serviceRows<{ request_id: string }>(
+          environment,
+          'daily_challenge_reroll_receipts',
+          account!.id,
+          'request_id'
+        );
+        expect(
+          replayReceipts.filter((row) => row.request_id === requestBody.p_request_id)
+        ).toHaveLength(1);
       });
 
-      await test.step('freeze purchase serializes the click and charges the fixed price once', async () => {
+      await test.step('different-card rerolls serialize across concurrent tabs', async () => {
+        const assignments = await serviceRows<{
+          id: string;
+          challenge_id: string;
+          completed: boolean;
+          claimed: boolean;
+        }>(environment, 'user_daily_challenges', account!.id, 'id,challenge_id,completed,claimed');
+        const candidates = assignments.filter((row) => !row.completed && !row.claimed).slice(0, 2);
+        expect(candidates).toHaveLength(2);
+        const balanceBefore = await diamondBalance(environment, account!.id);
+        const requests = candidates.map((row) => ({
+          p_user_id: account!.id,
+          p_challenge_row_id: row.id,
+          p_expected_challenge_id: row.challenge_id,
+          p_cost: 10,
+          p_request_id: randomUUID(),
+        }));
+        const results = await Promise.all(
+          requests.map((request) => account!.client.rpc('reroll_daily_challenge', request))
+        );
+        for (const [index, result] of results.entries()) {
+          if (result.error) throw result.error;
+          expect(result.data).toMatchObject({
+            success: true,
+            alreadyRerolled: false,
+            requestId: requests[index].p_request_id,
+            diamondsSpent: 10,
+          });
+        }
+        const replacementIds = results.map(
+          (result) => (result.data as JsonObject).challengeId as string
+        );
+        expect(new Set(replacementIds).size).toBe(2);
+        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 20);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await expect(page.getByText('Live Now')).toBeVisible({
+          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+        });
+      });
+
+      await test.step('freeze purchase confirms the ledger and charges the fixed price once', async () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
         const buy = page.getByRole('button', { name: /Buy Streak Freeze/ });
         await expect(buy).toBeEnabled({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
@@ -345,13 +664,39 @@ test.describe('production Daily Missions certification', () => {
           if (request.url().includes('/rest/v1/rpc/buy_streak_freeze')) calls += 1;
         };
         page.on('request', onRequest);
+
+        await buy.click();
+        const confirmation = page.getByRole('dialog', { name: 'Secure A Streak Freeze?' });
+        await expect(confirmation).toBeVisible();
+        await expect(confirmation.getByText('Vault Price')).toBeVisible();
+        await expect(confirmation.getByText('5,000 Diamonds', { exact: true })).toBeVisible();
+        await expect(
+          confirmation.getByText(`${(balanceBefore - 5_000).toLocaleString()} Diamonds`, {
+            exact: true,
+          })
+        ).toBeVisible();
+        await expect(page.locator('#daily-missions')).toHaveAttribute('inert', '');
+        await expectCertifiedDailyChallengeCopy(confirmation, 'Streak Freeze Confirmation');
+
+        await confirmation.getByRole('button', { name: 'Keep My Diamonds' }).click();
+        await expect(confirmation).toHaveCount(0);
+        await expect(page.locator('#daily-missions')).not.toHaveAttribute('inert', '');
+        await expect(page.locator('#daily-missions')).not.toHaveAttribute('aria-hidden', 'true');
+        await expect(buy).toBeFocused();
+        expect(calls, 'dismissing the confirmation must not call the purchase RPC').toBe(0);
+        expect(await diamondBalance(environment, account!.id)).toBe(balanceBefore);
+
+        await buy.click();
+        await expect(confirmation).toBeVisible();
         const rpc = page.waitForResponse(
           (response) => response.url().includes('/rest/v1/rpc/buy_streak_freeze'),
           { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
         );
-        await buy.dblclick();
+        await confirmation.getByRole('button', { name: 'Buy Streak Freeze' }).dblclick();
         const response = await rpc;
         expect(response.ok()).toBe(true);
+        await expect(confirmation).toHaveCount(0);
+        await expect(page.locator('#daily-missions')).not.toHaveAttribute('inert', '');
         await expect
           .poll(() => diamondBalance(environment, account!.id))
           .toBe(balanceBefore - 5_000);
@@ -534,9 +879,8 @@ test.describe('production Daily Missions certification', () => {
 
         const reward = page.getByRole('dialog', { name: 'Reward Settled' });
         await expect(reward).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
-        await expect(
-          reward.getByText('Deposited Securely To Your Club Arena Balances')
-        ).toBeVisible();
+        await expect(reward.getByText('Added To Your Club Arena Diamond Balance')).toBeVisible();
+        await expectCertifiedDailyChallengeCopy(reward, 'Reward Settlement Dialog');
         await reward.getByRole('button', { name: 'Continue' }).click();
         await expect.poll(() => playerWalletBalance(environment, account!.id)).toBe(walletBefore);
         await expect
@@ -582,7 +926,7 @@ test.describe('production Daily Missions certification', () => {
         expect(Number(claimReceipts[0].amount)).toBe(expectedDiamonds);
       });
 
-      await test.step('disconnected alert preference can be turned off without requesting permission', async () => {
+      await test.step('reset alert reaches notifications and push exactly once, then opt-out works', async () => {
         const { error } = await account!.client
           .from('user_notification_preferences')
           .upsert(
@@ -590,6 +934,61 @@ test.describe('production Daily Missions certification', () => {
             { onConflict: 'user_id' }
           );
         if (error) throw error;
+
+        const cycleDate = currentPeriodKeys().daily;
+        const inserted = await callServiceRpc<number>(
+          environment,
+          'enqueue_daily_mission_reset_notifications',
+          { p_cycle_date: cycleDate, p_limit: 5000 },
+          true
+        );
+        expect(Number(inserted)).toBe(1);
+        const replayedInsert = await callServiceRpc<number>(
+          environment,
+          'enqueue_daily_mission_reset_notifications',
+          { p_cycle_date: cycleDate, p_limit: 5000 },
+          true
+        );
+        expect(Number(replayedInsert)).toBe(0);
+
+        const notifications = await serviceRows<{
+          id: string;
+          type: string;
+          title: string;
+          message: string;
+          action_url: string;
+          data: JsonObject;
+        }>(environment, 'notifications', account!.id, 'id,type,title,message,action_url,data');
+        const resetNotifications = notifications.filter(
+          (row) =>
+            row.type === 'daily_challenge' &&
+            row.data?.source === 'club_arena_daily_missions' &&
+            row.data?.cycle_date === cycleDate
+        );
+        expect(resetNotifications).toHaveLength(1);
+        expect(resetNotifications[0]).toMatchObject({
+          title: 'Daily Missions Are Live',
+          message: 'A Fresh Set Of Poker Missions And Rewards Is Ready In Club Arena.',
+          action_url: '/hub/club-arena/challenges',
+        });
+        const pushRows = await readServiceRows<{
+          related_entity_id: string;
+          event: string;
+          title: string;
+          body: string;
+          url: string;
+        }>(environment, 'push_outbox', exactQuery('*', 'recipient_user_id', account!.id));
+        expect(
+          pushRows.filter((row) => row.related_entity_id === resetNotifications[0].id)
+        ).toEqual([
+          expect.objectContaining({
+            event: 'daily_challenge',
+            title: 'Daily Missions Are Live',
+            body: 'A Fresh Set Of Poker Missions And Rewards Is Ready In Club Arena.',
+            url: '/hub/club-arena/challenges',
+          }),
+        ]);
+
         await page.reload({ waitUntil: 'domcontentloaded' });
         await expect(page.getByText('Preference On, Device Disconnected')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
@@ -608,7 +1007,7 @@ test.describe('production Daily Missions certification', () => {
         // Headless and policy-managed browsers can truthfully remain "Blocked
         // In Browser Settings" after opt-out. The stable UI contract is that
         // the preference-on recovery controls disappear and opt-in returns.
-        await expect(page.getByRole('button', { name: 'Turn On Mission Alerts' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Turn On Challenge Alerts' })).toBeVisible();
         await expect(page.getByText('Preference On, Device Disconnected')).toHaveCount(0);
         const preferences = await serviceRows<{ daily_mission_reminders: boolean }>(
           environment,
@@ -622,7 +1021,7 @@ test.describe('production Daily Missions certification', () => {
 
       await test.step('an injected dashboard outage fails visibly and retry restores the live board', async () => {
         let abortedAttempts = 0;
-        await page.route('**/rest/v1/rpc/get_daily_challenge_dashboard_v2', async (route) => {
+        await page.route('**/rest/v1/rpc/get_daily_challenge_dashboard_v3', async (route) => {
           if (abortedAttempts < 3) {
             abortedAttempts += 1;
             await route.abort('failed');
@@ -635,20 +1034,22 @@ test.describe('production Daily Missions certification', () => {
         // here used to turn this RPC recovery assertion into an unrelated
         // 60-second asset-waterfall timeout on a busy production edge.
         await missions.navigateWithinArena('notifications');
-        await expect(page.getByRole('heading', { name: 'Daily Missions', level: 1 })).toHaveCount(
+        await expect(page.getByRole('heading', { name: 'Daily Challenges', level: 1 })).toHaveCount(
           0
         );
         await missions.navigateWithinArena('challenges');
-        await expect(page.getByRole('alert')).toContainText('Mission Network Unavailable', {
+        await expect(page.getByRole('alert')).toContainText('Challenge Ledger Unavailable', {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
+        await expect(page.getByText('Spendable Balance', { exact: true })).toHaveCount(0);
+        await expect(page.getByRole('heading', { name: '0 Day Streak' })).toHaveCount(0);
         expect(abortedAttempts).toBe(3);
-        await page.unroute('**/rest/v1/rpc/get_daily_challenge_dashboard_v2');
+        await page.unroute('**/rest/v1/rpc/get_daily_challenge_dashboard_v3');
         const recovered = page.waitForResponse(
           (response) => response.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard'),
           { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
         );
-        const retry = page.getByRole('button', { name: 'Retry Sync' });
+        const retry = page.getByRole('button', { name: 'Retry Challenge Ledger' });
         await missions.placeControlInSafeViewport(retry);
         await retry.click();
         expect((await recovered).ok()).toBe(true);
@@ -656,7 +1057,7 @@ test.describe('production Daily Missions certification', () => {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
         await expect(
-          page.getByRole('heading', { name: 'Choose Your Mission Cycle' })
+          page.getByRole('heading', { name: 'Choose Your Challenge Cycle' })
         ).toBeVisible();
       });
 
@@ -676,7 +1077,7 @@ test.describe('production Daily Missions certification', () => {
         }));
         expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
 
-        const alertButton = mobilePage.getByRole('button', { name: 'Turn On Mission Alerts' });
+        const alertButton = mobilePage.getByRole('button', { name: 'Turn On Challenge Alerts' });
         const alertBox = await alertButton.boundingBox();
         expect(alertBox?.height || 0).toBeGreaterThanOrEqual(44);
         const dailyTab = mobilePage.getByRole('tab', { name: /^Daily/ });
@@ -725,9 +1126,19 @@ test.describe('production Daily Missions certification', () => {
       for (const context of contexts.reverse()) {
         await context.close().catch(() => undefined);
       }
+      if (certificationHandHistoryId) {
+        await deleteServiceRows(
+          environment,
+          'hand_history',
+          new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
+        ).catch((error) => cleanupErrors.push(`hand history: ${(error as Error).message}`));
+      }
       if (account) {
-        await cleanupTemporaryCustomizationAccount(environment, account);
+        await cleanupTemporaryCustomizationAccount(environment, account).catch((error) =>
+          cleanupErrors.push(`account: ${(error as Error).message}`)
+        );
       }
     }
+    expect(cleanupErrors, 'Daily Missions certification cleanup failed').toEqual([]);
   });
 });

@@ -8,12 +8,12 @@ repo, in both directions.**
 
 ## What was actually true, measured before anything was changed
 
-| | |
-| --- | --- |
-| alerts running on the box | **72** |
+|                                        |        |
+| -------------------------------------- | ------ |
+| alerts running on the box              | **72** |
 | alerts declared in `infra/monitoring/` | **79** |
-| declared here and NEVER LOADED | **15** |
-| running that this repo had never seen | **8** |
+| declared here and NEVER LOADED         | **15** |
+| running that this repo had never seen  | **8**  |
 
 The 15 include **`EngineRefusingSessions`** and **`EngineCannotReachAuth`** -
 the two alerts this programme wrote in phase 1 so that the outage it exists to
@@ -117,10 +117,10 @@ Its first run, before the deploy, reported exactly the table above.
   of the "something checks for it" pin read the whole checker file and passed
   when the checker was pointed at a different alertname, because the header
   still mentioned the canary. A pin satisfied by prose is not a pin.
-- **CLAUDE.md 10.84**, two rules from the two halves of the outage: *an agent
-  never SETS a credential* (the twenty-two hours began with one environment
+- **CLAUDE.md 10.84**, two rules from the two halves of the outage: _an agent
+  never SETS a credential_ (the twenty-two hours began with one environment
   variable, and an agent may read where a credential lives and say what shape it
-  should have, never write one), and *never hand-write what a monitor reads*.
+  should have, never write one), and _never hand-write what a monitor reads_.
 
 ## The deep audit (same day) - and the one that would have deleted the pager
 

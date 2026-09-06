@@ -149,7 +149,6 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     { label: 'Community Center', path: '/community' },
     { label: 'Find Players & Clubs', path: '/search' },
     { label: 'Friends', path: '/friends' },
-    { label: 'Unions', path: '/unions' },
     // Wallet & Rewards
     { label: 'Rewards Center', path: '/rewards' },
     { label: 'Wallet', path: '/wallet' },
@@ -194,6 +193,27 @@ test.describe('Hamburger Menu — Navigation Links', () => {
       await expect(page).toHaveURL(new RegExp(`.*${escapedPath}`), { timeout: 10000 });
     });
   }
+
+  test('offers Unions only to an allowed union-network operator', async ({ page }) => {
+    await navigateAndWait(page, '/');
+    if (!(await openMenuOrSkip(page))) return;
+
+    const dialog = page.getByRole('dialog', { name: 'Club Arena' });
+    const unions = dialog.getByRole('button', { name: /^Unions(?:\s|$)/ }).first();
+    /* Allow the fail-closed capability RPC to settle. An allowlisted operator
+       gets a working door; every other account gets no misleading door and a
+       typed URL is redirected by the route guard. Both are deliberate. */
+    await page.waitForTimeout(3_000);
+    if (await unions.isVisible().catch(() => false)) {
+      await unions.click();
+      await expect(page).toHaveURL(/\/unions(?:[/?#]|$)/, { timeout: 10_000 });
+      return;
+    }
+
+    await page.goto('unions');
+    await expect(page).toHaveURL(/\/community(?:[/?#]|$)/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Community Center' })).toBeVisible();
+  });
 });
 
 test.describe('Hamburger Menu — Settings Toggles', () => {

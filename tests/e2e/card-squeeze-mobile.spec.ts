@@ -37,14 +37,24 @@ async function loadLiveCss(page: Page) {
     for (const m of js.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
     for (const m of html.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
     document.body.innerHTML = '';
-    for (const n of names) {
-      try {
-        const css = await fetch(base + n).then((r) => r.text());
+    const styles = await Promise.all(
+      [...names].map(async (n) => {
+        try {
+          return await fetch(base + n).then((r) => {
+            if (!r.ok) throw new Error(String(r.status));
+            return r.text();
+          });
+        } catch {
+          /* a chunk that 404s is not this test's problem */
+          return '';
+        }
+      })
+    );
+    for (const css of styles) {
+      if (css) {
         const s = document.createElement('style');
         s.textContent = css;
         document.head.appendChild(s);
-      } catch {
-        /* a chunk that 404s is not this test's problem */
       }
     }
     document.documentElement.style.setProperty('--animation-speed', '1');
@@ -139,10 +149,23 @@ test.describe('the squeeze at 375px', () => {
     await mountPhoneBoard(page);
     const durations = await page.evaluate(() => {
       const out: Record<string, number> = {};
-      for (const a of document.getAnimations()) {
-        const name = (a as unknown as { animationName?: string }).animationName;
-        const d = a.effect?.getTiming().duration;
-        if (name && typeof d === 'number') out[name] = Math.round(d);
+      const elements = [
+        document.getElementById('river'),
+        document.getElementById('flip'),
+        document.querySelector('.card-squeeze__spine'),
+        document.querySelector('.card-squeeze__shadow'),
+      ].filter((element): element is Element => element !== null);
+      for (const element of elements) {
+        const style = getComputedStyle(element);
+        const names = style.animationName.split(',').map((name) => name.trim());
+        const times = style.animationDuration.split(',').map((time) => time.trim());
+        names.forEach((name, index) => {
+          if (!name || name === 'none') return;
+          const raw = times[index] || times[times.length - 1] || '0s';
+          out[name] = Math.round(
+            raw.endsWith('ms') ? Number.parseFloat(raw) : Number.parseFloat(raw) * 1_000
+          );
+        });
       }
       return out;
     });
@@ -184,13 +207,13 @@ test.describe('the squeeze at 375px', () => {
     }
   });
 
-  test('reduced motion cross-fades rather than deleting the reveal', async ({ browser }) => {
-    const ctx = await browser.newContext({
-      ...devices['iPhone 13'],
-      reducedMotion: 'reduce',
-    });
-    const page = await ctx.newPage();
-    await loadLiveCss(page);
+  test('reduced motion cross-fades rather than deleting the reveal', async ({ page }) => {
+    /* Reuse the page whose CSS the describe-level beforeEach already loaded.
+       Creating a second context fetched every production chunk twice inside
+       one 30-second test, so a slow CDN response timed out before this test
+       reached its first assertion. emulateMedia changes the same preference
+       on the already-loaded page and exercises the identical cascade. */
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await mountPhoneBoard(page);
     const state = await page.evaluate(() => {
       const flip = document.getElementById('flip')!;
@@ -214,6 +237,5 @@ test.describe('the squeeze at 375px', () => {
     // an edge belongs to a turn; there is no turn
     expect(state.spineName).toBe('none');
     expect(state.spine).toBeLessThan(0.05);
-    await ctx.close();
   });
 });

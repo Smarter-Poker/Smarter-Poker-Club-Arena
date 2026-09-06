@@ -46,17 +46,47 @@ test.describe('Club Management', () => {
 
 test.describe('Union Management', () => {
   test('should show unions list page', async ({ page }) => {
-    await expectRoute(page, 'unions', { expectText: 'Union Command' });
+    const rendered = await expectRoute(page, 'unions');
+    if (!rendered) return;
+
+    await expect
+      .poll(
+        async () =>
+          new URL(page.url()).pathname.endsWith('/community') ||
+          (await page
+            .getByText('Union Command')
+            .first()
+            .isVisible()
+            .catch(() => false)),
+        { timeout: 15_000 }
+      )
+      .toBe(true);
+    if (new URL(page.url()).pathname.endsWith('/community')) {
+      await expect(page.getByRole('heading', { name: 'Community Center' })).toBeVisible();
+    } else {
+      await expect(page.getByText('Union Command').first()).toBeVisible();
+    }
   });
 
   test('should show create union page', async ({ page }) => {
     const rendered = await expectRoute(page, 'unions/create');
     if (!rendered) return;
 
-    await expect(
-      page.getByText(/^(?:Forge A Union|Create A Club First)$/).first(),
-      'union creation should render either the forge or its club-ownership prerequisite'
-    ).toBeVisible({ timeout: 15000 });
+    await expect
+      .poll(
+        async () =>
+          new URL(page.url()).pathname.endsWith('/community') ||
+          (await page
+            .getByText(/^(?:Forge A Union|Create A Club First)$/)
+            .first()
+            .isVisible()
+            .catch(() => false)),
+        { timeout: 15_000 }
+      )
+      .toBe(true);
+    if (new URL(page.url()).pathname.endsWith('/community')) {
+      await expect(page.getByRole('heading', { name: 'Community Center' })).toBeVisible();
+    }
   });
 
   test('should show union detail page', async ({ page }) => {

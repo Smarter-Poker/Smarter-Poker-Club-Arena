@@ -28,7 +28,10 @@ import { chromium, type FullConfig } from '@playwright/test';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { ensureClubMembership } from './support/ensureClubMembership';
+import {
+  ensureClubMembership,
+  retireCurrentClubEntryMessage,
+} from './support/ensureClubMembership';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 
 export const STORAGE_STATE = 'tests/e2e/.auth/state.json';
@@ -290,6 +293,7 @@ export default async function globalSetup(config: FullConfig) {
     // ever reaching the UI they claim to test. Use the public Join Club flow
     // once and prove the lobby is reachable before sharing this storageState.
     await ensureClubMembership(page, baseURL, process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID);
+    await retireCurrentClubEntryMessage(page);
 
     await ctx.storageState({ path: STORAGE_STATE });
     console.log('[global-setup] authenticated session saved — auth-gated specs will run.');

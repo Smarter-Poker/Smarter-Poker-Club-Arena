@@ -2668,7 +2668,7 @@
 /* The `.seat__bombpot-badge` magenta pill and its `bombpotBadgeIn` keyframe
    were removed 2026-09-04 (Dan: "THERE SHOULDN'T BE 'BOMB POT PILL BUTTONS'
    UNDER THE PLAYERS"). The bomb pot is marked once, on the felt:
-   `.bomb-pot-eta--live` in TablePage.css. */
+   `.bomb-pot-live` in TablePage.css. */
 
 @keyframes allinBadgePulse {
   0%,

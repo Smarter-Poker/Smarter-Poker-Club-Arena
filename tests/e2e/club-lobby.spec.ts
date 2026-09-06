@@ -41,6 +41,24 @@ async function lobbySettled(page: Page): Promise<void> {
     .catch(() => {
       /* Fall through: the assertions below report the real state. */
     });
+
+  /* A club message is an intentional full-screen welcome at the door. Every
+     Playwright test gets a fresh browser context, so the same legitimate
+     message can open again before an interaction and intercept the game tabs.
+     Close it through its real X without persisting "do not show" or changing
+     any production account/club data. */
+  const clubMessageClose = page.getByRole('button', { name: 'Close Club Message' });
+  const messageOpened = await clubMessageClose
+    .waitFor({ state: 'visible', timeout: 3_000 })
+    .then(() => true)
+    .catch(() => {
+      /* Clubs without a message correctly have nothing to dismiss. */
+      return false;
+    });
+  if (messageOpened) {
+    await clubMessageClose.click();
+    await expect(clubMessageClose, 'the club message did not close').toBeHidden({ timeout: 8_000 });
+  }
 }
 
 test.describe('Club lobby', () => {

@@ -1455,6 +1455,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const result = await logHandHistory({
           tableId: this.tableId,
           nitGame: this.tableInfo.nit_game === true,
+          // THE FLOOR TRAVELS WITH THE HAND (2026-09-06). A horse at a
+          // floored table is REQUIRED to play above it (10.5, vpipFloorMul),
+          // so its VPIP there cannot be judged against the winning-player
+          // band - see HorsePlayStats and fn_horse_frequency_leaks.
+          vpipFloor: this.vpipFloor(),
           tournamentId: this.tableInfo.tournament_id || undefined,
           handNumber: snap.handNumber,
           // VARIANT OVERRIDE 2026-08-28 (spec §10.1/§20): the variant this

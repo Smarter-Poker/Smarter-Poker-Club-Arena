@@ -1,8 +1,10 @@
 import { useCallback, useState } from 'react';
 import InsuranceModal, { type InsuranceOffer } from '../../components/table/InsuranceModal';
 import RabbitHunt, { type RabbitHuntRevealResult } from '../../components/table/RabbitHunt';
+import { masterBus } from '../../core/MasterBus';
 
 const TEST_USER_ID = '11111111-2222-4333-8444-555555555555';
+const TEST_TABLE_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
 const OFFER: InsuranceOffer = {
   maxCoverage: 240,
@@ -75,6 +77,14 @@ export default function FinancialDecisionShowcasePage() {
     };
   }, []);
 
+  const offerWaitlistSeat = useCallback(() => {
+    masterBus.emit('WAITLIST_SEAT_OFFERED', {
+      tableId: TEST_TABLE_ID,
+      tableName: 'Phase Five Hold Table',
+      holdExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+  }, []);
+
   return (
     <main
       data-testid="financial-decision-showcase"
@@ -85,6 +95,9 @@ export default function FinancialDecisionShowcasePage() {
       <output data-testid="insurance-status">{insuranceStatus}</output>
       <output data-testid="decline-count">{declines}</output>
       <output data-testid="rabbit-request-count">{rabbitRequests}</output>
+      <button type="button" data-testid="waitlist-seat-offer" onClick={offerWaitlistSeat}>
+        Offer Test Seat
+      </button>
       <InsuranceModal
         isOpen={showInsurance}
         onClose={declineInsurance}

@@ -28,8 +28,15 @@
  *      stuck in a connect loop a way to knock its own player off the felt.
  *   6. Both refusals are numbers on the always-on exposition. A refusal nobody
  *      can see is how twenty-two hours went by.
+ *   7. EVERY socket, not two of the three. Phase 5 shipped this for the table
+ *      and mux sockets and skipped `/ws/channel` - the same gap Phase 4 wrote
+ *      a warning about, made one phase later, on the socket that carries
+ *      FINANCIAL_UPDATE. The mechanism lives in wsHelpers now and each server
+ *      hands it its own connection map, so there is one implementation and no
+ *      way for two to drift.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { runReauthSweep, socketsHeldBy, staggeredReauthAt } from './wsHelpers.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -46,6 +53,14 @@ const SERVER = readFileSync(
   'utf8'
 );
 const GAME_SERVER = readFileSync(join(ROOT, 'server', 'src', 'GameServer.ts'), 'utf8');
+const CHANNEL = readFileSync(
+  join(ROOT, 'server', 'src', 'transport', 'ChannelWebSocketServer.ts'),
+  'utf8'
+);
+const HELPERS = readFileSync(join(ROOT, 'server', 'src', 'transport', 'wsHelpers.ts'), 'utf8');
+/** The one implementation both servers call. */
+const SWEEP = sliceMethod(HELPERS, 'export function runReauthSweep<W, C extends ReauthableConnection>(');
+const CAP = sliceMethod(HELPERS, 'export function socketsHeldBy<W, C extends { userId: string }>(');
 
 describe('LAW 1/3/4 - re-auth runs on a timer, staggered and bounded', () => {
   it('the heartbeat sweep drives it, and drives it first', () => {
@@ -60,23 +75,26 @@ describe('LAW 1/3/4 - re-auth runs on a timer, staggered and bounded', () => {
   });
 
   it('each socket has its own due time, spread across the period', () => {
-    const fn = sliceMethod(SERVER, 'function staggeredReauthAt(): number {');
-    expect(fn).toContain('Math.random() * REAUTH_INTERVAL_MS');
-    // Both upgrade paths stagger; a path that did not would come due in a
-    // block, which is the herd this exists to avoid.
-    expect((SERVER.match(/nextReauthAt: staggeredReauthAt\(\)/g) ?? []).length).toBe(2);
+    const fn = sliceMethod(HELPERS, 'export function staggeredReauthAt(intervalMs: number): number {');
+    expect(fn).toContain('Math.random() * intervalMs');
+    // All THREE upgrade paths stagger - two table, one channel. A path that did
+    // not would come due in a block, which is the herd this exists to avoid.
+    const staggered =
+      (SERVER.match(/nextReauthAt: staggeredReauthAt\(/g) ?? []).length +
+      (CHANNEL.match(/nextReauthAt: staggeredReauthAt\(/g) ?? []).length;
+    expect(staggered).toBe(3);
   });
 
   it('no more than a fixed number are re-checked per sweep', () => {
-    const fn = sliceMethod(SERVER, 'private reauthSweep(now: number): void {');
-    expect(fn).toContain('if (checked >= REAUTH_MAX_PER_SWEEP) break');
+    expect(SWEEP).toContain('if (checked >= opts.maxPerSweep) break');
   });
 
   it('the next slot is claimed BEFORE the await', () => {
-    const fn = blankNonCode(sliceMethod(SERVER, 'private reauthSweep(now: number): void {'));
-    const claim = fn.indexOf('conn.nextReauthAt = now + REAUTH_INTERVAL_MS');
-    const ask = fn.indexOf('this.verifyToken(conn.token)');
+    const fn = blankNonCode(SWEEP);
+    const claim = fn.indexOf('conn.nextReauthAt = opts.now + opts.intervalMs');
+    const ask = fn.indexOf('opts\n      .verify(conn.token)') >= 0 ? fn.indexOf('.verify(conn.token)') : fn.indexOf('.verify(conn.token)');
     expect(claim).toBeGreaterThan(0);
+    expect(ask).toBeGreaterThan(0);
     expect(claim, 'a slow GoTrue would re-queue the same socket every sweep').toBeLessThan(ask);
   });
 
@@ -88,30 +106,36 @@ describe('LAW 1/3/4 - re-auth runs on a timer, staggered and bounded', () => {
 });
 
 describe('LAW 2 - only a definitive no closes a live socket', () => {
-  const fn = sliceMethod(SERVER, 'private reauthSweep(now: number): void {');
-
   it("an 'unavailable' verdict is left alone", () => {
-    expect(fn).toContain("if (denial.denied !== 'invalid') return");
+    expect(SWEEP).toContain("if (denial.denied !== 'invalid') return");
   });
 
-  it('a definitive rejection closes 4401 with the same reason the upgrade uses', () => {
-    expect(fn).toContain('CLOSE_AUTH_FAILED');
-    expect(fn).toContain('authRejectionReason(denial.code)');
+  it('a definitive rejection closes with the reason the upgrade uses', () => {
+    expect(SWEEP).toContain('authRejectionReason(denial.code)');
+    // Each server passes its own 4401 constant in; both are 4401.
+    expect(SERVER).toContain('closeCode: CLOSE_AUTH_FAILED');
+    expect(CHANNEL).toContain('closeCode: CLOSE_AUTH_FAILED');
   });
 
   it('a socket that vanished while we asked is not touched', () => {
-    expect(fn).toContain('if (!this.connections.has(ws)) return');
+    expect(SWEEP).toContain('if (!opts.connections.has(ws)) return');
   });
 
   it('and a thrown verifier never closes anything', () => {
-    expect(fn).toMatch(/\.catch\(\(\) => \{[\s\S]*?\}\)/);
-    const catchBlock = fn.slice(fn.indexOf('.catch('));
-    expect(catchBlock).not.toContain('ws.close');
+    const catchBlock = SWEEP.slice(SWEEP.indexOf('.catch('));
+    expect(catchBlock).not.toContain('close(');
   });
 });
 
 describe('LAW 5 - the cap refuses the new socket, never the old one', () => {
   const fn = sliceMethod(SERVER, 'private refuseIfOverSocketCap(ws: WebSocket, userId: string)');
+
+  it('counts through the shared counter, which only counts', () => {
+    expect(fn).toContain('socketsHeldBy(this.connections, userId)');
+    // It reads; it must never reach for a socket to close.
+    expect(CAP).not.toContain('close(');
+    expect(CAP).not.toContain('delete(');
+  });
 
   it('closes the ARRIVING socket', () => {
     expect(fn).toContain('ws.close(CLOSE_RATE_LIMITED');
@@ -165,8 +189,212 @@ describe('LAW 6 - both refusals are numbers', () => {
   });
 
   it('the re-auth close is counted as an auth refusal too, on the right path', () => {
-    const fn = sliceMethod(SERVER, 'private reauthSweep(now: number): void {');
-    expect(fn).toContain("recordWsAuthRefusal(conn.isMux ? 'multi' : 'table', 'invalid')");
-    expect(fn).toContain('recordWsReauthClose()');
+    expect(SWEEP).toContain("recordWsAuthRefusal(opts.path(conn), 'invalid')");
+    expect(SWEEP).toContain('recordWsReauthClose()');
+    // And each server labels its own sockets.
+    expect(SERVER).toContain("path: (conn) => (conn.isMux ? 'multi' : 'table')");
+    expect(CHANNEL).toContain("path: () => 'channel' as const");
+  });
+});
+
+/**
+ * LAW 7 - EVERY SOCKET, NOT TWO OF THE THREE (audit, 2026-09-06).
+ *
+ * Phase 4 wrote the warning: "a version on two of the three sockets is worse
+ * than none". Phase 5 then shipped re-auth and the cap for the table and mux
+ * sockets and skipped `/ws/channel` - which carries club presence, the lobby,
+ * hand replay and FINANCIAL_UPDATE, so a revoked session went on receiving a
+ * player's wallet balance and ledger entries indefinitely.
+ */
+describe('LAW 7 - the channel socket is covered too', () => {
+  it('it re-checks, through the same shared sweep', () => {
+    expect(CHANNEL).toContain('runReauthSweep({');
+    const sweep = sliceMethod(CHANNEL, 'private heartbeatSweep(): void {');
+    const code = blankNonCode(sweep);
+    expect(code.indexOf('runReauthSweep({')).toBeLessThan(code.indexOf('for (const [ws, conn]'));
+  });
+
+  it('it caps, through the same shared counter, refusing the arriving socket', () => {
+    const fn = sliceMethod(CHANNEL, 'private onUpgraded(ws: WebSocket, userId: string, token = ');
+    expect(fn).toContain('socketsHeldBy(this.connections, userId) >= MAX_SOCKETS_PER_USER');
+    expect(fn).toContain('CLOSE_RATE_LIMITED');
+    expect(fn).toContain('recordWsSocketCapRefusal()');
+    // Refused BEFORE it is registered, like the other two.
+    const code = blankNonCode(fn);
+    expect(code.indexOf('socketsHeldBy')).toBeLessThan(code.indexOf('this.connections.set(ws, conn)'));
+  });
+
+  it('it keeps the token it opened with', () => {
+    expect(CHANNEL).toContain('this.onUpgraded(ws, userId, token)');
+    expect(CHANNEL).toMatch(/token: string;/);
+  });
+
+  it('all three servers share ONE set of numbers', () => {
+    // The channel server imports them rather than declaring its own, or the
+    // three sockets would drift apart the first time one was tuned.
+    expect(CHANNEL).toMatch(/REAUTH_INTERVAL_MS,\s*\n\s*REAUTH_MAX_PER_SWEEP,\s*\n\s*MAX_SOCKETS_PER_USER,/);
+    expect(CHANNEL).not.toMatch(/const (REAUTH_INTERVAL_MS|MAX_SOCKETS_PER_USER) =/);
+  });
+});
+
+/**
+ * LAW 8 - AND THE SHARED MECHANISM IS EXERCISED, NOT ONLY READ (audit, 2026-09-06).
+ *
+ * Every pin above reads source text, which is the only way to state "the slot
+ * is claimed before the await" or "this file imports the shared numbers". But
+ * a law that only reads text cannot see a body that still SAYS the right words
+ * and does the wrong thing. Found in this audit's own mutation run: replacing
+ * `if (c.userId === userId) held++` with `held++` - a cap that refuses every
+ * player once ANY four sockets exist - left all twenty-one pins green.
+ *
+ * So the shared helpers are also RUN here.
+ */
+describe('LAW 8 - the shared helpers behave', () => {
+  type Conn = { token: string; nextReauthAt: number; userId: string };
+  const conn = (userId: string, token = 't', nextReauthAt = 0): Conn => ({
+    token,
+    nextReauthAt,
+    userId,
+  });
+
+  it('socketsHeldBy counts ONE account, not the room', () => {
+    const m = new Map<object, Conn>([
+      [{}, conn('a')],
+      [{}, conn('a')],
+      [{}, conn('b')],
+      [{}, conn('c')],
+    ]);
+    expect(socketsHeldBy(m, 'a')).toBe(2);
+    expect(socketsHeldBy(m, 'b')).toBe(1);
+    expect(socketsHeldBy(m, 'zzz')).toBe(0);
+  });
+
+  it('staggeredReauthAt lands inside the period, never in a block', () => {
+    const seen = new Set<number>();
+    for (let i = 0; i < 200; i++) {
+      const t = staggeredReauthAt(300_000);
+      expect(t).toBeGreaterThanOrEqual(Date.now());
+      expect(t).toBeLessThanOrEqual(Date.now() + 300_000);
+      seen.add(t);
+    }
+    expect(seen.size, 'every socket came due at the same instant').toBeGreaterThan(50);
+  });
+
+  const sweep = (
+    connections: Map<object, Conn>,
+    verify: (token: string) => Promise<unknown>,
+    close: (ws: object, code: number, reason: string) => void,
+    now = 1_000_000
+  ) =>
+    runReauthSweep({
+      now,
+      connections,
+      path: () => 'channel' as const,
+      verify: verify as never,
+      close,
+      intervalMs: 300_000,
+      maxPerSweep: 2,
+      closeCode: 4401,
+    });
+
+  it('re-checks no more than the cap, and only what is due', async () => {
+    const asked: string[] = [];
+    const m = new Map<object, Conn>([
+      // The not-due socket is FIRST: a sweep that ignored the due time would
+      // spend one of its two slots on it, and the ones that are actually due
+      // would wait another period.
+      [{}, conn('d', 'four', 2_000_000)], // not due
+      [{}, conn('a', 'one')],
+      [{}, conn('b', 'two')],
+      [{}, conn('c', 'three')],
+    ]);
+    sweep(
+      m,
+      async (t) => {
+        asked.push(t);
+        return { userId: 'ok' };
+      },
+      () => {}
+    );
+    await Promise.resolve();
+    expect(asked).toEqual(['one', 'two']);
+  });
+
+  it('claims the next slot before it asks, so a slow verifier is not re-queued', () => {
+    const c = conn('a');
+    const m = new Map<object, Conn>([[{}, c]]);
+    let resolve!: (v: unknown) => void;
+    sweep(
+      m,
+      () => new Promise((r) => (resolve = r)),
+      () => {}
+    );
+    expect(c.nextReauthAt, 'still due while the answer is outstanding').toBe(1_300_000);
+    resolve({ userId: 'ok' });
+  });
+
+  it('closes 4401 on a definitive rejection - and nothing else does', async () => {
+    const closed: Array<[number, string]> = [];
+    const ws = {};
+    const m = new Map<object, Conn>([[ws, conn('a')]]);
+    sweep(
+      m,
+      async () => ({ denied: 'invalid', code: 'session_not_found' }),
+      (_w, code, reason) => closed.push([code, reason])
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(closed).toEqual([[4401, 'auth:session_not_found']]);
+  });
+
+  it.each([
+    ['a good token', { userId: 'u1' }],
+    ['an auth outage', { denied: 'unavailable', code: 'upstream_5xx' }],
+  ])('leaves the socket alone on %s', async (_label, verdict) => {
+    const closed: number[] = [];
+    const m = new Map<object, Conn>([[{}, conn('a')]]);
+    sweep(
+      m,
+      async () => verdict,
+      (_w, code) => closed.push(code)
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(closed).toEqual([]);
+  });
+
+  it('a socket that closed while we asked is not touched', async () => {
+    const closed: number[] = [];
+    const ws = {};
+    const m = new Map<object, Conn>([[ws, conn('a')]]);
+    sweep(
+      m,
+      async () => {
+        m.delete(ws);
+        return { denied: 'invalid', code: 'revoked' };
+      },
+      (_w, code) => closed.push(code)
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(closed).toEqual([]);
+  });
+
+  it('a verifier that throws never closes anything, and never rejects unhandled', async () => {
+    const closed: number[] = [];
+    const unhandled = vi.fn();
+    process.once('unhandledRejection', unhandled);
+    const m = new Map<object, Conn>([[{}, conn('a')]]);
+    sweep(
+      m,
+      async () => {
+        throw new Error('GoTrue is down');
+      },
+      (_w, code) => closed.push(code)
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(closed).toEqual([]);
+    expect(unhandled).not.toHaveBeenCalled();
+    process.off('unhandledRejection', unhandled);
   });
 });

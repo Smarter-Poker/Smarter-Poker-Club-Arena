@@ -18,6 +18,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { serverNow } from '../../utils/serverClock';
 import './MaintenanceBreakScreen.css';
 
 export interface MaintenanceBreakScreenProps {
@@ -44,7 +45,7 @@ export function MaintenanceBreakScreen({
   const countingDown = phase === 'counting_down' && !!breakEndsAtMs;
 
   const read = useMemo(
-    () => () => (breakEndsAtMs ? Math.max(0, Math.round((breakEndsAtMs - Date.now()) / 1000)) : 0),
+    () => () => (breakEndsAtMs ? Math.max(0, Math.round((breakEndsAtMs - serverNow()) / 1000)) : 0),
     [breakEndsAtMs]
   );
   const [remaining, setRemaining] = useState(read);

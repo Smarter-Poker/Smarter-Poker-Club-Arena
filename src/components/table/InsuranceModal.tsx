@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { haptic, soundService } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
+import { serverNow } from '../../utils/serverClock';
 import { CardImage } from './CardImage';
 import type { Card as CardImageCard } from './CardImage';
 import './InsuranceModal.css';
@@ -125,12 +126,14 @@ export function InsuranceModal({
   // static number that rendered "15s" for the whole window; the reference
   // popup visibly counts down to its auto-decline.
   // COUNTDOWN HONESTY 2026-08-28: when the engine publishes its absolute
-  // deadline, every tick derives from Date.now() against it — the seconds
-  // shown are the seconds the server will actually wait.
+  // deadline, every tick derives from serverNow() against it - the seconds
+  // shown are the seconds the server will actually wait. Date.now() until
+  // 2026-09-06, which made that promise false on any skewed device, on the
+  // one countdown in the app that is spending chips.
   const remainingNow = useCallback(
     () =>
       offer.deadlineAt
-        ? Math.max(0, Math.ceil((offer.deadlineAt - Date.now()) / 1000))
+        ? Math.max(0, Math.ceil((offer.deadlineAt - serverNow()) / 1000))
         : (offer.timeoutSeconds ?? timeRemaining),
     [offer.deadlineAt, offer.timeoutSeconds, timeRemaining]
   );

@@ -139,6 +139,8 @@ export default function WaitlistBanner() {
 
   return (
     <div
+      className="waitlist-banner-stack"
+      data-testid="waitlist-banner-stack"
       /**
        * MOBILE FIX 2026-08-28 — THIS BANNER SAT ON TOP OF THE ACTION ROW.
        *
@@ -173,6 +175,8 @@ export default function WaitlistBanner() {
         return (
           <div
             key={entry.tableId}
+            className={`waitlist-banner-card${held ? ' waitlist-banner-card--held' : ''}`}
+            data-testid="waitlist-banner-card"
             onClick={held ? () => navigate(`/table/${entry.tableId}?buyin=1`) : undefined}
             role={held ? 'button' : undefined}
             tabIndex={held ? 0 : undefined}
@@ -238,6 +242,7 @@ export default function WaitlistBanner() {
                   <>
                     Seat Held{' '}
                     <span
+                      data-testid="waitlist-hold-countdown"
                       style={{
                         color: left <= 10 ? '#ff5c5c' : '#00d4ff',
                         fontSize: '0.85rem',
@@ -291,7 +296,11 @@ export default function WaitlistBanner() {
                 e.stopPropagation();
                 dismiss(entry.tableId);
               }}
-              aria-label={`Dismiss The Waitlist Notice For ${entry.tableName}`}
+              aria-label={
+                entry.tableName
+                  ? `Dismiss The Waitlist Notice For ${entry.tableName}`
+                  : 'Dismiss The Waitlist Notice'
+              }
               className="waitlist-banner__dismiss"
               style={{
                 background: 'rgba(255, 255, 255, 0.05)',
@@ -311,21 +320,13 @@ export default function WaitlistBanner() {
               }}
               title="Dismiss"
             >
-              <span aria-hidden="true">✕</span>
+              <span aria-hidden="true">&times;</span>
             </button>
           </div>
         );
       })}
 
       <style>{`
-                @keyframes waitlistSlideUp {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                @keyframes waitlistPulse {
-                    0%, 100% { opacity: 0.5; transform: scale(0.8); }
-                    50% { opacity: 1; transform: scale(1.2); }
-                }
                 /* 44x44 hit area around the 22px dismiss dot (2026-08-28). */
                 .waitlist-banner__dismiss::after {
                     content: '';

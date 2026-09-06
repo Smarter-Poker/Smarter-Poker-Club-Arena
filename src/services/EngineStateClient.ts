@@ -20,7 +20,7 @@
  * tested with jsdom. The React binding lives in hooks/useEngineTableState.
  */
 
-import { noteServerTime } from '../utils/serverClock';
+import { noteServerTime, serverNow } from '../utils/serverClock';
 import jsonPatch from 'fast-json-patch';
 import {
   engineSocketMux,
@@ -1126,7 +1126,11 @@ export class EngineStateClient {
    * what keeps one announcement from disabling the failsafe forever.
    */
   private inAnnouncedRestart(): boolean {
-    return this.restartWindowUntil > 0 && Date.now() < this.restartWindowUntil;
+    /* serverNow(), not Date.now(). `restartWindowUntil` is derived from
+       `resume_expected_at`, which the ENGINE stamped. A phone thirty seconds
+       fast would leave this window thirty seconds early and escalate its
+       ladder into the restart - the exact spin Phase 4 built this to end. */
+    return this.restartWindowUntil > 0 && serverNow() < this.restartWindowUntil;
   }
 
   private scheduleReconnect(): void {

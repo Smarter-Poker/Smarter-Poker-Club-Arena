@@ -50,13 +50,11 @@ export interface GameCreationAccess {
   reason: GameCreationReason;
 }
 
-export const GAME_CREATION_DENIED_MESSAGES: Record<
-  Exclude<GameCreationReason, 'ok'>,
-  string
-> = {
-  union_only: 'This club is part of a union. Cash games and tournaments here are built by the union.',
+export const GAME_CREATION_DENIED_MESSAGES: Record<Exclude<GameCreationReason, 'ok'>, string> = {
+  union_only:
+    'This club is part of a union. Cash games and tournaments here are built by the union.',
   not_owner_or_admin: 'Only the club owner or an admin can create games for this club.',
-  unknown_club: "That club could not be found.",
+  unknown_club: 'That club could not be found.',
   not_signed_in: 'Please sign in to create a game.',
   check_failed: 'Could not confirm your permission to create games here. Please try again.',
 };
@@ -70,7 +68,11 @@ const VALID_REASONS: GameCreationReason[] = [
   'check_failed',
 ];
 
-export const GAME_CREATION_DENIED: GameCreationAccess = { allowed: false, unionId: null, reason: 'check_failed' };
+export const GAME_CREATION_DENIED: GameCreationAccess = {
+  allowed: false,
+  unionId: null,
+  reason: 'check_failed',
+};
 
 /**
  * Turn whatever `fn_game_creation_access` returned into a value the UI can
@@ -105,4 +107,14 @@ export function gameCreationDeniedMessage(access: GameCreationAccess): string {
   if (access.allowed) return '';
   const reason = access.reason === 'ok' ? 'check_failed' : access.reason;
   return GAME_CREATION_DENIED_MESSAGES[reason];
+}
+
+/**
+ * Club-scoped creation URLs are exclusively for standalone clubs. An allowed
+ * answer carrying a union id means the caller is a union operator; they still
+ * have authority, but must use the union console so a member club can never
+ * become an accidental host through a bookmark or hand-written legacy URL.
+ */
+export function canUseStandaloneClubCreationRoute(access: GameCreationAccess): boolean {
+  return access.allowed && access.unionId === null;
 }

@@ -35,9 +35,19 @@ Three things the build itself taught, all in the migration:
 
 The arithmetic was validated against a real account while building it: the Midway union bank moved -5,190.50 between 03:07 and 23:15 and its 36 journal legs over the same window net to -5,190.50 exactly, none of which carry a label on the union side.
 
+## 7.2 A horse funding names its player, and can be keyed
+
+Phase 7's "horse buy-in idempotency keys", read against the rows first. Horses are players (CLAUDE.md 10.5), so a horse's buy-in is funded from the club treasury through `fn_horse_fund_from_treasury` (a rebuy) or `fn_horse_seat_from_treasury` (a first seat), each writing its own leg.
+
+Measured over seven days: 9,252 `horse_funding` legs, **none of which named the player they funded**. The leg said club_treasury to table_stack and the table, and nothing else - so the per-account replay built hours earlier can key the club side and the table side but never the seat, and a person reading the journal cannot tell which horse was funded. 441 pairs landed at the same table for the same amount inside a minute; every one is a second horse buying in as far as the journal can say, and none can be _proven_ to be. That is the gap: not a measured double-spend, an inability to tell one from the other.
+
+Both doors now name the player (description and metadata) and take an optional `p_op_id`. With a key, a replay funds nothing and returns the first answer (`idempotency_key = 'horse_fund:<op>'`); without one, nothing changes but the name, so no caller has to move first and the engine adopts it when it next ships. The argument has a DEFAULT and the old shapes are dropped, so no call site breaks and no named-argument call is ambiguous. Probed rolled back: first call funded, second returned `replayed`, one leg written, the player named. Live at 00:23 UTC: the first leg through the new door carries its player.
+
 ## The rest of Phase 7, measured
 
 - **`fn_award_satellite_seat` rake row for fee-0 targets**: 0 such targets exist today (`buy_in_fee = 0` on a satellite target: none). Nothing to fix; the Phase 5 gate's leg-based satellite_in already feeds a fee-less target correctly.
 - **C1 (`atomic_table_withdraw`)**: the function does not exist any more. `atomic_table_cashout` is service-role only and registered; `atomic_table_buyin` already takes `p_idempotency_key`.
-- **Horse buy-in idempotency, C3 (bust rebuy through the pending ledger), C5 (cron cash-outs declare their category), the PITR drill, and the seat-award 400**: carried, with the horse doors named (`fn_horse_fund_from_treasury`, `fn_horse_seat_from_treasury`, `fn_seat_horse_in_seat_first_game`, `mass_fund_horses`).
+- **C5 (cron cash-outs declare their category)**: already true. `fn_evict_sitting_out_cash_players` checks the freeze and leaves through `player_leave_table`, which declares `table_cashout` before calling `atomic_seat_cashout_locked`. Closed by measurement, not by a change.
+- **The seat-award 400** (a satellite winner at the four-game cap): the cap is `fn_enforce_four_table_limit` on `table_seats`, and the award writes `tournament_players`, so the refusal cannot come from the award itself; no satellite alert of that shape has been raised in seven days. UNVERIFIED stays unverified rather than being "fixed" blind - it needs the reproduction, and the honest next step is to log the 400's body when it next happens.
+- **C3 (bust rebuy through the pending ledger) and the PITR drill**: carried, and they are the last two items of the programme's original list.
 - **chip_ledger partitioning** stays a dated cut of its own before December, blocked on the `ca_mint_ledger.chip_ledger_id` foreign key (a partitioned parent's unique key must carry the partition column).

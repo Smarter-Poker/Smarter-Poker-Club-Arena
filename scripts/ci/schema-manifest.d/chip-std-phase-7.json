@@ -1,5 +1,5 @@
 {
-  "_owner": "fix/union-to-club-money-declares-itself (chip standard Phase 7.1, the journal replays every account, 2026-09-05). Applied as 20260905230611. Also 20260905230154 (the switch confirms before it pages).",
+  "_owner": "fix/union-to-club-money-declares-itself (chip standard Phase 7.1, the journal replays every account, 2026-09-05). Applied as 20260905230611. Also 20260905230154 (the switch confirms before it pages). 7.2: 20260906002035 (horse funding names its player and can be keyed).",
   "tables": ["ca_account_snapshots"],
   "functions": ["fn_ca_ledger_replay", "fn_ca_leg_accounts", "fn_ca_account_balance"],
   "columns": {}

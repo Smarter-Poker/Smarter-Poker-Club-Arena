@@ -10,12 +10,15 @@ Loudness target: -16 LUFS integrated, -1 dBTP. Containers: Opus (.webm) and AAC 
 - Licence: CC0-1.0
 - URL: https://kenney.nl/assets/interface-sounds
 
-| Cue                  | Source file(s)  |
-| -------------------- | --------------- |
-| `pop_soft`           | `drop_001.ogg`  |
-| `glass_clink_rattle` | `glass_002.ogg` |
-| `drip_tick`          | `tick_002.ogg`  |
-| `drip`               | `drop_003.ogg`  |
+| Cue                  | Source file(s)                                                     |
+| -------------------- | ------------------------------------------------------------------ |
+| `pop_soft`           | `drop_001.ogg`                                                     |
+| `glass_clink_rattle` | `glass_002.ogg`                                                    |
+| `drip_tick`          | `tick_002.ogg`                                                     |
+| `drip`               | `drop_003.ogg`                                                     |
+| `cork_pop`           | `drop_002.ogg`                                                     |
+| `flute_clink`        | `glass_001.ogg`                                                    |
+| `harp_sparkle`       | `pluck_001.ogg`, `pluck_002.ogg`, `glass_003.ogg`, `glass_005.ogg` |
 
 ## Kenney - Impact Sounds (1.0)
 
@@ -23,9 +26,27 @@ Loudness target: -16 LUFS integrated, -1 dBTP. Containers: Opus (.webm) and AAC 
 - Licence: CC0-1.0
 - URL: https://kenney.nl/assets/impact-sounds
 
-| Cue                  | Source file(s)                                                                                                                                  |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `glass_clink_rattle` | `impactGlass_light_000.ogg`, `impactGlass_light_001.ogg`, `impactGlass_light_002.ogg`, `impactGlass_light_003.ogg`, `impactGlass_light_004.ogg` |
+| Cue                  | Source file(s)                                                                                                                                                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `glass_clink_rattle` | `impactGlass_light_000.ogg`, `impactGlass_light_001.ogg`, `impactGlass_light_002.ogg`, `impactGlass_light_003.ogg`, `impactGlass_light_004.ogg`                                                                                        |
+| `cork_pop`           | `impactWood_medium_000.ogg`                                                                                                                                                                                                            |
+| `flute_clink`        | `impactGlass_light_000.ogg`, `impactGlass_light_003.ogg`                                                                                                                                                                               |
+| `flute_clink_soft`   | `impactGlass_light_004.ogg`                                                                                                                                                                                                            |
+| `fw_crackle`         | `impactPlate_heavy_000.ogg`, `impactMetal_heavy_001.ogg`, `impactPlate_heavy_002.ogg`, `impactMetal_heavy_003.ogg`, `impactPlate_heavy_001.ogg`, `impactMetal_heavy_000.ogg`                                                           |
+| `fw_barrage`         | `impactPlate_heavy_000.ogg`, `impactMetal_heavy_000.ogg`, `impactPlate_heavy_001.ogg`, `impactMetal_heavy_002.ogg`, `impactPlate_heavy_002.ogg`, `impactMetal_heavy_001.ogg`, `impactPlate_heavy_003.ogg`, `impactMetal_heavy_003.ogg` |
+
+## Smarter.Poker - synthesised cues
+
+- Author: Smarter.Poker
+- Licence: Own-Synthesis
+- Generated: ffmpeg lavfi sources (aevalsrc / anoisesrc) shaped by the per-layer `filter` in this manifest, then loudness-normalised with every other cue. The expression IS the provenance: nothing is downloaded, nobody is credited, and the file is reproducible from this repo alone. Used only where no CC0 sample pack has the sound - a rising firework whistle, a low rumble and a champagne fizz bed are not in Kenney's libraries, and Freesound needs an API key nobody has supplied yet (plan 3.3.1, phase 6).
+
+| Cue          | ffmpeg source expression                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| `fizz_loop`  | `anoisesrc=d=2.4:c=white:a=0.30:r=48000`                                                               |
+| `fw_whistle` | `aevalsrc='0.55*sin(2*PI*(900+2900*t*t)*t)':d=0.85:s=48000`, `anoisesrc=d=0.85:c=white:a=0.10:r=48000` |
+| `fw_rumble`  | `anoisesrc=d=1.5:c=brown:a=0.85:r=48000`                                                               |
+| `fw_barrage` | `anoisesrc=d=1.4:c=brown:a=0.9:r=48000`                                                                |
 
 ## Placeholders (no file yet; the legacy procedural recipe plays instead)
 

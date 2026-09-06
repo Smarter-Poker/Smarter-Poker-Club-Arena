@@ -33,17 +33,52 @@ const soundsDir = path.join(repo, manifest.outputDir);
 describe('the cue manifest', () => {
   it('allows only licences that permit commercial use with no attribution', () => {
     // CC0 (public domain), the Sonniss GDC bundles (royalty free, commercial,
-    // no attribution) and our own recordings. Nothing NC, nothing ND, and
-    // nothing lifted from the PokerBros captures.
+    // no attribution), our own recordings, and cues we SYNTHESISE ourselves.
+    // Nothing NC, nothing ND, and nothing lifted from the PokerBros captures.
+    //
+    // 'Own-Synthesis' was added in phase 2 (2026-09-06) for the three cues no
+    // CC0 sample pack has - a rising firework whistle, a low rumble and a
+    // champagne fizz bed - and it is a DIFFERENT claim from 'Own-Recording':
+    // nothing was recorded, an ffmpeg expression in the manifest generates the
+    // file. That expression is the provenance, which is why the source rule
+    // below demands a recipe from a synth source and a URL from every other.
     expect(THROWABLE_CUE_ALLOWED_LICENSES).toEqual([
       'CC0-1.0',
       'Sonniss-GDC-Royalty-Free',
       'Own-Recording',
+      'Own-Synthesis',
     ]);
     for (const [key, src] of Object.entries<any>(manifest.sources)) {
       expect(THROWABLE_CUE_ALLOWED_LICENSES, `source '${key}'`).toContain(src.license);
-      expect(src.url, `source '${key}' records where it came from`).toMatch(/^https?:\/\//);
       expect(src.author, `source '${key}' names an author`).toBeTruthy();
+      if (src.kind === 'synth') {
+        // Nothing was downloaded, so there is no URL to record. What has to be
+        // recorded instead is HOW it is made, or the cue is unreproducible.
+        expect(src.recipe, `synth source '${key}' records how it is generated`).toBeTruthy();
+        expect(src.license, `a synth source cannot claim someone else's licence`).toBe(
+          'Own-Synthesis'
+        );
+      } else {
+        expect(src.url, `source '${key}' records where it came from`).toMatch(/^https?:\/\//);
+      }
+    }
+  });
+
+  it('a synthesised cue names its ffmpeg expression on every layer', () => {
+    // A synth layer with no expression would build silence and nothing would
+    // say so - the same shape as the cue drops the phase-1 verification pass
+    // found in ThrowableSoundService.
+    for (const [name, cue] of Object.entries<any>(manifest.cues)) {
+      if (cue.placeholder) continue;
+      for (const [i, layer] of (cue.layers || []).entries()) {
+        const src = manifest.sources[layer.source || cue.source];
+        if (src?.kind !== 'synth') continue;
+        expect(layer.lavfi, `cue '${name}' layer ${i} is synth but names no lavfi`).toBeTruthy();
+        expect(
+          layer.file,
+          `cue '${name}' layer ${i} is synth and must not name a file`
+        ).toBeFalsy();
+      }
     }
   });
 

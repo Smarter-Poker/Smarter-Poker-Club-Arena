@@ -1,7 +1,7 @@
 {
   "$comment": "THE ONE PLACE that says where every shipped throwable cue came from and under what licence. Edit this, then run `node scripts/audio/build-throwable-cues.mjs --sources <dir>` (needs ffmpeg). It writes public/sounds/throwables/<cue>.webm + .m4a, public/sounds/throwables/CREDITS.md and src/throwables/cueManifest.generated.ts. A `placeholder` cue has no file yet and names the legacy ThrowableSoundService recipe to play in its place; tests/unit/throwableCuesAreLicensed.test.ts counts them and refuses any licence not in `allowedLicenses`. Plan: docs/throwables/THROWABLES-PREMIUM-ANIMATION-PLAN.md 3.3.1.",
   "outputDir": "public/sounds/throwables",
-  "allowedLicenses": ["CC0-1.0", "Sonniss-GDC-Royalty-Free", "Own-Recording"],
+  "allowedLicenses": ["CC0-1.0", "Sonniss-GDC-Royalty-Free", "Own-Recording", "Own-Synthesis"],
   "loudness": { "integratedLufs": -16, "truePeakDb": -1 },
   "sources": {
     "kenney-casino-audio": {
@@ -30,6 +30,13 @@
       "license": "CC0-1.0",
       "url": "https://kenney.nl/assets/interface-sounds",
       "dir": "interface-sounds/Audio"
+    },
+    "own-synthesis": {
+      "kind": "synth",
+      "title": "Smarter.Poker - synthesised cues",
+      "author": "Smarter.Poker",
+      "license": "Own-Synthesis",
+      "recipe": "ffmpeg lavfi sources (aevalsrc / anoisesrc) shaped by the per-layer `filter` in this manifest, then loudness-normalised with every other cue. The expression IS the provenance: nothing is downloaded, nobody is credited, and the file is reproducible from this repo alone. Used only where no CC0 sample pack has the sound - a rising firework whistle, a low rumble and a champagne fizz bed are not in Kenney's libraries, and Freesound needs an API key nobody has supplied yet (plan 3.3.1, phase 6)."
     }
   },
   "cues": {
@@ -83,6 +90,124 @@
       "$comment": "cracked_egg: the crack. Needs a Freesound CC0 take (phase 6).",
       "placeholder": true,
       "fallback": "egg_crack"
+    },
+
+    "cork_pop": {
+      "$comment": "champagne 800: the loudest cue in the library. A wood impact for the thock plus an interface drop for the airy 'pop' tail; the reference's cork is a short resonant burst with almost no ring.",
+      "source": "kenney-impact-sounds",
+      "layers": [
+        { "file": "impactWood_medium_000.ogg", "at": 0, "gain": 1 },
+        { "source": "kenney-interface-sounds", "file": "drop_002.ogg", "at": 0.01, "gain": 0.55 }
+      ],
+      "trimEnd": 0.45
+    },
+    "fizz_loop": {
+      "$comment": "champagne 1000-3200: the foam bed under the jet. Band-limited white noise, which is what a fizz is; no sample pack here has one and the expression is reproducible.",
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "anoisesrc=d=2.4:c=white:a=0.30:r=48000",
+          "filter": "highpass=f=2600,lowpass=f=9500,tremolo=f=11:d=0.25,afade=t=in:st=0:d=0.12,afade=t=out:st=2.2:d=0.2",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "flute_clink": {
+      "$comment": "champagne 3167: two flutes meeting. Brighter and shorter than the beer mugs' six-rattle chime - a flute rings once and cleanly.",
+      "source": "kenney-impact-sounds",
+      "layers": [
+        { "file": "impactGlass_light_000.ogg", "at": 0, "gain": 1 },
+        { "file": "impactGlass_light_003.ogg", "at": 0.028, "gain": 0.6 },
+        { "source": "kenney-interface-sounds", "file": "glass_001.ogg", "at": 0.01, "gain": 0.45 }
+      ],
+      "trimEnd": 1.1
+    },
+    "flute_clink_soft": {
+      "$comment": "champagne 3900 / 4100: the two late soft clinks the capture records with the table hidden.",
+      "source": "kenney-impact-sounds",
+      "layers": [{ "file": "impactGlass_light_004.ogg", "at": 0, "gain": 0.7 }],
+      "trimEnd": 0.7
+    },
+
+    "fw_whistle": {
+      "$comment": "fireworks 0-830: the rising whistle, measured centroid 5.3-5.6 kHz, swelling from the first spark and peaking as burst 1 opens. A quadratic chirp 900 Hz -> ~5.4 kHz with a breath of air noise under it. Synthesised: no CC0 pack here has a firework whistle.",
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='0.55*sin(2*PI*(900+2900*t*t)*t)':d=0.85:s=48000",
+          "filter": "afade=t=in:st=0:d=0.06,afade=t=out:st=0.62:d=0.23,volume=1.6",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "lavfi": "anoisesrc=d=0.85:c=white:a=0.10:r=48000",
+          "filter": "highpass=f=3500,afade=t=in:st=0:d=0.1,afade=t=out:st=0.55:d=0.3",
+          "at": 0,
+          "gain": 0.5
+        }
+      ]
+    },
+    "fw_crackle": {
+      "$comment": "fireworks: the bang cluster around bursts 2 and 3 - the reference lands one bang every 130-170 ms. Six plate and metal impacts at exactly those spacings, decaying.",
+      "source": "kenney-impact-sounds",
+      "layers": [
+        { "file": "impactPlate_heavy_000.ogg", "at": 0, "gain": 1 },
+        { "file": "impactMetal_heavy_001.ogg", "at": 0.15, "gain": 0.8 },
+        { "file": "impactPlate_heavy_002.ogg", "at": 0.29, "gain": 0.85 },
+        { "file": "impactMetal_heavy_003.ogg", "at": 0.45, "gain": 0.65 },
+        { "file": "impactPlate_heavy_001.ogg", "at": 0.6, "gain": 0.6 },
+        { "file": "impactMetal_heavy_000.ogg", "at": 0.74, "gain": 0.45 }
+      ],
+      "trimEnd": 1.3
+    },
+    "fw_rumble": {
+      "$comment": "fireworks 1767-2033: the tail that bridges the gap and wave 2's trails, 25-60x the median with NO picture on screen. Brown noise under 220 Hz. Synthesised for the same reason as the whistle.",
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "anoisesrc=d=1.5:c=brown:a=0.85:r=48000",
+          "filter": "lowpass=f=220,afade=t=in:st=0:d=0.25,afade=t=out:st=0.8:d=0.7",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "fw_barrage": {
+      "$comment": "fireworks 2333: wave 2, the loudest hit of the throw (RMS 0.406, second loudest in the whole video). Eight impacts, densest at the front, with the rumble layered under the opening.",
+      "source": "kenney-impact-sounds",
+      "layers": [
+        { "file": "impactPlate_heavy_000.ogg", "at": 0, "gain": 1 },
+        { "file": "impactMetal_heavy_000.ogg", "at": 0.06, "gain": 0.95 },
+        { "file": "impactPlate_heavy_001.ogg", "at": 0.13, "gain": 1 },
+        { "file": "impactMetal_heavy_002.ogg", "at": 0.21, "gain": 0.8 },
+        { "file": "impactPlate_heavy_002.ogg", "at": 0.34, "gain": 0.75 },
+        { "file": "impactMetal_heavy_001.ogg", "at": 0.47, "gain": 0.6 },
+        { "file": "impactPlate_heavy_003.ogg", "at": 0.63, "gain": 0.5 },
+        { "file": "impactMetal_heavy_003.ogg", "at": 0.8, "gain": 0.38 },
+        {
+          "source": "own-synthesis",
+          "lavfi": "anoisesrc=d=1.4:c=brown:a=0.9:r=48000",
+          "filter": "lowpass=f=180,afade=t=in:st=0:d=0.05,afade=t=out:st=0.5:d=0.85",
+          "at": 0,
+          "gain": 0.7
+        }
+      ],
+      "trimEnd": 1.7
+    },
+
+    "harp_sparkle": {
+      "$comment": "rose 767: one soft sparkle running 1.6 s under the butterfly. Six plucks up a pentatonic run, decaying - the reference's cue is a rising shimmer, not a chord.",
+      "source": "kenney-interface-sounds",
+      "layers": [
+        { "file": "pluck_001.ogg", "at": 0, "gain": 0.9 },
+        { "file": "pluck_002.ogg", "at": 0.11, "gain": 0.85 },
+        { "file": "glass_003.ogg", "at": 0.23, "gain": 0.5 },
+        { "file": "pluck_001.ogg", "at": 0.36, "gain": 0.6 },
+        { "file": "glass_005.ogg", "at": 0.52, "gain": 0.42 },
+        { "file": "pluck_002.ogg", "at": 0.71, "gain": 0.36 }
+      ],
+      "trimEnd": 1.6
     }
   }
 }

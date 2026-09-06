@@ -16,10 +16,20 @@ export const THROWABLE_CUE_MANIFEST: Record<string, CueManifestEntry> = {
   drip: { placeholder: false, license: 'CC0-1.0' },
   splat_wet: { placeholder: true, fallback: 'splat_wet' },
   egg_crack: { placeholder: true, fallback: 'egg_crack' },
+  cork_pop: { placeholder: false, license: 'CC0-1.0' },
+  fizz_loop: { placeholder: false, license: 'Own-Synthesis' },
+  flute_clink: { placeholder: false, license: 'CC0-1.0' },
+  flute_clink_soft: { placeholder: false, license: 'CC0-1.0' },
+  fw_whistle: { placeholder: false, license: 'Own-Synthesis' },
+  fw_crackle: { placeholder: false, license: 'CC0-1.0' },
+  fw_rumble: { placeholder: false, license: 'Own-Synthesis' },
+  fw_barrage: { placeholder: false, license: 'CC0-1.0' },
+  harp_sparkle: { placeholder: false, license: 'CC0-1.0' },
 };
 
 export const THROWABLE_CUE_ALLOWED_LICENSES: readonly string[] = [
   'CC0-1.0',
   'Sonniss-GDC-Royalty-Free',
   'Own-Recording',
+  'Own-Synthesis',
 ];

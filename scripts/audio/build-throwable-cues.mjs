@@ -114,15 +114,32 @@ for (const [name, cue] of cues) {
     const srcKey = layer.source || cue.source;
     const src = manifest.sources[srcKey];
     if (!src) fail(`cue '${name}' layer ${i} names unknown source '${srcKey}'`);
-    const file = join(sourcesDir, src.dir, layer.file);
-    if (!existsSync(file)) fail(`cue '${name}': missing source file ${file} (run with --fetch, or --sources <dir>)`);
-    inputs.push('-i', file);
+
+    // A SYNTHESISED layer has no file on disk: ffmpeg generates it from the
+    // `lavfi` expression, and that expression IS its provenance - the cue is
+    // reproducible from this repo alone, with nothing to download and nobody
+    // to credit but ourselves. Anything else is a sample from a licensed pack.
+    let creditFile;
+    if (src.kind === 'synth') {
+      if (!layer.lavfi) fail(`cue '${name}' layer ${i} uses the synth source but names no lavfi expression`);
+      inputs.push('-f', 'lavfi', '-i', layer.lavfi);
+      creditFile = layer.lavfi;
+    } else {
+      const file = join(sourcesDir, src.dir, layer.file);
+      if (!existsSync(file)) fail(`cue '${name}': missing source file ${file} (run with --fetch, or --sources <dir>)`);
+      inputs.push('-i', file);
+      creditFile = layer.file;
+    }
+
     const delayMs = Math.round((layer.at || 0) * 1000);
     const gain = layer.gain ?? 1;
-    // mono, resample, per-layer delay and gain
-    filters.push(`[${i}:a]aformat=channel_layouts=mono,aresample=48000,adelay=${delayMs}|${delayMs},volume=${gain}[l${i}]`);
+    // Optional per-layer shaping (a filter chain applied before the delay), so
+    // a raw noise or sine source can be band-limited into the cue it is for.
+    const shape = layer.filter ? `,${layer.filter}` : '';
+    // mono, resample, shape, per-layer delay and gain
+    filters.push(`[${i}:a]aformat=channel_layouts=mono,aresample=48000${shape},adelay=${delayMs}|${delayMs},volume=${gain}[l${i}]`);
     mixInputs.push(`[l${i}]`);
-    credits.push({ cue: name, source: src, file: layer.file });
+    credits.push({ cue: name, source: src, file: creditFile });
   });
   const mix =
     layers.length === 1
@@ -158,7 +175,18 @@ const lines = [
   '',
 ];
 for (const { source, cues: cueMap } of bySource.values()) {
-  lines.push(`## ${source.title}`, '', `- Author: ${source.author}`, `- Licence: ${source.license}`, `- URL: ${source.url}`, '', '| Cue | Source file(s) |', '| --- | --- |');
+  lines.push(
+    `## ${source.title}`,
+    '',
+    `- Author: ${source.author}`,
+    `- Licence: ${source.license}`,
+    source.kind === 'synth'
+      ? `- Generated: ${source.recipe}`
+      : `- URL: ${source.url}`,
+    '',
+    source.kind === 'synth' ? '| Cue | ffmpeg source expression |' : '| Cue | Source file(s) |',
+    '| --- | --- |'
+  );
   for (const [cue, files] of cueMap) lines.push(`| \`${cue}\` | ${[...files].map((f) => `\`${f}\``).join(', ')} |`);
   lines.push('');
 }

@@ -11,9 +11,12 @@
 import type { ThrowableSpec } from './spec';
 import type { ThrowableRig } from './rig';
 import { beerSpec, beerRig } from './rigs/beer';
-import { waterGunSpec, waterGunRig } from './rigs/water_gun';
-import { tomatoSpec, tomatoRig } from './rigs/tomato';
+import { champagneSpec, champagneRig } from './rigs/champagne';
 import { crackedEggSpec, crackedEggRig } from './rigs/cracked_egg';
+import { fireworksSpec, fireworksRig } from './rigs/fireworks';
+import { roseSpec, roseRig } from './rigs/rose';
+import { tomatoSpec, tomatoRig } from './rigs/tomato';
+import { waterGunSpec, waterGunRig } from './rigs/water_gun';
 
 export interface RiggedThrowable {
   spec: ThrowableSpec;
@@ -22,9 +25,12 @@ export interface RiggedThrowable {
 
 const RIGGED: Record<string, RiggedThrowable> = {
   beer: { spec: beerSpec, rig: beerRig },
-  water_gun: { spec: waterGunSpec, rig: waterGunRig },
-  tomato: { spec: tomatoSpec, rig: tomatoRig },
+  champagne: { spec: champagneSpec, rig: champagneRig },
   cracked_egg: { spec: crackedEggSpec, rig: crackedEggRig },
+  fireworks: { spec: fireworksSpec, rig: fireworksRig },
+  rose: { spec: roseSpec, rig: roseRig },
+  tomato: { spec: tomatoSpec, rig: tomatoRig },
+  water_gun: { spec: waterGunSpec, rig: waterGunRig },
 };
 
 export const RIGGED_IDS: readonly string[] = Object.keys(RIGGED);

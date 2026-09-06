@@ -1,0 +1,456 @@
+/**
+ * CHAMPAGNE - keyframes. Every delay is from LANDING (launch + 200 ms); the
+ * comment on each rule gives the catalogue's ms from launch as well. Every
+ * duration and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 1's target
+ * avatar was ~30 px wide, so measured pixels are scaled by 100/30 = 3.333.
+ *
+ * The timeline from landing (catalogue ms in brackets):
+ *   +0     (200)  the bottle stands, centred
+ *   +600   (800)  CORK POP: a white puff at the neck, the cork leaves
+ *   +733   (933)  FOAM JET grows out of the neck, arcing right, spraying
+ *   +1367  (1567) the jet detaches into a rising thread and fades
+ *   +1733  (1933) the bottle rests
+ *   +2100  (2300) MORPH: the bottle cross-fades into ONE flute - the two
+ *                 overlap for the whole 167 ms, a dissolve and not a cut
+ *   +2500  (2700) a SECOND flute fades in on the left
+ *   +2633  (2833) both tilt inward into a V
+ *   +2967  (3167) CLINK: yellow droplets jump from the touching rims
+ *   +3067  (3267) ease apart to flank the face
+ *   +3333  (3533) fade, gone by +4500 (4700)
+ *
+ * THE IDIOM for an element that appears at a beat: `opacity: 0` in its own
+ * rule, `forwards` (not `both`), and a 0% frame that is already VISIBLE. With
+ * `both` the backwards fill puts the 0% frame into the delay, so a hidden 0%
+ * hides the element on the very frame it is meant to appear - which is what
+ * the darkroom photographed here at 800 (no cork, no puff) and 933 (no jet).
+ */
+
+.thr-champagne {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* == THE BOTTLE: on screen from the landing, dissolving out over the morph.
+   The flute fades IN across the same 167 ms, which is what makes it a
+   dissolve rather than a swap. `both` is correct here: the 0% frame is the
+   visible one, so the backwards fill keeps the bottle up while it waits. = */
+.thr-champagne__bottle {
+  animation: thr-champagne-bottle calc(0.167s * var(--animation-speed, 1)) linear
+    calc(2.1s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-champagne-bottle {
+  0% {
+    /* 2300: still solid */
+    opacity: 1;
+  }
+  100% {
+    /* 2467: gone; the flute is at full strength in the same frame */
+    opacity: 0;
+  }
+}
+
+/* == THE CORK: leaves the neck at 800 (+600), tumbling up and to the right,
+   out of sight by 1100 (+900). ========================================= */
+.thr-champagne__cork {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-champagne-cork calc(0.3s * var(--animation-speed, 1))
+    cubic-bezier(0.15, 0.7, 0.4, 1) calc(0.6s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-champagne-cork {
+  0% {
+    /* 800: on the neck, on screen */
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg);
+  }
+  100% {
+    /* 1100: away, up and right, tumbling */
+    opacity: 0;
+    transform: translate(46px, -74px) rotate(230deg);
+  }
+}
+
+/* == THE PUFF at the neck tip, 800-933 (+600..+733). The reference's first
+   white ball of the pop, handed over to the jet. ======================= */
+.thr-champagne__puff {
+  transform-box: fill-box;
+  transform-origin: 50% 80%;
+  opacity: 0;
+  animation: thr-champagne-puff calc(0.133s * var(--animation-speed, 1)) ease-out
+    calc(0.6s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-champagne-puff {
+  0% {
+    /* 800: on screen, small */
+    opacity: 1;
+    transform: scale(0.55);
+  }
+  60% {
+    opacity: 0.95;
+    transform: scale(1.15);
+  }
+  100% {
+    /* 933: the jet takes over */
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+/* == THE FOAM JET, 933-1600 (+733..+1400). It GROWS off its own base so the
+   root never leaves the neck, holds, then drops as the thread lifts. ==== */
+.thr-champagne__jet {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-champagne-jet calc(0.667s * var(--animation-speed, 1)) ease-out
+    calc(0.733s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-champagne-jet {
+  0% {
+    /* 933: the first spurt is already out of the neck */
+    opacity: 1;
+    transform: scaleY(0.3);
+  }
+  30% {
+    /* ~1133: full height */
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  80% {
+    opacity: 1;
+    transform: scaleY(0.96);
+  }
+  100% {
+    /* 1600: the stream lets go */
+    opacity: 0;
+    transform: scaleY(0.7);
+  }
+}
+
+/* The spray only exists while the jet does. */
+.thr-champagne__jet-spray {
+  opacity: 0;
+  animation: thr-champagne-spray-window calc(0.667s * var(--animation-speed, 1)) linear
+    calc(0.733s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-champagne-spray-window {
+  0% {
+    opacity: 1;
+  }
+  86% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Each speck is thrown sideways off the jet's crown and dies. Its own delay is
+   inline (a fixed table in the .tsx, never random) and it repeats for as long
+   as the spray window above keeps the group visible. */
+.thr-champagne__speck {
+  animation: thr-champagne-speck calc(0.28s * var(--animation-speed, 1)) ease-out infinite;
+}
+
+@keyframes thr-champagne-speck {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(0.5);
+  }
+  12% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.25), calc(var(--dy) * 0.25)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(0.7);
+  }
+}
+
+/* == THE THREAD, 1567-1900 (+1367..+1700): the stream lifts off the neck as a
+   filament, rises, and fades. ========================================== */
+.thr-champagne__thread {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-champagne-thread calc(0.333s * var(--animation-speed, 1)) ease-out
+    calc(1.367s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-champagne-thread {
+  0% {
+    /* 1567: still attached, on screen */
+    opacity: 0.95;
+    transform: translateY(0) scaleY(0.9);
+  }
+  10% {
+    opacity: 0.95;
+    transform: translateY(-4px) scaleY(1);
+  }
+  100% {
+    /* 1900: risen and gone */
+    opacity: 0;
+    transform: translateY(-40px) scaleY(1.1);
+  }
+}
+
+/* == THE FLUTES ===========================================================
+   Flute 1 dissolves in where the bottle was (2300-2467 = +2100..+2267), holds
+   centred, eases out to the RIGHT flank at 3267-3500 (+3067..+3300), and
+   fades from 3533 (+3333) to gone at 4700 (+4500). Flute 2 does the same on
+   the LEFT, fading in later (2700-2967 = +2500..+2767).
+
+   Flute 2 stands at -0.55 u before the V, not the -0.30 u this file first
+   had: at -0.30 the two glasses overlapped almost entirely and the darkroom's
+   clink frame showed ONE flute. The reference has them clearly apart, meeting
+   only at the rims.
+
+   The V swing lives on a SEPARATE inner group so the tilt and the travel do
+   not share one transform list - which is what made the beer mugs overlap in
+   phase 1. ============================================================= */
+.thr-champagne__f1,
+.thr-champagne__f2 {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+}
+
+.thr-champagne__f1 {
+  animation: thr-champagne-f1 calc(2.4s * var(--animation-speed, 1)) linear
+    calc(2.1s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-champagne-f1 {
+  0% {
+    /* 2300: the dissolve begins - the flute is faintly there already, at the
+       bottle's place and a hair small. The bottle is still solid over it. */
+    opacity: 0.35;
+    transform: translateX(28px) scale(0.86);
+  }
+  7% {
+    /* 2467: full strength, full size */
+    opacity: 1;
+    transform: translateX(30px) scale(1);
+  }
+  40% {
+    /* 3067: still in place; the V has been and gone on the inner group */
+    opacity: 1;
+    transform: translateX(30px) scale(1);
+  }
+  49% {
+    /* 3500: out to the right flank at +0.47 u */
+    opacity: 1;
+    transform: translateX(47px) scale(1);
+  }
+  51% {
+    /* 3533: the fade starts */
+    opacity: 1;
+    transform: translateX(47px) scale(1);
+  }
+  100% {
+    /* 4700: clean */
+    opacity: 0;
+    transform: translateX(47px) scale(1);
+  }
+}
+
+.thr-champagne__f2 {
+  animation: thr-champagne-f2 calc(2.4s * var(--animation-speed, 1)) linear
+    calc(2.5s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-champagne-f2 {
+  0% {
+    /* 2700: fading in on the left, on screen from this frame */
+    opacity: 0.4;
+    transform: translateX(-55px) scale(0.9);
+  }
+  11% {
+    /* 2967: full */
+    opacity: 1;
+    transform: translateX(-55px) scale(1);
+  }
+  24% {
+    opacity: 1;
+    transform: translateX(-55px) scale(1);
+  }
+  33% {
+    /* 3500: out to the left flank at -0.47 u */
+    opacity: 1;
+    transform: translateX(-47px) scale(1);
+  }
+  35% {
+    opacity: 1;
+    transform: translateX(-47px) scale(1);
+  }
+  100% {
+    /* 4700: clean */
+    opacity: 0;
+    transform: translateX(-47px) scale(1);
+  }
+}
+
+/* The V: both tilt INWARD 2833-3133 (+2633..+2933), rims meeting at the top
+   centre, hold to the clink, then straighten as they ease apart. */
+.thr-champagne__f1-tilt,
+.thr-champagne__f2-tilt {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.thr-champagne__f1-tilt {
+  animation: thr-champagne-tilt-r calc(0.867s * var(--animation-speed, 1)) ease-in-out
+    calc(2.633s * var(--animation-speed, 1)) both;
+}
+
+.thr-champagne__f2-tilt {
+  animation: thr-champagne-tilt-l calc(0.867s * var(--animation-speed, 1)) ease-in-out
+    calc(2.633s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-champagne-tilt-r {
+  0% {
+    /* 2833: upright */
+    transform: rotate(0deg);
+  }
+  35% {
+    /* 3133: leaning left into the V, rim toward the centre */
+    transform: rotate(-18deg);
+  }
+  50% {
+    /* 3167: the clink frame, held */
+    transform: rotate(-18deg);
+  }
+  100% {
+    /* 3500: upright again on the flank */
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes thr-champagne-tilt-l {
+  0% {
+    transform: rotate(0deg);
+  }
+  35% {
+    transform: rotate(18deg);
+  }
+  50% {
+    transform: rotate(18deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* == THE CLINK: droplets jump from the touching rims at 3167 (+2967). The
+   group's window keeps them off the felt before and after. ============= */
+.thr-champagne__clink {
+  opacity: 0;
+  animation: thr-champagne-clink-window calc(0.5s * var(--animation-speed, 1)) linear
+    calc(2.967s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-champagne-clink-window {
+  0% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.thr-champagne__drop {
+  animation: thr-champagne-drop calc(0.4s * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.7, 0.4, 1) forwards;
+}
+
+@keyframes thr-champagne-drop {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(0.5);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.2), calc(var(--dy) * 0.3)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(0.75);
+  }
+}
+
+/* == THE TWO LATE GLINTS at 3900 and 4100, one per flute; their delays are
+   inline because nothing else distinguishes them. INVENTED: the capture has
+   the table hidden behind a dialog there and records only two soft clinks, so
+   this is a rim sparkle rather than choreography nobody measured. ======= */
+.thr-champagne__glint {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-champagne-glint calc(0.35s * var(--animation-speed, 1)) ease-out forwards;
+}
+
+@keyframes thr-champagne-glint {
+  0% {
+    opacity: 0.6;
+    transform: scale(0.4) rotate(0deg);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.15) rotate(35deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.5) rotate(70deg);
+  }
+}
+
+/* == REDUCED MOTION: the toast, arrived. Two flutes on their flanks, full
+   strength, no bottle, no jet, no droplets. The player still sees exactly
+   what was thrown; nothing on the screen moves. ======================== */
+@media (prefers-reduced-motion: reduce) {
+  .thr-champagne__bottle,
+  .thr-champagne__cork,
+  .thr-champagne__puff,
+  .thr-champagne__jet,
+  .thr-champagne__jet-spray,
+  .thr-champagne__thread,
+  .thr-champagne__clink,
+  .thr-champagne__glint,
+  .thr-champagne__speck,
+  .thr-champagne__drop {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-champagne__f1 {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translateX(47px) scale(1) !important;
+  }
+
+  .thr-champagne__f2 {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translateX(-47px) scale(1) !important;
+  }
+
+  .thr-champagne__f1-tilt,
+  .thr-champagne__f2-tilt {
+    animation: none !important;
+    transform: rotate(0deg) !important;
+  }
+}

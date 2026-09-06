@@ -20,6 +20,7 @@ const summary = (over: Partial<ClusterTickSummary> = {}): ClusterTickSummary => 
   ticked: 3,
   woken: 1,
   rested: 0,
+  deferred: 0,
   rpcs: 0,
   errors: 0,
   skippedFrozen: false,
@@ -102,6 +103,7 @@ describe('a pass', () => {
     expectType('poker_cluster_pass_ticked', 'gauge');
     expectType('poker_cluster_pass_woken', 'gauge');
     expectType('poker_cluster_pass_rested', 'gauge');
+    expectType('poker_cluster_pass_deferred', 'gauge');
     expectType('poker_cluster_pass_errors_total', 'counter');
     expectType('poker_cluster_pass_stalled_total', 'counter');
     expectType('poker_cluster_pass_skipped_frozen_total', 'counter');
@@ -223,6 +225,7 @@ describe('the stall and the freeze', () => {
       woken: 0,
       errors: 0,
       rested: 0,
+      deferred: 0,
       rpcs: 0,
       stalled: 0,
       skippedFrozen: 0,
@@ -256,9 +259,28 @@ describe('the stall and the freeze', () => {
       woken: 1,
       errors: 1,
       rested: 2,
+      deferred: 0,
       rpcs: 6,
       stalled: 0,
       skippedFrozen: 0,
     });
+  });
+});
+
+/**
+ * A PASS COMMITS WHAT IT DID (2026-09-06, 20260906150956). The SQL stops
+ * starting games at its budget and reports how many it deferred; the gauge
+ * carries it so a controller running behind its cadence is a number, not a
+ * warn line.
+ */
+describe('deferred games are a gauge', () => {
+  it('reads deferred from the summary and defaults to zero', () => {
+    const { registry, m } = build();
+    m.recordPass(summary({ deferred: 7 }));
+    expect(registry.renderPrometheus()).toMatch(/poker_cluster_pass_deferred 7\b/);
+    expect(m.healthSnapshot().deferred).toBe(7);
+    m.recordPass({ ...summary(), deferred: undefined } as unknown as ClusterTickSummary);
+    expect(registry.renderPrometheus()).toMatch(/poker_cluster_pass_deferred 0\b/);
+    expect(m.healthSnapshot().deferred).toBe(0);
   });
 });

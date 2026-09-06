@@ -210,3 +210,4 @@ supabase/migrations/*_a_second_agent_wants_the_same_second.sql
 # supabase/migrations/, so they cannot race the dozen test files that scan that
 # directory. See tests/a-migration-version-is-reserved-not-guessed.law.test.ts.
 .tmp-migration-reservation-probe/
+infra/monitoring/.deployed-from

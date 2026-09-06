@@ -50,7 +50,12 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_cashier_can_transact(uuid,uuid,uuid)',
-      'hash', '6e02bd4dcb663130bedb41816968350e'
+      -- The Realtime WAL repair converts this read-only helper from PL/pgSQL
+      -- to equivalent SQL so its scope is resolved once. Production may move
+      -- before the application bundle while deploys converge, so both audited
+      -- definitions are valid; an unknown third body must still fail closed.
+      'hash', '6e02bd4dcb663130bedb41816968350e',
+      'replacement_hash', 'a812c44870554f37cddb36edf600e386'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_cashier_members_page_v3(uuid,integer,uuid,integer)',
@@ -80,9 +85,16 @@ BEGIN
       RAISE EXCEPTION 'cashier function missing: %', v_item ->> 'signature';
     END IF;
     SELECT md5(pg_get_functiondef(v_oid)) INTO v_actual_hash;
-    IF v_actual_hash <> v_item ->> 'hash' THEN
+    IF v_actual_hash <> v_item ->> 'hash'
+       AND v_actual_hash <> coalesce(v_item ->> 'replacement_hash', '') THEN
       RAISE EXCEPTION 'cashier function drift: % expected %, got %',
-        v_item ->> 'signature', v_item ->> 'hash', v_actual_hash;
+        v_item ->> 'signature',
+        CASE
+          WHEN v_item ? 'replacement_hash'
+            THEN concat(v_item ->> 'hash', ' or ', v_item ->> 'replacement_hash')
+          ELSE v_item ->> 'hash'
+        END,
+        v_actual_hash;
     END IF;
     IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = v_oid) THEN
       RAISE EXCEPTION 'cashier function is not SECURITY DEFINER: %', v_item ->> 'signature';

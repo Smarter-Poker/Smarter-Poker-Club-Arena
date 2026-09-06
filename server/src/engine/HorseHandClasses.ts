@@ -182,14 +182,29 @@ function suitCounts(cards: Card[]): Map<string, number> {
 
 /**
  * How connected are the four best cards: the span of the tightest four-card
- * window, ignoring pairs. 3 = perfectly connected (JT98), 4-5 = one or two
- * gaps, 6+ = disconnected. The ace also plays low for a wheel rundown.
+ * window over the DISTINCT ranks. 3 = perfectly connected (JT98), 4-5 = one
+ * or two gaps, 6+ = disconnected. The ace also plays low for a wheel
+ * rundown.
+ *
+ * A HAND WITH A PAIR HAS FEWER THAN FOUR DISTINCT RANKS AND NO FOUR-CARD
+ * WINDOW, so this returns UNCONNECTED for it, and every caller must treat
+ * that as "the question does not apply" rather than "disconnected".
+ *
+ * Measured 2026-09-05, and the reason this comment exists: the first version
+ * returned the same sentinel and the callers read it as a fact. `9932` and
+ * `J733` came out as `trash`, which carries foldAlways - so 4.35% of every
+ * PLO hand dealt was folded to any bet, set-mining hands included, and
+ * `dangler` (which tightens the open bar) swallowed 42.9% of the deck. Both
+ * shipped. The classifier below now asks for four distinct ranks BEFORE it
+ * reads a span, and the distribution test pins the shape of the result.
  */
+export const UNCONNECTED = 99;
+
 export function connectedSpan(cards: Card[]): number {
   const uniq = [...new Set(cards.map(rv))].sort((a, b) => a - b);
   const withWheelAce = uniq.includes(14) ? [...new Set([1, ...uniq])].sort((a, b) => a - b) : uniq;
-  if (withWheelAce.length < 4) return 99;
-  let best = 99;
+  if (withWheelAce.length < 4) return UNCONNECTED;
+  let best = UNCONNECTED;
   for (let i = 0; i + 3 < withWheelAce.length; i++) {
     best = Math.min(best, withWheelAce[i + 3] - withWheelAce[i]);
   }
@@ -240,9 +255,13 @@ export function omahaHandClass(cards: Card[] | undefined | null): OmahaHandClass
   // multiway flop.
   if (highCards >= 4 && suits >= 2) return 'broadway_ds';
 
-  // A rundown: four cards inside a five-rank window, nine-high or better.
+  // A rundown: four DISTINCT cards inside a five-rank window, nine-high or
+  // better. `span` is only meaningful with four distinct ranks, which
+  // `maxOfARank === 1` guarantees for a four-card hand and the span check
+  // guarantees for five and six.
   const topRank = Math.max(...counts.keys());
-  if (span <= 4 && topRank >= 9 && maxOfARank === 1) return 'rundown';
+  const distinct = counts.size;
+  if (span !== UNCONNECTED && span <= 4 && topRank >= 9 && maxOfARank === 1) return 'rundown';
 
   // Kings or queens with support.
   const hasKQPair = (counts.get(13) ?? 0) === 2 || (counts.get(12) ?? 0) === 2;
@@ -252,14 +271,27 @@ export function omahaHandClass(cards: Card[] | undefined | null): OmahaHandClass
   const bigPairRank = [...counts.entries()].find(([r, n]) => n === 2 && r >= 10)?.[0];
   if (bigPairRank !== undefined && (suits >= 1 || span <= 5)) return 'pair_support';
 
-  // TRASH before DANGLER: a double-paired low rainbow hand is not "three good
-  // cards and a passenger", it is a hand with no way to make the nuts.
-  const pairCount = [...counts.values()].filter((n) => n === 2).length;
-  const lowRainbow = suits === 0 && topRank <= 11 && aces === 0;
-  if ((pairCount >= 2 && topRank <= 10) || (lowRainbow && span >= 6)) return 'trash';
+  // TRASH IS RARE AND UNAMBIGUOUS, because it carries foldAlways. Two low
+  // pairs, rainbow, no ace: the hand cannot make a nut flush, cannot make a
+  // nut straight, and its two sets are both beaten by the sets above them.
+  // ANY other weak hand is just a weak hand - the bars fold it at the right
+  // price, and a hand with one pair can still flop a set, which is why
+  // `9932` and `J733` must NOT land here (they did, and were folded to every
+  // bet in production on 2026-09-05).
+  const pairRanks = [...counts.entries()].filter(([, n]) => n === 2).map(([r]) => r);
+  if (pairRanks.length >= 2 && Math.max(...pairRanks) <= 9 && suits === 0 && aces === 0) {
+    return 'trash';
+  }
 
-  // Three cards that work together and one that does not.
-  if (span >= 5 && (highCards >= 2 || aces >= 1)) return 'dangler';
+  // A DANGLER IS THREE CARDS THAT WORK AND ONE THAT DOES NOT, which needs
+  // four distinct ranks to even be a question. Requiring a real span (not the
+  // sentinel) and a genuine gap keeps this a class rather than a bucket: it
+  // was 42.9% of the deck when a paired hand's sentinel span counted as
+  // "disconnected", and a class that broad silently tightened the fleet's
+  // opening range in every Omaha game.
+  if (distinct === 4 && span !== UNCONNECTED && span >= 6 && (highCards >= 2 || aces >= 1)) {
+    return 'dangler';
+  }
 
   return 'other';
 }

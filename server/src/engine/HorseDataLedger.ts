@@ -1431,6 +1431,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'no second look: EquityLoadGovernor was already shedding load (event-loop p50 over 40ms). A high count here is capacity, and it is the ONLY visibility the governor has outside the GameServer status payload',
     'V44'
   ),
+  /*
+   * THE BREATHER AFTER A COOLER (V48, 2026-09-06). A horse had never once
+   * stood up after a bad hand - it takes a 200bb cooler and is in the very
+   * next hand, every time, forever. The behaviour landed the moment its hook
+   * did: ServerTableEngineSeating.sitOut is the same public method a human's
+   * Sit Out button calls, so every rule that governs a human sitting out
+   * governs this one.
+   */
+  receipt(
+    'v48_sit_out_after_loss',
+    'ServerTableEngineSettlement.horsesTakeABreather',
+    'a horse lost 100bb+ in one hand and its persona took an orbit off; needs a persona with sitOutAfterLossRate above 0 and a cash table',
+    'V48'
+  ),
+  receipt(
+    'v48_sit_back_in',
+    'ServerTableEngineSettlement.horsesTakeABreather',
+    'the breather ended and the seat booked itself back in. This one MUST track v48_sit_out_after_loss - a gap between them is a horse stranded sitting out',
+    'V48'
+  ),
   receipt(
     'v48_gto_deviation',
     'HorseLogic (V48) via HorsePersona.followsSolver',

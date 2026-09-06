@@ -126,11 +126,15 @@ describe('LAW: the persona survives the tuner', () => {
       {
         style: 'lag',
         tightness: 1.05,
-        persona: { straddleRate: 0.3, gtoAdherence: 0.9 },
+        persona: { straddleRate: 0.3, gtoAdherence: 0.9, sitOutAfterLossRate: 0.1 },
       },
       'h1'
     );
-    expect(mods.persona).toEqual({ straddleRate: 0.3, gtoAdherence: 0.9 });
+    expect(mods.persona).toEqual({
+      straddleRate: 0.3,
+      gtoAdherence: 0.9,
+      sitOutAfterLossRate: 0.1,
+    });
     expect(mods.tightness).toBe(1.05);
   });
 
@@ -197,7 +201,7 @@ describe('LAW: the persona survives the tuner', () => {
         hero,
         gs,
         'balanced',
-        { persona: { straddleRate: 0, gtoAdherence: 0.7 } },
+        { persona: { straddleRate: 0, gtoAdherence: 0.7, sitOutAfterLossRate: 0 } },
         {
           telemetry: true,
           mind: false,
@@ -217,7 +221,7 @@ describe('LAW: the persona survives the tuner', () => {
         hero,
         gs,
         'balanced',
-        { persona: { straddleRate: 0, gtoAdherence: 1 } },
+        { persona: { straddleRate: 0, gtoAdherence: 1, sitOutAfterLossRate: 0 } },
         {
           telemetry: true,
           mind: false,

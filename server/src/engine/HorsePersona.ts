@@ -47,6 +47,21 @@ export interface HorsePersonaV2 {
    * where its own read disagrees. Read by HorseLogic at the solver consult.
    */
   gtoAdherence: number;
+  /**
+   * How often this horse takes a breather after a big losing hand, per hand
+   * it loses SIT_OUT_LOSS_BB or more (2026-09-06). 0 = the grinder who never
+   * stops; 0.25 = the player who pushes back from the table after a cooler.
+   *
+   * Read by ServerTableEngineSettlement, which sits the seat out through the
+   * SAME public sitOut() a human's button calls, and books it back in one
+   * orbit later. Cash only - a tournament seat is bought and gets blinded off,
+   * so sitting out there is not a breather, it is a leak.
+   *
+   * It is one of the most visible absences at a live table: the seat that
+   * takes a 200bb cooler and is in the very next hand, every single time,
+   * forever.
+   */
+  sitOutAfterLossRate: number;
 }
 
 /*
@@ -60,15 +75,39 @@ export interface HorsePersonaV2 {
  * estate's ledger exists to prevent, so it waits for the seating path to
  * carry the profile it already loads elsewhere.
  *
- * Same reason for `tilt`, `showBluffRate` and `sitOutAfterLossRate`: their
- * hooks (session memory, the show-cards path) are not in this branch. They
- * go in with the hooks, not before them.
+ * `sitOutAfterLossRate` LANDED on 2026-09-06, and it landed the moment its
+ * hook did: ServerTableEngineSeating.sitOut is the same public method a
+ * human's Sit Out button calls, and settlement already knows every horse's
+ * net for the hand. That is the whole rule this comment is stating - a field
+ * goes in WITH its hook, never before it.
+ *
+ * `tilt` and `showBluffRate` are still out, and for the same reason they
+ * always were. `tilt` needs a per-seat session memory that survives hands and
+ * nothing in the engine keeps one. `showBluffRate` needs a voluntary
+ * show-cards action for a pot won WITHOUT showdown, and the engine has muck
+ * handling and an observer setting but no such action - building it is an
+ * engine and client change, not a persona one. Shipping either field now
+ * would be exactly the dead data the ledger exists to refuse.
  */
 
 export const PERSONA_DEFAULT: HorsePersonaV2 = {
   straddleRate: 0,
   gtoAdherence: 1,
+  sitOutAfterLossRate: 0,
 };
+
+/**
+ * The loss that earns a breather, in big blinds.
+ *
+ * 100bb is a full buy-in at most tables, which is the size of hand a player
+ * actually reacts to. Lower and the fleet would be standing up constantly -
+ * `fleet_seat_starvation` already reports 545 of 821 cash seats empty, and a
+ * horse in a chair is what fills them.
+ */
+export const SIT_OUT_LOSS_BB = 100;
+
+/** How long the breather lasts. One orbit at a full table, near enough. */
+export const SIT_OUT_MS = 75_000;
 
 const clamp = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, n));
 
@@ -115,13 +154,25 @@ export function defaultPersonaFor(horseId: string): HorsePersonaV2 {
   // two horses end up with the same personality.
   const hs = personaHash(`${horseId}|straddle`);
   const hg = personaHash(`${horseId}|gto`);
+  const ho = personaHash(`${horseId}|sitout`);
   const bucket = hs % 100;
   const straddleRate =
     bucket < 60 ? 0 : bucket < 85 ? 0.08 + ((hs >>> 8) % 8) / 100 : 0.25 + ((hs >>> 16) % 15) / 100;
+  // Most players sit straight back down; a minority take a walk after a
+  // cooler and a few always do. Same shape as the straddle, gentler tail -
+  // an empty seat costs the table more than an eager one.
+  const outBucket = ho % 100;
+  const sitOutRate =
+    outBucket < 55
+      ? 0
+      : outBucket < 88
+        ? 0.05 + ((ho >>> 8) % 8) / 100
+        : 0.18 + ((ho >>> 16) % 13) / 100;
   return {
     straddleRate: Math.round(straddleRate * 100) / 100,
     // 0.80 .. 1.00 - nobody in the fleet ignores the solver entirely.
     gtoAdherence: Math.round((0.8 + (hg % 21) / 100) * 100) / 100,
+    sitOutAfterLossRate: Math.round(sitOutRate * 100) / 100,
   };
 }
 
@@ -132,6 +183,19 @@ export function defaultPersonaFor(horseId: string): HorsePersonaV2 {
  * dials, and for the same reason: a bad row must degrade, never reach a
  * decision.
  */
+/**
+ * Does this horse take a breather after THIS losing hand? Deterministic in
+ * (horse, hand), exactly like wantsStraddle and for the same two reasons: a
+ * replayed hand must answer the same way twice, and a test must be able to
+ * assert the distribution rather than hope. Math.random is banned anywhere
+ * near a decision.
+ */
+export function wantsSitOutAfterLoss(horseId: string, handNumber: number, rate: number): boolean {
+  if (!(rate > 0)) return false;
+  const h = personaHash(`${horseId}|sitout|${handNumber}`);
+  return (h % 10_000) / 10_000 < rate;
+}
+
 export function resolvePersona(profile: unknown, horseId: string): HorsePersonaV2 {
   if (!profile || typeof profile !== 'object') return defaultPersonaFor(horseId);
   return personaFromValue((profile as Record<string, unknown>).persona, horseId);
@@ -152,9 +216,15 @@ export function personaFromValue(raw: unknown, horseId: string): HorsePersonaV2 
     typeof v === 'number' && Number.isFinite(v) ? v : undefined;
   const straddle = num(p.straddleRate);
   const adherence = num(p.gtoAdherence);
+  const sitOutRate = num(p.sitOutAfterLossRate);
   return {
     straddleRate: straddle === undefined ? base.straddleRate : clamp(straddle, 0, 0.6),
     gtoAdherence: adherence === undefined ? base.gtoAdherence : clamp(adherence, 0.5, 1),
+    // Bounded hard at 0.35. A horse that sits out after every cooler is a
+    // horse that is not in the game, and an empty seat is worse for the table
+    // than a slightly robotic one.
+    sitOutAfterLossRate:
+      sitOutRate === undefined ? base.sitOutAfterLossRate : clamp(sitOutRate, 0, 0.35),
   };
 }
 

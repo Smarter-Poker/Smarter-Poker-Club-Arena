@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/the-absolute-score-runs-first",
+  "_comment": "20260906095757 a_breather_that_never_ends_is_a_stranded_seat and 20260906095835 restore_the_seat_clock_and_append_the_breather, applied to production 2026-09-06 via the Supabase MCP. V48's last persona behaviour: a horse that loses 100bb+ in one hand takes an orbit off through the same public sitOut() a human's button calls, and fn_audit_breather_returns watches that the seat comes back.",
+  "tables": [],
+  "functions": ["fn_audit_breather_returns"],
+  "columns": {}
+}

@@ -65,6 +65,9 @@ const BRAIN_FILES = [
   // V48: the voluntary straddle is decided at the deal, which is the only
   // place that knows the hand number and the seat order.
   'engine/ServerTableEngineDealing.ts',
+  // V48: the breather after a cooler is decided at SETTLEMENT, which is the
+  // only place that knows what the hand cost the horse.
+  'engine/ServerTableEngineSettlement.ts',
 ];
 const BRAIN_SOURCE = BRAIN_FILES.map(read).join('\n');
 

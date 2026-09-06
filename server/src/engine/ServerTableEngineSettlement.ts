@@ -40,6 +40,13 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
+import { noteFire } from './BrainTelemetry.js';
+import {
+  resolvePersona,
+  wantsSitOutAfterLoss,
+  SIT_OUT_LOSS_BB,
+  SIT_OUT_MS,
+} from './HorsePersona.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
@@ -99,6 +106,71 @@ const BOMB_LEDGER_RETRY_BASE_MS = 250;
 const BOMB_LEDGER_RETRY_MAX_MS = 2_000;
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
+  /**
+   * V48: a horse that just lost a buy-in takes an orbit off (2026-09-06).
+   *
+   * Deterministic in (horse, hand) so a replayed hand behaves the same way
+   * twice and a test can assert the distribution - Math.random is banned
+   * anywhere near this. Cash only: a tournament seat is bought and gets
+   * blinded off, so sitting out there is not a breather, it is a leak.
+   *
+   * Everything here is best-effort and swallowed. A persona must never be
+   * able to stop a hand settling, which is the same contract the voluntary
+   * straddle enrol runs under one file down.
+   */
+  private horsesTakeABreather(snap: {
+    contributions: Map<string, number>;
+    winners: Array<{ userId: string; amount: number }>;
+  }): void {
+    try {
+      if (this.isTournamentTable()) return;
+      const rawBb = Number(this.tableInfo?.big_blind);
+      const bb = Number.isFinite(rawBb) && rawBb > 0 ? rawBb : 1;
+      const handNumber = this.handCount;
+      const returned = new Map<string, number>();
+      for (const w of snap.winners ?? []) {
+        if (!w?.userId) continue;
+        returned.set(w.userId, (returned.get(w.userId) ?? 0) + (w.amount ?? 0));
+      }
+      for (const seated of this.seatedPlayers) {
+        // 10.5: the ONLY is_horse read here, and it is the input device -
+        // a human clicks Sit Out, a horse has no browser.
+        if (!seated?.is_horse || !seated.user_id) continue;
+        const invested = snap.contributions.get(seated.user_id) ?? 0;
+        if (invested === 0) continue;
+        const netBB = ((returned.get(seated.user_id) ?? 0) - invested) / bb;
+        if (netBB > -SIT_OUT_LOSS_BB) continue;
+        const persona = resolvePersona(seated.horse_profile, seated.user_id);
+        if (!wantsSitOutAfterLoss(seated.user_id, handNumber, persona.sitOutAfterLossRate))
+          continue;
+
+        // The same public method the button calls, so every rule that
+        // governs a human sitting out governs this: the play-one-hand gate,
+        // the disconnect engine, the eviction clock.
+        const out = this.sitOut(seated.user_id, true);
+        if (!out.success) continue;
+        noteFire('v48_sit_out_after_loss');
+
+        const userId = seated.user_id;
+        const back = setTimeout(() => {
+          try {
+            // Only book back in if the seat is still ours to book. A horse
+            // evicted or moved during the breather must not be dragged back.
+            if (!this.running) return;
+            if (!this.seatedPlayers.some((p) => p.user_id === userId)) return;
+            this.sitOut(userId, false);
+            noteFire('v48_sit_back_in');
+          } catch {
+            /* a breather must never be able to strand a seat */
+          }
+        }, SIT_OUT_MS);
+        back.unref?.();
+      }
+    } catch {
+      /* a persona must never be able to stop a hand settling */
+    }
+  }
+
   /**
    * RABBIT HUNT — the paid reveal. Dan 2026-08-25.
    *
@@ -1451,6 +1523,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           winners: snap.winners,
           showdownResults: snap.showdownResults,
         });
+
+        // ═══ V48 THE BREATHER AFTER A COOLER (2026-09-06) ══════════════════
+        // A horse has never once stood up after a bad hand. It takes a 200bb
+        // cooler and is in the very next hand, every time, forever - one of
+        // the most visible absences at a live table, and the last of the
+        // three persona behaviours whose hook actually exists.
+        //
+        // It uses the SAME public sitOut() a human's Sit Out button calls,
+        // which is why this is legal under 10.5: the `is_horse` read is the
+        // horse's input device, nothing else. A human clicks the button; a
+        // horse has no browser.
+        this.horsesTakeABreather(snap);
 
         const result = await logHandHistory({
           tableId: this.tableId,

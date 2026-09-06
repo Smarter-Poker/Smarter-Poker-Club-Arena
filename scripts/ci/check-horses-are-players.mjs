@@ -119,9 +119,13 @@ const REGISTER = {
     ].join('\n'),
   },
   'server/src/engine/ServerTableEngineSettlement.ts': {
-    allowed: 1,
+    allowed: 2,
     kind: 'IDENTIFICATION',
-    why: 'Horse cash-out plumbing: picks the horses that have hit their deterministic stack target and stands them up on their big blind. Fleet steering, and it denies a horse nothing.',
+    why: [
+      '(1) Horse cash-out plumbing: picks the horses that have hit their deterministic stack target and stands them up on their big blind. Fleet steering, and it denies a horse nothing.',
+      '',
+      '(2) horsesTakeABreather (V48, 2026-09-06) - the INPUT DEVICE exemption, the same one the voluntary straddle round carries in ServerTableEngineDealing. A human who loses a buy-in in one hand can click Sit Out; a horse has no browser, so this reads is_horse to find the seats that need the click made for them. It calls the SAME public sitOut() the button calls, so every rule that governs a human sitting out governs this: the play-one-hand gate, the disconnect engine, the eviction clock. It withholds nothing - it GRANTS a horse a behaviour only humans had.',
+    ].join('\n'),
   },
   'server/src/handlers/faultInjection.ts': {
     allowed: 1,

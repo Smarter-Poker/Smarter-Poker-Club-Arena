@@ -45,15 +45,38 @@ describe('canOpenAnotherTable sees the whole position, not one seat', () => {
     ).toBe(true);
   });
 
-  it('caps the total at three single-table shares, not three tables', () => {
-    // standard: 5% of 10,000 is 500 per table, so the ceiling is 1,500.
+  it('caps the total at four single-table shares, not four tables', () => {
+    // standard: 5% of 10,000 is 500 per table, so the ceiling is 2,000 -
+    // four full buy-ins at the per-table cap, which is Dan's four tables.
     const ceiling = 10_000 * std.maxBankrollFraction * AGGREGATE_EXPOSURE_MULTIPLE;
-    expect(ceiling).toBe(1500);
+    expect(ceiling).toBe(2000);
     expect(
-      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1100, nextBuyIn: 400, policy: std })
+      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1600, nextBuyIn: 400, policy: std })
     ).toBe(true);
     expect(
-      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1101, nextBuyIn: 400, policy: std })
+      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1601, nextBuyIn: 400, policy: std })
+    ).toBe(false);
+  });
+
+  it('lets a horse at three full per-table buy-ins take the fourth (2026-09-06)', () => {
+    // Three shares (the old multiple) is exactly where the fourth table used to
+    // be refused; four shares is where it is refused now.
+    const share = 10_000 * std.maxBankrollFraction;
+    expect(
+      canOpenAnotherTable({
+        bankroll: 10_000,
+        liveExposure: 3 * share,
+        nextBuyIn: share,
+        policy: std,
+      })
+    ).toBe(true);
+    expect(
+      canOpenAnotherTable({
+        bankroll: 10_000,
+        liveExposure: 4 * share,
+        nextBuyIn: 1,
+        policy: std,
+      })
     ).toBe(false);
   });
 
@@ -64,15 +87,15 @@ describe('canOpenAnotherTable sees the whole position, not one seat', () => {
    */
   it('counts the buy-in being committed, not only what is already at risk', () => {
     expect(
-      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1499, nextBuyIn: 400, policy: std })
+      canOpenAnotherTable({ bankroll: 10_000, liveExposure: 1999, nextBuyIn: 400, policy: std })
     ).toBe(false);
   });
 
   it('is looser for a gambler and tighter for a nit, at the same roll', () => {
     const nit = bankrollPolicyFor(idOf('nit'));
     const gam = bankrollPolicyFor(idOf('gambler'));
-    // nit ceiling is 10,000 * 0.03 * 3 = 900; gambler is 10,000 * 0.10 * 3 = 3,000.
-    const args = { bankroll: 10_000, liveExposure: 850, nextBuyIn: 100 };
+    // nit ceiling is 10,000 * 0.03 * 4 = 1,200; gambler is 10,000 * 0.10 * 4 = 4,000.
+    const args = { bankroll: 10_000, liveExposure: 1150, nextBuyIn: 100 };
     expect(canOpenAnotherTable({ ...args, policy: gam })).toBe(true);
     expect(canOpenAnotherTable({ ...args, policy: nit })).toBe(false);
   });

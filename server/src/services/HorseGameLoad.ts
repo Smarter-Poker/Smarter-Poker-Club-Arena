@@ -51,10 +51,47 @@
  *  `fn_enforce_four_table_limit`. */
 export const CONCURRENT_GAME_LIMIT = 4;
 
-/** One `tournament_players` row that clause (2) would count. */
+/**
+ * A BOOKING IS A GAME AN HOUR BEFORE IT STARTS (2026-09-06, Dan: "PROCEED").
+ *
+ * Clause (2) used to count a booking from the moment it was made. Measured
+ * 09:45 CDT the same day: 2,111 bookings across 897 players, 1,377 of them for
+ * events more than six hours away and 466 more than a day away (the furthest
+ * 68 hours), and 217 horses capped by bookings ALONE - registering for
+ * Tuesday cost a cash seat until Tuesday. Migration 20260906144448 narrowed
+ * the SQL to bookings whose tournament starts within sixty minutes; this is
+ * the same window, applied to the same rows, so the fleet keeps counting
+ * exactly what the database counts.
+ *
+ * A booking with NO start time is a seat-first game (a Spin, a sit-and-go)
+ * that starts the moment it fills, so it always counts - as the SQL's
+ * `tr.start_time IS NULL OR` does.
+ *
+ * The hard invariant is untouched: never more than four LIVE seats.
+ */
+export const BOOKING_COUNTS_WITHIN_MS = 60 * 60 * 1000;
+
+/** Does this booking count as a game right now? Mirrors the SQL predicate
+ *  `tr.start_time IS NULL OR tr.start_time <= now() + interval '60 minutes'`.
+ *  An unparseable start time counts, because counting too much refuses a
+ *  seat the database would also refuse, while counting too little offers the
+ *  controller a buyer the door will turn away. */
+export function bookingIsAGame(
+  startTime: string | null | undefined,
+  nowMs: number = Date.now()
+): boolean {
+  if (startTime === null || startTime === undefined || startTime === '') return true;
+  const start = Date.parse(startTime);
+  if (!Number.isFinite(start)) return true;
+  return start <= nowMs + BOOKING_COUNTS_WITHIN_MS;
+}
+
+/** One `tournament_players` row that clause (2) would consider. `start_time`
+ *  is the tournament's; absent means seat-first and always counts. */
 export interface BookingRow {
   user_id: string;
   tournament_id: string;
+  start_time?: string | null;
 }
 
 export interface GameLoad {
@@ -77,11 +114,16 @@ export interface GameLoad {
  * `tournamentByTableId` maps every table that is not closed to its tournament;
  * `seatsByPlayer` is the fleet's live seat map. A booking whose tournament is
  * absent from the table map cannot have a seat, which is the ordinary case.
+ *
+ * `nowMs` is the instant the sixty-minute window is measured from
+ * (`bookingIsAGame`); a booking for a tournament further out is a plan and is
+ * not counted.
  */
 export function buildBookingLoad(
   bookings: readonly BookingRow[],
   tournamentByTableId: ReadonlyMap<string, string>,
-  seatsByPlayer: ReadonlyMap<string, ReadonlySet<string>>
+  seatsByPlayer: ReadonlyMap<string, ReadonlySet<string>>,
+  nowMs: number = Date.now()
 ): Map<string, number> {
   /* player -> the tournaments they already hold a chair in. Built once, from
      the seat map, so the exclusion costs one pass rather than one per row. */
@@ -100,6 +142,7 @@ export function buildBookingLoad(
   const counted = new Set<string>();
   for (const b of bookings) {
     if (!b.user_id || !b.tournament_id) continue;
+    if (!bookingIsAGame(b.start_time, nowMs)) continue;
     const key = `${b.user_id}|${b.tournament_id}`;
     if (counted.has(key)) continue;
     counted.add(key);

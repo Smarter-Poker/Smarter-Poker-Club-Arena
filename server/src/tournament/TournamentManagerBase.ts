@@ -328,34 +328,66 @@ export abstract class TournamentManagerBase {
     return this.onBreak;
   }
 
-  /** Reusable broadcast — single channel per tournament lifecycle */
+  /**
+   * Broadcast a tournament event to the `t-break-<id>` topic the clients watch.
+   *
+   * ═══ THE ENGINE STOPPED JOINING 425 CHANNELS TO SPEAK ON THEM (2026-09-06) ══
+   *
+   * This used to `subscribe()` a channel per tournament and keep it for the
+   * tournament's lifetime. One engine process holds ONE Realtime socket, and a
+   * socket has a hard cap of 100 channels: with 425 live tournaments plus a
+   * channel per bomb-pot table, the engine sat permanently over the cap and
+   * Realtime refused the surplus joins — 123,219 `ChannelRateLimitReached:
+   * Too many channels` in 24 hours, about 1.4 every second, for ever, because
+   * each refusal was retried.
+   *
+   * That mattered beyond the noise. Supabase Realtime runs the channel layer
+   * and the WAL replication poller in the SAME Elixir node, so a rejected-join
+   * loop at 1.4/s is CPU taken from the poller that was already behind.
+   *
+   * THE ENGINE ONLY EVER SPEAKS HERE; it never listens. So it does not need a
+   * channel at all. `httpSend` posts the broadcast to Realtime's REST endpoint
+   * and reaches every subscribed client identically — this is the same
+   * transport `send()` was silently falling back to (the "Sent 202" lines in
+   * the Realtime log), now asked for explicitly rather than through a path the
+   * library warns is deprecated.
+   *
+   * The client contract is UNCHANGED: clients still subscribe to
+   * `t-break-<tournamentId>` and still receive `tournament_event`.
+   */
   protected async broadcast(eventType: string, payload: any): Promise<void> {
     try {
       if (!this.broadcastChannel) {
         this.broadcastChannel = supabase.channel(`t-break-${this.tournamentId}`);
-        await this.broadcastChannel.subscribe();
         this.broadcastReady = true;
       }
-      await this.broadcastChannel.send({
-        type: 'broadcast',
-        event: 'tournament_event',
-        payload: { type: eventType, payload },
+      await this.broadcastChannel.httpSend('tournament_event', {
+        type: eventType,
+        payload,
       });
     } catch (e) {
-      reportError(e, 'TournamentthistournamentIdslic.Broadcast_eventType_failed');
-      // Reset channel on error so next call re-creates
+      reportError(e, 'TournamentManager.broadcast_failed');
+      // Drop the channel object so the next call rebuilds it. Nothing is
+      // joined, so this costs one allocation rather than a re-join.
       this.broadcastChannel = null;
       this.broadcastReady = false;
     }
   }
 
-  /** Clean up broadcast channel when tournament ends */
+  /**
+   * Release the broadcast channel when the tournament ends.
+   *
+   * Nothing is joined any more (see broadcast above), so there is no
+   * `unsubscribe()` to await. `removeChannel` drops the object from the
+   * client's channel registry, which is what stops a finished tournament from
+   * accumulating there for the life of the process.
+   */
   protected async cleanupBroadcastChannel(): Promise<void> {
     if (this.broadcastChannel) {
       try {
-        await this.broadcastChannel.unsubscribe();
+        await supabase.removeChannel(this.broadcastChannel);
       } catch {
-        /* ignore */
+        /* a channel that will not release cannot hold up a tournament ending */
       }
       this.broadcastChannel = null;
       this.broadcastReady = false;

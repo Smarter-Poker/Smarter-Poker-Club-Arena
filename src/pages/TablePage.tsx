@@ -166,7 +166,6 @@ import {
   useMasterBusSubscription,
   useMasterBusSubscriptions,
 } from '../hooks/useMasterBusSubscription';
-import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { playerStatusService } from '../services/PlayerStatusService';
 import { avatarService } from '../services/AvatarService';
 import { waitlistService } from '../services/WaitlistService';
@@ -178,6 +177,7 @@ import { useSeatAddOnBubbles } from '../components/table/AddOnBubble';
 import { useTableVoice } from '../hooks/useTableVoice';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
+import { money } from '../utils/handFormat';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
 import { useTableEnvironment } from '../hooks/useTableEnvironment';
@@ -9702,44 +9702,38 @@ export default function TablePage({
     }
   }, [engineLastUserEvent, handleHoleCardPayload]);
 
-  /* ═══ 'INSERT' MISSED EVERY PINEAPPLE DISCARD (2026-08-31) ═════════════
-     `insert_hole_cards` is an upsert - `ON CONFLICT (table_id, hand_number,
-     user_id) DO UPDATE SET cards = EXCLUDED.cards` (20260312_secure_hole_
-     cards_fix.sql). The deal is the INSERT; the engine's re-push of the hero's
-     remaining two cards after `performDiscard` splices one out hits the same
-     unique key and is therefore an UPDATE. Subscribing to INSERT only meant
-     the client was never told, and the third card sat on the felt for the rest
-     of the hand. Every other hole-card re-push - a RESYNC, a reconnect - was
-     invisible for the same reason. '*' is INSERT + UPDATE + DELETE, and the
-     handler already reads `payload.new`, which UPDATE carries. */
-  useMasterBusChannel({
-    channelName: `table-cards-secure-${tableId}-${userId}`,
-    table: 'table_hole_cards',
-    filter: tableId ? `table_id=eq.${tableId}` : null,
-    event: '*',
-    onPayload: handleHoleCardPayload,
-    /* ═══ A DEAD CHANNEL MUST NOT BE A SILENT ONE (2026-08-31) ════════════
-       This subscription had no error handler, so when `table_hole_cards` was
-       dropped from the supabase_realtime publication at 19:02 UTC the channel
-       failed with nothing said - no toast, no telemetry, no fallback - and
-       every player at every table quietly lost their hole-card push for four
-       hours. `useMasterBusChannel` has surfaced CHANNEL_ERROR / TIMED_OUT /
-       CLOSED this whole time; nobody was listening.
+  /* ═══ HOLE CARDS COME DOWN THE SOCKET, NOT THROUGH THE WAL (2026-09-06) ═══
+     There WAS a fourth delivery path here: a Realtime `postgres_changes`
+     subscription on `table_hole_cards`, which is how the hero's cards reached
+     the screen before the engine socket carried them (PR #3032, live since
+     2026-09-05 00:55 UTC). It is gone, and the table is out of the
+     `supabase_realtime` publication in the same change.
 
-       Listening now, and answering: force the recovery fetch immediately
-       rather than waiting out the poll interval. Had this been wired, the
-       incident would have self-reported on the first table load and
-       self-recovered on the first hand. */
-    onSubscriptionError: (status, err) => {
-      reportError(
-        err ?? new Error(`hole-card channel ${status}`),
-        'TablePage.hole_card_channel_failed',
-        { tableId, status }
-      );
-      heroCardFetchRef.current?.();
-    },
-    enabled: !!tableId && !!userId,
-  });
+     WHY. `table_hole_cards` was 716 of the 1,643 published row changes in a
+     measured 15-second window - 44% of everything Supabase Realtime had to
+     decode - and it was delivered to NOBODY: every one of those changes cost
+     a wal2json decode plus an `apply_rls` pass and reached zero subscribers,
+     because the socket had already delivered the cards and the row exists
+     only as the durable copy. The poller was spending 22.9 seconds of
+     database time per 15 seconds of WAL, so it could never catch up, and a
+     logical slot that is behind reads WAL from disk instead of memory and
+     falls further behind. That spiral is what players felt as a late felt.
+
+     WHAT STILL DELIVERS THE CARDS, three independent paths:
+       1. the deal itself - `sendToUser` on the engine socket, sent BEFORE the
+          database write (ServerTableEngineDealing.persistHoleCardsWithRetry);
+       2. every SUBSCRIBE - the transport calls `onResync` on first connect,
+          on reconnect and on a mux join, and that re-pushes the hero's cards
+          for the live hand (EngineWebSocketServer -> index.ts -> rePushHoleCards);
+       3. the bounded recovery poll below, which reads the row directly.
+     Plus `hole_cards_unavailable` if the write itself fails three times.
+
+     THIS IS NOT THE 2026-08-31 TRIM. That one removed the publication while
+     the Realtime row push was the ONLY path, and blinded every table for four
+     hours. The precondition it recorded - "deliver hole cards as a private
+     frame on the engine socket the player already holds and then drop this
+     table from realtime for good" - is the change that shipped in #3032, and
+     it is met before this line was deleted rather than after. */
 
   // Fallback: Check active hand if page reloads mid-hand and misses the INSERT event.
   // FIX-232: Polls at 0s/2s/5s intervals but STOPS once cards are received (Bug #7).
@@ -10803,6 +10797,53 @@ export default function TablePage({
           handNumber: Number(handState.hand_number) || 0,
           emittedAt: typeof handState.emitted_at === 'number' ? handState.emitted_at : undefined,
         });
+        return;
+      }
+
+      /* THE JACKPOT IS COMING, EVEN IF THE MONEY IS LATE (BBJ phase 2.2).
+         A hit the engine could not pay this instant - the :55 maintenance
+         freeze refuses every money write for five minutes, and that is the
+         ordinary cause - used to leave the table in SILENCE: `bbj_hit` had
+         gone out, the celebration waits on `bbj_payout_complete`, and that
+         never arrived. The players who had just taken and beaten a
+         qualifying hand saw the hand end normally and nothing else. The
+         payout itself is safe (the write-ahead claim and the reconciler);
+         this is only about telling them. */
+      if (eventType === 'bbj_payout_pending') {
+        if (
+          !shouldAnnounceBbjHit({
+            tableId: (handState.table_id as string) || tableId,
+            handNumber: handState.hand_number as number,
+            emittedAt: handState.emitted_at as number,
+          })
+        ) {
+          return;
+        }
+        toast.info('Bad Beat Jackpot Hit. Your Share Is Being Paid And Will Land Shortly.', 6000);
+        return;
+      }
+
+      /* And the other half of that promise: the reconciler landed it. The hand
+         is minutes old by now, so this is a notice rather than the ten second
+         celebration - every recipient also has a notification saying exactly
+         what they were paid and where it went (phase 1.1). */
+      if (eventType === 'bbj_payout_paid') {
+        if (
+          !shouldAnnounceBbjHit({
+            tableId: (handState.table_id as string) || tableId,
+            handNumber: handState.hand_number as number,
+            emittedAt: handState.emitted_at as number,
+          })
+        ) {
+          return;
+        }
+        const late = Number(handState.totalPayout);
+        toast.success(
+          Number.isFinite(late) && late > 0
+            ? `Bad Beat Jackpot Paid. $${money(late)} Has Been Shared Out.`
+            : 'Bad Beat Jackpot Paid. Your Share Has Landed.',
+          6000
+        );
         return;
       }
 

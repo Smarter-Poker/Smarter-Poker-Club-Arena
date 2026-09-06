@@ -72,6 +72,26 @@
  * TRIGGER FUNCTIONS ARE OUT OF SCOPE. `RETURNS trigger` cannot be invoked as an
  * RPC; Postgres refuses it outside a trigger context, so the grant is inert.
  *
+ * SO IS `RETURNS event_trigger`, for exactly the same reason, and until
+ * 2026-09-06 this file did not say so: the test was `/RETURNS\s+trigger\b/`,
+ * which does not match `event_trigger`, so every event-trigger function that
+ * writes a log row was reported as a SECURITY DEFINER writer a browser could
+ * reach. `ca_log_ddl_event` and `ca_log_ddl_drop` blocked a push that way.
+ * Postgres refuses `SELECT ca_log_ddl_event()` with "can only be called in a
+ * sql_drop event trigger function" whatever the grant says, so the finding was
+ * never actionable - and an unactionable BLOCKED is how a gate teaches people
+ * to reach for --no-verify.
+ *
+ * Both of that finding's premises were false, and the second is worth knowing
+ * for its own sake: the live ACL on those two functions is
+ * `{postgres=X, service_role=X}` - no browser role holds EXECUTE. "Silence
+ * means open" is right for CREATE FUNCTION and WRONG for CREATE OR REPLACE of
+ * a function that already exists, because a replace PRESERVES the existing
+ * grants rather than resetting them to the default. This check reads migration
+ * text, not the catalogue, so it cannot see that; the conservative reading is
+ * still the right default, but it is the reason a migration that only replaces
+ * a body can be reported as opening something it never touched.
+ *
  * ESCAPE HATCH. scripts/ci/definer-authorization.allowlist.json, which carries
  * a written reason per entry, under two separate keys: `reviewedExceptions`
  * for rule 1 and `anonPublicSurface` for rule 2. Two functions are in the
@@ -309,7 +329,7 @@ export function unauthorisedWriters(sql, allowlist = new Set(), grantSql = sql) 
   const out = [];
   for (const fn of declaredFunctions(clean)) {
     if (!/SECURITY\s+DEFINER/i.test(fn.header)) continue;
-    if (/RETURNS\s+trigger\b/i.test(fn.header)) continue;
+    if (/RETURNS\s+(?:event_)?trigger\b/i.test(fn.header)) continue;
     if (!/(?:^|[^a-z_])(?:insert\s+into|update\s+[a-z_"]|delete\s+from)/i.test(fn.body)) continue;
     if (!browserReachable(grants, fn.name)) continue;
     /* ASKING, THEN ACCEPTING THE CALLER'S ANSWER, IS NOT ASKING (2026-08-31).
@@ -391,10 +411,78 @@ export function anonReadableDefiners(sql, allowlist = new Set(), grantSql = sql)
   const out = [];
   for (const fn of declaredFunctions(clean)) {
     if (!/SECURITY\s+DEFINER/i.test(fn.header)) continue;
-    if (/RETURNS\s+trigger\b/i.test(fn.header)) continue;
+    if (/RETURNS\s+(?:event_)?trigger\b/i.test(fn.header)) continue;
     if (!anonReachable(grants, fn.name)) continue;
     if (/auth\.(?:uid|role|jwt)\s*\(/i.test(fn.body)) continue;
     if (allowlist.has(fn.name)) continue;
+    out.push(fn.name);
+  }
+  return out;
+}
+
+/**
+ * --- THE FOURTH RULE: A ROSTER NOBODY CAN BE SCOPED OUT OF (2026-09-06) -----
+ *
+ * WHY, and why it is not simply "extend rule 2 to authenticated".
+ *
+ * `fn_bbj_unclaimed_shares()` shipped on 2026-09-06 returning EVERY unpaid
+ * bad-beat-jackpot share on the platform - player id, arena name, amount,
+ * table, hand, reason - as SECURITY DEFINER, with no REVOKE and no GRANT, so
+ * Postgres's default handed EXECUTE to PUBLIC and every logged-in account
+ * inherited it. It is a READ, so rule 1 (writers) did not judge it; it is
+ * reachable by `authenticated` rather than `anon`, so rule 2 did not either.
+ * It fell exactly between them. The live check
+ * `check-telemetry-exposure.mjs` caught it fourteen minutes after it landed -
+ * the net working, but after the fact.
+ *
+ * Rule 2's header explains, correctly, why it stops at `anon`: "a great many
+ * read-only functions are legitimately open to a logged-in player and failing
+ * those would train everybody to stuff the allowlist." Widening rule 2 would
+ * do precisely the harm it warns about. So this rule does not widen it. It
+ * names the NARROW shape that is never a legitimate player read:
+ *
+ *     SECURITY DEFINER  and  a browser role can execute it
+ *     and  it takes NO ARGUMENTS          -> it cannot be scoped to a caller
+ *     and  it RETURNS SETOF / TABLE       -> it enumerates rows, it does not
+ *                                            answer one question
+ *     and  the body never consults auth.uid() / auth.role() / auth.jwt()
+ *     and  it is not on the anonPublicSurface allowlist
+ *
+ * All four conditions together mean: a definer that bypasses RLS, hands back a
+ * list, and has no way of knowing or limiting who asked. That is an operator
+ * console, and it is the same judgement
+ * `fn_ca_browser_reachable_telemetry()` makes against the live database -
+ * moved to the branch, so it is refused before it is applied instead of
+ * reported after.
+ *
+ * A parameterless definer returning a SCALAR is untouched (a count, a flag, a
+ * name-availability check), and so is any function that takes an argument -
+ * both are the ordinary shapes of a legitimate logged-in read.
+ */
+export function unscopedRosterDefiners(sql, allowlist = new Set(), grantSql = sql) {
+  const clean = stripComments(sql);
+  const grants = grantSql === sql ? clean : stripComments(grantSql);
+  const out = [];
+  for (const fn of declaredFunctions(clean)) {
+    if (!/SECURITY\s+DEFINER/i.test(fn.header)) continue;
+    if (/RETURNS\s+(?:event_)?trigger\b/i.test(fn.header)) continue;
+    if (!browserReachable(grants, fn.name)) continue;
+    if (/auth\.(?:uid|role|jwt)\s*\(/i.test(fn.body)) continue;
+    if (allowlist.has(fn.name)) continue;
+
+    // No arguments: `name(` immediately followed by `)`, allowing whitespace.
+    // An argument list is the caller's chance to be scoped, so its presence
+    // takes the function out of this rule entirely.
+    const takesNoArgs = new RegExp(
+      `FUNCTION\\s+(?:public\\.)?${fn.name}\\s*\\(\\s*\\)`,
+      'i'
+    ).test(fn.header);
+    if (!takesNoArgs) continue;
+
+    // Returns a set: SETOF ..., or TABLE(...). A scalar return answers one
+    // question and is not a roster.
+    if (!/RETURNS\s+(?:SETOF\b|TABLE\s*\()/i.test(fn.header)) continue;
+
     out.push(fn.name);
   }
   return out;
@@ -501,6 +589,7 @@ function main() {
   const offenders = [];
   const anonOffenders = [];
   const cloneOffenders = [];
+  const rosterOffenders = [];
   let inspected = 0;
 
   // Every migration this branch touches, concatenated, so a REVOKE in one file
@@ -533,6 +622,61 @@ function main() {
     for (const name of unrevokedClones(sql, anonAllowlist, branchSql)) {
       cloneOffenders.push({ name, file });
     }
+    // Rule 4: a no-argument, set-returning definer a browser can reach.
+    // Reported only when nothing above already named it, for the same reason
+    // the anon rule defers to the writer rule: one verdict per function, and
+    // the more specific guidance wins.
+    const named = new Set([
+      ...offenders.map((o) => o.name),
+      ...anonOffenders.map((o) => o.name),
+      ...cloneOffenders.map((o) => o.name),
+    ]);
+    for (const name of unscopedRosterDefiners(sql, anonAllowlist, branchSql)) {
+      if (!named.has(name)) rosterOffenders.push({ name, file });
+    }
+  }
+
+  if (rosterOffenders.length > 0) {
+    console.error('');
+    console.error(
+      '[check-definer-authorization] BLOCKED -- a roster nobody can be scoped out of.'
+    );
+    console.error('');
+    for (const o of rosterOffenders) {
+      console.error(`  ${o.name}`);
+      console.error(`    declared in ${o.file}`);
+      console.error('    SECURITY DEFINER, so RLS does not apply. It takes NO ARGUMENTS, so it');
+      console.error('    cannot be scoped to a caller. It RETURNS A SET, so it hands back a list');
+      console.error('    rather than answering one question. And it never consults auth.uid(),');
+      console.error('    auth.role() or auth.jwt(), so it cannot tell who is asking. A browser');
+      console.error('    role can execute it.');
+      console.error('');
+    }
+    console.error('  On 2026-09-06 fn_bbj_unclaimed_shares() shipped in exactly this shape and');
+    console.error('  returned EVERY unpaid bad-beat-jackpot share on the platform - player name,');
+    console.error('  amount, table, hand - to any account that could log in. It was a read, so');
+    console.error('  the writer rule did not judge it; it was reachable by `authenticated` and');
+    console.error('  not `anon`, so the anon rule did not either. It fell between them.');
+    console.error('');
+    console.error('  Postgres grants EXECUTE to PUBLIC on every new function. Silence is not');
+    console.error('  "closed" - silence is "open to everyone".');
+    console.error('');
+    console.error('  Pick one:');
+    console.error('');
+    console.error('  1. NOBODY IN A BROWSER SHOULD CALL IT (usually true for an operator read):');
+    console.error(
+      '       REVOKE ALL ON FUNCTION public.<name>() FROM PUBLIC, anon, authenticated;'
+    );
+    console.error('       GRANT EXECUTE ON FUNCTION public.<name>() TO service_role;');
+    console.error('');
+    console.error('  2. A PLAYER SHOULD SEE THEIR OWN ROWS. Filter on auth.uid() inside the');
+    console.error('     function. That both scopes it and satisfies this rule.');
+    console.error('');
+    console.error('  3. IT IS GENUINELY A PUBLIC LIST (a leaderboard, a lobby). Add it to the');
+    console.error('     anonPublicSurface block of scripts/ci/definer-authorization.allowlist.json');
+    console.error('     with a reason saying why every row in it is safe for anyone to read.');
+    console.error('');
+    process.exit(1);
   }
 
   if (cloneOffenders.length > 0) {
@@ -660,10 +804,15 @@ function main() {
     process.exit(1);
   }
 
+  // The summary names all four rules on purpose. A pass line that describes
+  // fewer checks than actually ran teaches the next reader that the ones it
+  // omits do not exist - which is how rule 4's shape went unjudged until a
+  // live audit found it.
   console.log(
     `[check-definer-authorization] OK — ${inspected} SECURITY DEFINER function(s) declared across ` +
       `${files.length} migration(s); every writer a browser can reach consults the request, ` +
-      'and nothing new answers a caller with no account.'
+      'nothing new answers a caller with no account, every clone names its grants, ' +
+      'and no unscoped set-returning definer is browser-reachable.'
   );
 }
 

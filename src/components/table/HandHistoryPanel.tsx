@@ -35,6 +35,12 @@ import HandDetailView from '../handdetail/HandDetailView';
 import type { ReplayModel } from '../../utils/handReplay';
 import type { HeroHandFacts } from '../../services/HandHistoryService';
 import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
+import {
+  handMatchesQuery,
+  handQueryIsActive,
+  handSearchSubject,
+  type HandQuery,
+} from '../../lib/handSearch';
 import { formatTableChips } from '../../utils/format';
 import './HandHistoryPanel.css';
 
@@ -405,7 +411,28 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
      new array identity. Keyed by the ids the list holds instead. */
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const idSignature = hands.map((h) => h.id).join('|');
+  /**
+   * PHASE 5 (2026-09-06): the panel can be searched. One box, the same
+   * predicate the archive runs - hand number, an opponent's name, a tag or a
+   * word from a note - because a player at a table remembers "the one against
+   * KingFish", not its position in a list.
+   */
+  const [search, setSearch] = useState('');
+  const shown = useMemo(() => {
+    const query: HandQuery = { text: search };
+    if (!handQueryIsActive(query)) return hands;
+    return hands.filter((h) =>
+      handMatchesQuery(
+        handSearchSubject(h.replay, {
+          heroUserId: heroId,
+          handNumber: h.handNumber,
+          playedAtMs: h.timestamp,
+        }),
+        query
+      )
+    );
+  }, [hands, search, heroId]);
+  const idSignature = shown.map((h) => h.id).join('|');
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -592,19 +619,48 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
           </div>
         )}
 
+        {hands.length > 0 && (
+          <div className="hh-panel__search">
+            <input
+              className="hh-panel__search-input"
+              type="search"
+              value={search}
+              placeholder="Find A Hand: Number, Opponent Or Tag"
+              aria-label="Find A Hand At This Table"
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                type="button"
+                className="hh-panel__search-clear"
+                onClick={() => setSearch('')}
+                aria-label="Clear The Search"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="hh-panel__list">
-          {hands.length === 0 ? (
+          {shown.length === 0 ? (
             <div className="hh-panel__empty">
               {loadState === 'loading'
                 ? 'Loading Hands'
                 : loadState === 'failed'
                   ? 'Could Not Load The Hands For This Table'
-                  : viewerSeated
-                    ? 'No Completed Hands For You At This Table Yet'
-                    : 'You Are Watching. Hands Are Recorded For The Players Dealt Into Them. Take A Seat And Yours Will Appear Here.'}
+                  : /* A search that matched nothing is not an empty history,
+                       and telling a seated player they have no hands when
+                       they are looking at a filter is the same mistake the
+                       observer copy fixed in Phase 1. */
+                    hands.length > 0
+                    ? 'No Hands Here Match That Search'
+                    : viewerSeated
+                      ? 'No Completed Hands For You At This Table Yet'
+                      : 'You Are Watching. Hands Are Recorded For The Players Dealt Into Them. Take A Seat And Yours Will Appear Here.'}
             </div>
           ) : (
-            hands.map((hand) => (
+            shown.map((hand) => (
               <div
                 key={hand.id}
                 className={`hh-panel__item${visible[hand.id] ? ' hh-panel__item--in' : ''}`}

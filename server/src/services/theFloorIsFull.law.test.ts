@@ -33,6 +33,9 @@ const read = (p: string) => readFileSync(resolve(__dirname, '..', '..', p), 'utf
 const FLEET = read('src/services/HorseFleetManager.ts');
 const ROTATOR = read('src/services/HorseSessionRotator.ts');
 const BEHAVIOR = read('src/services/HorseBehavior.ts');
+/* The platform's four-game limit, mirrored from the database. See the
+   "hard ceiling" pin below. */
+const GAME_LOAD = read('src/services/HorseGameLoad.ts');
 
 describe('LAW: a seat opens for a person, and for nothing else', () => {
   it('the fleet counts humans on the list and subtracts them from the target', () => {
@@ -101,9 +104,19 @@ describe('LAW: four tables is the target, not the ceiling', () => {
        more than four. `tagMaxTables` is pinned separately in
        StableHandTags.test.ts to never return above what it is given, and to
        return the ceiling untouched for a horse with no tag. */
-    expect(FLEET).toMatch(/tablesForHorse\.size >= tagMaxTables\(tag, MAX_TABLES_PER_HORSE\)/);
+    /* PIN MOVED AGAIN 2026-09-06, and the law is stricter again. The tag
+       ceiling is unchanged and still measured against the horse's live SEATS -
+       it is `ownCashCeiling` now - but the test it feeds also asks the
+       platform's four-GAME limit, which counts tournament bookings the way
+       `fn_concurrent_game_load` counts them. The database was refusing that
+       fifth game 10,577 times in four hours while this line said the horse was
+       free. Both rules, one predicate: see HorseGameLoad. */
+    expect(FLEET).toContain('ownCashCeiling: tagMaxTables(tag, MAX_TABLES_PER_HORSE),');
+    expect(FLEET).toContain('if (!mayEnterAnotherGame(gameLoad)) {');
     // the constant is still the ceiling that gets handed in
     expect(FLEET).toContain('const MAX_TABLES_PER_HORSE = 4');
+    // ...and the platform limit it can never exceed is the database's four
+    expect(GAME_LOAD).toContain('export const CONCURRENT_GAME_LIMIT = 4;');
     // and nothing raises it anywhere
     expect(FLEET).not.toMatch(/MAX_TABLES_PER_HORSE\s*\+/);
   });

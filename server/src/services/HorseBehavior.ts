@@ -342,21 +342,34 @@ export function clearStakeBandSupply(): void {
  * point of the ladder and the thing a player would notice. Its stored band is
  * untouched: the operator's switch is temporary and the merit record is not
  * ours to rewrite.
+ *
+ * THE SAME RULE RUNS IN SQL (2026-09-06). `fn_project_stake_band(band, avail)`
+ * in migration 20260906093032 is this function, statement for statement, and
+ * `fn_assign_horse_stake_bands` applies it so the ASSIGNMENT stops minting
+ * horses into a band with no game in the first place. This one stays as the
+ * belt to that braces: it covers the window between an operator switching a
+ * game off and the next assignment run. Change one and change the other -
+ * HorseStakeBandProjection.test.ts fails if they drift.
  */
-export function effectiveStakeBandFor(horseId: string): HorseStakeBand {
-  const assigned = stakeBandFor(horseId);
-  const supply = bandSupply;
+export function projectStakeBandOnto(
+  band: HorseStakeBand,
+  available: ReadonlySet<HorseStakeBand> | null | undefined
+): HorseStakeBand {
   // Nothing published, or a floor with no bands at all: fail OPEN. A cycle
   // that read no tables is not evidence that a band is empty.
-  if (!supply || supply.size === 0) return assigned;
-  if (supply.has(assigned)) return assigned;
-  for (let i = STAKE_BAND_LADDER.indexOf(assigned) - 1; i >= 0; i--) {
-    const band = STAKE_BAND_LADDER[i];
-    if (supply.has(band)) return band;
+  if (!available || available.size === 0) return band;
+  if (available.has(band)) return band;
+  for (let i = STAKE_BAND_LADDER.indexOf(band) - 1; i >= 0; i--) {
+    const lower = STAKE_BAND_LADDER[i];
+    if (available.has(lower)) return lower;
   }
   // Only bands ABOVE this horse have a game. It stays where it is rather than
   // being promoted; the floor simply has nothing for it this cycle.
-  return assigned;
+  return band;
+}
+
+export function effectiveStakeBandFor(horseId: string): HorseStakeBand {
+  return projectStakeBandOnto(stakeBandFor(horseId), bandSupply);
 }
 
 /**

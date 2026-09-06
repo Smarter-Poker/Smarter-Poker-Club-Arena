@@ -250,14 +250,27 @@ export type RaiseResponsePlan = 'commit' | 'callOnce' | 'foldToRaise';
  * The recency window (r*) stays pooled: it is a "did they just change
  * gears" read and gears are not per-scope.
  */
-export type ReadScope = `${'holdem' | 'omaha'}:${'hu' | 'short' | 'full'}`;
+export type ReadScope = `${'holdem' | 'omaha' | 'sixplus'}:${'hu' | 'short' | 'full'}`;
 
 /** Scoped hands before the scoped bucket outranks the pooled one. */
 export const SCOPE_MIN_HANDS = 40;
 
 export function readScopeOf(variant: string | null | undefined, dealtCount: number): ReadScope {
   const v = (variant || 'nlh').toLowerCase();
-  const fam = v.startsWith('plo') || v === 'flo8' || v.includes('omaha') ? 'omaha' : 'holdem';
+  // SHORT DECK IS ITS OWN FAMILY, not hold'em with two cards. Strip the
+  // deuces through fives and every frequency moves: VPIP runs near 50% where
+  // full-deck hold'em sits at 25%, because everyone connects with everything.
+  // Filing it under `holdem` let 205,562 short-deck seat-hands a week pollute
+  // the same player's NLH read, which is the exact defect this scope exists
+  // to remove - just with a different pair of games than the one the audit
+  // named. `sixplus` rather than `short` so the family can never be confused
+  // with the table-size token in the key.
+  const fam =
+    v.includes('short') || v === '6+' || v.includes('sixplus')
+      ? 'sixplus'
+      : v.startsWith('plo') || v === 'flo8' || v.includes('omaha')
+        ? 'omaha'
+        : 'holdem';
   const size = dealtCount <= 2 ? 'hu' : dealtCount <= 5 ? 'short' : 'full';
   return `${fam}:${size}`;
 }

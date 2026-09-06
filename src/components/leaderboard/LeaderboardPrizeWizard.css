@@ -222,6 +222,39 @@
   font-size: 1.25rem;
 }
 
+.lb-prize-funding-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 12px 0 0;
+  overflow: hidden;
+  border: 1px solid rgb(126 203 255 / 24%);
+  border-radius: 8px;
+  background: rgb(126 203 255 / 18%);
+}
+
+.lb-prize-funding-grid div {
+  min-width: 0;
+  padding: 12px;
+  background: rgb(3 10 19 / 96%);
+}
+
+.lb-prize-funding-grid dt {
+  margin-bottom: 5px;
+  color: #8aa2b8;
+  font-size: 0.68rem;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lb-prize-funding-grid dd {
+  margin: 0;
+  color: #eef8ff;
+  font-size: 0.9rem;
+  font-weight: 760;
+}
+
 .lb-prize-safety-note,
 .lb-prize-inline-error,
 .lb-prize-inline-warning {
@@ -405,7 +438,8 @@
 
   .lb-prize-choice-grid,
   .lb-prize-period-grid,
-  .lb-prize-review {
+  .lb-prize-review,
+  .lb-prize-funding-grid {
     grid-template-columns: 1fr;
   }
 

@@ -34,7 +34,7 @@ describe('club lobby creation controls', () => {
     expect(tableConfig).toContain('const canBuildHere = access?.allowed === true');
   });
 
-  it('keeps the desktop selector deck sticky and mobile controls inside the approved chassis', () => {
+  it('keeps the complete selector deck sticky below the real header on desktop and mobile', () => {
     /* FIND THE BLOCK BY THE RULE IT OWNS, NOT BY BEING LAST (2026-09-01).
        This used to slice from `lastIndexOf('@media (min-width: 901px)')`, which
        is a guess about file order rather than a statement about the deck lock.
@@ -44,9 +44,11 @@ describe('club lobby creation controls', () => {
        same three declarations about the block that actually declares them, so
        appending another desktop block cannot make this lie in either
        direction. */
-    const deckAnchor = commandCss.indexOf('.club-lobby-machine > .club-lobby-command-top {');
-    expect(deckAnchor).toBeGreaterThan(-1);
-    const deckOpen = commandCss.lastIndexOf('@media (min-width: 901px)', deckAnchor);
+    const deckComment = commandCss.indexOf(
+      '/* Keep the complete Find Your Game selector deck available while the game'
+    );
+    expect(deckComment).toBeGreaterThan(-1);
+    const deckOpen = commandCss.indexOf('@media (min-width: 901px)', deckComment);
     expect(deckOpen).toBeGreaterThan(-1);
     const deckEnd = commandCss.indexOf('@media', deckOpen + 1);
     const desktop = commandCss.slice(deckOpen, deckEnd === -1 ? undefined : deckEnd);
@@ -54,11 +56,15 @@ describe('club lobby creation controls', () => {
     expect(desktop).toContain('position: sticky');
     expect(desktop).toContain('top: 0');
 
-    const mobile = commandCss.slice(commandCss.indexOf('/* ONE-CHASSIS CONTROL LOCK'));
+    const mobileAnchor = commandCss.indexOf('/* MOBILE FIND-YOUR-GAME LOCK');
+    expect(mobileAnchor).toBeGreaterThan(-1);
+    const mobile = commandCss.slice(mobileAnchor);
     expect(mobile).toContain('@media (max-width: 900px)');
-    expect(mobile).toMatch(
-      /\.club-lobby-command-top\s*\{[^}]*position:\s*relative[^}]*display:\s*grid/s
-    );
+    expect(mobile).toContain('display: contents');
+    expect(mobile).toContain('position: sticky');
+    expect(mobile).toContain('--ca-global-header-height');
+    expect(mobile).toContain('--ca-in-tab-header-height');
+    expect(mobile).toContain('env(safe-area-inset-top, 0px)');
     expect(commandCss).toMatch(
       /\.club-lobby-machine\s*\{[^}]*width:\s*calc\(100% - 8px\)[^}]*max-width:\s*none/s
     );

@@ -166,14 +166,43 @@ export function useVIPStatus() {
         return;
       }
 
-      try {
-        const vip = await vipService.isVIP(user.id);
-        if (mounted) {
-          setIsVIP(vip);
+      /**
+       * A FAILED READ IS NOT A DOWNGRADE (2026-09-05), and this hook was the
+       * one place still saying it was.
+       *
+       * `vipService.checkVIPStatus` goes out of its way to THROW rather than
+       * answer "not VIP" when the query errors - its own header explains why,
+       * citing the two times this repo has already ruled against that shape
+       * (`WalletService.getPlayerBalance`, `useWalletStore.loadDiamonds`): a
+       * read that never happened is not an answer. This catch then threw that
+       * intent away and wrote `false`, so ONE transient blip stripped a paying
+       * member of every VIP-gated perk for the rest of the session, silently,
+       * with no retry.
+       *
+       * It cost a real feature: the VIP all-in squeeze reads this hook, and a
+       * member who lost the read simply never saw the perk again and had no
+       * way to know why.
+       *
+       * So: one retry on a short backoff, and if the answer still never
+       * arrives, KEEP WHAT WE ALREADY KNEW rather than inventing a downgrade.
+       * The initial value is `false`, so a first read that fails still grants
+       * nothing - fail closed on a perk we have never been able to confirm -
+       * but a member confirmed once is not un-confirmed by a dropped packet.
+       */
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const vip = await vipService.isVIP(user.id);
+          if (mounted) setIsVIP(vip);
+          break;
+        } catch (e) {
+          if (attempt === 0) {
+            await new Promise((r) => setTimeout(r, 400));
+            if (!mounted) return;
+            continue;
+          }
+          reportError(e, 'useVIP.check');
+          /* No setIsVIP here, deliberately. See above. */
         }
-      } catch (e) {
-        reportError(e, 'useVIP.check');
-        if (mounted) setIsVIP(false);
       }
       if (mounted) setIsLoading(false);
     };

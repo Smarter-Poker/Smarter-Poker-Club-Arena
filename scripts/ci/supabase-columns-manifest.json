@@ -916,6 +916,19 @@
       "user_id",
       "created_at"
     ],
+    "ca_account_snapshots": [
+      "id",
+      "account_key",
+      "account_type",
+      "entity_id",
+      "club_id",
+      "column_name",
+      "balance",
+      "taken_at",
+      "is_baseline",
+      "unexplained",
+      "note"
+    ],
     "ca_alarm_drills": [
       "id",
       "run_at",

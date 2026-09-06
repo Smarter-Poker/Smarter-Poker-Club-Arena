@@ -196,8 +196,22 @@ silence the server had explained two minutes earlier.
 mutation-tested against six deliberate breakages. Full reasoning:
 `docs/changelog/2026-09-05-realtime-phase-4-restart-handoff-and-protocol.md`.
 
-**Verification.** Recorded below when it has been read from production across a
-real break.
+**Verification (2026-09-05/06, read from production).** The client half
+published at 23:20 and was checked by downloading the bytes: all three sockets
+go through the one builder (`Br(this.baseUrl,"/ws/multi")`,
+`Br(this.opts.baseUrl,"/ws/table/"+…)`, `Br(this.opts.baseUrl,"/ws/channel")`),
+`PROTOCOL_VERSION` minifies to 1, and there is **exactly one**
+`replace(/^http/,"ws")` left in the entire entry chunk - the builder itself, so
+no hand-built socket URL survives. The engine cut over inside the 23:55 break:
+`becameLeaderAt 23:55:18`, the running container is
+`club-arena-engine:dec2a23f0…` (the image tag IS the commit sha), healthy, and
+`MIN_CLIENT_PROTOCOL` is compiled into both `EngineWebSocketServer.js` and
+`ChannelWebSocketServer.js` inside that image.
+
+**Phase 4 audit (2026-09-06)** found four defects, one of which meant the phase
+did nothing for the players most likely to need it - a frame reaches only the
+sockets that were already subscribed, so anyone who sat down after :53 was
+never told. See `docs/changelog/2026-09-06-realtime-phase-4-deep-audit.md`.
 
 ## Phase 3 - Do no harm (2026-09-05)
 

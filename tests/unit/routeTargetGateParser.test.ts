@@ -45,6 +45,20 @@ const loadStripComments = (): ((src: string) => string) => {
 
 const stripComments = loadStripComments();
 
+/** Lift the REAL route matcher out of the shipped gate. */
+const loadRouteMatcher = (): ((path: string) => RegExp | null) => {
+  const start = GATE.indexOf('function toMatcher');
+  const end = GATE.indexOf('\nconst matchers =');
+  expect(start, 'toMatcher not found in the gate').toBeGreaterThan(-1);
+  expect(end, 'the matcher construction that follows toMatcher moved').toBeGreaterThan(start);
+
+  return new Function(`${GATE.slice(start, end)}\nreturn toMatcher;`)() as (
+    path: string
+  ) => RegExp | null;
+};
+
+const toMatcher = loadRouteMatcher();
+
 /**
  * The gate's own matcher AND its own normalisation, so these cases exercise the
  * real pair rather than a lookalike. An interpolation becomes `<param>` (which
@@ -112,7 +126,14 @@ describe('the matcher no longer treats the catch-all as a match', () => {
   });
 
   it('still honours a NESTED splat, which is a real prefix route', () => {
-    expect(GATE).toContain("if (seg === '*') return '.*';");
+    expect(toMatcher('legal/*')?.test('legal/privacy')).toBe(true);
+  });
+
+  it('matches both forms of a route with an optional parameter', () => {
+    const matcher = toMatcher('challenges/:cycle?');
+    expect(matcher?.test('challenges')).toBe(true);
+    expect(matcher?.test('challenges/daily')).toBe(true);
+    expect(matcher?.test('challenges/daily/extra')).toBe(false);
   });
 
   it('checks Link and NavLink, not only navigate()', () => {

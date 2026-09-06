@@ -2192,10 +2192,10 @@ export class HandController {
      *
      * The re-check, in order, and every step decides on MERIT:
      *
-     *   1. Re-run the evaluation against one pot holding the whole amount with
-     *      every contender eligible. This is the same showdown with the
-     *      snapshot removed from the question, and it is what recovers a stale
-     *      or mis-shaped eligibility list.
+     *   1. Re-run every original pot layer with every contender eligible. This
+     *      is the same showdown with only the stale snapshot removed from the
+     *      question; preserving the layers also keeps the settlement and Daily
+     *      Mission per-pot evidence exact.
      *   2. If exactly one contender remains, that player wins uncontested.
      *      This is a legitimate outcome, not a guess.
      *   3. If the evaluator still cannot separate them, split the pot equally
@@ -2221,18 +2221,19 @@ export class HandController {
 
       // 1. Re-evaluate with the eligibility question removed.
       if (contenders.length > 0 && totalPot > 0) {
+        const recoveredPerPot: PerPotAward[] = [];
         winners = determineWinners(
           this.state.players,
           this.state.communityCards,
-          [
-            {
-              amount: totalPot,
-              eligiblePlayers: contenders.map((p) => p.user_id),
-            } as (typeof pots)[number],
-          ],
+          pots.map((pot) => ({
+            ...pot,
+            eligiblePlayers: contenders.map((p) => p.user_id),
+          })),
           this.config.gameVariant,
-          this.state.dealerSeat
+          this.state.dealerSeat,
+          recoveredPerPot
         );
+        if (winners.length > 0) this.pendingPerPotAwards = recoveredPerPot;
       }
 
       // 2. One contender left is a winner, not a guess.

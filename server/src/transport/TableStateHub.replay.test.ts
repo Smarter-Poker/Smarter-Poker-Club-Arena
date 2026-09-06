@@ -11,6 +11,7 @@
  * never a snapshot field (Law 1.16 — a snapshot must never trigger animation).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { TableStateHub, type HubSubscriber } from './TableStateHub.js';
 
 function makeSub(id: string, readyState = 1 /* OPEN */) {
@@ -164,15 +165,30 @@ describe('TableStateHub reveal retention (D3)', () => {
   });
 
   it('keeps at most a handful of events per table, newest wins', () => {
+    /* The cap is READ FROM THE SOURCE, not written down here. It was the
+       literal 4, and when phase 2 of the jackpot work raised the cap to 8 -
+       because one jackpot hand now asks the hub to retain five beats and the
+       splice was silently dropping the oldest, `bbj_hit` - this test went red
+       for a change that was correct. A number tuned to one shape of traffic
+       and copied into a test outlives the shape it was tuned to (CLAUDE.md
+       1.1.7). What is actually being pinned is the BEHAVIOUR: the list is
+       bounded, and it is the NEWEST that survive. */
+    const capSrc = readFileSync(new URL('./TableStateHub.ts', import.meta.url), 'utf8');
+    const cap = Number(/HUB_MAX_RETAINED_EVENTS_PER_TABLE = (\d+)/.exec(capSrc)?.[1] ?? '0');
+    expect(cap, 'the per-table retention cap is readable from the hub').toBeGreaterThan(0);
+
+    const emitted = cap + 5;
     const until = Date.now() + 15_000;
-    for (let i = 1; i <= 9; i++) {
+    for (let i = 1; i <= emitted; i++) {
       hub.emitEvent(TABLE, { type: 'spin_beat', beat: i, replay_until: until });
     }
     const late = makeSub('late');
     hub.subscribe(TABLE, late);
     const got = events(late);
-    expect(got).toHaveLength(4);
-    expect(got.map((m) => m.payload.beat)).toEqual([6, 7, 8, 9]);
+    expect(got).toHaveLength(cap);
+    expect(got.map((m) => m.payload.beat)).toEqual(
+      Array.from({ length: cap }, (_, n) => emitted - cap + 1 + n)
+    );
   });
 
   it('replays the sequence in emission order', () => {

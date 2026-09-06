@@ -303,7 +303,6 @@ import { resolveDisplayRake } from '../lib/rakeOverride';
 // renders. Alias both so adaptServiceHandToPanel below reads unambiguously.
 import { LeaderboardService } from '../services/LeaderboardService';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
-import { dailyChallengeService } from '../services/DailyChallengeService';
 // REPLACE_ME from '../services/AchievementTriggerService';
 import { notificationService } from '../services/NotificationService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
@@ -1479,14 +1478,6 @@ export default function TablePage({
 
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
-
-  useEffect(() => {
-    if (userId && userId !== 'guest') {
-      // CA-412 BUG FIX: A player who sat and played before opening the Challenges tab
-      // never got challenges assigned, so progress RPCs zero-matched. Pre-seed here.
-      dailyChallengeService.getAllChallenges(userId).catch(() => {});
-    }
-  }, [userId]);
 
   // ── Bounty animations (2026-08-20, Dan) ───────────────────────────────────
   // Both are driven by engine broadcasts that already reach EVERY client at

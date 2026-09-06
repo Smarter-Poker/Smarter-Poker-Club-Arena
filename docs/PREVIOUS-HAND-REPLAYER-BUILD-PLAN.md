@@ -143,11 +143,45 @@ BUILT 2026-09-06 (`feat/previous-hand-phase-6`); see
 
 ## Phase 7 of 7 - Accessibility, devices, performance
 
-- Every card announces itself ("Ace Of Spades"); the rundown, the panel, the
-  modal and the replayer pass a keyboard-only walk.
-- Real-device pass at 375px: panel, modal Summary rows, 9-max replayer felt.
-- Measure and trim: model build time per page, list render, replayer frame
-  build; virtualise the archive list past 100 hands.
+LIVE 2026-09-06 (squash `71feeebd3c`); see
+`docs/changelog/2026-09-06-previous-hand-phase-7.md`. The last phase, and the
+programme is complete.
+
+Verified in the bytes players download, not only in the sha: the entry chunk
+carries all thirteen rank words, all four suits and `Face Down Card`;
+`HandReplay`'s chunk carries `hr-panel-replay`, the arrow-key handler and the
+container's key label; its stylesheet carries `4 / 6.4` and the hero seat's
+`margin-top: 36px`; the archive's stylesheet carries `content-visibility` and
+`contain-intrinsic-size`, and its chunk carries `hand-card--deferred`.
+`Deuce` is correctly ABSENT from the entry chunk - `replayMotion` is lazy, and
+the poker room's own vocabulary was never meant to reach first paint.
+
+`src/utils/cardWords.ts` is a reviewed entry-chunk module (+1kB gz, 157 -> 158).
+That is deliberate: `CardImage` is already in the entry, so deferring the words
+would mean the first cards a player sees announce nothing - the defect this
+phase exists to fix, reintroduced behind a dynamic import.
+
+- Every card announces itself through ONE helper (`utils/cardWords`). The alt
+  text interpolated the rank raw, so every card everywhere was read as "A Of
+  spades"; a face-down card carried no label at all and was SILENT, which
+  makes a hand read two cards short rather than two cards unseen. Nothing is
+  announced twice now either - the broken-image glyph and the felt's own cards
+  are hidden where a label above already says the same words.
+- The keyboard-only walk: the replayer's tablist had the roles and none of the
+  behaviour (both tabs tabbable, no `aria-controls`, dead arrow keys), and
+  BOTH dialogs let Tab walk out into the live table behind them despite
+  `aria-modal="true"` - which is a promise to a screen reader, not a
+  mechanism.
+- 375px measured on the LIVE share page (no login needed) with a real 8-handed
+  PLO8 hand: four pairs of seats overlapping, one card row 45px across a
+  neighbour's stack, "CO 221.76" cut in half. `4 / 6.4` plus the hero seat
+  moved down 36px - re-measured at zero overlaps, zero seats outside the felt.
+- Measured and trimmed: the model is 0.376ms and is built once by the service,
+  so the cost was the FADE-IN - one `setTimeout` per loaded hand, each copying
+  the whole visibility map, re-armed on every keystroke. "Virtualise past 100"
+  is `content-visibility`, deliberately, because these rows expand and a
+  windowing list that guesses heights on a variable-height list is a worse bug
+  than the one it fixes.
 
 ## Recorded, outside this plan
 

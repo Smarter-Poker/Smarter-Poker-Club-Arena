@@ -128,3 +128,46 @@ describe('LAW - the merged-branch guard is wired into the push path', () => {
     expect(read('.env.example')).toMatch(/AGENT_MERGED_BRANCH_OK=1/);
   });
 });
+
+describe('LAW - the test gate can never look at an empty diff', () => {
+  /**
+   * FOUND 2026-09-06, and it had been true for as long as the hook has had a
+   * test gate.
+   *
+   * The new-branch arm read `git diff --name-only "$LOCAL_SHA"` - the WORKING
+   * TREE against that commit. A clean tree at push time returns NOTHING, so
+   * `FILES` was empty, `CHANGED_SRC` and `CHANGED_TESTS` were empty, and the
+   * vitest gate below them was skipped in silence. Every house rule still
+   * printed OK, so the push read as fully checked while the one guard
+   * CLAUDE.md rule 8 calls the seatbelt had not run at all.
+   *
+   * Measured: 0 files that way against 7 the right way, on a push whose diff
+   * CONTAINED the test that CI then failed on.
+   *
+   * And it is the path every agent takes: 10.82 requires a new branch off main
+   * for every follow-up commit, so the rule that stops commits vanishing sends
+   * all of them through the one arm where the gate is blind.
+   */
+  const hook = read(HOOK_PATH);
+
+  it('never diffs the working tree against the commit being pushed', () => {
+    /* `git diff --name-only <sha>` with no second ref is the bug. Two refs, or
+       a range, is a real answer about what the push contains. */
+    expect(hook, 'the new-branch arm is comparing against the working tree again').not.toMatch(
+      /git diff --name-only "\$LOCAL_SHA"\s*\)/
+    );
+  });
+
+  it('the new-branch arm resolves a merge base, like the remote-tip arm already did', () => {
+    const arm = hook.slice(
+      hook.indexOf('if [ "$REMOTE_SHA" = "0000'),
+      hook.indexOf('# A FILE THAT IS IDENTICAL TO origin/main')
+    );
+    expect(arm, 'the new-branch arm must exist').not.toBe('');
+    expect(arm, 'no merge-base in the new-branch arm').toMatch(/merge-base "\$LOCAL_SHA"/);
+    expect(arm, 'it must diff two refs').toMatch(/git diff --name-only "\$BASE" "\$LOCAL_SHA"/);
+    /* "I could not tell" is never "nothing changed" (10.86 rule 1): with no
+       common base it checks the whole tree instead of an empty list. */
+    expect(arm, 'no whole-tree fallback').toMatch(/git ls-files/);
+  });
+});

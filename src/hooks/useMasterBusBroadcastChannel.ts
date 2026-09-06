@@ -9,6 +9,7 @@
 
 import { useEffect, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
+import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 
 interface UseMasterBusBroadcastChannelOptions {
@@ -48,7 +49,30 @@ export function useMasterBusBroadcastChannel({
     if (!enabled || !channelName) return;
     let alive = true;
 
-    const subscribeChannel = () => {
+    const subscribeChannel = async () => {
+      if (privateChannel) {
+        try {
+          // Realtime Authorization is separate from PostgREST authentication.
+          // Prime it from the Supabase client's current session before a private
+          // channel asks realtime.messages RLS for permission to join.
+          await supabase.realtime.setAuth();
+        } catch (authError) {
+          if (!alive) return;
+          const error =
+            authError instanceof Error
+              ? authError
+              : new Error('Realtime authentication could not be initialized');
+          reportError(error, `useMasterBusBroadcastChannel.AUTH_ERROR.${event}`);
+          try {
+            errorCallbackRef.current?.('AUTH_ERROR', error);
+          } catch (callbackError) {
+            reportError(callbackError, 'useMasterBusBroadcastChannel.onSubscriptionError_threw');
+          }
+          return;
+        }
+      }
+
+      if (!alive) return;
       const channel = masterBus.getOrCreateChannel(channelName, { private: privateChannel });
       const state = (channel as any)?.state;
       if (state && state !== 'closed' && state !== 'errored') {
@@ -85,8 +109,12 @@ export function useMasterBusBroadcastChannel({
         });
     };
 
-    masterBus.registerChannelFactory(channelName, subscribeChannel);
-    subscribeChannel();
+    const startSubscription = () => {
+      void subscribeChannel();
+    };
+
+    masterBus.registerChannelFactory(channelName, startSubscription);
+    startSubscription();
 
     return () => {
       alive = false;

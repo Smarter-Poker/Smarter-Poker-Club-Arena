@@ -33,6 +33,11 @@ import { mergeById } from '../utils/mergeById';
 import { reportError } from '../utils/errorReporter';
 import CreateTablePage, { isCreateTableGameType } from './CreateTablePage';
 import TableConfigPage from './TableConfigPage';
+import {
+  claimManagedGameWork,
+  managedGameKey,
+  releaseManagedGameWork,
+} from './gameManagementIdentity';
 import styles from './GameManagementPage.module.css';
 
 type Scope = 'club' | 'union';
@@ -94,7 +99,11 @@ const BUCKET_CLOSED = 2;
  * depending on which code path produced it is the bug this whole page has been
  * paying for all day.
  */
-function toManagedGame(row: any, hostNames: Record<string, string>, fallbackName: string) {
+function toManagedGame(
+  row: any,
+  hostNames: Record<string, string>,
+  fallbackName: string
+): ManagedGame {
   return {
     id: row.id,
     kind: row.kind,
@@ -140,7 +149,7 @@ const VIEW_BUCKET: Record<View, number | null> = {
 const CREATE_TARGETS = new Set<GameCreationTarget>(['table', 'event', 'spin', 'sng']);
 /** A refresh keeps the identity of every row it did not change. */
 const mergeManagedGames = (current: ManagedGame[], next: ManagedGame[]): ManagedGame[] =>
-  mergeById(current, next, (row) => row.id);
+  mergeById(current, next, managedGameKey);
 
 const GAME_REFRESH_EVENTS = [
   'TABLE_CREATED',
@@ -522,29 +531,29 @@ export function ContractHistoryDialog({
             </span>
             <span>
               <small>Effective Guarantee</small>
-              <strong>{game.contract.readiness.effectiveGuarantee}</strong>
+              <strong>{game.contract.readiness.effectiveGuarantee.toLocaleString()}</strong>
             </span>
             {game.contract.readiness.satelliteSeatGuarantee > 0 && (
               <span>
                 <small>Satellite Seat Value</small>
-                <strong>{game.contract.readiness.satelliteSeatGuarantee}</strong>
+                <strong>{game.contract.readiness.satelliteSeatGuarantee.toLocaleString()}</strong>
               </span>
             )}
             <span>
               <small>Overlay Required</small>
-              <strong>{game.contract.readiness.overlayRequired}</strong>
+              <strong>{game.contract.readiness.overlayRequired.toLocaleString()}</strong>
             </span>
             <span>
               <small>{game.contract.readiness.bankType || 'Funding'} Bank</small>
-              <strong>{game.contract.readiness.bankBalance}</strong>
+              <strong>{game.contract.readiness.bankBalance.toLocaleString()}</strong>
             </span>
             <span>
               <small>Other Live Promises</small>
-              <strong>{game.contract.readiness.otherLiveExposure}</strong>
+              <strong>{game.contract.readiness.otherLiveExposure.toLocaleString()}</strong>
             </span>
             <span>
               <small>Short By</small>
-              <strong>{game.contract.readiness.shortBy}</strong>
+              <strong>{game.contract.readiness.shortBy.toLocaleString()}</strong>
             </span>
           </div>
         )}
@@ -624,7 +633,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [surfaceDirty, setSurfaceDirty] = useState(false);
   const [editing, setEditing] = useState<ManagedGame | null>(null);
   const [scheduling, setScheduling] = useState<ManagedGame | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // The database identity is (kind, id). A table and tournament may legally
+  // share a UUID, and more than one distinct game may be managed at once.
+  const [busyKeys, setBusyKeys] = useState<Set<string>>(() => new Set());
+  // State disables the painted controls; this ref closes the smaller window
+  // before React commits that state, so a rapid double tap cannot launch a
+  // second command for the same logical game with a different command UUID.
+  const busyKeysRef = useRef<Set<string>>(new Set());
   const [contractGame, setContractGame] = useState<ManagedGame | null>(null);
   const [contractVersions, setContractVersions] = useState<ManagedGameContractVersion[]>([]);
   const [contractLoading, setContractLoading] = useState(false);
@@ -642,7 +657,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const loadedViewRef = useRef<View>('all');
   /** Latest rows, so the refresh below never closes over a stale board. */
   const gamesRef = useRef<ManagedGame[]>([]);
-  /** Games named by events since the last flush, deduplicated. */
+  /** Games named by events since the last flush, deduplicated by kind and id. */
   const changedRef = useRef<Set<string>>(new Set());
   /**
    * An event arrived that did NOT name a game. Not every refresh event is
@@ -668,6 +683,17 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     scope === 'union'
       ? `/unions/${unionRef}/table-management`
       : `/clubs/${clubId}/table-management`;
+
+  const beginGameWork = useCallback((game: Pick<ManagedGame, 'kind' | 'id'>): boolean => {
+    if (!claimManagedGameWork(busyKeysRef.current, game)) return false;
+    setBusyKeys(new Set(busyKeysRef.current));
+    return true;
+  }, []);
+
+  const endGameWork = useCallback((game: Pick<ManagedGame, 'kind' | 'id'>): void => {
+    releaseManagedGameWork(busyKeysRef.current, game);
+    setBusyKeys(new Set(busyKeysRef.current));
+  }, []);
 
   const clearCreate = () => setSearchParams({}, { replace: true });
   const openTableSelector = () => setSearchParams({ create: 'table' }, { replace: true });
@@ -845,69 +871,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             }),
         ]);
         if (!isCurrent()) return;
-        const tableRows = page.items.filter((row: any) => row.kind === 'table');
-        const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
         const hostNames: Record<string, string> = {
           ...nextMemberNames,
           ...Object.fromEntries(nextHosts.map((host) => [host.id, host.name])),
         };
-        const rows: ManagedGame[] = [
-          ...tableRows.map((row: any) => ({
-            id: row.id,
-            kind: 'table' as const,
-            bucket: Number(row.bucket ?? 0),
-            name: row.name,
-            status: row.status,
-            clubId: row.club_id,
-            hostName: hostNames[row.club_id] || resolvedScopeName,
-            variant: row.variant || 'NLH',
-            players: row.players || 0,
-            maxPlayers: row.max_players || 0,
-            startTime: null,
-            smallBlind: Number(row.small_blind || 0),
-            bigBlind: Number(row.big_blind || 0),
-            minBuyIn: Number(row.min_buy_in || 0),
-            maxBuyIn: Number(row.max_buy_in || 0),
-            buyIn: 0,
-            contract: row.contract || null,
-            lastCommand: row.lastCommand || null,
-            pendingSchedule: row.pending_schedule
-              ? {
-                  scheduleId: row.pending_schedule.schedule_id,
-                  executeAt: row.pending_schedule.execute_at,
-                  status: row.pending_schedule.status,
-                }
-              : null,
-          })),
-          ...tournamentRows.map((row: any) => ({
-            id: row.id,
-            kind: 'tournament' as const,
-            bucket: Number(row.bucket ?? 0),
-            name: row.name,
-            status: row.status,
-            clubId: row.club_id,
-            hostName: hostNames[row.club_id] || resolvedScopeName,
-            variant: row.variant || 'MTT',
-            players: row.players || 0,
-            maxPlayers: row.max_players || 0,
-            startTime: row.start_time,
-            smallBlind: 0,
-            bigBlind: 0,
-            minBuyIn: 0,
-            maxBuyIn: 0,
-            buyIn: Number(row.buy_in || 0),
-            contract: row.contract || null,
-            lastCommand: row.lastCommand || null,
-            pendingSchedule: row.pending_schedule
-              ? {
-                  scheduleId: row.pending_schedule.schedule_id,
-                  executeAt: row.pending_schedule.execute_at,
-                  status: row.pending_schedule.status,
-                }
-              : null,
-          })),
-        ];
-        /* MERGE BY ID, NEVER REPLACE. `setGames(rows)` handed React a brand
+        const rows: ManagedGame[] = page.items.map((row: any) =>
+          toManagedGame(row, hostNames, resolvedScopeName)
+        );
+        /* MERGE BY COMPOSITE GAME IDENTITY, NEVER REPLACE. `setGames(rows)` handed React a brand
            new object for every row on every refresh, so the whole list
            remounted: rows flashed, an open row menu closed, and the scroll
            position jumped. A row whose fields are unchanged now keeps its
@@ -980,8 +951,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         toManagedGame(row, hostNames, scopeName)
       );
       setGames((current) => {
-        const seen = new Set(current.map((game) => `${game.kind}:${game.id}`));
-        return [...current, ...rows.filter((game) => !seen.has(`${game.kind}:${game.id}`))];
+        const seen = new Set(current.map(managedGameKey));
+        return [...current, ...rows.filter((game) => !seen.has(managedGameKey(game)))];
       });
       // Null on a paged read means unchanged, not zero.
       if (page.counts) setCounts(page.counts);
@@ -1097,7 +1068,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     // Reloading here would turn a spurious wake into a full board read.
     if (ids.length === 0) return;
     const known = ids
-      .map((id) => gamesRef.current.find((game) => game.id === id))
+      .map((key) => gamesRef.current.find((game) => managedGameKey(game) === key))
       .filter((game): game is ManagedGame => Boolean(game));
     if (known.length !== ids.length || known.length > TARGETED_REFRESH_MAX) {
       requestBoardRefresh();
@@ -1114,8 +1085,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         requestBoardRefresh();
         return;
       }
-      const byId = new Map(mapped.map((row) => [row!.id, row as ManagedGame]));
-      setGames((current) => current.map((game) => byId.get(game.id) ?? game));
+      const byKey = new Map(mapped.map((row) => [managedGameKey(row!), row as ManagedGame]));
+      setGames((current) => current.map((game) => byKey.get(managedGameKey(game)) ?? game));
     } catch (error) {
       // A targeted read that fails is not a reason to show stale rows.
       reportError(error, 'GameManagementPage.refreshChangedGames');
@@ -1127,10 +1098,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   // subscription only ever sees the LAST payload of a burst - which would
   // refresh one game and silently miss the other four hundred.
   useMasterBusSubscriptions([...GAME_REFRESH_EVENTS], (payload: unknown) => {
-    const id =
-      (payload as { tableId?: string; tournamentId?: string } | null)?.tableId ??
-      (payload as { tableId?: string; tournamentId?: string } | null)?.tournamentId;
-    if (id) changedRef.current.add(String(id));
+    const event = payload as { tableId?: string; tournamentId?: string } | null;
+    if (event?.tableId) changedRef.current.add(`table:${event.tableId}`);
+    else if (event?.tournamentId) changedRef.current.add(`tournament:${event.tournamentId}`);
     else sawUnnamedRef.current = true;
   });
 
@@ -1269,16 +1239,16 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       );
       return;
     }
-    const confirmed = await confirmDialog({
-      message:
-        game.kind === 'table'
-          ? `Close ${game.name}? Only an empty table can be closed.`
-          : `Cancel ${game.name}? This is allowed only before the first registration.`,
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-    setBusyId(game.id);
+    if (!beginGameWork(game)) return;
     try {
+      const confirmed = await confirmDialog({
+        message:
+          game.kind === 'table'
+            ? `Close ${game.name}? Only an empty table can be closed.`
+            : `Cancel ${game.name}? This is allowed only before the first registration.`,
+        variant: 'danger',
+      });
+      if (!confirmed) return;
       await gameManagementService.close(game.kind, game.id, game.contract?.version);
       toast.success(
         game.kind === 'table' ? 'Empty table closed.' : 'Unregistered tournament cancelled.'
@@ -1287,7 +1257,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not close the game.');
     } finally {
-      setBusyId(null);
+      endGameWork(game);
     }
   };
 
@@ -1553,12 +1523,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                             }
                             title={
                               game.contract.readiness.state === 'funding_blocked'
-                                ? `Guarantee Short By ${game.contract.readiness.shortBy} Chips`
+                                ? `Guarantee Short By ${game.contract.readiness.shortBy.toLocaleString()} Chips`
                                 : 'Published Contract Readiness'
                             }
                           >
                             {game.contract.readiness.state === 'funding_blocked'
-                              ? `Funding Short ${game.contract.readiness.shortBy}`
+                              ? `Funding Short ${game.contract.readiness.shortBy.toLocaleString()}`
                               : game.contract.readiness.state.replace(/_/g, ' ')}
                           </span>
                         )}
@@ -1595,9 +1565,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         <strong>{formatTime(game.pendingSchedule.executeAt)}</strong>
                         <button
                           type="button"
-                          disabled={busyId === game.id}
+                          disabled={busyKeys.has(managedGameKey(game))}
                           onClick={async () => {
-                            setBusyId(game.id);
+                            if (!beginGameWork(game)) return;
                             try {
                               await gameManagementService.cancelSchedule(
                                 game.pendingSchedule!.scheduleId
@@ -1611,7 +1581,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                                   : 'Could not cancel this schedule.'
                               );
                             } finally {
-                              setBusyId(null);
+                              endGameWork(game);
                             }
                           }}
                         >
@@ -1630,7 +1600,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                   <div className={styles.rowActions}>
                     <button
                       onClick={() => void openContractHistory(game)}
-                      disabled={busyId === game.id}
+                      disabled={busyKeys.has(managedGameKey(game))}
                       title="View Published Contract History"
                     >
                       Contract
@@ -1653,7 +1623,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                           }
                           setEditing(game);
                         }}
-                        disabled={busyId === game.id}
+                        disabled={busyKeys.has(managedGameKey(game))}
                         title={
                           game.kind === 'tournament' && game.contract?.contractLocked
                             ? 'Locked After The First Registration'
@@ -1672,10 +1642,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                     {game.kind === 'table' && !closed && (
                       <button
                         type="button"
-                        disabled={busyId === game.id}
+                        disabled={busyKeys.has(managedGameKey(game))}
                         onClick={async () => {
                           const paused = game.status.toLowerCase() === 'paused';
-                          setBusyId(game.id);
+                          if (!beginGameWork(game)) return;
                           try {
                             if (paused) await gameManagementService.resume(game.id);
                             else await gameManagementService.pause(game.id);
@@ -1690,7 +1660,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                                 : `Could not ${paused ? 'resume' : 'pause'} this table.`
                             );
                           } finally {
-                            setBusyId(null);
+                            endGameWork(game);
                           }
                         }}
                         title={
@@ -1715,7 +1685,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                           }
                           setScheduling(game);
                         }}
-                        disabled={busyId === game.id || !game.contract}
+                        disabled={busyKeys.has(managedGameKey(game)) || !game.contract}
                         aria-disabled={
                           game.players > 0 || game.contract?.contractLocked ? true : undefined
                         }
@@ -1732,7 +1702,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       <button
                         className={styles.danger}
                         onClick={() => void closeGame(game)}
-                        disabled={busyId === game.id}
+                        disabled={busyKeys.has(managedGameKey(game))}
                         title={
                           game.players > 0 || game.contract?.contractLocked
                             ? game.kind === 'table'
@@ -1744,7 +1714,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                           game.players > 0 || game.contract?.contractLocked ? true : undefined
                         }
                       >
-                        {busyId === game.id ? 'Closing…' : 'Close'}
+                        {busyKeys.has(managedGameKey(game)) ? 'Closing…' : 'Close'}
                       </button>
                     )}
                   </div>
@@ -1791,10 +1761,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       {editing && (
         <EditGameDialog
           game={editing}
-          busy={busyId === editing.id}
+          busy={busyKeys.has(managedGameKey(editing))}
           onClose={() => setEditing(null)}
           onSave={async (patch) => {
-            setBusyId(editing.id);
+            if (!beginGameWork(editing)) return;
             try {
               await gameManagementService.update(
                 editing.kind,
@@ -1808,7 +1778,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             } catch (error) {
               toast.error(error instanceof Error ? error.message : 'Could not update the game.');
             } finally {
-              setBusyId(null);
+              endGameWork(editing);
             }
           }}
         />
@@ -1817,11 +1787,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       {scheduling && (
         <ScheduleCloseDialog
           game={scheduling}
-          busy={busyId === scheduling.id}
+          busy={busyKeys.has(managedGameKey(scheduling))}
           onClose={() => setScheduling(null)}
           onSchedule={async (executeAt) => {
             if (!scheduling.contract) return;
-            setBusyId(scheduling.id);
+            if (!beginGameWork(scheduling)) return;
             try {
               await gameManagementService.scheduleClose(
                 scheduling.kind,
@@ -1837,7 +1807,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 error instanceof Error ? error.message : 'Could not schedule this command.'
               );
             } finally {
-              setBusyId(null);
+              endGameWork(scheduling);
             }
           }}
         />

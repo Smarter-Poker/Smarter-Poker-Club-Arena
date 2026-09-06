@@ -56,6 +56,18 @@ describe('cashier Phase 5 production certification contracts', () => {
     const databaseContractStep = workflow.slice(stepStart, stepEnd);
     expect(stepStart).toBeGreaterThanOrEqual(0);
     expect(workflow).toContain('node scripts/verification-harness/certify-cashier-contract.mjs');
+    /**
+     * THE CERTIFICATION IS THE NODE RUNNER, NOT A RAW psql CALL - inside THIS
+     * STEP. The pin used to read the whole workflow, and main went red on it
+     * (2026-09-05, #3217, commit 05dd513de): the same pull request that moved
+     * the certification onto the runner also added an "Ensure PostgreSQL
+     * client is available" step, because the estate runner carries the
+     * Playwright libraries but not the PostgreSQL client and the contract died
+     * with `psql: command not found` before a single assertion ran. That step
+     * ends with `psql --version`, an indented line beginning with the word,
+     * and the pin fired on it. A presence check is not a certification. Scoped
+     * to the step it is about, and named here so nobody re-widens it.
+     */
     expect(databaseContractStep).not.toMatch(/^\s+psql(?:\s|\\)/m);
     expect(canary).toContain('md5(pg_get_functiondef(v_oid))');
     expect(canary).toContain("has_function_privilege('anon', v_oid, 'EXECUTE')");

@@ -12,9 +12,15 @@
  */
 import type { HandRecord as ServiceHandRecord } from '../services/HandHistoryService';
 import type { HandRecord as PanelHandRecord } from '../components/table/HandHistoryPanel';
-import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
+import type { ShareableHand } from '../components/table/ShareHand';
 import { toCardCodes, toCardCode } from '../utils/cardCode';
 import { buildReplay, type ReplayModel } from '../utils/handReplay';
+import { shareableFromModel, toShareVariant } from './shareHandModel';
+
+/* Re-exported because this module was the only home `toShareVariant` ever had
+   and its callers (and its tests) name it here. The mapping itself lives with
+   the share model now, beside the producer that uses it. */
+export { toShareVariant };
 
 /**
  * Dan 2026-08-15 — HandRecord adapter (build fix).
@@ -352,124 +358,26 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
    invented number to whoever opened the link. `ShareablePlayer.stack` is
    optional so the figure can be omitted; omitted is what an unknown is. */
 
-const SHARE_VARIANTS = [
-  'NLH',
-  'PLO4',
-  'PLO5',
-  'PLO6',
-  'PLO8',
-  'Short Deck',
-  // 2026-09-01: the engine deals CRAZY Pineapple. See handFormat.ts.
-  'Crazy Pineapple',
-] as const;
-
-/** Widen a stored game_type onto the share union without silently mislabelling.
-    Order matters: PLO8 must be tested before PLO, and SHORT before anything
-    else, or "PLO8" is shared as "PLO4" — which is what the union's own comment
-    records as having happened. */
-export function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
-  const g = (gameType || '').toUpperCase().replace(/[\s_-]/g, '');
-  if (g.includes('PINEAPPLE')) return 'Crazy Pineapple';
-  if (g.includes('SHORT')) return 'Short Deck';
-  if (g.includes('PLO8') || g.includes('OMAHA8') || g.includes('HILO')) return 'PLO8';
-  if (g.includes('PLO6')) return 'PLO6';
-  if (g.includes('PLO5')) return 'PLO5';
-  if (g.includes('PLO') || g.includes('OMAHA')) return 'PLO4';
-  return (SHARE_VARIANTS as readonly string[]).includes(gameType || '')
-    ? (gameType as ShareableHand['variant'])
-    : 'NLH';
-}
-
-/** "Ah" -> { rank: 'A', suit: 'h' }. Codes reaching here are canonical
-    two-character output from `toCardCode`; anything else is dropped rather
-    than shared as a half-parsed card. */
-function toShareCard(code: string): ShareableCard | null {
-  const rank = (code || '').slice(0, -1);
-  const suit = (code || '').slice(-1).toLowerCase();
-  if (!rank || !'hdcs'.includes(suit)) return null;
-  return { rank, suit: suit as ShareableCard['suit'] };
-}
-
-const SHARE_ACTION: Record<string, ShareableAction['action']> = {
-  fold: 'FOLD',
-  check: 'CHECK',
-  call: 'CALL',
-  bet: 'BET',
-  raise: 'RAISE',
-  allin: 'ALL_IN',
-  all_in: 'ALL_IN',
-  /* v3 (2026-09-05): the forced money and the returned bet travel too, so the
-     recipient's pot starts with the blinds in it and an uncalled bet comes
-     back out. The DISCARD verb travels; the card never does. */
-  sb: 'SB',
-  bb: 'BB',
-  ante: 'ANTE',
-  straddle: 'STRADDLE',
-  post: 'POST',
-  return: 'RETURN',
-  discard: 'DISCARD',
-};
-
+/**
+ * PHASE 4 2026-09-05 — THE SHARE LINK IS BUILT FROM THE MODEL.
+ *
+ * This function used to re-read the panel record street by street and assemble
+ * a share payload of its own: its own verb table, its own board slicing, its
+ * own winner list. That was a second reading of a hand the record had already
+ * reconstructed, and it dropped what the second reading had no field for -
+ * the run-it-twice boards, the hi-lo halves, the rake, the jackpot drop, the
+ * discard street, the dead money and the hand number.
+ *
+ * `hand.replay` IS the reconstruction. `shareableFromModel` reads it, and the
+ * recipient's `replayFromShareable` rebuilds it. The verb table and the card
+ * parser that used to live here went with the second reading; `toShareVariant`
+ * moved to `lib/shareHandModel` so the table and the archive share ONE
+ * mapping (the table's copy knew four of the seven variants).
+ */
 export function panelHandToShareable(hand: PanelHandRecord, tableName: string): ShareableHand {
-  const seatOf = new Map(hand.players.map((p) => [p.id, p.seat]));
-  const winnerIds = new Set(hand.winners.map((w) => w.playerId));
-
-  const actionsFor = (street: string): ShareableAction[] =>
-    (hand.streets.find((s) => s.name === street)?.actions || [])
-      .map((a): ShareableAction | null => {
-        const mapped = SHARE_ACTION[(a.action || '').toLowerCase()];
-        const seat = seatOf.get(a.playerId);
-        // A verb the link cannot carry is dropped, never relabelled.
-        if (!mapped || seat == null) return null;
-        return { seat, action: mapped, amount: a.amount };
-      })
-      .filter((a): a is ShareableAction => a !== null);
-
-  /* The board is stored per street by the adapter above, so it is read back
-     the same way rather than re-sliced from a flat list. */
-  const cardsOn = (street: string): ShareableCard[] =>
-    (hand.streets.find((s) => s.name === street)?.cards || [])
-      .map(toShareCard)
-      .filter((c): c is ShareableCard => c !== null);
-
-  const flopCards = cardsOn('flop');
-  const turnCard = cardsOn('turn')[0];
-  const riverCard = cardsOn('river')[0];
-
-  return {
+  return shareableFromModel(hand.replay, {
     id: hand.id,
-    tableName: tableName || 'Club Arena',
-    variant: toShareVariant(hand.gameType),
-    stakes: hand.blinds || '',
-    timestamp: hand.timestamp,
-    /* Positions are stored, so the button is derived rather than defaulted to
-       seat 0. 'D' and 'BTN' are both in use across producers. */
-    buttonSeat: hand.players.find((p) => p.position === 'BTN' || p.position === 'D')?.seat ?? 0,
-    players: hand.players.map((p) => {
-      const cards = (p.holeCards || [])
-        .map(toShareCard)
-        .filter((c): c is ShareableCard => c !== null);
-      return {
-        seat: p.seat,
-        name: p.name,
-        /* Only holdings the table actually saw travel in the link. The record
-           carries hole cards for the hero and for anyone who showed down; a
-           mucked hand is never persisted, so there is nothing here to leak. */
-        cards: cards.length ? cards : undefined,
-        isHero: p.id === hand.heroId,
-        isWinner: winnerIds.has(p.id),
-      };
-    }),
-    preflop: actionsFor('preflop'),
-    flop: flopCards.length >= 3 ? { cards: flopCards, actions: actionsFor('flop') } : undefined,
-    turn: turnCard ? { card: turnCard, actions: actionsFor('turn') } : undefined,
-    river: riverCard ? { card: riverCard, actions: actionsFor('river') } : undefined,
-    potTotal: hand.potTotal,
-    /* GROSS chips out of the pot, which is what `winners[].amount` holds after
-       the 2026-08-23 correction. Sharing the net here would understate every
-       pot by the winner's own investment. */
-    winners: hand.winners
-      .map((w) => ({ seat: seatOf.get(w.playerId) ?? 0, amount: w.amount }))
-      .filter((w) => w.seat > 0),
-  };
+    tableName: tableName || hand.tableName || 'Club Arena',
+    heroUserId: hand.heroId,
+  });
 }

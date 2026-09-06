@@ -41,7 +41,18 @@ function fixture(mobile: boolean): string {
     <div class="probe-lead"></div>
     <main class="club-lobby-machine">
       <section class="club-lobby-command-top">
-        <div class="club-lobby-command-top__controls">Find Your Game</div>
+        <div class="club-lobby-command-top__controls">
+          <div class="lobby-controls">
+            <div class="lobby-controls__heading">Find Your Game</div>
+            <div class="game-bar">
+              <div class="game-bar__types"><button class="game-bar__type">All</button></div>
+              <button class="game-bar__filter-btn">Sort</button>
+            </div>
+            <div class="quickprefs">
+              <div class="quickprefs__row--status"><button class="quickprefs__chip">Running</button></div>
+            </div>
+          </div>
+        </div>
         <div class="club-lobby-command-top__campaign">Campaign</div>
       </section>
       <div class="probe-games">Games</div>
@@ -83,4 +94,13 @@ test('mobile pins the selector below the measured header while the page scrolls'
   ).toBeLessThan(2);
   await expect(controls).toHaveCSS('position', 'sticky');
   await expect(controls).toHaveCSS('top', '64px');
+
+  for (const selector of ['.game-bar__type', '.game-bar__filter-btn', '.quickprefs__chip']) {
+    const target = await page.locator(selector).boundingBox();
+    expect(target, `${selector} must render`).not.toBeNull();
+    expect(
+      target!.height,
+      `${selector} must provide a 44px mobile touch target`
+    ).toBeGreaterThanOrEqual(44);
+  }
 });

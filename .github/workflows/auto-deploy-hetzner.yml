@@ -1090,7 +1090,7 @@ jobs:
       # of 2026-08-31 GitHub Actions stopped starting jobs for this repo and
       # every Actions-side watchdog went quiet with it. A pipeline that reports
       # in turns silence itself into an alarm: fn_ca_engine_deploy_truth_watch
-      # runs from pg_cron every ten minutes and raises when these rows stop
+      # runs from pg_cron every minute and raises when these rows stop
       # arriving, when the running engine_version falls behind what was
       # offered, when two builds hold leases at once, or when the engine stops
       # heartbeating. It never fails the deploy.

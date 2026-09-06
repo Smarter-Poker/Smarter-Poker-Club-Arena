@@ -355,6 +355,7 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     expect(page).toContain('reward.diamonds.toLocaleString()');
     expect(page).toContain('aria-controls="mission-panel"');
     expect(page).toContain("event.key === 'ArrowRight'");
-    expect(page).toMatch(/Current Progress Will Be\s*\n\s*Replaced/);
+    expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
+    expect(page).toContain('Replaced.');
   });
 });

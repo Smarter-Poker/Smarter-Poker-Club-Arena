@@ -77,7 +77,7 @@ describe('Daily Mission one-Diamond reroll contract', () => {
 
   it('certifies the singular price and exact one-Diamond settlement in production', () => {
     expect(pageObject).toContain('/^Reroll 1 Diamond For .+$/');
-    expect(production).toContain('reroll confirmation charges one diamond exactly once');
+    expect(production).toContain('reroll confirmation charges one Diamond exactly once');
     expect(production).toContain('p_cost: 1');
     expect(production).toContain('diamondsSpent: 1');
     expect(production).toContain('toBe(balanceBefore - 1)');

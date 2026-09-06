@@ -67,6 +67,7 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(page).toContain('streak.usedFreeze && streak.frozenDate');
     expect(page).toContain('<span className={styles.srOnly}>Diamonds</span>');
     expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
+    expect(page).toContain('Replaced.');
     expect(css).not.toMatch(/\.cardClaimed\s*\{[^}]*opacity:/s);
     const claimedCardRules = [
       ...css.matchAll(/\.challengeCard\[data-mission-state='claimed'\]\s*\{([^}]*)\}/g),
@@ -85,6 +86,7 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   it('keeps cold-error recovery above the fold and animates only enabled intent surfaces', () => {
     const finalUnavailableRule = css.slice(css.lastIndexOf('.unavailableHero'));
     expect(finalUnavailableRule).toContain('min-height: 420px');
+    expect(css).not.toContain(':hover');
     expect(css).toContain('.challengeCard:focus-within .iconBox');
     expect(css).toContain('.buyFreezeBtn:not(:disabled):active');
     expect(css).toContain('.rerollButton:not(:disabled):active');

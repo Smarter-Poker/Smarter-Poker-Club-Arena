@@ -632,7 +632,7 @@ test.describe('production Daily Missions certification', () => {
           .toEqual({ event_key: eventKey, amounts, magnitudes, threshold_values: thresholdValues });
       });
 
-      await test.step('reroll confirmation charges one diamond exactly once', async () => {
+      await test.step('reroll confirmation charges one Diamond exactly once', async () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
         const reroll = await missions.firstRerollButton();
         await missions.placeControlInSafeViewport(reroll);

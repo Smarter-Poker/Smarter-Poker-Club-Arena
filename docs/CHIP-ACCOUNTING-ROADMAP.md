@@ -324,3 +324,142 @@ with nobody seated, one migration able to put every balance back, and the
 opening grants issued through the Mint so the new epoch starts from a known
 number rather than an assumed one. PITR is measured healthy (8.3) and is the net
 under the net, not the plan.
+
+---
+
+# PART TWO — THE CONTINUATION BUILD PLAN (2026-09-06)
+
+Three handoffs arrived at once: the 894-alert backlog, the horse-hand recording
+proposal, and the chip/diamond triage brief. Everything below was **measured on
+production before it was written down**, and several of the headline numbers did
+not survive that.
+
+## What the audit actually found
+
+### The alert backlog is a third the size it reads, and doubled
+
+379 unresolved, 135 critical — not 894/165; the alert-board pass on 2026-09-05
+closed most of it. Of what remains, **30 rows are literal duplicates**: the drift
+pipeline files a `drift_incident:financial_alerts:<source>` wrapper beside every
+native alert, so each of those events is on the board twice.
+
+### `settlement_barrier_abandoned` was ten a day; it is three shutdowns
+
+Fifteen rows, all reading "exceeded 300s", all carrying `waitedMs: 30000`.
+Thirty seconds in a message claiming three hundred, on a loop whose timeout
+condition was still true. It exited on `this.running`. Three SIGTERMs, five
+tables each, one second apart. **Underneath it sat a real hole**: `drainHands`
+counted a stopped engine as drained while `postHandTasks` was still writing, so
+the process exited on top of in-flight money at :55 every hour. That is Phase 1,
+shipped with this document.
+
+### The 9.98M treasury divergence is an opening balance, not a leak
+
+`ca_treasury_baseline` already registers the unledgered opening gap for three
+clubs, taken 2026-08-31 10:45. My own recomputation from `chip_ledger` matches
+all three **to the cent** (33,223,391.23 / 8,450,449.72 / 9,766.78). The fourth,
+Deep Stack Society, was created at 19:02 — eight hours after the snapshot — so it
+has no baseline row and its entire opening treasury reads as drift forever. The
+gap is **constant**: measured twice minutes apart, journal and stored moved 17.53
+in lockstep and the gap did not change by a cent. Two structural defects:
+
+- the baseline is a **one-shot snapshot with no rule for clubs born after it**;
+- only `reconcile_ledger_nightly` subtracts it. `fn_ca_quick_reconcile` and
+  `fn_ca_auto_reconcile_tick` do not, so they re-report the three explained clubs
+  endlessly. That is most of the `treasury_error` noise, and it is why the same
+  fact appears under `reconcile:` and `qr:` prefixes.
+
+### The frozen-pool 10,700 is already retired; 0.30 is not
+
+`ca_frozen_pool_baseline` was moved to 732,581,294.33 for the authorised phantom
+promo retirement. The pool actually holds 732,581,294.03. **A residual of 0.30
+chips that no change record explains** — trivial in size, but the pool's own rule
+is that any movement is a critical, and this one was not refused.
+
+### The horse-hand proposal: C yes, the gate no
+
+The load problem is real (1,854 kB/s WAL against 1,880 kB/s capacity is not
+headroom, it is a coin flip, and it fails as a spiral because a lagging slot
+reads WAL from disk). But **skipping the `hand_history` write breaks 10.5 for
+recording**, and 10.5 is binding and explicitly rejects "equal outcome by a
+different mechanism". Worse, it is irreversible: data not written cannot be
+backfilled, and bounty attribution reads those rows to decide who busted whom in
+tournaments that pay real chips.
+
+Alternative A ("keep the row, kill the cascade") is **not the safe middle it
+looks like** — those seven triggers feed `player_stats`, VIP points and the
+rakeback basis, so skipping them for horses is the _exact_ shape of the
+`is_horse` filter that 10.5 exists because of. Only **C (partition and DROP
+PARTITION)** is both a large win and a pure storage decision with no player
+treatment in it, and it is already roadmap 8.4. B (slim row) is worth costing.
+
+**The gate itself is Dan's ruling, not mine.** Retention is the precedent: Dan
+decided the 7-day horse-only prune himself, on the record, as a storage decision.
+This is the same question one step further and I will not carve into 10.5 on my
+own authority. It goes to him as options with costs — which is what 10.8 requires
+when a written law and a proposal collide.
+
+## The phases
+
+Each is shipped, published and verified before the next starts.
+
+| #     | Phase                                                                                                                                                      | Why here                                                 |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| **1** | **The drain waits for the money; the barrier names the right fault**                                                                                       | Recurs hourly, engine-side, and it is money. Ship first. |
+| 2     | The board separates signal from noise: baseline as a rule not a snapshot, every detector subtracts it, kill the wrapper double-filing, rank by materiality | Nothing else can be trusted until the board can be read  |
+| 3     | One definition of a chip — scale 2 on every balance column (9.1)                                                                                           | Cheap now, expensive after a reset re-bases everything   |
+| 4     | The remaining three of the triage brief: the 619,829 diamonds, the supply-unexplained buckets, the 0.30 residual                                           | Small, real, and each needs its own trace                |
+| 5     | Realtime load: partition + `DROP PARTITION` (8.4 / handoff C); the horse-recording gate put to Dan with costs                                              | Orthogonal, reversible, no law question                  |
+| 6     | The attestation is anchored outside the database (9.2); the journal gets a retention policy (9.4)                                                          | A hash stored beside what it hashes proves nothing       |
+| 7     | A player can audit their own chips (9.5); the second writer is audited (9.6)                                                                               | RLS already permits it; no surface exists                |
+| 8     | The other currencies get a ledger — VIP points, rakeback, commissions (9.7)                                                                                | Why the 16k stayed invisible for five months             |
+| 9     | The reset is a phase, not an event (9.8); the restatement policy (9.3)                                                                                     | `ca_financial_epochs.is_current` is the hook             |
+
+## Phase 1 — DONE
+
+See `docs/changelog/2026-09-06-the-drain-waits-for-the-money.md`.
+Pinned by `server/src/engine/TheDrainWaitsForTheMoney.law.test.ts`.
+
+---
+
+## THE 323 INCIDENT SWEEP (2026-09-06) — and what it changed about the plan
+
+Read one at a time, per Dan. **323 open -> 86; criticals 135 -> 25.** Full
+account: `docs/changelog/2026-09-06-the-323-open-drift-incidents.md`.
+
+**Dan's ruling, mid-sweep, now binding on this programme:**
+
+> "WE AREN'T USING ANY CRONS TO MONITOR OR FIX, THATS A BANDAID, NOT A HARD
+> CODED SOLUTION. WE NEED TO FIX THE ISSUES AT THE CODE LEVEL. NOT CONSTANTLY
+> RUNNING AROUND RECONCILING. I WANT NOTHING BUT CODE BASE FIXES FOR ANY AND
+> ALL CHIP DRIFT ISSUES."
+
+Every remaining phase is re-scoped against this. A repair sweep, a backfill
+pass or a reconciliation job is **not** an acceptable answer to a drift; the
+answer is the write that cannot lose. Two sweeps I scheduled during this session
+were unscheduled again in `20260906100735`.
+
+This retires the "detector + repair" pattern the earlier phases leaned on. It
+does **not** retire detectors — a detector says whether the code fix worked. It
+retires the repair as the fix.
+
+### Re-ordered remaining work, each one a code fix
+
+| #   | what                                                                                 | the code fix, not the sweep                                                                                                                                         |
+| --- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2a  | Bomb award units                                                                     | **Done, pending engine deploy.** One transaction via `fn_ca_insert_hand_with_awards`. The constraint trigger goes on in the same PR once the engine can satisfy it. |
+| 2b  | Escrow residue (30 incidents)                                                        | The SNG/heads-up close path never drains the fee sub-balance. Fix the close, not the leftovers.                                                                     |
+| 2c  | The live 2,523.48 (7 incidents, kill switch tripped)                                 | One account disagrees with its journal. Find the write that skipped a leg.                                                                                          |
+| 2d  | Deep Stack Society treasury (5 incidents)                                            | A club created after the baseline snapshot has no opening row. Give club creation the row, rather than a snapshot that ages.                                        |
+| 2e  | Diamond supply, insurance offers, R3 credits, the 0.30 residual                      | One write path each.                                                                                                                                                |
+| 3   | One definition of a chip — scale 2 everywhere (9.1)                                  | unchanged                                                                                                                                                           |
+| 4+  | Attestation, retention, player statement, second writer, other currencies, the reset | unchanged                                                                                                                                                           |
+
+### Two corrections of mine from this session, recorded so they are not repeated
+
+1. **I answered a drift with a cron.** Rejected and reverted.
+2. **I attached a constraint trigger before the engine could satisfy it**, then
+   dropped it on a misreading (a 2m41s gap in bomb pots whose normal maximum gap
+   that hour was 489s; and three unit-less hands committed while it was live, so
+   it was not blocking anything). A rule must land with, or after, the code that
+   can obey it — never before.

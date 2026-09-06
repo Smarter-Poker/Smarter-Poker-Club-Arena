@@ -114,17 +114,11 @@ used_versions() {
 }
 
 taken="$(used_versions | sort -u)"
-# Do not pipe the inventory into `grep -q`: with `set -o pipefail`, grep exits
-# as soon as it finds a match, `printf` receives SIGPIPE, and the whole
-# pipeline reports false. That inverted a real collision into "available".
-is_taken() {
-  local wanted="$1"
-  local used
-  while IFS= read -r used; do
-    [ "$used" = "$wanted" ] && return 0
-  done <<< "$taken"
-  return 1
-}
+# A large version set can make grep exit as soon as it finds a match while
+# printf is still writing. Under pipefail that turns a real match into SIGPIPE
+# status 141, so the caller incorrectly treats a reserved version as free.
+# Feed grep through stdin redirection instead; no producer can be cut off.
+is_taken() { grep -qx "$1" <<< "$taken"; }
 
 version="$(date -u +%Y%m%d%H%M%S)"
 if is_taken "$version"; then

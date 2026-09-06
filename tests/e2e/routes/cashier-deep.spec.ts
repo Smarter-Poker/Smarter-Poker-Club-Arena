@@ -1,273 +1,117 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  E2E TESTS — Cashier Deep Features (Playwright)
- * ═══════════════════════════════════════════════════════════════════════════════
+ * CASHIER DEEP E2E — assertions that cannot pass without a Cashier.
  *
- * Deep verification of Cashier page UX improvements:
- * - Skeleton loading states
- * - Tab keyboard navigation (Arrow keys)
- * - History filter & pagination
- * - Connection status indicator rendering
- * - Focus trap in modals
- * - Rate limiting guard
+ * The previous suite navigated to `cashier`, then returned successfully from
+ * every test when the route redirected or a control was absent. It also looked
+ * for a tab named "History" even though the shipped tab is "Trade Record".
+ * Those green runs proved only that Playwright could render a page. This suite
+ * requires the authenticated, club-scoped Trade surface up front and either
+ * makes product assertions or reports a real skip when credentials are absent.
  */
 
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-// ── Helper: filter out known non-critical console errors ──
-function filterCriticalErrors(errors: string[]): string[] {
-  return errors.filter(
-    (e) =>
-      !e.includes('401') &&
-      !e.includes('auth') &&
-      !e.includes('not authenticated') &&
-      !e.includes('AuthSessionMissing') &&
-      !e.includes('Invalid Refresh Token') &&
-      !e.includes('[HMR]') &&
-      !e.includes('verify_ledger_totals')
-  );
+const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+const HAS_AUTH = Boolean(process.env.SP_EMAIL && process.env.SP_PASS);
+
+async function openTradeCashier(page: Page) {
+  await page.goto(`clubs/${CLUB_ID}/cashier`, { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+  await expect(page.locator('[data-cashier-surface="trade"]')).toBeVisible({ timeout: 60_000 });
+  const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
+  await expect(tablist).toBeVisible();
+  await expect(tablist).toHaveAttribute('aria-busy', 'false', { timeout: 30_000 });
+  return tablist;
 }
 
-test.describe('Cashier Page — Deep UX Tests', () => {
-  test.beforeEach(async ({ page }) => {
-    // Navigate to cashier — will redirect to login if unauthenticated
-    await page.goto('cashier');
-    await page.waitForTimeout(2000);
-  });
+test.describe('Cashier Trade — deep authenticated UX', () => {
+  test.describe.configure({ timeout: 90_000 });
+  test.skip(!HAS_AUTH, 'SP_EMAIL/SP_PASS are required; a signed-out page is not Cashier proof.');
 
-  test('should render tabs with correct ARIA attributes', async ({ page }) => {
-    const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
-    const tablistCount = await tablist.count();
-
-    if (tablistCount > 0) {
-      await expect(tablist).toHaveAttribute('aria-label', 'Cashier Actions');
-      await expect(tablist).toHaveAttribute('aria-busy', 'false');
-
-      const tabs = tablist.getByRole('tab');
-      const count = await tabs.count();
-      expect(count).toBeGreaterThanOrEqual(2); // At minimum: buyin, cashout
-
-      // Verify aria-selected on active tab
-      const activeTab = page.locator('[role="tab"][aria-selected="true"]');
-      await expect(activeTab).toHaveCount(1);
-    }
-  });
-
-  test('should support keyboard navigation between tabs', async ({ page }) => {
-    const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
-    if ((await tablist.count()) === 0) return;
-    await expect(tablist).toHaveAttribute('aria-busy', 'false');
+  test('defaults to the first visible tab and keeps keyboard/tabpanel wiring exact', async ({
+    page,
+  }) => {
+    const tablist = await openTradeCashier(page);
     const tabs = tablist.getByRole('tab');
-    const tabCount = await tabs.count();
+    expect(await tabs.count()).toBeGreaterThanOrEqual(3);
+    await expect(tabs.first()).toHaveText('Trade');
+    await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.first()).toHaveAttribute('tabindex', '0');
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'false');
 
-    if (tabCount > 1) {
-      const originalTab = tablist.locator('[role="tab"][aria-selected="true"]');
-      const originalTabId = await originalTab.getAttribute('id');
-      expect(originalTabId).toBeTruthy();
-      await originalTab.focus();
+    const firstPanelId = await tabs.first().getAttribute('aria-controls');
+    expect(firstPanelId).toBeTruthy();
+    await expect(page.locator(`#${firstPanelId}`)).toHaveAttribute('role', 'tabpanel');
 
-      // Press ArrowRight to move to next tab
-      await originalTab.press('ArrowRight');
-
-      // The next visible role-scoped tab should now be focused and selected.
-      const nextTab = tablist.locator('[role="tab"][aria-selected="true"]');
-      await expect(nextTab).toBeFocused();
-      expect(await nextTab.getAttribute('id')).not.toBe(originalTabId);
-
-      // Press ArrowLeft to go back
-      await nextTab.press('ArrowLeft');
-
-      const restoredTab = tablist.locator(`[role="tab"][id="${originalTabId}"]`);
-      await expect(restoredTab).toHaveAttribute('aria-selected', 'true');
-      await expect(restoredTab).toBeFocused();
-    }
+    await tabs.first().focus();
+    await tabs.first().press('ArrowRight');
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.nth(1)).toBeFocused();
+    await tabs.nth(1).press('ArrowLeft');
+    await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.first()).toBeFocused();
   });
 
-  test('should render skeleton or content without crash', async ({ page }) => {
-    const consoleErrors: string[] = [];
-    page.on('console', (msg) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text());
-    });
+  test('Trade Record resolves to rows, a truthful empty state, or a retryable error', async ({
+    page,
+  }) => {
+    const tablist = await openTradeCashier(page);
+    await tablist.getByRole('tab', { name: 'Trade Record', exact: true }).click();
+    const panel = page.getByRole('tabpanel', { name: 'Trade Record' });
+    await expect(panel).toBeVisible();
 
-    await page.waitForTimeout(3000);
+    const rows = panel.getByRole('button', { name: /^Open Receipt For/ });
+    const empty = panel.getByText('No Trades Recorded Yet.', { exact: true });
+    const retry = panel.getByRole('button', { name: 'Retry', exact: true });
+    await expect
+      .poll(async () => (await rows.count()) + (await empty.count()) + (await retry.count()), {
+        timeout: 30_000,
+        message: 'Trade Record never reached a terminal UI state',
+      })
+      .toBeGreaterThan(0);
 
-    // No error boundary should be triggered
-    const errorBoundary = page.locator('text=Something went wrong');
-    await expect(errorBoundary).not.toBeVisible();
-
-    const critical = filterCriticalErrors(consoleErrors);
-    expect(critical).toHaveLength(0);
-  });
-
-  test('should have accessible tab buttons with roving tabIndex', async ({ page }) => {
-    const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
-    if ((await tablist.count()) === 0) return;
-    await expect(tablist).toHaveAttribute('aria-busy', 'false');
-    const activeTab = tablist.locator('[role="tab"][aria-selected="true"]');
-    const inactiveTab = tablist.locator('[role="tab"][aria-selected="false"]').first();
-
-    if ((await activeTab.count()) > 0 && (await inactiveTab.count()) > 0) {
-      await expect(activeTab).toHaveAttribute('tabindex', '0');
-      await expect(inactiveTab).toHaveAttribute('tabindex', '-1');
-    }
-  });
-});
-
-test.describe('Wallet Page — Deep UX Tests', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('wallet');
-    await page.waitForTimeout(2000);
-  });
-
-  test('should render wallet tabs (Wallets, Transfer, Ledger)', async ({ page }) => {
-    const body = page.locator('body');
-    await expect(body).toBeVisible();
-
-    // Check no error boundary
-    const errorBoundary = page.locator('text=Something went wrong');
-    await expect(errorBoundary).not.toBeVisible();
-  });
-
-  test('should load without critical console errors', async ({ page }) => {
-    const consoleErrors: string[] = [];
-    page.on('console', (msg) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text());
-    });
-
-    await page.waitForTimeout(3000);
-
-    const critical = filterCriticalErrors(consoleErrors);
-    expect(critical).toHaveLength(0);
-  });
-});
-
-test.describe('Transaction History — UX Tests', () => {
-  test('should show skeleton or transaction data', async ({ page }) => {
-    await page.goto('cashier');
-    await page.waitForTimeout(2000);
-
-    // Click History tab if present
-    const historyTab = page.locator('[role="tab"]', { hasText: 'History' });
-    if ((await historyTab.count()) > 0) {
-      await historyTab.click();
-      await page.waitForTimeout(1000);
-
-      // Should show either skeleton bars, transaction rows, empty state, or error+retry
-      /* The cashier is styled with CSS Modules, so nothing on this page has a
-         plain global class: a transaction row ships as
-         `class="_txRow_1mn1y_662"`. `.transaction-row` and its three siblings
-         below could never match anything on any build, which made `hasContent`
-         unconditionally false - and the test still passed for a year, because
-         signed out the History tab did not exist and the whole block was
-         skipped by `if (historyTab.count() > 0)`.
-
-         Match on the stable part of the generated name. Verified live: the
-         panel renders `_txRow_*` rows with real transactions. */
-      const skeleton = page.locator('[class*="txSkeleton"], [class*="skeleton"]');
-      const txRows = page.locator('[class*="txRow"]');
-      const emptyState = page.locator('[class*="emptyState"], [class*="txEmpty"]');
-      const retryBtn = page.locator('[class*="txRetry"], [class*="retryBtn"]');
-
-      const hasContent =
-        (await skeleton.count()) > 0 ||
-        (await txRows.count()) > 0 ||
-        (await emptyState.count()) > 0 ||
-        (await retryBtn.count()) > 0;
-
-      expect(hasContent).toBe(true);
-    }
-  });
-});
-
-test.describe('Club CashierModal — ARIA Tests', () => {
-  test('should render ARIA tablist and tabs if club cashier is open', async ({ page }) => {
-    await page.goto('cashier');
-    await page.waitForTimeout(2000);
-
-    // These tests verify the club CashierModal ARIA wiring added in Phase 3.
-    // If the modal is not open, the test passes gracefully.
-    const tablist = page.locator('[role="tablist"][aria-label="Cashier Actions"]');
-    if ((await tablist.count()) > 0) {
-      const tabs = page.locator('[role="tab"]');
-      const count = await tabs.count();
-      expect(count).toBeGreaterThanOrEqual(2);
-
-      // Each tab should have aria-controls pointing to a valid panel ID
-      for (let i = 0; i < count; i++) {
-        const ariaControls = await tabs.nth(i).getAttribute('aria-controls');
-        expect(ariaControls).toBeTruthy();
-
-        // The controlled panel should exist in the DOM when that tab is active
-        const selected = await tabs.nth(i).getAttribute('aria-selected');
-        if (selected === 'true') {
-          const panel = page.locator(`#${ariaControls}`);
-          await expect(panel).toHaveAttribute('role', 'tabpanel');
-        }
-      }
-    }
-  });
-});
-
-test.describe('Focus Trap — Modal UX Tests', () => {
-  test('should close modal on Escape key', async ({ page }) => {
-    await page.goto('cashier');
-    await page.waitForTimeout(2000);
-
-    // Check if any dialog/modal is open
-    const dialog = page.locator('[role="dialog"]');
-    if ((await dialog.count()) > 0) {
-      await expect(dialog).toBeVisible();
+    if ((await rows.count()) > 0) {
+      await rows.first().click();
+      const receipt = page.getByRole('dialog', { name: 'Transaction Receipt' });
+      await expect(receipt).toBeVisible();
+      await expect(receipt.getByText('Recorded In Ledger', { exact: true })).toBeVisible();
+      await expect(receipt.getByText(/^[0-9a-f-]{36}$/i)).toBeVisible();
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(500);
-
-      // Dialog should be closed
-      await expect(dialog).not.toBeVisible();
+      await expect(receipt).toBeHidden();
+    } else if ((await retry.count()) > 0) {
+      await expect(panel.getByRole('alert')).toContainText('Could not load your trade record.');
+    } else {
+      await expect(empty).toBeVisible();
     }
   });
 
-  test('should trap focus within open modal', async ({ page }) => {
-    await page.goto('cashier');
-    await page.waitForTimeout(2000);
-
-    const dialog = page.locator('[role="dialog"]');
-    if ((await dialog.count()) > 0) {
-      // Tab through all focusable elements — focus should stay inside dialog
-      const focusable = dialog.locator(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
-      const count = await focusable.count();
-
-      if (count > 1) {
-        // Focus first element
-        await focusable.first().focus();
-
-        // Tab through all elements + one more (should wrap to first)
-        for (let i = 0; i < count; i++) {
-          await page.keyboard.press('Tab');
-          await page.waitForTimeout(50);
-        }
-
-        // After wrapping, active element should still be inside dialog
-        const activeInDialog = await page.evaluate(() => {
-          const dialog = document.querySelector('[role="dialog"]');
-          return dialog?.contains(document.activeElement) ?? false;
-        });
-        expect(activeInDialog).toBe(true);
+  test('reconciliation reaches a verified state with no hidden resource errors', async ({
+    page,
+  }) => {
+    const errors: Array<{ text: string; url: string }> = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') {
+        errors.push({ text: message.text(), url: message.location().url });
       }
-    }
-  });
-});
+    });
+    await openTradeCashier(page);
+    const reconciliation = page.locator('[data-cashier-recovery="true"]');
+    const cashierStatus = page
+      .getByRole('region', { name: 'Every Chip. Accounted For.' })
+      .getByRole('status');
+    await expect(cashierStatus).toHaveText(
+      /^(Balances synchronized|Cashier ready; loading the rest of the roster after [\d,]+ members)$/,
+      { timeout: 30_000 }
+    );
+    await expect(reconciliation.getByText('Not Yet Verified', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Something went wrong', { exact: false })).toHaveCount(0);
 
-test.describe('CashierPage — Settlement Lock', () => {
-  test('should show settlement lock error when frozen', async ({ page }) => {
-    await page.goto('cashier');
-    await page.waitForTimeout(2000);
-
-    // If settlement is active, the lock message should be visible
-    const lockMessage = page.locator('text=🔒');
-    if ((await lockMessage.count()) > 0) {
-      await expect(lockMessage.first()).toBeVisible();
-    }
-    // If no settlement lock, test passes — we're just verifying the UI renders correctly
+    const critical = errors.filter(
+      (entry) =>
+        !entry.text.includes('[cashier-telemetry]') &&
+        !entry.text.includes('favicon') &&
+        !entry.url.includes('favicon')
+    );
+    expect(critical, critical.map((entry) => `${entry.url}: ${entry.text}`).join('\n')).toEqual([]);
   });
 });

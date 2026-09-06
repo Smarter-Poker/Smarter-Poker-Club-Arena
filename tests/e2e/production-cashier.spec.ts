@@ -13,9 +13,11 @@ test.describe('Production Cashier Certification', () => {
   test('serves the redesigned Trade surface and opens its first visible tab', async ({ page }) => {
     test.setTimeout(90_000);
     const clubId = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
-    const consoleErrors: string[] = [];
+    const consoleErrors: Array<{ text: string; url: string }> = [];
     page.on('console', (message) => {
-      if (message.type() === 'error') consoleErrors.push(message.text());
+      if (message.type() === 'error') {
+        consoleErrors.push({ text: message.text(), url: message.location().url });
+      }
     });
 
     await page.goto(`clubs/${clubId}/cashier`, {
@@ -61,14 +63,75 @@ test.describe('Production Cashier Certification', () => {
     await expect(reconciliation.getByRole('button', { name: 'Reconcile Now' })).toBeEnabled({
       timeout: 30_000,
     });
+    // The synchronization message belongs to the hero's live status region;
+    // the reconciliation console exposes the same successful state as its
+    // verified timestamp. Scoping this assertion to the console looked for a
+    // node that cannot exist and made a healthy production cashier fail its
+    // canary after hydration completed.
+    const cashierStatus = page
+      .getByRole('region', { name: 'Every Chip. Accounted For.' })
+      .getByRole('status');
+    await expect(cashierStatus).toHaveText(
+      /^(Balances synchronized|Cashier ready; loading the rest of the roster after [\d,]+ members)$/,
+      { timeout: 30_000 }
+    );
+    await expect(reconciliation.getByText('Not Yet Verified', { exact: true })).toHaveCount(0);
 
     await expect(page.locator('text=Something went wrong')).toHaveCount(0);
     const cashierCritical = consoleErrors.filter(
       (message) =>
-        !message.includes('[cashier-telemetry]') &&
-        !message.includes('favicon') &&
-        !message.includes('Failed to load resource')
+        !message.text.includes('[cashier-telemetry]') &&
+        !message.text.includes('favicon') &&
+        !message.url.includes('favicon')
     );
-    expect(cashierCritical, cashierCritical.join('\n')).toEqual([]);
+    expect(
+      cashierCritical,
+      cashierCritical.map((entry) => `${entry.url}: ${entry.text}`).join('\n')
+    ).toEqual([]);
+  });
+
+  test('opens the wallet directory by right-click and mobile hold without viewport overflow', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await page.goto('.', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
+    const quickActions = page.getByRole('navigation', { name: 'Quick Actions' });
+    await expect(quickActions).toBeVisible({ timeout: 60_000 });
+    const cashierTile = quickActions.getByRole('button', { name: /^Cashier\b/ });
+    await expect(cashierTile).toBeVisible();
+
+    await cashierTile.click({ button: 'right' });
+    const desktopMenu = page.getByRole('menu', { name: 'Open Cashier For' });
+    await expect(desktopMenu).toBeVisible();
+    await expect(desktopMenu.getByRole('menuitem').first()).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(desktopMenu).toBeHidden();
+    await page.setViewportSize({ width: 320, height: 700 });
+    await cashierTile.scrollIntoViewIfNeeded();
+    await cashierTile.dispatchEvent('pointerdown', { pointerType: 'touch', button: 0 });
+    await page.waitForTimeout(550);
+    const mobileMenu = page.getByRole('menu', { name: 'Open Cashier For' });
+    await expect(mobileMenu).toBeVisible();
+    await cashierTile.dispatchEvent('pointerup', { pointerType: 'touch', button: 0 });
+
+    const bounds = await mobileMenu.evaluate((menu) => {
+      const box = menu.parentElement?.getBoundingClientRect() ?? menu.getBoundingClientRect();
+      return {
+        left: box.left,
+        right: box.right,
+        top: box.top,
+        bottom: box.bottom,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        documentWidth: document.documentElement.scrollWidth,
+      };
+    });
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth);
+    expect(bounds.top).toBeGreaterThanOrEqual(0);
+    expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight);
+    expect(bounds.documentWidth).toBeLessThanOrEqual(bounds.viewportWidth);
   });
 });

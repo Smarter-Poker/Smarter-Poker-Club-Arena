@@ -52,6 +52,10 @@ limit 12;
 - **Rows are `ok` and recent** - the platform can hold a table. What you are
   looking at is one player, one network, or one table. Skip to
   [It is only some players](#it-is-only-some-players).
+- **Rows are `skipped`, `reason: maintenance_break`** - the platform was on its
+  announced `:55` break, every table was parked, and the probe said so instead
+  of crying. Expected once an hour. If you see a RUN of them outside `:55`-`:00`,
+  the break did not end: go to question 3.
 - **Rows are `failed`** - go to the outcome's section in
   [Close codes and outcomes](#close-codes-and-outcomes). The outcome IS the
   diagnosis; that is what it is for.
@@ -128,8 +132,7 @@ token.
 
 The engine no longer does that for an invalid token - it completes the
 handshake and closes with 4401. **But five other refusals are still written
-before the handshake**, and every one of them reaches the client as a bare
-1006. Find out which by replaying the upgrade by hand (`--http1.1` matters:
+before the handshake**, and every one of them reaches the client as a bare 1006. Find out which by replaying the upgrade by hand (`--http1.1` matters:
 over HTTP/2 curl cannot upgrade at all and the engine answers a misleading
 404):
 
@@ -141,13 +144,13 @@ curl -sS -i --http1.1 --max-time 15 \
   "https://engine.smarter.poker/ws/table/$TABLE_ID?v=1"
 ```
 
-| status | meaning |
-| --- | --- |
-| `101` | the upgrade worked; the fault is after it - go to `no_snapshot` |
-| `403` | one of four viewer gates: **not a member of the table's club**, banned by a club/union blacklist, the table is seats-only (`restrict_observers`), or the IP rule found a different account at that table from this address |
-| `404` | the table does not exist and could not be started |
-| `503` | the engine could not CHECK the token (GoTrue unreachable) - deliberate, and the client is meant to keep retrying |
-| nothing / connection reset | the proxy or the engine is not answering - check `EngineDown` and the Caddy log, and question 3 |
+| status                     | meaning                                                                                                                                                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `101`                      | the upgrade worked; the fault is after it - go to `no_snapshot`                                                                                                                                                            |
+| `403`                      | one of four viewer gates: **not a member of the table's club**, banned by a club/union blacklist, the table is seats-only (`restrict_observers`), or the IP rule found a different account at that table from this address |
+| `404`                      | the table does not exist and could not be started                                                                                                                                                                          |
+| `503`                      | the engine could not CHECK the token (GoTrue unreachable) - deliberate, and the client is meant to keep retrying                                                                                                           |
+| nothing / connection reset | the proxy or the engine is not answering - check `EngineDown` and the Caddy log, and question 3                                                                                                                            |
 
 **A 403 here is the trap.** It is a correct refusal, it is permanent, and the
 client cannot tell it from a flaky link - so the tab reconnects forever with no

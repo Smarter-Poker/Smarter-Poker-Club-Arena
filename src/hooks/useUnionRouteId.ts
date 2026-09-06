@@ -14,29 +14,39 @@ import { resolveUnionUUID, resolveUnionUUIDSync } from '../utils/unionIdResolver
  */
 export function useUnionRouteId(): { unionId: string | undefined; unionRef: string | undefined } {
   const { unionId: unionRef } = useParams<{ unionId: string }>();
-  const [unionId, setUnionId] = useState<string | undefined>(() =>
-    unionRef ? (resolveUnionUUIDSync(unionRef) ?? undefined) : undefined
-  );
+  const [resolved, setResolved] = useState<{
+    ref: string | undefined;
+    id: string | undefined;
+  }>(() => ({
+    ref: unionRef,
+    id: unionRef ? (resolveUnionUUIDSync(unionRef) ?? undefined) : undefined,
+  }));
 
   useEffect(() => {
     if (!unionRef) {
-      setUnionId(undefined);
+      setResolved({ ref: undefined, id: undefined });
       return;
     }
     const sync = resolveUnionUUIDSync(unionRef);
     if (sync) {
-      setUnionId(sync);
+      setResolved({ ref: unionRef, id: sync });
       return;
     }
     let live = true;
-    setUnionId(undefined);
+    setResolved({ ref: unionRef, id: undefined });
     resolveUnionUUID(unionRef).then((id) => {
-      if (live) setUnionId(id);
+      if (live) setResolved({ ref: unionRef, id });
     });
     return () => {
       live = false;
     };
   }, [unionRef]);
 
-  return { unionId, unionRef };
+  // Effects run after render. Associating the resolved UUID with the route ref
+  // means a slug-to-slug navigation cannot expose the previous route's UUID
+  // for even that intervening render while the new lookup is still pending.
+  return {
+    unionId: resolved.ref === unionRef ? resolved.id : undefined,
+    unionRef,
+  };
 }

@@ -130,6 +130,18 @@ const DEFINITIONS: OperationDefinition[] = [
     rail: true,
     signals: ['reports_open'],
   },
+  {
+    /* PHASE 6 (2026-09-06): the hands players flagged, and the audited lookup
+       that opens any hand dealt at this club. Staff triage; the cards
+       themselves are owner/admin and Postgres enforces that. */
+    id: 'hand-review',
+    label: 'Hand Review',
+    description: 'Flagged Hands And The Audited Hand Lookup',
+    suffix: 'hand-review',
+    group: 'people',
+    access: 'staff',
+    rail: true,
+  },
   /**
    * PHASE 7 — two built tools that had no door.
    *
@@ -409,6 +421,7 @@ const OPERATION_SUFFIXES = new Set([
   'agent-dashboard',
   'anti-cheat',
   'reports',
+  'hand-review',
   'disputes',
   'blacklist',
   'financials',

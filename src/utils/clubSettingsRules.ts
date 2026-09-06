@@ -134,34 +134,62 @@ export function sanitizationWouldAlter(raw: string, sanitized: string): boolean 
  */
 export const CSV_BOM = '\ufeff';
 
-/** What a club deletion would destroy. Gathered before the confirm modal
- *  arms, because `tables` and `club_wallets` both CASCADE on clubs. */
-export interface ClubDeletionImpact {
+/** Authoritative preflight for preserving a club while ending active use. */
+export interface ClubRetirementImpact {
   members: number;
   runningTables: number;
+  activeTournaments: number;
   walletChips: number;
+  diamonds: number;
+  inventoryItems: number;
+  openObligations: number;
+  unionAffiliated: boolean;
+  alreadyRetired: boolean;
 }
 
 /**
- * Reason this club must not be deleted yet, or null when it is safe.
- *
- * The FKs from `tables` and `club_wallets` to `clubs` are ON DELETE CASCADE,
- * so deleting a club silently destroys every table under it — including
- * running tables with players seated — and the club's wallets with them.
- * The confirmation modal said only "all club data, members, and tables will
- * be permanently removed" and showed no numbers at all.
+ * Reason this club must not be retired yet, or null when it is settled and idle.
+ * Every record remains stored; these checks prevent stranding value or ending
+ * active games/settlements when the club becomes read-only.
  */
-export function blockingDeletionReason(impact: ClubDeletionImpact): string | null {
+export function blockingRetirementReason(impact: ClubRetirementImpact): string | null {
+  if (impact.alreadyRetired) {
+    return 'This club is already retired. Its retained records are read-only.';
+  }
+  if (impact.unionAffiliated) {
+    return 'Leave the union first, or retire a union estate through Union Administration.';
+  }
   if (impact.runningTables > 0) {
     return `Close the ${impact.runningTables} running table${
       impact.runningTables === 1 ? '' : 's'
-    } before deleting this club - deleting now would remove them with players seated.`;
+    } before retiring this club.`;
+  }
+  if (impact.activeTournaments > 0) {
+    return `Complete or cancel the ${impact.activeTournaments} active tournament${
+      impact.activeTournaments === 1 ? '' : 's'
+    } before retiring this club.`;
   }
   if (impact.walletChips > 0) {
-    return `This club still holds ${impact.walletChips.toLocaleString()} chips. Settle the club wallet before deleting.`;
+    return `This club still has ${impact.walletChips.toLocaleString()} chips or credit across its wallets, seats, pools, escrow, tournaments, or leaderboard reserve. Settle every account before retiring.`;
+  }
+  if (impact.diamonds > 0) {
+    return `This club and its members still hold ${impact.diamonds.toLocaleString()} diamonds. Redeem or transfer them before retiring.`;
+  }
+  if (impact.inventoryItems > 0) {
+    return `Resolve the ${impact.inventoryItems.toLocaleString()} item${impact.inventoryItems === 1 ? '' : 's'} still held in the Promo Vault before retiring.`;
+  }
+  if (impact.openObligations > 0) {
+    return `Resolve the ${impact.openObligations} open game, cashier, credit, or settlement obligation${
+      impact.openObligations === 1 ? '' : 's'
+    } before retiring this club.`;
   }
   return null;
 }
+
+/** @deprecated Owner-facing club deletion was replaced by record-preserving retirement. */
+export type ClubDeletionImpact = ClubRetirementImpact;
+/** @deprecated Use blockingRetirementReason. */
+export const blockingDeletionReason = blockingRetirementReason;
 
 /**
  * Turning a club private while approval is off does NOT close it: the join

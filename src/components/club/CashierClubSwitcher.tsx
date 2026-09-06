@@ -54,38 +54,63 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [balances, setBalances] = useState<Map<string, number> | null>(null);
+  const [balanceOwnerId, setBalanceOwnerId] = useState<string | null>(null);
   const [balanceNonce, setBalanceNonce] = useState(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
+  useEffect(() => {
+    setMenuOpen(false);
+    setBalances(null);
+    setBalanceOwnerId(null);
+  }, [user?.id]);
+
   // Cached list, re-read on demand (cacheNonce) so a join/leave lands
   const [cacheNonce, setCacheNonce] = useState(0);
-  const cachedClubs = useMemo(() => readCachedQuickLinkClubs(), [cacheNonce]);
+  const cachedClubs = useMemo(() => readCachedQuickLinkClubs(user?.id), [cacheNonce, user?.id]);
   const [fetchedClubs, setFetchedClubs] = useState<QuickLinkClub[] | null>(null);
+  const [fetchedForUserId, setFetchedForUserId] = useState<string | null>(null);
+  const sameUserFetchedClubs = fetchedForUserId === user?.id ? fetchedClubs : null;
   const clubs = useMemo(
-    () => eligibleQuickLinkClubs(cachedClubs.length > 0 ? cachedClubs : (fetchedClubs ?? [])),
-    [cachedClubs, fetchedClubs]
+    () =>
+      eligibleQuickLinkClubs(cachedClubs.length > 0 ? cachedClubs : (sameUserFetchedClubs ?? [])),
+    [cachedClubs, sameUserFetchedClubs]
   );
 
   // Cold-cache fallback — a deep link straight into the cashier means the
   // lobby never populated CLUBS_CACHE; fetch memberships so switching works
   useEffect(() => {
-    if (cachedClubs.length > 0 || fetchedClubs !== null || !user?.id) return;
+    if (cachedClubs.length > 0 || sameUserFetchedClubs !== null || !user?.id) return;
+    const requestedUserId = user.id;
     let live = true;
-    fetchQuickLinkClubs(user.id).then((list) => {
-      if (live) setFetchedClubs(list);
+    fetchQuickLinkClubs(requestedUserId).then((list) => {
+      if (live) {
+        setFetchedForUserId(requestedUserId);
+        setFetchedClubs(list);
+      }
     });
     return () => {
       live = false;
     };
-  }, [cachedClubs.length, fetchedClubs, user?.id]);
+  }, [cachedClubs.length, sameUserFetchedClubs, user?.id]);
 
   // Per-club chip balances — lazy-loaded when the dropdown opens
   useEffect(() => {
-    if (!menuOpen || !user?.id) return;
+    if (!menuOpen) return;
+    if (!user?.id) {
+      setBalances(null);
+      setBalanceOwnerId(null);
+      return;
+    }
+    const requestedUserId = user.id;
+    setBalances(null);
+    setBalanceOwnerId(requestedUserId);
     let live = true;
-    fetchClubChipBalances(user.id).then((b) => {
-      if (live) setBalances(b);
+    fetchClubChipBalances(requestedUserId).then((b) => {
+      if (live) {
+        setBalanceOwnerId(requestedUserId);
+        setBalances(b);
+      }
     });
     return () => {
       live = false;
@@ -98,7 +123,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
     setBalanceNonce((n) => n + 1);
   });
 
-  const currentUuid = useMemo(() => clubParamToUuid(clubId), [clubId]);
+  const currentUuid = useMemo(() => clubParamToUuid(clubId, user?.id), [clubId, user?.id]);
   const currentClub = useMemo(
     () => clubs.find((c) => c.id === currentUuid || String(c.club_id) === clubId) || null,
     [clubs, currentUuid, clubId]
@@ -106,6 +131,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
 
   const displayName = currentClub?.name || clubName || '';
   const hasSwitch = clubs.length > 1;
+  const visibleBalances = balanceOwnerId === user?.id ? balances : null;
 
   // LastClubTracker can only resolve a UUID route param (or a numeric code
   // already present in the cache). Once this page has resolved the club for
@@ -248,9 +274,9 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
                 {logo(club, club.name || '')}
                 <span className={styles.itemText}>
                   <span className={styles.itemName}>{club.name || 'Unnamed Club'}</span>
-                  {balances?.has(club.id) && (
+                  {visibleBalances?.has(club.id) && (
                     <span className={styles.itemBalance}>
-                      {(balances.get(club.id) as number).toLocaleString()} Chips
+                      {(visibleBalances.get(club.id) as number).toLocaleString()} Chips
                     </span>
                   )}
                 </span>

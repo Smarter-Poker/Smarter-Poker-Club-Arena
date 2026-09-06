@@ -70,7 +70,9 @@ const BASELINE = new Map<string, number>([
   // getRecentDistributions, a dead parallel implementation of agent undo whose
   // reads went nowhere anyway.
   ['src/services/AgentService.ts', 7],
-  ['src/pages/UnionDashboardPage.tsx', 10],
+  // 10 -> 8: union route/account authorization now reports both canonical
+  // operator lookup failures instead of discarding them during a stale load.
+  ['src/pages/UnionDashboardPage.tsx', 8],
   ['src/services/UnionService.ts', 12],
   ['src/pages/AdminDashboardPage.tsx', 7],
   ['src/services/ClubsService.ts', 5],

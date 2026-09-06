@@ -151,12 +151,16 @@ describe('Player Command connection truth', () => {
 describe('Player Command resilience wiring', () => {
   it('routes both first-page reads through the bounded retry utility', () => {
     expect(SERVICE.match(/runRosterReadWithRetry/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(SERVICE).toContain('{ attempts: 1, signal: query.signal, timeoutMs: 20_000 }');
+    expect(SERVICE).toContain('{ attempts: 1, signal: query.signal, timeoutMs: 40_000 }');
     expect(PAGE).toContain('signal: controller.signal');
+    expect(PAGE).toContain(
+      'ClubRosterService.getSummary(resolvedClubId, summaryController.signal)'
+    );
   });
 
   it('does not multiply an expensive cold page read across nested retry loops', () => {
-    expect(PAGE).toContain('const recoveryScheduled = scheduleConnectionRecovery(1)');
+    expect(PAGE).not.toContain('recoveryScheduled');
+    expect(PAGE).not.toContain('scheduleConnectionRecovery');
     expect(SERVICE).not.toContain('{ attempts: 3, signal: query.signal');
     expect(SERVICE).not.toContain('{ signal: query.signal, timeoutMs: 8_000 }');
   });
@@ -210,7 +214,7 @@ describe('Player Command resilience wiring', () => {
   });
 
   it('uses inline persistent state instead of a repeated background failure toast', () => {
-    expect(PAGE).toContain("setDataFreshness(membersRef.current.length > 0 ? 'stale' : 'failed')");
+    expect(PAGE).toContain("setDataFreshness(directoryAvailableRef.current ? 'stale' : 'failed')");
     expect(PAGE).not.toContain("toast.error('Failed To Load Members')");
     expect(PAGE).toContain('<RosterConnectionStatus');
   });
@@ -231,20 +235,81 @@ describe('Player Command resilience wiring', () => {
     expect(PAGE).toContain("dataFreshness === 'failed'");
   });
 
-  it('recovers a cold first-page timeout without making the player retry manually', () => {
-    expect(PAGE).toContain('const recoveryScheduled = scheduleConnectionRecovery(1)');
-    expect(PAGE).toContain('setLoadError(!recoveryScheduled && !hasSavedRows)');
-    expect(PAGE).toContain("recoveryScheduled ? 'loading' : 'failed'");
-    expect(PAGE).toMatch(/recoveryAttemptRef\.current >= maxAttempts/);
+  it('does not multiply a timed-out cold read and exposes the deliberate retry state', () => {
+    expect(PAGE).not.toContain('scheduleConnectionRecovery');
+    expect(PAGE).not.toContain('recoveryAttemptRef');
+    expect(PAGE).toContain("reportError(error, 'ClubMembersPage.loadFirstPage')");
+    expect(PAGE).toContain('setLoadError(!hasVerifiedDirectory)');
+    expect(PAGE).toContain("setDataFreshness(hasVerifiedDirectory ? 'stale' : 'failed')");
   });
 
-  it('gives every new query and explicit retry a fresh bounded recovery budget', () => {
-    expect(PAGE).toContain("const recoveryRequestKeyRef = useRef('')");
-    expect(PAGE).toContain('recoveryRequestKeyRef.current !== recoveryRequestKey');
-    expect(PAGE).toMatch(
-      /options\.resetRecovery === true[\s\S]*recoveryAttemptRef\.current = 0[\s\S]*recoveryRequestKeyRef\.current = recoveryRequestKey/
+  it('keeps retry ownership on the visible refresh control', () => {
+    expect(PAGE).not.toContain('recoveryRequestKeyRef');
+    expect(PAGE).toContain('await latestLoadRef.current({ forceSummary: true })');
+    expect(PAGE).not.toContain('resetRecovery');
+  });
+
+  it('clears request-owned loading flags when the browser aborts work offline', () => {
+    const offlineHandler = PAGE.slice(
+      PAGE.indexOf('const handleOffline = () => {'),
+      PAGE.indexOf('    };', PAGE.indexOf('const handleOffline = () => {'))
     );
-    expect(PAGE).toContain('{ forceSummary: true, resetRecovery: true }');
+    expect(offlineHandler).toContain('abortRef.current?.abort()');
+    expect(offlineHandler).toContain('moreAbortRef.current?.abort()');
+    expect(offlineHandler).toContain('clearTimeout(refreshTimerRef.current)');
+    expect(offlineHandler).toContain('refreshTimerRef.current = null');
+    expect(offlineHandler).toContain('summaryAbortRef.current?.abort()');
+    expect(offlineHandler).toContain('summaryAbortRef.current = null');
+    expect(offlineHandler).toContain('setLoadError(!directoryAvailableRef.current)');
+    expect(offlineHandler).toContain('setLoading(false)');
+    expect(offlineHandler).toContain('setIsRefreshing(false)');
+    expect(offlineHandler).toContain('setLoadSlow(false)');
+    expect(offlineHandler).toContain(
+      "setSummaryFreshness(summaryAvailableRef.current ? 'stale' : 'failed')"
+    );
+    expect(offlineHandler).toContain(
+      "setDataFreshness(directoryAvailableRef.current ? 'stale' : 'failed')"
+    );
+  });
+
+  it('keeps a verified empty result distinct from a directory that never loaded', () => {
+    const successfulPage = PAGE.slice(
+      PAGE.indexOf('onPage: (page) => {'),
+      PAGE.indexOf('onSummaryError:', PAGE.indexOf('onPage: (page) => {'))
+    );
+    const failedPage = PAGE.slice(
+      PAGE.indexOf('onPageError: (error) => {'),
+      PAGE.indexOf('      });', PAGE.indexOf('onPageError: (error) => {'))
+    );
+    expect(successfulPage).toContain('directoryAvailableRef.current = true');
+    expect(successfulPage).toContain('setDirectoryAvailable(true)');
+    expect(failedPage).toContain('const hasVerifiedDirectory = directoryAvailableRef.current');
+    expect(failedPage).not.toContain('membersRef.current.length');
+    expect(PAGE).toContain('const hasVerifiedDirectory = directoryAvailable');
+    expect(PAGE).toContain('hasData={hasVerifiedDirectory}');
+  });
+
+  it('cancels the independent summary retry chain when the page goes offline or unmounts', () => {
+    expect(PAGE).toContain('const summaryAbortRef = useRef<AbortController | null>(null)');
+    expect(PAGE).toContain('const summaryController = new AbortController()');
+    expect(PAGE).toContain(
+      'ClubRosterService.getSummary(resolvedClubId, summaryController.signal)'
+    );
+    expect(PAGE.match(/summaryAbortRef\.current\?\.abort\(\)/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('waits for realtime recovery before reloading the authoritative roster', () => {
+    const channelError = PAGE.slice(
+      PAGE.indexOf('onSubscriptionError: () => {'),
+      PAGE.indexOf('    },', PAGE.indexOf('onSubscriptionError: () => {'))
+    );
+    const channelRecovered = PAGE.slice(
+      PAGE.indexOf("if (status !== 'SUBSCRIBED') return;"),
+      PAGE.indexOf('    },', PAGE.indexOf("if (status !== 'SUBSCRIBED') return;"))
+    );
+    expect(channelError).not.toContain('scheduleConnectionRecovery');
+    expect(channelError).not.toContain('latestLoadRef');
+    expect(channelRecovered).toContain('if (recovered) scheduleStructuralRefresh()');
   });
 
   it('does not export a previous query while the visible search is still settling', () => {

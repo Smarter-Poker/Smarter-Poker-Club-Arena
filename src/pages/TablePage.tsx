@@ -11471,6 +11471,7 @@ export default function TablePage({
         // Neither pass may DOWNGRADE a known club back to null: from both of
         // them null means "could not tell", never "there is no club".
         const lobbyClubArgs = {
+          userId: userId !== 'guest' ? userId : null,
           viewerClubId: useUserStore.getState().currentClubId,
           tableClubId: table.club_id || null,
         };

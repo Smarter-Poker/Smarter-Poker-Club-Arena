@@ -961,6 +961,80 @@ detector will ever tell you it broke.**
 
 ---
 
+## 10.84 AGENTS NEVER SET A CREDENTIAL, AND NEVER HAND-WRITE WHAT A MONITOR READS (2026-09-06, BINDING)
+
+Two rules, one lesson: **the things that watch this platform are configuration,
+and configuration an agent edits by hand is configuration nobody can see.**
+Both were written by the Realtime Connections Programme's phase 7, from the two
+halves of the 2026-09-03 outage.
+
+### 1. An agent never SETS a credential. It reads where one lives, or it stops.
+
+The twenty-two hours began with **one environment variable**. Somebody put
+Dan's own address into `PROBE_LOGIN_EMAIL` in Vercel, the login probe signed in
+as him every fifteen minutes and called a global `signOut()`, and every table he
+opened said "Reconnecting To The Table" until somebody noticed by hand.
+
+So: an agent may READ a credential from the place AGENT-PLAYBOOK.md names
+(`.env.local`, `.env`, the Keychain entry, the Vercel dashboard), and may say
+which place a value belongs in. An agent may NOT write, rotate, paste or
+"correct" a credential in Vercel, Supabase, GitHub Actions, a `.env` on a
+server, or anywhere else - not even to fix an outage it can see. Those edits
+are Dan's, and they are the one class of change where being wrong is invisible
+to every test in this repo.
+
+If a credential is wrong, say which one, say where it lives, and say what value
+SHAPE it should have (an address under `@probe.smarter.poker`, the service
+identity, a 64-character secret). Never the value.
+
+Corollary, already law in the World Hub
+(`__tests__/synthetic-probes-never-sign-out-a-person.law.test.mjs`): a probe
+pointed at the wrong identity refuses to run rather than running as the wrong
+person. Code that guesses is worse than code that stops.
+
+### 2. Never hand-write what a monitor reads.
+
+Phase 1 found, and phase 7 fixed, alert rules on engine-01 that were not the
+alert rules in this repo **in both directions**. Measured on 2026-09-06: 72
+alerts running, 79 declared here, **15 declared and never loaded** - among them
+`EngineRefusingSessions` and `EngineCannotReachAuth`, the two written in phase 1
+so that this exact outage would page somebody - and **8 running that this repo
+had never seen**, hand-authored on the box with good reasoning and a changelog
+reference that was never committed.
+
+Nobody was careless. THREE LISTS had to agree and nothing checked them:
+`prometheus.yml`'s `rule_files`, `docker-compose.yml`'s mounts, and
+`deploy.sh`'s symlink loop - which named four of the seven, so four rule files
+could only ever be changed by hand.
+
+THE RULES:
+
+- **A monitoring change is a pull request in `infra/monitoring/`,** then
+  `bash infra/monitoring/deploy.sh` on the box. Never an editor on engine-01.
+  `deploy.sh` symlinks this repo over the live files, so a hand-written rule is
+  not merely undocumented - **it is deleted by the next deploy**, which is how
+  the 2026-09-04 cron and postgres rules were nearly lost.
+- **An empty alert group is worse than no group.** It reads as coverage. Delete
+  the heading with a comment saying where the coverage really lives (the
+  `vercel-health` note in `alert-rules.yml` is the worked example), or fill it.
+- **A rule is not live because it merged.** It is live when
+  `curl -s localhost:9090/api/v1/rules` says so.
+  `scripts/ci/check-alert-rules-match.mjs` asks, and refuses to be silently
+  green when it cannot reach the stack.
+- **The canary is not decoration.** `MonitoringCanary` fires unconditionally so
+  that its ABSENCE is the signal - without it, "no alerts" and "no monitoring"
+  are the same observation, and they were the same observation for twenty-two
+  hours.
+- **Derive a threshold, do not guess one, and write the measurement beside it.**
+  `EngineRefusingSessions` shipped as `>= 6 in 15m`; measured against the live
+  series before it was ever loaded, the ordinary p95 was 9.2 and the daily max
+  32.3, so it would have fired for ever on nothing but expiring tokens. An
+  alarm that is always on is an alarm that gets muted.
+
+Pinned by `tests/what-a-monitor-reads-is-what-the-repo-says.law.test.ts`.
+
+---
+
 ## 10.85 NEVER SCHEDULE ANYTHING ON THE CLAUDE SCHEDULER (Dan, 2026-09-04, BINDING)
 
 **Dan, verbatim: "IF YOU ARE SCHEDULING ANYTHING TO 'RUN ON CLAUDE SCHEDULER' IT

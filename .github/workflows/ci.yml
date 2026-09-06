@@ -872,7 +872,7 @@ jobs:
   # The whole suite runs in 13s, so there is never a reason to skip it. It MUST
   # stay blocking.
   # ===========================================================================
-  unit:
+  unit_shards:
     # COST 2026-08-23: this already ran, and passed, on the pull request -
     # the ruleset will not merge without it. Re-running it on the merge
     # commit tests an identical tree. 34 of every 100 CI runs were that
@@ -902,7 +902,7 @@ jobs:
       (github.event_name == 'schedule' ||
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
-    name: Client Unit Tests (vitest)
+    name: Client Unit Tests shard ${{ matrix.shard }}
     # 2026-09-01 (cost audit): `vars.CI_RUNNER` routes this job to a
     # self-hosted runner the moment Dan sets the repository variable (e.g. to
     # `estate-linux`). Unset, it is exactly `ubuntu-latest` as before. A warm
@@ -910,6 +910,18 @@ jobs:
     # node_modules survives between runs.
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
+    # SHARDED 2026-09-06. Measured over 18 pull-request runs this was the
+    # critical path by a distance - p50 264s, max 779s, against 236s for the
+    # next longest job. The publisher has run the same suite four ways since
+    # 2026-09-02 (publish-club-arena.yml `client-tests`); this is that, moved
+    # one step earlier so the pull request feels it too.
+    #
+    # fail-fast cancels the siblings the moment one shard fails, which is what
+    # a gate wants: the answer is already known.
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4]
 
     steps:
       - name: Checkout
@@ -938,15 +950,57 @@ jobs:
         run: npm ci
 
       - name: Run Test Suite
-        run: npm test
+        run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
 
       - name: Report
         if: always()
         run: |
-          echo "## Client Unit Tests" >> $GITHUB_STEP_SUMMARY
+          echo "## Client Unit Tests - shard ${{ matrix.shard }}/4" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`tests/**\` via vitest. Blocking - see the note above this job" >> $GITHUB_STEP_SUMMARY
           echo "in ci.yml for why it exists." >> $GITHUB_STEP_SUMMARY
+
+  # ── THE REQUIRED CHECK KEEPS ITS NAME ────────────────────────────────────
+  #
+  # `Client Unit Tests (vitest)` is one of the six contexts in the `main
+  # protection` ruleset. A matrix job publishes a check PER SHARD - "Client
+  # Unit Tests shard 1" and so on - so sharding the job alone would retire the
+  # name the ruleset waits for, and a required context that NEVER REPORTS
+  # leaves every pull request pending forever. AGENT-PLAYBOOK calls that "the
+  # quiet killer: a required context no job produces".
+  #
+  # So the shards do the work under new names and this one-second job carries
+  # the old name and the verdict. `needs` on a matrix waits for EVERY shard, so
+  # one red shard still stops the merge, exactly as before.
+  #
+  # It must also survive the shards being SKIPPED. The ruleset counts a skipped
+  # required check as satisfied, and the `if:` on unit_shards deliberately skips
+  # when the diff touches neither src nor tests - so this runs on `always()`
+  # and only fails on a real failure, never on a skip.
+  unit:
+    needs: unit_shards
+    if: always()
+    name: Client Unit Tests (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        run: |
+          RESULT="${{ needs.unit_shards.result }}"
+          echo "## Client Unit Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Four shards, aggregated. Matrix result: **$RESULT**" >> $GITHUB_STEP_SUMMARY
+          case "$RESULT" in
+            success)
+              echo "All four shards passed." >> $GITHUB_STEP_SUMMARY ;;
+            skipped)
+              # Not a failure: the diff touched neither src/ nor tests/.
+              echo "Skipped - the diff touched neither \`src/\` nor \`tests/\`." >> $GITHUB_STEP_SUMMARY ;;
+            *)
+              echo "A shard did not pass. Open the shard job for the failing test." >> $GITHUB_STEP_SUMMARY
+              echo "::error title=CLIENT UNIT TESTS FAILED::At least one of the four vitest shards did not pass ($RESULT). The failing test is in the shard job, not here."
+              exit 1 ;;
+          esac
 
   server:
     # COST 2026-08-23: this already ran, and passed, on the pull request -

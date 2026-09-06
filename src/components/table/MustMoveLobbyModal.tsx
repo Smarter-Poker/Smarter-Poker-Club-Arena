@@ -179,9 +179,21 @@ export function MustMoveLobbyModal({
         toast.info(waitlistedText(r));
         await load();
       } else if (r.table_id) {
+        /* THE DOOR SAYS WHERE, EVERY TIME (2026-09-06). This used to close and
+           navigate in silence, which reads as "nothing happened" in two real
+           cases: a surface that passes no `onGoToTable`, and a door that seats
+           you at the table you are ALREADY looking at (TablePage's handler
+           returns early on `dest === tableId`). The seat is reserved
+           server-side either way and the buy-in door is the table's own, so the
+           player has to be told which table is now theirs. */
+        toast.success(`Seat Reserved At ${labelFor(r.table_id) ?? r.table_name ?? 'Your Table'}.`);
         onClose();
         onGoToTable?.(r.table_id);
       } else {
+        /* A REFUSAL THAT DOES NOT THROW IS STILL A REFUSAL. fn_cash_game_join
+           can answer `{ok:false}` with no table and no waitlist place; the
+           button used to swallow that and look broken. */
+        toast.warning(joinGameRefusalText(new Error(String(r.action ?? ''))));
         await load();
       }
     } catch (err) {

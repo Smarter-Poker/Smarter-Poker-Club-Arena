@@ -113,6 +113,45 @@ export function recordServerTime(serverTimeMs: number | undefined | null): void 
   offsetMs += (windowMinMs - offsetMs) * SMOOTHING;
 }
 
+/**
+ * ═══ ONE CLOCK (Realtime Phase 5, 2026-09-06) ══════════════════════════════
+ *
+ * `noteServerTime` is the same estimator under the name `lib/serverClock` used
+ * before it was folded in here, and it exists because for one day this app had
+ * TWO functions called `serverNow()` with OPPOSITE SIGNS:
+ *
+ *   utils/serverClock (2026-08-18)  offset = Date.now() - serverTime
+ *                                   serverNow() = Date.now() - offset
+ *   lib/serverClock   (2026-09-05)  offset = serverTime - Date.now()
+ *                                   serverNow() = Date.now() + offset
+ *
+ * Same name, same meaning, inverted arithmetic. Whichever module a file
+ * happened to import decided which clock it got, both compiled, and both
+ * returned a plausible number - so one wrong import path would have turned a
+ * three-second-fast phone into a three-second-SLOW one and doubled the error
+ * on a turn clock, silently.
+ *
+ * The two also had different quality and, worse, the wrong one had the better
+ * feed. `utils` is latency-corrected (Cristian's algorithm, see the header
+ * above) and was fed only by SNAPSHOTS; `lib` ignored latency on purpose and
+ * was fed by every EVENT and PING frame. So the accurate estimator got the
+ * fewest samples and drove the TURN RING, while the rough one got a sample
+ * every twenty-five seconds and drove the jackpot freshness gate.
+ *
+ * Folding them together keeps the better estimator and gives it the better
+ * feed. `lib/serverClock.ts` is deleted; a law pins that exactly one
+ * `serverNow` exists.
+ *
+ * The one thing that does NOT carry over is "latency is ignored on purpose".
+ * That reasoning was written for a ninety-second freshness gate and is wrong
+ * for a fifteen-second turn: the 2026-08-28 note above is about a countdown
+ * that showed time the player did not have.
+ */
+export function noteServerTime(serverTimeMs: unknown): void {
+  if (typeof serverTimeMs !== 'number') return;
+  recordServerTime(serverTimeMs);
+}
+
 /** Current time on the ENGINE's clock, in epoch ms. */
 export function serverNow(): number {
   return Date.now() - offsetMs;

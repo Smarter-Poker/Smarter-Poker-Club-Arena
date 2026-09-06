@@ -27,6 +27,15 @@
  *   row is skipped, never judged against a fabricated zero.
  * LAW 1d (gate) - THE NIGHTLY RUN READS ONE SNAPSHOT (REPEATABLE READ), so
  *   the balances and the journal come from the same instant.
+ * LAW 3b (Phase 8.1) - THE OTHER SIDE OF A LEG NAMES THE COLUMN THIS SIDE
+ *   MOVED: money out of a promo bank arrives in a promo bank, and the
+ *   entity's identity (a union, a club, an agent) decides which promo column.
+ *   579 legs a day could not be keyed before this; after it, none.
+ * LAW 3c (Phase 8.1) - A RESIDUE THAT ALREADY CANCELLED IS NOT A FINDING:
+ *   the snapshot carries the CUMULATIVE residue since the account's baseline,
+ *   and a finding needs a non-zero cumulative AND two consecutive intervals
+ *   moving it the same way (a leak persists, an oscillation flips), or a
+ *   single interval of 100 chips or more.
  * LAW 4 - WHAT IT DOES NOT REPLAY, IT SAYS. prize_liability is excluded
  *   because tournament_escrow is its per-event balance with an hourly shadow;
  *   a leg whose column cannot be keyed is counted and reported as unkeyable,
@@ -117,6 +126,32 @@ describe('the journal replays every account it named', () => {
     expect(g).toMatch(/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;/);
     expect(g).toMatch(/RAISE EXCEPTION 'the nightly replay does not ask for one snapshot'/);
     expect(g).toMatch(/COMMENT ON FUNCTION public\.fn_ca_ledger_replay\(integer\) IS/);
+  });
+
+  it('LAW 3b: the other side of a leg names the column this side moved', () => {
+    const g = load(/^\d{14}_phase_8_1_the_other_side_of_a_leg_names_the_column_this_side\.sql$/);
+    const a = fnIn(g, 'fn_ca_leg_accounts');
+    expect(a).toMatch(
+      /SELECT l\.to_type AS t, l\.to_entity_id AS id, l\.to_label AS lbl, l\.from_label AS other_lbl/
+    );
+    expect(a).toMatch(
+      /WHEN s\.other_lbl LIKE '%promo%'\s+AND EXISTS \(SELECT 1 FROM public\.unions u WHERE u\.id = s\.id\)\s+THEN 'union_wallets\.promo_wallet' END\)/
+    );
+    expect(a).toMatch(/THEN 'clubs\.promo_balance'/);
+    expect(a).toMatch(/THEN 'agents\.promo_wallet_balance'/);
+    // still counted, never guessed: the unkeyable branch survives
+    expect(a).toMatch(/SELECT NULL, 'unkeyable'/);
+    expect(g).toMatch(/RAISE EXCEPTION 'the replay still cannot key % legs/);
+  });
+
+  it('LAW 3c: a residue that already cancelled is not a finding', () => {
+    const g = load(/^\d{14}_a_residue_that_already_cancelled_is_not_a_finding\.sql$/);
+    const r = fnIn(g, 'fn_ca_ledger_replay');
+    expect(r).toMatch(/v_cum := round\(v_this \+ COALESCE\(r\.prev_cum, 0\), 2\);/);
+    expect(r).toMatch(/WHEN abs\(v_this\) >= 100 THEN v_this/);
+    expect(r).toMatch(/AND sign\(v_this\) = sign\(r\.prev_unexplained\) THEN v_cum/);
+    expect(g).toMatch(/ADD COLUMN IF NOT EXISTS cum_unexplained numeric/);
+    expect(g).toMatch(/RAISE EXCEPTION 'the replay still sums two intervals blind'/);
   });
 
   it('LAW 4: what it does not replay, it says', () => {

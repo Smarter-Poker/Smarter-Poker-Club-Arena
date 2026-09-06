@@ -153,6 +153,15 @@ What the reset gives Phase 5: exact opening figures, so the escrow floor of zero
 6.3 Alert board: an owner and a 24h SLA per detector; auto-resolve on clear; retire every detector that R1-R11 make impossible.
 6.4 `chip_ledger.idempotency_key` populated (NULL on 126,559 of 126,593 rows tonight) so the ledger dedupes by itself; monthly partitioning before month four.
 
+### Phase 8 - every account is replayable
+
+**Phase 8.1 status - 2026-09-06 01:22 UTC (measured, not intended).** DONE. The replay's last blind spot is closed: 579 legs a day carried no column it could key (a union wallet has six, an agent two, and the counterparty side of a leg carries no label). The rule is exact - THE OTHER SIDE OF A LEG NAMES WHAT MOVED, and the entity's identity decides which promo column - and the migration refuses to apply unless the unkeyable count is zero. A flaw inherited from the BBJ meter's two-interval rule was fixed with it: a residue that already cancelled was being counted twice along the chain, so the snapshot now carries the CUMULATIVE residue and a finding needs two consecutive intervals moving it the same way. Two runs, each in one snapshot: **1,012 accounts, 0 unkeyable, 1 disagreement** - the felt, at 10 to 25 chips, which is the engine writing a hand's stacks and its legs in two transactions. `docs/changelog/2026-09-06-chip-std-phase-8-every-account-is-replayable.md`.
+
+8.2 C3: the bust rebuy goes through the pending ledger.
+8.3 The PITR drill.
+8.4 `chip_ledger` partitioning, before December, blocked on the `ca_mint_ledger.chip_ledger_id` foreign key (a partitioned parent's unique key must carry the partition column).
+8.5 The engine settles a hand in one transaction, so the felt stops disagreeing with its own journal by the size of the in-flight population (engine lane).
+
 ### Phase 7 - further optimisation (after the above)
 
 **Phase 7 gate - 2026-09-06 00:50 UTC (measured, not intended).** The replay's first judged run filed 159 findings and every one was the replay's own keying: an account keyed by the club on the leg split one union wallet into two, the felt was replayed per table where a sanctioned seat move carries a stack between tables with no leg, and a missing club_members row read as a zero balance. Corrected (`20260906003739`): the account is the OWNER of the chips and the felt is one pool. Same window after: 1,009 checked, 9 disagreements, every large one reading two-interval 0.00. The edge itself is closed by running the nightly job in one REPEATABLE READ snapshot (`20260906004441`). 7.2 verified live (5 of 6 new horse legs name their player, no caller broken). `docs/changelog/2026-09-06-chip-std-phase-7-gate.md`.

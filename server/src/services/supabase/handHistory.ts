@@ -362,6 +362,11 @@ export async function logHandHistory(params: {
       // 2026-09-05: the rake is part of the result (horse_daily_nets.rake_bb),
       // and the button places the blinds for horse_daily_play.
       rakeAmount: params.rakeAmount,
+      // 2026-09-06: THE DROP IS THE RAKE AND THE JACKPOT. On 2026-09-06 the
+      // fleet's residual after rake was -1,778bb and the day's BBJ drop was
+      // 1,761bb - a 1% match. Both halves of the drop must reach the horse
+      // row or the tuner reads the house take as a leak.
+      bbjAmount: params.bbjAmount ?? 0,
       buttonSeat: params.buttonSeat ?? null,
       // 2026-09-06: a floored table's play is measured separately - the
       // horse is required to be loose there.

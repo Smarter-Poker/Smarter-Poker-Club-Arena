@@ -388,12 +388,12 @@ export default function ClubMembersPage() {
         onPageError: (error) => {
           if (!isCurrent() || abortLike(error)) return;
           const hasSavedRows = membersRef.current.length > 0;
-          // ClubRosterService gives this expensive page read one 20s attempt.
-          // Recover once after jitter (worst case about 41.4s), then expose the
-          // retry control. Nested service retries plus two page recoveries used
-          // to keep a cold roster spinning for roughly 79s and could pile up
-          // server work after the browser had abandoned each request.
-          const recoveryScheduled = scheduleConnectionRecovery(1);
+          // ClubRosterService gives this expensive page read one uninterrupted
+          // 40s attempt. Do not automatically launch another database copy
+          // when it expires; the visible retry control is the deliberate next
+          // attempt. Automatic retry multiplication was the reason a cold page
+          // could remain loading while abandoned queries piled up.
+          const recoveryScheduled = false;
           if (!recoveryScheduled) reportError(error, 'ClubMembersPage.loadFirstPage');
           setLoadError(!recoveryScheduled && !hasSavedRows);
           setLoading(recoveryScheduled && !hasSavedRows);
@@ -414,7 +414,7 @@ export default function ClubMembersPage() {
         writeRosterCache(user.id, resolvedClubId, pageResult.value.items, summaryResult.value);
       }
     },
-    [debouncedSearch, filter, resolvedClubId, scheduleConnectionRecovery, sortKey, user?.id]
+    [debouncedSearch, filter, resolvedClubId, sortKey, user?.id]
   );
 
   useEffect(() => {

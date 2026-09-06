@@ -125,6 +125,25 @@ class UnionServiceClass {
   }
 
   /**
+   * Fetch only unions this user owns.
+   *
+   * The Home Cashier wallet directory is a hot path and needs ownership from
+   * the authoritative `unions` row. `getMyUnions()` intentionally discovers
+   * admin/member affiliations and enriches network counts as well; using that
+   * broader workflow here would add unrelated round trips and could advertise
+   * an admin-visible union as an owner treasury.
+   */
+  async getOwnedUnions(userId: string): Promise<Union[]> {
+    const { data, error } = await supabase
+      .from('unions')
+      .select('id, slug, name, owner_id, avatar_url, member_count, created_at, updated_at')
+      .eq('owner_id', userId);
+
+    if (error) throw error;
+    return (data || []).map(this.mapUnion);
+  }
+
+  /**
    * Get unions where user is owner or admin
    */
   async getMyUnions(userId: string): Promise<Union[]> {

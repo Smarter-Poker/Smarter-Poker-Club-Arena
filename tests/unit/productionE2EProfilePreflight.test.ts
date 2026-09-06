@@ -174,7 +174,10 @@ describe('authenticated production account preflight', () => {
 
     const mobileFit = source('tests/e2e/mobile-fit-audit.spec.ts');
     expect(mobileFit).toContain('evaluateAcrossDocumentReplacement');
-    expect(mobileFit).toContain('ROUTES.length * 16_000 + 180_000');
+    expect(mobileFit).toContain("test.describe('Club Arena Mobile Fit At 375px'");
+    expect(mobileFit).toContain('for (const route of ROUTES)');
+    expect(mobileFit).toContain("test(`${route || 'home'} has no horizontal page overflow`");
+    expect(mobileFit).not.toContain('test.setTimeout(ROUTES.length');
     expect(mobileFit).not.toContain('ROUTES.length * 12_000 + 120_000');
     const documentReplacement = source('tests/e2e/support/evaluateAcrossDocumentReplacement.ts');
     expect(documentReplacement).toContain('execution context was destroyed');

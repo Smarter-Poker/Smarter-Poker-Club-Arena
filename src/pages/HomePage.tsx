@@ -28,6 +28,7 @@ import { useAppNavigate, useInTabLobby } from '../context/InTabLobbyContext';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
+import { UnionService } from '../services/UnionService';
 import { ClubJoinService } from '../services/ClubJoinService';
 import { ClubEntryTrustService, type ClubEntryFlags } from '../services/ClubEntryTrustService';
 import { backfillClubCards } from '../services/ClubCardBackfill';
@@ -44,13 +45,15 @@ import LOBBY_TILES from '../config/lobbyTiles.config';
 import { preloadRoute } from '../utils/ChunkPreloader';
 import {
   eligibleQuickLinkClubs,
-  eligibleCashierWallets,
+  mergeCashierWalletDirectory,
   isUnionEntity,
   resolveCashierWallet,
   resolveTargetClub,
   readLastClubId,
+  readCachedQuickLinkClubs,
   rememberLastClub,
   primeUnionFlags,
+  writeCachedQuickLinkClubs,
 } from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
 import ClubEntryActionBar from '../components/home/ClubEntryActionBar';
@@ -158,53 +161,20 @@ function HomePageInner() {
    *  from "we could not find out", which the lobby previously conflated. */
   const [loadFailed, setLoadFailed] = useState(false);
 
-  // Real data states — start as NOT loading if SWR cache provides clubs
-  const [userClubs, setUserClubs] = useState<UserClub[]>(() => {
-    // SWR — instant render from cache
-    try {
-      const cached = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
-      const cacheTs = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE_TS);
-      const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
-      if (cached && isFresh) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          if (
-            parsed.some(
-              (c: any) => c.slug === undefined && c.id !== 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
-            )
-          )
-            return [];
-          return parsed;
-        }
-      }
-    } catch {
-      /* ignore corrupt cache */
-    }
-    return [];
-  });
-  const [isLoading, setIsLoading] = useState(() => {
-    // If SWR cache already gave us clubs, skip loading state entirely
-    try {
-      const cached = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
-      const cacheTs = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE_TS);
-      const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
-      if (cached && isFresh) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          if (
-            parsed.some(
-              (c: any) => c.slug === undefined && c.id !== 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
-            )
-          )
-            return true;
-          return false;
-        }
-      }
-    } catch {
-      /* */
-    }
-    return true;
-  });
+  // The cache is account-scoped and may only be hydrated after getAuthUser has
+  // established which account is active. Starting from a bare cached array
+  // briefly exposed the previous account's club names during an account switch.
+  const [userClubs, setUserClubs] = useState<UserClub[]>([]);
+  const directoryOwnerRef = useRef<string | null>(null);
+  // Multiple auth/bus refreshes can overlap. Only the newest request may
+  // publish a directory or end its loading state; otherwise a slower response
+  // from account A can repaint account A's clubs after account B signs in.
+  const directoryRequestGenerationRef = useRef(0);
+  // Canonical union ownership lives in `unions`, and a newly created union no
+  // longer has to own a companion `clubs` row. Keep treasury destinations out
+  // of the club carousel and merge them only into the Cashier directory.
+  const [ownedUnionWallets, setOwnedUnionWallets] = useState<UserClub[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Per-club stats for featured card rendering
   // Club-card totals are live facts. Never hydrate them from localStorage or
@@ -309,17 +279,21 @@ function HomePageInner() {
 
   const fetchUserData = useCallback(
     async (skipLoading = false, getIsMounted?: () => boolean) => {
+      const requestGeneration = ++directoryRequestGenerationRef.current;
+      const isCurrentRequest = () =>
+        directoryRequestGenerationRef.current === requestGeneration &&
+        (!getIsMounted || getIsMounted());
       if (!skipLoading) setIsLoading(true);
 
       // Safety timeout: never show loading spinner for more than 6 seconds.
       // Was 12 — on a saturated database that is 12 seconds of dimmed screen;
       // the SWR cache + retry UI handle the rest.
       const loadingTimeout = setTimeout(() => {
-        if (!getIsMounted || getIsMounted()) setIsLoading(false);
+        if (isCurrentRequest()) setIsLoading(false);
       }, 6_000);
 
       try {
-        if (getIsMounted && !getIsMounted()) {
+        if (!isCurrentRequest()) {
           clearTimeout(loadingTimeout);
           return;
         }
@@ -327,17 +301,42 @@ function HomePageInner() {
         const {
           data: { user: authUser },
         } = await getAuthUser();
+        if (!isCurrentRequest()) return;
         if (authUser) {
-          const [memberships, ownedUnionResult] = await Promise.all([
+          if (directoryOwnerRef.current !== authUser.id) {
+            directoryOwnerRef.current = authUser.id;
+            setUserClubs([]);
+            setOwnedUnionWallets([]);
+          }
+
+          // Hydrate only an envelope written by this exact account. The auth
+          // lookup is local/session-backed, so this keeps SWR speed without a
+          // cross-account affiliation flash.
+          if (!skipLoading) {
+            try {
+              const cacheTs = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE_TS);
+              const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
+              const cached = isFresh ? readCachedQuickLinkClubs(authUser.id) : [];
+              if (cached.length > 0) {
+                setUserClubs(cached as UserClub[]);
+                primeUnionFlags(cached);
+                setIsLoading(false);
+              }
+            } catch {
+              /* corrupt/quota-restricted cache: continue with the network */
+            }
+          }
+
+          const [memberships, ownedUnions] = await Promise.all([
             ClubsService.getUserMemberships(authUser),
-            supabase
-              .from('clubs')
-              .select(
-                'id, club_id, name, slug, logo_url, card_image_url, member_count, owner_id, union_id, is_union'
-              )
-              .eq('owner_id', authUser.id)
-              .eq('is_union', true),
+            // This is part of the Cashier directory contract, not optional
+            // decoration. Let a failure reach the visible/retryable page error
+            // instead of publishing a confidently incomplete wallet list.
+            UnionService.getOwnedUnions(authUser.id),
           ]);
+          // An account change, logout, or newer refresh invalidates this
+          // response even when its component is still mounted.
+          if (!isCurrentRequest() || directoryOwnerRef.current !== authUser.id) return;
           const clubs =
             memberships?.map(
               (m) =>
@@ -345,31 +344,26 @@ function HomePageInner() {
                   ...m.club,
                   is_owner: m.role === 'owner',
                   member_count: m.club?.member_count || 0,
-                  // Detect union entities via union_id FK + name heuristic.
-                  // A club row with union_id set AND "union" in the name is the union's
-                  // display stub. Regular member clubs also have union_id but don't
-                  // have "union" in their name.
-                  entity_type:
-                    (m.club as any)?.is_union === true ||
-                    ((m.club as any)?.union_id && /union/i.test(m.club?.name || ''))
-                      ? 'union'
-                      : 'club',
+                  // `clubs.is_union` is authoritative. Names are user content:
+                  // an ordinary member club called "Union Poker Club" must not
+                  // disappear from its members' Cashier directory.
+                  entity_type: (m.club as any)?.is_union === true ? 'union' : 'club',
                 }) as UserClub
             ) || [];
-          // Union ownership is authority in its own right; do not depend on a
-          // redundant club_members row existing for the union hub card.
-          if (ownedUnionResult.error) {
-            reportError(ownedUnionResult.error, 'HomePage.ownedUnionWallets');
-          } else {
-            for (const owned of ownedUnionResult.data || []) {
-              if (clubs.some((club) => club.id === owned.id)) continue;
-              clubs.push({
-                ...owned,
-                is_owner: true,
-                entity_type: 'union',
-              } as UserClub);
-            }
-          }
+          // Union ownership is authority in its own right; no redundant
+          // club_members/house-club row is required for this treasury entry.
+          const nextOwnedUnionWallets: UserClub[] = ownedUnions.map((owned) => ({
+            id: owned.id,
+            slug: owned.slug,
+            name: owned.name,
+            logo_url: owned.avatarUrl,
+            member_count: owned.memberCount,
+            owner_id: owned.ownerId,
+            union_id: owned.id,
+            is_union: true,
+            is_owner: true,
+            entity_type: 'union',
+          }));
           // UNION LAW (2026-08-19, Dan): the union house-club card (club.id ===
           // club.union_id) is only shown to its owner. Players enter through
           // their own club; union games appear inside the club lobby.
@@ -378,13 +372,14 @@ function HomePageInner() {
             const isUnionHouseClub = c.entity_type === 'union' || (!!uid && c.id === uid);
             return !isUnionHouseClub || (c as any).is_owner;
           });
-          if (getIsMounted && !getIsMounted()) return;
+          if (!isCurrentRequest() || directoryOwnerRef.current !== authUser.id) return;
           setLoadFailed(false);
           setUserClubs(lawFilteredClubs);
+          setOwnedUnionWallets(nextOwnedUnionWallets);
           // Enhancement #9: Update SWR cache (stats re-fetch keys off
           // displayClubIdsKey — no manual refresh counter needed)
           try {
-            localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify(lawFilteredClubs));
+            writeCachedQuickLinkClubs(authUser.id, lawFilteredClubs);
             localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE_TS, String(Date.now()));
           } catch {
             /* quota */
@@ -408,8 +403,10 @@ function HomePageInner() {
            */
           primeUnionFlags(lawFilteredClubs);
         } else {
-          if (getIsMounted && !getIsMounted()) return;
+          if (!isCurrentRequest()) return;
+          directoryOwnerRef.current = null;
           setUserClubs([]);
+          setOwnedUnionWallets([]);
           try {
             localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE);
             localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE_TS);
@@ -427,12 +424,14 @@ function HomePageInner() {
         //
         // Record the failure so the carousel can say "could not load" instead
         // of quietly inventing a club list.
-        if (!getIsMounted || getIsMounted()) setLoadFailed(true);
-        reportError(err, 'HomePage.Error_fetching_user_data');
-        toast.error('Could Not Load Your Clubs');
+        if (isCurrentRequest()) {
+          setLoadFailed(true);
+          reportError(err, 'HomePage.Error_fetching_user_data');
+          toast.error('Could Not Load Your Clubs');
+        }
       } finally {
         clearTimeout(loadingTimeout);
-        if (!getIsMounted || getIsMounted()) {
+        if (isCurrentRequest()) {
           setIsLoading(false);
           hasFetchedOnceRef.current = true;
         }
@@ -532,14 +531,34 @@ function HomePageInner() {
     { debounce: 500 }
   );
 
+  // Union creation, rename, ownership transfer and deletion must update the
+  // Cashier wallet directory without requiring a page reload.
+  useMasterBusSubscription(
+    'UNION_UPDATED',
+    () => {
+      fetchUserData(true);
+    },
+    { debounce: 500 }
+  );
+
   // AUTH_STATE_CHANGED: kept as immediate (auth state must propagate instantly)
   useMasterBusSubscription(
     'AUTH_STATE_CHANGED',
     (payload: any) => {
       if (payload.isAuthenticated) {
+        if (directoryOwnerRef.current !== payload.userId) {
+          directoryOwnerRef.current = payload.userId || null;
+          setUserClubs([]);
+          setOwnedUnionWallets([]);
+        }
         fetchUserData(false);
       } else {
+        // Invalidate any request that started before sign-out. There is no
+        // replacement fetch in this branch to advance the generation for us.
+        directoryRequestGenerationRef.current += 1;
+        directoryOwnerRef.current = null;
         setUserClubs([]);
+        setOwnedUnionWallets([]);
         // Clear SWR cache to prevent stale club data leaking across logins
         try {
           localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE);
@@ -643,14 +662,22 @@ function HomePageInner() {
         case '4': {
           haptic.light();
           playPremiumSfx('navigate');
-          const target = resolveCashierWallet(eligibleCashierWallets(userClubs), quickLinkClubId);
+          const target = loadFailed
+            ? null
+            : resolveCashierWallet(
+                mergeCashierWalletDirectory(userClubs, ownedUnionWallets),
+                quickLinkClubId
+              );
           if (target) {
             rememberLastClub(target.id);
             navigate(
               isUnionEntity(target)
-                ? `/unions/${unionRouteRef(String(target.union_id || target.id))}/operations?tab=wallet`
+                ? `/unions/${target.slug || unionRouteRef(String(target.union_id || target.id))}/operations?tab=wallet`
                 : `/clubs/${target.slug || target.id}/cashier`
             );
+          } else if (loadFailed) {
+            toast.info('Retrying Cashier Directory');
+            void fetchUserData(false, () => isMountedRef.current);
           } else toast.info('Join a club first to access the cashier');
           break;
         }
@@ -692,14 +719,16 @@ function HomePageInner() {
   }, [
     navigate,
     userClubs,
+    ownedUnionWallets,
     quickLinkClubId,
+    loadFailed,
+    fetchUserData,
     showJoinModal,
     showCreateClubModal,
     showFindPlayerModal,
     entryFlags,
     toast,
     leaveConfirm?.visible,
-    toast,
   ]);
 
   // #2: Pin/unpin club
@@ -1057,7 +1086,10 @@ function HomePageInner() {
     () => resolveTargetClub(quickLinkClubs, quickLinkClubId),
     [quickLinkClubs, quickLinkClubId]
   );
-  const cashierWallets = useMemo(() => eligibleCashierWallets(userClubs), [userClubs]);
+  const cashierWallets = useMemo(
+    () => (loadFailed ? [] : mergeCashierWalletDirectory(userClubs, ownedUnionWallets)),
+    [loadFailed, ownedUnionWallets, userClubs]
+  );
   const cashierWallet = useMemo(
     () => resolveCashierWallet(cashierWallets, quickLinkClubId),
     [cashierWallets, quickLinkClubId]
@@ -1071,7 +1103,7 @@ function HomePageInner() {
       playPremiumSfx('navigate');
       navigate(
         isUnionEntity(club)
-          ? `/unions/${unionRouteRef(String(club.union_id || club.id))}/operations?tab=wallet`
+          ? `/unions/${club.slug || unionRouteRef(String(club.union_id || club.id))}/operations?tab=wallet`
           : `/clubs/${club.slug || club.id}/cashier`
       );
     },
@@ -1091,9 +1123,14 @@ function HomePageInner() {
 
   const cashierEmpty = useCallback(() => {
     haptic.light();
+    if (loadFailed) {
+      toast.info('Retrying Cashier Directory');
+      void fetchUserData(false, () => isMountedRef.current);
+      return;
+    }
     toast.info('Join a club to access the cashier');
     setShowJoinModal(true);
-  }, [toast]);
+  }, [fetchUserData, loadFailed, toast]);
 
   const marketplaceEmpty = useCallback(() => {
     haptic.light();

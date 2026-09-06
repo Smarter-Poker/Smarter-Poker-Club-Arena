@@ -17,6 +17,7 @@
  */
 
 import { supabase } from '../services/supabase.js';
+import { bankrollPolicyFor } from '../services/HorseBankroll.js';
 import { fetchAllRows } from '../services/supabase/pagination.js';
 import {
   assignTags,
@@ -44,6 +45,12 @@ const FUNDING_WALLETS = [JAQK_CLUB_ID, SHARK_CLUB_ID, DSS_CLUB_ID];
 interface MemberRow extends Record<string, unknown> {
   user_id: string;
   club_id: string;
+  /** The wallet this tag is for. `assignPreferredStakes` uses it as the
+   *  CEILING on the stakes the horse is tagged for - see Dan's 2026-09-05
+   *  ruling in StableHand. Null when the column is unreadable, which the
+   *  assignment reads as "no ceiling", exactly as the seat gate reads an
+   *  unreadable roll as "no bankroll opinion". */
+  chip_balance: number | null;
 }
 
 async function loadHorseMemberships(clubIds: string[]): Promise<MemberRow[]> {
@@ -70,7 +77,7 @@ async function loadHorseMemberships(clubIds: string[]): Promise<MemberRow[]> {
       (cursor, want) => {
         let q = supabase
           .from('club_members')
-          .select('user_id, club_id')
+          .select('user_id, club_id, chip_balance')
           .eq('club_id', clubId)
           .in('status', ['active', 'approved'])
           .order('user_id', { ascending: true })
@@ -117,6 +124,19 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
         `n=${rows.length} cash=${split.cash} tourney=${split.tourney} both=${split.both} freeroll=${split.cashFreeroll}`
     );
 
+    /* THE ROLL IS THE CEILING (Dan, 2026-09-05). The tagger is the only place
+       that decides which stakes a horse is ever offered, and until today it
+       decided on a hash alone with a ladder that stopped at 1/2 - so no horse
+       on the platform was ever tagged above 1/2, however rich, and every 2/5
+       and bigger game sat empty. It now reads the same wallet the seat gate
+       reads (`club_members.chip_balance` for THIS club) and hands it to
+       `assignPreferredStakes` as a ceiling. */
+    const rollOf = new Map<string, number>();
+    rows.forEach((r) => {
+      const bal = Number(r.chip_balance);
+      if (Number.isFinite(bal)) rollOf.set(r.user_id, bal);
+    });
+
     for (const t of tags) {
       const isTourneyOnly = t.mode === 'tourney';
       tagRows.push({
@@ -128,7 +148,12 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
         persona_mtt: t.personaMtt,
         // Section 7.2: a tourney-only horse carries no cash variants.
         variants: isTourneyOnly ? [] : (variants.get(t.horseId) ?? ['nlh']),
-        preferred_stakes: isTourneyOnly ? [] : assignPreferredStakes(t.horseId),
+        preferred_stakes: isTourneyOnly
+          ? []
+          : assignPreferredStakes(t.horseId, {
+              roll: rollOf.get(t.horseId),
+              buyInsToSit: bankrollPolicyFor(t.horseId).buyInsToSit,
+            }),
         max_tables: t.maxTables,
         tag_seed: t.tagSeed,
       });
@@ -145,6 +170,52 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
       `NLHE coverage ${covered('nlh')}/${cashTags.length} below floor - refusing to write`
     );
   }
+  /* SAY WHERE THE FLEET LANDS BEFORE WRITING IT. A tag distribution is the
+     single number this script exists to produce, and the 1/2 clamp went
+     unnoticed for as long as it did because nothing ever printed it. Bands
+     and rungs, cash tags only, and it prints on a dry run too. */
+  const bandOfBb = (bb: number) =>
+    bb <= 0.5 ? 'micro' : bb <= 2 ? 'low' : bb <= 6 ? 'mid' : 'high';
+  const byBand = new Map<string, number>();
+  const byRung = new Map<number, number>();
+  for (const r of cashTags) {
+    const stakes = (r.preferred_stakes as number[]) ?? [];
+    const top = stakes.length ? Math.max(...stakes) : 0;
+    if (top > 0) byBand.set(bandOfBb(top), (byBand.get(bandOfBb(top)) ?? 0) + 1);
+    stakes.forEach((bb) => byRung.set(bb, (byRung.get(bb) ?? 0) + 1));
+  }
+  console.log(
+    `[stable-hand:tag] band of anchor (top preferred stake): ` +
+      ['micro', 'low', 'mid', 'high'].map((b) => `${b}=${byBand.get(b) ?? 0}`).join(' ') +
+      ` of ${cashTags.length} cash tags`
+  );
+  console.log(
+    `[stable-hand:tag] rungs: ` +
+      [...byRung.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([bb, n]) => `${bb}=${n}`)
+        .join(' ')
+  );
+  const byVariantBand = new Map<string, Map<string, number>>();
+  for (const r of cashTags) {
+    const stakes = (r.preferred_stakes as number[]) ?? [];
+    const top = stakes.length ? Math.max(...stakes) : 0;
+    if (top <= 0) continue;
+    for (const v of (r.variants as string[]) ?? []) {
+      if (!byVariantBand.has(v)) byVariantBand.set(v, new Map());
+      const m = byVariantBand.get(v)!;
+      m.set(bandOfBb(top), (m.get(bandOfBb(top)) ?? 0) + 1);
+    }
+  }
+  [...byVariantBand.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .forEach(([v, m]) =>
+      console.log(
+        `[stable-hand:tag]   ${v.padEnd(10)} ` +
+          ['micro', 'low', 'mid', 'high'].map((b) => `${b}=${m.get(b) ?? 0}`).join(' ')
+      )
+    );
+
   console.log(
     `[stable-hand:tag] coverage nlh=${covered('nlh')} plo4=${covered('plo4')} plo5=${covered('plo5')} ` +
       `plo6=${covered('plo6')} pineapple=${covered('pineapple')} short_deck=${covered('short_deck')} ` +

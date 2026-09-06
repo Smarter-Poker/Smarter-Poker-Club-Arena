@@ -31,7 +31,10 @@ import { ScheduledTournamentService } from './services/ScheduledTournamentServic
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
-import { wsAuthRefusalPrometheusLines } from './transport/wsHelpers.js';
+import {
+  wsAuthRefusalPrometheusLines,
+  wsProtocolRefusalPrometheusLines,
+} from './transport/wsHelpers.js';
 import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
@@ -1566,6 +1569,7 @@ export class GameServer {
       // See transport/wsHelpers.ts and EngineRefusingSessions in
       // infra/monitoring/alert-rules.yml.
       ...wsAuthRefusalPrometheusLines(),
+      ...wsProtocolRefusalPrometheusLines(),
       // ── ACTION LATENCY, ALWAYS ON (Realtime programme Phase 1, 2026-09-04)
       // The number that defines how a table feels, scraped for the first
       // time. Two series (audience=human|horse), never per table. See

@@ -12,8 +12,12 @@ const migration = readFileSync(
 const settlementRepair = readFileSync(
   join(
     __dirname,
-    '../../supabase/migrations/20260906020000_leaderboard_settlement_follows_the_published_period.sql'
+    '../../supabase/migrations/20260906022137_leaderboard_settlement_follows_the_published_period.sql'
   ),
+  'utf8'
+);
+const fundingIndexes = readFileSync(
+  join(__dirname, '../../supabase/migrations/20260906022941_leaderboard_phase3_fk_indexes.sql'),
   'utf8'
 );
 const wizard = readFileSync(
@@ -23,6 +27,13 @@ const wizard = readFileSync(
 const page = readFileSync(join(__dirname, '../../src/pages/LeaderboardPage.tsx'), 'utf8');
 
 describe('leaderboard phase three funded publication', () => {
+  it('covers every new phase three foreign-key lookup', () => {
+    expect(fundingIndexes).toContain('(funding_union_id)');
+    expect(fundingIndexes).toContain('(program_id)');
+    expect(fundingIndexes).toContain('(supersedes_program_id)');
+    expect(fundingIndexes.match(/CREATE INDEX IF NOT EXISTS/g)).toHaveLength(4);
+  });
+
   it('derives commitments from only the latest immutable program per club', () => {
     expect(migration).toContain('SELECT DISTINCT ON (program.club_id)');
     expect(migration).toContain('ORDER BY program.club_id, program.version DESC');

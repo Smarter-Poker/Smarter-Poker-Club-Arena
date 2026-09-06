@@ -61,7 +61,7 @@ import { SUITS, RANKS, RANK_VALUES, validateAction, calculateBettingState } from
 // V3 (2026-07-23): real-time opponent intelligence — live stats, range reading,
 // exploit adjustments, board texture, blockers. See HorseMind.ts.
 import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
-import { HorseMind, SNAP_MS, TANK_MS } from './HorseMind.js';
+import { HorseMind, SNAP_MS, TANK_MS, readScopeOf } from './HorseMind.js';
 // V7 (2026-07-24): position-pair preflop mastery — 3-bet/4-bet bluffs, blind
 // vs blind, squeezes, stack depth, reshoves, ICM. See HorsePreflop.ts.
 import {
@@ -97,6 +97,7 @@ import { gtoFacingDefense, realizationFactor } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
+  setEquityDepth,
   fastRandom,
   variantInfo,
   type VariantInfo,
@@ -130,6 +131,8 @@ import { anteOrbitCostBB } from './AnteMath.js';
 // V35 (2026-09-02): the games are different games — per-variant preflop width
 // and postflop temperament, one row per game. See HorseVariantProfile.ts.
 import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
+import { handClassRead } from './HorseHandClasses.js';
+import { personaFromValue, followsSolver, type HorsePersonaV2 } from './HorsePersona.js';
 // V38 (2026-09-03): the EV engine — the arithmetic behind every choice, the
 // arbiter for the games with no solver export and for every river fold/call
 // the hold'em solver range did not answer. See HorseEvEngine.ts.
@@ -224,6 +227,8 @@ interface StyleParams {
   limpBloatLoad?: number;
   /** V41: extra ICM survival premium for a horse tagged for event stack-offs. */
   tourneyLeakPremium?: number;
+  /** V48: the authored persona's solver adherence, 0.5..1 (1 = always). */
+  gtoAdherence?: number;
 }
 
 const STYLE_PARAMS: Record<HorseStyle, StyleParams> = {
@@ -303,6 +308,13 @@ export interface HorseProfileMods {
    *  events pays a little more survival premium. */
   leaksTournament?: Record<string, number>;
   leaksHandsTournament?: number;
+  /**
+   * V48 (2026-09-05): the AUTHORED persona. Resolved through the same read
+   * boundary as the dials so there is exactly one place a horse_profile turns
+   * into behaviour, and bounded there (HorsePersona.resolvePersona). The
+   * self-tuner never writes it - ThePersonaSurvivesTheTuner.law.test.ts.
+   */
+  persona?: HorsePersonaV2;
 }
 
 /**
@@ -524,6 +536,9 @@ export function resolveHorseStyle(
       mods.leaksHoldem = holdem;
       mods.leaksHandsHoldem = holdemHands;
     }
+    // V48: the persona rides the same boundary as the dials - one place a
+    // horse_profile turns into behaviour, bounded per field.
+    mods.persona = personaFromValue(obj.persona, horseId);
     const tourney = counts(obj.leaksTournament);
     const tourneyHands = hands(obj.leaksHandsTournament);
     if (tourney && tourneyHands !== undefined) {
@@ -1569,6 +1584,16 @@ export interface HorseDecideOpts {
    *  was made against what this player's bets at that tempo have shown down
    *  as. Disable to ablate (default: enabled). */
   v43Tempo?: boolean;
+  /** V46 (2026-09-05): the Omaha / short-deck hand-class chart - AAxx
+   *  double-suited 3-bets, a rundown flats, AAA-x folds. Disable to ablate
+   *  (default: enabled). Hold'em is unaffected either way. */
+  v46Charts?: boolean;
+  /** V44 (2026-09-05): the SECOND LOOK. When set above 1, every Monte Carlo
+   *  read in this decision runs at that multiple of its budgeted sample. The
+   *  engine uses it to replay a close decision inside the think time it was
+   *  already going to spend; see ServerTableEngineTurns.scheduleHorseAction.
+   *  Never set on the fast path. */
+  deepEquity?: number;
 }
 
 /**
@@ -1691,6 +1716,17 @@ export class HorseLogic {
     opts: HorseDecideOpts = {}
   ): HorseDecision {
     try {
+      // V45 SCOPED READS: every read in this decision sees the bucket for
+      // this card family and table size (HorseMind.readStats). Cleared on
+      // every exit, including a throw.
+      HorseMind.setDecisionScope(
+        readScopeOf(
+          gameState.gameVariant,
+          Array.isArray(gameState.players)
+            ? gameState.players.filter((p) => !p.is_sitting_out).length
+            : 0
+        )
+      );
       // V3: ingest the action stream into the opponent-intelligence layer.
       // Wrapped so observation can never take down a decision.
       // V12: benchmark/league decisions pass mind:false — they must never
@@ -1700,6 +1736,17 @@ export class HorseLogic {
           HorseMind.observe(gameState.actionHistory, gameState.players);
         } catch {
           /* observation is best-effort */
+        }
+      }
+      // V44 SECOND LOOK: a deep replay runs the same path at a larger
+      // sample. Bracketed so a throw cannot leave the depth raised for the
+      // next horse to act.
+      if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
+        setEquityDepth(opts.deepEquity);
+        try {
+          return this.decideInternal(player, gameState, style, mods, opts);
+        } finally {
+          setEquityDepth(1);
         }
       }
       return this.decideInternal(player, gameState, style, mods, opts);
@@ -1722,6 +1769,8 @@ export class HorseLogic {
       return toCall === 0
         ? { action: 'check', thinkTime: 1500 }
         : { action: 'fold', thinkTime: 1500 };
+    } finally {
+      HorseMind.setDecisionScope(null);
     }
   }
 
@@ -1751,6 +1800,8 @@ export class HorseLogic {
       params.riverWarLoad = riverWarLoad(mods, fam41);
       params.limpBloatLoad = limpBloatLoad(mods, fam41);
       params.tourneyLeakPremium = (opts.v41Leaks ?? true) !== false ? tourneyLeakPremium(mods) : 0;
+      // V48: the authored persona reaches the solver consult.
+      params.gtoAdherence = mods.persona?.gtoAdherence ?? 1;
       // PROOF OF RECEIPT: once per decision, preflop or postflop, only where
       // the premium can reach a price (a tournament).
       if (telemetryOn(opts) && params.tourneyLeakPremium > 0 && isTournamentMode(gs)) {
@@ -2088,13 +2139,34 @@ export class HorseLogic {
         });
         if (advice) {
           if (telemetryOn(opts)) noteFire('v27_gto_open_jam');
-          // The chart gives the mixed strategy; the horse rolls it. A 77%
-          // jam is jammed 77% of the time, not rounded to always.
-          const pushProb = advice.action === 'push' ? advice.freq : 1 - advice.freq;
-          if (fastRandom() < pushProb) return { action: 'all_in', thinkTime: 0 };
-          // SB folding still surrenders the small blind; check when free.
-          if (toCall <= 0) return { action: 'check', thinkTime: 0 };
-          return { action: 'fold', thinkTime: 0 };
+          // ═══ V48 PERSONA: gtoAdherence ═══════════════════════════════════
+          // Not every player takes the chart every time, and a fleet where
+          // every seat plays the identical solver line at 12bb is a fleet
+          // that reads as one player. A horse's adherence is authored (0.80
+          // to 1.00 by default, deterministic in its id); below 1 it
+          // sometimes declines the consult and answers with its own read -
+          // deterministically in (horse, hand, spot), so a replayed hand
+          // answers the same way twice and one hand can deviate on one node
+          // and follow the chart on the next.
+          const adh48 = params.gtoAdherence ?? 1;
+          // The hand's identity: the first action's timestamp is stable
+          // across every decision in the hand and different between hands -
+          // the same key HorseMind uses to dedupe a replayed history.
+          const hand48 = gs.actionHistory?.[0]?.timestamp ?? 0;
+          if (
+            adh48 < 1 &&
+            !followsSolver(player.user_id, hand48, `openjam:${chartDepthBB}`, adh48)
+          ) {
+            if (telemetryOn(opts)) noteFire('v48_gto_deviation');
+          } else {
+            // The chart gives the mixed strategy; the horse rolls it. A 77%
+            // jam is jammed 77% of the time, not rounded to always.
+            const pushProb = advice.action === 'push' ? advice.freq : 1 - advice.freq;
+            if (fastRandom() < pushProb) return { action: 'all_in', thinkTime: 0 };
+            // SB folding still surrenders the small blind; check when free.
+            if (toCall <= 0) return { action: 'check', thinkTime: 0 };
+            return { action: 'fold', thinkTime: 0 };
+          }
         }
       }
 
@@ -2413,6 +2485,25 @@ export class HorseLogic {
       // V35: the game's own preflop width (PLO wider opens, narrower 3-bets;
       // 6+ wider still; fixed limit widest). Rides the v8 variant flag.
       variantShift: opts.v8 !== false ? variantPreflopShift(gs.gameVariant) : undefined,
+      // ═══ V46 (2026-09-05) ═══ the SHAPE of the hand, which the percentile
+      // cannot see. AAxx double-suited is the 3-bet anchor, a rundown flats,
+      // AAA-x is a fold the ladder rates highly. Hold'em returns the zero
+      // read, so this is byte-identical outside Omaha and short deck.
+      ...(() => {
+        if ((opts.v46Charts ?? true) === false) return {};
+        const read46 = handClassRead(player.cards, vi.isOmaha, vi.isShortDeck);
+        if (read46.cls === 'other' || read46.cls === 'sd_other') return {};
+        if (telemetryOn(opts)) {
+          noteFire('v46_class_read');
+          if (read46.foldAlways) noteFire('v46_class_fold');
+          else if (read46.neverThreeBet) noteFire('v46_class_never_3bet');
+        }
+        return {
+          classShift: read46.shift,
+          classNeverThreeBet: read46.neverThreeBet,
+          classFoldAlways: read46.foldAlways,
+        };
+      })(),
       // V37: preflop blockers — an ace or king in the hand.
       holdsAce: player.cards.some((hc) => hc.rank === 'A'),
       holdsKing: player.cards.some((hc) => hc.rank === 'K'),

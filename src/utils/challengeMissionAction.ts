@@ -30,5 +30,10 @@ export function getChallengeMissionAction(type: ChallengeType): ChallengeMission
     case 'strong_hands':
     case 'chips_won':
       return CASH_GAME_ACTION;
+    default:
+      // The service rejects unknown server rows before render. Keep this
+      // runtime guard as the final safety boundary for stale cached bundles or
+      // a future caller that bypasses that mapper.
+      return CASH_GAME_ACTION;
   }
 }

@@ -58,11 +58,45 @@ describe('Daily Missions atomic action receipts', () => {
   it('wires both single and bulk claims to one RPC and removes success reloads', () => {
     expect(service).toContain("supabase.rpc('claim_daily_challenges'");
     expect(service).toContain('p_request_id: requestId');
-    expect(service).toContain('this.mapServerChallenge(result.challenge, userId)');
+    expect(service).toMatch(/this\.mapServerChallenge\(\s*result\.challenge,\s*userId/);
     expect(page).toContain('dailyChallengeService.claimChallenges(userId, [challenge.id])');
     expect(page).toContain('dailyChallengeService.claimChallenges(userId, readyIds)');
     expect(page).toContain('setRewardVault(paid.vault)');
     expect(page).not.toContain('for (const c of ready)');
     expect(page).not.toContain('await loadChallenges(userId, false);');
+  });
+
+  it('serializes every balance-changing action and never paints an unconfirmed freeze debit', () => {
+    expect(page).toContain('const economyGuardRef = useRef(false)');
+    expect(page).toContain('const [economyBusy, setEconomyBusy] = useState(false)');
+    expect(page.match(/economyGuardRef\.current = true/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(page).toContain('disabled={claiming || economyBusy}');
+    expect(page).toContain('disabled={claimingAll || economyBusy}');
+    expect(page).not.toContain('setDiamondBalance((prev) => Math.max(0, prev - 5000))');
+    expect(page).not.toContain(
+      'setStreak((prev) => (prev ? { ...prev, freezesAvailable: prev.freezesAvailable + 1 } : prev))'
+    );
+
+    const freezeSuccessStart = page.indexOf('if (res.success) {');
+    const freezeSuccessEnd = page.indexOf('} else {', freezeSuccessStart);
+    const freezeSuccess = page.slice(freezeSuccessStart, freezeSuccessEnd);
+    expect(freezeSuccess).toContain('mutationEpochRef.current += 1');
+    expect(freezeSuccess.indexOf('mutationEpochRef.current += 1')).toBeLessThan(
+      freezeSuccess.indexOf('setDiamondBalance(res.diamondBalance)')
+    );
+
+    const rerollSuccess = page.indexOf(
+      'setConfirmingRerollId(null)',
+      page.indexOf('if (!result.success)')
+    );
+    const missingReceipt = page.indexOf('if (!result.challenge)', rerollSuccess);
+    expect(rerollSuccess).toBeGreaterThan(-1);
+    expect(rerollSuccess).toBeLessThan(missingReceipt);
+
+    const rerollRefusalStart = page.indexOf('if (!result.success)');
+    const rerollRefusalEnd = page.indexOf('setConfirmingRerollId(null)', rerollRefusalStart);
+    expect(page.slice(rerollRefusalStart, rerollRefusalEnd)).toContain(
+      "loadChallenges(userId, 'silent')"
+    );
   });
 });

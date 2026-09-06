@@ -19,6 +19,21 @@ const { dailyChallengeService } = await import('../src/services/DailyChallengeSe
 
 const USER = '11111111-1111-4111-8111-111111111111';
 const ROW = '22222222-2222-4222-8222-222222222222';
+const REROLLED_CHALLENGE = {
+  id: ROW,
+  challenge_id: 'hp_25',
+  assigned_date: '2026-09-06',
+  progress: 0,
+  completed: false,
+  claimed: false,
+  completed_at: null,
+  name: 'Warmed Up',
+  description: 'Play 25 Hands Today',
+  challenge_type: 'hands_played',
+  requirement: 25,
+  diamond_reward: 12,
+  tier: 'daily',
+};
 
 beforeEach(() => {
   rpc.mockReset();
@@ -27,17 +42,22 @@ beforeEach(() => {
 
 describe('daily challenge rerolls', () => {
   it('calls the atomic RPC with the assignment the player actually saw', async () => {
-    rpc.mockResolvedValue({
-      data: {
-        success: true,
-        alreadyRerolled: false,
-        challengeId: 'hp_25',
-        diamondBalance: 490,
-      },
-      error: null,
-    });
+    rpc.mockImplementation((_name: string, params: Record<string, unknown>) =>
+      Promise.resolve({
+        data: {
+          success: true,
+          alreadyRerolled: false,
+          requestId: params.p_request_id,
+          diamondsSpent: 10,
+          challengeId: 'hp_25',
+          diamondBalance: 490,
+          challenge: REROLLED_CHALLENGE,
+        },
+        error: null,
+      })
+    );
 
-    await expect(dailyChallengeService.rerollChallenge(USER, ROW, 'hp_10')).resolves.toEqual({
+    await expect(dailyChallengeService.rerollChallenge(USER, ROW, 'hp_10')).resolves.toMatchObject({
       success: true,
       alreadyRerolled: false,
       challengeId: 'hp_25',
@@ -48,6 +68,7 @@ describe('daily challenge rerolls', () => {
       p_challenge_row_id: ROW,
       p_expected_challenge_id: 'hp_10',
       p_cost: 10,
+      p_request_id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
     });
     expect(emit).toHaveBeenCalledWith('DIAMOND_BALANCE_CHANGED', {
       newBalance: 490,
@@ -57,15 +78,20 @@ describe('daily challenge rerolls', () => {
   });
 
   it('treats a replay as success without announcing a second charge', async () => {
-    rpc.mockResolvedValue({
-      data: {
-        success: true,
-        alreadyRerolled: true,
-        challengeId: 'hp_25',
-        diamondBalance: 490,
-      },
-      error: null,
-    });
+    rpc.mockImplementation((_name: string, params: Record<string, unknown>) =>
+      Promise.resolve({
+        data: {
+          success: true,
+          alreadyRerolled: true,
+          requestId: params.p_request_id,
+          diamondsSpent: 0,
+          challengeId: 'hp_25',
+          diamondBalance: 490,
+          challenge: REROLLED_CHALLENGE,
+        },
+        error: null,
+      })
+    );
 
     const result = await dailyChallengeService.rerollChallenge(USER, ROW, 'hp_10');
     expect(result.alreadyRerolled).toBe(true);
@@ -73,6 +99,60 @@ describe('daily challenge rerolls', () => {
       'DIAMOND_BALANCE_CHANGED',
       expect.objectContaining({ delta: 0 })
     );
+  });
+
+  it('reuses one request id when PostgreSQL selects it as a deadlock victim', async () => {
+    const requestIds: unknown[] = [];
+    rpc
+      .mockImplementationOnce((_name: string, params: Record<string, unknown>) => {
+        requestIds.push(params.p_request_id);
+        return Promise.resolve({
+          data: null,
+          error: { code: '40P01', message: 'deadlock detected' },
+        });
+      })
+      .mockImplementationOnce((_name: string, params: Record<string, unknown>) => {
+        requestIds.push(params.p_request_id);
+        return Promise.resolve({
+          data: {
+            success: true,
+            alreadyRerolled: true,
+            requestId: params.p_request_id,
+            diamondsSpent: 0,
+            challengeId: 'hp_25',
+            diamondBalance: 490,
+            challenge: REROLLED_CHALLENGE,
+          },
+          error: null,
+        });
+      });
+
+    await expect(dailyChallengeService.rerollChallenge(USER, ROW, 'hp_10')).resolves.toMatchObject({
+      success: true,
+      alreadyRerolled: true,
+    });
+    expect(requestIds).toHaveLength(2);
+    expect(requestIds[0]).toBe(requestIds[1]);
+  });
+
+  it('rejects a receipt that is not bound to this reroll request', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        success: true,
+        alreadyRerolled: false,
+        requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        diamondsSpent: 10,
+        challengeId: 'hp_25',
+        diamondBalance: 490,
+        challenge: REROLLED_CHALLENGE,
+      },
+      error: null,
+    });
+
+    const result = await dailyChallengeService.rerollChallenge(USER, ROW, 'hp_10');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('invalid reroll request identifier receipt');
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('never turns a refusal or missing RPC into a successful reroll', async () => {
@@ -131,7 +211,7 @@ describe('daily challenge batch claims', () => {
               claimed: false,
               name: 'Straight Away',
               description: 'Win A Hand With A Straight Or Better Today',
-              challenge_type: 'straight_or_better',
+              challenge_type: 'strong_hands',
               requirement: 1,
               chip_reward: 1000,
               diamond_reward: 15,
@@ -207,7 +287,11 @@ describe('the page ships the casino-realism surface without the old stubs', () =
     resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'),
     'utf8'
   );
-  const hero = resolve(__dirname, '../public/images/challenges/daily-missions-vault-v1.webp');
+  const hero = resolve(__dirname, '../public/images/challenges/daily-missions-casino-v2.webp');
+  const mobileHero = resolve(
+    __dirname,
+    '../public/images/challenges/daily-missions-casino-v2-mobile.webp'
+  );
 
   it('uses the spendable balance and the real reroll service', () => {
     expect(page).toContain('dailyChallengeService.getDashboard(uid)');
@@ -219,29 +303,60 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   });
 
   it('ships an optimized eager hero and responsive accessibility states', () => {
-    expect(page).toContain('daily-missions-vault-v1.webp');
+    expect(page).toContain('daily-missions-casino-v2.webp');
+    expect(page).toContain('daily-missions-casino-v2-mobile.webp');
     expect(page).toContain('fetchPriority="high"');
     expect(css).not.toContain('@import url(');
     expect(css).toContain('@media (max-width: 680px)');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).toContain(':focus-visible');
     expect(statSync(hero).size).toBeLessThan(200 * 1024);
+    expect(statSync(mobileHero).size).toBeLessThan(100 * 1024);
   });
 
   it('keeps dashboard failures recoverable and refreshes stale background tabs', () => {
     expect(page).toContain('dailyChallengeService.getDashboard(uid)');
     expect(page).toContain("document.addEventListener('visibilitychange'");
-    expect(page).toContain('requestId !== loadRequestRef.current');
+    expect(page.match(/!isCurrentDailyMissionDashboardReceipt\(/g)).toHaveLength(2);
+    expect(page).toContain('mutationEpochRef.current += 1');
     expect(page).toContain('if (!initialLoadSettledRef.current) return;');
+    expect(page).toContain('const acceptedAt = Date.now();');
+    expect(page).toContain('lastDashboardReceiptAtRef.current = acceptedAt;');
+    expect(page).toContain('const stale = resumedAt - lastDashboardReceiptAtRef.current > 60_000;');
+    expect(page).toContain('const serverSyncedAt = Date.parse(dashboard.syncedAt);');
+    expect(page).toContain('const nextServerClockOffsetMs = serverSyncedAt - acceptedAt;');
+    expect(page).toContain('periodKeysRef.current = dashboard.periodKeys;');
+    expect(page).toContain("msUntilChallengeReset('daily', serverNow)");
+    expect(page).toContain('getUtcDateKey(resumedAt + clockOffset) !== renderedDailyKey');
+    expect(page).not.toContain('lastSyncedAtRef');
+    expect(page).not.toContain('dateKeyRef');
     expect(page).toContain('MissionLoadingState');
-    expect(page).toContain('Retry Mission Link');
+    expect(page).toContain('Retry Sync');
+  });
+
+  it('distinguishes an unreadable secure session from a signed-out visitor', () => {
+    expect(page).toContain('const authResult = await getAuthUser();');
+    expect(page).toContain("authResult.error || ('failed' in authResult && authResult.failed)");
+    expect(page).toContain('Secure Session Check Failed. Please Retry Or Sign In Again.');
+    expect(page).toContain('Retry Session Check');
+  });
+
+  it('blocks push enrollment when the current browser cannot support it', () => {
+    expect(page).toContain('const unsupportedBrowser = !isWebPushSupported() && !unsupportedIos;');
+    expect(page).toContain(
+      "const enrollmentBlocked = permission === 'denied' || unsupportedIos || unsupportedBrowser;"
+    );
+    expect(page).toContain('Unavailable In This Browser');
+    expect(page).toContain(
+      'This Browser Does Not Support Challenge Alerts. Use A Supported Browser Or Device.'
+    );
   });
 
   it('ships complete reward feedback and keyboard-operable period tabs', () => {
     // Was `reward.chips.toLocaleString()`. The celebration no longer has a
     // chip payout tile to render (Dan 2026-09-05: rewards are diamonds).
     expect(page).toContain('reward.diamonds.toLocaleString()');
-    expect(page).toContain('aria-controls={`mission-panel-${tier}`}');
+    expect(page).toContain('aria-controls="mission-panel"');
     expect(page).toContain("event.key === 'ArrowRight'");
     expect(page).toContain('Current Progress Will Be Replaced');
   });

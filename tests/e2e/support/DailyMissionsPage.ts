@@ -196,7 +196,9 @@ export class DailyMissionsPage {
       waitUntil: 'domcontentloaded',
       timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
     });
-    await expect(this.page.getByRole('heading', { name: 'Daily Missions', level: 1 })).toBeVisible({
+    await expect(
+      this.page.getByRole('heading', { name: 'Daily Challenges', level: 1 })
+    ).toBeVisible({
       timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
     });
     await expect(this.page.locator('#daily-missions')).toHaveAttribute('aria-busy', 'false', {

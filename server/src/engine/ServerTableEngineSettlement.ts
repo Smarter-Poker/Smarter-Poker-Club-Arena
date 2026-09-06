@@ -1450,6 +1450,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           })),
           winners: snap.winners,
           showdownResults: snap.showdownResults,
+          pots: snap.pots,
+          perPotAwards: snap.perPotAwards,
         });
 
         const result = await logHandHistory({

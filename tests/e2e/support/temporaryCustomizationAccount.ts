@@ -461,6 +461,8 @@ async function cleanupTemporaryCustomizationAccountOnce(
     'daily_challenge_event_outbox',
     'daily_challenge_milestone_claims',
     'daily_challenge_claim_batches',
+    'daily_challenge_reroll_receipts',
+    'daily_challenge_freeze_entitlements',
     'user_daily_challenges',
     'challenge_streak_state',
     'user_notification_preferences',

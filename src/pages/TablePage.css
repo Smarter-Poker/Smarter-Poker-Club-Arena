@@ -1459,6 +1459,24 @@
   color: rgba(214, 224, 240, 0.35);
 }
 
+/* WHAT THIS TABLE IS PLAYING FOR (BBJ build plan phase 3.3, 2026-09-06).
+   A card room prints the jackpot on the placard beside the stakes, because the
+   drop that funds it comes off every raked pot at THIS table. Gold, like the
+   club name and the game style, so it reads as part of the house's own
+   printing rather than a fourth statistic; one line, never wrapped, and never
+   rendered at all when there is no jackpot to play for. */
+.table-brand__line--jackpot {
+  margin-top: 0;
+  font-size: 0.56rem;
+  letter-spacing: 0.16em;
+}
+
+.table-brand__jackpot {
+  color: rgba(255, 215, 0, 0.78);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 /* THE BOMB POT CLOCK, UNDER THE BLINDS (Dan 2026-09-05): "THE 'DOUBLE BOARD
    BOMB POT NEXT HAND' DISPLAY AND COUNTDOWN CLOCK NEEDS TO BE MUCH SMALLER ...
    IT SHOULD BE UNDER THE BLINDS WHERE 'ACTION' IS LOCATED. AND SHOULD JUST BE

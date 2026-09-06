@@ -154,9 +154,35 @@ describe('the seat guard is armed', () => {
         `deliberate act - if you mean it, move this law in the same commit.`
     ).toBe(false);
 
-    expect(file, 'the armed migration must remain the LAST one to declare the guard').toMatch(
-      /_the_seat_guard_is_armed\.sql$/
-    );
+    /**
+     * WHO MAY RE-DECLARE THE GUARD (2026-09-06).
+     *
+     * This used to require that the LAST migration declaring the guard be
+     * `_the_seat_guard_is_armed.sql` itself. That pinned the migration's
+     * IDENTITY rather than the guard's PROPERTY, so any legitimate later
+     * change - the comment correction in 20260906232223, which left the
+     * compiled body byte-identical - failed a law about arming.
+     *
+     * A pin like that pressures the next agent to weaken the law or to avoid
+     * touching the function at all, and both are worse than the thing it was
+     * protecting against. The property is what matters and it is asserted
+     * above: the live body refuses, and it is not the dry-run body.
+     *
+     * What is kept is deliberateness. A migration may re-declare this guard
+     * only by naming itself here, so swapping the body is never something
+     * that happens quietly in a file nobody reviewed.
+     */
+    const SANCTIONED_REDECLARATIONS = [
+      /_the_seat_guard_is_armed\.sql$/,
+      /_the_seat_guard_says_what_it_actually_does\.sql$/,
+    ];
+    expect(
+      SANCTIONED_REDECLARATIONS.some((re) => re.test(file)),
+      `${file} is now the live declaration of ${FUNCTION} and it is not on the ` +
+        `sanctioned list in this law. Re-declaring the money guard is allowed, ` +
+        `but never silently: add your migration to SANCTIONED_REDECLARATIONS in ` +
+        `the same commit, and say in its header what changed and what did not.`
+    ).toBe(true);
   });
 
   it('all five sanctioned money paths survive in the allowlist', () => {

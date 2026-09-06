@@ -2421,6 +2421,33 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       (p) => !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)
     );
     const tbExtras = await this.fetchTimeBankExtras(tbNewPlayers.map((p) => p.user_id));
+    /**
+     * THE ENGINE MAY HAVE BEEN TORN DOWN DURING THAT AWAIT (2026-09-06).
+     *
+     * That RPC is the one await between `new HandController(...)` above and
+     * `this.handController!.onEvent(...)` below, and both `stop()` and
+     * `killForRestart()` set `this.handController = null` - a table that broke
+     * or closed under the cluster controller, an engine superseded by its
+     * replacement, the :55 cut-over. The `!` then dereferenced null:
+     *
+     *     TypeError: Cannot read properties of null (reading 'onEvent')
+     *       at ServerTableEngineDealing.js:2363  (dealHand)
+     *
+     * four times in three hours on 2026-09-06, every one a table the cluster
+     * controller had just broken. Nothing was dealt (start() is inside the
+     * promise, after the listener), so the only harm was a stack trace with a
+     * misleading name and one wasted attempt on the dealing loop's retry
+     * ladder - but a hand that was torn down is not a hand to deal, and a
+     * stopped engine must not go on to arm timers and write a snapshot for a
+     * controller its successor owns. Leave quietly; the loop sees `running`.
+     */
+    if (!this.handController || !this.running) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] hand ${handNumber} not dealt - the engine was ` +
+          `stopped while the time banks were being read`
+      );
+      return;
+    }
     for (const p of hcPlayers) {
       this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
       // Only initialize time bank if player is NEW (don't reset existing pool per session)

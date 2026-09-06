@@ -223,9 +223,13 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
     const ADMIN = read('src/handlers/admin.ts');
     expect(ADMIN).toContain('await engine.leaveTable(targetUserId, { forced: true })');
     const ROTATOR = read('src/services/HorseSessionRotator.ts');
-    // Three doors, all the human one: the retirement drain, the session end,
-    // and (2026-09-05, no lone horse) the lone-table stand in standLoneHorses.
-    expect((ROTATOR.match(/await engine\.leaveTable\(/g) ?? []).length).toBe(3);
+    // Four doors, all the human one: the retirement drain, the session end,
+    // (2026-09-05, no lone horse) the lone-table stand in standLoneHorses, and
+    // (2026-09-06) the stand for an imminent tournament booking in
+    // leaveCashForTournaments - a horse leaving cash the way a person with a
+    // tournament in an hour does. Every one of them is engine.leaveTable.
+    expect((ROTATOR.match(/await engine\.leaveTable\(/g) ?? []).length).toBe(4);
+    expect(ROTATOR).toContain('private async leaveCashForTournaments(');
   });
 
   it('there is no partial cash-out: no withdrawChips, no /withdrawchips route (A0.1)', () => {

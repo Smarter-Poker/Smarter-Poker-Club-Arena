@@ -48,6 +48,7 @@ const MON = join(ROOT, 'infra', 'monitoring');
 const PROM = readFileSync(join(MON, 'prometheus.yml'), 'utf8');
 const COMPOSE = readFileSync(join(MON, 'docker-compose.yml'), 'utf8');
 const DEPLOY = readFileSync(join(MON, 'deploy.sh'), 'utf8');
+const ALERTMANAGER = readFileSync(join(MON, 'alertmanager.yml'), 'utf8');
 
 /** The rule files Prometheus is told to load, by basename. */
 function loadedRuleFiles(): string[] {
@@ -151,5 +152,43 @@ describe('LAW 3 - the canary, because silence has to mean something', () => {
       /const CANARY = 'MonitoringCanary';/
     );
     expect(src).toContain('labels?.alertname === CANARY');
+  });
+});
+
+/**
+ * LAW 4 - THE ROUTING IS IN THIS REPO TOO (audit, 2026-09-06)
+ *
+ * `deploy.sh` symlinks `alertmanager.yml` over the live one exactly as it does
+ * the rule files, and the phase-7 audit found the live file carried a
+ * `pager-sms` receiver and a `page="sms"` route THIS REPO DID NOT HAVE - the
+ * 3am pager, added on the box on 2026-09-04. A deploy would have deleted
+ * paging outright, and the rules check would have said nothing, because it
+ * only reads alerts.
+ *
+ * The canary's route is here for the opposite reason. The top-level
+ * fallthrough receiver is `email-critical`, so an unmatched `severity: canary`
+ * would email ops every hour, for ever - alert fatigue manufactured by the
+ * very thing built to prevent it. It was missing for the first hour of the
+ * phase.
+ */
+describe('LAW 4 - the routing is in this repo, and the canary reaches nobody', () => {
+  it('the pager survives a deploy: receiver and route are both declared here', () => {
+    expect(ALERTMANAGER, 'the pager-sms receiver must exist in this repo or a deploy deletes it').toMatch(
+      /^\s*- name: pager-sms\s*$/m
+    );
+    expect(ALERTMANAGER, 'and the route that reaches it').toMatch(/page="sms"/);
+  });
+
+  it('the canary is routed to null-receiver, explicitly', () => {
+    const route = sliceBetween(ALERTMANAGER, 'severity="canary"', '\n    - matchers:');
+    expect(route).toMatch(/receiver:\s*null-receiver/);
+  });
+
+  it('and the deploy refuses to remove routing that is live', () => {
+    const wf = readFileSync(join(ROOT, '.github/workflows/deploy-monitoring.yml'), 'utf8');
+    expect(wf).toContain('Refuse to delete routing this repo has never seen');
+    expect(wf).toContain('Deploying would REMOVE routing that is live on the box');
+    // And the same for the rules, which is the half that was written first.
+    expect(wf).toContain('Refuse to delete rules this repo has never seen');
   });
 });

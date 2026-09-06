@@ -33,6 +33,21 @@ route:
   group_interval: 5m
   repeat_interval: 1h
   routes:
+    # ── THE 3AM PAGER (2026-09-04) ─────────────────────────────────────
+    # Exactly six rules carry `page: sms`, chosen by Dan; the list is pinned
+    # by tests/the-pager-list-is-exactly-six.test.ts in this repo. They post to
+    # the World Hub, which texts the phone deploy-monitor.js already pages.
+    # `continue: true` so the same alert also lands in the critical email.
+    # repeat_interval 4h: an unresolved incident re-pages every four hours,
+    # not every hour - the estate has already had one SMS storm.
+    - matchers:
+        - page="sms"
+      receiver: pager-sms
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 4h
+      continue: true
+
     - matchers:
         - severity="critical"
       receiver: email-critical
@@ -46,12 +61,39 @@ route:
       group_interval: 30m
       repeat_interval: 12h
 
+    # ── THE CANARY (2026-09-06, Realtime phase 7) ─────────────────────
+    # MonitoringCanary fires unconditionally and for ever - that is the whole
+    # point, because its ABSENCE is the signal and something checks for it
+    # (scripts/ci/check-alert-rules-match.mjs). It must therefore reach NOBODY.
+    #
+    # This route is load-bearing and its absence would be worse than no canary
+    # at all: the top-level fallthrough receiver is `email-critical`, so
+    # without a match here the canary would email ops every hour, for ever,
+    # which is exactly the alert fatigue this phase exists to prevent. It was
+    # missing for the first hour of the phase and the audit caught it.
+    - matchers:
+        - severity="canary"
+      receiver: null-receiver
+
     - matchers:
         - severity="info"
       receiver: null-receiver
 
 receivers:
   - name: null-receiver
+
+  # World Hub route pages/api/internal/alertmanager-page.js. Bearer is
+  # CRON_SECRET, read from a file mounted beside resend_key so the secret is
+  # never in this file. send_resolved closes the loop with a RESOLVED text.
+  - name: pager-sms
+    webhook_configs:
+      - url: https://smarter.poker/api/internal/alertmanager-page
+        send_resolved: true
+        max_alerts: 10
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/cron_secret
 
   - name: email-critical
     email_configs:

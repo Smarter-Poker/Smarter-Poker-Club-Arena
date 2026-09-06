@@ -41,6 +41,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceBetween } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const MON = join(ROOT, 'infra', 'monitoring');
@@ -126,8 +127,14 @@ describe('LAW 3 - the canary, because silence has to mean something', () => {
   });
 
   it('it is severity canary, so it never wakes anyone', () => {
-    const block = RULES.slice(RULES.indexOf('- alert: MonitoringCanary'));
-    expect(block.slice(0, 900)).toMatch(/severity:\s*canary/);
+    // Bounded by the thing that ends the alert - the next `- alert:` or the
+    // end of the file - never by a byte count, which goes stale the first time
+    // the annotation gains a line (tests/unit/noFixedSizeSourceWindows).
+    const block = sliceBetween(RULES, '- alert: MonitoringCanary', '\n      - alert:');
+    expect(block).toMatch(/severity:\s*canary/);
+    // And nothing louder is smuggled in beside it.
+    expect(block).not.toMatch(/severity:\s*(critical|warning)/);
+    expect(block).not.toMatch(/page:\s*sms/);
   });
 
   it('and something actually checks for it', () => {

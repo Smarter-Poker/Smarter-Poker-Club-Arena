@@ -9,6 +9,15 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
+/* THE SPEED EXPRESSION (2026-09-05). Every duration multiplies by this, not
+   by --animation-speed directly. A server-paced profile writes --rs-speed
+   (clamped to <= 1) on the host; everything else falls through to the
+   player's own setting. It used to be a bare `var(--animation-speed, 1)` and
+   the clamp was applied by REDEFINING --animation-speed in terms of itself,
+   which is a self-reference: invalid at computed-value time, measured empty
+   in Chromium, so the clamp never ran. See squeezeVars in SqueezeCard.tsx. */
+const SPEED = 'var(--rs-speed, var(--animation-speed, 1))';
+
 const ROOT = path.resolve(__dirname, '../../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -20,6 +29,9 @@ const boardCode = stripComments(boardCss);
 const tsx = read('src/components/table/CommunityCards.tsx');
 const squeezeCard = read('src/presentation/cardPresentation/SqueezeCard.tsx');
 const tablePageCss = stripComments(read('src/pages/TablePage.css'));
+
+/** Prettier wraps long shorthands, so pins compare on collapsed whitespace. */
+const flat = (t: string) => t.replace(/\s+/g, ' ').trim();
 
 function rule(css: string, selector: string): string {
   const i = css.indexOf(selector + ' {');
@@ -36,10 +48,8 @@ function keyframeBody(css: string, name: string): string {
 describe('the squeeze is compositor-only and speed-scaled', () => {
   it('the card materialises in place, scaled by --animation-speed, no travel (spec 69)', () => {
     const r = rule(squeezeCode, '.card-squeeze-host.card-squeeze-host');
-    expect(r).toContain(
-      'ccCardMaterialize calc(var(--rs-prepare, 0.05s) * var(--animation-speed, 1))'
-    );
-    expect(r).toContain('animation-delay: calc(var(--rs-stagger, 0s) * var(--animation-speed, 1))');
+    expect(flat(r)).toContain(`ccCardMaterialize calc(var(--rs-prepare, 0.05s) * ${SPEED})`);
+    expect(flat(r)).toContain(`animation-delay: calc(var(--rs-stagger, 0s) * ${SPEED})`);
     expect(keyframeBody(squeezeCode, 'ccCardMaterialize')).not.toMatch(/translate/);
   });
 
@@ -49,7 +59,7 @@ describe('the squeeze is compositor-only and speed-scaled', () => {
       expect(r, sel).toMatch(
         /var\(--rs-prepare, 0\.05s\) \+ var\(--rs-hold, 0s\) \+ var\(--rs-stagger, 0s\)/
       );
-      expect(r, sel).toContain('var(--rs-flip, 0.25s) * var(--animation-speed, 1)');
+      expect(flat(r), sel).toContain(`var(--rs-flip, 0.25s) * ${SPEED}`);
     }
     expect(rule(squeezeCode, '.card-squeeze')).toContain('cubic-bezier(0.16, 1, 0.3, 1)');
     expect(rule(squeezeCode, '.card-squeeze')).not.toContain('linear');

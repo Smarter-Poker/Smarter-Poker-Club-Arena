@@ -231,6 +231,46 @@ export const CARD_PRESENTATION_PROFILES = Object.freeze({
     // The only profile the PLAYER drives. See interactive in types.ts.
     interactive: true,
   }),
+  /**
+   * THE SQUEEZE SURVIVES REDUCED MOTION (2026-09-05, Dan: "NOTHING WORKS FOR
+   * THE SQUEEZE ON THE RIVER").
+   *
+   * It was measured, on an emulated iPhone with `prefers-reduced-motion:
+   * reduce`, that an eligible squeezer's river resolved `reduced`: no hold,
+   * no `data-rs-hold`, the card already face up. There was nothing on screen
+   * to squeeze - which is exactly the report, and Reduce Motion is a switch a
+   * great many phones have on.
+   *
+   * That was wrong on its own terms. CLAUDE.md 10.6: reduced motion
+   * "collapses motion but never meaning". The squeeze is not decoration - it
+   * is a VIP perk the player OPERATES, and the hold is a beat the SERVER is
+   * pacing. Collapsing it removed the feature, not the movement.
+   *
+   * So: same beats and the same ceiling as `allIn`, still server-paced, still
+   * interactive - the card still waits face down under their hand and still
+   * opens when they open it. What collapses is the MOTION: no 3D turn, no
+   * overshoot, no sweep. The reveal cross-fades (see the reduced-motion block
+   * in cardSqueeze.css, which drives the two faces' opacity from --rs-drag
+   * instead of rotating them).
+   */
+  allInReduced: profile({
+    id: 'all-in-reduced',
+    mode: 'cash',
+    platform: 'desktop',
+    intensity: 'reduced',
+    prepareMs: ALL_IN_PREPARE_MS,
+    holdMs: ALL_IN_HOLD_MS,
+    squeezeMs: ALL_IN_SQUEEZE_MS,
+    revealMs: ALL_IN_REVEAL_MS,
+    settleMs: ALL_IN_SETTLE_MS,
+    overshoot: 1,
+    staggerMs: 60,
+    audioEnabled: true,
+    lightSweepEnabled: false,
+    threeD: false,
+    serverPaced: true,
+    interactive: true,
+  }),
   /** A visible but unfocused multi-table slot. Compact. ~280ms. */
   background: profile({
     id: 'background',

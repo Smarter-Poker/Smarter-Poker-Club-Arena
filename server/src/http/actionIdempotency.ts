@@ -63,6 +63,14 @@
  * MEMORY IS BOUNDED THE SAME WAY `ClientConnectionEvents` is: a TTL, a hard
  * ceiling, and eviction of the oldest rather than growth. This runs on the one
  * core the engine has.
+ *
+ * ONE ACCEPTED BOUND, WRITTEN DOWN SO IT IS A DECISION AND NOT AN OVERSIGHT:
+ * this map is in memory and an engine restart loses it. A restart happens
+ * inside the announced :55 break with every table parked and the platform
+ * frozen (CLAUDE.md 13), and a key lives sixty seconds - so the exposure is a
+ * retry that crosses a restart at a moment when actions are refused anyway.
+ * The alternative, persisting keys to Postgres, puts a database write on the
+ * hot path of every action on a one-core engine. Not worth it.
  */
 
 import { actionIdempotencyTotal } from '../observability/engineInstruments.js';

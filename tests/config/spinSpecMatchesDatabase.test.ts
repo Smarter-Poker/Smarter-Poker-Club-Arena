@@ -62,7 +62,9 @@ function latestFairnessCheckMigration(): string {
     .filter((f) => f.endsWith('.sql'))
     .sort()
     .filter((f) =>
-      readFileSync(join(MIGRATIONS_DIR, f), 'utf8').includes('FUNCTION public.fn_spin_fairness_check')
+      readFileSync(join(MIGRATIONS_DIR, f), 'utf8').includes(
+        'FUNCTION public.fn_spin_fairness_check'
+      )
     );
   expect(defs.length, 'no migration defines fn_spin_fairness_check').toBeGreaterThan(0);
   return join(MIGRATIONS_DIR, defs[defs.length - 1]);

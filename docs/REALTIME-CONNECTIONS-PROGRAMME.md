@@ -225,8 +225,31 @@ stopped looking for. Full reasoning:
 and whether each NEEDS one is a per-alert judgement; `slo-rules.yml` and
 `slo-alerts.yml` read a blackbox exporter this stack does not deploy.
 
-**Verification.** Recorded below once `deploy.sh` has run on the box and
-`check-alert-rules-match.mjs` is green.
+## Phase 7 audit (2026-09-06) - the one that would have deleted the pager
+
+1. **A deploy would have DELETED THE 3AM PAGER.** `deploy.sh` symlinks
+   `alertmanager.yml` too, and the live file carried a `pager-sms` receiver and
+   a `page="sms"` route this repo did not have - added on the box 2026-09-04,
+   its comment citing a test that was never committed here either. The next
+   deploy would have removed paging silently, and the rule-orphan guard would
+   have said nothing because it only reads alerts. The routing is in the repo
+   now, and the deploy has a second guard that refuses to lose a receiver or a
+   route matcher.
+2. **The canary would have emailed ops every hour, for ever.** The top-level
+   fallthrough receiver is `email-critical` and nothing matched
+   `severity="canary"` - alert fatigue manufactured by the thing built to
+   prevent it. Explicit route to `null-receiver`, pinned by the law.
+3. **The last report ended by asking Dan to run a command.** A deploy that
+   depends on somebody remembering is the same class of thing as a rule nobody
+   loaded. `.github/workflows/deploy-monitoring.yml` now does it on merge,
+   guards both hazards first, and verifies by reading.
+
+**Verification.** `promtool` validates all seven rule files (96 rules) and
+`amtool` the routing. Against `main`, `alert-rules.yml` gained the eight
+rescued alerts and removed nothing, with no shared expression changed. The
+deploy and its final `check-alert-rules-match.mjs` run automatically on the
+merge that carries this; before it, the checker reads 72 running against 89
+declared and no canary, which is the "before" this phase closes.
 
 ## Phase 6 - Prove it from outside (2026-09-06)
 

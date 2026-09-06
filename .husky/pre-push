@@ -22,6 +22,13 @@ set -e
 # next checkout or `git reset --hard` takes the lot with nobody warned.
 bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh" push
 
+# ── The pull request for this branch may already be MERGED (2026-09-06) ─────
+# Autopilot squash-merges the instant the required checks pass. A push after
+# that lands on a closed pull request, changes nothing, and EXITS 0 - which is
+# how World Hub #1387 shipped one of its three commits and nobody noticed for
+# hours. Runs early and costs one HTTP request; fails open on any doubt.
+bash "$(git rev-parse --show-toplevel)/scripts/guard-merged-branch.sh"
+
 REMOTE="$1"
 URL="$2"
 FAIL=0
@@ -125,6 +132,49 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
         RANGE="$LOCAL_SHA"
         FILES=$(git ls-files 2>/dev/null || true)
       fi
+    fi
+  fi
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # A FILE THAT IS IDENTICAL TO origin/main CANNOT BE A NEW VIOLATION.
+  #
+  # Every FILES= above diffs against the branch's PREVIOUS REMOTE TIP. That is
+  # the right question for "what am I pushing", and the wrong one for "what did
+  # I write": the moment you `git merge origin/main` - which section 12 says to
+  # do, because rebasing main is refused - every file main changed since that
+  # tip appears in the list as though you had touched it.
+  #
+  # 2026-09-06, measured: a push carrying three one-file fixes was BLOCKED by
+  # check 4 on src/services/HandNotesService.ts, a file the branch never
+  # opened. It was byte-identical to origin/main, where it had landed in #3289
+  # and passed the full required suite. The gate was reporting main's own
+  # shipped code as this branch's violation.
+  #
+  # That matters more than the lost minutes. Check 4's own comment promises
+  # "this gate only fires on files you actually touch, so they are a to-do,
+  # not a wall" - and autopilot merges main into every open branch on a timer,
+  # so the wall builds itself. An inscrutable block invites --no-verify, and
+  # --no-verify switches off the merge-conflict-marker check too: the one
+  # guard here that has actually caught a production break.
+  #
+  # So drop anything whose content matches origin/main. This only ever NARROWS,
+  # never skips: if main is not fetched, the list is left exactly as computed.
+  # ═══════════════════════════════════════════════════════════════════════
+  if [ -n "$FILES" ] && git rev-parse --verify -q "$REMOTE/main" >/dev/null 2>&1; then
+    KEPT=""
+    DROPPED=0
+    for f in $FILES; do
+      if git diff --quiet "$REMOTE/main" -- "$f" 2>/dev/null; then
+        DROPPED=$((DROPPED + 1))
+        continue
+      fi
+      KEPT="$KEPT$f
+"
+    done
+    FILES="$KEPT"
+    if [ "$DROPPED" -gt 0 ]; then
+      echo "[club-arena pre-push] $DROPPED file(s) came in with a main merge and are"
+      echo "                      byte-identical to $REMOTE/main; judging the rest."
     fi
   fi
 

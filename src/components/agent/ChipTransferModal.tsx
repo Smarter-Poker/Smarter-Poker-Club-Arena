@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CHIP TRANSFER MODAL — Cashier-Based Chip Distribution
+ *  CHIP TRANSFER MODAL - Cashier-Based Chip Distribution
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Dan, 2026-08-25, binding: "Any chips sent or claimed back transact from the
@@ -48,7 +48,6 @@ import { resolveClubIdFilter, resolveClubUUID } from '../../utils/clubIdResolver
 import './ChipTransferModal.css';
 import { reportError } from '../../utils/errorReporter';
 
-import { safeErrorMessage } from '../../utils/safeErrorMessage';
 interface Recipient {
   id: string;
   username: string;
@@ -106,6 +105,9 @@ export default function ChipTransferModal({
      preview: chip_balance for a player, agents.agent_wallet_balance for an
      agent-capable recipient. null while unknown. */
   const [destinationBalance, setDestinationBalance] = useState<number | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const successCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* A PER-INTENT idempotency key, the same shape CashierPage uses. A key minted
      inside the call protects nothing: the dangerous shape is commit, lost
@@ -124,12 +126,34 @@ export default function ChipTransferModal({
 
   useEffect(() => {
     if (isOpen) {
-      // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
+      // BUG FIX (mount-timer): track timer so it cancels on unmount and prevents stale setState.
       const _mountTimer = setTimeout(() => setMounted(true), 50);
       return () => clearTimeout(_mountTimer);
     } else {
       setMounted(false);
     }
+  }, [isOpen]);
+
+  /* A cashier is a real modal, not only a panel drawn over the page. Keep the
+     keyboard inside it, stop the roster from scrolling behind it, and return
+     focus to the exact control that opened it when the cashier closes. */
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+      if (successCloseTimerRef.current) {
+        clearTimeout(successCloseTimerRef.current);
+        successCloseTimerRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   // Load sender's wallet balance and role
@@ -217,7 +241,7 @@ export default function ChipTransferModal({
         if (!floatErr) setSenderBalance(Number(float_?.agent_wallet_balance ?? 0) || 0);
       }
 
-      // Get club name
+      // Get the club name for the audit description.
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
       const { data: club } = await supabase
         .from('clubs')
@@ -580,7 +604,7 @@ export default function ChipTransferModal({
 
       if (onTransferComplete) onTransferComplete();
 
-      setTimeout(() => {
+      successCloseTimerRef.current = setTimeout(() => {
         onClose();
         setSuccess(null);
       }, 1500);
@@ -594,6 +618,10 @@ export default function ChipTransferModal({
   };
 
   const handleClose = () => {
+    if (successCloseTimerRef.current) {
+      clearTimeout(successCloseTimerRef.current);
+      successCloseTimerRef.current = null;
+    }
     setError(null);
     setSuccess(null);
     setAmount('');
@@ -610,10 +638,31 @@ export default function ChipTransferModal({
       className="chip-transfer-overlay"
       onClick={handleClose}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') handleClose();
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          handleClose();
+          return;
+        }
+        if (e.key !== 'Tab') return;
+        const focusable = Array.from(
+          modalRef.current?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          ) ?? []
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }}
     >
       <div
+        ref={modalRef}
         className="chip-transfer-modal"
         role="dialog"
         aria-modal="true"
@@ -627,7 +676,13 @@ export default function ChipTransferModal({
       >
         <div className="chip-transfer-header">
           <h2 id="chip-transfer-title">Cashier Transfer</h2>
-          <button type="button" className="close-btn" onClick={handleClose} aria-label="Close">
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="close-btn"
+            onClick={handleClose}
+            aria-label="Close"
+          >
             X
           </button>
         </div>

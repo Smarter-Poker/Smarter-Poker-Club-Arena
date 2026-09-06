@@ -40,6 +40,86 @@
   background: linear-gradient(180deg, var(--hha-black) 0%, var(--hha-void) 100%);
 }
 
+/* ── Search (Phase 5) ───────────────────────────────────────────────────── */
+.hh-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 0;
+  padding: 8px;
+  border: 1px solid var(--hha-gunmetal);
+  border-radius: 4px;
+  background: var(--hha-black);
+}
+
+.hh-search__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.hh-search__input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--hha-gunmetal);
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+  font: inherit;
+}
+
+.hh-search__select,
+.hh-search__date {
+  padding: 7px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--hha-gunmetal);
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  min-width: 0;
+}
+
+.hh-search__clear,
+.hh-search__export {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--hha-gunmetal);
+  background: transparent;
+  color: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hh-search__export:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 375px first: the label and the two buttons wrap under the field. */
+@media (max-width: 560px) {
+  .hh-search {
+    flex-wrap: wrap;
+  }
+
+  .hh-search__input {
+    order: -1;
+    flex-basis: 100%;
+  }
+
+  /* 375px: the game and the two dates share a row under the field rather
+     than pushing the buttons off the edge. */
+  .hh-search__select,
+  .hh-search__date {
+    flex: 1 1 30%;
+  }
+}
+
 /* ── Filters ────────────────────────────────────────────────────────────── */
 .hh-filters {
   display: flex;

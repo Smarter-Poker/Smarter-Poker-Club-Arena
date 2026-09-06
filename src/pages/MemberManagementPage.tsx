@@ -51,7 +51,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { toTitleCase } from '../utils/titleCase';
-import { isUUID, resolveClubUUID } from '../utils/clubIdResolver';
+import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import {
   ROLE_DESCRIPTION,
@@ -71,6 +71,8 @@ import ClubRosterService, {
   type DownlineMember,
 } from '../services/ClubRosterService';
 import './MemberManagementPage.css';
+
+const MEMBER_CREDENTIAL_ART = `${import.meta.env.BASE_URL}images/club-members/member-credential-v1.webp`;
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    FORMATTING
@@ -153,7 +155,14 @@ export default function MemberManagementPage() {
 
   const loadDetail = useCallback(
     async (activeRange: MemberRange, getIsMounted?: () => boolean) => {
-      if (!clubId || !userId) return;
+      if (!clubId || !userId) {
+        if (!getIsMounted || getIsMounted()) {
+          setNotFound(true);
+          setDetail(null);
+          setLoading(false);
+        }
+        return;
+      }
       const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
 
       if (live()) {
@@ -322,263 +331,324 @@ export default function MemberManagementPage() {
 
       {/* ── Identity ─────────────────────────────────────────────────────── */}
 
-      <section className="mm-card mm-identity">
-        <div className={`mm-avatar${detail!.presence.is_online ? ' mm-avatar--online' : ''}`}>
-          {identity!.avatar_url ? (
-            <img
-              src={sizedStorageUrl(identity!.avatar_url!, 56)}
-              alt=""
-              loading="lazy"
-              onError={(e) => {
-                e.currentTarget.onerror = null;
-                e.currentTarget.src = generateAvatarSvg(userId || 'member', identity!.alias || '?');
-              }}
-            />
-          ) : (
-            <span>{initial}</span>
-          )}
-        </div>
-
-        <div className="mm-identity__main">
-          <div className="mm-identity__line">
-            <RoleBadge role={identity!.role} size="md" showLabel />
-          </div>
-          <span className="mm-alias">{alias}</span>
-          {identity!.username && <span className="mm-username">{identity!.username}</span>}
-        </div>
-
-        {/* The player number is what one member gives another and what an agent
-            is handed in a support ticket. Never invented: absent means absent. */}
-        <span className="mm-player-id">
-          {identity!.player_number ? `ID: ${identity!.player_number}` : 'ID: Not Assigned'}
-        </span>
-      </section>
-
-      {/* ── Nickname and remark ──────────────────────────────────────────── */}
-
-      {detail!.capabilities.can_view_notes && (
-        <NotesEditor
-          key={identity!.user_id!}
-          clubId={resolvedClubId}
-          userId={identity!.user_id!}
-          initialNickname={identity!.nickname}
-          initialRemark={identity!.remark}
-          editable={detail!.capabilities.can_edit_notes}
+      <section className="mm-credential" aria-labelledby="mm-player-name">
+        <img
+          className="mm-credential__art"
+          src={MEMBER_CREDENTIAL_ART}
+          alt=""
+          aria-hidden="true"
+          width="1672"
+          height="941"
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
         />
-      )}
-
-      {/* ── Provenance ───────────────────────────────────────────────────── */}
-
-      <section className="mm-card mm-provenance">
-        {detail!.capabilities.can_view_financials && (
-          <InfoLine label="Last Login" value={formatTimestamp(identity!.last_login)} />
-        )}
-        <InfoLine label="Joined" value={formatTimestamp(identity!.joined_at)} />
-        {/* The RPC nulls upline_name for viewers without financial access;
-            printing "None" for them said the player has no upline. */}
-        {detail!.capabilities.can_view_financials && (
-          <InfoLine
-            label="Upline Agent"
-            value={
-              identity!.upline_name
-                ? identity!.upline_player_number
-                  ? `${identity!.upline_name} (ID: ${identity!.upline_player_number})`
-                  : identity!.upline_name
-                : 'None'
-            }
-          />
-        )}
-        {identity!.home_club_name && (
-          <InfoLine label="Home Club" value={identity!.home_club_name} />
-        )}
-      </section>
-
-      {/* ── Range control (requirement 5) ────────────────────────────────── */}
-
-      {stats && (
-        <section className="mm-range">
-          <div className="mm-range__tabs" role="group" aria-label="Statistics Date Range">
-            {(Object.keys(RANGE_LABEL) as RangeMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={rangeMode === mode ? 'active' : ''}
-                aria-pressed={rangeMode === mode}
-                onClick={() => chooseRange(mode)}
-              >
-                {RANGE_LABEL[mode]}
-              </button>
-            ))}
-          </div>
-
-          {rangeMode === 'custom' && (
-            <div className="mm-range__custom">
-              <label className="mm-date">
-                <span>From</span>
-                <input
-                  type="date"
-                  value={customFrom}
-                  max={customTo || undefined}
-                  onChange={(e) => setCustomFrom(e.target.value)}
+        <div className="mm-credential__shade" aria-hidden="true" />
+        <div className="mm-credential__content">
+          <span className="mm-eyebrow">Audited Player Credential</span>
+          <div className="mm-identity">
+            <div className={`mm-avatar${detail!.presence.is_online ? ' mm-avatar--online' : ''}`}>
+              {identity!.avatar_url ? (
+                <img
+                  src={sizedStorageUrl(identity!.avatar_url!, 96)}
+                  alt=""
+                  loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = generateAvatarSvg(
+                      userId || 'member',
+                      identity!.alias || '?'
+                    );
+                  }}
                 />
-              </label>
-              <label className="mm-date">
-                <span>To</span>
-                <input
-                  type="date"
-                  value={customTo}
-                  min={customFrom || undefined}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                />
-              </label>
-              <button type="button" className="mm-range__confirm" onClick={confirmCustomRange}>
-                Confirm
-              </button>
-            </div>
-          )}
-
-          {/* The caption names the range the numbers BELONG to, which is the
-              one the server answered for, not the tab just pressed. While a
-              new range loads the figures are dimmed and say so. */}
-          <p className="mm-range__caption" aria-live="polite">
-            {loading
-              ? 'Loading The Selected Range...'
-              : detail!.range.is_overall
-                ? 'Showing Lifetime Totals'
-                : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'}`}
-          </p>
-        </section>
-      )}
-
-      {/* ── Stats ────────────────────────────────────────────────────────── */}
-
-      {stats && (
-        <section
-          className={`mm-card mm-stats${loading ? ' mm-stats--busy' : ''}`}
-          aria-busy={loading}
-        >
-          <h2 className="mm-card__title">Activity</h2>
-          {/* The RPC splits hands by tournament_id, and every other pair on
-              this card is shown as cash / MTT. "Hands" was the cash half
-              labelled as the whole; mtt_hands was fetched and never drawn. */}
-          <StatRow label="Cash Hands" value={count(stats.hands)} />
-          <StatRow label="MTT Hands" value={count(stats.mtt_hands)} />
-          <StatRow label="Total Fee" value={money(stats.total_fee)} />
-          <StatRow label="MTT Fee" value={money(stats.mtt_fee)} />
-          <StatRow label="Claimed Back" value={money(stats.claimed_back)} />
-          <StatRow label="Sent Out" value={money(stats.sent_out)} />
-          <StatRow
-            label="Total Winnings"
-            value={money(stats.total_winnings)}
-            signed={stats.total_winnings}
-          />
-          <StatRow
-            label="MTT Winnings"
-            value={money(stats.mtt_winnings)}
-            signed={stats.mtt_winnings}
-          />
-        </section>
-      )}
-
-      {/* ── Wallets ──────────────────────────────────────────────────────── */}
-
-      {wallets && (
-        <section className="mm-card mm-stats">
-          <h2 className="mm-card__title">Wallets</h2>
-          {/* chip_balance and player_wallet are the same club_members row
-              read twice; two labels on one number read as two wallets. */}
-          <StatRow label="Player Wallet" value={chips(wallets.player_wallet)} />
-          <StatRow label="Agent Wallet" value={chips(wallets.agent_wallet)} />
-          <StatRow label="Promo Wallet" value={chips(wallets.promo_wallet)} />
-        </section>
-      )}
-
-      {/* ── Downline ─────────────────────────────────────────────────────── */}
-
-      {counts && (
-        <section className="mm-card mm-stats">
-          <h2 className="mm-card__title">Downline</h2>
-          <StatRow label="Downlines Direct" value={count(counts.downline_direct)} />
-          <StatRow label="Downlines Total" value={count(counts.downline_total)} />
-
-          {shownDownline.length > 0 && (
-            <div className="mm-downline">
-              {shownDownline.map((d) => (
-                <div key={d.user_id} className="mm-downline__row">
-                  <RoleBadge role={d.role} size="sm" />
-                  <span className="mm-downline__names">
-                    <span className="mm-downline__alias">{d.alias}</span>
-                    {d.username && d.username.toLowerCase() !== d.alias.toLowerCase() && (
-                      <span className="mm-downline__username">{d.username}</span>
-                    )}
-                  </span>
-                  {d.player_number && (
-                    <span className="mm-downline__number">No. {d.player_number}</span>
-                  )}
-                  <span className="mm-downline__fees">{money(d.total_fees)}</span>
-                </div>
-              ))}
-              {downline.length > shownDownline.length && (
-                <p className="mm-downline__more">
-                  Showing {count(shownDownline.length)} Of {count(downline.length)}
-                  <button
-                    type="button"
-                    className="mm-downline__show-more"
-                    onClick={() => setDownlineShown((n) => n + DOWNLINE_RENDER_CAP)}
-                  >
-                    Show{' '}
-                    {count(Math.min(DOWNLINE_RENDER_CAP, downline.length - shownDownline.length))}{' '}
-                    More
-                  </button>
-                </p>
+              ) : (
+                <span>{initial}</span>
               )}
             </div>
+
+            <div className="mm-identity__main">
+              <div className="mm-identity__line">
+                <RoleBadge role={identity!.role} size="md" showLabel />
+                <span
+                  className={`mm-presence${
+                    detail!.presence.is_seated
+                      ? ' mm-presence--seated'
+                      : detail!.presence.is_online
+                        ? ' mm-presence--online'
+                        : ''
+                  }`}
+                >
+                  {detail!.presence.is_seated
+                    ? 'At A Table'
+                    : detail!.presence.is_online
+                      ? 'Online Now'
+                      : 'Offline'}
+                </span>
+              </div>
+              <h2 id="mm-player-name" className="mm-alias">
+                {alias}
+              </h2>
+              {identity!.username && <span className="mm-username">{identity!.username}</span>}
+            </div>
+
+            <span className="mm-player-id">
+              {identity!.player_number ? `ID: ${identity!.player_number}` : 'ID: Not Assigned'}
+            </span>
+          </div>
+          <p className="mm-credential__note">
+            Club Identity, Live Presence, Wallet Access, Activity, And Role Authority In One Record.
+          </p>
+        </div>
+      </section>
+
+      <div className="mm-ledger-grid">
+        {/* ── Nickname and remark ──────────────────────────────────────────── */}
+
+        {detail!.capabilities.can_view_notes && (
+          <NotesEditor
+            key={identity!.user_id!}
+            clubId={resolvedClubId}
+            userId={identity!.user_id!}
+            initialNickname={identity!.nickname}
+            initialRemark={identity!.remark}
+            editable={detail!.capabilities.can_edit_notes}
+          />
+        )}
+
+        {/* ── Provenance ───────────────────────────────────────────────────── */}
+
+        <section className="mm-card mm-provenance" aria-labelledby="mm-provenance-title">
+          <h2 id="mm-provenance-title" className="mm-card__title">
+            Membership Record
+          </h2>
+          {detail!.capabilities.can_view_financials && (
+            <InfoLine label="Last Login" value={formatTimestamp(identity!.last_login)} />
+          )}
+          <InfoLine label="Joined" value={formatTimestamp(identity!.joined_at)} />
+          {/* The RPC nulls upline_name for viewers without financial access;
+            printing "None" for them said the player has no upline. */}
+          {detail!.capabilities.can_view_financials && (
+            <InfoLine
+              label="Upline Agent"
+              value={
+                identity!.upline_name
+                  ? identity!.upline_player_number
+                    ? `${identity!.upline_name} (ID: ${identity!.upline_player_number})`
+                    : identity!.upline_name
+                  : 'None'
+              }
+            />
+          )}
+          {identity!.home_club_name && (
+            <InfoLine label="Home Club" value={identity!.home_club_name} />
           )}
         </section>
-      )}
 
-      {/* ── Role ─────────────────────────────────────────────────────────── */}
+        {/* ── Range control (requirement 5) ────────────────────────────────── */}
 
-      {detail!.capabilities.can_manage_role && identity!.home_club_id && (
-        <RoleSection
-          clubId={clubId!}
-          resolvedClubId={identity!.home_club_id}
-          targetUserId={identity!.user_id!}
-          targetName={alias}
-          targetRole={identity!.role}
-          myRole={myRole}
-          onRoleChanged={reload}
-        />
-      )}
+        {stats && (
+          <section className="mm-range" aria-labelledby="mm-range-title">
+            <div className="mm-section-heading">
+              <h2 id="mm-range-title">Ledger Window</h2>
+              <span>Verified Activity Range</span>
+            </div>
+            <div className="mm-range__tabs" role="group" aria-label="Statistics Date Range">
+              {(Object.keys(RANGE_LABEL) as RangeMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={rangeMode === mode ? 'active' : ''}
+                  aria-pressed={rangeMode === mode}
+                  onClick={() => chooseRange(mode)}
+                >
+                  {RANGE_LABEL[mode]}
+                </button>
+              ))}
+            </div>
 
-      {/* ── Navigation rows ──────────────────────────────────────────────── */}
+            {rangeMode === 'custom' && (
+              <div className="mm-range__custom">
+                <label className="mm-date">
+                  <span>From</span>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    max={customTo || undefined}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                  />
+                </label>
+                <label className="mm-date">
+                  <span>To</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    min={customFrom || undefined}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                  />
+                </label>
+                <button type="button" className="mm-range__confirm" onClick={confirmCustomRange}>
+                  Confirm
+                </button>
+              </div>
+            )}
 
-      <nav className="mm-nav">
-        {detail!.capabilities.can_view_financials && (
-          <button
-            type="button"
-            className="mm-nav__row"
-            onClick={() => navigate(`/clubs/${clubId}/promo-vault?player=${identity!.user_id}`)}
-          >
-            <span className="mm-nav__label">Promo Vault</span>
-            <span className="mm-nav__chevron" aria-hidden="true">
-              ›
-            </span>
-          </button>
+            {/* The caption names the range the numbers BELONG to, which is the
+              one the server answered for, not the tab just pressed. While a
+              new range loads the figures are dimmed and say so. */}
+            <p className="mm-range__caption" aria-live="polite">
+              {loading
+                ? 'Loading The Selected Range...'
+                : detail!.range.is_overall
+                  ? 'Showing Lifetime Totals'
+                  : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'}`}
+            </p>
+          </section>
         )}
-        {detail!.capabilities.can_view_financials && (
-          <button
-            type="button"
-            className="mm-nav__row"
-            onClick={() => navigate(`/clubs/${clubId}/members/${identity!.user_id}/statistics`)}
+
+        {/* ── Stats ────────────────────────────────────────────────────────── */}
+
+        {stats && (
+          <section
+            className={`mm-card mm-stats${loading ? ' mm-stats--busy' : ''}`}
+            aria-busy={loading}
           >
-            <span className="mm-nav__label">Player Statistics</span>
-            <span className="mm-nav__chevron" aria-hidden="true">
-              ›
-            </span>
-          </button>
+            <h2 className="mm-card__title">Activity</h2>
+            {/* The RPC splits hands by tournament_id, and every other pair on
+              this card is shown as cash / MTT. "Hands" was the cash half
+              labelled as the whole; mtt_hands was fetched and never drawn. */}
+            <StatRow label="Cash Hands" value={count(stats.hands)} />
+            <StatRow label="MTT Hands" value={count(stats.mtt_hands)} />
+            <StatRow label="Total Fee" value={money(stats.total_fee)} />
+            <StatRow label="MTT Fee" value={money(stats.mtt_fee)} />
+            <StatRow label="Claimed Back" value={money(stats.claimed_back)} />
+            <StatRow label="Sent Out" value={money(stats.sent_out)} />
+            <StatRow
+              label="Total Winnings"
+              value={money(stats.total_winnings)}
+              signed={stats.total_winnings}
+            />
+            <StatRow
+              label="MTT Winnings"
+              value={money(stats.mtt_winnings)}
+              signed={stats.mtt_winnings}
+            />
+          </section>
         )}
-      </nav>
+
+        {/* ── Wallets ──────────────────────────────────────────────────────── */}
+
+        {wallets && (
+          <section className="mm-card mm-stats">
+            <h2 className="mm-card__title">Wallets</h2>
+            {/* chip_balance and player_wallet are the same club_members row
+              read twice; two labels on one number read as two wallets. */}
+            <StatRow label="Player Wallet" value={chips(wallets.player_wallet)} />
+            <StatRow label="Agent Wallet" value={chips(wallets.agent_wallet)} />
+            <StatRow label="Promo Wallet" value={chips(wallets.promo_wallet)} />
+          </section>
+        )}
+
+        {/* ── Downline ─────────────────────────────────────────────────────── */}
+
+        {counts && (
+          <section className="mm-card mm-stats">
+            <h2 className="mm-card__title">Downline</h2>
+            <StatRow label="Downlines Direct" value={count(counts.downline_direct)} />
+            <StatRow label="Downlines Total" value={count(counts.downline_total)} />
+
+            {shownDownline.length > 0 && (
+              <div className="mm-downline">
+                {shownDownline.map((d) => (
+                  <button
+                    key={d.user_id}
+                    type="button"
+                    className="mm-downline__row"
+                    onClick={() => navigate(`/clubs/${clubId}/members/${d.user_id}`)}
+                    aria-label={`Open ${d.alias}, ${roleLabel(d.role)}`}
+                  >
+                    <RoleBadge role={d.role} size="sm" />
+                    <span className="mm-downline__names">
+                      <span className="mm-downline__alias">{d.alias}</span>
+                      {d.username && d.username.toLowerCase() !== d.alias.toLowerCase() && (
+                        <span className="mm-downline__username">{d.username}</span>
+                      )}
+                    </span>
+                    {d.player_number && (
+                      <span className="mm-downline__number">No. {d.player_number}</span>
+                    )}
+                    <span className="mm-downline__fees">{money(d.total_fees)}</span>
+                    <span className="mm-downline__open" aria-hidden="true">
+                      ›
+                    </span>
+                  </button>
+                ))}
+                {downline.length > shownDownline.length && (
+                  <p className="mm-downline__more">
+                    Showing {count(shownDownline.length)} Of {count(downline.length)}
+                    <button
+                      type="button"
+                      className="mm-downline__show-more"
+                      onClick={() => setDownlineShown((n) => n + DOWNLINE_RENDER_CAP)}
+                    >
+                      Show{' '}
+                      {count(Math.min(DOWNLINE_RENDER_CAP, downline.length - shownDownline.length))}{' '}
+                      More
+                    </button>
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ── Role ─────────────────────────────────────────────────────────── */}
+
+        {detail!.capabilities.can_manage_role && identity!.home_club_id && (
+          <RoleSection
+            resolvedClubId={identity!.home_club_id}
+            targetUserId={identity!.user_id!}
+            targetName={alias}
+            targetRole={identity!.role}
+            myRole={myRole}
+            onRoleChanged={reload}
+          />
+        )}
+
+        {/* ── Navigation rows ──────────────────────────────────────────────── */}
+
+        <nav className="mm-nav">
+          {detail!.capabilities.can_view_financials && (
+            <button
+              type="button"
+              className="mm-nav__row"
+              onClick={() => navigate(`/clubs/${clubId}/promo-vault?player=${identity!.user_id}`)}
+            >
+              <span className="mm-nav__copy">
+                <span className="mm-nav__label">Promo Vault</span>
+                <span className="mm-nav__detail">Review This Player's Promotional Credits</span>
+              </span>
+              <span className="mm-nav__chevron" aria-hidden="true">
+                ›
+              </span>
+            </button>
+          )}
+          {detail!.capabilities.can_view_financials && (
+            <button
+              type="button"
+              className="mm-nav__row"
+              onClick={() => navigate(`/clubs/${clubId}/members/${identity!.user_id}/statistics`)}
+            >
+              <span className="mm-nav__copy">
+                <span className="mm-nav__label">Player Statistics</span>
+                <span className="mm-nav__detail">Open The Full Performance Instrument Board</span>
+              </span>
+              <span className="mm-nav__chevron" aria-hidden="true">
+                ›
+              </span>
+            </button>
+          )}
+        </nav>
+      </div>
     </div>
   );
 }
@@ -593,7 +663,7 @@ function PageHeader({ onBack }: { onBack: () => void }) {
       <button type="button" className="mm-back" onClick={onBack} aria-label="Go Back">
         ‹
       </button>
-      <h1 className="mm-title">Member Management</h1>
+      <h1 className="mm-title">Player Record</h1>
       {/* A spacer so the title is optically centred without absolute positioning,
           which would overlap the back button on a 320px screen. */}
       <span className="mm-header__spacer" aria-hidden="true" />
@@ -735,7 +805,10 @@ function NotesEditor({
 
   if (!editable) {
     return (
-      <section className="mm-card mm-notes">
+      <section className="mm-card mm-notes" aria-labelledby="mm-notes-title">
+        <h2 id="mm-notes-title" className="mm-card__title">
+          Club Notes
+        </h2>
         <InfoLine label="Nickname" value={nickname || 'None'} />
         <InfoLine label="Remark" value={remark || 'None'} />
       </section>
@@ -743,7 +816,10 @@ function NotesEditor({
   }
 
   return (
-    <section className="mm-card mm-notes">
+    <section className="mm-card mm-notes" aria-labelledby="mm-notes-title">
+      <h2 id="mm-notes-title" className="mm-card__title">
+        Club Notes
+      </h2>
       <label className="mm-field">
         <span className="mm-field__label">Nickname</span>
         <input
@@ -816,7 +892,6 @@ function NotesEditor({
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 function RoleSection({
-  clubId,
   resolvedClubId,
   targetUserId,
   targetName,
@@ -824,7 +899,6 @@ function RoleSection({
   myRole,
   onRoleChanged,
 }: {
-  clubId: string;
   resolvedClubId: string;
   targetUserId: string;
   targetName: string;
@@ -1014,7 +1088,7 @@ function RoleSection({
       if (rpcError) throw rpcError;
 
       const result = data as { success?: boolean; error?: string } | null;
-      if (!result?.success) throw new Error(result?.error || 'Role change refused');
+      if (!result?.success) throw new Error(result?.error || 'Role Change Refused');
 
       setSuccess(`${targetName} Is Now ${roleLabel(newRole)}`);
       setConfirmRole(null);

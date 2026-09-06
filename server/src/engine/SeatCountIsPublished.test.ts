@@ -23,27 +23,24 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { sliceMethod } from '../testHelpers/sourceWindow';
 
 const ENGINE = readFileSync(join(__dirname, 'ServerTableEngine.ts'), 'utf8');
 
-/** Slice a method body by brace-matching from its signature. */
-function sliceMethod(src: string, signature: string): string {
-  const start = src.indexOf(signature);
-  if (start < 0) throw new Error(`method not found: ${signature}`);
-  let depth = 0;
-  let seen = false;
-  for (let i = start; i < src.length; i++) {
-    const ch = src[i];
-    if (ch === '{') {
-      depth++;
-      seen = true;
-    } else if (ch === '}') {
-      depth--;
-      if (seen && depth === 0) return src.slice(start, i + 1);
-    }
-  }
-  return src.slice(start);
-}
+/**
+ * The shared scanner, not a local copy (2026-09-05).
+ *
+ * The copy that used to live here brace-matched from the first `{` after the
+ * signature, which `tests/helpers/sourceWindow.ts` documents as wrong for any
+ * method with an inline return type - `): Promise<{ ok: boolean }> {` closes on
+ * `}>` and hands back the signature alone. That window is GREEN on every
+ * negative assertion while guarding nothing, which for a law written about a
+ * player being erased from his own screen is the worst way to fail.
+ *
+ * It also anchored with a raw `indexOf`, so a comment naming a method could
+ * redirect the pin at it. Both are fixed once, in one place, for all 66 files
+ * that pin source this way.
+ */
 
 describe('LAW - the seat count is published, not guessed (2026-08-31)', () => {
   it('the live broadcast payload carries max_seats', () => {

@@ -860,6 +860,78 @@ groups:
   # - `on()` because most of these expressions aggregate their left side away
   # from {instance, job}, and a plain `unless` would then match no series and
   # guard nothing. max_over_time reads through the restart's scrape gap.
+  # ── THE CORE THAT LIMITS EVERYTHING (2026-09-06) ─────────────────────
+  # The engine is ONE Node core. Until today that ceiling had no time series:
+  # the p50 lived in the /health JSON and nowhere else, so a slow controller
+  # pass, a laggy table and a stalled discovery loop all looked like Postgres
+  # and none of them could be correlated with the thing they share.
+  #
+  # THRESHOLDS ARE THE GOVERNOR'S OWN, not guesses. EquityLoadGovernor's table
+  # is: p50 < 40 ms -> full precision; < 120 ms -> 0.6; < 300 ms -> 0.35;
+  # otherwise the 0.2 floor. So 40 ms is the number the platform itself calls
+  # "out of headroom", and 300 ms is the number it calls "shed everything".
+  # Measured on engine-01 2026-09-06 while writing this: cluster pass p50
+  # 0.86 s at steady state against 26.8 s in the minutes after a restart, so
+  # `for:` is long enough that the hourly cutover cannot raise either of these.
+  - name: engine-core
+    interval: 15s
+    rules:
+      - alert: EngineCoreOutOfHeadroom
+        expr: |
+          poker_event_loop_delay_p50_ms > 40
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "Engine event loop p50 {{ $value | printf \"%.0f\" }} ms - the core is out of headroom"
+          description: |
+            The engine's event loop has been delayed past the point where
+            EquityLoadGovernor starts shedding horse Monte Carlo precision,
+            for ten minutes. Everything on this process shares that loop: a
+            human's action, their timer, the broadcast that shows it, the
+            cluster controller's pass and the discovery sweep. Check
+            poker_equity_governor_scale beside this - if it is still 1 the
+            governor is not reacting, which is its own defect.
+          runbook: "docs/changelog/2026-09-06-the-core-that-limits-everything-is-a-number.md"
+
+      - alert: EngineCoreSaturated
+        expr: |
+          poker_event_loop_delay_p50_ms > 300
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: "Engine event loop p50 {{ $value | printf \"%.0f\" }} ms - the core is saturated"
+          description: |
+            Past the governor's floor: horse Monte Carlo is already at 20% of
+            full precision and the loop is still this late. Tables are laggy
+            for every seat, human included. This is the one-core ceiling, and
+            the answer is less work on this process, not a bigger timeout.
+
+      # The governor throttling is not itself a fault - it is the mechanism
+      # working. Sustained throttling IS a capacity signal, and it is the only
+      # one that says the platform is trading precision for latency right now.
+      - alert: EngineSheddingPrecisionForHours
+        expr: |
+          poker_equity_governor_scale < 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2h
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "Horse decision precision has been scaled to {{ $value }} for two hours"
+          description: |
+            EquityLoadGovernor has been shedding Monte Carlo iterations
+            continuously for two hours. Horses are reading a noisier equity
+            than the platform intends (CLAUDE.md 10.5 is not broken - every
+            seat gets the same engine - but the room is playing worse than it
+            was built to). Capacity, not a bug.
+
   - name: cluster
     interval: 15s
     rules:

@@ -70,9 +70,10 @@
      has to be a containing block. The felt's card already is; the replay's
      `.card.small` is not, and without this the faces escaped it entirely. */
   position: relative;
-  animation: ccCardMaterialize calc(var(--rs-prepare, 0.05s) * var(--animation-speed, 1))
+  animation: ccCardMaterialize
+    calc(var(--rs-prepare, 0.05s) * var(--rs-speed, var(--animation-speed, 1)))
     cubic-bezier(0.25, 0.1, 0.25, 1) both;
-  animation-delay: calc(var(--rs-stagger, 0s) * var(--animation-speed, 1));
+  animation-delay: calc(var(--rs-stagger, 0s) * var(--rs-speed, var(--animation-speed, 1)));
   /* The flip needs depth; a clipped box flattens it. */
   overflow: visible;
 }
@@ -95,11 +96,11 @@
   transform-style: preserve-3d;
   transform: rotateY(180deg);
   border-radius: inherit;
-  animation: ccCardSqueeze calc(var(--rs-flip, 0.25s) * var(--animation-speed, 1))
+  animation: ccCardSqueeze calc(var(--rs-flip, 0.25s) * var(--rs-speed, var(--animation-speed, 1)))
     cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: calc(
     (var(--rs-prepare, 0.05s) + var(--rs-hold, 0s) + var(--rs-stagger, 0s)) *
-      var(--animation-speed, 1)
+      var(--rs-speed, var(--animation-speed, 1))
   );
 }
 
@@ -171,10 +172,11 @@
   background: var(--rs-edge, rgba(14, 14, 18, 0.88));
   opacity: 0;
   pointer-events: none;
-  animation: ccCardSpine calc(var(--rs-flip, 0.25s) * var(--animation-speed, 1)) linear both;
+  animation: ccCardSpine calc(var(--rs-flip, 0.25s) * var(--rs-speed, var(--animation-speed, 1)))
+    linear both;
   animation-delay: calc(
     (var(--rs-prepare, 0.05s) + var(--rs-hold, 0s) + var(--rs-stagger, 0s)) *
-      var(--animation-speed, 1)
+      var(--rs-speed, var(--animation-speed, 1))
   );
 }
 
@@ -203,10 +205,11 @@
   box-shadow: var(--rs-shadow);
   opacity: 1;
   pointer-events: none;
-  animation: ccCardShadow calc(var(--rs-flip, 0.25s) * var(--animation-speed, 1)) linear both;
+  animation: ccCardShadow calc(var(--rs-flip, 0.25s) * var(--rs-speed, var(--animation-speed, 1)))
+    linear both;
   animation-delay: calc(
     (var(--rs-prepare, 0.05s) + var(--rs-hold, 0s) + var(--rs-stagger, 0s)) *
-      var(--animation-speed, 1)
+      var(--rs-speed, var(--animation-speed, 1))
   );
 }
 
@@ -285,7 +288,8 @@
 }
 
 .card-squeeze-host[data-rs-hold='released'] .card-squeeze {
-  animation: ccCardSqueezeFrom calc(var(--rs-flip, 0.25s) * var(--animation-speed, 1))
+  animation: ccCardSqueezeFrom
+    calc(var(--rs-flip, 0.25s) * var(--rs-speed, var(--animation-speed, 1)))
     cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: 0s;
 }
@@ -404,11 +408,56 @@
     opacity: 1;
     transform: none;
   }
+
+  /* ═════════════════════════════════════════════════════════════════════
+     THE PLAYER'S OWN HOLD SURVIVES (2026-09-05)
+     ═════════════════════════════════════════════════════════════════════
+     Dan: "NOTHING WORKS FOR THE SQUEEZE ON THE RIVER." Measured on an
+     emulated iPhone with Reduce Motion on: the river resolved the `reduced`
+     profile, which has no hold, so the card was already face up and there
+     was nothing to squeeze. The perk was gone, not just its movement.
+
+     An interactive presentation keeps its hold here. What collapses is the
+     TURN: the box does not rotate, the two faces cross-fade under the same
+     --rs-drag the pointer writes, so the card still opens under the player's
+     hand and still waits for them. Direct manipulation, no autonomous
+     motion. Opacity only. (10.6: motion collapses, meaning never.)
+     ═════════════════════════════════════════════════════════════════════ */
+  .card-squeeze-host[data-rs-hold] .card-squeeze {
+    animation: none !important;
+    transform: none !important;
+    transform-style: flat;
+  }
+  .card-squeeze-host[data-rs-hold] .card-squeeze__face {
+    backface-visibility: visible;
+    -webkit-backface-visibility: visible;
+  }
+  .card-squeeze-host[data-rs-hold] .card-squeeze__face--front {
+    transform: none;
+    opacity: var(--rs-drag, 0);
+    transition: opacity 120ms linear;
+  }
+  .card-squeeze-host[data-rs-hold] .card-squeeze__face--back {
+    opacity: calc(1 - var(--rs-drag, 0));
+    transition: opacity 120ms linear;
+  }
+  /* Opened - by their hand or by the ceiling - the face arrives by fading. */
+  .card-squeeze-host[data-rs-hold='released'] .card-squeeze__face--front {
+    animation: ccCardCrossFade
+      calc(var(--rs-flip, 0.25s) * var(--rs-speed, var(--animation-speed, 1))) linear both !important;
+    opacity: 1;
+  }
+  .card-squeeze-host[data-rs-hold='released'] .card-squeeze__face--back {
+    animation: ccCardCrossOut
+      calc(var(--rs-flip, 0.25s) * var(--rs-speed, var(--animation-speed, 1))) linear both !important;
+    opacity: 0;
+  }
   /* Resting state is FACE UP, and it arrives by fading, not by turning. */
   .card-squeeze {
-    animation: ccCardCrossFade calc(var(--rs-flip, 0.25s) * var(--animation-speed, 1)) linear both !important;
+    animation: ccCardCrossFade
+      calc(var(--rs-flip, 0.25s) * var(--rs-speed, var(--animation-speed, 1))) linear both !important;
     animation-delay: calc(
-      (var(--rs-prepare, 0.05s) + var(--rs-hold, 0s)) * var(--animation-speed, 1)
+      (var(--rs-prepare, 0.05s) + var(--rs-hold, 0s)) * var(--rs-speed, var(--animation-speed, 1))
     ) !important;
     transform: rotateY(180deg);
   }
@@ -432,5 +481,15 @@
   }
   100% {
     opacity: 1;
+  }
+}
+
+/* The back of an interactive card leaving under reduced motion. */
+@keyframes ccCardCrossOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }

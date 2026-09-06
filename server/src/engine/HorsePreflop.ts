@@ -171,6 +171,24 @@ export interface PreflopCtx {
     bbDefend: number;
   };
   /**
+   * V46 (2026-09-05): the HAND CLASS shift, same units and same shape as
+   * `variantShift`, from HorseHandClasses.handClassRead. V35 says how the
+   * GAME plays; this says how THIS SHAPE plays inside it - AAxx double-suited
+   * 3-bets, a rundown flats, AAA-x folds. Undefined = hold'em or the flag is
+   * off, and every bar below is then byte-identical to V35.
+   */
+  classShift?: {
+    open: number;
+    threeBet: number;
+    fourBet: number;
+    coldCall: number;
+    bbDefend: number;
+  };
+  /** V46: this class flats instead of 3-betting (rundowns, broadway, danglers). */
+  classNeverThreeBet?: boolean;
+  /** V46: the percentile is lying and the hand is a fold (trips, trash). */
+  classFoldAlways?: boolean;
+  /**
    * V37 (2026-09-02): satellite state from HorseLogic.satelliteRead.
    * locked = can fold to a seat; urgent = below the seat line with the
    * blinds coming; coversAll = every live opponent is covered by a margin.
@@ -363,6 +381,18 @@ const LIMP_BEHIND_MIN = 0.5;
  * about the guard changes.
  */
 export function decidePreflopV7(ctx: PreflopCtx): PreflopIntent {
+  // ═══ V46 (2026-09-05) ═══ THE PERCENTILE IS LYING. Three or four of a rank
+  // in an Omaha hand (AAA-x above all) rates high on the hold'em ladder and
+  // is close to unplayable: the third card of the rank is dead, and the hand
+  // makes one pair with no redraw. Same for a double-paired low rainbow hand.
+  // No bar can express "the number you are reading is wrong", so this is a
+  // gate in front of the bars, not another shift.
+  //
+  // A free look is still free: with nothing to call, checking the big blind
+  // is not a decision anybody can exploit.
+  if (ctx.classFoldAlways === true && ctx.toCall > 0) {
+    return { a: 'fold' };
+  }
   const out = decidePreflopV7Core(ctx);
   if (ctx.v13 === false) return out;
   if (out.a !== 'fold') return out;
@@ -467,7 +497,19 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   const t = (x: number) => Math.min(BAR_CAP, clamp01(x * ctx.tightness + ctx.riskAdd));
   const tCall = (x: number) => Math.min(BAR_CAP, clamp01(x * ctx.tightness + riskScaled));
   // V35: the game's own width. Zero for hold'em and for every ablation.
-  const vs35 = ctx.variantShift ?? { open: 0, threeBet: 0, fourBet: 0, coldCall: 0, bbDefend: 0 };
+  const base35 = ctx.variantShift ?? { open: 0, threeBet: 0, fourBet: 0, coldCall: 0, bbDefend: 0 };
+  // V46: the class shift rides on top of the variant shift, in the same
+  // units, so every bar that already respects the game respects the shape.
+  const cs46 = ctx.classShift;
+  const vs35 = cs46
+    ? {
+        open: base35.open + cs46.open,
+        threeBet: base35.threeBet + cs46.threeBet,
+        fourBet: base35.fourBet + cs46.fourBet,
+        coldCall: base35.coldCall + cs46.coldCall,
+        bbDefend: base35.bbDefend + cs46.bbDefend,
+      }
+    : base35;
   const strength = raw;
   // V37: a big bounty on hero's own head gets called wider, so every bluff
   // (3-bet, squeeze, 4-bet) buys less fold equity — trim the budget.
@@ -1059,6 +1101,14 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     let effThreeBetThresh = threeBetThresh;
     if (ctx.isOmaha && ctx.omahaAA === true) effThreeBetThresh = threeBetThresh - 0.04;
     if (strength >= effThreeBetThresh) {
+      // ═══ V46 (2026-09-05) ═══ a rundown, a broadway hand and a dangler
+      // FLAT. This is the thing a bar cannot say: those hands want a cheap
+      // multiway flop, and widening or narrowing their 3-bet threshold does
+      // the opposite of what the hand wants either way. The price still has
+      // to be a flatting price - past that the bars decide as before.
+      if (ctx.classNeverThreeBet === true && toCall <= ctx.stack * 0.12) {
+        return { a: 'call' };
+      }
       if (
         ctx.isOmaha &&
         ctx.omahaAA === false &&

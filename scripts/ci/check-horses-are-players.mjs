@@ -104,10 +104,12 @@ const REGISTER = {
     why: 'humansSeated() drives the DEPLOY DRAIN gate: a server push restarts engines and voids the hand in flight. Chips are preserved either way, so nothing is taken from the horse; and because this platform is horse-heavy, counting horses here would mean no deploy could ever drain, which is an outage, not equal treatment. Raised for Dan in the 2026-08-27 audit.',
   },
   'server/src/engine/ServerTableEngineDealing.ts': {
-    allowed: 2,
+    allowed: 3,
     kind: 'IDENTIFICATION',
     why: [
-      'BOTH are the horse INPUT DEVICE, which is the law\'s second sanctioned exemption, and in both the horse ends up BETTER protected than a human rather than worse.',
+      'ALL THREE are the horse INPUT DEVICE, which is the law\'s second sanctioned exemption, and in each the horse ends up BETTER served than a human rather than worse.',
+      '',
+      '(0) the V48 voluntary straddle round - `if (!seated?.is_horse) continue`. A human enrolls in the voluntary straddle by clicking the table setting, which reaches toggleAutoStraddle through the seating route. A horse has no browser, so the engine supplies the same click from its persona before the straddle round. The loop only ever calls toggleAutoStraddle FOR A HORSE; a human\'s own enrollment is never read, written or overridden by it. Removing the guard would have the engine overwriting every human\'s straddle setting every hand, which is the actual bug this line prevents.',
       '',
       '(1) anyBustedPlayerCanAffordARebuy - `const humans = busted.filter(p => !p.is_horse)`. This decides whether the felt holds five seconds for a bust, and it decides it by reading club_members.chip_balance. A horse HAS no member wallet: it is funded from the club treasury through autoRebuyHorse/fn_horse_fund_from_treasury. Asking the wrong ledger about a horse would answer "cannot afford" and DENY it the pause. So the horse is asked its own question first, immediately above, and any horse below its two-rebuy stop-loss returns true - the pause is granted before a single wallet is read. A horse can therefore only ever gain a pause from this branch, never lose one.',
       '',

@@ -1020,7 +1020,28 @@ export class MaintenanceBreak {
   // Broadcast
   // ─────────────────────────────────────────────────────────────────────────
 
+  /**
+   * When the engine expects to be answering sockets again.
+   *
+   * At `counting_down` the break end is already fixed, so it is that. At
+   * `last_hand` nothing has been written yet, so it is derived from the
+   * announcement: the two-minute lead plus the five-minute break. Derived, not
+   * guessed - both are constants pinned by `the-break-clocks-agree`.
+   *
+   * Zero when there is no break, which the client reads as "no window".
+   */
+  private resumeExpectedAt(): number {
+    if (this.breakEndsAt > 0) return this.breakEndsAt;
+    if (this.announcedAt > 0) {
+      return (
+        this.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS
+      );
+    }
+    return 0;
+  }
+
   private eventPayload(tableId: string, phase: MaintenanceBreakPhase) {
+    const resumeAt = this.resumeExpectedAt();
     return {
       type: 'maintenance_break',
       table_id: tableId,
@@ -1030,6 +1051,29 @@ export class MaintenanceBreak {
       // engine to ask and no socket to ask it on.
       break_ends_at: this.breakEndsAt > 0 ? this.breakEndsAt : null,
       duration_ms: MaintenanceBreak.BREAK_DURATION_MS,
+      /* ═══ THE RESTART HANDOFF (Realtime Phase 4, 2026-09-05) ═════════════
+         Two numbers the RECONNECT LADDER needs, as opposed to the countdown
+         a player reads. They are on this frame rather than a new one because
+         this frame already reaches every subscribed socket at exactly the
+         right moment, and an unknown field is ignored by every client that
+         has not learned to read it yet.
+
+         `restart_in_ms`  - how long until the socket goes away. Two minutes
+                            at :53, zero once the countdown has started and
+                            the engine may be pulled at any moment.
+         `resume_expected_at` - absolute epoch ms, when it should be back.
+
+         WHY THE LADDER NEEDS THEM. Without this, the engine going down for
+         its scheduled ~3 minutes is indistinguishable from the box dying:
+         the client ladders 1s, 2s, 4s ... 30s, reaches maxRetries at roughly
+         three minutes, announces 'failed', and TablePage's twenty-second
+         failsafe reloads the page - every hour, on a schedule, under a
+         player who was told their seat would survive. It also asks GoTrue
+         whether the session is still alive, because three failed handshakes
+         in a row is exactly the shape of the 2026-09-03 outage; here it is
+         not, and we already know why. */
+      restart_in_ms: Math.max(0, resumeAt - MaintenanceBreak.BREAK_DURATION_MS - this.now()),
+      resume_expected_at: resumeAt > 0 ? resumeAt : null,
       reason: this.reason,
       timestamp: this.now(),
     };

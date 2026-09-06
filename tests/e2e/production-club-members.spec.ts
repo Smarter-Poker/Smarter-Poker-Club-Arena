@@ -159,4 +159,79 @@ test.describe('Production Shark Club Players', () => {
     expect(probe.responseFailures).toEqual([]);
     expect(probe.pageErrors).toEqual([]);
   });
+
+  test('wires the live Player Record and Statistics subpages without unsafe writes', async ({
+    page,
+  }) => {
+    const probe = observeMembersPath(page);
+    await openMembers(page, probe);
+
+    const directory = page.getByRole('list', { name: 'Club Member Directory' });
+    await directory.getByRole('listitem').first().getByRole('button').click();
+    await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
+    await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible({
+      timeout: 45_000,
+    });
+    await expect(page.locator('#mm-player-name')).toBeVisible();
+
+    const credentialArt = page.locator('.mm-credential__art');
+    await expect(credentialArt).toBeVisible();
+    await expect
+      .poll(() =>
+        credentialArt.evaluate(
+          (image: HTMLImageElement) => image.complete && image.naturalWidth > 0
+        )
+      )
+      .toBe(true);
+
+    const roleOption = page.locator('.mm-roles__option:not([disabled])').first();
+    if (await roleOption.count()) {
+      await roleOption.click();
+      const cancel = page.getByRole('button', { name: 'Cancel', exact: true });
+      await expect(cancel).toBeVisible();
+      await cancel.click();
+      await expect(cancel).toHaveCount(0);
+    }
+
+    const recordAxe = await new AxeBuilder({ page }).include('.member-mgmt-page').analyze();
+    expect(
+      recordAxe.violations.filter((violation) =>
+        ['serious', 'critical'].includes(violation.impact || '')
+      )
+    ).toEqual([]);
+
+    await page.getByRole('button', { name: /Player Statistics/i }).click();
+    await expect(page).toHaveURL(/\/members\/[0-9a-f-]{36}\/statistics(?:[/?#]|$)/i);
+    await expect(
+      page.getByRole('heading', { name: 'Player Performance', exact: true })
+    ).toBeVisible({
+      timeout: 45_000,
+    });
+
+    const statisticsArt = page.locator('.ps-hero__art');
+    await expect(statisticsArt).toBeVisible();
+    await expect
+      .poll(() =>
+        statisticsArt.evaluate(
+          (image: HTMLImageElement) => image.complete && image.naturalWidth > 0
+        )
+      )
+      .toBe(true);
+
+    for (const range of ['Overall', '7 Days', 'Custom']) {
+      const control = page.getByRole('button', { name: range, exact: true });
+      await control.click();
+      await expect(control).toHaveAttribute('aria-pressed', 'true');
+    }
+    await expect(page.locator('.ps-range__custom input[type="date"]')).toHaveCount(2);
+
+    const statisticsAxe = await new AxeBuilder({ page }).include('.player-stats-page').analyze();
+    expect(
+      statisticsAxe.violations.filter((violation) =>
+        ['serious', 'critical'].includes(violation.impact || '')
+      )
+    ).toEqual([]);
+    expect(probe.responseFailures).toEqual([]);
+    expect(probe.pageErrors).toEqual([]);
+  });
 });

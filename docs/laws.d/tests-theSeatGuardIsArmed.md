@@ -1,0 +1,3 @@
+# tests/theSeatGuardIsArmed.law.test.ts
+
+Chips reach a seat through the engine or one of five declared money paths or not at all: the live declaration of `fn_ca_guard_seat_creation` raises `SEAT_NOT_FUNDED` rather than observing, keeps all five allowlisted paths, asks `fn_caller_is_engine()` before the allowlist so the engine can never be refused, stays scoped to a seat arriving (INSERT, or `left_at` NOT NULL -> NULL) so a top-up is untouched, and never tries to log its own refusal - a RAISE in a BEFORE trigger takes the trigger's INSERT with it, so the evidence travels in the error message instead.

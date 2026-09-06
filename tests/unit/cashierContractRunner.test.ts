@@ -14,7 +14,7 @@ class FakeClient {
   queries: string[] = [];
   connected = false;
   ended = false;
-  failInsert = false;
+  failTelemetryRpc = false;
 
   constructor(public configuration: unknown) {
     FakeClient.instances.push(this);
@@ -29,8 +29,9 @@ class FakeClient {
     if (sql.includes('FROM public.club_members cm')) {
       return { rows: [{ user_id: USER_ID, club_id: CLUB_ID }] };
     }
-    if (this.failInsert && sql.includes('INSERT INTO public.cashier_operations')) {
-      throw new Error('policy rejected insert');
+    if (sql.includes('SELECT public.fn_record_cashier_operation')) {
+      if (this.failTelemetryRpc) throw new Error('telemetry RPC rejected insert');
+      return { rows: [{ recorded: true }] };
     }
     return { rows: [] };
   }
@@ -64,25 +65,23 @@ describe('cashier database contract runner', () => {
     expect(client.connected).toBe(true);
     expect(client.queries).toContain('BEGIN');
     expect(client.queries).toContain('SET LOCAL ROLE authenticated');
-    expect(
-      client.queries.some((sql) => sql.includes('INSERT INTO public.cashier_operations'))
-    ).toBe(true);
+    expect(client.queries.some((sql) => sql.includes('fn_record_cashier_operation'))).toBe(true);
     expect(client.queries.at(-1)).toBe('ROLLBACK');
     expect(client.ended).toBe(true);
     vi.restoreAllMocks();
   });
 
-  it('rolls back and closes the connection when the RLS insert fails', async () => {
+  it('rolls back and closes the connection when the telemetry RPC fails', async () => {
     FakeClient.instances = [];
     class RejectingClient extends FakeClient {
-      failInsert = true;
+      failTelemetryRpc = true;
     }
     await expect(
       certifyCashierContract({
         environment: { SUPABASE_DB_PASSWORD: 'test' },
         ClientClass: RejectingClient,
       })
-    ).rejects.toThrow('policy rejected insert');
+    ).rejects.toThrow('telemetry RPC rejected insert');
     const client = FakeClient.instances[0];
     expect(client.queries.at(-1)).toBe('ROLLBACK');
     expect(client.ended).toBe(true);

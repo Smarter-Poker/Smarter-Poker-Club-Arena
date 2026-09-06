@@ -34,6 +34,7 @@
     "fn_get_managed_game_contracts",
     "fn_guard_game_management_event",
     "fn_guard_managed_game_command_receipt",
+    "fn_guard_managed_game_contract_version",
     "fn_guard_managed_game_delete",
     "fn_guard_managed_game_lifecycle",
     "fn_guard_registered_tournament_contract",
@@ -55,6 +56,7 @@
     "fn_schedule_managed_game_close",
     "fn_sync_club_announcement_message",
     "fn_tournament_management_readiness",
+    "fn_tournament_management_readiness_for_row",
     "fn_update_managed_game"
   ],
   "columns": {

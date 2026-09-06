@@ -41,11 +41,18 @@
  * A refused route is a sentence on screen, never a silent substitution.
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import { reportError } from '../../utils/errorReporter';
 import { fmt } from '../../utils/format';
 import { unionApi } from '../../services/UnionApiService';
+import {
+  clearUnionWalletOperation,
+  reserveUnionWalletOperation,
+  unionWalletIntentSignature,
+  type UnionWalletIntentScope,
+} from '../../services/UnionWalletRecovery';
 import {
   clubSendRoute,
   clubPullRoute,
@@ -55,6 +62,8 @@ import {
 import '../wallet/WalletCashierModal.css';
 import './UnionWalletModal.css';
 
+// Keep this union explicit at the UI boundary. Static release certification
+// verifies that the reserve wallet remains a first-class, read-only modal key.
 export type UnionWalletKey = 'chips' | 'rake' | 'bbj' | 'promo' | 'spin_reserve';
 
 export interface UnionWalletModalProps {
@@ -129,19 +138,8 @@ function titleCase(raw: string): string {
  */
 const apiNote = (s: string) => s.replace(/[;'"\\]/g, '').slice(0, 500);
 
-/** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
-function newOpId(): string {
-  try {
-    const c = globalThis.crypto as Crypto | undefined;
-    if (c?.randomUUID) return c.randomUUID();
-  } catch {
-    /* fall through */
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
-    const r = (Math.random() * 16) | 0;
-    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
+const definitiveRefusal = (message: string): Error & { definitive: true } =>
+  Object.assign(new Error(message), { definitive: true as const });
 
 /** Ledger money, always to the hundredth: 5,000.00, never 5,000 beside 32,482.58. */
 const money = (n: number | null | undefined) =>
@@ -164,10 +162,14 @@ export function UnionWalletModal({
   balance,
   onSent,
 }: UnionWalletModalProps) {
+  const { user } = useAuthUser();
   const [mode, setMode] = useState<Mode>('send');
   const [clubs, setClubs] = useState<Array<{ id: string; name: string }>>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [directoryReload, setDirectoryReload] = useState(0);
+  const directoryLoadVersion = useRef(0);
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<
     | { type: 'member'; data: RosterRow }
@@ -177,6 +179,8 @@ export function UnionWalletModal({
   const [kind, setKind] = useState<SendKind>(walletKey === 'promo' ? 'promo' : 'chips');
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
+  /** Synchronous guard for two taps that arrive before React paints `busy`. */
+  const busyRef = useRef(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [liveBalance, setLiveBalance] = useState(balance);
   const [reserveLedger, setReserveLedger] = useState<
@@ -198,20 +202,31 @@ export function UnionWalletModal({
 
   const chipSource = walletKey === 'rake' ? 'rake' : walletKey === 'promo' ? 'promo' : 'chips';
 
+  const requestClose = useCallback(() => {
+    if (busyRef.current) {
+      setNotice({ ok: false, text: 'Wait For The Current Money Move To Finish.' });
+      return;
+    }
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') requestClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
+  }, [isOpen, requestClose]);
 
   const readOnly = walletKey === 'spin_reserve';
 
   useEffect(() => {
     if (!isOpen) return;
+    const loadVersion = ++directoryLoadVersion.current;
+    const isCurrent = () => directoryLoadVersion.current === loadVersion;
     setNotice(null);
+    setDirectoryError(null);
     setTarget(null);
     setAmount('');
     setMode('send');
@@ -230,6 +245,7 @@ export function UnionWalletModal({
         .order('created_at', { ascending: false })
         .limit(25)
         .then(({ data, error }) => {
+          if (!isCurrent()) return;
           if (error) {
             reportError(error, 'UnionWalletModal.reserve_ledger_load_failed');
             setNotice({ ok: false, text: 'Could Not Load The Spin Reserve Ledger.' });
@@ -239,7 +255,9 @@ export function UnionWalletModal({
       setRoster([]);
       setClubs([]);
       setLoading(false);
-      return;
+      return () => {
+        if (isCurrent()) ++directoryLoadVersion.current;
+      };
     }
     setReserveLedger([]);
 
@@ -247,30 +265,50 @@ export function UnionWalletModal({
     void Promise.all([
       supabase.rpc('fn_union_player_directory', { p_union_id: unionId }),
       supabase.from('union_clubs').select('*, clubs:club_id(*)').eq('union_id', unionId),
-    ]).then(([rosterRes, clubsRes]) => {
-      if (rosterRes.error) {
-        reportError(rosterRes.error, 'UnionWalletModal.roster_load_failed');
-        setNotice({ ok: false, text: 'Could Not Load The Union Roster.' });
-        setRoster([]);
-      } else {
-        setRoster((rosterRes.data as RosterRow[]) || []);
-      }
+    ])
+      .then(([rosterRes, clubsRes]) => {
+        if (!isCurrent()) return;
+        const failures: string[] = [];
+        if (rosterRes.error) {
+          reportError(rosterRes.error, 'UnionWalletModal.roster_load_failed');
+          failures.push('Union Roster');
+          setRoster([]);
+        } else {
+          setRoster((rosterRes.data as RosterRow[]) || []);
+        }
 
-      if (clubsRes.data) {
-        const enriched = clubsRes.data.map((uc: any) => ({
-          id: uc.club_id,
-          name: uc.clubs?.name || 'Unknown Club',
-        }));
-        setClubs(enriched);
-      }
-      setLoading(false);
-    });
+        if (clubsRes.error) {
+          reportError(clubsRes.error, 'UnionWalletModal.clubs_load_failed');
+          failures.push('Club Wallets');
+          setClubs([]);
+        } else {
+          const enriched = (clubsRes.data || []).map((uc: any) => ({
+            id: uc.club_id,
+            name: uc.clubs?.name || 'Unknown Club',
+          }));
+          setClubs(enriched);
+        }
+        setDirectoryError(failures.length > 0 ? `Could Not Load ${failures.join(' And ')}.` : null);
+      })
+      .catch((error) => {
+        if (!isCurrent()) return;
+        reportError(error, 'UnionWalletModal.directory_load_failed');
+        setRoster([]);
+        setClubs([]);
+        setDirectoryError('Could Not Load The Union Wallet Directory.');
+      })
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
     /* `balance` is deliberately NOT a dependency: onSent makes the dashboard
        reload and pass a fresh balance, and re-running this reset on that would
        wipe the success notice and the picked target the moment a send lands.
        The live figure comes from the send's own response instead. */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, unionId, walletKey]);
+     
+    return () => {
+      if (isCurrent()) ++directoryLoadVersion.current;
+    };
+  }, [isOpen, unionId, walletKey, user?.id, directoryReload]);
 
   /**
    * THE LEDGER TAB. fn_promo_wallet_ledger scope 'union' reads
@@ -357,7 +395,15 @@ export function UnionWalletModal({
 
   const send = useCallback(async () => {
     const amt = Number(amount);
-    if (!target || !Number.isFinite(amt) || amt <= 0 || busy) return;
+    if (
+      !target ||
+      mode === 'ledger' ||
+      !Number.isFinite(amt) ||
+      amt <= 0 ||
+      busy ||
+      busyRef.current
+    )
+      return;
     if (kind === 'diamonds' && amt !== Math.floor(amt)) {
       setNotice({ ok: false, text: 'Diamonds Must Be A Whole Number.' });
       return;
@@ -370,6 +416,49 @@ export function UnionWalletModal({
       setNotice({ ok: false, text: 'Club Sends Move In Whole Chips.' });
       return;
     }
+    if (mode === 'pull' && target.type === 'member') {
+      setNotice({ ok: false, text: 'Member Clawbacks Must Be Performed By The Club Owner.' });
+      return;
+    }
+    const selectedRoute =
+      mode === 'send' ? clubSendRoute(walletKey, kind) : clubPullRoute(walletKey);
+    if (target.type === 'club' && selectedRoute.kind === 'refused') {
+      setNotice({ ok: false, text: selectedRoute.reason });
+      return;
+    }
+    if (!user?.id) {
+      setNotice({ ok: false, text: 'Your Session Must Finish Loading Before Moving Funds.' });
+      return;
+    }
+
+    const intentScope: UnionWalletIntentScope = {
+      userId: user.id,
+      unionId,
+      walletKey,
+      signature: unionWalletIntentSignature({
+        mode,
+        targetType: target.type,
+        targetId: target.type === 'member' ? target.data.user_id : target.data.id,
+        kind,
+        amount: amt,
+        sourceWallet: mode === 'pull' ? selectedRoute.kind : kind === 'chips' ? chipSource : kind,
+      }),
+    };
+    /* Reserve BEFORE the RPC/fetch. A browser that cannot durably remember
+       the operation id cannot safely recover a committed-but-lost response,
+       so the money door stays closed. */
+    const opId = reserveUnionWalletOperation(intentScope);
+    if (!opId) {
+      const storageError = new Error('Union Wallet operation id could not be stored');
+      reportError(storageError, 'UnionWalletModal.operation_recovery_write_failed');
+      setNotice({
+        ok: false,
+        text: 'Union Wallet Safety Storage Is Unavailable. Free Browser Storage And Try Again.',
+      });
+      return;
+    }
+
+    busyRef.current = true;
     setBusy(true);
     setNotice(null);
 
@@ -383,6 +472,7 @@ export function UnionWalletModal({
             p_amount: amt,
             p_source_wallet: kind === 'chips' ? chipSource : null,
             p_note: `${walletLabel} To ${target.data.display_name || target.data.username || 'Member'}`,
+            p_op_id: opId,
           });
           const res = (data ?? {}) as {
             success?: boolean;
@@ -390,8 +480,8 @@ export function UnionWalletModal({
             wallet_after?: number;
             destination?: string;
           };
-          if (error || !res.success)
-            throw new Error(error?.message || res.error || 'union send failed');
+          if (error) throw definitiveRefusal(error.message || 'union send failed');
+          if (!res.success) throw definitiveRefusal(res.error || 'union send failed');
           const who = target.data.display_name || target.data.username;
           const landed =
             res.destination === 'promo_float'
@@ -418,7 +508,8 @@ export function UnionWalletModal({
               amt,
               'club',
               target.data.id,
-              apiNote(`${walletLabel} To ${target.data.name} Promo Wallet`)
+              apiNote(`${walletLabel} To ${target.data.name} Promo Wallet`),
+              opId
             )) as { promoAfter?: number | null };
             setNotice({
               ok: true,
@@ -433,7 +524,8 @@ export function UnionWalletModal({
               unionId,
               target.data.id,
               amt,
-              apiNote(`${walletLabel} To ${target.data.name} Club Bank`)
+              apiNote(`${walletLabel} To ${target.data.name} Club Bank`),
+              opId
             )) as { unionBalanceAfter?: number | null };
             setNotice({
               ok: true,
@@ -444,9 +536,7 @@ export function UnionWalletModal({
           }
         }
       } else {
-        if (target.type === 'member') {
-          throw new Error('Member Clawbacks Must Be Performed By The Club Owner.');
-        } else {
+        if (target.type === 'club') {
           /* A PULL COMES BACK TO THE WALLET THAT IS OPEN. The promo wallet
              pulls from the club's Promo Wallet through
              fn_union_clawback_promo_from_club; the union bank pulls from the
@@ -455,7 +545,6 @@ export function UnionWalletModal({
              calls carry an op id so a retried tap cannot pull twice. */
           const pr = clubPullRoute(walletKey);
           if (pr.kind === 'refused') throw new Error(pr.reason);
-          const opId = newOpId();
           const isPromoPull = pr.kind === 'promo';
           const { data: cbRes, error: cbErr } = await supabase.rpc(
             isPromoPull ? 'fn_union_clawback_promo_from_club' : 'fn_union_clawback_from_club',
@@ -469,7 +558,7 @@ export function UnionWalletModal({
               p_op_id: opId,
             }
           );
-          if (cbErr) throw new Error(cbErr.message || 'Clawback failed');
+          if (cbErr) throw definitiveRefusal(cbErr.message || 'Clawback failed');
           const cb = (cbRes ?? {}) as {
             success?: boolean;
             error?: string;
@@ -478,8 +567,22 @@ export function UnionWalletModal({
             union_balance?: number;
           };
           if (cb.success === false) {
+            if (cb.duplicate) {
+              clearUnionWalletOperation(intentScope, opId);
+              setAmount('');
+              setNotice({
+                ok: true,
+                text: 'This Money Move Was Already Processed. The Wallet Is Refreshing.',
+              });
+              try {
+                onSent?.();
+              } catch (callbackError) {
+                reportError(callbackError, 'UnionWalletModal.on_sent_failed');
+              }
+              return;
+            }
             const msg = cb.error || 'Clawback failed';
-            throw new Error(
+            throw definitiveRefusal(
               msg.includes('insufficient club promo')
                 ? 'The Club Promo Wallet Does Not Hold That Much.'
                 : msg.includes('insufficient')
@@ -498,15 +601,36 @@ export function UnionWalletModal({
           else setLiveBalance((prev) => prev + amt);
         }
       }
+      clearUnionWalletOperation(intentScope, opId);
       setAmount('');
-      if (onSent) onSent();
+      try {
+        onSent?.();
+      } catch (callbackError) {
+        // Refresh failures do not turn a confirmed money movement into a
+        // failure banner or invite the operator to submit it again.
+        reportError(callbackError, 'UnionWalletModal.on_sent_failed');
+      }
     } catch (err: any) {
+      if (err?.definitive === true) clearUnionWalletOperation(intentScope, opId);
       reportError(err, 'UnionWalletModal.action_failed');
       setNotice({ ok: false, text: err.message || 'The Action Was Refused.' });
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
-  }, [amount, target, busy, kind, mode, unionId, chipSource, walletLabel, walletKey, onSent]);
+  }, [
+    amount,
+    target,
+    busy,
+    kind,
+    mode,
+    unionId,
+    chipSource,
+    walletLabel,
+    walletKey,
+    onSent,
+    user?.id,
+  ]);
 
   if (!isOpen) return null;
 
@@ -514,6 +638,9 @@ export function UnionWalletModal({
   const sendDisabled =
     !target ||
     !(Number(amount) > 0) ||
+    !user?.id ||
+    loading ||
+    Boolean(directoryError) ||
     busy ||
     (mode === 'send' && target.type === 'club' && route.kind === 'refused') ||
     (mode === 'pull' && target.type === 'club' && pullRoute.kind === 'refused');
@@ -524,7 +651,7 @@ export function UnionWalletModal({
       role="dialog"
       aria-modal="true"
       aria-label={`${walletLabel} Cashier`}
-      onClick={onClose}
+      onClick={requestClose}
     >
       <div className="cbc-panel uwm-panel" onClick={(e) => e.stopPropagation()}>
         {/* ── Header ─────────────────────────────────────────────────────── */}
@@ -551,7 +678,7 @@ export function UnionWalletModal({
               )}
             </p>
           </div>
-          <button className="cbc-x" onClick={onClose} aria-label="Close">
+          <button className="cbc-x" onClick={requestClose} aria-label="Close" disabled={busy}>
             &times;
           </button>
         </div>
@@ -634,6 +761,17 @@ export function UnionWalletModal({
                     <div className="cbc-list uwm-list">
                       {loading ? (
                         <div className="cbc-empty">Loading Directory…</div>
+                      ) : directoryError ? (
+                        <div className="cbc-empty cbc-empty--bad" role="alert">
+                          {directoryError}
+                          <button
+                            type="button"
+                            className="cbc-more"
+                            onClick={() => setDirectoryReload((value) => value + 1)}
+                          >
+                            Retry Directory
+                          </button>
+                        </div>
                       ) : filtered.clubs.length === 0 && filtered.roster.length === 0 ? (
                         <div className="cbc-empty">No Targets Match.</div>
                       ) : (

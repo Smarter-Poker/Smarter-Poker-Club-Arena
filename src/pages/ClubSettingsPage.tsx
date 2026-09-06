@@ -52,6 +52,7 @@ function roleLabelForHandover(role: string): string {
   }
 }
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import {
   MAX_RAKE_CAP_BB,
@@ -64,8 +65,8 @@ import {
   BUYIN_BB_FLOOR,
   CLUB_NAME_MAX,
   WATCHED_COLUMNS,
-  type ClubDeletionImpact,
-  blockingDeletionReason,
+  type ClubRetirementImpact,
+  blockingRetirementReason,
   clubAssetPathFromPublicUrl,
   clampBuyin,
   privateClubNeedsApproval,
@@ -165,7 +166,7 @@ export default function ClubSettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, baselineVersion]);
   const changedFieldsDisplay = pendingLogo ? [...changedFields, 'Logo'] : changedFields;
-  // The delete confirmation must quote the club's SAVED name. It read the
+  // The retirement confirmation must quote the club's SAVED name. It read the
   // live form value, so typing a new name without saving made the modal
   // demand the unsaved text — and the placeholder advertised a name the club
   // does not have.
@@ -201,7 +202,7 @@ export default function ClubSettingsPage() {
   // overwriting one or the other.
   const [serverChanged, setServerChanged] = useState(false);
 
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showRetirementModal, setShowRetirementModal] = useState(false);
 
   // ───────────────────────────────────────────────────────────────────────────
   // HANDING THE CLUB OVER
@@ -225,27 +226,27 @@ export default function ClubSettingsPage() {
   const [isHandingOver, setIsHandingOver] = useState(false);
   const [handoverError, setHandoverError] = useState<string | null>(null);
   const handoverTriggerRef = useRef<HTMLButtonElement | null>(null);
-  // What a delete would actually destroy. tables and club_wallets are both
-  // ON DELETE CASCADE from clubs, so the modal must show real numbers and
-  // refuse while anything is live.
-  const [deleteImpact, setDeleteImpact] = useState<ClubDeletionImpact | null>(null);
+  // What must be settled before the retained club can become read-only.
+  const [retirementImpact, setRetirementImpact] = useState<ClubRetirementImpact | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
-  /** Why the deletion check failed. Without it the modal said only "Could Not
-   *  Check What This Would Delete" and the Delete button stayed permanently
+  /** Why the retirement check failed. Without it the modal said only "Could Not
+   *  Check Retirement Readiness" and the action stayed permanently
    *  disabled with no retry - Cancel and reopen was the only recourse. */
   const [impactError, setImpactError] = useState<string | null>(null);
   /** True when we could not confirm the reader's role, so the page can say so
    *  instead of silently degrading them to `player`. */
   const [roleLoadFailed, setRoleLoadFailed] = useState(false);
   const [showStatsExport, setShowStatsExport] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isRetiring, setIsRetiring] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [userRole, setUserRole] = useState<ClubRole>('player');
   // Mirrors the audit_trail SELECT policies: owner, or is_club_admin() which
   // accepts role IN ('owner','co_owner','admin','manager','agent').
   const canSeeAuditLog =
     isOwner || isClubStaff(userRole) || userRole === 'agent' || userRole === 'super_agent';
-  const deleteBlockedReason = deleteImpact ? blockingDeletionReason(deleteImpact) : null;
+  const retirementBlockedReason = retirementImpact
+    ? blockingRetirementReason(retirementImpact)
+    : null;
 
   // What the Rake Cap setting actually means in money, at two reference
   // stakes. Derived from getRakeConfig — the same function the engine mirrors —
@@ -281,11 +282,11 @@ export default function ClubSettingsPage() {
     setClubCode(null);
     setIsOwner(false);
     setUserRole('player');
-    setShowDeleteModal(false);
-    setDeleteImpact(null);
+    setShowRetirementModal(false);
+    setRetirementImpact(null);
     setImpactLoading(false);
     setShowStatsExport(false);
-    setIsDeleting(false);
+    setIsRetiring(false);
     setConfirmText('');
     setLoadError(false);
     setNotFound(false);
@@ -314,7 +315,7 @@ export default function ClubSettingsPage() {
   const currentLogoUrlRef = useRef<string | null>(null);
   const isMountedRef = useIsMounted();
   const logoInputRef = useRef<HTMLInputElement | null>(null);
-  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const retirementTriggerRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     pendingLogoRef.current = pendingLogo;
   }, [pendingLogo]);
@@ -393,22 +394,22 @@ export default function ClubSettingsPage() {
   }, [hasUnsavedChanges, isOwner]);
 
   /**
-   * Escape closes the delete modal, and focus returns to the button that
+   * Escape closes the retirement modal, and focus returns to the button that
    * opened it.
    *
-   * This was written once and lost in a merge, which is why `deleteTriggerRef`
+   * This was written once and lost in a merge, which is why `retirementTriggerRef`
    * existed with nothing reading it and the modal carried `role="dialog"
    * aria-modal="true"` with nothing enforcing either. On the control that
-   * permanently destroys a club, dismissal was overlay-click only.
+   * changes the club's lifecycle, dismissal was overlay-click only.
    */
   /**
-   * `isDeleting` goes through a REF, not the dep array (Dan 2026-08-25).
+   * `isRetiring` goes through a REF, not the dep array (Dan 2026-08-25).
    *
-   * It was a dependency, so pressing Delete Club - which sets isDeleting true -
+   * It was a dependency, so pressing Retire Club - which sets isRetiring true -
    * tore this effect down and ran its cleanup, and the cleanup moves focus back
    * to the trigger BEHIND the overlay. Focus left an open `aria-modal` dialog
    * at the exact moment the irreversible request was in flight. Depending only
-   * on `showDeleteModal` means the cleanup runs when the modal actually closes,
+   * on `showRetirementModal` means cleanup runs when the modal actually closes,
    * which is the only time returning focus is correct.
    */
   /**
@@ -510,19 +511,19 @@ export default function ClubSettingsPage() {
     };
   }, [showHandoverModal]);
 
-  const isDeletingRef = useRef(isDeleting);
-  isDeletingRef.current = isDeleting;
+  const isRetiringRef = useRef(isRetiring);
+  isRetiringRef.current = isRetiring;
   useEffect(() => {
-    if (!showDeleteModal) return;
+    if (!showRetirementModal) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isDeletingRef.current) setShowDeleteModal(false);
+      if (e.key === 'Escape' && !isRetiringRef.current) setShowRetirementModal(false);
     };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
-      deleteTriggerRef.current?.focus();
+      retirementTriggerRef.current?.focus();
     };
-  }, [showDeleteModal]);
+  }, [showRetirementModal]);
 
   /**
    * Ctrl+S. Through a REF (Dan 2026-08-25).
@@ -1059,20 +1060,16 @@ export default function ClubSettingsPage() {
     }
   };
 
-  const loadDeleteImpact = async () => {
+  const loadRetirementImpact = async () => {
     if (!clubId) return;
     setImpactLoading(true);
-    setDeleteImpact(null);
+    setRetirementImpact(null);
     setImpactError(null);
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      // One authoritative read instead of three client queries. The previous
-      // version asked club_wallets directly, and that table has RLS enabled
-      // with NO policies — an owner's SELECT returns no rows rather than an
-      // error, so the guard reported "0 chips" for every club while the wallet
-      // was about to be destroyed by ON DELETE CASCADE. The RPC is
-      // SECURITY DEFINER, owner-gated, and counts both balance columns.
-      const { data, error } = await supabase.rpc('fn_club_deletion_impact', {
+      // One owner-gated authoritative read covers canonical chip liabilities,
+      // diamonds, Promo Vault inventory, games, credit and settlement work.
+      const { data, error } = await supabase.rpc('fn_club_retirement_impact', {
         p_club_id: resolvedId,
       });
       if (error) throw error;
@@ -1081,64 +1078,97 @@ export default function ClubSettingsPage() {
        *
        * `(data || {})` plus `?? 0` meant that if the RPC ever returned a row
        * SET rather than a json object, every field was undefined, every figure
-       * became 0, blockingDeletionReason returned null - and the Delete button
+       * became 0, blockingRetirementReason returned null - and the action button
        * armed on a live club with members and running tables. A non-numeric
        * wallet_chips gave NaN, and `NaN > 0` is false, for the same outcome.
        */
       const impact = (Array.isArray(data) ? data[0] : data) as {
         members?: unknown;
         running_tables?: unknown;
+        active_tournaments?: unknown;
         wallet_chips?: unknown;
+        diamonds?: unknown;
+        inventory_items?: unknown;
+        open_obligations?: unknown;
+        union_affiliated?: unknown;
+        already_retired?: unknown;
       } | null;
       const members = Number(impact?.members ?? NaN);
       const runningTables = Number(impact?.running_tables ?? NaN);
+      const activeTournaments = Number(impact?.active_tournaments ?? NaN);
       const walletChips = Number(impact?.wallet_chips ?? NaN);
+      const diamonds = Number(impact?.diamonds ?? NaN);
+      const inventoryItems = Number(impact?.inventory_items ?? NaN);
+      const openObligations = Number(impact?.open_obligations ?? NaN);
+      const unionAffiliated = impact?.union_affiliated;
+      const alreadyRetired = impact?.already_retired;
+      const numericValues = [
+        members,
+        runningTables,
+        activeTournaments,
+        walletChips,
+        diamonds,
+        inventoryItems,
+        openObligations,
+      ];
       if (
         !impact ||
         typeof impact !== 'object' ||
-        !Number.isFinite(members) ||
-        !Number.isFinite(runningTables) ||
-        !Number.isFinite(walletChips)
+        numericValues.some((value) => !Number.isFinite(value) || value < 0) ||
+        typeof unionAffiliated !== 'boolean' ||
+        typeof alreadyRetired !== 'boolean'
       ) {
-        throw new Error('The deletion check returned something unreadable.');
+        throw new Error('The retirement check returned something unreadable.');
       }
       setImpactError(null);
-      setDeleteImpact({ members, runningTables, walletChips });
+      setRetirementImpact({
+        members,
+        runningTables,
+        activeTournaments,
+        walletChips,
+        diamonds,
+        inventoryItems,
+        openObligations,
+        unionAffiliated,
+        alreadyRetired,
+      });
     } catch (e) {
-      reportError(e, 'ClubSettingsPage.Failed_to_load_delete_impact');
-      // Unknown impact must not read as "safe to delete".
-      setImpactError(e instanceof Error ? e.message : 'Could not check what this would delete.');
-      setDeleteImpact(null);
+      reportError(e, 'ClubSettingsPage.Failed_to_load_retirement_impact');
+      // Unknown impact must not read as "safe to retire".
+      setImpactError(safeErrorMessage(e, 'Could not check whether this club is ready to retire.'));
+      setRetirementImpact(null);
     } finally {
       setImpactLoading(false);
     }
   };
 
-  const handleDeleteClub = async () => {
+  const handleRetireClub = async () => {
     if (!clubId || !savedClubName.trim() || confirmText.trim() !== savedClubName.trim()) return;
-    // Belt and braces: the button is disabled for these cases, but a delete
-    // that cascades 56 running tables deserves a second gate.
-    if (!deleteImpact) {
-      toast.error('Still checking what this would delete - try again in a moment.');
+    // The button has the same gate, but the handler remains fail-closed for
+    // keyboard/programmatic activation and stale renders.
+    if (!retirementImpact) {
+      toast.error('Still checking whether this club can retire - try again in a moment.');
       return;
     }
-    const blocked = blockingDeletionReason(deleteImpact);
+    const blocked = blockingRetirementReason(retirementImpact);
     if (blocked) {
       toast.error(blocked);
       return;
     }
 
-    setIsDeleting(true);
+    setIsRetiring(true);
     try {
-      await ClubsService.delete(clubId);
-      toast.success('Club deleted successfully');
+      await ClubsService.retire(clubId, confirmText.trim());
+      toast.success('Club Retired. Membership, Game, Financial, And Audit Records Were Retained.');
+      setShowRetirementModal(false);
       navigate('/clubs');
     } catch (error: unknown) {
-      reportError(error, 'ClubSettingsPage.Failed_to_delete_club');
-      toast.error(error instanceof Error ? error.message : 'Failed to delete club');
+      reportError(error, 'ClubSettingsPage.Failed_to_retire_club');
+      // Keep the dialog and typed confirmation open so the owner can resolve a
+      // newly-arrived obligation, retry, or read the server's exact refusal.
+      toast.error(safeErrorMessage(error, 'The club could not be retired. Nothing was changed.'));
     } finally {
-      setIsDeleting(false);
-      setShowDeleteModal(false);
+      setIsRetiring(false);
     }
   };
 
@@ -1789,20 +1819,21 @@ export default function ClubSettingsPage() {
             <h3>Danger Zone</h3>
             <div className="danger-item">
               <div className="danger-info">
-                <span className="danger-label">Delete This Club</span>
+                <span className="danger-label">Retire This Club</span>
                 <span className="danger-desc">
-                  Once Deleted, All Club Data, Members, And Tables Will Be Permanently Removed.
+                  End Active Play And Cashier Access While Retaining Members, Games, Financial
+                  Journals, And Audit History.
                 </span>
               </div>
               <button
-                ref={deleteTriggerRef}
+                ref={retirementTriggerRef}
                 className="btn btn-danger"
                 onClick={() => {
-                  setShowDeleteModal(true);
-                  loadDeleteImpact();
+                  setShowRetirementModal(true);
+                  loadRetirementImpact();
                 }}
               >
-                Delete Club
+                Retire Club
               </button>
             </div>
           </section>
@@ -1940,55 +1971,62 @@ export default function ClubSettingsPage() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Retirement Confirmation Modal */}
       {/* Dialog semantics (Dan 2026-08-25). The overlay was an interactive div
           with no role, Escape did nothing, Tab walked straight out into the
           page behind it, and nothing announced this as a modal - on the control
-          that permanently destroys a club. */}
-      {showDeleteModal && (
+          that changes whether an entire club can operate. */}
+      {showRetirementModal && (
         <div
           className="modal-overlay"
           role="presentation"
-          onClick={() => !isDeleting && setShowDeleteModal(false)}
+          onClick={() => !isRetiring && setShowRetirementModal(false)}
         >
           <div
             className="modal-content delete-modal"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="delete-club-title"
+            aria-labelledby="retire-club-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 id="delete-club-title">Delete Club</h3>
+            <h3 id="retire-club-title">Retire Club</h3>
             <p>
-              This Action <strong>Cannot Be Undone</strong>. This Will Permanently Delete The Club{' '}
-              <strong>{savedClubName}</strong>.
+              This Ends Active Play And Cashier Access For <strong>{savedClubName}</strong>. The
+              Club, Memberships, Games, Financial Journals, And Audit Records Stay Retained And
+              Read-Only.
             </p>
-            {impactLoading && <p className="delete-impact">Checking What This Would Delete...</p>}
-            {!impactLoading && deleteImpact && (
+            {impactLoading && <p className="delete-impact">Checking Retirement Readiness...</p>}
+            {!impactLoading && retirementImpact && (
               <ul className="delete-impact">
-                <li>{deleteImpact.members.toLocaleString()} Member Records</li>
+                <li>{retirementImpact.members.toLocaleString()} Membership Records Retained</li>
+                <li>{retirementImpact.runningTables.toLocaleString()} Running Tables To Close</li>
+                <li>{retirementImpact.activeTournaments.toLocaleString()} Active Tournaments</li>
                 <li>
-                  Every Table In This Club
-                  {deleteImpact.runningTables > 0
-                    ? `, Including ${deleteImpact.runningTables} Currently Running`
-                    : ' (None Are Running)'}
+                  {retirementImpact.walletChips.toLocaleString()} Chips Or Credit Across Canonical
+                  Accounts
                 </li>
-                <li>Club Wallets Holding {deleteImpact.walletChips.toLocaleString()} Chips</li>
+                <li>{retirementImpact.diamonds.toLocaleString()} Club Or Member Diamonds</li>
+                <li>{retirementImpact.inventoryItems.toLocaleString()} Promo Vault Items</li>
+                <li>{retirementImpact.openObligations.toLocaleString()} Open Obligations</li>
               </ul>
             )}
-            {!impactLoading && !deleteImpact && (
+            {!impactLoading && !retirementImpact && (
               <p className="delete-impact delete-impact--blocked">
-                Could Not Check What This Would Delete. Deletion Is Disabled Until That Check
+                Could Not Check Retirement Readiness. Retirement Is Disabled Until That Check
                 Succeeds.
                 {impactError ? ` ${impactError}` : ''}{' '}
-                <button type="button" className="settings-inline-link" onClick={loadDeleteImpact}>
+                <button
+                  type="button"
+                  className="settings-inline-link"
+                  onClick={loadRetirementImpact}
+                >
                   Check Again
                 </button>
               </p>
             )}
-            {deleteBlockedReason && (
+            {retirementBlockedReason && (
               <p className="delete-impact delete-impact--blocked" role="alert">
-                {deleteBlockedReason}
+                {retirementBlockedReason}
               </p>
             )}
             <div className="form-group">
@@ -1999,6 +2037,7 @@ export default function ClubSettingsPage() {
                 placeholder={savedClubName}
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
+                disabled={isRetiring}
                 autoFocus
               />
             </div>
@@ -2006,27 +2045,28 @@ export default function ClubSettingsPage() {
               <button
                 className="btn btn-secondary"
                 onClick={() => {
-                  setShowDeleteModal(false);
+                  setShowRetirementModal(false);
                   setConfirmText('');
-                  setDeleteImpact(null);
+                  setRetirementImpact(null);
                 }}
+                disabled={isRetiring}
               >
                 Cancel
               </button>
               <button
                 className="btn btn-danger"
-                onClick={handleDeleteClub}
+                onClick={handleRetireClub}
                 disabled={
                   !savedClubName.trim() ||
                   confirmText.trim() !== savedClubName.trim() ||
-                  isDeleting ||
+                  isRetiring ||
                   impactLoading ||
-                  !deleteImpact ||
-                  !!deleteBlockedReason
+                  !retirementImpact ||
+                  !!retirementBlockedReason
                 }
-                title={deleteBlockedReason || undefined}
+                title={retirementBlockedReason || undefined}
               >
-                {isDeleting ? 'Deleting...' : 'Delete Club'}
+                {isRetiring ? 'Retiring...' : 'Retire Club'}
               </button>
             </div>
           </div>

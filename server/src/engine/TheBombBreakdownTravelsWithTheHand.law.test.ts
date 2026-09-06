@@ -22,6 +22,31 @@ import { join } from 'path';
 const hist = readFileSync(join(__dirname, '..', 'services', 'supabase', 'handHistory.ts'), 'utf8');
 const settle = readFileSync(join(__dirname, 'ServerTableEngineSettlement.ts'), 'utf8');
 
+/**
+ * One statement, from `anchor` to the semicolon that closes it at depth zero.
+ *
+ * Inlined rather than imported: `tests/helpers/sourceWindow` lives in the
+ * CLIENT tree, and this server tree refuses cross-tree imports twice over (its
+ * ESM `.js` specifier guard and tsc's rootDir). Byte counts are forbidden by
+ * tests/unit/noFixedSizeSourceWindows.test.ts - which caught the first draft
+ * of this very assertion slicing `start + 2400`, which is the rule working.
+ * The window has to be the statement because the ternary chain gains a branch
+ * every time a fallback is added, and a fixed count slides off the newest one
+ * while staying green.
+ */
+function statementAt(src: string, anchor: string): string {
+  const start = src.indexOf(anchor);
+  if (start < 0) throw new Error(`statementAt: "${anchor}" not found`);
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    const c = src[i];
+    if (c === '{' || c === '(' || c === '[') depth++;
+    else if (c === '}' || c === ')' || c === ']') depth--;
+    else if (c === ';' && depth <= 0) return src.slice(start, i + 1);
+  }
+  return src.slice(start);
+}
+
 describe('the bomb breakdown travels with the hand', () => {
   it('the award units are written by the same call that writes the row', () => {
     expect(hist).toContain("supabase.rpc('fn_ca_insert_hand_with_awards'");
@@ -55,8 +80,10 @@ describe('the bomb breakdown travels with the hand', () => {
     // the retry queue and the hand lost outright. The winners list is the same
     // money (966 of 966 bomb hands over six hours: sum(winners) == distributable
     // to the cent), so it is the fallback source of units.
-    const start = settle.indexOf('const bombAwardUnits =');
-    const build = settle.slice(start, start + 2400);
+    // Bounded by the statement, never by a byte count: the ternary chain
+    // grows every time a fallback is added, and a fixed window would slide
+    // off the newest one while staying green (tests/helpers/sourceWindow.ts).
+    const build = statementAt(settle, 'const bombAwardUnits =');
     expect(build).toContain('snap.bombPot && (snap.winners?.length ?? 0) > 0');
     expect(build).toContain('snap.winners.map((w) => ({');
     expect(build).toContain('pot_index: w.potIndex ?? 0');

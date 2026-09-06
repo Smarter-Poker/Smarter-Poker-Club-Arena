@@ -335,6 +335,19 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       FAIL=1
     fi
   fi
+  # An UPDATE or DELETE with no WHERE runs fine from a migration (as postgres)
+  # and is REFUSED on the PostgREST path, because `authenticator` preloads
+  # safeupdate. It therefore passes every check the author runs and breaks in
+  # production. 2026-09-06: one of these silently stopped the GTO aggregation
+  # driver, and the sweep after it found nine more already live.
+  if [ -f scripts/ci/check-unqualified-writes.mjs ]; then
+    UQW_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "HEAD~1")
+    if ! node scripts/ci/check-unqualified-writes.mjs "$UQW_BASE"; then
+      echo "[club-arena pre-push] BLOCKED: an UPDATE or DELETE with no WHERE clause."
+      echo "                      PostgREST refuses it; a migration does not. See above."
+      FAIL=1
+    fi
+  fi
 
   # 0b. TYPE CHECK — added 2026-08-27, re-justified 2026-08-28.
   #

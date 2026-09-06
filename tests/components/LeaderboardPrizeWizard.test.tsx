@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LeaderboardSettings } from '../../src/services/LeaderboardService';
@@ -28,6 +28,14 @@ const setup: LeaderboardSettings = {
   funding_source: 'union_promo_wallet',
   funding_label: 'North Circuit Promo Wallet',
   available_balance: 10_000,
+  wallet_balance: 12_500,
+  committed_balance: 2_500,
+  current_program_commitment: 0,
+  other_program_commitments: 2_500,
+  available_uncommitted_balance: 10_000,
+  publication_capacity: 10_000,
+  committed_club_count: 2,
+  funding_status: 'not_published',
   can_manage: true,
   setup_complete: false,
   rewards_enabled: false,
@@ -115,7 +123,7 @@ describe('LeaderboardPrizeWizard', () => {
     await user.click(screen.getByRole('button', { name: /No Prizes Right Now/i }));
     await user.click(screen.getByRole('button', { name: 'Review Disabled Plan' }));
     expect(screen.getByText('Prizes Disabled')).toBeInTheDocument();
-    expect(screen.getAllByText('0 Chips')).toHaveLength(2);
+    expect(screen.getAllByText('0 Chips')).toHaveLength(3);
     await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByText('Do You Want To Reward Leaderboard Prizes?')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Review Disabled Plan' }));
@@ -158,5 +166,44 @@ describe('LeaderboardPrizeWizard', () => {
       { rank: 2, amount: 75 },
       { rank: 3, amount: 50 },
     ]);
+  });
+
+  it('shows union-wide commitments and blocks an unfunded publication', async () => {
+    const user = userEvent.setup();
+    const unfundedSetup: LeaderboardSettings = {
+      ...setup,
+      rewards_enabled: true,
+      setup_complete: true,
+      weekly_prizes: [{ rank: 1, amount: 80 }],
+      monthly_prizes: [{ rank: 1, amount: 40 }],
+      wallet_balance: 350,
+      committed_balance: 370,
+      current_program_commitment: 120,
+      other_program_commitments: 250,
+      available_uncommitted_balance: 0,
+      publication_capacity: 100,
+      committed_club_count: 3,
+      funding_status: 'underfunded',
+    };
+
+    render(
+      <LeaderboardPrizeWizard isOpen setup={unfundedSetup} onClose={vi.fn()} onSaved={vi.fn()} />
+    );
+
+    await user.click(screen.getByRole('button', { name: /Yes, Show Prizes/i }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByText('350 Chips')).toBeInTheDocument();
+    expect(screen.getByText('370 Chips')).toBeInTheDocument();
+    expect(screen.getByText('250 Chips')).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Funding Commitment Summary')).getByText('3')
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This Plan Cannot Be Published. Reduce The Combined Weekly And Monthly Commitment To 100 Promo Chips Or Less.'
+    );
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    expect(saveLeaderboardRewardSetup).not.toHaveBeenCalled();
   });
 });

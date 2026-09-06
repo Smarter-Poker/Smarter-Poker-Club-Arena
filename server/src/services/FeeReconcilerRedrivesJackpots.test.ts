@@ -21,7 +21,7 @@ vi.mock('./supabase.js', () => ({
 }));
 vi.mock('./supabase/bbj.js', () => ({
   processBBJPayout: (...a: unknown[]) => processBBJPayout(...a),
-  setBBJPayoutQueueWriter: vi.fn(),
+  setBBJPayoutQueue: vi.fn(),
 }));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
 vi.mock('./financialAlerts.js', () => ({
@@ -100,12 +100,15 @@ beforeEach(() => {
 describe('a queued bbj_payout row', () => {
   it('is re-driven through processBBJPayout with the frozen parameters and the LIVE seat set', async () => {
     processBBJPayout.mockResolvedValue({
-      totalPayout: 100,
-      loserShare: 50,
-      winnerShare: 25,
-      tableShare: 25,
-      perPlayerShare: 12.5,
-      poolId: 'pool',
+      status: 'paid',
+      result: {
+        totalPayout: 100,
+        loserShare: 50,
+        winnerShare: 25,
+        tableShare: 25,
+        perPlayerShare: 12.5,
+        poolId: 'pool',
+      },
     });
     const summary = await reconcilePendingFees();
     expect(summary).toMatchObject({ scanned: 1, resolved: 1, stillFailing: 0, exhausted: 0 });
@@ -131,7 +134,7 @@ describe('a queued bbj_payout row', () => {
   it('resolves when the payout returns null but the ledger shows the hand was already paid', async () => {
     // The live attempt succeeded and only its response was lost; the RPC
     // answered already_paid on the re-drive, so processBBJPayout returns null.
-    processBBJPayout.mockResolvedValue(null);
+    processBBJPayout.mockResolvedValue({ status: 'already_paid' });
     bbjPayoutRows = [{ id: 'payout-1' }];
     const summary = await reconcilePendingFees();
     expect(summary.resolved).toBe(1);
@@ -139,12 +142,12 @@ describe('a queued bbj_payout row', () => {
   });
 
   it('stays open, attempts bumped, when the payout fails again and nothing is in the ledger', async () => {
-    processBBJPayout.mockResolvedValue(null);
+    processBBJPayout.mockResolvedValue({ status: 'queued', lastError: 'fetch failed' });
     const summary = await reconcilePendingFees();
     expect(summary).toMatchObject({ resolved: 0, stillFailing: 1 });
     expect(patches[0]).toMatchObject({ attempts: 1 });
     expect((patches[0] as { resolved_at?: string }).resolved_at).toBeUndefined();
-    expect((patches[0] as { last_error: string }).last_error).toContain('no bbj_payouts row');
+    expect((patches[0] as { last_error: string }).last_error).toContain('fetch failed');
   });
 
   it('refuses a row whose parameters are missing rather than paying the wrong people', async () => {

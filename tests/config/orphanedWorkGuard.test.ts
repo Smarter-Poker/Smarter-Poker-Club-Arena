@@ -113,7 +113,9 @@ beforeAll(() => {
   git('checkout', '-q', 'main');
   write('c.js', 'base\n// Derive the count from SEAT rows, never the counter column.\n');
   commit('stale-side merge: comment survived, code flattened away');
-});
+  // The full suite creates substantial concurrent filesystem pressure. Keep
+  // the guard strict while allowing its real multi-branch Git fixture to land.
+}, 30_000);
 
 afterAll(() => {
   if (repo) rmSync(repo, { recursive: true, force: true });

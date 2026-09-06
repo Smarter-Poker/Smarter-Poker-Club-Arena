@@ -1030,7 +1030,7 @@ function FullApp() {
 
                 {/* User */}
                 <Route
-                  path="challenges"
+                  path="challenges/:cycle?"
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Daily Challenges">

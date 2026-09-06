@@ -330,7 +330,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
   if (!isAuthenticated) {
     // HARDENED: Always redirect to the canonical World Hub login page
     // instead of the regressed internal SPA auth component.
-    const redirectUrl = '/hub/club-arena' + location.pathname + location.search;
+    const redirectUrl = '/hub/club-arena' + location.pathname + location.search + location.hash;
     window.location.href = `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`;
     return null;
   }

@@ -72,6 +72,7 @@ const CAPS: ClubNavigationCapabilities = {
  */
 const ALLOWED_ORPHANS: Record<string, string> = {
   // ── Entry points that arrive from OUTSIDE the app ────────────────────────
+  auth: 'public authentication entry point reached from signed-out redirects and old bookmarks',
   'share/hand/:handId':
     "a hand's own address - Copy Link on the replay writes it, and a player bookmarks it; " +
     'reads hand_history, so it is for the people who played the hand',

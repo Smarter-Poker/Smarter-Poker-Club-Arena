@@ -737,8 +737,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_review_rollup',
     'nightly',
-    'HorseSelfTuner (leak counts -> dials and the V40 leak profile)',
-    'per horse/day/variant tag counts',
+    'HorseSelfTuner (leak counts -> dials and the V40 leak profile); fn_horse_tag_ev -> fn_audit_river_aggression_ev (leak_net_bb -> the EV ranking); fn_run_horse_daily_audit (the seven-day tag baseline)',
+    'per horse/day/variant tag counts AND, since 2026-09-06, the per-tag net (leak_net_bb). The count says how often a shape happened; the net says what it was worth, which is the difference between ranking situations by damage and ranking them by EV',
     'V18',
     { dayColumn: 'day', freshnessDays: 2 }
   ),

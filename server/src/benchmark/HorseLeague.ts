@@ -1175,6 +1175,23 @@ async function maybeRunLeague(): Promise<void> {
 
   if (inWindow && lastLeagueDate !== today) {
     if (await alreadyRanToday(today)) {
+      /*
+       * THE SCORE IS NOT A SIDE EFFECT OF THE MATCHUPS (2026-09-06).
+       *
+       * A day where the card ran and died mid-way lands rows, so this
+       * short-circuit fires for the rest of the process's life. Before the
+       * score moved to the front of runLeague that was how it went unwritten:
+       * on 2026-09-06 the league completed 3 of 28 matchups and the absolute
+       * score - the only measurement that can say the brain got worse with
+       * nothing to compare it against - was never taken, as it had not been
+       * once since it shipped.
+       *
+       * Moving it to the front of runLeague fixes tomorrow. This fixes the
+       * day whose card already ran: the score costs seconds and depends on
+       * nothing the matchups produce, so if the day has results and no score,
+       * take the score.
+       */
+      if (!(await hasSolverAgreement(today))) await writeSolverAgreement(today);
       lastLeagueDate = today; // remember for the rest of this process's life
       return;
     }
@@ -1276,6 +1293,68 @@ export function stopHorseLeague(): void {
   }
 }
 
+/**
+ * V47 SOLVER AGREEMENT - the absolute score (2026-09-05, moved 2026-09-06).
+ *
+ * The matchups measure a DIFFERENCE between two configs. This is the only
+ * ABSOLUTE number in the estate: agreement with the hold'em push/fold charts,
+ * which is a reference the brain did not author. It is the one measurement
+ * that can say the brain got worse with nothing to compare it to - and, since
+ * the fleet plays itself and its aggregate result is zero minus the drop by
+ * construction, it is also the only thing that can say the brain is any good.
+ *
+ * Extracted so it can run BEFORE the matchup loop. See the call site.
+ *
+ * A skip is WRITTEN, not just logged. `reference` is null when the chart
+ * store is empty, and the old code console.logged that and moved on - so
+ * "the score is missing" and "the score was skipped because the charts did
+ * not load" looked identical from the database, which is the exact failure
+ * this estate keeps finding. The row now says which.
+ */
+/** Has the absolute score already been taken for this date? */
+async function hasSolverAgreement(date: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('horse_solver_agreement')
+      .select('run_date')
+      .eq('run_date', date)
+      .limit(1);
+    if (error) throw new Error(error.message);
+    return (data?.length ?? 0) > 0;
+  } catch (err) {
+    // A read that failed is not a score that exists. Retrying the probe costs
+    // seconds; skipping it costs the day's only absolute measurement.
+    reportError(err, 'HorseLeague.hasSolverAgreement');
+    return false;
+  }
+}
+
+export async function writeSolverAgreement(date: string): Promise<void> {
+  try {
+    const agreement = scoreSolverAgreement();
+    const { error } = await supabase.rpc('fn_horse_solver_agreement_add', {
+      p_rows: [
+        {
+          run_date: date,
+          reference: agreement.reference ?? 'none_chart_store_empty',
+          spots: agreement.spots,
+          agreement: round4(agreement.agreement),
+          pure_misses: agreement.pureMisses,
+        },
+      ],
+    });
+    if (error) throw new Error(error.message);
+    console.log(
+      agreement.reference
+        ? `[HorseLeague] solver agreement ${round4(agreement.agreement)} over ${agreement.spots} ` +
+            `spots (${agreement.pureMisses} pure misses)`
+        : '[HorseLeague] solver agreement SKIPPED - the chart store is empty here; row written so the audit can see the skip'
+    );
+  } catch (err) {
+    reportError(err, 'HorseLeague.agreement');
+  }
+}
+
 export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
   if (leagueRunning) return [];
   leagueRunning = true;
@@ -1333,6 +1412,21 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       `of a possible ${Math.round(MAX_RUN_MS / 60000)}, clipped to the window), ` +
       `rotation offset ${rotateBy} -> first up ${card[0]?.name}`
   );
+  // ═══ THE ABSOLUTE SCORE RUNS FIRST (2026-09-06) ════════════════════════
+  //
+  // This used to be the LAST thing in the run, after the matchup loop. On
+  // 2026-09-06 the league completed 3 of 28 matchups and the score was never
+  // written - and it had never been written once since it shipped, because
+  // this run is, in the words of the comment 250 lines above, "ALWAYS killed
+  // mid-card". A budget break would have fallen through to it; a killed
+  // process does not.
+  //
+  // So the one number that can say the brain got WORSE without another config
+  // to compare it against was gated behind ninety minutes of work that never
+  // finishes. It costs a few hundred synchronous decisions - seconds - and it
+  // depends on nothing the matchups produce. It goes first.
+  await writeSolverAgreement(date);
+
   try {
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
     for (const m of card) {
@@ -1382,38 +1476,6 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       // Yield the event loop between matchups — production tables come first.
       await new Promise((res) => setTimeout(res, 250));
     }
-    // ═══ V47 SOLVER AGREEMENT (2026-09-05) ═══════════════════════════════
-    // The matchups above measure a DIFFERENCE between two configs. This is
-    // the absolute score, against the only reference in the building: the
-    // hold'em push/fold charts. It costs a few hundred synchronous decisions
-    // once a night, and it is the one number that can say the brain got
-    // WORSE without another config to compare it to.
-    try {
-      const agreement = scoreSolverAgreement();
-      if (agreement.reference) {
-        const { error } = await supabase.rpc('fn_horse_solver_agreement_add', {
-          p_rows: [
-            {
-              run_date: date,
-              reference: agreement.reference,
-              spots: agreement.spots,
-              agreement: round4(agreement.agreement),
-              pure_misses: agreement.pureMisses,
-            },
-          ],
-        });
-        if (error) throw new Error(error.message);
-        console.log(
-          `[HorseLeague] solver agreement ${round4(agreement.agreement)} over ${agreement.spots} ` +
-            `spots (${agreement.pureMisses} pure misses)`
-        );
-      } else {
-        console.log('[HorseLeague] solver agreement skipped - the chart store is empty here');
-      }
-    } catch (err) {
-      reportError(err, 'HorseLeague.agreement');
-    }
-
     console.log(
       `[HorseLeague] run ${date} finished: ${results.length}/${LEAGUE_MATCHUPS.length} matchups ` +
         `in ${Math.round((Date.now() - startedAt) / 1000)}s`

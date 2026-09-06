@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/the-absolute-score-runs-first",
+  "_comment": "20260906093726 every_tag_carries_its_own_ev, 20260906093746 tag_ev_title_typo and 20260906093926 the_ev_ranking_pairs_every_mirror, applied to production 2026-09-06 via the Supabase MCP. horse_review_rollup.leak_net_bb is the per-tag net that turns leak_counts from 'how often this shape happened' into 'what it was worth'; fn_horse_tag_ev ranks every mirrored situation by EV across both outcomes.",
+  "tables": [],
+  "functions": ["fn_horse_tag_ev"],
+  "columns": { "horse_review_rollup": ["leak_net_bb"] }
+}

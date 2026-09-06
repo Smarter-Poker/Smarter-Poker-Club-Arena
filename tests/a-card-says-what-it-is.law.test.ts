@@ -34,6 +34,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceBetween } from './helpers/sourceWindow';
 import { cardWords, cardsWords, FACE_DOWN_WORDS, RANK_WORD } from '../src/utils/cardWords';
 
 const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8');
@@ -91,9 +92,12 @@ describe('a card says what it is', () => {
   it('nothing is announced twice', () => {
     const card = read('../src/components/table/CardImage.tsx');
     /* The fallback glyph sits beside an <img> that KEEPS its alt while hidden,
-       so the same card would be read as itself and then as its glyph. */
-    const fallback = card.slice(card.indexOf('card-image__fallback'));
-    expect(fallback.slice(0, 400)).toMatch(/aria-hidden="true"/);
+       so the same card would be read as itself and then as its glyph.
+       Bounded by the element's own attribute list - from its class to the
+       `style` that ends it - rather than by a byte count that drifts off the
+       thing it watches (tests/helpers/sourceWindow.ts). */
+    const fallback = sliceBetween(card, 'className="card-image__fallback"', 'style={{');
+    expect(fallback).toMatch(/aria-hidden="true"/);
 
     const felt = read('../src/components/table/CommunityCards.tsx');
     /* The board's region names every card in one sentence, so the cards

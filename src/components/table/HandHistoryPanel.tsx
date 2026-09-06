@@ -33,10 +33,12 @@
 import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
 import HandDetailView from '../handdetail/HandDetailView';
 import HandNoteEditor from '../handdetail/HandNoteEditor';
+import HandFlagControl from '../handdetail/HandFlagControl';
 import type { ReplayModel } from '../../utils/handReplay';
 import type { HeroHandFacts } from '../../services/HandHistoryService';
 import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
 import { handNotesService, type HandNote } from '../../services/HandNotesService';
+import { handFlagService, type HandFlag } from '../../services/HandFlagService';
 import { filterBySubjects, handSearchSubject } from '../../lib/handSearch';
 import { formatTableChips } from '../../utils/format';
 import './HandHistoryPanel.css';
@@ -306,6 +308,9 @@ function HandEntry({
   note,
   noteKnown,
   onNoteSaved,
+  flag,
+  flagKnown,
+  onFlagFiled,
 }: {
   hand: HandRecord;
   heroId: string;
@@ -316,6 +321,9 @@ function HandEntry({
   note?: HandNote | null;
   noteKnown?: boolean;
   onNoteSaved?: (handId: string, note: HandNote | null) => void;
+  flag?: HandFlag | null;
+  flagKnown?: boolean;
+  onFlagFiled?: (handId: string, flag: HandFlag | null) => void;
 }) {
   const heroNet = hand.replay.players.find((p) => p.userId === heroId)?.net ?? hand.heroResult;
   const tone = heroNet > 0 ? 'up' : heroNet < 0 ? 'down' : 'flat';
@@ -382,6 +390,12 @@ function HandEntry({
               write one without leaving the felt for the archive. Same
               component, same service - `useTableKeyboard` already declines to
               read the keyboard while a TEXTAREA has it. */}
+          <HandFlagControl
+            handId={hand.id}
+            flag={flag}
+            flagKnown={flagKnown}
+            onFiled={onFlagFiled}
+          />
           <HandNoteEditor
             handId={hand.id}
             note={note}
@@ -450,6 +464,10 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
    */
   const [notes, setNotes] = useState<Map<string, HandNote>>(new Map());
   const [notesKnown, setNotesKnown] = useState(false);
+  /* Phase 6: flagging a hand belongs AT the table too - the moment a player
+     thinks something went wrong is while they are still sitting there. */
+  const [flags, setFlags] = useState<Map<string, HandFlag>>(new Map());
+  const [flagsKnown, setFlagsKnown] = useState(false);
   const noteIdKey = hands.map((h) => h.id).join('|');
   useEffect(() => {
     const ids = noteIdKey ? noteIdKey.split('|') : [];
@@ -460,6 +478,11 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
       setNotes(map);
       setNotesKnown(true);
     });
+    void handFlagService.mineFor(ids).then((map) => {
+      if (!alive) return;
+      setFlags(map);
+      setFlagsKnown(true);
+    });
     return () => {
       alive = false;
     };
@@ -469,6 +492,15 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
     setNotes((prev) => {
       const next = new Map(prev);
       if (saved) next.set(handId, saved);
+      else next.delete(handId);
+      return next;
+    });
+  }, []);
+
+  const onFlagFiled = useCallback((handId: string, filed: HandFlag | null) => {
+    setFlags((prev) => {
+      const next = new Map(prev);
+      if (filed) next.set(handId, filed);
       else next.delete(handId);
       return next;
     });
@@ -735,6 +767,9 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
                   note={notes.get(hand.id) ?? null}
                   noteKnown={notesKnown}
                   onNoteSaved={onNoteSaved}
+                  flag={flags.get(hand.id) ?? null}
+                  flagKnown={flagsKnown}
+                  onFlagFiled={onFlagFiled}
                 />
               </div>
             ))

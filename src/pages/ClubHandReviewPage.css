@@ -1,0 +1,341 @@
+/*
+ * HAND REVIEW — Phase 6.
+ *
+ * Every rule is scoped under `.chr-`, which is this page's own prefix. See
+ * tests/global-css-does-not-leak-across-pages.law.test.ts for why, and
+ * tests/no-hover-effects.law.test.ts for why there is no :hover here.
+ */
+
+.chr-page {
+  padding-bottom: 40px;
+}
+
+.chr-empty {
+  margin: 24px 16px;
+  padding: 24px;
+  text-align: center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  opacity: 0.8;
+}
+
+/* ── The audited lookup ───────────────────────────────────────────────────── */
+
+.chr-lookup {
+  margin: 16px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(214, 173, 82, 0.32);
+  background: rgba(214, 173, 82, 0.06);
+}
+
+.chr-lookup--locked {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chr-lookup__head {
+  margin-bottom: 10px;
+}
+
+.chr-lookup__title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #d6ad52;
+}
+
+.chr-lookup__warn {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
+.chr-lookup__form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chr-lookup__number {
+  flex: 0 0 150px;
+}
+
+.chr-lookup__reason {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.chr-lookup__number,
+.chr-lookup__reason,
+.chr-flag__replybox {
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.3);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.chr-lookup__go {
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(214, 173, 82, 0.55);
+  background: rgba(214, 173, 82, 0.18);
+  color: #f2e2bb;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chr-lookup__go:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.chr-lookup__error {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: #e28b7a;
+}
+
+/* ── The opened hand ──────────────────────────────────────────────────────── */
+
+.chr-hand {
+  margin: 0 16px 16px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.chr-hand__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.chr-hand__num {
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.chr-hand__cards {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.chr-hand__cards.is-complete {
+  color: #4dc660;
+  border-color: rgba(77, 198, 96, 0.45);
+}
+
+.chr-hand__cards.is-short {
+  color: #e8c977;
+  border-color: rgba(232, 201, 119, 0.45);
+}
+
+.chr-hand__close {
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chr-hand__short {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  color: #e8c977;
+  opacity: 0.9;
+}
+
+/* ── The queue ────────────────────────────────────────────────────────────── */
+
+.chr-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 16px 12px;
+}
+
+.chr-chip {
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chr-chip.active {
+  border-color: rgba(214, 173, 82, 0.6);
+  background: rgba(214, 173, 82, 0.16);
+  color: #f2e2bb;
+}
+
+.chr-list {
+  list-style: none;
+  margin: 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chr-flag {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chr-flag.is-open {
+  border-left: 3px solid rgba(232, 201, 119, 0.7);
+}
+
+.chr-flag.is-under_review {
+  border-left: 3px solid rgba(127, 182, 232, 0.7);
+}
+
+.chr-flag__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.chr-flag__num {
+  font-weight: 800;
+  font-size: 0.88rem;
+}
+
+.chr-flag__status {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.chr-flag__status.is-open {
+  color: #e8c977;
+  border-color: rgba(232, 201, 119, 0.45);
+}
+
+.chr-flag__status.is-under_review {
+  color: #7fb6e8;
+  border-color: rgba(127, 182, 232, 0.45);
+}
+
+.chr-flag__status.is-resolved {
+  color: #4dc660;
+  border-color: rgba(77, 198, 96, 0.45);
+}
+
+.chr-flag__status.is-dismissed {
+  color: #c9c9c9;
+}
+
+.chr-flag__note {
+  margin: 0 0 6px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.chr-flag__meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  opacity: 0.6;
+}
+
+.chr-flag__reply {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border-left: 3px solid rgba(214, 173, 82, 0.55);
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.chr-flag__reply-label {
+  display: block;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.chr-flag__reply-body {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.chr-flag__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.chr-flag__replybox {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.chr-flag__btn,
+.chr-flag__open {
+  padding: 8px 13px;
+  border-radius: 8px;
+  border: 1px solid rgba(214, 173, 82, 0.5);
+  background: rgba(214, 173, 82, 0.14);
+  color: #f2e2bb;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chr-flag__btn--quiet {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: inherit;
+}
+
+.chr-flag__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* 375px first: the lookup and the row controls stack rather than overflow. */
+@media (max-width: 560px) {
+  .chr-lookup__number,
+  .chr-lookup__reason,
+  .chr-lookup__go {
+    flex: 1 1 100%;
+  }
+
+  .chr-flag__actions > * {
+    flex: 1 1 100%;
+  }
+}

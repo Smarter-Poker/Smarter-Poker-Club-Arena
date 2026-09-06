@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { isSentryEnvelopeRateLimitConsoleError } from './support/productionConsoleErrorPolicy';
+
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
 test.describe('Production Cashier Certification', () => {
@@ -82,7 +84,8 @@ test.describe('Production Cashier Certification', () => {
       (message) =>
         !message.text.includes('[cashier-telemetry]') &&
         !message.text.includes('favicon') &&
-        !message.url.includes('favicon')
+        !message.url.includes('favicon') &&
+        !isSentryEnvelopeRateLimitConsoleError(message)
     );
     expect(
       cashierCritical,

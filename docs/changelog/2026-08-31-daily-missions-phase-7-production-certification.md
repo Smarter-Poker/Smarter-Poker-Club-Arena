@@ -23,7 +23,7 @@ The production certification is disabled unless `DAILY_MISSIONS_CERTIFICATION=1`
 ## Verification Contract
 
 - One dashboard aggregate request on cold load within the production latency budget.
-- Exactly one 10-diamond reroll receipt and one 5,000-diamond freeze receipt under double activation.
+- Exactly one 1-diamond reroll receipt and one 5,000-diamond freeze receipt under double activation.
 - Realtime vault opening without navigation after server-side progress completion.
 - One claim RPC from double activation, one batch/credit receipt, and an idempotent replay response.
 - Alert preference recovery without invoking browser notification permission.

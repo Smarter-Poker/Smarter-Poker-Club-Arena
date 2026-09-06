@@ -95,7 +95,7 @@ export interface BookingRow {
 }
 
 export interface GameLoad {
-  /** Live seats: clause (1). */
+  /** Live seats, EVERY table: clause (1), and the platform limit's input. */
   seats: number;
   /** Bookings that are not already described by a seat: clause (2). */
   bookings: number;
@@ -103,6 +103,11 @@ export interface GameLoad {
    *  four). A separate, softer rule about how many CASH tables it plays; it
    *  is not the platform limit and is not applied to bookings. */
   ownCashCeiling: number;
+  /** Live seats at CASH tables only - what `ownCashCeiling` is measured
+   *  against. Omitted means the caller cannot tell them apart, and the
+   *  ceiling then falls back to `seats` (stricter). See
+   *  remainingGameCapacity. */
+  cashSeats?: number;
 }
 
 /**
@@ -168,8 +173,21 @@ export function concurrentGameLoad(load: Pick<GameLoad, 'seats' | 'bookings'>): 
  * against seats plus bookings.
  */
 export function remainingGameCapacity(load: GameLoad): number {
-  const seats = Math.max(0, Math.floor(load.seats));
-  const byOwnCeiling = Math.max(0, Math.floor(load.ownCashCeiling) - seats);
+  /* ── THE CASH CEILING IS MEASURED AGAINST CASH SEATS (2026-09-06) ─────────
+     The paragraph above has always said "measured against cash seats", and
+     the code has always subtracted `load.seats` - which the fleet builds from
+     `allActiveSeats`, EVERY open seat on the platform, tournament tables
+     included (that read's own comment says so). So a horse whose tag says
+     `max_tables: 2` and which is sitting at two tournament tables was refused
+     every cash table on the floor by a rule documented as being about cash
+     multi-tabling. 837 horses carry a tag of 2 or 3.
+
+     `cashSeats` is optional because an absent value is a caller that has not
+     been taught the difference, and the honest answer there is the old,
+     stricter one - it refuses seats the database would allow, which is the
+     safe direction to be wrong in. The fleet passes it. */
+  const cashSeats = Math.max(0, Math.floor(load.cashSeats ?? load.seats));
+  const byOwnCeiling = Math.max(0, Math.floor(load.ownCashCeiling) - cashSeats);
   const byPlatform = Math.max(0, CONCURRENT_GAME_LIMIT - concurrentGameLoad(load));
   return Math.min(byOwnCeiling, byPlatform);
 }

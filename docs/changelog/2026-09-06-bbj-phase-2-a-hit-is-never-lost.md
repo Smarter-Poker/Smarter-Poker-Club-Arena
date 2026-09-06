@@ -138,3 +138,91 @@ Rewritten against `tests/helpers/sourceWindow`.
 Client `tsc` clean, server `tsc` clean, server 434 files / 6,221 tests, client
 1,093 files across six shards, all green. Migration probed rolled back, then
 applied.
+
+## The deep dive before phase 3, and the four defects it found in this phase
+
+Dan's standing rule between phases: prove the last one is fully built, coded,
+wired in and tested before starting the next. Four things failed that, three of
+them in code that had already passed tsc, 6,239 server tests and every required
+check. Each is written here as what it was, not as what it became.
+
+### 1. Phase 2.2 was emitted, handled, and swallowed one layer in
+
+`shouldAnnounceBbjHit` identifies a jackpot by **table + hand and nothing
+else**, and marks it seen the first time it says yes. So on the path this phase
+was built for - a payout that cannot land now - `bbj_payout_pending` marked the
+hit seen, and `bbj_payout_paid` for the same hand was then refused **as a
+replay of itself**. The player was told the money was coming and never told it
+had arrived.
+
+Everything else about it worked: the engine emitted, the hub retained, the
+client handled, and the source pin asserting "the handler calls the gate"
+passed - which is exactly why the pin did not catch it. The gate now takes a
+`kind`, so the three things one jackpot can say each de-duplicate on their own
+and each is still said at most once. The default is the empty string, so the
+celebration and the club-wide card keep the key they have always had and keep
+sharing it: those two are one announcement seen from two places, and the card
+already refuses the table you are looking at.
+
+### 2. The hub could no longer hold one jackpot's beats
+
+Every retained emit on a cash table is a jackpot beat, and this phase took that
+from three to five - `bbj_hit`, `bbj_payout_pending`, `bbj_payout_complete`,
+`bbj_hit_global`, `bbj_payout_paid` - against a per-table cap of **four**. The
+splice drops the OLDEST, which is `bbj_hit`: the beat carrying the hand names
+the celebration is built from, whose own retention comment (added in phase 1)
+says it exists so a player reconnecting through the hit still receives them.
+Phase 1 wrote a guarantee and phase 2 quietly spent it.
+
+The cap is 8 with the measurement beside it. `TableStateHub.replay.test.ts`
+pinned the literal 4 and went red for a correct change; it now READS the cap
+and pins the behaviour - bounded, newest wins - because a number tuned to one
+shape of traffic and copied into a test outlives the shape it was tuned to.
+
+### 3. A counter declared and written to nowhere
+
+`poker_bbj_shares_parked_total` shipped beside detected, paid and queued, and
+was incremented in no code path at all. It would have read a flat zero for
+ever, indistinguishable from "no share was ever parked" - the same shape as an
+empty alert group reading as coverage. It is now incremented where the park is
+detected, and the test asserts every declared counter is written to somewhere
+rather than merely declared.
+
+### 4. Two migrations the repo could not tie to the database
+
+The Supabase MCP assigns its own version when it applies a migration, and it
+recorded `an_unpayable_jackpot_share_is_parked_not_lost` as **20260906152640**
+while the file said 20260906152329. A file whose version is not the version the
+database recorded is a migration a rebuild applies a second time. Renamed, as
+the three earlier files in this series already were.
+
+Worse, the REVOKE that closed `fn_bbj_unclaimed_shares` to the browser was
+applied live as `20260906153916` and **had no file at all** - the exact gap
+`check-applied-migrations-are-recorded.mjs` exists to report, and one a Midway
+master reset would rebuild without. Written down verbatim, with a header saying
+it is the live twin of the block folded into 20260906152640.
+
+### And one latent hazard closed while it was cheap
+
+`bbj_unclaimed_shares` - the row that says a named player is owed a named
+number of chips - inherited Supabase's default `GRANT ALL` to `anon` and
+`authenticated`. Nothing was exploitable: RLS is on and its only policy is
+SELECT-only, so a write from a browser role is refused today whatever the grant
+says. But that protection rests entirely on nobody ever adding a permissive
+`FOR ALL` policy, which is the natural way somebody would let a player read
+their own row. Both writers of the table are SECURITY DEFINER, so
+`20260906160939_a_parked_jackpot_share_is_not_a_browser_write` revokes the
+write grants and keeps SELECT, and nothing loses a path.
+
+### What the deep dive also found that is NOT this phase
+
+`fn_rake_bbj_audit` has raised CRITICAL `I7_raked_hand_never_banked` alerts
+repeatedly - 5 violations at 07:38, 3 at 06:38. Read rather than assumed:
+**zero** hands are unbanked right now (0 of 51,733 raked hands / 62,498.69
+chips in the last 24 hours), and `rake-repair-unbanked-hourly` last ran seven
+minutes before the check. So the alert is firing on hands the hourly repair
+then fixes - a CRITICAL that fires on correct behaviour, which is how real
+alarms get ignored - and, underneath it, a rake that is not banked inline and
+is caught by a repair job every hour, which by CLAUDE.md 10.11 means the cause
+is not fixed. Both belong to phase 5 (close the books) and are recorded there
+rather than half-fixed here.

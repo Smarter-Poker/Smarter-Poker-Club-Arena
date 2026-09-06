@@ -13,6 +13,7 @@ import { MEDIA_BASE } from '../../utils/mediaBase';
 import { useDeckStyle } from '../../hooks/useDeckStyle';
 import './CardImage.css';
 import { reportError } from '../../utils/errorReporter';
+import { cardWords, FACE_DOWN_WORDS } from '../../utils/cardWords';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -287,7 +288,7 @@ export function CardImage({
         loading={loading}
         decoding="async"
         src={effectivePath}
-        alt={`${card.rank} Of ${SUIT_MAP[card.suit] || card.suit}`}
+        alt={cardWords(card)}
         className="card-image__img"
         draggable={false}
         style={imgError ? { display: 'none' } : undefined}
@@ -297,6 +298,10 @@ export function CardImage({
       {imgError && (
         <div
           className="card-image__fallback"
+          /* The hidden <img> above KEEPS its alt, so this is the same card a
+             second time. Announced twice it reads as two cards, and the suit
+             here is a glyph a screen reader spells out. */
+          aria-hidden="true"
           style={{
             width: '100%',
             height: '100%',
@@ -569,8 +574,14 @@ export function CardBack({ style, size = 'md', className = '' }: CardBackProps) 
     .filter(Boolean)
     .join(' ');
 
+  /* A FACE-DOWN CARD IS NOT NOTHING. This carried no alt, no role and no
+     label, so every muck row, every opponent's holding and every undealt seat
+     was SILENT to a screen reader - a hand that reads as two cards short
+     rather than as two cards you cannot see. `aria-label` on a `role="img"`
+     is what an <img alt> would have been, and this draws its face with a CSS
+     background rather than an <img>. */
   return (
-    <div className={classes}>
+    <div className={classes} role="img" aria-label={FACE_DOWN_WORDS}>
       <div
         className={`card-back card-back--${backStyle}`}
         style={{ '--cb-image': `url('${cardBackImageUrl(backStyle)}')` } as React.CSSProperties}

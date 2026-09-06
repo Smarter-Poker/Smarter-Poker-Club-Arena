@@ -34,5 +34,11 @@ export async function setDailyMissionAlertPreference(
 
   if (error) throw error;
   if (!data) throw new Error('Daily Mission alert preference returned no receipt');
-  return { enabled: data?.daily_mission_reminders === true };
+  if (
+    typeof data.daily_mission_reminders !== 'boolean' ||
+    data.daily_mission_reminders !== enabled
+  ) {
+    throw new Error('Daily Mission alert preference returned a contradictory receipt');
+  }
+  return { enabled };
 }

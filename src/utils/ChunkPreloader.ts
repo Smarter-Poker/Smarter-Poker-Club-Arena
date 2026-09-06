@@ -155,7 +155,7 @@ const ROUTE_CHUNKS: Record<string, () => Promise<any>> = {
   '/notifications': () => import('../pages/NotificationsPage'),
   '/messages': () => import('../pages/NavigateToMessenger'),
   '/leaderboard': () => import('../pages/LeaderboardPage'),
-  '/tournaments': () => import('../pages/TournamentPage'),
+  '/tournaments': () => import('../pages/tournament/TournamentLobbyPage'),
   '/tournament-lobby': () => import('../pages/tournament/TournamentLobbyPage'),
   '/tournament-results': () => import('../pages/tournament/TournamentResultsPage'),
   '/stats': () => import('../pages/PlayerStatsPage'),

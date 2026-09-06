@@ -32,7 +32,13 @@ beforeEach(() => rpc.mockReset());
 describe('buyStreakFreeze', () => {
   it('reports success only when the RPC actually granted the freeze', async () => {
     rpc.mockResolvedValue({
-      data: { success: true, freezesAvailable: 2, diamondBalance: 45000 },
+      data: {
+        success: true,
+        alreadyPurchased: false,
+        freezesAvailable: 2,
+        diamondsSpent: 5000,
+        diamondBalance: 45000,
+      },
       error: null,
     });
     await expect(dailyChallengeService.buyStreakFreeze(USER)).resolves.toMatchObject({
@@ -59,15 +65,20 @@ describe('buyStreakFreeze', () => {
   });
 
   it('reuses one request id across a transient retry', async () => {
-    rpc.mockRejectedValueOnce(new Error('network unavailable')).mockResolvedValueOnce({
-      data: {
-        success: true,
-        alreadyPurchased: true,
-        freezesAvailable: 2,
-        diamondBalance: 45000,
-      },
-      error: null,
-    });
+    // PostgREST resolves fetch failures as an `{ error }` object. The service
+    // must turn that into an Error so retryAsync recognizes it as transient.
+    rpc
+      .mockResolvedValueOnce({ data: null, error: { message: 'network fetch failed' } })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          alreadyPurchased: true,
+          freezesAvailable: 2,
+          diamondsSpent: 0,
+          diamondBalance: 45000,
+        },
+        error: null,
+      });
 
     const out = await dailyChallengeService.buyStreakFreeze(USER);
     expect(out).toMatchObject({ success: true, alreadyPurchased: true });

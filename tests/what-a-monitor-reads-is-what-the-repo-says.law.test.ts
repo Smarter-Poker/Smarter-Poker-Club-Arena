@@ -173,9 +173,10 @@ describe('LAW 3 - the canary, because silence has to mean something', () => {
  */
 describe('LAW 4 - the routing is in this repo, and the canary reaches nobody', () => {
   it('the pager survives a deploy: receiver and route are both declared here', () => {
-    expect(ALERTMANAGER, 'the pager-sms receiver must exist in this repo or a deploy deletes it').toMatch(
-      /^\s*- name: pager-sms\s*$/m
-    );
+    expect(
+      ALERTMANAGER,
+      'the pager-sms receiver must exist in this repo or a deploy deletes it'
+    ).toMatch(/^\s*- name: pager-sms\s*$/m);
     expect(ALERTMANAGER, 'and the route that reaches it').toMatch(/page="sms"/);
   });
 

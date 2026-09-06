@@ -74,6 +74,13 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
     ),
     'utf8'
   );
+  const operationsIndex = readFileSync(
+    path.resolve(
+      __dirname,
+      '../../supabase/migrations/20260906100500_daily_mission_operations_user_index.sql'
+    ),
+    'utf8'
+  );
 
   it('keeps push permission on the original click path and stores explicit consent', () => {
     expect(page).toContain('const pushResultPromise = enablePush();');
@@ -103,7 +110,7 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
 
   it('wires settlement feedback and every critical operation into health signals', () => {
     expect(page).toContain('Reward Settled');
-    expect(page).toContain('Deposited Securely To Your Club Arena Balances');
+    expect(page).toContain('Added To Your Club Arena Diamond Balance');
     for (const event of [
       'dashboard_loaded',
       'dashboard_failed',
@@ -139,5 +146,7 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
     );
     expect(authority).toContain('CREATE OR REPLACE FUNCTION public.record_daily_mission_operation');
     expect(authority).toContain('>= 60 THEN');
+    expect(operationsIndex).toContain('daily_mission_operations_user_created_idx');
+    expect(operationsIndex).toContain('(user_id, created_at DESC)');
   });
 });

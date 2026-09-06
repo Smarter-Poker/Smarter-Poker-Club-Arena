@@ -683,7 +683,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state(
     'vpipFloor',
     'the table VPIP floor a seat is stood up under after ten hands (Dan 2026-09-04)',
-    'HorseLogic.vpipFloorMul'
+    // Two consumers, and the second one is the point (2026-09-06): the floor
+    // does not only widen the brain, it travels to settlement and keys the
+    // horse_daily_play row apart, so no band ever judges required-loose play.
+    'HorseLogic.vpipFloorMul; ServerTableEngineSettlement -> HorseHandReview (horse_daily_play.floored)'
   ),
   state(
     'ownVpip',
@@ -750,16 +753,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_daily_nets',
     'nightly',
-    'HorseSelfTuner (real bb/100 and, since 2026-09-05, rake_bb -> the rake-adjusted regression rule); fn_run_horse_daily_audit',
-    'exact settlement nets + weighted-contributed rake per horse per day',
+    'HorseSelfTuner (real bb/100 and, since 2026-09-05, rake_bb and, since 2026-09-06, bbj_bb -> the DROP-adjusted regression rule and fleetQuartile); fn_run_horse_daily_audit; fn_audit_fleet_drop_identity (the closed-system assertion)',
+    'exact settlement nets + weighted-contributed rake AND bad-beat-jackpot drop per horse per day. net_bb + rake_bb + bbj_bb is the result before the house took anything, and on 2026-09-06 it came to zero over 31,186 seat-hands - the fleet plays itself, so it must',
     'V16',
     { dayColumn: 'day', freshnessDays: 1 }
   ),
   table(
     'horse_daily_play',
     'nightly',
-    'HorseSelfTuner (loadPlayRows: every horse studied from its own rows; HorseHandReview compiles them at settlement with HorsePlayStats)',
-    'per horse/day/format VPIP, PFR, 3-bet, fold-to-3-bet, saw flop, WWSF, postflop aggression',
+    'HorseSelfTuner (loadPlayRows: every horse studied from its own rows, floored = false only; HorseHandReview compiles them at settlement with HorsePlayStats); fn_horse_frequency_leaks; fn_audit_frequency_leaks (which reports the floored share so the exclusion stays visible)',
+    'per horse/day/format/floored VPIP, PFR, 3-bet, fold-to-3-bet, saw flop, WWSF, postflop aggression. `floored` splits play at a VPIP-floored table, where the horse was REQUIRED to be loose, away from play the winning-player bands may judge (2026-09-06)',
     '2026-09-05',
     { dayColumn: 'day', freshnessDays: 1 }
   ),

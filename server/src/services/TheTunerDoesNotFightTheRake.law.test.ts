@@ -86,12 +86,15 @@ describe('LAW: the tuner does not fight the rake', () => {
 
   it('runSelfTune reads rake_bb and passes the fleet quartile', () => {
     const tuner = read('services/HorseSelfTuner.ts');
-    expect(tuner.includes("'horse_user_id, hands, net_bb, rake_bb, format'")).toBe(true);
+    // 2026-09-06: the read gained bbj_bb - the OTHER half of the drop. The
+    // law names the full select so dropping either half fails here.
+    expect(tuner.includes("'horse_user_id, hands, net_bb, rake_bb, bbj_bb, format'")).toBe(true);
     expect(tuner.includes('const fleetP25 = fleetQuartile(realNets);')).toBe(true);
     // the diagnose call carries both
     const call = tuner.slice(tuner.indexOf('const { mods, reasons } = diagnoseAndNudge('));
     const head = call.slice(0, call.indexOf(');'));
     expect(head.includes('rakeBB100')).toBe(true);
+    expect(head.includes('bbjBB100')).toBe(true);
     expect(head.includes('fleetP25')).toBe(true);
     expect(head.includes('leaksHands')).toBe(true);
   });

@@ -149,7 +149,6 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     { label: 'Community Center', path: '/community' },
     { label: 'Find Players & Clubs', path: '/search' },
     { label: 'Friends', path: '/friends' },
-    { label: 'Unions', path: '/unions' },
     // Wallet & Rewards
     { label: 'Rewards Center', path: '/rewards' },
     { label: 'Wallet', path: '/wallet' },
@@ -194,6 +193,24 @@ test.describe('Hamburger Menu — Navigation Links', () => {
       await expect(page).toHaveURL(new RegExp(`.*${escapedPath}`), { timeout: 10000 });
     });
   }
+
+  test('hides Unions and closes its direct route for the reserved certification account', async ({
+    page,
+  }) => {
+    await navigateAndWait(page, '/');
+    if (!(await openMenuOrSkip(page))) return;
+
+    const unions = page
+      .getByRole('dialog', { name: 'Club Arena' })
+      .getByRole('button', { name: /^Unions(?:\s|$)/ });
+    await expect(unions).toHaveCount(0);
+
+    await page.goto('unions');
+    await expect(page).toHaveURL(/\/community(?:[/?#]|$)/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Community Center' })).toBeVisible({
+      timeout: 15_000,
+    });
+  });
 });
 
 test.describe('Hamburger Menu — Settings Toggles', () => {

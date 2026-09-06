@@ -42,9 +42,16 @@ export const LONE_TABLE_MINUTES = 10;
 
 /**
  * An `opening` feeder is being filled by the fleet on purpose; the controller
- * promotes it at two seated and abandons an empty one at three minutes. A
- * horse alone on one younger than this is waiting for a partner the fleet is
- * about to seat, not sitting at a dead table.
+ * promotes it at two seated and abandons an empty one at six minutes (raised
+ * from three on 2026-09-05 - three was shorter than one worst-case fleet
+ * cycle, so the feeder was closed before the fleet could fill it). A horse
+ * alone on one younger than this is waiting for a partner the fleet is about
+ * to seat, not sitting at a dead table.
+ *
+ * This grace stays at THREE and is not the abandon window. It answers a
+ * different question - how long a horse that already sat waits alone before
+ * standing - and a horse seated on a feeder is exactly what stops the
+ * controller abandoning it, so tying the two together would be circular.
  */
 export const OPENING_FEEDER_GRACE_MINUTES = 3;
 

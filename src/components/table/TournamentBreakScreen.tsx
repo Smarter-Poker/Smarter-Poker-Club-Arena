@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { serverNow } from '../../utils/serverClock';
 import './TournamentBreakScreen.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -124,7 +125,7 @@ export function TournamentBreakScreen({
   const countingDown = phase === 'counting_down';
   const [displayTime, setDisplayTime] = useState(() =>
     breakEndsAtMs
-      ? Math.max(0, Math.round((breakEndsAtMs - Date.now()) / 1000))
+      ? Math.max(0, Math.round((breakEndsAtMs - serverNow()) / 1000))
       : breakTimeRemaining
   );
 
@@ -146,7 +147,7 @@ export function TournamentBreakScreen({
     }
     const read = () =>
       breakEndsAtMs
-        ? Math.max(0, Math.round((breakEndsAtMs - Date.now()) / 1000))
+        ? Math.max(0, Math.round((breakEndsAtMs - serverNow()) / 1000))
         : Math.max(0, breakTimeRemaining);
     setDisplayTime(read());
     // Without an absolute end time all we can do is count the seeded value

@@ -10,7 +10,7 @@ const migration = read(
   'supabase/migrations/20260906141022_daily_mission_rerolls_cost_one_diamond.sql'
 );
 const replayHardening = read(
-  'supabase/migrations/20260906145129_daily_mission_reroll_replay_proof_and_current_projection.sql'
+  'supabase/migrations/20260906151803_daily_mission_reroll_replay_proof_and_current_projection.sql'
 );
 const pageObject = read('tests/e2e/support/DailyMissionsPage.ts');
 const production = read('tests/e2e/production-daily-missions.spec.ts');

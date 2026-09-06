@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  LEADERBOARD PAGE — Club + Global Rankings with Real-Time Updates
+ *  LEADERBOARD PAGE: Club + Global Rankings with Real-Time Updates
  * ═══════════════════════════════════════════════════════════════════════════════
  * Rebuilt 2026-08-19 on the real-profit pipeline:
  * - Profit / hands / tournaments / ROI values are real (snapshot-delta RPCs).
@@ -383,7 +383,7 @@ export default function LeaderboardPage() {
   }, []);
 
   // AUDIT 2026-08-19: a realtime channel on `promotion_leaderboards` used to live
-  // here. This view reads player_stats, so that channel could never fire for it —
+  // here. This view reads player_stats, so that channel could never fire for it;
   // it was dead weight that made the page look more live than it was. Freshness
   // comes from the 30s poll plus the debounced HAND_COMPLETED bus event above.
   // A channel on player_stats itself is deliberately NOT used: it changes on

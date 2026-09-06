@@ -40,6 +40,9 @@ import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import type { HandRecord, HandHistoryLoadState } from './HandHistoryPanel';
 import HandDetailView from '../handdetail/HandDetailView';
 import CardImage, { CardBack } from './CardImage';
+import { replayRabbitOffer } from './replayRabbitOffer';
+import { useRabbitHuntReveal } from './useRabbitHuntReveal';
+import type { RabbitHuntRevealResult } from './RabbitHunt';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayShowdownRow } from '../../utils/handReplay';
 import './HandDetailModal.css';
@@ -64,6 +67,15 @@ export interface HandDetailModalProps {
   initialHandId?: string | null;
   /** False for a spectator: the empty state says so instead of claiming the table has no hands. */
   viewerSeated?: boolean;
+  /**
+   * P5 2026-09-05: buy the rabbit hunt for the hand you are LOOKING AT, not
+   * only the one the felt just offered. Charges and answers in one call, the
+   * same path the felt tile uses. Absent (the share route, the lobby) the
+   * block never renders - there is no table to ask.
+   */
+  onRabbitHunt?: (handNumber: number) => Promise<RabbitHuntRevealResult>;
+  /** The signed-in player; without one there is nobody to bill. */
+  rabbitUserId?: string | null;
   /** Open the full animated replay of THE HAND PASSED IN, not "the last hand". */
   onReplay?: (hand: HandRecord) => void;
   /** Open the share modal for THE HAND PASSED IN. */
@@ -181,6 +193,88 @@ function BoardsBlock({ model, isBomb }: { model: ReplayModel; isBomb: boolean })
   );
 }
 
+/**
+ * THE HUNT YOU MISSED AT THE FELT (P5, 2026-09-05).
+ *
+ * The felt shows the Rabbit Hunt for 2250-2650ms; the engine holds the offer
+ * for ninety seconds. This is the rest of that window, and it is the one
+ * thing the 2026-09-05 competitive research found ClubWPT Gold doing that we
+ * did not.
+ *
+ * The cards it buys go ONLY to the buyer, exactly as at the felt (Dan
+ * 2026-08-25: "These should ONLY APPEAR TO THE PLAYER WHO CLICKED") - they
+ * are rendered here, in this player's own modal, and are in no broadcast.
+ * `useRabbitHuntReveal` is the same single-flight purchase the tile makes, so
+ * a double tap cannot bill twice and an already-bought hand re-shows free.
+ */
+function RabbitHuntReplayBlock({
+  hand,
+  model,
+  onRabbitHunt,
+  userId,
+}: {
+  hand: HandRecord;
+  model: ReplayModel;
+  onRabbitHunt: (handNumber: number) => Promise<RabbitHuntRevealResult>;
+  userId: string | null | undefined;
+}) {
+  const offer = replayRabbitOffer({
+    handNumber: hand.handNumber,
+    timestamp: hand.timestamp,
+    boards: model.boards,
+  });
+  const { reveal, isRevealing, hasRevealed, cards } = useRabbitHuntReveal({
+    onReveal: (n) => onRabbitHunt(n ?? hand.handNumber),
+    userId,
+  });
+
+  // Nothing left to sell, a re-run, or past the engine's window - and nothing
+  // already bought that we should keep showing.
+  if (!offer.show && !hasRevealed) return null;
+
+  return (
+    <section className="hdm-rabbit" aria-label="Rabbit Hunt">
+      <header className="hdm-section-head">
+        <span>Rabbit Hunt</span>
+        {hasRevealed ? null : (
+          <span className="hdm-section-count">
+            {offer.cardsUnseen} Card{offer.cardsUnseen === 1 ? '' : 's'} Unseen
+          </span>
+        )}
+      </header>
+      {hasRevealed ? (
+        <div className="hdm-board hdm-rabbit__cards">
+          <span className="hdm-board__badge">Would Have Come</span>
+          <span className="hdm-board__cards">
+            {cards.map((c, i) => (
+              <CardImage
+                key={i}
+                /* The reveal's rank is a plain string off the wire; the board
+                   renderer wants the deck's own union. The server only ever
+                   sends real ranks, and a bad one would render as a missing
+                   image rather than throw, so this narrows rather than
+                   validates. */
+                card={c as unknown as Parameters<typeof CardImage>[0]['card']}
+                size="xs"
+                className="hdm-card--rabbit"
+              />
+            ))}
+          </span>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="hdm-rabbit__btn"
+          onClick={() => void reveal(hand.handNumber)}
+          disabled={isRevealing}
+        >
+          {isRevealing ? 'Revealing...' : 'Show What Would Have Come'}
+        </button>
+      )}
+    </section>
+  );
+}
+
 function SummaryRow({
   row,
   isYou,
@@ -255,6 +349,8 @@ export function HandDetailModal({
   viewerSeated = true,
   onReplay,
   onShare,
+  onRabbitHunt,
+  rabbitUserId,
 }: HandDetailModalProps) {
   /* THE SUBJECT IS A HAND, NOT A POSITION. `hands` is newest-first and can be
      replaced while the modal is open (a hand finishing behind it). Holding an
@@ -633,6 +729,16 @@ export function HandDetailModal({
               </div>
 
               <BoardsBlock model={model} isBomb={isBomb} />
+
+              {onRabbitHunt ? (
+                <RabbitHuntReplayBlock
+                  key={hand.id}
+                  hand={hand}
+                  model={model}
+                  onRabbitHunt={onRabbitHunt}
+                  userId={rabbitUserId}
+                />
+              ) : null}
 
               {showdownRows.length === 0 ? (
                 <div className="hdm-empty hdm-empty--inline">

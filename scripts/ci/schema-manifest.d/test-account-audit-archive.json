@@ -1,0 +1,16 @@
+{
+  "_owner": "agent/codex/fix/phase4-postdeploy-closure",
+  "_comment": "20260906021500 preserves synthetic actors' complete audit rows before guarded account deletion.",
+  "tables": ["ca_test_account_audit_archive"],
+  "functions": ["fn_guard_test_account_audit_archive", "fn_sweep_test_account_after_audit_archive"],
+  "columns": {
+    "ca_test_account_audit_archive": [
+      "audit_id",
+      "actor_id",
+      "actor_email",
+      "audit_row",
+      "archived_at",
+      "archive_reason"
+    ]
+  }
+}

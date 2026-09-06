@@ -237,6 +237,108 @@ export function recordWsSocketCapRefusal(): void {
   wsSocketCapRefusals++;
 }
 
+// ─── Renewing trust, for every socket (Phase 5 audit, 2026-09-06) ──────────
+//
+// Phase 5 gave the TABLE sockets a periodic re-check and a per-user cap, and
+// gave the channel socket neither - the same "two of the three sockets"
+// mistake Phase 4 wrote a paragraph warning about, made one phase later. The
+// channel socket carries club presence, the lobby, hand replay and
+// FINANCIAL_UPDATE: a revoked session went on receiving a player's wallet
+// balance and ledger entries indefinitely.
+//
+// So the mechanism lives here, where both servers already share their auth
+// vocabulary, and each one hands it its own connection map. One implementation,
+// one set of rules, no chance of the two drifting.
+
+/** The shape either server's connection state must expose to be re-checkable. */
+export interface ReauthableConnection {
+  /** The bearer this socket opened with. Empty means "cannot re-check". */
+  token: string;
+  /** Epoch ms of the next due re-check; staggered at connect. */
+  nextReauthAt: number;
+}
+
+export interface ReauthSweepOptions<W, C extends ReauthableConnection> {
+  now: number;
+  connections: Map<W, C>;
+  /** Which socket this is, for the refusal counter. */
+  path: (conn: C) => 'table' | 'multi' | 'channel';
+  verify: (token: string) => Promise<TokenVerdict | null>;
+  /** Close a socket that GoTrue definitively rejected. */
+  close: (ws: W, code: number, reason: string) => void;
+  intervalMs: number;
+  maxPerSweep: number;
+  closeCode: number;
+}
+
+/**
+ * Re-ask GoTrue about live sockets, a few at a time.
+ *
+ * THE RULES, all three of which are the point rather than the detail:
+ *
+ *   - ONLY a definitive rejection closes. `unavailable` - GoTrue down, a 5xx,
+ *     a timeout - is never a refusal, or a bad minute for auth signs every
+ *     player out at once.
+ *   - The next slot is claimed BEFORE the await, so a slow GoTrue cannot make
+ *     one socket re-checked on every sweep until it answers.
+ *   - A socket that vanished while we were asking is left alone.
+ */
+export function runReauthSweep<W, C extends ReauthableConnection>(
+  opts: ReauthSweepOptions<W, C>
+): void {
+  let checked = 0;
+  for (const [ws, conn] of opts.connections) {
+    if (checked >= opts.maxPerSweep) break;
+    if (opts.now < conn.nextReauthAt) continue;
+    if (!conn.token) continue; // nothing to re-check (test fixtures)
+    checked++;
+    conn.nextReauthAt = opts.now + opts.intervalMs;
+    void opts
+      .verify(conn.token)
+      .then((verdict) => {
+        if (!opts.connections.has(ws)) return; // gone while we asked
+        const denial = tokenDenial(verdict);
+        if (!denial) return; // still good
+        if (denial.denied !== 'invalid') return; // could not ask: not a refusal
+        recordWsAuthRefusal(opts.path(conn), 'invalid');
+        recordWsReauthClose();
+        opts.close(ws, opts.closeCode, authRejectionReason(denial.code));
+      })
+      .catch(() => {
+        /* an unreachable auth service is never a refusal */
+      });
+  }
+}
+
+/**
+ * How many sockets one account already holds in this map.
+ *
+ * The caller refuses the ARRIVING socket when this reaches the cap - never
+ * evicts an existing one, which may be carrying a hand, and which would hand a
+ * client stuck in a connect loop a way to knock its own player off the felt.
+ */
+export function socketsHeldBy<W, C extends { userId: string }>(
+  connections: Map<W, C>,
+  userId: string
+): number {
+  let held = 0;
+  for (const c of connections.values()) {
+    if (c.userId === userId) held++;
+  }
+  return held;
+}
+
+/**
+ * A re-auth deadline spread across the period rather than all on the hour.
+ *
+ * Sockets that connect in the same second would otherwise come due in the same
+ * second one period later, forever - a self-organising thundering herd against
+ * GoTrue, built by the mechanism meant to protect the platform.
+ */
+export function staggeredReauthAt(intervalMs: number): number {
+  return Date.now() + Math.floor(Math.random() * intervalMs);
+}
+
 export function wsTrustLimitPrometheusLines(): string[] {
   return [
     '# HELP poker_ws_reauth_closed_total Live sockets closed because a periodic re-check found the session no longer valid. A trickle is normal (someone signed out with a tab open); a step change is a revocation loop',

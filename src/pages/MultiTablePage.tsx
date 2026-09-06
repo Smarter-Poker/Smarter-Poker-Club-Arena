@@ -24,6 +24,7 @@ import React, {
 } from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
+import { serverNow } from '../utils/serverClock';
 import { isSitOutUrgent } from '../lib/sitOutDeadline';
 import LiveTablesBar from '../components/table/LiveTablesBar';
 import {
@@ -1533,7 +1534,12 @@ export default function MultiTablePage() {
 
   // 2026-08-15 multi-table fix: the tab countdown ticks off the server
   // deadline. One 1s clock runs only while some table has a live turn.
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  /* THE ENGINE'S CLOCK (2026-09-06). Every deadline this drives -
+     turnDeadlineMs, sitOutDeadlineMs, the decision deadline - was stamped by
+     the engine, and the table's own ring has read them through serverNow()
+     since Phase 5. The tab strip did not, so the surface a multi-tabler
+     actually watches was the one still showing device-clock seconds. */
+  const [nowMs, setNowMs] = useState(() => serverNow());
   /**
    * Dan 2026-08-21: "ALL CLOCKS, COUNTDOWNS AND WARNINGS NEED TO STILL BE
    * WORKING ALL AT THE SAME TIME." The 1s clock used to run only while some
@@ -1555,7 +1561,7 @@ export default function MultiTablePage() {
   );
   useEffect(() => {
     if (!anyTurnLive) return;
-    const iv = setInterval(() => setNowMs(Date.now()), 1000);
+    const iv = setInterval(() => setNowMs(serverNow()), 1000);
     return () => clearInterval(iv);
   }, [anyTurnLive]);
   const secondsLeft = useCallback(

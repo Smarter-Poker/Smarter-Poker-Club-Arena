@@ -47,6 +47,10 @@ import {
   authRejectionReason,
   tokenDenial,
   recordWsAuthRefusal,
+  recordWsSocketCapRefusal,
+  runReauthSweep,
+  socketsHeldBy,
+  staggeredReauthAt,
   type TokenVerdict,
 } from './wsHelpers.js';
 import { channelHub } from '../hub/ChannelHub.js';
@@ -57,6 +61,9 @@ import {
   MIN_CLIENT_PROTOCOL,
   clientProtocolVersion,
   refuseProtocol,
+  REAUTH_INTERVAL_MS,
+  REAUTH_MAX_PER_SWEEP,
+  MAX_SOCKETS_PER_USER,
 } from './EngineWebSocketServer.js';
 
 /** B13: how long a club-membership verdict may be reused. */
@@ -91,6 +98,16 @@ interface ConnectionState {
   lastPongAt: number;
   inboundCount: number;
   inboundWindowStart: number;
+  /**
+   * Phase 5 audit (2026-09-06). This socket had no periodic re-check and no
+   * per-user cap: Phase 5 gave both to the TABLE sockets and skipped this one,
+   * the same "two of the three sockets" gap Phase 4 wrote a warning about. It
+   * matters here as much as there - this socket carries FINANCIAL_UPDATE, so a
+   * revoked session went on receiving a player's wallet balance and ledger
+   * entries indefinitely.
+   */
+  token: string;
+  nextReauthAt: number;
 }
 
 // Inbound message discriminated union
@@ -192,7 +209,7 @@ export class ChannelWebSocketServer {
           }
           const userId = auth.userId;
           this.wss.handleUpgrade(req, socket, head, (ws) => {
-            this.onUpgraded(ws, userId);
+            this.onUpgraded(ws, userId, token);
           });
         })
         .catch(() => {
@@ -233,13 +250,31 @@ export class ChannelWebSocketServer {
 
   // ─── Upgrade aftermath ─────────────────────────────────────────────────────
 
-  private onUpgraded(ws: WebSocket, userId: string): void {
+  private onUpgraded(ws: WebSocket, userId: string, token = ''): void {
+    if (socketsHeldBy(this.connections, userId) >= MAX_SOCKETS_PER_USER) {
+      // The ARRIVING socket is refused, never an existing one evicted - see
+      // the table server's cap for why. 4429 is the code this client already
+      // backs off on.
+      recordWsSocketCapRefusal();
+      try {
+        ws.close(CLOSE_RATE_LIMITED, 'too_many_sockets');
+      } catch {
+        try {
+          ws.terminate();
+        } catch {
+          /* nothing further to do */
+        }
+      }
+      return;
+    }
     const conn: ConnectionState = {
       userId,
       ws,
       lastPongAt: Date.now(),
       inboundCount: 0,
       inboundWindowStart: Date.now(),
+      token,
+      nextReauthAt: staggeredReauthAt(REAUTH_INTERVAL_MS),
     };
     this.connections.set(ws, conn);
     channelHub.addConnection(userId, ws);
@@ -552,6 +587,31 @@ export class ChannelWebSocketServer {
 
   private heartbeatSweep(): void {
     const now = Date.now();
+    /* Trust has to be renewed here too (audit, 2026-09-06). The SHARED sweep,
+       handed this server's own connection map - the table sockets got this in
+       Phase 5 and this one did not, and this is the socket carrying
+       FINANCIAL_UPDATE. Runs first so a socket whose session died is closed on
+       this sweep rather than pinged and closed on the next. */
+    runReauthSweep({
+      now,
+      connections: this.connections,
+      path: () => 'channel' as const,
+      verify: (t) => verifyToken(t),
+      close: (ws, code, reason) => {
+        try {
+          ws.close(code, reason);
+        } catch {
+          try {
+            ws.terminate();
+          } catch {
+            /* ignore */
+          }
+        }
+      },
+      intervalMs: REAUTH_INTERVAL_MS,
+      maxPerSweep: REAUTH_MAX_PER_SWEEP,
+      closeCode: CLOSE_AUTH_FAILED,
+    });
     for (const [ws, conn] of this.connections) {
       if (now - conn.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
         try {

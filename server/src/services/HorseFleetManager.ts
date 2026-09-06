@@ -53,6 +53,13 @@ import { stakeForBand } from './StableHandController.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { allocateBuyers, FULL_TABLE_BUYER_PROBE, type BuyerPool } from './HorseBuyerAllocation.js';
 import {
+  doorsFromRows,
+  isStillSeatable,
+  staleSnapshotLine,
+  unknownDoors,
+  type DoorSnapshot,
+} from './HorseStaleTable.js';
+import {
   applyRejoinFloor,
   buildRejoinConstraints,
   EMPTY_REJOIN_CONSTRAINTS,
@@ -165,6 +172,13 @@ interface CycleBeat {
   /** 1 when the disabled-games read failed or came back short; the cycle then
    *  treated NO game as disabled (fail open), and the beat has to say so. */
   disabledGamesReadFailed: number;
+  /** Cluster tables this cycle refused to seat into because the door re-read
+   *  (see HorseStaleTable) found them no longer seatable - closed or breaking
+   *  since the open-table list was read at the top of the cycle. */
+  staleTablesSkipped: number;
+  /** 1 when the door re-read failed or came back short; the cycle then seated
+   *  on the top-of-cycle snapshot exactly as before (fail open). */
+  staleDoorReadFailed: number;
   /** One entry per opening feeder this cycle reached: what the fleet counted,
    *  what it selected, what it seated and why it skipped the rest. */
   openingFeeders: OpeningFeederDiag[];
@@ -683,6 +697,8 @@ export class HorseFleetManager {
       withheldTables: 0,
       disabledGameTables: 0,
       disabledGamesReadFailed: 0,
+      staleTablesSkipped: 0,
+      staleDoorReadFailed: 0,
       openingFeeders: [],
       rows: [],
     };
@@ -1755,13 +1771,83 @@ export class HorseFleetManager {
       const unsittable = new Map<SitSkipReason, number>();
       const bump = (m: Map<SitSkipReason, number>, r: SitSkipReason) =>
         m.set(r, (m.get(r) ?? 0) + 1);
-      const noteSkip = (diag: OpeningFeederDiag | null, r: SitSkipReason | 'lone_seat_refused') => {
+      const noteSkip = (
+        diag: OpeningFeederDiag | null,
+        r: SitSkipReason | 'lone_seat_refused' | 'stale_snapshot'
+      ) => {
         if (diag) diag.skipped[r] = (diag.skipped[r] ?? 0) + 1;
       };
       /* NO LONE HORSE (2026-09-05): empty cluster tables the fleet left empty
          this cycle because only one horse could sit there. Counted once per
          table per cycle and logged once per cycle - see HorseLoneTable.ts. */
       let loneSeatRefused = 0;
+      /* THE TABLE MAY BE GONE BY THE TIME WE SEAT INTO IT (2026-09-05).
+         The open-table list above was read ONCE at the top of this cycle, and
+         a cycle takes 57 to 118 seconds (its own line). The controller closes
+         an opening feeder nobody came to and breaks a table the whole time,
+         so by the time this loop commits a horse the row it is holding can
+         already be `closed` - and `fn_refuse_seat_on_closed_cluster_table`
+         then raises TABLE_CLOSING, fifteen times in twenty-five minutes on
+         2026-09-05. Each one is a horse spent on a door that was shut.
+
+         ONE batched read per cycle, as late as the loop allows: it is issued
+         lazily on the first seat this cycle actually attempts, so a cycle
+         that seats nobody asks nothing, and a cycle that does asks once and
+         gets the freshest answer the loop can act on. Not one query per
+         table, and never one per horse.
+
+         Fail OPEN on an error or a short read, like the bankroll, rejoin and
+         disabled-game loaders: a bad read must not stop the floor filling.
+         See HorseStaleTable. */
+      const clusterIdsToSeed = [
+        ...new Set(tablesToSeed.filter((t) => t.cluster_id).map((t) => t.id)),
+      ];
+      let doors: DoorSnapshot = unknownDoors();
+      let doorsAsked = false;
+      let staleTablesSkipped = 0;
+      /* NO BARE EARLY EXIT IN HERE, deliberately - it is latched with a flag
+         and an `if` instead of returning. The contract pinned by
+         HorseFleetPolicyWiring ("a withheld cycle is a skipped seating list,
+         NOT an early return") is asserted by reading this method's SOURCE for
+         the bare keyword, so a closure that exits early reads exactly like a
+         cycle that bailed out, and so does a comment that spells it. */
+      const readDoorsOnce = async (): Promise<void> => {
+        const first = !doorsAsked;
+        doorsAsked = true;
+        if (first && clusterIdsToSeed.length > 0) {
+          try {
+            const doorPage = await fetchAllRows<{
+              id: string;
+              lifecycle?: string | null;
+              status?: string | null;
+            }>(
+              (cursor, want) => {
+                let q = supabase
+                  .from('tables')
+                  .select('id, lifecycle, status')
+                  .in('id', clusterIdsToSeed)
+                  .order('id', { ascending: true })
+                  .limit(want);
+                if (cursor) q = q.gt('id', cursor);
+                return q;
+              },
+              { label: 'HorseFleet.doorRecheck', maxRows: 50_000 }
+            );
+            if (doorPage.complete) {
+              doors = doorsFromRows(doorPage.rows);
+            } else {
+              beat.staleDoorReadFailed = 1;
+              console.warn(
+                '[HorseFleet] door re-read incomplete - seating this cycle on the ' +
+                  'top-of-cycle snapshot (fail open); a closed table may refuse a buy-in.'
+              );
+            }
+          } catch (err) {
+            beat.staleDoorReadFailed = 1;
+            reportError(err, 'HorseFleet.door_recheck_failed');
+          }
+        }
+      };
       for (const table of tablesToSeed) {
         let diag: OpeningFeederDiag | null = null;
         try {
@@ -2358,6 +2444,24 @@ export class HorseFleetManager {
             continue;
           }
 
+          /* THE DOOR, RE-READ (2026-09-05). Everything above ran on the
+             snapshot; this is the last moment before a horse is committed, so
+             this is where the cluster table's CURRENT lifecycle and status are
+             asked for - once for the whole cycle, on the first seat it
+             attempts. A table that went `breaking` or `closed` while this
+             cycle was walking is skipped here, and its horses are still
+             unspent: nothing below ran, so their exposure, table count and the
+             seat budget are untouched and the next table in this same loop can
+             take them. See HorseStaleTable. */
+          if (table.cluster_id && cleared.length > 0) {
+            await readDoorsOnce();
+            if (!isStillSeatable(doors, table.id)) {
+              staleTablesSkipped++;
+              noteSkip(diag, 'stale_snapshot');
+              continue;
+            }
+          }
+
           // Seat each horse at an ACTUAL empty seat
           let seated = 0;
           for (const { horse, seatNumber, verdict } of cleared) {
@@ -2519,6 +2623,10 @@ export class HorseFleetManager {
             `low VPIP; ${floorUnaffordableDropped} holding a rejoin floor their roll cannot ` +
             `cover. Neither is tried, neither is counted as a buyer.`
         );
+      }
+      beat.staleTablesSkipped = staleTablesSkipped;
+      if (staleTablesSkipped > 0) {
+        console.log(staleSnapshotLine(staleTablesSkipped));
       }
       if (loneSeatRefused > 0) {
         console.log(
@@ -2927,6 +3035,8 @@ export class HorseFleetManager {
             overrun_ticks: this.overrunTicks,
             disabled_game_tables: beat.disabledGameTables,
             disabled_games_read_failed: beat.disabledGamesReadFailed,
+            stale_tables_skipped: beat.staleTablesSkipped,
+            stale_door_read_failed: beat.staleDoorReadFailed,
             opening_feeders: beat.openingFeeders,
           },
         },

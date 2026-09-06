@@ -199,7 +199,55 @@ between three files is a decision rather than a cleanup.
 clocks added to `the-break-clocks-agree`. Six mutations, six reds. Full
 reasoning: `docs/changelog/2026-09-06-realtime-phase-5-trust-and-limits.md`.
 
-**Verification.** Recorded below when it has been read from production.
+**Verification.** Client half published as `9685001e6`. The engine half is
+BUILT AND STAGED on engine-01 and not yet running: the deploy workflow's run
+for `d3c1855ed` reported success with the cutover SKIPPED, because the next
+`:55` break was 3123s away and beyond that run's budget - its own step is named
+"DID NOT DEPLOY - this run shipped nothing" and it says in the summary "do not
+treat this tick as proof the engine is running your code". The running image is
+still `7a1d19390` (#3224), and `poker_ws_reauth_closed_total` and
+`poker_ws_socket_cap_refused_total` are absent from engine-01's Prometheus
+while `poker_ws_protocol_refused_total` (Phase 4) is present - which is the
+same statement read from the other end. It cuts over at the next window with no
+rebuild. **A green deploy run is not a deployment**; the image tag on the
+running container is.
+
+## Phase 5 audit (2026-09-06) - what a deep pass found after "done"
+
+Two defects, both the shape this programme keeps finding: a mechanism that is
+correct where you look and absent where you do not.
+
+1. **Re-auth and the cap reached two of the three sockets.** `/ws/channel` had
+   neither - and Phase 4 had written the warning for exactly this ("a version
+   on two of the three sockets is worse than none") one phase earlier. It is
+   the worst of the three to have missed: that socket carries club presence,
+   the lobby, hand replay and `FINANCIAL_UPDATE`, so a revoked session went on
+   receiving a player's wallet balance and ledger entries indefinitely. The
+   mechanism moved into `server/src/transport/wsHelpers.ts`
+   (`runReauthSweep`, `socketsHeldBy`, `staggeredReauthAt`) and both servers
+   call it with their own map, label and numbers - one implementation, three
+   sockets, no way for two to drift.
+
+2. **The clock was unified and its callers were not.** Phase 5 folded two
+   `serverNow()` implementations into one and pinned five consumers; eleven
+   OTHER places were still subtracting `Date.now()` from an instant the engine
+   or Postgres stamped. The worst was `MultiTablePage`: the table's own turn
+   ring read the server clock and the multi-table tab strip did not, so a
+   skewed device showed two different countdowns for one hand and the player
+   believed the one they were looking at. Also `inAnnouncedRestart()` - the
+   Phase 4 window itself, which a fast phone would leave early and escalate
+   its ladder into the very restart the window exists to wait out - the
+   insurance countdown on a decision that spends chips, the disconnect grace
+   clock whose comment read "no drift under clock skew", the break countdown,
+   the tournament clock and the sit-out clock.
+
+**A law that only reads source is half a law.** `trustIsRenewedAndBounded` was
+all source pins, and a mutation making the per-user cap count every socket in
+the room - the cap then refuses everybody - left all twenty-one green. It now
+drives the real helpers as well (`LAW 8`), and `there-is-one-server-clock`
+gained a scan that finds any known server stamp measured against `Date.now()`.
+Twenty mutations, twenty reds. Full reasoning:
+`docs/changelog/2026-09-06-realtime-phase-5-deep-audit.md`.
 
 ## Phase 4 - Restart handoff and protocol (2026-09-05)
 

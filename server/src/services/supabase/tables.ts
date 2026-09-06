@@ -498,12 +498,79 @@ export async function syncTournamentChips(tableId: string, tournamentId: string)
 }
 
 /**
- * Update table player count and status
+ * The PostgREST `or=` filter that matches a `tables` row ONLY when the seat
+ * count or the status differs from what we are about to write.
+ *
+ * Exported for the same reason `timeBankChangedFilter` is: the failure mode
+ * that costs something is a filter matching NOTHING when a value HAS changed,
+ * which would silently drop a real recount. Every column therefore carries its
+ * `is.null` arm — PostgREST `neq` is SQL three-valued logic, so a NULL column
+ * does NOT satisfy `neq` and the row would be filtered out.
+ *
+ * `status` is quoted because it is text; the engine only ever writes
+ * running/waiting/closed, but an unquoted reserved character in a PostgREST
+ * filter value changes what the filter means rather than failing loudly.
+ */
+export function tableCountChangedFilter(next: {
+  current_players?: number;
+  status?: string;
+}): string {
+  const clauses: string[] = [];
+  if (next.current_players !== undefined) {
+    clauses.push(`current_players.neq.${next.current_players}`, 'current_players.is.null');
+  }
+  if (next.status !== undefined) {
+    clauses.push(`status.neq."${next.status}"`, 'status.is.null');
+  }
+  return clauses.join(',');
+}
+
+/**
+ * Update table player count and status.
+ *
+ * ═══ THE RECOUNT THAT WROTE A NUMBER IT ALREADY HELD (2026-09-06) ═══════════
+ *
+ * This is the AUTHORITATIVE recount at the end of every hand
+ * (ServerTableEngineSettlement step 15), and it wrote unconditionally:
+ * 1,604,259 calls since the 09-02 stats reset, every one of them producing a
+ * heap tuple, a WAL record, index entries, two AFTER-UPDATE triggers, and — the
+ * expensive part — a logical decode of a 154-COLUMN row for Supabase Realtime.
+ *
+ * `tables` is the widest published table on the platform, and apply_rls costs
+ * roughly one dynamic cast plus one column-privilege check per column: measured
+ * 2026-09-06 against live WAL, 28.4 ms of database time PER CHANGE, 221 changes
+ * per 15 seconds, 6,277 ms — 27% of all realtime decoding, on a poller that was
+ * already spending 22.9 s of CPU per 15 s of WAL and therefore falling behind.
+ *
+ * And it almost never had anything to say. `current_players` is the count of
+ * seats with `left_at IS NULL` and `status` is derived from it, so both are
+ * constant across every hand at a table whose seats did not change. Measured on
+ * production the same day, across all 472 open tables:
+ *
+ *     current_players already equal to the live seat count   468 of 472
+ *     status already agreeing with the seat count            445 of 472
+ *     recounts that would write nothing                      93.4%
+ *
+ * The guard is a FILTER, not a diff held in memory — the same shape, and for
+ * the same reasons, as `timeBankChangedFilter` (2026-09-02). If neither column
+ * differs from what is stored, zero rows match, Postgres writes nothing, and no
+ * WAL record exists to decode. There is no cache to go stale, it is correct
+ * across an engine restart, and it is correct against a concurrent writer
+ * because the comparison happens inside the UPDATE, against the current row.
+ * A recount that genuinely moved still writes exactly as it did before.
+ *
+ * This does NOT weaken the recount. The caller still counts seats in the
+ * database every hand and still passes the authoritative number; what changes
+ * is that agreeing with the stored value is no longer a write.
  */
 export async function updateTableStatus(
   tableId: string,
   playerCount: number,
   status: string = 'running'
 ): Promise<void> {
-  await supabase.from('tables').update({ current_players: playerCount, status }).eq('id', tableId);
+  await supabase
+    .from('tables')
+    .update({ current_players: playerCount, status })
+    .eq('id', tableId)
+    .or(tableCountChangedFilter({ current_players: playerCount, status }));
 }

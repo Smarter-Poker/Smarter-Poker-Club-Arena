@@ -82,11 +82,44 @@ describe('TablePage wiring', () => {
     expect(i).toBeLessThan(j);
   });
 
-  it('subscribes to hole-card UPDATEs, not just INSERTs', () => {
-    const block = sliceCall(src, 'useMasterBusChannel({');
-    expect(block).toContain("table: 'table_hole_cards'");
-    expect(block).toContain("event: '*'");
-    expect(block).not.toContain("event: 'INSERT'");
+  /* ═══ THE PIN MOVED WITH THE MECHANISM (2026-09-06) ═══════════════════════
+     This used to assert the hole-card Realtime subscription listened on '*'
+     rather than 'INSERT', because the discard re-push is an UPSERT and so
+     arrives as an UPDATE - subscribing to INSERT only left the third card on
+     the felt for the rest of the hand.
+
+     The bug is the same and still worth pinning; the transport is not. Hole
+     cards now arrive as a private USER_EVENT frame on the engine socket
+     (PR #3032), and `table_hole_cards` has left the supabase_realtime
+     publication because decoding it cost 44% of everything the WAL poller
+     did and was delivered to nobody. So the pin asks the same question of the
+     new path: does a re-push of the hero's cards still reach the handler? */
+  it('routes hole-card frames from the engine socket into the hole-card handler', () => {
+    expect(src).toContain("ev.kind === 'hole_cards'");
+    expect(src).toContain('handleHoleCardPayload({ new: ev.row })');
+  });
+
+  it('no longer carries a table_hole_cards realtime subscription', () => {
+    // Re-adding one would put 716 changes per 15 seconds back through
+    // apply_rls for an audience of zero. The socket already delivered them.
+    expect(src).not.toContain("table: 'table_hole_cards'");
+    expect(src).not.toContain('useMasterBusChannel');
+  });
+
+  it('the engine re-push sends the socket frame before it writes the row', () => {
+    const dealing = read('server/src/engine/ServerTableEngineDealing.ts');
+    const send = dealing.indexOf("kind: 'hole_cards'");
+    const write = dealing.indexOf("supabase.rpc('insert_hole_cards'");
+    expect(send).toBeGreaterThan(-1);
+    expect(write).toBeGreaterThan(-1);
+    // Sent first, so a slow database never delays the cards on screen - and so
+    // the frame still goes out if the write later fails.
+    expect(send).toBeLessThan(write);
+    // The reconnect / RESYNC re-push goes through that same function, which is
+    // what makes the socket path survive a dropped connection mid-hand.
+    expect(dealing).toContain(
+      'await this.persistHoleCardsWithRetry(userId, entry.seat, entry.cards)'
+    );
   });
 
   it('submits the translated index, never the clicked one', () => {

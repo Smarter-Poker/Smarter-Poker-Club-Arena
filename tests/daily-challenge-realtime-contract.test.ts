@@ -27,7 +27,18 @@ const privateBroadcast = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260902060000_daily_mission_private_broadcast.sql'),
   'utf8'
 );
+const certificationRepair = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260906093500_daily_mission_certification_repairs.sql'
+  ),
+  'utf8'
+);
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const completionListener = readFileSync(
+  resolve(__dirname, '../src/components/notifications/ChallengeToastListener.tsx'),
+  'utf8'
+);
 const broadcastHook = readFileSync(
   resolve(__dirname, '../src/hooks/useMasterBusBroadcastChannel.ts'),
   'utf8'
@@ -100,7 +111,10 @@ describe('Daily Missions realtime and render-isolation contract', () => {
   it('coalesces event bursts and repairs dropped events with a visible-tab cursor read', () => {
     expect(page).toContain('scheduleRealtimeRefresh');
     expect(page).toContain("loadChallenges(userId, 'silent')");
-    expect(page).toContain('announcedRevision === null && !initialLoadSettledRef.current');
+    expect(page).toContain('dashboardRequestsInFlightRef.current > 0');
+    expect(page).toContain('queuedRealtimeRevisionRef.current = Math.max');
+    expect(page).toContain('queuedUnversionedRealtimeRef.current = true');
+    expect(page).toContain('shouldRefreshQueuedDailyMissionRealtime(');
     expect(page).toContain('announcedRevision <= dashboardRevisionRef.current');
     expect(page).toContain('dailyChallengeService.getDashboardRevision(userId)');
     expect(page).toContain('revision > dashboardRevisionRef.current');
@@ -108,6 +122,22 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     expect(page).toContain('setTimeout(reconcileRevision, 15_000)');
     expect(page).not.toContain("'CHALLENGE_PROGRESS_UPDATED'");
     expect(page).not.toMatch(/setInterval\s*\(/);
+  });
+
+  it('broadcasts completion once on a private topic and retains account-delete safety', () => {
+    expect(certificationRepair).toContain('users receive own daily mission completion broadcasts');
+    expect(certificationRepair).toContain("'daily_mission_completed'");
+    expect(certificationRepair).toContain("'daily-mission-completion:' || v_user_id::text");
+    expect(certificationRepair).toContain('OLD.completed IS NOT TRUE');
+    expect(certificationRepair).toContain('NEW.completed IS TRUE');
+    expect(certificationRepair).toContain(
+      'EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = v_user_id)'
+    );
+    expect(completionListener).toContain(
+      'channelName: userId ? `daily-mission-completion:${userId}` : null'
+    );
+    expect(completionListener).toContain("event: 'daily_mission_completed'");
+    expect(completionListener).not.toContain("'postgres_changes'");
   });
 
   it('keeps the live clock outside page state and inside subscribing leaves', () => {

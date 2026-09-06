@@ -15,17 +15,22 @@ function normalizeTarget(target: string): string {
 }
 
 function routePatternMatches(pattern: string, target: string): boolean {
-  const normalizedPattern = pattern === '*' ? '*' : normalizeTarget(pattern);
+  // Route syntax may contain an optional-parameter `?`; unlike a navigation
+  // target, that character is not the start of a query string.
+  const normalizedPattern =
+    pattern === '*' ? '*' : pattern.startsWith('/') ? pattern : `/${pattern}`;
   if (normalizedPattern === '*') return false;
   const source = normalizedPattern
     .split('/')
+    .filter(Boolean)
     .map((segment) => {
-      if (!segment) return '';
-      if (segment === '*') return '.*';
-      if (segment.startsWith(':')) return '[^/]+';
-      return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (segment === '*') return '/.*';
+      if (segment.startsWith(':')) {
+        return segment.endsWith('?') ? '(?:/[^/]+)?' : '/[^/]+';
+      }
+      return `/${segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`;
     })
-    .join('/');
+    .join('');
   return new RegExp(`^${source}/?$`).test(normalizeTarget(target));
 }
 

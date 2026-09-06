@@ -59,7 +59,12 @@ Known and deliberately NOT in this phase: the felt names a horse by
 disagree on a horse's name. That is a platform naming question (engine
 `loadSeatedPlayers`), not a jackpot one; recorded for the naming law's owner.
 
-## Phase 2 of 6 - A hit is never lost
+## Phase 2 of 6 - A hit is never lost **[SHIPPED 2026-09-06]**
+
+Record: `docs/changelog/2026-09-06-bbj-phase-2-a-hit-is-never-lost.md`.
+Migration `20260906152329_an_unpayable_jackpot_share_is_parked_not_lost`
+applied. 2.6 (the post-deploy drain proof) is the one item that can only be
+done after the merge is live; it is run and recorded there.
 
 | #   | Item                                                                                                                                                                                                            |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

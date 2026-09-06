@@ -21,7 +21,7 @@ vi.mock('./supabase.js', () => ({
 }));
 vi.mock('./supabase/bbj.js', () => ({
   processBBJPayout: vi.fn(),
-  setBBJPayoutQueueWriter: vi.fn(),
+  setBBJPayoutQueue: vi.fn(),
 }));
 vi.mock('./errorReporter.js', () => ({ reportError: (...a: unknown[]) => reportError(...a) }));
 vi.mock('./financialAlerts.js', () => ({

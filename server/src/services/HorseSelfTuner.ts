@@ -47,8 +47,15 @@ export { accumulatePlayStats, type HandRow, type PlayStats } from './HorsePlaySt
 // 2. DIAGNOSE + 3. ADJUST — pure, unit-tested
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Winning-player benchmark bands (6-max cash). Outside the band = leak. */
-const BENCH = {
+/**
+ * Winning-player benchmark bands (6-max cash). Outside the band = leak.
+ *
+ * EXPORTED so TheTunerDoesNotFightTheFloor.law.test.ts can pin the numbers
+ * (2026-09-06). When a mass tightening shows up, the tempting fix is to widen
+ * this band; the right fix is to stop feeding it play the horse was REQUIRED
+ * to make. The law fails if the band moves.
+ */
+export const BENCH = {
   vpip: { lo: 0.19, hi: 0.32 },
   pfrOfVpip: { lo: 0.55, hi: 1.0 },
   foldTo3Bet: { lo: 0.35, hi: 0.62 },
@@ -493,11 +500,39 @@ async function loadPlayRows(
         )
         .gte('day', sinceDay)
         .in('format', ['cash', 'hu_cash'])
-        // Full unique key: (horse_user_id, day, format). See the note on the
-        // real-nets loop - an unstable page order drops rows.
+        /*
+         * ═══ THE FLOOR IS NOT A LEAK (2026-09-06, measured) ═══════════════
+         *
+         * A floored table stands a seat up after ten hands under its
+         * maintain_percent_min, horses included (10.5), so the brain widens
+         * toward it (vpipFloorMul) and a horse there is REQUIRED to play
+         * 40-70% of hands. Of the 72 cash tables the fleet played on
+         * 2026-09-05, 15 were floored at a mean of 49.3%.
+         *
+         * The tuner judges VPIP against the 19-32% winning-player band, and
+         * `tightness` is a GLOBAL dial. So a horse obeying a 60% floor was
+         * measured as "too loose", tightened everywhere, and then re-widened
+         * by the floor at the same table - while its play at ORDINARY tables
+         * got nittier every night. The loop is visible in the log:
+         *
+         *   2026-09-03  104 of 429 tightened for "too loose", fleet VPIP .277
+         *   2026-09-04  180 of 386                              fleet VPIP .312
+         *   2026-09-05  216 of 383  (56%)                       fleet VPIP .338
+         *
+         * That is the rake bug in a different input: a blended number judged
+         * against an unblended band. Floored rows are still written and are
+         * still on the panel; they are simply never fed to a band that
+         * assumes the horse was free to fold.
+         */
+        .eq('floored', false)
+        // Full unique key: (horse_user_id, day, format, floored). `floored`
+        // is ordered even though the filter pins it, because the key is what
+        // the paging law checks and a filter is not a key. See the note on
+        // the real-nets loop - an unstable page order drops rows.
         .order('horse_user_id', { ascending: true })
         .order('day', { ascending: true })
         .order('format', { ascending: true })
+        .order('floored', { ascending: true })
         .range(offset, offset + 999);
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;

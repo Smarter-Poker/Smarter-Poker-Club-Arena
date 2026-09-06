@@ -40,6 +40,8 @@ export async function logHandHistory(params: {
    * writeHandFacts for why the rule could not bite without it.
    */
   nitGame?: boolean;
+  /** The table's VPIP floor in percent (0 = none). See recordHorseHandReviews. */
+  vpipFloor?: number;
   tournamentId?: string;
   handNumber: number;
   gameVariant: string;
@@ -361,6 +363,9 @@ export async function logHandHistory(params: {
       // and the button places the blinds for horse_daily_play.
       rakeAmount: params.rakeAmount,
       buttonSeat: params.buttonSeat ?? null,
+      // 2026-09-06: a floored table's play is measured separately - the
+      // horse is required to be loose there.
+      vpipFloor: params.vpipFloor ?? 0,
     });
   }
 

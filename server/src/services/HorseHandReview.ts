@@ -73,6 +73,16 @@ export interface HorseReviewInput {
   /** Button seat, so HorsePlayStats can place the blinds the way the tuner's
    *  hand_history path always has. Absent = no blind reconstruction. */
   buttonSeat?: number | null;
+  /**
+   * The table's VPIP floor in percent, 0 when it has none (2026-09-06).
+   *
+   * A floored table stands a seat up after ten hands under the floor, horses
+   * included, so the brain widens toward it (HorseLogic.vpipFloorMul) and a
+   * horse there is REQUIRED to play 40-70% of hands. Its VPIP is therefore
+   * not comparable with the 19-32% winning-player band, and the frequency
+   * rows it produces are keyed apart so nothing judges the two together.
+   */
+  vpipFloor?: number;
 }
 
 const FLAG_BB = 20;
@@ -775,7 +785,7 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
       acc.rakeBB += (rakeShares.get(p.userId) ?? 0) / bb;
       netAcc.set(key, acc);
     }
-    accumulateHorsePlay(input, day, format);
+    accumulateHorsePlay(input, day, format, Number(input.vpipFloor ?? 0) > 0);
     touchHorseSeats(input);
     if (netAcc.size > NET_ACC_MAX_KEYS) {
       // An outage has backed us up far beyond a realistic key space
@@ -872,7 +882,12 @@ const playAcc = new Map<string, PlayStats>();
 
 const playEnabled = (): boolean => process.env.HORSE_PLAY_ROLLUP_ENABLED !== 'false';
 
-function accumulateHorsePlay(input: HorseReviewInput, day: string, format: string): void {
+function accumulateHorsePlay(
+  input: HorseReviewInput,
+  day: string,
+  format: string,
+  floored: boolean
+): void {
   try {
     if (!playEnabled()) return;
     const tracked = new Set<string>();
@@ -898,7 +913,7 @@ function accumulateHorsePlay(input: HorseReviewInput, day: string, format: strin
     const delta = accumulatePlayStats([row], tracked, new Map());
     for (const [horse, d] of delta) {
       if (d.hands === 0) continue;
-      const key = `${horse}|${day}|${format}`;
+      const key = `${horse}|${day}|${format}|${floored ? 'f' : 'n'}`;
       const acc = playAcc.get(key);
       if (!acc) {
         playAcc.set(key, { ...d });
@@ -938,6 +953,9 @@ export interface HorsePlayRow {
   horse_user_id: string;
   day: string;
   format: string;
+  /** the table carried a VPIP floor, so these frequencies are not comparable
+   *  with the winning-player bands (2026-09-06) */
+  floored: boolean;
   hands: number;
   vpip: number;
   pfr: number;
@@ -957,11 +975,12 @@ export function drainHorsePlay(max: number = NET_BATCH_MAX): HorsePlayRow[] {
   const rows: HorsePlayRow[] = [];
   for (const [key, s] of playAcc) {
     if (rows.length >= max) break;
-    const [horse, day, format] = key.split('|');
+    const [horse, day, format, fl] = key.split('|');
     rows.push({
       horse_user_id: horse,
       day,
       format,
+      floored: fl === 'f',
       hands: s.hands,
       vpip: s.vpip,
       pfr: s.pfr,
@@ -987,7 +1006,7 @@ async function flushHorsePlay(): Promise<void> {
   if (error) {
     reportError(new Error(error.message), 'HorseHandReview.playFlushRpc');
     for (const row of rows) {
-      const key = `${row.horse_user_id}|${row.day}|${row.format}`;
+      const key = `${row.horse_user_id}|${row.day}|${row.format}|${row.floored ? 'f' : 'n'}`;
       const acc = playAcc.get(key);
       const back: PlayStats = {
         hands: row.hands,

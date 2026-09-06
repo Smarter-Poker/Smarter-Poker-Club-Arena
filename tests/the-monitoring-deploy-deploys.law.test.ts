@@ -73,6 +73,8 @@ describe('the verify step can reach the box', () => {
     expect(WF).toContain('echo "Host $HETZNER_HOST"');
     expect(WF).toContain('echo "  IdentityFile ~/.ssh/id_deploy"');
     expect(WF).toContain('node scripts/ci/check-alert-rules-match.mjs');
+    expect(WF).toContain('docker compose up -d --force-recreate prometheus');
+    expect(WF).toContain('rebinding its file mounts');
   });
 });
 

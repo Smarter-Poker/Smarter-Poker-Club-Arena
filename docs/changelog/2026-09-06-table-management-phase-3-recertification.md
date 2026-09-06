@@ -29,6 +29,12 @@ registered-tournament guards, row evidence, and shared UUID behavior.
 - The original database law read only the original migration, so a later
   redefinition of the command gateway could silently remove Phase 3 while its
   tests remained green.
+- Terminal receipt fields were assembled consistently by the gateway, but the
+  receipt table did not enforce that the outcome, status, UUID, reviewed
+  version, and before/after versions agreed with one another.
+- A command or reconciliation request whose network promise never settled
+  could wait forever, so the nominally bounded retry path was not bounded in
+  elapsed time.
 
 ## Repairs
 
@@ -47,11 +53,19 @@ registered-tournament guards, row evidence, and shared UUID behavior.
   while still allowing independent games to be managed concurrently.
 - Added chronological migration coverage that certifies the latest installed
   command definition and the one authenticated mutation door.
+- Added a validated database constraint that rejects contradictory terminal
+  receipt evidence and client validation that checks outcome/status agreement
+  plus the exact reviewed contract version.
+- Added a 15-second response bound to both command execution and receipt
+  reconciliation. A timed-out request follows the same identical-UUID recovery
+  path, preserving exactly-once behavior.
 
 ## Production Proof
 
 - Migration `20260906132537` was applied and recorded in the production
   migration ledger.
+- Migration `20260906135711` was applied and recorded, and its receipt-evidence
+  constraint is validated in production.
 - The installed gateway contains the UUID advisory lock before receipt lookup.
 - `authenticated` can execute the command gateway and cannot execute either
   lifecycle implementation helper.
@@ -59,6 +73,9 @@ registered-tournament guards, row evidence, and shared UUID behavior.
   `players_registered` rejections, replayed the identical request, returned
   `idempotency_conflict` for cross-game UUID reuse, and left no probe receipts
   after rollback.
+- A negative production probe proved that contradictory terminal evidence is
+  rejected by the table constraint. Valid guarded commands still wrote three
+  durable receipts inside the probe transaction and zero survived rollback.
 
 Full client, server, build, merge, and published provenance are recorded in the
 Phase 3 completion summary after the automated release chain finishes.

@@ -235,16 +235,16 @@ misfiring (see Part 5 TASK A).
 
 ## 4.1 Metrics, before and now
 
-| metric                                  | session start            | **13:20 UTC now** | how                                                   |
-| --------------------------------------- | ------------------------ | ----------------- | ----------------------------------------------------- |
-| open drift incidents                    | 323                      | **126**           | `ca_drift_incidents where resolved_at is null`        |
-| critical                                | 135                      | **42**            | same, `severity='critical'`                           |
-| resolved total                          | ~1,264                   | **1,901**         | same, `resolved_at is not null`                       |
-| NEW incidents in last 3h                | n/a                      | **40**            | `detected_at > now()-interval '3 hours'`              |
-| unresolved financial_alerts             | 894 claimed / 379 actual | **278**           | `financial_alerts where not resolved`                 |
-| bomb pots with no award units, last 90m | 3/hour                   | **2 of 178**      | see Part 9                                            |
-| banned repair crons                     | 2 (mine)                 | **0**             | `cron.job where jobname ilike '%bomb%' or '%roster%'` |
-| collusion signals preserved             | 104                      | **104**           | `ca_collusion_signals`                                |
+| metric                                  | session start            | **13:20 UTC now**                               | how                                                   |
+| --------------------------------------- | ------------------------ | ----------------------------------------------- | ----------------------------------------------------- |
+| open drift incidents                    | 323                      | **108** (126 before TASK A)                     | `ca_drift_incidents where resolved_at is null`        |
+| critical                                | 135                      | **42**                                          | same, `severity='critical'`                           |
+| resolved total                          | ~1,264                   | **1,901**                                       | same, `resolved_at is not null`                       |
+| NEW incidents in last 3h                | n/a                      | **40, of which 17 were the TASK A false alarm** | `detected_at > now()-interval '3 hours'`              |
+| unresolved financial_alerts             | 894 claimed / 379 actual | **278**                                         | `financial_alerts where not resolved`                 |
+| bomb pots with no award units, last 90m | 3/hour                   | **2 of 178**                                    | see Part 9                                            |
+| banned repair crons                     | 2 (mine)                 | **0**                                           | `cron.job where jobname ilike '%bomb%' or '%roster%'` |
+| collusion signals preserved             | 104                      | **104**                                         | `ca_collusion_signals`                                |
 
 **The board went UP from 91 to 126 while the handoff was being written.** That is
 not regression in Phase 1; it is a live inflow, and Part 5 TASK A is the cause of
@@ -298,64 +298,62 @@ _measured_.
 
 ---
 
-## TASK A — STOP THE FALSE PAGES TO DAN'S PHONE (do this first)
+## TASK A — SHIPPED 2026-09-06 13:35 UTC. VERIFY IT HELD.
 
-**This is Dan's newest instruction and it is also the largest source of new
-incidents.**
+**This was the top task and it is done.** Migration
+`20260906132947_only_a_critical_that_needs_a_person_reaches_a_person`, pinned by
+`tests/only-a-critical-reaches-a-person.law.test.ts`.
 
-### What is already established (do not re-derive)
+### What it fixed
 
-`fn_ca_escrow_on_close` filed **17 of the 40 new incidents in three hours**, up
-to 2,375.00 each. I checked three of them against the real tournaments:
+**A1. `fn_ca_escrow_on_close` judged a postcondition as a precondition.** It is
+an AFTER UPDATE trigger on `tournaments` firing the instant status becomes
+COMPLETED, and at that instant **the prizes have not been paid yet**, so
+`prize_balance` is still the whole pool. It reported that pool as chips left in
+escrow, up to 2,375.00 a time, roughly six an hour.
 
-| tournament                             | gross_in | prize_out | **prize_balance** | payout rows | paid    |
-| -------------------------------------- | -------- | --------- | ----------------- | ----------- | ------- |
-| NLH Heads-Up 100 Turbo `a569c989-...`  | 2500.00  | 2375.00   | **0.00**          | 3           | 2375.00 |
-| NLH Heads-Up 50 Turbo `53e50799-...`   | 1600.00  | 1520.00   | **0.00**          | 4           | 1520.00 |
-| PLO4 Heads-Up 100 Turbo `337d43f1-...` | 1500.00  | 1425.00   | **0.00**          | 2           | 1425.00 |
+Measured, its ten most recent: **8 of 10 now read `prize_balance 0.00`**, and
+three checked against `tournament_payouts` had `prize_out` equal to the sum of
+their payout rows exactly. Only 2 of 10 were genuinely stuck (20 Chip Spin PLO4
+55.20, NLH Heads-Up 20 Turbo 217.36).
 
-**Every one is fully paid and escrow is empty.** The detector reads the escrow
-balance at the _instant of close_, before the reconciler settles, and never
-re-checks. Its own text admits it: _"the reconciler settles what is owed, and
-what is left after that is the..."_.
+It now stamps `closed_at` and `close_note` and raises nothing.
+**`fn_ca_escrow_vs_counter_check` still detects genuinely stuck escrow**, after
+settlement has had time to happen. No sweep was added.
 
-### The two fixes
+**A2. `fn_ca_incident_notify` pushed on warnings, on 0.00, and on resolutions.**
+Three gates now sit on the push only, checked in this order: a resolution never
+pages (checked first, or a resolved critical slips through), anything below
+critical never pages, a zero never pages. The incident is still filed, the board
+still shows everything, and the reason a push was withheld is recorded as
+`ca_incident_events.kind = 'notify_withheld'`.
 
-**A1. The detector must re-check before it files.** `fn_ca_escrow_on_close`
-should either defer its judgement until after the reconciler has run for that
-tournament, or re-read `prize_balance` and file nothing when it is zero. Fix the
-detector; do not add a sweep to clean up after it.
-
-**A2. The notifier must respect Dan's rule.** In `fn_ca_incident_notify`
-(read it first: `select prosrc from pg_proc where proname='fn_ca_incident_notify'`),
-notifications currently go out for warnings, and for **resolutions** (`v_kind`
-can be `'resolved'`). Dan wants:
-
-- **critical only** — not warning, not info
-- **never a resolution** — `v_kind = 'resolved'` must not reach `fn_raise_notification`
-- **never a zero** — `COALESCE(inc.discrepancy_amount,0) = 0` must not page
-
-Keep writing the `ca_incident_events` row in every case so the board still shows
-everything. Only the push to the phone is suppressed.
-
-**ACCEPTANCE:**
+### Verify it held
 
 ```sql
--- after the fix, over the next hour:
-select count(*) from ca_drift_incidents
-where source='fn_ca_escrow_on_close' and detected_at > now()-interval '1 hour';
--- expect 0 for tournaments that paid correctly
-
-select kind, count(*) from ca_incident_events
-where at > now()-interval '1 hour' group by 1;
--- 'notified' rows should be few and all critical with a non-zero amount
+select
+ (select count(*) from ca_drift_incidents where resolved_at is null
+    and source='fn_ca_escrow_on_close')                                   escrow_close_open,
+ (select count(*) from ca_drift_incidents where source='fn_ca_escrow_on_close'
+    and detected_at > now()-interval '2 hours')                           escrow_close_new_2h,
+ (select count(*) from pg_proc where proname='fn_ca_escrow_on_close'
+    and prosrc ~ 'fn_ca_raise_drift_incident')                            close_still_raises,
+ (select count(*) from ca_incident_events where kind='notify_withheld')   withheld,
+ (select count(*) from ca_incident_events where kind='notified'
+    and at > now()-interval '2 hours')                                    pages_2h;
 ```
 
-**FAILURE MODE:** if you suppress too much, a real critical stops paging. Prove
-the opposite direction too: file a test incident at critical with a non-zero
-amount and confirm it still notifies.
+**Healthy:** `escrow_close_open` 0 · `escrow_close_new_2h` 0 ·
+`close_still_raises` **0** · `withheld` climbing · `pages_2h` small and every one
+a non-zero unresolved critical.
 
----
+**Measured immediately after the migration (13:35 UTC):** 0 · 0 · 0 · 0 · 0, and
+the board fell 126 to 108.
+
+**IF `pages_2h` IS ZERO FOR A DAY, CHECK THE OTHER DIRECTION.** The gates could
+be drawn too tight. The migration proves a real critical carrying 12,345.67 chips
+still delivers, but prove it again against live data before assuming silence
+means health. Silence and no monitoring are the same observation.
 
 ## TASK B — LAND THE STRANDED COMMIT
 
@@ -852,9 +850,8 @@ assuming it is yours.
 
 1. Run **Part 9.1** and **Part 9.2**. Write the numbers down. They are your
    baseline and they are already 15 minutes stale.
-2. **TASK A** — stop the false pages. Read `fn_ca_escrow_on_close` and
-   `fn_ca_incident_notify`, fix both, ship. This is Dan's newest instruction and
-   the largest source of new incidents.
+2. **TASK A is SHIPPED.** Run its verification block and confirm it held,
+   including the other direction (a real critical must still page).
 3. **TASK B** — cherry-pick `6f1a454f93` onto a new branch off `main`.
 4. **TASK C** — verify the engine deployed, through the database.
 5. **TASK D** — only if C passes, attach the bomb guard with a guarded, lock-timed

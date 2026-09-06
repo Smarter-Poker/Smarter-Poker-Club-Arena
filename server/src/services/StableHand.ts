@@ -659,12 +659,26 @@ export const MTT_PERSONA_MIX: Array<[MttPersona, number]> = [
   ['mtt_late_reg', 0.2],
 ];
 
+/**
+ * A HORSE PLAYS FOUR TABLES (Dan 2026-09-02, verbatim: "THEY SHOULD BE PLAYING
+ * 4 TABLES AT ONCE"). This table used to hand grinders 4, regulars and weekend
+ * players 3, mixers and night owls 2 - a texture nobody asked for that tagged
+ * 837 of 1,000 horses BELOW the number Dan set, and the sit verdict then
+ * refused them a third or fourth chair (`sit_cap`) while feeders opened on the
+ * strength of their count and were abandoned empty. Measured 2026-09-06: 175
+ * horses seated at cash, 1.66 tables each, two at four.
+ *
+ * The persona still shapes WHEN a horse plays (its day, its cap, its session
+ * jitter) and HOW it buys in; it no longer shapes how many tables it may hold.
+ * Every cash-mode persona is the platform ceiling. Migration
+ * 20260906144448 brought the live tags to the same value.
+ */
 export const MAX_TABLES_BY_PERSONA: Record<CashPersona, number> = {
   grinder: 4,
-  regular: 3,
-  mixer: 2,
-  night_owl: 2,
-  weekend_heavy: 3,
+  regular: 4,
+  mixer: 4,
+  night_owl: 4,
+  weekend_heavy: 4,
 };
 /** A tourney-only horse holds one MTT slot and never a second table. */
 export const MAX_TABLES_TOURNEY_ONLY = 1;

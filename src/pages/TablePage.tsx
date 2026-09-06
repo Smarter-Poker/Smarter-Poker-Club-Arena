@@ -1993,13 +1993,32 @@ export default function TablePage({
   const USE_ENGINE_WS =
     (import.meta as unknown as { env: Record<string, string | undefined> }).env
       ?.VITE_USE_ENGINE_WS !== '0';
+  /* MOVED ABOVE THE SOCKET (Realtime Phase 4 audit, 2026-09-05). This hook was
+     called two thousand lines further down, which was fine while nothing but
+     the countdown needed it. The transport needs it now: a player who sits
+     down at :54 never receives the break FRAME - it was broadcast at :53 to
+     the sockets that existed then - so the only way their reconnect ladder can
+     know a restart is coming is the database row this hook reads on mount.
+     It takes no arguments and depends on nothing between here and where it
+     used to sit, so this is a pure move. Its docblock is at the refs below. */
+  const {
+    maintenanceBreak,
+    ingestMaintenanceEvent,
+    refreshFromDb: refreshMaintenanceBreak,
+  } = useMaintenanceBreak();
+
   const {
     snapshot: rawEngineSnapshot,
     status: engineWsStatus,
     lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
     lastUserEvent: engineLastUserEvent,
-  } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
+  } = useEngineTableState(tableId || undefined, {
+    enabled: USE_ENGINE_WS,
+    /* The break's end, from the database, handed to the reconnect ladder so it
+       waits out a restart it may never have been told about over a socket. */
+    scheduledRestartUntil: maintenanceBreak.active ? maintenanceBreak.breakEndsAtMs : null,
+  });
 
   // RABBIT HUNT FREEZE 2026-08-25
   const [rabbitHuntFreezeEnd, setRabbitHuntFreezeEnd] = useState<number>(0);
@@ -3491,11 +3510,6 @@ export default function TablePage({
    * database for a browser that loaded during the outage. See
    * hooks/useMaintenanceBreak.ts.
    */
-  const {
-    maintenanceBreak,
-    ingestMaintenanceEvent,
-    refreshFromDb: refreshMaintenanceBreak,
-  } = useMaintenanceBreak();
   // Read inside the 4404 effect without making it re-run on every countdown
   // tick, which would reset the consecutive-close counter every second.
   const maintenanceBreakRef = useRef(maintenanceBreak);

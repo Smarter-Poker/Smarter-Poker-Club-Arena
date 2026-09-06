@@ -2430,3 +2430,15 @@
     box-shadow: 0 10px 24px rgb(0 0 0 / 78%);
   }
 }
+
+/* FINAL MOBILE TOUCH LOCK — this must remain after every compact cabinet
+   variant above. The old last winner painted these controls at 29px and left
+   only 32px of reliable hit-test reach between neighbouring rows. */
+@media (max-width: 900px) {
+  .club-lobby-command-top .lobby-controls .game-bar__type,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    min-height: 44px;
+    height: 44px;
+  }
+}

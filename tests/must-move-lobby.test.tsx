@@ -33,6 +33,8 @@ import {
   type CashGameLobby,
 } from '../src/services/cashGameLobby';
 
+const read = (rel: string) => readFileSync(resolve(__dirname, '..', rel), 'utf8');
+
 const GAME = 'g-1';
 const MAIN1 = 't-main1';
 const MAIN2 = 't-main2';
@@ -241,19 +243,61 @@ describe('the words', () => {
 });
 
 describe('the box in the corner', () => {
-  it('reads players, tables and the hero place, and offers SEAT CHANGE when available', async () => {
+  /**
+   * THE BAR LEFT THE FELT (Dan 2026-09-05): "THE LOBBY RECTANGLE, NEEDS TO
+   * MOVE TO ... WHERE THE '4 SQUARE' BOX IS IN THE ACTION PILL AREA. AND SAY
+   * 'LOBBY' ON IT. (4 SQUARE BUTTON SHOULD BE TO THE LEFT OF IT)."
+   *
+   * These used to assert the MUST MOVE / PLAYERS / TABLES bar in the corner.
+   * The pins move with the mechanism rather than being weakened: the corner
+   * now carries ONLY actions, and the LOBBY button is pinned where it went -
+   * in MultiTablePage's action pill row, right of the 4-square button.
+   */
+  it('carries only the actions now, and no readout bar over the seats', async () => {
     mocks.rpc.mockResolvedValue({ data: lobby(), error: null });
     const onOpen = vi.fn();
     const onChange = vi.fn();
-    render(<CashClusterHUD gameId={GAME} onOpenLobby={onOpen} onSeatChange={onChange} />);
-    await waitFor(() => expect(screen.getByText('10')).toBeTruthy());
-    expect(screen.getByText('3')).toBeTruthy();
-    expect(screen.getByText('#2')).toBeTruthy();
+    const { container } = render(
+      <CashClusterHUD gameId={GAME} onOpenLobby={onOpen} onSeatChange={onChange} />
+    );
+    await waitFor(() => expect(screen.getByText('Seat Change')).toBeTruthy());
+    expect(container.querySelector('.cash-cluster-hud-bar')).toBeNull();
+    expect(screen.queryByText('Players')).toBeNull();
+    expect(screen.queryByText('Tables')).toBeNull();
     fireEvent.click(screen.getByText('Seat Change'));
     expect(onChange).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: /Open Must Move Lobby/ }));
-    expect(onOpen).toHaveBeenCalled();
     expect(mocks.rpc).toHaveBeenCalledWith('fn_cash_game_lobby', { p_game_id: GAME });
+  });
+
+  it('puts LOBBY in the action pill row, right of the 4-square button, on cluster tables only', () => {
+    const page = read('src/pages/MultiTablePage.tsx');
+    /* The button exists, says the one word, and asks THIS table for its
+       lobby over the bus - the strip cannot reach the felt's own state. */
+    expect(page).toMatch(/className="mtp-lobby-btn"/);
+    expect(page).toMatch(/masterBus\.emit\('OPEN_MUST_MOVE_LOBBY', \{ tableId: activeTableId \}\)/);
+    /* Only a table that belongs to a must-move game has a lobby to open. */
+    expect(page).toMatch(/\{activeClusterId && \(\s*<button/);
+    /* 4-square first in the markup, LOBBY after it: source order IS the
+       left-to-right order Dan asked for. */
+    expect(page.indexOf('tile-toggle-btn--shifted')).toBeLessThan(
+      page.indexOf('className="mtp-lobby-btn"')
+    );
+    const css = read('src/pages/MultiTablePage.css');
+    /* Both sit in the same fixed band; LOBBY takes the outer position and the
+       4-square steps left of it by exactly its width plus the gap. */
+    expect(css).toMatch(/\.mtp-lobby-btn \{[\s\S]*?right: 6px/);
+    expect(css).toMatch(/\.tile-toggle-btn--shifted \{\s*right: calc\(6px \+ 62px \+ 6px\)/);
+    /* And the felt does not draw it any more. */
+    expect(read('src/components/table/CashClusterHUD.tsx')).not.toMatch(
+      /className="cash-cluster-hud-bar"/
+    );
+  });
+
+  it('opens this table lobby and no other when the strip asks for it', () => {
+    const page = read('src/pages/TablePage.tsx');
+    expect(page).toMatch(
+      /useMasterBusSubscription\('OPEN_MUST_MOVE_LOBBY', \(event\) => \{\s*if \(event\.tableId !== tableId\) return;/
+    );
   });
 
   it('shows no button on Main 1, and the list place instead once listed', async () => {
@@ -271,7 +315,7 @@ describe('the box in the corner', () => {
     const { unmount } = render(
       <CashClusterHUD gameId={GAME} onOpenLobby={vi.fn()} onSeatChange={vi.fn()} />
     );
-    await waitFor(() => expect(screen.getByText('10')).toBeTruthy());
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalled());
     expect(screen.queryByText('Seat Change')).toBeNull();
     expect(screen.queryByText(/#\d/)).toBeNull();
     unmount();

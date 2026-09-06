@@ -54,6 +54,10 @@ export type BusEventType =
   // MultiTablePage to open a table as an OBSERVER in a new screen, leaving
   // every screen already open still live. Cap-guarded like every other tab.
   | 'OPEN_OBSERVE_TABLE'
+  // Dan 2026-09-05: the LOBBY button moved off the felt and into the action
+  // pill row beside the 4-square button, which MultiTablePage owns - so the
+  // strip asks the table it is labelling to open its Must Move Lobby.
+  | 'OPEN_MUST_MOVE_LOBBY'
   | 'TABLE_CAP_BLOCKED'
   | 'BALANCE_UPDATED'
   // Had a payload in BusPayloadMap but was missing from this union, so five
@@ -431,6 +435,14 @@ export interface BusPayloadMap {
    * dropped, and never by closing a screen the player is using.
    */
   OPEN_OBSERVE_TABLE: { tableId: string; tableName?: string; stakes?: string };
+  /**
+   * Ask the TablePage showing `tableId` to open its Must Move Lobby. Emitted by
+   * the LOBBY button in the multi-table action strip, which sits beside the
+   * 4-square button and therefore lives in a component that cannot reach the
+   * felt's own state. Addressed by table id so a strip labelling one screen can
+   * never open the lobby of another.
+   */
+  OPEN_MUST_MOVE_LOBBY: { tableId: string };
   /** Dan 2026-08-21: a seat could not be opened because the player is at
    *  the 4-table cap. TournamentAutoSeat turns this into the large popup. */
   TABLE_CAP_BLOCKED: { tableId: string };

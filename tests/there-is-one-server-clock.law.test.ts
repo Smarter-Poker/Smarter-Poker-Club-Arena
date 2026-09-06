@@ -30,6 +30,17 @@
  *   3. Every consumer reads the surviving one.
  *   4. The estimator still corrects for latency in the safe direction - the
  *      2026-08-28 finding, which is the half a merge could quietly lose.
+ *   5. A SERVER-STAMPED DEADLINE IS MEASURED WITH THE SERVER CLOCK. Added by
+ *      the Phase 5 audit (2026-09-06). Unifying the two implementations fixed
+ *      the module; it did not fix the CALLERS, and eleven of them were still
+ *      subtracting `Date.now()` from an instant the engine or Postgres had
+ *      stamped - among them the multi-table tab strip (every turn clock a
+ *      multi-tabler actually watches), the insurance countdown (a timed
+ *      decision that spends chips), the disconnect grace clock, whose comment
+ *      read "no drift under clock skew", and `inAnnouncedRestart()`, the Phase
+ *      4 window that keeps a reconnect ladder from escalating into a restart.
+ *      The table's own ring was correct, so the bug was invisible exactly
+ *      where a player would compare two surfaces and believe the wrong one.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -101,7 +112,7 @@ describe('LAW 3 - every consumer reads the surviving clock', () => {
 
   it('the transport feeds it, so it learns from every frame and not only snapshots', () => {
     const client = readFileSync(join(SRC, 'services', 'EngineStateClient.ts'), 'utf8');
-    expect(client).toMatch(/import \{ noteServerTime \} from '\.\.\/utils\/serverClock'/);
+    expect(client).toMatch(/import \{ noteServerTime[^}]*\} from '\.\.\/utils\/serverClock'/);
     expect(client).toContain('noteServerTime(msg.ts)');
     const mapper = readFileSync(join(SRC, 'utils', 'mapEngineSnapshot.ts'), 'utf8');
     expect(mapper).toContain('recordServerTime(s.server_time_ms)');
@@ -159,5 +170,86 @@ describe('LAW 4 - the estimator still errs the safe way', () => {
     noteServerTime(0);
     noteServerTime(NaN);
     expect(clockOffsetMs()).toBe(0);
+  });
+});
+
+/**
+ * LAW 5 - A SERVER STAMP IS MEASURED WITH THE SERVER CLOCK (audit, 2026-09-06)
+ */
+describe('LAW 5 - server-stamped deadlines use serverNow()', () => {
+  /**
+   * Identifiers that hold an instant somebody ELSE's clock stamped: the engine
+   * (`turnDeadlineMs`, `deadlineAt`, `graceDeadlineMs`, `resume_expected_at`)
+   * or Postgres (`break_ends_at`, `sit_out_at`). Subtracting the device clock
+   * from any of them reports the skew as time the player has, or has lost.
+   */
+  const SERVER_STAMPS = [
+    'turnDeadlineMs',
+    'turnStartTimeMs',
+    'turn_start_time_ms',
+    'sitOutDeadlineMs',
+    'sitOutSince',
+    'sit_out_at',
+    'graceDeadlineMs',
+    'graceDeadline',
+    'deadlineAt',
+    'breakEndsAtMs',
+    'break_ends_at',
+    'restartWindowUntil',
+    'resume_expected_at',
+    'server_time_ms',
+  ];
+
+  const files = everySourceFile(SRC);
+
+  it('no source file measures one against Date.now()', () => {
+    const offences: string[] = [];
+    for (const f of files) {
+      // Comments are where these bugs get DESCRIBED (three of the eleven had a
+      // comment promising the opposite of the code), so read code only. The
+      // clock module itself is the one place Date.now() and a server stamp
+      // legitimately meet - that subtraction IS the offset.
+      if (f.endsWith(join('utils', 'serverClock.ts'))) continue;
+      const code = readFileSync(f, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/\/\/[^\n]*/g, ' ')
+        .replace(/\s+/g, ' ');
+      for (const id of SERVER_STAMPS) {
+        const near = new RegExp(
+          `(?:${id}[\\w.?\\]) ]*(?:-|<=?|>=?|===?)\\s*Date\\.now\\(\\))` +
+            `|(?:Date\\.now\\(\\)\\s*(?:-|<=?|>=?|===?)[\\w.?( ]*${id})`
+        );
+        if (near.test(code)) offences.push(`${relative(ROOT, f)}: ${id}`);
+      }
+    }
+    expect(
+      offences,
+      'a server stamp minus the device clock reports the skew as time the player has'
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['src/pages/MultiTablePage.tsx', 'setNowMs(serverNow())'],
+    ['src/pages/TablePage.tsx', 'insuranceOffer.deadlineAt - serverNow()'],
+    ['src/components/table/InsuranceModal.tsx', 'offer.deadlineAt - serverNow()'],
+    ['src/components/table/DisconnectToast.tsx', 'graceDeadline - serverNow()'],
+    ['src/components/table/MaintenanceBreakScreen.tsx', 'breakEndsAtMs - serverNow()'],
+    ['src/components/table/TournamentBreakScreen.tsx', 'breakEndsAtMs - serverNow()'],
+    ['src/components/tournament/TournamentClock.tsx', 'endsAtMs - serverNow()'],
+    ['src/lib/sitOutDeadline.ts', 'params.now ?? serverNow()'],
+    ['src/hooks/useMaintenanceBreak.ts', 'serverNow() >= s.breakEndsAtMs'],
+    ['src/services/EngineStateClient.ts', 'serverNow() < this.restartWindowUntil'],
+  ])('%s reads the engine clock', (rel, expr) => {
+    expect(readFileSync(join(ROOT, rel), 'utf8')).toContain(expr);
+  });
+
+  it('and the ONE field that could hold either clock holds the server one', () => {
+    /* `breakEndsAtMs` is `Date.parse(break_ends_at)` - a SERVER instant - or,
+       when the row carries only a duration, now + remaining_ms. Building that
+       fallback from Date.now() put two different clocks in one field, and no
+       reader downstream could tell which it had been handed. */
+    const hook = readFileSync(join(SRC, 'hooks', 'useMaintenanceBreak.ts'), 'utf8');
+    expect(hook).toContain('serverNow() + Number(row.remaining_ms ?? 0)');
+    expect(hook).not.toContain('Date.now() + Number(row.remaining_ms');
   });
 });

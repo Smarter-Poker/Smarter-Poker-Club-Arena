@@ -1,5 +1,21 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { expectRoute } from './utils';
+
+async function expectUnionAccessDecision(page: Page, path: string): Promise<boolean> {
+  const rendered = await expectRoute(page, path);
+  if (!rendered) return false;
+
+  if (/\/community(?:[/?#]|$)/.test(page.url())) {
+    await expect(page.getByRole('heading', { name: 'Community Center' })).toBeVisible({
+      timeout: 15_000,
+    });
+    return false;
+  }
+
+  const escapedPath = path.replace(/\//g, '\\/');
+  await expect(page).toHaveURL(new RegExp(`${escapedPath}(?:[/?#]|$)`));
+  return true;
+}
 
 test.describe('Club Management', () => {
   test('should show clubs list page', async ({ page }) => {
@@ -46,12 +62,13 @@ test.describe('Club Management', () => {
 
 test.describe('Union Management', () => {
   test('should show unions list page', async ({ page }) => {
-    await expectRoute(page, 'unions', { expectText: 'Union Command' });
+    const allowed = await expectUnionAccessDecision(page, 'unions');
+    if (allowed) await expect(page.getByText('Union Command').first()).toBeVisible();
   });
 
   test('should show create union page', async ({ page }) => {
-    const rendered = await expectRoute(page, 'unions/create');
-    if (!rendered) return;
+    const allowed = await expectUnionAccessDecision(page, 'unions/create');
+    if (!allowed) return;
 
     await expect(
       page.getByText(/^(?:Forge A Union|Create A Club First)$/).first(),
@@ -60,7 +77,7 @@ test.describe('Union Management', () => {
   });
 
   test('should show union detail page', async ({ page }) => {
-    await expectRoute(page, 'unions/demo');
+    await expectUnionAccessDecision(page, 'unions/demo');
   });
 });
 

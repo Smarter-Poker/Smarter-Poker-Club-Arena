@@ -1,7 +1,18 @@
--- 20260906003931_the_tourney_tag_can_hold_the_one_table_its_own_migration_dec.sql
+-- 20260906004017_the_tourney_tag_can_hold_the_one_table_its_own_migration_dec.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
+--
+-- RENAMED 2026-09-05, FROM 20260906003931 TO 20260906004017. The number is not
+-- a correction of the reservation; it is the number production actually
+-- recorded. supabase_migrations.schema_migrations holds this migration under
+-- version 20260906004017 with this exact name, and 20260906003931 appears
+-- nowhere in the ledger - the version the Supabase apply stamped is the clock
+-- at apply time, not the filename. Left as it was, a fresh apply built from
+-- this repo would run this file A SECOND TIME under a version nothing has
+-- seen, re-running the DROP/ADD constraint cycle and the tourney UPDATE. The
+-- file now names the version the ledger names, so a rebuild skips it exactly
+-- as it should. See docs/changelog/2026-09-05-the-migration-ledger-matches-the-database.md.
 --
 -- WHAT THIS CHANGES, AND WHY
 --

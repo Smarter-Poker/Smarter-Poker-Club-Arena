@@ -1,5 +1,5 @@
 {
-  "entry_gz_kb": 157,
+  "entry_gz_kb": 158,
   "modules": [
     "src/App.tsx",
     "src/components/ConnectionStatusBar.tsx",
@@ -181,6 +181,7 @@
     "src/types/clubRoles.ts",
     "src/utils/avatarGenerator.ts",
     "src/utils/buyIn.ts",
+    "src/utils/cardWords.ts",
     "src/utils/clearUserCaches.ts",
     "src/utils/clubCode.ts",
     "src/utils/clubIdResolver.ts",

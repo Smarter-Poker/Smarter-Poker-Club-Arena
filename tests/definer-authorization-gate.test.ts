@@ -26,6 +26,7 @@ type Verdict = (sql: string, allowlist?: Set<string>, grantSql?: string) => stri
 let unauthorisedWriters: Verdict;
 let anonReadableDefiners: Verdict;
 let unrevokedClones: Verdict;
+let unscopedRosterDefiners: Verdict;
 let clonedFunctions: (sql: string) => string[];
 
 beforeAll(async () => {
@@ -40,6 +41,7 @@ beforeAll(async () => {
   unauthorisedWriters = mod.unauthorisedWriters;
   anonReadableDefiners = mod.anonReadableDefiners;
   unrevokedClones = mod.unrevokedClones;
+  unscopedRosterDefiners = mod.unscopedRosterDefiners;
   clonedFunctions = mod.clonedFunctions;
 });
 
@@ -423,5 +425,120 @@ REVOKE ALL ON FUNCTION public.fn_reader(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_reader(uuid) TO service_role;
 `;
     expect(anonReadableDefiners(sql)).toEqual([]);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  RULE 4: A ROSTER NOBODY CAN BE SCOPED OUT OF (2026-09-06)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * `fn_bbj_unclaimed_shares()` shipped on 2026-09-06 returning EVERY unpaid
+ * bad-beat-jackpot share on the platform - player id, arena name, amount, table,
+ * hand, reason - SECURITY DEFINER, with no REVOKE and no GRANT, so Postgres's
+ * default handed EXECUTE to PUBLIC and every logged-in account inherited it.
+ *
+ * It fell exactly between the rules above. It is a READ, so rule 1 (writers)
+ * never judged it. It is reachable by `authenticated` rather than `anon`, so
+ * rule 2 never judged it either. The live audit caught it fourteen minutes
+ * later, which is a net doing its job AFTER the fact.
+ *
+ * THE DANGEROUS DIRECTION FOR THIS RULE IS CRYING WOLF. Widening rule 2 to
+ * `authenticated` would fail the very many read-only functions a logged-in
+ * player is legitimately allowed to call, and would train everybody to stuff the
+ * allowlist - the harm rule 2's own header warns about. So the pins below are
+ * mostly about what it must NOT flag: an argument list, a scalar return, a body
+ * that asks who is calling, a revoke in the same branch. Only all four
+ * conditions together describe an operator console with no way of knowing who
+ * asked.
+ */
+describe('a roster nobody can be scoped out of', () => {
+  /** The shape that shipped: no arguments, returns a table, no grant written. */
+  const SHIPPED = `
+CREATE OR REPLACE FUNCTION public.fn_bbj_unclaimed_shares()
+RETURNS TABLE(user_id uuid, arena_name text, amount numeric, reason text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+AS $function$
+  SELECT u.user_id, p.arena_name, u.amount, u.reason
+  FROM bbj_unclaimed_shares u JOIN profiles p ON p.id = u.user_id
+  WHERE u.paid_at IS NULL;
+$function$;
+`;
+
+  it('names the function that shipped, in the shape it shipped in', () => {
+    expect(unscopedRosterDefiners(SHIPPED)).toEqual(['fn_bbj_unclaimed_shares']);
+  });
+
+  it('clears it once the migration that closes it is read alongside', () => {
+    // The real fix, 20260906153953. PUBLIC is named as well as the two browser
+    // roles, because revoking a role while PUBLIC still holds EXECUTE reads as
+    // a fix and does nothing.
+    const closed =
+      SHIPPED +
+      '\nREVOKE ALL ON FUNCTION public.fn_bbj_unclaimed_shares() FROM PUBLIC, anon, authenticated;' +
+      '\nGRANT EXECUTE ON FUNCTION public.fn_bbj_unclaimed_shares() TO service_role;';
+    expect(unscopedRosterDefiners(closed)).toEqual([]);
+  });
+
+  it('is not satisfied by revoking the browser roles while PUBLIC still holds it', () => {
+    const halfFixed =
+      SHIPPED +
+      '\nREVOKE ALL ON FUNCTION public.fn_bbj_unclaimed_shares() FROM anon, authenticated;';
+    expect(unscopedRosterDefiners(halfFixed)).toEqual(['fn_bbj_unclaimed_shares']);
+  });
+
+  it('passes a roster the function scopes to its caller itself', () => {
+    // Option 2 of the remedy: a player seeing their OWN parked share. The
+    // function knows who asked, so it is not this rule's shape at all.
+    const scoped = SHIPPED.replace('WHERE u.paid_at IS NULL', 'WHERE u.user_id = auth.uid()');
+    expect(unscopedRosterDefiners(scoped)).toEqual([]);
+  });
+
+  it('passes a function that takes an argument, because an argument can be scoped', () => {
+    // This is the pin that stops the rule becoming "rule 2 for authenticated".
+    // A parameterised read is the ordinary shape of a legitimate logged-in
+    // query and failing those would train everybody to stuff the allowlist.
+    const withArg = SHIPPED.replace(
+      'fn_bbj_unclaimed_shares()',
+      'fn_bbj_unclaimed_shares(p_club_id uuid)'
+    );
+    expect(unscopedRosterDefiners(withArg)).toEqual([]);
+  });
+
+  it('passes a parameterless definer that returns a scalar', () => {
+    // A count, a flag, a name-availability check. It answers one question; it
+    // does not hand back a list of people.
+    const scalar = `
+CREATE OR REPLACE FUNCTION public.fn_bbj_unclaimed_total()
+RETURNS numeric LANGUAGE sql STABLE SECURITY DEFINER
+AS $function$ SELECT COALESCE(SUM(amount), 0) FROM bbj_unclaimed_shares; $function$;
+`;
+    expect(unscopedRosterDefiners(scalar)).toEqual([]);
+  });
+
+  it('catches the SETOF form as well as TABLE(', () => {
+    // RETURNS SETOF composite is the same disclosure written differently, and a
+    // rule that only knew one spelling would be a rule anyone could step around
+    // by accident.
+    const setof = `
+CREATE OR REPLACE FUNCTION public.fn_unpaid_roster()
+RETURNS SETOF public.bbj_unclaimed_shares
+LANGUAGE sql STABLE SECURITY DEFINER
+AS $function$ SELECT * FROM bbj_unclaimed_shares WHERE paid_at IS NULL; $function$;
+`;
+    expect(unscopedRosterDefiners(setof)).toEqual(['fn_unpaid_roster']);
+  });
+
+  it('passes SECURITY INVOKER, which RLS still applies to', () => {
+    // The whole premise of every rule in this file is that DEFINER bypasses
+    // RLS. An INVOKER function is judged by the caller's own policies.
+    const invoker = SHIPPED.replace('SECURITY DEFINER', 'SECURITY INVOKER');
+    expect(unscopedRosterDefiners(invoker)).toEqual([]);
+  });
+
+  it('accepts a written decision, like the three rules above it', () => {
+    // A genuinely public list - a leaderboard, a lobby - is allowed, once
+    // somebody writes down why every row in it is safe for anyone to read.
+    expect(unscopedRosterDefiners(SHIPPED, new Set(['fn_bbj_unclaimed_shares']))).toEqual([]);
   });
 });

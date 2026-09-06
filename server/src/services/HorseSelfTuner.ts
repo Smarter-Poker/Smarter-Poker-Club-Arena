@@ -393,6 +393,25 @@ const TUNER_BOOT_DELAY_MS = 120 * 1000;
 const STUDY_WINDOW_DAYS = 7;
 const MAX_HANDS_TO_STUDY = 120_000;
 const PAGE_SIZE = 1000;
+/**
+ * ═══ THE FLOOR FLAG IS ONLY TRUE FROM THE DAY IT WAS FIRST WRITTEN ══════
+ *
+ * horse_daily_play started being written at 21:05 UTC on 2026-09-05. The
+ * `floored` column arrived with #3246 and its first true row landed at 03:03
+ * UTC on 2026-09-06. Every row written in between - the whole of 2026-09-05
+ * and the first three hours of 2026-09-06 - says `floored = false` for play
+ * that happened at floored tables, because nothing was yet writing anything
+ * else. They cannot be relabelled: the row has no table id.
+ *
+ * MEASURED by the 2026-09-05 daily analysis: the first tuner run AFTER the
+ * floor fix (2026-09-06 08:01) still tightened 123 of 259 horses for "too
+ * loose", because its seven-day window was fed those unlabelled rows. A
+ * `.eq('floored', false)` filter cannot exclude play that was never labelled;
+ * only the calendar can. Rows from before this day are not fed to the bands.
+ * The constant expires by itself: once the window has rolled past it, it
+ * excludes nothing, and it is safe to delete after 2026-09-13.
+ */
+export const FLOORED_TRUSTED_FROM_DAY = '2026-09-06';
 
 let checkTimer: NodeJS.Timeout | null = null;
 let lastRunDate: string | null = null;
@@ -496,20 +515,44 @@ export function fleetQuartile(
 }
 
 /**
- * Load the window's horse_daily_play rows into PlayStats (cash + hu_cash;
- * the tuner is cash-only by design). Returns the set of horses that had rows.
+ * Load the window's horse_daily_play rows into PlayStats (ring cash only; the
+ * tuner is cash-only by design). Returns the set of horses that had rows.
  * A read failure reports and returns an empty set: the hand_history stream
  * then carries the night exactly as it did before this table existed.
+ *
+ * ═══ HEADS-UP IS NOT MEASURED WITH THE SIX-MAX RULER (2026-09-06) ═══════
+ *
+ * This used to load `hu_cash` alongside `cash` into the same accumulator and
+ * hand the blend to BENCH, whose comment says "6-max cash" in its first line.
+ * A winning heads-up player opens 60-80% of hands; the fleet's own hu_cash
+ * VPIP is 41-45%. So every hand of heads-up a horse played pulled its blended
+ * VPIP toward "too loose", and `tightness` is a GLOBAL dial.
+ *
+ * MEASURED by the 2026-09-05 daily analysis, on the 123 horses the
+ * 2026-09-06 run tightened for "too loose": 97 had heads-up rows in the
+ * window, 37 played MORE heads-up than ring, and 21 were INSIDE the band on
+ * their ring-cash play alone - tightened for nothing but the ruler. The same
+ * shape as the floor bug directly below: a blended number judged against an
+ * unblended band.
+ *
+ * Heads-up frequencies are owned by the brain's heads-up overlay (V16 v16Hu,
+ * which widens ranges by seat count at decision time) and are not tuned
+ * here. hu_cash rows stay on the panel and in the real-nets loop further
+ * down, where money is money whatever the seat count.
  */
+export const TUNER_STUDY_FORMAT = 'cash';
+
 async function loadPlayRows(
   into: Map<string, PlayStats>,
   tracked: Set<string>
 ): Promise<Set<string>> {
   const seen = new Set<string>();
   try {
-    const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
+    const windowDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
       .toISOString()
       .slice(0, 10);
+    // The later of the window edge and the day the floor flag became true.
+    const sinceDay = windowDay > FLOORED_TRUSTED_FROM_DAY ? windowDay : FLOORED_TRUSTED_FROM_DAY;
     for (let offset = 0; ; offset += 1000) {
       const { data, error } = await supabase
         .from('horse_daily_play')
@@ -517,7 +560,7 @@ async function loadPlayRows(
           'horse_user_id, format, hands, vpip, pfr, three_bets, three_bet_opps, open_raises, faced_3bets, fold_to_3bets, saw_flop, won_when_saw_flop, post_aggr, post_passive'
         )
         .gte('day', sinceDay)
-        .in('format', ['cash', 'hu_cash'])
+        .eq('format', TUNER_STUDY_FORMAT)
         /*
          * ═══ THE FLOOR IS NOT A LEAK (2026-09-06, measured) ═══════════════
          *
@@ -856,7 +899,16 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         .range(offset, offset + PAGE_SIZE - 1);
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;
-      accumulatePlayStats(data as unknown as HandRow[], tracked, streamed);
+      // The same ruler rule as loadPlayRows: a heads-up hand (two dealt in)
+      // is not measured against the six-max bands. The stream is only the
+      // gap-filler for a horse with no play rows, and it must not hand the
+      // bands the blend the play rows now refuse. (Floored tables cannot be
+      // told apart here - hand_history carries no floor - which is one more
+      // reason the play rows are the primary source.)
+      const ring = (data as unknown as HandRow[]).filter(
+        (h) => Array.isArray(h.players) && h.players.length >= 3
+      );
+      accumulatePlayStats(ring, tracked, streamed);
       fetched += data.length;
       oldestSeen = (data[data.length - 1] as { created_at: string }).created_at;
       if (data.length < PAGE_SIZE) break;

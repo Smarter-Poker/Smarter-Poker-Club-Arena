@@ -30,6 +30,8 @@ const SERVICE_REQUEST_MAX_ATTEMPTS = 5;
 const SERVICE_REQUEST_BASE_DELAY_MS = 500;
 const STALE_FIXTURE_MINIMUM_AGE_MS = 5 * 60_000;
 const STALE_FIXTURE_CLEANUP_LIMIT = 100;
+const PLATFORM_FREEZE_CLEANUP_ATTEMPTS = 37;
+const PLATFORM_FREEZE_CLEANUP_RETRY_MS = 10_000;
 
 function isTransientCleanupError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -204,6 +206,27 @@ export async function callServiceRpc<T>(
   );
 }
 
+async function callGuardedCertificationCleanup(
+  environment: CustomizationCertificationEnvironment,
+  userId: string
+): Promise<void> {
+  for (let attempt = 0; attempt < PLATFORM_FREEZE_CLEANUP_ATTEMPTS; attempt += 1) {
+    const result = await callServiceRpc<JsonObject>(
+      environment,
+      'cleanup_reserved_certification_account',
+      { p_user_id: userId },
+      true
+    );
+    if (result?.success === true) return;
+
+    const reason = String(result?.reason || 'unknown');
+    if (reason !== 'platform_is_frozen' || attempt + 1 === PLATFORM_FREEZE_CLEANUP_ATTEMPTS) {
+      throw new Error(`Guarded certification cleanup refused ${userId}: ${reason}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, PLATFORM_FREEZE_CLEANUP_RETRY_MS));
+  }
+}
+
 export async function listTableStudioStorefrontSkus(
   environment: CustomizationCertificationEnvironment
 ): Promise<StorefrontSku[]> {
@@ -364,7 +387,7 @@ export async function createTemporaryCustomizationAccount(
 async function assertRowsRemoved(
   environment: CustomizationCertificationEnvironment,
   table: string,
-  column: 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id' | 'actor_id',
+  column: 'id' | 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id' | 'actor_id',
   userId: string
 ): Promise<void> {
   const rows = await readServiceRows<{ id?: string }>(
@@ -444,12 +467,7 @@ export async function cleanupStaleTemporaryCustomizationAccounts(
         `Refusing invalid stale certification candidate ${candidate.id || 'unknown'}.`
       );
     }
-    await callServiceRpc<JsonObject>(
-      environment,
-      'cleanup_reserved_certification_account',
-      { p_user_id: candidate.id },
-      true
-    );
+    await callGuardedCertificationCleanup(environment, candidate.id);
     if (await authUserExists(environment, candidate.id)) {
       throw new Error(`Stale certification account ${candidate.id} still exists after cleanup.`);
     }
@@ -488,6 +506,7 @@ async function cleanupTemporaryCustomizationAccountOnce(
     'daily_challenge_freeze_entitlements',
     'user_daily_challenges',
     'challenge_streak_state',
+    'club_members',
     'user_notification_preferences',
     'notifications',
     // Deleting mission state intentionally bumps the dashboard revision. This
@@ -505,25 +524,29 @@ async function cleanupTemporaryCustomizationAccountOnce(
     'diamond_transactions',
     'diamond_wallets',
     'signup_errors',
+    'table_waitlist',
+    'rate_limits',
   ];
 
   const relatedTables = [
     { table: 'push_outbox', column: 'recipient_user_id' as const },
+    { table: 'notifications', column: 'actor_id' as const },
     { table: 'chip_transactions', column: 'from_user_id' as const },
     { table: 'chip_transactions', column: 'to_user_id' as const },
     { table: 'audit_trail', column: 'actor_id' as const },
   ];
 
-  await callServiceRpc<JsonObject>(
-    environment,
-    'cleanup_reserved_certification_account',
-    {
-      p_user_id: account.id,
-    },
-    true
-  ).catch((error) => failures.push(`reserved identity: ${(error as Error).message}`));
+  const identityTables = [
+    { table: 'profiles', column: 'id' as const },
+    { table: 'users', column: 'id' as const },
+  ];
+
+  await callGuardedCertificationCleanup(environment, account.id).catch((error) =>
+    failures.push(`reserved identity: ${(error as Error).message}`)
+  );
 
   for (const { table, column } of [
+    ...identityTables,
     ...relatedTables,
     ...userTables.map((table) => ({ table, column: 'user_id' as const })),
   ]) {

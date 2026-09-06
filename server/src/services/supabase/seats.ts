@@ -10,6 +10,8 @@
  */
 
 import { supabase } from './client.js';
+import { reportError } from '../errorReporter.js';
+import { tableCountChangedFilter } from './tables.js';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -325,17 +327,39 @@ export async function processLeavePending(
     cashedOut.push(seat.user_id);
   }
 
-  // Authoritative recount after all departures
-  const { count } = await supabase
+  // Authoritative recount after all departures.
+  //
+  // 2026-09-06, two fixes in one place:
+  //
+  // 1. THE ERROR WAS NEVER READ. `count || 0` on an undestructured error is the
+  //    same shape as the settlement bug fixed on 2026-08-28: a single failed
+  //    read wrote `current_players = 0` on a live table. A count we could not
+  //    read is UNKNOWN, not zero — leave the row alone and let the next hand's
+  //    recount settle it.
+  // 2. AGREEING IS NOT A WRITE. `tables` is the widest published table on the
+  //    platform (154 columns) and the most expensive thing Realtime decodes;
+  //    see the note on updateTableStatus. Same filter, same reasoning.
+  const { count, error: countErr } = await supabase
     .from('table_seats')
     .select('*', { count: 'exact', head: true })
     .eq('table_id', tableId)
     .is('left_at', null);
 
-  await supabase
-    .from('tables')
-    .update({ current_players: count || 0 })
-    .eq('id', tableId);
+  if (countErr || count === null || count === undefined) {
+    reportError(
+      new Error(
+        `[Seats] processLeavePending: seat recount unavailable for ${tableId.slice(0, 8)} ` +
+          `(${countErr?.message ?? 'null count'}) - current_players left unchanged`
+      ),
+      'supabase.process_leave_pending_count_unavailable'
+    );
+  } else {
+    await supabase
+      .from('tables')
+      .update({ current_players: count })
+      .eq('id', tableId)
+      .or(tableCountChangedFilter({ current_players: count }));
+  }
 
   // TOURNEY-AUDIT 2026-07-24 (sweep 6): a seat opened — offer it to the
   // longest-waiting waitlisted player (cash tables only; no-op otherwise).

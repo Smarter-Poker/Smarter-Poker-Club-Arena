@@ -264,6 +264,16 @@ const JAQK_CLUB_ID = 'a0000000-0000-0000-0000-000000000001';
  *  candidate filter read the same number. */
 const MAX_TABLES_PER_HORSE = 4;
 
+/**
+ * How old the buyer census may be before it answers zero. A cycle is 30 s
+ * plus its own run time (measured 19-118 s), so two consecutive cycles fit
+ * inside this with room; a census older than it means the fleet has not
+ * completed a walk of the floor in five minutes and is not seating anyone.
+ * See lastEligibleBuiltAt.
+ */
+export const ELIGIBLE_MAX_AGE_MS = 5 * 60 * 1000;
+const EMPTY_CENSUS: ReadonlyMap<string, number> = new Map();
+
 // V3 (2026-07-23): ALL 7 approved variants now spawn cash tables. The V2/V3
 // engine is verified on every variant (legality fuzz + full-hand simulation +
 // production burn-in on NLH), so "quality before scaling" is satisfied —
@@ -453,19 +463,50 @@ export class HorseFleetManager {
   private lastEligibleByTable = new Map<string, number>();
 
   /** How many horses could sit at this table, as of the last seeding cycle.
-   *  0 when the table was not in the cycle (closed, breaking, surplus). */
+   *  0 when the table was not in the cycle (closed, breaking, surplus), and 0
+   *  for every table once the census is older than ELIGIBLE_MAX_AGE_MS. */
   eligibleHorseCount(tableId: string): number {
+    if (this.censusIsStale()) return 0;
     return this.lastEligibleByTable.get(tableId) ?? 0;
   }
 
   /** The whole census, table id -> eligible horses, as of the last cycle.
    *  The ClusterController sends it with every pass (one RPC, keyed by
    *  Main 1) so the SQL can look each game's horse demand up itself. The map
-   *  is swapped whole per cycle, never mutated, so handing it out is safe. */
+   *  is swapped whole per cycle, never mutated, so handing it out is safe.
+   *  Empty once the census is stale - see lastEligibleBuiltAt. */
   eligibleCounts(): ReadonlyMap<string, number> {
+    if (this.censusIsStale()) return EMPTY_CENSUS;
     return this.lastEligibleByTable;
   }
+
+  private censusIsStale(now: number = Date.now()): boolean {
+    return now - this.lastEligibleBuiltAt > ELIGIBLE_MAX_AGE_MS;
+  }
+
+  /** Tests only: age the census by hand. */
+  __setCensusBuiltAtForTest(ms: number): void {
+    this.lastEligibleBuiltAt = ms;
+  }
   private overrunTicks = 0; // 30s ticks dropped because the previous cycle was still running
+  /** Seeds the per-sitting buy-in jitter for the WHOLE cycle, so the count
+   *  and the chair size the same buy-in (buyInBBFor). Set at cycle start. */
+  private cycleSittingSeed = '0';
+  /**
+   * When `lastEligibleByTable` was last rebuilt from a full walk of the floor.
+   *
+   * THE CENSUS DECAYS (2026-09-06). Every fail-closed early return in
+   * seedAllTables - an incomplete table list, seat map, union map or horse
+   * pool, and the outer catch - used to leave the PREVIOUS cycle's map in
+   * place with nothing saying how old it was. The ClusterController ticks
+   * twelve times a minute on that map, and the SQL open rule counts its
+   * numbers as buyers: a fleet that cannot read the floor kept telling every
+   * full game that two horses were ready to sit, and the controller kept
+   * opening feeders nobody could fill (six minutes to abandon, two to rest,
+   * open again). A census older than ELIGIBLE_MAX_AGE_MS answers zero, which
+   * is the truth about a fleet that is not seating anyone.
+   */
+  private lastEligibleBuiltAt = 0;
   private clubIndex = 0;
   /* Last time a failed fleet-state publish was reported. The engine can ship
      before the World Hub migration that creates fn_ca_fleet_state_upsert, and
@@ -705,6 +746,7 @@ export class HorseFleetManager {
     if (this.seeding) return; // Prevent concurrent seeding
     this.seeding = true;
     const cycleStartedAt = Date.now();
+    this.cycleSittingSeed = String(cycleStartedAt);
     /* THE PULSE (Phase 3). Filled in as the cycle learns things and published
        once, in `finally`, so that EVERY exit path beats - the early returns
        above all the way down to the catch. Starts as "we got nowhere", which
@@ -1289,11 +1331,15 @@ export class HorseFleetManager {
           id: string;
           user_id: string;
           tournament_id: string;
+          tournaments:
+            | { status: string; start_time: string | null }
+            | Array<{ status: string; start_time: string | null }>
+            | null;
         }>(
           (cursor, want) => {
             let q = supabase
               .from('tournament_players')
-              .select('id, user_id, tournament_id, tournaments!inner(status)')
+              .select('id, user_id, tournament_id, tournaments!inner(status, start_time)')
               .in('status', ['registered', 'playing'])
               .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
               .order('id', { ascending: true })
@@ -1328,7 +1374,20 @@ export class HorseFleetManager {
           for (const row of tournamentTablePage.rows) {
             if (row.tournament_id) tournamentByTableId.set(row.id, row.tournament_id);
           }
-          bookingLoad = buildBookingLoad(bookingPage.rows, tournamentByTableId, horseTables);
+          /* THE WINDOW (2026-09-06). The start time rides along so that
+             `buildBookingLoad` can apply the same sixty-minute window
+             `fn_concurrent_game_load` applies: a booking for an event more
+             than an hour out is a plan, not a game. Read once, here, so the
+             count and the chair see one clock. */
+          const withStart = bookingPage.rows.map((row) => {
+            const t = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
+            return {
+              user_id: row.user_id,
+              tournament_id: row.tournament_id,
+              start_time: t?.start_time ?? null,
+            };
+          });
+          bookingLoad = buildBookingLoad(withStart, tournamentByTableId, horseTables, Date.now());
         } else {
           beat.bookingsReadFailed = 1;
           console.warn(
@@ -1353,10 +1412,20 @@ export class HorseFleetManager {
          the switch is temporary); only the band it may SIT in moves, and only
          downward. See effectiveStakeBandFor. */
       const bandsWithAGame = new Set<HorseStakeBand>();
+      /* ...AND WHICH EXACT BIG BLINDS (2026-09-06). The tag names blinds, not
+         a band, and `tagAllowsStake` is a hard gate on the exact number. A
+         tag whose every stake names a game that is switched off - measured
+         2026-09-06: 20 tags on 18 horses carrying only 10.00 / 20.00 / 50.00,
+         every one of those rungs closed by the operator on 09-04 - refuses
+         every table on the floor, and the band projection below (built for
+         exactly this) is never reached because it sits on the untagged
+         branch. See the stake gate in the candidate filter. */
+      const stakesWithAGame = new Set<string>();
       for (const t of tables) {
         if (t.lifecycle === 'breaking' || t.lifecycle === 'closed') continue;
         if (isTableOfDisabledGame(t, disabledGameIds)) continue;
         bandsWithAGame.add(stakeBandForBigBlind(Number(t.big_blind)));
+        stakesWithAGame.add(Number(t.big_blind).toFixed(2));
       }
       const bandSupply = applyStakeBandSupply(bandsWithAGame);
       if (bandSupply.missing.length > 0) {
@@ -1723,6 +1792,9 @@ export class HorseFleetManager {
          clubDropped, because the silent version of this number is what hid the
          Midway floor for a day. */
       let tagDropped = 0;
+      /* Horse/table pairs where the tag's every stake names a closed game and
+         the merit band decided instead (see the stake gate). */
+      let strandedTagFallthrough = 0;
       /* Refusals from the Stable Hand mutex, by reason, for the cycle log.
          A gate whose refusals are invisible is a gate nobody can tune. */
       const mutexRefused = new Map<SitRejection, number>();
@@ -1895,7 +1967,12 @@ export class HorseFleetManager {
         m.set(r, (m.get(r) ?? 0) + 1);
       const noteSkip = (
         diag: OpeningFeederDiag | null,
-        r: SitSkipReason | 'lone_seat_refused' | 'stale_snapshot' | `buyin_${BuyInRefusal}`
+        r:
+          | SitSkipReason
+          | 'lone_seat_refused'
+          | 'lone_seat_left'
+          | 'stale_snapshot'
+          | `buyin_${BuyInRefusal}`
       ) => {
         if (diag) diag.skipped[r] = (diag.skipped[r] ?? 0) + 1;
       };
@@ -1903,6 +1980,10 @@ export class HorseFleetManager {
          this cycle because only one horse could sit there. Counted once per
          table per cycle and logged once per cycle - see HorseLoneTable.ts. */
       let loneSeatRefused = 0;
+      /* Empty cluster tables that still ended a cycle with ONE horse after the
+         door refused the second and a second draw over the pool found nobody
+         else. The lone stand (HorseLoneTable) clears these at ten minutes. */
+      let loneSeatLeft = 0;
       /* THE TABLE MAY BE GONE BY THE TIME WE SEAT INTO IT (2026-09-05).
          The open-table list above was read ONCE at the top of this cycle, and
          a cycle takes 57 to 118 seconds (its own line). The controller closes
@@ -2268,7 +2349,25 @@ export class HorseFleetManager {
                this, blinds were read solely to size a buy-in, and 64 of 210
                horses sat across multiple stakes in 48 hours, one at 0.10/0.20
                and 25.00/50.00 both. */
-            const stakeOk = tagAllowsStake(tag, Number(table.big_blind));
+            let stakeOk = tagAllowsStake(tag, Number(table.big_blind));
+            /* A TAG WITH NO GAME LEFT IN IT FALLS THROUGH TO THE BAND
+               (2026-09-06). `tagAllowsStake` is exact, and a tag drawn into a
+               band whose every rung the operator has closed refuses every
+               table there is. Only then - never when the tag names a stake
+               that is running - the tag is read as "no opinion" and the
+               merit band decides, projected DOWN onto the bands that have a
+               game (effectiveStakeBandFor), the way an untagged horse's is.
+               Downward only, so the 25/50 regular plays 2/5 while 25/50 is
+               shut, and never a micro game. */
+            if (
+              stakeOk === false &&
+              tag &&
+              tag.preferredStakes.length > 0 &&
+              !tag.preferredStakes.some((s) => stakesWithAGame.has(Number(s).toFixed(2)))
+            ) {
+              strandedTagFallthrough++;
+              stakeOk = undefined;
+            }
             if (stakeOk === false && !humanNeedsRescue) {
               tagDropped++;
               return false;
@@ -2470,6 +2569,24 @@ export class HorseFleetManager {
           }
           let pool = sittable.filter((h) => isActiveNow(h.id, hourUTC));
           if (pool.length < emptySeats.length && humanNeedsRescue) pool = sittable;
+          /* ── AN OPENING FEEDER WIDENS THE HOUR TOO (2026-09-06, measured) ──
+             The activity window is texture: it decides WHICH of the horses
+             that could sit do sit, so the floor rotates through the stable.
+             It is the wrong gate for a feeder this fleet opened. Read from the
+             beat over one afternoon, the same line for thirty minutes:
+
+               "PLO4 0.50/1 Classic Feeder": candidates 6, sittable 4,
+               wanted 6, reserved 2, selected 1, seated 0,
+               skipped {lone_seat_refused: 1}
+
+             Four horses could sit; three were outside their window; the one
+             inside it was refused as a lone seat; the feeder sat empty, was
+             abandoned at six minutes, rested two, and was opened again on the
+             same two buyers. The window widens for a human's rescue for the
+             same reason it widens here: the seats are wanted NOW, by a game
+             that exists because this fleet said the horses were there. Never
+             the band, never the verdict - only the hour. */
+          if (openingFeeder && pool.length < FEEDER_BUYERS_TO_GO_LIVE) pool = sittable;
           /* What the ClusterController asks: how many horses COULD sit here
              this cycle. A horse is a buyer (Law 10.5); the open rule in
              OPORD 1.4 18.3 counts them beside the humans on the waitlist. */
@@ -2493,6 +2610,14 @@ export class HorseFleetManager {
             const feederClaim = openingFeeder
               ? Math.max(0, FEEDER_BUYERS_TO_GO_LIVE - currentCount)
               : 0;
+            /* A SEATING TABLE CLAIMS WHAT IT WILL SEAT (2026-09-06). This
+               booked `max_players - currentCount` - nine less the count - of
+               the floor's shared horse capacity for a table the trickle will
+               give one or two horses this cycle, and the allocation walks in
+               seeding order, so with a spare pool in the single digits the
+               full Mains that need a feeder probe (two each) lost the draw to
+               whichever sparse table sorted first. The claim is `seatsNeeded`:
+               the seats this cycle is actually going to fill. */
             clusterPool = {
               tableId: table.id,
               clusterId: table.cluster_id,
@@ -2502,7 +2627,7 @@ export class HorseFleetManager {
                 ? feederClaim
                 : countOnly
                   ? FULL_TABLE_BUYER_PROBE
-                  : Math.max(0, Number(table.max_players) - currentCount),
+                  : Math.max(0, Math.min(seatsNeeded, Number(table.max_players) - currentCount)),
             };
             if (diag) diag.reserved = feederClaim;
             clusterPools.push(clusterPool);
@@ -2621,7 +2746,16 @@ export class HorseFleetManager {
 
           // Seat each horse at an ACTUAL empty seat
           let seated = 0;
-          for (const { horse, seatNumber, verdict } of cleared) {
+          /* ONE SEATING, ONE PLACE. The main pass below and the lone-seat
+             second draw after it seat a horse through this closure, so the
+             bookkeeping a seat carries - the mutex counter, the session start,
+             the host body count, the live exposure, the budget - cannot drift
+             between the two callers. */
+          const seatOne = async (
+            horse: (typeof selectedHorses)[number],
+            seatNumber: number,
+            verdict: Extract<SitVerdict, { ok: true }>
+          ): Promise<boolean> => {
             const { seatClub, buyIn } = verdict;
             /* THE COUNTER THE MUTEX READS is written against the SAME key the
                mutex judged (see the takenKey write below). */
@@ -2629,6 +2763,14 @@ export class HorseFleetManager {
             if (key) {
               sitKeyOf.set(`${horse.id}:${table.id}`, key);
             }
+            /* A SESSION STARTS when a horse with nothing open sits down. Read
+               BEFORE the seat is added to horseTables below: this used to be
+               tested after it, when the set already held this table, so the
+               size was never zero and the balance was never recorded. The 50%
+               commit cap (HorseSitVerdict / commitAllows) then fell back to
+               the balance NOW, and a horse that had won during its session was
+               allowed to commit more - the exact thing the cap exists to stop. */
+            const wasIdle = (horseTables.get(horse.id)?.size ?? 0) === 0;
 
             const success = await this.seatHorse(
               table.id,
@@ -2642,42 +2784,95 @@ export class HorseFleetManager {
                 noteSkip(diag, `buyin_${reason}`);
               }
             );
-            if (success) {
-              seated++;
-              totalSeated++;
-              seatBudget--;
-              // Update our in-memory map so we don't assign them to another table if they hit 4
-              if (!horseTables.has(horse.id)) horseTables.set(horse.id, new Set());
-              horseTables.get(horse.id)!.add(table.id);
-              /* And the host's body count, in the same breath. A cap read from
-                 the position the cycle STARTED with would let one pass seat the
-                 whole floor past it. */
-              /* THE COUNTER THE MUTEX READS. Recorded against the SAME key
-                 the mutex judged, so "three sits on this game today" counts
-                 the sits it actually refused a fourth of. */
-              const takenKey = sitKeyOf.get(`${horse.id}:${table.id}`);
-              if (takenKey) {
-                stateMutations.push({
-                  horseId: horse.id,
-                  sitOnKey: takenKey,
-                  /* A SESSION STARTS when a horse with nothing open sits down.
-                     The 50% commit cap is measured against the balance at that
-                     moment, so winning later does not raise it. */
-                  ...((horseTables.get(horse.id)?.size ?? 0) === 0 && seatClub
-                    ? { sessionStartBalance: bankrolls.get(`${seatClub}:${horse.id}`) ?? undefined }
-                    : {}),
-                });
+            if (!success) return false;
+            seated++;
+            totalSeated++;
+            seatBudget--;
+            // Update our in-memory map so we don't assign them to another table if they hit 4
+            if (!horseTables.has(horse.id)) horseTables.set(horse.id, new Set());
+            horseTables.get(horse.id)!.add(table.id);
+            /* And the host's body count, in the same breath. A cap read from
+               the position the cycle STARTED with would let one pass seat the
+               whole floor past it. */
+            /* THE COUNTER THE MUTEX READS. Recorded against the SAME key
+               the mutex judged, so "three sits on this game today" counts
+               the sits it actually refused a fourth of. */
+            const takenKey = sitKeyOf.get(`${horse.id}:${table.id}`);
+            if (takenKey) {
+              stateMutations.push({
+                horseId: horse.id,
+                sitOnKey: takenKey,
+                /* The 50% commit cap is measured against the balance at the
+                   moment the session started, so winning later does not raise
+                   it. */
+                ...(wasIdle && seatClub
+                  ? { sessionStartBalance: bankrolls.get(`${seatClub}:${horse.id}`) ?? undefined }
+                  : {}),
+              });
+            }
+            const seatedHost = String((table as any).club_id ?? '');
+            if (seatedHost) {
+              if (!bodiesOnHost.has(seatedHost)) bodiesOnHost.set(seatedHost, new Set());
+              bodiesOnHost.get(seatedHost)!.add(horse.id);
+            }
+            // The seat we just bought is exposure NOW, not next cycle: without
+            // this the aggregate ceiling only ever sees the position the cycle
+            // STARTED with, and a single pass could seat a horse at four
+            // tables while every check reads zero.
+            horseExposure.set(horse.id, (horseExposure.get(horse.id) ?? 0) + buyIn);
+            return true;
+          };
+
+          const seatedIdsHere = new Set<string>();
+          const freedChairs: number[] = [];
+          for (const { horse, seatNumber, verdict } of cleared) {
+            if (await seatOne(horse, seatNumber, verdict)) seatedIdsHere.add(horse.id);
+            else freedChairs.push(seatNumber);
+          }
+
+          /* ── NO LONE HORSE, JUDGED ON THE OUTCOME (2026-09-06) ─────────────
+             The refusal above judged the count of horses that CLEARED the
+             verdict. A buy-in can still fail at the door (FOUR TABLE LIMIT,
+             a floor, insufficient balance, TABLE_CLOSING - seatHorse reports
+             seven), and two cleared with one seated is exactly the lone horse
+             the rule exists to prevent. On an opening feeder it is worse than
+             cosmetic: a feeder with one seat is never abandoned (the sweep
+             wants zero seats), never promoted (promote wants two), never a
+             break candidate (break wants live), and blocks the game from
+             opening anything else - the game is frozen until the lone stand
+             at ten minutes, then six more to abandon. So when an empty
+             cluster table ends this pass with exactly one horse, the rest of
+             the pool is asked, in order, until a second one sits or the pool
+             is spent. Same verdict, same door, same bookkeeping. */
+          if (table.cluster_id && currentCount === 0 && seated === 1 && seatBudget > 0) {
+            const tried = new Set(cleared.map((c) => c.horse.id));
+            const chairs = [...freedChairs];
+            for (let s = 1; s <= table.max_players && chairs.length < 2; s++) {
+              if (!occupiedNumbers.has(s) && !cleared.some((c) => c.seatNumber === s))
+                chairs.push(s);
+            }
+            let secondDrawTried = 0;
+            for (const h of pool) {
+              if (seated >= 2 || seatBudget <= 0 || chairs.length === 0) break;
+              if (tried.has(h.id)) continue;
+              tried.add(h.id);
+              secondDrawTried++;
+              const v = sitVerdictFor(h.id, table, sitCtx);
+              for (const e of v.telemetry) bankrollEvent(e);
+              if (!v.ok) {
+                noteSkip(diag, v.reason);
+                continue;
               }
-              const seatedHost = String((table as any).club_id ?? '');
-              if (seatedHost) {
-                if (!bodiesOnHost.has(seatedHost)) bodiesOnHost.set(seatedHost, new Set());
-                bodiesOnHost.get(seatedHost)!.add(horse.id);
-              }
-              // The seat we just bought is exposure NOW, not next cycle: without
-              // this the aggregate ceiling only ever sees the position the cycle
-              // STARTED with, and a single pass could seat a horse at four
-              // tables while every check reads zero.
-              horseExposure.set(horse.id, (horseExposure.get(horse.id) ?? 0) + buyIn);
+              const chair = chairs.shift()!;
+              if (await seatOne(h, chair, v)) seatedIdsHere.add(h.id);
+            }
+            if (seated === 1) {
+              loneSeatLeft++;
+              noteSkip(diag, 'lone_seat_left');
+              console.warn(
+                `[HorseFleet] "${table.name}" ended the cycle with ONE horse after a second draw ` +
+                  `over ${secondDrawTried} more candidate(s) - the lone stand will clear it if nobody joins`
+              );
             }
           }
 
@@ -2685,10 +2880,9 @@ export class HorseFleetManager {
           if (seated > 0 && clusterPool) {
             /* The horses this table actually took go to the front of its
                pool, so the allocation after the loop hands out the same
-               bodies the cycle did. */
-            const seatedIds = new Set(
-              selectedHorses.filter((h) => horseTables.get(h.id)?.has(table.id)).map((h) => h.id)
-            );
+               bodies the cycle did - including a second-draw horse that was
+               not among the selected. */
+            const seatedIds = seatedIdsHere;
             clusterPool.pool = [
               ...clusterPool.pool.filter((id) => seatedIds.has(id)),
               ...clusterPool.pool.filter((id) => !seatedIds.has(id)),
@@ -2737,6 +2931,10 @@ export class HorseFleetManager {
         nextEligible.set(tableId, n);
       }
       this.lastEligibleByTable = nextEligible;
+      // The only place the census is stamped: a cycle that returned early
+      // above never reaches here, and its stale map ages out (see
+      // lastEligibleBuiltAt) instead of being repeated to the controller.
+      this.lastEligibleBuiltAt = Date.now();
 
       /* ── WHAT THE CONSOLE WILL SEE ─────────────────────────────────────
          Built from what this cycle already read - no extra query. `reason` is
@@ -2770,6 +2968,12 @@ export class HorseFleetManager {
         console.log(
           `[HorseFleet] ${clubDropped} horse/table pairs excluded - the horse holds no ` +
             `membership that can pay for that table (a horse plays inside its own club).`
+        );
+      }
+      if (strandedTagFallthrough > 0) {
+        console.log(
+          `[HorseFleet] ${strandedTagFallthrough} horse/table pair(s) judged by the merit band ` +
+            `because the tag's every stake names a closed game (stranded tag fallthrough).`
         );
       }
       if (tagDropped > 0 || restDayDropped > 0 || dailyCapDropped > 0) {
@@ -2809,6 +3013,12 @@ export class HorseFleetManager {
           `[HorseFleet] lone_seat_refused=${loneSeatRefused}: empty cluster table(s) left empty ` +
             `this cycle because only one horse could sit - a cluster table is seeded to two ` +
             `or not at all (no lone horse).`
+        );
+      }
+      if (loneSeatLeft > 0) {
+        console.warn(
+          `[HorseFleet] lone_seat_left=${loneSeatLeft}: empty cluster table(s) ended the cycle with ` +
+            `ONE horse - the door refused the second and the second draw found nobody else.`
         );
       }
       if (mutexRefused.size > 0) {
@@ -3323,13 +3533,43 @@ export class HorseFleetManager {
         const stake = stakeForBand(order.band);
         if (!stake) continue;
         const variant = String(order.variant ?? 'nlh').toLowerCase();
+        /* AN OPERATOR'S CLOSE OUTRANKS A PLANNER'S OPEN (2026-09-06).
+           fn_cash_game_ensure re-enables a game it finds switched off, and
+           this order used to reach it unconditionally - so a Stable Hand open
+           order for a band whose games an operator had closed (the six bb > 6
+           games, closed 2026-09-04 16:47 CDT, which every handoff since says
+           not to reopen) would have quietly switched one back on. OPORD 1.4
+           18.4 makes `enabled` the one human knob; a machine does not turn it
+           back. A key that exists and is disabled is left alone and said so. */
+        const { data: closedGame, error: closedErr } = await supabase
+          .from('cash_games')
+          .select('id, name, closed_by')
+          .eq('club_id', order.hostId)
+          .eq('variant', variant)
+          .eq('sb', stake.sb)
+          .eq('bb', stake.bb)
+          .eq('enabled', false)
+          .limit(1)
+          .maybeSingle();
+        if (closedErr) {
+          reportError(closedErr, 'HorseFleet.openPlannedGame_closed_read_failed');
+          continue; // cannot tell whether a human closed it: do not reopen
+        }
+        if (closedGame) {
+          console.log(
+            `[HorseFleet] Stable Hand open order for ${variant} ${stake.sb}/${stake.bb} on host ` +
+              `${order.hostId.slice(0, 8)} refused: game "${String((closedGame as { name?: string }).name ?? '')}" ` +
+              `is switched off by an operator, and a planner does not switch it back on`
+          );
+          continue;
+        }
         /* GATE 7 (2026-09-05): the Stable Hand plans GAMES. The order used to
            insert a plain table on the host; the database now refuses a cash
            table with no game behind it (tables_cash_needs_a_game) and the
            ClusterController opens, feeds, promotes, breaks and closes the
            tables of every game. fn_cash_game_ensure returns the key's game -
-           created with Main 1 if absent, re-enabled if a host had closed it -
-           and is idempotent, so a repeated order costs one read. */
+           created with Main 1 if absent - and is idempotent, so a repeated
+           order costs one read. A disabled key never reaches it (above). */
         const { data, error } = await supabase.rpc('fn_cash_game_ensure', {
           p_club_id: order.hostId,
           p_variant: variant,
@@ -3542,7 +3782,11 @@ export class HorseFleetManager {
     // V9: humans buy in for ROUND numbers, never 227.40. Snap to a 5bb step,
     // then clamp to the table's real limits.
     const step = table.big_blind * 5;
-    const raw = table.big_blind * buyInBBFor(horseId);
+    /* One roll per (horse, table, cycle): the count and the chair must size
+       the same buy-in or the aggregate-exposure ceiling can pass one and
+       refuse the other. See buyInBBFor. */
+    const raw =
+      table.big_blind * buyInBBFor(horseId, `${String(table.id)}|${this.cycleSittingSeed}`);
     let buyIn =
       Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
 

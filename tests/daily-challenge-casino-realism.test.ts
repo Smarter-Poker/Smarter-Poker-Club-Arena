@@ -66,13 +66,14 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(page).toContain('Streak Freeze Applied');
     expect(page).toContain('streak.usedFreeze && streak.frozenDate');
     expect(page).toContain('<span className={styles.srOnly}>Diamonds</span>');
-    expect(page).toContain('10 Diamonds? Current Progress Will Be Replaced.');
+    expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
+    expect(page).toContain('Replaced.');
     expect(css).not.toMatch(/\.cardClaimed\s*\{[^}]*opacity:/s);
-    const claimedState = css.slice(
-      css.lastIndexOf(".challengeCard[data-mission-state='claimed']"),
-      css.indexOf('.cardTopline', css.lastIndexOf(".challengeCard[data-mission-state='claimed']"))
-    );
-    expect(claimedState).not.toMatch(/(?:filter|opacity)\s*:/);
+    const claimedCardRules = [
+      ...css.matchAll(/\.challengeCard\[data-mission-state='claimed'\]\s*\{([^}]*)\}/g),
+    ];
+    expect(claimedCardRules.length).toBeGreaterThan(0);
+    expect(claimedCardRules.at(-1)?.[1]).not.toMatch(/(?:filter|opacity)\s*:/);
   });
 
   it('warms the exact mission destination chunk on mouse, touch, and keyboard intent', () => {
@@ -82,11 +83,27 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     );
   });
 
-  it('keeps cold-error recovery above the fold and disabled controls physically still', () => {
+  it('keeps cold-error recovery above the fold and animates only enabled intent surfaces', () => {
     const finalUnavailableRule = css.slice(css.lastIndexOf('.unavailableHero'));
     expect(finalUnavailableRule).toContain('min-height: 420px');
     expect(css).not.toContain(':hover');
+    expect(css).toContain('.challengeCard:focus-within .iconBox');
     expect(css).toContain('.buyFreezeBtn:not(:disabled):active');
+    expect(css).toContain('.rerollButton:not(:disabled):active');
+  });
+
+  it('closes every chamfer and gives each mission icon live progress and state', () => {
+    expect(page.match(/className=\{styles\.bevelFrame\}/g)?.length).toBeGreaterThanOrEqual(7);
+    expect(css).toContain('Precision Frame Closure');
+    expect(css).toContain('100% 100% / var(--bevel-size) var(--bevel-size) no-repeat');
+    expect(css).toContain('.rerollButton::after');
+    expect(page).toContain("'--mission-progress': `${pct}%`");
+    expect(page).toContain('data-mission-icon={c.type}');
+    expect(page).toContain('data-icon-state=');
+    expect(css).toContain('conic-gradient(');
+    expect(css).toContain('@keyframes missionScannerOrbit');
+    expect(css).toContain(".iconAssembly[data-mission-icon='friends_added']");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.iconOrbit/);
   });
 
   it('renders both purchase and reward dialogs as complete casino settlement surfaces', () => {

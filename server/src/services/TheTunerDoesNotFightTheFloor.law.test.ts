@@ -51,7 +51,7 @@ import {
   drainHorsePlay,
   type HorseReviewInput,
 } from './HorseHandReview.js';
-import { BENCH } from './HorseSelfTuner.js';
+import { BENCH, FLOORED_TRUSTED_FROM_DAY, TUNER_STUDY_FORMAT } from './HorseSelfTuner.js';
 
 const SRC = join(process.cwd(), 'src');
 const read = (rel: string): string => readFileSync(join(SRC, rel), 'utf8');
@@ -171,5 +171,54 @@ describe('LAW: the tuner does not fight the floor', () => {
     // instead of excluding floored play, this fails and says why.
     expect(BENCH.vpip.lo).toBeCloseTo(0.19, 5);
     expect(BENCH.vpip.hi).toBeCloseTo(0.32, 5);
+  });
+
+  /*
+   * ── 2026-09-06: the same bug in two more inputs ──
+   *
+   * The first tuner run after the floor fix (08:01 UTC) still tightened 123
+   * of 259 horses for "too loose". Two reasons, both the floor bug's shape - a
+   * blended number judged against an unblended band:
+   *
+   *   1. hu_cash rows were loaded into the same accumulator as ring cash and
+   *      judged by BENCH, whose first line says "6-max cash". Of the 123, 97
+   *      had heads-up rows, 37 played more heads-up than ring, and 21 were
+   *      inside the band on ring play alone.
+   *   2. every horse_daily_play row written before the floor flag's first
+   *      true row (03:03 UTC 2026-09-06) says floored = false for play at
+   *      floored tables, and .eq('floored', false) cannot exclude play that
+   *      was never labelled. Only the calendar can.
+   */
+  it('the bands are fed ring cash only - heads-up is not measured with the six-max ruler', () => {
+    expect(TUNER_STUDY_FORMAT).toBe('cash');
+    const tuner = read('services/HorseSelfTuner.ts');
+    const load = tuner.slice(tuner.indexOf(".from('horse_daily_play')"));
+    const block = load.slice(0, load.indexOf('.range('));
+    expect(
+      block.includes(".eq('format', TUNER_STUDY_FORMAT)"),
+      'loadPlayRows must read one format, the ring-cash one the bands describe'
+    ).toBe(true);
+    expect(block.includes("'hu_cash'"), 'hu_cash must not reach the frequency bands').toBe(false);
+    // The hand_history gap-filler obeys the same rule: two dealt in is heads-up.
+    const stream = tuner.slice(tuner.indexOf(".from('hand_history')"));
+    const streamBlock = stream.slice(0, stream.indexOf('accumulatePlayStats('));
+    expect(
+      streamBlock.includes('h.players.length >= 3'),
+      'the hand_history fallback must drop heads-up hands before accumulating'
+    ).toBe(true);
+  });
+
+  it('play rows from before the floor flag existed are not fed to the bands', () => {
+    // The first floored = true row landed 2026-09-06 03:03 UTC; everything
+    // earlier is unlabelled and must age out of the window unread.
+    expect(FLOORED_TRUSTED_FROM_DAY).toBe('2026-09-06');
+    const tuner = read('services/HorseSelfTuner.ts');
+    const load = tuner.slice(tuner.indexOf('async function loadPlayRows'));
+    const body = load.slice(0, load.indexOf('.range('));
+    expect(
+      body.includes('FLOORED_TRUSTED_FROM_DAY'),
+      'the window start must be clamped to the day the floor flag became true'
+    ).toBe(true);
+    expect(body.includes(".gte('day', sinceDay)")).toBe(true);
   });
 });

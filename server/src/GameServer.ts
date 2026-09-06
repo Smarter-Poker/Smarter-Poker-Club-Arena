@@ -2547,14 +2547,14 @@ export class GameServer {
 
             if (error) {
               console.log(
-                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — error checking activity, assuming active.`
+                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} - error checking activity, assuming active.`
               );
               continue;
             }
 
             if (recentHands && recentHands.length > 0) {
               console.log(
-                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — found recent hands in last hour (still active)`
+                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} - found recent hands in last hour (still active)`
               );
               continue;
             }

@@ -45,9 +45,12 @@ import { WALLET_CACHE_PREFIX, clearWalletMemoryCache } from '../lib/walletCache'
 import { CLUB_UUID_MAP_KEY, clearClubUUIDCache } from './clubIdResolver';
 import { STATS_CACHE_PREFIX, clearStatsRangeMemo } from '../lib/statsCache';
 import { CLUB_WORKSPACE_CACHE_KEY } from '../lib/clubWorkspaceCache';
-
 /** Written by ClubHomePage; imported there so writer and purger cannot drift. */
 export const CLUB_HOME_CACHE_PREFIX = 'club_home_cache_';
+/** Financial retry journals live here so sign-out never eagerly loads their implementations. */
+export const CASHIER_RECOVERY_PREFIX = 'smarter-poker:cashier-transfer-recovery:v1';
+export const CASHIER_REQUEST_RECOVERY_PREFIX = 'smarter-poker:cashier-chip-request:v1';
+export const UNION_WALLET_RECOVERY_PREFIX = 'smarter-poker:union-wallet-intent:v2';
 
 type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];
 
@@ -95,6 +98,9 @@ const USER_SCOPED_PREFIXES: string[] = [
   'dismissed_announcements_', // per-club dismissals
   'referral_', // per-club referral attribution
   STATS_CACHE_PREFIX, // PlayerStatsPage SWR payload: lifetime profit, sessions, hands
+  CASHIER_RECOVERY_PREFIX, // unresolved money intents, scoped by user + club
+  CASHIER_REQUEST_RECOVERY_PREFIX, // unresolved chip-request retry ids, scoped by intent
+  UNION_WALLET_RECOVERY_PREFIX, // unresolved union-wallet intents, scoped by user
 ];
 
 /**

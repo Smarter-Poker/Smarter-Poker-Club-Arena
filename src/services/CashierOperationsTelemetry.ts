@@ -21,7 +21,6 @@ export type CashierOperation = {
 };
 
 const SUCCESS_SAMPLE_RATE = 0.1;
-const SUCCESS_SAMPLE_WEIGHT = Math.round(1 / SUCCESS_SAMPLE_RATE);
 
 function isFailure(event: CashierOperationEvent): boolean {
   return event === 'roster_page_failed' || event === 'batch_partial' || event === 'batch_failed';
@@ -71,22 +70,23 @@ export function recordCashierOperation(operation: CashierOperation): void {
     if (!operation.userId || !operation.clubId || !shouldRecordCashierOperation(operation.event)) {
       return;
     }
-    const row = {
-      user_id: operation.userId,
-      club_id: operation.clubId,
-      event: operation.event,
-      operation: operation.operation,
-      duration_ms: boundedInt(operation.durationMs, 300_000),
-      item_count: boundedInt(operation.itemCount),
-      page_number: boundedInt(operation.pageNumber, 100_000),
-      success_count: boundedInt(operation.successCount),
-      failure_count: boundedInt(operation.failureCount),
-      reason_code: safeToken(operation.reasonCode),
-      sample_weight: isFailure(operation.event) ? 1 : SUCCESS_SAMPLE_WEIGHT,
+    const args = {
+      p_club_id: operation.clubId,
+      p_event: operation.event,
+      p_operation: operation.operation,
+      p_duration_ms: boundedInt(operation.durationMs, 300_000),
+      p_item_count: boundedInt(operation.itemCount),
+      p_page_number: boundedInt(operation.pageNumber, 100_000),
+      p_success_count: boundedInt(operation.successCount),
+      p_failure_count: boundedInt(operation.failureCount),
+      p_reason_code: safeToken(operation.reasonCode),
     };
-    void Promise.resolve(supabase.from('cashier_operations').insert(row))
+    // The database derives user_id from auth.uid(), validates this club scope,
+    // and derives sample_weight. Neither identity nor SLO weighting is trusted
+    // to a browser-provided row anymore.
+    void Promise.resolve(supabase.rpc('fn_record_cashier_operation', args))
       .then(({ error }) => {
-        if (error) console.debug('[cashier-telemetry] insert refused', error.message);
+        if (error) console.debug('[cashier-telemetry] RPC refused', error.message);
       })
       .catch(() => undefined);
   } catch {

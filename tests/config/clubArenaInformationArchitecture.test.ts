@@ -139,7 +139,7 @@ describe('Club Arena information architecture', () => {
     expect(redirectSource).toContain("destination === 'invite'");
     expect(redirectSource).toContain('`/clubs/${target.id}/${destination}`');
     expect(redirectSource).toContain('{ replace: true }');
-    expect(redirectSource).toContain('readCachedQuickLinkClubs()');
+    expect(redirectSource).toContain('readCachedQuickLinkClubs(user.id)');
     expect(redirectSource).toContain('CLUB_RESOLUTION_TIMEOUT_MS');
   });
 
@@ -271,13 +271,21 @@ describe('Club Arena information architecture', () => {
       getClubNavigationCapabilities('member')
     );
 
+    /* PHASE 6 (2026-09-06) added Hand Review at `staff`, which is where the two
+       queues either side of it already sit: an agent who can see a conduct
+       report and a financial dispute can see that a player flagged a hand.
+       The hole cards on that page are a DIFFERENT question and a different
+       set - owner, co_owner and admin only, enforced by
+       `fn_ca_operator_read_hand` rather than by this list. */
     expect(agentItems.map((item) => item.path)).toEqual([
       '/clubs/shark-club/reports',
       '/clubs/shark-club/disputes',
+      '/clubs/shark-club/hand-review',
     ]);
     expect(ownerItems.map((item) => item.path)).toEqual([
       '/clubs/shark-club/reports',
       '/clubs/shark-club/disputes',
+      '/clubs/shark-club/hand-review',
       '/clubs/shark-club/blacklist',
     ]);
     expect(memberItems).toEqual([]);

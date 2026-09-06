@@ -409,3 +409,99 @@ describe('getClubTournamentStats', () => {
     expect(from.mock.calls.filter(([table]) => table === 'tournament_players')).toHaveLength(0);
   });
 });
+
+describe('leaderboard settlement status', () => {
+  it('loads and normalizes the canonical period receipt model', async () => {
+    const { supabase } = await import('../../src/lib/supabase');
+    const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+    rpc.mockResolvedValueOnce({
+      data: {
+        club_id: 'club-1',
+        period: 'weekly',
+        period_start: '2026-09-06',
+        period_end: '2026-09-13',
+        state: 'paid',
+        can_manage: true,
+        planned_total: '150.00',
+        program: null,
+        batch: {
+          id: 'batch-1',
+          program_id: 'program-1',
+          program_version: '2',
+          program_hash: 'hash',
+          metric: 'profit',
+          funding_owner_type: 'club',
+          funding_union_id: null,
+          total_paid: '150.00',
+          seed_funded: '0.00',
+          promo_funded: '150.00',
+          winner_count: '2',
+          tie_policy: 'split_occupied_places',
+          settled_at: '2026-09-13T00:20:00Z',
+        },
+        failure: null,
+        receipts: [
+          {
+            id: 'receipt-1',
+            batch_id: 'batch-1',
+            user_id: 'player-1',
+            rank: '1',
+            payout_amount: '75.00',
+            payout_currency: 'chips',
+            awarded_at: '2026-09-13T00:20:00Z',
+          },
+          {
+            id: 'receipt-2',
+            batch_id: 'batch-1',
+            user_id: 'player-2',
+            rank: '1',
+            payout_amount: '75.00',
+            payout_currency: 'chips',
+            awarded_at: '2026-09-13T00:20:00Z',
+          },
+        ],
+      },
+      error: null,
+    });
+
+    const status = await LeaderboardService.getLeaderboardSettlementStatus(
+      'club-1',
+      'weekly',
+      '2026-09-06'
+    );
+
+    expect(rpc).toHaveBeenCalledWith('fn_get_leaderboard_settlement_status', {
+      p_club_id: 'club-1',
+      p_period: 'weekly',
+      p_period_start: '2026-09-06',
+    });
+    expect(status.planned_total).toBe(150);
+    expect(status.batch?.total_paid).toBe(150);
+    expect(status.receipts[0].payout_amount).toBe(75);
+  });
+
+  it('rejects malformed receipt data instead of painting an unverified payout', async () => {
+    const { supabase } = await import('../../src/lib/supabase');
+    const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+    rpc.mockResolvedValueOnce({
+      data: {
+        club_id: 'club-1',
+        period: 'weekly',
+        period_start: '2026-09-06',
+        period_end: '2026-09-13',
+        state: 'paid',
+        can_manage: false,
+        planned_total: 100,
+        program: null,
+        batch: null,
+        failure: null,
+        receipts: [{ id: 'receipt-1', payout_amount: 'not-a-number' }],
+      },
+      error: null,
+    });
+
+    await expect(
+      LeaderboardService.getLeaderboardSettlementStatus('club-1', 'weekly', '2026-09-06')
+    ).rejects.toThrow('Leaderboard Settlement Receipts Returned Invalid Data');
+  });
+});

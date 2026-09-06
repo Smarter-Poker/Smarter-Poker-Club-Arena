@@ -35,6 +35,7 @@ import {
   supabase,
 } from '../services/supabase.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
+import * as EngineMetrics from '../observability/engineInstruments.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
@@ -928,6 +929,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // The actual pool amounts are fetched from Supabase and paid from union/club bank
         // For now, broadcast the BBJ_HIT event with payout percentages.
         // The actual payout amounts will be calculated in postHandTasks() using the pool balance.
+        EngineMetrics.bbjHitsDetectedTotal.inc(1, { table_id: this.tableId });
         this.hub?.emitEvent(this.tableId, {
           type: 'bbj_hit',
           table_id: this.tableId,
@@ -1473,7 +1475,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 amount: a.amount,
                 hand_name: a.hand?.name ?? null,
               }))
-            : undefined;
+            : snap.bombPot && (snap.winners?.length ?? 0) > 0
+              ? /* THE ROW MUST STILL COMMIT (2026-09-06). Since 20260906143315
+                   the database refuses a bomb hand that distributed chips and
+                   carries no award units. A bomb hand that produced winners
+                   but an empty per-pot award array (the 'bomb_award_units_
+                   empty' defect reported below) would therefore be refused
+                   twenty times by the retry queue and lost - hand, rake link,
+                   facts and all - which is worse than the missing breakdown
+                   the guard exists to prevent. The winners list IS the money
+                   that left the pot: on 966 of 966 bomb hands measured over
+                   six hours its amounts summed to the distributable pot to the
+                   cent. So the breakdown is derived from it, one unit per
+                   winner, and the defect is still reported. */
+                snap.winners.map((w) => ({
+                  pot_index: w.potIndex ?? 0,
+                  board: 1,
+                  side: 'high',
+                  user_id: w.userId,
+                  amount: w.amount,
+                  hand_name: w.hand?.name ?? null,
+                }))
+              : undefined;
 
         const result = await logHandHistory({
           tableId: this.tableId,
@@ -1944,7 +1967,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       ) {
         const bbjHit = snap.bbjHit;
         const payoutConfig = snap.bbjPayoutConfig;
-        const result = await processBBJPayout({
+        const outcome = await processBBJPayout({
           tableId: this.tableId,
           clubId: this.tableInfo.club_id,
           handNumber: snap.handNumber,
@@ -1961,7 +1984,40 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           payoutTotalPercent: payoutConfig.bbjPayoutTotalPercent,
         });
 
-        if (result) {
+        /* THE TABLE IS TOLD EVEN WHEN THE MONEY IS LATE (BBJ phase 2.2).
+           A jackpot that cannot be paid this instant - the commonest cause
+           being the :55 maintenance freeze, which refuses every money write
+           for five minutes - used to produce SILENCE at the table: `bbj_hit`
+           had already gone out, the celebration waits on
+           `bbj_payout_complete`, and that never arrived. The players who had
+           just taken and beaten a qualifying hand saw the hand end normally
+           and nothing else, and the chips appeared minutes later with no
+           explanation. The payout itself is safe (write-ahead claim + the
+           reconciler), so this is only about telling them. */
+        if (outcome.status === 'queued') {
+          EngineMetrics.bbjPayoutsQueuedTotal.inc(1, { table_id: this.tableId });
+          this.hub?.emitEvent(this.tableId, {
+            type: 'bbj_payout_pending',
+            table_id: this.tableId,
+            hand_number: snap.handNumber,
+            emitted_at: Date.now(),
+            // Retained like every other jackpot beat, so a player whose socket
+            // is between reconnects still learns the payout is coming.
+            replay_until: Date.now() + 60_000,
+            loser: { userId: bbjHit.loserUserId },
+            winner: { userId: bbjHit.winnerUserId },
+            tablePlayerIds: (bbjHit.dealtInPlayerIds || []).filter(
+              (id) => id !== bbjHit.loserUserId && id !== bbjHit.winnerUserId
+            ),
+          });
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] BBJ payout could not land now; queued and announced as pending`
+          );
+        }
+
+        if (outcome.status === 'paid') {
+          const result = outcome.result;
+          EngineMetrics.bbjPayoutsPaidTotal.inc(1, { table_id: this.tableId });
           // Credit chips directly to players' table stacks
           // LOSER (bad beat holder) gets 50% of total payout
           const loserSeat = players.find((p) => p.user_id === bbjHit.loserUserId);

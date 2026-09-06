@@ -59,7 +59,12 @@ Known and deliberately NOT in this phase: the felt names a horse by
 disagree on a horse's name. That is a platform naming question (engine
 `loadSeatedPlayers`), not a jackpot one; recorded for the naming law's owner.
 
-## Phase 2 of 6 - A hit is never lost
+## Phase 2 of 6 - A hit is never lost **[SHIPPED 2026-09-06]**
+
+Record: `docs/changelog/2026-09-06-bbj-phase-2-a-hit-is-never-lost.md`.
+Migration `20260906152329_an_unpayable_jackpot_share_is_parked_not_lost`
+applied. 2.6 (the post-deploy drain proof) is the one item that can only be
+done after the merge is live; it is run and recorded there.
 
 | #   | Item                                                                                                                                                                                                            |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -90,12 +95,13 @@ disagree on a horse's name. That is a platform naming question (engine
 
 ## Phase 5 of 6 - Close the books
 
-| #   | Item                                                                                                                                                                                                                             |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 5.1 | Audit the admin money controls the way the hit path was audited: `fn_union_fund_bbj_pool`, `fn_bbj_move_between_banks`, promo rain, the owner's `bbj_percent` switch, `BBJAdminAnalytics`, `fn_resolve_bbj_pool`, `record_rake`. |
-| 5.2 | Convert the three SECURITY INVOKER writers (`record_rake`, `fn_resolve_bbj_pool`, `fn_union_fund_bbj_pool`) so INSERT/UPDATE/DELETE can be revoked from `anon` and `authenticated` on every `bbj_*` table.                       |
-| 5.3 | Resolve the promo-bank drift (`fn_bbj_promo_bank_check`, 6,705 chips) and the lifetime conservation gap (70,795 above baseline) with a fix or a written resolution on the alert row.                                             |
-| 5.4 | Table-share farming check in the multi-account detector.                                                                                                                                                                         |
+| #   | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5.1 | Audit the admin money controls the way the hit path was audited: `fn_union_fund_bbj_pool`, `fn_bbj_move_between_banks`, promo rain, the owner's `bbj_percent` switch, `BBJAdminAnalytics`, `fn_resolve_bbj_pool`, `record_rake`.                                                                                                                                                                                                                                                                           |
+| 5.2 | Convert the three SECURITY INVOKER writers (`record_rake`, `fn_resolve_bbj_pool`, `fn_union_fund_bbj_pool`) so INSERT/UPDATE/DELETE can be revoked from `anon` and `authenticated` on every `bbj_*` table.                                                                                                                                                                                                                                                                                                 |
+| 5.3 | Resolve the promo-bank drift (`fn_bbj_promo_bank_check`, 6,705 chips) and the lifetime conservation gap (70,795 above baseline) with a fix or a written resolution on the alert row.                                                                                                                                                                                                                                                                                                                       |
+| 5.4 | Table-share farming check in the multi-account detector.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 5.5 | `I7_raked_hand_never_banked`: rake is not banked inline and `rake-repair-unbanked-hourly` catches it every hour, which by CLAUDE.md 10.11 means the cause is not fixed. Measured 2026-09-06: 0 of 51,733 raked hands (62,498.69 chips) unbanked NOW, so no money is missing - but `fn_rake_bbj_audit` raised CRITICAL on 5 hands at 07:38 and 3 at 06:38 that the repair then fixed. Fix the cause; then give the audit a grace that outlasts the repair, so a CRITICAL stops firing on correct behaviour. |
 
 ## Phase 6 of 6 - Mini BBJ, funded by the backup reserve (last, per Dan)
 

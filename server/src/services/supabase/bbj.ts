@@ -15,6 +15,7 @@
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { raiseFinancialAlert } from '../financialAlerts.js';
+import { bbjSharesParkedTotal } from '../../observability/engineInstruments.js';
 
 /**
  * BBJ AUDIT 2026-09-05: every club that shares a jackpot pool with `clubId`.
@@ -352,15 +353,53 @@ export interface BBJPayoutResult {
 }
 
 /**
- * Signature of the durable-queue writer, injected by FeeReconciler at boot so
+ * What became of a jackpot the engine detected. `null` used to carry four
+ * different meanings here - paid, already paid, nothing to pay, and could not
+ * pay - so the caller could not tell a settled hand from a lost one, and the
+ * table had no way to say "paying after the break" (BBJ phase 2).
+ */
+export type BBJPayoutOutcome =
+  | { status: 'paid'; result: BBJPayoutResult }
+  /** A replay: the money was already placed, and the RPC re-drove any missing credit. */
+  | { status: 'already_paid' }
+  /** Nothing will ever be paid for this hand: no pool, an empty pool, a refused argument. */
+  | { status: 'nothing_to_pay'; reason: string }
+  /** Detected, NOT paid, and durably recorded for the reconciler to re-drive. */
+  | { status: 'queued'; lastError: string };
+
+/**
+ * The durable record of a jackpot payout, injected by FeeReconciler at boot so
  * this module does not import it (FeeReconciler imports logBBJCollection from
  * here; a static import back would be a cycle).
+ *
+ * WRITE-AHEAD (BBJ phase 2.1). Until now the row was written only AFTER four
+ * attempts had failed, which leaves the window this queue exists to close:
+ * the engine detects a jackpot, announces it, and the process dies - a
+ * SIGKILL, an OOM, the box going away - before any row exists. Nothing then
+ * knows a jackpot was owed. `claim` is called BEFORE the first attempt, so
+ * the intent is on disk while the money is still in the pool, and `settle`
+ * closes it the moment the outcome is known.
  */
-export type BBJPayoutQueueWriter = (params: BBJPayoutParams, lastError: string) => Promise<void>;
-let bbjPayoutQueueWriter: BBJPayoutQueueWriter | null = null;
+export interface BBJPayoutQueue {
+  /** Record the intent to pay, before trying. Idempotent; never throws. */
+  claim(params: BBJPayoutParams, note: string): Promise<void>;
+  /** Close the claim: the money landed, or nothing will ever be owed. Never throws. */
+  settle(params: BBJPayoutParams, note: string): Promise<void>;
+}
+let bbjPayoutQueue: BBJPayoutQueue | null = null;
 /** Called once by FeeReconciler when it loads. Tests may call it with a stub. */
-export function setBBJPayoutQueueWriter(writer: BBJPayoutQueueWriter | null): void {
-  bbjPayoutQueueWriter = writer;
+export function setBBJPayoutQueue(queue: BBJPayoutQueue | null): void {
+  bbjPayoutQueue = queue;
+}
+
+/** Never let bookkeeping about the money stop the money. */
+async function queueSafely(fn: () => Promise<void>, what: string): Promise<void> {
+  if (!bbjPayoutQueue) return;
+  try {
+    await fn();
+  } catch (e) {
+    reportError(e, `processBBJPayout.queue_${what}_failed`);
+  }
 }
 
 /** Thrown inside the attempt loop to say "this one is not worth retrying". */
@@ -407,26 +446,64 @@ export async function processBBJPayout(
   params: BBJPayoutParams,
   options: {
     /**
-     * True when the reconciler is re-driving a queued payout: no re-queue on
-     * failure (the reconciler bumps the row's attempt counter itself), and
-     * every recipient is notified, because the table has long since moved on
-     * and nobody is going to see a celebration overlay for this hand.
+     * True when the reconciler is re-driving a queued payout: the reconciler
+     * OWNS the queue row (it bumps the attempt counter and resolves it), so
+     * this call neither claims nor settles, and every recipient is notified,
+     * because the table has long since moved on and nobody is going to see a
+     * celebration overlay for this hand.
      */
     fromQueue?: boolean;
   } = {}
-): Promise<BBJPayoutResult | null> {
+): Promise<BBJPayoutOutcome> {
+  const owned = options.fromQueue !== true;
+
+  /* WRITE-AHEAD (phase 2.1). The intent goes on disk BEFORE the first attempt,
+     while the money is still in the pool. Until now the row was written only
+     after four attempts had failed, so a process that died between detecting
+     the jackpot and paying it left nothing behind that knew a jackpot was
+     owed - the one gap the queue was built to close. Best effort: if the
+     database is unreachable the payout is attempted anyway (it may be the
+     Realtime side that is unwell, not Postgres), and the post-failure claim
+     below is the second chance. */
+  if (owned) {
+    await queueSafely(
+      () => bbjPayoutQueue!.claim(params, 'write-ahead: detected, payout not yet attempted'),
+      'claim'
+    );
+  }
+
   let lastError = '';
 
   for (let attempt = 1; attempt <= BBJ_PAYOUT_ATTEMPTS; attempt++) {
     try {
       const outcome = await attemptBBJPayoutOnce(params, options.fromQueue === true);
+      if (owned) {
+        await queueSafely(
+          () =>
+            bbjPayoutQueue!.settle(
+              params,
+              outcome.status === 'paid'
+                ? `paid ${outcome.result.totalPayout} to ${params.dealtInPlayerIds.length} recipient(s)`
+                : 'already paid; the RPC re-drove any missing credit'
+            ),
+          'settle'
+        );
+      }
       return outcome;
     } catch (e) {
       if (e instanceof BBJPayoutFinal) {
         // Not a failure of the transport: the pool is empty, the club is
-        // gone, the RPC refused the arguments. Retrying cannot change it.
+        // gone, the RPC refused the arguments. Retrying cannot change it, and
+        // leaving the claim open would have the reconciler re-drive a hand
+        // that can never pay until it exhausts into a critical alert.
         console.warn(`[processBBJPayout] ${e.reason}: ${e.message}`);
-        return null;
+        if (owned) {
+          await queueSafely(
+            () => bbjPayoutQueue!.settle(params, `nothing to pay (${e.reason}): ${e.message}`),
+            'settle'
+          );
+        }
+        return { status: 'nothing_to_pay', reason: e.reason };
       }
       lastError = e instanceof Error ? e.message : String(e);
       const retryable = BBJ_PAYOUT_RETRYABLE.test(lastError);
@@ -456,22 +533,18 @@ export async function processBBJPayout(
     `bbj_atomic_payout_v2 is idempotent on (pool, table, hand), so re-driving it by hand is safe.`;
   reportError(new Error(detail), 'processBBJPayout.exhausted');
 
-  if (!options.fromQueue) {
-    if (bbjPayoutQueueWriter) {
-      try {
-        await bbjPayoutQueueWriter(params, lastError);
-      } catch (qErr) {
-        reportError(qErr, 'processBBJPayout.queue_failed');
-      }
-    }
+  if (owned) {
+    // The claim above normally already exists; this refreshes its note with
+    // the error, and is the second chance if the write-ahead insert failed.
+    await queueSafely(() => bbjPayoutQueue!.claim(params, lastError), 'claim');
     await raiseFinancialAlert('critical', 'processBBJPayout.exhausted', detail, {
       ...params,
       attempts: BBJ_PAYOUT_ATTEMPTS,
       lastError,
-      queued: bbjPayoutQueueWriter !== null,
+      queued: bbjPayoutQueue !== null,
     });
   }
-  return null;
+  return { status: 'queued', lastError };
 }
 
 /**
@@ -482,7 +555,7 @@ export async function processBBJPayout(
 async function attemptBBJPayoutOnce(
   params: BBJPayoutParams,
   fromQueue: boolean
-): Promise<BBJPayoutResult | null> {
+): Promise<{ status: 'paid'; result: BBJPayoutResult } | { status: 'already_paid' }> {
   // 1. Find the club's union (if any). A read error is a transport failure,
   //    not "club not found" - the two used to be indistinguishable here, and
   //    the second one silently ended the payout.
@@ -566,8 +639,14 @@ async function attemptBBJPayoutOnce(
         `[processBBJPayout] Already paid - hand ${params.tableId}#${params.handNumber} on pool ${pool.id}` +
           (rpc?.recovered ? ' (re-drove a missing recipient credit)' : '')
       );
+      return { status: 'already_paid' };
     }
-    return null;
+    /* Not applied and not a replay: the pool row read as empty between the
+       lookup above and the locked read inside the RPC. Nothing is owed. */
+    throw new BBJPayoutFinal(
+      `pool ${pool.id} had nothing to pay when the RPC locked it`,
+      'no_pool_or_empty'
+    );
   }
 
   const totalPayout = Number(rpc.total_payout);
@@ -593,6 +672,46 @@ async function attemptBBJPayoutOnce(
     `[processBBJPayout] BBJ HIT! Pool ${pool.id}: $${totalPayout} total ` +
       `(loser=$${loserShare}, winner=$${winnerShare}, table=$${tableShareTotal} / ${tableOnlyPlayers.length} players)`
   );
+
+  /* A PARKED SHARE IS NEVER SILENT (BBJ phase 2.3). The RPC now parks a
+     recipient's share rather than raising when no club wallet resolves for
+     them - which is what stops one unpayable player costing the whole table
+     their jackpot. The chips go back to the pool in the same transaction, so
+     nothing is missing, but somebody is still OWED that money and a debt
+     nobody is told about is the failure this whole phase is against. One
+     indexed read on the rare jackpot path. */
+  try {
+    const { data: parked } = await supabase
+      .from('bbj_unclaimed_shares')
+      .select('user_id, amount')
+      .eq('payout_id', rpc.payout_id)
+      .is('paid_at', null);
+    if (parked && parked.length > 0) {
+      const total = parked.reduce((n, r) => n + Number(r.amount || 0), 0);
+      /* COUNTED WHERE IT HAPPENS (BBJ phase 2.4). This counter was declared
+         beside detected/paid/queued and incremented nowhere, which is the
+         worse half of having no metric at all: `poker_bbj_shares_parked_total`
+         would have read 0 for ever and been indistinguishable from "no share
+         was ever parked". A number nobody writes to is not coverage. */
+      bbjSharesParkedTotal.inc(parked.length, { table_id: params.tableId });
+      await raiseFinancialAlert(
+        'warning',
+        'processBBJPayout.share_parked',
+        `[BBJ] ${parked.length} jackpot share(s) worth ${total} could not be delivered on table ` +
+          `${params.tableId} hand #${params.handNumber}: no club wallet resolved for the recipient. ` +
+          `The chips were returned to pool ${pool.id} and the players are still owed them - ` +
+          `fn_bbj_unclaimed_shares() lists every open one, and a re-drive pays them once they hold a club membership again.`,
+        {
+          tableId: params.tableId,
+          handNumber: params.handNumber,
+          poolId: pool.id,
+          parked: parked.map((r) => ({ userId: r.user_id, amount: Number(r.amount) })),
+        }
+      );
+    }
+  } catch (parkErr) {
+    console.warn('[processBBJPayout] could not read parked shares (money is placed):', parkErr);
+  }
 
   // EVERY RECIPIENT IS TOLD (BBJ build plan phase 1, 2026-09-05).
   //
@@ -675,11 +794,14 @@ async function attemptBBJPayoutOnce(
   }
 
   return {
-    totalPayout,
-    loserShare,
-    winnerShare,
-    tableShare: tableShareTotal,
-    perPlayerShare,
-    poolId: pool.id,
+    status: 'paid',
+    result: {
+      totalPayout,
+      loserShare,
+      winnerShare,
+      tableShare: tableShareTotal,
+      perPlayerShare,
+      poolId: pool.id,
+    },
   };
 }

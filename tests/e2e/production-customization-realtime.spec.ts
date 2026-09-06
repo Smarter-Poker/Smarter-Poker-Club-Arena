@@ -11,7 +11,9 @@ import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import {
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
+  readServiceRows,
   requireCustomizationCertificationEnvironment,
+  type CustomizationCertificationEnvironment,
   type TemporaryCustomizationAccount,
 } from './support/temporaryCustomizationAccount';
 
@@ -57,6 +59,28 @@ const CATEGORY_ALTERNATIVES = {
   Cards: ['Classic Blue', 'Classic Red', 'Royal'],
 } as const;
 
+const CATEGORY_APPEARANCE_FIELD = {
+  Tables: 'table',
+  Scenes: 'background',
+  Buttons: 'button',
+  Cards: 'cards',
+} as const satisfies Record<keyof typeof CATEGORY_ALTERNATIVES, keyof Appearance>;
+
+const FREE_ASSET_ID_BY_NAME: Record<string, string> = {
+  'Classic Green': 'classic_green',
+  'Carbon Red': 'carbon_red',
+  'Ocean Blue': 'ocean_blue',
+  Midnight: 'midnight',
+  'Royal Indigo': 'royal_indigo',
+  'Emerald Room': 'emerald_room',
+  'White D': 'classic-white',
+  'Red D': 'red-d-gear',
+  'Gray D': 'gray-d-gear',
+  'Classic Blue': 'classic_blue',
+  'Classic Red': 'classic_red',
+  Royal: 'royal',
+};
+
 const PRODUCTION_RESPONSE_TIMEOUT = 60_000;
 
 function preview(studio: Locator) {
@@ -64,25 +88,76 @@ function preview(studio: Locator) {
 }
 
 async function readAppearance(studio: Locator): Promise<Appearance> {
-  const target = preview(studio);
-  return {
-    table: (await target.getAttribute('data-table-theme')) || '',
-    background: (await target.getAttribute('data-background-theme')) || '',
-    button: (await target.getAttribute('data-button-theme')) || '',
-    cards: (await target.getAttribute('data-card-back')) || '',
-  };
+  return preview(studio).evaluate((target) => ({
+    table: target.getAttribute('data-table-theme') || '',
+    background: target.getAttribute('data-background-theme') || '',
+    button: target.getAttribute('data-button-theme') || '',
+    cards: target.getAttribute('data-card-back') || '',
+  }));
 }
 
 async function expectAppearance(studio: Locator, appearance: Appearance) {
-  const target = preview(studio);
-  await expect(target).toHaveAttribute('data-table-theme', appearance.table, { timeout: 20_000 });
-  await expect(target).toHaveAttribute('data-background-theme', appearance.background, {
-    timeout: 20_000,
-  });
-  await expect(target).toHaveAttribute('data-button-theme', appearance.button, {
-    timeout: 20_000,
-  });
-  await expect(target).toHaveAttribute('data-card-back', appearance.cards, { timeout: 20_000 });
+  await expect.poll(() => readAppearance(studio), { timeout: 20_000 }).toEqual(appearance);
+}
+
+async function expectPreviewAvatarsLoaded(studio: Locator) {
+  const avatars = preview(studio).locator('.studio-game-preview__seat > img');
+  await expect(avatars).toHaveCount(6, { timeout: PRODUCTION_RESPONSE_TIMEOUT });
+  await expect
+    .poll(
+      () =>
+        avatars.evaluateAll((images) =>
+          images.every(
+            (image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0
+          )
+        ),
+      {
+        timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        message: 'Table Studio preview avatars did not resolve to real image assets.',
+      }
+    )
+    .toBe(true);
+}
+
+async function expectPersistedAppearance(
+  environment: CustomizationCertificationEnvironment,
+  userId: string,
+  appearance: Appearance
+) {
+  await expect
+    .poll(
+      async () => {
+        const rows = await readServiceRows<{
+          game_type: string;
+          table_id: string;
+          background_id: string;
+          button_id: string;
+          cards_id: string;
+        }>(
+          environment,
+          'user_theme_settings',
+          new URLSearchParams({
+            select: 'game_type,table_id,background_id,button_id,cards_id',
+            user_id: `eq.${userId}`,
+            game_type: 'eq.ALL',
+          })
+        );
+        const row = rows[0];
+        return row
+          ? {
+              table: row.table_id,
+              background: row.background_id,
+              button: row.button_id,
+              cards: row.cards_id,
+            }
+          : null;
+      },
+      {
+        timeout: PRODUCTION_RESPONSE_TIMEOUT,
+        message: 'The selected Table Studio appearance never became durable.',
+      }
+    )
+    .toEqual(appearance);
 }
 
 async function installOverlaySafety(page: Page) {
@@ -133,6 +208,7 @@ async function openStudio(page: Page) {
   await expect(studio.getByText('Table Art Live')).toBeVisible({
     timeout: PRODUCTION_RESPONSE_TIMEOUT,
   });
+  await expectPreviewAvatarsLoaded(studio);
   await expect(grid.locator('.theme-asset[aria-pressed="true"]')).toHaveCount(1, {
     timeout: PRODUCTION_RESPONSE_TIMEOUT,
   });
@@ -350,8 +426,10 @@ test.describe('production Table Studio realtime contract', () => {
 
       const primaryPreset = different(primaryOriginal.selections.Looks, Object.keys(PRESETS));
       await selectAsset(primaryStudio, 'Looks', primaryPreset);
-      await expectAppearance(primaryStudio, PRESETS[primaryPreset]);
-      await expectAppearance(mobileStudio, PRESETS[primaryPreset]);
+      let expectedPrimary = { ...PRESETS[primaryPreset] };
+      await expectPersistedAppearance(environment, primaryUserId, expectedPrimary);
+      await expectAppearance(primaryStudio, expectedPrimary);
+      await expectAppearance(mobileStudio, expectedPrimary);
       await expectAppearance(otherStudio, otherBefore);
       console.log('[customization-realtime] preset synced and remained account-scoped');
 
@@ -374,13 +452,20 @@ test.describe('production Table Studio realtime contract', () => {
           CATEGORY_ALTERNATIVES[category]
         );
         await selectAsset(primaryStudio, category, target);
-        const updated = await readAppearance(primaryStudio);
-        await expectAppearance(mobileStudio, updated);
+        const targetId = FREE_ASSET_ID_BY_NAME[target];
+        if (!targetId) throw new Error(`The free design ${target} has no expected asset id.`);
+        expectedPrimary = {
+          ...expectedPrimary,
+          [CATEGORY_APPEARANCE_FIELD[category]]: targetId,
+        };
+        await expectPersistedAppearance(environment, primaryUserId, expectedPrimary);
+        await expectAppearance(primaryStudio, expectedPrimary);
+        await expectAppearance(mobileStudio, expectedPrimary);
         await expectAppearance(otherStudio, otherBefore);
         console.log(`[customization-realtime] ${category} synced and remained account-scoped`);
       }
 
-      const finalPrimary = await readAppearance(primaryStudio);
+      const finalPrimary = expectedPrimary;
       // openStudio performs a fresh, bounded navigation before reopening the
       // modal. A separate reload here duplicated that navigation and could
       // leave Playwright waiting forever for a lifecycle event even though the

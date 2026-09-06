@@ -54,6 +54,39 @@ export const allInEquityDuration: Histogram = metricsRegistry.histogram(
  * audit caught twice) shows up here as mucked_hands_total flatlining while
  * showdown_hands_total keeps climbing — no DB sampling required.
  */
+/**
+ * ═══ THE BAD BEAT JACKPOT, COUNTED (BBJ phase 2.4, 2026-09-06) ═════════════
+ *
+ * A jackpot is the rarest event on the platform - one every few weeks - so
+ * "did it work" has never been answerable from a graph, only by reading the
+ * ledger after somebody noticed. These four make the whole path observable:
+ * DETECTED is what the engine ruled at showdown, PAID is what actually
+ * landed, QUEUED is what could not be paid this instant (the :55 freeze is
+ * the ordinary cause) and PARKED is a single recipient's share held because
+ * no club wallet would take it.
+ *
+ * The useful reading is the DIFFERENCE. detected == paid is health. A
+ * detected that never becomes paid or queued is the failure mode the whole
+ * of phase 2 exists to make impossible, and it would now be visible as two
+ * counters that stopped agreeing.
+ */
+export const bbjHitsDetectedTotal: Counter = metricsRegistry.counter(
+  'poker_bbj_hits_detected_total',
+  'Bad Beat Jackpot hits the engine ruled qualifying at showdown (label: table_id)'
+);
+export const bbjPayoutsPaidTotal: Counter = metricsRegistry.counter(
+  'poker_bbj_payouts_paid_total',
+  'Bad Beat Jackpot payouts that landed on the first live attempt (label: table_id)'
+);
+export const bbjPayoutsQueuedTotal: Counter = metricsRegistry.counter(
+  'poker_bbj_payouts_queued_total',
+  'Bad Beat Jackpot payouts that could not be paid live and were queued for the reconciler (label: table_id)'
+);
+export const bbjSharesParkedTotal: Counter = metricsRegistry.counter(
+  'poker_bbj_shares_parked_total',
+  'Bad Beat Jackpot recipient shares parked because no club wallet would take them (label: table_id)'
+);
+
 export const showdownHandsTotal: Counter = metricsRegistry.counter(
   'poker_showdown_hands_total',
   'Hands that reached a contested showdown (label: table_id)'
@@ -108,7 +141,7 @@ export const engineTracer = new Tracer({
 // Horses lose nothing here (CLAUDE.md 10.5): the same latency is observed for
 // every table; the label says who was watching, it does not change what any
 // seat gets.
-import { MetricsRegistry } from './Metrics.js';
+import { MetricsRegistry, type Gauge } from './Metrics.js';
 
 export const alwaysOnRegistry = new MetricsRegistry();
 
@@ -116,6 +149,38 @@ export const alwaysOnRegistry = new MetricsRegistry();
 export const actToBroadcastFleet: Histogram = alwaysOnRegistry.histogram(
   'poker_act_to_broadcast_ms',
   'Latency from a player action being accepted to the new state reaching every seat (ms). audience=human when a human is seated at the table, else horse; format=cash|spin|hu_sng|mtt'
+);
+
+/**
+ * THE CORE THAT LIMITS EVERYTHING, AS A NUMBER (2026-09-06).
+ *
+ * The engine is ONE Node core and CLAUDE.md calls that the ceiling. Until
+ * today the only measurement of it was `equityGovernor.snapshot()` inside the
+ * `/health` JSON - no time series, no chart, no alert, nothing to correlate a
+ * slow controller pass or a laggy table against. `HorseDataLedger` said so
+ * itself: "the ONLY visibility the governor has outside the GameServer status
+ * payload".
+ *
+ * These are gauges, not a histogram: the governor already keeps the
+ * percentiles (perf_hooks maintains the underlying histogram), so re-bucketing
+ * them here would cost work to say the same thing less precisely.
+ *
+ * The scale is published beside the delay on purpose. A p50 over 40 ms and a
+ * scale of 1 means the governor is not reacting; a scale below 1 with a low
+ * p50 means it is throttling on a reading nobody can see. Together they are
+ * self-checking; apart, each can lie.
+ */
+export const eventLoopDelayP50: Gauge = alwaysOnRegistry.gauge(
+  'poker_event_loop_delay_p50_ms',
+  'Event-loop delay p50 over the last second (ms). The engine is one core; this is what saturation looks like from inside it.'
+);
+export const eventLoopDelayP99: Gauge = alwaysOnRegistry.gauge(
+  'poker_event_loop_delay_p99_ms',
+  'Event-loop delay p99 over the last second (ms).'
+);
+export const equityGovernorScale: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_governor_scale',
+  'Horse Monte Carlo iteration scale the governor is applying (1 = full precision, 0.2 = floor). Below 1 means the core is shedding load.'
 );
 
 /** Actions processed, 2 series. */

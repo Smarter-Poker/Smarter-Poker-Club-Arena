@@ -305,7 +305,10 @@ function Felt({
   const buttonSeat = buttonSeatOf(model, seats);
   const buttonPos = buttonSeat !== null ? layout[buttonSeat] : null;
   const facing = facingAt(prev, frame);
-  const potPos = { x: 50, y: 38 };
+  /* Where chips travel to and from: the pot pill's own centre, measured on the
+     felt (43% of its height, boards below it). Close enough that the pill has
+     faded out before the last few pixels could be noticed. */
+  const potPos = { x: 50, y: 43 };
 
   return (
     <div
@@ -375,7 +378,8 @@ function Felt({
         // A seat whose cards were already face-up (the viewer's own) has nothing to flip.
         const flipping = motion.flip.includes(p.seat) && !isHero;
         const chipsIn = motion.chipsIn === p.seat;
-        const sweeping = motion.sweep.includes(p.seat) && prev ? prev.committed[p.seat] || 0 : 0;
+        const deadIn = motion.deadIn === p.seat ? (frame.row?.amount ?? 0) : 0;
+        const sweeping = motion.sweep.includes(p.seat) ? (prev?.committed[p.seat] ?? 0) : 0;
         const awarded = motion.potTo.includes(p.seat);
         const known = revealed ? p.hole : showPrivate ? own : null;
         const made = known ? madeLabelFor(model, frame, p.userId, known) : null;
@@ -455,6 +459,24 @@ function Felt({
                 {money(bet)}
               </div>
             )}
+            {deadIn > 0 && (
+              /* Dead money (an ante) goes from the seat straight to the pot.
+                 It is never in front of the player, so it never becomes a bet
+                 pill - it just travels. */
+              <div
+                key={`dead-${p.seat}-${frame.key}`}
+                className="hr-bet hr-bet--dead"
+                aria-hidden="true"
+                style={
+                  {
+                    left: `${pos.x}%`,
+                    top: `${pos.y}%`,
+                  } as React.CSSProperties
+                }
+              >
+                {money(deadIn)}
+              </div>
+            )}
             {sweeping > 0 && (
               <div
                 key={`sweep-${p.seat}-${frame.key}`}
@@ -516,7 +538,18 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
   const playbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const go = useCallback((next: number | ((s: number) => number), motion: boolean) => {
-    setCursor((c) => ({ step: typeof next === 'function' ? next(c.step) : next, motion }));
+    setCursor((c) => {
+      const step = typeof next === 'function' ? next(c.step) : next;
+      /* ARRIVING WHERE YOU ALREADY ARE IS NOT A STEP. Without this, holding
+         ArrowRight on the last frame handed back a new cursor object every
+         press, and each one re-ran the arrival effect: the win fanfare played
+         again and the pot flew to the winner again, on a hand that had already
+         ended. Same shape at frame 0 with ArrowLeft. Returning the SAME object
+         is what makes it a no-op - a new object with equal fields still
+         re-renders and still re-fires the effect. */
+      if (step === c.step) return c;
+      return { step, motion };
+    });
   }, []);
   const chooseRate = useCallback((r: ReplayRate) => {
     setRate(r);
@@ -584,11 +617,18 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursor]);
 
+  /* Leaving the Replay tab stops playback. It used to keep stepping behind
+     the Rundown: the felt nobody could see played its chip and card cues to
+     the end, and coming back showed the hand already over. */
+  useEffect(() => {
+    if (tab !== 'replay') setIsPlaying(false);
+  }, [tab]);
+
   // Playback: one frame per beat, scaled by the player's Animation Speed and
   // the replay's own rate. Each tick is a STEP, so it moves and sounds.
   useEffect(() => {
     if (playbackRef.current) clearTimeout(playbackRef.current);
-    if (!isPlaying || frames.length === 0) return;
+    if (!isPlaying || tab !== 'replay' || frames.length === 0) return;
     if (step >= last) {
       setIsPlaying(false);
       return;
@@ -598,7 +638,7 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
     return () => {
       if (playbackRef.current) clearTimeout(playbackRef.current);
     };
-  }, [isPlaying, step, last, frames.length, frame, rate, go]);
+  }, [isPlaying, tab, step, last, frames.length, frame, rate, go]);
 
   const togglePlay = useCallback(() => {
     if (step >= last) go(0, false);

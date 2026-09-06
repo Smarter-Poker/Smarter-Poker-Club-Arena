@@ -169,6 +169,15 @@ export interface ReplayInput {
    */
   amountsAreIncremental?: boolean;
   /**
+   * A BOMB POT posts antes and NO BLINDS. Without this the blind-synthesis
+   * below saw a log with no blind rows, decided they had been dropped, and
+   * invented a small and a big blind nobody posted: a real double-board bomb
+   * pot (#6704153) rebuilt to 3.75 against a stored pot of 3.00, `reconciles`
+   * went false so the whole stack column was withdrawn, and the felt drew two
+   * bet pills for money that never left a stack.
+   */
+  bombPot?: boolean | null;
+  /**
    * PHASE 4 2026-09-01 - the discarded card, keyed by the user it belongs to.
    *
    * In Crazy Pineapple the thrown card is never revealed to opponents, not on
@@ -256,6 +265,20 @@ export interface ReplayRow {
    * and on every other verb - an opponent's fold stays face-down backs.
    */
   privateCards: DeckCard[] | null;
+  /**
+   * DEAD forced money: an ante, a bomb-pot ante, the dead half of a dead
+   * blind. It is in the pot but was never in front of the seat, so it is not
+   * part of the live bet level and nothing may price a call off it.
+   *
+   * The reconstruction has always known this (it is why a raise-TO level is
+   * differenced against live chips only), but until 2026-09-05 it kept the
+   * fact to itself: `buildReplayFrames` re-derived its own per-seat
+   * commitments from the rows, counted the ante among them, and the felt drew
+   * a tournament big blind sitting behind 750 when 400 was in front of them.
+   * Phase 3 then priced pot odds off that number and told every player facing
+   * the blind a price that was not the price. One flag, read by both.
+   */
+  dead: boolean;
 }
 
 export interface ReplayStreet {
@@ -602,8 +625,17 @@ export function buildReplay(input: ReplayInput): ReplayModel {
   const logHasReturns = live.some((a) => normalizeVerb(a.action) === 'return');
 
   // Blinds, synthesised only when the log does not already carry them.
+  /**
+   * A bomb pot posts ANTES AND NO BLINDS, so "the log has no blinds" is the
+   * truth there rather than a gap to be filled. Read from the row's own
+   * `bomb_pot` fact, and from a `bomb_ante` row for any input path that does
+   * not carry it (the share codec, an import).
+   */
+  const isBombPot =
+    input.bombPot === true || live.some((a) => canonicalVerb(a.action).includes('bomb_ante'));
+
   const preflopPosts: Array<ReplayRow & { stage: string }> = [];
-  if (!logHasBlinds) {
+  if (!logHasBlinds && !isBombPot) {
     const post = (seat: number | null, amount: number, verb: 'sb' | 'bb') => {
       if (seat === null || !(amount > 0)) return;
       addMoney(seat, amount);
@@ -622,6 +654,8 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         shownCards: null,
         discardedCard: null,
         privateCards: null,
+        // Synthesised because the log had no blinds at all: a live blind.
+        dead: false,
       });
     };
     post(sbSeat, Number(input.smallBlind) || 0, 'sb');
@@ -682,6 +716,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       shownCards: null,
       discardedCard: null,
       privateCards: null,
+      dead: false,
     });
   };
 
@@ -712,11 +747,17 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     }
     if (increment < 0 && verb !== 'return') increment = 0;
 
+    /**
+     * DEAD money goes into the pot but NOT into the live bet level.
+     *
+     * Computed for EVERY row (not only the ones that moved chips) and carried
+     * on the row itself, so every consumer - the rundown, the frames, the
+     * felt's bet pills, the pot odds - reads one answer instead of guessing.
+     */
+    const isDead = (a as { dead?: boolean }).dead === true || canonical === 'ante';
     if (increment !== 0) {
       addMoney(seat, increment);
       /**
-       * DEAD money goes into the pot but NOT into the live bet level.
-       *
        * `committed` exists for one job: differencing a raise-TO level against
        * what that seat already had in. An ante is in the pot and counts toward
        * nothing — a player who posted a 1 ante and then raises TO 20 has added
@@ -727,7 +768,6 @@ export function buildReplay(input: ReplayInput): ReplayModel {
        * `verb === 'ante'` is the floor for rows written before the engine
        * carried the flag, and for any importer that does not set it.
        */
-      const isDead = (a as { dead?: boolean }).dead === true || canonical === 'ante';
       if (!isDead) committed.set(seat, money((committed.get(seat) || 0) + increment));
     }
 
@@ -745,6 +785,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       label: labelFor(a.action, verb),
       amount: increment,
       stackAfter: null,
+      dead: isDead,
       showsMuck: verb === 'fold' || verb === 'muck',
       shownCards: null,
       /* PHASE 4 2026-09-01: the card this seat threw, and only ever the
@@ -871,6 +912,7 @@ export function buildReplay(input: ReplayInput): ReplayModel {
       shownCards: hole,
       discardedCard: null,
       privateCards: null,
+      dead: false,
     });
   }
 
@@ -1159,6 +1201,7 @@ export interface HandHistoryRowLike {
   bbj_amount?: number | string | null;
   button_seat?: number | string | null;
   community_cards?: unknown;
+  bomb_pot?: unknown;
   community_cards2?: unknown;
   community_cards3?: unknown;
   rit_boards?: unknown;
@@ -1213,6 +1256,11 @@ export function replayInputFromRow(
       action: String(r.action ?? ''),
       amount: r.amount === undefined || r.amount === null ? 0 : Number(r.amount),
       stage: (r.stage as string | null | undefined) ?? null,
+      /* The engine has written `dead` on forced-money rows since the ante
+         work; this mapper dropped it, so only the rows whose verb happened to
+         be the literal string `ante` hit the fallback and a bomb pot's
+         `bomb_ante` was read as live money in front of the seat. */
+      dead: r.dead === true,
     };
   });
   const winners = arr(row.winners).map((w) => {
@@ -1263,5 +1311,6 @@ export function replayInputFromRow(
     pots: (row.pots as { index?: number; amount?: number }[] | null | undefined) ?? null,
     discardedCards: extras.discardedCards ?? null,
     privateHoleCards: extras.privateHoleCards ?? null,
+    bombPot: row.bomb_pot != null,
   };
 }

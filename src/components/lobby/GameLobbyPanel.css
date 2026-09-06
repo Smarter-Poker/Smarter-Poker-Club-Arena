@@ -118,6 +118,26 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* THE TICK FOR STAFF (Dan 2026-09-05): one small monospace line under the
+   game facts - the controller's last pass and what it did. Staff only. */
+.glp__tick {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 4%);
+  color: #9aa6b4;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+
+.glp__tick.is-stale {
+  color: #f0b429;
+  background: rgb(240 180 41 / 8%);
+}
+
 .glp__rules {
   list-style: none;
   margin: 0;

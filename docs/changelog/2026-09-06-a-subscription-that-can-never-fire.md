@@ -33,9 +33,11 @@ been dead ever since.
 I wrote the migration to put it back. Then the guard I was building disagreed
 with me - it scanned the worktree and found no such subscription.
 
-**My `~/Documents/club-arena` clone was stale.** On current `main` the
-subscription is gone, deliberately, and the changelog is in the file I had
-been reading an old copy of:
+**`main` had moved under me.** The commit that removed the subscription
+(`1621bf4113`) landed at 10:53 CDT, part-way through this session, and the
+copy of `TablePage.tsx` I had read was from before it. The worktree I cut
+later carried it. On current `main` the subscription is gone, deliberately,
+and the reasoning is in the file I had been reading an earlier version of:
 
 > `table_hole_cards` was 716 of the 1,643 published row changes in a measured
 > 15-second window - 44% of everything Supabase Realtime had to decode - and
@@ -55,10 +57,17 @@ optimisation on this project, on the day it landed, and called it a bug fix.
 reasoning and an explicit "do not re-add without removing the socket path
 first".
 
-Two lessons worth the file: **CLAUDE.md 10.8's warning about stale worktrees
-applies to the main clone too** - it is a mirror, and mine was days behind
-while every worktree I cut was current. And a guard is worth building even
-when you are sure, because the guard is what read the current tree.
+Two lessons worth the file. **A tree you read is a snapshot with a
+timestamp, not a fact.** `main` takes twenty-odd merges a day here; the file I
+based a migration on was correct when I read it and wrong when I acted on it,
+which is CLAUDE.md 10.82's shape ("merged is not landed") pointed the other
+way - _landed is not what you read_. The cheap defence is the one 10.82
+already prescribes for merges: ask the current tree for the file, not your
+memory of it.
+
+And **a guard is worth building even when you are sure**, because the guard is
+what read the current tree. I was one `psql -f` from reverting the largest
+realtime optimisation on this project and filing it as a fix.
 
 ## What the check reports but does not fail on
 

@@ -435,10 +435,38 @@ export function HandDetailModal({
     if (!isOpen) return;
     restoreFocusTo.current = document.activeElement as HTMLElement | null;
     panelRef.current?.focus();
+    const FOCUSABLE =
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         onCloseRef.current();
+        return;
+      }
+      /* TAB STAYED INSIDE ONLY BY LUCK. Focus went in on open and came back on
+         close, which is two thirds of a dialog; the third is that Tab cannot
+         leave. `aria-modal` tells a screen reader the rest of the page is
+         inert and the BROWSER does not care - Tab walked out of the modal into
+         the page behind it, where the reader is then somewhere it was just
+         told does not exist. */
+      if (e.key !== 'Tab' || !panelRef.current) return;
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!panelRef.current.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+        return;
+      }
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     document.addEventListener('keydown', onKey);

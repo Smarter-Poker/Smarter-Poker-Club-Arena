@@ -77,9 +77,45 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   fi
 
   if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
-    # New branch — check all commits up to current
-    RANGE="$LOCAL_SHA"
-    FILES=$(git diff --name-only "$LOCAL_SHA")
+    # ─────────────────────────────────────────────────────────────────────
+    # NEW BRANCH — AND THIS LINE USED TO CHECK NOTHING AT ALL (2026-09-06).
+    #
+    # It read `git diff --name-only "$LOCAL_SHA"`, which compares the WORKING
+    # TREE against that commit. At push time the tree is clean, so it returned
+    # an EMPTY list — the exact opposite of the comment above it. Empty FILES
+    # means empty CHANGED_SRC and CHANGED_TESTS, which means the whole vitest
+    # gate below is skipped in silence. Every house rule still ran and printed
+    # OK, so the push looked thoroughly checked; the one guard CLAUDE.md rule 8
+    # calls the seatbelt against a red test had simply not run.
+    #
+    # Measured on this branch: 0 files that way, 7 the right way. The push went
+    # green with a test that CI then failed on — the test file was even in the
+    # diff, and `vitest related` finds it in four seconds.
+    #
+    # WORSE, IT IS THE PATH EVERY AGENT NOW TAKES. Section 10.82 (binding, the
+    # same day) requires a NEW BRANCH off main for every follow-up commit, so
+    # the rule written to stop commits vanishing routes all of them through the
+    # one case where the test gate is blind. On a dirty tree it was not merely
+    # empty either — it listed exactly the files you had NOT committed.
+    #
+    # This is 10.86's rule 1 and 2 in one line: an unreadable answer coerced
+    # into an empty one, and "I could not tell" reported as "nothing changed".
+    # It gets the same ladder the remote-tip branch below already has: diff
+    # against the merge base, and if there is no base, check the whole tree.
+    # Never nothing.
+    # ─────────────────────────────────────────────────────────────────────
+    BASE=$(git merge-base "$LOCAL_SHA" "$REMOTE/main" 2>/dev/null \
+           || git merge-base "$LOCAL_SHA" main 2>/dev/null || true)
+    if [ -n "$BASE" ]; then
+      RANGE="$BASE..$LOCAL_SHA"
+      FILES=$(git diff --name-only "$BASE" "$LOCAL_SHA" 2>/dev/null || true)
+    else
+      echo "[club-arena pre-push] NOTE: new branch with no common base with"
+      echo "                      main. Checking the whole tree rather than"
+      echo "                      nothing."
+      RANGE="$LOCAL_SHA"
+      FILES=$(git ls-files 2>/dev/null || true)
+    fi
   else
     # ─────────────────────────────────────────────────────────────────────
     # THE REMOTE TIP MAY NOT BE IN THIS CLONE, AND THAT IS NORMAL HERE.

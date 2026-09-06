@@ -83,13 +83,18 @@ function toMatcher(path) {
   if (clean === '' || clean === '*') return null;
   const body = clean
     .split('/')
-    .map((seg) => {
-      if (seg.startsWith(':')) return '[^/]+';
+    .map((seg, index) => {
+      const separator = index === 0 ? '' : '/';
+      if (seg.startsWith(':')) {
+        return seg.endsWith('?')
+          ? `(?:${separator}[^/]+)?`
+          : `${separator}[^/]+`;
+      }
       // A NESTED splat ("legal/*") is a real prefix route and stays a matcher.
-      if (seg === '*') return '.*';
-      return seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (seg === '*') return `${separator}.*`;
+      return `${separator}${seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`;
     })
-    .join('/');
+    .join('');
   return new RegExp(`^${body}$`);
 }
 const matchers = declared.map(toMatcher).filter(Boolean);

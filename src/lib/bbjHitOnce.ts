@@ -48,7 +48,7 @@
  * page, which is the same protection the module-level guards gave before.
  */
 
-import { serverNow } from './serverClock';
+import { serverNow } from '../utils/serverClock';
 
 /**
  * How recent an emission has to be to count as "now".
@@ -68,7 +68,7 @@ export const BBJ_FRESH_MS = 90_000;
  * which the skew monitor keeps within seconds of it), so comparing it
  * against the device clock made the gate hostage to the phone's settings: a
  * clock two minutes fast refused every live jackpot as a replay, silently
- * and forever. lib/serverClock learns the engine's clock from every EVENT
+ * and forever. utils/serverClock learns the engine's clock from every EVENT
  * and PING frame; until the engine has spoken it IS the device clock, so
  * nothing is worse than before.
  */

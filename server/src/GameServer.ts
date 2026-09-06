@@ -34,6 +34,7 @@ import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import {
   wsAuthRefusalPrometheusLines,
   wsProtocolRefusalPrometheusLines,
+  wsTrustLimitPrometheusLines,
 } from './transport/wsHelpers.js';
 import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
@@ -1658,6 +1659,7 @@ export class GameServer {
       // infra/monitoring/alert-rules.yml.
       ...wsAuthRefusalPrometheusLines(),
       ...wsProtocolRefusalPrometheusLines(),
+      ...wsTrustLimitPrometheusLines(),
       // ── ACTION LATENCY, ALWAYS ON (Realtime programme Phase 1, 2026-09-04)
       // The number that defines how a table feels, scraped for the first
       // time. Two series (audience=human|horse), never per table. See

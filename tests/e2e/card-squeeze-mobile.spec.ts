@@ -184,13 +184,11 @@ test.describe('the squeeze at 375px', () => {
     }
   });
 
-  test('reduced motion cross-fades rather than deleting the reveal', async ({ browser }) => {
-    const ctx = await browser.newContext({
-      ...devices['iPhone 13'],
-      reducedMotion: 'reduce',
-    });
-    const page = await ctx.newPage();
-    await loadLiveCss(page);
+  test('reduced motion cross-fades rather than deleting the reveal', async ({ page }) => {
+    // Reuse the fixture page and the CSS loaded by beforeEach. Creating a
+    // second browser context repeated every production chunk fetch and made
+    // this one assertion consume the full 30-second test budget under load.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await mountPhoneBoard(page);
     const state = await page.evaluate(() => {
       const flip = document.getElementById('flip')!;
@@ -214,6 +212,5 @@ test.describe('the squeeze at 375px', () => {
     // an edge belongs to a turn; there is no turn
     expect(state.spineName).toBe('none');
     expect(state.spine).toBeLessThan(0.05);
-    await ctx.close();
   });
 });

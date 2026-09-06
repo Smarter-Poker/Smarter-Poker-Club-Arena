@@ -2013,8 +2013,8 @@
    catalogue scrolls. display: contents removes the short command wrapper as
    the sticky containing block without changing the DOM or accessible order.
    This override intentionally follows every responsive cabinet rule on the
-   desktop ledger. Mobile retains the approved one-chassis control and campaign
-   composition below. */
+   desktop ledger. The final mobile lock at the end of this file applies the
+   same behavior below the measured mobile header. */
 @media (min-width: 901px) {
   .club-lobby-machine > .club-lobby-command-top {
     display: contents;
@@ -2391,5 +2391,31 @@
     object-fit: contain;
     object-position: center;
     clip-path: none;
+  }
+}
+
+/* MOBILE FIND-YOUR-GAME LOCK
+   Keep this at the end of the responsive ledger: the command wrapper also
+   owns the campaign banner, so leaving it as the sticky containing block
+   releases the controls as soon as that short wrapper scrolls away. Flatten
+   only the wrapper and pin the complete selector deck below whichever real
+   GlobalHeader is mounted (standalone page or "+" tab). GlobalHeader measures
+   its rendered height, including the safe area; the aspect-ratio fallback
+   covers the first frame before that measurement lands. */
+@media (max-width: 900px) {
+  .club-lobby-machine > .club-lobby-command-top {
+    display: contents;
+  }
+
+  .club-lobby-machine > .club-lobby-command-top > .club-lobby-command-top__controls {
+    position: sticky;
+    top: var(
+      --ca-global-header-height,
+      var(--ca-in-tab-header-height, calc(env(safe-area-inset-top, 0px) + 10.2vw))
+    );
+    z-index: 30;
+    isolation: isolate;
+    background: #03070a;
+    box-shadow: 0 10px 24px rgb(0 0 0 / 78%);
   }
 }

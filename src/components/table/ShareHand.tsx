@@ -49,6 +49,14 @@ export interface ShareableAction {
     | 'RETURN'
     | 'DISCARD';
   amount?: number;
+  /**
+   * v4 (2026-09-05): DEAD forced money — an ante, a bomb-pot ante, the dead
+   * half of a dead blind. It is in the pot but was never in front of the seat,
+   * so nothing may price a call off it. Phase 3 found what happens when this
+   * fact is dropped: a tournament big blind drawn sitting behind its blind
+   * PLUS its ante, and every pot-odds figure priced off that number.
+   */
+  dead?: boolean;
 }
 
 export interface ShareablePlayer {
@@ -60,11 +68,28 @@ export interface ShareablePlayer {
    * HandHistoryPage used to fill in a literal `1000` for every seat, so every
    * shared hand showed fabricated chip counts as if they were fact. Leave it
    * undefined rather than inventing a number; the replayer omits the figure.
+   *
+   * v4 pins WHICH stack: the one this seat STARTED the hand with, which is the
+   * only one a replayer can count down from. v1-v3 carried whatever the
+   * producer happened to hold (the live table sent the starting stack, the
+   * archive sent nothing), so the number could not be read either way.
    */
   stack?: number;
   cards?: ShareableCard[];
+  /**
+   * v4: these cards were NEVER SHOWN to the table — they are the sharer's own
+   * holding on a hand that did not reach showdown. Marked rather than merged,
+   * because a recipient's reconstruction treats a known holding as a reveal:
+   * without this flag, sharing a hand you folded turned your fold into a show
+   * row and put you in a showdown that never happened.
+   */
+  privateCards?: boolean;
   isWinner?: boolean;
   isHero?: boolean;
+  /** v4: reached showdown and mucked. Drawn as a muck, not as "no cards". */
+  mucked?: boolean;
+  /** v4: the made hand this seat showed ("Flush, Ace High"), when it showed. */
+  handName?: string;
 }
 
 export interface ShareableHand {
@@ -84,7 +109,57 @@ export interface ShareableHand {
   turn?: { card: ShareableCard; actions: ShareableAction[] };
   river?: { card: ShareableCard; actions: ShareableAction[] };
   potTotal: number;
-  winners: { seat: number; amount: number }[];
+  winners: ShareableWinner[];
+
+  // ── v4 (2026-09-05) — everything the one reconstruction knows ────────────
+  /**
+   * The hand's own number, so a shared hand is called what it is called
+   * everywhere else. Absent on v1-v3 links, whose replay had no title.
+   */
+  handNumber?: number | string | null;
+  /**
+   * Crazy Pineapple's discard street. A real street, not a footnote on
+   * preflop: 74,631 discard actions exist in production and a link that
+   * folded them into preflop printed them under a heading they did not
+   * happen on. The CARD never travels - it is the viewer's own.
+   */
+  discard?: { actions: ShareableAction[] };
+  /**
+   * Run-it-twice runs 2..N, and the second and third boards of a
+   * double-board bomb pot. Board one stays in flop / turn / river. Each entry
+   * is the whole board that run finished on.
+   */
+  extraBoards?: ShareableCard[][];
+  /** What the house took out of this pot, and the jackpot drop beside it. */
+  rake?: number;
+  bbjFee?: number;
+  /**
+   * A BOMB POT posts antes and NO blinds. Without this the recipient's
+   * reconstruction sees a hand with no blind rows, decides they were dropped,
+   * and invents a small and a big blind nobody posted - the exact defect
+   * Phase 3 found on hand #6704153.
+   */
+  bombPot?: boolean;
+  /**
+   * Which wire version this hand was decoded FROM, set by the decoder and
+   * never encoded. It is how a reader knows what the amounts mean: v4 carries
+   * the reconstruction's own INCREMENTAL amounts, v1-v3 carried the engine's
+   * raise-TO levels. Undefined on a hand built in memory (it has not been on
+   * a wire), which reads as current - v4.
+   */
+  wireVersion?: 'v1' | 'v2' | 'v3' | 'v4';
+}
+
+export interface ShareableWinner {
+  seat: number;
+  /** GROSS chips out of the pot, before rake. */
+  amount: number;
+  /** v4: 1-based board this share was won on. Absent on a single-board hand. */
+  board?: number;
+  /** v4: this share is the LOW half of a split (eight-or-better) pot. */
+  low?: boolean;
+  /** v4: the hand it was won with, on that board. */
+  hand?: string;
 }
 
 export interface ShareHandProps {
@@ -128,8 +203,7 @@ function decodeCards(str: string, count: number): ShareableCard[] {
   return cards;
 }
 
-// Action encoding: seat(1) + action(1) + amount(variable)
-const ACTIONS = 'FCXBRA'; // Fold, Call, Check, Bet, Raise, All-in
+// Action encoding: seat(digits) + verb(1 uppercase) + amount(base36) + dead(!)
 
 /**
  * CODEC FIX 2026-08-15 — CHECK was encoded as CALL.
@@ -176,14 +250,18 @@ const encodeMoney = (n: number | undefined): string =>
 const decodeMoney = (s: string | undefined, version: string): number => {
   const raw = parseInt(s || '', 36);
   if (!Number.isFinite(raw)) return 0;
-  return version === 'v3' ? raw / CENTS : raw;
+  return version === 'v3' || version === 'v4' ? raw / CENTS : raw;
 };
+
+/** v4: dead forced money is marked on its own token. */
+const DEAD_MARK = '!';
 
 function encodeAction(action: ShareableAction): string {
   let str = `${action.seat}${ACTION_CODE[action.action] || 'X'}`;
   if (action.amount !== undefined) {
     str += encodeMoney(action.amount);
   }
+  if (action.dead) str += DEAD_MARK;
   return str;
 }
 
@@ -191,24 +269,38 @@ function encodeActions(actions: ShareableAction[]): string {
   return actions.map(encodeAction).join(',');
 }
 
-/** Shared action-list parser — the old decoder inlined this three times and
- *  still never called it for the turn or the river. */
+/**
+ * Shared action-list parser — the old decoder inlined this three times and
+ * still never called it for the turn or the river.
+ *
+ * THE SEAT IS ITS LEADING DIGITS, not `token[0]`. A one-character seat was
+ * fine while every table was nine-handed or smaller, but it is a limit hidden
+ * inside a codec rather than a stated one: on a ten-seat table seat 10 encoded
+ * as `10F` and read back as SEAT 1 taking action `0` - an unknown code, so the
+ * row was dropped and one player's whole hand vanished from the link. Digits,
+ * then the verb (always an UPPERCASE letter), then the amount (base36, always
+ * lowercase or a digit), then an optional dead mark.
+ */
 function decodeActions(str: string | undefined, version: string): ShareableAction[] {
   const out: ShareableAction[] = [];
   if (!str) return out;
-  for (const token of str.split(',')) {
-    if (token.length < 2) continue;
-    const seat = parseInt(token[0], 10);
+  for (const rawToken of str.split(',')) {
+    const dead = rawToken.endsWith(DEAD_MARK);
+    const token = dead ? rawToken.slice(0, -1) : rawToken;
+    const m = token.match(/^(\d+)([A-Z])(.*)$/);
+    if (!m) continue;
+    const seat = parseInt(m[1], 10);
     if (!Number.isFinite(seat)) continue;
     /* An unknown code is skipped, not read as CHECK. It used to default to
        CHECK, which invented an action the player never took. */
-    const verb = CODE_ACTION[token[1]];
+    const verb = CODE_ACTION[m[2]];
     if (!verb) continue;
     const action: ShareableAction = { seat, action: verb };
-    if (token.length > 2) {
-      const amt = decodeMoney(token.substring(2), version);
+    if (m[3]) {
+      const amt = decodeMoney(m[3], version);
       if (Number.isFinite(amt)) action.amount = amt;
     }
+    if (dead) action.dead = true;
     out.push(action);
   }
   return out;
@@ -262,21 +354,35 @@ export function encodeHand(hand: ShareableHand): string {
   // see decodeHandFromUrl. v1 payloads still decode (there are none in the
   // wild: the /replay route did not exist until today).
   // v3 (2026-09-05): money in cents, forced-money verbs. v1/v2 still decode.
-  parts.push('v3');
+  // v4 (2026-09-05): the reconstruction's own hand. Amounts are INCREMENTAL,
+  // dead money is marked, and the extra boards, the hi-lo halves, the rake,
+  // the jackpot drop, the hand number and the discard street all travel — so
+  // a recipient rebuilds the same model the sharer was looking at rather than
+  // a thinner cousin of it. v1-v3 still decode; see decodeHandFromUrl.
+  parts.push('v4');
   parts.push(hand.variant);
   parts.push(hand.stakes.replace('/', '-'));
   parts.push(hand.buttonSeat.toString());
   parts.push(hand.timestamp.toString(36));
 
-  // Players: seat:name:stack:cards:flags
-  //   flags — 'h' hero, 'w' winner, 'hw' both, '' neither.
+  // Players: seat:name:stack:cards:flags:handName
+  //   flags — 'h' hero, 'w' winner, 'm' mucked, 'p' cards never shown to the
+  //   table (the sharer's own); any combination, '' none.
   // v1 truncated the base64 name to 8 chars (≈6 bytes) and lost isHero /
   // isWinner entirely, so a replay could not mark who shared it or who won.
   const playerStr = hand.players
     .map((p) => {
-      const flags = `${p.isHero ? 'h' : ''}${p.isWinner ? 'w' : ''}`;
+      const flags =
+        `${p.isHero ? 'h' : ''}${p.isWinner ? 'w' : ''}` +
+        `${p.mucked ? 'm' : ''}${p.privateCards ? 'p' : ''}`;
       const cards = p.cards?.length ? encodeCards(p.cards) : '';
-      return `${p.seat}:${b64utf8((p.name || '').slice(0, 24))}:${encodeMoney(p.stack)}:${cards}:${flags}`;
+      const handName = p.handName ? b64utf8(p.handName.slice(0, 40)) : '';
+      /* An UNKNOWN stack is empty, not zero. `encodeMoney(undefined)` is '0',
+         so a hand shared from the archive - which carries no stacks at all -
+         used to reach the recipient with every seat sitting behind nothing,
+         which reads as fact and is not one. */
+      const stack = p.stack == null ? '' : encodeMoney(p.stack);
+      return `${p.seat}:${b64utf8((p.name || '').slice(0, 24))}:${stack}:${cards}:${flags}:${handName}`;
     })
     .join(';');
   parts.push(playerStr);
@@ -302,12 +408,37 @@ export function encodeHand(hand: ShareableHand): string {
     parts.push('');
   }
 
-  // Pot and winners
+  // Pot and winners. v4 adds the board a share was won on, the low-half mark
+  // and the hand it was won with: `seat:amount:board:low:hand`.
   parts.push(encodeMoney(hand.potTotal));
-  parts.push((hand.winners || []).map((w) => `${w.seat}:${encodeMoney(w.amount)}`).join(';'));
+  parts.push(
+    (hand.winners || [])
+      .map((w) =>
+        [
+          w.seat,
+          encodeMoney(w.amount),
+          w.board ?? '',
+          w.low ? '1' : '',
+          w.hand ? b64utf8(w.hand.slice(0, 40)) : '',
+        ].join(':')
+      )
+      .join(';')
+  );
   // v2 field — the table name. v1 hard-coded "Shared Hand" on decode, so the
   // recipient never saw which table the hand came from.
   parts.push(b64utf8((hand.tableName || '').slice(0, 40)));
+
+  // ── v4 fields, appended so every earlier payload still parses ───────────
+  // 13: run-it-twice / bomb-pot boards 2..N, whole boards, ';'-joined.
+  parts.push((hand.extraBoards || []).map((b) => encodeCards(b)).join(';'));
+  // 14: what the house took, and the jackpot drop.
+  parts.push(`${encodeMoney(hand.rake)}:${encodeMoney(hand.bbjFee)}`);
+  // 15: the hand's own number.
+  parts.push(hand.handNumber == null ? '' : b64utf8(String(hand.handNumber).slice(0, 24)));
+  // 16: Crazy Pineapple's discard street (the card itself never travels).
+  parts.push(hand.discard ? encodeActions(hand.discard.actions) : '');
+  // 17: hand-level flags. 'b' — a bomb pot, which posts antes and NO blinds.
+  parts.push(hand.bombPot ? 'b' : '');
 
   // Base64 URL-safe encode. Everything above is ASCII by construction (names
   // are base64'd), so btoa cannot throw here.
@@ -328,7 +459,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
     // payloads genuinely do not carry the turn, the river, the winners, the
     // table name or the hero/winner flags — they were never encoded as
     // recoverable fields. v2 does.
-    if (version !== 'v1' && version !== 'v2' && version !== 'v3') return null;
+    if (version !== 'v1' && version !== 'v2' && version !== 'v3' && version !== 'v4') return null;
 
     // Parse basic info
     const variant = parts[1] as ShareableHand['variant'];
@@ -336,22 +467,27 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
     const buttonSeat = parseInt(parts[3], 10) || 0;
     const timestamp = parseInt(parts[4], 36) || Date.now();
 
-    // Parse players — v1: seat:name:stack:cards / v2 adds :flags
+    // Parse players — v1: seat:name:stack:cards / v2 adds :flags / v4 :handName
     const players: ShareablePlayer[] = (parts[5] || '')
       .split(';')
       .filter(Boolean)
       .map((ps) => {
-        const [seat, nameB64, stackB36, cardsStr, flags] = ps.split(':');
+        const [seat, nameB64, stackB36, cardsStr, flags, handNameB64] = ps.split(':');
         const player: ShareablePlayer = {
           seat: parseInt(seat, 10) || 0,
           name: unb64utf8(nameB64) || `Seat ${seat}`,
-          stack: decodeMoney(stackB36, version),
         };
+        /* Empty means the producer did not know it (v4). Zero means zero. */
+        if (stackB36) player.stack = decodeMoney(stackB36, version);
         if (cardsStr) player.cards = decodeCards(cardsStr, cardsStr.length);
         if (flags) {
           if (flags.includes('h')) player.isHero = true;
           if (flags.includes('w')) player.isWinner = true;
+          if (flags.includes('m')) player.mucked = true;
+          if (flags.includes('p')) player.privateCards = true;
         }
+        const handName = unb64utf8(handNameB64);
+        if (handName) player.handName = handName;
         return player;
       });
 
@@ -389,13 +525,36 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
       };
     }
 
-    const winners = (parts[11] || '')
+    /* v1-v3: `seat:amount`. v4 appends the board, the low-half mark and the
+       hand it was won with; the extra fields are simply absent on the old
+       shape, which is why they are read positionally rather than counted. */
+    const winners: ShareableWinner[] = (parts[11] || '')
       .split(';')
       .filter(Boolean)
       .map((w) => {
-        const [seat, amt] = w.split(':');
-        return { seat: parseInt(seat, 10) || 0, amount: decodeMoney(amt, version) };
+        const [seat, amt, board, low, handB64] = w.split(':');
+        const row: ShareableWinner = {
+          seat: parseInt(seat, 10) || 0,
+          amount: decodeMoney(amt, version),
+        };
+        const boardIndex = parseInt(board || '', 10);
+        if (Number.isFinite(boardIndex) && boardIndex > 0) row.board = boardIndex;
+        if (low === '1') row.low = true;
+        const handName = unb64utf8(handB64);
+        if (handName) row.hand = handName;
+        return row;
       });
+
+    // ── v4 tail. Absent on every earlier payload, which parses unchanged ───
+    const extraBoards = (parts[13] || '')
+      .split(';')
+      .filter(Boolean)
+      .map((b) => decodeCards(b, b.length))
+      .filter((b) => b.length > 0);
+    const [rakeStr, bbjStr] = (parts[14] || '').split(':');
+    const handNumber = unb64utf8(parts[15]);
+    const discardActions = decodeActions(parts[16], version);
+    const handFlags = parts[17] || '';
 
     // Build hand object
     const hand: ShareableHand = {
@@ -412,7 +571,14 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
       river,
       potTotal: decodeMoney(parts[10], version),
       winners,
+      wireVersion: version,
     };
+    if (extraBoards.length) hand.extraBoards = extraBoards;
+    if (rakeStr) hand.rake = decodeMoney(rakeStr, version);
+    if (bbjStr) hand.bbjFee = decodeMoney(bbjStr, version);
+    if (handNumber) hand.handNumber = handNumber;
+    if (discardActions.length) hand.discard = { actions: discardActions };
+    if (handFlags.includes('b')) hand.bombPot = true;
 
     return hand;
   } catch (e) {

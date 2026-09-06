@@ -167,6 +167,25 @@ describe('table watchdog - when it must stay out of the way', () => {
     (h.engine as any).handForHandResolve = null;
     h.engine.resumeDealing();
     expect((h.engine as any).isPausedByDesign()).toBe(false);
+    /**
+     * 2026-09-05: this used to `run(h)` here and expect a trip immediately,
+     * on the ten minutes of staleness accrued DURING the pause. That is the
+     * defect this commit fixes, and the test was pinning it.
+     *
+     * `releasePauseGate()` now credits the progress clock when a pause ends,
+     * because time a table was TOLD not to deal is not time it failed to deal
+     * (§13 rule 4, "deadlines are thawed, not burned"). Measured: 49.5% of
+     * every stalled table-second in a 24-hour day was the maintenance break
+     * being charged to the fleet the instant it lifted, and that reading is
+     * what sp-autoheal restarted production on five times.
+     *
+     * What this test is FOR is unchanged and still asserted above and below:
+     * the pause no longer suppresses the watchdog. It re-engages on staleness
+     * accrued AFTER the resume, which is the only staleness that means
+     * anything.
+     */
+    expect((h.engine as any).msSinceProgress()).toBeLessThan(1_000);
+    h.setStale(10 * 60_000);
     run(h); // idle + dealable + unpaused -> Case B counts a trip again
     expect(trips(h)).toBe(1);
   });

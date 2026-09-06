@@ -16,6 +16,10 @@ import {
   stakeBandAllows,
   setHorseStakeBands,
   assignedStakeBandCount,
+  applyStakeBandSupply,
+  clearHorseStakeBands,
+  clearStakeBandSupply,
+  effectiveStakeBandFor,
   type HorseStakeBand,
 } from './HorseBehavior.js';
 
@@ -174,5 +178,99 @@ describe('the shipped wiring - the rule is worthless if the seater does not cons
     const src = readFileSync(new URL('./HorseLaneLoader.ts', import.meta.url).pathname, 'utf8');
     expect(src).toContain('setHorseStakeBands(bandRows)');
     expect(src).toContain('fn_assign_horse_stake_bands');
+  });
+});
+
+/**
+ * A BAND WITH NO GAME IN IT (2026-09-05).
+ *
+ * `fn_assign_horse_stake_bands` ranks the fleet by bb/100 and never asks which
+ * games exist. Measured on 2026-09-05: 100 horses held 'high' and there was
+ * not one enabled game with bb > 6 on the platform - an operator had closed
+ * all six high games (5/10 NLH Classic/Action/Madness, 5/10 PLO4 Classic,
+ * 10/20 NLH, 25/50 NLH) at 16:47 the previous day. `stakeBandAllows` is a hard
+ * gate, so those 100 horses could sit nowhere at all.
+ *
+ * The engine's answer is a SEATING fallback, downward only, with the stored
+ * band left exactly as the merit run wrote it.
+ */
+describe('a band with no enabled game seats one band down, and never one band up', () => {
+  beforeEach(() => {
+    clearStakeBandSupply();
+    // The loader MERGES, and earlier cases in this file have loaded bands, so
+    // start from an empty fleet: the fallback COUNT is part of what is pinned.
+    clearHorseStakeBands();
+    setHorseStakeBands([
+      { id: 'nosebleed', stakeBand: 'high' },
+      { id: 'midstakes', stakeBand: 'mid' },
+      { id: 'regular', stakeBand: 'low' },
+      { id: 'grinder', stakeBand: 'micro' },
+    ]);
+  });
+
+  it('a high horse with no high game seats in mid', () => {
+    const report = applyStakeBandSupply(['micro', 'low', 'mid']);
+    expect(report.missing).toEqual(['high']);
+    expect(report.fallbacks).toBe(1);
+    expect(effectiveStakeBandFor('nosebleed')).toBe('mid');
+    expect(stakeBandAllows('nosebleed', 4)).toBe(true); // 2.00/4.00
+    // And still nowhere near a micro game: the drop is one rung, not a reset.
+    expect(stakeBandAllows('nosebleed', 0.2)).toBe(false);
+  });
+
+  it('the same horse with a high game open stays high', () => {
+    applyStakeBandSupply(['micro', 'low', 'mid', 'high']);
+    expect(effectiveStakeBandFor('nosebleed')).toBe('high');
+    expect(stakeBandAllows('nosebleed', 10)).toBe(true);
+    expect(stakeBandAllows('nosebleed', 4)).toBe(false);
+  });
+
+  it('it drops past an empty rung to the highest band that does have a game', () => {
+    applyStakeBandSupply(['micro', 'low']);
+    expect(effectiveStakeBandFor('nosebleed')).toBe('low');
+    expect(effectiveStakeBandFor('midstakes')).toBe('low');
+  });
+
+  it('a micro horse is never promoted, however empty the floor below it is', () => {
+    const report = applyStakeBandSupply(['mid']);
+    expect(effectiveStakeBandFor('grinder')).toBe('micro');
+    expect(stakeBandAllows('grinder', 4)).toBe(false);
+    expect(stakeBandAllows('grinder', 0.1)).toBe(true);
+    // It is reported as unserved, but it is not counted as a fallback: it did
+    // not move, and the log line counts horses that moved.
+    expect(report.missing).toContain('micro');
+    // Only the high horse moves: it drops to mid. The low horse has nothing
+    // below it either (micro has no game) and stays put, and micro cannot be
+    // promoted. One horse moved, so the log line says one.
+    expect(report.fallbacks).toBe(1);
+  });
+
+  it('an empty table list changes nothing - an unread floor is not an empty one', () => {
+    applyStakeBandSupply(['micro', 'low', 'mid']);
+    expect(effectiveStakeBandFor('nosebleed')).toBe('mid');
+    const report = applyStakeBandSupply([]);
+    expect(report).toEqual({ missing: [], fallbacks: 0 });
+    expect(effectiveStakeBandFor('nosebleed')).toBe('high');
+    expect(stakeBandAllows('nosebleed', 10)).toBe(true);
+  });
+
+  it('the stored band is a merit record and is never rewritten by the fallback', () => {
+    applyStakeBandSupply(['micro', 'low', 'mid']);
+    expect(effectiveStakeBandFor('nosebleed')).toBe('mid');
+    expect(stakeBandFor('nosebleed')).toBe('high');
+    expect(assignedStakeBandCount()).toBe(4);
+  });
+
+  it('the fleet publishes the supply from the tables it already read, and says so once', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('./HorseFleetManager.ts', import.meta.url).pathname, 'utf8');
+    // Derived from the cycle's own table list; no second query.
+    expect(src).toContain('const bandsWithAGame = new Set<HorseStakeBand>();');
+    expect(src).toContain('bandsWithAGame.add(stakeBandForBigBlind(Number(t.big_blind)));');
+    expect(src).toContain('const bandSupply = applyStakeBandSupply(bandsWithAGame);');
+    expect(src).toContain('[HorseFleet] band supply: no enabled game in band(s) ');
+    expect(src).toContain('horse(s) seat one band down');
+    // A table the seeding loop would refuse is not supply.
+    expect(src).toContain('if (isTableOfDisabledGame(t, disabledGameIds)) continue;');
   });
 });

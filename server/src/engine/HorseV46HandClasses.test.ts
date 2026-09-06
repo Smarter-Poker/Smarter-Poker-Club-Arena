@@ -26,7 +26,8 @@ import { decidePreflopV7, type PreflopCtx } from './HorsePreflop.js';
 import { variantPreflopShift } from './HorseVariantProfile.js';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import { HorseMind } from './HorseMind.js';
-import { seedFastRandom } from './HorseEval.js';
+import { seedFastRandom, fastRandom } from './HorseEval.js';
+import { SUITS, RANKS } from './PokerEngine.js';
 import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
 import { LEAGUE_MATCHUPS } from '../benchmark/HorseLeague.js';
 import type { Card, SeatPlayer, HandStage } from '../types.js';
@@ -96,6 +97,67 @@ describe('V46 Omaha classifier', () => {
     expect(suitedness(cc('As', 'Ah', 'Kd', 'Qc'))).toBe(0);
     expect(aceSuited(cc('As', 'Ks', '7h', '2d'))).toBe(true);
     expect(aceSuited(cc('Ac', 'Ks', '7h', '2d'))).toBe(false);
+  });
+
+  // ═══ THE REGRESSION THIS SUITE EXISTS FOR (2026-09-05) ═══════════════
+  // The first version of connectedSpan returned its "no four-card window"
+  // sentinel for ANY hand containing a pair, and the classifier read that
+  // sentinel as a fact. `9932` and `J733` came out as `trash`, which carries
+  // foldAlways, so 4.35% of every PLO hand dealt was folded to any bet -
+  // set-mining hands included - and `dangler`, which TIGHTENS the open bar,
+  // swallowed 42.9% of the deck. Both shipped to production. A distribution
+  // test is what catches a bug of that shape; a hand-by-hand test does not,
+  // because every hand it names still looks reasonable in isolation.
+  it('a hand with one pair is never force-folded: it can still flop a set', () => {
+    for (const h of [
+      ['9s', '9h', '3d', '2c'],
+      ['Js', '7h', '3d', '3c'],
+      ['Qs', 'Qh', '7d', '3c'],
+      ['4s', '4h', 'Kd', '2c'],
+    ]) {
+      const read = handClassRead(cc(...h), true, false);
+      expect(read.foldAlways, `${h.join('')} must not be force-folded`).toBe(false);
+    }
+  });
+
+  it('trash is only the hand that can make no nuts at all', () => {
+    // two low pairs, rainbow, no ace: no nut flush, no nut straight, and both
+    // sets are beaten by the sets above them
+    expect(omahaHandClass(cc('2s', '2h', '3d', '3c'))).toBe('trash');
+    // the same ranks with a suit are NOT trash - a flush draw is a way to win
+    expect(omahaHandClass(cc('2s', '2h', '3s', '3c'))).not.toBe('trash');
+    // a high pair alongside a low one is not trash either
+    expect(omahaHandClass(cc('Ks', 'Kh', '3d', '3c'))).not.toBe('trash');
+  });
+
+  it('the class distribution over random deals is sane - the guard for the above', () => {
+    seedFastRandom(7);
+    const deck: Card[] = [];
+    for (const s of SUITS) for (const r of RANKS) deck.push({ rank: r, suit: s });
+    const counts: Record<string, number> = {};
+    const N = 8000;
+    for (let n = 0; n < N; n++) {
+      for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(fastRandom() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+      const cls = omahaHandClass(deck.slice(0, 4));
+      counts[cls] = (counts[cls] ?? 0) + 1;
+    }
+    const share = (k: string): number => (counts[k] ?? 0) / N;
+    // FORCE-FOLDING is the dangerous verdict, so it is the tightest bound:
+    // trips is ~0.8% of deals by combinatorics and trash is rarer still.
+    expect(share('trips') + share('trash')).toBeLessThan(0.015);
+    expect(share('trash')).toBeLessThan(0.005);
+    // AAxx is about 2.5% of PLO hands; the two aces classes should find it.
+    expect(share('aa_ds') + share('aa_dry')).toBeGreaterThan(0.015);
+    expect(share('aa_ds') + share('aa_dry')).toBeLessThan(0.04);
+    // No single class may swallow the deck - a class that broad is a bucket,
+    // and its shift becomes a fleet-wide bar change nobody chose.
+    for (const [cls, n] of Object.entries(counts)) {
+      if (cls === 'other') continue;
+      expect(n / N, `${cls} is ${((n / N) * 100).toFixed(1)}% of all deals`).toBeLessThan(0.4);
+    }
   });
 
   it('a short hand or no hand reads as no class', () => {

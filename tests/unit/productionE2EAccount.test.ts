@@ -7,6 +7,7 @@ import {
   cleanupProductionE2EAccount,
   cleanupStaleProductionE2EAccounts,
   createProductionE2EAccount,
+  prepareProductionE2EStaffMembership,
 } from '../../scripts/ci/production-e2e-account.mjs';
 
 const USER_ID = '00000000-0000-4000-8000-000000000099';
@@ -16,6 +17,7 @@ function environment(directory: string) {
   return {
     SUPABASE_URL: 'https://certification.supabase.invalid',
     SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_certification',
+    VITE_SUPABASE_ANON_KEY: 'sb_publishable_certification',
     RUNNER_TEMP: directory,
     GITHUB_ENV: join(directory, 'github-env'),
   };
@@ -93,6 +95,83 @@ describe('post-deploy production account', () => {
       cleanupProductionE2EAccount({ environment: env, fetchImpl: fetchMock })
     ).rejects.toThrow('outside the reserved post-deploy namespace');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('creates staff access only for a new reserved zero-balance membership', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-staff-'));
+    const env = environment(directory);
+    const email = 'ca-customization-cert-postdeploy-staff@example.invalid';
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({ id: USER_ID, email, password: 'unused' })
+    );
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/auth/v1/token?grant_type=password')) {
+        return Response.json({ access_token: 'temporary-user-token' });
+      }
+      if (url.includes('/rest/v1/rpc/fn_join_club')) {
+        return Response.json({ club_id: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4' });
+      }
+      if (url.includes('/rest/v1/club_members?') && init?.method !== 'PATCH') {
+        const membershipReads = fetchMock.mock.calls.filter(([called]) =>
+          String(called).includes('/rest/v1/club_members?')
+        ).length;
+        if (membershipReads === 1) return Response.json([]);
+        return Response.json([
+          {
+            club_id: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
+            user_id: USER_ID,
+            role: 'player',
+            status: 'active',
+            chip_balance: 0,
+          },
+        ]);
+      }
+      if (url.includes('/rest/v1/club_members?') && init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body));
+        return Response.json([
+          {
+            club_id: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
+            user_id: USER_ID,
+            role: body.role,
+            status: body.status,
+            chip_balance: 0,
+          },
+        ]);
+      }
+      return new Response('unexpected request', { status: 500 });
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await expect(
+      prepareProductionE2EStaffMembership({ environment: env, fetchImpl: fetchMock })
+    ).resolves.toMatchObject({ role: 'admin', status: 'active', chip_balance: 0 });
+    const roleUpdate = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).includes('/club_members?') && init?.method === 'PATCH'
+    );
+    expect(JSON.parse(String(roleUpdate?.[1]?.body))).toMatchObject({
+      role: 'admin',
+      status: 'active',
+    });
+  });
+
+  it('refuses to overwrite an existing reserved membership', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-existing-staff-'));
+    const env = environment(directory);
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({
+        id: USER_ID,
+        email: 'ca-customization-cert-postdeploy-existing@example.invalid',
+      })
+    );
+    const fetchMock = vi.fn().mockResolvedValue(Response.json([{ role: 'player' }]));
+
+    await expect(
+      prepareProductionE2EStaffMembership({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow('Refusing to change an existing Club Arena membership');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('recovers only bounded post-deploy accounts older than the job timeout', async () => {

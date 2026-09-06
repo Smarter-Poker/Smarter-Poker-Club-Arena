@@ -56,7 +56,8 @@ describe('WaitlistBanner cannot cover the action row', () => {
   });
 
   it('gives the dismiss control a name and a 44px hit area', () => {
-    expect(src).toContain('aria-label={`Dismiss The Waitlist Notice For');
+    expect(src).toContain('`Dismiss The Waitlist Notice For ${entry.tableName}`');
+    expect(src).toContain("'Dismiss The Waitlist Notice'");
     expect(src).toContain('.waitlist-banner__dismiss::after');
     expect(src).toMatch(/width:\s*44px;[\s\S]*height:\s*44px;/);
   });

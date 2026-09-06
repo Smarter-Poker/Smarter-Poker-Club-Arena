@@ -35,7 +35,7 @@
  * moment, because the multiplier is a server fact delivered to every client.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { soundService } from '../../services/SoundService';
 import {
   ANIMATION_SPEED_MIN,
@@ -144,6 +144,8 @@ export interface SpinWheelProps {
   data: SpinWheelData | null;
   onDone: () => void;
   playSounds?: boolean;
+  /** Keep the reveal inside its table when several tables share the screen. */
+  contained?: boolean;
 }
 
 type Phase = 'idle' | 'countdown' | 'chase' | 'result';
@@ -358,7 +360,12 @@ export function chaseCatchUp(
   return { litNow, remaining };
 }
 
-export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheelProps) {
+export default function SpinWheel({
+  data,
+  onDone,
+  playSounds = true,
+  contained = false,
+}: SpinWheelProps) {
   const lockedDetail = useMemo(() => {
     const map = new Map<number, SpinLockedTier>();
     for (const m of data?.lockedMultipliers ?? []) map.set(m, { multiplier: m });
@@ -425,7 +432,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
   // the buy-in is whole, so the prize is shown whole too.
   const prize = data ? Math.round(data.buyIn * data.multiplier) : 0;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     timersRef.current.forEach(clearTimeout);
     timersRef.current = [];
     if (rafRef.current !== null) {
@@ -515,14 +522,20 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
     const leadInMs = (reduced ? 0 : SPIN_REVEAL.LEAD_IN_MS) * speed;
     /** Schedule against the shared clock: anything already past fires now. */
     const at = (offsetMs: number) => Math.max(0, offsetMs - elapsed);
+    const countdownMs = (reduced ? 200 : COUNTDOWN_FROM * COUNTDOWN_STEP_MS) * speed;
+    const chaseMs = (reduced ? 400 : CHASE_MS) * speed;
+    const resultAtMs = leadInMs + countdownMs + chaseMs;
+    /* A reconnect at the result boundary must never paint a private countdown
+       for one frame. useLayoutEffect applies this before browser paint. */
+    const resultOnly = sharedClock && elapsed >= Math.max(0, resultAtMs - 250);
 
-    setPhase('countdown');
+    setPhase(resultOnly ? 'result' : 'countdown');
     setCount(COUNTDOWN_FROM);
     setTreeLit(0);
-    setLitIndex(-1);
-    setDisplayPrize(0);
+    setLitIndex(resultOnly ? targetIndex : -1);
+    setDisplayPrize(resultOnly ? prize : 0);
 
-    if (playSounds) {
+    if (playSounds && !resultOnly) {
       try {
         /* ── SILENCE IS A DEFECT, AND IT MUST LEAVE A TRACE (round 17) ─────
            Dan, 2026-08-30: "ANIMATION STARTED WHEN BOUGHT IN, BUT WITH NO
@@ -547,8 +560,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
     }
 
     // ── 1. Countdown: 3 · 2 · 1 ─────────────────────────────────────────────
-    const countdownMs = (reduced ? 200 : COUNTDOWN_FROM * COUNTDOWN_STEP_MS) * speed;
-    if (!reduced) {
+    if (!reduced && !resultOnly) {
       // One lamp per step: red, yellow, green. Step 0 lights on Dan's
       // one-second beat and keeps the numeral already on screen; steps 1 and 2
       // advance it. The beep is fired here rather than from a render effect so
@@ -571,52 +583,52 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
           )
         );
       }
-    } else {
+    } else if (!resultOnly) {
       setTreeLit(COUNTDOWN_FROM);
     }
 
     // ── 2. The chase ────────────────────────────────────────────────────────
-    const chaseMs = (reduced ? 400 : CHASE_MS) * speed;
-    timers.push(
-      setTimeout(
-        () => {
-          setPhase('chase');
-          /* How far into the CHASE this client already is. `at()` above put us
+    if (!resultOnly)
+      timers.push(
+        setTimeout(
+          () => {
+            setPhase('chase');
+            /* How far into the CHASE this client already is. `at()` above put us
              at the right phase; this puts the runner at the right segment. */
-          const intoChase = Math.max(0, elapsed - (leadInMs + countdownMs));
-          const schedule = reduced ? [] : chaseSchedule(order.length, targetIndex, chaseMs);
-          const { litNow, remaining } = chaseCatchUp(schedule, intoChase);
-          if (playSounds) {
-            try {
-              // Dan: "CLICKING SOUNDS AS IT PASSES." Handing the sound the
-              // light's OWN schedule is what makes that literally true — one
-              // peg strike per segment crossed, on the same millisecond,
-              // because it is the same array. Passing only a duration left the
-              // two to drift apart on any easing change. It is the CAUGHT-UP
-              // schedule for the same reason the light is: pegs for segments
-              // already crossed would strike after the result was announced.
-              soundService.playSpinTicking(
-                Math.max(0, chaseMs - intoChase),
-                remaining.map((r) => r.at)
-              );
-            } catch {
-              /* best effort */
+            const intoChase = Math.max(0, elapsed - (leadInMs + countdownMs));
+            const schedule = reduced ? [] : chaseSchedule(order.length, targetIndex, chaseMs);
+            const { litNow, remaining } = chaseCatchUp(schedule, intoChase);
+            if (playSounds) {
+              try {
+                // Dan: "CLICKING SOUNDS AS IT PASSES." Handing the sound the
+                // light's OWN schedule is what makes that literally true — one
+                // peg strike per segment crossed, on the same millisecond,
+                // because it is the same array. Passing only a duration left the
+                // two to drift apart on any easing change. It is the CAUGHT-UP
+                // schedule for the same reason the light is: pegs for segments
+                // already crossed would strike after the result was announced.
+                soundService.playSpinTicking(
+                  Math.max(0, chaseMs - intoChase),
+                  remaining.map((r) => r.at)
+                );
+              } catch {
+                /* best effort */
+              }
             }
-          }
-          if (reduced) {
-            setLitIndex(targetIndex);
-          } else {
-            /* Light where the runner actually is before scheduling the rest,
+            if (reduced) {
+              setLitIndex(targetIndex);
+            } else {
+              /* Light where the runner actually is before scheduling the rest,
                so a caught-up client never shows an empty disc. */
-            if (litNow >= 0) setLitIndex(litNow % order.length);
-            for (const step of remaining) {
-              timers.push(setTimeout(() => setLitIndex(step.stepIdx % order.length), step.at));
+              if (litNow >= 0) setLitIndex(litNow % order.length);
+              for (const step of remaining) {
+                timers.push(setTimeout(() => setLitIndex(step.stepIdx % order.length), step.at));
+              }
             }
-          }
-        },
-        at(leadInMs + countdownMs)
-      )
-    );
+          },
+          at(leadInMs + countdownMs)
+        )
+      );
 
     // ── 3. Result ───────────────────────────────────────────────────────────
     timers.push(
@@ -635,7 +647,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
           // Count the PRIZE up, not the multiplier. "You are playing for $30"
           // is the fact that matters; the multiple is how it was arrived at.
-          if (reduced) {
+          if (reduced || resultOnly) {
             setDisplayPrize(prize);
           } else {
             const started = performance.now();
@@ -654,18 +666,23 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
             rafRef.current = requestAnimationFrame(step);
           }
         },
-        at(leadInMs + countdownMs + chaseMs)
+        resultOnly ? 0 : at(leadInMs + countdownMs + chaseMs)
       )
     );
 
     // ── 4. Fade out, hand the felt back ────────────────────────────────────
+    const sharedDeadline = Number(data.revealDeadlineMs);
+    const reducedDoneOffset =
+      Number.isFinite(sharedDeadline) && sharedClock
+        ? Math.max(0, sharedDeadline - revealAt)
+        : leadInMs + countdownMs + chaseMs + 1800 * speed;
     timers.push(
       setTimeout(
         () => {
           setPhase('idle');
           onDoneRef.current();
         },
-        at(leadInMs + countdownMs + chaseMs + (reduced ? 1800 : RESULT_MS) * speed)
+        at(reduced ? reducedDoneOffset : leadInMs + countdownMs + chaseMs + RESULT_MS * speed)
       )
     );
 
@@ -732,9 +749,8 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
   return (
     <div
-      className={`sw sw--${phase} ${tierClass(data.multiplier)}`}
-      role="dialog"
-      aria-modal="true"
+      className={`sw sw--${phase} ${tierClass(data.multiplier)}${contained ? ' sw--contained' : ''}`}
+      role="region"
       aria-label="Spin Multiplier Draw"
     >
       {/* Rendered from the first frame and never removed: a live region that
@@ -957,7 +973,16 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       {phase === 'result' && celebration.confettiPieces > 0 && (
         <div className={`sw__confetti sw__confetti--${celebration.band}`} aria-hidden="true">
           {Array.from({ length: celebration.confettiPieces }, (_, i) => (
-            <span key={i} className="sw__conf" style={{ ['--sw-c' as string]: i }} />
+            <span
+              key={i}
+              className="sw__conf"
+              style={{
+                ['--sw-c' as string]: i,
+                ['--sw-count' as string]: celebration.confettiPieces,
+                ['--sw-left' as string]: `${((i + 0.5) / celebration.confettiPieces) * 100}%`,
+                ['--sw-delay' as string]: `${Math.min(i * 38, 720)}ms`,
+              }}
+            />
           ))}
         </div>
       )}

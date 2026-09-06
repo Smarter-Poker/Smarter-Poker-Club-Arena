@@ -17,9 +17,9 @@ import { masterBus } from '../core/MasterBus';
 
 import type {
   LeaderboardSettings,
-  LeaderboardPayout,
   LeaderboardRewardContext,
   LeaderboardRewardPlan,
+  LeaderboardSettlementStatus,
 } from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
@@ -34,12 +34,17 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import { LeaderboardPrizeWizard } from '../components/leaderboard/LeaderboardPrizeWizard';
+import { LeaderboardSettlementCard } from '../components/leaderboard/LeaderboardSettlementCard';
 import type { VipTier } from '../components/avatars/PlayerAvatar';
 import './LeaderboardPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
-import { prizePlanLabel, totalPrizePlan } from '../utils/leaderboardPrizePlans';
+import {
+  allocateTiedPrizePlan,
+  prizePlanLabel,
+  totalPrizePlan,
+} from '../utils/leaderboardPrizePlans';
 
 // ── SWR Cache helpers ──
 const LB_CACHE_KEY = 'lb_cache_v2_';
@@ -238,9 +243,12 @@ export default function LeaderboardPage() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsReloadKey, setSettingsReloadKey] = useState(0);
   const [ownerToolsError, setOwnerToolsError] = useState<string | null>(null);
-  const [payouts, setPayouts] = useState<LeaderboardPayout[]>([]);
   const [rewardPlan, setRewardPlan] = useState<LeaderboardRewardPlan | null>(null);
-  const [rewardPlanError, setRewardPlanError] = useState<string | null>(null);
+  const [settlementStatus, setSettlementStatus] = useState<LeaderboardSettlementStatus | null>(
+    null
+  );
+  const [settlementLoading, setSettlementLoading] = useState(false);
+  const [settlementError, setSettlementError] = useState<string | null>(null);
   const settingsRequestRef = useRef(0);
   const openedSetupLinkRef = useRef<string | null>(null);
   const previousUserIdRef = useRef<string | null>(null);
@@ -298,7 +306,8 @@ export default function LeaderboardPage() {
     setUserClubs([]);
     setSelectedClubId(null);
     setUserRank(null);
-    setPayouts([]);
+    setSettlementStatus(null);
+    setSettlementError(null);
     setSettings(null);
     if (user?.id) {
       loadUserClubs(() => isMounted);
@@ -584,13 +593,20 @@ export default function LeaderboardPage() {
 
     // SWR: show cached data instantly
     const cacheKey = `${isGlobal ? 'global' : selectedClubId}_${metric}_${period}_${periodOffset}`;
-    if (isGlobal) setPayouts([]);
+    if (isGlobal) {
+      setSettlementStatus(null);
+      setRewardPlan(null);
+      setSettlementError(null);
+    }
     if (!user?.id) setUserRank(null);
     if (!silent) {
       setLoadError(null);
-      setPayouts([]);
+      setSettlementStatus(null);
       setRewardPlan(null);
-      setRewardPlanError(null);
+      setSettlementError(null);
+      setSettlementLoading(
+        !isGlobal && Boolean(selectedClubId) && (period === 'weekly' || period === 'monthly')
+      );
       setUserRank(null);
       const cached = getCachedEntries(cacheKey);
       if (cached && cached.entries.length > 0) {
@@ -644,37 +660,44 @@ export default function LeaderboardPage() {
       // screen while secondary payout and personal-rank metadata load.
       if (!silent) setLoading(false);
 
-      // Secondary metadata is independent and can arrive in parallel. This
-      // removes two serial round-trips from the visible page-load path.
+      // Secondary metadata is independent and can arrive in parallel. One
+      // settlement read model replaces separate plan and payout queries.
       const periodMetadataPromise =
-        !isGlobal && selectedClubId
+        !isGlobal && selectedClubId && (period === 'weekly' || period === 'monthly')
           ? LeaderboardService.getPeriodWindow(period, periodOffset).then(async (window) => {
-              const [payoutResult, planResult] = await Promise.allSettled([
-                LeaderboardService.getPayoutsForPeriod(
+              if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                setSettlementLoading(true);
+              }
+              try {
+                const status = await LeaderboardService.getLeaderboardSettlementStatus(
                   selectedClubId,
                   period,
-                  metric,
                   window.start_date
-                ),
-                period === 'weekly' || period === 'monthly'
-                  ? LeaderboardService.getLeaderboardRewardPlan(
-                      selectedClubId,
-                      period,
-                      window.start_date
-                    )
-                  : Promise.resolve(null),
-              ]);
-              if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
-                if (payoutResult.status === 'fulfilled') setPayouts(payoutResult.value);
-                if (planResult.status === 'fulfilled') {
-                  setRewardPlan(planResult.value);
-                  setRewardPlanError(null);
-                } else {
-                  setRewardPlanError('Period Prize Rules Could Not Be Verified.');
+                );
+                if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                  setSettlementStatus(status);
+                  setRewardPlan(status.program);
+                  setSettlementError(null);
+                }
+              } catch (error) {
+                reportError(error, 'LeaderboardPage.Settlement_status_failed');
+                if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                  setSettlementError('Period Settlement Could Not Be Verified.');
+                }
+              } finally {
+                if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                  setSettlementLoading(false);
                 }
               }
             })
-          : Promise.resolve();
+          : Promise.resolve().then(() => {
+              if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                setSettlementStatus(null);
+                setRewardPlan(null);
+                setSettlementError(null);
+                setSettlementLoading(false);
+              }
+            });
 
       const rankPromise = user?.id
         ? (isGlobal
@@ -818,20 +841,19 @@ export default function LeaderboardPage() {
     (m) => scope === 'my-clubs' || m.globalSupported
   );
   const payoutsByUser = useMemo(
-    () => new Map(payouts.map((payout) => [payout.user_id, payout])),
-    [payouts]
+    () => new Map((settlementStatus?.receipts || []).map((payout) => [payout.user_id, payout])),
+    [settlementStatus?.receipts]
   );
-  const plannedPrizesByRank = useMemo(() => {
+  const plannedPrizesByUser = useMemo(() => {
     if (
       scope !== 'my-clubs' ||
       !rewardPlan?.rewards_enabled ||
-      settings?.funding_status !== 'funded' ||
       rewardPlan.payout_metric !== metric
     ) {
-      return new Map<number, number>();
+      return new Map<string, number>();
     }
-    return new Map(rewardPlan.prizes.map((prize) => [prize.rank, prize.amount]));
-  }, [metric, rewardPlan, scope, settings?.funding_status]);
+    return allocateTiedPrizePlan(entries, rewardPlan.prizes);
+  }, [entries, metric, rewardPlan, scope]);
 
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3);
@@ -875,17 +897,20 @@ export default function LeaderboardPage() {
     const payout = payoutsByUser.get(entry.userId);
     if (payout) {
       return (
-        <span className="payout-badge">
-          Paid {payout.payout_amount.toLocaleString()}{' '}
-          {payout.payout_currency === 'diamonds' ? 'Diamonds' : 'Chips'}
-        </span>
+        <span className="payout-badge">Paid {payout.payout_amount.toLocaleString()} Chips</span>
       );
     }
-    const planned = plannedPrizesByRank.get(entry.rank);
+    const planned = plannedPrizesByUser.get(entry.userId);
     if (!planned) return null;
+    const prizeState =
+      settlementStatus?.state === 'failed'
+        ? 'Delayed'
+        : settlementStatus?.state === 'pending'
+          ? 'Pending'
+          : 'Prize';
     return (
       <span className="payout-badge payout-badge-planned">
-        Prize {planned.toLocaleString()} Chips
+        {prizeState} {planned.toLocaleString()} Chips
       </span>
     );
   };
@@ -1300,13 +1325,31 @@ export default function LeaderboardPage() {
               Review Setup
             </button>
           )}
-          <span className="lb-prize-program-safety" role={rewardPlanError ? 'status' : undefined}>
-            {rewardPlanError ||
+          <span className="lb-prize-program-safety" role={settlementError ? 'status' : undefined}>
+            {settlementError ||
               (settings.funding_status === 'underfunded'
-                ? 'Planned Prize Badges Are Hidden Until The Promo Wallet Is Fully Funded.'
+                ? 'Published Prizes Stay Visible. Settlement Waits For The Promo Wallet And Never Uses The Operating Wallet.'
                 : 'Published Rules Activate At The Dates Shown. Settlement Uses The Recorded Promo Wallet After The Period Closes.')}
           </span>
         </section>
+      )}
+
+      {scope === 'my-clubs' && selectedClubId && (period === 'weekly' || period === 'monthly') && (
+        <LeaderboardSettlementCard
+          status={settlementStatus}
+          currentUserId={user?.id}
+          loading={settlementLoading}
+          error={settlementError}
+          onRetry={() => loadLeaderboardRef.current(false, () => isMountedRef.current)}
+          onReviewSetup={
+            canManagePrizes && settings
+              ? () => {
+                  setEditingSettings(settings);
+                  setShowSettings(true);
+                }
+              : undefined
+          }
+        />
       )}
 
       {currentError &&

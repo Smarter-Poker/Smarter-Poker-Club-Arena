@@ -600,3 +600,32 @@
     padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
   }
 }
+
+/* ── Find a hand (Phase 5, 2026-09-06) ──────────────────────────────────── */
+.hh-panel__search {
+  display: flex;
+  gap: 8px;
+  padding: 0 12px 8px;
+}
+
+.hh-panel__search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--hh-gunmetal, rgba(255, 255, 255, 0.16));
+  background: rgba(0, 0, 0, 0.32);
+  color: inherit;
+  font: inherit;
+}
+
+.hh-panel__search-clear {
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--hh-gunmetal, rgba(255, 255, 255, 0.16));
+  background: transparent;
+  color: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}

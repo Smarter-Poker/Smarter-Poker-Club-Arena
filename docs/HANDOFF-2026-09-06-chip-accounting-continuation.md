@@ -2,9 +2,12 @@
 
 **Paste this entire file as the first message of a new chat.**
 
-Gathered and verified 2026-09-06 13:20 UTC against live production. Every table
-below says when it was measured. Re-run the commands before trusting any of it,
-because another agent is working the same tree.
+Gathered and verified 2026-09-06 **13:50 UTC** against live production. Every
+table below says when it was measured. Re-run the commands before trusting any
+of it, because another agent is working the same tree.
+
+**This is ONE document, updated in place. There is no companion, no part two and
+no addendum. If you are holding an earlier copy, discard it.**
 
 ---
 
@@ -349,6 +352,34 @@ a non-zero unresolved critical.
 
 **Measured immediately after the migration (13:35 UTC):** 0 · 0 · 0 · 0 · 0, and
 the board fell 126 to 108.
+
+**PROVED LIVE at 13:50 UTC**, with a self-aborting probe against the real
+function (this is how to re-prove it, and the error IS the success case):
+
+```sql
+DO $probe$
+DECLARE v_inc uuid; v_sent int; v_w int;
+BEGIN
+  INSERT INTO public.ca_drift_incidents
+    (classification, severity, layer, source, dedupe_key, discrepancy_amount, suspected_cause)
+  VALUES ('ledger_imbalance','critical','ledger','zz_live_probe','zz-live-zero',0,'live gate probe')
+  RETURNING id INTO v_inc;
+  v_sent := public.fn_ca_incident_notify(v_inc,'notified','live probe zero',false);
+  SELECT count(*) INTO v_w FROM public.ca_incident_events
+   WHERE incident_id=v_inc AND kind='notify_withheld';
+  RAISE EXCEPTION 'LIVE_GATE sent=% withheld_rows=%', v_sent, v_w;
+END $probe$;
+```
+
+It returned **`LIVE_GATE sent=0 withheld_rows=1`**: a 0.00 critical sent nothing
+and recorded why. The probe rolled itself back.
+
+**A NOTE ON READING `pages_2h` BEFORE YOU PANIC.** At 13:50 there were still 11
+`notified` rows in the previous 30 minutes, all 0.00 criticals from
+`financial_alerts:fn_payout_guarantee_check` - and every one of them was stamped
+**13:18:00, fifteen minutes BEFORE the migration applied**. Check the timestamp
+against the migration before concluding the gate leaks. `fn_payout_guarantee_check`
+raising criticals with a 0.00 discrepancy is itself in the backlog at H8.
 
 **IF `pages_2h` IS ZERO FOR A DAY, CHECK THE OTHER DIRECTION.** The gates could
 be drawn too tight. The migration proves a real critical carrying 12,345.67 chips

@@ -50,9 +50,15 @@ describe('cinematic retained route families', () => {
     const source = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
     expect(source).toContain('data-arena-surface="missions"');
     expect(source).toContain('className={styles.hero}');
-    expect(source).toContain('Club Arena // Mission Control');
-    expect(source).toContain("mediaUrl('images/challenges/daily-missions-vault-v1.webp')");
-    expect(existsSync('public/images/challenges/daily-missions-vault-v1.webp')).toBe(true);
+    expect(source).toContain('Club Arena / Private Challenge Vault');
+    expect(source).toContain("'images/challenges/daily-missions-casino-v2.webp'");
+    expect(source).toContain("'images/challenges/daily-missions-casino-v2-mobile.webp'");
+    expect(source).toContain("'images/challenges/daily-missions-reward-pedestal-v1.webp'");
+    expect(existsSync('public/images/challenges/daily-missions-casino-v2.webp')).toBe(true);
+    expect(existsSync('public/images/challenges/daily-missions-casino-v2-mobile.webp')).toBe(true);
+    expect(existsSync('public/images/challenges/daily-missions-reward-pedestal-v1.webp')).toBe(
+      true
+    );
   });
 
   it.each(UNION_PAGES)('%s uses the Union Network visual anchor', (path) => {
@@ -75,7 +81,9 @@ describe('cinematic retained route families', () => {
       'public/assets/club-buttons/wallets/desktop/wallet-diamonds-v1.webp',
       'public/assets/club-buttons/lobby/shark-club-championship-ad-v2.png',
       'public/images/community/community-network-v1.webp',
-      'public/images/challenges/daily-missions-vault-v1.webp',
+      'public/images/challenges/daily-missions-casino-v2.webp',
+      'public/images/challenges/daily-missions-casino-v2-mobile.webp',
+      'public/images/challenges/daily-missions-reward-pedestal-v1.webp',
       'public/images/bg-vault.jpg',
     ]) {
       expect(existsSync(path), `${path} must ship with the build`).toBe(true);

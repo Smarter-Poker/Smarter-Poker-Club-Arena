@@ -1,0 +1,33 @@
+{
+  "_owner": "fix/daily-challenges-casino-realism-certification",
+  "tables": ["daily_challenge_freeze_entitlements", "daily_challenge_reroll_receipts"],
+  "functions": [
+    "buy_streak_freeze_serialized_body",
+    "claim_daily_challenge_serialized_body",
+    "claim_daily_challenges_serialized_body",
+    "fn_assign_current_challenge_period_serialized_body",
+    "fn_daily_missions_tournament_registered_inserted",
+    "fn_daily_missions_tournament_registered_updated",
+    "fn_drain_daily_mission_reset_notifications",
+    "fn_lock_daily_mission_user",
+    "fn_parse_daily_mission_date",
+    "get_daily_challenge_dashboard_serialized_body",
+    "get_daily_challenge_dashboard_v2_serialized_body",
+    "get_daily_challenge_dashboard_v3",
+    "record_daily_challenge_event_serialized_body",
+    "reroll_daily_challenge_legacy_serialized_body"
+  ],
+  "columns": {
+    "challenge_streak_state": [
+      "current_streak_ended_on",
+      "current_streak_length",
+      "current_streak_run_id",
+      "current_streak_started_on"
+    ],
+    "daily_challenge_catalog": ["is_active"],
+    "daily_challenge_claim_batches": ["challenge_row_ids"],
+    "daily_challenge_event_outbox": ["threshold_values"],
+    "daily_challenge_milestone_claims": ["streak_run_id"],
+    "daily_challenge_progress_events": ["threshold_values"]
+  }
+}

@@ -24,6 +24,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getGameCalls: [] as string[],
+  getGameKinds: [] as string[],
   getGameResult: undefined as any,
   listCalls: 0,
   listResolvers: [] as Array<(value: unknown) => void>,
@@ -119,6 +120,7 @@ vi.mock('../../src/services/GameManagementService', () => ({
     },
     getGame: async (_scope: string, _scopeId: string, _kind: string, gameId: string) => {
       mocks.getGameCalls.push(gameId);
+      mocks.getGameKinds.push(_kind);
       return mocks.getGameResult === undefined
         ? {
             id: gameId,
@@ -225,6 +227,7 @@ describe('a changed game is read back, not the whole board', () => {
     mocks.busHandlers.length = 0;
     mocks.resync.current = null;
     mocks.getGameCalls = [];
+    mocks.getGameKinds = [];
     mocks.getGameResult = undefined;
   });
 
@@ -268,6 +271,62 @@ describe('a changed game is read back, not the whole board', () => {
     expect(new Set(mocks.getGameCalls)).toEqual(new Set(['table-1']));
     // The whole point: no second board read.
     expect(mocks.listCalls, 'a named game must not reload the board').toBe(1);
+  });
+
+  it('keeps table and tournament identities separate even when their UUIDs match', async () => {
+    renderBoard();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    const resolve = mocks.listResolvers.shift();
+    expect(resolve).toBeTruthy();
+    await act(async () => {
+      resolve!({
+        items: [
+          {
+            id: 'shared-game-id',
+            kind: 'table',
+            name: 'Shared Cash Table',
+            status: 'running',
+            club_id: 'club-uuid-1',
+            players: 2,
+            max_players: 9,
+            bucket: 0,
+          },
+          {
+            id: 'shared-game-id',
+            kind: 'tournament',
+            name: 'Shared Tournament',
+            status: 'REGISTERING',
+            club_id: 'club-uuid-1',
+            players: 4,
+            max_players: 50,
+            bucket: 0,
+          },
+        ],
+        counts: { total: 2, live: 2, scheduled: 0, closed: 0 },
+        nextCursor: null,
+      });
+    });
+    await screen.findByText('Shared Cash Table');
+    await screen.findByText('Shared Tournament');
+
+    mocks.getGameResult = {
+      id: 'shared-game-id',
+      kind: 'tournament',
+      name: 'Updated Shared Tournament',
+      status: 'REGISTERING',
+      club_id: 'club-uuid-1',
+      players: 5,
+      max_players: 50,
+      bucket: 0,
+    };
+    await act(async () => {
+      fireGameRefresh({ tournamentId: 'shared-game-id' });
+    });
+
+    await screen.findByText('Updated Shared Tournament');
+    expect(screen.getByText('Shared Cash Table')).toBeInTheDocument();
+    expect(new Set(mocks.getGameKinds)).toEqual(new Set(['tournament']));
+    expect(mocks.listCalls).toBe(1);
   });
 
   it('reloads the board when the changed game is not on it', async () => {
@@ -333,6 +392,7 @@ describe('Table Management under its own refresh storm', () => {
     mocks.busHandlers.length = 0;
     mocks.resync.current = null;
     mocks.getGameCalls = [];
+    mocks.getGameKinds = [];
     mocks.getGameResult = undefined;
   });
 

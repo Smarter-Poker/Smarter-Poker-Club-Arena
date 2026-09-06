@@ -34,6 +34,7 @@ import {
 } from '../../presentation/cardPresentation/CardPresentationDebug';
 import { formatPopupText } from '../../utils/popupStyle';
 import './CommunityCards.css';
+import { cardsWords } from '../../utils/cardWords';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -449,6 +450,12 @@ function CardFace({
       role={host && interactiveHold ? 'button' : undefined}
       tabIndex={host && interactiveHold ? 0 : undefined}
       aria-label={host && interactiveHold ? 'Squeeze To Reveal' : undefined}
+      /* The region above already names every board card in one sentence, so an
+         ordinary card here is a DESCRIPTION that would be read a second time.
+         The one card that is a CONTROL is never hidden: aria-hidden is
+         inherited, and hiding a focusable element leaves it in the tab order
+         announcing nothing. See the container's note. */
+      aria-hidden={host && interactiveHold ? undefined : true}
     >
       {isSqueeze ? (
         /* ROUND 2 2026-09-05: the turn and river share ONE piece of markup
@@ -543,6 +550,10 @@ interface RabbitCardProps {
 function RabbitCard({ card, index, deckStyle, cardBack }: RabbitCardProps) {
   return (
     <div
+      /* Named by the region's "Rabbit Hunt: ..." clause, so the card itself is
+         a description that would otherwise be read twice. It carries no
+         control, so hiding it strands nothing. */
+      aria-hidden="true"
       className="community-cards__card community-cards__card--rabbit"
       style={{ '--card-index': index } as React.CSSProperties}
     >
@@ -1053,7 +1064,15 @@ function CommunityCardsComponent({
     <div
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
       role="region"
-      aria-label={`Community Cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'None Dealt'}${rabbitCount > 0 ? `; Rabbit Hunt: ${rabbitCards.map((c) => `${c.rank} of ${c.suit}`).join(', ')}` : ''}${winningHandName ? ` - ${winningHandName}` : ''}`}
+      /* THE BOARD, IN WORDS. This built its own sentence out of the RAW rank
+         and the RAW suit letter, so the region announced "Community Cards: A
+         of s, T of h" - the sprite's own field values read aloud. It says the
+         board through the one card-naming helper now, the same words the
+         cards' own alt text uses.
+         The cards inside are aria-hidden, because this label already names
+         every one of them: without that the board is announced twice, once as
+         a sentence and once card by card. */
+      aria-label={`Community Cards: ${cards.length > 0 ? cardsWords(cards) : 'None Dealt'}${rabbitCount > 0 ? `; Rabbit Hunt: ${cardsWords(rabbitCards)}` : ''}${winningHandName ? ` - ${winningHandName}` : ''}`}
     >
       {/* Bible V8 §5.1: Stage label (FLOP/TURN/RIVER) — fades in briefly when cards are dealt */}
       {stageLabel && (
@@ -1068,6 +1087,23 @@ function CommunityCardsComponent({
           so the winning-hand card pop had NEVER fired in production. The class
           is applied to the highlighted CARDS now, which is what the keyframe
           was written for. */}
+      {/* NAMED ONCE, BY THE REGION ABOVE. Every card in here carries its own
+          alt, so without hiding them the board is read out twice - as a
+          sentence and then card by card.
+
+          THE HIDING IS PER CARD, NOT ON THIS CONTAINER (deep dive 2026-09-06).
+          It was on the container for a few hours, and that was a real defect
+          shipped by the phase that exists to remove exactly it: `aria-hidden`
+          is INHERITED by the whole subtree, and one of these cards becomes the
+          Squeeze To Reveal BUTTON. Hiding the container took a focusable,
+          keyboard-operable control out of the accessibility tree while leaving
+          it in the tab order - focus landed on it and nothing was announced.
+          A control the keyboard can reach must be a control the reader can
+          hear, so the control stays exposed and only the DESCRIPTIONS are
+          hidden. (Its own children need no hiding: `role="button"` already
+          makes descendants presentational, so the reader says "Squeeze To
+          Reveal, button" and not the card's name after it.)
+          Pinned in tests/components/RiverSqueeze.test.tsx. */}
       <div className="community-cards__container">
         {slots.map((slot, i) =>
           slot.type === 'rabbit' ? (

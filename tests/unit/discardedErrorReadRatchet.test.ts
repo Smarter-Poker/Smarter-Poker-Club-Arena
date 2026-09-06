@@ -157,7 +157,9 @@ const BASELINE = new Map<string, number>([
   ['src/services/ProfileService.ts', 1],
   ['src/services/PermissionService.ts', 1],
   ['src/services/HandHistoryService.ts', 1],
-  ['src/services/DailyChallengeService.ts', 1],
+  // 1 -> 0 on 2026-09-06. Daily Mission mutations now preserve and classify
+  // PostgREST failures so retryable deadlocks cannot disappear into `void`.
+  ['src/services/DailyChallengeService.ts', 0],
   ['src/services/BlockService.ts', 1],
   ['src/services/AvatarService.ts', 1],
   ['src/services/AdService.ts', 1],

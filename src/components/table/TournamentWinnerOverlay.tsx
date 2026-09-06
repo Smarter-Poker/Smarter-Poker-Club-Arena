@@ -5,6 +5,7 @@ interface TournamentWinnerOverlayProps {
   isWinner: boolean;
   prize: number;
   tournamentName: string;
+  position?: number;
   onDismiss: () => void;
 }
 
@@ -12,6 +13,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
   isWinner,
   prize,
   tournamentName,
+  position = 1,
   onDismiss,
 }) => {
   const [visible, setVisible] = useState(false);
@@ -79,8 +81,18 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
 
   if (!isWinner) return null;
 
+  const paidFinish = position > 1;
+  const positionLabel =
+    position === 2 ? 'Second Place' : position === 3 ? 'Third Place' : `Place ${position}`;
+
   return (
-    <div className={`winnerOverlay ${visible ? 'visible' : ''}`} onClick={handleDismiss}>
+    <div
+      className={`winnerOverlay ${visible ? 'visible' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={paidFinish ? `${positionLabel} Paid Finish` : 'Tournament Champion'}
+      onClick={handleDismiss}
+    >
       <div className="sparkleContainer">
         {particles.map((p) => (
           <div
@@ -95,8 +107,8 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         ))}
       </div>
       <div className="winnerContent winner-entrance">
-        <div className="winnerTrophy trophy-bounce">WINNER</div>
-        <div className="winnerTitle winner-golden">CHAMPION!</div>
+        <div className="winnerTrophy trophy-bounce">{paidFinish ? positionLabel : 'Winner'}</div>
+        <div className="winnerTitle winner-golden">{paidFinish ? 'Paid Finish!' : 'Champion!'}</div>
         <div className="winnerTournament">{tournamentName}</div>
         {prize > 0 && (
           <div className="winnerPrize prize-counter">

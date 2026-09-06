@@ -67,6 +67,8 @@ export interface RebuyData {
 export interface TournamentWinner {
   prize: number;
   name: string;
+  /** Paid non-winners use the same celebration surface without being called champion. */
+  position?: number;
 }
 
 export interface Announcement {

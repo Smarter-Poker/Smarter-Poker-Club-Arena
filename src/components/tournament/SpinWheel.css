@@ -608,13 +608,34 @@
 .sw__conf {
   position: absolute;
   top: -4%;
-  left: calc((var(--sw-c) * 4.16%) + 2%);
+  left: var(--sw-left);
   width: 7px;
   height: 12px;
   border-radius: 2px;
   background: hsl(calc(var(--sw-c) * 47deg), 90%, 62%);
   animation: swConfFall 1.8s cubic-bezier(0.2, 0.6, 0.35, 1) both;
-  animation-delay: calc(var(--sw-c) * 55ms);
+  animation-delay: var(--sw-delay);
+}
+
+/* Multi-table tiles own their viewport. A fixed reveal here used to cover all
+   four tables when only one table was drawing. */
+.sw--contained {
+  position: absolute;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+@media (max-height: 620px) {
+  .sw__stage {
+    transform: scale(0.78);
+    transform-origin: center;
+  }
+  .sw__tree {
+    top: -82px;
+  }
+  .sw__result {
+    margin-top: 4px;
+  }
 }
 
 @keyframes swConfFall {

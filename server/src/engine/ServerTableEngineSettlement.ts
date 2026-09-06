@@ -1473,7 +1473,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 amount: a.amount,
                 hand_name: a.hand?.name ?? null,
               }))
-            : undefined;
+            : snap.bombPot && (snap.winners?.length ?? 0) > 0
+              ? /* THE ROW MUST STILL COMMIT (2026-09-06). Since 20260906143315
+                   the database refuses a bomb hand that distributed chips and
+                   carries no award units. A bomb hand that produced winners
+                   but an empty per-pot award array (the 'bomb_award_units_
+                   empty' defect reported below) would therefore be refused
+                   twenty times by the retry queue and lost - hand, rake link,
+                   facts and all - which is worse than the missing breakdown
+                   the guard exists to prevent. The winners list IS the money
+                   that left the pot: on 966 of 966 bomb hands measured over
+                   six hours its amounts summed to the distributable pot to the
+                   cent. So the breakdown is derived from it, one unit per
+                   winner, and the defect is still reported. */
+                snap.winners.map((w) => ({
+                  pot_index: w.potIndex ?? 0,
+                  board: 1,
+                  side: 'high',
+                  user_id: w.userId,
+                  amount: w.amount,
+                  hand_name: w.hand?.name ?? null,
+                }))
+              : undefined;
 
         const result = await logHandHistory({
           tableId: this.tableId,

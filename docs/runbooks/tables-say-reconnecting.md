@@ -52,6 +52,10 @@ limit 12;
 - **Rows are `ok` and recent** - the platform can hold a table. What you are
   looking at is one player, one network, or one table. Skip to
   [It is only some players](#it-is-only-some-players).
+- **Rows are `skipped`, `reason: maintenance_break`** - the platform was on its
+  announced `:55` break, every table was parked, and the probe said so instead
+  of crying. Expected once an hour. If you see a RUN of them outside `:55`-`:00`,
+  the break did not end: go to question 3.
 - **Rows are `failed`** - go to the outcome's section in
   [Close codes and outcomes](#close-codes-and-outcomes). The outcome IS the
   diagnosis; that is what it is for.

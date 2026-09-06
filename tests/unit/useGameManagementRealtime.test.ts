@@ -91,4 +91,76 @@ describe('useGameManagementRealtime', () => {
       clubId: 'club-1',
     });
   });
+
+  it('routes every managed content invalidation through its named event', () => {
+    renderHook(() =>
+      useGameManagementRealtime({
+        scope: 'club',
+        scopeId: 'club-1',
+        enabled: true,
+        onResync: vi.fn(),
+      })
+    );
+
+    act(() =>
+      mocks.channelOptions.onPayload({
+        new: {
+          event_type: 'ticker_settings_changed',
+          scope_kind: 'club',
+          scope_id: 'club-1',
+        },
+      })
+    );
+    expect(mocks.emit).toHaveBeenLastCalledWith('TICKER_SETTINGS_CHANGED', {
+      scope: 'club',
+      scopeId: 'club-1',
+    });
+
+    act(() =>
+      mocks.channelOptions.onPayload({
+        new: {
+          event_type: 'club_identity_changed',
+          scope_kind: 'club',
+          scope_id: 'club-1',
+          club_id: 'club-1',
+        },
+      })
+    );
+    expect(mocks.emit).toHaveBeenLastCalledWith('CLUB_UPDATED', { clubId: 'club-1' });
+
+    act(() =>
+      mocks.channelOptions.onPayload({
+        new: {
+          event_type: 'announcement_changed',
+          scope_kind: 'club',
+          scope_id: 'club-1',
+          club_id: 'club-1',
+        },
+      })
+    );
+    expect(mocks.emit).toHaveBeenLastCalledWith('ANNOUNCEMENT_CHANGED', {
+      clubId: 'club-1',
+      action: 'created',
+    });
+  });
+
+  it('marks every terminal channel state degraded and resyncs on recovery', () => {
+    const resync = vi.fn();
+    const { result } = renderHook(() =>
+      useGameManagementRealtime({
+        scope: 'union',
+        scopeId: 'union-1',
+        enabled: true,
+        onResync: resync,
+      })
+    );
+
+    act(() => mocks.channelOptions.onSubscriptionStatus('TIMED_OUT'));
+    expect(result.current).toBe('degraded');
+    act(() => mocks.channelOptions.onSubscriptionStatus('CLOSED'));
+    expect(result.current).toBe('degraded');
+    act(() => mocks.channelOptions.onSubscriptionStatus('SUBSCRIBED'));
+    expect(result.current).toBe('live');
+    expect(resync).toHaveBeenCalledOnce();
+  });
 });

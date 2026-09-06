@@ -31,12 +31,15 @@ import {
   cancelSeatChange,
   fetchCashGameLobby,
   isMainOne,
+  joinCashGame,
+  joinGameRefusalText,
   lobbyTableLabel,
   mustMoveListRows,
   pendingMoveNotice,
   requestSeatChange,
   seatChangeOutcomeText,
   seatChangeRefusalText,
+  waitlistedText,
   type CashGameLobby,
   type LobbyTable,
 } from '../../services/cashGameLobby';
@@ -54,6 +57,14 @@ export interface MustMoveLobbyModalProps {
   /** The table the viewer is looking at (highlighted in the list). */
   currentTableId: string | null | undefined;
   onClose: () => void;
+  /**
+   * JOIN GAME FROM THE LOBBY (Dan 2026-09-05): "if a player 'views table' or
+   * is in the 'lobby' of a must move game, there should be a button next to
+   * close that said 'Join Game'." The game door picks the table; this carries
+   * the viewer to it. A surface with no way to move the viewer may omit it -
+   * the door still holds the place and the toast still says where.
+   */
+  onGoToTable?: (tableId: string) => void;
 }
 
 function lifecycleLabel(t: LobbyTable): string {
@@ -68,6 +79,7 @@ export function MustMoveLobbyModal({
   gameId,
   currentTableId,
   onClose,
+  onGoToTable,
 }: MustMoveLobbyModalProps) {
   const toast = useToast();
   const [lobby, setLobby] = useState<CashGameLobby | null>(null);
@@ -151,6 +163,34 @@ export function MustMoveLobbyModal({
     }
   };
 
+  /**
+   * JOIN GAME. One call to the game door (fn_cash_game_join): it picks the
+   * shortest table with an unreserved chair and answers with it, or holds the
+   * caller's place on the waitlist. Nothing here chooses a table - the door
+   * does, so the lobby and the felt can never disagree about where a player
+   * belongs. The buy-in stays the table's own door once we arrive.
+   */
+  const join = async () => {
+    if (!gameId || busy) return;
+    setBusy(true);
+    try {
+      const r = await joinCashGame(gameId);
+      if (r.action === 'waitlisted') {
+        toast.info(waitlistedText(r));
+        await load();
+      } else if (r.table_id) {
+        onClose();
+        onGoToTable?.(r.table_id);
+      } else {
+        await load();
+      }
+    } catch (err) {
+      toast.warning(joinGameRefusalText(err));
+    } finally {
+      if (mountedRef.current) setBusy(false);
+    }
+  };
+
   if (!isOpen || !gameId) return null;
 
   const me = lobby?.me ?? null;
@@ -184,6 +224,20 @@ export function MustMoveLobbyModal({
 
         <div className="tlm-header">
           <span className="tlm-title">Must Move Lobby</span>
+          {/* JOIN GAME sits beside Close for anybody looking at this game
+              without a chair in it - viewing a table, or opening the lobby
+              from the game list. A seated player never sees it. */}
+          {lobby && !me?.seated && (
+            <button
+              type="button"
+              className="tlm-close mml-join"
+              onClick={() => void join()}
+              disabled={busy}
+              aria-label="Join Game"
+            >
+              Join Game
+            </button>
+          )}
           <button type="button" className="tlm-close" onClick={onClose} aria-label="Close">
             Close
           </button>

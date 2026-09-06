@@ -3,7 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ErrorState } from '../common/EmptyState';
 import PageSkeleton from '../common/PageSkeleton';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
-import { gameCreationDeniedMessage, type GameCreationAccess } from '../../lib/gameCreationAccess';
+import {
+  canUseStandaloneClubCreationRoute,
+  gameCreationDeniedMessage,
+  type GameCreationAccess,
+} from '../../lib/gameCreationAccess';
 import { fetchGameCreationAccess } from '../../services/GameAccessService';
 
 /**
@@ -38,10 +42,14 @@ export default function GameCreationGuard({ children }: { children: ReactNode })
   if (error) return <ErrorState message={error} onRetry={() => void checkAccess()} />;
   if (!access) return <PageSkeleton variant="default" />;
 
-  if (!access.allowed) {
+  if (!canUseStandaloneClubCreationRoute(access)) {
     return (
       <ErrorState
-        message={gameCreationDeniedMessage(access)}
+        message={
+          access.allowed && access.unionId
+            ? 'This Club Is Managed By A Union. Create Games From The Union Console.'
+            : gameCreationDeniedMessage(access)
+        }
         onRetry={() => navigate(`/clubs/${clubId}`, { replace: true })}
       />
     );

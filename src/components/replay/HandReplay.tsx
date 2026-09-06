@@ -749,6 +749,29 @@ export default function HandReplay({
     [last, go]
   );
 
+  /**
+   * THE TABLIST'S OWN KEYS. Left/Right move between the two tabs and WRAP,
+   * Home/End go to the ends, and focus follows selection - which is the half
+   * that makes a roving tabindex usable: move the selection without moving
+   * the focus and the next Tab press leaves from wherever focus was stranded.
+   */
+  const replayTabRef = useRef<HTMLButtonElement | null>(null);
+  const rundownTabRef = useRef<HTMLButtonElement | null>(null);
+  const onTabsKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const go = (next: 'replay' | 'rundown') => {
+      e.preventDefault();
+      setTab(next);
+      (next === 'replay' ? replayTabRef : rundownTabRef).current?.focus();
+    };
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      go(tab === 'replay' ? 'rundown' : 'replay');
+    } else if (e.key === 'Home') {
+      go('replay');
+    } else if (e.key === 'End') {
+      go('rundown');
+    }
+  };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (tab !== 'replay') return;
     if (e.key === 'ArrowRight') {
@@ -815,6 +838,17 @@ export default function HandReplay({
       className="hand-replay"
       onKeyDown={onKeyDown}
       tabIndex={0}
+      /* A `tabIndex={0}` div is a focus stop, and an unnamed one is a stop
+         that announces nothing and explains nothing. It carries the transport
+         keys (arrows step, Home/End jump, Space plays), so it says so - and
+         only while the Replay tab is showing, because on the Rundown tab
+         `onKeyDown` returns immediately and the stop would be a lie. */
+      role={tab === 'replay' ? 'application' : undefined}
+      aria-label={
+        tab === 'replay'
+          ? 'Hand Replay. Arrow Keys Step, Home And End Jump, Space Plays.'
+          : undefined
+      }
       /* The replay's own rate; every motion duration divides by it in CSS. */
       style={{ '--hr-rate': rate } as React.CSSProperties}
     >
@@ -832,11 +866,29 @@ export default function HandReplay({
           </h2>
           <span className="hand-replay__when">{stamp(model.playedAt)}</span>
         </div>
-        <div className="hand-replay__tabs" role="tablist" aria-label="Replay View">
+        {/* THE TABLIST PATTERN, FINISHED. It had `role="tablist"` and two
+            `role="tab"` buttons and none of what makes those roles true: both
+            tabs were tabbable, neither named its panel, neither panel named
+            its tab, and the arrow keys did nothing. A screen reader announced
+            "tab 1 of 2" and then could not move between them.
+            One tabbable tab, arrows to move (wrapping), Home/End to the ends,
+            and focus follows selection - the same pattern
+            `tests/unit/tournamentLobbyShellIsAccessible.test.ts` pins for the
+            tournament lobby. */}
+        <div
+          className="hand-replay__tabs"
+          role="tablist"
+          aria-label="Replay View"
+          onKeyDown={onTabsKeyDown}
+        >
           <button
             type="button"
             role="tab"
+            id="hr-tab-replay"
+            aria-controls="hr-panel-replay"
             aria-selected={tab === 'replay'}
+            tabIndex={tab === 'replay' ? 0 : -1}
+            ref={replayTabRef}
             className={`hr-tab${tab === 'replay' ? ' hr-tab--active' : ''}`}
             onClick={() => setTab('replay')}
           >
@@ -845,7 +897,11 @@ export default function HandReplay({
           <button
             type="button"
             role="tab"
+            id="hr-tab-rundown"
+            aria-controls="hr-panel-rundown"
             aria-selected={tab === 'rundown'}
+            tabIndex={tab === 'rundown' ? 0 : -1}
+            ref={rundownTabRef}
             className={`hr-tab${tab === 'rundown' ? ' hr-tab--active' : ''}`}
             onClick={() => setTab('rundown')}
           >
@@ -855,7 +911,12 @@ export default function HandReplay({
       </header>
 
       {tab === 'rundown' ? (
-        <div className="hand-replay__rundown" role="tabpanel">
+        <div
+          className="hand-replay__rundown"
+          role="tabpanel"
+          id="hr-panel-rundown"
+          aria-labelledby="hr-tab-rundown"
+        >
           <HandDetailView
             model={model}
             currentUserId={heroId}
@@ -864,7 +925,12 @@ export default function HandReplay({
           />
         </div>
       ) : (
-        <div className="hand-replay__stage" role="tabpanel">
+        <div
+          className="hand-replay__stage"
+          role="tabpanel"
+          id="hr-panel-replay"
+          aria-labelledby="hr-tab-replay"
+        >
           {frame && motion && (
             <Felt model={model} frame={frame} prev={prevFrame} motion={motion} heroId={heroId} />
           )}

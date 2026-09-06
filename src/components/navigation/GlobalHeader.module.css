@@ -229,6 +229,11 @@
   border: 0.5px solid rgba(0, 0, 0, 0.94);
   border-radius: 50%;
   background: transparent;
+  /* The button is `overflow: hidden`, so a slot even slightly taller than its
+     box is not merely off-centre - the portrait is SLICED, and a sliced circle
+     reads as a squashed one. Nothing may leave the frame. */
+  max-width: 100%;
+  max-height: 100%;
   pointer-events: none;
 }
 
@@ -338,10 +343,29 @@
     background: #000;
   }
 
+  /* THE PORTRAIT IS NOT IN ITS FRAME (Dan 2026-09-05: "THE PROFILE PIC IN THE
+     GLOBAL HEADER IS DISTORTED AND NOT IN ITS FRAME").
+
+     MEASURED: the rule above gives this button `width: 7.15%` of the header
+     and `height: 74%` of the 96px desktop band - at a 1680px viewport that is
+     120px by 71px, a box that is NOT square because `aspect-ratio` is
+     cancelled here while the width is inherited from the mobile rule. The slot
+     was then sized from the WIDTH (72% of 120px = 86px) and centred, so it
+     stood 15px taller than the button that contains it and the button's
+     `overflow: hidden` cut the portrait's top and bottom off. A circle with
+     its cap and chin sliced away is exactly what "distorted" looks like.
+
+     So the slot is sized from the button's HEIGHT here, which is the axis that
+     actually constrains it: 86% of 71px is a 61px circle that fits with room
+     on every axis at every laptop width. `aspect-ratio: 1` from the base rule
+     keeps it round; `width: auto` hands the sizing to the height. The black
+     disc stays width-derived on purpose - it has to cover the ornament, which
+     `object-fit: fill` squashes into a wide ellipse up here. */
   .profileAvatarSlot {
     top: 50% !important;
     left: 50% !important;
-    width: 72%;
+    width: auto;
+    height: 86%;
     border: 0.5px solid rgba(0, 0, 0, 0.94);
   }
 }

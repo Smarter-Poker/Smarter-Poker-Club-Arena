@@ -304,9 +304,17 @@ describe('the regular ante reaches the felt', () => {
     );
     expect(page).toMatch(/seatPositions\[tableState\.heroSeat - 1\]/);
     const css = read('src/components/table/HeroVpipTracker.css');
+    /* CLOSER, AND SMALLER (Dan 2026-09-05: "VPIP NEXT TO THE HERO NEEDS TO BE
+       SUBSTANTIALLY SMALLER, AND CLOSER TO THE HERO"). The pin is on the
+       MECHANISM - anchored at the hero's own point and pushed left by half the
+       pod, so it rides with the seat at every breakpoint - not on the gap,
+       which is Dan's to set. It was 10px; it is 3px. */
     expect(css).toMatch(
-      /transform: translate\(calc\(-100% - var\(--sp-hero-half\) - 10px\), -50%\);/
+      /transform: translate\(calc\(-100% - var\(--sp-hero-half\) - 3px\), -50%\);/
     );
+    /* And it stays small: a readout beside the hero, not a second seat. */
+    expect(css).toMatch(/\.hero-vpip__figure \{\s*font-size: 0\.66rem;/);
+    expect(css).toMatch(/min-width: 40px;/);
     expect(css).not.toMatch(/:hover/);
   });
 });

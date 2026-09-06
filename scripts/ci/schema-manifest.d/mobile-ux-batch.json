@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/mobile-table-ux-batch - 20260906011318, the must-move tables balance themselves (Dan 2026-09-05). Applied to production 2026-09-06 01:13 UTC; the base snapshot predates it. fn_cash_clusters_tick_all is already in the base and is only re-emitted.",
+  "functions": ["fn_cash_cluster_balance"]
+}

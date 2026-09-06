@@ -36,6 +36,7 @@ import { reportError } from '../../utils/errorReporter';
    rabbit/crosshair icon provided by the user. Imported through Vite so it
    emits to dist/assets/ and reaches production via the automated build. */
 import { useButtonImage } from '../../hooks/useButtonImage';
+import { useRabbitHuntReveal } from './useRabbitHuntReveal';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -115,21 +116,22 @@ export function RabbitHunt({
   const rabbitHuntIcon = useButtonImage('icon-rabbit');
   const toast = useToast();
 
-  const [isRevealing, setIsRevealing] = useState(false);
-  /* Write-only on purpose: the reveal RENDERS on the CommunityCards board
-     (TablePage passes it `rabbitCards`), so nothing here reads the array back.
-     The setter stays because clearing it on a new hand is what stops the
-     previous hand's cards being offered again. */
-  const [, setRevealedCards] = useState<Card[]>([]);
-  const [hasRevealed, setHasRevealed] = useState(false);
+  /* THE REVEAL ITSELF LIVES IN useRabbitHuntReveal (P5, 2026-09-05), because
+     the hand replayer buys the same thing and two implementations of a paid
+     action drift. This component is the felt TILE: the artwork, the price
+     badge, the counts and the offer's own visibility. It decides nothing
+     about money. */
   const [isVIP, setIsVIP] = useState(false);
-  const [vipRemaining, setVipRemaining] = useState<number | null>(null);
-  /* Uses left on a PURCHASED pack. A different pool from the VIP monthly one,
-     and only knowable after a reveal has consumed one, so it can never be read
-     before the first press. Once it IS known it belongs on the tile with every
-     other count, not in a popup. See the corner numeral below. */
-  const [packRemaining, setPackRemaining] = useState<number | null>(null);
-  const revealInFlightRef = useRef(false);
+  const {
+    reveal,
+    isRevealing,
+    hasRevealed,
+    vipRemaining,
+    packRemaining,
+    reset: resetReveal,
+    setVipRemaining,
+  } = useRabbitHuntReveal({ onReveal, userId, disabled: !isAvailable });
+  const handleReveal = useCallback(() => void reveal(), [reveal]);
 
   // Server price when we have it, the constant only as a fallback.
   const cost =
@@ -185,75 +187,8 @@ export function RabbitHunt({
 
   // A new hand's offer must not show the previous hand's cards.
   useEffect(() => {
-    setRevealedCards([]);
-    setHasRevealed(false);
-  }, [isAvailable, cardsAvailable]);
-
-  const handleReveal = useCallback(async () => {
-    if (revealInFlightRef.current || isRevealing || hasRevealed || !isAvailable) return;
-    if (!userId) {
-      toast.error('Please Log In To Use Rabbit Hunt');
-      return;
-    }
-
-    // State does not update until React renders. This synchronous mutex makes
-    // the paid endpoint single-flight even when two taps land in one frame.
-    revealInFlightRef.current = true;
-    setIsRevealing(true);
-    try {
-      // One call: it charges and returns the cards, or it charges nothing and
-      // returns why. There is no window in which a player has paid and has no
-      // cards, which is the failure the old fetch-then-charge dance was written
-      // to avoid and could not actually close from the client.
-      const result = await onReveal();
-
-      if (!result.success || !result.cards || result.cards.length === 0) {
-        toast.error(result.error || 'Rabbit Hunt Is Not Available For This Hand');
-        setIsRevealing(false);
-        return;
-      }
-
-      // Every paying path says what it took. The player must never spend
-      // something and be told nothing.
-      if (result.diamondsSpent && result.diamondsSpent > 0) {
-        toast.info(`${result.diamondsSpent} Diamonds Charged`);
-      } else if (typeof result.vipRemaining === 'number') {
-        /* Dan 2026-08-30: "YOU DO NOT NEED A POP UP IN THE BOTTOM RIGHT CORNER
-           'ALERTING YOU' HOW MANY RABBIT HUNTS YOU HAVE LEFT."
-
-           The count is not dropped, it is MOVED. It already renders as the
-           corner numeral on the tile (rabbit-hunt__remaining), where it is
-           readable BEFORE the press rather than announced after the money has
-           gone — which is the moment it is actually useful. A toast that
-           repeats it is one more thing covering the felt at the end of a hand.
-           Nothing spent is left unsaid: the diamonds branch above still speaks,
-           because that one is a charge, not a stock level. */
-        setVipRemaining(result.vipRemaining);
-      } else if (typeof result.usesRemaining === 'number') {
-        // A purchased pack. Same rule: the number lands on the tile, not in a
-        // popup. This spends neither diamonds nor a VIP use, so without one of
-        // the two it would be the only path with no acknowledgement at all.
-        setPackRemaining(result.usesRemaining);
-      } else if (result.source === 'already_revealed') {
-        toast.info('Showing Your Rabbit Hunt Again, No Charge');
-      }
-
-      // Set every card at once and let CSS stagger them. Awaiting 500ms PER
-      // CARD before the first one appeared left the player paying for a reveal
-      // and then watching it get unmounted: a pre-flop fold took 2.5s to finish
-      // drawing, and the next hand starting inside that window tore the panel
-      // down mid-animation. The cards carry animationDelay below, so the
-      // staggered feel survives without holding the reveal open for seconds.
-      setRevealedCards(result.cards);
-      setHasRevealed(true);
-    } catch (error) {
-      reportError(error, 'RabbitHunt.Rabbit_hunt_failed');
-      toast.error('Rabbit Hunt Failed');
-    } finally {
-      revealInFlightRef.current = false;
-      setIsRevealing(false);
-    }
-  }, [isRevealing, hasRevealed, isAvailable, onReveal, userId, toast]);
+    resetReveal();
+  }, [isAvailable, cardsAvailable, resetReveal]);
 
   // The hotkey sees exactly what the button sees: a handler while an offer
   // is up and not yet revealed, nothing otherwise.

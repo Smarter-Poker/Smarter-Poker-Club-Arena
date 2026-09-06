@@ -23,6 +23,7 @@ BEGIN
    WHERE club.owner_id IS NOT NULL
      AND COALESCE(club.is_union, false) = false
      AND club.union_id IS NULL
+     AND COALESCE(club.promo_balance, 0) BETWEEN 0.01 AND 1000000000
      AND NOT EXISTS (
        SELECT 1 FROM public.union_clubs membership WHERE membership.club_id = club.id
      )
@@ -85,7 +86,32 @@ BEGIN
     RAISE EXCEPTION 'FAIL: Funded Publication Retry Was Not Exact And Idempotent';
   END IF;
 
-  RAISE NOTICE 'PASS: Standalone Funding Gate, Summary, Rollback, And Retry';
+  v_saved := public.fn_save_leaderboard_reward_setup(
+    v_club_id, false, 'profit', '[]'::jsonb, '[]'::jsonb,
+    'custom', v_version + 1,
+    '00000000-0000-4000-8000-000000003005'::uuid
+  );
+  v_summary := public.fn_leaderboard_funding_summary(v_club_id);
+  IF (v_saved ->> 'program_version')::integer <> v_version + 2
+     OR (v_summary ->> 'current_program_commitment')::numeric <> 0
+     OR v_summary ->> 'funding_status' <> 'disabled' THEN
+    RAISE EXCEPTION 'FAIL: Disabled Replacement Did Not Release Its Commitment: %', v_summary;
+  END IF;
+
+  v_saved := public.fn_save_leaderboard_reward_setup(
+    v_club_id, true, 'profit',
+    jsonb_build_array(jsonb_build_object('rank', 1, 'amount', v_wallet)),
+    '[]'::jsonb, 'custom', v_version + 2,
+    '00000000-0000-4000-8000-000000003006'::uuid
+  );
+  v_summary := public.fn_leaderboard_funding_summary(v_club_id);
+  IF (v_saved ->> 'program_version')::integer <> v_version + 3
+     OR (v_summary ->> 'current_program_commitment')::numeric <> v_wallet
+     OR v_summary ->> 'funding_status' <> 'funded' THEN
+    RAISE EXCEPTION 'FAIL: Exact Wallet Boundary Was Not Publishable: %', v_summary;
+  END IF;
+
+  RAISE NOTICE 'PASS: Standalone Gate, Summary, Retry, Disable Release, And Exact Boundary';
 END;
 $standalone$;
 
@@ -169,6 +195,30 @@ BEGIN
 END;
 $union$;
 
+DO $scheduler_contract$
+DECLARE
+  v_definition text;
+BEGIN
+  SELECT pg_get_functiondef('public.fn_settle_due_leaderboards()'::regprocedure)
+    INTO v_definition;
+
+  IF position('leaderboard_reward_program_versions' IN v_definition) = 0
+     OR position('fn_get_leaderboard_reward_plan' IN v_definition) = 0
+     OR position('generate_series' IN v_definition) = 0
+     OR position('v_plan ->> ''payout_metric''' IN v_definition) = 0
+     OR position('WHERE settings.rewards_enabled' IN v_definition) > 0 THEN
+    RAISE EXCEPTION 'FAIL: Settlement Scheduler Is Not Bound To Immutable Closed-Period Programs';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.fn_settle_due_leaderboards()', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.fn_settle_due_leaderboards()', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.fn_settle_due_leaderboards()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL: Settlement Scheduler Execution Grants Are Unsafe';
+  END IF;
+
+  RAISE NOTICE 'PASS: Catch-Up Scheduler Uses Immutable Programs And Remains Service-Only';
+END;
+$scheduler_contract$;
+
 ROLLBACK;
 
 SELECT CASE WHEN count(*) = 0 THEN 'PASS: Zero Probe Rows Remain'
@@ -178,5 +228,7 @@ WHERE operation_id IN (
   '00000000-0000-4000-8000-000000003001'::uuid,
   '00000000-0000-4000-8000-000000003002'::uuid,
   '00000000-0000-4000-8000-000000003003'::uuid,
-  '00000000-0000-4000-8000-000000003004'::uuid
+  '00000000-0000-4000-8000-000000003004'::uuid,
+  '00000000-0000-4000-8000-000000003005'::uuid,
+  '00000000-0000-4000-8000-000000003006'::uuid
 );

@@ -19,7 +19,12 @@ import {
 } from './HorseEval.js';
 import { HorseLogic, type HorseGameStateV2 } from './HorseLogic.js';
 import { HorseMind } from './HorseMind.js';
-import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
+import {
+  ServerTableEngineTurns,
+  noteSecondLookDecline,
+  type SecondLookDecline,
+} from './ServerTableEngineTurns.js';
+import { drainFires, enableBrainTelemetry } from './BrainTelemetry.js';
 import type { Card, SeatPlayer, HandStage } from '../types.js';
 
 beforeEach(() => {
@@ -111,21 +116,73 @@ describe('V44 second look plan and verdict', () => {
   const T = ServerTableEngineTurns;
   it('earns a second look only on a close spot with time to spend', () => {
     const call = { action: 'call', thinkTime: 3000 };
-    expect(T.secondLookPlan(call, 20, 100, 2, 3000, 1)).toEqual({ afterMs: 400 });
-    expect(T.secondLookPlan(call, 20, 100, 2, 1800, 1)).toEqual({ afterMs: 600 > 400 ? 400 : 600 });
-    // not facing a bet
-    expect(T.secondLookPlan(call, 0, 100, 2, 3000, 1)).toBeNull();
-    // pot too small (20bb at bb 2 = 40 chips)
-    expect(T.secondLookPlan(call, 10, 30, 2, 3000, 1)).toBeNull();
-    // a sizing answer is not the sample's call
-    expect(T.secondLookPlan({ action: 'raise', thinkTime: 3000 }, 20, 100, 2, 3000, 1)).toBeNull();
-    // no time
-    expect(T.secondLookPlan(call, 20, 100, 2, 1200, 1)).toBeNull();
-    // the governor is shedding load
-    expect(T.secondLookPlan(call, 20, 100, 2, 3000, 0.7)).toBeNull();
+    expect(T.secondLookPlan(call, 20, 100, 2, 3000, 1)).toEqual({ ok: true, afterMs: 400 });
+    expect(T.secondLookPlan(call, 20, 100, 2, 1800, 1)).toEqual({ ok: true, afterMs: 400 });
     // the replay always lands well inside the think time
-    const plan = T.secondLookPlan(call, 20, 100, 2, 1500, 1)!;
-    expect(plan.afterMs).toBeLessThan(1500);
+    const plan = T.secondLookPlan(call, 20, 100, 2, 1500, 1);
+    expect(plan.ok).toBe(true);
+    expect(plan.ok && plan.afterMs).toBeLessThan(1500);
+  });
+
+  /*
+   * A DECLINE NAMES ITS GATE (2026-09-06). On 2026-09-05 the daily audit
+   * reported v44_second_look firing 0 times against 2,121,841 decides, and
+   * nobody could say which of the five gates was closing, because the plan
+   * returned a bare null. Each reason wants an opposite fix - `governor` is
+   * capacity, `no_think_time` is the tempo model, `small_pot` and
+   * `action_shape` are the ledger's 0.1% expectation being wrong - so the
+   * reason is the finding.
+   */
+  it('a decline names the gate that closed, in gate order', () => {
+    const call = { action: 'call', thinkTime: 3000 };
+    expect(T.secondLookPlan(call, 0, 100, 2, 3000, 1)).toEqual({
+      ok: false,
+      reason: 'not_facing_bet',
+    });
+    // pot too small (20bb at bb 2 = 40 chips)
+    expect(T.secondLookPlan(call, 10, 30, 2, 3000, 1)).toEqual({ ok: false, reason: 'small_pot' });
+    // a sizing answer is not the sample's call
+    expect(T.secondLookPlan({ action: 'raise', thinkTime: 3000 }, 20, 100, 2, 3000, 1)).toEqual({
+      ok: false,
+      reason: 'action_shape',
+    });
+    expect(T.secondLookPlan(call, 20, 100, 2, 1200, 1)).toEqual({
+      ok: false,
+      reason: 'no_think_time',
+    });
+    // the governor is shedding load
+    expect(T.secondLookPlan(call, 20, 100, 2, 3000, 0.7)).toEqual({
+      ok: false,
+      reason: 'governor',
+    });
+    // gate ORDER matters: a spot failing several gates reports the first, so
+    // the counts partition the decisions rather than double-counting them.
+    expect(T.secondLookPlan({ action: 'raise', thinkTime: 0 }, 0, 1, 2, 0, 0)).toEqual({
+      ok: false,
+      reason: 'not_facing_bet',
+    });
+  });
+
+  it('every decline reason fires exactly one distinct receipt', () => {
+    drainFires();
+    enableBrainTelemetry();
+    const reasons: SecondLookDecline[] = [
+      'not_facing_bet',
+      'small_pot',
+      'action_shape',
+      'no_think_time',
+      'governor',
+    ];
+    for (const r of reasons) noteSecondLookDecline(r);
+    const fired = drainFires();
+    // Five reasons, five distinct keys, one fire each - the counts partition
+    // the declined decisions rather than double-counting them.
+    expect(fired.length).toBe(reasons.length);
+    expect(new Set(fired.map((f) => f.feature)).size).toBe(reasons.length);
+    for (const f of fired) {
+      expect(f.feature.startsWith('v44_declined_')).toBe(true);
+      expect(f.fires).toBe(1);
+    }
   });
 
   it('only a different call/fold/all-in overturns the fast answer', () => {

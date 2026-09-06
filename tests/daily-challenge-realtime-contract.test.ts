@@ -100,6 +100,8 @@ describe('Daily Missions realtime and render-isolation contract', () => {
   it('coalesces event bursts and repairs dropped events with a visible-tab cursor read', () => {
     expect(page).toContain('scheduleRealtimeRefresh');
     expect(page).toContain("loadChallenges(userId, 'silent')");
+    expect(page).toContain('announcedRevision === null && !initialLoadSettledRef.current');
+    expect(page).toContain('announcedRevision <= dashboardRevisionRef.current');
     expect(page).toContain('dailyChallengeService.getDashboardRevision(userId)');
     expect(page).toContain('revision > dashboardRevisionRef.current');
     expect(page).toContain("document.visibilityState === 'visible'");

@@ -125,7 +125,7 @@
 .scope,
 .period,
 .exportBtn {
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 0.85rem;
   color: #72818e;
   background: #0b1117;
@@ -630,6 +630,8 @@
 }
 
 .drill {
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   color: #7fc8ff;
   background: none;
@@ -661,7 +663,8 @@
 }
 
 .crumbs button {
-  min-height: 30px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 0.5rem;
   color: #7fc8ff;
   background: #0b1117;
@@ -748,7 +751,7 @@
 }
 
 .pagerBtn {
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 0.9rem;
   color: var(--energy-soft);
   background: #0c131a;
@@ -840,14 +843,14 @@
 }
 .toolSearch input {
   width: 100%;
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 0.55rem;
   color: #e7f4fe;
   background: #0b1117;
   border: 1px solid rgba(174, 189, 203, 0.18);
   border-radius: 2px;
   font-family: 'Rajdhani', sans-serif;
-  font-size: 0.78rem;
+  font-size: 16px;
   letter-spacing: 0.03em;
 }
 .toolSearch input::placeholder {
@@ -857,7 +860,7 @@
   font-size: 0.7rem;
 }
 .toolSort select {
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 0.45rem;
   color: #e7f4fe;
   background: #0b1117;
@@ -871,7 +874,7 @@
   cursor: pointer;
 }
 .toolClear {
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 0.6rem;
   color: #7fc8ff;
   background: #0b1117;
@@ -919,6 +922,8 @@
    rendered as a button when the server says the row will actually open, so the
    underline is a promise rather than an invitation to be refused. */
 .drillIn {
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   color: #7fc8ff;
   background: none;

@@ -87,7 +87,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // GameServer had four tournament-cancel paths; all four are gone. Nothing in
 // this file cancels a tournament any more — it fills, resumes or settles.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
-import { selectCompletingDue } from './tournament/completingDwell.js';
+import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
 import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
@@ -3557,6 +3557,24 @@ export class GameServer {
           const dueIds = new Set(dwell.due);
           for (const stuck of stuckTournaments || []) {
             if (!dueIds.has(String(stuck.id))) continue;
+            /* A MANAGER THAT NEVER CAME BACK (2026-09-06). See
+               managerHasOverstayed. Past the grace the registered manager is
+               the thing that is stuck, not the thing that will fix it. */
+            const lingering = this.tournamentEngines.get(String(stuck.id));
+            if (lingering && managerHasOverstayed(dwell.seenAt.get(String(stuck.id)), Date.now())) {
+              reportError(
+                new Error(
+                  `[GameServer] ${stuck.name} (${String(stuck.id).slice(0, 8)}) has been COMPLETING past the managed grace with its manager still registered - its finish never returned. Stopping the manager and recovering.`
+                ),
+                'GameServer.completing_manager_overstayed'
+              );
+              try {
+                lingering.stop();
+              } catch (stopErr) {
+                reportError(stopErr, 'GameServer.completing_manager_stop_failed');
+              }
+              this.tournamentEngines.delete(String(stuck.id));
+            }
             if (!this.tournamentEngines.has(stuck.id)) {
               // No active engine managing this tournament - it's truly stuck.
               // TOURNEY-AUDIT 2026-07-24: recovery now PAYS remaining players

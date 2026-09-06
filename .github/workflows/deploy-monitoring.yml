@@ -83,6 +83,21 @@ jobs:
           printf '#!/bin/bash\nexec ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 "%s@%s" "$@"\n' \
             "$SSH_USER" "$HETZNER_HOST" > ~/hssh
           chmod +x ~/hssh
+          # PLAIN `ssh root@host` MUST USE THE SAME KEY (2026-09-06).
+          # check-alert-rules-match.mjs execs `ssh $ENGINE_MONITORING_SSH`
+          # with no -i, so on the first run of this workflow the verify step
+          # died with "Permission denied (publickey)" - exit 2, red for the
+          # wrong reason, with the Deploy step above it green having
+          # deployed nothing. The host entry makes the bare form work.
+          {
+            echo "Host $HETZNER_HOST"
+            echo "  User $SSH_USER"
+            echo "  IdentityFile ~/.ssh/id_deploy"
+            echo "  IdentitiesOnly yes"
+            echo "  BatchMode yes"
+            echo "  ConnectTimeout 20"
+          } >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       # WHAT IS RUNNING BEFORE WE TOUCH IT. If the box is running rules this
       # repo has never seen, deploying would DELETE them - deploy.sh symlinks
@@ -156,10 +171,36 @@ jobs:
           print('No routing would be lost.')
           PYEOF
 
+      # SHIP THE CHECKOUT, THEN RUN deploy.sh FROM IT (2026-09-06).
+      # The step used to `curl raw.githubusercontent.com/.../deploy.sh | bash`
+      # on the box. This repository is PRIVATE: raw answers 404, bash reads an
+      # empty stdin and exits 0, and the step reported SUCCESS having done
+      # nothing - on its first run, 12:23 UTC, the morning the cluster
+      # controller was down 65 minutes with ClusterPassErrors declared here and
+      # not loaded there. deploy.sh's own git clone fails the same way on a box
+      # with no credentials. So the runner, which HAS the files, sends them.
+      - name: Ship infra/monitoring to the box
+        run: |
+          set -euo pipefail
+          echo "${{ github.sha }} ${{ github.ref_name }} $(date -u +%Y-%m-%dT%H:%M:%SZ)" > infra/monitoring/.deployed-from
+          # Staged, then copied IN PLACE. docker-compose.yml bind-mounts the
+          # rule files one by one, and a bind mount of a file follows the
+          # inode: a file that is unlinked and recreated (tar's default) is a
+          # file the running container never sees again until it restarts.
+          # `cp` opens the existing file and truncates it, so the inode - and
+          # the mount - survive, and the reload in deploy.sh reads new bytes.
+          tar -C . -cf - infra/monitoring \
+            | ~/hssh "rm -rf /opt/smarter-poker-monitoring-src.incoming && mkdir -p /opt/smarter-poker-monitoring-src.incoming && tar -C /opt/smarter-poker-monitoring-src.incoming -xf -"
+          ~/hssh "mkdir -p /opt/smarter-poker-monitoring-src/infra/monitoring \
+            && cp -R /opt/smarter-poker-monitoring-src.incoming/infra/monitoring/. /opt/smarter-poker-monitoring-src/infra/monitoring/ \
+            && rm -rf /opt/smarter-poker-monitoring-src.incoming \
+            && test -f /opt/smarter-poker-monitoring-src/infra/monitoring/prometheus.yml \
+            && cat /opt/smarter-poker-monitoring-src/infra/monitoring/.deployed-from"
       - name: Deploy
         run: |
           set -euo pipefail
-          ~/hssh "bash -lc 'curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/infra/monitoring/deploy.sh | bash'" 2>&1 | tail -60
+          # No pipe on this line: a pipe would report the pager's exit, not the deploy's.
+          ~/hssh "MONITORING_SRC_FROM_CHECKOUT=1 bash /opt/smarter-poker-monitoring-src/infra/monitoring/deploy.sh" 2>&1
 
       # VERIFY BY READING. A green deploy step is not a loaded rule - the same
       # lesson as "a green deploy run is not a deployment" one layer down.

@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/an-escrow-incident-closes-itself",
+  "functions": ["fn_ca_escrow_incident_closes_when_the_leg_lands"]
+}

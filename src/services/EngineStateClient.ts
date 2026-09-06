@@ -20,7 +20,7 @@
  * tested with jsdom. The React binding lives in hooks/useEngineTableState.
  */
 
-import { noteServerTime } from '../lib/serverClock';
+import { noteServerTime } from '../utils/serverClock';
 import jsonPatch from 'fast-json-patch';
 import {
   engineSocketMux,
@@ -67,7 +67,7 @@ export interface ServerEventMessage {
    * and recorded fixtures omit it.
    */
   seq?: number;
-  /** Engine clock at send time (live or replay). See lib/serverClock. */
+  /** Engine clock at send time (live or replay). See utils/serverClock. */
   ts?: number;
   payload: Record<string, unknown>;
 }
@@ -824,7 +824,7 @@ export class EngineStateClient {
       return;
     }
     if (msg.type === 'PING') {
-      // The engine's clock rides the keepalive; see lib/serverClock.
+      // The engine's clock rides the keepalive; see utils/serverClock.
       noteServerTime(msg.ts);
       // Keepalive never queues — answering late defeats its purpose.
       try {

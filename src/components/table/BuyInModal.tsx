@@ -278,11 +278,29 @@ export function BuyInModal({
         {/* CHIP CONTINUITY (OPORD 1.3 section 6.1): when a rejoin floor applies
             the minimum is simply higher. No notice, no paragraph about why. */}
 
-        {/* Amount Display */}
-        <div className="buy-in-modal__amount-display">
-          <span className="buy-in-modal__min-label">
-            {formatAmount(effectiveMinBuyIn, currency)}
-          </span>
+        {/**
+         * THE SLIDER GOES UP AND DOWN (Dan 2026-09-05)
+         *
+         * "THE SLIDER FOR ADJUSTING YOUR 'BUY IN' NEEDS TO GO UP AND DOWN, NOT
+         * SIDE TO SIDE. (SIDE TO SIDE SWIPES THE PAGE) REDESIGN THIS PLEASE."
+         *
+         * A horizontal drag inside a table is a table-switch gesture, so the
+         * one control a player MUST use to sit down was competing with the
+         * navigation for every touch - and losing, because a swipe that starts
+         * on a 6px-high track is a swipe long before it is a drag. Turning the
+         * track vertical takes the control out of that axis entirely, which is
+         * a fix by construction rather than by tuning a threshold.
+         *
+         * `touch-action: none` on the input (CSS) is the other half: it stops
+         * the browser handing the vertical drag to the sheet as a scroll.
+         *
+         * The min and max were labels either side of the amount and the words
+         * "Min"/"Max" under the track - four things saying two. They are the
+         * ends of the track now: max at the top where the thumb reaches it,
+         * min at the bottom. Nothing about the value, the step grid or the
+         * MAX-is-reachable fix above changes.
+         */}
+        <div className="buy-in-modal__stage">
           <div className="buy-in-modal__current-amount">
             <span className="buy-in-modal__amount-value">
               {displayAmount.toLocaleString('en-US', {
@@ -291,28 +309,28 @@ export function BuyInModal({
               })}
             </span>
           </div>
-          <span className="buy-in-modal__max-label">{formatAmount(maxBuyIn, currency)}</span>
-        </div>
 
-        {/* Slider */}
-        <div className="buy-in-modal__slider-container">
-          <input
-            type="range"
-            className="buy-in-modal__slider"
-            min={effectiveMinBuyIn}
-            max={maxBuyIn}
-            value={clampedBuyIn}
-            onChange={handleSliderChange}
-            step={bigBlind}
-            style={
-              {
-                '--slider-percent': `${sliderPercent}%`,
-              } as React.CSSProperties
-            }
-          />
-          <div className="buy-in-modal__slider-labels">
-            <span>Min</span>
-            <span>Max</span>
+          <div className="buy-in-modal__slider-container">
+            <span className="buy-in-modal__slider-cap">{formatAmount(maxBuyIn, currency)}</span>
+            <input
+              type="range"
+              className="buy-in-modal__slider"
+              min={effectiveMinBuyIn}
+              max={maxBuyIn}
+              value={clampedBuyIn}
+              onChange={handleSliderChange}
+              step={bigBlind}
+              aria-label="Buy-In Amount"
+              aria-orientation="vertical"
+              style={
+                {
+                  '--slider-percent': `${sliderPercent}%`,
+                } as React.CSSProperties
+              }
+            />
+            <span className="buy-in-modal__slider-cap">
+              {formatAmount(effectiveMinBuyIn, currency)}
+            </span>
           </div>
         </div>
 

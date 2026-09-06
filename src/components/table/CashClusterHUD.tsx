@@ -3,13 +3,19 @@
  *  THE MUST MOVE BOX (Dan 2026-09-05)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * The cash-game counterpart of TournamentHUD: a bar in the upper-right corner
- * of a must-move table that reads MUST MOVE, players in the game, tables open
- * and - for a player not yet in the main game - their place on the list. The
- * bar IS the button: tapping it opens the Must Move Lobby, exactly as the
- * level bar opens the tournament lobby (Dan 2026-08-30).
+ * THE BAR IS GONE (Dan 2026-09-05). This used to open with a bar across the
+ * upper-right corner reading MUST MOVE / LOBBY / PLAYERS n / TABLES n, which
+ * was also the button that opened the lobby. Dan moved that to the action pill
+ * row - "THE LOBBY RECTANGLE, NEEDS TO MOVE TO ... WHERE THE '4 SQUARE' BOX
+ * IS ... AND SAY 'LOBBY' ON IT" - where it is one word beside the 4-square
+ * button (MultiTablePage, .mtp-lobby-btn) and covers no seats. Do not put a
+ * readout bar back on the felt; every figure it carried is in the lobby it
+ * opens, one tap away.
  *
- * Under it, the SEAT CHANGE button: "EACH AND EVERY PLAYER GETS A SEAT CHANGE
+ * What is left here is what the bar was not: a sentence that has to sit beside
+ * the seats it is about, and buttons that DO something.
+ *
+ * The SEAT CHANGE button: "EACH AND EVERY PLAYER GETS A SEAT CHANGE
  * BUTTON WHEN THEY SIT DOWN AT ANY 'FEEDER GAME'." Shown only while the
  * database says the change is available (seated, not on Main 1, not used,
  * nothing pending); it opens the lobby, where the player picks Any Table or
@@ -92,10 +98,7 @@ export function CashClusterHUD({
     return () => window.clearInterval(id);
   }, [load, refreshKey]);
 
-  const players = (lobby?.tables ?? []).reduce((n, t) => n + Number(t.seated ?? 0), 0);
-  const tables = (lobby?.tables ?? []).length;
   const me = lobby?.me ?? null;
-  const position = me?.seated && !me.on_main_one ? me.must_move_position : null;
   const moveNotice = me?.seated ? pendingMoveNotice(me.pending_move) : null;
   const seatChangeAvailable = Boolean(me?.seated && me.seat_change.available);
   const listed = me?.seat_change.request ?? null;
@@ -122,40 +125,26 @@ export function CashClusterHUD({
     }
   };
 
+  /* NOTHING TO SAY, NOTHING DRAWN (2026-09-05). With the bar gone this column
+     is only a notice and up to two buttons, and a player sitting quietly in
+     the main game has none of them. An empty flex box in the corner is not
+     visible, but it is still a pointer-events:auto node over the felt (see
+     .hud-ur-column in TableHUD.css), so it does not get rendered at all. */
+  if (!moveNotice && !seatChangeAvailable && !listed && !onWaitlist) return null;
+
   return (
     <div className="cch-column">
-      <div
-        className="cash-cluster-hud-bar"
-        role="button"
-        tabIndex={0}
-        aria-label="Must Move Game - Open Must Move Lobby"
-        onClick={onOpenLobby}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onOpenLobby();
-          }
-        }}
-      >
-        <div className="cch-seg cch-seg--title">
-          <span className="cch-label">Must Move</span>
-          <span className="cch-value">Lobby</span>
-        </div>
-        <div className="cch-seg">
-          <span className="cch-label">Players</span>
-          <span className="cch-value">{lobby ? players : '-'}</span>
-        </div>
-        <div className="cch-seg">
-          <span className="cch-label">Tables</span>
-          <span className="cch-value">{lobby ? tables : '-'}</span>
-        </div>
-        {position != null && (
-          <div className="cch-seg cch-seg--me">
-            <span className="cch-label">You Are</span>
-            <span className="cch-value">#{position}</span>
-          </div>
-        )}
-      </div>
+      {/* THE BAR IS GONE FROM THE FELT (Dan 2026-09-05). It read MUST MOVE /
+          LOBBY / PLAYERS n / TABLES n across the upper-right corner, over two
+          seats, and Dan moved it into the action pill row beside the 4-square
+          button as one word: "THE LOBBY RECTANGLE, NEEDS TO MOVE TO ... WHERE
+          THE '4 SQUARE' BOX IS ... AND SAY 'LOBBY' ON IT." The button lives in
+          MultiTablePage now and opens this same lobby over the bus.
+
+          What stays here is what the bar was NOT: the pending-move sentence,
+          which has to be beside the seats it is about, and the seat-change /
+          waitlist buttons, which are actions rather than a readout. Every
+          figure the bar carried is one tap away inside the lobby. */}
       {moveNotice && (
         <div
           className="cch-move-notice"

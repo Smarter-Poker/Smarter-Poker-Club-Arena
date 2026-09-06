@@ -31,7 +31,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { sliceBetween, sliceEnclosingBlock } from '../../../tests/helpers/sourceWindow';
+import { sliceBetween, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(resolve(here, p), 'utf8');

@@ -7246,71 +7246,86 @@ export default function TablePage({
     rabbitFloorTimerRef.current = setTimeout(drop, RABBIT_MIN_VISIBLE_MS - shownFor);
   }, []);
 
-  const handleRabbitReveal = useCallback(async (): Promise<RabbitHuntRevealResult> => {
-    if (!tableId) return { success: false, error: 'Table Not Ready' };
+  /**
+   * P5 2026-09-05: takes an explicit hand number so the HAND REPLAYER can buy
+   * a reveal for an older hand (ClubWPT Gold parity - missing the window at
+   * the felt is no longer final). Omitted, it means "the hand the felt is
+   * offering", which is what the tile passes. The ENGINE decides whether that
+   * hand is still purchasable: the offer, its 90-second TTL, the table toggle,
+   * the board length, whether the caller was dealt in, and whether they have
+   * already bought it.
+   */
+  const handleRabbitReveal = useCallback(
+    async (handNumber?: number): Promise<RabbitHuntRevealResult> => {
+      if (!tableId) return { success: false, error: 'Table Not Ready' };
 
-    const result = await requestRabbitHunt(tableId, rabbitHandNumberRef.current ?? undefined);
-    if (!result.success || !result.cards?.length) {
-      // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
-      // remove the button, or topping up cannot be followed by a retry.
-      return { success: false, error: result.error };
-    }
+      const result = await requestRabbitHunt(
+        tableId,
+        handNumber ?? rabbitHandNumberRef.current ?? undefined
+      );
+      if (!result.success || !result.cards?.length) {
+        // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
+        // remove the button, or topping up cannot be followed by a retry.
+        return { success: false, error: result.error };
+      }
 
-    // Server card format (hearts/diamonds/clubs/spades) → client shorthand.
-    const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-      hearts: 'h',
-      diamonds: 'd',
-      clubs: 'c',
-      spades: 's',
-      h: 'h',
-      d: 'd',
-      c: 'c',
-      s: 's',
-    };
-    const parsedCards = result.cards.map((c) => ({
-      rank: String(c.rank) as any,
-      suit: suitMap[String(c.suit)] || 'h',
-    }));
-    setRabbitRevealedCards(parsedCards);
-    // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
-    // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
-    // without freezing anything. It yields the moment a newer hand has cards.
-    setRetainedRabbitBoard(
-      boardForRabbitReveal(
-        lastBoardOfHandRef.current,
-        rabbitHandNumberRef.current ?? liveHandNumberRef.current,
-        parsedCards
-      )
-    );
-    if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
-    retainedRabbitTimerRef.current = window.setTimeout(() => {
-      retainedRabbitTimerRef.current = null;
-      setRetainedRabbitBoard(null);
-    }, RABBIT_REVEAL_MIN_VISIBLE_MS);
-    // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
-    // this, a reveal on a table that never deals another hand stayed on the
-    // board forever (the only other clears are hand-boundary resets).
-    if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
-    rabbitRevealClearTimerRef.current = window.setTimeout(() => {
-      rabbitRevealClearTimerRef.current = null;
-      setRabbitRevealedCards([]);
-    }, 8000);
-    return {
-      success: true,
-      cards: parsedCards,
-      source: result.source,
-      diamondsSpent: result.diamonds_spent,
-      // The server counts the VIP monthly pool down on every reveal and has
-      // always returned it. It used to be dropped here, one line from the UI,
-      // which is why the button could say FREE on the 101st hunt and then
-      // silently charge five diamonds.
-      vipRemaining: result.vip_remaining,
-      // Uses left on a purchased pack. Without it a pack reveal spent neither
-      // diamonds nor a VIP use, so the player burned one of something they had
-      // paid for and nothing on screen acknowledged it.
-      usesRemaining: result.uses_remaining,
-    };
-  }, [tableId]);
+      // Server card format (hearts/diamonds/clubs/spades) → client shorthand.
+      const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
+        hearts: 'h',
+        diamonds: 'd',
+        clubs: 'c',
+        spades: 's',
+        h: 'h',
+        d: 'd',
+        c: 'c',
+        s: 's',
+      };
+      const parsedCards = result.cards.map((c) => ({
+        rank: String(c.rank) as any,
+        suit: suitMap[String(c.suit)] || 'h',
+      }));
+      setRabbitRevealedCards(parsedCards);
+      // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
+      // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
+      // without freezing anything. It yields the moment a newer hand has cards.
+      setRetainedRabbitBoard(
+        boardForRabbitReveal(
+          lastBoardOfHandRef.current,
+          rabbitHandNumberRef.current ?? liveHandNumberRef.current,
+          parsedCards
+        )
+      );
+      if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+      retainedRabbitTimerRef.current = window.setTimeout(() => {
+        retainedRabbitTimerRef.current = null;
+        setRetainedRabbitBoard(null);
+      }, RABBIT_REVEAL_MIN_VISIBLE_MS);
+      // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
+      // this, a reveal on a table that never deals another hand stayed on the
+      // board forever (the only other clears are hand-boundary resets).
+      if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
+      rabbitRevealClearTimerRef.current = window.setTimeout(() => {
+        rabbitRevealClearTimerRef.current = null;
+        setRabbitRevealedCards([]);
+      }, 8000);
+      return {
+        success: true,
+        cards: parsedCards,
+        source: result.source,
+        diamondsSpent: result.diamonds_spent,
+        // The server counts the VIP monthly pool down on every reveal and has
+        // always returned it. It used to be dropped here, one line from the UI,
+        // which is why the button could say FREE on the 101st hunt and then
+        // silently charge five diamonds.
+        vipRemaining: result.vip_remaining,
+        // Uses left on a purchased pack. Without it a pack reveal spent neither
+        // diamonds nor a VIP use, so the player burned one of something they had
+        // paid for and nothing on screen acknowledged it.
+        usesRemaining: result.uses_remaining,
+      };
+    },
+    [tableId]
+  );
 
   // Leaderboard state
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -23963,6 +23978,11 @@ export default function TablePage({
         loadState={handHistoryState}
         initialHandId={handDetailFocusId}
         viewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
+        /* P5 2026-09-05: the rest of the server's ninety seconds. The felt
+           shows the offer for ~2.5s; a player who missed it can buy the same
+           reveal here, through the same charging call. */
+        onRabbitHunt={handleRabbitReveal}
+        rabbitUserId={userId === 'guest' ? null : userId}
         /* Take the hand you are LOOKING AT. This was `onReplay={() => {...}}`
            — no parameter — and the replay modal resolves its own subject from
            `lastHandId`, which is filled by `getPlayerHands(userId, 1)`: the

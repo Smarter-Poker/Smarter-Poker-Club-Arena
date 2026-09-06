@@ -118,7 +118,12 @@ describe('the socket clocks agree, and clear any proxy idle timeout', () => {
     expect(reauthMs).toBeGreaterThan(pingMs);
     // And the stagger is bounded by the period, or a socket could be pushed
     // past its next due time indefinitely.
-    expect(TABLE_WS).toContain('Math.random() * REAUTH_INTERVAL_MS');
+    /* The stagger moved into `wsHelpers.staggeredReauthAt(intervalMs)` in the
+       Phase 5 audit, when the channel socket was given the same mechanism -
+       three sockets, one implementation. The table server passes its own
+       REAUTH_INTERVAL_MS in; the bound still has to be the period. */
+    expect(TABLE_WS).toContain('staggeredReauthAt(REAUTH_INTERVAL_MS)');
+    expect(read('server/src/transport/wsHelpers.ts')).toContain('Math.random() * intervalMs');
   });
 });
 

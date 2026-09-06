@@ -300,7 +300,7 @@
 }
 
 .members-result-count {
-  color: var(--members-text-faint);
+  color: var(--members-text-dim);
   font-family: Rajdhani, monospace;
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
@@ -958,8 +958,10 @@
   box-shadow: 0 0 8px rgba(255, 201, 60, 0.25);
 }
 .members-count {
+  width: var(--members-content);
+  margin: 0 auto;
   padding: 12px;
-  color: var(--members-text-faint);
+  color: var(--members-text-dim);
   font-family: Rajdhani, monospace;
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;

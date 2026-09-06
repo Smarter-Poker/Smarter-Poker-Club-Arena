@@ -182,7 +182,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
   });
 
   it('emits the JSON the honesty check reads, from every playwright invocation', () => {
-    for (const report of ['cashier.json', 'stats.json', 'sweep.json']) {
+    for (const report of ['cashier.json', 'stats.json', 'club-members.json', 'sweep.json']) {
       expect(WORKFLOW, `no PLAYWRIGHT_JSON_OUTPUT_NAME for ${report}`).toContain(
         `e2e-report/${report}`
       );

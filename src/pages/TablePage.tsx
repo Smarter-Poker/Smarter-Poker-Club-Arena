@@ -5073,7 +5073,7 @@ export default function TablePage({
   } | null>(null);
   useEffect(() => {
     if (!insuranceWaitingOn) return;
-    const ms = Math.max(0, insuranceWaitingOn.until - Date.now());
+    const ms = Math.max(0, insuranceWaitingOn.until - serverNow());
     const t = setTimeout(() => setInsuranceWaitingOn(null), ms + 500);
     return () => clearTimeout(t);
   }, [insuranceWaitingOn]);
@@ -6181,7 +6181,7 @@ export default function TablePage({
       // 2026-08-28: prefer the engine's absolute deadline (survives transit
       // delay and reconnects); timeoutSeconds only as a fallback.
       const windowMs = insuranceOffer?.deadlineAt
-        ? Math.max(0, insuranceOffer.deadlineAt - Date.now())
+        ? Math.max(0, insuranceOffer.deadlineAt - serverNow())
         : (insuranceOffer?.timeoutSeconds || 15) * 1000;
       insuranceTimeoutRef.current = workerTimeout(() => {
         if (!isMounted.current) return;
@@ -10083,14 +10083,14 @@ export default function TablePage({
           // COUNTDOWN HONESTY 2026-08-28: the multi-table tab's background
           // countdown anchors to the ENGINE's deadline when it rides the
           // offer, not a seconds figure that is stale on arrival.
-          const insDeadline = Number(heroOffer.deadlineAt) || Date.now() + insSecs * 1000;
+          const insDeadline = Number(heroOffer.deadlineAt) || serverNow() + insSecs * 1000;
           setDecisionDeadline({ kind: 'insurance', at: insDeadline });
         } else {
           // Everyone else (players AND observers) sees the reference flow's
           // quiet status bar while the leader decides. Auto-expires with the
           // offer window so a missed decline event cannot strand it.
           const leaderName = String(serverOffers[0]?.username || 'Player');
-          setInsuranceWaitingOn({ username: leaderName, until: Date.now() + insSecs * 1000 });
+          setInsuranceWaitingOn({ username: leaderName, until: serverNow() + insSecs * 1000 });
         }
         return; // Don't process as regular state
       }

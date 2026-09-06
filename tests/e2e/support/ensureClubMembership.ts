@@ -33,14 +33,31 @@ export async function ensureClubMembership(
   clubId: string
 ): Promise<boolean> {
   const clubUrl = new URL(`clubs/${clubId}`, baseURL).toString();
-  await page.goto(clubUrl, {
-    // The decision selector below is the real application-ready contract.
-    // Waiting for DOMContentLoaded first can stall for a full minute when an
-    // unrelated production asset is slow even though the SPA route has already
-    // committed and can render its lobby/recovery state.
-    waitUntil: 'commit',
-    timeout: CLUB_ROUTE_TIMEOUT,
-  });
+  let navigationError: unknown = null;
+  for (let attempt = 0; attempt < CLUB_ROUTE_ATTEMPTS; attempt++) {
+    try {
+      await page.goto(clubUrl, {
+        // The decision selector below is the real application-ready contract.
+        // Waiting for DOMContentLoaded first can stall for a full minute when an
+        // unrelated production asset is slow even though the SPA route has already
+        // committed and can render its lobby/recovery state.
+        waitUntil: 'commit',
+        timeout: CLUB_ROUTE_TIMEOUT,
+      });
+      navigationError = null;
+      break;
+    } catch (error) {
+      navigationError = error;
+      if (attempt + 1 < CLUB_ROUTE_ATTEMPTS) {
+        console.warn(`[global-setup] club navigation timed out; retrying ${clubId}.`);
+      }
+    }
+  }
+  if (navigationError) {
+    throw new Error(`Club ${clubId} did not commit after ${CLUB_ROUTE_ATTEMPTS} attempts.`, {
+      cause: navigationError,
+    });
+  }
 
   const lobby = page.locator('.club-home');
   const join = page.getByRole('button', { name: 'Join Club', exact: true });

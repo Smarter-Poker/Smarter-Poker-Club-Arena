@@ -10815,6 +10815,11 @@ export default function TablePage({
             tableId: (handState.table_id as string) || tableId,
             handNumber: handState.hand_number as number,
             emittedAt: handState.emitted_at as number,
+            /* Its OWN identity. Sharing table+hand with the celebration and
+               with `paid` meant whichever arrived first silenced the rest -
+               so a queued jackpot promised the money and never said it had
+               landed. See lib/bbjHitOnce `kind`. */
+            kind: 'pending',
           })
         ) {
           return;
@@ -10833,6 +10838,7 @@ export default function TablePage({
             tableId: (handState.table_id as string) || tableId,
             handNumber: handState.hand_number as number,
             emittedAt: handState.emitted_at as number,
+            kind: 'paid',
           })
         ) {
           return;

@@ -369,8 +369,25 @@ export abstract class TournamentManagerBase {
       reportError(e, 'TournamentManager.broadcast_failed');
       // Drop the channel object so the next call rebuilds it. Nothing is
       // joined, so this costs one allocation rather than a re-join.
+      //
+      // It goes through removeChannel and not a bare `= null`, corrected
+      // 2026-09-06. `supabase.channel(topic)` APPENDS to the client's channel
+      // registry and does not de-duplicate by topic, so nulling the reference
+      // leaves the object there and the next call adds a second entry under
+      // `t-break-<id>`. A tournament whose broadcasts keep failing - the case
+      // this branch exists for - would grow that registry once per event for
+      // the life of the process, which is the accumulation this whole change
+      // set removed from the JOIN path, reappearing on the error path.
+      const stale = this.broadcastChannel;
       this.broadcastChannel = null;
       this.broadcastReady = false;
+      if (stale) {
+        try {
+          await supabase.removeChannel(stale);
+        } catch {
+          /* a channel that will not release cannot fail a broadcast twice */
+        }
+      }
     }
   }
 

@@ -793,6 +793,33 @@ jobs:
             exit 1
           fi
 
+      # An UPDATE or DELETE with no WHERE clause is legal SQL and runs perfectly
+      # from a migration, because a migration runs as `postgres`. PostgREST
+      # connects as `authenticator`, which carries
+      # session_preload_libraries=safeupdate, and safeupdate raises
+      # "DELETE requires a WHERE clause" — and `SET ROLE service_role` does not
+      # unload it, so the ENGINE is refused exactly like a browser.
+      #
+      # That asymmetry is the whole problem: it passes every check the author
+      # runs and fails on the only path anything uses. On 2026-09-06 one of
+      # these silently stopped the GTO aggregation driver for an hour, and the
+      # sweep that followed found NINE more already live — among them a
+      # bomb-pot backfill the engine calls and a settlement RPC the operator
+      # dashboard calls.
+      - name: Supabase Invariants — No Unqualified Writes
+        run: |
+          set -o pipefail
+          echo "## Unqualified UPDATE/DELETE Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-unqualified-writes.mjs 2>&1 | tee /tmp/unqualifiedwrites.log; then
+            echo "OK — every UPDATE and DELETE carries a WHERE clause." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A migration declares an UPDATE or DELETE with no WHERE clause. It will work" >> $GITHUB_STEP_SUMMARY
+            echo "when you run it and be refused by safeupdate on the PostgREST path the" >> $GITHUB_STEP_SUMMARY
+            echo "engine and the browser both use. See the log for the exact remedy." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       - name: Nothing here may deploy to Vercel
         run: |
           # CLAUDE.md 1.3 has said this since March, and until 2026-08-22 two

@@ -271,6 +271,8 @@ test.describe('production Daily Missions certification', () => {
     const contexts: BrowserContext[] = [];
     let account: TemporaryCustomizationAccount | null = null;
     let certificationHandHistoryId: string | null = null;
+    let compatibilityCycleRowId: string | null = null;
+    let receiptBearingUiRowId: string | null = null;
     const report: JsonObject = {};
     const cleanupErrors: string[] = [];
 
@@ -591,6 +593,7 @@ test.describe('production Daily Missions certification', () => {
         };
         expect(requestBody.p_cost).toBe(1);
         expect(requestBody.p_request_id).toMatch(/^[0-9a-f-]{36}$/i);
+        receiptBearingUiRowId = requestBody.p_challenge_row_id;
         expect(receipt.requestId).toBe(requestBody.p_request_id);
         expect(receipt.diamondBalance).toBe(balanceBefore - 1);
         await expect
@@ -685,6 +688,7 @@ test.describe('production Daily Missions certification', () => {
         expect(compatibilityCandidates.length).toBeGreaterThanOrEqual(4);
 
         const cycled = compatibilityCandidates[2];
+        compatibilityCycleRowId = cycled.id;
         const cycledReceiptRequestId = randomUUID();
         const compatibilityBalance = await diamondBalance(environment, account!.id);
         await insertServiceRows(environment, 'daily_challenge_reroll_receipts', {
@@ -920,8 +924,16 @@ test.describe('production Daily Missions certification', () => {
           completed: boolean;
           claimed: boolean;
         }>(environment, 'user_daily_challenges', account!.id, 'id,challenge_id,completed,claimed');
-        const candidate = assignments.find((row) => !row.completed && !row.claimed);
+        const candidate = assignments.find(
+          (row) =>
+            !row.completed &&
+            !row.claimed &&
+            row.id !== compatibilityCycleRowId &&
+            row.id !== receiptBearingUiRowId
+        );
         expect(candidate).toBeTruthy();
+        expect(candidate!.id).not.toBe(compatibilityCycleRowId);
+        expect(candidate!.id).not.toBe(receiptBearingUiRowId);
         const balanceBefore = await diamondBalance(environment, account!.id);
         const legacyRequest = {
           p_user_id: account!.id,

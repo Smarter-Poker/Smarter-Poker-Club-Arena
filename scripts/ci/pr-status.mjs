@@ -65,6 +65,8 @@
 // ---------------------------------------------------------------------------
 
 import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const args = process.argv.slice(2);
 const has = (f) => args.includes(f);
@@ -75,6 +77,10 @@ const argOf = (name, dflt) => {
 
 const JSON_OUT = has('--json');
 const ALL = has('--all');
+// Fetch and distil the failing job's log in the same call. Cached on disk, so
+// asking twice costs one request - repeated log reads are the heavy endpoint
+// that exhausts the quota.
+const WANT_LOG = has('--log');
 const REPO = argOf('--repo', process.env.REPO || 'Smarter-Poker/Smarter-Poker-Club-Arena');
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_PAT || process.env.GH_TOKEN;
 
@@ -95,7 +101,7 @@ if (!TOKEN) {
   die(
     'no GITHUB_TOKEN / GH_PAT / GH_TOKEN in the environment.\n' +
       '  It lives in ~/Documents/club-arena/.env - load it with:\n' +
-      "    export GITHUB_TOKEN=$(grep -m1 '^GITHUB_TOKEN=' ~/Documents/club-arena/.env | cut -d= -f2-)",
+      "    export GITHUB_TOKEN=$(grep -m1 '^GITHUB_TOKEN=' ~/Documents/club-arena/.env | cut -d= -f2-)"
   );
 }
 
@@ -104,6 +110,42 @@ if (!TOKEN) {
 // the whole point of the file: the 403 that started all this returned a
 // perfectly good JSON body, and the caller read `.check_runs` off it.
 // ---------------------------------------------------------------------------
+// Quota as last observed, so the footer can warn before the next agent runs
+// into the wall rather than after.
+let lastQuota = null;
+
+/**
+ * A 403 has TWO completely different meanings here and telling them apart is
+ * not optional. Missing scope is permanent and needs a different token; rate
+ * limiting is temporary and needs a clock. On 2026-09-06 an agent polling a
+ * failing job exhausted the quota, and a tool that blamed "missing scope"
+ * would have sent them to rotate a credential that was fine. GitHub says which
+ * it is in the headers: `x-ratelimit-remaining: 0`, or `retry-after` for the
+ * secondary limit.
+ */
+function rateLimitOf(res) {
+  const remaining = Number(res.headers.get('x-ratelimit-remaining') ?? NaN);
+  const limit = Number(res.headers.get('x-ratelimit-limit') ?? NaN);
+  const reset = Number(res.headers.get('x-ratelimit-reset') ?? NaN);
+  const retryAfter = Number(res.headers.get('retry-after') ?? NaN);
+  if (Number.isFinite(remaining) && Number.isFinite(limit)) lastQuota = { remaining, limit, reset };
+  const limited =
+    res.status === 429 || (res.status === 403 && (remaining === 0 || Number.isFinite(retryAfter)));
+  if (!limited) return null;
+  const waitMin = Number.isFinite(retryAfter)
+    ? retryAfter / 60
+    : Number.isFinite(reset)
+      ? Math.max(0, (reset * 1000 - Date.now()) / 60000)
+      : null;
+  return {
+    resource: res.headers.get('x-ratelimit-resource') || 'core',
+    waitMin,
+    resetAt: Number.isFinite(reset)
+      ? new Date(reset * 1000).toISOString().slice(11, 19) + ' UTC'
+      : null,
+  };
+}
+
 async function gh(path, { allow404 = false } = {}) {
   const url = path.startsWith('http') ? path : `https://api.github.com/repos/${REPO}${path}`;
   const res = await fetch(url, {
@@ -113,8 +155,24 @@ async function gh(path, { allow404 = false } = {}) {
       'X-GitHub-Api-Version': '2022-11-28',
     },
   });
+  rateLimitOf(res); // record quota even on success
   if (res.status === 404 && allow404) return null;
   if (!res.ok) {
+    const rl = rateLimitOf(res);
+    if (rl) {
+      die(
+        `RATE LIMITED on the "${rl.resource}" quota.\n` +
+          `  This is NOT a permissions problem and NOT a broken token - do not\n` +
+          `  rotate a credential over it.\n` +
+          (rl.waitMin !== null
+            ? `  The quota resets in ${rl.waitMin.toFixed(1)} minute(s)${rl.resetAt ? ` (${rl.resetAt})` : ''}.\n`
+            : '') +
+          '  You almost certainly got here by POLLING. Do not: push, open the PR,\n' +
+          '  report the number, end the session (AGENT-PLAYBOOK 7b, CLAUDE.md\n' +
+          '  10.8.3). Autopilot merges and the watchdogs verify, server-side.\n' +
+          '  To read a failing job once, cheaply: node scripts/ci/pr-status.mjs <pr> --log'
+      );
+    }
     const body = await res.text().catch(() => '');
     let detail = '';
     try {
@@ -125,14 +183,64 @@ async function gh(path, { allow404 = false } = {}) {
     die(
       `GitHub answered ${res.status} for ${url}\n  ${detail}\n\n` +
         (res.status === 403
-          ? '  A 403 here usually means the token lacks a scope. This tool needs\n' +
-            '  actions:read and pull_requests:read. Do NOT "work around" it by\n' +
-            '  falling back to /commits/:sha/status - that endpoint reports\n' +
+          ? '  A 403 with quota remaining means the token lacks a scope. This tool\n' +
+            '  needs actions:read and pull_requests:read. Do NOT "work around" it\n' +
+            '  by falling back to /commits/:sha/status - that endpoint reports\n' +
             '  "pending" for commits that have already failed. See the header.'
-          : ''),
+          : '')
     );
   }
   return res.json();
+}
+
+/**
+ * Fetch a job's log ONCE and cache it. An agent reading the same failure twice
+ * should pay for it once; log endpoints are heavy and repeated reads are what
+ * exhausts the quota in the first place.
+ */
+async function jobLog(jobId) {
+  const cache = `${tmpdir()}/ca-joblog-${jobId}.txt`;
+  if (existsSync(cache)) return readFileSync(cache, 'utf8');
+  const res = await fetch(`https://api.github.com/repos/${REPO}/actions/jobs/${jobId}/logs`, {
+    headers: { Authorization: `Bearer ${TOKEN}`, Accept: 'application/vnd.github+json' },
+  });
+  const rl = rateLimitOf(res);
+  if (rl)
+    die(`RATE LIMITED fetching the log for job ${jobId}; resets in ${rl.waitMin?.toFixed(1)} min.`);
+  if (!res.ok) die(`could not read the log for job ${jobId}: HTTP ${res.status}`);
+  const text = await res.text();
+  try {
+    writeFileSync(cache, text);
+  } catch {
+    /* cache is a convenience, never a requirement */
+  }
+  return text;
+}
+
+/**
+ * The lines that actually say what broke. A 1MB job log is mostly the stderr of
+ * tests that PASS while deliberately exercising failure paths - on 2026-09-06
+ * the real failure sat under ~40 lines of expected "[Supabase] FATAL" noise,
+ * and grepping for /Error:/ finds the noise first.
+ */
+function failureLines(log) {
+  const clean = log.replace(/\x1b\[[0-9;]*m/g, '').split('\n');
+  const hits = [];
+  for (let i = 0; i < clean.length; i++) {
+    const l = clean[i];
+    if (
+      /^\s*\S*\s*(FAIL|✕|×)\s/.test(l) ||
+      /Failed Tests/.test(l) ||
+      /Test Files\s+\d+ failed/.test(l) ||
+      /Tests\s+\d+ failed/.test(l) ||
+      /Test timed out in/.test(l) ||
+      /^\s*##\[error\]/.test(l) ||
+      /AssertionError/.test(l)
+    ) {
+      hits.push(l.replace(/^\S+Z\s/, '').trimEnd());
+    }
+  }
+  return [...new Set(hits)];
 }
 
 // A read whose absence is survivable: returns null instead of exiting.
@@ -260,6 +368,26 @@ async function commitState(sha, required) {
   return { state, runs: list, failures, activeRuns, required };
 }
 
+/**
+ * Say something BEFORE the wall, not after it. An agent who has burned 80% of
+ * the hour's quota is one poll loop away from being unable to read CI at all,
+ * and the failure mode when that happens is a 403 that looks like a broken
+ * token.
+ */
+function quotaWarning(line) {
+  if (!lastQuota || !Number.isFinite(lastQuota.limit) || lastQuota.limit === 0) return;
+  const frac = lastQuota.remaining / lastQuota.limit;
+  if (frac > 0.2) return;
+  const mins = Number.isFinite(lastQuota.reset)
+    ? Math.max(0, (lastQuota.reset * 1000 - Date.now()) / 60000).toFixed(0)
+    : '?';
+  line('');
+  line(
+    `  QUOTA LOW: ${lastQuota.remaining}/${lastQuota.limit} GitHub API calls left, resets in ${mins} min.`
+  );
+  line('  Stop polling. Push, open the PR, report the number, end the session.');
+}
+
 // ---------------------------------------------------------------------------
 function render(pr, st) {
   const line = (s) => console.log(s);
@@ -285,7 +413,11 @@ function render(pr, st) {
 
   for (const r of st.runs) {
     const tag =
-      r.status !== 'completed' ? 'RUNNING' : GOOD.has(r.conclusion) ? 'ok' : String(r.conclusion).toUpperCase();
+      r.status !== 'completed'
+        ? 'RUNNING'
+        : GOOD.has(r.conclusion)
+          ? 'ok'
+          : String(r.conclusion).toUpperCase();
     line(`  ${tag.padEnd(9)} ${r.name}`);
   }
 
@@ -296,17 +428,21 @@ function render(pr, st) {
       line(`    ${f.required ? '[BLOCKS MERGE]' : '[not required]'} ${f.workflow} -> ${f.job}`);
       if (f.step) line(`        failed step: ${f.step}`);
       line(`        ${f.url}`);
-      if (f.jobId)
-        line(
-          `        logs: curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" \\\n` +
-            `          https://api.github.com/repos/${REPO}/actions/jobs/${f.jobId}/logs | tail -60`,
-        );
+      if (f.detail?.length) {
+        line('        ---- what the log says ----');
+        for (const d of f.detail.slice(-12)) line(`        ${d}`);
+      } else if (f.jobId && !WANT_LOG) {
+        line(`        re-run with --log to name the failing test (cached, one request)`);
+      }
     }
   }
 
+  quotaWarning(line);
   line('');
   if (st.state === 'RED') {
-    line(`  RED - ${st.failures.filter((f) => f.required).length} required check(s) failed. This will not merge.`);
+    line(
+      `  RED - ${st.failures.filter((f) => f.required).length} required check(s) failed. This will not merge.`
+    );
     line('');
     return EXIT.RED;
   }
@@ -328,7 +464,9 @@ function render(pr, st) {
   if (pr && mergeLabel(pr) === 'BLOCKED')
     line('  (GitHub still says "blocked" - that clears when autopilot enables auto-merge.)');
   if (pr && mergeLabel(pr) === 'UNCOMPUTED')
-    line('  (GitHub has not computed mergeability yet - that is not a problem, just not an answer.)');
+    line(
+      '  (GitHub has not computed mergeability yet - that is not a problem, just not an answer.)'
+    );
   line('');
   return EXIT.GREEN;
 }
@@ -365,8 +503,8 @@ async function main() {
             failures: st.failures,
           })),
           null,
-          2,
-        ),
+          2
+        )
       );
       return 0;
     }
@@ -374,8 +512,11 @@ async function main() {
     for (const row of rows) {
       const { pr, st, merge } = row;
       const state = stateOf(row);
-      const note = merge === 'UNCOMPUTED' && state !== 'DIRTY' ? '  (mergeability not yet computed)' : '';
-      console.log(`  ${state.padEnd(18)} #${String(pr.number).padEnd(5)} ${pr.head.ref.slice(0, 56)}${note}`);
+      const note =
+        merge === 'UNCOMPUTED' && state !== 'DIRTY' ? '  (mergeability not yet computed)' : '';
+      console.log(
+        `  ${state.padEnd(18)} #${String(pr.number).padEnd(5)} ${pr.head.ref.slice(0, 56)}${note}`
+      );
       if (state === 'DIRTY') continue; // the conflict is the finding; CI is moot
       for (const f of st.failures)
         console.log(`       ${f.required ? 'X' : '-'} ${f.job}${f.step ? ` :: ${f.step}` : ''}`);
@@ -383,7 +524,9 @@ async function main() {
     console.log('');
     const dirty = rows.filter((r) => stateOf(r) === 'DIRTY').length;
     const red = rows.filter((r) => stateOf(r) === 'RED').length;
-    console.log(`  ${rows.length} open, ${red} with a failing required check, ${dirty} conflicting with main.`);
+    console.log(
+      `  ${rows.length} open, ${red} with a failing required check, ${dirty} conflicting with main.`
+    );
     console.log('');
     return red || dirty ? EXIT.RED : EXIT.GREEN;
   }
@@ -407,7 +550,7 @@ async function main() {
       if (ref === 'main' || ref === 'HEAD')
         die(
           `the current branch is "${ref}". Give a PR number, --branch, or --sha.\n` +
-            '  (Work never originates on main - CLAUDE.md 12.)',
+            '  (Work never originates on main - CLAUDE.md 12.)'
         );
     }
     const owner = REPO.split('/')[0];
@@ -420,7 +563,7 @@ async function main() {
         die(
           `no open PR for "${ref}" and origin has no such branch.\n` +
             '  If you have not pushed yet, that is the answer - push it, and\n' +
-            '  agent-open-pr.yml opens the PR within seconds.',
+            '  agent-open-pr.yml opens the PR within seconds.'
         );
       sha = b.commit.sha;
     }
@@ -429,6 +572,17 @@ async function main() {
   if (pr) sha = pr.head.sha;
   const st = await commitState(sha, required);
   st.sha = sha;
+
+  // --log: name the failing test, not just the failing job. Without this the
+  // agent runs a second curl, and if they run it in a loop they land on the
+  // rate limit - which is exactly how PR #3272 went three pushes with nobody
+  // able to say which of its 6,192 tests had failed.
+  if (WANT_LOG) {
+    for (const f of st.failures ?? []) {
+      if (!f.jobId) continue;
+      f.detail = failureLines(await jobLog(f.jobId));
+    }
+  }
 
   if (JSON_OUT) {
     console.log(
@@ -443,8 +597,8 @@ async function main() {
           reason: st.reason ?? null,
         },
         null,
-        2,
-      ),
+        2
+      )
     );
     return pr && mergeLabel(pr) === 'DIRTY' ? EXIT.DIRTY : (EXIT[st.state] ?? EXIT.RED);
   }

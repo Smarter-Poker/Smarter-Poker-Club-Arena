@@ -16,6 +16,13 @@ const rateLimitMigration = readFileSync(
   ),
   'utf8'
 );
+const currentCleanupMigration = readFileSync(
+  join(
+    process.cwd(),
+    'supabase/migrations/20260906022000_reserved_cleanup_archives_audit_testimony.sql'
+  ),
+  'utf8'
+);
 
 describe('guarded test-account audit archive', () => {
   it('copies the complete audit row and verifies the copy before deletion', () => {
@@ -54,5 +61,16 @@ describe('guarded test-account audit archive', () => {
   it('lets the transient club-join throttle expire with a deleted identity', () => {
     expect(rateLimitMigration).toContain('FOREIGN KEY (user_id) REFERENCES auth.users(id)');
     expect(rateLimitMigration).toContain('ON DELETE CASCADE');
+  });
+
+  it('preserves testimony through the current reserved-account cleanup RPC too', () => {
+    expect(currentCleanupMigration).toContain(
+      "v_email NOT LIKE 'ca-customization-cert-%@example.invalid'"
+    );
+    expect(currentCleanupMigration).toContain('INSERT INTO public.ca_test_account_audit_archive');
+    expect(currentCleanupMigration.indexOf('v_archived_count <> v_audit_count')).toBeLessThan(
+      currentCleanupMigration.indexOf('DELETE FROM public.audit_trail')
+    );
+    expect(currentCleanupMigration).toContain("'audit_rows_archived', v_audit_count");
   });
 });

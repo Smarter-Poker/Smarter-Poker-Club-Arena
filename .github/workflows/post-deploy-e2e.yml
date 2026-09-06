@@ -110,7 +110,7 @@ jobs:
     # The old 20-minute ceiling cancelled the honesty/report steps just as the
     # sweep completed, discarding a real verdict. This remains bounded while
     # leaving enough room for first-attempt, zero-retry certification.
-    timeout-minutes: 35
+    timeout-minutes: 42
 
     steps:
       - name: Checkout
@@ -242,30 +242,35 @@ jobs:
             echo "**Drift, not reconciled.** Production serves \`$LIVE\`, which is not an ancestor of this run's \`$HERE\`. The specs below are from \`$HERE\` and a failure may mean only that they do not match the deployed bundle." >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Certify the live cashier database contract
+      # A standing shared login is eventually changed, disabled, left behind a
+      # one-time gate, or mutated by two overlapping suites. Build one isolated
+      # player for this job instead. The account lives only in RUNNER_TEMP and
+      # is hard-deleted by the always() cleanup below through a server function
+      # that refuses every email outside the reserved certification namespace.
+      - name: Provision an isolated production E2E account
         if: steps.live.outputs.ready == 'true'
+        id: account
         env:
-          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        run: |
-          psql \
-            "host=aws-0-us-west-2.pooler.supabase.com port=6543 dbname=postgres user=postgres.kuklfnapbkmacvwxktbh sslmode=require connect_timeout=8" \
-            -X -v ON_ERROR_STOP=1 \
-            -f scripts/verification-harness/cashier-release-contract.sql
-          psql \
-            "host=aws-0-us-west-2.pooler.supabase.com port=6543 dbname=postgres user=postgres.kuklfnapbkmacvwxktbh sslmode=require connect_timeout=8" \
-            -X -v ON_ERROR_STOP=1 \
-            -f scripts/verification-harness/cashier-telemetry-rls.sql
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create
+
+      - name: Certify the live cashier database contract
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        # `pg` is a pinned repository dependency. This stays deterministic on
+        # hosted and estate runners instead of assuming the image has psql.
+        run: node scripts/verification-harness/certify-cashier-contract.mjs
 
       # Keep the release-critical Cashier result independent from the broader
       # production sweep. A failure on Stats or another route must not obscure
       # whether the money surface itself passed or failed.
       - name: Certify the authenticated production Cashier
-        if: steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           ARENA_BASE_URL: https://smarter.poker/hub/club-arena
-          SP_EMAIL: ${{ secrets.SP_EMAIL }}
-          SP_PASS: ${{ secrets.SP_PASS }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
@@ -285,12 +290,10 @@ jobs:
       # independence and delivered it in one direction only. Run 33394046555:
       # Cashier failed, and thirteen spec files plus tests/e2e/routes never ran.
       - name: Run the specs that need a deployed page
-        if: always() && steps.live.outputs.ready == 'true'
+        if: always() && steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           ARENA_BASE_URL: https://smarter.poker/hub/club-arena
-          SP_EMAIL: ${{ secrets.SP_EMAIL }}
-          SP_PASS: ${{ secrets.SP_PASS }}
           # Customization certification never mutates either standing player.
           # Realtime creates two isolated identities to prove cross-device sync
           # and cross-player isolation; commerce creates a third for checkout.
@@ -440,6 +443,13 @@ jobs:
           e2e-report/customization-commerce.json
           e2e-report/daily-missions.json
           e2e-report/sweep.json
+
+      - name: Hard-delete the isolated production E2E account
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs cleanup
 
       - name: Upload the report when something is wrong on production
         # `failure()` is false when GitHub cancels a job at its time limit. The

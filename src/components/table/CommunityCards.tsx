@@ -34,6 +34,7 @@ import {
 } from '../../presentation/cardPresentation/CardPresentationDebug';
 import { formatPopupText } from '../../utils/popupStyle';
 import './CommunityCards.css';
+import { cardsWords } from '../../utils/cardWords';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -1053,7 +1054,15 @@ function CommunityCardsComponent({
     <div
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
       role="region"
-      aria-label={`Community Cards: ${cards.length > 0 ? cards.map((c) => `${c.rank} of ${c.suit}`).join(', ') : 'None Dealt'}${rabbitCount > 0 ? `; Rabbit Hunt: ${rabbitCards.map((c) => `${c.rank} of ${c.suit}`).join(', ')}` : ''}${winningHandName ? ` - ${winningHandName}` : ''}`}
+      /* THE BOARD, IN WORDS. This built its own sentence out of the RAW rank
+         and the RAW suit letter, so the region announced "Community Cards: A
+         of s, T of h" - the sprite's own field values read aloud. It says the
+         board through the one card-naming helper now, the same words the
+         cards' own alt text uses.
+         The cards inside are aria-hidden, because this label already names
+         every one of them: without that the board is announced twice, once as
+         a sentence and once card by card. */
+      aria-label={`Community Cards: ${cards.length > 0 ? cardsWords(cards) : 'None Dealt'}${rabbitCount > 0 ? `; Rabbit Hunt: ${cardsWords(rabbitCards)}` : ''}${winningHandName ? ` - ${winningHandName}` : ''}`}
     >
       {/* Bible V8 §5.1: Stage label (FLOP/TURN/RIVER) — fades in briefly when cards are dealt */}
       {stageLabel && (
@@ -1068,7 +1077,11 @@ function CommunityCardsComponent({
           so the winning-hand card pop had NEVER fired in production. The class
           is applied to the highlighted CARDS now, which is what the keyframe
           was written for. */}
-      <div className="community-cards__container">
+      {/* NAMED ONCE, BY THE REGION ABOVE. Every card in here carries its own
+          alt, so without this the board is read out twice - as a sentence and
+          then card by card. The squeeze control keeps its own label because it
+          is a CONTROL, not a description. */}
+      <div className="community-cards__container" aria-hidden="true">
         {slots.map((slot, i) =>
           slot.type === 'rabbit' ? (
             // RABBIT HUNT 2026-08-26: renders even at stage 'preflop' — the

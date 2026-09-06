@@ -961,15 +961,92 @@ its test, and two em dashes. **All three were correct changes that left one half
 behind** - the ordinary way a repo goes red, and exactly why somebody has to be
 told.
 
-`scripts/ci/check-main-is-green.mjs` (World Hub, in `publish-watchdog.yml`) now
-raises one issue for any workflow red on `main` past a threshold **with no open
-issue naming it**. It reports a workflow as `loud` when something already tracks
-it, so a watchdog raising its own alarm is not mistaken for a defect - the first
-run flagged `Publish Watchdog` doing precisely that, which would have taught
-everyone to ignore the detector inside a week.
+`scripts/ci/check-main-is-green.mjs` raises one issue for any workflow red on
+`main` past a threshold **with no open issue naming it**. It reports a workflow
+as `loud` when something already tracks it, so a watchdog raising its own alarm
+is not mistaken for a defect - the first run flagged `Publish Watchdog` doing
+precisely that, which would have taught everyone to ignore the detector inside
+a week. It counts only `failure`: a `cancelled` run is the publisher being
+superseded by a newer merge, and paging on that would cry wolf several times an
+hour.
+
+**CORRECTED 2026-09-06, the same day this section was written.** It said "(World
+Hub, in `publish-watchdog.yml`)" and stopped there, so this paragraph - in CLUB
+ARENA's CLAUDE.md - described a guard watching a different repo. **Club Arena
+did not have it.** Every agent reading this file was told something was watching
+when nothing was, which is worse than the gap itself. Both repos run it now,
+each in its own `publish-watchdog.yml`, on `ubuntu-latest` so the alarm never
+shares a failure domain with the boxes it watches.
+
+What it found on its first Club Arena run, three workflows red with no issue
+naming any of them: `CI - Build & Type Safety` (1.4h), `Applied Migrations Are
+Recorded` (1.0h), and `Deploy Monitoring` (0.3h). **The third is the whole
+argument.** `check-alert-rules-match.mjs` could not read the running rules off
+engine-01 and refused to pass - doing exactly what 10.84 built it to do - and
+the refusal reached nobody. A check behaving perfectly is worthless if its
+result has no reader.
 
 **If you add a workflow, either put it in the ruleset or accept that only this
 detector will ever tell you it broke.**
+
+---
+
+## 10.86 A SIGNAL THAT ANSWERS WHEN IT DOES NOT KNOW (2026-09-06, BINDING)
+
+Read this before writing any check, probe, guard, watchdog or status report.
+It is the common cause behind 10.82, 10.83, 10.84 and a day of red CI, and it
+keeps being re-derived one incident at a time.
+
+**The estate's failure mode is no longer a missing detector. It is a detector
+that answers confidently when it cannot tell.** Every one of these was found in
+a single day, and not one was carelessness - each is a reasonable component
+giving a well-formed answer it had no business giving:
+
+| what answered                        | what it said                                     | what was true                           |
+| ------------------------------------ | ------------------------------------------------ | --------------------------------------- |
+| `GET /commits/:sha/status`           | `pending`, HTTP 200                              | red for fifteen hours                   |
+| `GET /commits/:sha/check-runs`       | 403 -> `.check_runs` is `undefined` -> `\|\| []` | "nothing failed"                        |
+| a wait budget equal to `testTimeout` | `Test timed out in 10000ms`                      | names no cause; the assertion never ran |
+| `pr-status.mjs` on a 403             | "the token lacks a scope"                        | rate limited; the token was fine        |
+| the `--all` mergeability read        | every branch clean                               | eight conflicted                        |
+| CLAUDE.md 11.0                       | "the GitHub MCP returns Bad credentials"         | it works                                |
+| AGENT-PLAYBOOK's CI section          | four `gh` commands                               | `gh` is not installed here              |
+| this section, 10.83                  | "a detector raises the issue"                    | not in this repo it did not             |
+
+### The four rules
+
+1. **"I could not tell" is a distinct outcome and must have its own name.**
+   Never fold it into pending, green, empty, zero or silence. `pr-status.mjs`
+   exits `3` for UNKNOWN and a law forbids it sharing a code with RUNNING or
+   GREEN. If your check has two outcomes it is probably wrong; most have three.
+
+2. **Never coerce an unreadable answer into an empty one.** `(await
+res.json()).check_runs` on a 403 body is `undefined`, and `undefined || []`
+   reads as good news. Check `res.ok` first, every time.
+
+3. **A guard must have a reader, and you must name them.** Ask, before you
+   merge it: who sees this when it fires, and by what path? "It goes red in
+   Actions" is not a reader. If it is not in the ruleset, `check-main-is-green`
+   is the reader - confirm the workflow is on `main` where it can see it. An
+   alarm that runs where `gh` is absent, or files an issue with a token lacking
+   `issues: write`, is a guard with no reader at all.
+
+4. **A fix that leaves the same trap one level up has not landed.** This is the
+   subtle one and it caught good work twice in a day. Two agents correctly
+   de-flaked a fixed `sleep` into a conditional wait, and both set the budget to
+   the ceiling they had just read - the wait got robust, the headroom went to
+   zero. The playbook correctly diagnosed the `checks:read` 403 and then offered
+   four commands that do not exist on this machine. **When you fix something,
+   ask what the next person will reach for, and check that it works.**
+
+### And put an expiry on any claim about the environment
+
+"The GitHub MCP is dead", "`gh` is installed", "`list_migrations` is fine" are
+claims about a world that changes without touching this repo. A note that
+retires a working tool costs more than the outage that prompted it, because
+every agent afterwards reads it as current and routes around something that
+works. **Date the claim, and re-check it in one call before you route around
+anything.** One call is always cheaper than the detour.
 
 ---
 
@@ -1251,10 +1328,32 @@ and `api.github.com` is reachable. Then:
 - **Rebasing your branch onto main is refused by a ref-guard hook.** Use
   `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
 
-**The GitHub MCP (`mcp__github__*`) returns `Bad credentials` as of
-2026-09-01.** Every call fails, including read-only ones. Do not debug it and
-do not build a plan around it; use the host terminal. If you are reading this
-long after that date, one call will tell you whether it is back.
+**The GitHub MCP (`mcp__github__*`) WORKS again, verified 2026-09-06.** This
+paragraph said it returned `Bad credentials` on every call and told you not to
+debug it. That was true on 2026-09-01 and stale by the 6th, when
+`get_file_contents` on `server/vitest.config.ts` returned the file. A note that
+retires a working tool costs more than the outage did: it is read as current by
+every agent after it. **Check before you route around anything this file calls
+dead - one call is cheaper than the detour.** The host terminal remains correct
+for everything, and is still the only route for `git push`.
+
+**The Supabase MCP works, but `list_migrations` will blow your context.** This
+database holds **3,713** migrations and the tool returns every one of them WITH
+its SQL - 296,122 characters, saved to a temp file you then have to slice in
+80,000-character spans. Nothing about that answers the question you had. Ask
+Postgres directly instead:
+
+```
+mcp__...__execute_sql:
+  select count(*) from supabase_migrations.schema_migrations;
+  select version, name from supabase_migrations.schema_migrations
+    order by version desc limit 20;
+  select 1 from supabase_migrations.schema_migrations where version = '<v>';
+```
+
+Same rule for any MCP tool over a large table: a targeted read is not a
+workaround, it is the correct call. Reserve the bulk tool for when you truly
+need all of it.
 
 **Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
 `supabase-columns-manifest.json`.** They are nightly snapshots and were the

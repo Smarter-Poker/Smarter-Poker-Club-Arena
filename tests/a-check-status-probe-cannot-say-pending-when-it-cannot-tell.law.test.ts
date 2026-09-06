@@ -122,6 +122,23 @@ describe('a check-status probe cannot say pending when it cannot tell', () => {
     ).toEqual([]);
   });
 
+  it('it asks about the repo it is standing in, and never guesses', () => {
+    const src = read(TOOL);
+    // AGENT-PLAYBOOK.md is byte-identical in seven repos, so the moment it
+    // started naming this tool, a hardcoded default made it answer about Club
+    // Arena's pull requests in every other repo - confidently, in the right
+    // format, about the wrong repository. Derive from the checkout instead.
+    expect(
+      /const REPO = argOf\('--repo',\s*process\.env\.REPO \|\| '[^']+'\)/.test(src),
+      'pr-status.mjs must not fall back to a hardcoded owner/name. The playbook ' +
+        'that names it is shared by seven repos; a literal default reports on the ' +
+        'wrong one and looks right doing it.'
+    ).toBe(false);
+    expect(src, 'it must derive the repo from the git remote').toMatch(/remote get-url origin/);
+    // And when it cannot tell, it must refuse rather than pick one.
+    expect(src, 'a missing repo must die(), not default').toMatch(/if \(!REPO\)/);
+  });
+
   it('the playbook sends agents to the tool, and warns about both bad routes', () => {
     const pb = read('AGENT-PLAYBOOK.md');
     expect(pb, 'AGENT-PLAYBOOK.md must name the working command').toContain(

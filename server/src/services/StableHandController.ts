@@ -78,8 +78,8 @@ export interface TableSnapshot {
    * cluster Main 1s (PLO8, Short Deck, Pineapple, FLH, FLO8 - Dan's ladder of
    * two rungs x three templates is six per variant against this cap of two)
    * `retire_when_empty`. The fleet then refused to seed them, the rotator
-   * walked their horses out, retireSurplusTables closed them, and the
-   * controller reopened them on its next tick, forever.
+   * walked their horses out, the (now deleted) retireSurplusTables closed
+   * them, and the controller reopened them on its next tick, forever.
    */
   clusterId?: string | null;
 }

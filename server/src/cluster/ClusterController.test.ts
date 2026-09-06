@@ -20,6 +20,7 @@ import {
   wakeCluster,
   type ClusterControllerDeps,
   type ClusterTickAllEntry,
+  type ClusterTickAllRestedEntry,
 } from './ClusterController.js';
 
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
@@ -34,7 +35,11 @@ const passOf = (
       error?: { sqlstate?: string; message?: string };
     }
   >,
-  extra: Partial<{ rested: number; games: number }> = {}
+  extra: Partial<{
+    rested: number;
+    games: number;
+    restedGames: ClusterTickAllRestedEntry[];
+  }> = {}
 ) => {
   const results: ClusterTickAllEntry[] = rows.map((r, i) => {
     const entry: ClusterTickAllEntry = {
@@ -47,13 +52,15 @@ const passOf = (
     return entry;
   });
   const errors = results.filter((r) => r.error).length;
+  const restedGames = extra.restedGames ?? [];
   return {
     ok: true,
-    games: extra.games ?? results.length + (extra.rested ?? 0),
+    games: extra.games ?? results.length + (extra.rested ?? restedGames.length),
     ticked: results.length - errors,
     errors,
-    rested: extra.rested ?? 0,
+    rested: extra.rested ?? restedGames.length,
     results,
+    rested_games: restedGames,
   };
 };
 
@@ -250,6 +257,96 @@ describe('the freeze (CLAUDE.md 13, OPORD 1.4 18.5)', () => {
     const s = await controller.tick();
     expect(s.skippedFrozen).toBe(true);
     expect(s.errors).toBe(0);
+  });
+});
+
+/**
+ * A RESTED GAME ANSWERS THE WAKE (2026-09-05, migration 20260906011113).
+ *
+ * The pass CONTINUEs past a dormant, empty, unwanted game before it builds a
+ * result entry, so it appeared in no roster the controller could read. The map
+ * the wake consults was built from `results` alone, so a wake on a rested game
+ * found nothing, read `enabled` as false and skipped the 18.4 dealer wake -
+ * for exactly the dormant game a wake exists to serve. The SQL now returns a
+ * `rested_games` roster; the controller folds it in as IDENTITY ONLY.
+ */
+describe('the rested roster is identity, and the wake can read it', () => {
+  const rested = (over: Partial<ClusterTickAllRestedEntry> = {}): ClusterTickAllRestedEntry => ({
+    game_id: 'sleepy',
+    main1_table_id: 'sleepy-main1',
+    enabled: true,
+    state: 'dormant',
+    ...over,
+  });
+
+  it('a wake on a game the pass only RESTED still finds its Main 1 and its horse demand', async () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, calls } = build({
+        pass: passOf([{ game_id: 'g1', main1_table_id: 't1' }], { restedGames: [rested()] }),
+        eligibleHorseCount: (t) => (t === 'sleepy-main1' ? 3 : 0),
+      });
+      controller.start();
+      await controller.tick();
+      calls.length = 0;
+      controller.wake('sleepy');
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS + 1);
+      expect(calls).toEqual([
+        { fn: 'fn_cash_cluster_tick', args: { p_game_id: 'sleepy', p_eligible_horses: 3 } },
+      ]);
+      controller.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('and its enabled flag, so the 18.4 dealer wake is not skipped for a dormant game', async () => {
+    vi.useFakeTimers();
+    try {
+      const ensureEngine = vi.fn(async () => true);
+      const { controller } = build({
+        pass: passOf([{ game_id: 'g1', main1_table_id: 't1' }], { restedGames: [rested()] }),
+        ensureEngine,
+        hasEngine: () => false,
+        seatedCount: async () => 3,
+        tickResult: { ok: true, actions: [], seated_total: 3 },
+      });
+      controller.start();
+      await controller.tick();
+      ensureEngine.mockClear();
+      controller.wake('sleepy');
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS + 1);
+      expect(ensureEngine).toHaveBeenCalledWith('sleepy-main1');
+      controller.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a rested game is not a ticked one: it is counted once, in rested, and never dealt with', async () => {
+    const ensureEngine = vi.fn(async () => true);
+    const { controller } = build({
+      pass: passOf([{ game_id: 'g1', main1_table_id: 't1' }], {
+        restedGames: [rested(), rested({ game_id: 'sleepy-2', main1_table_id: 'sleepy-2-main1' })],
+      }),
+      ensureEngine,
+      seatedCount: async () => 0,
+    });
+    const s = await controller.tick();
+    expect(s.ticked).toBe(1);
+    expect(s.rested).toBe(2);
+    expect(s.games).toBe(3);
+    expect(s.errors).toBe(0);
+    // No result, so no afterGameTick: a rested game never wakes a dealer from
+    // the pass itself, only from a wake that reads the row it just learned.
+    expect(ensureEngine).not.toHaveBeenCalled();
+  });
+
+  it('a pass with no rested_games at all is unchanged (an older engine, or an empty roster)', async () => {
+    const { controller } = build({ pass: passOf([{}, {}], { rested: 4 }) });
+    const s = await controller.tick();
+    expect(s.ticked).toBe(2);
+    expect(s.rested).toBe(4);
   });
 });
 

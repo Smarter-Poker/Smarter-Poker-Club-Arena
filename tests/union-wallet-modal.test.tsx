@@ -8,6 +8,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
+const UNION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const sourceState = vi.hoisted(() => ({ clubError: null as null | { message: string } }));
+
 const rpc = vi.fn();
 // The modal also loads a recent-sends feed via supabase.from(...); a thenable
 // chain stub keeps that path alive without a real client.
@@ -20,14 +23,24 @@ const fromChain = (table?: string) => {
   for (const m of ['select', 'eq', 'in', 'order', 'limit', 'contains']) {
     chain[m] = () => chain;
   }
-  chain.then = (resolve: (v: { data: unknown[] }) => void) =>
-    resolve({ data: table === 'union_clubs' ? unionClubs : [] });
+  chain.then = (resolve: (v: { data: unknown[]; error: null | { message: string } }) => void) =>
+    resolve({
+      data: table === 'union_clubs' && !sourceState.clubError ? unionClubs : [],
+      error: table === 'union_clubs' ? sourceState.clubError : null,
+    });
   return chain;
 };
 vi.mock('../src/lib/supabase', () => ({
   supabase: { rpc: (...a: unknown[]) => rpc(...a), from: (t: string) => fromChain(t) },
 }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+vi.mock('../src/hooks/useAuthUser', () => ({
+  useAuthUser: () => ({
+    user: { id: '11111111-1111-4111-8111-111111111111' },
+    isAuthenticated: true,
+    isHydrating: false,
+  }),
+}));
 const promoSend = vi.fn();
 const sendToClub = vi.fn();
 vi.mock('../src/services/UnionApiService', () => ({
@@ -65,13 +78,16 @@ const roster = [
 const base = {
   isOpen: true,
   onClose: vi.fn(),
-  unionId: 'un-1',
+  unionId: UNION_ID,
   walletKey: 'rake' as const,
   walletLabel: 'Weekly Rake Wallet',
   balance: 5000,
 };
 
 beforeEach(() => {
+  window.localStorage.clear();
+  sourceState.clubError = null;
+  base.onClose.mockClear();
   rpc.mockReset();
   promoSend.mockReset();
   sendToClub.mockReset();
@@ -89,10 +105,19 @@ describe('UnionWalletModal', () => {
   it('loads the union-wide roster with roles when opened', async () => {
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('Danny')).toBeTruthy());
-    expect(rpc).toHaveBeenCalledWith('fn_union_player_directory', { p_union_id: 'un-1' });
+    expect(rpc).toHaveBeenCalledWith('fn_union_player_directory', { p_union_id: UNION_ID });
     expect(screen.getByText('OWNER')).toBeTruthy();
     expect(screen.getByText('MEMBER')).toBeTruthy();
     expect(screen.getByText('SHARK')).toBeTruthy();
+  });
+
+  it('fails the wallet directory closed and exposes a retry when club wallets cannot load', async () => {
+    sourceState.clubError = { message: 'network unavailable' };
+    render(<UnionWalletModal {...base} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load club wallets/i);
+    expect(screen.getByRole('button', { name: 'Retry Directory' })).toBeVisible();
+    expect(screen.getByRole('button', { name: /pick a member or club/i })).toBeDisabled();
   });
 
   it('sends chips from the wallet that was clicked', async () => {
@@ -107,11 +132,12 @@ describe('UnionWalletModal', () => {
       expect(rpc).toHaveBeenCalledWith(
         'fn_union_send_to_member',
         expect.objectContaining({
-          p_union_id: 'un-1',
+          p_union_id: UNION_ID,
           p_target_user_id: 'u-2',
           p_kind: 'chips',
           p_amount: 250,
           p_source_wallet: 'rake', // the wallet the manager opened
+          p_op_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
         })
       )
     );
@@ -163,6 +189,115 @@ describe('UnionWalletModal', () => {
     expect(base.onClose).not.toHaveBeenCalled();
   });
 
+  it('retires the key after a definitive business refusal', async () => {
+    let sendAttempt = 0;
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_send_to_member') {
+        sendAttempt += 1;
+        return Promise.resolve({
+          data:
+            sendAttempt === 1
+              ? { success: false, error: 'Insufficient balance.' }
+              : { success: true },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} />);
+    await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+    fireEvent.click(screen.getByText('Fish'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
+    fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+    await screen.findByRole('status');
+
+    const sends = rpc.mock.calls.filter(([fn]) => fn === 'fn_union_send_to_member');
+    expect((sends[1][1] as { p_op_id: string }).p_op_id).not.toBe(
+      (sends[0][1] as { p_op_id: string }).p_op_id
+    );
+  });
+
+  it('reuses the member-send operation id after a lost response and a remount', async () => {
+    let sendAttempt = 0;
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_send_to_member') {
+        sendAttempt += 1;
+        if (sendAttempt === 1) return Promise.reject(new TypeError('Failed to fetch'));
+        return Promise.resolve({ data: { success: true }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    const firstView = render(<UnionWalletModal {...base} />);
+    await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+    fireEvent.click(screen.getByText('Fish'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
+    fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+    await screen.findByRole('alert');
+
+    const firstSend = rpc.mock.calls.find(([fn]) => fn === 'fn_union_send_to_member');
+    const firstOpId = (firstSend?.[1] as { p_op_id?: string })?.p_op_id;
+    expect(firstOpId).toMatch(/^[0-9a-f-]{36}$/);
+    firstView.unmount();
+
+    render(<UnionWalletModal {...base} />);
+    await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+    fireEvent.click(screen.getByText('Fish'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
+    fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+    expect((await screen.findByRole('status')).textContent).toMatch(/sent 250/i);
+
+    const sends = rpc.mock.calls.filter(([fn]) => fn === 'fn_union_send_to_member');
+    expect(sends).toHaveLength(2);
+    expect((sends[1][1] as { p_op_id: string }).p_op_id).toBe(firstOpId);
+  });
+
+  it('cannot be dismissed while a money response is unresolved', async () => {
+    let settle!: (value: { data: { success: true }; error: null }) => void;
+    const pending = new Promise<{ data: { success: true }; error: null }>((resolve) => {
+      settle = resolve;
+    });
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_send_to_member') return pending;
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    render(<UnionWalletModal {...base} />);
+    await screen.findByText('Fish');
+    fireEvent.click(screen.getByText('Fish'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '25' } });
+    fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(base.onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/wait for the current money move/i);
+    settle({ data: { success: true }, error: null });
+    await screen.findByRole('status');
+  });
+
+  it('fails closed before the member RPC when durable safety storage is unavailable', async () => {
+    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new Error('quota exceeded');
+    });
+    try {
+      render(<UnionWalletModal {...base} />);
+      await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
+      fireEvent.click(screen.getByText('Fish'));
+      fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
+      fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/safety storage is unavailable/i);
+      expect(rpc).not.toHaveBeenCalledWith('fn_union_send_to_member', expect.anything());
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
   it('cannot send until a member and a positive amount are chosen', async () => {
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
@@ -184,10 +319,36 @@ describe('UnionWalletModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /send to club jaqk/i }));
 
     await waitFor(() =>
-      expect(promoSend).toHaveBeenCalledWith('un-1', 5000, 'club', 'c-1', expect.any(String))
+      expect(promoSend).toHaveBeenCalledWith(
+        UNION_ID,
+        5000,
+        'club',
+        'c-1',
+        expect.any(String),
+        expect.stringMatching(/^[0-9a-f-]{36}$/)
+      )
     );
     expect(sendToClub).not.toHaveBeenCalled();
     expect((await screen.findByRole('status')).textContent).toMatch(/promo wallet/i);
+  });
+
+  it('reuses the caller-owned API key when a promo-send response is lost', async () => {
+    promoSend
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ success: true, promoAfter: 4500 });
+    render(<UnionWalletModal {...base} walletKey="promo" walletLabel="Promo Wallet" />);
+    await waitFor(() => expect(screen.getByText('Club JAQK')).toBeTruthy());
+    fireEvent.click(screen.getByText('Club JAQK'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '500' } });
+    fireEvent.click(screen.getByRole('button', { name: /send to club jaqk/i }));
+    await screen.findByRole('alert');
+
+    fireEvent.click(screen.getByRole('button', { name: /send to club jaqk/i }));
+    await screen.findByRole('status');
+
+    expect(promoSend).toHaveBeenCalledTimes(2);
+    expect(promoSend.mock.calls[0][5]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(promoSend.mock.calls[1][5]).toBe(promoSend.mock.calls[0][5]);
   });
 
   it('sends from the union bank to a club through sendToClub, into the Club Bank', async () => {
@@ -200,7 +361,13 @@ describe('UnionWalletModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /send to shark club/i }));
 
     await waitFor(() =>
-      expect(sendToClub).toHaveBeenCalledWith('un-1', 'c-2', 250, expect.any(String))
+      expect(sendToClub).toHaveBeenCalledWith(
+        UNION_ID,
+        'c-2',
+        250,
+        expect.any(String),
+        expect.stringMatching(/^[0-9a-f-]{36}$/)
+      )
     );
     expect(promoSend).not.toHaveBeenCalled();
   });
@@ -252,7 +419,11 @@ describe('UnionWalletModal', () => {
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith(
         'fn_promo_wallet_ledger',
-        expect.objectContaining({ p_scope: 'union', p_scope_id: 'un-1', p_wallet: 'promo_wallet' })
+        expect.objectContaining({
+          p_scope: 'union',
+          p_scope_id: UNION_ID,
+          p_wallet: 'promo_wallet',
+        })
       )
     );
     expect(await screen.findByText('Promo To Club')).toBeTruthy();
@@ -285,7 +456,7 @@ describe('UnionWalletModal', () => {
       expect(rpc).toHaveBeenCalledWith(
         'fn_union_clawback_promo_from_club',
         expect.objectContaining({
-          p_union_id: 'un-1',
+          p_union_id: UNION_ID,
           p_club_id: 'c-1',
           p_amount: 400,
           p_op_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
@@ -317,6 +488,61 @@ describe('UnionWalletModal', () => {
       )
     );
     expect(screen.getByText('70,000.00')).toBeTruthy();
+  });
+
+  it('reuses the clawback operation id after an ambiguous transport failure', async () => {
+    let clawbackAttempt = 0;
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_clawback_from_club') {
+        clawbackAttempt += 1;
+        if (clawbackAttempt === 1) return Promise.reject(new TypeError('Failed to fetch'));
+        return Promise.resolve({ data: { success: true, union_balance: 5010 }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
+    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
+    fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
+    await screen.findByRole('alert');
+
+    fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
+    await screen.findByRole('status');
+
+    const calls = rpc.mock.calls.filter(([fn]) => fn === 'fn_union_clawback_from_club');
+    expect(calls).toHaveLength(2);
+    expect((calls[0][1] as { p_op_id: string }).p_op_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect((calls[1][1] as { p_op_id: string }).p_op_id).toBe(
+      (calls[0][1] as { p_op_id: string }).p_op_id
+    );
+  });
+
+  it('treats a duplicate clawback response as the confirmed earlier operation', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_clawback_from_club') {
+        return Promise.resolve({
+          data: { success: false, duplicate: true, error: 'operation already processed' },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    const onSent = vi.fn();
+    render(
+      <UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" onSent={onSent} />
+    );
+    await screen.findByText('SHARK CLUB');
+    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
+    fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/already processed/i);
+    expect(onSent).toHaveBeenCalledOnce();
   });
 
   it('refuses a pull from the rake wallet instead of pulling into the bank in silence', async () => {

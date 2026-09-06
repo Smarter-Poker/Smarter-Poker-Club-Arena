@@ -40,13 +40,14 @@ describe('cashier navigation and ledger controls stay operational', () => {
   });
 
   it('loads ledger pages with a truthful sentinel row', () => {
-    expect(PAGE).toContain('.limit(recordsLimit + 1)');
+    expect(PAGE).toContain("supabase.rpc('fn_club_trade_ledger'");
+    expect(PAGE).toContain('p_limit: recordsLimit + 1');
     expect(PAGE).toContain('setRecordsHasMore((data || []).length > recordsLimit)');
     expect(PAGE).toContain('setRecordsLimit((limit) => Math.min(limit + 50, 250))');
   });
 
   it('provides local search and direction filters without widening the money path', () => {
-    expect(PAGE).toContain("useState<'all' | 'in' | 'out'>('all')");
+    expect(PAGE).toContain("useState<'all' | 'in' | 'out' | 'managed'>('all')");
     expect(PAGE).toContain('row.counterparty.toLowerCase().includes(q)');
     expect(PAGE).toContain("supabase.rpc('fn_cashier_batch_transfer'");
   });

@@ -233,3 +233,96 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: node .github/scripts/schedule-liveness.mjs
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # IS ANYTHING RED ON MAIN THAT NOBODY IS LOOKING AT?
+  #
+  # CLAUDE.md 10.83 has described this detector since 2026-09-06 and Club Arena
+  # DID NOT HAVE IT - the section documents the World Hub's copy, and every
+  # agent reading Club Arena's CLAUDE.md has been told a guard was watching this
+  # repo when nothing was. Measured the day this job was added, three workflows
+  # were failing on Club Arena's `main` with no open issue naming any of them:
+  #
+  #   CI - Build & Type Safety                     1.4h, last green 11:00:19Z
+  #   Applied Migrations Are Recorded              1.0h, no green in the window
+  #   Deploy Monitoring (on infra/monitoring)      0.3h, no green in the window
+  #
+  # The third is the one that matters, and it is the argument for this job in a
+  # single line: `check-alert-rules-match.mjs` could not read the running rules
+  # off engine-01 and REFUSED TO PASS - doing exactly what 10.84 designed it to
+  # do - and the refusal reached nobody. A check behaving perfectly is still
+  # worthless if its result has no reader.
+  #
+  # Not in the ruleset, so a red run here blocks no merge. That is deliberate:
+  # this reports, it never gates. 10.83's rule stands - a workflow is either in
+  # the ruleset or only this detector will ever say it broke.
+  #
+  # ubuntu-latest ON PURPOSE, like the alarm job at the top of this file. The
+  # alarm must not share a failure domain with the boxes it watches, and `gh`
+  # is preinstalled there - a self-hosted runner without `gh` would give this
+  # repo a detector whose alarm silently fails, which is the 10.83 bug wearing
+  # a fresh coat.
+  main_is_green:
+    name: Nothing is silently red on main
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Any workflow red on main past the threshold, with nobody watching
+        id: main-green
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # PIPESTATUS[0], not the pipeline's code - `tee` always succeeds, and
+          # reading the pipeline's status here would report every run as clean.
+          set +e
+          node scripts/ci/check-main-is-green.mjs 2>&1 | tee /tmp/main-green.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "check-main-is-green exited ${code}"
+
+      - name: Raise the alarm for a silently red main
+        if: always() && steps.main-green.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TITLE="A workflow has been failing on main with nobody watching"
+          BODY=$(printf '%s\n' \
+            "One or more workflows have been red on \`main\` past the threshold and have no open issue naming them." \
+            "" \
+            "A check that is red and blocks nobody stops being a check: it cannot fail any louder than it already is, so the next person to break the same thing learns nothing." \
+            '```' \
+            "$(cat /tmp/main-green.log)" \
+            '```' \
+            "" \
+            "Detector: \`scripts/ci/check-main-is-green.mjs\`. Closes itself once every workflow's latest run on main is green, or once an issue exists that names it.")
+          EXISTING=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number' || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" || true
+          fi
+
+      - name: Close it when main is green again
+        if: always() && steps.main-green.outputs.code == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TITLE="A workflow has been failing on main with nobody watching"
+          EXISTING=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number' || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --comment "Every workflow's latest run on main is green again." || true
+          fi

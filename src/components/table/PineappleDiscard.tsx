@@ -222,7 +222,14 @@ export function PineappleDiscard({
             ? 'Discarding…'
             : selected === null
               ? 'Select A Card'
-              : `Discard ${cards[selected].rank}${cards[selected].suit}`}
+              : /* The CONFIRM button, and the last thing anybody reads before
+                   the card is gone. It printed "Discard As" / "Discard 2d" -
+                   on screen, for everyone, sighted or not, and not Title Cased
+                   either (CLAUDE.md 5.7). Found in the SHIPPED BUNDLE after
+                   the aria-label fifty lines above it had already been fixed:
+                   the sweep that found that one only looked at attributes, and
+                   this is visible text. */
+                `Discard ${cardWords(cards[selected])}`}
         </button>
       </div>
     </div>

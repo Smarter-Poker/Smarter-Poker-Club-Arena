@@ -1,7 +1,18 @@
--- 20260906091137_hand_notes_and_tags_are_the_players_own.sql
+-- 20260906092329_hand_notes_and_tags_are_the_players_own.sql
 --
--- Version reserved by scripts/new-migration.mjs against origin/main and every
--- remote branch, so it cannot collide with another agent's in-flight work.
+-- THIS VERSION IS THE ONE PRODUCTION RECORDED, not the one reserved.
+--
+-- `scripts/new-migration.mjs` reserved 20260906091137 against origin/main and
+-- every remote branch, which is the rule (CLAUDE.md 4.5) and was correct at
+-- the moment it ran. Another agent's branch then took the SAME second for
+-- `the_rake_door_states_its_own_grants...` and landed first, so CI's
+-- collision check went red on a version that was free when it was handed out.
+--
+-- The reservation cannot see a branch that does not exist yet, so this is the
+-- residual race rather than a hand-typed timestamp. The fix is to take the
+-- version Supabase actually assigned when this was applied - 20260906092329,
+-- read back from `schema_migrations` - so the file and the database agree and
+-- nothing tries to apply it twice.
 --
 -- WHAT THIS CHANGES, AND WHY:
 --

@@ -151,8 +151,14 @@ describe('Player Command connection truth', () => {
 describe('Player Command resilience wiring', () => {
   it('routes both first-page reads through the bounded retry utility', () => {
     expect(SERVICE.match(/runRosterReadWithRetry/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(SERVICE).toContain('{ signal: query.signal, timeoutMs: 8_000 }');
+    expect(SERVICE).toContain('{ attempts: 1, signal: query.signal, timeoutMs: 20_000 }');
     expect(PAGE).toContain('signal: controller.signal');
+  });
+
+  it('does not multiply an expensive cold page read across nested retry loops', () => {
+    expect(PAGE).toContain('const recoveryScheduled = scheduleConnectionRecovery(1)');
+    expect(SERVICE).not.toContain('{ attempts: 3, signal: query.signal');
+    expect(SERVICE).not.toContain('{ signal: query.signal, timeoutMs: 8_000 }');
   });
 
   it('normalizes an older sparse cache row before the UI can render it', () => {
@@ -226,7 +232,7 @@ describe('Player Command resilience wiring', () => {
   });
 
   it('recovers a cold first-page timeout without making the player retry manually', () => {
-    expect(PAGE).toContain('const recoveryScheduled = scheduleConnectionRecovery(2)');
+    expect(PAGE).toContain('const recoveryScheduled = scheduleConnectionRecovery(1)');
     expect(PAGE).toContain('setLoadError(!recoveryScheduled && !hasSavedRows)');
     expect(PAGE).toContain("recoveryScheduled ? 'loading' : 'failed'");
     expect(PAGE).toMatch(/recoveryAttemptRef\.current >= maxAttempts/);

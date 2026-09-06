@@ -11,6 +11,14 @@
  * not even symmetric: horses run HorseLogic.decideDiscard and pick the
  * equity-maximising card. The bots played the variant correctly; the people
  * never got to play it at all.
+ *
+ * 2026-09-06 — the labels below changed from "Discard As" to "Discard Ace Of
+ * Spades". SAME CLAIM, NEW WORDS: the button's accessible name was built out
+ * of the raw rank and suit, and a button's aria-label REPLACES its content, so
+ * the card image's corrected alt inside it was never read. A player choosing
+ * which card to throw away, against a timer that folds the hand, was the last
+ * one on the platform hearing the sprite's own field values. These selectors
+ * are the words a screen reader actually says now.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -49,11 +57,11 @@ describe('PineappleDiscard', () => {
 
     // Pick the middle card. The old engine fallback always threw the LAST one,
     // so an implementation that ignores the selection would send 2.
-    fireEvent.click(screen.getByLabelText('Discard Kh'));
+    fireEvent.click(screen.getByLabelText('Discard King Of Hearts'));
     fireEvent.click(
-      screen.getAllByRole('button', { name: /discard kh/i }).find((b) =>
-        b.classList.contains('pineapple-discard__confirm')
-      )!
+      screen
+        .getAllByRole('button', { name: /discard kh/i })
+        .find((b) => b.classList.contains('pineapple-discard__confirm'))!
     );
 
     await waitFor(() => expect(onDiscard).toHaveBeenCalledTimes(1));
@@ -62,9 +70,13 @@ describe('PineappleDiscard', () => {
 
   it('marks the chosen card and leaves the others as keeps', () => {
     render(<PineappleDiscard isOpen cards={cards} onDiscard={vi.fn()} />);
-    fireEvent.click(screen.getByLabelText('Discard 2d'));
-    expect(screen.getByLabelText('Discard 2d').getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByLabelText('Discard As').getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByLabelText('Discard Two Of Diamonds'));
+    expect(screen.getByLabelText('Discard Two Of Diamonds').getAttribute('aria-pressed')).toBe(
+      'true'
+    );
+    expect(screen.getByLabelText('Discard Ace Of Spades').getAttribute('aria-pressed')).toBe(
+      'false'
+    );
   });
 
   it('stays open and explains itself when the engine refuses', async () => {
@@ -73,15 +85,15 @@ describe('PineappleDiscard', () => {
     const onDiscard = vi.fn().mockResolvedValue(false);
     render(<PineappleDiscard isOpen cards={cards} onDiscard={onDiscard} />);
 
-    fireEvent.click(screen.getByLabelText('Discard As'));
+    fireEvent.click(screen.getByLabelText('Discard Ace Of Spades'));
     fireEvent.click(
-      screen.getAllByRole('button', { name: /discard as/i }).find((b) =>
-        b.classList.contains('pineapple-discard__confirm')
-      )!
+      screen
+        .getAllByRole('button', { name: /discard as/i })
+        .find((b) => b.classList.contains('pineapple-discard__confirm'))!
     );
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
-    expect(screen.getByLabelText('Discard As')).toBeTruthy(); // still selectable
+    expect(screen.getByLabelText('Discard Ace Of Spades')).toBeTruthy(); // still selectable
   });
 
   it('shows how long is left before the table discards for you', () => {

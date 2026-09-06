@@ -80,6 +80,43 @@ enforces it or tells the next caller. The panel reads its handler through a ref
 now, like the modal, and both are pinned together so the pair cannot be
 half-fixed again.
 
+## 4. The pre-push test gate never ran on a new branch, and that is why I shipped 2
+
+The fix for finding 2 broke `tests/pineapple-discard.test.tsx`, which pins the
+old label. I pushed anyway and CI went red. The interesting part is that the
+push was green, and it should not have been: `vitest related` finds that test
+from `PineappleDiscard.tsx` in four seconds.
+
+The hook's new-branch arm read:
+
+```sh
+FILES=$(git diff --name-only "$LOCAL_SHA")     # working tree vs that commit
+```
+
+One ref, not two - so it compares the **working tree** against the commit being
+pushed. At push time the tree is clean, so it returns **nothing**, which is the
+exact opposite of the comment above it ("check all commits up to current").
+Empty `FILES` gives empty `CHANGED_SRC` and `CHANGED_TESTS`, and the vitest gate
+below them is skipped in silence. Measured on this branch: **0 files that way,
+7 the right way** - and the diff it saw as empty contained the failing test.
+
+Every other guard still ran and printed OK, so the push read as thoroughly
+checked. That is 10.86 exactly: an answer it could not give, coerced into an
+empty one, reported as good news. It is also 10.86 rule 3 - the guard rule 8
+calls "the seatbelt" had no reader, because nothing said it had not run.
+
+**And it is the path every agent now takes.** Section 10.82, binding since the
+same day, requires a NEW BRANCH off main for every follow-up commit. So the rule
+written to stop commits vanishing routes all of them through the one arm where
+the test gate is blind - and the faster CI gets, the more follow-up branches
+there are. On a DIRTY tree it was worse than empty: it listed precisely the
+files you had _not_ committed.
+
+The arm now gets the same ladder the remote-tip arm has had all along - resolve
+the merge base, diff two refs, and fall back to the whole tree if there is no
+common base. Never nothing. Pinned in `tests/the-guards-are-wired.law.test.ts`,
+which goes red if the one-ref diff comes back.
+
 ## Checked and found correct
 
 - `cardWords` agrees with what `CardImage` will actually render: it uppercases

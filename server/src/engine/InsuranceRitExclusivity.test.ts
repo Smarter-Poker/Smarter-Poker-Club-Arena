@@ -104,6 +104,8 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
   };
   engine.allInStreetPauseMs = 1; // drive ordering, not real seconds
   engine.allInFirstPauseMs = 1;
+  engine.allInStreetRevealMs = 1;
+  engine.allInPreShowdownPauseMs = 1;
   engine.seatedPlayers = players.map((p) => ({
     seat_number: p.seat,
     user_id: p.user_id,

@@ -57,6 +57,7 @@ function mkEngine(players: SeatPlayer[], hc: HandController | null) {
   // pacing, so they run it at test speed instead of racing a wall clock.
   engine.allInFirstPauseMs = 1;
   engine.allInStreetPauseMs = 1;
+  engine.allInStreetRevealMs = 1;
   engine.allInPreShowdownPauseMs = 1;
   return engine;
 }
@@ -271,5 +272,5 @@ describe('decline → the pot runs ONCE (full flow through the real wait)', () =
       a.action.startsWith('rit_board_')
     );
     expect(extra.length).toBe(0);
-  });
+  }, 15_000);
 });

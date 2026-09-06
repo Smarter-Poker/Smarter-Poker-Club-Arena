@@ -733,7 +733,7 @@
 @keyframes hrChipSweep {
   to {
     left: var(--hr-pot-x, 50%);
-    top: var(--hr-pot-y, 38%);
+    top: var(--hr-pot-y, 43%);
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.7);
   }
@@ -742,6 +742,16 @@
 .hr-bet--sweep {
   pointer-events: none;
   animation: hrChipSweep calc(520ms * var(--hr-move)) cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
+/* Dead money travels from the seat to the pot without ever stopping in front
+   of the player. Same journey as the sweep, from a different starting point,
+   so it shares the keyframe. */
+.hr-bet--dead {
+  pointer-events: none;
+  color: var(--hr-brass);
+  border-color: rgba(214, 173, 82, 0.5);
+  animation: hrChipSweep calc(620ms * var(--hr-move)) cubic-bezier(0.4, 0, 0.6, 1) forwards;
 }
 
 /* The pot goes to the winner. */
@@ -948,6 +958,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* THE SEATS NEAREST THE RAIL ARE ANCHORED BY THEIR INNER EDGE, not centred on
+   it. A 96px plate centred at 6% of a 430px felt puts half of itself outside,
+   and the felt clips: on a seven-handed hand (real #6703996) the two widest
+   seats read "allHunter..." and "BarrelSage" with the rest cut off. Anchoring
+   the left seat's left edge and the right seat's right edge to its own point
+   keeps the whole plate on the felt at every table size. */
+.hr-seat--left {
+  transform: translate(0, -50%);
+}
+
+.hr-seat--right {
+  transform: translate(-100%, -50%);
+}
+
 /* Labels hang inward on the seats nearest the felt's edges: the felt clips. */
 .hr-seat--right .hr-facing {
   left: auto;
@@ -1057,7 +1081,8 @@
 }
 
 [data-theme='light'] .hr-facing,
-[data-theme='light'] .hr-pot-fly {
+[data-theme='light'] .hr-pot-fly,
+[data-theme='light'] .hr-seat__made {
   background: rgba(255, 255, 255, 0.92);
 }
 

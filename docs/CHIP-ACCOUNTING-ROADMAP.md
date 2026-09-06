@@ -177,3 +177,35 @@ Nightly ledger-replay sampling (derive balances from the journal and diff); dail
 ## 4. How to read progress
 
 `fn_ca_trial_balance(now() - interval '24 hours')` names the account that drifted; `ca_money_path_violations` counts the legacy tournament writers still alive; `tournament_escrow_shadow` shows every event's held-versus-paid; `ca_direct_balance_writes` shows who wrote a balance outside a declared path. When all four read zero for seven days, Phase 3's deletions are due.
+
+## The board clearance - 2026-09-06 (status: DONE)
+
+Dan, 2026-09-06: "finish up everything thats still pending and not finished OR
+STILL NEEDS TO BE FIXED, IMPROVED, ENHANCED OR OPTIMIZED STILL."
+
+`financial_alerts` held **894 open rows**; it holds **200**. Read one class at a
+time they were four real defects, one stale baseline, one repair queue nobody
+was draining, and 152 rows of my own noise.
+
+| what the board said                                  | what it was                                                                                                                                                                                | migration                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| 246 x "tournament paid out money it never collected" | the conservation delta read the guarantee overlay from a side table that only ONE of the two funding paths writes; the union bank had paid every one of them and journalled it             | `20260906015217` (+ two indexes, `20260906015837`, `20260906020707`) |
+| 151 events still short after that fix                | guarantees paid before `fn_ca_fund_overlay_on_lock` existed to fund them, 2026-07-24 to 2026-09-03, 39,685.56 chips; acknowledged, not clawed back                                         | `20260906021514`                                                     |
+| 3 x critical "the dead pool changed by -10,700.00"   | the baseline had not followed the authorised phantom promo retirement of 2026-09-03; it may now move only beside a recorded reason                                                         | `20260906022011`                                                     |
+| 180 x "unbanked BBJ contribution"                    | duplicate rake rows, not lost chips - `atomic_distribute_rake` keyed BOTH idempotency guards on a hand id that is NULL on the engine's first call, and its leg key was a fresh random uuid | `20260906023024`                                                     |
+| 21 x critical "ledger write failure"                 | 116 swallowed journal rows and a working drain nobody had called; 113 legs written back, no balance touched                                                                                | `20260906023900`                                                     |
+| 152 rows of mine                                     | a detector retired at the Phase 6.3 gate, and four replay runs superseded by the migrations that followed them                                                                             | `20260906021758`                                                     |
+
+Left open on purpose: the felt's -10.74 (engine item 8.5), the 30
+`escrow:<id>` residues (the epoch reset gate's list, Dan's), and one diamond
+audit row that is not a chip leg.
+
+Recorded and NOT acted on: 4,452 duplicate rake rows carrying **16,426.46 of
+over-attributed rake** between 2026-04-16 and 2026-09-05. The producer is
+closed. Only 371 can be proven duplicates from surviving hand rows; the rest sit
+behind five months of VIP points and agent commissions already paid, and
+restating settled earnings is a decision to be taken deliberately.
+
+Carried into Phase 8: 8.2 (the bust rebuy goes through the pending ledger),
+8.3 (the PITR drill), 8.4 (`chip_ledger` partitioning before December), 8.5
+(the engine settles a hand in one transaction).

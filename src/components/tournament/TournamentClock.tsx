@@ -14,6 +14,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { formatDuration as formatTime } from '@/lib/date';
+import { serverNow } from '../../utils/serverClock';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { tournamentTimerService } from '../../services/TournamentTimerService';
 import { tournamentService } from '../../services/TournamentService';
@@ -87,7 +88,7 @@ function epochMs(value: string | number | null | undefined): number | null {
 /** Seconds left until `endsAtMs`, floored at 0. 0 when there is no deadline. */
 function secondsUntil(endsAtMs: number | null | undefined): number {
   if (endsAtMs === null || endsAtMs === undefined) return 0;
-  return Math.max(0, Math.floor((endsAtMs - Date.now()) / 1000));
+  return Math.max(0, Math.floor((endsAtMs - serverNow()) / 1000));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -214,7 +215,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       );
       const onBreak =
         Boolean((tournament as { on_break?: boolean | null }).on_break) ||
-        (breakEndsAtMs !== null && breakEndsAtMs > Date.now());
+        (breakEndsAtMs !== null && breakEndsAtMs > serverNow());
 
       setClock({
         currentLevel: levelState.levelIndex + 1,

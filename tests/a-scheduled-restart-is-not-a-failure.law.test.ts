@@ -77,7 +77,12 @@ describe('LAW 1 - the transport reads the announcement', () => {
     // until the next break - otherwise the windows would join up.
     expect(RESTART_WINDOW_GRACE_MS).toBeLessThan(10 * 60 * 1000);
     const fn = sliceMethod(CLIENT, 'private inAnnouncedRestart(): boolean {');
-    expect(fn).toContain('Date.now() < this.restartWindowUntil');
+    /* serverNow(), not Date.now(), since the Phase 5 audit (2026-09-06).
+       `restartWindowUntil` is `resume_expected_at` - the ENGINE's stamp - plus
+       the grace, so measuring it against the device clock let a skewed phone
+       leave the window early and escalate its ladder into the very restart
+       this window exists to wait out. */
+    expect(fn).toContain('serverNow() < this.restartWindowUntil');
   });
 });
 

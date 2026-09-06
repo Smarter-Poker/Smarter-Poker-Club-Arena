@@ -16,6 +16,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useMaintenanceBreak } from '../../hooks/useMaintenanceBreak';
+import { serverNow } from '../../utils/serverClock';
 import './MaintenanceBreakBanner.css';
 
 function formatTime(totalSeconds: number): string {
@@ -33,7 +34,7 @@ export function MaintenanceBreakBanner() {
   useEffect(() => {
     if (!maintenanceBreak.active || !countingDown) return;
     const read = () =>
-      Math.max(0, Math.round(((maintenanceBreak.breakEndsAtMs as number) - Date.now()) / 1000));
+      Math.max(0, Math.round(((maintenanceBreak.breakEndsAtMs as number) - serverNow()) / 1000));
     setRemaining(read());
     const t = setInterval(() => setRemaining(read()), 1000);
     return () => clearInterval(t);

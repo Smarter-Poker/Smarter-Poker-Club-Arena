@@ -132,10 +132,11 @@ interface Violation {
 test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
   /* Budget per route, not a flat cap. The 58 static routes finish in about
      six minutes, but AUDIT_CLUB_ID adds 23 club dashboards — the heaviest
-     pages in the app — and a flat 15 minutes silently ran out mid-sweep,
-     which reads as a hang rather than as "the cap was too small". 12s each
-     plus two minutes of slack scales with whatever the route list holds. */
-  test.setTimeout(ROUTES.length * 12_000 + 120_000);
+     pages in the app. Production run 34024252195 reached the final checks
+     with 173 tests green, then this sweep hit the old 12s-per-route ceiling
+     while the deployment host was busy. 15s each plus two minutes of slack
+     scales with the route list and remains inside the workflow's 42m cap. */
+  test.setTimeout(ROUTES.length * 15_000 + 120_000);
   await page.setViewportSize({ width: 375, height: 812 });
 
   const violations: Violation[] = [];

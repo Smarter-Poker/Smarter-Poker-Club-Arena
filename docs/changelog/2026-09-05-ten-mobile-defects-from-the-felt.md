@@ -272,7 +272,7 @@ back to the UA, so a fallback for old WebKit would have unstyled the control
 everywhere else.
 
 While there: `--slider-percent` has been set inline by this component and read
-by **nothing** — the element that was supposed to paint the fill
+by **nothing** - the element that was supposed to paint the fill
 (`.buy-in-modal__slider-track`) lived in the stylesheet and was never in the
 markup, so the track had no fill at all. The vertical track paints it as a
 gradient stop, growing upward toward the maximum. Nothing about the value, the

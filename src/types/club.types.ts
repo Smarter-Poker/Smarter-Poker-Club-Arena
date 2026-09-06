@@ -41,6 +41,8 @@ export interface Club {
   hierarchy_threshold_next?: number;
 
   union_id?: string | null;
+  lifecycle_status?: 'active' | 'retired';
+  retired_at?: string | null;
   settings?: ClubSettings | Record<string, any>;
   created_at: string;
   updated_at: string;

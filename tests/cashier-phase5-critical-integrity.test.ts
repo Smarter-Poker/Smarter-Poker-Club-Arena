@@ -71,11 +71,13 @@ describe('cashier Phase 5 production certification contracts', () => {
     expect(databaseContractStep).not.toMatch(/^\s+psql(?:\s|\\)/m);
     expect(canary).toContain('md5(pg_get_functiondef(v_oid))');
     expect(canary).toContain("has_function_privilege('anon', v_oid, 'EXECUTE')");
-    expect(canary).toContain('cashier_operations_insert_own');
+    expect(canary).toContain('fn_record_cashier_operation');
+    expect(canary).toContain("('20260906093024')");
     expect(canary).toContain('club_members_cashier_tree_idx');
     expect(canary).toContain("('20260831235992')");
     expect(runner).toContain("await client.query('SET LOCAL ROLE authenticated')");
-    expect(runner).toContain('INSERT INTO public.cashier_operations');
+    expect(runner).toContain('SELECT public.fn_record_cashier_operation');
+    expect(runner).not.toContain('INSERT INTO public.cashier_operations');
     expect(runner).toContain("await client.query('ROLLBACK')");
     expect(runner).toContain('SUPABASE_DB_PASSWORD');
   });
@@ -91,18 +93,23 @@ describe('cashier Phase 5 production certification contracts', () => {
     expect(spec).toContain("tabs.nth(1)).toHaveAttribute('aria-selected', 'false')");
   });
 
-  it('records only bounded cashier SLO fields behind insert-only RLS', () => {
+  it('records bounded cashier SLO fields through an auth-derived, club-scoped RPC', () => {
     const telemetry = source('src/services/CashierOperationsTelemetry.ts');
-    const telemetryMigration = source(
+    const telemetryBase = source(
       'supabase/migrations/20260831235992_cashier_operational_telemetry.sql'
     );
-    expect(telemetry).toContain("supabase.from('cashier_operations').insert(row)");
+    const telemetryBoundary = source(
+      'supabase/migrations/20260906093024_cashier_rpc_idempotency_and_telemetry_boundary.sql'
+    );
+    expect(telemetry).toContain("supabase.rpc('fn_record_cashier_operation', args)");
+    expect(telemetry).not.toContain("supabase.from('cashier_operations')");
     expect(telemetry).not.toContain('amount:');
-    expect(telemetryMigration).toContain('FOR INSERT TO authenticated');
-    expect(telemetryMigration).toContain('WITH CHECK (user_id = auth.uid())');
-    expect(telemetryMigration).toContain(
+    expect(telemetryBoundary).toContain('v_user_id uuid := auth.uid()');
+    expect(telemetryBoundary).toContain('fn_club_cashier_scope(p_club_id, v_user_id)');
+    expect(telemetryBoundary).toContain('DROP POLICY IF EXISTS cashier_operations_insert_own');
+    expect(telemetryBoundary).toContain(
       'REVOKE ALL ON public.cashier_operations FROM PUBLIC, anon, authenticated'
     );
-    expect(telemetryMigration).toContain('v_cashier_health_hourly');
+    expect(telemetryBase).toContain('v_cashier_health_hourly');
   });
 });

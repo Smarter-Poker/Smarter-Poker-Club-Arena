@@ -15,6 +15,15 @@
 **Updated By:** Claude (settings-toggle honesty sweep + time-bank / crash-recovery re-verification)
 **Total Fixes:** 226
 
+### 2026-09-05 Leaderboard Phase 3 Deep Audit
+
+The Club Arena leaderboard settlement scheduler now resolves every closed,
+unpaid round from its immutable effective reward program. It no longer uses the
+newest mutable setup row to choose the prior round's enabled state or metric,
+and it can catch up a round missed after its boundary date. The scheduler stays
+service-role-only and delegates all money movement to the existing atomic payout
+function. This repair does not change a Bible V8 table-game compliance row.
+
 > ## ⚠️ READ THIS BEFORE TRUSTING THE PERCENTAGE BELOW
 >
 > The summary table at the bottom of this file was measured on **2026-03-31**,

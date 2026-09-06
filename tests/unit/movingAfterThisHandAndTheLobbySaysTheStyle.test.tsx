@@ -290,7 +290,7 @@ describe('the felt notice in the corner (CashClusterHUD)', () => {
     expect(notice.textContent).toBe('Seat Open On Main 2. Moving After This Hand.');
     expect(notice).toHaveAttribute('role', 'status');
     /* A move pending means the seat change is not on offer; the corner holds
-       the bar and the sentence, nothing that competes with it. */
+       the sentence and nothing that competes with it. */
     expect(screen.queryByText('Seat Change')).toBeNull();
   });
 
@@ -314,17 +314,21 @@ describe('the felt notice in the corner (CashClusterHUD)', () => {
       error: null,
     });
     render(<CashClusterHUD gameId={GAME} onOpenLobby={vi.fn()} onSeatChange={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText('11')).toBeTruthy());
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalled());
     expect(screen.queryByTestId('cch-move-notice')).toBeNull();
   });
 
   it('the corner is wired on every cluster table and the notice sits inside the column, away from the action buttons', () => {
     const page = read('src/pages/TablePage.tsx');
     expect(page).toMatch(/<div className="hud-ur-column">[\s\S]*?<CashClusterHUD/);
+    /* THE BAR LEFT THE FELT (Dan 2026-09-05). It read MUST MOVE / PLAYERS /
+       TABLES across the corner, over two seats; the one word LOBBY is in the
+       action pill row now (MultiTablePage, .mtp-lobby-btn) and the corner
+       keeps only the sentence and the action buttons. This pin moved with the
+       mechanism rather than being dropped - see must-move-lobby.test.tsx. */
     const hud = read('src/components/table/CashClusterHUD.tsx');
-    expect(hud.indexOf('className="cash-cluster-hud-bar"')).toBeLessThan(
-      hud.indexOf('className="cch-move-notice"')
-    );
+    expect(hud).not.toMatch(/className="cash-cluster-hud-bar"/);
+    expect(hud).toMatch(/className="cch-move-notice"/);
     const css = read('src/components/table/CashClusterHUD.css');
     /* Capped inside a 375px screen at the phone breakpoint. */
     expect(css).toMatch(

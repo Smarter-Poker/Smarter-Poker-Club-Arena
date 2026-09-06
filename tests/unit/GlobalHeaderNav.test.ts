@@ -324,11 +324,27 @@ describe('the profile region shows the complete live profile picture', () => {
     expect(CSS).toMatch(
       /@media \(min-width: 901px\)[\s\S]*?\.profileBtn\s*\{[\s\S]*?top: 13%;[\s\S]*?height: 74%;[\s\S]*?aspect-ratio: auto;[\s\S]*?background: #000;/
     );
-    // The desktop slot keeps the pre-2026-09-01 geometry verbatim, so the
-    // mobile aperture fix cannot silently move the portrait on a laptop.
+    /* THE PORTRAIT IS INSIDE THE FRAME (Dan 2026-09-05: "THE PROFILE PIC IN
+       THE GLOBAL HEADER IS DISTORTED AND NOT IN ITS FRAME").
+
+       PIN CORRECTED. It used to require `width: 72%` on the desktop slot,
+       preserving the pre-2026-09-01 geometry verbatim. That geometry was the
+       defect: the rule above cancels `aspect-ratio` while the mobile
+       `width: 7.15%` is inherited, so this button is ~120px wide by ~71px tall
+       at a 1680px viewport - and 72% of its WIDTH is an 86px circle inside a
+       71px box that is `overflow: hidden`. The portrait had its top and bottom
+       sliced off, which is what "distorted" looks like.
+
+       The slot is sized from the button's HEIGHT now, which is the axis that
+       constrains it. The pin follows: it must never again be sized from the
+       width on this breakpoint. */
     expect(CSS).toMatch(
-      /@media \(min-width: 901px\)[\s\S]*?\.profileAvatarSlot\s*\{[\s\S]*?top: 50% !important;[\s\S]*?left: 50% !important;[\s\S]*?width: 72%;/
+      /@media \(min-width: 901px\)[\s\S]*?\.profileAvatarSlot\s*\{[\s\S]*?top: 50% !important;[\s\S]*?left: 50% !important;[\s\S]*?width: auto;[\s\S]*?height: 86%;/
     );
+    const desktopSlot = CSS.slice(CSS.indexOf('@media (min-width: 901px)')).match(
+      /\.profileAvatarSlot\s*\{([\s\S]*?)\}/
+    );
+    expect(desktopSlot?.[1]).not.toMatch(/width:\s*\d/);
   });
 });
 

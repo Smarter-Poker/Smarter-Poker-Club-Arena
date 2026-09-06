@@ -193,6 +193,8 @@ export interface HandRecord {
   serial_number: string;
   table_id: string;
   table_name: string;
+  /** Seats at the table, when the table row still exists. */
+  table_max_seats?: number | null;
   played_at: string;
   hand_number: number;
   total_hands: number;
@@ -453,27 +455,42 @@ class HandHistoryServiceClass {
   }
 
   /**
-   * THE TABLE'S NAME (2026-09-04). `table_name` was the literal string
-   * 'Table' on every record, and the archive printed it as every card's
-   * title. One query for the page's distinct tables.
+   * THE TABLE'S NAME AND ITS SIZE (2026-09-04; size added 2026-09-06).
+   *
+   * `table_name` was the literal string 'Table' on every record, and the
+   * archive printed it as every card's title. One query for the page's
+   * distinct tables.
+   *
+   * The SIZE rides along on the same query because `hand_history` does not
+   * carry it and the tracker export has to write `N-max`. It wrote a constant
+   * 9, which is wrong for most of this fleet - 3-max, heads-up and 6-max
+   * tables all exported as full ring, and a tracker's heads-up statistics are
+   * a different game. A recycled table row simply yields no size, and the
+   * writer falls back to what the seats prove.
    */
   private async fetchTableNames(
     rows: Array<{ table_id?: string | null }>
-  ): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
+  ): Promise<Map<string, { name?: string; maxSeats?: number }>> {
+    const out = new Map<string, { name?: string; maxSeats?: number }>();
     const ids = [...new Set(rows.map((r) => r?.table_id).filter(Boolean))] as string[];
     if (ids.length === 0) return out;
     try {
-      const { data, error } = await supabase.from('tables').select('id, name').in('id', ids);
+      const { data, error } = await supabase
+        .from('tables')
+        .select('id, name, max_players')
+        .in('id', ids);
       if (error) {
         reportError(error, 'HandHistoryService.fetchTableNames');
         return out;
       }
       for (const t of data || []) {
         const row = t as any;
-        if (row?.id && typeof row.name === 'string' && row.name.trim()) {
-          out.set(String(row.id), row.name.trim());
-        }
+        if (!row?.id) continue;
+        const entry: { name?: string; maxSeats?: number } = {};
+        if (typeof row.name === 'string' && row.name.trim()) entry.name = row.name.trim();
+        const seats = Number(row.max_players);
+        if (Number.isFinite(seats) && seats > 0) entry.maxSeats = seats;
+        if (entry.name || entry.maxSeats) out.set(String(row.id), entry);
       }
     } catch (e) {
       reportError(e, 'HandHistoryService.fetchTableNames_threw');
@@ -567,7 +584,7 @@ class HandHistoryServiceClass {
     profileMap: Map<string, { username: string; avatar_url: string | null }>,
     discardsByHand?: Map<string, { seat: number; card: { rank: string; suit: string } }>,
     privateByHand?: Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>,
-    tableNames?: Map<string, string>
+    tableNames?: Map<string, { name?: string; maxSeats?: number }>
   ): HandRecord | null {
     if (!row?.id) return null;
     const jsonbPlayers: any[] = Array.isArray(row.players) ? row.players : [];
@@ -814,7 +831,11 @@ class HandHistoryServiceClass {
          printed as "SN: <uuid>" on the replay. */
       serial_number: String(Number(row.hand_number) || row.id),
       table_id: row.table_id,
-      table_name: tableNames?.get(String(row.table_id)) || 'Table',
+      table_name: tableNames?.get(String(row.table_id))?.name || 'Table',
+      /* The table's real seat count, for the tracker export's `N-max`. Absent
+         when the table row has been recycled; the writer then derives a floor
+         from the occupied seats rather than assuming one. */
+      table_max_seats: tableNames?.get(String(row.table_id))?.maxSeats ?? null,
       // Play time, not insert time: a retry-queued row lands minutes later.
       played_at: (row as any).started_at || row.created_at,
       hand_number: Number(row.hand_number) || 1,

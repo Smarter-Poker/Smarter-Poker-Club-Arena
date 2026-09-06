@@ -97,6 +97,7 @@ import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
+import { solverPolicyArtifactStatus } from './gto/SolverPolicyArtifactLoader.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -1420,6 +1421,9 @@ export class GameServer {
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
+      // Public liveness for the cross-repository solver contract. Counts and
+      // versions only; no ranges or private decision data leave the process.
+      solverPolicyArtifact: solverPolicyArtifactStatus(),
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,

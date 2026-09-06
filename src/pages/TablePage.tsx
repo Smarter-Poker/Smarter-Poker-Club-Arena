@@ -6484,7 +6484,16 @@ export default function TablePage({
     if (!shown) return undefined;
     const WINNER_STUCK_TICK_MS = 2000;
     const WINNER_STUCK_TICKS = 6;
-    const id = window.setInterval(() => {
+    /* THE HANDLE IS NOT NAMED `id`, AND THIS COMMENT MUST NOT SPELL THAT
+       CLEANUP LINE OUT EITHER. `aPaidSeatIsNeverEjected.test.ts` locates the
+       seat-eviction guard by the FIRST cleanup in this file that clears an
+       interval handle of that name, then reads the dependency array after it -
+       a paid seat must never be released by an interval that stopped
+       re-evaluating. This effect sits earlier in the file, so either a handle
+       or a quotation of that line steals the anchor and the guard's own pin
+       silently starts describing this watchdog instead. Both mistakes were
+       made here in turn, and the hook caught both. */
+    const watchdogId = window.setInterval(() => {
       /*
        * Something is going to take it down, OR the award sequence this label
        * describes is still in flight. Either way, leave it alone.
@@ -6523,7 +6532,7 @@ export default function TablePage({
       });
       setWinnerParticle((prev) => ({ ...prev, active: false }));
     }, WINNER_STUCK_TICK_MS);
-    return () => window.clearInterval(id);
+    return () => window.clearInterval(watchdogId);
   }, [winnerInfo]);
 
   // Unmount guard for all four CA-19..CA-22 animation timers.

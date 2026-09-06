@@ -114,10 +114,12 @@ export function LeaderboardPrizeWizard({
   const selectedPlan = planKey === 'custom' ? null : planKey;
   const weeklyTotal = totalPrizePlan(weeklyPrizes);
   const monthlyTotal = totalPrizePlan(monthlyPrizes);
+  const proposedCommitment = enabled ? weeklyTotal + monthlyTotal : 0;
+  const publicationCapacity = setup.publication_capacity ?? setup.available_balance;
+  const projectedUncommitted =
+    publicationCapacity == null ? null : Math.max(publicationCapacity - proposedCommitment, 0);
   const hasPrizes = weeklyTotal > 0 || monthlyTotal > 0;
-  const exceedsAvailable =
-    setup.available_balance != null &&
-    (weeklyTotal > setup.available_balance || monthlyTotal > setup.available_balance);
+  const exceedsAvailable = publicationCapacity != null && proposedCommitment > publicationCapacity;
 
   const sourceDescription =
     setup.funding_owner_type === 'union'
@@ -171,7 +173,7 @@ export function LeaderboardPrizeWizard({
   };
 
   const save = async () => {
-    if (saving || (enabled && !hasPrizes)) return;
+    if (saving || (enabled && (!hasPrizes || exceedsAvailable))) return;
     setSaving(true);
     setError(null);
     try {
@@ -285,17 +287,37 @@ export function LeaderboardPrizeWizard({
                   <p>{sourceDescription}</p>
                 </div>
                 <div className="lb-prize-balance">
-                  <span>Available</span>
+                  <span>Publication Capacity</span>
                   <strong>
-                    {setup.available_balance == null
+                    {publicationCapacity == null
                       ? 'Protected'
-                      : setup.available_balance.toLocaleString('en-US', {
+                      : publicationCapacity.toLocaleString('en-US', {
                           maximumFractionDigits: 2,
                         })}
                   </strong>
                   <small>Promo Chips</small>
                 </div>
               </div>
+              {setup.can_manage && (
+                <dl className="lb-prize-funding-grid" aria-label="Funding Commitment Summary">
+                  <div>
+                    <dt>Promo Wallet</dt>
+                    <dd>{(setup.wallet_balance ?? 0).toLocaleString('en-US')} Chips</dd>
+                  </div>
+                  <div>
+                    <dt>Published Commitments</dt>
+                    <dd>{(setup.committed_balance ?? 0).toLocaleString('en-US')} Chips</dd>
+                  </div>
+                  <div>
+                    <dt>Other Club Commitments</dt>
+                    <dd>{(setup.other_program_commitments ?? 0).toLocaleString('en-US')} Chips</dd>
+                  </div>
+                  <div>
+                    <dt>Committed Clubs</dt>
+                    <dd>{(setup.committed_club_count ?? 0).toLocaleString('en-US')}</dd>
+                  </div>
+                </dl>
+              )}
               <div className="lb-prize-safety-note" role="note">
                 <strong>Source Is Automatic.</strong>
                 <span>
@@ -410,9 +432,9 @@ export function LeaderboardPrizeWizard({
                 </div>
               )}
               {exceedsAvailable && (
-                <div className="lb-prize-inline-warning" role="status">
-                  A Planned Period Is Larger Than The Current Promo Balance. The Plan Can Be Saved,
-                  But It Is Not Funded Yet.
+                <div className="lb-prize-inline-error" role="alert">
+                  This Plan Cannot Be Published. Reduce The Combined Weekly And Monthly Commitment
+                  To {publicationCapacity?.toLocaleString('en-US')} Promo Chips Or Less.
                 </div>
               )}
             </div>
@@ -449,6 +471,18 @@ export function LeaderboardPrizeWizard({
                   <dt>Monthly Total</dt>
                   <dd>{monthlyTotal.toLocaleString('en-US')} Chips</dd>
                 </div>
+                <div>
+                  <dt>Combined Commitment</dt>
+                  <dd>{proposedCommitment.toLocaleString('en-US')} Chips</dd>
+                </div>
+                <div>
+                  <dt>Uncommitted After Publication</dt>
+                  <dd>
+                    {projectedUncommitted == null
+                      ? 'Protected'
+                      : `${projectedUncommitted.toLocaleString('en-US')} Chips`}
+                  </dd>
+                </div>
               </dl>
               <div className="lb-prize-safety-note" role="note">
                 <strong>Starts Next Period</strong>
@@ -458,10 +492,11 @@ export function LeaderboardPrizeWizard({
                 </span>
               </div>
               <div className="lb-prize-safety-note" role="note">
-                <strong>Publication Does Not Move Chips.</strong>
+                <strong>Publication Claims Funding Capacity.</strong>
                 <span>
-                  The Funding Owner And Prize Rules Become Auditable And Immutable. Automated
-                  Settlement Remains Protected Until Its Separate Conservation Gate Is Complete.
+                  Publishing Does Not Move Chips. The Service-Only Settlement Process Debits The
+                  Recorded Promo Wallet And Writes Immutable Payout Evidence After The Period
+                  Closes.
                 </span>
               </div>
               {error && (
@@ -486,7 +521,7 @@ export function LeaderboardPrizeWizard({
               type="button"
               className="primary"
               onClick={() => setStep(step === 0 && !enabled ? 3 : step + 1)}
-              disabled={step === 2 && enabled && !hasPrizes}
+              disabled={step === 2 && enabled && (!hasPrizes || exceedsAvailable)}
             >
               {step === 0 && !enabled ? 'Review Disabled Plan' : 'Continue'}
             </button>
@@ -495,7 +530,7 @@ export function LeaderboardPrizeWizard({
               type="button"
               className="primary"
               onClick={save}
-              disabled={saving || (enabled && !hasPrizes)}
+              disabled={saving || (enabled && (!hasPrizes || exceedsAvailable))}
             >
               {saving ? 'Publishing Prize Program' : 'Publish Prize Program'}
             </button>

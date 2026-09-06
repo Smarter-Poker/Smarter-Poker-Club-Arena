@@ -165,6 +165,11 @@ jobs:
           GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ENGINE_URL: https://engine.smarter.poker
+          # 2026-09-05: the staleness issue can now quote the pipeline's own
+          # ledger (ca_engine_deploy_attempts) for WHY production is behind,
+          # instead of leaving the reader to reconstruct it from run logs.
+          # Optional - the watchdog runs unchanged without it.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: bash .github/scripts/engine-watchdog.sh
 
       # Dan 2026-09-01: "no work ever gets lost, orphaned or not published."

@@ -181,6 +181,21 @@ describe('post-deploy production account', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('refuses staff preparation for any non-certification identity without a request', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-real-staff-'));
+    const env = environment(directory);
+    writeFileSync(
+      join(directory, 'club-arena-production-e2e-account.json'),
+      JSON.stringify({ id: USER_ID, email: 'real-player@example.com', password: 'unused' })
+    );
+    const fetchMock = vi.fn();
+
+    await expect(
+      prepareProductionE2EStaffMembership({ environment: env, fetchImpl: fetchMock })
+    ).rejects.toThrow('outside the reserved post-deploy namespace');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('recovers only bounded post-deploy accounts older than the job timeout', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-stale-'));
     const env = environment(directory);

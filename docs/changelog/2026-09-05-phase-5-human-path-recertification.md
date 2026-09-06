@@ -32,6 +32,10 @@ leaves no residue.
   publication, records it in its own JSON report, and feeds that report to the
   honesty checker. A missing, skipped, or empty Players verdict can no longer be
   reported as a green production run.
+- The new 375px scan exposed three live accessibility defects: a status node
+  inside the ARIA roster list, an unnamed mobile Sort control, and result-count
+  text at 4.4:1 contrast. The status now sits outside the list, Sort has a
+  stable accessible name, and both count treatments use the AA-safe text token.
 - The 60-second waitlist offer had unit coverage for its deadline arithmetic,
   but no real-browser proof that the actual banner counted down, fit at 375px,
   preserved its 44px dismiss target, and handed the player to

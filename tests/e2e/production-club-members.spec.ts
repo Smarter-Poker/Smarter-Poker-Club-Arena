@@ -111,6 +111,8 @@ test.describe('Production Shark Club Players', () => {
 
     await directory.getByRole('listitem').first().getByRole('button').click();
     await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
+    expect(probe.responseFailures).toEqual([]);
+    expect(probe.pageErrors).toEqual([]);
   });
 
   test('keeps the complete Players control surface usable at 375px', async ({ page }) => {
@@ -154,5 +156,7 @@ test.describe('Production Shark Club Players', () => {
     expect(
       axe.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact || ''))
     ).toEqual([]);
+    expect(probe.responseFailures).toEqual([]);
+    expect(probe.pageErrors).toEqual([]);
   });
 });

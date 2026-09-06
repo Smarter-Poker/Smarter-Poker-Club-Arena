@@ -122,6 +122,7 @@ interface ManagedGameCommandResult {
   message?: string | null;
   command_id?: string;
   command_status?: ManagedGameCommandReceipt['status'];
+  expected_version?: number;
   version_before?: number;
   version_after?: number;
   contract_version_before?: number;
@@ -132,6 +133,8 @@ interface ManagedGameCommandResult {
   completed_at?: string | null;
   reconciliation_state?: ManagedGameCommandReceipt['reconciliationState'];
 }
+
+export const MANAGED_GAME_COMMAND_TIMEOUT_MS = 15_000;
 
 const numberValue = (value: unknown): number => {
   const parsed = Number(value ?? 0);
@@ -278,13 +281,17 @@ function mapCommandReceipt(
 
 function isTerminalCommandResult(
   result: ManagedGameCommandResult | null | undefined,
-  commandId: string
+  commandId: string,
+  expectedVersion: number
 ): boolean {
+  const outcomeMatchesStatus =
+    (result?.ok === true && result.command_status === 'succeeded') ||
+    (result?.ok === false && result.command_status === 'rejected');
   return Boolean(
     result &&
-    typeof result.ok === 'boolean' &&
+    outcomeMatchesStatus &&
     result.command_id === commandId &&
-    (result.command_status === 'succeeded' || result.command_status === 'rejected') &&
+    result.expected_version === expectedVersion &&
     Number.isInteger(result.version_before) &&
     Number(result.version_before) > 0 &&
     Number.isInteger(result.version_after) &&
@@ -292,18 +299,40 @@ function isTerminalCommandResult(
   );
 }
 
-async function reconcileCommand(commandId: string): Promise<ManagedGameCommandResult | null> {
+async function withCommandTimeout<T>(request: PromiseLike<T>): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error('The command request timed out before a response arrived.')),
+      MANAGED_GAME_COMMAND_TIMEOUT_MS
+    );
+  });
   try {
-    const { data, error } = await supabase.rpc('fn_get_managed_game_command_receipt', {
-      p_command_id: commandId,
-    });
+    return await Promise.race([Promise.resolve(request), timeout]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+}
+
+async function reconcileCommand(
+  commandId: string,
+  expectedVersion: number
+): Promise<ManagedGameCommandResult | null> {
+  try {
+    const { data, error } = await withCommandTimeout(
+      supabase.rpc('fn_get_managed_game_command_receipt', {
+        p_command_id: commandId,
+      })
+    );
     if (error) return null;
     const result = data as {
       ok?: boolean;
       found?: boolean;
       receipt?: ManagedGameCommandResult;
     } | null;
-    return result?.ok && result.found && isTerminalCommandResult(result.receipt, commandId)
+    return result?.ok &&
+      result.found &&
+      isTerminalCommandResult(result.receipt, commandId, expectedVersion)
       ? (result.receipt ?? null)
       : null;
   } catch {
@@ -327,14 +356,16 @@ async function executeCommand(
     let data: unknown = null;
     let requestError: unknown = null;
     try {
-      const response = await supabase.rpc('fn_execute_managed_game_command', {
-        p_command_id: commandId,
-        p_kind: kind,
-        p_game_id: gameId,
-        p_action: action,
-        p_expected_version: expectedVersion,
-        p_payload: payload,
-      });
+      const response = await withCommandTimeout(
+        supabase.rpc('fn_execute_managed_game_command', {
+          p_command_id: commandId,
+          p_kind: kind,
+          p_game_id: gameId,
+          p_action: action,
+          p_expected_version: expectedVersion,
+          p_payload: payload,
+        })
+      );
       data = response.data;
       requestError = response.error;
     } catch (error) {
@@ -346,7 +377,7 @@ async function executeCommand(
 
     const result = (data || {}) as ManagedGameCommandResult;
     if (!requestError) {
-      if (isTerminalCommandResult(result, commandId)) return result;
+      if (isTerminalCommandResult(result, commandId, expectedVersion)) return result;
       // Preflight refusals happen before a receipt can exist and are already
       // definitive. Successful or receipt-bearing responses are not accepted
       // without terminal command evidence.
@@ -361,11 +392,11 @@ async function executeCommand(
       action,
       attempt: attempt + 1,
     });
-    const reconciled = await reconcileCommand(commandId);
+    const reconciled = await reconcileCommand(commandId, expectedVersion);
     if (reconciled) return { ...reconciled, replayed: true };
   }
 
-  const reconciled = await reconcileCommand(commandId);
+  const reconciled = await reconcileCommand(commandId, expectedVersion);
   if (reconciled) return { ...reconciled, replayed: true };
   throw new Error(
     `Could not confirm command ${commandId}. Refresh Table Management before trying again.`

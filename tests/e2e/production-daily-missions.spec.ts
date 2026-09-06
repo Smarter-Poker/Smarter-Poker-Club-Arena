@@ -553,6 +553,15 @@ test.describe('production Daily Missions certification', () => {
         await replace.dblclick({ timeout: 10_000 });
         const response = await rerollResponse;
         expect(response.ok()).toBe(true);
+        const receipt = (await response.json()) as JsonObject;
+        expect(
+          receipt,
+          `The Reroll RPC Returned An Unsettled Receipt: ${JSON.stringify(receipt)}`
+        ).toMatchObject({
+          success: true,
+          alreadyRerolled: false,
+          diamondsSpent: 1,
+        });
         const requestBody = response.request().postDataJSON() as {
           p_user_id: string;
           p_challenge_row_id: string;
@@ -562,7 +571,13 @@ test.describe('production Daily Missions certification', () => {
         };
         expect(requestBody.p_cost).toBe(1);
         expect(requestBody.p_request_id).toMatch(/^[0-9a-f-]{36}$/i);
-        await expect.poll(() => diamondBalance(environment, account!.id)).toBe(balanceBefore - 1);
+        expect(receipt.requestId).toBe(requestBody.p_request_id);
+        expect(receipt.diamondBalance).toBe(balanceBefore - 1);
+        await expect
+          .poll(() => diamondBalance(environment, account!.id), {
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          })
+          .toBe(balanceBefore - 1);
         await expect(confirmation).toHaveCount(0, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
 
         const { data: replay, error: replayError } = await account!.client.rpc(

@@ -178,6 +178,7 @@ describe('authenticated production account preflight', () => {
     expect(mobileFit).toContain('for (const route of ROUTES)');
     expect(mobileFit).toContain("test(`${route || 'home'} has no horizontal page overflow`");
     expect(mobileFit).not.toContain('test.setTimeout(ROUTES.length');
+    expect(mobileFit).not.toContain('ROUTES.length * 12_000 + 120_000');
     const documentReplacement = source('tests/e2e/support/evaluateAcrossDocumentReplacement.ts');
     expect(documentReplacement).toContain('execution context was destroyed');
     expect(documentReplacement).toContain('attempt <= 3');

@@ -126,12 +126,17 @@ describe('authenticated production account preflight', () => {
   });
 
   it('preflights the dedicated account through the real public club join flow', () => {
-    expect(source('tests/e2e/global-setup.ts')).toContain('ensureClubMembership(');
+    const setup = source('tests/e2e/global-setup.ts');
+    expect(setup).toContain('ensureClubMembership(');
+    expect(setup).toContain('dismissClubEntryMessage(page)');
+    expect(setup).toContain('/rest/v1/rpc/fn_dismiss_club_message');
+    expect(setup).toContain("name: 'Do Not Show Me This Message Again'");
     const helper = source('tests/e2e/support/ensureClubMembership.ts');
     expect(helper).toContain("getByRole('button', { name: 'Join Club', exact: true })");
     expect(helper).toContain("locator('.club-home')");
     expect(helper).toContain("locator('.invite-pending')");
     expect(helper).toContain("getByRole('button', { name: 'Try Again' })");
+    expect(helper).toContain("waitUntil: 'commit'");
     expect(helper).toContain('CLUB_ROUTE_ATTEMPTS');
     expect(helper).toContain('POST_JOIN_DECISION_SELECTOR');
     expect(helper).toContain("textContent({ timeout: 1_000 }).catch(() => '')");

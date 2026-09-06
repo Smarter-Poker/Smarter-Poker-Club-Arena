@@ -37,7 +37,14 @@
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 
-export type SeatMoveReason = 'must_move' | 'break' | 'seat_change';
+/**
+ * A FOURTH REASON (Dan 2026-09-05): `balance`. The room evened the must-move
+ * tables - "feeder games must be balanced, there shouldn't be 3 tables of 9
+ * and one table of [3]". It is planned by fn_cash_cluster_balance and enters
+ * the destination exactly as `must_move` and `break` do (entry_hold =
+ * 'moved'), because it is the game moving the player, not the player asking.
+ */
+export type SeatMoveReason = 'must_move' | 'break' | 'seat_change' | 'balance';
 
 export interface PendingSeatMove {
   move_id: string;
@@ -209,6 +216,9 @@ export function seatMoveNotice(
 ): string {
   const where = seatMoveDestination(m);
   if (m.reason === 'break') return `This Table Is Closing. Moving To ${where} After This Hand.`;
+  if (m.reason === 'balance') {
+    return `Balancing The Tables. Moving To ${where} After This Hand.`;
+  }
   if (m.reason === 'seat_change') {
     return m.swap_move_id
       ? `Seat Change Granted. Swapping To ${where} After This Hand.`

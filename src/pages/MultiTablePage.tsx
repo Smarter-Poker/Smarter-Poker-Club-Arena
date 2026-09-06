@@ -24,6 +24,7 @@ import React, {
 } from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
+import { serverNow } from '../utils/serverClock';
 import { isSitOutUrgent } from '../lib/sitOutDeadline';
 import LiveTablesBar from '../components/table/LiveTablesBar';
 import {
@@ -141,6 +142,12 @@ interface TableInstance {
    * it is never stored on the instance.
    */
   movedToTableId?: string;
+  /**
+   * THE LOBBY BUTTON (Dan 2026-09-05): the must-move game this table belongs
+   * to, '' for a table that belongs to none. Reported by TablePage; the action
+   * pill row below draws its LOBBY button only when the ACTIVE table has one.
+   */
+  clusterId?: string;
   /** Hero is sitting out at this table. */
   sittingOut?: boolean;
   /** Absolute epoch-ms this table's sit-out clock runs out. Cash only. */
@@ -1517,10 +1524,22 @@ export default function MultiTablePage() {
 
   // ─── Derived state ───────────────────────────────────────────────────
   const activeTableId = tables[activeIndex]?.id || '';
+  /* THE LOBBY BUTTON (Dan 2026-09-05): "THE LOBBY RECTANGLE, NEEDS TO MOVE TO
+     ... WHERE THE '4 SQUARE' BOX IS IN THE ACTION PILL AREA. AND SAY 'LOBBY'
+     ON IT. (4 SQUARE BUTTON SHOULD BE TO THE LEFT OF IT)." Only a table that
+     belongs to a must-move game has a lobby to open, so the button appears
+     only for one - reported by TablePage as `clusterId` because this row is
+     drawn out here, where the felt's own state is not reachable. */
+  const activeClusterId = tables[activeIndex]?.clusterId || '';
 
   // 2026-08-15 multi-table fix: the tab countdown ticks off the server
   // deadline. One 1s clock runs only while some table has a live turn.
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  /* THE ENGINE'S CLOCK (2026-09-06). Every deadline this drives -
+     turnDeadlineMs, sitOutDeadlineMs, the decision deadline - was stamped by
+     the engine, and the table's own ring has read them through serverNow()
+     since Phase 5. The tab strip did not, so the surface a multi-tabler
+     actually watches was the one still showing device-clock seconds. */
+  const [nowMs, setNowMs] = useState(() => serverNow());
   /**
    * Dan 2026-08-21: "ALL CLOCKS, COUNTDOWNS AND WARNINGS NEED TO STILL BE
    * WORKING ALL AT THE SAME TIME." The 1s clock used to run only while some
@@ -1542,7 +1561,7 @@ export default function MultiTablePage() {
   );
   useEffect(() => {
     if (!anyTurnLive) return;
-    const iv = setInterval(() => setNowMs(Date.now()), 1000);
+    const iv = setInterval(() => setNowMs(serverNow()), 1000);
     return () => clearInterval(iv);
   }, [anyTurnLive]);
   const secondsLeft = useCallback(
@@ -4045,7 +4064,11 @@ export default function MultiTablePage() {
             means opening table 2 no longer shoves the felt down by 48px
             mid-hand, which is what the old >1 condition did. */}
         {tables.length >= 1 && (
-          <div className="multi-table-page__tab-bar-wrapper">
+          <div
+            className={`multi-table-page__tab-bar-wrapper${
+              activeClusterId ? ' multi-table-page__tab-bar-wrapper--with-lobby' : ''
+            }`}
+          >
             <TableTabBar
               tabs={tabInfos}
               activeTabId={activeTableId}
@@ -4118,7 +4141,9 @@ export default function MultiTablePage() {
                 table it is inert and dimmed. Positioning lives in
                 MultiTablePage.css (.tile-toggle-btn). */}
             <button
-              className={`tile-toggle-btn${tables.length > 1 ? '' : ' tile-toggle-btn--inert'}`}
+              className={`tile-toggle-btn${tables.length > 1 ? '' : ' tile-toggle-btn--inert'}${
+                activeClusterId ? ' tile-toggle-btn--shifted' : ''
+              }`}
               onClick={() => {
                 if (tables.length > 1) setIsTileView((prev) => !prev);
               }}
@@ -4171,6 +4196,23 @@ export default function MultiTablePage() {
                 </g>
               </svg>
             </button>
+            {/* LOBBY - the rectangle that used to float over the felt's
+                upper-right corner (CashClusterHUD's bar). Dan 2026-09-05 moved
+                it here, to the right of the 4-square button, and cut it down to
+                the one word. The figures it carried (players, tables, your
+                place on the list) are all in the lobby it opens, one tap away,
+                and they were sitting on top of two seats to say so. */}
+            {activeClusterId && (
+              <button
+                type="button"
+                className="mtp-lobby-btn"
+                onClick={() => masterBus.emit('OPEN_MUST_MOVE_LOBBY', { tableId: activeTableId })}
+                aria-label="Open Must Move Lobby"
+                title="Must Move Lobby"
+              >
+                Lobby
+              </button>
+            )}
           </div>
         )}
 

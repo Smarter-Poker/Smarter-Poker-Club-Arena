@@ -9,6 +9,17 @@ const migration = readFileSync(
   ),
   'utf8'
 );
+const settlementRepair = readFileSync(
+  join(
+    __dirname,
+    '../../supabase/migrations/20260906022137_leaderboard_settlement_follows_the_published_period.sql'
+  ),
+  'utf8'
+);
+const fundingIndexes = readFileSync(
+  join(__dirname, '../../supabase/migrations/20260906022941_leaderboard_phase3_fk_indexes.sql'),
+  'utf8'
+);
 const wizard = readFileSync(
   join(__dirname, '../../src/components/leaderboard/LeaderboardPrizeWizard.tsx'),
   'utf8'
@@ -16,6 +27,13 @@ const wizard = readFileSync(
 const page = readFileSync(join(__dirname, '../../src/pages/LeaderboardPage.tsx'), 'utf8');
 
 describe('leaderboard phase three funded publication', () => {
+  it('covers every new phase three foreign-key lookup', () => {
+    expect(fundingIndexes).toContain('(funding_union_id)');
+    expect(fundingIndexes).toContain('(program_id)');
+    expect(fundingIndexes).toContain('(supersedes_program_id)');
+    expect(fundingIndexes.match(/CREATE INDEX IF NOT EXISTS/g)).toHaveLength(4);
+  });
+
   it('derives commitments from only the latest immutable program per club', () => {
     expect(migration).toContain('SELECT DISTINCT ON (program.club_id)');
     expect(migration).toContain('ORDER BY program.club_id, program.version DESC');
@@ -69,5 +87,33 @@ describe('leaderboard phase three funded publication', () => {
     expect(page).toContain(
       'Planned Prize Badges Are Hidden Until The Promo Wallet Is Fully Funded.'
     );
+  });
+
+  it('settles closed rounds from immutable programs instead of mutable wizard settings', () => {
+    expect(settlementRepair).toContain('public.leaderboard_reward_program_versions program');
+    expect(settlementRepair).toContain('public.fn_get_leaderboard_reward_plan(');
+    expect(settlementRepair).toContain("v_plan ->> 'payout_metric'");
+    expect(settlementRepair).not.toMatch(
+      /FROM public\.club_leaderboard_settings[\s\S]*WHERE settings\.rewards_enabled/
+    );
+  });
+
+  it('catches up every closed unpaid round and preserves disabled contracts', () => {
+    expect(settlementRepair).toContain('CROSS JOIN LATERAL generate_series(');
+    expect(settlementRepair).toContain('public.leaderboard_payout_batches batch');
+    expect(settlementRepair).toContain(
+      "NOT COALESCE((v_plan ->> 'rewards_enabled')::boolean, false)"
+    );
+    expect(settlementRepair).toContain("'skipped_disabled', v_skipped_disabled");
+  });
+
+  it('keeps catch-up settlement service-only and delegates the money path', () => {
+    expect(settlementRepair).toContain('public.fn_payout_leaderboard(');
+    expect(settlementRepair).not.toMatch(/UPDATE\s+public\.(union_wallets|clubs)/i);
+    expect(settlementRepair).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_settle_due_leaderboards()'
+    );
+    expect(settlementRepair).toContain('FROM PUBLIC, anon, authenticated');
+    expect(settlementRepair).toContain('TO service_role');
   });
 });

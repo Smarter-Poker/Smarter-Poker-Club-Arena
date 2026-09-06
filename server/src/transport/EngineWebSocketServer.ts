@@ -46,6 +46,11 @@ import {
   tokenDenial,
   recordWsAuthRefusal,
   recordWsProtocolRefusal,
+  recordWsReauthClose,
+  recordWsSocketCapRefusal,
+  runReauthSweep,
+  socketsHeldBy,
+  staggeredReauthAt,
   type TokenVerdict,
   type TokenDenial,
 } from './wsHelpers.js';
@@ -110,6 +115,47 @@ export const MIN_CLIENT_PROTOCOL = 0;
 
 /** Refused for speaking a protocol this engine no longer serves. */
 export const CLOSE_UPGRADE_REQUIRED = 4426;
+
+/**
+ * ═══ TRUST HAS TO BE RENEWED (Realtime Phase 5, 2026-09-06) ════════════════
+ *
+ * A socket is authenticated ONCE, at the upgrade, and then trusted for as long
+ * as it stays open. That was the whole story until today, and it is the
+ * 2026-09-03 outage seen from the other side: the fix that day made a revoked
+ * session unable to OPEN a socket, and said nothing about the sockets already
+ * open. With a seven-day access token and a tab that stays open, a player who
+ * signed out - or was signed out by an admin, or had their session revoked -
+ * keeps playing at a real table with real chips until something else happens
+ * to break the connection.
+ *
+ * So every live socket re-asks GoTrue on this period. Three properties matter
+ * more than the number:
+ *
+ *   - ONLY A DEFINITIVE "no" CLOSES. `denied: 'unavailable'` - GoTrue down,
+ *     5xx, a timeout - is never a refusal. That distinction is the whole point
+ *     of `wsHelpers.tokenDenial`, and inverting it here would sign every
+ *     player out the moment auth had a bad minute.
+ *   - IT IS STAGGERED. Re-authing every socket in one sweep would be a few
+ *     hundred GoTrue calls in the same second, on the period, forever.
+ *   - IT IS BOUNDED PER SWEEP, so a backlog drains at a fixed rate rather than
+ *     arriving all at once.
+ */
+export const REAUTH_INTERVAL_MS = 5 * 60_000;
+
+/** At most this many sockets are re-checked in any one heartbeat sweep. */
+export const REAUTH_MAX_PER_SWEEP = 20;
+
+/**
+ * How many sockets one account may hold at once.
+ *
+ * Generous on purpose. The multiplexed transport means a tab is ONE socket
+ * however many tables it carries, so a player at four tables on a laptop and
+ * two on a phone is two - and this still leaves room for the channel socket,
+ * a reconnect that has not yet been reaped, and somebody who genuinely keeps
+ * several tabs open. It is a bound on abuse and on a client stuck in a
+ * connect loop, not a product limit anyone should ever meet.
+ */
+export const MAX_SOCKETS_PER_USER = 10;
 
 /**
  * The protocol a socket claims, from `?v=`. Absent, malformed or negative all
@@ -199,6 +245,15 @@ export interface EngineWebSocketServerOptions {
 interface ConnectionState {
   id: string;
   userId: string;
+  /**
+   * The bearer this socket opened with, kept so it can be re-checked while the
+   * socket is alive (Phase 5). It is already in memory - it is a key in
+   * `tokenCache` - and it is the only thing that lets the engine notice a
+   * session revoked AFTER the upgrade.
+   */
+  token: string;
+  /** Epoch ms of the next re-auth. Staggered at connect, see REAUTH_INTERVAL_MS. */
+  nextReauthAt: number;
   /** Single-table path: the table from the upgrade URL. Mux path: ''. */
   tableId: string;
   ws: WebSocket;
@@ -445,7 +500,7 @@ export class EngineWebSocketServer {
             }
             const userId = auth.userId;
             this.wss.handleUpgrade(req, socket, head, (ws) => {
-              this.onUpgradedMux(ws, userId, muxClientIp);
+              this.onUpgradedMux(ws, userId, muxClientIp, muxToken);
             });
           })
           .catch(() => {
@@ -603,7 +658,7 @@ export class EngineWebSocketServer {
           this.logConnectionAudit(auth.userId, tableId, clientIp);
 
           this.wss.handleUpgrade(req, socket, head, (ws) => {
-            this.onUpgraded(ws, req, auth.userId, tableId, clientIp);
+            this.onUpgraded(ws, req, auth.userId, tableId, clientIp, token);
           });
         })
         .catch(() => {
@@ -900,11 +955,15 @@ export class EngineWebSocketServer {
     _req: IncomingMessage,
     userId: string,
     tableId: string,
-    clientIp: string | null = null
+    clientIp: string | null = null,
+    token = ''
   ): void {
+    if (this.refuseIfOverSocketCap(ws, userId)) return;
     const conn: ConnectionState = {
       id: randomUUID(),
       userId,
+      token,
+      nextReauthAt: staggeredReauthAt(REAUTH_INTERVAL_MS),
       tableId,
       ws,
       lastPongAt: Date.now(),
@@ -968,10 +1027,13 @@ export class EngineWebSocketServer {
 
   // ─── Roadmap batch 6: mux connection lifecycle ──────────────────────────
 
-  private onUpgradedMux(ws: WebSocket, userId: string, clientIp: string | null): void {
+  private onUpgradedMux(ws: WebSocket, userId: string, clientIp: string | null, token = ''): void {
+    if (this.refuseIfOverSocketCap(ws, userId)) return;
     const conn: ConnectionState = {
       id: randomUUID(),
       userId,
+      token,
+      nextReauthAt: staggeredReauthAt(REAUTH_INTERVAL_MS),
       tableId: '',
       ws,
       lastPongAt: Date.now(),
@@ -1304,8 +1366,80 @@ export class EngineWebSocketServer {
     }
   }
 
+  /**
+   * Refuse a socket that would take one account past the cap.
+   *
+   * THE NEW ONE IS REFUSED, NEVER AN OLD ONE EVICTED. An existing socket may
+   * be carrying a hand; the arriving one certainly is not. Evicting the oldest
+   * would also hand any client stuck in a connect loop a way to knock its own
+   * player off the felt, over and over, which is a worse failure than the one
+   * this bounds.
+   *
+   * Closed with 4429 - the code this client already understands as "slow
+   * down", and which makes its ladder back off rather than hammer - and with
+   * a reason that says what happened, because a close nobody can read is the
+   * 2026-09-03 lesson.
+   */
+  private refuseIfOverSocketCap(ws: WebSocket, userId: string): boolean {
+    const held = socketsHeldBy(this.connections, userId);
+    if (held < MAX_SOCKETS_PER_USER) return false;
+    recordWsSocketCapRefusal();
+    try {
+      ws.close(CLOSE_RATE_LIMITED, `too_many_sockets:${held}`);
+    } catch {
+      try {
+        ws.terminate();
+      } catch {
+        /* nothing further to do */
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Re-ask GoTrue whether the sessions behind live sockets are still alive.
+   *
+   * Runs inside the heartbeat sweep because that is already the one place
+   * every connection is walked on a timer. Bounded per sweep and staggered per
+   * socket, so this is a trickle rather than a wave.
+   *
+   * A DEFINITIVE rejection closes with 4401 and the same `auth:<code>` reason
+   * the upgrade path uses, so the client's existing handling - ask GoTrue,
+   * prompt, sign in - runs unchanged. Anything else leaves the socket alone
+   * and tries again next period: an auth outage must never close a table.
+   */
+  private reauthSweep(now: number): void {
+    /* The SHARED sweep (audit, 2026-09-06). This was a private copy here and
+       the channel socket had none at all - the same "two of the three sockets"
+       gap Phase 4 warned about, one phase later. One implementation now, in
+       wsHelpers, handed each server's own connection map. */
+    runReauthSweep({
+      now,
+      connections: this.connections,
+      path: (conn) => (conn.isMux ? 'multi' : 'table'),
+      verify: (token) => this.verifyToken(token),
+      close: (ws, code, reason) => {
+        try {
+          ws.close(code, reason);
+        } catch {
+          try {
+            ws.terminate();
+          } catch {
+            /* ignore */
+          }
+        }
+      },
+      intervalMs: REAUTH_INTERVAL_MS,
+      maxPerSweep: REAUTH_MAX_PER_SWEEP,
+      closeCode: CLOSE_AUTH_FAILED,
+    });
+  }
+
   private heartbeatSweep(): void {
     const now = Date.now();
+    // Trust has to be renewed: see REAUTH_INTERVAL_MS. Runs first so a socket
+    // whose session died is closed on this sweep rather than pinged first.
+    this.reauthSweep(now);
     for (const [ws, conn] of this.connections) {
       if (now - conn.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
         try {

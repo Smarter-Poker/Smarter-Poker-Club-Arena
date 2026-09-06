@@ -16,7 +16,7 @@ verification when it lands.
 | 2     | See the client             | Beacon from four client failure sites -> `POST /client-event`; bounded per-user counting in the engine; `PlayersReconnectingRepeatedly` + `TablesAreReloadingThemselves` alerts; two laws | done   |
 | 3     | Do no harm                 | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   | done   |
 | 4     | Restart handoff + protocol | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 | done   |
-| 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      |        |
+| 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      | done   |
 | 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      |        |
 | 7     | Guardrails                 | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        |        |
 
@@ -160,6 +160,94 @@ now watches. Building the channel properly (server-side emission from
 belongs in its own phase with Dan's sign-off, not smuggled into an
 observability phase. It is recorded here so nobody reads the existing code as
 a working path.
+
+## Phase 5 - Trust and limits (2026-09-06)
+
+**Why.** Three things a live socket still took on trust: that the device's
+clock is right, that the session behind it is still valid, and that one account
+cannot open sockets without limit.
+
+**What.**
+
+1. **There is one server clock.** This phase was meant to ADD an offset; it
+   already existed TWICE, with opposite signs, born eighteen days apart -
+   `utils/serverClock` (`Date.now() - offset`) and `lib/serverClock`
+   (`Date.now() + offset`). Same name, same meaning, inverted arithmetic, so
+   one wrong import path would have turned a three-second-fast phone into a
+   three-second-SLOW one and doubled the error on the turn ring. The
+   latency-corrected estimator was fed only by snapshots and drove the turn
+   clock; the rough one, which ignores latency on purpose, was fed by every
+   frame. Folded into one, `lib/serverClock` deleted.
+2. **Trust has to be renewed.** A socket was authenticated once at the upgrade
+   and trusted forever after - the 2026-09-03 outage from the other side. Every
+   live socket now re-asks GoTrue every five minutes, staggered per socket and
+   bounded per sweep, and ONLY a definitive rejection closes it.
+3. **A cap of ten sockets per account**, refusing the ARRIVING socket with 4429
+   rather than evicting one that may be carrying a hand.
+4. **The socket clocks agree.** Four clocks in four files, one of them not in
+   this repo, held together by relationships nothing checked. Now pinned.
+   Measured on the box: Caddy sets no timeout at all for the engine vhost, so
+   the 25-second ping clears every default comfortably.
+
+**Found and NOT fixed here:** the repo carries TWO Caddyfiles for
+`engine.smarter.poker` and neither is what is running. Same shape as the Phase 1
+alert-rules finding; it belongs to Phase 7's reconciler, and picking a winner
+between three files is a decision rather than a cleanup.
+
+**Laws.** `tests/there-is-one-server-clock.law.test.ts`,
+`server/src/transport/trustIsRenewedAndBounded.law.test.ts`, and the socket
+clocks added to `the-break-clocks-agree`. Six mutations, six reds. Full
+reasoning: `docs/changelog/2026-09-06-realtime-phase-5-trust-and-limits.md`.
+
+**Verification.** Client half published as `9685001e6`. The engine half is
+BUILT AND STAGED on engine-01 and not yet running: the deploy workflow's run
+for `d3c1855ed` reported success with the cutover SKIPPED, because the next
+`:55` break was 3123s away and beyond that run's budget - its own step is named
+"DID NOT DEPLOY - this run shipped nothing" and it says in the summary "do not
+treat this tick as proof the engine is running your code". The running image is
+still `7a1d19390` (#3224), and `poker_ws_reauth_closed_total` and
+`poker_ws_socket_cap_refused_total` are absent from engine-01's Prometheus
+while `poker_ws_protocol_refused_total` (Phase 4) is present - which is the
+same statement read from the other end. It cuts over at the next window with no
+rebuild. **A green deploy run is not a deployment**; the image tag on the
+running container is.
+
+## Phase 5 audit (2026-09-06) - what a deep pass found after "done"
+
+Two defects, both the shape this programme keeps finding: a mechanism that is
+correct where you look and absent where you do not.
+
+1. **Re-auth and the cap reached two of the three sockets.** `/ws/channel` had
+   neither - and Phase 4 had written the warning for exactly this ("a version
+   on two of the three sockets is worse than none") one phase earlier. It is
+   the worst of the three to have missed: that socket carries club presence,
+   the lobby, hand replay and `FINANCIAL_UPDATE`, so a revoked session went on
+   receiving a player's wallet balance and ledger entries indefinitely. The
+   mechanism moved into `server/src/transport/wsHelpers.ts`
+   (`runReauthSweep`, `socketsHeldBy`, `staggeredReauthAt`) and both servers
+   call it with their own map, label and numbers - one implementation, three
+   sockets, no way for two to drift.
+
+2. **The clock was unified and its callers were not.** Phase 5 folded two
+   `serverNow()` implementations into one and pinned five consumers; eleven
+   OTHER places were still subtracting `Date.now()` from an instant the engine
+   or Postgres stamped. The worst was `MultiTablePage`: the table's own turn
+   ring read the server clock and the multi-table tab strip did not, so a
+   skewed device showed two different countdowns for one hand and the player
+   believed the one they were looking at. Also `inAnnouncedRestart()` - the
+   Phase 4 window itself, which a fast phone would leave early and escalate
+   its ladder into the very restart the window exists to wait out - the
+   insurance countdown on a decision that spends chips, the disconnect grace
+   clock whose comment read "no drift under clock skew", the break countdown,
+   the tournament clock and the sit-out clock.
+
+**A law that only reads source is half a law.** `trustIsRenewedAndBounded` was
+all source pins, and a mutation making the per-user cap count every socket in
+the room - the cap then refuses everybody - left all twenty-one green. It now
+drives the real helpers as well (`LAW 8`), and `there-is-one-server-clock`
+gained a scan that finds any known server stamp measured against `Date.now()`.
+Twenty mutations, twenty reds. Full reasoning:
+`docs/changelog/2026-09-06-realtime-phase-5-deep-audit.md`.
 
 ## Phase 4 - Restart handoff and protocol (2026-09-05)
 

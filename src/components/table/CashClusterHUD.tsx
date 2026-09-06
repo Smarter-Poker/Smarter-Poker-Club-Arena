@@ -18,6 +18,16 @@
  * The figures come from the same read the lobby uses (fn_cash_game_lobby),
  * every ten seconds while the table is open - two controller ticks - and at
  * once whenever the engine says a move is pending, landed or held.
+ *
+ * THE FELT SAYS A MOVE IS COMING (Dan 2026-09-05). The engine's
+ * SEAT_MOVE_PENDING toast is shown once and gone in seconds; the hero then
+ * plays a whole hand not knowing whether they are still leaving. So while the
+ * database holds a pending move for the viewer, the sentence stays under the
+ * bar - "Seat Open On Main 2. Moving After This Hand." - and leaves only when
+ * the move has executed (the read no longer returns it). A move always runs
+ * at the next hand boundary, so there is no hands-out count to show. It lives
+ * in this corner column, above the seats and far from the action buttons at
+ * the foot of a 375px screen.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -25,6 +35,7 @@ import {
   fetchCashGameLobby,
   joinCashGame,
   joinGameRefusalText,
+  pendingMoveNotice,
   waitlistedText,
   type CashGameLobby,
 } from '../../services/cashGameLobby';
@@ -85,6 +96,7 @@ export function CashClusterHUD({
   const tables = (lobby?.tables ?? []).length;
   const me = lobby?.me ?? null;
   const position = me?.seated && !me.on_main_one ? me.must_move_position : null;
+  const moveNotice = me?.seated ? pendingMoveNotice(me.pending_move) : null;
   const seatChangeAvailable = Boolean(me?.seated && me.seat_change.available);
   const listed = me?.seat_change.request ?? null;
   const onWaitlist = Boolean(me && !me.seated && me.waitlist?.on_list);
@@ -144,6 +156,16 @@ export function CashClusterHUD({
           </div>
         )}
       </div>
+      {moveNotice && (
+        <div
+          className="cch-move-notice"
+          role="status"
+          aria-live="polite"
+          data-testid="cch-move-notice"
+        >
+          {moveNotice}
+        </div>
+      )}
       {seatChangeAvailable && (
         <button
           type="button"

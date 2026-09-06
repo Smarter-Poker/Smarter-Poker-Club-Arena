@@ -82,6 +82,12 @@ export function replayBeatMs(
 export interface FrameMotion {
   /** Seat whose chips slide from the seat to its bet spot on this frame. */
   chipsIn: number | null;
+  /**
+   * Seat posting DEAD money on this frame (an ante, a bomb-pot ante). It goes
+   * from the seat straight to the pot - it is never in front of the player -
+   * so it gets its own travel rather than a bet pill that should not exist.
+   */
+  deadIn: number | null;
   /** Seats whose street bets sweep into the pot on this frame (a new street). */
   sweep: number[];
   /** Seats whose hole cards turn face-up on this frame. */
@@ -92,7 +98,14 @@ export interface FrameMotion {
   potTo: number[];
 }
 
-const NO_MOTION: FrameMotion = { chipsIn: null, sweep: [], flip: [], fold: null, potTo: [] };
+const NO_MOTION: FrameMotion = {
+  chipsIn: null,
+  deadIn: null,
+  sweep: [],
+  flip: [],
+  fold: null,
+  potTo: [],
+};
 
 /**
  * What moves between `prev` and `frame`. Null `prev` (a jump, a scrub, the
@@ -106,10 +119,12 @@ export function frameMotion(
 ): FrameMotion {
   if (!prev) return NO_MOTION;
   const row = frame.row;
-  const chipsIn =
+  const posted =
     row && frame.activeSeat !== null && row.amount > 0 && row.verb !== 'show' && row.verb !== 'muck'
       ? frame.activeSeat
       : null;
+  const chipsIn = posted !== null && !row?.dead ? posted : null;
+  const deadIn = posted !== null && row?.dead ? posted : null;
   // A street frame (and the final frame) clears every commitment into the
   // pot. A row frame never does, so a seat dropping to zero mid-street is a
   // returned uncalled bet, not a sweep.
@@ -125,7 +140,7 @@ export function frameMotion(
       ? frame.activeSeat
       : null;
   const potTo = frame.isShowdown && !prev.isShowdown ? winnerSeats : [];
-  return { chipsIn, sweep, flip, fold, potTo };
+  return { chipsIn, deadIn, sweep, flip, fold, potTo };
 }
 
 // ── Sound ────────────────────────────────────────────────────────────────────
@@ -157,15 +172,20 @@ const VERB_CUE: Partial<Record<ReplayVerb, ReplayCue>> = {
   muck: 'fold',
   discard: 'discard',
   show: 'show',
-  return: null,
-  unknown: null,
 };
 
 /** The cue a frame owes when it is STEPPED INTO. None for a jump or a scrub. */
 export function frameCue(prev: ReplayFrame | null, frame: ReplayFrame): ReplayCue {
   if (!prev) return null;
   if (frame.isShowdown) return 'win';
-  if (frame.row) return VERB_CUE[frame.row.verb] ?? null;
+  if (frame.row) {
+    /* A verb this reader does not know still MOVED CHIPS if it carries an
+       amount - `bomb_ante` is one, and it put 1.50 in the middle in silence
+       until 2026-09-05. Money that moves is owed the chip cue whether or not
+       we have a word for the action. A returned bet (negative) and a chipless
+       unknown verb are owed nothing. */
+    return VERB_CUE[frame.row.verb] ?? (frame.row.amount > 0 ? 'chips' : null);
+  }
   if (frame.key === 'deal') return 'deal';
   return 'community';
 }

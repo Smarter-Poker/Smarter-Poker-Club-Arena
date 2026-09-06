@@ -1,0 +1,96 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "id": null,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Seconds since the last controller pass (alert at 60s outside the break)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "time() - poker_cluster_last_pass_timestamp_seconds", "legendFormat": "silence" },
+        { "expr": "poker_maintenance_break_active * 60", "legendFormat": "break active (x60)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "red", "value": 60 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Pass duration p50 / p95 (norm ~10s, alert p95 > 20s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(poker_cluster_pass_duration_seconds_bucket[10m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(poker_cluster_pass_duration_seconds_bucket[10m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 3,
+      "title": "Games on the worklist, ticked, woken",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "poker_cluster_games", "legendFormat": "{{ state }}" },
+        { "expr": "poker_cluster_pass_ticked", "legendFormat": "ticked" },
+        { "expr": "poker_cluster_pass_woken", "legendFormat": "woken" },
+        { "expr": "poker_cluster_pass_rested", "legendFormat": "rested" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Errors, stalls and frozen skips (per 15m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "increase(poker_cluster_pass_errors_total[15m])", "legendFormat": "tick errors" },
+        {
+          "expr": "increase(poker_cluster_pass_stalled_total[15m])",
+          "legendFormat": "latch released"
+        },
+        {
+          "expr": "increase(poker_cluster_pass_skipped_frozen_total[15m])",
+          "legendFormat": "skipped (frozen)"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Actions by kind (per 30m)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum by (kind) (increase(poker_cluster_actions_total[30m]))",
+          "legendFormat": "{{ kind }}"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["smarter-poker", "cluster", "engine"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Cluster Controller",
+  "uid": "smarter-poker-cluster",
+  "version": 1
+}

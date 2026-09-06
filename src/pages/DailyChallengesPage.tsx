@@ -813,6 +813,7 @@ export default function DailyChallengesPage() {
       // then compare it with the revision actually rendered by the first receipt:
       // the matching echo is already covered; a genuinely newer mutation still
       // refreshes immediately.
+      if (announcedRevision === null && !initialLoadSettledRef.current) return;
       if (announcedRevision !== null && announcedRevision <= dashboardRevisionRef.current) return;
       if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
       realtimeRefreshTimerRef.current = setTimeout(() => {

@@ -119,16 +119,13 @@ async function openStudio(page: Page) {
       new URL(response.url()).pathname.endsWith('/rest/v1/user_theme_settings'),
     { timeout: PRODUCTION_RESPONSE_TIMEOUT }
   );
-  await open.click();
+  await Promise.all([hydrated, open.click()]);
 
   const studio = page.getByRole('dialog', { name: 'Make The Table Yours' });
   await expect(studio).toBeVisible({ timeout: 20_000 });
-  await hydrated;
-  // The settings request may be satisfied before the listener is attached or
-  // from a warm in-memory snapshot. Network timing is not the contract; a
-  // settled grid with the live-status marker and exactly one selected design
-  // is. These assertions still fail on an empty/error response without making
-  // a cached success look like a timeout.
+  // The successful settings response above proves the authoritative read; the
+  // settled grid and live marker below prove that receipt was rendered rather
+  // than merely downloaded behind a cached snapshot.
   const grid = studio.locator('.theme-modal__grid');
   await expect(grid).toHaveAttribute('aria-busy', 'false', {
     timeout: PRODUCTION_RESPONSE_TIMEOUT,

@@ -21,6 +21,8 @@ export interface ManagedGameReadiness {
   contractLocked: boolean;
   guaranteeEnforced: boolean;
   guaranteedPrize: number;
+  satelliteSeatGuarantee: number;
+  effectiveGuarantee: number;
   currentPrizePool: number;
   overlayRequired: number;
   bankType: 'club' | 'union' | null;
@@ -180,6 +182,8 @@ function mapReadiness(raw: any): ManagedGameReadiness {
     contractLocked: Boolean(raw?.contract_locked),
     guaranteeEnforced: Boolean(raw?.guarantee_enforced),
     guaranteedPrize: numberValue(raw?.guaranteed_prize),
+    satelliteSeatGuarantee: numberValue(raw?.satellite_seat_guarantee),
+    effectiveGuarantee: numberValue(raw?.effective_guarantee),
     currentPrizePool: numberValue(raw?.current_prize_pool),
     overlayRequired: numberValue(raw?.overlay_required),
     bankType: raw?.bank_type === 'club' || raw?.bank_type === 'union' ? raw.bank_type : null,

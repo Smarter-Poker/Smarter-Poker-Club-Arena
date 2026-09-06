@@ -80,14 +80,55 @@ describe('a dialog keeps the keyboard', () => {
       expect(src, `${file} restores focus`).toMatch(/restoreFocusTo\.current\?\.focus\?\.\(\)/);
       expect(src, `${file} still closes on Escape`).toMatch(/'Escape'/);
     });
+
+    it(`${label} does not re-arm its focus restore on every parent render`, () => {
+      const src = read(file);
+      /* DEEP DIVE 2026-09-06. The cleanup of this effect calls
+         `restoreFocusTo.current.focus()`, so anything that makes the effect
+         RE-RUN pulls focus back to whatever opened the dialog while it is
+         still open - behind a live table that is every websocket tick.
+         `onClose` in the deps does exactly that whenever the caller passes an
+         inline arrow. HandDetailModal was written this way from the start;
+         HandHistoryPanel was not, and was safe only because TablePage happens
+         to memoise its handler for an unrelated reason. A dependency on a
+         caller's memoisation is not a fix, it is a coincidence. */
+      expect(src, `${file} reads onClose through a ref`).toMatch(
+        /const onCloseRef = useRef\(onClose\)/
+      );
+      expect(src, `${file} calls it through the ref`).toMatch(/onCloseRef\.current\(\)/);
+      expect(src, `${file} keys the focus effect on isOpen alone`).not.toMatch(
+        /\}, \[isOpen, onClose\]\)/
+      );
+    });
   }
 });
+
+/**
+ * The BODY of an at-rule, brace-matched.
+ *
+ * `css.slice(indexOf('@media ...'))` runs to the end of the file, so a rule
+ * that had fallen OUT of the media block - and was therefore applying to every
+ * screen size - would still satisfy a pin written against that window. Same
+ * lesson as the container/control mix-up this deep dive found: a window has to
+ * end where the thing it is watching ends.
+ */
+const atRuleBody = (css: string, opener: string): string => {
+  const start = css.indexOf(opener);
+  if (start < 0) return '';
+  let depth = 0;
+  for (let i = css.indexOf('{', start); i < css.length; i++) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}' && --depth === 0) return css.slice(start, i + 1);
+  }
+  return '';
+};
 
 describe('the felt fits a phone', () => {
   const css = read('src/components/replay/HandReplay.css');
 
   it('gives nine seats the vertical room the measurement asked for', () => {
-    const narrow = css.slice(css.indexOf('@media (max-width: 480px)'));
+    const narrow = atRuleBody(css, '@media (max-width: 480px)');
+    expect(narrow, 'the 480px block must exist and be brace-matched').not.toBe('');
     expect(narrow).toMatch(/aspect-ratio: 4 \/ 6\.4/);
     /* The bottom-centre seat is the one whose cards reached into the seat
        beside it, and no amount of shrinking cleared it. */

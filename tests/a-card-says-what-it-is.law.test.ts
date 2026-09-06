@@ -32,12 +32,21 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 import { sliceBetween } from './helpers/sourceWindow';
 import { cardWords, cardsWords, FACE_DOWN_WORDS, RANK_WORD } from '../src/utils/cardWords';
 
 const read = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8');
+
+/** Every file under a directory, so the sweep below cannot miss a folder. */
+function* walk(dir: string): Generator<string> {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) yield* walk(full);
+    else yield full;
+  }
+}
 
 describe('a card says what it is', () => {
   it('spells the rank, never the letter on the sprite', () => {
@@ -103,9 +112,49 @@ describe('a card says what it is', () => {
     /* The board's region names every card in one sentence, so the cards
        inside it are hidden - otherwise the board is read out twice. */
     expect(felt).toMatch(/cardsWords\(cards\)/);
-    expect(felt).toMatch(/community-cards__container" aria-hidden="true"/);
     /* And it must not build its own sentence out of raw fields again. */
     expect(felt).not.toMatch(/\$\{c\.rank\} of \$\{c\.suit\}/);
+
+    /* THE HIDING IS PER CARD, NEVER ON THE CONTAINER (deep dive 2026-09-06).
+       This pin used to read `community-cards__container" aria-hidden="true"`
+       and it was GREEN while the felt was broken: `aria-hidden` is inherited,
+       one of those cards becomes the Squeeze To Reveal button, and hiding the
+       container took a focusable control out of the accessibility tree while
+       leaving it in the tab order. The pin was watching the MECHANISM, so it
+       could not see that the mechanism had swallowed a control.
+       The property is pinned where it can actually be observed - against the
+       rendered DOM, in tests/components/RiverSqueeze.test.tsx. Here we only
+       forbid the shape that caused it. */
+    expect(felt).not.toMatch(/community-cards__container"\s+aria-hidden/);
+    expect(felt).toMatch(/aria-hidden=\{host && interactiveHold \? undefined : true\}/);
+  });
+
+  it('no spoken label anywhere is built out of raw card fields', () => {
+    /* DEEP DIVE 2026-09-06. The phase fixed every card FACE and missed a
+       CONTROL: Crazy Pineapple's discard button said `Discard ${card.rank}${
+       card.suit}` - "Discard As" - and a button's aria-label REPLACES its
+       content as the accessible name, so the corrected alt on the CardImage
+       inside it was never read. The one card a player is asked to choose,
+       under a timer that folds the hand, was the one still read as the
+       sprite's field values.
+       One renderer was never the whole surface: a label is written by hand
+       anywhere somebody needs one, so the class has to be pinned, not the
+       instance. */
+    const spoken = /(aria-label|alt|title)=\{`[^`]*\$\{[^}]*\.(rank|suit)\b/;
+    const offenders: string[] = [];
+    for (const rel of walk(resolve(__dirname, '../src'))) {
+      if (!rel.endsWith('.tsx')) continue;
+      const src = readFileSync(rel, 'utf8');
+      /* `.rank` is also a LEADERBOARD position, which is a legitimate thing to
+         say out loud. Only card-shaped names count. */
+      for (const line of src.split('\n')) {
+        if (!spoken.test(line)) continue;
+        if (/\.suit\b/.test(line) || /\bcard\.rank\b/.test(line)) {
+          offenders.push(`${rel.split('/src/')[1]}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(offenders, 'a spoken label built from raw rank/suit').toEqual([]);
   });
 
   it('leaves the poker room its own words', () => {

@@ -266,3 +266,102 @@ describe('8. a seating table claims what it will seat', () => {
     );
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE SECOND PASS (2026-09-06) - what the first one only recorded
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * CLAUDE.md 10.11, Dan the same day: "I WANT HARD CODED FIXES FOR THINGS THAT
+ * BREAK ... I DON'T JUST WANT IT 'FLAGGED' AND 'RECONCILED'." The first pass
+ * left eight items under "recorded, not changed here". These are the pins for
+ * the ones that were then fixed at the root.
+ */
+describe('9. the cycle stops scanning every seat for every table', () => {
+  it('the seat map is indexed once and the sort reads a precomputed set', () => {
+    expect(SEED).toContain('const seatsByTable = new Map<string, typeof allActiveSeats>();');
+    expect(SEED).toContain('const humanShortIds = new Set<string>();');
+    expect(SEED).toContain(
+      'const humanShort = (t: { id: string }): boolean => humanShortIds.has(t.id);'
+    );
+    // The per-table full scan is gone from the seeding loop too.
+    expect(SEED).toContain('const tableOccupiedSeats = seatsByTable.get(table.id) ?? [];');
+    expect(SEED).not.toContain('allActiveSeats.filter((s) => s.table_id === table.id)');
+    expect(SEED).not.toContain('allActiveSeats.filter((x) => x.table_id === t.id)');
+  });
+});
+
+describe('10. every read in the file is paged', () => {
+  it('the pending-move, waitlist and prune reads are keyset-paged like the rest', () => {
+    for (const label of [
+      'HorseFleet.pendingMoves',
+      'HorseFleet.humansWaiting',
+      'HorseFleet.pruneWaitlist',
+    ]) {
+      expect(SRC).toContain(`label: '${label}'`);
+    }
+    // A bare .select() on either of the two hot tables would be the silent
+    // db-max-rows truncation this file documents three times over.
+    expect(SRC).not.toMatch(/\.from\('cash_seat_moves'\)\s*\.select\('to_table_id'\)/);
+  });
+
+  it('an incomplete waitlist read asks nobody to leave, and an incomplete move read says so', () => {
+    expect(SRC).toContain(
+      '[HorseFleet] waitlist read incomplete - nobody is asked to leave this cycle.'
+    );
+    expect(SRC).toContain('[HorseFleet] pending seat-move read incomplete');
+  });
+});
+
+describe('11. the fleet owns no table lifecycle', () => {
+  it('runTableLifecyclePass and its RPC are gone from the file', () => {
+    // The TOMBSTONE stays - it is what stops the next agent restoring the pass
+    // for the fourth time. What must be gone is the call and the method.
+    expect(SRC).not.toContain('this.runTableLifecyclePass(');
+    expect(SRC).not.toContain('private async runTableLifecyclePass(');
+    expect(SRC).not.toContain('fn_table_lifecycle_pass');
+    expect(SRC).toContain('runTableLifecyclePass is GONE');
+  });
+});
+
+describe('12. a horse can answer a seat call it was actually offered', () => {
+  it('the prune clears only `waiting`, so a `notified` offer survives to be claimed', () => {
+    const prune = SRC.slice(
+      SRC.indexOf('private async pruneHorseWaitlist('),
+      SRC.indexOf('private resolveSeatClub(')
+    );
+    expect(prune).toContain(".eq('status', 'waiting')");
+    expect(prune).not.toContain("'notified'");
+  });
+
+  it('and the claim path refuses a breaking or closed table, like the seeding loop', () => {
+    const claim = SRC.slice(
+      SRC.indexOf('private async claimOfferedSeats('),
+      SRC.indexOf('private computeHorseBuyIn(')
+    );
+    expect(claim).toContain(
+      "if (table.lifecycle === 'breaking' || table.lifecycle === 'closed') continue;"
+    );
+  });
+});
+
+describe('13. an opening feeder is never skipped silently', () => {
+  it('the diagnostic is opened before the structural skips, and each one names itself', () => {
+    const loop = SEED.slice(SEED.indexOf('for (const table of tablesToSeed) {'));
+    const diagAt = loop.indexOf('diag = {');
+    const surplusAt = loop.indexOf('if (surplusTableIds.has(table.id))');
+    expect(diagAt).toBeGreaterThan(0);
+    expect(surplusAt).toBeGreaterThan(diagAt);
+    for (const reason of ['surplus_draining', 'lifecycle_', 'game_disabled']) {
+      expect(loop).toContain(`diag.withheld = ${reason.endsWith('_') ? '`' : "'"}${reason}`);
+    }
+  });
+});
+
+describe('14. a cash ceiling counts cash seats', () => {
+  it('the fleet tells HorseGameLoad which seats are cash', () => {
+    expect(SEED).toContain('const tournamentTableIds = new Set<string>();');
+    expect(SEED).toContain('if (!tournamentTableIds.has(tid)) cashSeatsForHorse++;');
+    expect(SEED).toContain('cashSeats: cashSeatsForHorse,');
+  });
+});

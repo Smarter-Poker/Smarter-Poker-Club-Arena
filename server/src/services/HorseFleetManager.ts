@@ -609,13 +609,38 @@ export class HorseFleetManager {
   private async humansWaitingByTable(horseIdSet: Set<string>): Promise<Map<string, number>> {
     const out = new Map<string, number>();
     try {
-      const { data, error } = await supabase
-        .from('table_waitlist')
-        .select('table_id, user_id, status')
-        .in('status', ['waiting', 'notified']);
-      if (error) throw new Error(error.message);
-      for (const row of data ?? []) {
-        const r = row as { table_id?: string; user_id?: string };
+      /* PAGED (2026-09-06). A bare `.select()` is capped at db-max-rows (1,000)
+         by PostgREST WITHOUT erroring - the truncation this file documents
+         three times for `tables`, `table_seats` and `club_members` and never
+         applied here. This queue reached 10,004 rows on 2026-08-31, and the
+         consequence of truncating THIS read is the worst of the three: a human
+         past the cap is invisible, `humansWaiting` reads 0 for their table,
+         `occupancyTargetFor` never subtracts their seat, and the 2026-09-02
+         release rule - the ONLY thing that stands a horse up - silently stops
+         working for them. Keyset on id. */
+      const page = await fetchAllRows<{ id: string; table_id: string; user_id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('table_waitlist')
+            .select('id, table_id, user_id, status')
+            .in('status', ['waiting', 'notified'])
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'HorseFleet.humansWaiting', maxRows: 50_000 }
+      );
+      if (!page.complete) {
+        // Fails CLOSED, as the original did on error: nobody is asked to leave
+        // on a half-read queue. One more cycle of waiting costs a person 30
+        // seconds; the other direction stands horses up off the whole floor.
+        console.warn(
+          '[HorseFleet] waitlist read incomplete - nobody is asked to leave this cycle.'
+        );
+        return new Map();
+      }
+      for (const r of page.rows) {
         if (!r.table_id || !r.user_id) continue;
         if (horseIdSet.has(r.user_id)) continue;
         out.set(r.table_id, (out.get(r.table_id) ?? 0) + 1);
@@ -651,12 +676,40 @@ export class HorseFleetManager {
    */
   private async pruneHorseWaitlist(horseIdSet: Set<string>): Promise<void> {
     try {
-      const { data, error } = await supabase
-        .from('table_waitlist')
-        .select('id, user_id, status')
-        .in('status', ['waiting', 'notified']);
-      if (error) throw new Error(error.message);
-      const excess = (data ?? [])
+      /* PAGED (2026-09-06), same reason as humansWaitingByTable above and with
+         a sharper edge: this method's whole job is to DRAIN the queue, and a
+         1,000-row cap meant it could only ever clear the first 1,000 horse
+         rows per cycle. The 10,004-row queue this was written for could not be
+         drained by the thing written to drain it. */
+      /* ── A NOTIFIED ROW IS AN OFFER, NOT A QUEUE ENTRY (2026-09-06) ────────
+         This cleared `waiting` AND `notified` horse rows, and `notified` means
+         a seat is being HELD for that horse for sixty seconds - the platform's
+         own offer, made by `fn_offer_open_seat`. Clearing it is the platform
+         withdrawing an offer it just made, and it ran BEFORE
+         `claimOfferedSeats` in the same cycle, which reads `notified` and
+         nothing else. So the method Dan asked for on 2026-08-31 - "MAKE HORSES
+         ANSWER A SEAT CALL... THEY SHOULD NEVER BE SKIPPED" - could never find
+         a row to answer. Structurally dead, and dead in the direction the law
+         forbids: a human's offer stands and a horse's did not (10.5).
+
+         Only `waiting` is pruned now. The queue still holds no horses (Dan
+         2026-09-02: horses do not queue, waitTarget is 0 everywhere), and an
+         offer the platform has already made is honoured. An offer nobody
+         answers still expires on `fn_offer_open_seat`'s own sweep. */
+      const page = await fetchAllRows<{ id: string; user_id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('table_waitlist')
+            .select('id, user_id, status')
+            .eq('status', 'waiting')
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'HorseFleet.pruneWaitlist', maxRows: 50_000 }
+      );
+      const excess = page.rows
         .filter((r) => horseIdSet.has(r.user_id as string))
         .map((r) => r.id as string);
       if (excess.length === 0) return;
@@ -990,20 +1043,44 @@ export class HorseFleetManager {
       {
         // A SWAP IS NOT A RESERVATION (2026-09-05): two linked seat-change
         // moves exchange two occupied chairs and change no table's headcount.
-        const { data: pm, error: pmErr } = await supabase
-          .from('cash_seat_moves')
-          .select('to_table_id')
-          .eq('state', 'pending')
-          .is('swap_move_id', null);
-        if (pmErr) {
-          reportError(pmErr, 'HorseFleet.pending_moves_read_failed');
-        } else {
-          for (const row of (pm ?? []) as Array<{ to_table_id: string }>) {
-            pendingMovesByTable.set(
-              row.to_table_id,
-              (pendingMovesByTable.get(row.to_table_id) ?? 0) + 1
-            );
-          }
+        //
+        // PAGED (2026-09-06). This was a bare `.select()` with no order and no
+        // limit, in the one file whose doctrine is "page everything" and which
+        // documents the silent PostgREST db-max-rows truncation three times
+        // over. A truncated read here UNDERCOUNTS reservations, and an
+        // undercounted reservation is the fleet filling the very seat the
+        // controller planned a feeder player into - which is the bug this read
+        // was added to fix. Keyset on id, exactly like the seat and table
+        // reads above.
+        const pmPage = await fetchAllRows<{ id: string; to_table_id: string }>(
+          (cursor, want) => {
+            let q = supabase
+              .from('cash_seat_moves')
+              .select('id, to_table_id')
+              .eq('state', 'pending')
+              .is('swap_move_id', null)
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) q = q.gt('id', cursor);
+            return q;
+          },
+          { label: 'HorseFleet.pendingMoves', maxRows: 50_000 }
+        );
+        if (!pmPage.complete) {
+          // Fail LOUD but open: a reservation we cannot see costs a wasted
+          // buy-in attempt (the executor reports `destination_full`), whereas
+          // treating an unreadable page as "every seat is reserved" would stop
+          // the floor filling at all.
+          console.warn(
+            '[HorseFleet] pending seat-move read incomplete - seating this cycle without ' +
+              'the full reservation map; a planned arrival may find its seat taken.'
+          );
+        }
+        for (const row of pmPage.rows) {
+          pendingMovesByTable.set(
+            row.to_table_id,
+            (pendingMovesByTable.get(row.to_table_id) ?? 0) + 1
+          );
         }
       }
 
@@ -1326,6 +1403,8 @@ export class HorseFleetManager {
          every cycle before today did. The database is still the guard; the
          cost is wasted buy-in attempts, and the beat says it happened. */
       let bookingLoad: ReadonlyMap<string, number> = new Map<string, number>();
+      /** Open TOURNAMENT tables, so a cash-only rule can exclude their seats. */
+      const tournamentTableIds = new Set<string>();
       try {
         const bookingPage = await fetchAllRows<{
           id: string;
@@ -1374,6 +1453,13 @@ export class HorseFleetManager {
           for (const row of tournamentTablePage.rows) {
             if (row.tournament_id) tournamentByTableId.set(row.id, row.tournament_id);
           }
+          /* Hoisted out of this block (2026-09-06) so the candidate filter can
+             tell a CASH seat from a tournament one. The horse's own tag
+             ceiling is a cash rule and must not count tournament chairs; see
+             HorseGameLoad.remainingGameCapacity. Empty when this read failed,
+             which makes `cashSeats` fall back to every seat - the stricter
+             answer, and the honest one when we cannot tell them apart. */
+          for (const id of tournamentByTableId.keys()) tournamentTableIds.add(id);
           /* THE WINDOW (2026-09-06). The start time rides along so that
              `buildBookingLoad` can apply the same sixty-minute window
              `fn_concurrent_game_load` applies: a booking for an event more
@@ -1412,6 +1498,18 @@ export class HorseFleetManager {
          the switch is temporary); only the band it may SIT in moves, and only
          downward. See effectiveStakeBandFor. */
       const bandsWithAGame = new Set<HorseStakeBand>();
+      /* A DRAINING TABLE IS NOT SUPPLY (2026-09-06). The scan below excludes
+         breaking, closed and disabled-game tables but not the two the fleet
+         also refuses: `retire_when_empty` and the night park (they build
+         `surplusTableIds` further down, and the seeding loop skips both). A
+         band whose only tables are draining therefore read as supplied, and
+         `projectStakeBandOnto` refuses to step a horse DOWN out of a band it
+         cannot actually sit in - stranding exactly the horses the projection
+         exists to rescue. The same two predicates, asked here. Both sets are
+         empty on the cash floor today (every open cash table is a cluster
+         table), so this changes nothing now and cannot rot later. */
+      const drainingHere = (t: { cluster_id?: string | null; settings?: unknown }): boolean =>
+        !t.cluster_id && (isRetiringTable(t) || isNightParkedTable(t));
       /* ...AND WHICH EXACT BIG BLINDS (2026-09-06). The tag names blinds, not
          a band, and `tagAllowsStake` is a hard gate on the exact number. A
          tag whose every stake names a game that is switched off - measured
@@ -1424,6 +1522,7 @@ export class HorseFleetManager {
       for (const t of tables) {
         if (t.lifecycle === 'breaking' || t.lifecycle === 'closed') continue;
         if (isTableOfDisabledGame(t, disabledGameIds)) continue;
+        if (drainingHere(t as { cluster_id?: string | null; settings?: unknown })) continue;
         bandsWithAGame.add(stakeBandForBigBlind(Number(t.big_blind)));
         stakesWithAGame.add(Number(t.big_blind).toFixed(2));
       }
@@ -1663,12 +1762,38 @@ export class HorseFleetManager {
         );
       }
 
+      /* ── THE SEAT MAP IS INDEXED ONCE (2026-09-06, measured) ──────────────
+         `allActiveSeats` is a flat array of every open seat on the platform -
+         about 2,000 rows - and three places used to scan the whole of it per
+         TABLE: `humanShort` below, and `tableOccupiedSeats` in the seeding
+         loop. `humanShort` is called from inside a comparator, so a sort of
+         ~1,100 tables ran it roughly 2 x 1,100 x log2(1,100) times - on the
+         order of 4 x 10^7 row visits to decide an ORDER, before a single seat
+         was filled.
+
+         That is the biggest single cost in a cycle that measures 19-118
+         seconds, and the cycle time is not a cosmetic number: it is why the
+         feeder abandon window had to be widened to six minutes ("three
+         minutes is shorter than one worst-case cycle plus a tick interval",
+         migration 20260906015029), which is in turn why an opening feeder can
+         sit empty for eight minutes. One pass to index, then every lookup is
+         O(1). */
+      const seatsByTable = new Map<string, typeof allActiveSeats>();
+      for (const s of allActiveSeats) {
+        const list = seatsByTable.get(s.table_id);
+        if (list) list.push(s);
+        else seatsByTable.set(s.table_id, [s]);
+      }
       // V8: tables with a short-handed HUMAN seed first (never leave a human
-      // stranded); everything else keeps its natural order.
-      const humanShort = (t: any): boolean => {
-        const seats = allActiveSeats.filter((x) => x.table_id === t.id);
-        return seats.some((x) => !horseIdSet.has(x.user_id)) && seats.length < 4;
-      };
+      // stranded); everything else keeps its natural order. Precomputed rather
+      // than recomputed inside the comparator - same predicate, same answer.
+      const humanShortIds = new Set<string>();
+      for (const [tableId, seats] of seatsByTable) {
+        if (seats.length < 4 && seats.some((x) => !horseIdSet.has(x.user_id))) {
+          humanShortIds.add(tableId);
+        }
+      }
+      const humanShort = (t: { id: string }): boolean => humanShortIds.has(t.id);
       /* A STABLE FLOOR, NOT A DIFFERENT RANDOM SUBSET EVERY CYCLE.
          Now that a full table is filled to max in ONE pass rather than one or
          two seats at a time, the fleet runs out of horses partway down this
@@ -2054,22 +2179,14 @@ export class HorseFleetManager {
       for (const table of tablesToSeed) {
         let diag: OpeningFeederDiag | null = null;
         try {
-          // A draining table gets no new horses. Without this the surplus can
-          // never empty, and so can never be retired.
-          if (surplusTableIds.has(table.id)) continue;
-          // A cluster table that is breaking (18.3: no new sit-ins) or closed
-          // gets none either; the controller is walking its players out.
-          if (table.lifecycle === 'breaking' || table.lifecycle === 'closed') continue;
-          /* A table of a DISABLED game gets none either (18.4: no seeding).
-             Before any seat arithmetic and before the pool is kept for
-             nextEligible, so the game reports 0 eligible - which is exactly
-             what lets fn_cash_cluster_tick mark it dormant and close its
-             empties instead of the fleet refilling them. Counted, and the
-             count reaches the cycle line. */
-          if (isTableOfDisabledGame(table, disabledGameIds)) {
-            disabledGameTables++;
-            continue;
-          }
+          /* THE DIAGNOSTIC IS OPENED FIRST (2026-09-06). It used to be created
+             AFTER the three `continue`s below, so an opening feeder skipped
+             for surplus, for `breaking`/`closed`, or for a disabled game
+             produced no `opening_feeders` entry and no console line at all -
+             the one diagnostic these sessions rely on went silent exactly when
+             a feeder was being skipped STRUCTURALLY, which is the case hardest
+             to guess from the outside. Opened here, and each skip names itself
+             in `withheld` on the way out. */
           if (table.cluster_id && table.lifecycle === 'opening') {
             diag = {
               table_id: table.id,
@@ -2085,9 +2202,34 @@ export class HorseFleetManager {
               withheld: null,
             };
           }
+          // A draining table gets no new horses. Without this the surplus can
+          // never empty, and so can never be retired.
+          if (surplusTableIds.has(table.id)) {
+            if (diag) diag.withheld = 'surplus_draining';
+            continue;
+          }
+          // A cluster table that is breaking (18.3: no new sit-ins) or closed
+          // gets none either; the controller is walking its players out.
+          if (table.lifecycle === 'breaking' || table.lifecycle === 'closed') {
+            if (diag) diag.withheld = `lifecycle_${table.lifecycle}`;
+            continue;
+          }
+          /* A table of a DISABLED game gets none either (18.4: no seeding).
+             Before any seat arithmetic and before the pool is kept for
+             nextEligible, so the game reports 0 eligible - which is exactly
+             what lets fn_cash_cluster_tick mark it dormant and close its
+             empties instead of the fleet refilling them. Counted, and the
+             count reaches the cycle line. */
+          if (isTableOfDisabledGame(table, disabledGameIds)) {
+            disabledGameTables++;
+            if (diag) diag.withheld = 'game_disabled';
+            continue;
+          }
 
           // Determine currently occupied seats for THIS table from our in-memory map
-          const tableOccupiedSeats = allActiveSeats.filter((s) => s.table_id === table.id);
+          // Indexed once at the top of the cycle - see seatsByTable. This was
+          // a full scan of every open seat on the platform, per table.
+          const tableOccupiedSeats = seatsByTable.get(table.id) ?? [];
           const occupiedNumbers = new Set(tableOccupiedSeats.map((s) => s.seat_number));
           /* A planned arrival holds its seat (see pendingMovesByTable). */
           const currentCount = occupiedNumbers.size + (pendingMovesByTable.get(table.id) ?? 0);
@@ -2496,10 +2638,23 @@ export class HorseFleetManager {
                they did, 10,577 times in under four hours, and every one of
                those was a buyer the controller had already opened a feeder
                for. See HorseGameLoad. */
+            let cashSeatsForHorse = 0;
+            if (tablesForHorse) {
+              for (const tid of tablesForHorse) {
+                if (!tournamentTableIds.has(tid)) cashSeatsForHorse++;
+              }
+            }
             const gameLoad = {
               seats: tablesForHorse?.size ?? 0,
               bookings: bookingLoad.get(h.id) ?? 0,
               ownCashCeiling: tagMaxTables(tag, MAX_TABLES_PER_HORSE),
+              /* The tag ceiling is a CASH rule (HorseGameLoad). `seats` above
+                 is every open seat on the platform, tournaments included, and
+                 subtracting those from a cash ceiling refused 837 tagged
+                 horses cash tables they were entitled to. When the tournament
+                 table read failed this set is empty, every seat counts as
+                 cash, and the ceiling is exactly as strict as it was before. */
+              cashSeats: cashSeatsForHorse,
             };
             /* THE HORSE'S REMAINING CAPACITY, for the buyer allocation after
                the loop. Recorded the FIRST time this cycle sees the horse, so
@@ -2622,11 +2777,28 @@ export class HorseFleetManager {
               tableId: table.id,
               clusterId: table.cluster_id,
               pool: pool.map((h) => h.id),
-              claim: openingFeeder ? 'reserved' : countOnly ? 'probe' : 'seating',
+              /* A PROBE IS A FULL TABLE (2026-09-06). `countOnly` is also set
+                 when the vibe target is already met, when the 1-2 trickle
+                 produced zero, and when the seat budget ran out - tables with
+                 real open seats. Calling those a probe made each one book two
+                 horses of the floor's shared capacity to answer a question the
+                 SQL cannot act on (the OPEN rule needs `v_open_unreserved = 0`,
+                 so a table with a free seat blocks the open by itself), and
+                 report two buyers, which keeps the game "due" on every 5-second
+                 pass. The claim now follows the SEATS, not the reason the fleet
+                 stopped: no open seat is a genuine probe, an open seat left
+                 unfilled this cycle asks for nothing. */
+              claim: openingFeeder
+                ? 'reserved'
+                : countOnly && emptySeats.length === 0
+                  ? 'probe'
+                  : 'seating',
               seatsWanted: openingFeeder
                 ? feederClaim
                 : countOnly
-                  ? FULL_TABLE_BUYER_PROBE
+                  ? emptySeats.length === 0
+                    ? FULL_TABLE_BUYER_PROBE
+                    : 0
                   : Math.max(0, Math.min(seatsNeeded, Number(table.max_players) - currentCount)),
             };
             if (diag) diag.reserved = feederClaim;
@@ -3264,12 +3436,22 @@ export class HorseFleetManager {
         reportError(err, 'HorseFleet.stableHandBookkeeping');
       }
 
-      // The same two directions for a HOST's own table, from the switches on
-      // the table creation page: Auto Restart reopens a closed one, Auto
-      // Create Table opens a sibling when it fills. The fleet's own spawn and
-      // retire above only know DEFAULT_TABLES; this knows every table that
-      // carries the flag, which is what makes a host's switch mean anything.
-      await this.runTableLifecyclePass();
+      /* THE LIFECYCLE PASS IS GONE (2026-09-06). OPORD 1.4 s18.2 lists it for
+         deletion beside `spawnOverflowTables` and `retireSurplusTables`; those
+         two went at Gate 7 and this one was left running every 30 seconds.
+
+         It had nothing to do and one way to do harm. Read from production
+         today: of 3,636 live cluster tables and 1,954 non-cluster cash tables,
+         ZERO carry `auto_restart` or `auto_create_table` - Gate 5's applier
+         forces both false on every cluster table each tick - so every pass was
+         an RPC that returned an empty set. And its AUTO CREATE arm calls
+         `fn_clone_table_row`, which copied `cluster_id`, `role`, `main_index`
+         and `lifecycle`: cloning a full Main 1 produced a SECOND Main 1 of the
+         same game, which is the shape that opened 3,000 tables on one game on
+         2026-09-05 (docs/HANDOFF-TABLE-STAKES-CURRENT-STATE.md s6). The cloner
+         is fixed in the same PR so no caller can do it; the pass is deleted
+         because the controller owns lifecycle and a second owner of it is the
+         defect, not the redundancy. */
     } catch (err: any) {
       reportError(err, 'HorseFleet.seedAllTables_error');
     } finally {
@@ -3450,35 +3632,14 @@ export class HorseFleetManager {
   // V8 DEMAND-BASED TABLE SPAWNING
   // ─────────────────────────────────────────────────────────────────────
 
-  /**
-   * AUTO RESTART and AUTO CREATE TABLE (Dan 2026-08-25, table-creation
-   * parity). Two more switches that had tooltips and no readers.
-   *
-   * The rules live in `fn_table_lifecycle_pass` rather than here for the same
-   * reason spawnOverflowTables below could not simply be widened: THAT method
-   * only knows the fleet's own DEFAULT_TABLES, matched by name prefix. A
-   * host's table is not in that list and never could be. The SQL pass asks the
-   * question of every table that carries the flag, which is the only way a
-   * host's own switch can mean anything.
-   *
-   * Idempotent, so it is safe on every cycle, and it reports what it did so
-   * this can log it rather than guess.
-   */
-  private async runTableLifecyclePass(): Promise<void> {
-    try {
-      const { data, error } = await supabase.rpc('fn_table_lifecycle_pass');
-      if (error) {
-        reportError(error, 'HorseFleet.tableLifecyclePass_failed');
-        return;
-      }
-      if (!Array.isArray(data) || data.length === 0) return;
-      for (const row of data as Array<{ action?: string; table_name?: string }>) {
-        console.log(`[HorseFleet] lifecycle: ${row.action} "${row.table_name}" (host switch)`);
-      }
-    } catch (err) {
-      reportError(err, 'HorseFleet.tableLifecyclePass_error');
-    }
-  }
+  /* runTableLifecyclePass is GONE (2026-09-06), and with it the AUTO RESTART /
+     AUTO CREATE TABLE pass it wrapped. See the note at its old call site in
+     seedAllTables: OPORD 1.4 s18.2 deletes it beside spawnOverflowTables and
+     retireSurplusTables, it acted on zero rows (nothing on the platform
+     carries either flag), and its AUTO CREATE arm cloned a Main 1 into a
+     second Main 1. The clone path itself is fixed in the same PR
+     (20260906160550) so no caller can repeat it. The fleet owns no table
+     lifecycle at all now; the ClusterController does. */
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -3692,6 +3853,16 @@ export class HorseFleetManager {
            Same set, same predicate as the seeding loop: a horse holding an
            offer for a switched-off game leaves the seat to its own sweep. */
         if (isTableOfDisabledGame(table, disabledGameIds)) continue;
+        /* NOR ONE THE CONTROLLER IS WALKING PLAYERS OUT OF (2026-09-06). The
+           seeding loop refuses `breaking` and `closed` before it does any seat
+           arithmetic (18.3: no new sit-ins on a breaking table); this path had
+           no lifecycle test at all, so an offer made a minute before a break
+           started would seat a horse INTO the table the controller is
+           emptying, and the must-move would have to carry it straight back
+           out. The prune used to hide this by clearing every horse row first;
+           now that a horse can genuinely answer an offer, the rule has to be
+           written down rather than depended on as an accident. */
+        if (table.lifecycle === 'breaking' || table.lifecycle === 'closed') continue;
 
         const expiresAt = offer.hold_expires_at
           ? Date.parse(offer.hold_expires_at)

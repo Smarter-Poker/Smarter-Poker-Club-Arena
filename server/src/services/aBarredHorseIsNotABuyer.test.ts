@@ -200,8 +200,12 @@ describe('a buyer is counted once', () => {
     // 2026-09-06: a SEATING table claims what it will seat this cycle
     // (seatsNeeded), never the whole table - see
     // theFeederFillsFromTheCountItOpenedOn.test.ts.
+    // 2026-09-06: a SEATING table claims seatsNeeded (what it will actually
+    // fill), and a countOnly table claims the probe only when it is FULL.
+    expect(SEED).toMatch(/seatsWanted: openingFeeder/);
+    expect(SEED).toMatch(/emptySeats\.length === 0\s*\?\s*FULL_TABLE_BUYER_PROBE\s*:\s*0/);
     expect(SEED).toMatch(
-      /seatsWanted: openingFeeder\s*\?\s*feederClaim\s*:\s*countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE\s*:\s*Math\.max\(0, Math\.min\(seatsNeeded, Number\(table\.max_players\) - currentCount\)\)/
+      /Math\.max\(0, Math\.min\(seatsNeeded, Number\(table\.max_players\) - currentCount\)\)/
     );
     expect(SEED).toContain('Math.max(0, FEEDER_BUYERS_TO_GO_LIVE - currentCount)');
   });

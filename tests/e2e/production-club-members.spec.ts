@@ -421,7 +421,12 @@ test.describe('Production Shark Club Players', () => {
       )
       .toBe(true);
 
-    for (const range of ['Overall', '7 Days', 'Custom']) {
+    // These are the four product modes promised by PlayerStatisticsPage:
+    // rolling 1/7/30-day windows plus an explicit custom span. The old canary
+    // waited for "Overall" and "7 Days", neither of which exists on this
+    // club-scoped page, and consumed the full test timeout after the page had
+    // loaded successfully. Exercise every real control instead.
+    for (const range of ['Day', 'Week', 'Month', 'Custom']) {
       const control = page.getByRole('button', { name: range, exact: true });
       await control.click();
       await expect(control).toHaveAttribute('aria-pressed', 'true');

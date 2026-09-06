@@ -37,7 +37,8 @@ describe('leaderboard phase two operational hardening', () => {
   it('invalidates account and club-specific state before loading a new context', () => {
     expect(page).toContain('setUserClubs([])');
     expect(page).toContain('setSelectedClubId(null)');
-    expect(page).toContain('setPayouts([])');
+    expect(page).toContain('setSettlementStatus(null)');
+    expect(page).toContain('setSettlementError(null)');
     expect(page).toContain('setUserRank(null)');
     expect(page).toContain('const requestId = ++settingsRequestRef.current');
   });
@@ -50,7 +51,7 @@ describe('leaderboard phase two operational hardening', () => {
     expect(page).toContain('Showing The Last Verified Board.');
   });
 
-  it('retires the unsafe payout path while keeping verified payout history visible', () => {
+  it('retires the unsafe browser payout path while keeping verified receipts visible', () => {
     expect(page).not.toContain('payoutLeaderboardPeriod');
     expect(service).not.toContain("supabase.rpc('fn_payout_leaderboard'");
     expect(page).toContain('const payout = payoutsByUser.get(entry.userId)');

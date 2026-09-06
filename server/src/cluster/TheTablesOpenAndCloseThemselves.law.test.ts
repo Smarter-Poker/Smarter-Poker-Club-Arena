@@ -429,7 +429,14 @@ describe('the fleet keeps its hands off cluster tables', () => {
     expect(FLEET).toMatch(
       /clusterPools\.push\(clusterPool\);\s*\} else \{\s*nextEligible\.set\(table\.id, pool\.length\);\s*\}\s*if \(countOnly\) continue;/
     );
-    expect(FLEET).toMatch(/seatsWanted: countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE/);
+    /* PIN MOVED 2026-09-06 (the feeder reserves the buyers it was opened for).
+       The full-table probe is unchanged and still asks for the open rule's
+       two; an OPENING feeder now declares a `reserved` claim ahead of it, so
+       the ternary has one more branch. The claim is derived from `lifecycle`
+       every cycle and stored nowhere, so it dies with the feeder. See
+       HorseBuyerAllocation.test.ts for the allocation itself. */
+    expect(FLEET).toMatch(/countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE/);
+    expect(FLEET).toMatch(/claim: openingFeeder \? 'reserved' : countOnly \? 'probe' : 'seating',/);
     expect(FLEET).toMatch(
       /for \(const \[tableId, n\] of allocateBuyers\(clusterPools, capacityByHorse\)\) \{\s*nextEligible\.set\(tableId, n\);\s*\}\s*this\.lastEligibleByTable = nextEligible;/
     );

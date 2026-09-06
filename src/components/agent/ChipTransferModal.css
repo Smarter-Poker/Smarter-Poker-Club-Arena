@@ -1,198 +1,334 @@
 /**
- *  CHIP TRANSFER MODAL — Styles
+ * Players Cashier Transfer
+ * A compact brass, carbon, and cyan cashier console. Every selector is rooted
+ * to the dialog so generic names such as .form-group never restyle another
+ * Club Arena surface after this lazy chunk has loaded.
  */
 
 .chip-transfer-overlay {
   position: fixed;
+  z-index: 1000;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background:
+    linear-gradient(rgba(0, 212, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.025) 1px, transparent 1px), rgba(1, 3, 5, 0.9);
+  background-size: 32px 32px;
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
 }
 
 .chip-transfer-modal {
-  background: linear-gradient(180deg, #1a1d21 0%, #0d0f12 100%);
-  border-radius: 1.5rem;
-  border: 1px solid rgba(255, 215, 0, 0.2);
-  width: 90%;
-  max-width: 480px;
-  max-height: 90vh;
+  --cashier-cyan: var(--info-cyan, #00d4ff);
+  --cashier-gold: var(--vip-gold, #ffc93c);
+  --cashier-red: var(--danger-red, #ff5a67);
+  --cashier-text: #f4f7fa;
+  --cashier-muted: #9ba8b5;
+  --cashier-border: #455463;
+
+  position: relative;
+  width: min(100%, 520px);
+  max-height: min(92dvh, 760px);
   overflow-y: auto;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 201, 60, 0.62);
+  border-radius: 4px;
+  color: var(--cashier-text);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.055), transparent 32%),
+    linear-gradient(180deg, #111820, #05080b 76%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    inset 4px 0 0 rgba(255, 201, 60, 0.2),
+    0 28px 80px rgba(0, 0, 0, 0.72);
+  scrollbar-color: #566575 #06090d;
+  overscroll-behavior: contain;
 }
 
-.chip-transfer-header {
+.chip-transfer-modal::after {
+  position: absolute;
+  top: 0;
+  right: 46px;
+  width: 88px;
+  height: 2px;
+  content: '';
+  background: linear-gradient(90deg, transparent, var(--cashier-cyan), transparent);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.8);
+}
+
+.chip-transfer-modal .chip-transfer-header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  justify-content: space-between;
+  min-height: 66px;
+  padding: 12px 14px 12px 20px;
+  border-bottom: 1px solid #34414e;
+  background: rgba(7, 11, 15, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
-.chip-transfer-header h2 {
+.chip-transfer-modal .chip-transfer-header h2 {
   margin: 0;
-  color: #fff;
-  font-size: 1.25rem;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted, #6b7280);
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0.25rem;
-  line-height: 1;
-  transition: color 0.2s;
-}
-
-.agent-balance {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 1.5rem;
-  background: rgba(255, 215, 0, 0.1);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.agent-balance span:first-child {
-  color: var(--text-muted, #9ca3af);
-  font-size: 0.875rem;
-}
-
-.balance-amount {
-  color: #ffd700;
-  font-size: 1.25rem;
+  color: var(--cashier-text);
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 1.35rem;
   font-weight: 700;
-  font-family: monospace;
+  letter-spacing: 0.035em;
 }
 
-.chip-transfer-form {
-  padding: 1.5rem;
+.chip-transfer-modal .close-btn {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--cashier-border);
+  border-radius: 3px;
+  color: var(--cashier-muted);
+  background: linear-gradient(180deg, #19232c, #080c10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  font:
+    700 1rem/1 'Roboto Condensed',
+    'Arial Narrow',
+    sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.chip-transfer-modal .agent-balance {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 20px;
+  border-bottom: 1px solid #2d3843;
+  background: linear-gradient(90deg, rgba(255, 201, 60, 0.11), transparent 72%);
+}
+
+.chip-transfer-modal .agent-balance span:first-child,
+.chip-transfer-modal .form-group label {
+  color: var(--cashier-muted);
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.chip-transfer-modal .balance-amount {
+  color: var(--cashier-gold);
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 1.18rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.chip-transfer-modal .chip-transfer-form {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 18px;
+  padding: 20px;
 }
 
-.form-group {
+.chip-transfer-modal .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 7px;
 }
 
-.form-group label {
-  color: var(--text-muted, #9ca3af);
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.player-select,
-.form-group input {
-  padding: 0.875rem 1rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.75rem;
-  color: #fff;
-  font-size: 1rem;
+.chip-transfer-modal .player-select,
+.chip-transfer-modal .form-group input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--cashier-border) !important;
+  border-radius: 3px !important;
+  color: var(--cashier-text) !important;
+  background: #070b0f !important;
+  font-size: 16px;
   transition:
-    border-color 0.2s,
-    background 0.2s;
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
-.player-select:focus,
-.form-group input:focus {
-  outline: none;
-  border-color: rgba(255, 215, 0, 0.5);
-  background: rgba(255, 255, 255, 0.08);
+.chip-transfer-modal .player-select option {
+  color: var(--cashier-text);
+  background: #0d1218;
 }
 
-.player-select option {
-  background: #1a1d21;
-  color: #fff;
+.chip-transfer-modal .loading-text {
+  min-height: 48px;
+  padding: 13px 12px;
+  border: 1px solid #2d3843;
+  color: var(--cashier-muted);
+  background: #070b0f;
+  font-size: 0.82rem;
 }
 
-.loading-text {
-  color: var(--text-muted, #6b7280);
-  padding: 0.875rem;
-  font-size: 0.875rem;
-}
-
-.amount-input-wrapper {
+.chip-transfer-modal .amount-input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-.currency-symbol {
+.chip-transfer-modal .currency-symbol {
   position: absolute;
-  left: 1rem;
-  color: #ffd700;
-  font-weight: 600;
-  font-size: 1rem;
+  z-index: 1;
+  left: 13px;
+  color: var(--cashier-gold);
+  font-size: 0.95rem;
+  font-weight: 700;
 }
 
-.amount-input-wrapper input {
-  padding-left: 2rem;
-  width: 100%;
+.chip-transfer-modal .amount-input-wrapper input {
+  padding-left: 35px;
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 1.08rem;
+  font-variant-numeric: tabular-nums;
 }
 
-.quick-amounts {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+.chip-transfer-modal .quick-amounts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
 
-.quick-amounts button {
-  flex: 1;
-  padding: 0.5rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.5rem;
-  color: var(--text-muted, #9ca3af);
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.message {
-  padding: 0.875rem 1rem;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.message.error {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #ef4444;
-}
-
-.message.success {
-  background: rgba(34, 197, 94, 0.2);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  color: #22c55e;
-}
-
-.transfer-btn {
-  padding: 1rem;
-  background: linear-gradient(135deg, #ffd700 0%, #daa520 100%);
-  border: none;
-  border-radius: 0.75rem;
-  color: #000;
-  font-size: 1rem;
+.chip-transfer-modal .quick-amounts button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 4px;
+  border: 1px solid #34414e;
+  border-radius: 3px;
+  color: var(--cashier-muted);
+  background: linear-gradient(180deg, #16212a, #080c10);
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  touch-action: manipulation;
 }
 
-.transfer-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.chip-transfer-modal .quick-amounts button:disabled,
+.chip-transfer-modal .transfer-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.chip-transfer-modal .transfer-preview {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(0, 212, 255, 0.38);
+  border-left: 3px solid var(--cashier-cyan);
+  background: #071117;
+}
+
+.chip-transfer-modal .preview-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--cashier-muted);
+  font-size: 0.78rem;
+}
+
+.chip-transfer-modal .preview-row span:last-child {
+  color: var(--cashier-text);
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.chip-transfer-modal .message {
+  padding: 11px 13px;
+  border: 1px solid #34414e;
+  border-radius: 2px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.chip-transfer-modal .message.error {
+  border-color: rgba(255, 90, 103, 0.48);
+  color: #ff9ca5;
+  background: rgba(255, 90, 103, 0.11);
+}
+
+.chip-transfer-modal .message.success {
+  border-color: rgba(0, 212, 255, 0.48);
+  color: #8bebff;
+  background: rgba(0, 212, 255, 0.1);
+}
+
+.chip-transfer-modal .transfer-btn {
+  min-height: 50px;
+  padding: 11px 16px;
+  border: 1px solid rgba(255, 201, 60, 0.74);
+  border-radius: 3px;
+  color: #211504;
+  background: linear-gradient(180deg, #ffdd7d, #bd7b0a);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 4px 0 #4a2d02;
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.chip-transfer-modal :is(button, input, select):focus-visible {
+  outline: 3px solid var(--cashier-cyan) !important;
+  outline-offset: 2px;
+}
+
+@media (max-width: 430px) {
+  .chip-transfer-overlay {
+    align-items: flex-end;
+    padding-inline: 8px;
+  }
+
+  .chip-transfer-modal {
+    width: 100%;
+    max-height: calc(100dvh - max(8px, env(safe-area-inset-top)));
+  }
+
+  .chip-transfer-modal .chip-transfer-form,
+  .chip-transfer-modal .agent-balance {
+    padding-inline: 14px;
+  }
+
+  .chip-transfer-modal .quick-amounts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .chip-transfer-modal .quick-amounts button:last-child {
+    grid-column: span 2;
+  }
+
+  .chip-transfer-modal .preview-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .chip-transfer-modal .preview-row span:last-child {
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip-transfer-modal,
+  .chip-transfer-modal * {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms !important;
+  }
 }

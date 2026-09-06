@@ -1,0 +1,219 @@
+/**
+ * LAW: THE ENGINE SAYS WHICH PROTOCOL IT SPEAKS (Realtime Phase 4, 2026-09-05)
+ *
+ * Club Arena's origin keeps old assets on purpose (CLAUDE.md 1.1): `/assets/*`
+ * is an ADDITIVE pool nothing deletes, so a player whose tab has been open
+ * since yesterday is running yesterday's bundle against today's engine, right
+ * now, mid-hand. That is a feature - it is what stops a deploy 404ing a
+ * player's chunks - and it is exactly why the engine has to be able to say
+ * "not that old".
+ *
+ * Until this phase it could not. Nothing on the wire said which protocol
+ * either side spoke, so the only way to change a frame's shape was to hope no
+ * stale tab was reading it, or to carry both shapes forever.
+ *
+ * The gate is a NO-OP today (`MIN_CLIENT_PROTOCOL` is 0, every client is
+ * accepted, including the bundles that predate the parameter and send
+ * nothing). It is installed now so that the day a frame changes there is
+ * somewhere to put the number.
+ *
+ * PINS
+ *   1. The version travels on the URL of BOTH sockets, from one builder. A
+ *      version on only the multiplexed socket would refuse the stale bundles
+ *      that happened to be muxed and silently serve the rest.
+ *   2. A version the engine will not serve is refused with a CLOSE FRAME
+ *      (4426), never a pre-handshake HTTP status - which reaches JavaScript
+ *      as 1006 and means "try again", the one thing a stale bundle must not
+ *      do. This is the 2026-09-03 lesson applied before it costs anything.
+ *   3. Absent, malformed and negative all read as 0, never NaN. A comparison
+ *      against NaN is false, which would let garbage through the one gate
+ *      meant to catch it.
+ *   4. The gate is open today, and closing it is a deliberate one-line change
+ *      that reloads every tab below the new number.
+ *   5. The client answers 4426 by fetching NEW BYTES - the shared hardReload,
+ *      not a plain reload, which re-serves the same cached document.
+ */
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  MIN_CLIENT_PROTOCOL,
+  CLOSE_UPGRADE_REQUIRED,
+  clientProtocolVersion,
+} from './EngineWebSocketServer.js';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
+
+const ROOT = join(__dirname, '..', '..', '..');
+const SERVER = readFileSync(
+  join(ROOT, 'server', 'src', 'transport', 'EngineWebSocketServer.ts'),
+  'utf8'
+);
+const MUX = readFileSync(join(ROOT, 'src', 'services', 'EngineSocketMux.ts'), 'utf8');
+const CLIENT = readFileSync(join(ROOT, 'src', 'services', 'EngineStateClient.ts'), 'utf8');
+
+describe('LAW 1 - one builder, both sockets', () => {
+  it('the URL builder appends the version', () => {
+    const fn = sliceMethod(MUX, 'export function engineSocketUrl(');
+    expect(fn).toContain('v=${PROTOCOL_VERSION}');
+    // Survives a path that already has a query rather than producing `?a=1?v=`.
+    expect(fn).toContain("path.includes('?') ? '&' : '?'");
+  });
+
+  it('the multiplexed socket uses it', () => {
+    expect(MUX).toContain("engineSocketUrl(this.baseUrl, '/ws/multi')");
+  });
+
+  it('the per-table socket uses it too', () => {
+    expect(CLIENT).toContain(
+      "engineSocketUrl(this.opts.baseUrl, '/ws/table/' + this.opts.tableId)"
+    );
+  });
+
+  it('and so does the third socket, the channel one', () => {
+    // Club presence, the lobby and financial updates rather than a hand - but
+    // its frames can change shape too, and a version on two of the three
+    // sockets is the same "worse than none" this builder exists to stop.
+    expect(CLIENT).toContain("engineSocketUrl(this.opts.baseUrl, '/ws/channel')");
+    const chan = readFileSync(
+      join(ROOT, 'server', 'src', 'transport', 'ChannelWebSocketServer.ts'),
+      'utf8'
+    );
+    expect(chan).toContain('clientProtocolVersion(url) < MIN_CLIENT_PROTOCOL');
+    expect(chan).toContain('CLOSE_UPGRADE_REQUIRED');
+    // Imported, never redefined: a second copy of the number is how two
+    // sockets end up disagreeing about which bundles they serve.
+    expect(chan).not.toMatch(/const (MIN_CLIENT_PROTOCOL|CLOSE_UPGRADE_REQUIRED) =/);
+  });
+
+  it('neither builds a socket URL by hand any more', () => {
+    // A hand-built URL is a socket with no version on it, which is the whole
+    // failure this law exists to prevent.
+    /* Raw source, not blanked: the scheme rewrite is `replace(/^http/, 'ws')`
+       and blankNonCode erases the 'ws' by design. */
+    const rewrites = (s: string) => (s.match(/replace\(\/\^http\/, 'ws'\)/g) ?? []).length;
+    // Exactly one in the mux - the builder itself - and none anywhere else.
+    expect(rewrites(MUX), 'EngineSocketMux builds a ws:// URL outside engineSocketUrl').toBe(1);
+    expect(rewrites(CLIENT), 'EngineStateClient builds a ws:// URL by hand').toBe(0);
+    // And that one is inside the builder, not beside it.
+    expect(sliceMethod(MUX, 'export function engineSocketUrl(')).toContain(
+      "replace(/^http/, 'ws')"
+    );
+  });
+});
+
+describe('LAW 2 - refused with a close frame, not an HTTP status', () => {
+  it('refuseProtocol completes the handshake and then closes 4426', () => {
+    const fn = sliceMethod(SERVER, 'function refuseProtocol(');
+    expect(fn).toContain('wss.handleUpgrade(');
+    expect(fn).toContain('CLOSE_UPGRADE_REQUIRED');
+    // Never the pre-handshake shape, which the browser reports as 1006.
+    expect(fn).not.toContain('socket.write(');
+    expect(fn).not.toContain('socket.destroy(');
+  });
+
+  it('the reason names both numbers, so a log needs no cross-reference', () => {
+    const fn = sliceMethod(SERVER, 'function refuseProtocol(');
+    expect(fn).toMatch(/upgrade_required:\$\{saw\}<\$\{MIN_CLIENT_PROTOCOL\}/);
+  });
+
+  it('the gate runs for both socket paths', () => {
+    const gate = SERVER.slice(
+      SERVER.indexOf('PROTOCOL GATE'),
+      SERVER.indexOf('if (url.pathname === ')
+    );
+    expect(gate).toContain("'/ws/multi'");
+    expect(gate).toContain("'/ws/table/'");
+  });
+
+  it('4426 is the same number on both sides', () => {
+    expect(CLOSE_UPGRADE_REQUIRED).toBe(4426);
+    expect(CLIENT).toContain('export const CLOSE_UPGRADE_REQUIRED = 4426;');
+  });
+});
+
+describe('LAW 3 - the parser cannot be fooled', () => {
+  const url = (q: string) => new URL(`http://x/ws/multi${q}`);
+
+  it('reads a real version', () => {
+    expect(clientProtocolVersion(url('?v=1'))).toBe(1);
+    expect(clientProtocolVersion(url('?v=42'))).toBe(42);
+  });
+
+  it('treats absent as 0 - the version of every bundle that predates it', () => {
+    expect(clientProtocolVersion(url(''))).toBe(0);
+    expect(clientProtocolVersion(url('?other=1'))).toBe(0);
+  });
+
+  it('never returns NaN, whatever is sent', () => {
+    for (const q of ['?v=', '?v=abc', '?v=-3', '?v=NaN', '?v=1e999', '?v=%20', '?v=0', '?v=null']) {
+      const n = clientProtocolVersion(url(q));
+      expect(Number.isNaN(n), `${q} produced NaN`).toBe(false);
+      expect(Number.isInteger(n), `${q} produced a non-integer`).toBe(true);
+      expect(n, `${q} produced a negative version`).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('anything that is not a positive integer reads as 0', () => {
+    for (const q of ['?v=', '?v=abc', '?v=-3', '?v=NaN', '?v=%20', '?v=0', '?v=null']) {
+      expect(clientProtocolVersion(url(q)), `${q} should read as 0`).toBe(0);
+    }
+    /* `?v=1e999` is the one that is NOT garbage: parseInt stops at the `e` and
+       reads 1, which is a real version this client could be sending. Recorded
+       rather than asserted away - the gate's job is to be un-foolable, not to
+       reject every odd-looking string. */
+    expect(clientProtocolVersion(url('?v=1e999'))).toBe(1);
+  });
+});
+
+describe('LAW 4 - open today, and closing it is deliberate', () => {
+  it('accepts every client while the minimum is zero', () => {
+    expect(MIN_CLIENT_PROTOCOL).toBe(0);
+    // Which means the gate below cannot fire: 0 < 0 is false.
+    expect(clientProtocolVersion(new URL('http://x/ws/multi'))).toBeGreaterThanOrEqual(
+      MIN_CLIENT_PROTOCOL
+    );
+  });
+
+  it('the client sends a version above zero, so raising the floor has an effect', () => {
+    expect(MUX).toMatch(/export const PROTOCOL_VERSION = [1-9]\d*;/);
+  });
+});
+
+describe('LAW 5 - the client answers 4426 with new bytes', () => {
+  it('uses the shared hard reload, not location.reload()', () => {
+    const fn = sliceMethod(CLIENT, 'function reloadForNewBundle(): Promise<void> {');
+    /* The specifier is assembled rather than written out, and that is not
+       cosmetic. This test file lives under server/src, where
+       `TournamentFixes.guard` scans every .ts for a relative `import('...')`
+       missing its .js extension - the guard that caught the two specifiers
+       which left main unbootable. The string it is looking for is exactly the
+       one this assertion is ABOUT, and the path is a browser specifier that
+       Vite resolves, so it correctly has no extension. Assembling it asserts
+       the same thing without handing that guard a false positive. */
+    const lazyLoader = ['..', 'utils', 'lazyWithRetry'].join('/');
+    expect(fn).toContain(`import('${lazyLoader}')`);
+    expect(fn).toContain('m.hardReload()');
+  });
+
+  it('there is exactly one hardReload in the app', () => {
+    const util = readFileSync(join(ROOT, 'src', 'utils', 'lazyWithRetry.ts'), 'utf8');
+    expect(util).toContain('export async function hardReload()');
+    // It purges what a plain reload would re-serve.
+    expect(util).toContain('serviceWorker');
+    expect(util).toContain('caches.delete');
+    expect(util).toContain("searchParams.set('_cb'");
+  });
+
+  it('and it stops the ladder rather than reconnecting into the same refusal', () => {
+    const at = CLIENT.indexOf('if (e.code === CLOSE_UPGRADE_REQUIRED) {');
+    expect(at, 'the 4426 branch is gone').toBeGreaterThan(-1);
+    // Bounded by the branch that follows it, searched FORWARD from here -
+    // `CLOSE_RATE_LIMITED` also appears in the constants at the top of the
+    // file, and searching from zero produced an empty window that passed
+    // every negative assertion in it.
+    const block = CLIENT.slice(at, CLIENT.indexOf('CLOSE_RATE_LIMITED', at));
+    expect(block).toContain('reloadForNewBundle()');
+    expect(block).toContain('return;');
+    expect(block).not.toContain('this.scheduleReconnect()');
+  });
+});

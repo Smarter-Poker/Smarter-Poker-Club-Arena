@@ -26,9 +26,11 @@ const buildChain = (): any => {
   return new Proxy({}, handler);
 };
 
+const fromMock = vi.hoisted(() => vi.fn());
+
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    from: () => buildChain(),
+    from: fromMock,
   },
 }));
 
@@ -41,6 +43,7 @@ vi.mock('../../src/core/MasterBus', () => ({
 
 vi.mock('../../src/utils/clubIdResolver', () => ({
   resolveClubUUID: (id: string) => Promise.resolve(id),
+  isUUID: (id: string) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id),
 }));
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
@@ -50,6 +53,7 @@ import { UnionService } from '../../src/services/UnionService';
 describe('UnionService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fromMock.mockImplementation(() => buildChain());
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -127,6 +131,55 @@ describe('UnionService', () => {
     it('should return null for non-existent union', async () => {
       const union = await UnionService.getUnion('non-existent');
       expect(union).toBeNull();
+    });
+  });
+
+  describe('owned union cashier discovery', () => {
+    it('reads canonical unions by owner and maps their route and artwork fields', async () => {
+      const eq = vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            slug: 'fresh-union',
+            name: 'Fresh Union',
+            owner_id: '22222222-2222-4222-8222-222222222222',
+            avatar_url: 'https://cdn.example.test/fresh.webp',
+            member_count: 12,
+            created_at: '2026-09-06T00:00:00Z',
+            updated_at: '2026-09-06T00:00:00Z',
+          },
+        ],
+        error: null,
+      });
+      const select = vi.fn(() => ({ eq }));
+      fromMock.mockReturnValue({ select });
+
+      const unions = await UnionService.getOwnedUnions('22222222-2222-4222-8222-222222222222');
+
+      expect(fromMock).toHaveBeenCalledWith('unions');
+      expect(select).toHaveBeenCalledWith(
+        'id, slug, name, owner_id, avatar_url, member_count, created_at, updated_at'
+      );
+      expect(eq).toHaveBeenCalledWith('owner_id', '22222222-2222-4222-8222-222222222222');
+      expect(unions).toMatchObject([
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          slug: 'fresh-union',
+          name: 'Fresh Union',
+          ownerId: '22222222-2222-4222-8222-222222222222',
+          avatarUrl: 'https://cdn.example.test/fresh.webp',
+          memberCount: 12,
+        },
+      ]);
+    });
+
+    it('does not silently convert a failed ownership read into no unions', async () => {
+      const failure = new Error('union read refused');
+      fromMock.mockReturnValue({
+        select: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ data: null, error: failure }) })),
+      });
+
+      await expect(UnionService.getOwnedUnions('owner')).rejects.toBe(failure);
     });
   });
 

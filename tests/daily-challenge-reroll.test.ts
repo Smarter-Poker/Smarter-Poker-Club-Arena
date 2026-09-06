@@ -208,6 +208,7 @@ describe('daily challenge batch claims', () => {
               assigned_date: '2026-08-31',
               progress: 1,
               completed: true,
+              completed_at: '2026-08-31T12:00:00.000Z',
               claimed: false,
               name: 'Straight Away',
               description: 'Win A Hand With A Straight Or Better Today',

@@ -48,6 +48,44 @@ GRANT EXECUTE ON FUNCTION public.fn_lock_daily_mission_user(uuid)
 COMMENT ON FUNCTION public.fn_lock_daily_mission_user(uuid) IS
 'Private transaction-scoped Daily Missions player mutex. It locks profiles before assignment, streak, wallet, and revision rows so every path uses one deadlock-safe order.';
 
+-- Legacy clients were once allowed to choose any regex-shaped period key, so
+-- old rows are not safe to cast directly. Keep malformed and future dates out
+-- of streak calculations without allowing one bad historical row to abort this
+-- migration or suppress a valid current run.
+CREATE FUNCTION public.fn_parse_daily_mission_date(p_value text)
+RETURNS date
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_date date;
+BEGIN
+  IF p_value IS NULL OR p_value !~ '^\d{4}-\d{2}-\d{2}$' THEN
+    RETURN NULL;
+  END IF;
+
+  BEGIN
+    v_date := p_value::date;
+  EXCEPTION
+    WHEN datetime_field_overflow OR invalid_datetime_format THEN
+      RETURN NULL;
+  END;
+
+  IF to_char(v_date, 'YYYY-MM-DD') IS DISTINCT FROM p_value THEN
+    RETURN NULL;
+  END IF;
+
+  RETURN v_date;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_parse_daily_mission_date(text)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+COMMENT ON FUNCTION public.fn_parse_daily_mission_date(text) IS
+'Private canonical YYYY-MM-DD parser for legacy Daily Missions rows. It returns NULL instead of throwing on malformed historical values.';
+
 -- Preserve the already-certified assignment implementation behind a private
 -- body. The public internal name becomes the mandatory serialized entrypoint.
 ALTER FUNCTION public.fn_assign_current_challenge_period(uuid, text, text, integer)
@@ -84,6 +122,17 @@ REVOKE ALL ON FUNCTION public.fn_assign_current_challenge_period(uuid, text, tex
 GRANT EXECUTE ON FUNCTION public.fn_assign_current_challenge_period(uuid, text, text, integer)
   TO service_role;
 
+-- New hand projections carry individual threshold candidates. Scalar amounts
+-- and magnitudes stay intact for deployed callers and old outbox rows. Add the
+-- receipt columns before compiling wrappers that validate those fields.
+ALTER TABLE public.daily_challenge_progress_events
+  ADD COLUMN IF NOT EXISTS threshold_values jsonb NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(threshold_values) = 'object');
+
+ALTER TABLE public.daily_challenge_event_outbox
+  ADD COLUMN IF NOT EXISTS threshold_values jsonb NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(threshold_values) = 'object');
+
 -- The event receipt used to be inserted before any common player lock. Keep
 -- its validated implementation, but serialize before that first write.
 ALTER FUNCTION public.record_daily_challenge_event(uuid, text, jsonb, jsonb, timestamptz)
@@ -113,8 +162,30 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
 AS $function$
+DECLARE
+  v_event public.daily_challenge_progress_events%ROWTYPE;
+  v_event_found boolean;
 BEGIN
   PERFORM public.fn_lock_daily_mission_user(p_user_id);
+
+  SELECT * INTO v_event
+  FROM public.daily_challenge_progress_events
+  WHERE user_id = p_user_id
+    AND event_key = p_event_key
+  FOR UPDATE;
+  v_event_found := FOUND;
+
+  IF v_event_found
+     AND (
+       v_event.amounts IS DISTINCT FROM p_amounts
+       OR v_event.magnitudes IS DISTINCT FROM p_magnitudes
+       OR v_event.threshold_values IS DISTINCT FROM '{}'::jsonb
+       OR v_event.occurred_at IS DISTINCT FROM p_occurred_at
+     )
+  THEN
+    RAISE EXCEPTION 'Daily Missions event key is already bound to another payload';
+  END IF;
+
   RETURN QUERY
   SELECT *
   FROM public.record_daily_challenge_event_serialized_body(
@@ -133,16 +204,6 @@ REVOKE ALL ON FUNCTION public.record_daily_challenge_event(
 GRANT EXECUTE ON FUNCTION public.record_daily_challenge_event(
   uuid, text, jsonb, jsonb, timestamptz
 ) TO service_role;
-
--- New hand projections carry individual threshold candidates. Scalar amounts
--- and magnitudes stay intact for deployed callers and old outbox rows.
-ALTER TABLE public.daily_challenge_progress_events
-  ADD COLUMN IF NOT EXISTS threshold_values jsonb NOT NULL DEFAULT '{}'::jsonb
-    CHECK (jsonb_typeof(threshold_values) = 'object');
-
-ALTER TABLE public.daily_challenge_event_outbox
-  ADD COLUMN IF NOT EXISTS threshold_values jsonb NOT NULL DEFAULT '{}'::jsonb
-    CHECK (jsonb_typeof(threshold_values) = 'object');
 
 CREATE FUNCTION public.record_daily_challenge_event(
   p_user_id uuid,
@@ -167,6 +228,7 @@ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   v_inserted integer;
+  v_event public.daily_challenge_progress_events%ROWTYPE;
   v_daily_key text;
   v_weekly_key text;
   v_monthly_key text;
@@ -290,6 +352,20 @@ BEGIN
   ON CONFLICT (user_id, event_key) DO NOTHING;
   GET DIAGNOSTICS v_inserted = ROW_COUNT;
   IF v_inserted = 0 THEN
+    SELECT * INTO STRICT v_event
+    FROM public.daily_challenge_progress_events
+    WHERE user_id = p_user_id
+      AND event_key = p_event_key
+    FOR UPDATE;
+
+    IF v_event.amounts IS DISTINCT FROM p_amounts
+       OR v_event.magnitudes IS DISTINCT FROM p_magnitudes
+       OR v_event.threshold_values IS DISTINCT FROM p_values
+       OR v_event.occurred_at IS DISTINCT FROM p_occurred_at
+    THEN
+      RAISE EXCEPTION 'Daily Missions event key is already bound to another payload';
+    END IF;
+
     RETURN;
   END IF;
 
@@ -381,6 +457,106 @@ GRANT EXECUTE ON FUNCTION public.record_daily_challenge_event(
   uuid, text, jsonb, jsonb, jsonb, timestamptz
 ) TO service_role;
 
+-- An event key is an immutable idempotency key, including while its first
+-- attempt is waiting in the outbox. Always replay the stored payload and reject
+-- a caller that tries to bind the same key to different facts.
+CREATE OR REPLACE FUNCTION public.enqueue_daily_challenge_event(
+  p_user_id uuid,
+  p_event_key text,
+  p_amounts jsonb,
+  p_magnitudes jsonb,
+  p_occurred_at timestamptz
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_event public.daily_challenge_event_outbox%ROWTYPE;
+  v_receipt public.daily_challenge_progress_events%ROWTYPE;
+  v_receipt_found boolean;
+BEGIN
+  PERFORM public.fn_lock_daily_mission_user(p_user_id);
+
+  INSERT INTO public.daily_challenge_event_outbox (
+    user_id,
+    event_key,
+    amounts,
+    magnitudes,
+    occurred_at
+  ) VALUES (
+    p_user_id,
+    p_event_key,
+    p_amounts,
+    p_magnitudes,
+    p_occurred_at
+  )
+  ON CONFLICT (user_id, event_key) DO NOTHING;
+
+  SELECT * INTO STRICT v_event
+  FROM public.daily_challenge_event_outbox
+  WHERE user_id = p_user_id
+    AND event_key = p_event_key
+  FOR UPDATE;
+
+  IF v_event.amounts IS DISTINCT FROM p_amounts
+     OR v_event.magnitudes IS DISTINCT FROM p_magnitudes
+     OR v_event.threshold_values IS DISTINCT FROM '{}'::jsonb
+     OR v_event.occurred_at IS DISTINCT FROM p_occurred_at
+  THEN
+    RAISE EXCEPTION 'Daily Missions event key is already bound to another payload';
+  END IF;
+
+  SELECT * INTO v_receipt
+  FROM public.daily_challenge_progress_events
+  WHERE user_id = p_user_id
+    AND event_key = p_event_key
+  FOR UPDATE;
+  v_receipt_found := FOUND;
+
+  IF v_receipt_found
+     AND (
+       v_receipt.amounts IS DISTINCT FROM v_event.amounts
+       OR v_receipt.magnitudes IS DISTINCT FROM v_event.magnitudes
+       OR v_receipt.threshold_values IS DISTINCT FROM '{}'::jsonb
+       OR v_receipt.occurred_at IS DISTINCT FROM v_event.occurred_at
+     )
+  THEN
+    RAISE EXCEPTION 'Daily Missions event key is already bound to another payload';
+  END IF;
+
+  BEGIN
+    PERFORM public.record_daily_challenge_event(
+      v_event.user_id,
+      v_event.event_key,
+      v_event.amounts,
+      v_event.magnitudes,
+      v_event.occurred_at
+    );
+    DELETE FROM public.daily_challenge_event_outbox
+    WHERE user_id = v_event.user_id
+      AND event_key = v_event.event_key;
+    RETURN true;
+  EXCEPTION WHEN OTHERS THEN
+    UPDATE public.daily_challenge_event_outbox
+    SET attempts = attempts + 1,
+        last_error = left(SQLERRM, 1000),
+        next_attempt_at = now() + interval '1 minute'
+    WHERE user_id = v_event.user_id
+      AND event_key = v_event.event_key;
+    RETURN false;
+  END;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.enqueue_daily_challenge_event(
+  uuid, text, jsonb, jsonb, timestamptz
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.enqueue_daily_challenge_event(
+  uuid, text, jsonb, jsonb, timestamptz
+) TO service_role;
+
 CREATE FUNCTION public.enqueue_daily_challenge_event(
   p_user_id uuid,
   p_event_key text,
@@ -394,7 +570,13 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
 AS $function$
+DECLARE
+  v_event public.daily_challenge_event_outbox%ROWTYPE;
+  v_receipt public.daily_challenge_progress_events%ROWTYPE;
+  v_receipt_found boolean;
 BEGIN
+  PERFORM public.fn_lock_daily_mission_user(p_user_id);
+
   INSERT INTO public.daily_challenge_event_outbox (
     user_id,
     event_key,
@@ -412,26 +594,58 @@ BEGIN
   )
   ON CONFLICT (user_id, event_key) DO NOTHING;
 
+  SELECT * INTO STRICT v_event
+  FROM public.daily_challenge_event_outbox
+  WHERE user_id = p_user_id
+    AND event_key = p_event_key
+  FOR UPDATE;
+
+  IF v_event.amounts IS DISTINCT FROM p_amounts
+     OR v_event.magnitudes IS DISTINCT FROM p_magnitudes
+     OR v_event.threshold_values IS DISTINCT FROM p_values
+     OR v_event.occurred_at IS DISTINCT FROM p_occurred_at
+  THEN
+    RAISE EXCEPTION 'Daily Missions event key is already bound to another payload';
+  END IF;
+
+  SELECT * INTO v_receipt
+  FROM public.daily_challenge_progress_events
+  WHERE user_id = p_user_id
+    AND event_key = p_event_key
+  FOR UPDATE;
+  v_receipt_found := FOUND;
+
+  IF v_receipt_found
+     AND (
+       v_receipt.amounts IS DISTINCT FROM v_event.amounts
+       OR v_receipt.magnitudes IS DISTINCT FROM v_event.magnitudes
+       OR v_receipt.threshold_values IS DISTINCT FROM v_event.threshold_values
+       OR v_receipt.occurred_at IS DISTINCT FROM v_event.occurred_at
+     )
+  THEN
+    RAISE EXCEPTION 'Daily Missions event key is already bound to another payload';
+  END IF;
+
   BEGIN
     PERFORM public.record_daily_challenge_event(
-      p_user_id,
-      p_event_key,
-      p_amounts,
-      p_magnitudes,
-      p_values,
-      p_occurred_at
+      v_event.user_id,
+      v_event.event_key,
+      v_event.amounts,
+      v_event.magnitudes,
+      v_event.threshold_values,
+      v_event.occurred_at
     );
     DELETE FROM public.daily_challenge_event_outbox
-    WHERE user_id = p_user_id
-      AND event_key = p_event_key;
+    WHERE user_id = v_event.user_id
+      AND event_key = v_event.event_key;
     RETURN true;
   EXCEPTION WHEN OTHERS THEN
     UPDATE public.daily_challenge_event_outbox
     SET attempts = attempts + 1,
         last_error = left(SQLERRM, 1000),
         next_attempt_at = now() + interval '1 minute'
-    WHERE user_id = p_user_id
-      AND event_key = p_event_key;
+    WHERE user_id = v_event.user_id
+      AND event_key = v_event.event_key;
     RETURN false;
   END;
 END;
@@ -458,7 +672,9 @@ BEGIN
   END IF;
 
   FOR event IN
-    SELECT value FROM jsonb_array_elements(NEW.daily_mission_events)
+    SELECT value
+    FROM jsonb_array_elements(NEW.daily_mission_events)
+    ORDER BY value ->> 'user_id', value::text
   LOOP
     BEGIN
       PERFORM public.enqueue_daily_challenge_event(
@@ -481,7 +697,195 @@ END;
 $function$;
 
 REVOKE ALL ON FUNCTION public.fn_enqueue_hand_daily_missions()
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- A friendship touches two players in one transaction. Lock the lower UUID
+-- first so reciprocal rows cannot take the same two profile locks in reverse.
+CREATE OR REPLACE FUNCTION public.fn_daily_missions_friend_accepted()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+  IF NEW.status = 'accepted'
+     AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'accepted') THEN
+    IF NEW.user_id = NEW.friend_id THEN
+      PERFORM public.fn_lock_daily_mission_user(NEW.user_id);
+    ELSIF NEW.user_id < NEW.friend_id THEN
+      PERFORM public.fn_lock_daily_mission_user(NEW.user_id);
+      PERFORM public.fn_lock_daily_mission_user(NEW.friend_id);
+    ELSE
+      PERFORM public.fn_lock_daily_mission_user(NEW.friend_id);
+      PERFORM public.fn_lock_daily_mission_user(NEW.user_id);
+    END IF;
+
+    BEGIN
+      PERFORM public.enqueue_daily_challenge_event(
+        NEW.user_id,
+        'friendship:' || NEW.id::text,
+        '{"friends_added":1}'::jsonb,
+        '{}'::jsonb,
+        now()
+      );
+      PERFORM public.enqueue_daily_challenge_event(
+        NEW.friend_id,
+        'friendship:' || NEW.id::text,
+        '{"friends_added":1}'::jsonb,
+        '{}'::jsonb,
+        now()
+      );
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'Daily Missions friendship event % could not be queued: %',
+        NEW.id,
+        SQLERRM;
+    END;
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_daily_missions_friend_accepted()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- Tournament starts commonly update an entire field from registered to
+-- playing in one statement. The old FOR EACH ROW trigger acquired player
+-- mutexes in executor row order, which is not deterministic across concurrent
+-- fields. Transition tables let us reserve every affected player mutex in UUID
+-- order before any profile/outbox mutation, while keeping projection failures
+-- isolated from the tournament state transition.
+CREATE OR REPLACE FUNCTION public.fn_daily_missions_tournament_registered_inserted()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_event record;
+  v_occurred_at timestamptz := transaction_timestamp();
+  v_user_id uuid;
+BEGIN
+  FOR v_user_id IN
+    SELECT DISTINCT inserted.user_id
+    FROM inserted_rows inserted
+    WHERE inserted.status::text IN ('playing', 'eliminated', 'finished', 'winner')
+    ORDER BY inserted.user_id
+  LOOP
+    PERFORM pg_advisory_xact_lock(
+      hashtextextended('daily-missions-user:' || v_user_id::text, 0)
+    );
+  END LOOP;
+
+  FOR v_event IN
+    SELECT inserted.id, inserted.user_id, inserted.tournament_id
+    FROM inserted_rows inserted
+    WHERE inserted.status::text IN ('playing', 'eliminated', 'finished', 'winner')
+    ORDER BY inserted.user_id, inserted.tournament_id, inserted.id
+  LOOP
+    BEGIN
+      PERFORM public.enqueue_daily_challenge_event(
+        v_event.user_id,
+        'tournament:' || v_event.tournament_id::text,
+        '{"tournaments_played":1}'::jsonb,
+        '{}'::jsonb,
+        v_occurred_at
+      );
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'Daily Missions tournament event % for player % could not be queued: %',
+        v_event.tournament_id,
+        v_event.user_id,
+        SQLERRM;
+    END;
+  END LOOP;
+
+  RETURN NULL;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_daily_missions_tournament_registered_updated()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_event record;
+  v_occurred_at timestamptz := transaction_timestamp();
+  v_user_id uuid;
+BEGIN
+  FOR v_user_id IN
+    SELECT DISTINCT updated.user_id
+    FROM updated_rows updated
+    JOIN previous_rows previous ON previous.id = updated.id
+    WHERE updated.status::text IN ('playing', 'eliminated', 'finished', 'winner')
+      AND (
+        previous.status IS NULL
+        OR previous.status::text NOT IN ('playing', 'eliminated', 'finished', 'winner')
+      )
+    ORDER BY updated.user_id
+  LOOP
+    PERFORM pg_advisory_xact_lock(
+      hashtextextended('daily-missions-user:' || v_user_id::text, 0)
+    );
+  END LOOP;
+
+  FOR v_event IN
+    SELECT updated.id, updated.user_id, updated.tournament_id
+    FROM updated_rows updated
+    JOIN previous_rows previous ON previous.id = updated.id
+    WHERE updated.status::text IN ('playing', 'eliminated', 'finished', 'winner')
+      AND (
+        previous.status IS NULL
+        OR previous.status::text NOT IN ('playing', 'eliminated', 'finished', 'winner')
+      )
+    ORDER BY updated.user_id, updated.tournament_id, updated.id
+  LOOP
+    BEGIN
+      PERFORM public.enqueue_daily_challenge_event(
+        v_event.user_id,
+        'tournament:' || v_event.tournament_id::text,
+        '{"tournaments_played":1}'::jsonb,
+        '{}'::jsonb,
+        v_occurred_at
+      );
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'Daily Missions tournament event % for player % could not be queued: %',
+        v_event.tournament_id,
+        v_event.user_id,
+        SQLERRM;
+    END;
+  END LOOP;
+
+  RETURN NULL;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_daily_missions_tournament_registered_inserted()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_daily_missions_tournament_registered_updated()
+  FROM PUBLIC, anon, authenticated, service_role;
+-- The former row-trigger body is retained for migration compatibility only;
+-- nothing may invoke it directly after the statement triggers take ownership.
+REVOKE ALL ON FUNCTION public.fn_daily_missions_tournament_registered()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+DROP TRIGGER IF EXISTS trg_daily_missions_tournament_registered
+  ON public.tournament_players;
+DROP TRIGGER IF EXISTS trg_daily_missions_tournament_registered_insert
+  ON public.tournament_players;
+
+CREATE TRIGGER trg_daily_missions_tournament_registered_insert
+AFTER INSERT ON public.tournament_players
+REFERENCING NEW TABLE AS inserted_rows
+FOR EACH STATEMENT
+EXECUTE FUNCTION public.fn_daily_missions_tournament_registered_inserted();
+
+CREATE TRIGGER trg_daily_missions_tournament_registered
+AFTER UPDATE ON public.tournament_players
+REFERENCING OLD TABLE AS previous_rows NEW TABLE AS updated_rows
+FOR EACH STATEMENT
+EXECUTE FUNCTION public.fn_daily_missions_tournament_registered_updated();
 
 CREATE OR REPLACE FUNCTION public.fn_drain_daily_challenge_event_outbox(
   p_limit integer DEFAULT 500
@@ -495,38 +899,55 @@ DECLARE
   r record;
   v_done integer := 0;
 BEGIN
-  IF p_limit NOT BETWEEN 1 AND 5000 THEN
+  IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 5000 THEN
     RAISE EXCEPTION 'Invalid outbox batch size';
   END IF;
 
-  UPDATE public.daily_challenge_event_outbox
-  SET dead_lettered_at = now(),
-      last_error = left(
-        COALESCE(last_error || '; ', '')
-          || 'Authoritative event exceeded 35-day replay horizon',
-        1000
-      )
-  WHERE dead_lettered_at IS NULL
-    AND occurred_at < now() - interval '35 days';
+  IF NOT pg_try_advisory_xact_lock(
+    hashtextextended('daily-missions-event-outbox-drain', 0)
+  ) THEN
+    RETURN 0;
+  END IF;
 
   FOR r IN
     SELECT *
     FROM public.daily_challenge_event_outbox
-    WHERE next_attempt_at <= now()
-      AND dead_lettered_at IS NULL
-    ORDER BY created_at
+    WHERE dead_lettered_at IS NULL
+      AND (
+        occurred_at < now() - interval '35 days'
+        OR next_attempt_at <= now()
+      )
+    ORDER BY user_id, created_at, event_key
     LIMIT p_limit
-    FOR UPDATE SKIP LOCKED
   LOOP
-    IF public.enqueue_daily_challenge_event(
-      r.user_id,
-      r.event_key,
-      r.amounts,
-      r.magnitudes,
-      r.threshold_values,
-      r.occurred_at
-    ) THEN
-      v_done := v_done + 1;
+    -- The cursor itself takes no outbox row lock. Enter through the common
+    -- player mutex first, then lock/update the outbox row inside this branch or
+    -- enqueue_daily_challenge_event. Producers use the same player-first order.
+    PERFORM public.fn_lock_daily_mission_user(r.user_id);
+
+    IF r.occurred_at < now() - interval '35 days' THEN
+      UPDATE public.daily_challenge_event_outbox
+      SET dead_lettered_at = now(),
+          last_error = left(
+            COALESCE(last_error || '; ', '')
+              || 'Authoritative event exceeded 35-day replay horizon',
+            1000
+          )
+      WHERE user_id = r.user_id
+        AND event_key = r.event_key
+        AND dead_lettered_at IS NULL
+        AND occurred_at < now() - interval '35 days';
+    ELSE
+      IF public.enqueue_daily_challenge_event(
+        r.user_id,
+        r.event_key,
+        r.amounts,
+        r.magnitudes,
+        r.threshold_values,
+        r.occurred_at
+      ) THEN
+        v_done := v_done + 1;
+      END IF;
     END IF;
   END LOOP;
 
@@ -636,6 +1057,64 @@ GRANT EXECUTE ON FUNCTION public.get_daily_challenge_dashboard_v2(
   text, text[], text, text[], text, text[]
 ) TO authenticated, service_role;
 
+-- Period keys and the freshness clock must describe one instant. The nested
+-- legacy dashboard still emits a clock_timestamp()-based syncedAt value, so
+-- replace it with the same captured transaction timestamp that produced every
+-- server-authoritative UTC key. This prevents a midnight-crossing request from
+-- pairing yesterday's key with today's freshness clock.
+CREATE OR REPLACE FUNCTION public.get_daily_challenge_dashboard_v3()
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_now timestamptz := transaction_timestamp();
+  v_daily_key text;
+  v_weekly_key text;
+  v_monthly_key text;
+  v_dashboard jsonb;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Authentication required' USING ERRCODE = '28000';
+  END IF;
+
+  v_daily_key := to_char((v_now AT TIME ZONE 'utc')::date, 'YYYY-MM-DD');
+  v_weekly_key := 'W' || to_char(
+    date_trunc('week', v_now AT TIME ZONE 'utc')::date,
+    'YYYY-MM-DD'
+  );
+  v_monthly_key := 'M' || to_char(v_now AT TIME ZONE 'utc', 'YYYY-MM');
+
+  v_dashboard := public.get_daily_challenge_dashboard_v2(
+    v_daily_key,
+    ARRAY[]::text[],
+    v_weekly_key,
+    ARRAY[]::text[],
+    v_monthly_key,
+    ARRAY[]::text[]
+  );
+
+  RETURN v_dashboard || jsonb_build_object(
+    'syncedAt', to_char(
+      v_now AT TIME ZONE 'utc',
+      'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+    ),
+    'periodKeys', jsonb_build_object(
+      'daily', v_daily_key,
+      'weekly', v_weekly_key,
+      'monthly', v_monthly_key
+    )
+  );
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.get_daily_challenge_dashboard_v3()
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_daily_challenge_dashboard_v3()
+  TO authenticated, service_role;
+
 -- Claims retain their proven settlement implementations. These narrow wrappers
 -- establish the player/profile lock before the receipt or challenge row lock.
 ALTER FUNCTION public.claim_daily_challenge(uuid, uuid, numeric)
@@ -681,6 +1160,50 @@ REVOKE ALL ON FUNCTION public.claim_daily_challenge(uuid, uuid, numeric)
 GRANT EXECUTE ON FUNCTION public.claim_daily_challenge(uuid, uuid, numeric)
   TO authenticated, service_role;
 
+-- Bind every durable Claim All receipt to the normalized set it settled. The
+-- private legacy body inserts then finishes the row in one transaction; the
+-- wrapper fills this nullable-during-that-statement column before commit and
+-- refuses any replay whose UUID is paired with another input set.
+ALTER TABLE public.daily_challenge_claim_batches
+  ADD COLUMN IF NOT EXISTS challenge_row_ids uuid[];
+
+UPDATE public.daily_challenge_claim_batches batch
+SET challenge_row_ids = ARRAY(
+  SELECT DISTINCT item.value::uuid
+  FROM jsonb_array_elements_text(
+    (
+      CASE
+        WHEN jsonb_typeof(batch.result -> 'claimedIds') = 'array'
+          THEN batch.result -> 'claimedIds'
+        ELSE '[]'::jsonb
+      END
+    ) || (
+      CASE
+        WHEN jsonb_typeof(batch.result -> 'alreadyClaimedIds') = 'array'
+          THEN batch.result -> 'alreadyClaimedIds'
+        ELSE '[]'::jsonb
+      END
+    )
+  ) AS item(value)
+  ORDER BY item.value::uuid
+)
+WHERE batch.challenge_row_ids IS NULL;
+
+ALTER TABLE public.daily_challenge_claim_batches
+  DROP CONSTRAINT IF EXISTS daily_challenge_claim_batches_bound_ids_valid;
+ALTER TABLE public.daily_challenge_claim_batches
+  ADD CONSTRAINT daily_challenge_claim_batches_bound_ids_valid
+    CHECK (
+      challenge_row_ids IS NULL
+      OR (
+        cardinality(challenge_row_ids) BETWEEN 1 AND 100
+        AND array_position(challenge_row_ids, NULL) IS NULL
+      )
+    );
+
+COMMENT ON COLUMN public.daily_challenge_claim_batches.challenge_row_ids IS
+'Sorted distinct assignment UUIDs immutably bound to this Claim All request. NULL is permitted only inside the private settlement body before its serialized wrapper finishes the same transaction.';
+
 ALTER FUNCTION public.claim_daily_challenges(uuid, uuid[], uuid)
   RENAME TO claim_daily_challenges_serialized_body;
 
@@ -699,6 +1222,10 @@ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   v_uid uuid := auth.uid();
+  v_requested_ids uuid[];
+  v_bound_ids uuid[];
+  v_receipt_found boolean;
+  v_result jsonb;
 BEGIN
   IF v_uid IS NULL AND public.fn_caller_is_engine() THEN
     v_uid := p_user_id;
@@ -709,13 +1236,58 @@ BEGIN
   IF p_user_id IS NULL OR p_user_id <> v_uid THEN
     RAISE EXCEPTION 'Cannot claim challenges for another user' USING ERRCODE = '42501';
   END IF;
+  IF p_request_id IS NULL THEN
+    RAISE EXCEPTION 'A claim request id is required';
+  END IF;
+  IF p_challenge_row_ids IS NULL OR cardinality(p_challenge_row_ids) = 0 THEN
+    RAISE EXCEPTION 'At least one challenge is required';
+  END IF;
+  IF cardinality(p_challenge_row_ids) > 100 THEN
+    RAISE EXCEPTION 'At most 100 challenges can be claimed at once';
+  END IF;
+  IF array_position(p_challenge_row_ids, NULL) IS NOT NULL THEN
+    RAISE EXCEPTION 'Challenge ids cannot be null';
+  END IF;
+
+  SELECT array_agg(id ORDER BY id)
+  INTO v_requested_ids
+  FROM (SELECT DISTINCT unnest(p_challenge_row_ids) AS id) requested;
 
   PERFORM public.fn_lock_daily_mission_user(v_uid);
-  RETURN public.claim_daily_challenges_serialized_body(
+
+  SELECT challenge_row_ids INTO v_bound_ids
+  FROM public.daily_challenge_claim_batches
+  WHERE user_id = v_uid
+    AND request_id = p_request_id
+  FOR UPDATE;
+  v_receipt_found := FOUND;
+
+  IF v_receipt_found AND v_bound_ids IS DISTINCT FROM v_requested_ids THEN
+    RAISE EXCEPTION 'Claim request id is already bound to another challenge set';
+  END IF;
+
+  v_result := public.claim_daily_challenges_serialized_body(
     p_user_id,
     p_challenge_row_ids,
     p_request_id
   );
+
+  UPDATE public.daily_challenge_claim_batches
+  SET challenge_row_ids = v_requested_ids
+  WHERE user_id = v_uid
+    AND request_id = p_request_id
+    AND challenge_row_ids IS NULL;
+
+  SELECT challenge_row_ids INTO v_bound_ids
+  FROM public.daily_challenge_claim_batches
+  WHERE user_id = v_uid
+    AND request_id = p_request_id;
+
+  IF NOT FOUND OR v_bound_ids IS DISTINCT FROM v_requested_ids THEN
+    RAISE EXCEPTION 'Claim request receipt did not preserve its challenge binding';
+  END IF;
+
+  RETURN v_result;
 END;
 $function$;
 
@@ -735,7 +1307,7 @@ REVOKE ALL ON FUNCTION public.buy_streak_freeze_serialized_body(uuid, integer, u
 CREATE FUNCTION public.buy_streak_freeze(
   p_user_id uuid,
   p_cost integer,
-  p_request_id uuid DEFAULT NULL
+  p_request_id uuid
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -745,6 +1317,13 @@ AS $function$
 DECLARE
   v_uid uuid := auth.uid();
 BEGIN
+  IF p_request_id IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'a streak freeze request id is required'
+    );
+  END IF;
+
   IF v_uid IS NULL AND public.fn_caller_is_engine() THEN
     v_uid := p_user_id;
   END IF;
@@ -768,6 +1347,29 @@ $function$;
 REVOKE ALL ON FUNCTION public.buy_streak_freeze(uuid, integer, uuid)
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.buy_streak_freeze(uuid, integer, uuid)
+  TO authenticated, service_role;
+
+-- Keep the former two-argument PostgREST shape discoverable while old bundles
+-- drain from caches, but fail closed: without a request UUID no purchase can be
+-- replayed safely after a lost response.
+CREATE FUNCTION public.buy_streak_freeze(
+  p_user_id uuid,
+  p_cost integer
+)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+AS $function$
+  SELECT jsonb_build_object(
+    'success', false,
+    'error', 'a streak freeze request id is required; refresh and try again'
+  );
+$function$;
+
+REVOKE ALL ON FUNCTION public.buy_streak_freeze(uuid, integer)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.buy_streak_freeze(uuid, integer)
   TO authenticated, service_role;
 
 -- Stable streak-run identity and per-run freeze entitlement receipts.
@@ -822,10 +1424,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.daily_challenge_freeze_enti
 -- yesterday), including every already-recorded frozen date. Do not infer a
 -- current run length from the lifetime freezes_earned counter.
 WITH RECURSIVE completed_days AS (
-  SELECT DISTINCT user_id, assigned_date::date AS completed_on
-  FROM public.user_daily_challenges
-  WHERE completed
-    AND assigned_date ~ '^\d{4}-\d{2}-\d{2}$'
+  SELECT DISTINCT challenge.user_id, parsed.completed_on
+  FROM public.user_daily_challenges challenge
+  CROSS JOIN LATERAL (
+    SELECT public.fn_parse_daily_mission_date(challenge.assigned_date) AS completed_on
+  ) parsed
+  WHERE challenge.completed
+    AND parsed.completed_on IS NOT NULL
+    AND parsed.completed_on <= (transaction_timestamp() AT TIME ZONE 'utc')::date
 ), latest_completed AS (
   SELECT user_id, max(completed_on) AS ended_on
   FROM completed_days
@@ -834,10 +1440,14 @@ WITH RECURSIVE completed_days AS (
   SELECT user_id, completed_on AS covered_on
   FROM completed_days
   UNION
-  SELECT s.user_id, frozen.frozen_on::date
+  SELECT s.user_id, parsed.frozen_on
   FROM public.challenge_streak_state s
-  CROSS JOIN LATERAL unnest(s.frozen_dates) AS frozen(frozen_on)
-  WHERE frozen.frozen_on ~ '^\d{4}-\d{2}-\d{2}$'
+  CROSS JOIN LATERAL unnest(s.frozen_dates) AS frozen(frozen_text)
+  CROSS JOIN LATERAL (
+    SELECT public.fn_parse_daily_mission_date(frozen.frozen_text) AS frozen_on
+  ) parsed
+  WHERE parsed.frozen_on IS NOT NULL
+    AND parsed.frozen_on <= (transaction_timestamp() AT TIME ZONE 'utc')::date
 ), run_walk(user_id, covered_on) AS (
   SELECT l.user_id, l.ended_on
   FROM latest_completed l
@@ -956,22 +1566,54 @@ CROSS JOIN LATERAL generate_series(
 WHERE evidence.freezes_earned > evidence.current_accounted
 ON CONFLICT DO NOTHING;
 
--- Milestones are unique by stable run identity. The descriptive start date is
--- retained and existing rows are grouped onto a deterministic legacy run id.
+-- Milestones are unique by stable run identity. The prior award function
+-- shifted the descriptive start one day forward when a run ended yesterday.
+-- Map that proven +1 shape back to the current run as well as exact starts, or
+-- the same milestone could be inserted under the new run UUID and paid twice.
+-- If the legacy bug already paid both date variants, only the earliest receipt
+-- becomes the current-run guard; every additional paid row remains preserved on
+-- its deterministic legacy identity as immutable accounting evidence.
 ALTER TABLE public.daily_challenge_milestone_claims
   ADD COLUMN IF NOT EXISTS streak_run_id uuid;
 
 UPDATE public.daily_challenge_milestone_claims claims
-SET streak_run_id = COALESCE(
-  (
-    SELECT state.current_streak_run_id
-    FROM public.challenge_streak_state state
-    WHERE state.user_id = claims.user_id
-      AND state.current_streak_started_on = claims.streak_started_on
-  ),
-  md5(claims.user_id::text || ':' || claims.streak_started_on::text)::uuid
-)
+SET streak_run_id = md5(
+  claims.user_id::text || ':' || claims.streak_started_on::text
+)::uuid
 WHERE claims.streak_run_id IS NULL;
+
+WITH eligible AS (
+  SELECT claims.ctid AS claim_row,
+         state.current_streak_run_id AS run_id,
+         row_number() OVER (
+           PARTITION BY claims.user_id,
+                        state.current_streak_run_id,
+                        claims.milestone_days
+           ORDER BY claims.claimed_at, claims.streak_started_on
+         ) AS receipt_order
+  FROM public.daily_challenge_milestone_claims claims
+  JOIN public.challenge_streak_state state
+    ON state.user_id = claims.user_id
+   AND state.current_streak_run_id IS NOT NULL
+   AND claims.milestone_days <= state.current_streak_length
+   AND (
+     state.current_streak_started_on = claims.streak_started_on
+     OR (
+       claims.streak_started_on = state.current_streak_started_on + 1
+       AND (claims.claimed_at AT TIME ZONE 'utc')::date
+           BETWEEN state.current_streak_started_on
+               AND state.current_streak_ended_on + 1
+     )
+   )
+), current_run_guards AS (
+  SELECT claim_row, run_id
+  FROM eligible
+  WHERE receipt_order = 1
+)
+UPDATE public.daily_challenge_milestone_claims claims
+SET streak_run_id = guard.run_id
+FROM current_run_guards guard
+WHERE claims.ctid = guard.claim_row;
 
 ALTER TABLE public.daily_challenge_milestone_claims
   ALTER COLUMN streak_run_id SET NOT NULL;
@@ -1045,11 +1687,15 @@ BEGIN
   SELECT COALESCE(array_agg(d ORDER BY d DESC), ARRAY[]::date[])
   INTO v_days
   FROM (
-    SELECT DISTINCT assigned_date::date AS d
-    FROM public.user_daily_challenges
-    WHERE user_id = v_uid
-      AND completed
-      AND assigned_date ~ '^\d{4}-\d{2}-\d{2}$'
+    SELECT DISTINCT parsed.completed_on AS d
+    FROM public.user_daily_challenges challenge
+    CROSS JOIN LATERAL (
+      SELECT public.fn_parse_daily_mission_date(challenge.assigned_date) AS completed_on
+    ) parsed
+    WHERE challenge.user_id = v_uid
+      AND challenge.completed
+      AND parsed.completed_on IS NOT NULL
+      AND parsed.completed_on <= v_today
   ) completed_days;
 
   v_day_count := COALESCE(array_length(v_days, 1), 0);
@@ -1651,7 +2297,10 @@ BEGIN
   IF NOT public.fn_caller_is_engine() THEN
     RAISE EXCEPTION 'service role required';
   END IF;
-  IF p_limit < 1 OR p_limit > 5000 THEN
+  IF p_cycle_date IS NULL THEN
+    RAISE EXCEPTION 'p_cycle_date is required';
+  END IF;
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 5000 THEN
     RAISE EXCEPTION 'p_limit must be between 1 and 5000';
   END IF;
 
@@ -1721,10 +2370,13 @@ BEGIN
   IF NOT public.fn_caller_is_engine() THEN
     RAISE EXCEPTION 'service role required';
   END IF;
-  IF p_batch_size NOT BETWEEN 1 AND 5000 THEN
+  IF p_cycle_date IS NULL THEN
+    RAISE EXCEPTION 'p_cycle_date is required';
+  END IF;
+  IF p_batch_size IS NULL OR p_batch_size NOT BETWEEN 1 AND 5000 THEN
     RAISE EXCEPTION 'p_batch_size must be between 1 and 5000';
   END IF;
-  IF p_max_batches NOT BETWEEN 1 AND 100 THEN
+  IF p_max_batches IS NULL OR p_max_batches NOT BETWEEN 1 AND 100 THEN
     RAISE EXCEPTION 'p_max_batches must be between 1 and 100';
   END IF;
 
@@ -1784,6 +2436,7 @@ DO $verify$
 DECLARE
   v_source text;
   v_job_count integer;
+  v_default_count integer;
 BEGIN
   IF to_regprocedure('public.fn_lock_daily_mission_user(uuid)') IS NULL
      OR has_function_privilege(
@@ -1792,6 +2445,23 @@ BEGIN
        'EXECUTE'
      ) THEN
     RAISE EXCEPTION 'Private Daily Missions player lock contract is missing';
+  END IF;
+
+  IF to_regprocedure('public.fn_parse_daily_mission_date(text)') IS NULL
+     OR has_function_privilege(
+       'authenticated',
+       'public.fn_parse_daily_mission_date(text)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_parse_daily_mission_date(text)',
+       'EXECUTE'
+     )
+     OR public.fn_parse_daily_mission_date('2026-02-28') IS DISTINCT FROM date '2026-02-28'
+     OR public.fn_parse_daily_mission_date('2026-02-31') IS NOT NULL
+     OR public.fn_parse_daily_mission_date('2026-2-08') IS NOT NULL THEN
+    RAISE EXCEPTION 'Private canonical Daily Missions date parser is incomplete';
   END IF;
 
   FOREACH v_source IN ARRAY ARRAY[
@@ -1814,6 +2484,18 @@ BEGIN
     END IF;
   END LOOP;
 
+  SELECT pg_get_functiondef(
+    'public.get_daily_challenge_dashboard_v3()'::regprocedure
+  ) INTO v_source;
+  IF v_source NOT LIKE '%v_now timestamptz := transaction_timestamp()%'
+     OR v_source LIKE '%clock_timestamp()%'
+     OR v_source NOT LIKE '%to_char((v_now AT TIME ZONE ''utc'')::date, ''YYYY-MM-DD'')%'
+     OR v_source NOT LIKE '%to_char(v_now AT TIME ZONE ''utc'', ''YYYY-MM'')%'
+     OR v_source NOT LIKE '%''syncedAt'', to_char(%v_now AT TIME ZONE ''utc''%'
+  THEN
+    RAISE EXCEPTION 'Dashboard keys and syncedAt do not share one authoritative timestamp';
+  END IF;
+
   IF to_regclass('public.daily_challenge_reroll_receipts') IS NULL
      OR to_regclass('public.daily_challenge_freeze_entitlements') IS NULL THEN
     RAISE EXCEPTION 'A Daily Missions replay or entitlement ledger is missing';
@@ -1823,6 +2505,7 @@ BEGIN
     'public.fn_enqueue_hand_daily_missions()'::regprocedure
   ) INTO v_source;
   IF v_source NOT LIKE '%event -> ''values''%'
+     OR v_source NOT LIKE '%ORDER BY value ->> ''user_id'', value::text%'
      OR to_regprocedure(
        'public.enqueue_daily_challenge_event(uuid,text,jsonb,jsonb,jsonb,timestamptz)'
      ) IS NULL
@@ -1830,6 +2513,132 @@ BEGIN
        'public.record_daily_challenge_event(uuid,text,jsonb,jsonb,jsonb,timestamptz)'
      ) IS NULL THEN
     RAISE EXCEPTION 'Exact hand values are not wired through trigger, outbox, and recorder';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.fn_daily_missions_friend_accepted()'::regprocedure
+  ) INTO v_source;
+  IF v_source NOT LIKE '%NEW.user_id < NEW.friend_id%'
+     OR v_source NOT LIKE '%fn_lock_daily_mission_user(NEW.user_id)%'
+     OR v_source NOT LIKE '%fn_lock_daily_mission_user(NEW.friend_id)%' THEN
+    RAISE EXCEPTION 'Friendship Daily Missions locks are not deterministically ordered';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.fn_daily_missions_tournament_registered_inserted()'::regprocedure
+  ) INTO v_source;
+  IF v_source NOT LIKE '%FROM inserted_rows%'
+     OR v_source NOT LIKE '%ORDER BY inserted.user_id%'
+     OR v_source NOT LIKE '%ORDER BY inserted.user_id, inserted.tournament_id, inserted.id%'
+     OR v_source NOT LIKE '%daily-missions-user:%'
+     OR v_source NOT LIKE '%inserted.status::text IN (%'
+     OR v_source NOT LIKE '%enqueue_daily_challenge_event%' THEN
+    RAISE EXCEPTION 'Inserted tournament Daily Missions events are not deterministically batched';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.fn_daily_missions_tournament_registered_updated()'::regprocedure
+  ) INTO v_source;
+  IF v_source NOT LIKE '%FROM updated_rows%'
+     OR v_source NOT LIKE '%JOIN previous_rows previous ON previous.id = updated.id%'
+     OR v_source NOT LIKE '%ORDER BY updated.user_id%'
+     OR v_source NOT LIKE '%ORDER BY updated.user_id, updated.tournament_id, updated.id%'
+     OR v_source NOT LIKE '%daily-missions-user:%'
+     OR v_source NOT LIKE '%previous.status::text NOT IN (%'
+     OR v_source NOT LIKE '%enqueue_daily_challenge_event%' THEN
+    RAISE EXCEPTION 'Updated tournament Daily Missions events are not deterministically batched';
+  END IF;
+
+  IF NOT EXISTS (
+       SELECT 1
+       FROM pg_trigger
+       WHERE tgrelid = 'public.tournament_players'::regclass
+         AND tgname = 'trg_daily_missions_tournament_registered_insert'
+         AND NOT tgisinternal
+         AND (tgtype::integer & 1) = 0
+         AND tgoldtable IS NULL
+         AND tgnewtable = 'inserted_rows'
+         AND tgfoid =
+           'public.fn_daily_missions_tournament_registered_inserted()'::regprocedure
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_trigger
+       WHERE tgrelid = 'public.tournament_players'::regclass
+         AND tgname = 'trg_daily_missions_tournament_registered'
+         AND NOT tgisinternal
+         AND (tgtype::integer & 1) = 0
+         AND tgoldtable = 'previous_rows'
+         AND tgnewtable = 'updated_rows'
+         AND tgfoid =
+           'public.fn_daily_missions_tournament_registered_updated()'::regprocedure
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM pg_trigger
+       WHERE tgrelid = 'public.tournament_players'::regclass
+         AND tgname LIKE 'trg_daily_missions_tournament_registered%'
+         AND NOT tgisinternal
+         AND (tgtype::integer & 1) <> 0
+     )
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_daily_missions_tournament_registered()',
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION 'Tournament Daily Missions projection is not statement-batched or private';
+  END IF;
+
+  FOREACH v_source IN ARRAY ARRAY[
+    pg_get_functiondef(
+      'public.enqueue_daily_challenge_event(uuid,text,jsonb,jsonb,timestamptz)'::regprocedure
+    ),
+    pg_get_functiondef(
+      'public.enqueue_daily_challenge_event(uuid,text,jsonb,jsonb,jsonb,timestamptz)'::regprocedure
+    )
+  ]
+  LOOP
+    IF position('fn_lock_daily_mission_user' IN v_source) = 0
+       OR position('fn_lock_daily_mission_user' IN v_source)
+          > position('INSERT INTO public.daily_challenge_event_outbox' IN v_source)
+       OR v_source NOT LIKE '%SELECT * INTO STRICT v_event%'
+       OR v_source NOT LIKE '%daily_challenge_progress_events%'
+       OR v_source NOT LIKE '%v_receipt.amounts IS DISTINCT FROM v_event.amounts%'
+       OR v_source NOT LIKE '%event key is already bound to another payload%' THEN
+      RAISE EXCEPTION 'Outbox event keys are not payload-bound in player-first lock order';
+    END IF;
+  END LOOP;
+
+  FOREACH v_source IN ARRAY ARRAY[
+    pg_get_functiondef(
+      'public.record_daily_challenge_event(uuid,text,jsonb,jsonb,timestamptz)'::regprocedure
+    ),
+    pg_get_functiondef(
+      'public.record_daily_challenge_event(uuid,text,jsonb,jsonb,jsonb,timestamptz)'::regprocedure
+    )
+  ]
+  LOOP
+    IF v_source NOT LIKE '%daily_challenge_progress_events%'
+       OR v_source NOT LIKE '%v_event.amounts IS DISTINCT FROM p_amounts%'
+       OR v_source NOT LIKE '%v_event.magnitudes IS DISTINCT FROM p_magnitudes%'
+       OR v_source NOT LIKE '%v_event.threshold_values IS DISTINCT FROM%'
+       OR v_source NOT LIKE '%v_event.occurred_at IS DISTINCT FROM p_occurred_at%'
+       OR v_source NOT LIKE '%event key is already bound to another payload%' THEN
+      RAISE EXCEPTION 'Processed Daily Missions event receipts are not payload-bound';
+    END IF;
+  END LOOP;
+
+  SELECT pg_get_functiondef(
+    'public.fn_drain_daily_challenge_event_outbox(integer)'::regprocedure
+  ) INTO v_source;
+  IF v_source NOT LIKE '%p_limit IS NULL%'
+     OR v_source NOT LIKE '%daily-missions-event-outbox-drain%'
+     OR v_source NOT LIKE '%ORDER BY user_id, created_at, event_key%'
+     OR position('fn_lock_daily_mission_user' IN v_source) = 0
+     OR position('fn_lock_daily_mission_user' IN v_source)
+        > position('UPDATE public.daily_challenge_event_outbox' IN v_source)
+     OR v_source LIKE '%FOR UPDATE SKIP LOCKED%' THEN
+    RAISE EXCEPTION 'Daily Missions outbox drain bounds or lock order are incomplete';
   END IF;
 
   SELECT pg_get_functiondef(
@@ -1868,6 +2677,57 @@ BEGIN
     RAISE EXCEPTION 'Daily Missions receipt ledgers do not cascade with profile cleanup';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_attribute
+    WHERE attrelid = 'public.daily_challenge_claim_batches'::regclass
+      AND attname = 'challenge_row_ids'
+      AND atttypid = 'uuid[]'::regtype
+      AND NOT attisdropped
+  ) OR EXISTS (
+    SELECT 1
+    FROM public.daily_challenge_claim_batches
+    WHERE challenge_row_ids IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Claim All receipts are not fully bound to challenge inputs';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.claim_daily_challenges(uuid,uuid[],uuid)'::regprocedure
+  ) INTO v_source;
+  IF v_source NOT LIKE '%array_agg(id ORDER BY id)%'
+     OR v_source NOT LIKE '%SELECT challenge_row_ids INTO v_bound_ids%'
+     OR v_source NOT LIKE '%FOR UPDATE%'
+     OR v_source NOT LIKE '%request id is already bound to another challenge set%'
+     OR v_source NOT LIKE '%receipt did not preserve its challenge binding%' THEN
+    RAISE EXCEPTION 'Claim All request replay is not bound to normalized inputs';
+  END IF;
+
+  SELECT pronargdefaults INTO v_default_count
+  FROM pg_proc
+  WHERE oid = 'public.buy_streak_freeze(uuid,integer,uuid)'::regprocedure;
+
+  IF COALESCE(v_default_count, -1) <> 0
+     OR to_regprocedure('public.buy_streak_freeze(uuid,integer)') IS NULL THEN
+    RAISE EXCEPTION 'The current streak-freeze contract still permits a missing request id';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.buy_streak_freeze(uuid,integer,uuid)'::regprocedure
+  ) INTO v_source;
+  IF v_source NOT LIKE '%p_request_id IS NULL%'
+     OR v_source NOT LIKE '%streak freeze request id is required%' THEN
+    RAISE EXCEPTION 'The request-bound streak-freeze guard is missing';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.buy_streak_freeze(uuid,integer)'::regprocedure
+  ) INTO v_source;
+  IF v_source NOT LIKE '%streak freeze request id is required; refresh and try again%'
+     OR v_source LIKE '%buy_streak_freeze_serialized_body%' THEN
+    RAISE EXCEPTION 'The legacy two-argument streak-freeze shape does not fail closed';
+  END IF;
+
   SELECT pg_get_functiondef(
     'public.reroll_daily_challenge(uuid,uuid,text,integer,uuid)'::regprocedure
   ) INTO v_source;
@@ -1883,7 +2743,9 @@ BEGIN
      OR v_source NOT LIKE '%streakStartedOn%'
      OR v_source NOT LIKE '%streakEndedOn%'
      OR v_source NOT LIKE '%daily_challenge_freeze_entitlements%'
-     OR v_source NOT LIKE '%NOT v_used_new_freeze%' THEN
+     OR v_source NOT LIKE '%NOT v_used_new_freeze%'
+     OR v_source NOT LIKE '%fn_parse_daily_mission_date(challenge.assigned_date)%'
+     OR v_source NOT LIKE '%parsed.completed_on <= v_today%' THEN
     RAISE EXCEPTION 'Stable streak-run and freeze-entitlement contract is incomplete';
   END IF;
 
@@ -1897,12 +2759,52 @@ BEGIN
     RAISE EXCEPTION 'Milestones do not use the authoritative stable streak run';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM public.challenge_streak_state state
+    JOIN public.daily_challenge_milestone_claims claims
+      ON claims.user_id = state.user_id
+     AND state.current_streak_run_id IS NOT NULL
+     AND claims.milestone_days <= state.current_streak_length
+     AND (
+       claims.streak_started_on = state.current_streak_started_on
+       OR (
+         claims.streak_started_on = state.current_streak_started_on + 1
+         AND (claims.claimed_at AT TIME ZONE 'utc')::date
+             BETWEEN state.current_streak_started_on
+                 AND state.current_streak_ended_on + 1
+       )
+     )
+    GROUP BY state.user_id,
+             state.current_streak_run_id,
+             claims.milestone_days
+    HAVING count(*) FILTER (
+      WHERE claims.streak_run_id = state.current_streak_run_id
+    ) <> 1
+  ) THEN
+    RAISE EXCEPTION 'A legacy exact/+1 milestone receipt lacks one current-run replay guard';
+  END IF;
+
   SELECT pg_get_functiondef(
     'public.enqueue_daily_mission_reset_notifications(date,integer)'::regprocedure
   ) INTO v_source;
   IF v_source NOT LIKE '%fn_caller_is_engine()%'
-     OR v_source LIKE '%auth.role() <> ''service_role''%' THEN
+     OR v_source LIKE '%auth.role() <> ''service_role''%'
+     OR v_source NOT LIKE '%p_cycle_date IS NULL%'
+     OR v_source NOT LIKE '%p_limit IS NULL%'
+     OR v_source NOT LIKE '%ORDER BY p.user_id%' THEN
     RAISE EXCEPTION 'pg_cron cannot enter the Daily Missions reset enqueue contract';
+  END IF;
+
+  SELECT pg_get_functiondef(
+    'public.fn_drain_daily_mission_reset_notifications(date,integer,integer)'::regprocedure
+  ) INTO v_source;
+  IF v_source NOT LIKE '%p_cycle_date IS NULL%'
+     OR v_source NOT LIKE '%p_batch_size IS NULL%'
+     OR v_source NOT LIKE '%p_max_batches IS NULL%'
+     OR v_source NOT LIKE '%pg_try_advisory_xact_lock%'
+     OR v_source NOT LIKE '%EXIT WHEN v_batch >= p_max_batches%' THEN
+    RAISE EXCEPTION 'Daily Missions reset drain null guards or bounds are incomplete';
   END IF;
 
   IF to_regnamespace('cron') IS NOT NULL THEN
@@ -1928,6 +2830,9 @@ COMMENT ON TABLE public.daily_challenge_freeze_entitlements IS
 
 COMMENT ON FUNCTION public.fn_drain_daily_mission_reset_notifications(date, integer, integer) IS
 'Engine-only bounded reset-alert drain. Up to 100 batches of 5,000 cover more than 5,000 opt-ins without an unbounded transaction loop.';
+
+COMMENT ON FUNCTION public.get_daily_challenge_dashboard_v3() IS
+'Atomic Daily Missions dashboard whose UTC period keys and syncedAt value derive from one captured transaction timestamp.';
 
 NOTIFY pgrst, 'reload schema';
 

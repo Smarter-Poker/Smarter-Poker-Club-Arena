@@ -8,7 +8,8 @@ const authGuard = readFileSync(resolve(__dirname, '../src/components/auth/AuthGu
 
 describe('Daily Challenge cycle deep links', () => {
   it('routes Daily, Weekly, and Monthly as bookmarkable subpages', () => {
-    expect(app).toContain('path="challenges/:cycle?"');
+    expect(app).toContain('path="challenges"');
+    expect(app).toContain('path="challenges/:cycle"');
     expect(page).toContain("cycle === 'daily' || cycle === 'weekly' || cycle === 'monthly'");
     expect(page).toContain('navigate(`/challenges/${tier}`)');
     expect(page).toContain('data-mission-cycle={activeTier}');
@@ -17,6 +18,15 @@ describe('Daily Challenge cycle deep links', () => {
   it('recovers malformed cycle bookmarks to the safe Daily ledger', () => {
     expect(page).toContain("navigate('/challenges', { replace: true })");
     expect(page).toContain("setActiveTier('daily')");
+  });
+
+  it('closes a stale reroll confirmation when returning to the base route', () => {
+    const baseRouteBranch = page.slice(
+      page.indexOf('if (!cycle)'),
+      page.indexOf("if (cycle === 'daily'")
+    );
+    expect(baseRouteBranch).toContain("setActiveTier('daily')");
+    expect(baseRouteBranch).toContain('setConfirmingRerollId(null)');
   });
 
   it('preserves path, query, and hash through the signed-out login handoff', () => {

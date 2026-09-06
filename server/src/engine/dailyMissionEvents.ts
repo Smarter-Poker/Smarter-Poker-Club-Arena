@@ -13,6 +13,36 @@ export type DailyMissionHandEvent = {
   values: Partial<Record<'big_pots' | 'strong_hands', number[]>>;
 };
 
+/**
+ * Mission thresholds describe named, conventional hand classes: Straight=5,
+ * Flush=6, Full House=7, and Four Of A Kind=8. The game evaluator's numeric
+ * ranking is intentionally variant-relative (Short Deck swaps Flush and Full
+ * House), so it cannot be used as the mission magnitude when a name is
+ * available.
+ */
+export function dailyMissionHandStrength(hand?: { name?: string; ranking?: number }): number {
+  const name = String(hand?.name ?? '')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .trim();
+  if (name.includes('royal')) return 10;
+  if (name.includes('straight flush')) return 9;
+  if (name.includes('four of a kind') || name.includes('quads')) return 8;
+  if (name.includes('full house') || name.includes('boat')) return 7;
+  if (name.includes('flush')) return 6;
+  if (name.includes('straight')) return 5;
+  if (name.includes('three of a kind') || name.includes('trips') || name.includes('set')) return 4;
+  if (name.includes('two pair')) return 3;
+  if (name.includes('pair')) return 2;
+  if (name.includes('high card')) return 1;
+
+  // Compatibility for an older/incomplete award shape with no name. Current
+  // settlement always carries EvaluatedHand.name; accepting its bounded rank
+  // keeps the durable hand writer replayable across rolling engine deploys.
+  const ranking = Math.floor(Number(hand?.ranking));
+  return Number.isSafeInteger(ranking) && ranking >= 1 && ranking <= 10 ? ranking : 0;
+}
+
 /** Build immutable mission facts from one settled hand for every dealt player, including horses. */
 export function buildDailyMissionHandEvents(input: {
   dealtPlayerIds: Iterable<string>;
@@ -25,7 +55,7 @@ export function buildDailyMissionHandEvents(input: {
     potIndex: number;
     amount: number;
     low: boolean;
-    hand?: { ranking?: number };
+    hand?: { name?: string; ranking?: number };
     board?: number;
   }>;
 }): DailyMissionHandEvent[] {
@@ -74,8 +104,8 @@ export function buildDailyMissionHandEvents(input: {
         0,
         ...wonAwards
           .filter((award) => !award.low)
-          .map((award) => Math.floor(Number(award.hand?.ranking)))
-          .filter((ranking) => Number.isSafeInteger(ranking) && ranking > 0)
+          .map((award) => dailyMissionHandStrength(award.hand))
+          .filter((ranking) => ranking > 0)
       );
       const won = potWon > 0;
       return {

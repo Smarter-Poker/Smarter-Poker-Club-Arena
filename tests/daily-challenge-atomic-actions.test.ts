@@ -99,4 +99,12 @@ describe('Daily Missions atomic action receipts', () => {
       "loadChallenges(userId, 'silent')"
     );
   });
+
+  it('reconciles cross-device reroll and third-freeze presentation state', () => {
+    expect(page).toContain(
+      'if (!confirmingChallenge || confirmingChallenge.completed || confirmingChallenge.claimed)'
+    );
+    expect(page).toContain('setConfirmingRerollId(null)');
+    expect(page).toContain('nextFreezeIn: freezesAvailable >= 3 ? null : prev.nextFreezeIn');
+  });
 });

@@ -153,4 +153,45 @@ describe('buildDailyMissionHandEvents', () => {
     expect(lowOnly.magnitudes.strong_hands).toBeUndefined();
     expect(lowOnly.values.strong_hands).toBeUndefined();
   });
+
+  it('uses named hand classes when Short Deck swaps evaluator ranking order', () => {
+    const events = buildDailyMissionHandEvents({
+      dealtPlayerIds: ['full-house-winner', 'flush-winner'],
+      roster: [
+        { userId: 'full-house-winner', isHorse: false },
+        { userId: 'flush-winner', isHorse: false },
+      ],
+      winners: [
+        { userId: 'full-house-winner', amount: 500 },
+        { userId: 'flush-winner', amount: 500 },
+      ],
+      showdownResults: [
+        { userId: 'full-house-winner', handRanking: 6 },
+        { userId: 'flush-winner', handRanking: 7 },
+      ],
+      pots: [
+        { index: 0, amount: 500 },
+        { index: 1, amount: 500 },
+      ],
+      perPotAwards: [
+        {
+          userId: 'full-house-winner',
+          potIndex: 0,
+          amount: 500,
+          low: false,
+          hand: { name: 'Full House', ranking: 6 },
+        },
+        {
+          userId: 'flush-winner',
+          potIndex: 1,
+          amount: 500,
+          low: false,
+          hand: { name: 'Flush', ranking: 7 },
+        },
+      ],
+    });
+
+    expect(events[0].values.strong_hands).toEqual([7]);
+    expect(events[1].values.strong_hands).toEqual([6]);
+  });
 });

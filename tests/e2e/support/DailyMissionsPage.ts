@@ -265,7 +265,7 @@ export class DailyMissionsPage {
     for (const tier of ['Daily', 'Weekly', 'Monthly'] as const) {
       await this.chooseTier(tier);
       const candidate = this.page
-        .getByRole('button', { name: /^Reroll .+ For 10 Diamonds$/ })
+        .getByRole('button', { name: /^Reroll 10 Diamonds For .+$/ })
         .first();
       if (await candidate.isVisible().catch(() => false)) return candidate;
     }

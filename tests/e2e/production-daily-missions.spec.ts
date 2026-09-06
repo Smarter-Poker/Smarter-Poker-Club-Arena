@@ -14,6 +14,8 @@ import {
   callServiceRpc,
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
+  deleteServiceRows,
+  insertServiceRows,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
   type CustomizationCertificationEnvironment,
@@ -225,6 +227,10 @@ async function completeEveryAssignedMission(
         friends_added: 2_500,
       },
       p_magnitudes: { big_pots: 1_000_000_000, strong_hands: 10 },
+      p_values: {
+        big_pots: Array.from({ length: 2_500 }, () => 1_000_000_000),
+        strong_hands: Array.from({ length: 2_500 }, () => 10),
+      },
       p_occurred_at: new Date().toISOString(),
     },
     true
@@ -264,7 +270,9 @@ test.describe('production Daily Missions certification', () => {
     const environment = requireCustomizationCertificationEnvironment();
     const contexts: BrowserContext[] = [];
     let account: TemporaryCustomizationAccount | null = null;
+    let certificationHandHistoryId: string | null = null;
     const report: JsonObject = {};
+    const cleanupErrors: string[] = [];
 
     try {
       account = await createTemporaryCustomizationAccount(environment, 'missions', 7_000);
@@ -458,6 +466,75 @@ test.describe('production Daily Missions certification', () => {
         // history-only navigation or a fragment scroll position.
         await missions.open();
         await expect(page).toHaveURL(challengesURL.toString());
+      });
+
+      await test.step('the settled-hand trigger preserves mixed exact threshold candidates', async () => {
+        certificationHandHistoryId = randomUUID();
+        const occurredAt = new Date().toISOString();
+        const handNumber =
+          1_700_000_000 +
+          (Number.parseInt(certificationHandHistoryId.replaceAll('-', '').slice(0, 7), 16) %
+            100_000_000);
+        const amounts = {
+          hands_played: 1,
+          hands_won: 1,
+          hands_won_no_showdown: 1,
+          chips_won: 600,
+          big_pots: 2,
+          strong_hands: 2,
+        };
+        const magnitudes = { big_pots: 500, strong_hands: 7 };
+        const thresholdValues = { big_pots: [499, 500], strong_hands: [6, 7] };
+
+        const inserted = await insertServiceRows<{ id: string }>(environment, 'hand_history', {
+          id: certificationHandHistoryId,
+          table_id: null,
+          tournament_id: null,
+          hand_number: handNumber,
+          game_variant: 'nlh',
+          small_blind: 1,
+          big_blind: 2,
+          pot_size: 600,
+          rake_amount: 0,
+          community_cards: [],
+          winners: [],
+          players: [],
+          actions: [],
+          started_at: occurredAt,
+          ended_at: occurredAt,
+          has_human: false,
+          daily_mission_events: [
+            {
+              user_id: account!.id,
+              amounts,
+              magnitudes,
+              values: thresholdValues,
+            },
+          ],
+        });
+        expect(inserted).toHaveLength(1);
+        expect(inserted[0]).toMatchObject({ id: certificationHandHistoryId });
+
+        const eventKey = `hand:${certificationHandHistoryId}`;
+        await expect
+          .poll(
+            async () => {
+              const receipts = await serviceRows<{
+                event_key: string;
+                amounts: JsonObject;
+                magnitudes: JsonObject;
+                threshold_values: JsonObject;
+              }>(
+                environment,
+                'daily_challenge_progress_events',
+                account!.id,
+                'event_key,amounts,magnitudes,threshold_values'
+              );
+              return receipts.find((receipt) => receipt.event_key === eventKey) ?? null;
+            },
+            { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+          )
+          .toEqual({ event_key: eventKey, amounts, magnitudes, threshold_values: thresholdValues });
       });
 
       await test.step('reroll confirmation charges ten diamonds exactly once', async () => {
@@ -949,13 +1026,15 @@ test.describe('production Daily Missions certification', () => {
         await expect(page.getByRole('alert')).toContainText('Challenge Ledger Unavailable', {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
+        await expect(page.getByText('Spendable Balance', { exact: true })).toHaveCount(0);
+        await expect(page.getByRole('heading', { name: '0 Day Streak' })).toHaveCount(0);
         expect(abortedAttempts).toBe(3);
         await page.unroute('**/rest/v1/rpc/get_daily_challenge_dashboard_v3');
         const recovered = page.waitForResponse(
           (response) => response.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard'),
           { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
         );
-        const retry = page.getByRole('button', { name: 'Retry Sync' });
+        const retry = page.getByRole('button', { name: 'Retry Challenge Ledger' });
         await missions.placeControlInSafeViewport(retry);
         await retry.click();
         expect((await recovered).ok()).toBe(true);
@@ -1032,9 +1111,19 @@ test.describe('production Daily Missions certification', () => {
       for (const context of contexts.reverse()) {
         await context.close().catch(() => undefined);
       }
+      if (certificationHandHistoryId) {
+        await deleteServiceRows(
+          environment,
+          'hand_history',
+          new URLSearchParams({ id: `eq.${certificationHandHistoryId}` })
+        ).catch((error) => cleanupErrors.push(`hand history: ${(error as Error).message}`));
+      }
       if (account) {
-        await cleanupTemporaryCustomizationAccount(environment, account);
+        await cleanupTemporaryCustomizationAccount(environment, account).catch((error) =>
+          cleanupErrors.push(`account: ${(error as Error).message}`)
+        );
       }
     }
+    expect(cleanupErrors, 'Daily Missions certification cleanup failed').toEqual([]);
   });
 });

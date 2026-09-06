@@ -114,7 +114,17 @@ used_versions() {
 }
 
 taken="$(used_versions | sort -u)"
-is_taken() { printf '%s\n' "$taken" | grep -qx "$1"; }
+# Do not pipe the inventory into `grep -q`: with `set -o pipefail`, grep exits
+# as soon as it finds a match, `printf` receives SIGPIPE, and the whole
+# pipeline reports false. That inverted a real collision into "available".
+is_taken() {
+  local wanted="$1"
+  local used
+  while IFS= read -r used; do
+    [ "$used" = "$wanted" ] && return 0
+  done <<< "$taken"
+  return 1
+}
 
 version="$(date -u +%Y%m%d%H%M%S)"
 if is_taken "$version"; then

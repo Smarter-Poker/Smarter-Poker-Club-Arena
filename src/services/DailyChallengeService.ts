@@ -803,6 +803,25 @@ const DAILY_MISSION_TIER_COUNTS: Record<Tier, number> = {
   weekly: 3,
   monthly: 2,
 };
+const DAILY_MISSION_CLAIM_BATCH_LIMIT = 100;
+
+function parseUtcDateKey(value: string): number | null {
+  if (!DAILY_MISSION_PERIOD_PATTERNS.daily.test(value)) return null;
+  const timestamp = Date.parse(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(timestamp)) return null;
+  return new Date(timestamp).toISOString().slice(0, 10) === value ? timestamp : null;
+}
+
+function isValidDailyMissionPeriod(tier: Tier, value: string): boolean {
+  if (!DAILY_MISSION_PERIOD_PATTERNS[tier].test(value)) return false;
+  if (tier === 'monthly') {
+    const timestamp = Date.parse(`${value.slice(1)}-01T00:00:00.000Z`);
+    return (
+      Number.isFinite(timestamp) && `M${new Date(timestamp).toISOString().slice(0, 7)}` === value
+    );
+  }
+  return parseUtcDateKey(tier === 'weekly' ? value.slice(1) : value) !== null;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -911,7 +930,7 @@ class DailyChallengeServiceClass {
     }
     const tier = row.tier;
     const assignedDate = readReceiptString(row.assigned_date, context, 'challenge period');
-    if (!DAILY_MISSION_PERIOD_PATTERNS[tier].test(assignedDate)) {
+    if (!isValidDailyMissionPeriod(tier, assignedDate)) {
       return invalidDailyMissionReceipt(context, 'challenge period');
     }
     const requirement = readReceiptInteger(row.requirement, context, 'challenge requirement', 1);
@@ -919,12 +938,13 @@ class DailyChallengeServiceClass {
     const progress = readReceiptInteger(row.progress, context, 'challenge progress');
     const completed = readReceiptBoolean(row.completed, context, 'challenge completion state');
     const claimed = readReceiptBoolean(row.claimed, context, 'challenge claim state');
+    if (progress > requirement || completed !== (progress === requirement)) {
+      return invalidDailyMissionReceipt(context, 'challenge progress state');
+    }
     if (claimed && !completed) return invalidDailyMissionReceipt(context, 'challenge claim state');
-    if (
-      row.completed_at !== null &&
-      row.completed_at !== undefined &&
-      (typeof row.completed_at !== 'string' || !Number.isFinite(Date.parse(row.completed_at)))
-    ) {
+    const hasCompletionTime =
+      typeof row.completed_at === 'string' && Number.isFinite(Date.parse(row.completed_at));
+    if ((row.completed_at !== null && !hasCompletionTime) || completed !== hasCompletionTime) {
       return invalidDailyMissionReceipt(context, 'challenge completion time');
     }
 
@@ -932,7 +952,7 @@ class DailyChallengeServiceClass {
       id,
       challengeId,
       userId,
-      progress: Math.min(requirement, progress),
+      progress,
       completed,
       claimed,
       completedAt: typeof row.completed_at === 'string' ? row.completed_at : undefined,
@@ -980,6 +1000,9 @@ class DailyChallengeServiceClass {
     const count = readReceiptInteger(value.count, context, 'reward vault count');
     const diamonds = readReceiptInteger(value.diamonds, context, 'reward vault total');
     const pageSize = readReceiptInteger(value.pageSize, context, 'reward vault page size', 1);
+    if (pageSize > DAILY_MISSION_CLAIM_BATCH_LIMIT) {
+      return invalidDailyMissionReceipt(context, 'reward vault page size');
+    }
     const hasMore = readReceiptBoolean(value.hasMore, context, 'reward vault page state');
     const items = this.mapServerChallenges(value.items, userId, `${context}_vault`);
     const expectedItems = Math.min(count, pageSize);
@@ -989,11 +1012,9 @@ class DailyChallengeServiceClass {
     if (items.some((item) => !item.completed || item.claimed)) {
       return invalidDailyMissionReceipt(context, 'reward vault state');
     }
-    if (!hasMore) {
-      const itemDiamonds = items.reduce((total, item) => total + item.challenge.diamondReward, 0);
-      if (itemDiamonds !== diamonds) {
-        return invalidDailyMissionReceipt(context, 'reward vault total');
-      }
+    const itemDiamonds = items.reduce((total, item) => total + item.challenge.diamondReward, 0);
+    if ((!hasMore && itemDiamonds !== diamonds) || (hasMore && diamonds < itemDiamonds)) {
+      return invalidDailyMissionReceipt(context, 'reward vault total');
     }
     return { count, diamonds, items, pageSize, hasMore };
   }
@@ -1028,10 +1049,21 @@ class DailyChallengeServiceClass {
     const dailyKey = readReceiptString(periodKeys.daily, context, 'daily period key');
     const weeklyKey = readReceiptString(periodKeys.weekly, context, 'weekly period key');
     const monthlyKey = readReceiptString(periodKeys.monthly, context, 'monthly period key');
+    const dailyTimestamp = parseUtcDateKey(dailyKey);
+    const weeklyTimestamp = parseUtcDateKey(weeklyKey.slice(1));
+    const dailyDate = dailyTimestamp === null ? null : new Date(dailyTimestamp);
+    const expectedWeeklyKey =
+      dailyDate === null
+        ? null
+        : `W${new Date(dailyDate.getTime() - ((dailyDate.getUTCDay() + 6) % 7) * 86_400_000)
+            .toISOString()
+            .slice(0, 10)}`;
     if (
-      !DAILY_MISSION_PERIOD_PATTERNS.daily.test(dailyKey) ||
-      !DAILY_MISSION_PERIOD_PATTERNS.weekly.test(weeklyKey) ||
-      !DAILY_MISSION_PERIOD_PATTERNS.monthly.test(monthlyKey) ||
+      dailyTimestamp === null ||
+      weeklyTimestamp === null ||
+      !isValidDailyMissionPeriod('weekly', weeklyKey) ||
+      !isValidDailyMissionPeriod('monthly', monthlyKey) ||
+      weeklyKey !== expectedWeeklyKey ||
       monthlyKey.slice(1) !== dailyKey.slice(0, 7)
     ) {
       return invalidDailyMissionReceipt(context, 'dashboard period keys');
@@ -1054,6 +1086,14 @@ class DailyChallengeServiceClass {
       }
     }
     const missions = this.mapServerChallenges(payload.missions, userId, `${context}_missions`);
+    const catalogContracts = new Set<string>();
+    for (const mission of missions) {
+      const catalogContract = `${mission.tier}:${mission.challengeId}`;
+      if (catalogContracts.has(catalogContract)) {
+        return invalidDailyMissionReceipt(context, 'duplicate challenge catalog contract');
+      }
+      catalogContracts.add(catalogContract);
+    }
     for (const tier of Object.keys(DAILY_MISSION_TIER_COUNTS) as Tier[]) {
       if (
         missions.filter((mission) => mission.tier === tier).length !==
@@ -1072,6 +1112,10 @@ class DailyChallengeServiceClass {
     if (totalClaimed > totalCompleted) {
       return invalidDailyMissionReceipt(context, 'challenge totals');
     }
+    const vault = this.mapRewardVault(payload.vault, userId, context);
+    if (vault.count !== totalCompleted - totalClaimed) {
+      return invalidDailyMissionReceipt(context, 'challenge reward vault total');
+    }
     const currentStreak = readReceiptInteger(stats.currentStreak, context, 'current streak');
     const streakCount = readReceiptInteger(streak.streak, context, 'streak count');
     if (currentStreak !== streakCount || stats.milestoneRewardCurrency !== 'diamonds') {
@@ -1083,19 +1127,32 @@ class DailyChallengeServiceClass {
       'freeze inventory'
     );
     const usedFreeze = readReceiptBoolean(streak.usedFreeze, context, 'freeze usage state');
+    const frozenDate = streak.frozenDate;
+    if (freezesAvailable > 3 || (frozenDate !== null && typeof frozenDate !== 'string')) {
+      return invalidDailyMissionReceipt(context, 'freeze inventory');
+    }
     if (
-      streak.frozenDate !== null &&
-      (typeof streak.frozenDate !== 'string' ||
-        !DAILY_MISSION_PERIOD_PATTERNS.daily.test(streak.frozenDate))
+      (typeof frozenDate === 'string' && parseUtcDateKey(frozenDate) === null) ||
+      usedFreeze !== (frozenDate !== null)
     ) {
       return invalidDailyMissionReceipt(context, 'frozen date');
     }
     const nextFreezeIn =
       streak.nextFreezeIn === null
         ? null
-        : readReceiptInteger(streak.nextFreezeIn, context, 'next freeze distance');
+        : readReceiptInteger(streak.nextFreezeIn, context, 'next freeze distance', 1);
+    if (
+      (nextFreezeIn !== null && nextFreezeIn > 7) ||
+      freezesAvailable >= 3 !== (nextFreezeIn === null)
+    ) {
+      return invalidDailyMissionReceipt(context, 'next freeze distance');
+    }
     const syncedAt = readReceiptString(payload.syncedAt, context, 'synchronization time');
-    if (!Number.isFinite(Date.parse(syncedAt))) {
+    const syncedTimestamp = Date.parse(syncedAt);
+    if (
+      !Number.isFinite(syncedTimestamp) ||
+      new Date(syncedTimestamp).toISOString().slice(0, 10) !== dailyKey
+    ) {
       return invalidDailyMissionReceipt(context, 'synchronization time');
     }
 
@@ -1127,11 +1184,11 @@ class DailyChallengeServiceClass {
         streak: streakCount,
         freezesAvailable,
         usedFreeze,
-        frozenDate: streak.frozenDate as string | null,
+        frozenDate: frozenDate as string | null,
         nextFreezeIn,
       },
       diamondBalance: readReceiptInteger(payload.diamondBalance, context, 'diamond balance'),
-      vault: this.mapRewardVault(payload.vault, userId, context),
+      vault,
       revision: readReceiptInteger(payload.revision, context, 'dashboard revision', 1),
       syncedAt,
     };
@@ -1157,7 +1214,9 @@ class DailyChallengeServiceClass {
       throw new Error(error.message || 'Could not reconcile Daily Missions');
     }
 
-    return Math.max(0, Number(data?.revision) || 0);
+    if (data === null) return 0;
+    if (!isRecord(data)) return invalidDailyMissionReceipt('getDashboardRevision', 'revision row');
+    return readReceiptInteger(data.revision, 'getDashboardRevision', 'dashboard revision', 1);
   }
 
   /**
@@ -1353,7 +1412,11 @@ class DailyChallengeServiceClass {
         'rerolled challenge identifier'
       );
       const challenge = this.mapServerChallenge(result.challenge, userId, 'rerollChallenge');
-      if (challenge.challengeId !== challengeId || challenge.id !== challengeRowId) {
+      if (
+        challenge.challengeId !== challengeId ||
+        challenge.id !== challengeRowId ||
+        challengeId === expectedChallengeId
+      ) {
         return invalidDailyMissionReceipt('rerollChallenge', 'rerolled challenge');
       }
       const diamondBalance = readReceiptInteger(
@@ -1395,7 +1458,9 @@ class DailyChallengeServiceClass {
   async claimChallenges(userId: string, challengeRowIds: string[]): Promise<ClaimBatchResult> {
     const ids = [...new Set(challengeRowIds)];
     if (ids.length === 0) throw new Error('Choose at least one completed challenge to claim.');
-    if (ids.length > 100) throw new Error('Claim up to 100 challenge rewards at a time.');
+    if (ids.length > DAILY_MISSION_CLAIM_BATCH_LIMIT) {
+      throw new Error('Claim up to 100 challenge rewards at a time.');
+    }
     if (ids.some((id) => !DAILY_MISSION_UUID_PATTERN.test(id))) {
       throw new Error('One or more challenges are not ready to claim. Refresh and try again.');
     }
@@ -1464,6 +1529,13 @@ class DailyChallengeServiceClass {
       'earned diamond total'
     );
     const vault = this.mapRewardVault(paid.vault, userId, context);
+    if (
+      (claimedIds.length === 0 && diamonds !== 0) ||
+      totalClaimed < settledIds.size ||
+      totalDiamondsEarned < diamonds
+    ) {
+      return invalidDailyMissionReceipt(context, 'claim settlement totals');
+    }
 
     if (claimedIds.length > 0) {
       masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId });

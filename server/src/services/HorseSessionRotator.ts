@@ -423,10 +423,16 @@ export class HorseSessionRotator {
      * out under the pot - so a running table is closed the way a real room
      * closes one: `settings.retire_when_empty` is set on the row, the fleet
      * stops seating anyone there (it joins surplusTableIds in
-     * HorseFleetManager.seedAllTables), this pass asks one horse a cycle to
-     * stand up through the engine's own leaveTable() (folds if mid-hand,
-     * cashes out at the end of the hand), and retireSurplusTables() closes
-     * the row once nobody is left.
+     * HorseFleetManager.seedAllTables), and this pass asks one horse a cycle
+     * to stand up through the engine's own leaveTable() (folds if mid-hand,
+     * cashes out at the end of the hand).
+     *
+     * The row itself is no longer CLOSED by anything: retireSurplusTables()
+     * did that and Gate 7 (2026-09-05) deleted it, because a cash table is
+     * closed only by its game's ClusterController. Every cash table is a
+     * cluster table now and the guard below skips those, so this loop is
+     * unreachable in production - see the note in
+     * HorseFleetManager.seedAllTables.
      *
      * These departures sit OUTSIDE the realism cap below on purpose: the cap
      * keeps a healthy floor from thinning itself, and a retiring table is not
@@ -450,8 +456,8 @@ export class HorseSessionRotator {
          and the first draft of this loop had none of them: it took the first
          horse it found, once a cycle, human or not. On a nine-handed table
          that empties the person's game in twelve minutes and then strands
-         them, because retireSurplusTables refuses to close an occupied table
-         and the fleet refuses to re-seat a retiring one. Worse, every horse
+         them, because a drained table is not re-seated by the fleet and
+         (since Gate 7) nothing closes it either. Worse, every horse
          that cashes out calls notifyWaitlistSeatOpen, so the drain would
          offer the freed seats to MORE people.
 

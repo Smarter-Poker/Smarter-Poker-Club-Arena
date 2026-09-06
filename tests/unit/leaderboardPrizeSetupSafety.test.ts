@@ -52,6 +52,7 @@ describe('leaderboard prize setup safety contract', () => {
     expect(wizard).toContain('Do You Want To Reward Leaderboard Prizes?');
     expect(wizard).toContain('step === 0 && !enabled ? 3 : step + 1');
     expect(wizard).toContain("setPlanKey('custom')");
-    expect(wizard).toContain('A Planned Period Is Larger Than The Current Promo Balance');
+    expect(wizard).toContain('This Plan Cannot Be Published.');
+    expect(wizard).toContain('proposedCommitment > publicationCapacity');
   });
 });

@@ -2650,6 +2650,25 @@
   background: rgba(0, 212, 255, 0.1);
 }
 
+/* The Cashier tile is the fourth card in a five-wide phone footer. An
+   absolutely centred 230px menu therefore extended past a 320px viewport.
+   On phone widths the directory is a viewport-owned sheet with safe-area
+   insets, so its geometry is independent of which tile opened it. */
+@media (max-width: 480px) {
+  .cashierSwitchMenu {
+    position: fixed;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: max(8px, env(safe-area-inset-left));
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: min(70vh, 480px);
+    max-height: min(70dvh, 480px);
+    transform: none;
+  }
+}
+
 /* Dan 2026-08-24 (screenshot): on phones the five bottom tiles rendered near-
    uniform — the desktop hierarchy (STATS card largest in the centre, inner
    pair medium, edge pair smallest) had collapsed under equal flex. Restore it

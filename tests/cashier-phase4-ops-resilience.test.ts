@@ -2,9 +2,14 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  CASHIER_RECOVERY_PREFIX,
   cashierReceiptText,
+  clearCashierChipRequestOperation,
   clearCashierTransferRecovery,
   readCashierTransferRecovery,
+  readCashierTransferRecoveries,
+  readCashierTransferRecoveryBySubmission,
+  reserveCashierChipRequestOperation,
   writeCashierTransferRecovery,
   type CashierTransferRecovery,
 } from '../src/services/CashierResilience';
@@ -16,8 +21,16 @@ const styles = readFileSync(resolve(root, 'src/pages/CashierTradePage.module.css
 class MemoryStorage {
   private readonly values = new Map<string, string>();
 
+  get length() {
+    return this.values.size;
+  }
+
   getItem(key: string) {
     return this.values.get(key) ?? null;
+  }
+
+  key(index: number) {
+    return [...this.values.keys()][index] ?? null;
   }
 
   setItem(key: string, value: string) {
@@ -26,6 +39,16 @@ class MemoryStorage {
 
   removeItem(key: string) {
     this.values.delete(key);
+  }
+
+  entries() {
+    return [...this.values.entries()];
+  }
+}
+
+class RefusingStorage extends MemoryStorage {
+  override setItem() {
+    throw new Error('quota exceeded');
   }
 }
 
@@ -49,6 +72,23 @@ const recovery: CashierTransferRecovery = {
     '44444444-4444-4444-8444-444444444444': '77777777-7777-4777-8777-777777777777',
   },
   createdAt: Date.UTC(2026, 7, 31, 15, 45),
+};
+
+const concurrentRecovery: CashierTransferRecovery = {
+  ...recovery,
+  targetIds: ['88888888-8888-4888-8888-888888888888'],
+  failures: [
+    {
+      userId: '88888888-8888-4888-8888-888888888888',
+      name: 'Other Tab Player',
+      message: 'Connection Closed',
+    },
+  ],
+  submissionId: '99999999-9999-4999-8999-999999999999',
+  opIds: {
+    '88888888-8888-4888-8888-888888888888': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  },
+  createdAt: recovery.createdAt + 1,
 };
 
 describe('cashier Phase 4 operational resilience', () => {
@@ -90,17 +130,210 @@ describe('cashier Phase 4 operational resilience', () => {
     ).toContain('Recorded: Unavailable');
   });
 
-  it('round-trips the exact unresolved intent and original per-target retry keys', () => {
+  it('round-trips retry keys without persisting recipient names or raw errors', () => {
     const storage = new MemoryStorage();
     const now = recovery.createdAt + 1_000;
 
     expect(writeCashierTransferRecovery(recovery, storage, now)).toBe(true);
-    expect(readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, now)).toEqual(
-      recovery
+    expect(readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, now)).toEqual({
+      ...recovery,
+      failures: [
+        {
+          userId: '44444444-4444-4444-8444-444444444444',
+          name: 'Cashier Recipient',
+          message: 'Outcome Needs Verification',
+        },
+      ],
+    });
+
+    clearCashierTransferRecovery(
+      recovery.userId,
+      recovery.clubId,
+      recovery.submissionId,
+      storage,
+      now
+    );
+    expect(readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, now)).toBeNull();
+  });
+
+  it('isolates concurrent browser-tab batches and conditionally clears only the confirmed one', () => {
+    const storage = new MemoryStorage();
+    const now = recovery.createdAt + 1_000;
+
+    expect(writeCashierTransferRecovery(recovery, storage, now)).toBe(true);
+    expect(writeCashierTransferRecovery(concurrentRecovery, storage, now)).toBe(true);
+    // One physical key per submission is the property that survives an actual
+    // A-read/B-read/A-write/B-write interleave. A shared array envelope would
+    // still have length 1 and its last writer could erase the other batch.
+    expect(storage.length).toBe(2);
+    expect(
+      readCashierTransferRecoveries(recovery.userId, recovery.clubId, storage, now).map(
+        (entry) => entry.submissionId
+      )
+    ).toEqual([recovery.submissionId, concurrentRecovery.submissionId]);
+    expect(
+      readCashierTransferRecoveryBySubmission(
+        recovery.userId,
+        recovery.clubId,
+        concurrentRecovery.submissionId,
+        storage,
+        now
+      )?.targetIds
+    ).toEqual(concurrentRecovery.targetIds);
+
+    clearCashierTransferRecovery(
+      recovery.userId,
+      recovery.clubId,
+      recovery.submissionId,
+      storage,
+      now
+    );
+    expect(
+      readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, now)?.submissionId
+    ).toBe(concurrentRecovery.submissionId);
+
+    // A stale tab cannot erase the remaining tab's journal with its own id.
+    clearCashierTransferRecovery(
+      recovery.userId,
+      recovery.clubId,
+      recovery.submissionId,
+      storage,
+      now
+    );
+    expect(
+      readCashierTransferRecoveries(recovery.userId, recovery.clubId, storage, now)
+    ).toHaveLength(1);
+  });
+
+  it('survives another tab writing between this tab preflighting and persisting', () => {
+    const now = recovery.createdAt + 1_000;
+    class InterleavingStorage extends MemoryStorage {
+      private injected = false;
+
+      override setItem(key: string, value: string) {
+        if (!this.injected) {
+          this.injected = true;
+          const otherKey = key.replace(recovery.submissionId, concurrentRecovery.submissionId);
+          super.setItem(
+            otherKey,
+            JSON.stringify({
+              ...concurrentRecovery,
+              failures: [
+                {
+                  userId: concurrentRecovery.targetIds[0],
+                  name: 'Cashier Recipient',
+                  message: 'Outcome Needs Verification',
+                },
+              ],
+            })
+          );
+        }
+        super.setItem(key, value);
+      }
+    }
+
+    const storage = new InterleavingStorage();
+    expect(writeCashierTransferRecovery(recovery, storage, now)).toBe(true);
+    expect(
+      readCashierTransferRecoveries(recovery.userId, recovery.clubId, storage, now).map(
+        (entry) => entry.submissionId
+      )
+    ).toEqual([recovery.submissionId, concurrentRecovery.submissionId]);
+  });
+
+  it('still recovers and conditionally clears a rollout-era shared-key record', () => {
+    const storage = new MemoryStorage();
+    const now = recovery.createdAt + 1_000;
+    storage.setItem(
+      `${CASHIER_RECOVERY_PREFIX}:${recovery.userId}:${recovery.clubId}`,
+      JSON.stringify(recovery)
     );
 
-    clearCashierTransferRecovery(recovery.userId, recovery.clubId, storage);
+    expect(
+      readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, now)?.submissionId
+    ).toBe(recovery.submissionId);
+    clearCashierTransferRecovery(
+      recovery.userId,
+      recovery.clubId,
+      recovery.submissionId,
+      storage,
+      now
+    );
     expect(readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, now)).toBeNull();
+  });
+
+  it('retains a malformed financial journal and blocks a replacement operation', () => {
+    const storage = new MemoryStorage();
+    const now = recovery.createdAt + 1_000;
+    const key = `${CASHIER_RECOVERY_PREFIX}:${recovery.userId}:${recovery.clubId}:${recovery.submissionId}`;
+    storage.setItem(key, '{"version":1,"truncated":');
+
+    expect(readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, now)).toBeNull();
+    expect(storage.getItem(key)).toBe('{"version":1,"truncated":');
+    expect(writeCashierTransferRecovery(concurrentRecovery, storage, now)).toBe(false);
+    expect(storage.getItem(key)).toBe('{"version":1,"truncated":');
+    expect(storage.length).toBe(1);
+  });
+
+  it('reuses a chip-request operation after a lost response and simulated remount', async () => {
+    const storage = new MemoryStorage();
+    const intent = {
+      userId: recovery.userId,
+      clubId: recovery.clubId,
+      amount: 75,
+      note: '  Table Seven  ',
+    };
+    const firstId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const accidentalSecondId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+    const firstMount = await reserveCashierChipRequestOperation(
+      intent,
+      () => firstId,
+      storage,
+      recovery.createdAt
+    );
+    // The RPC may have committed here and lost its response. A remounted page
+    // has no ref state, so only the durable canonical intent can recover it.
+    const remount = await reserveCashierChipRequestOperation(
+      { ...intent, note: 'Table Seven' },
+      () => accidentalSecondId,
+      storage,
+      recovery.createdAt + 1
+    );
+
+    expect(firstMount?.operationId).toBe(firstId);
+    expect(remount?.operationId).toBe(firstId);
+    expect(
+      storage
+        .entries()
+        .map(([, value]) => value)
+        .join('')
+    ).not.toContain('Table Seven');
+
+    expect(clearCashierChipRequestOperation(remount!, storage, recovery.createdAt + 2)).toBe(true);
+    const freshIntent = await reserveCashierChipRequestOperation(
+      intent,
+      () => accidentalSecondId,
+      storage,
+      recovery.createdAt + 3
+    );
+    expect(freshIntent?.operationId).toBe(accidentalSecondId);
+  });
+
+  it('fails chip requests closed when their retry journal cannot be written', async () => {
+    const reserved = await reserveCashierChipRequestOperation(
+      { userId: recovery.userId, clubId: recovery.clubId, amount: 75, note: null },
+      () => 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      new RefusingStorage(),
+      recovery.createdAt
+    );
+    expect(reserved).toBeNull();
+  });
+
+  it('reports a refused recovery write instead of pretending the intent is durable', () => {
+    expect(
+      writeCashierTransferRecovery(recovery, new RefusingStorage(), recovery.createdAt + 1_000)
+    ).toBe(false);
   });
 
   it('rejects stale, cross-scope, and incomplete recovery payloads', () => {
@@ -140,6 +373,25 @@ describe('cashier Phase 4 operational resilience', () => {
     expect(page).toContain('if (!isOnline) setActiveCashier(null)');
   });
 
+  it('journals a chip request before its RPC and retains unknown outcomes', () => {
+    const requestBody = page.slice(
+      page.indexOf('const askForChips ='),
+      page.indexOf('// ── Settlement invoices')
+    );
+    expect(requestBody.indexOf('reserveCashierChipRequestOperation(')).toBeLessThan(
+      requestBody.indexOf("supabase.rpc('fn_request_chips'")
+    );
+    expect(requestBody).toMatch(
+      /if \(!recovery\) \{[\s\S]+Cashier Safety Storage Is Unavailable[\s\S]+return;/
+    );
+    expect(requestBody).toContain("throw new Error('Request Outcome Needs Verification')");
+    expect(requestBody).toMatch(
+      /if \(!res\.success\) \{[\s\S]+clearCashierChipRequestOperation\(recovery\)/
+    );
+    expect(requestBody.match(/clearCashierChipRequestOperation\(recovery\)/g)).toHaveLength(2);
+    expect(requestBody).toContain("toast?.success?.('Chip Request Sent')");
+  });
+
   it('shows one reconciliation console with verified freshness evidence', () => {
     expect(page).toContain('data-cashier-recovery="true"');
     expect(page).toContain('Reconciliation Console');
@@ -166,13 +418,16 @@ describe('cashier Phase 4 operational resilience', () => {
     expect(transferBody.indexOf('writeCashierTransferRecovery(uncertainRecovery)')).toBeLessThan(
       transferBody.indexOf("supabase.rpc('fn_cashier_batch_transfer'")
     );
+    expect(transferBody).toContain('if (!writeCashierTransferRecovery(uncertainRecovery))');
+    expect(transferBody).toContain('Cashier Safety Storage Is Unavailable');
     expect(page).toContain('readCashierTransferRecovery(user.id, clubUuid)');
     expect(page).toContain('submissionId,');
     expect(page).toContain('opIds: Object.fromEntries(opIdsRef.current)');
     expect(page).toContain('Original Retry Keys Are Preserved');
     expect(page).toContain('Review And Retry');
-    expect(page).toContain('setTransferFailures(saved.failures)');
+    expect(page).toContain('saved.failures.map((failure)');
     expect(page).toContain('opIdsRef.current = new Map()');
+    expect(page).not.toContain('`${entry.userId}:${entry.message}`');
   });
 
   it('opens ledger rows as accessible, copyable receipts on desktop and mobile', () => {

@@ -23,21 +23,40 @@ const sendGuard = readFileSync(
 );
 
 describe('cashier integrity and wallet launcher', () => {
-  it('waits for the resolved role before redirecting a player off the first tab', () => {
+  it('waits for the resolved role and always selects the first visible tab', () => {
     expect(page).toContain("const [tab, setTab] = useState<TabKey>('trade')");
-    expect(page).toContain("roleResolved && myRole === 'player' && tab === 'trade'");
+    expect(page).toContain('if (!visibleTabs.some(([key]) => key === tab))');
+    expect(page).toContain('setTab(visibleTabs[0][0])');
+    expect(page).toContain("setTab(role === 'player' ? 'record' : 'trade')");
+    expect(page).toContain('initialTabResolvedRef.current = false');
     expect(page).toMatch(
-      /useEffect\(\(\) => \{[\s\S]+?setTab\('trade'\);\s+setRoleResolved\(false\)/
+      /useEffect\(\(\) => \{[\s\S]+?setTab\('trade'\);[\s\S]{0,120}?setRoleResolved\(false\)/
     );
   });
 
   it('opens owned unions at their wallet tab from the Cashier launcher', () => {
-    expect(home).toContain('eligibleCashierWallets(userClubs)');
+    expect(home).toContain('UnionService.getOwnedUnions(authUser.id)');
+    expect(home).toContain('mergeCashierWalletDirectory(userClubs, ownedUnionWallets)');
     expect(home).toContain('/operations?tab=wallet');
     expect(union).toContain("requestedUnionTab(searchParams.get('tab'))");
-    expect(home).toMatch(
-      /case '4':[\s\S]+resolveCashierWallet\(eligibleCashierWallets\(userClubs\)/
+    expect(home).toMatch(/case '4':[\s\S]+resolveCashierWallet\([\s\S]+ownedUnionWallets/);
+    expect(home).toContain('target.slug || unionRouteRef');
+  });
+
+  it('builds a complete directory from authoritative union flags or fails visibly', () => {
+    expect(home).toContain("entity_type: (m.club as any)?.is_union === true ? 'union' : 'club'");
+    expect(home).not.toContain('/union/i.test');
+    expect(home).toContain('UnionService.getOwnedUnions(authUser.id),');
+    expect(page).toContain('UnionService.getOwnedUnions(user.id),');
+    expect(home).not.toMatch(/UnionService\.getOwnedUnions\(authUser\.id\)\.catch/);
+    expect(page).not.toMatch(/UnionService\.getOwnedUnions\(user\.id\)\.catch/);
+    expect(home).toContain('setLoadFailed(true)');
+    expect(home).toContain(
+      'loadFailed ? [] : mergeCashierWalletDirectory(userClubs, ownedUnionWallets)'
     );
+    expect(home).toContain("toast.info('Retrying Cashier Directory')");
+    expect(home).toContain('void fetchUserData(false, () => isMountedRef.current)');
+    expect(page).toContain("setMembershipsError('Could not load your club cashiers.')");
   });
 
   it('preloads the exact Trade cashier chunk used by the lobby destination', () => {
@@ -52,7 +71,11 @@ describe('cashier integrity and wallet launcher', () => {
     expect(union).toContain('const dashLoadVersion = useRef(0)');
     expect(union).toContain('const requestVersion = ++dashLoadVersion.current');
     expect(union).toContain('dashLoadVersion.current === requestVersion');
-    expect(union).toContain('loadUnionData(id, requestVersion)');
+    expect(union).toContain(
+      'loadUnionData(id, requestVersion, unionResult.data as UnionRow, authorizedRole)'
+    );
+    expect(union).toContain("unionResult.data.owner_id === user.id ? 'union_lead'");
+    expect(union).toContain("setError('You are not a union admin or owner.')");
   });
 
   it('exposes recoverable balance reads and safe mobile cashier sheets', () => {
@@ -74,7 +97,9 @@ describe('cashier integrity and wallet launcher', () => {
     expect(sql).toContain("pg_advisory_xact_lock(hashtextextended('chip-request:'");
     expect(sql).toContain('v_prior.amount is distinct from p_amount');
     expect(sql).toContain('chip_requests_requester_op_uidx');
+    expect(page).toContain('reserveCashierChipRequestOperation(');
     expect(page).toContain('p_op_id: requestOpIdRef.current');
+    expect(page).toContain('clearCashierChipRequestOperation(recovery)');
   });
 
   it('locks both memberships and conditionally debits before issuing a ticket', () => {

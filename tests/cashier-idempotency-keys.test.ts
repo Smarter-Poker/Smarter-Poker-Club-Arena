@@ -134,15 +134,18 @@ describe('one op id per target, held across a failure', () => {
     // one. Retained across a failure, cleared on a change: both, or neither
     // protection works.
     expect(PAGE).toContain('const recoveryScope = transferRecoveryScopeRef.current');
+    expect(PAGE).toContain('recoveryScope.submissionId');
     expect(PAGE).toContain(
-      'clearCashierTransferRecovery(recoveryScope.userId, recoveryScope.clubId)'
+      'readCashierTransferRecovery(recoveryScope.userId, recoveryScope.clubId)'
     );
-    expect(PAGE).toMatch(/setTransferRecovery\(null\);\s*\}, \[amount, selected\]\);/);
+    expect(PAGE).toMatch(/\}, \[amount, selected\]\);/);
   });
 
   it('is retained across a failure, which is what makes a retry safe', () => {
     expect(RUN_TRANSFERS).toContain('if (ok === targets.length) {');
-    expect(RUN_TRANSFERS).toContain('clearCashierTransferRecovery(user.id, clubUuid)');
+    expect(RUN_TRANSFERS).toContain(
+      'clearCashierTransferRecovery(user.id, clubUuid, submissionId)'
+    );
     expect(RUN_TRANSFERS).toContain('writeCashierTransferRecovery(recovery)');
     expect(RUN_TRANSFERS).toContain('opIds: Object.fromEntries(opIdsRef.current)');
   });

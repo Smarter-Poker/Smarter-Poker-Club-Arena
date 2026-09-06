@@ -5,9 +5,11 @@ import ClubBottomNav from '../../src/components/club/ClubBottomNav';
 import { clubIdFromPath } from '../../src/components/club/clubIdFromPath';
 import { activeTabForPath } from '../../src/components/club/clubBottomNavTabs';
 import { STORAGE_KEYS } from '../../src/lib/storage';
+import { writeCachedQuickLinkClubs } from '../../src/utils/clubQuickLink';
 
+const authState = vi.hoisted(() => ({ userId: 'user-1' }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
-  useAuthUser: () => ({ user: { id: 'user-1' }, loading: false }),
+  useAuthUser: () => ({ user: { id: authState.userId }, loading: false }),
 }));
 
 vi.mock('../../src/contexts/ClubWorkspaceContext', () => ({
@@ -49,10 +51,10 @@ const CLUB = '11111111-2222-3333-4444-555555555555';
 const OTHER = '99999999-8888-7777-6666-555555555555';
 const LABELS = ['Settings', 'Players', 'Cashier', 'Market', 'Data', 'Stats'];
 
-function seedClubs(ids: string[] = [CLUB], last: string | null = CLUB) {
-  localStorage.setItem(
-    STORAGE_KEYS.CLUBS_CACHE,
-    JSON.stringify(ids.map((id) => ({ id, name: id, is_union: false })))
+function seedClubs(ids: string[] = [CLUB], last: string | null = CLUB, userId = authState.userId) {
+  writeCachedQuickLinkClubs(
+    userId,
+    ids.map((id) => ({ id, name: id, is_union: false }))
   );
   if (last) localStorage.setItem(STORAGE_KEYS.LAST_CLUB, last);
 }
@@ -94,7 +96,10 @@ describe('clubIdFromPath', () => {
 });
 
 describe('ClubBottomNav approved footer contract', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    authState.userId = 'user-1';
+    localStorage.clear();
+  });
 
   it('always exposes exactly the six approved controls in approved order', async () => {
     seedClubs();
@@ -132,6 +137,22 @@ describe('ClubBottomNav approved footer contract', () => {
 
     expect(hrefs()).toContain(`/clubs/${OTHER}/settings`);
     expect(hrefs().some((href) => href?.includes(CLUB))).toBe(false);
+  });
+
+  it('does not retain the previous account club after an in-app account switch', async () => {
+    seedClubs([OTHER], OTHER, 'user-1');
+    const view = await renderAt('/stats');
+    expect(hrefs()).toContain(`/clubs/${OTHER}/settings`);
+
+    authState.userId = 'user-2';
+    view.rerender(
+      <MemoryRouter initialEntries={['/stats']}>
+        <ClubBottomNav />
+      </MemoryRouter>
+    );
+
+    expect(hrefs().some((href) => href?.includes(OTHER))).toBe(false);
+    expect(hrefs()).toContain('/settings');
   });
 
   it('uses the current route club before a stale cached club', async () => {

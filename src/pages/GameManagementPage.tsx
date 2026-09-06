@@ -521,9 +521,15 @@ export function ContractHistoryDialog({
               <strong>{game.contract.readiness.state.replace(/_/g, ' ')}</strong>
             </span>
             <span>
-              <small>Guarantee</small>
-              <strong>{game.contract.readiness.guaranteedPrize}</strong>
+              <small>Effective Guarantee</small>
+              <strong>{game.contract.readiness.effectiveGuarantee}</strong>
             </span>
+            {game.contract.readiness.satelliteSeatGuarantee > 0 && (
+              <span>
+                <small>Satellite Seat Value</small>
+                <strong>{game.contract.readiness.satelliteSeatGuarantee}</strong>
+              </span>
+            )}
             <span>
               <small>Overlay Required</small>
               <strong>{game.contract.readiness.overlayRequired}</strong>

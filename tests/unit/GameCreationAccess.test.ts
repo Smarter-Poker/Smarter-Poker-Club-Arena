@@ -20,6 +20,7 @@ import {
   parseGameCreationAccess,
   gameCreationDeniedMessage,
   GAME_CREATION_DENIED_MESSAGES,
+  canUseStandaloneClubCreationRoute,
   type GameCreationAccess,
 } from '../../src/lib/gameCreationAccess';
 // NOTE: imported from src/lib (pure) and NOT from services/GameAccessService —
@@ -50,9 +51,9 @@ describe('parseGameCreationAccess — the allowed cases', () => {
 
 describe('parseGameCreationAccess — the refusals keep their reason', () => {
   it('a club inside a union is refused with union_only, and still reports the union', () => {
-    expect(parseGameCreationAccess({ allowed: false, union_id: UNION, reason: 'union_only' })).toEqual(
-      { allowed: false, unionId: UNION, reason: 'union_only' }
-    );
+    expect(
+      parseGameCreationAccess({ allowed: false, union_id: UNION, reason: 'union_only' })
+    ).toEqual({ allowed: false, unionId: UNION, reason: 'union_only' });
   });
 
   it.each(['not_owner_or_admin', 'unknown_club', 'not_signed_in'] as const)(
@@ -84,9 +85,9 @@ describe('parseGameCreationAccess — every malformed answer fails CLOSED', () =
 
   it('a self-contradictory answer — allowed with a denial reason — is refused', () => {
     // If the two halves disagree, there is no safe way to pick a winner.
-    expect(parseGameCreationAccess({ allowed: true, union_id: UNION, reason: 'union_only' })).toEqual(
-      { allowed: false, unionId: null, reason: 'check_failed' }
-    );
+    expect(
+      parseGameCreationAccess({ allowed: true, union_id: UNION, reason: 'union_only' })
+    ).toEqual({ allowed: false, unionId: null, reason: 'check_failed' });
   });
 
   it('a refusal labelled "ok" is also refused', () => {
@@ -106,11 +107,15 @@ describe('parseGameCreationAccess — the union id it hands back', () => {
   it('an empty-string union id becomes null, never an empty stamp on the row', () => {
     // `union_id: ''` written to the table would be rejected by the uuid column;
     // NULL is the correct "no union".
-    expect(parseGameCreationAccess({ allowed: true, union_id: '', reason: 'ok' }).unionId).toBeNull();
+    expect(
+      parseGameCreationAccess({ allowed: true, union_id: '', reason: 'ok' }).unionId
+    ).toBeNull();
   });
 
   it('a non-string union id is ignored', () => {
-    expect(parseGameCreationAccess({ allowed: true, union_id: 12345, reason: 'ok' }).unionId).toBeNull();
+    expect(
+      parseGameCreationAccess({ allowed: true, union_id: 12345, reason: 'ok' }).unionId
+    ).toBeNull();
   });
 });
 
@@ -144,5 +149,23 @@ describe('gameCreationDeniedMessage', () => {
 
   it('says nothing when access was granted', () => {
     expect(gameCreationDeniedMessage({ allowed: true, unionId: null, reason: 'ok' })).toBe('');
+  });
+});
+
+describe('standalone club creation routes', () => {
+  it('admits only an allowed standalone club verdict', () => {
+    expect(canUseStandaloneClubCreationRoute({ allowed: true, unionId: null, reason: 'ok' })).toBe(
+      true
+    );
+    expect(canUseStandaloneClubCreationRoute({ allowed: true, unionId: UNION, reason: 'ok' })).toBe(
+      false
+    );
+    expect(
+      canUseStandaloneClubCreationRoute({
+        allowed: false,
+        unionId: null,
+        reason: 'not_owner_or_admin',
+      })
+    ).toBe(false);
   });
 });

@@ -10,7 +10,20 @@ export interface ClubOpeningEligibility {
  * managed by a union completes setup from the union console instead.
  */
 export function hasNewClubOpeningChecklist(
-  club: ClubOpeningEligibility | null | undefined
+  club: ClubOpeningEligibility | null | undefined,
+  resolvedUnionId: string | null | undefined
 ): boolean {
-  return Boolean(club?.opening_checklist_started_at && club.is_union !== true && !club.union_id);
+  /* `undefined` means the union lookup has not produced an authoritative
+     answer yet. Fail closed during that window: a club linked only through
+     union_clubs does not necessarily carry clubs.union_id, and painting the
+     checklist before that lookup completes makes an established union club
+     flash a new-club gate on every visit. `null` is the positive, resolved
+     answer that this is a standalone club. */
+  return Boolean(
+    resolvedUnionId !== undefined &&
+    club?.opening_checklist_started_at &&
+    club.is_union !== true &&
+    !club.union_id &&
+    !resolvedUnionId
+  );
 }

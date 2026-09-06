@@ -276,7 +276,7 @@ export interface SeatSlotProps {
    * every live seat for the length of a bomb-pot hand. Dan: "THERE SHOULDN'T
    * BE 'BOMB POT PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD JUST BE
    * SOMETHING ON THE TABLE THAT SAYS 'BOMB POT'." The one marker is now the
-   * on-felt pill (`.bomb-pot-eta--live`, TablePage.tsx), which reads
+   * on-felt pill (`.bomb-pot-live`, TablePage.tsx), which reads
    * "BOMB POT" for the hand itself. Do not add a per-seat bomb marker back.
    */
   isWinner?: boolean;

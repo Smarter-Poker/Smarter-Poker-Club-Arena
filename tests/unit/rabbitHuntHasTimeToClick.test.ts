@@ -71,8 +71,9 @@ describe('the hand rests before the next one', () => {
   it('the engine sleeps it AFTER the hand-free broadcast and the board clear', () => {
     // Order is the entire fix. Before the broadcast the client still believes
     // a hand is in progress, so the button cannot render and the time is spent
-    // on nobody; and a reveal freezes the client snapshot for three seconds,
-    // which is only safe once there is no live hand for the freeze to starve.
+    // on nobody. (A reveal used to freeze the client snapshot for three
+    // seconds as well; since 2026-09-05 it paints on a retained board and
+    // freezes nothing - see retainedRabbitBoard.ts.)
     const broadcast = DEALING_CODE.indexOf('this.broadcastCurrentState();');
     const clear = DEALING_CODE.indexOf('boardClearMs(wentToShowdown)');
     const rest = DEALING_CODE.indexOf('HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS');

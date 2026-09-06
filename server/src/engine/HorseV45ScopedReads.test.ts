@@ -66,7 +66,9 @@ describe('V45 scope', () => {
     expect(readScopeOf('nlh', 6)).toBe('holdem:full');
     expect(readScopeOf('plo6', 2)).toBe('omaha:hu');
     expect(readScopeOf('plo4', 4)).toBe('omaha:short');
-    expect(readScopeOf('short_deck', 9)).toBe('holdem:full');
+    // short deck is its OWN family: its frequencies are not hold'em's
+    expect(readScopeOf('short_deck', 9)).toBe('sixplus:full');
+    expect(readScopeOf('short_deck', 2)).toBe('sixplus:hu');
     expect(readScopeOf('flo8', 3)).toBe('omaha:short');
     expect(readScopeOf(undefined, 0)).toBe('holdem:hu');
   });

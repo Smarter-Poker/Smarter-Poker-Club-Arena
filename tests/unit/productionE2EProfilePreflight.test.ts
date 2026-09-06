@@ -109,7 +109,11 @@ describe('authenticated production account preflight', () => {
   });
 
   it('probes a protected layout route and exposes the server-backed decision', () => {
-    expect(source('tests/e2e/global-setup.ts')).toContain("new URL('notifications', baseURL)");
+    const setup = source('tests/e2e/global-setup.ts');
+    expect(setup).toContain("new URL('notifications', baseURL)");
+    expect(setup).toContain("const AUTH_STORAGE_KEY = 'smarter-poker-auth'");
+    expect(setup).toContain('client.auth.signInWithPassword({ email, password })');
+    expect(setup).toContain('localStorage.setItem(authKey, JSON.stringify(session))');
     expect(source('tests/e2e/production-customization-realtime.spec.ts')).toContain(
       "new URL('notifications', baseURL)"
     );
@@ -129,6 +133,11 @@ describe('authenticated production account preflight', () => {
     expect(helper).toContain("locator('.invite-pending')");
     expect(helper).toContain("getByRole('button', { name: 'Try Again' })");
     expect(helper).toContain('CLUB_ROUTE_ATTEMPTS');
+    expect(helper).toContain('POST_JOIN_DECISION_SELECTOR');
+    expect(helper).toContain("textContent({ timeout: 1_000 }).catch(() => '')");
+    expect(helper).not.toContain(
+      'await error.textContent())?.trim() || (await workspaceError.textContent()'
+    );
     expect(helper).toContain('Visible copy:');
   });
 

@@ -71,17 +71,201 @@ groups:
             {{ $labels.instance }} reports {{ $value }} tables. Baseline was
             much higher. Investigate lobby.promote failures.
 
+  # ═══════════════════════════════════════════════════════════════════
+  # RECOVERED FROM engine-01, 2026-09-06 (Realtime Programme phase 7).
+  #
+  # This group existed HERE as a heading with no rules under it, while the
+  # box carried the rules below and this repo had never seen them. An empty
+  # group is worse than an absent one: it reads as coverage. `deploy.sh`
+  # symlinks this file over the live one, so the first person to run it
+  # would have deleted every rule in this section without noticing.
+  #
+  # Restored verbatim from the running file so the repo is a superset and a
+  # deploy is safe. The reasoning comments are the original author's.
+  # ═══════════════════════════════════════════════════════════════════
   - name: cron-health
     interval: 30s
     rules:
+      # Silence, not failure, is the observable that matters here. When
+      # CRON_SECRET was rotated without updating the Hetzner VM, all 85 Open
+      # Claw jobs 401'd and nothing noticed, because a 401 is refused before
+      # anything records it - the log does not fill with errors, it STOPS.
+      - alert: OpenClawJobsHaveGoneSilent
+        expr: |
+          poker_cron_openclaw_stale > 0
+        for: 30m
+        labels:
+          severity: warning
+          component: cron
+        annotations:
+          summary: "{{ $value }} Open Claw job(s) past their staleness threshold"
+          description: "SELECT * FROM v_openclaw_job_staleness WHERE is_stale. A job that stops being dispatched produces no errors at all - it simply stops appearing."
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
 
+      - alert: OpenClawFleetLongSilence
+        expr: |
+          poker_cron_openclaw_worst_silence_minutes > 1440
+        for: 30m
+        labels:
+          severity: critical
+          page: sms
+          component: cron
+        annotations:
+          summary: "An Open Claw job has been silent for {{ $value | humanizeDuration }}"
+          description: "More than a day with no successful run. The worst case observed before this alert existed was 18.3 days."
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+      # Twelve at once on 2026-09-04, all 'job startup timeout', including the
+      # snapshot prune and the daily-missions outbox drain.
+      - alert: PgCronFailuresElevated
+        expr: |
+          poker_cron_pg_failures > 10
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: cron
+        annotations:
+          summary: "{{ $value }} pg_cron failures in the last hour"
+          description: "SELECT jobname, status, return_message FROM cron.job_run_details JOIN cron.job USING (jobid) WHERE status <> 'succeeded' ORDER BY start_time DESC."
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+      # 856 runs an hour is normal. A collapse means the scheduler itself has
+      # stopped, which no per-job alert can see.
+      - alert: PgCronFleetStopped
+        expr: |
+          poker_cron_pg_runs < 50
+          and poker_cron_metrics_stale_seconds < 300
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 20m
+        labels:
+          severity: critical
+          component: cron
+        annotations:
+          summary: "Only {{ $value }} pg_cron runs in the last hour"
+          description: "The fleet normally runs ~856 an hour. The collector is fresh, so this is the scheduler, not the gauge."
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+      - alert: CronMetricsBlind
+        expr: |
+          poker_cron_metrics_stale_seconds > 600
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: cron
+        annotations:
+          summary: "Cron fleet gauges are stale ({{ $value }}s)"
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+  # ── POSTGRES ──────────────────────────────────────────────────────────
+  # Also empty until 2026-09-04, and pointedly so: the realtime replication
+  # slot spent that morning at 305 MB behind, growing, with nothing on the
+  # platform able to see it. The engine-01 stack drops the supabase_pg scrape
+  # job (no postgres_exporter deployed), so these are written against gauges
+  # the ENGINE emits from SECURITY DEFINER functions instead - it is the
+  # Postgres exporter now, for the things that matter.
+  #
+  # Slot flush-lag rules live in the `replication` group below; these are the
+  # ones that group does not cover.
+
+
+  # ═══════════════════════════════════════════════════════════════════
+  # RECOVERED FROM engine-01, 2026-09-06 (Realtime Programme phase 7).
+  #
+  # This group existed HERE as a heading with no rules under it, while the
+  # box carried the rules below and this repo had never seen them. An empty
+  # group is worse than an absent one: it reads as coverage. `deploy.sh`
+  # symlinks this file over the live one, so the first person to run it
+  # would have deleted every rule in this section without noticing.
+  #
+  # Restored verbatim from the running file so the repo is a superset and a
+  # deploy is safe. The reasoning comments are the original author's.
+  # ═══════════════════════════════════════════════════════════════════
   - name: postgres-health
     interval: 30s
     rules:
+      # restart_lsn, not confirmed_flush_lsn. This is the horizon Postgres
+      # cannot recycle WAL past - it is what actually fills the disk, and it
+      # sat at 703 MB while flush lag read 305 MB.
+      - alert: ReplicationSlotPinningWal
+        expr: |
+          max by (slot) (poker_pg_replication_slot_restart_lag_bytes) > 2147483648
+        for: 20m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Slot {{ $labels.slot }} is pinning {{ $value | humanize1024 }}B of WAL on disk"
+          description: "Postgres cannot recycle WAL behind a slot's restart_lsn. This is the number that fills the volume, and it runs well ahead of the flush lag."
+          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
 
-  - name: vercel-health
-    interval: 60s
-    rules:
+      # The engine and the database disagreeing about the time silently breaks
+      # every deadline, timer and retention window on the platform.
+      - alert: EngineDatabaseClockSkew
+        expr: |
+          abs(poker_db_clock_skew_ms) > 5000
+        for: 15m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Engine and database clocks differ by {{ $value }}ms"
+          description: "Turn timers, maintenance-break windows and every retention cutoff are computed against one clock or the other."
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+      - alert: DatabaseRpcErrorsElevated
+        expr: |
+          rate(poker_rpc_errors_total[10m]) > 1
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Engine RPC errors at {{ $value }}/s"
+          description: "The engine reaches Postgres only through PostgREST. A sustained error rate here is seats, hands and settlements failing to write."
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+  # ── vercel-health: DELETED 2026-09-04, deliberately ───────────────────
+  # This group existed with no rules in it. Filling it honestly is not
+  # possible from this stack: every rule it would want reads
+  # probe_success{job="vercel_health"} from blackbox-exporter, and the
+  # engine-01 compose does not deploy blackbox - the same reason
+  # slo-rules.yml and slo-alerts.yml are marked DISABLED. The engine cannot
+  # substitute, because it cannot see whether smarter.poker is reachable from
+  # the outside.
+  #
+  # That coverage is NOT missing, it just lives elsewhere: the World Hub's
+  # publish-watchdog.yml runs every 15 minutes, compares main's HEAD against
+  # the sha /api/health reports, and raises a self-closing issue when they
+  # diverge. It deliberately does not share a failure domain with the deploy
+  # pipeline it watches.
+  #
+  # An empty group is worse than no group - it reads as coverage. To bring it
+  # back properly: add blackbox-exporter to infra/monitoring/docker-compose.yml,
+  # add a vercel_health blackbox job to prometheus.yml, then re-enable
+  # slo-rules.yml and slo-alerts.yml and restore this group in the same PR.
+
+
+  # ── vercel-health: DELETED 2026-09-06, deliberately ───────────────────
+  # This group existed here as a heading with NO RULES IN IT, which reads as
+  # coverage and is not. Filling it honestly is not possible from this stack:
+  # every rule it would want reads probe_success{job="vercel_health"} from
+  # blackbox-exporter, and infra/monitoring/docker-compose.yml does not deploy
+  # blackbox. The engine cannot substitute - it cannot see whether
+  # smarter.poker is reachable from the outside.
+  #
+  # That coverage is NOT missing, it lives elsewhere and deliberately outside
+  # this failure domain: the World Hub's publish-watchdog.yml runs every 15
+  # minutes, compares main's HEAD against the sha /api/health reports, and
+  # raises a self-closing issue when they diverge.
+  #
+  # To bring it back properly: add blackbox-exporter to docker-compose.yml, add
+  # a vercel_health blackbox job to prometheus.yml, then restore this group in
+  # the same pull request. The same note on the box has said so since
+  # 2026-09-04; this repo is now saying it too.
+
 
   - name: host-health
     interval: 30s
@@ -577,9 +761,31 @@ groups:
       # who cannot sit down. The client now retries a dead session at most
       # once (it is sent to sign in), so this is a count of PEOPLE, not
       # of retries.
+      # THRESHOLD RE-DERIVED FROM PRODUCTION 2026-09-06 (phase 7). The rule as
+      # written was `>= 6 in 15m`, and it had never run - it is one of the
+      # fifteen this repo declared and the box had never loaded. Before loading
+      # it, its threshold was measured against the live series it reads:
+      #
+      #     avg 15m increase over 24h ...  1.1
+      #     p95 ..........................  9.2
+      #     max ..........................  32.3
+      #
+      # So `>= 6` sits BELOW the ordinary p95: it would have fired several
+      # times a day, for ever, on nothing but seven-day tokens expiring in
+      # tabs nobody had closed. An alarm that is always on is an alarm that
+      # gets muted, and a muted alarm is what twenty-two hours of silence was
+      # made of. Raising the number alone would rot too - the count scales
+      # with traffic (1.1 avg at 04:00, 23.4 at 11:38 the same morning).
+      #
+      # So it fires on the SHAPE that hurt instead: sessions refused WHILE at
+      # least one client is stuck in a reconnect loop because of it. On
+      # 2026-09-03 both were true continuously for a day; in ordinary churn
+      # `poker_ws_clients_reconnecting_badly` measured 0 for 24 hours straight,
+      # because a client refused once simply goes away.
       - alert: EngineRefusingSessions
         expr: |
           sum(increase(poker_ws_auth_refused_total{denied="invalid"}[15m])) >= 6
+          and poker_ws_clients_reconnecting_badly > 0
         for: 15m
         labels:
           severity: warning
@@ -594,6 +800,28 @@ groups:
             a signing-key rotation, or a password change. The 2026-09-03
             outage looked exactly like this and ran for 22 hours unseen.
           runbook: "docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md"
+
+      # BACKSTOP. The rule above needs the client beacon to be working; this
+      # one needs nothing but the engine's own counter. 60 in fifteen minutes
+      # is nearly double the highest ordinary quarter-hour measured on
+      # 2026-09-06 (32.3), so it cannot be reached by token expiry at today's
+      # traffic - and if traffic grows enough to reach it, that is worth
+      # knowing too, which is why this is a warning and not a page.
+      - alert: EngineRefusingSessionsInVolume
+        expr: |
+          sum(increase(poker_ws_auth_refused_total{denied="invalid"}[15m])) >= 60
+        for: 15m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "Engine refused {{ $value }} sockets as invalid sessions in 15 min"
+          description: |
+            Far above the ordinary rate of expiring tokens. Either something is
+            revoking sessions behind live players, or the client beacon that
+            EngineRefusingSessions depends on has stopped reporting - check
+            poker_ws_clients_reconnecting_badly is still being written.
+          runbook: "docs/runbooks/tables-say-reconnecting.md"
 
       # `unavailable` = the engine could not ASK GoTrue. Nobody is refused
       # as invalid on this path (they get a 503 and keep retrying), but
@@ -796,3 +1024,41 @@ groups:
             pool is CLUSTER_TICK_CONCURRENCY. Either the worklist grew past
             what eight in flight can cover in 5 s, or PostgREST is slow.
             /health -> cluster.elapsedMs and cluster.games say which.
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # THE CANARY - silence has to mean something (phase 7, 2026-09-06)
+  #
+  # Every other rule in this file is quiet when things are well, which makes
+  # "no alerts" and "no monitoring" the same observation. They were the same
+  # observation for twenty-two hours on 2026-09-03, and again for the fifteen
+  # rules this repo declared that the box had simply never loaded.
+  #
+  # MonitoringCanary is always firing, on purpose. It proves the chain a real
+  # alert would travel: Prometheus is up, it loaded THIS file, its rule
+  # evaluator is running, and Alertmanager is receiving. Its ABSENCE is the
+  # signal - `scripts/ci/check-alert-rules-match.mjs` fails when Alertmanager
+  # is not holding it, so a monitoring stack that has stopped evaluating
+  # cannot look like a quiet night.
+  #
+  # It routes to null-receiver: nobody is woken by a canary, and its value is
+  # entirely in being checked FOR rather than sent anywhere.
+  # ═══════════════════════════════════════════════════════════════════════
+  - name: monitoring-canary
+    interval: 30s
+    rules:
+      - alert: MonitoringCanary
+        expr: |
+          vector(1)
+        labels:
+          severity: canary
+          component: monitoring
+        annotations:
+          summary: "Monitoring is alive. This alert always fires; its absence is the fault."
+          description: |
+            If this is NOT in Alertmanager, the stack is not evaluating rules -
+            every other alert in this file is silent for the same reason, and
+            that silence is indistinguishable from health. Check that
+            prometheus is up, that it loaded alert-rules.yml
+            (curl localhost:9090/api/v1/rules), and that alertmanager is
+            reachable from it.
+          runbook: "docs/runbooks/tables-say-reconnecting.md"

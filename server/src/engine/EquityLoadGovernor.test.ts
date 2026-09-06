@@ -65,8 +65,14 @@ describe('simulateEquity under the governor', () => {
       for (let i = 0; i < 20; i++) simulateEquity(hero, [], 3, vi, 450);
       return performance.now() - t0;
     };
-    const full = time(1);
-    const throttled = time(0.2);
+    // Compare the fastest of three samples. A single wall-clock sample can
+    // include an unrelated scheduler pause, especially while several engine
+    // suites share a runner. The fastest sample still measures the actual
+    // work performed and keeps the assertion sensitive to a lost governor.
+    const fastest = (scale: number) => Math.min(time(scale), time(scale), time(scale));
+    time(1); // warm the evaluator before either measured sample set
+    const full = fastest(1);
+    const throttled = fastest(0.2);
     expect(throttled).toBeLessThan(full * 0.6);
   });
 

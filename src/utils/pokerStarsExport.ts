@@ -34,10 +34,19 @@
  * somebody's database and it would look exactly like data.
  *
  * VALIDATED AGAINST THE FORMAT, NOT AGAINST A TRACKER. The grammar below is
- * pinned line by line in `tests/unit/pokerStarsExport.test.ts`, including a
+ * pinned line by line in `tests/unit/handSearchAndExport.test.ts`, including a
  * full round trip of real production hands. Nobody here has run PokerTracker
  * against the output; if an importer rejects something, the pin is the place
  * to correct it.
+ *
+ * READ THE OUTPUT, NOT ONLY THE TESTS. Every defect this file has carried was
+ * found by generating the corpus and reading it - four before it shipped, and
+ * five more in the Phase 5 deep dive: summary positions the format has no
+ * grammar for, `showed and lost` with the cards missing, the uncalled bet
+ * printed after the showdown instead of before it, a missing time stamped as
+ * today, and an `ET` label on the exporter's own clock. Green tests said
+ * nothing about any of them, because each one was a line nobody had thought
+ * to assert.
  */
 
 import type { DeckCard } from './deckCards';
@@ -50,7 +59,12 @@ export interface PokerStarsMeta {
   playedAt?: string | number | null;
   /** Whose hand history this is: the seat written as "Dealt to". */
   heroUserId?: string | null;
-  /** Seats at the table, for the `N-max` in the table line. Defaults to 9. */
+  /**
+   * Seats at the table, for the `N-max` in the table line. `hand_history` does
+   * not carry it - the caller reads it from the table row. Left out, the
+   * writer falls back to the floor the occupied seats prove rather than to a
+   * constant; see the table line below for why a constant was wrong.
+   */
   maxSeats?: number;
   /** Tournament hands are written in chips, cash hands in a currency. */
   isTournament?: boolean;
@@ -88,6 +102,17 @@ function card(c: DeckCard): string {
 const cards = (list: DeckCard[]): string => list.map(card).join(' ');
 
 /**
+ * The made hand, in the format's casing.
+ *
+ * The evaluator's own label is Title Cased for the felt (the house popup
+ * rule); PokerStars writes `two pair`, `a full house`, lower case. The WORDS
+ * are the evaluator's either way - no detail is invented here, because the
+ * format's fuller "two pair, Kings and Fours" is a fact this record does not
+ * carry and guessing at it is how fiction gets into somebody's database.
+ */
+const handWords = (name: string): string => String(name || '').toLowerCase();
+
+/**
  * The variant, named the way the format names it.
  *
  * A name this does not know would make the whole hand unparseable, so an
@@ -112,15 +137,38 @@ export function pokerStarsGameName(variant: string | null | undefined): string |
   return GAME_NAME[key] ?? null;
 }
 
-/** `2026/09/06 9:11:37 ET` - the format's own stamp. */
-function stamp(value: string | number | null | undefined): string {
-  const d = value === null || value === undefined ? new Date() : new Date(value);
-  const t = Number.isFinite(d.getTime()) ? d : new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${t.getFullYear()}/${p(t.getMonth() + 1)}/${p(t.getDate())} ` +
-    `${t.getHours()}:${p(t.getMinutes())}:${p(t.getSeconds())} ET`
-  );
+/**
+ * `2026/09/06 09:11:37 ET`, and it is REALLY Eastern.
+ *
+ * This used to read `getHours()` - the EXPORTING BROWSER's own clock - and
+ * label it ET regardless. The same hand exported in London and in Chicago
+ * carried two different times, and neither was the one the label claimed. A
+ * tracker groups hands into sessions by their stamps, so a shifted clock
+ * splits one session in two or welds two into one.
+ *
+ * Returns null for a time it cannot read, because the caller must REFUSE such
+ * a hand rather than stamp it with today (see the reasons below): a date is
+ * fiction that looks exactly like data.
+ */
+const ET_STAMP = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hour12: false,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+function stamp(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return null;
+  const part: Record<string, string> = {};
+  for (const p of ET_STAMP.formatToParts(d)) part[p.type] = p.value;
+  /* `hour12: false` emits "24" for midnight in some engines. */
+  const hour = part.hour === '24' ? '00' : part.hour;
+  return `${part.year}/${part.month}/${part.day} ${hour}:${part.minute}:${part.second} ET`;
 }
 
 /** The street headers, in the format's own spelling. */
@@ -193,6 +241,22 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
     );
   }
 
+  /**
+   * A HAND WITH NO TIME ON IT IS REFUSED, not stamped with today.
+   *
+   * `stamp` used to fall back to `new Date()`, so a record whose `played_at`
+   * was missing was written with the moment of the export - and a whole file
+   * of them carried the same second. A tracker reads that as one session
+   * played now, which is a hand the player never had at a time they were not
+   * at the table.
+   */
+  const played = stamp(meta.playedAt ?? model.playedAt);
+  if (!played) {
+    reasons.push(
+      'the record carries no time for the hand, and a stamped guess would file it in the wrong session'
+    );
+  }
+
   const lines: string[] = [];
   const heroSeat = meta.heroUserId
     ? model.players.find((p) => p.userId === meta.heroUserId)
@@ -204,13 +268,34 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
   lines.push(
     `PokerStars Hand #${meta.handNumber ?? model.handNumber ?? 0}: ` +
       `${game ?? "Hold'em No Limit"} (${stakes}${meta.isTournament ? '' : ' USD'}) - ` +
-      stamp(meta.playedAt ?? model.playedAt)
+      (played ?? stamp(Date.now()))
   );
 
   const buttonSeat = model.buttonSeat ?? model.players[0]?.seat ?? 1;
+  /**
+   * THE TABLE'S OWN SIZE, not a constant.
+   *
+   * This wrote `9-max` on every hand. Measured against the fleet, that is
+   * wrong for most of it: the tables on this platform are 3-max (64,759),
+   * 9-max (63,808) and heads-up (39,459), plus 6, 7 and 8. Every heads-up and
+   * three-handed hand exported as full ring, and a tracker's heads-up
+   * statistics are a different game from its full-ring ones.
+   *
+   * `hand_history` does not carry the size, so the caller reads it from the
+   * table row and passes it. When the table row is gone - they are recycled -
+   * the FLOOR is what the seats themselves prove: a table cannot be smaller
+   * than its highest occupied seat. That is derived from the record rather
+   * than assumed, and it is stated here so nobody reads it as a fact the
+   * record held.
+   */
+  const seatFloor = model.players.reduce((max, p) => Math.max(max, p.seat || 0), 0);
+  /* NEVER below the floor, even when the caller says so. A table row can be
+     resized after the hand was dealt, and `6-max` written above a `Seat 7:`
+     line is a table that cannot exist - which a parser is right to reject. */
+  const maxSeats = Math.max(meta.maxSeats && meta.maxSeats > 0 ? meta.maxSeats : 0, seatFloor, 2);
   lines.push(
     `Table '${(meta.tableName || 'Club Arena').replace(/'/g, '')}' ` +
-      `${meta.maxSeats ?? 9}-max Seat #${buttonSeat} is the button`
+      `${maxSeats}-max Seat #${buttonSeat} is the button`
   );
 
   for (const p of model.players) {
@@ -345,20 +430,43 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
     writeActions(street);
   }
 
+  /**
+   * THE UNCALLED BET COMES BACK BEFORE THE SHOWDOWN, because that is when it
+   * happens: the last caller is short, the surplus is returned, and only then
+   * do the cards go face up.
+   *
+   * This engine files the return with stage `showdown` (the same fact Phase 4
+   * found when the wire had no showdown slot), and writing the showdown street
+   * after the `*** SHOW DOWN ***` block put the return AFTER the cards. A
+   * reader rebuilding the pot street by street then has the wrong number in
+   * the middle at the moment of the showdown. Its `show` and `muck` rows are
+   * skipped inside `writeActions`; what travels here is the return.
+   */
   const showdownStreet = byStreet('showdown');
+  if (showdownStreet) writeActions(showdownStreet);
+
+  /**
+   * WHAT EACH SEAT ACTUALLY TURNED OVER, by seat, so the summary can repeat it
+   * the way the format does. A seat with no cards on record did not show, and
+   * the summary says `mucked` rather than claiming a showdown nobody can see.
+   */
+  const revealed = new Map<number, { hole: DeckCard[]; handName: string }>();
+  for (const row of model.showdown) {
+    if (row.boardIndex !== 0 || row.low) continue;
+    if (row.hole?.length && !revealed.has(row.seat)) {
+      revealed.set(row.seat, { hole: row.hole, handName: row.handName });
+    }
+  }
+
   if (model.showdown.length > 0) {
     lines.push('*** SHOW DOWN ***');
     /* One "shows" line per seat that turned cards over, on board one. */
     for (const row of model.showdown.filter((r) => r.boardIndex === 0 && !r.low)) {
       if (row.hole?.length) {
-        lines.push(`${row.name}: shows [${cards(row.hole)}] (${row.handName})`);
+        lines.push(`${row.name}: shows [${cards(row.hole)}] (${handWords(row.handName)})`);
       }
     }
   }
-  /* The showdown street still carries the returned uncalled bet on this
-     engine, which is why it is written at all; its show and muck rows are
-     skipped above. */
-  if (showdownStreet) writeActions(showdownStreet);
 
   for (const p of model.players) {
     if (p.won > 0) lines.push(`${nameOf(p)} collected ${money(p.won)} from pot`);
@@ -391,18 +499,52 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
       if (r.verb === 'fold') foldedOn.set(r.userId, FOLD_WORDS[s.key] ?? 'folded before Flop');
     }
   }
+  /**
+   * THE SUMMARY HAS EXACTLY THREE POSITIONS: `(button)`, `(small blind)` and
+   * `(big blind)`. Every other seat carries NOTHING.
+   *
+   * This wrote the felt's own labels straight through - `(utg)`, `(mp)`,
+   * `(co)`, `(hj)`, and `(sb)`/`(bb)` in our spelling - which is 101 of the
+   * corpus's summary lines carrying a token no parser has a rule for. Read
+   * from the POSTS rather than from the derived position, because who put the
+   * blind in is the record's own witness to which seat it was.
+   */
+  const sbSeat = allRows.find((r) => r.verb === 'sb')?.seat ?? null;
+  const bbSeat = allRows.find((r) => r.verb === 'bb')?.seat ?? null;
+  const summaryPosition = (seat: number): string => {
+    const parts: string[] = [];
+    /* Heads-up the button IS the small blind, and the format writes both. */
+    if (seat === buttonSeat) parts.push('(button)');
+    if (seat === sbSeat) parts.push('(small blind)');
+    else if (seat === bbSeat) parts.push('(big blind)');
+    return parts.length ? ` ${parts.join(' ')}` : '';
+  };
+
   for (const p of model.players) {
-    const position =
-      p.seat === buttonSeat ? ' (button)' : p.position ? ` (${p.position.toLowerCase()})` : '';
-    const who = `Seat ${p.seat}: ${nameOf(p)}${position}`;
+    const who = `Seat ${p.seat}: ${nameOf(p)}${summaryPosition(p.seat)}`;
+    const reveal = revealed.get(p.seat);
+    /**
+     * `showed and lost` with NO CARDS is what this used to write, while the
+     * very same cards sat three lines above in the `*** SHOW DOWN ***` block.
+     * A parser reads that as a showdown with an unknown holding, which is
+     * worse than no showdown at all: the tracker records it as fact and the
+     * holding is simply missing.
+     */
     if (p.won > 0) {
-      lines.push(`${who} collected (${money(p.won)})`);
+      lines.push(
+        reveal
+          ? `${who} showed [${cards(reveal.hole)}] and won (${money(p.won)}) with ${handWords(reveal.handName)}`
+          : `${who} collected (${money(p.won)})`
+      );
     } else if (foldedOn.has(p.userId)) {
       lines.push(`${who} ${foldedOn.get(p.userId)}`);
-    } else if (p.mucked) {
-      lines.push(`${who} mucked`);
+    } else if (reveal) {
+      lines.push(
+        `${who} showed [${cards(reveal.hole)}] and lost with ${handWords(reveal.handName)}`
+      );
     } else {
-      lines.push(`${who} showed and lost`);
+      /* No cards on record IS the muck: nothing was turned over. */
+      lines.push(`${who} mucked`);
     }
   }
 

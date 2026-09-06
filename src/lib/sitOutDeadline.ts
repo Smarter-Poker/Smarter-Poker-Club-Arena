@@ -1,3 +1,4 @@
+import { serverNow } from '../utils/serverClock';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * SIT-OUT DEADLINE — how long a cash player actually has
@@ -78,7 +79,7 @@ export function sitOutMsRemaining(params: {
   const { sitOutSince, isTournament } = params;
   if (isTournament) return null;
   if (!sitOutSince || !Number.isFinite(sitOutSince)) return null;
-  const now = params.now ?? Date.now();
+  const now = params.now ?? serverNow();
   const elapsed = now - sitOutSince;
   /* A STAMP SLIGHTLY IN THE FUTURE IS CLOCK SKEW, NOT A MYSTERY.
      `sit_out_at` is `now()` on the DATABASE, so a device whose clock is behind

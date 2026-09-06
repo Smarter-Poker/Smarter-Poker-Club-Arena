@@ -24,6 +24,7 @@ import React, {
 } from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
+import { serverNow } from '../utils/serverClock';
 import { isSitOutUrgent } from '../lib/sitOutDeadline';
 import LiveTablesBar from '../components/table/LiveTablesBar';
 import {
@@ -1533,7 +1534,12 @@ export default function MultiTablePage() {
 
   // 2026-08-15 multi-table fix: the tab countdown ticks off the server
   // deadline. One 1s clock runs only while some table has a live turn.
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  /* THE ENGINE'S CLOCK (2026-09-06). Every deadline this drives -
+     turnDeadlineMs, sitOutDeadlineMs, the decision deadline - was stamped by
+     the engine, and the table's own ring has read them through serverNow()
+     since Phase 5. The tab strip did not, so the surface a multi-tabler
+     actually watches was the one still showing device-clock seconds. */
+  const [nowMs, setNowMs] = useState(() => serverNow());
   /**
    * Dan 2026-08-21: "ALL CLOCKS, COUNTDOWNS AND WARNINGS NEED TO STILL BE
    * WORKING ALL AT THE SAME TIME." The 1s clock used to run only while some
@@ -1555,7 +1561,7 @@ export default function MultiTablePage() {
   );
   useEffect(() => {
     if (!anyTurnLive) return;
-    const iv = setInterval(() => setNowMs(Date.now()), 1000);
+    const iv = setInterval(() => setNowMs(serverNow()), 1000);
     return () => clearInterval(iv);
   }, [anyTurnLive]);
   const secondsLeft = useCallback(
@@ -2801,6 +2807,14 @@ export default function MultiTablePage() {
           stakes: current.stakes,
           isMyTurn: false,
           pot: 0,
+          /* THE GAME DOES NOT CHANGE WHEN THE TABLE DOES (2026-09-06). A
+             must-move / seat change / balance move re-points this tab at
+             another table OF THE SAME GAME, so the cluster is the one thing
+             that certainly survives it. Dropping it here blanked
+             `activeClusterId` until the remounted TablePage reported it again -
+             and in that gap the LOBBY button vanished and the 4-square jumped
+             ~74px sideways, at the exact moment the player was being moved. */
+          clusterId: current.clusterId,
           gameCode: current.gameCode,
           isTournament: current.isTournament,
         } as TableInstance;
@@ -4060,7 +4074,7 @@ export default function MultiTablePage() {
         {tables.length >= 1 && (
           <div
             className={`multi-table-page__tab-bar-wrapper${
-              activeClusterId ? ' multi-table-page__tab-bar-wrapper--with-lobby' : ''
+              activeClusterId && !isTileView ? ' multi-table-page__tab-bar-wrapper--with-lobby' : ''
             }`}
           >
             <TableTabBar
@@ -4136,7 +4150,7 @@ export default function MultiTablePage() {
                 MultiTablePage.css (.tile-toggle-btn). */}
             <button
               className={`tile-toggle-btn${tables.length > 1 ? '' : ' tile-toggle-btn--inert'}${
-                activeClusterId ? ' tile-toggle-btn--shifted' : ''
+                activeClusterId && !isTileView ? ' tile-toggle-btn--shifted' : ''
               }`}
               onClick={() => {
                 if (tables.length > 1) setIsTileView((prev) => !prev);
@@ -4196,7 +4210,17 @@ export default function MultiTablePage() {
                 the one word. The figures it carried (players, tables, your
                 place on the list) are all in the lobby it opens, one tap away,
                 and they were sitting on top of two seats to say so. */}
-            {activeClusterId && (
+            {/* NOT IN TILE VIEW (2026-09-06). The lobby is a child of the
+                `.table-page` root, and in tile view that whole subtree is
+                `transform: scale(0.5)` + `pointer-events: none`
+                (MultiTablePage.css). Opening it from this strip - which is NOT
+                scaled, and is clickable in tile view - produced a half-size
+                modal inside one tile that could not be scrolled, clicked or
+                closed except by Escape. Every previous opener lived inside that
+                same dead subtree, so it was merely unreachable; this one made
+                it reachable and broken. Pick a table first, as with every other
+                felt control. */}
+            {activeClusterId && !isTileView && (
               <button
                 type="button"
                 className="mtp-lobby-btn"

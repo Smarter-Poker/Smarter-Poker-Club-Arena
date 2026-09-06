@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 const ACCOUNT_PREFIX = 'ca-customization-cert-postdeploy-';
 const ACCOUNT_SUFFIX = '@example.invalid';
 const FREE_AVATAR = '/avatars/table/free_samurai@2x.webp';
+const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const PROFILE_ATTEMPTS = 24;
 const STALE_ACCOUNT_AGE_MS = 40 * 60_000;
 const STALE_ACCOUNT_LIMIT = 20;
@@ -155,6 +156,112 @@ export async function cleanupProductionE2EAccount({
   return true;
 }
 
+/**
+ * Give only the short-lived reserved certification identity enough authority
+ * to open staff-only Club Arena surfaces. The account is created immediately
+ * before this call and must have no membership yet: refusing an existing row
+ * keeps this helper from ever changing a real player's role or balance.
+ * cleanup_reserved_certification_account removes this zero-balance fixture
+ * with the identity at the end of the post-deploy job.
+ */
+export async function prepareProductionE2EStaffMembership({
+  environment = process.env,
+  fetchImpl = fetch,
+} = {}) {
+  const path = fixturePath(environment);
+  const account = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
+  if (!account?.id || !reserved(account.email || '')) {
+    throw new Error('Refusing to prepare staff access outside the reserved post-deploy namespace.');
+  }
+
+  const configuration = requireEnvironment(environment);
+  const anonKey = environment.SUPABASE_ANON_KEY || environment.VITE_SUPABASE_ANON_KEY || '';
+  if (!anonKey) throw new Error('SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY is required.');
+  const clubId = environment.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
+  const query = new URLSearchParams({
+    select: 'club_id,user_id,role,status,chip_balance',
+    club_id: `eq.${clubId}`,
+    user_id: `eq.${account.id}`,
+  });
+  const existing = await serviceRequest(
+    configuration,
+    `/rest/v1/club_members?${query.toString()}`,
+    {},
+    fetchImpl
+  );
+  if (!Array.isArray(existing)) {
+    throw new Error('Reserved staff membership preflight returned a non-array body.');
+  }
+  if (existing.length > 0) {
+    throw new Error(
+      'Refusing to change an existing Club Arena membership for staff certification.'
+    );
+  }
+
+  // Membership creation itself must go through the public join contract. The
+  // database correctly rejects even service-role inserts that bypass it.
+  const authResponse = await fetchImpl(
+    `${configuration.supabaseUrl}/auth/v1/token?grant_type=password`,
+    {
+      method: 'POST',
+      headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: account.email, password: account.password }),
+    }
+  );
+  const session = await responseBody(authResponse);
+  if (!authResponse.ok || !session?.access_token) {
+    throw new Error(`Reserved staff authentication failed (${authResponse.status}).`);
+  }
+  const joinResponse = await fetchImpl(`${configuration.supabaseUrl}/rest/v1/rpc/fn_join_club`, {
+    method: 'POST',
+    headers: {
+      apikey: anonKey,
+      Authorization: `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ p_club_id: clubId }),
+  });
+  const joinResult = await responseBody(joinResponse);
+  if (!joinResponse.ok || joinResult?.error) {
+    throw new Error(`Reserved staff public join failed (${joinResponse.status}).`);
+  }
+
+  const joined = await serviceRequest(
+    configuration,
+    `/rest/v1/club_members?${query.toString()}`,
+    {},
+    fetchImpl
+  );
+  const joinedRow = Array.isArray(joined) ? joined[0] : null;
+  if (joined?.length !== 1 || Number(joinedRow?.chip_balance) !== 0) {
+    throw new Error('Reserved staff public join did not create one zero-balance membership.');
+  }
+
+  const created = await serviceRequest(
+    configuration,
+    `/rest/v1/club_members?club_id=eq.${encodeURIComponent(clubId)}&user_id=eq.${encodeURIComponent(account.id)}&select=club_id,user_id,role,status,chip_balance`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ role: 'admin', status: 'active', is_active: true }),
+    },
+    fetchImpl
+  );
+  const row = Array.isArray(created) ? created[0] : null;
+  if (
+    created?.length !== 1 ||
+    row?.club_id !== clubId ||
+    row?.user_id !== account.id ||
+    row?.role !== 'admin' ||
+    row?.status !== 'active' ||
+    Number(row?.chip_balance) !== 0
+  ) {
+    throw new Error('Reserved staff membership was not created exactly as requested.');
+  }
+  console.log('[production-e2e-account] isolated zero-balance staff membership verified.');
+  return row;
+}
+
 export async function cleanupStaleProductionE2EAccounts({
   environment = process.env,
   fetchImpl = fetch,
@@ -263,8 +370,9 @@ export async function createProductionE2EAccount({
 async function main() {
   const command = process.argv[2];
   if (command === 'create') return createProductionE2EAccount();
+  if (command === 'prepare-staff') return prepareProductionE2EStaffMembership();
   if (command === 'cleanup') return cleanupProductionE2EAccount();
-  throw new Error('Usage: production-e2e-account.mjs <create|cleanup>');
+  throw new Error('Usage: production-e2e-account.mjs <create|prepare-staff|cleanup>');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

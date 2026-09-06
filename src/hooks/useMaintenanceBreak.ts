@@ -30,6 +30,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { serverNow } from '../utils/serverClock';
 
 export interface MaintenanceBreakState {
   active: boolean;
@@ -88,7 +89,7 @@ async function fetchBreakState(): Promise<MaintenanceBreakState> {
             phase === 'counting_down'
               ? row.break_ends_at
                 ? Date.parse(row.break_ends_at as string)
-                : Date.now() + Number(row.remaining_ms ?? 0)
+                : serverNow() + Number(row.remaining_ms ?? 0)
               : null,
           reason: (row.reason as string) || 'Scheduled Engine Maintenance',
         };
@@ -165,7 +166,7 @@ export function useMaintenanceBreak() {
     const tick = () => {
       const s = stateRef.current;
       if (!s.active) return;
-      if (s.phase === 'counting_down' && s.breakEndsAtMs && Date.now() >= s.breakEndsAtMs) {
+      if (s.phase === 'counting_down' && s.breakEndsAtMs && serverNow() >= s.breakEndsAtMs) {
         setState(IDLE);
         return;
       }

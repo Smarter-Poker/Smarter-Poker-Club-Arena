@@ -66,6 +66,16 @@ const TICK_ALL = read(
 const WORKLIST = read(
   'supabase/migrations/20260906011113_the_worklist_reaches_the_game_the_repair_was_written_for.sql'
 );
+/* PIN MOVED 2026-09-05 (migration 20260906015029). `fn_cash_cluster_tick` was
+   re-declared WHOLE by that migration to raise the opening-feeder abandon
+   window from 3 minutes to 6, so 20260905050000 is no longer the live
+   definition of the abandon block and pinning it would pin a superseded
+   function. The feeder-abandon assertions below read the current file; every
+   other tick assertion in this describe still reads DEEP_DIVE, where the text
+   it pins is unchanged. */
+const FEEDER_WINDOW = read(
+  'supabase/migrations/20260906015029_an_opening_feeder_is_filled_before_it_is_abandoned.sql'
+);
 const METRICS = read('server/src/cluster/ClusterMetrics.ts');
 
 describe('the controller is wired on the leader, beside the fleet', () => {
@@ -419,7 +429,14 @@ describe('the fleet keeps its hands off cluster tables', () => {
     expect(FLEET).toMatch(
       /clusterPools\.push\(clusterPool\);\s*\} else \{\s*nextEligible\.set\(table\.id, pool\.length\);\s*\}\s*if \(countOnly\) continue;/
     );
-    expect(FLEET).toMatch(/seatsWanted: countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE/);
+    /* PIN MOVED 2026-09-06 (the feeder reserves the buyers it was opened for).
+       The full-table probe is unchanged and still asks for the open rule's
+       two; an OPENING feeder now declares a `reserved` claim ahead of it, so
+       the ternary has one more branch. The claim is derived from `lifecycle`
+       every cycle and stored nowhere, so it dies with the feeder. See
+       HorseBuyerAllocation.test.ts for the allocation itself. */
+    expect(FLEET).toMatch(/countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE/);
+    expect(FLEET).toMatch(/claim: openingFeeder \? 'reserved' : countOnly \? 'probe' : 'seating',/);
     expect(FLEET).toMatch(
       /for \(const \[tableId, n\] of allocateBuyers\(clusterPools, capacityByHorse\)\) \{\s*nextEligible\.set\(tableId, n\);\s*\}\s*this\.lastEligibleByTable = nextEligible;/
     );
@@ -626,12 +643,23 @@ describe('the deep dive after the first live cycle (20260905050000)', () => {
     expect(tick).toMatch(/d\.table_id = t\.id AND d\.user_id = ts\.user_id AND d\.left_at IS NULL/);
   });
 
-  it('an abandoned opening feeder closes, and OPEN waits two minutes after it', () => {
-    const tick = DEEP_DIVE.slice(
-      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick')
+  it('an abandoned opening feeder closes after SIX minutes, and OPEN waits two after it', () => {
+    /* THE WINDOW MOVED 2026-09-05, and this pin moved with it in the same
+       commit. Three minutes is shorter than one worst-case fleet seeding
+       cycle (57 to 118 seconds, on a 30-second tick) plus a tick interval, so
+       an opening feeder could be closed before the fleet's next cycle ever
+       reached it - and the fleet then bought into the closed row and was
+       refused TABLE_CLOSING, 15 times in 25 minutes. Measured that night: 22
+       feeder_opened, 4 feeder_live, 20 feeder_abandoned in one hour. Six
+       minutes is 148s (118 + 30) with a full cycle of margin.
+       The 2-minute rest after an abandon is deliberately NOT changed. */
+    const tick = FEEDER_WINDOW.slice(
+      FEEDER_WINDOW.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick')
     );
     expect(tick).toMatch(/'feeder_abandoned'/);
-    expect(tick).toMatch(/interval '3 minutes'/);
+    expect(tick).toMatch(
+      /coalesce\(tb\.opened_at, tb\.created_at\) < v_now - interval '6 minutes'/
+    );
     expect(tick).toMatch(/e\.kind = 'feeder_abandoned' AND e\.at > v_now - interval '2 minutes'/);
   });
 

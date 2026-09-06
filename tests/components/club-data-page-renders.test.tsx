@@ -948,6 +948,63 @@ describe('ClubDataPage', () => {
     );
   });
 
+  it('keeps an expanded recent ledger through the 60-second verified refresh', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const recentRows = Array.from({ length: 200 }, (_, index) => ({
+      ...snapshot.rows[0],
+      id: `heartbeat-game-${index + 1}`,
+      name: `Heartbeat Game ${index + 1}`,
+      started_at: new Date(Date.UTC(2026, 7, 30, 12, 0, 0) - index * 1_000).toISOString(),
+    }));
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot') {
+        return {
+          data: { ...snapshot, rows: recentRows.slice(0, 100), row_count: 250 },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_game_page' && args?.p_sort === 'recent') {
+        return {
+          data: {
+            ...gamePage,
+            rows: recentRows.slice(100),
+            next_cursor: { value: 1, time: 1, kind: 'CASH', id: 'heartbeat-game-200' },
+            has_more: true,
+            filtered_count: 250,
+          },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    try {
+      const { rerender } = render(<ClubDataPage />);
+      const loadMore = await screen.findByRole('button', {
+        name: 'Load More Games - 100 Of 250',
+      });
+      fireEvent.click(loadMore);
+      await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+
+      // IdentityDNA replaces the same signed-in user's object when delayed
+      // profile hydration or a token refresh lands. That is not a new ledger
+      // query and must not turn a background identity update into a destructive
+      // first-page reload.
+      authState.current = { user: { id: 'owner-1' }, isHydrating: false };
+      rerender(<ClubDataPage />);
+      await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+
+      await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('retires stale game pagination when a sort establishes a new cursor', async () => {
     const recentRows = Array.from({ length: 200 }, (_, index) => ({
       ...snapshot.rows[0],

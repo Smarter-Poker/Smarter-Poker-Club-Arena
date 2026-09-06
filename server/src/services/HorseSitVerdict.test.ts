@@ -337,12 +337,26 @@ describe('the fleet: one predicate, asked for the count and for the chair', () =
     expect(seat.indexOf('const verdict = sitVerdictFor(')).toBeLessThan(
       seat.indexOf('const success = await this.seatHorse(')
     );
-    // no silent continue is left in the seat stage. Two remain and both are
-    // counted: the verdict's refusal (above) and, since 2026-09-05, the
-    // lone-seat refusal that keeps a single horse off an EMPTY cluster table
-    // (loneSeatRefused++, noted in the diag as lone_seat_refused).
+    /* No silent continue is left in the seat stage. THREE remain and all
+       three are counted:
+         1. the verdict's refusal (above);
+         2. the lone-seat refusal that keeps a single horse off an EMPTY
+            cluster table (loneSeatRefused++, diag lone_seat_refused);
+         3. PIN MOVED 2026-09-05, from 2 to 3, for the stale-snapshot skip.
+            The open-table list is read once at the top of a cycle that takes
+            57 to 118 seconds, so the feeder being seated into may already
+            have been closed by the controller - the door then raised
+            TABLE_CLOSING 15 times in 25 minutes. The re-read skips it
+            (staleTablesSkipped++, diag stale_snapshot). It is counted, and it
+            is deliberately placed here, ABOVE the first seatHorse, so the
+            horses that table selected are still unspent.
+       If a FOURTH appears, it needs a counter of its own before this number
+       moves again. */
     const stage = seat.slice(0, seat.indexOf('const success = await this.seatHorse('));
-    expect(stage.match(/continue;/g)?.length).toBe(2);
+    expect(stage.match(/continue;/g)?.length).toBe(3);
+    expect(stage).toMatch(
+      /if \(!isStillSeatable\(doors, table\.id\)\) \{\s*staleTablesSkipped\+\+;\s*noteSkip\(diag, 'stale_snapshot'\);\s*continue;/
+    );
     expect(stage).toMatch(
       /refusesLoneSeat\(\{[\s\S]*?\}\)\s*\)\s*\{\s*loneSeatRefused\+\+;\s*noteSkip\(diag, 'lone_seat_refused'\);\s*continue;/
     );
@@ -372,9 +386,14 @@ describe('the fleet: an opening feeder says what happened', () => {
     expect(finBlock).toContain(
       '`[HorseFleet] opening feeder "${diag.name}": candidates ${diag.candidates}, `'
     );
+    /* PIN MOVED 2026-09-06: the line now carries the RESERVATION the feeder
+       holds (HorseBuyerAllocation), between what it wanted and the seats it
+       found. Same line, same finally, one more number - the one that says the
+       claim mechanism is running. */
     expect(finBlock).toContain(
-      '`sittable ${diag.sittable}, wanted ${diag.wanted}, empty seats ${diag.empty_seats}, `'
+      '`sittable ${diag.sittable}, wanted ${diag.wanted}, reserved ${diag.reserved}, `'
     );
+    expect(finBlock).toContain('`empty seats ${diag.empty_seats}, `');
     expect(finBlock).toContain('`selected ${diag.selected}, seated ${diag.seated}, `');
     expect(finBlock).toContain(
       '`skipped {${formatSkipCounts(new Map(Object.entries(diag.skipped)))}}`'

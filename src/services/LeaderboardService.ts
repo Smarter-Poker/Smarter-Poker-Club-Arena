@@ -162,18 +162,67 @@ export interface LeaderboardRewardPlan {
   published_at: string;
 }
 
-export interface LeaderboardPayout {
+export type LeaderboardSettlementState =
+  | 'not_published'
+  | 'disabled'
+  | 'open'
+  | 'pending'
+  | 'failed'
+  | 'paid';
+
+export interface LeaderboardSettlementBatch {
   id: string;
-  club_id: string;
-  period: string;
+  program_id: string;
+  program_version: number;
+  program_hash: string;
   metric: string;
-  start_date: string;
-  end_date: string;
+  funding_owner_type: 'union' | 'club';
+  funding_union_id: string | null;
+  total_paid: number;
+  seed_funded: number;
+  promo_funded: number;
+  winner_count: number;
+  tie_policy: 'split_occupied_places';
+  settled_at: string;
+}
+
+export interface LeaderboardSettlementFailure {
+  error_code:
+    | 'promo_wallet_underfunded'
+    | 'promo_wallet_missing'
+    | 'program_invalid'
+    | 'credit_conflict'
+    | 'settlement_error'
+    | 'unknown';
+  attempt_count: number;
+  first_failed_at: string;
+  last_failed_at: string;
+  automatic_retry: true;
+  owner_message: string | null;
+}
+
+export interface LeaderboardSettlementReceipt {
+  id: string;
+  batch_id: string;
   user_id: string;
   rank: number;
   payout_amount: number;
-  payout_currency: string;
+  payout_currency: 'chips';
   awarded_at: string;
+}
+
+export interface LeaderboardSettlementStatus {
+  club_id: string;
+  period: 'weekly' | 'monthly';
+  period_start: string;
+  period_end: string;
+  state: LeaderboardSettlementState;
+  can_manage: boolean;
+  planned_total: number;
+  program: LeaderboardRewardPlan | null;
+  batch: LeaderboardSettlementBatch | null;
+  failure: LeaderboardSettlementFailure | null;
+  receipts: LeaderboardSettlementReceipt[];
 }
 
 export interface LeaderboardEntry {
@@ -1052,41 +1101,156 @@ export const LeaderboardService = {
     return data as LeaderboardSettings;
   },
 
-  async getPayoutsForPeriod(
+  async getLeaderboardSettlementStatus(
     clubId: string,
-    period: string,
-    metric: string,
-    startDate: string
-  ): Promise<LeaderboardPayout[]> {
-    try {
-      const { data, error } = await supabase
-        .from('leaderboard_payouts')
-        .select('*')
-        .eq('club_id', clubId)
-        .eq('period', period)
-        .eq('metric', metric)
-        .eq('start_date', startDate);
-      if (error) throw error;
-      return (data as LeaderboardPayout[]) || [];
-    } catch (err) {
-      reportError(err, 'LeaderboardService.getPayoutsForPeriod');
-      return [];
+    period: 'weekly' | 'monthly',
+    periodStart: string
+  ): Promise<LeaderboardSettlementStatus> {
+    const { data, error } = await supabase.rpc('fn_get_leaderboard_settlement_status', {
+      p_club_id: clubId,
+      p_period: period,
+      p_period_start: periodStart,
+    });
+    if (error) {
+      reportError(error, 'LeaderboardService.getLeaderboardSettlementStatus');
+      throw error;
     }
-  },
 
-  async getUserTrophies(userId: string): Promise<LeaderboardPayout[]> {
-    try {
-      const { data, error } = await supabase
-        .from('leaderboard_payouts')
-        .select('*')
-        .eq('user_id', userId)
-        .order('awarded_at', { ascending: false });
-      if (error) throw error;
-      return (data as LeaderboardPayout[]) || [];
-    } catch (err) {
-      reportError(err, 'LeaderboardService.getUserTrophies');
-      return [];
+    const row = data as Partial<LeaderboardSettlementStatus> | null;
+    const validStates: LeaderboardSettlementState[] = [
+      'not_published',
+      'disabled',
+      'open',
+      'pending',
+      'failed',
+      'paid',
+    ];
+    if (
+      !row ||
+      row.club_id !== clubId ||
+      row.period !== period ||
+      row.period_start !== periodStart ||
+      typeof row.period_end !== 'string' ||
+      !row.state ||
+      !validStates.includes(row.state) ||
+      typeof row.can_manage !== 'boolean' ||
+      !Number.isFinite(Number(row.planned_total)) ||
+      Number(row.planned_total) < 0 ||
+      !Array.isArray(row.receipts)
+    ) {
+      throw new Error('Leaderboard Settlement Status Returned Invalid Data');
     }
+
+    const receipts = row.receipts.map((receipt) => ({
+      ...receipt,
+      rank: Number(receipt.rank),
+      payout_amount: Number(receipt.payout_amount),
+    }));
+    if (
+      receipts.some(
+        (receipt) =>
+          !receipt.id ||
+          !receipt.batch_id ||
+          !receipt.user_id ||
+          !Number.isInteger(receipt.rank) ||
+          receipt.rank < 1 ||
+          !Number.isFinite(receipt.payout_amount) ||
+          receipt.payout_amount < 0 ||
+          receipt.payout_currency !== 'chips' ||
+          typeof receipt.awarded_at !== 'string'
+      )
+    ) {
+      throw new Error('Leaderboard Settlement Receipts Returned Invalid Data');
+    }
+
+    const batch = row.batch
+      ? {
+          ...row.batch,
+          program_version: Number(row.batch.program_version),
+          total_paid: Number(row.batch.total_paid),
+          seed_funded: Number(row.batch.seed_funded),
+          promo_funded: Number(row.batch.promo_funded),
+          winner_count: Number(row.batch.winner_count),
+        }
+      : null;
+    if (
+      batch &&
+      (!batch.id ||
+        !batch.program_id ||
+        !Number.isInteger(batch.program_version) ||
+        batch.program_version < 1 ||
+        !batch.program_hash ||
+        !['profit', 'hands_played', 'tournaments_won', 'roi'].includes(batch.metric) ||
+        !['union', 'club'].includes(batch.funding_owner_type) ||
+        (batch.funding_owner_type === 'union' && !batch.funding_union_id) ||
+        !Number.isFinite(batch.total_paid) ||
+        batch.total_paid < 0 ||
+        !Number.isFinite(batch.seed_funded) ||
+        batch.seed_funded < 0 ||
+        !Number.isFinite(batch.promo_funded) ||
+        batch.promo_funded < 0 ||
+        !Number.isInteger(batch.winner_count) ||
+        batch.winner_count < 0 ||
+        batch.tie_policy !== 'split_occupied_places' ||
+        typeof batch.settled_at !== 'string' ||
+        Math.round(batch.total_paid * 100) !==
+          Math.round((batch.seed_funded + batch.promo_funded) * 100))
+    ) {
+      throw new Error('Leaderboard Settlement Batch Returned Invalid Data');
+    }
+
+    const failure = row.failure
+      ? {
+          ...row.failure,
+          attempt_count: Number(row.failure.attempt_count),
+        }
+      : null;
+    const validFailureCodes = [
+      'promo_wallet_underfunded',
+      'promo_wallet_missing',
+      'program_invalid',
+      'credit_conflict',
+      'settlement_error',
+      'unknown',
+    ];
+    if (
+      failure &&
+      (!validFailureCodes.includes(failure.error_code) ||
+        !Number.isInteger(failure.attempt_count) ||
+        failure.attempt_count < 1 ||
+        typeof failure.first_failed_at !== 'string' ||
+        typeof failure.last_failed_at !== 'string' ||
+        failure.automatic_retry !== true ||
+        (failure.owner_message !== null && typeof failure.owner_message !== 'string'))
+    ) {
+      throw new Error('Leaderboard Settlement Failure Returned Invalid Data');
+    }
+
+    if (row.state === 'paid') {
+      const receiptTotalCents = receipts.reduce(
+        (total, receipt) => total + Math.round(receipt.payout_amount * 100),
+        0
+      );
+      if (
+        !batch ||
+        failure ||
+        receipts.length !== batch.winner_count ||
+        receipts.some((receipt) => receipt.batch_id !== batch.id) ||
+        receiptTotalCents !== Math.round(batch.total_paid * 100)
+      ) {
+        throw new Error('Leaderboard Paid Settlement Did Not Reconcile');
+      }
+    } else if (batch || receipts.length > 0 || (row.state === 'failed') !== Boolean(failure)) {
+      throw new Error('Leaderboard Settlement State Returned Conflicting Data');
+    }
+
+    return {
+      ...(row as LeaderboardSettlementStatus),
+      planned_total: Number(row.planned_total),
+      batch,
+      failure,
+      receipts,
+    };
   },
 };
 

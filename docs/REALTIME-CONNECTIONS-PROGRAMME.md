@@ -17,7 +17,7 @@ verification when it lands.
 | 3     | Do no harm                 | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   | done   |
 | 4     | Restart handoff + protocol | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 | done   |
 | 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      | done   |
-| 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      |        |
+| 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      | done   |
 | 7     | Guardrails                 | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        |        |
 
 Not in the programme, because they are Dan's decisions, recorded so they are
@@ -161,6 +161,132 @@ belongs in its own phase with Dan's sign-off, not smuggled into an
 observability phase. It is recorded here so nobody reads the existing code as
 a working path.
 
+## Phase 6 - Prove it from outside (2026-09-06)
+
+**Why.** Phases 1 to 5 gave the platform eyes, and every one of them looks at
+the platform FROM INSIDE THE PLATFORM. The thing that was broken on 2026-09-03
+was not visible from inside: the engine was healthy and dealing 5,700 hands per
+ten minutes, `/api/health` was green because the engine was healthy, the lobby
+was green because PostgREST checks a JWT's signature and not its session, and
+`login-probe` was green because GoTrue was issuing tokens perfectly - it was
+this platform's own cron revoking them a moment later. Every monitor answered
+an HTTP question. The player's question is a WebSocket one, and nothing
+anywhere was asking it.
+
+**What.**
+
+1. **A synthetic client that does what a player does**, every five minutes, on
+   Open Claw: sign in, open a REAL `wss://` socket to a table that is dealing
+   (`['bearer', jwt]` subprotocol - the client's own code path, on Node's
+   global `WebSocket`), wait for the first `SNAPSHOT`, close, sign out scope
+   local. It could not be a `fetch`: the upgrade runs the protocol gate (4426),
+   the token verdict that separates revoked from unreachable (4401 vs a
+   pre-handshake 503), the socket cap (4429) and the subscribe - none of which
+   an HTTP request touches.
+2. **A table chosen at runtime, never hardcoded** (`fn_probe_table_candidate`):
+   running, cash, at least three hands in the last ten minutes, no human
+   seated, picked at RANDOM among the qualifying rooms. Recent hands are
+   load-bearing - the hub only sends a snapshot when it has one, so an idle
+   table would report "no felt arrived" for a table that is merely quiet.
+   Always picking the busiest would let one healthy table mask a broken fleet.
+   Zero rows is an answer, not an error: the fleet is not dealing.
+3. **The outcomes are distinguished**, because they send you to different
+   places: `refused` (1006, the ambiguous one that cost twenty-two hours),
+   `auth_refused` (4401), `no_snapshot` (the socket opened and the felt never
+   came - a completely different fault), `handshake_timeout`, `table_not_found`,
+   `rate_limited`, `probe_outdated` (4426 - the PROBE needs raising, not an
+   outage).
+4. **`docs/runbooks/tables-say-reconnecting.md`** - four questions for the
+   first four minutes, every close code by name, and the 2026-09-03 outage as
+   the worked example with each of its six steps mapped to the thing that now
+   watches it.
+
+**The design decision of the phase: it does NOT report to the engine's
+`/metrics`.** That would be tidy and consistent with phases 1, 2 and 5, and it
+is the exact mistake this probe exists to avoid - a monitor that reports
+through the thing it monitors cannot report the outage it was built for. If the
+engine is refusing sockets it can refuse the probe's POST too, and a gauge that
+stops moving looks exactly like a quiet night. The result goes to
+`probe_heartbeats`, to an ops email, and to Open Claw's `CRITICAL_JOBS` (three
+consecutive failures page by SMS - three rather than two because one run per
+hour lands inside the `:55` break, and the break can eat one run but never
+three). SILENCE is covered by `check-cron-fleet-alive.mjs`, which asks Postgres
+how long it has been since any Open Claw job ran - because a probe that stops
+running is silent, and silence looks like health.
+
+Putting these numbers on Prometheus waits for **Phase 7**, which owns the phase
+1 finding that the alert rules on the box are not the rules in this repo, in
+both directions. Adding a hand-edited scrape target now would be adding to the
+drift that phase exists to end.
+
+**Also here:** the "who may a probe be" gate moved out of `login-probe.js` into
+one shared module both probes import - a copied security gate is one that
+drifts, which the phase 5 audit had just finished proving on the WebSocket
+servers.
+
+**Laws.** `tests/every-refusal-has-a-runbook.law.test.ts` (every `CLOSE_* =
+4xxx` must appear in the runbook, so a new close code cannot ship undocumented)
+and the World Hub's `synthetic-probes-never-sign-out-a-person.law.test.mjs`
+extended with the one-gate and real-socket pins. Seven mutations, seven reds.
+Full reasoning:
+`docs/changelog/2026-09-06-realtime-phase-6-prove-it-from-outside.md`.
+
+**Running it before shipping it found the bug.** The first table picker asked
+for any busy horse-only table. Run against production from the Mac with the
+service account's real credentials, it came back `refused`, close 1006 - and
+`curl --http1.1` gave the real answer: a pre-handshake `403 Forbidden`. Nothing
+was broken. `authorizeTableViewer` fails closed on club membership, and the
+service identity was not a member of either club that runs the live cash fleet.
+**A probe that picks tables it may not open measures its own membership, not
+whether a player can hold a table**, and it would have paged forever while the
+platform was healthy. Fixed by making the picker mirror EVERY gate the upgrade
+applies, and by making the probe an ordinary `player` member of those two clubs
+- the alternative was a god-role bypass in the viewer gate, which is the shape
+of bug this programme exists to stop.
+
+**Found here, recorded, NOT fixed here: five refusals are still written BEFORE
+the handshake** (not a club member, banned, seats-only table, IP conflict, and
+table-not-found), so each reaches the client as a bare 1006 and the tab
+reconnects forever with no explanation. Phase 3 gave the auth refusal a real
+close code (4401 + reason) for exactly this reason and the four viewer gates
+never got the same treatment. It is an engine change with a client half, so it
+is the first item for the phase 6 audit; the runbook documents how to diagnose
+it by hand meanwhile.
+
+## Phase 6 audit (2026-09-06) - four defects, all in what had just been built
+
+1. **The migration would have FAILED on apply.** `club_members` carries 34
+   triggers and `trg_club_members_require_explicit_join` refuses any insert
+   that does not declare its source - so the migration would have aborted, and
+   with it `fn_probe_table_candidate`, leaving the probe to fail every five
+   minutes against a healthy platform. Proved both directions with self-
+   aborting probes (11.5): as written it raises `MEMBERSHIP_REQUIRES_JOIN`;
+   with `set_config('app.club_membership_source','join_club', true)` - the
+   value `fn_join_club` sets around the real join - both rows insert. The
+   migration now ends with an assertion, so an apply cannot report success
+   while leaving the probe blind.
+2. **The happy path had never been run.** Every earlier verification stopped at
+   a refusal. The migration was applied and the probe's own `openTableSocket`,
+   extracted verbatim from the shipped file, was run against production:
+   `outcome: "ok"`, socket open in 1630 ms, `SNAPSHOT` received. **That is the
+   first time in this programme that anything has proven, from outside, that a
+   player can hold a table.**
+3. **The probe was shipping a law violation** - it hand-wrote its
+   `unconfigured` response instead of `unconfiguredProbe()`, which writes the
+   heartbeat FIRST. `a-probe-that-cannot-run-says-so.law` was red.
+4. **Two outcomes existed in code and in no runbook.** Both documented; the set
+   is now `PROBE_OUTCOMES`, pinned in both directions, which immediately caught
+   two more outcomes hidden inside a ternary.
+
+**Verification.** Client half: `fn_probe_table_candidate` live, the service
+identity a member of both fleet clubs with zero chips, and a real `wss://`
+socket to a live table returning `SNAPSHOT` in 1.63 s. Engine half: nothing to
+deploy - the probe runs outside the engine, which is the point. **Remaining
+manual step: `bash scripts/deploy-openclaw.sh` once the World Hub PR merges**,
+or the schedule exists in the repo and not on the box (World Hub CLAUDE.md
+11.3). The live dispatcher was checked and is currently byte-identical to
+`main`, so there is no pre-existing drift to untangle.
+
 ## Phase 5 - Trust and limits (2026-09-06)
 
 **Why.** Three things a live socket still took on trust: that the device's
@@ -199,7 +325,55 @@ between three files is a decision rather than a cleanup.
 clocks added to `the-break-clocks-agree`. Six mutations, six reds. Full
 reasoning: `docs/changelog/2026-09-06-realtime-phase-5-trust-and-limits.md`.
 
-**Verification.** Recorded below when it has been read from production.
+**Verification.** Client half published as `9685001e6`. The engine half is
+BUILT AND STAGED on engine-01 and not yet running: the deploy workflow's run
+for `d3c1855ed` reported success with the cutover SKIPPED, because the next
+`:55` break was 3123s away and beyond that run's budget - its own step is named
+"DID NOT DEPLOY - this run shipped nothing" and it says in the summary "do not
+treat this tick as proof the engine is running your code". The running image is
+still `7a1d19390` (#3224), and `poker_ws_reauth_closed_total` and
+`poker_ws_socket_cap_refused_total` are absent from engine-01's Prometheus
+while `poker_ws_protocol_refused_total` (Phase 4) is present - which is the
+same statement read from the other end. It cuts over at the next window with no
+rebuild. **A green deploy run is not a deployment**; the image tag on the
+running container is.
+
+## Phase 5 audit (2026-09-06) - what a deep pass found after "done"
+
+Two defects, both the shape this programme keeps finding: a mechanism that is
+correct where you look and absent where you do not.
+
+1. **Re-auth and the cap reached two of the three sockets.** `/ws/channel` had
+   neither - and Phase 4 had written the warning for exactly this ("a version
+   on two of the three sockets is worse than none") one phase earlier. It is
+   the worst of the three to have missed: that socket carries club presence,
+   the lobby, hand replay and `FINANCIAL_UPDATE`, so a revoked session went on
+   receiving a player's wallet balance and ledger entries indefinitely. The
+   mechanism moved into `server/src/transport/wsHelpers.ts`
+   (`runReauthSweep`, `socketsHeldBy`, `staggeredReauthAt`) and both servers
+   call it with their own map, label and numbers - one implementation, three
+   sockets, no way for two to drift.
+
+2. **The clock was unified and its callers were not.** Phase 5 folded two
+   `serverNow()` implementations into one and pinned five consumers; eleven
+   OTHER places were still subtracting `Date.now()` from an instant the engine
+   or Postgres stamped. The worst was `MultiTablePage`: the table's own turn
+   ring read the server clock and the multi-table tab strip did not, so a
+   skewed device showed two different countdowns for one hand and the player
+   believed the one they were looking at. Also `inAnnouncedRestart()` - the
+   Phase 4 window itself, which a fast phone would leave early and escalate
+   its ladder into the very restart the window exists to wait out - the
+   insurance countdown on a decision that spends chips, the disconnect grace
+   clock whose comment read "no drift under clock skew", the break countdown,
+   the tournament clock and the sit-out clock.
+
+**A law that only reads source is half a law.** `trustIsRenewedAndBounded` was
+all source pins, and a mutation making the per-user cap count every socket in
+the room - the cap then refuses everybody - left all twenty-one green. It now
+drives the real helpers as well (`LAW 8`), and `there-is-one-server-clock`
+gained a scan that finds any known server stamp measured against `Date.now()`.
+Twenty mutations, twenty reds. Full reasoning:
+`docs/changelog/2026-09-06-realtime-phase-5-deep-audit.md`.
 
 ## Phase 4 - Restart handoff and protocol (2026-09-05)
 

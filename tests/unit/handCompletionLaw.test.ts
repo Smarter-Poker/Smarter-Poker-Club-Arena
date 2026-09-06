@@ -236,3 +236,74 @@ describe('heads-up is the only sit-n-go we run', () => {
     expect(shapes).not.toMatch(/seats: 9/);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THE STUCK-BANNER BACKSTOP TAKES THE BANNER DOWN, AND NOTHING ELSE
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Added 2026-09-05 because a late or duplicate `pot_win` leaves the winner
+ * label up forever: the extend block is gated on `handCompleteTimerRef`, and
+ * the reset NULLS that ref when it runs, so a pot_win landing after it writes a
+ * fresh winnerInfo and schedules nothing.
+ *
+ * CORRECTED 2026-09-06, and this is the part worth pinning. The first version
+ * preferred `handCompleteResetFnRef.current` "so the board, pot, mucks and
+ * stack hold come down together". Nothing on the normal path ever nulls that
+ * ref - the closure only nulls the TIMER - so it almost always holds the
+ * PREVIOUS hand's reset, and in the very case the backstop exists for (a late
+ * pot_win, after HAND_STARTED for the next hand) running it would blank
+ * `communityCards`, force `boardStage` to preflop and zero the POT of a hand
+ * being played. A backstop for a stuck LABEL must never be able to erase a live
+ * board.
+ *
+ * And it must never truncate a legitimate hold: it waives itself while ANY of
+ * the three in-flight clocks is running, not just the reset timer.
+ */
+describe('the win-banner backstop is a backstop, not a reset', () => {
+  const PAGE = read('src/pages/TablePage.tsx');
+  /* From the CODE, not from the docblock above it. Slicing at the heading put
+     the start INSIDE an open comment, so `strip` (which needs a matched
+     open/close pair) left the whole explanation in - and the explanation names
+     every identifier these assertions forbid. */
+  const fn = PAGE.slice(
+    PAGE.indexOf('const winnerStuckTicksRef'),
+    PAGE.indexOf('// Unmount guard for all four CA-19..CA-22 animation timers.')
+  );
+
+  it('never runs the stored end-of-hand reset closure', () => {
+    expect(fn.length, 'the watchdog block must be findable').toBeGreaterThan(500);
+    /* The CODE, with the prose stripped: this block explains at length what the
+       corrected version must never do, and those sentences name the very
+       identifiers the assertions forbid. */
+    const code = strip(fn);
+    // The ref may be read nowhere here and must certainly never be CALLED.
+    expect(code).not.toMatch(/handCompleteResetFnRef/);
+    expect(code).not.toMatch(/\breset\(\)/);
+    // Nothing that belongs to the hand itself may be touched from here.
+    for (const forbidden of ['setTableState', 'communityCards', 'boardStage', 'setRitResult']) {
+      expect(code, `the backstop must not touch ${forbidden}`).not.toContain(forbidden);
+    }
+    // What it DOES do: clear the winner display.
+    expect(code).toMatch(/setWinnerInfo\(\{/);
+    expect(code).toMatch(/setWinnerParticle\(/);
+  });
+
+  it('waives itself while any of the three in-flight clocks is running', () => {
+    expect(fn).toMatch(/handCompleteTimerRef\.current/);
+    expect(fn).toMatch(/potAwardAnimEndAtRef\.current > Date\.now\(\)/);
+    // The run-it-twice/three reveal is the longest of the three and was the one
+    // originally missed - a client that never got HAND_COMPLETE has no timer
+    // and no award clock, only this.
+    expect(fn).toMatch(/ritRevealEndsAtRef\.current > Date\.now\(\)/);
+  });
+
+  it('is a consecutive-idle count, never a ceiling on how long a win may show', () => {
+    // ANIMATION LAW: a three-board run-it-twice hold legitimately runs past
+    // twenty seconds, so the test must be "is anything scheduled", not elapsed
+    // time. A tick count only advances on ticks where nothing is pending.
+    expect(fn).toMatch(/winnerStuckTicksRef\.current \+= 1;/);
+    expect(fn).toMatch(/winnerStuckTicksRef\.current = 0;/);
+    expect(fn).toMatch(/const WINNER_STUCK_TICKS = \d+;/);
+  });
+});

@@ -10,4 +10,11 @@ describe('production hamburger certification contract', () => {
     expect(source).toContain("waitFor({ state: 'visible', timeout: 5000 })");
     expect(source).not.toContain('waitForTimeout(400)');
   });
+
+  it('certifies the private Union door with the reserved non-allowlisted account', () => {
+    expect(source).toContain('hides Unions and closes its direct route');
+    expect(source).toContain("getByRole('button', { name: /^Unions");
+    expect(source).toContain("page.goto('unions')");
+    expect(source).toContain('toHaveURL(/\\/community');
+  });
 });

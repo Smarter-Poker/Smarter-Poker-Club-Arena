@@ -16,6 +16,7 @@
  * and the offending element without blocking anyone's merge.
  */
 import { test, expect } from '@playwright/test';
+import { evaluateAcrossDocumentReplacement } from './support/evaluateAcrossDocumentReplacement';
 
 const ROUTES = [
   '',
@@ -129,12 +130,15 @@ interface Violation {
 }
 
 test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
-  /* Budget per route, not a flat cap. The 58 static routes finish in about
-     six minutes, but AUDIT_CLUB_ID adds 23 club dashboards — the heaviest
-     pages in the app — and a flat 15 minutes silently ran out mid-sweep,
-     which reads as a hang rather than as "the cap was too small". 12s each
-     plus two minutes of slack scales with whatever the route list holds. */
-  test.setTimeout(ROUTES.length * 12_000 + 120_000);
+  /* Budget per route, not a flat cap. Production run 34024252195 reached all
+     81 routes but the last route was interrupted by the old 18.2-minute cap:
+     173 assertions had passed and the browser was closed while the final
+     document was settling. Navigation latency belongs to each route, so use
+     the same 16s allowance as the other production mobile audits plus three
+     minutes for authentication, redirects and final report persistence. This
+     stays below the workflow's 42-minute outer deadline while ensuring the
+     sweep reports a geometry verdict instead of a harness timeout. */
+  test.setTimeout(ROUTES.length * 16_000 + 180_000);
   await page.setViewportSize({ width: 375, height: 812 });
 
   const violations: Violation[] = [];
@@ -170,7 +174,7 @@ test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
       continue;
     }
 
-    const result = await page.evaluate(() => {
+    const result = await evaluateAcrossDocumentReplacement(page, () => {
       const vw = window.innerWidth;
       const doc = document.documentElement;
       const overflow = doc.scrollWidth - vw;

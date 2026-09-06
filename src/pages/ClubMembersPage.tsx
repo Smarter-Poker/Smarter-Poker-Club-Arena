@@ -388,7 +388,12 @@ export default function ClubMembersPage() {
         onPageError: (error) => {
           if (!isCurrent() || abortLike(error)) return;
           const hasSavedRows = membersRef.current.length > 0;
-          const recoveryScheduled = scheduleConnectionRecovery(2);
+          // ClubRosterService gives this expensive page read one 20s attempt.
+          // Recover once after jitter (worst case about 41.4s), then expose the
+          // retry control. Nested service retries plus two page recoveries used
+          // to keep a cold roster spinning for roughly 79s and could pile up
+          // server work after the browser had abandoned each request.
+          const recoveryScheduled = scheduleConnectionRecovery(1);
           if (!recoveryScheduled) reportError(error, 'ClubMembersPage.loadFirstPage');
           setLoadError(!recoveryScheduled && !hasSavedRows);
           setLoading(recoveryScheduled && !hasSavedRows);
@@ -798,6 +803,7 @@ export default function ClubMembersPage() {
           <label className="members-sort">
             <span className="members-sort__label">Sort By</span>
             <select
+              aria-label="Sort Players"
               value={sortKey}
               onChange={(event) => setSortKey(event.target.value as RosterSort)}
             >
@@ -952,14 +958,14 @@ export default function ClubMembersPage() {
             <div ref={virtual.sentinelRef} className="members-sentinel" />
           </div>
         )}
-        {members.length > 0 && (
-          <div className="members-count" aria-live="polite">
-            {isLoadingMore
-              ? 'Loading More Players...'
-              : `Loaded ${members.length.toLocaleString()} Of ${filteredTotal.toLocaleString()}`}
-          </div>
-        )}
       </div>
+      {members.length > 0 && (
+        <div className="members-count" role="status" aria-live="polite">
+          {isLoadingMore
+            ? 'Loading More Players...'
+            : `Loaded ${members.length.toLocaleString()} Of ${filteredTotal.toLocaleString()}`}
+        </div>
+      )}
     </div>
   );
 }

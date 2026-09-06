@@ -28,7 +28,7 @@ const MIGRATION = 'supabase/migrations/20260901123315_deploy_truth_lives_in_the_
 const ZERO_ENGINE_FIX =
   'supabase/migrations/20260902103000_deploy_truth_cannot_mistake_zero_for_healthy.sql';
 const CONTINUOUS_BEHIND_FIX =
-  'supabase/migrations/20260906005000_deploy_truth_keeps_the_continuous_behind_clock.sql';
+  'supabase/migrations/20260906005803_deploy_truth_keeps_the_continuous_behind_clock.sql';
 
 describe('the deploy pipeline reports what it actually did', () => {
   it('records deploy truth on every run, including the runs that ship nothing', () => {

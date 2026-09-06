@@ -17,6 +17,29 @@ async function readableText(locator: ReturnType<Page['locator']>): Promise<strin
     .trim();
 }
 
+async function navigateToClubRoute(page: Page, clubUrl: string, clubId: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < CLUB_ROUTE_ATTEMPTS; attempt += 1) {
+    try {
+      await page.goto(clubUrl, {
+        // The decision selector below is the real application-ready contract.
+        // Waiting for DOMContentLoaded first can stall for a full minute when an
+        // unrelated production asset is slow even though the SPA route has already
+        // committed and can render its lobby/recovery state.
+        waitUntil: 'commit',
+        timeout: CLUB_ROUTE_TIMEOUT,
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt + 1 < CLUB_ROUTE_ATTEMPTS) {
+        console.warn(`[global-setup] club navigation did not commit; retrying ${clubId}.`);
+      }
+    }
+  }
+  throw lastError ?? new Error(`Club ${clubId} navigation failed without an error.`);
+}
+
 /**
  * Ensure the dedicated production E2E account can enter the club used by the
  * lobby suite. This deliberately uses the public join flow: it proves the same
@@ -33,14 +56,7 @@ export async function ensureClubMembership(
   clubId: string
 ): Promise<boolean> {
   const clubUrl = new URL(`clubs/${clubId}`, baseURL).toString();
-  await page.goto(clubUrl, {
-    // The decision selector below is the real application-ready contract.
-    // Waiting for DOMContentLoaded first can stall for a full minute when an
-    // unrelated production asset is slow even though the SPA route has already
-    // committed and can render its lobby/recovery state.
-    waitUntil: 'commit',
-    timeout: CLUB_ROUTE_TIMEOUT,
-  });
+  await navigateToClubRoute(page, clubUrl, clubId);
 
   const lobby = page.locator('.club-home');
   const join = page.getByRole('button', { name: 'Join Club', exact: true });

@@ -73,8 +73,24 @@ describe('the controller is wired on the leader, beside the fleet', () => {
     expect(GAME_SERVER).toMatch(/this\.horseFleet\.stop\(\);\s*this\.clusterController\.stop\(\);/);
   });
 
-  it('honours the freeze before any I/O and again inside the SQL', () => {
-    expect(CONTROLLER).toMatch(/if \(frozen\(\)\) \{\s*summary\.skippedFrozen = true;/);
+  /* PIN MOVED 2026-09-05, WITH ITS MECHANISM. This read
+     `if (frozen()) { summary.skippedFrozen = true;` - the literal shape of
+     the local freeze exit. There are TWO freeze exits (ours before any I/O,
+     and the SQL's, which sees a break that began between the two checks), and
+     only the first one incremented poker_cluster_pass_skipped_frozen_total;
+     the second set the summary flag and returned, counting nothing. Both go
+     through `frozenSkip` now, which is also what keeps
+     theClusterPages.law.test.ts counting exactly one `recordSkippedFrozen`
+     call in this file. Same law, one door instead of two. */
+  it('honours the freeze before any I/O and again inside the SQL, and counts both', () => {
+    expect(CONTROLLER).toMatch(/if \(frozen\(\)\) return this\.frozenSkip\(summary, startedAt\);/);
+    expect(CONTROLLER).toMatch(
+      /if \(pass\.skipped === 'frozen'\) return this\.frozenSkip\(summary, startedAt\);/
+    );
+    expect(CONTROLLER).toMatch(
+      /private frozenSkip\([^)]*\): ClusterTickSummary \{\s*summary\.skippedFrozen = true;/
+    );
+    expect(CONTROLLER).toMatch(/clusterMetrics\.recordSkippedFrozen\(\);/);
     expect(SQL).toMatch(
       /IF public\.fn_platform_frozen\(\) THEN\s*RETURN jsonb_build_object\('ok', false, 'skipped', 'frozen'\)/
     );

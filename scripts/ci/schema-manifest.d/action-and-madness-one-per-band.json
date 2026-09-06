@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/action-and-madness-are-one-game-per-blind-category",
+  "functions": ["fn_cash_stake_band", "fn_guard_one_game_per_blind_category"]
+}

@@ -292,6 +292,27 @@ export class ClusterController {
   }
 
   /**
+   * BOTH FREEZE EXITS, THROUGH ONE DOOR (2026-09-05). A pass can learn about
+   * the break twice: here, before any I/O (CLAUDE.md 13), and from the SQL,
+   * which checks again inside fn_cash_clusters_tick_all. They are the same
+   * event and must be counted the same way - and keeping them on one call
+   * site is also what lets theClusterPages.law.test.ts keep counting exactly
+   * one `recordSkippedFrozen` in this file.
+   *
+   * A skip is NOT a pass: recordPass is deliberately not called, so
+   * poker_cluster_last_pass_timestamp_seconds keeps ageing and the stall rule
+   * would fire - which is exactly why that rule carries the
+   * poker_maintenance_break_active guard.
+   */
+  private frozenSkip(summary: ClusterTickSummary, startedAt: number): ClusterTickSummary {
+    summary.skippedFrozen = true;
+    summary.elapsedMs = Date.now() - startedAt;
+    clusterMetrics.recordSkippedFrozen();
+    this.lastSummary = summary;
+    return summary;
+  }
+
+  /**
    * One pass over every must-move game: ONE RPC. Public so a test (and the
    * acceptance probe) can drive it without the clock.
    */
@@ -302,12 +323,7 @@ export class ClusterController {
     // THE FREEZE (CLAUDE.md 13): a tick moves seats and opens tables; not
     // during the break. Emitted as a summary so the log says it was skipped
     // rather than merely silent.
-    if (frozen()) {
-      summary.skippedFrozen = true;
-      clusterMetrics.recordSkippedFrozen();
-      this.lastSummary = summary;
-      return summary;
-    }
+    if (frozen()) return this.frozenSkip(summary, startedAt);
     // A slow tick never overlaps the next one (the same guard the fleet uses)
     // - but a STUCK one is released, loudly. Every await inside a pass is
     // bounded (the Supabase client times out at 15 s and the wake is not
@@ -347,12 +363,12 @@ export class ClusterController {
         return summary;
       }
       const pass = (data ?? {}) as Partial<ClusterTickAllResult>;
-      if (pass.skipped === 'frozen') {
-        // The SQL saw the break start between our check and its own.
-        summary.skippedFrozen = true;
-        this.lastSummary = summary;
-        return summary;
-      }
+      // The SQL saw the break start between our check and its own. Until
+      // 2026-09-05 this path recorded NOTHING - same event, same summary
+      // flag, no counter - so poker_cluster_pass_skipped_frozen_total
+      // undercounted every break by however many passes began just before
+      // :53. It goes through the same one door now.
+      if (pass.skipped === 'frozen') return this.frozenSkip(summary, startedAt);
       summary.games = Number(pass.games ?? 0);
       summary.rested = Number(pass.rested ?? 0);
       const results = Array.isArray(pass.results) ? pass.results : [];

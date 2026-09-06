@@ -107,10 +107,23 @@ async function openStudio(page: Page) {
   await menu.click();
   const open = page.getByRole('button', { name: 'Open Table Studio' });
   await expect(open).toBeVisible({ timeout: 20_000 });
+  // Attach before opening the modal. A cached first paint is useful, but the
+  // certification must not call it hydrated until this device has completed
+  // an authoritative account-scoped settings read. This also prevents a slow
+  // auth/store handoff from making the cold-reload assertion race a default or
+  // stale local snapshot while the real row is still in flight.
+  const hydrated = page.waitForResponse(
+    (response) =>
+      response.ok() &&
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname.endsWith('/rest/v1/user_theme_settings'),
+    { timeout: PRODUCTION_RESPONSE_TIMEOUT }
+  );
   await open.click();
 
   const studio = page.getByRole('dialog', { name: 'Make The Table Yours' });
   await expect(studio).toBeVisible({ timeout: 20_000 });
+  await hydrated;
   // The settings request may be satisfied before the listener is attached or
   // from a warm in-memory snapshot. Network timing is not the contract; a
   // settled grid with the live-status marker and exactly one selected design
@@ -412,9 +425,12 @@ test.describe('production Table Studio realtime contract', () => {
     }
 
     if (journeyFailure && teardownFailures.length) {
+      const failureSummary = [journeyFailure, ...teardownFailures]
+        .map((failure) => (failure instanceof Error ? failure.message : String(failure)))
+        .join(' | ');
       throw new AggregateError(
         [journeyFailure, ...teardownFailures],
-        'Customization certification journey and cleanup both failed.'
+        `Customization certification journey and cleanup both failed: ${failureSummary}`
       );
     }
     if (journeyFailure) throw journeyFailure;

@@ -223,19 +223,16 @@ test.describe('production Daily Missions certification', () => {
         const consoleErrors: string[] = [];
         const pageErrors: string[] = [];
         const dashboardRequests: Request[] = [];
-        const dashboardAttempts: Array<{
+        type DashboardAttempt = {
           url: string;
           status: number | null;
           failure: string | null;
-        }> = [];
-        const dashboardPrefixUrls: string[] = [];
+        };
+        const dashboardAttempts = new Map<Request, DashboardAttempt>();
         const dashboardStartedAt = new Map<Request, number>();
         let dashboardRpcMs = Number.POSITIVE_INFINITY;
         let dashboardRpcStatus = 0;
         const onRequest = (request: Request) => {
-          if (request.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard')) {
-            dashboardPrefixUrls.push(request.url());
-          }
           if (
             new URL(request.url()).pathname.endsWith(
               '/rest/v1/rpc/get_daily_challenge_dashboard_v2'
@@ -243,7 +240,11 @@ test.describe('production Daily Missions certification', () => {
           ) {
             dashboardRequests.push(request);
             dashboardStartedAt.set(request, Date.now());
-            dashboardAttempts.push({ url: request.url(), status: null, failure: null });
+            dashboardAttempts.set(request, {
+              url: request.url(),
+              status: null,
+              failure: null,
+            });
           }
         };
         const onResponse = (response: Response) => {
@@ -252,17 +253,12 @@ test.describe('production Daily Missions certification', () => {
           if (startedAt != null) {
             dashboardRpcMs = Date.now() - startedAt;
             dashboardRpcStatus = response.status();
-            const attempt = dashboardAttempts.find((entry) => entry.url === request.url());
-            if (attempt && attempt.status == null && attempt.failure == null) {
-              attempt.status = response.status();
-            }
+            const attempt = dashboardAttempts.get(request);
+            if (attempt) attempt.status = response.status();
           }
         };
         const onRequestFailed = (request: Request) => {
-          if (!dashboardStartedAt.has(request)) return;
-          const attempt = dashboardAttempts.find(
-            (entry) => entry.url === request.url() && entry.status == null && entry.failure == null
-          );
+          const attempt = dashboardAttempts.get(request);
           if (attempt) attempt.failure = request.failure()?.errorText || 'request failed';
         };
         page.on('request', onRequest);
@@ -281,13 +277,11 @@ test.describe('production Daily Missions certification', () => {
         report.dashboardRpcMs = dashboardRpcMs;
         report.dashboardRpcStatus = dashboardRpcStatus;
         report.dashboardRequests = dashboardRequests.length;
-        report.dashboardAttempts = dashboardAttempts;
-        report.dashboardPrefixUrls = dashboardPrefixUrls;
+        report.dashboardAttempts = [...dashboardAttempts.values()];
         report.consoleErrors = consoleErrors;
-        console.log('[daily-missions] dashboard request URLs', dashboardPrefixUrls);
         expect(loadMs).toBeLessThan(LOAD_BUDGET_MS);
         expect(dashboardRpcMs).toBeLessThan(DASHBOARD_RPC_BUDGET_MS);
-        expect(dashboardRequests, JSON.stringify(dashboardAttempts)).toHaveLength(1);
+        expect(dashboardRequests, JSON.stringify([...dashboardAttempts.values()])).toHaveLength(1);
         expect(dashboardRpcStatus).toBeGreaterThanOrEqual(200);
         expect(dashboardRpcStatus).toBeLessThan(300);
         // The app shell owns unrelated header/membership fetches and can log a

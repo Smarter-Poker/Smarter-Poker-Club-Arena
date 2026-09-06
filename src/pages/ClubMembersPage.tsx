@@ -798,6 +798,7 @@ export default function ClubMembersPage() {
           <label className="members-sort">
             <span className="members-sort__label">Sort By</span>
             <select
+              aria-label="Sort Players"
               value={sortKey}
               onChange={(event) => setSortKey(event.target.value as RosterSort)}
             >
@@ -952,14 +953,14 @@ export default function ClubMembersPage() {
             <div ref={virtual.sentinelRef} className="members-sentinel" />
           </div>
         )}
-        {members.length > 0 && (
-          <div className="members-count" aria-live="polite">
-            {isLoadingMore
-              ? 'Loading More Players...'
-              : `Loaded ${members.length.toLocaleString()} Of ${filteredTotal.toLocaleString()}`}
-          </div>
-        )}
       </div>
+      {members.length > 0 && (
+        <div className="members-count" role="status" aria-live="polite">
+          {isLoadingMore
+            ? 'Loading More Players...'
+            : `Loaded ${members.length.toLocaleString()} Of ${filteredTotal.toLocaleString()}`}
+        </div>
+      )}
     </div>
   );
 }

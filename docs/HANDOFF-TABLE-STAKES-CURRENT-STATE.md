@@ -20,19 +20,19 @@ superseded in full: eleven pull requests merged between then and now.
 All of these are on `main` and their migrations are applied. Verified by
 `git log origin/main --grep='(#NNNN)'` at 20:34 CDT.
 
-| PR             | What                                                                                                                                                            | Squash    |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| #3090          | Gate 7: every cash table is a game. 41 games adopted, the fleet spawns and retires nothing, the database refuses a cash table with no game                     | 43a8b1070 |
-| #3091          | Horses use the seat change; presence follows the move                                                                                                          | 8c681be83 |
-| #3093          | The 02:45 handoff (the file you are reading, previous version)                                                                                                 | 36a41de0c |
-| #3105, #3109   | The fleet: a buyer is counted once (one sit predicate for the count and for the chair), a barred horse is not a buyer (VPIP bar and rejoin floor read once per cycle), a disabled game is not seeded, no lone horse (a cluster table is seeded to two or not at all; a horse alone at a dead table for 10 minutes leaves), per-opening-feeder diagnostic line | a1dd0b5b7, dafbe05bd |
-| #3119          | One tick RPC per pass (`fn_cash_clusters_tick_all`); dormant games rest at 30 s; a seat change wakes its game                                                   | 171b6b063 |
-| #3120          | Cluster metrics that page, and a deploy that proves the version moved (`scripts/ci/prove-engine-version-moved.mjs` in `auto-deploy-hetzner.yml`)                | b33c35bd5 |
-| #3121          | The felt says a move is coming; the must-move list has names; the mobile card says the style; the stakes menu counts styles; staff see the tick                | 06896fe0c |
-| #3169, #3196   | The resume arrives in installments (8 waves across the first seconds of :00, stable-hash order, tournaments interleaved); the 10-board rolled-back probe harness (`scripts/dev/probe-cluster-boards.sql`, `npm run probe:cluster`); the `fn_cash_*` definer audit | f238217e4, 2e41bb91f |
-| #3172, #3176   | The tick: orbit hysteresis, lifecycle follows status, a lone feeder becomes Main 1, a second chair goes home, Main 1 looked up on the LIVE board (this one ended a loop that opened 3,000 tables on one game), the break consolidates a thin game (the maintain-floor clause was refusing every break that mattered), `current_players` follows the seats | 4dff2ebb5, 7a0e1b10b |
-| #3213          | A horse plays the stake its bankroll supports. `PHASE_MAX_BB` deleted, `STAKE_LADDER` extended to 25/50, the two band functions collapsed to one (`stakeBandForBigBlind`), `assignPreferredStakes` takes the roll as a ceiling, fleet re-tagged. Also fixed a `max_tables` CHECK that had made ANY re-tag impossible | 299cf7afb |
-| #3224          | Action and Madness are one game per blind category per game type; plus the worklist fix                                                                          | 7a1d19390 |
+| PR           | What                                                                                                                                                                                                                                                                                                                                                          | Squash               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| #3090        | Gate 7: every cash table is a game. 41 games adopted, the fleet spawns and retires nothing, the database refuses a cash table with no game                                                                                                                                                                                                                    | 43a8b1070            |
+| #3091        | Horses use the seat change; presence follows the move                                                                                                                                                                                                                                                                                                         | 8c681be83            |
+| #3093        | The 02:45 handoff (the file you are reading, previous version)                                                                                                                                                                                                                                                                                                | 36a41de0c            |
+| #3105, #3109 | The fleet: a buyer is counted once (one sit predicate for the count and for the chair), a barred horse is not a buyer (VPIP bar and rejoin floor read once per cycle), a disabled game is not seeded, no lone horse (a cluster table is seeded to two or not at all; a horse alone at a dead table for 10 minutes leaves), per-opening-feeder diagnostic line | a1dd0b5b7, dafbe05bd |
+| #3119        | One tick RPC per pass (`fn_cash_clusters_tick_all`); dormant games rest at 30 s; a seat change wakes its game                                                                                                                                                                                                                                                 | 171b6b063            |
+| #3120        | Cluster metrics that page, and a deploy that proves the version moved (`scripts/ci/prove-engine-version-moved.mjs` in `auto-deploy-hetzner.yml`)                                                                                                                                                                                                              | b33c35bd5            |
+| #3121        | The felt says a move is coming; the must-move list has names; the mobile card says the style; the stakes menu counts styles; staff see the tick                                                                                                                                                                                                               | 06896fe0c            |
+| #3169, #3196 | The resume arrives in installments (8 waves across the first seconds of :00, stable-hash order, tournaments interleaved); the 10-board rolled-back probe harness (`scripts/dev/probe-cluster-boards.sql`, `npm run probe:cluster`); the `fn_cash_*` definer audit                                                                                             | f238217e4, 2e41bb91f |
+| #3172, #3176 | The tick: orbit hysteresis, lifecycle follows status, a lone feeder becomes Main 1, a second chair goes home, Main 1 looked up on the LIVE board (this one ended a loop that opened 3,000 tables on one game), the break consolidates a thin game (the maintain-floor clause was refusing every break that mattered), `current_players` follows the seats     | 4dff2ebb5, 7a0e1b10b |
+| #3213        | A horse plays the stake its bankroll supports. `PHASE_MAX_BB` deleted, `STAKE_LADDER` extended to 25/50, the two band functions collapsed to one (`stakeBandForBigBlind`), `assignPreferredStakes` takes the roll as a ceiling, fleet re-tagged. Also fixed a `max_tables` CHECK that had made ANY re-tag impossible                                          | 299cf7afb            |
+| #3224        | Action and Madness are one game per blind category per game type; plus the worklist fix                                                                                                                                                                                                                                                                       | 7a1d19390            |
 
 **#3224 is MERGED**, not open. It landed at 01:31:46 UTC (20:31 CDT), about
 five minutes before this file was written. Do not go looking for an open PR.
@@ -76,28 +76,28 @@ x 100 big blinds, so 2,000 x bb.
 
 ### The floor (read 20:32, table counts re-read 20:36:52)
 
-| Measure                                        | Value                                             |
-| ---------------------------------------------- | ------------------------------------------------- |
-| `cash_games` rows / enabled / disabled         | 149 / 108 / 41                                    |
-| Enabled games live / dormant                   | 63 / 45                                           |
-| Open cluster tables (mains / feeders)          | 130 (117 / 13)                                    |
-| Cash tables outside a game                     | 0                                                 |
-| Seats on cluster tables                        | 275                                               |
-| `cash_game_roster` live rows                   | 275                                               |
-| Enabled games ticked in the last 90 s          | 108 of 108                                        |
-| Newest tick                                    | 20:36:51, read at 20:36:52                        |
+| Measure                                | Value                      |
+| -------------------------------------- | -------------------------- |
+| `cash_games` rows / enabled / disabled | 149 / 108 / 41             |
+| Enabled games live / dormant           | 63 / 45                    |
+| Open cluster tables (mains / feeders)  | 130 (117 / 13)             |
+| Cash tables outside a game             | 0                          |
+| Seats on cluster tables                | 275                        |
+| `cash_game_roster` live rows           | 275                        |
+| Enabled games ticked in the last 90 s  | 108 of 108                 |
+| Newest tick                            | 20:36:51, read at 20:36:52 |
 
 Roster drift is **zero**. It was 298 against 303 at 02:35; #3105 and the
 `one_chair_per_player_per_game_is_reconciled_every_tick` migration closed it.
 
 ### By stake band (read 20:32)
 
-| Band                | Games enabled | Open tables | Seats | Empty tables |
-| ------------------- | ------------- | ----------- | ----- | ------------ |
-| micro (bb <= 0.5)   | 59            | 76          | 190   | 31           |
-| low (bb <= 2)       | 33            | 38          | 84    | 17           |
-| mid (bb <= 6)       | 16            | 16          | 0     | 16           |
-| high (bb > 6)       | 0             | 0           | 0     | 0            |
+| Band              | Games enabled | Open tables | Seats | Empty tables |
+| ----------------- | ------------- | ----------- | ----- | ------------ |
+| micro (bb <= 0.5) | 59            | 76          | 190   | 31           |
+| low (bb <= 2)     | 33            | 38          | 84    | 17           |
+| mid (bb <= 6)     | 16            | 16          | 0     | 16           |
+| high (bb > 6)     | 0             | 0           | 0     | 0            |
 
 **No 2/5 table has a player yet.** 16 tables at bb >= 5, zero seats, read
 20:33 CDT. See section 4 for why that is expected until the 20:55 cutover, and
@@ -110,22 +110,22 @@ is Dan's call. **Do not reopen them.**
 
 ### Cluster events, last hour (read 20:33)
 
-| Kind                       | Count |
-| -------------------------- | ----- |
-| move_planned               | 185   |
-| seat_moved                 | 179   |
-| game_woken / game_dormant  | 67 / 67 |
-| feeder_opened              | 22    |
-| feeder_abandoned           | 20    |
-| table_opening_hold         | 15    |
-| lifecycle_followed_status  | 14    |
-| table_opening_hold_expired | 14    |
-| table_closed_disabled      | 11    |
-| main_demoted_to_feeder     | 5     |
-| table_break_started / completed | 5 / 5 |
-| feeder_live                | 4     |
-| feeder_promoted_to_main    | 1     |
-| controller_tick_error      | 1     |
+| Kind                            | Count   |
+| ------------------------------- | ------- |
+| move_planned                    | 185     |
+| seat_moved                      | 179     |
+| game_woken / game_dormant       | 67 / 67 |
+| feeder_opened                   | 22      |
+| feeder_abandoned                | 20      |
+| table_opening_hold              | 15      |
+| lifecycle_followed_status       | 14      |
+| table_opening_hold_expired      | 14      |
+| table_closed_disabled           | 11      |
+| main_demoted_to_feeder          | 5       |
+| table_break_started / completed | 5 / 5   |
+| feeder_live                     | 4       |
+| feeder_promoted_to_main         | 1       |
+| controller_tick_error           | 1       |
 
 `move_planned` 185 against `seat_moved` 179 is healthy: at 02:35 it was 261
 against 226 over six hours with a re-plan loop underneath. Breaks now happen
@@ -169,19 +169,19 @@ Merit bands, from `profiles.horse_profile->>'stakeBand'`, and
 Stake tags in `stable_hand_membership_tags`: 1,580 rows over 1,000 horses,
 which unnest to 2,177 (horse, stake) pairs.
 
-| bb   | pairs | horses |
-| ---- | ----- | ------ |
-| 0.02 | 72    | 56     |
-| 0.05 | 96    | 68     |
-| 0.10 | 103   | 72     |
-| 0.25 | 90    | 67     |
-| 0.50 | 332   | 255    |
-| 1.00 | 650   | 499    |
-| 2.00 | 528   | 397    |
-| 5.00 | 214   | 152    |
-| 10.00| 64    | 50     |
-| 20.00| 20    | 18     |
-| 50.00| 8     | 8      |
+| bb    | pairs | horses |
+| ----- | ----- | ------ |
+| 0.02  | 72    | 56     |
+| 0.05  | 96    | 68     |
+| 0.10  | 103   | 72     |
+| 0.25  | 90    | 67     |
+| 0.50  | 332   | 255    |
+| 1.00  | 650   | 499    |
+| 2.00  | 528   | 397    |
+| 5.00  | 214   | 152    |
+| 10.00 | 64    | 50     |
+| 20.00 | 20    | 18     |
+| 50.00 | 8     | 8      |
 
 Before #3213 no horse held a stake above 2.00 at all. **0 of the 2,177 pairs
 names a stake the wallet cannot cover** (tested directly: `chip_balance <
@@ -287,11 +287,14 @@ already have removed them from YOUR working tree while they are still tracked.
 
 While you are there, two related pieces of drift found at 20:35:
 
-- #3213's migration file on `main` is
+- CLOSED 2026-09-05. #3213's migration file on `main` was
   `20260906003931_the_tourney_tag_can_hold_the_one_table_its_own_migration_dec.sql`,
   but the version recorded in production is **20260906004017** under the same
-  name. `20260906003931` is not in `schema_migrations`, so a fresh apply would
-  run that file again under a version nothing has seen.
+  name. `20260906003931` was not in `schema_migrations`, so a fresh apply would
+  have run that file again under a version nothing had seen. The file is
+  renamed to `20260906004017_...` and its header records why the number
+  changed. See
+  `docs/changelog/2026-09-05-the-migration-ledger-matches-the-database.md`.
 - Four versions applied to production have NO file on `main`:
   `20260905104226 the_third_seat_waits_90_to_350_seconds_for_a_human`,
   `20260905155400 main_1_is_the_live_one_and_a_closed_table_owns_no_index`,
@@ -299,6 +302,15 @@ While you are there, two related pieces of drift found at 20:35:
   `20260906011318 the_feeder_tables_stay_within_one_player_of_each_other`.
   Three of those four are cluster work. Find whose branch they are on before
   you write anything that touches the same functions.
+  PARTLY CLOSED 2026-09-05: `20260905155400` and `20260905155937` now have
+  MIRROR files at their recorded versions, reconstructed from
+  `schema_migrations.statements` and verified against the live catalogue. A
+  mirror describes DDL production already has and is never applied by hand -
+  read its header before touching it. `20260905104226` and `20260906011318`
+  are still fileless, and they are two of roughly 230 in that state since
+  2026-09-01; see
+  `docs/changelog/2026-09-05-the-migration-ledger-matches-the-database.md`
+  for the query that lists them.
 
 ### 4. The engine is one core
 

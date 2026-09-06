@@ -1935,6 +1935,31 @@ export function placeOmahaBandCombo(
   return false;
 }
 
+/**
+ * ═══ V44 SECOND LOOK (2026-09-05) ═══ the equity depth multiplier.
+ *
+ * Every live decision runs its Monte Carlo at 120-450 iterations to stay
+ * under the 15 ms budget, then the horse sits for 0.7-8 s of think time
+ * doing nothing. At 120 iterations a 50% estimate carries +/-4.6 points of
+ * standard error, and the V40 caps it feeds sit 2-4 points apart. The
+ * budget the decision needs is the budget the think time already spends.
+ *
+ * The engine replays a close decision inside its think time with this
+ * multiplier raised (HorseLogic.decide reads opts.deepEquity and brackets
+ * the call), so the same code path runs at 6x the sample and a marginal
+ * call or fold can be overturned before the action fires. Module state,
+ * like the RNG: decisions are synchronous and never interleave.
+ */
+let equityDepth = 1;
+
+export function setEquityDepth(mult: number): void {
+  equityDepth = mult >= 1 && isFinite(mult) ? mult : 1;
+}
+
+export function currentEquityDepth(): number {
+  return equityDepth;
+}
+
 export function simulateEquity(
   holeCards: Card[],
   boardCards: Card[],
@@ -1963,6 +1988,9 @@ export function simulateEquity(
   // the core in this function's callees), the sample shrinks so the table -
   // every seat on it - stops waiting on horse arithmetic. See
   // EquityLoadGovernor.ts for the measurement and the scale table.
+  // V44: the second look multiplies BEFORE the governor, so a saturated
+  // loop still wins; the governor's floor is the governor's floor.
+  if (equityDepth > 1) iterations = Math.floor(iterations * equityDepth);
   iterations = governedIterations(iterations, equityGovernor.current());
   if (oppBands && vi.isOmaha) {
     // V13: the trim was HALVING the sample in exactly the spots that matter

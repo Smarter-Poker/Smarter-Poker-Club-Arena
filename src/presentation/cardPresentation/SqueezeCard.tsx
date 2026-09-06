@@ -37,11 +37,24 @@ export function squeezeVars(p: CardAnimationProfile, boardIndex = 0): React.CSSP
     '--rs-stagger': `${boardIndex * p.staggerMs}ms`,
     /* THE PIXELS ARE CLAMPED WHERE THE JS WINDOW IS (2026-09-05 audit).
        CardPresentationEngine caps a server-paced reveal at speed <= 1 because
-       the engine's equity gate is a fixed wall-clock hold. The CSS multiplies
-       by the same --animation-speed, so without this the markup would be torn
-       out at 1750ms while the card was still turning at 2344ms on Slow. One
-       clamp on each side, or neither is a clamp. */
-    ...(p.serverPaced ? { '--animation-speed': 'min(1, var(--animation-speed, 1))' } : null),
+       the engine's pacing is a fixed wall-clock hold. The CSS multiplies by
+       the same speed, so without this the markup would be torn out while the
+       card was still turning on Slow. One clamp on each side, or neither is a
+       clamp.
+
+       IT IS A SEPARATE PROPERTY, AND THAT IS THE WHOLE POINT (fixed
+       2026-09-05). This used to redefine `--animation-speed` in terms of
+       ITSELF - `--animation-speed: min(1, var(--animation-speed, 1))` - which
+       is a self-reference, and a custom property that depends on itself is
+       INVALID AT COMPUTED-VALUE TIME. Measured in Chromium: the property
+       computed to the empty string on the host and on every descendant, so
+       every `var(--animation-speed, 1)` in the stylesheet silently fell back
+       to 1 and the clamp did nothing at all - a player on Fast got speed 1,
+       and the mechanism the comment above describes was never running.
+       `--rs-speed` reads --animation-speed but is not it, so there is no
+       cycle; cardSqueeze.css reads `var(--rs-speed, var(--animation-speed, 1))`
+       so an unclamped profile still follows the player's setting. */
+    ...(p.serverPaced ? { '--rs-speed': 'min(1, var(--animation-speed, 1))' } : null),
   } as React.CSSProperties;
 }
 

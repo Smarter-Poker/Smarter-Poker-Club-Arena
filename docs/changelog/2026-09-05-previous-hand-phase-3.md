@@ -141,3 +141,90 @@ defects were found there and fixed in the same branch:
   36%), and its made-hand label sits beside the plate rather than under it;
 - the dealer button overlapped the bottom seat's first card (now on a wider
   ring, 0.3 rad clockwise).
+
+---
+
+# Phase 3 deep dive (same day, `feat/previous-hand-phase-3-review`)
+
+Everything above was re-checked line by line, then run against REAL production
+records rather than the fixture: a three-board run-it-twice PLO8 (#6703926), a
+double-board bomb pot (#6704153), a seven-handed tournament hand with a big
+blind ante (#6703996) and a pineapple hand (#6704080). Nothing threw. Six
+defects came out of it - two in phase 3, three older ones on the same surface,
+one layout - and all six are fixed here.
+
+## 1. Arriving where you already are was treated as a step (phase 3)
+
+`ArrowRight` is not disabled the way the Next button is. On the last frame it
+handed back a NEW cursor object every press, the arrival effect re-ran, and the
+win fanfare played again while the pot flew to the winner again on a hand that
+had already ended. `go()` now returns the SAME state object when the step does
+not change, which is what makes it a no-op: an equal-but-new object still
+re-renders and still re-fires the effect.
+
+## 2. The felt played on out of sight (phase 3)
+
+Playback kept stepping while the Rundown tab was showing: the chip and card
+cues of a felt nobody could see played to the end, and coming back showed the
+hand already over. Leaving the Replay tab now stops playback.
+
+## 3. DEAD MONEY WAS DRAWN IN FRONT OF THE SEAT, AND PHASE 3 PRICED CALLS OFF IT
+
+The worst of the six, and the reason to run real records rather than fixtures.
+
+`buildReplayFrames` re-derived its own per-seat commitments from the rows and
+counted dead forced money among them. On real tournament hand #6703996 the big
+blind posted 400 plus a 350 ante, and the felt drew 750 sitting in front of
+them. Phase 3 then read that number: every player facing that blind was shown
+"To Call 750" when the price was 400, and the big blind's own later decision
+was priced at 7,042 instead of 7,392.
+
+The reconstruction has always known which rows are dead - it is why a raise-TO
+level is differenced against live chips only - but it kept the fact to itself.
+`ReplayRow.dead` now carries it, computed once, and the frames add dead money
+to the POT and never to a seat's commitment. Pot odds are correct by
+construction rather than by a second opinion.
+
+## 4. The engine's `dead` flag was dropped at the door
+
+`replayInputFromRow` never copied `dead` from the stored action. Only rows
+whose verb was the literal string `ante` hit the fallback, so a bomb pot's
+`bomb_ante` was read as live money in front of the seat. It is carried now.
+
+## 5. A bomb pot had blinds invented for it
+
+A bomb pot posts antes and NO blinds. The blind-synthesis guard saw a log with
+no blind rows, concluded they had been dropped, and invented a small and a big
+blind nobody posted. Real hand #6704153 rebuilt to 3.75 against a stored pot of
+3.00, so `reconciles` went false and the stack column was withdrawn, and the
+felt drew two bet pills for money that never left a stack. The reader now knows
+a bomb pot from the row's own `bomb_pot` fact (and from a `bomb_ante` row, for
+input paths that do not carry it). All four real hands now rebuild to exactly
+their stored pot.
+
+## 6. Money moved in silence, and the edge seats were clipped
+
+- A verb the reader has no word for still MOVES CHIPS if it carries an amount.
+  `bomb_ante` is one: 1.50 into the middle with no cue. An unknown verb with a
+  positive amount is now owed the chip cue; a returned bet and a chipless
+  unknown verb are still owed nothing.
+- Dead money gets its own travel (`hr-bet--dead`): from the seat straight to
+  the pot, because it is never in front of the player. Measured in the browser
+  at half speed: 1,240ms, seat to pot centre, fading out on arrival.
+- On a seven-handed hand the two widest seats were half outside the felt and
+  clipped ("allHunter...", "BarrelSage"). The seats nearest the rail are now
+  anchored by their inner edge instead of centred on it.
+
+## Pins added
+
+`tests/unit/previousHandPhase3.test.tsx` (25 now): no repeat cue or repeat
+award at either end; leaving the Replay tab stops playback and the hand is
+where it was left; an ante is in the pot and not in the seat and nobody is
+priced off it; the ante travels seat-to-pot and is heard; a bomb pot invents no
+blinds and reconciles; an unknown verb that moves chips still sounds.
+
+## Verified
+
+`npx vitest run tests/` - 1,021 files, 14,1xx tests green. tsc, eslint,
+title-case and em-dash guards clean. Rendered in the browser pane against all
+four real hands, dark and light, desktop and 375px.

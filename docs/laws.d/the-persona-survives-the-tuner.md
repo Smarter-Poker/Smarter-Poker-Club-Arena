@@ -1,0 +1,3 @@
+# server/src/services/ThePersonaSurvivesTheTuner.law.test.ts
+
+`profiles.horse_profile.persona` (straddleRate, gtoAdherence, preferredDepthBB) is AUTHORED and `HorseSelfTuner` may never write it - the tuner writes only what it MEASURED (tightness, aggression, bluffFreq, leaks\*). Every persona field is bounded by `HorsePersona.personaFromValue` at the same read boundary as the dials, and a horse with no authored row gets a deterministic persona from its id. On 2026-09-04 the tuner halved three dials on 221 of 383 horses in one night; a persona inside that write would flatten the fleet's identity permanently.

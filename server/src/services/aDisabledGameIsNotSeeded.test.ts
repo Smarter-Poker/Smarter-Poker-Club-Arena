@@ -153,8 +153,10 @@ describe('the seeding loop', () => {
     // table has no pool and no nextEligible entry, so eligibleHorseCount is 0
     expect(skipAt).toBeLessThan(LOOP.indexOf('clusterPools.push('));
     expect(skipAt).toBeLessThan(LOOP.indexOf('nextEligible.set('));
+    // 2026-09-06: the census ages out (a stale one answers 0) and then reads
+    // the same map with the same shape.
     expect(SRC).toMatch(
-      /eligibleHorseCount\(tableId: string\): number \{\s*return this\.lastEligibleByTable\.get\(tableId\) \?\? 0;/
+      /eligibleHorseCount\(tableId: string\): number \{\s*if \(this\.censusIsStale\(\)\) return 0;\s*return this\.lastEligibleByTable\.get\(tableId\) \?\? 0;/
     );
   });
 

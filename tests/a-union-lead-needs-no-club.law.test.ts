@@ -38,14 +38,14 @@ const ROOT = resolve(__dirname, '..');
 const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const PANEL = resolve(ROOT, 'src/components/club/RakeSnapshotPanel.tsx');
 const APP = resolve(ROOT, 'src/App.tsx');
+const MIGRATION_SQL = readdirSync(MIGRATIONS)
+  .filter((file) => file.endsWith('.sql'))
+  .sort()
+  .map((file) => readFileSync(resolve(MIGRATIONS, file), 'utf8'));
 
 function latestDefining(fnName: string): string {
-  const files = readdirSync(MIGRATIONS)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
   let found = '';
-  for (const f of files) {
-    const sql = readFileSync(resolve(MIGRATIONS, f), 'utf8');
+  for (const sql of MIGRATION_SQL) {
     if (sql.includes(`FUNCTION public.${fnName}(`)) found = sql;
   }
   return found;

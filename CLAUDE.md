@@ -900,6 +900,67 @@ be pruned (pushed branches lose nothing — the commits live on origin).
 
 ---
 
+## 10.82 MERGED IS NOT LANDED, AND A SECOND PUSH CAN VANISH (2026-09-06, BINDING)
+
+**`agent-autopilot.yml` squash-merges the moment the required checks pass.** On
+an asset-only or docs change that can be under two minutes. Push again after
+that and the branch moves, the pull request stays merged, `git push` exits 0,
+and your commits reach nobody.
+
+World Hub #1387 shipped **1 of its 3 commits** this way. The push said success.
+The PR said merged. The branch on GitHub genuinely held all three. A CI fix for
+a gate that had been red on `main` for two days, and the deletion of a component
+that fabricated player data, were simply not there - found hours later, by
+accident, while looking at something else.
+
+### The rules
+
+1. **A follow-up commit needs a NEW BRANCH off current `main`.** Not a second
+   push to the branch you already opened a pull request from.
+   `scripts/guard-merged-branch.sh` refuses that push from `.husky/pre-push` and
+   prints the recovery. It fails OPEN on a missing token, no network, or any
+   answer it cannot read, so it can never block you because GitHub is unwell.
+   Override, when you truly mean to move a merged branch:
+   `AGENT_MERGED_BRANCH_OK=1 git push ...`
+
+2. **Verify the FILES, never the tick.** `git fetch origin main` then
+   `git cat-file -e origin/main:<path>`. This is section 1.4's rule - only
+   production serving the sha counts as deployed - applied to merges, and for
+   the same reason: every intermediate signal can be true while the outcome is
+   false.
+
+3. **This gets worse as CI gets faster.** #3187 took the critical path from
+   ~6.8 to ~4 minutes. Every minute cut off CI widens the window in which an
+   agent is racing its own merge.
+
+---
+
+## 10.83 A CHECK THAT NOBODY CAN SEE IS NOT A CHECK (2026-09-06, BINDING)
+
+`Global Footer E2E` failed on **every** run on the World Hub's `main` from
+2026-09-04 and was found two days later by accident. It is not in the ruleset,
+so a red run blocked no merge, opened no issue, and coloured nothing anyone
+reads. Twenty-odd merges landed on top of it.
+
+None of its three failures was in the footer. Every footer assertion passed.
+They were marketplace tests that `npm run build` runs first: a retired Daily
+Pass still pinned, an `annual` -> `yearly` rename applied to the code and not
+its test, and two em dashes. **All three were correct changes that left one half
+behind** - the ordinary way a repo goes red, and exactly why somebody has to be
+told.
+
+`scripts/ci/check-main-is-green.mjs` (World Hub, in `publish-watchdog.yml`) now
+raises one issue for any workflow red on `main` past a threshold **with no open
+issue naming it**. It reports a workflow as `loud` when something already tracks
+it, so a watchdog raising its own alarm is not mistaken for a defect - the first
+run flagged `Publish Watchdog` doing precisely that, which would have taught
+everyone to ignore the detector inside a week.
+
+**If you add a workflow, either put it in the ruleset or accept that only this
+detector will ever tell you it broke.**
+
+---
+
 ## 10.85 NEVER SCHEDULE ANYTHING ON THE CLAUDE SCHEDULER (Dan, 2026-09-04, BINDING)
 
 **Dan, verbatim: "IF YOU ARE SCHEDULING ANYTHING TO 'RUN ON CLAUDE SCHEDULER' IT

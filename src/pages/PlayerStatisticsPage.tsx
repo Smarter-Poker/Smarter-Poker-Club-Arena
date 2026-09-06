@@ -42,6 +42,8 @@ import ClubRosterService, {
 } from '../services/ClubRosterService';
 import './PlayerStatisticsPage.css';
 
+const PLAYER_INSTRUMENT_ART = `${import.meta.env.BASE_URL}images/club-members/player-instrument-felt-v1.webp`;
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    RANGE (requirement 7)
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -131,7 +133,14 @@ export default function PlayerStatisticsPage() {
       activeRange: MemberRange,
       getIsMounted?: () => boolean
     ) => {
-      if (!clubId || !userId) return;
+      if (!clubId || !userId) {
+        if ((!getIsMounted || getIsMounted()) && isMountedRef.current) {
+          setNotFound(true);
+          setStats(null);
+          setLoading(false);
+        }
+        return;
+      }
       const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
 
       if (live()) {
@@ -226,16 +235,57 @@ export default function PlayerStatisticsPage() {
   /* ── Render ─────────────────────────────────────────────────────────────── */
 
   return (
-    <div className="player-stats-page">
-      <header className="ps-header">
-        <button type="button" className="ps-back" onClick={() => navigate(-1)} aria-label="Go Back">
-          ‹
-        </button>
-        <h1 className="ps-title">Player Statistics</h1>
-        <span className="ps-header__spacer" aria-hidden="true" />
+    <div className="player-stats-page" aria-busy={loading}>
+      <header className="ps-hero" aria-labelledby="ps-page-title">
+        <img
+          className="ps-hero__art"
+          src={PLAYER_INSTRUMENT_ART}
+          alt=""
+          aria-hidden="true"
+          width="1672"
+          height="941"
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
+        />
+        <div className="ps-hero__shade" aria-hidden="true" />
+        <div className="ps-header">
+          <button
+            type="button"
+            className="ps-back"
+            onClick={() => navigate(-1)}
+            aria-label="Go Back"
+          >
+            ‹
+          </button>
+          <span className="ps-header__location">Players / Performance</span>
+          <span className="ps-header__spacer" aria-hidden="true" />
+        </div>
+        <div className="ps-hero__content">
+          <span className="ps-eyebrow">Measured From Verified Hands</span>
+          <h1 id="ps-page-title" className="ps-title">
+            Player Performance
+          </h1>
+          <p>Read Playing Style, Volume, And Club Results Across Any Recorded Game Window.</p>
+          {stats?.authorized && stats.hands > 0 && (
+            <dl className="ps-hero__readouts" aria-label="Selected Range Summary">
+              <HeroReadout label="Hands" value={count(stats.hands)} />
+              <HeroReadout label="Win Rate" value={pct(stats.win_rate)} />
+              <HeroReadout
+                label="Net"
+                value={money(stats.net)}
+                tone={stats.net > 0 ? 'up' : stats.net < 0 ? 'down' : undefined}
+              />
+            </dl>
+          )}
+        </div>
       </header>
 
-      <div className="ps-controls">
+      <section className="ps-controls" aria-labelledby="ps-controls-title">
+        <div className="ps-controls__heading">
+          <h2 id="ps-controls-title">Instrument Controls</h2>
+          <span>Choose The Game And Ledger Window</span>
+        </div>
         <label className="ps-variant">
           <span className="ps-variant__label">Game</span>
           <select
@@ -300,7 +350,7 @@ export default function PlayerStatisticsPage() {
               ? 'Showing Lifetime Totals'
               : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
         </p>
-      </div>
+      </section>
 
       {loading && !stats ? (
         <PageSkeleton variant="stats" />
@@ -311,7 +361,7 @@ export default function PlayerStatisticsPage() {
           </span>
           <p className="ps-empty__heading">Could Not Load Statistics</p>
           <p className="ps-empty__body">
-            This Player's Statistics Are Still There - We Just Could Not Reach Them Right Now.
+            This Player's Statistics Are Still There. We Just Could Not Reach Them Right Now.
           </p>
           <button
             type="button"
@@ -336,7 +386,7 @@ export default function PlayerStatisticsPage() {
       ) : (
         <div className={loading ? 'ps-cards ps-cards--busy' : 'ps-cards'} aria-busy={loading}>
           <section className="ps-card">
-            <h2 className="ps-card__title">Style</h2>
+            <h2 className="ps-card__title">Playing Style</h2>
             <StatRow label="VPIP" value={pct(stats.vpip)} />
             <StatRow label="PFR" value={pct(stats.pfr)} />
             {/* Per hand dealt, and labelled so. The old figure divided 3-bets
@@ -374,7 +424,7 @@ export default function PlayerStatisticsPage() {
           </section>
 
           <section className="ps-card">
-            <h2 className="ps-card__title">Result</h2>
+            <h2 className="ps-card__title">Club Result</h2>
             <StatRow label="Net" value={money(stats.net)} signed={stats.net} />
             <StatRow label="Fees" value={money(stats.fees)} />
           </section>
@@ -401,6 +451,23 @@ function StatRow({ label, value, signed }: { label: string; value: string; signe
     <div className={`ps-stat${tone}`}>
       <span className="ps-stat__label">{label}</span>
       <span className="ps-stat__value">{value}</span>
+    </div>
+  );
+}
+
+function HeroReadout({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'up' | 'down';
+}) {
+  return (
+    <div className={`ps-hero__readout${tone ? ` ps-hero__readout--${tone}` : ''}`}>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
   );
 }

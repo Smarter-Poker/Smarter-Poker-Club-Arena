@@ -1,5 +1,5 @@
 /**
- * CLUB MEMBERS — #smarterCasinoRealism roster command surface.
+ * CLUB MEMBERS - #smarterCasinoRealism roster command surface.
  * The rendered roster vault is the signature; the UI is quiet, machined hardware.
  */
 
@@ -42,7 +42,7 @@
   font-weight: 600;
   letter-spacing: 0.2em;
   line-height: 1.2;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 /* Roster vault hero */
@@ -146,7 +146,7 @@
   font-weight: 400;
   letter-spacing: 0.065em;
   line-height: 0.95;
-  text-transform: uppercase;
+  text-transform: none;
   text-shadow: 0 1px 0 #000;
 }
 
@@ -218,7 +218,7 @@
   font-weight: 600;
   letter-spacing: 0.13em;
   text-overflow: ellipsis;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 
@@ -232,7 +232,7 @@
   font-weight: 600;
   letter-spacing: 0.075em;
   line-height: 1.25;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .summary-stat--online {
@@ -296,7 +296,7 @@
   font-weight: 500;
   letter-spacing: 0.075em;
   line-height: 1;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .members-result-count {
@@ -305,7 +305,7 @@
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .members-search {
@@ -327,7 +327,7 @@
   font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: 0.12em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .members-search input {
@@ -405,7 +405,7 @@
   font-size: 0.76rem;
   font-weight: 600;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
   touch-action: manipulation;
   cursor: pointer;
 }
@@ -453,7 +453,7 @@
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 
@@ -495,7 +495,7 @@
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .members-columns summary {
@@ -549,14 +549,14 @@
   font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
   font-size: 0.72rem;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .members-bulk strong {
   margin-right: auto;
 }
 .members-bulk button {
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 10px;
   border: 1px solid #6b5937;
   border-radius: 3px;
@@ -584,7 +584,7 @@
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
+  text-transform: none;
   cursor: pointer;
 }
 .members-select-loaded[aria-pressed='true'] {
@@ -611,7 +611,10 @@
 .members-filters button:focus-visible,
 .members-refresh:focus-visible,
 .members-export:focus-visible,
-.members-select-loaded:focus-visible {
+.members-select-loaded:focus-visible,
+.members-columns summary:focus-visible,
+.members-columns__menu input:focus-visible,
+.members-bulk button:focus-visible {
   outline: 2px solid var(--members-cyan);
   outline-offset: 2px;
 }
@@ -623,7 +626,7 @@
   font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
   font-size: 0.67rem;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .members-slow {
@@ -641,7 +644,7 @@
   font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
   font-size: 0.76rem;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 /* Member access plates */
@@ -868,7 +871,7 @@
   white-space: nowrap;
 }
 .member-club {
-  text-transform: uppercase;
+  text-transform: none;
 }
 .member-upline {
   max-width: 18ch;
@@ -936,7 +939,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-overflow: ellipsis;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 .member-chevron {
@@ -967,7 +970,7 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.08em;
   text-align: center;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 /* Empty/error */
@@ -1001,7 +1004,7 @@
   font-size: 1.15rem;
   font-weight: 600;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 .members-empty__body {
   margin: 0;

@@ -20,6 +20,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceCall } from '../helpers/sourceWindow';
 import { buildReplay, replayInputFromRow, type ReplayModel } from '../../src/utils/handReplay';
 import {
   BIG_POT_BIG_BLINDS,
@@ -153,6 +154,36 @@ describe('finding a hand', () => {
     expect(handMatchesQuery(base, { outcome: 'won', text: 'nobody' })).toBe(false);
   });
 
+  /**
+   * BOTH SURFACES MUST FEED THE PREDICATE THE SAME FACTS.
+   *
+   * Running one predicate is only half of it. The table's panel searched with
+   * a subject it built WITHOUT notes - it never loaded one - so `note` and
+   * `tags` were always empty there and two branches of this predicate were
+   * dead on that surface, while its own placeholder offered to search tags. A
+   * player typed a tag they had written and was told "No Hands Here Match That
+   * Search": a confident wrong answer about their own data, which is the drift
+   * between two surfaces that one predicate exists to prevent.
+   *
+   * Read from the source, because the defect was an ABSENCE - there is no
+   * value to assert when a field is never passed.
+   */
+  it('both surfaces pass the viewer’s own note and tags into the subject', () => {
+    for (const file of [
+      '../../src/pages/HandHistoryPage.tsx',
+      '../../src/components/table/HandHistoryPanel.tsx',
+    ]) {
+      const src = readFileSync(resolve(__dirname, file), 'utf8');
+      expect(src, `${file} loads the viewer's notes`).toMatch(/handNotesService\.listFor\(/);
+      /* The CALL, bounded by its own closing paren - never a byte count, which
+         drifts off the end of what it watches while staying green
+         (tests/helpers/sourceWindow.ts). */
+      const subject = sliceCall(src, 'handSearchSubject(');
+      expect(subject, `${file} passes note`).toMatch(/note:/);
+      expect(subject, `${file} passes tags`).toMatch(/tags:/);
+    }
+  });
+
   it('builds its subject off the model, on every real hand', () => {
     for (const { model } of models) {
       const s = subjectFor(model);
@@ -174,14 +205,28 @@ describe('finding a hand', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * A REAL TIME, because every real caller has one and this corpus does not:
+ * the anonymised fixtures carry no `played_at` at all, so before 2026-09-06
+ * every hand these pins exported was stamped with the moment the test ran -
+ * and the header pin below matched, because a fabricated stamp has exactly
+ * the same SHAPE as a real one. Shape is all a regex can see. The value is
+ * asserted now, which also pins the Eastern conversion.
+ */
+const PLAYED_AT = '2026-09-05T22:14:03.000Z'; // 18:14:03 in New York (EDT)
+const meta = (extra: Record<string, unknown> = {}) => ({
+  handNumber: 1,
+  tableName: 'T',
+  playedAt: PLAYED_AT,
+  ...extra,
+});
+
+/**
  * The hands the writer itself says it can write faithfully. Derived from its
  * verdict rather than re-stated here, so a test cannot disagree with the code
  * about what is exportable - which it did the moment bomb pots and
  * run-it-twice were added to the refusals.
  */
-const exportable = models.filter(
-  ({ model }) => toPokerStarsHand(model, { handNumber: 1, tableName: 'T' }).faithful
-);
+const exportable = models.filter(({ model }) => toPokerStarsHand(model, meta()).faithful);
 
 describe('a hand history a tracker can import', () => {
   it('has real hands to write, and knows which it cannot', () => {
@@ -189,7 +234,7 @@ describe('a hand history a tracker can import', () => {
     const refused = models.filter(({ model }) => !pokerStarsGameName(model.gameVariant));
     /* Pineapple has no PokerStars grammar - refused rather than mislabelled. */
     for (const { model } of refused) {
-      const out = toPokerStarsHand(model, { handNumber: 1, tableName: 'T' });
+      const out = toPokerStarsHand(model, meta());
       expect(out.faithful).toBe(false);
       expect(out.reasons.join(' ')).toMatch(/no PokerStars name/);
     }
@@ -197,18 +242,21 @@ describe('a hand history a tracker can import', () => {
 
   it('opens with the header, the table line and a seat per player', () => {
     const { model } = exportable[0];
+    const seatFloor = Math.max(...model.players.map((p) => p.seat));
     const { text } = toPokerStarsHand(model, {
       handNumber: 12345,
       tableName: "Dan's Table",
       playedAt: '2026-09-06T09:11:37.000Z',
       heroUserId: model.players[0].userId,
-      maxSeats: 6,
+      maxSeats: seatFloor,
     });
     const lines = text.split('\n');
     expect(lines[0]).toMatch(
-      /^PokerStars Hand #12345: .+ \(\$[\d.]+\/\$[\d.]+ USD\) - \d{4}\/\d{2}\/\d{2} \d{1,2}:\d{2}:\d{2} ET$/
+      /^PokerStars Hand #12345: .+ \(\$[\d.]+\/\$[\d.]+ USD\) - \d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2} ET$/
     );
-    expect(lines[1]).toMatch(/^Table 'Dans Table' 6-max Seat #\d+ is the button$/);
+    expect(lines[1]).toMatch(
+      new RegExp(`^Table 'Dans Table' ${seatFloor}-max Seat #\\d+ is the button$`)
+    );
     for (const p of model.players) {
       expect(text).toContain(`Seat ${p.seat}: ${p.username} (`);
     }
@@ -226,7 +274,7 @@ describe('a hand history a tracker can import', () => {
         model.streets.some((s) => s.rows.some((r) => r.verb === 'raise'))
     );
     expect(withAnte, 'the corpus has a raise over dead money').toBeTruthy();
-    const { text } = toPokerStarsHand(withAnte!.model, { handNumber: 1, tableName: 'T' });
+    const { text } = toPokerStarsHand(withAnte!.model, meta());
     const raise = text.split('\n').find((l) => / raises /.test(l));
     expect(raise).toMatch(/raises .+ to /);
 
@@ -253,7 +301,7 @@ describe('a hand history a tracker can import', () => {
       model.streets.some((s) => s.key === 'preflop' && s.rows.some((r) => r.verb === 'raise'))
     );
     expect(withRaise, 'the corpus has a preflop raise').toBeTruthy();
-    const { text } = toPokerStarsHand(withRaise!.model, { handNumber: 1, tableName: 'T' });
+    const { text } = toPokerStarsHand(withRaise!.model, meta());
     const raise = text.split('\n').find((l) => / raises /.test(l))!;
     const [, by, to] = raise.match(/raises \$([\d.]+) to \$([\d.]+)/)!;
     expect(Number(to)).toBeGreaterThan(Number(by));
@@ -268,7 +316,7 @@ describe('a hand history a tracker can import', () => {
         model.streets.some((s) => s.rows.some((r) => r.verb === 'bb'))
     );
     expect(withBlinds, 'the corpus has a blinded hand').toBeTruthy();
-    const { text } = toPokerStarsHand(withBlinds!.model, { handNumber: 1, tableName: 'T' });
+    const { text } = toPokerStarsHand(withBlinds!.model, meta());
     expect(text.indexOf('posts small blind')).toBeLessThan(text.indexOf('posts big blind'));
   });
 
@@ -278,7 +326,7 @@ describe('a hand history a tracker can import', () => {
        twice, which reads as two showdowns. */
     const withShowdown = exportable.find(({ model }) => model.showdown.length > 0);
     expect(withShowdown, 'the corpus has a showdown').toBeTruthy();
-    const { text } = toPokerStarsHand(withShowdown!.model, { handNumber: 1, tableName: 'T' });
+    const { text } = toPokerStarsHand(withShowdown!.model, meta());
     const shows = text.split('\n').filter((l) => / shows \[/.test(l));
     const names = shows.map((l) => l.split(':')[0]);
     expect(new Set(names).size).toBe(names.length);
@@ -289,7 +337,7 @@ describe('a hand history a tracker can import', () => {
       model.streets.some((s) => s.key === 'preflop' && s.rows.some((r) => r.verb === 'fold'))
     );
     expect(withPreflopFold, 'the corpus has a preflop fold').toBeTruthy();
-    const { text } = toPokerStarsHand(withPreflopFold!.model, { handNumber: 1, tableName: 'T' });
+    const { text } = toPokerStarsHand(withPreflopFold!.model, meta());
     expect(text).toMatch(/folded before Flop/);
     /* Never the felt's own street label, which is "PreFlop". */
     expect(text).not.toMatch(/folded on the PreFlop/);
@@ -301,13 +349,13 @@ describe('a hand history a tracker can import', () => {
         !model.streets.flatMap((s) => s.rows).some((r) => r.verb === 'sb' || r.verb === 'bb')
     );
     expect(bomb, 'the corpus has a bomb pot').toBeTruthy();
-    const bombOut = toPokerStarsHand(bomb!.model, { handNumber: 1, tableName: 'T' });
+    const bombOut = toPokerStarsHand(bomb!.model, meta());
     expect(bombOut.faithful).toBe(false);
     expect(bombOut.reasons.join(' ')).toMatch(/no blinds were posted/);
 
     const rit = models.find(({ model }) => model.boards.length > 1);
     expect(rit, 'the corpus has a run-it-twice hand').toBeTruthy();
-    const ritOut = toPokerStarsHand(rit!.model, { handNumber: 1, tableName: 'T' });
+    const ritOut = toPokerStarsHand(rit!.model, meta());
     expect(ritOut.faithful).toBe(false);
     expect(ritOut.reasons.join(' ')).toMatch(/ran \d boards/);
   });
@@ -320,7 +368,7 @@ describe('a hand history a tracker can import', () => {
         model.players.every((p) => p.startStack !== null)
     );
     expect(withReturn, 'the corpus has a returned bet').toBeTruthy();
-    const { text } = toPokerStarsHand(withReturn!.model, { handNumber: 1, tableName: 'T' });
+    const { text } = toPokerStarsHand(withReturn!.model, meta());
     expect(text).toMatch(/^Uncalled bet \(\$[\d.]+\) returned to .+$/m);
     /* And the money is unsigned there - a negative would be read as a bet. */
     expect(text).not.toMatch(/Uncalled bet \(\$-/);
@@ -331,7 +379,7 @@ describe('a hand history a tracker can import', () => {
       model.streets.some((s) => s.key === 'river' && s.board.length === 5)
     );
     expect(toRiver, 'the corpus has a hand that saw a river').toBeTruthy();
-    const { text } = toPokerStarsHand(toRiver!.model, { handNumber: 1, tableName: 'T' });
+    const { text } = toPokerStarsHand(toRiver!.model, meta());
     expect(text).toMatch(/\*\*\* FLOP \*\*\* \[\w{2} \w{2} \w{2}\]/);
     expect(text).toMatch(/\*\*\* TURN \*\*\* \[\w{2} \w{2} \w{2}\] \[\w{2}\]/);
     expect(text).toMatch(/\*\*\* RIVER \*\*\* \[\w{2} \w{2} \w{2} \w{2}\] \[\w{2}\]/);
@@ -340,7 +388,7 @@ describe('a hand history a tracker can import', () => {
 
   it('gives every seat a summary line, in seat order', () => {
     const { model } = exportable[0];
-    const { text } = toPokerStarsHand(model, { handNumber: 1, tableName: 'T' });
+    const { text } = toPokerStarsHand(model, meta());
     const summary = text.slice(text.indexOf('*** SUMMARY ***'));
     const seats = [...summary.matchAll(/^Seat (\d+): /gm)].map((m) => Number(m[1]));
     expect(seats).toEqual(model.players.map((p) => p.seat));
@@ -349,7 +397,7 @@ describe('a hand history a tracker can import', () => {
   it('never writes a stack it does not know', () => {
     const noStacks = models.find(({ model }) => model.players.some((p) => p.startStack === null));
     if (!noStacks) return; // corpus may not contain one; the refusal is still pinned below
-    const out = toPokerStarsHand(noStacks.model, { handNumber: 1, tableName: 'T' });
+    const out = toPokerStarsHand(noStacks.model, meta());
     expect(out.faithful).toBe(false);
     expect(out.reasons.join(' ')).toMatch(/no starting stack/);
   });
@@ -358,11 +406,10 @@ describe('a hand history a tracker can import', () => {
     const file = toPokerStarsFile(
       models.map(({ model }) => ({
         model,
-        meta: {
+        meta: meta({
           handNumber: model.handNumber,
-          tableName: 'T',
           heroUserId: model.players[0]?.userId,
-        },
+        }),
       }))
     );
     expect(file.written).toBe(exportable.length);
@@ -374,13 +421,103 @@ describe('a hand history a tracker can import', () => {
     for (const s of file.skipped) expect(s.reasons.length).toBeGreaterThan(0);
   });
 
+  /* ───────────────────────────────────────────────────────────────────────
+     THE PHASE 5 DEEP DIVE (2026-09-06). Five more defects, all of them found
+     the same way the first four were: by generating the corpus and READING
+     it. Each one wrote a file that looks right and imports wrongly, and each
+     one sat under a green suite - because what was pinned was the SHAPE of a
+     line, and every one of these has the right shape.
+     ─────────────────────────────────────────────────────────────────────── */
+
+  it('the summary carries only the three positions the format has', () => {
+    /* `(utg)`, `(mp)`, `(co)`, `(hj)` are the FELT's labels and no parser has
+       a rule for them; 101 of this corpus's summary lines carried one. The
+       format writes `(button)`, `(small blind)`, `(big blind)`, and for every
+       other seat nothing at all. */
+    const ALLOWED =
+      /^Seat \d+: .+?( \(button\))?( \((?:small|big) blind\))? (?:folded|showed|collected|mucked)\b/;
+    for (const { model } of exportable) {
+      const { text } = toPokerStarsHand(model, meta());
+      const summary = text.slice(text.indexOf('*** SUMMARY ***')).split('\n');
+      for (const line of summary.filter((l) => /^Seat \d+: /.test(l))) {
+        expect(line, line).toMatch(ALLOWED);
+        expect(line, line).not.toMatch(/\((?:utg|mp|co|hj|lj|sb|bb)\)/);
+      }
+    }
+  });
+
+  it('heads-up, the button is also the small blind and the format says both', () => {
+    const hu = exportable.find(({ model }) => model.players.length === 2);
+    expect(hu, 'the corpus has a heads-up hand').toBeTruthy();
+    const { text } = toPokerStarsHand(hu!.model, meta());
+    expect(text.slice(text.indexOf('*** SUMMARY ***'))).toMatch(/\(button\) \(small blind\)/);
+  });
+
+  it('a seat that showed is written WITH its cards, and one that did not is a muck', () => {
+    /* `showed and lost` with no cards is a showdown with an unknown holding -
+       which a tracker records as fact - while the very cards sat three lines
+       above in the SHOW DOWN block. */
+    for (const { model } of exportable) {
+      const { text } = toPokerStarsHand(model, meta());
+      const summary = text.slice(text.indexOf('*** SUMMARY ***'));
+      expect(summary).not.toMatch(/showed and (lost|won)/);
+      for (const line of summary.split('\n').filter((l) => / showed /.test(l))) {
+        expect(line, line).toMatch(/ showed \[[^\]]+\] and (lost|won \(\S+\)) with /);
+      }
+    }
+  });
+
+  it('returns the uncalled bet BEFORE the showdown, because that is when it happens', () => {
+    const withBoth = exportable.find(({ model }) => {
+      const { text } = toPokerStarsHand(model, meta());
+      return text.includes('Uncalled bet') && text.includes('*** SHOW DOWN ***');
+    });
+    expect(withBoth, 'the corpus has a returned bet at a showdown').toBeTruthy();
+    const { text } = toPokerStarsHand(withBoth!.model, meta());
+    expect(text.indexOf('Uncalled bet')).toBeLessThan(text.indexOf('*** SHOW DOWN ***'));
+  });
+
+  it('refuses a hand with no time rather than stamping it with today', () => {
+    /* The corpus is anonymised and carries NO `played_at`, so before this the
+       whole file was written with the second the export ran - a session the
+       player never sat in, in a shape no regex could tell from a real one. */
+    const { model } = exportable[0];
+    const out = toPokerStarsHand(model, { handNumber: 1, tableName: 'T' });
+    expect(out.faithful).toBe(false);
+    expect(out.reasons.join(' ')).toMatch(/no time for the hand/);
+  });
+
+  it('stamps the hand in Eastern, not in whatever clock is exporting it', () => {
+    const { model } = exportable[0];
+    /* 22:14:03Z on 5 September is 18:14:03 in New York. Read as local time -
+       which is what `getHours()` did - it is a different hour in every
+       timezone, under a label that says ET regardless. */
+    const { text } = toPokerStarsHand(model, meta());
+    expect(text.split('\n')[0]).toContain('2026/09/05 18:14:03 ET');
+  });
+
+  it('never writes a table smaller than the seats it is dealing to', () => {
+    /* A constant 9 was wrong for most of this fleet, and a caller passing a
+       stale size can be wrong the other way: `6-max` above a `Seat 7:` line
+       is a table that cannot exist. */
+    const { model } = exportable[0];
+    const floor = Math.max(...model.players.map((p) => p.seat));
+    const { text } = toPokerStarsHand(model, meta({ maxSeats: 2 }));
+    expect(text.split('\n')[1]).toContain(`${floor}-max`);
+    const bigger = toPokerStarsHand(model, meta({ maxSeats: floor + 2 }));
+    expect(bigger.text.split('\n')[1]).toContain(`${floor + 2}-max`);
+  });
+
   it('every real hand it accepts is written without throwing, and parses back', () => {
     for (const { model } of exportable) {
-      const out = toPokerStarsHand(model, {
-        handNumber: model.handNumber,
-        tableName: 'Club Arena',
-        heroUserId: model.players[0]?.userId,
-      });
+      const out = toPokerStarsHand(
+        model,
+        meta({
+          handNumber: model.handNumber,
+          tableName: 'Club Arena',
+          heroUserId: model.players[0]?.userId,
+        })
+      );
       expect(out.faithful).toBe(true);
       const lines = out.text.split('\n');
       expect(lines[0].startsWith('PokerStars Hand #')).toBe(true);

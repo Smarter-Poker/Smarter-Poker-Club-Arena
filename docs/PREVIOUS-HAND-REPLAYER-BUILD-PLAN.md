@@ -100,6 +100,22 @@ BUILT 2026-09-06 (`feat/previous-hand-phase-5`); see
 - Reading the real output caught four format defects the tests had not: the
   raise level, the blind order, a doubled showdown, and the fold wording.
 
+DEEP DIVE 2026-09-06 (`audit/previous-hand-phase-5-deep-dive`); see
+`docs/changelog/2026-09-06-previous-hand-phase-5-deep-dive.md`. Eleven more,
+under a green suite, in two blind spots worth carrying into Phases 6 and 7:
+**a pin on a line's SHAPE cannot tell a fabricated fact from a real one** (the
+whole corpus was stamped with the second the test ran, and the header regex was
+happy), and **an absence has nothing to assert against** (the panel searched
+with a subject built without notes, so two branches of the shared predicate
+were dead there while its own placeholder offered to search tags). Five more
+export-format defects found by reading the output again - summary positions the
+format has no grammar for, `showed and lost` with the cards missing, the
+uncalled bet after the showdown instead of before it, a missing time stamped as
+today, an `ET` label on the exporter's clock - plus `9-max` written on every
+hand of a fleet that is mostly 3-max, heads-up and 6-max. Three ways a note
+could be silently replaced, and the panel given the same note editor the
+archive has.
+
 ## Phase 6 of 7 - Disputes and the operator's lookup
 
 - Flag a hand: one button files the hand id and a note with the club's

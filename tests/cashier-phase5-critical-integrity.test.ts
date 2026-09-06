@@ -53,7 +53,26 @@ describe('cashier Phase 5 production certification contracts', () => {
     const runner = source('scripts/verification-harness/certify-cashier-contract.mjs');
     expect(workflow).toContain('Certify the live cashier database contract');
     expect(workflow).toContain('node scripts/verification-harness/certify-cashier-contract.mjs');
-    expect(workflow).not.toMatch(/^\s+psql(?:\s|\\)/m);
+    /**
+     * THE CERTIFICATION IS THE NODE RUNNER, NOT A RAW psql CALL. That is what
+     * this pin protects, and it used to say so as `not.toMatch(/^\s+psql/m)` -
+     * any indented line beginning with the word.
+     *
+     * MAIN WENT RED ON IT (2026-09-05, #3217, commit 05dd513de). The same pull
+     * request that moved the certification onto the runner also added an
+     * "Ensure PostgreSQL client is available" step, because the estate runner
+     * carries the Playwright libraries but not the PostgreSQL client and the
+     * contract died with `psql: command not found` before a single assertion
+     * ran. That step ends with `psql --version` - an indented line beginning
+     * with the word, and the pin fired on it. A presence check is not a
+     * certification, so the pin was firing on the wrong thing.
+     *
+     * Narrowed to what it was always about: nothing may FEED psql the contract
+     * (`-f`, `-c`, `--file`, `--command`, or a redirect). Checking that the
+     * binary exists is allowed and named here so the next reader does not
+     * re-widen it.
+     */
+    expect(workflow).not.toMatch(/^\s+psql\b[^\n]*(-f|-c|--file|--command|<)/m);
     expect(canary).toContain('md5(pg_get_functiondef(v_oid))');
     expect(canary).toContain("has_function_privilege('anon', v_oid, 'EXECUTE')");
     expect(canary).toContain('cashier_operations_insert_own');

@@ -26,6 +26,8 @@ import { useAppNavigate } from '../context/InTabLobbyContext';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
+import { watchBbjPool } from '../lib/bbjPoolFeed';
+import { watchBbjHits } from '../lib/bbjHitFeed';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useCoalescedRefresh } from '../hooks/useCoalescedRefresh';
 import haptic from '../services/HapticService';
@@ -1024,6 +1026,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     let isMounted = true;
     let playingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
     let occupancyTimer: ReturnType<typeof setInterval> | null = null;
+    /* The jackpot feeds are ref-counted per club and per pool, so a table open
+       in another tab-panel shares these rather than opening a second of each. */
+    let stopBbjPool: (() => void) | null = null;
+    let stopBbjHits: (() => void) | null = null;
+    let watchedBbjPoolId: string | null = null;
 
     const setupRealtime = async () => {
       const resolvedId = await resolveClubUUID(clubId);
@@ -1249,34 +1256,34 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         );
       }
 
-      // 4. Live BBJ — subscribe to the CORRECT bbj_pools row (union pool for union
-      // clubs, else club pool) so the header jackpot ticks up in real time as rake
-      // funds it, instead of showing a value frozen at fetch time.
-      const handleBBJChange = (payload: any) => {
+      /* 4. THE JACKPOT: A POLL FOR THE FIGURE, AN INSERT FOR THE HIT.
+         BBJ build plan phase 3.1 + 3.2, 2026-09-06.
+
+         This used to be a `bbj_pools` subscription on the shared channel. That
+         row updates on every raked hand - 40,219 times in twenty-four hours,
+         measured on production - and it was carrying a header figure a player
+         glances at. Six surfaces each held one. It is now a single ten-second
+         poll per club, shared by all of them and paused while the tab is
+         hidden (lib/bbjPoolFeed); the union rule lives inside
+         fn_bbj_pool_for_club rather than being re-implemented here, which is
+         also how the union/club branch below stops being this page's problem.
+
+         And the LOBBY now hears the hit itself. Dan: "everyone currently
+         playing in the club or union get a pop up on screen" - the engine
+         fans its socket announcement out to every live table, but a player
+         standing in the lobby has no table socket, so until now they learned
+         about a jackpot by watching a counter, or not at all. One
+         `bbj_winners` INSERT per hit, straight to BBJ_HIT_GLOBAL, which
+         BBJHitAnnouncer already owns (lib/bbjHitFeed). */
+      stopBbjPool = watchBbjPool(resolvedId, (snap) => {
         if (!isMounted) return;
-        const row = (payload?.new ?? payload?.old) as
-          | { main_balance?: number | string }
-          | undefined;
-        // main_balance is numeric(14,2), and PostgREST/Realtime deliver
-        // numerics as STRINGS ("350.40"). The old guard was
-        // `typeof row.main_balance === 'number'`, which is therefore NEVER
-        // true - every live tick was silently dropped and the banner only
-        // ever showed the value fetched at mount. Coerce first, then check.
-        const next = Number(row?.main_balance);
-        if (Number.isFinite(next)) setJackpotAmount(next);
-      };
-      channel = channel.on(
-        'postgres_changes',
-        unionId
-          ? { event: '*', schema: 'public', table: 'bbj_pools', filter: `union_id=eq.${unionId}` }
-          : {
-              event: '*',
-              schema: 'public',
-              table: 'bbj_pools',
-              filter: `club_id=eq.${resolvedId}`,
-            },
-        handleBBJChange
-      );
+        setJackpotAmount(snap.mainBalance);
+        if (snap.poolId && snap.poolId !== watchedBbjPoolId) {
+          watchedBbjPoolId = snap.poolId;
+          if (stopBbjHits) stopBbjHits();
+          stopBbjHits = watchBbjHits(snap.poolId);
+        }
+      });
 
       /**
        * A DROPPED SOCKET USED TO MEAN A STALE LOBBY UNTIL THE NEXT RELOAD.
@@ -1405,6 +1412,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // Drop the factory FIRST. Removing the channel while its factory is
       // still registered is an invitation for the health monitor to rebuild
       // the one we are deliberately tearing down.
+      if (stopBbjPool) stopBbjPool();
+      if (stopBbjHits) stopBbjHits();
       masterBus.removeChannelFactory(`club-tables-${clubId}`);
       masterBus.removeRegisteredChannel(`club-tables-${clubId}`);
     };

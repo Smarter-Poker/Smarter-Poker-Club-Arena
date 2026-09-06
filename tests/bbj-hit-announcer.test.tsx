@@ -153,12 +153,22 @@ describe('who renders the card (source pins)', () => {
     const src = read('src/pages/TablePage.tsx');
     expect(src).not.toMatch(/<BBJHitNotification/);
     expect(src).not.toMatch(/useMasterBusSubscription\(\s*'BBJ_HIT_GLOBAL'/);
-    // Both producers are still wired: the engine socket event and the
-    // Realtime pool-row subscription.
+    /* BOTH PRODUCERS ARE STILL WIRED, and one of them MOVED (BBJ phase 3.1,
+       2026-09-06). TablePage keeps the fast path - the engine's socket
+       announcement, which reaches every live table in the club or union. The
+       second producer used to be TablePage's own `bbj_pools` subscription,
+       inferring a hit from `hit_count` going up; it is now the `bbj_winners`
+       INSERT in lib/bbjHitFeed, which is one row per jackpot rather than
+       40,219 row updates a day, and which the LOBBY can subscribe to as well.
+       The count here was 3 because that old path emitted twice - once
+       enriched, once as a fallback that set `tableId: ''` and was therefore
+       dropped by this very component on its first line. */
     expect(src).toMatch(/eventType === 'bbj_hit_global'/);
-    expect((src.match(/masterBus\.emit\('BBJ_HIT_GLOBAL'/g) || []).length).toBeGreaterThanOrEqual(
-      3
-    );
+    expect((src.match(/masterBus\.emit\('BBJ_HIT_GLOBAL'/g) || []).length).toBe(1);
+
+    const feed = read('src/lib/bbjHitFeed.ts');
+    expect(feed).toMatch(/table: 'bbj_winners'/);
+    expect(feed).toMatch(/masterBus\.emit\('BBJ_HIT_GLOBAL'/);
   });
 
   it('the engine fans bbj_hit_global out to sibling cash tables after the payout lands', () => {

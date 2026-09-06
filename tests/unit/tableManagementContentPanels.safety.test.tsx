@@ -186,6 +186,7 @@ describe('Table Management content panels fail closed', () => {
     mocks.messagesGet.mockResolvedValue(messageSnapshot);
     render(<ClubMessageManagementPanel clubId="club-1" clubName="Shark Club" />);
     const tagline = await screen.findByLabelText('Club Tag Line');
+    await waitFor(() => expect(tagline).toBeEnabled());
     await userEvent.clear(tagline);
     await userEvent.type(tagline, 'Local Draft');
     act(() => mocks.messageEvent?.({ clubId: 'club-1' }));
@@ -202,6 +203,7 @@ describe('Table Management content panels fail closed', () => {
     );
     render(<ClubMessageManagementPanel clubId="club-1" clubName="Shark Club" />);
     const tagline = await screen.findByLabelText('Club Tag Line');
+    await waitFor(() => expect(tagline).toBeEnabled());
     await userEvent.clear(tagline);
     await userEvent.type(tagline, 'Still Local');
     await userEvent.click(screen.getByRole('button', { name: 'Save Club Messages' }));

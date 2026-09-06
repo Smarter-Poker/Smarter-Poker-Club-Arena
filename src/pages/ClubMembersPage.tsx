@@ -14,10 +14,7 @@ import { exportToCSV } from '../lib/export';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
-import {
-  computeRosterRetryDelay,
-  type RosterConnectionState,
-} from '../utils/rosterReadReliability';
+import { type RosterConnectionState } from '../utils/rosterReadReliability';
 import { titleCase } from '../utils/titleCase';
 import { AGENT_ROLES, roleLabel } from '../types/clubRoles';
 import ClubRosterService, {
@@ -64,7 +61,7 @@ const SORT_LABEL: Record<RosterSort, string> = {
 
 type OptionalColumn = 'downlines' | 'wallets' | 'fees' | 'activity';
 type SummaryFreshness = 'loading' | 'fresh' | 'stale' | 'failed';
-type RosterLoadOptions = { forceSummary?: boolean; resetRecovery?: boolean };
+type RosterLoadOptions = { forceSummary?: boolean };
 
 const DEFAULT_SUMMARY: RosterSummary = {
   viewer_role: 'player',
@@ -111,6 +108,7 @@ export default function ClubMembersPage() {
   const [summary, setSummary] = useState<RosterSummary>(DEFAULT_SUMMARY);
   const [summaryAvailable, setSummaryAvailable] = useState(false);
   const [summaryFreshness, setSummaryFreshness] = useState<SummaryFreshness>('loading');
+  const [directoryAvailable, setDirectoryAvailable] = useState(false);
   const [members, setMembers] = useState<RosterMember[]>([]);
   const [cursor, setCursor] = useState<RosterCursor | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -148,11 +146,11 @@ export default function ClubMembersPage() {
   const moreAbortRef = useRef<AbortController | null>(null);
   const moreRef = useRef(false);
   const membersRef = useRef<RosterMember[]>([]);
+  const directoryAvailableRef = useRef(false);
   const summaryAvailableRef = useRef(false);
+  const summaryAbortRef = useRef<AbortController | null>(null);
   const summaryCoordinatorRef = useRef(new RosterSummaryCoordinator<RosterSummary | null>());
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recoveryAttemptRef = useRef(0);
-  const recoveryRequestKeyRef = useRef('');
   const realtimeConnectionRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
   const latestLoadRef = useRef<(options?: RosterLoadOptions) => Promise<void>>(
     async () => undefined
@@ -173,14 +171,16 @@ export default function ClubMembersPage() {
     setLoading(true);
     abortRef.current?.abort();
     moreAbortRef.current?.abort();
+    summaryAbortRef.current?.abort();
+    summaryAbortRef.current = null;
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = null;
-    recoveryAttemptRef.current = 0;
-    recoveryRequestKeyRef.current = '';
     requestEpochRef.current += 1;
     setResolvedClubId(null);
     membersRef.current = [];
     setMembers([]);
+    directoryAvailableRef.current = false;
+    setDirectoryAvailable(false);
     summaryCoordinatorRef.current.reset();
     summaryAvailableRef.current = false;
     setSummary(DEFAULT_SUMMARY);
@@ -222,6 +222,8 @@ export default function ClubMembersPage() {
               if (cached) {
                 membersRef.current = cached.rows;
                 setMembers(cached.rows);
+                directoryAvailableRef.current = true;
+                setDirectoryAvailable(true);
                 summaryAvailableRef.current = true;
                 setSummary(cached.summary);
                 setSummaryAvailable(true);
@@ -264,37 +266,9 @@ export default function ClubMembersPage() {
     }
   }, [resolvedClubId, searchQuery, user?.id]);
 
-  const scheduleConnectionRecovery = useCallback(
-    (maxAttempts: number = Number.POSITIVE_INFINITY): boolean => {
-      if (
-        !resolvedClubId ||
-        refreshTimerRef.current ||
-        !browserOnline ||
-        recoveryAttemptRef.current >= maxAttempts
-      ) {
-        return false;
-      }
-      const delay = computeRosterRetryDelay(recoveryAttemptRef.current, 1_200, 30_000);
-      recoveryAttemptRef.current += 1;
-      refreshTimerRef.current = setTimeout(() => {
-        refreshTimerRef.current = null;
-        void latestLoadRef.current({ forceSummary: true });
-      }, delay);
-      return true;
-    },
-    [browserOnline, resolvedClubId]
-  );
-
   const loadFirstPage = useCallback(
     async (options: RosterLoadOptions = {}) => {
       if (!resolvedClubId) return;
-      const recoveryRequestKey = `${resolvedClubId}:${debouncedSearch}:${filter}:${sortKey}`;
-      if (options.resetRecovery === true || recoveryRequestKeyRef.current !== recoveryRequestKey) {
-        if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-        refreshTimerRef.current = null;
-        recoveryAttemptRef.current = 0;
-        recoveryRequestKeyRef.current = recoveryRequestKey;
-      }
       const epoch = ++requestEpochRef.current;
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -311,7 +285,15 @@ export default function ClubMembersPage() {
       const summaryKey = `${user?.id ?? 'anonymous'}:${resolvedClubId}`;
       const summaryRequest = summaryCoordinatorRef.current.read(
         summaryKey,
-        () => ClubRosterService.getSummary(resolvedClubId),
+        () => {
+          const summaryController = new AbortController();
+          summaryAbortRef.current = summaryController;
+          return ClubRosterService.getSummary(resolvedClubId, summaryController.signal).finally(
+            () => {
+              if (summaryAbortRef.current === summaryController) summaryAbortRef.current = null;
+            }
+          );
+        },
         { force: options.forceSummary === true }
       );
       const pageRequest = ClubRosterService.getRosterPage(resolvedClubId, {
@@ -344,6 +326,8 @@ export default function ClubMembersPage() {
             setSummaryFreshness('fresh');
             membersRef.current = [];
             setMembers([]);
+            directoryAvailableRef.current = false;
+            setDirectoryAvailable(false);
             setCursor(null);
             setHasMore(false);
             setFilteredTotal(0);
@@ -366,6 +350,8 @@ export default function ClubMembersPage() {
           if (!isCurrent()) return;
           membersRef.current = page.items;
           setMembers(page.items);
+          directoryAvailableRef.current = true;
+          setDirectoryAvailable(true);
           setCursor(page.next_cursor);
           setHasMore(page.has_more);
           setFilteredTotal(page.filtered_total);
@@ -374,7 +360,6 @@ export default function ClubMembersPage() {
           setAccessDenied(false);
           setDataFreshness('fresh');
           setLastSuccessfulSyncAt(Date.now());
-          recoveryAttemptRef.current = 0;
           // ca_touch_member_fee_rollup used to be nudged here. Nothing reads
           // member_fee_rollup any more (verified against pg_proc 2026-09-04:
           // only its own refresh and backfill mention it), so the write was a
@@ -387,17 +372,16 @@ export default function ClubMembersPage() {
         },
         onPageError: (error) => {
           if (!isCurrent() || abortLike(error)) return;
-          const hasSavedRows = membersRef.current.length > 0;
+          const hasVerifiedDirectory = directoryAvailableRef.current;
           // ClubRosterService gives this expensive page read one uninterrupted
           // 40s attempt. Do not automatically launch another database copy
           // when it expires; the visible retry control is the deliberate next
           // attempt. Automatic retry multiplication was the reason a cold page
           // could remain loading while abandoned queries piled up.
-          const recoveryScheduled = false;
-          if (!recoveryScheduled) reportError(error, 'ClubMembersPage.loadFirstPage');
-          setLoadError(!recoveryScheduled && !hasSavedRows);
-          setLoading(recoveryScheduled && !hasSavedRows);
-          setDataFreshness(hasSavedRows ? 'stale' : recoveryScheduled ? 'loading' : 'failed');
+          reportError(error, 'ClubMembersPage.loadFirstPage');
+          setLoadError(!hasVerifiedDirectory);
+          setLoading(false);
+          setDataFreshness(hasVerifiedDirectory ? 'stale' : 'failed');
         },
       });
 
@@ -426,9 +410,21 @@ export default function ClubMembersPage() {
       setBrowserOnline(false);
       realtimeConnectionRef.current = 'degraded';
       setRealtimeConnection('degraded');
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
       abortRef.current?.abort();
       moreAbortRef.current?.abort();
-      setDataFreshness(membersRef.current.length > 0 ? 'stale' : 'failed');
+      summaryAbortRef.current?.abort();
+      summaryAbortRef.current = null;
+      // An aborted request deliberately fails the isCurrent() guard, so its
+      // own finally block cannot clear these flags. Clear them at the event
+      // that owns the abort or the directory can remain aria-busy forever.
+      setLoadError(!directoryAvailableRef.current);
+      setLoading(false);
+      setIsRefreshing(false);
+      setLoadSlow(false);
+      setSummaryFreshness(summaryAvailableRef.current ? 'stale' : 'failed');
+      setDataFreshness(directoryAvailableRef.current ? 'stale' : 'failed');
     };
     const handleOnline = () => {
       setBrowserOnline(true);
@@ -462,7 +458,7 @@ export default function ClubMembersPage() {
   const refresh = useCallback(async () => {
     if (!resolvedClubId) return;
     setIsRefreshing(true);
-    await latestLoadRef.current({ forceSummary: true, resetRecovery: true });
+    await latestLoadRef.current({ forceSummary: true });
   }, [resolvedClubId]);
 
   const retryLiveSync = useCallback(() => {
@@ -480,7 +476,7 @@ export default function ClubMembersPage() {
     if (!resolvedClubId || refreshTimerRef.current) return;
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
-      void latestLoadRef.current({ forceSummary: true, resetRecovery: true });
+      void latestLoadRef.current({ forceSummary: true });
     }, 1200);
   }, [resolvedClubId]);
 
@@ -489,6 +485,7 @@ export default function ClubMembersPage() {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
       abortRef.current?.abort();
       moreAbortRef.current?.abort();
+      summaryAbortRef.current?.abort();
     },
     []
   );
@@ -524,11 +521,9 @@ export default function ClubMembersPage() {
     onSubscriptionError: () => {
       realtimeConnectionRef.current = 'degraded';
       setRealtimeConnection('degraded');
-      // Bounded: a flapping channel used to schedule a forced summary + page
-      // reload on every error event, for ever, and each successful page reset
-      // the attempt counter so the bound never bit. The SUBSCRIBED handler
-      // above already refreshes once the channel comes back.
-      scheduleConnectionRecovery(2);
+      // A channel error is not evidence that the roster snapshot is stale.
+      // Reload once SUBSCRIBED confirms recovery; scheduling work here let a
+      // flapping socket abort healthy directory reads and reset its own bound.
     },
     enabled: !!resolvedClubId,
   });
@@ -682,7 +677,7 @@ export default function ClubMembersPage() {
     toast,
   ]);
 
-  const hasPaintedRoster = members.length > 0;
+  const hasVerifiedDirectory = directoryAvailable;
   const searchIsSettling = searchQuery.trim() !== debouncedSearch.trim();
   const stat = (value: number) => {
     if (!summaryAvailable) return summaryFreshness === 'loading' ? '...' : 'N/A';
@@ -763,7 +758,7 @@ export default function ClubMembersPage() {
             <h2 id="members-directory-title">Find A Player</h2>
           </div>
           <span className="members-result-count" aria-live="polite">
-            {loading && !hasPaintedRoster
+            {loading && !hasVerifiedDirectory
               ? 'Loading...'
               : `${filteredTotal.toLocaleString()} Results`}
           </span>
@@ -879,7 +874,7 @@ export default function ClubMembersPage() {
 
         <RosterConnectionStatus
           state={connectionState}
-          hasData={hasPaintedRoster}
+          hasData={hasVerifiedDirectory}
           lastSuccessfulSyncAt={lastSuccessfulSyncAt}
           isRefreshing={isRefreshing}
           isSlow={loadSlow}

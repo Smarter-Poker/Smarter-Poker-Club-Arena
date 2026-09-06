@@ -31,6 +31,7 @@ import { masterBus } from '../core/MasterBus';
 import HandReplay from '../components/replay/HandReplay';
 import HandDetailView from '../components/handdetail/HandDetailView';
 import HandNoteEditor from '../components/handdetail/HandNoteEditor';
+import HandFlagControl from '../components/handdetail/HandFlagControl';
 import { ShareHand, type ShareableHand } from '../components/table/ShareHand';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -44,6 +45,7 @@ import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistor
 import { gameTypeLabel, money } from '../utils/handFormat';
 import { filterBySubjects, handSearchSubject, type HandQuery } from '../lib/handSearch';
 import { handNotesService, type HandNote } from '../services/HandNotesService';
+import { handFlagService, type HandFlag } from '../services/HandFlagService';
 import { toPokerStarsFile } from '../utils/pokerStarsExport';
 
 /**
@@ -142,6 +144,10 @@ export default function HandHistoryPage() {
   const [to, setTo] = useState('');
   const [notes, setNotes] = useState<Map<string, HandNote>>(new Map());
   const [notesKnown, setNotesKnown] = useState(false);
+  /* Phase 6: the caller's own flags on these hands, so a hand already sent to
+     the operators shows its STATUS rather than another button. */
+  const [flags, setFlags] = useState<Map<string, HandFlag>>(new Map());
+  const [flagsKnown, setFlagsKnown] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [replayId, setReplayId] = useState<string | null>(null);
   const [shareHand, setShareHand] = useState<ShareableHand | null>(null);
@@ -341,6 +347,11 @@ export default function HandHistoryPage() {
     const ids = noteIdKey ? noteIdKey.split('|').filter(Boolean) : [];
     if (ids.length === 0) return;
     let alive = true;
+    void handFlagService.mineFor(ids).then((map) => {
+      if (!alive) return;
+      setFlags(map);
+      setFlagsKnown(true);
+    });
     void handNotesService.listFor(ids).then((map) => {
       if (!alive) return;
       setNotes(map);
@@ -776,6 +787,19 @@ export default function HandHistoryPage() {
                       currentUserId={heroId}
                       badge={variant}
                       viewerFacts={hand.heroFacts}
+                    />
+                    <HandFlagControl
+                      handId={hand.id}
+                      flag={flags.get(hand.id) ?? null}
+                      flagKnown={flagsKnown}
+                      onFiled={(handId, filed) =>
+                        setFlags((prev) => {
+                          const next = new Map(prev);
+                          if (filed) next.set(handId, filed);
+                          else next.delete(handId);
+                          return next;
+                        })
+                      }
                     />
                     <HandNoteEditor
                       handId={hand.id}

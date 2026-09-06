@@ -563,6 +563,24 @@ function MissionAlertsPanel({ userId }: { userId: string }) {
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function dailyMissionRevisionFromPayload(payload: unknown): number | null {
+  const records: unknown[] = [payload];
+  if (payload && typeof payload === 'object') {
+    const envelope = payload as Record<string, unknown>;
+    records.push(envelope.payload, envelope.data);
+    if (envelope.payload && typeof envelope.payload === 'object') {
+      records.push((envelope.payload as Record<string, unknown>).data);
+    }
+  }
+
+  for (const candidate of records) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const revision = Number((candidate as Record<string, unknown>).revision);
+    if (Number.isFinite(revision) && revision > 0) return revision;
+  }
+  return null;
+}
+
 export default function DailyChallengesPage() {
   const navigate = useNavigate();
   const isMountedRef = useIsMounted();
@@ -783,14 +801,29 @@ export default function DailyChallengesPage() {
     };
   }, [userId, loadChallenges]);
 
-  const scheduleRealtimeRefresh = useCallback(() => {
-    if (!userId) return;
-    if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
-    realtimeRefreshTimerRef.current = setTimeout(() => {
-      realtimeRefreshTimerRef.current = null;
-      loadChallenges(userId, 'silent');
-    }, 250);
-  }, [userId, loadChallenges]);
+  const scheduleRealtimeRefresh = useCallback(
+    (payload?: unknown) => {
+      if (!userId) return;
+      const announcedRevision = dailyMissionRevisionFromPayload(payload);
+
+      // The dashboard RPC can assign a brand-new account's first missions. Those
+      // inserts broadcast their revision before the same atomic RPC receipt
+      // reaches the browser. Scheduling another full dashboard read here made a
+      // cold open perform two identical RPCs. Keep the event for the debounce,
+      // then compare it with the revision actually rendered by the first receipt:
+      // the matching echo is already covered; a genuinely newer mutation still
+      // refreshes immediately.
+      if (announcedRevision === null && !initialLoadSettledRef.current) return;
+      if (announcedRevision !== null && announcedRevision <= dashboardRevisionRef.current) return;
+      if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+      realtimeRefreshTimerRef.current = setTimeout(() => {
+        realtimeRefreshTimerRef.current = null;
+        if (announcedRevision !== null && announcedRevision <= dashboardRevisionRef.current) return;
+        loadChallenges(userId, 'silent');
+      }, 250);
+    },
+    [userId, loadChallenges]
+  );
 
   // Realtime is the immediate path, while this tiny cursor read is the durable
   // repair path for a WebSocket event that was lost after subscription. It

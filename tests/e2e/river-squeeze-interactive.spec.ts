@@ -38,26 +38,30 @@ import { test, expect, type Page } from '@playwright/test';
 const BASE = process.env.ARENA_BASE_URL || 'http://localhost:4178';
 const HOST = '.card-squeeze-host';
 
+function rotationYFromTransform(transform: string | null): number {
+  if (transform === null) return NaN;
+  if (!transform || transform === 'none') return 0;
+  /* Parse INSIDE the parentheses. `matrix3d(...)` carries a digit in its
+     own name, so a naive match over the whole string picks up the "3" and
+     every index is off by one - which reported a real 27deg rotation as
+     0deg and sent a chase after a bug that was not there. */
+  const inside = transform.slice(transform.indexOf('(') + 1, transform.lastIndexOf(')'));
+  const nums = inside.split(',').map((n) => Number(n.trim()));
+  if (transform.startsWith('matrix3d') && nums.length === 16) {
+    // rotateY: m11 = cos(theta), m13 = -sin(theta) in column-major matrix3d
+    return Math.round((Math.atan2(-nums[2], nums[0]) * 180) / Math.PI);
+  }
+  if (nums.length === 6) return Math.round((Math.atan2(nums[1], nums[0]) * 180) / Math.PI);
+  return 0;
+}
+
 /** rotateY in degrees from the live computed matrix3d/matrix of an element. */
 async function rotationY(page: Page, selector: string): Promise<number> {
-  return page.evaluate((sel) => {
+  const transform = await page.evaluate((sel) => {
     const el = document.querySelector(sel) as HTMLElement | null;
-    if (!el) return NaN;
-    const t = getComputedStyle(el).transform;
-    if (!t || t === 'none') return 0;
-    /* Parse INSIDE the parentheses. `matrix3d(...)` carries a digit in its
-       own name, so a naive match over the whole string picks up the "3" and
-       every index is off by one - which reported a real 27deg rotation as
-       0deg and sent a chase after a bug that was not there. */
-    const inside = t.slice(t.indexOf('(') + 1, t.lastIndexOf(')'));
-    const nums = inside.split(',').map((n) => Number(n.trim()));
-    if (t.startsWith('matrix3d') && nums.length === 16) {
-      // rotateY: m11 = cos(theta), m13 = -sin(theta) in column-major matrix3d
-      return Math.round((Math.atan2(-nums[2], nums[0]) * 180) / Math.PI);
-    }
-    if (nums.length === 6) return Math.round((Math.atan2(nums[1], nums[0]) * 180) / Math.PI);
-    return 0;
+    return el ? getComputedStyle(el).transform : null;
   }, selector);
+  return rotationYFromTransform(transform);
 }
 
 /** Step the sim to the river of scenario 2 with the squeeze presented. */
@@ -232,8 +236,27 @@ test.describe('the river squeeze, with a real mouse', () => {
     await page.mouse.up();
     await expect(host).toHaveAttribute('data-rs-hold', 'released', { timeout: 2000 });
     await page.waitForTimeout(700);
-    const end = await rotationY(page, `${HOST} .card-squeeze`);
-    expect(Math.abs(Math.abs(end) - 180), `face up after release, got ${end}deg`).toBeLessThan(15);
+    const end = await page.evaluate((selector) => {
+      const card = document.querySelector(selector) as HTMLElement | null;
+      const board = document.querySelectorAll('.community-cards__card');
+      const river = board.item(board.length - 1);
+      return {
+        gone: card === null,
+        settledRiver: board.length === 5,
+        settledRiverFaceUp:
+          river !== null &&
+          river.querySelector('.card-squeeze') === null &&
+          river.querySelector('.card-image:not(.card-image--back)') !== null,
+        transform: card ? getComputedStyle(card).transform : null,
+      };
+    }, `${HOST} .card-squeeze`);
+    const endRotation = rotationYFromTransform(end.transform);
+    const openedBeforeUnmount =
+      Number.isFinite(endRotation) && Math.abs(Math.abs(endRotation) - 180) < 15;
+    expect(
+      openedBeforeUnmount || (end.gone && end.settledRiver && end.settledRiverFaceUp),
+      `released river did not settle face up (${JSON.stringify({ ...end, endRotation })})`
+    ).toBe(true);
   });
 
   test('a short drag springs it back face down', async ({ page }) => {

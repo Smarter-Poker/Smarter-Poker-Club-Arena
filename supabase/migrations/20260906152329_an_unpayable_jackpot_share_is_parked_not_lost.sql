@@ -204,7 +204,20 @@ AS $function$
 $function$;
 
 COMMENT ON FUNCTION public.fn_bbj_unclaimed_shares() IS
-  'Bad Beat Jackpot shares that could not be delivered and are still owed. The chips are in the pool; these rows say who they belong to. BBJ phase 2.3.';
+  'Bad Beat Jackpot shares that could not be delivered and are still owed. The chips are in the pool; these rows say who they belong to. Operator surface: service_role only - a player reads their OWN row through bbj_unclaimed_shares RLS. BBJ phase 2.3.';
+
+-- OPERATOR SURFACE, NOT PUBLIC. This function is SECURITY DEFINER and so runs
+-- past RLS; left with its default grants it would hand every unclaimed share -
+-- user ids and amounts, across every club - to any caller, including an
+-- unauthenticated one. `scripts/ci/definer-authorization.mjs` refused the push
+-- that first proposed it, and it was right to: read-only is not the same as
+-- harmless. A PLAYER does not need this function - the `bbj_unclaimed_self_select`
+-- policy above already lets them read their own row from the table itself.
+--
+-- PUBLIC is named as well as the roles: anon and authenticated inherit whatever
+-- PUBLIC holds, so revoking the roles alone reads as a fix and does nothing.
+REVOKE ALL ON FUNCTION public.fn_bbj_unclaimed_shares() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_bbj_unclaimed_shares() TO service_role;
 
 -- ── Assertions ──────────────────────────────────────────────────────────────
 DO $$

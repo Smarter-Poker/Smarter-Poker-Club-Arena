@@ -44,7 +44,10 @@ describe('a booking is a game: the fleet reads what the database counts', () => 
     const to = SEED.indexOf("label: 'HorseFleet.tournamentBookings'");
     expect(to).toBeGreaterThan(from);
     const read = SEED.slice(from, to);
-    expect(read).toContain('tournaments!inner(status)');
+    /* 2026-09-06: the start time rides along so the fleet can apply the same
+       sixty-minute window fn_concurrent_game_load applies (HorseGameLoad
+       bookingIsAGame). The status filter is unchanged. */
+    expect(read).toContain('tournaments!inner(status, start_time)');
     expect(read).toMatch(/\.in\('status', \['registered', 'playing'\]\)/);
     expect(read).toMatch(/\.in\('tournaments\.status', \['ANNOUNCED', 'REGISTERING'\]\)/);
     expect(read).toMatch(/\.order\('id',\s*\{\s*ascending:\s*true\s*\}\)/);
@@ -61,7 +64,12 @@ describe('a booking is a game: the fleet reads what the database counts', () => 
     const read = SEED.slice(from, to);
     expect(read).toMatch(/\.not\('tournament_id', 'is', null\)/);
     expect(read).toMatch(/\.neq\('status', 'closed'\)/);
-    expect(SEED).toContain('buildBookingLoad(bookingPage.rows, tournamentByTableId, horseTables)');
+    expect(SEED).toContain(
+      'buildBookingLoad(withStart, tournamentByTableId, horseTables, Date.now())'
+    );
+    /* The window is applied to every row the read returns, with the start
+       time the read carried - not re-read, not guessed. */
+    expect(SEED).toContain('start_time: t?.start_time ?? null,');
   });
 
   it('is loaded BEFORE the seeding loop and AFTER the seat map it needs', () => {

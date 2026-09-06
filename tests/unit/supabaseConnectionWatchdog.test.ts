@@ -42,6 +42,8 @@ describe('supabaseConnectionWatchdog', () => {
   const realFetch = globalThis.fetch;
 
   beforeEach(() => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://certification.supabase.invalid');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'sb_publishable_certification');
     wd.consecutiveFailures = 0;
     wd.isConnected = true;
   });
@@ -50,6 +52,7 @@ describe('supabaseConnectionWatchdog', () => {
     globalThis.fetch = realFetch;
     wd.stop();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it('should export supabaseConnectionWatchdog singleton', () => {
@@ -57,52 +60,53 @@ describe('supabaseConnectionWatchdog', () => {
     expect(typeof supabaseConnectionWatchdog).toBe('object');
   });
 
-  /**
-   * THE REGRESSION. `HEAD /rest/v1/` answers 401 to every caller — with the
-   * legacy anon JWT, with the sb_publishable_ key, and with an Authorization
-   * header alongside either (verified against production 2026-08-20).
-   *
-   * The check accepted 200 and 404 only, so it could never pass on any deploy.
-   * Five failures at 5s/10s/20s put every client into markDisconnected()
-   * within ~45s of load, and markConnected() — which is what re-subscribes
-   * realtime channels and replays the offline queue — became unreachable.
-   */
-  it('treats 401 from the REST root as CONNECTED, not as a dropped connection', async () => {
-    globalThis.fetch = respondWith(401) as unknown as typeof fetch;
+  it('uses the successful GoTrue health route instead of the unauthorized REST root', async () => {
+    const fetchMock = respondWith(200);
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
     await wd.checkHealth();
-    expect(wd.consecutiveFailures, '401 means the server answered us').toBe(0);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://certification.supabase.invalid/auth/v1/health',
+      expect.objectContaining({
+        method: 'GET',
+        headers: { apikey: 'sb_publishable_certification' },
+      })
+    );
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('/rest/v1/');
+    expect(wd.consecutiveFailures).toBe(0);
     expect(wd.isConnected).toBe(true);
   });
 
-  it.each([200, 204, 400, 401, 403, 404, 405, 429])(
-    'treats %i as connected — this is a connectivity check, not an authz check',
+  it.each([200, 204])('treats successful health status %i as connected', async (status) => {
+    globalThis.fetch = respondWith(status) as unknown as typeof fetch;
+    await wd.checkHealth();
+    expect(wd.consecutiveFailures).toBe(0);
+    expect(wd.isConnected).toBe(true);
+  });
+
+  it.each([401, 403, 429, 500, 502, 503, 504])(
+    'treats health status %i as a failure',
     async (status) => {
       globalThis.fetch = respondWith(status) as unknown as typeof fetch;
       await wd.checkHealth();
-      expect(wd.consecutiveFailures).toBe(0);
-      expect(wd.isConnected).toBe(true);
+      expect(wd.consecutiveFailures).toBe(1);
     }
   );
 
-  it.each([500, 502, 503, 504])('treats %i as a failure — the service itself is down', async (status) => {
-    globalThis.fetch = respondWith(status) as unknown as typeof fetch;
-    await wd.checkHealth();
-    expect(wd.consecutiveFailures).toBe(1);
-  });
-
   it('treats a network error as a failure', async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error('network down')) as unknown as typeof fetch;
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new Error('network down')) as unknown as typeof fetch;
     await wd.checkHealth();
     expect(wd.consecutiveFailures).toBe(1);
   });
 
-  it('recovers: a 401 after failures clears the counter', async () => {
+  it('recovers: a successful health response after failures clears the counter', async () => {
     globalThis.fetch = respondWith(503) as unknown as typeof fetch;
     await wd.checkHealth();
     await wd.checkHealth();
     expect(wd.consecutiveFailures).toBe(2);
 
-    globalThis.fetch = respondWith(401) as unknown as typeof fetch;
+    globalThis.fetch = respondWith(200) as unknown as typeof fetch;
     await wd.checkHealth();
     expect(wd.consecutiveFailures).toBe(0);
     expect(wd.isConnected).toBe(true);

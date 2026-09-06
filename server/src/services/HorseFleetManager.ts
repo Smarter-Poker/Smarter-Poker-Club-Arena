@@ -78,6 +78,7 @@ import {
   type SitVerdictContext,
 } from './HorseSitVerdict.js';
 import {
+  applyStakeBandSupply,
   buyInBBFor,
   gameLaneFor,
   horseHash,
@@ -88,6 +89,7 @@ import {
   stakeBandAllows,
   stakeBandFor,
   stakeBandForBigBlind,
+  type HorseStakeBand,
 } from './HorseBehavior.js';
 import {
   applyBias,
@@ -205,11 +207,6 @@ interface TableConfig {
   maxPlayers: number;
   horsesPerTable: number;
   gameVariant: string;
-  /** V23 (Dan 2026-08-28, "fully build all of these"): this table runs a UTG
-   *  straddle. The V18 straddle brain layer shipped 2026-08-26 and has fired
-   *  ZERO times in production because the fleet spawned no straddle tables —
-   *  this is the product half of that feature. NLH only. */
-  straddleEnabled?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -295,15 +292,22 @@ const DEFAULT_TABLES: TableConfig[] = [
     gameVariant: 'plo4',
   },
   {
-    // V23: the fleet's first STRADDLE game — gives the V18 straddle brain
-    // layer live traffic and the lobby an action table.
+    /* THE STRADDLE FLAG IS GONE (2026-09-05). This entry carried
+       `straddleEnabled: true` from V23, when the fleet still inserted tables
+       and wrote `straddle_enabled` onto them. Ruling R2 retired the lane, Gate
+       7 deleted every table writer in this file, and Gate 5's snapshot applier
+       now forces straddle_enabled, auto_utg_straddle and voluntary_straddle
+       false on every cash table each tick. So the field had no reader at all -
+       a switch on a wall connected to nothing, which is the shape of config an
+       agent restores by "wiring it up". It is deleted rather than left
+       declared; the name below is a fleet CONFIG KEY, not a live game.
+       Pinned by LeaguePmAndStraddle.test.ts. */
     name: 'NLH Straddle 1.00/2.00',
     smallBlind: 1.0,
     bigBlind: 2.0,
     maxPlayers: 9,
     horsesPerTable: 6,
     gameVariant: 'nlh',
-    straddleEnabled: true,
   },
   {
     name: 'PLO4 1.00/2.00',
@@ -1212,6 +1216,31 @@ export class HorseFleetManager {
         reportError(err, 'HorseFleet.disabled_games_load_failed');
       }
 
+      /* WHICH BANDS HAVE A GAME AT ALL (2026-09-05).
+         `fn_assign_horse_stake_bands` ranks the fleet by bb/100 and hands out
+         merit bands without ever asking which games exist. On 2026-09-05 that
+         put 100 horses in 'high' while every game with bb > 6 was switched
+         off - the six high games closed by an operator at 16:47 the day
+         before - and `stakeBandAllows` is a hard gate, so those 100 could sit
+         NOWHERE. Read from the table list this cycle already holds, minus the
+         tables the seeding loop below would refuse anyway; no extra query.
+         The band a horse is ASSIGNED is not touched (it is a merit record and
+         the switch is temporary); only the band it may SIT in moves, and only
+         downward. See effectiveStakeBandFor. */
+      const bandsWithAGame = new Set<HorseStakeBand>();
+      for (const t of tables) {
+        if (t.lifecycle === 'breaking' || t.lifecycle === 'closed') continue;
+        if (isTableOfDisabledGame(t, disabledGameIds)) continue;
+        bandsWithAGame.add(stakeBandForBigBlind(Number(t.big_blind)));
+      }
+      const bandSupply = applyStakeBandSupply(bandsWithAGame);
+      if (bandSupply.missing.length > 0) {
+        console.log(
+          `[HorseFleet] band supply: no enabled game in band(s) ${bandSupply.missing.join(', ')}; ` +
+            `${bandSupply.fallbacks} horse(s) seat one band down`
+        );
+      }
+
       // V8: full horse-id set (any status) so we can tell HUMAN seats from
       // horse seats — humans get rescue priority below.
       // Paged: a horse missing from this set reads as a HUMAN, which triggers
@@ -1282,11 +1311,21 @@ export class HorseFleetManager {
       // table the platform may still carry.
       const surplusTableIds = new Set<string>();
       /* A table marked `settings.retire_when_empty` is surplus by declaration
-         (Dan 2026-09-03, "close any tables over 2/5"): it gets no new horses,
-         HorseSessionRotator walks its horses out, and retireSurplusTables()
-         closes it once it is empty. This is how a RUNNING table above a
-         club's stake cap is closed without cashing seats out under a hand.
-         See isRetiringTable. */
+         (Dan 2026-09-03, "close any tables over 2/5"): it gets no new horses
+         and HorseSessionRotator walks its horses out. This is how a RUNNING
+         table above a club's stake cap is drained without cashing seats out
+         under a hand. See isRetiringTable.
+
+         THE CLOSER IS GONE AND NOTHING REPLACED IT (recorded 2026-09-05).
+         retireSurplusTables() used to close the drained row; Gate 7 deleted it
+         because a cash table is closed only by its game's ClusterController.
+         Every open cash table is a cluster table today, and a cluster table is
+         skipped by the `continue` above, so this set is empty in production
+         (0 flagged rows, 0 non-cluster cash tables, measured 2026-09-05) and
+         the missing closer costs nothing. If a non-cluster table is ever
+         flagged again it will drain to empty and then stay open forever. Do
+         not re-add a name-family closer here; give the flag to the controller,
+         or delete the flag. */
       let retiring = 0;
       let parked = 0;
       for (const t of tables) {
@@ -3398,7 +3437,13 @@ export class HorseFleetManager {
       }
 
       return { total: horses.length, available, seated, stuck };
-    } catch {
+    } catch (err) {
+      /* The zeroes above are the DELIBERATE answer to an incomplete read - a
+         health probe that undercounts silently is a lie. A THROWN read used
+         to return the same four zeroes with nothing said anywhere, so the
+         two indistinguishable answers had one visible cause between them.
+         Reported now; the zeroes still stand. */
+      reportError(err, 'HorseFleet.fleetHealth_failed');
       return { total: 0, available: 0, seated: 0, stuck: 0 };
     }
   }

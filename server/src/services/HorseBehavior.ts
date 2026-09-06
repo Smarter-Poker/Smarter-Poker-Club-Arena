@@ -216,6 +216,14 @@ export type HorseStakeBand = 'micro' | 'low' | 'mid' | 'high';
  *     low     0.50/1.00, 1.00/2.00          <- where the fleet's own configs live
  *     mid     2.00/4.00, 2.00/5.00, 3.00/6.00
  *     high    5.00/10.00, 10.00/25.00, 25.00/50.00
+ *
+ * THIS IS THE CANONICAL BAND FUNCTION (2026-09-05). StableHand used to carry
+ * a second, three-band one (micro / low / top, and null above 2) that
+ * disagreed with this one at every stake above 1/2. It is gone; StableHand
+ * re-exports this as `stakeBandOf`, so a band means the same thing to the
+ * seat gate, the tagger, the planner and `fn_assign_horse_stake_bands`.
+ * Change a boundary here and you have changed it everywhere, which is the
+ * point.
  */
 export function stakeBandForBigBlind(bigBlind: number): HorseStakeBand {
   const bb = Number(bigBlind);
@@ -256,6 +264,16 @@ export function assignedStakeBandCount(): number {
 }
 
 /**
+ * Test hook: forget every assigned band. The loader MERGES (a horse missing
+ * from one page keeps the band it had), so a test that wants to reason about
+ * the whole fleet - how many horses a band shortage moves, say - has to start
+ * from an empty map rather than from whatever an earlier case left behind.
+ */
+export function clearHorseStakeBands(): void {
+  assignedStakeBands.clear();
+}
+
+/**
  * A BAND IS EARNED (Dan 2026-08-29): micro is the worst-performing horses, low
  * the second worst, mid the good winners, high the best. The ranking is done in
  * the database by `fn_assign_horse_stake_bands`, on bb/100 - winnings over the
@@ -284,16 +302,108 @@ export function stakeBandFor(horseId: string): HorseStakeBand {
 }
 
 /**
+ * THE LADDER, LOW TO HIGH. The fallback below walks it DOWNWARD only.
+ */
+export const STAKE_BAND_LADDER: readonly HorseStakeBand[] = ['micro', 'low', 'mid', 'high'];
+
+/**
+ * WHICH BANDS HAVE A GAME TO SIT IN, as the fleet's last cycle read the floor.
+ * `null` means nobody has told us yet (boot, or a cycle that read no tables),
+ * and that is deliberately indistinguishable from "every band is fine": an
+ * unknown floor must never narrow anybody. See `applyStakeBandSupply`.
+ */
+let bandSupply: ReadonlySet<HorseStakeBand> | null = null;
+
+/** Test/ops hook: the supply set the last cycle published, or null. */
+export function stakeBandSupply(): ReadonlySet<HorseStakeBand> | null {
+  return bandSupply;
+}
+
+/** Test hook: forget the supply, so the gate is the assigned band alone. */
+export function clearStakeBandSupply(): void {
+  bandSupply = null;
+}
+
+/**
+ * THE BAND A HORSE CAN ACTUALLY SIT IN THIS CYCLE.
+ *
+ * A band is a merit record (see `stakeBandFor`) and it is not rewritten here.
+ * But a record is not a seat: on 2026-09-05 an operator had closed every game
+ * with bb > 6 - the six high games, 5/10 NLH Classic/Action/Madness, 5/10 PLO4
+ * Classic, 10/20 NLH and 25/50 NLH, all switched off at 16:47 the previous day
+ * - while `fn_assign_horse_stake_bands` went on assigning 'high' to the top
+ * 11% of the fleet by bb/100, because it ranks horses and never asks which
+ * games exist. 100 horses held a band with no game in it, and `stakeBandAllows`
+ * is a hard gate, so those 100 could sit NOWHERE AT ALL.
+ *
+ * The fix is a SEATING fallback and nothing more: a horse whose band has no
+ * game drops to the highest band BELOW it that does. Downward only - a micro
+ * horse is never promoted into a game it has not earned, which is the whole
+ * point of the ladder and the thing a player would notice. Its stored band is
+ * untouched: the operator's switch is temporary and the merit record is not
+ * ours to rewrite.
+ */
+export function effectiveStakeBandFor(horseId: string): HorseStakeBand {
+  const assigned = stakeBandFor(horseId);
+  const supply = bandSupply;
+  // Nothing published, or a floor with no bands at all: fail OPEN. A cycle
+  // that read no tables is not evidence that a band is empty.
+  if (!supply || supply.size === 0) return assigned;
+  if (supply.has(assigned)) return assigned;
+  for (let i = STAKE_BAND_LADDER.indexOf(assigned) - 1; i >= 0; i--) {
+    const band = STAKE_BAND_LADDER[i];
+    if (supply.has(band)) return band;
+  }
+  // Only bands ABOVE this horse have a game. It stays where it is rather than
+  // being promoted; the floor simply has nothing for it this cycle.
+  return assigned;
+}
+
+/**
+ * Publish the bands that have at least one enabled game, once per fleet cycle,
+ * and report what that costs: which bands with horses in them have no game,
+ * and how many horses are therefore seating below their record.
+ */
+export function applyStakeBandSupply(bands: Iterable<HorseStakeBand>): {
+  missing: HorseStakeBand[];
+  fallbacks: number;
+} {
+  const next = new Set<HorseStakeBand>();
+  for (const b of bands) if (isStakeBand(b)) next.add(b);
+  bandSupply = next.size > 0 ? next : null;
+  if (!bandSupply) return { missing: [], fallbacks: 0 };
+
+  const missing = new Set<HorseStakeBand>();
+  let fallbacks = 0;
+  for (const [horseId, assigned] of assignedStakeBands) {
+    if (bandSupply.has(assigned)) continue;
+    missing.add(assigned);
+    if (effectiveStakeBandFor(horseId) !== assigned) fallbacks++;
+  }
+  return {
+    missing: STAKE_BAND_LADDER.filter((b) => missing.has(b)),
+    fallbacks,
+  };
+}
+
+/**
  * May this horse sit in this game?
  *
  * NO ESCAPE HATCH, DELIBERATELY. There is a temptation to break the band when
- * a table has a waiting human and no banded horse is free — but that is
+ * a table has a waiting human and no banded horse is free - but that is
  * precisely the moment a human is looking, which makes it the worst possible
  * time to seat a 10/25 name in a 0.50/1 game. A quiet high-stakes table is
  * ordinary; a nosebleed regular in a micro game is the tell.
+ *
+ * THE ONE MOVEMENT ALLOWED IS DOWNWARD, AND ONLY WHEN THE BAND IS EMPTY OF
+ * GAMES (2026-09-05). That is `effectiveStakeBandFor`, and it is not an escape
+ * hatch in the sense this comment forbids: it never lets a small horse into a
+ * big game, which is the direction that looks wrong. A high-stakes regular
+ * playing mid because the high games are switched off is an ordinary thing to
+ * see; a hundred names that vanish from the floor entirely is not.
  */
 export function stakeBandAllows(horseId: string, bigBlind: number): boolean {
-  return stakeBandFor(horseId) === stakeBandForBigBlind(bigBlind);
+  return effectiveStakeBandFor(horseId) === stakeBandForBigBlind(bigBlind);
 }
 
 /**

@@ -293,6 +293,11 @@
     "bus_event_log": [
       "event_type"
     ],
+    "ca_account_snapshots": [
+      "account_key",
+      "account_type",
+      "balance"
+    ],
     "ca_alarm_drills": [
       "pass",
       "results"

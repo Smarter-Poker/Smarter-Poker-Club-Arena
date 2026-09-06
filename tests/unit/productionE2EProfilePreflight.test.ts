@@ -133,6 +133,11 @@ describe('authenticated production account preflight', () => {
     expect(helper).toContain("locator('.invite-pending')");
     expect(helper).toContain("getByRole('button', { name: 'Try Again' })");
     expect(helper).toContain('CLUB_ROUTE_ATTEMPTS');
+    expect(helper).toContain('POST_JOIN_DECISION_SELECTOR');
+    expect(helper).toContain("textContent({ timeout: 1_000 }).catch(() => '')");
+    expect(helper).not.toContain(
+      'await error.textContent())?.trim() || (await workspaceError.textContent()'
+    );
     expect(helper).toContain('Visible copy:');
   });
 

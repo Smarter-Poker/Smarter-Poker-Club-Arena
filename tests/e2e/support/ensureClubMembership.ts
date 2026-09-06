@@ -6,6 +6,16 @@ const CLUB_ROUTE_DECISION_SELECTOR =
   '.club-home, button.invite-btn--primary, .invite-pending, .invite-card.error-state, ' +
   '[role="alert"]:has-text("Club access could not be verified"), ' +
   '[role="alert"]:has-text("This Surface Could Not Load")';
+const POST_JOIN_DECISION_SELECTOR =
+  '.club-home, .invite-pending, .invite-card.error-state, ' +
+  '[role="alert"]:has-text("Club access could not be verified"), ' +
+  '[role="alert"]:has-text("This Surface Could Not Load")';
+
+async function readableText(locator: ReturnType<Page['locator']>): Promise<string> {
+  return ((await locator.textContent({ timeout: 1_000 }).catch(() => '')) || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 /**
  * Ensure the dedicated production E2E account can enter the club used by the
@@ -85,10 +95,27 @@ export async function ensureClubMembership(
 
     console.log(`[global-setup] joining the dedicated account to E2E club ${clubId}.`);
     await join.click({ timeout: 20_000 });
-    await page.locator(CLUB_ROUTE_DECISION_SELECTOR).first().waitFor({
-      state: 'visible',
-      timeout: CLUB_ROUTE_TIMEOUT,
-    });
+    /* The pre-click selector includes the Join Club button. Reusing it here
+       returned immediately while the RPC was still in flight, then the error
+       path waited 30 seconds on an absent error card and hid the real state
+       behind a locator timeout. After a click, only a terminal destination is
+       a decision: lobby, pending approval, or a rendered recovery surface. */
+    try {
+      await page.locator(POST_JOIN_DECISION_SELECTOR).first().waitFor({
+        state: 'visible',
+        timeout: CLUB_ROUTE_TIMEOUT,
+      });
+    } catch (joinError) {
+      const visibleCopy = await page
+        .locator('body')
+        .innerText({ timeout: 5_000 })
+        .catch(() => '');
+      throw new Error(
+        `Club ${clubId} join never reached its lobby, pending state, or recovery surface at ${page.url()}. ` +
+          `Visible copy: ${visibleCopy.replace(/\s+/g, ' ').trim().slice(0, 400) || '(none)'}`,
+        { cause: joinError }
+      );
+    }
 
     if (await lobby.isVisible().catch(() => false)) {
       console.log('[global-setup] dedicated account club membership is active.');
@@ -100,10 +127,8 @@ export async function ensureClubMembership(
       );
     }
 
-    throw new Error(
-      `The production E2E club join failed: ` +
-        `${(await error.textContent())?.trim() || (await workspaceError.textContent())?.trim() || clubId}`
-    );
+    const errorCopy = (await readableText(error)) || (await readableText(workspaceError));
+    throw new Error(`The production E2E club join failed: ${errorCopy || clubId}`);
   }
 
   throw new Error(`Club ${clubId} preflight exhausted its recovery attempts.`);

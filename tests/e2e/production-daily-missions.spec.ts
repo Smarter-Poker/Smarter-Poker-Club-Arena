@@ -461,7 +461,7 @@ test.describe('production Daily Missions certification', () => {
         report.blockedRevisionFrames = blockedRevisionFrames;
       });
 
-      await test.step('claim-all settles chips and diamonds once and replays its receipt', async () => {
+      await test.step('claim-all settles diamonds once, never mints chips, and replays its receipt', async () => {
         const payable = await serviceRows<{
           chip_reward_snapshot: number;
           diamond_reward_snapshot: number;
@@ -474,7 +474,7 @@ test.describe('production Daily Missions certification', () => {
           'chip_reward_snapshot,diamond_reward_snapshot,completed,claimed'
         );
         const due = payable.filter((row) => row.completed && !row.claimed);
-        const expectedChips = due.reduce(
+        const legacyChipPromise = due.reduce(
           (total, row) => total + Number(row.chip_reward_snapshot || 0),
           0
         );
@@ -484,6 +484,9 @@ test.describe('production Daily Missions certification', () => {
         );
         const walletBefore = await playerWalletBalance(environment, account!.id);
         const diamondsBefore = await diamondBalance(environment, account!.id);
+        expect(legacyChipPromise, 'new mission assignments must never promise chip rewards').toBe(
+          0
+        );
         const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
         await missions.placeControlInSafeViewport(claim);
         let claimCalls = 0;
@@ -511,9 +514,7 @@ test.describe('production Daily Missions certification', () => {
           reward.getByText('Deposited Securely To Your Club Arena Balances')
         ).toBeVisible();
         await reward.getByRole('button', { name: 'Continue' }).click();
-        await expect
-          .poll(() => playerWalletBalance(environment, account!.id))
-          .toBe(walletBefore + expectedChips);
+        await expect.poll(() => playerWalletBalance(environment, account!.id)).toBe(walletBefore);
         await expect
           .poll(() => diamondBalance(environment, account!.id))
           .toBe(diamondsBefore + expectedDiamonds);
@@ -527,6 +528,7 @@ test.describe('production Daily Missions certification', () => {
         if (error) throw error;
         expect((replay as JsonObject).success).toBe(true);
         expect((replay as JsonObject).replayed).toBe(true);
+        expect(Number((replay as JsonObject).chips || 0)).toBe(0);
 
         const batches = await serviceRows<{ request_id: string }>(
           environment,
@@ -537,17 +539,23 @@ test.describe('production Daily Missions certification', () => {
         expect(batches.filter((row) => row.request_id === requestBody.p_request_id)).toHaveLength(
           1
         );
-        const creditKeys = await serviceRows<{ key: string }>(
+        const diamondReceipts = await serviceRows<{
+          amount: number;
+          reference_id: string;
+          transaction_type: string;
+        }>(
           environment,
-          'wallet_credit_idempotency',
+          'diamond_transactions',
           account!.id,
-          'key'
+          'amount,reference_id,transaction_type'
         );
-        expect(
-          creditKeys.filter(
-            (row) => row.key === `challenge_claim_batch:${requestBody.p_request_id}`
-          )
-        ).toHaveLength(1);
+        const claimReceipts = diamondReceipts.filter(
+          (row) =>
+            row.reference_id === `challenge_claim_batch:${requestBody.p_request_id}:diamonds` &&
+            row.transaction_type === 'daily_challenge_claim'
+        );
+        expect(claimReceipts).toHaveLength(1);
+        expect(Number(claimReceipts[0].amount)).toBe(expectedDiamonds);
       });
 
       await test.step('disconnected alert preference can be turned off without requesting permission', async () => {

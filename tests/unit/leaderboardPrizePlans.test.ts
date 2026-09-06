@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MAX_PRIZE_PLAN_BUDGET,
+  allocateTiedPrizePlan,
   distributePrizeBudget,
   normalizeCustomPrizes,
   scaleCustomPrizesToBudget,
@@ -73,5 +74,45 @@ describe('leaderboard prize plans', () => {
       MAX_PRIZE_PLAN_BUDGET
     );
     expect(normalizeCustomPrizes([{ rank: 1, amount: MAX_PRIZE_PLAN_BUDGET + 0.01 }])).toEqual([]);
+  });
+
+  it('splits every occupied prize across tied players without breaking the tie', () => {
+    const awards = allocateTiedPrizePlan(
+      [
+        { userId: 'player-b', rank: 1 },
+        { userId: 'player-a', rank: 1 },
+        { userId: 'player-c', rank: 3 },
+      ],
+      [
+        { rank: 1, amount: 100 },
+        { rank: 2, amount: 50 },
+        { rank: 3, amount: 25 },
+      ]
+    );
+
+    expect(awards.get('player-a')).toBe(75);
+    expect(awards.get('player-b')).toBe(75);
+    expect(awards.get('player-c')).toBe(25);
+    expect([...awards.values()].reduce((sum, amount) => sum + amount, 0)).toBe(175);
+  });
+
+  it('assigns only rounding residue deterministically and excludes unqualified rows', () => {
+    const awards = allocateTiedPrizePlan(
+      [
+        { userId: 'c', rank: 1 },
+        { userId: 'a', rank: 1 },
+        { userId: 'b', rank: 1 },
+        { userId: 'unqualified', rank: 1, qualified: false },
+      ],
+      [{ rank: 1, amount: 1 }]
+    );
+
+    expect(awards).toEqual(
+      new Map([
+        ['a', 0.34],
+        ['b', 0.33],
+        ['c', 0.33],
+      ])
+    );
   });
 });

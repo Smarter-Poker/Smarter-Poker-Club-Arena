@@ -244,13 +244,30 @@ cannot change protection rules. The script says which of the two is missing.
 
 ### 1.2.5 HOW A PUSH LANDS NOW (changed 2026-08-21)
 
-The command is unchanged:
+**READ 1.1 FIRST - IT IS THE ROUTE, AND THIS SECTION IS THE SCRIPT'S HISTORY.**
+Clarified 2026-09-06, because the two read as competing instructions and an
+agent has to pick one:
+
+- **1.1 step 2 is what you do**: work on a branch in your own worktree and
+  `git push origin HEAD:refs/heads/<branch>`. `agent-open-pr.yml` opens the
+  pull request, autopilot merges it. That is the whole job.
+- **This section is about landing on `main` directly**, which the ruleset no
+  longer permits from any client.
+
+The command:
 
     bash scripts/git-safe-push.sh "feat(ca): what changed"
 
-What it does underneath is not. main is protected by a ruleset now, so the
-script pushes a branch, opens a pull request, waits for the required checks and
-merges it. You do not open the PR yourself and you do not push to main directly.
+What it does depends on where you are, and this used to be written as if it had
+one behaviour. On a FEATURE BRANCH it simply pushes, hook included - identical
+to 1.1 step 2, and it does NOT open a pull request. Only when you are on `main`
+does it route through `scripts/ci/pr-push.mjs`, which opens the pull request and
+waits, because main is protected by a ruleset and a direct push is refused.
+
+It does not use `gh` for any of that, and it must not: **`gh` is not installed
+on this Mac** (11.0 has said so correctly all along, while AGENT-PLAYBOOK.md
+claimed the opposite until 2026-09-06). It reads `GITHUB_TOKEN` from
+`~/Documents/club-arena/.env` and talks to the REST API directly.
 
 VERIFIED AGAINST THE LIVE API 2026-08-28, because two other places in this repo
 say the opposite and they are the stale ones. Ruleset `main protection`

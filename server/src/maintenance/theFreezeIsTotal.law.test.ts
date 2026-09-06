@@ -156,7 +156,15 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
     expect(seedGate).toBeLessThan(firstIo(seed));
 
     const seat = sliceMethod(src, 'private async seatHorse(');
-    const seatGate = seat.search(/isMaintenanceFrozen\(\)\)\s*return false;/);
+    /* PIN MOVED 2026-09-06, same mechanism, new shape. The gate is still the
+       first thing seatHorse does and still returns false before any RPC; it
+       now also hands the caller a reason ('frozen'), because a refusal nobody
+       can see is what hid the four-game limit for two days (HorseBuyInRefusal).
+       So the block form is accepted - the two assertions below, which are the
+       law, are unchanged. */
+    const seatGate = seat.search(
+      /isMaintenanceFrozen\(\)\)\s*\{?\s*(onRefusal[^\n]*\n\s*)?return false;/
+    );
     expect(seatGate, 'seatHorse does not gate itself').toBeGreaterThan(-1);
     expect(seatGate).toBeLessThan(at(seat, "rpc('atomic_table_buyin'", 'atomic_table_buyin'));
   });

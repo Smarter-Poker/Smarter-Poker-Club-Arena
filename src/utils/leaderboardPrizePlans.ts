@@ -117,3 +117,56 @@ export function totalPrizePlan(prizes: LeaderboardPrize[]): number {
   }, 0);
   return Math.round(total * 100) / 100;
 }
+
+export interface RankedPrizeCandidate {
+  userId: string;
+  rank: number;
+  qualified?: boolean;
+}
+
+/**
+ * Preview the same tie rule the settlement RPC enforces. A tie group shares
+ * the combined prizes for every place it occupies (1, 1 takes first + second;
+ * the next rank is 3). Residual cents follow stable user-id order so the
+ * preview and immutable payout receipts conserve the advertised pool exactly.
+ */
+export function allocateTiedPrizePlan(
+  candidates: RankedPrizeCandidate[],
+  prizes: LeaderboardPrize[]
+): Map<string, number> {
+  const prizeCentsByRank = new Map(
+    normalizeCustomPrizes(prizes).map((prize) => [prize.rank, Math.round(prize.amount * 100)])
+  );
+  const candidatesByRank = new Map<number, RankedPrizeCandidate[]>();
+
+  for (const candidate of candidates) {
+    if (
+      candidate.qualified === false ||
+      !candidate.userId ||
+      !Number.isInteger(candidate.rank) ||
+      candidate.rank < 1
+    ) {
+      continue;
+    }
+    const group = candidatesByRank.get(candidate.rank) || [];
+    group.push(candidate);
+    candidatesByRank.set(candidate.rank, group);
+  }
+
+  const awards = new Map<string, number>();
+  for (const [rank, unsortedGroup] of candidatesByRank) {
+    const group = [...unsortedGroup].sort((a, b) => a.userId.localeCompare(b.userId));
+    const poolCents = Array.from({ length: group.length }, (_, offset) => rank + offset).reduce(
+      (sum, occupiedRank) => sum + (prizeCentsByRank.get(occupiedRank) || 0),
+      0
+    );
+    if (poolCents <= 0) continue;
+
+    const baseCents = Math.floor(poolCents / group.length);
+    const residualCents = poolCents % group.length;
+    group.forEach((candidate, index) => {
+      awards.set(candidate.userId, (baseCents + (index < residualCents ? 1 : 0)) / 100);
+    });
+  }
+  return awards;
+}

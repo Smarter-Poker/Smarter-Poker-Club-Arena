@@ -44,7 +44,8 @@ function isRetryableError(error: unknown): boolean {
 export async function retryAsync<T>(
   fn: () => PromiseLike<T> | Promise<T>,
   maxRetries: number = 2,
-  baseDelayMs: number = 500
+  baseDelayMs: number = 500,
+  shouldRetry: (error: unknown) => boolean = isRetryableError
 ): Promise<T> {
   let lastError: unknown;
 
@@ -55,7 +56,7 @@ export async function retryAsync<T>(
       lastError = error;
 
       // Don't retry non-transient errors
-      if (!isRetryableError(error)) {
+      if (!shouldRetry(error)) {
         throw error;
       }
 

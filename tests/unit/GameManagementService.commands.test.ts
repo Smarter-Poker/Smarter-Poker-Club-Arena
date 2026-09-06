@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
@@ -20,12 +20,16 @@ vi.mock('../../src/utils/errorReporter', () => ({
   reportError: mocks.reportError,
 }));
 
-import { gameManagementService } from '../../src/services/GameManagementService';
+import {
+  gameManagementService,
+  MANAGED_GAME_COMMAND_TIMEOUT_MS,
+} from '../../src/services/GameManagementService';
 
 const success = {
   ok: true,
   command_id: mocks.commandId,
   command_status: 'succeeded',
+  expected_version: 4,
   version_before: 4,
   version_after: 5,
   replayed: false,
@@ -36,6 +40,10 @@ describe('GameManagementService command execution', () => {
     mocks.rpc.mockReset();
     mocks.emit.mockReset();
     mocks.reportError.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('passes the reviewed version and returns the durable command receipt', async () => {
@@ -112,6 +120,153 @@ describe('GameManagementService command execution', () => {
     expect(executions[1][1].p_command_id).toBe(mocks.commandId);
   });
 
+  it('does not treat a malformed successful response as receipt evidence', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: { ok: true }, error: null })
+      .mockResolvedValueOnce({ data: { ok: true, found: false }, error: null })
+      .mockResolvedValueOnce({ data: success, error: null });
+
+    const receipt = await gameManagementService.update(
+      'table',
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      { name: 'Verified Name' },
+      4
+    );
+
+    expect(receipt.status).toBe('succeeded');
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'GameManagementService.executeCommand',
+      expect.objectContaining({ commandId: mocks.commandId, attempt: 1 })
+    );
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === 'fn_execute_managed_game_command')
+    ).toHaveLength(2);
+  });
+
+  it('rejects contradictory outcome and terminal status evidence', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: { ...success, command_status: 'rejected' },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: { ok: true, found: false }, error: null })
+      .mockResolvedValueOnce({ data: success, error: null });
+
+    await expect(
+      gameManagementService.update(
+        'table',
+        'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        { name: 'Verified Name' },
+        4
+      )
+    ).resolves.toMatchObject({ status: 'succeeded' });
+
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'GameManagementService.executeCommand',
+      expect.objectContaining({ commandId: mocks.commandId, attempt: 1 })
+    );
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === 'fn_execute_managed_game_command')
+    ).toHaveLength(2);
+  });
+
+  it('does not accept receipt evidence for a different reviewed version', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: { ...success, expected_version: 3 }, error: null })
+      .mockResolvedValueOnce({ data: { ok: true, found: false }, error: null })
+      .mockResolvedValueOnce({ data: success, error: null });
+
+    await expect(
+      gameManagementService.close('table', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 4)
+    ).resolves.toMatchObject({ status: 'succeeded' });
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === 'fn_execute_managed_game_command')
+    ).toHaveLength(2);
+  });
+
+  it('bounds a request that never settles, then reconciles and retries the same UUID', async () => {
+    vi.useFakeTimers();
+    mocks.rpc
+      .mockImplementationOnce(() => new Promise(() => undefined))
+      .mockResolvedValueOnce({ data: { ok: true, found: false }, error: null })
+      .mockResolvedValueOnce({ data: { ...success, replayed: true }, error: null });
+
+    const pending = gameManagementService.close('table', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 4);
+    await vi.advanceTimersByTimeAsync(MANAGED_GAME_COMMAND_TIMEOUT_MS);
+
+    await expect(pending).resolves.toMatchObject({ status: 'succeeded', replayed: true });
+    const executions = mocks.rpc.mock.calls.filter(
+      ([name]) => name === 'fn_execute_managed_game_command'
+    );
+    expect(executions).toHaveLength(2);
+    expect(executions[0][1].p_command_id).toBe(mocks.commandId);
+    expect(executions[1][1].p_command_id).toBe(mocks.commandId);
+  });
+
+  it('bounds a reconciliation read that never settles', async () => {
+    vi.useFakeTimers();
+    mocks.rpc
+      .mockResolvedValueOnce({ data: null, error: { message: 'Response lost' } })
+      .mockImplementationOnce(() => new Promise(() => undefined))
+      .mockResolvedValueOnce({ data: success, error: null });
+
+    const pending = gameManagementService.close('table', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 4);
+    await vi.advanceTimersByTimeAsync(MANAGED_GAME_COMMAND_TIMEOUT_MS);
+
+    await expect(pending).resolves.toMatchObject({ status: 'succeeded' });
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'fn_get_managed_game_command_receipt', {
+      p_command_id: mocks.commandId,
+    });
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === 'fn_execute_managed_game_command')
+    ).toHaveLength(2);
+  });
+
+  it('reconciles when the RPC promise rejects instead of returning an error object', async () => {
+    mocks.rpc.mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce({
+      data: { ok: true, found: true, receipt: { ...success, completed_at: '2026-09-01' } },
+      error: null,
+    });
+
+    const receipt = await gameManagementService.close(
+      'tournament',
+      'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      4
+    );
+
+    expect(receipt).toMatchObject({ status: 'succeeded', replayed: true });
+    expect(mocks.emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not accept an incomplete processing receipt as a finished command', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: null, error: { message: 'Response lost' } })
+      .mockResolvedValueOnce({
+        data: {
+          ok: true,
+          found: true,
+          receipt: {
+            ok: true,
+            command_id: mocks.commandId,
+            command_status: 'processing',
+            version_before: 4,
+            version_after: 4,
+          },
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: success, error: null });
+
+    await expect(
+      gameManagementService.close('table', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 4)
+    ).resolves.toMatchObject({ status: 'succeeded' });
+    expect(
+      mocks.rpc.mock.calls.filter(([name]) => name === 'fn_execute_managed_game_command')
+    ).toHaveLength(2);
+  });
+
   it('surfaces stale-version rejection and emits no false success event', async () => {
     mocks.rpc.mockResolvedValueOnce({
       data: {
@@ -119,6 +274,7 @@ describe('GameManagementService command execution', () => {
         reason: 'stale_contract_version',
         command_id: mocks.commandId,
         command_status: 'rejected',
+        expected_version: 4,
         version_before: 5,
         version_after: 5,
       },
@@ -168,6 +324,30 @@ describe('GameManagementService command execution', () => {
         reconciliationState: 'confirmed',
       }),
     ]);
+  });
+
+  it('maps an unknown receipt status as processing instead of a false success', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        ok: true,
+        receipts: [
+          {
+            game_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            command_id: mocks.commandId,
+            command_action: 'update',
+            status: 'legacy_unknown',
+            contract_version_before: 4,
+            contract_version_after: 4,
+            reconciliation_state: 'confirmed',
+          },
+        ],
+      },
+      error: null,
+    });
+
+    await expect(
+      gameManagementService.getCommandReceipts('table', ['aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'])
+    ).resolves.toEqual([expect.objectContaining({ status: 'processing' })]);
   });
 
   it('maps the scoped management health snapshot', async () => {

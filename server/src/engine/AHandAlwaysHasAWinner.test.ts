@@ -23,6 +23,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { determineWinners } from './PokerEngine.js';
+import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
@@ -101,6 +102,47 @@ describe('a pot is never dropped', () => {
     expect(winners.map((w) => w.userId)).toEqual(['winner']);
     expect(winners[0].amount).toBeCloseTo(100, 2);
   });
+
+  it('keeps every uncontested main and side pot in the per-pot award ledger', () => {
+    const players = twoContenders() as Array<{ is_folded: boolean }>;
+    players[1].is_folded = true;
+    const pots: import('../types.js').Pot[] = [
+      { amount: 75, eligiblePlayers: ['winner', 'loser'] },
+      { amount: 25, eligiblePlayers: ['winner'] },
+    ];
+    const perPotAwards: import('../types.js').PerPotAward[] = [];
+
+    const winners = determineWinners(players as never[], BOARD, pots, 'nlh', 0, perPotAwards);
+
+    expect(perPotAwards.map(({ potIndex, amount }) => ({ potIndex, amount }))).toEqual([
+      { potIndex: 0, amount: 75 },
+      { potIndex: 1, amount: 25 },
+    ]);
+    expect(winners).toEqual([{ userId: 'winner', amount: 100, potIndex: 0 }]);
+
+    const missionEvents = buildDailyMissionHandEvents({
+      dealtPlayerIds: ['winner', 'loser'],
+      roster: [
+        { userId: 'winner', isHorse: false },
+        { userId: 'loser', isHorse: false },
+      ],
+      winners,
+      showdownResults: [],
+      pots: pots.map((pot, index) => ({ index, amount: pot.amount })),
+      perPotAwards,
+    });
+    expect(missionEvents[0]).toMatchObject({
+      user_id: 'winner',
+      amounts: { hands_played: 1, hands_won: 1, hands_won_no_showdown: 1, big_pots: 2 },
+      values: { big_pots: [75, 25] },
+    });
+    expect(missionEvents[1]).toEqual({
+      user_id: 'loser',
+      amounts: { hands_played: 1 },
+      magnitudes: {},
+      values: {},
+    });
+  });
 });
 
 describe('nothing is settled by list position', () => {
@@ -128,7 +170,11 @@ describe('nothing is settled by list position', () => {
     const at = src.indexOf('no_winners_recheck');
     expect(at).toBeGreaterThan(-1);
     // the re-evaluation must come AFTER the alarm, in the same block
-    expect(sliceEnclosingBlock(src, 'no_winners_recheck')).toContain('determineWinners(');
+    const recovery = sliceEnclosingBlock(src, 'no_winners_recheck');
+    expect(recovery).toContain('determineWinners(');
+    expect(recovery).toContain('recoveredPerPot');
+    expect(recovery).toContain('this.pendingPerPotAwards = recoveredPerPot');
+    expect(recovery).toContain('pots.map((pot) =>');
   });
 
   it('the last resort splits among contenders rather than picking one', () => {

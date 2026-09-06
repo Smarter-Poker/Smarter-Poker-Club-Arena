@@ -618,6 +618,18 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
    */
   const panelRef = useRef<HTMLDivElement | null>(null);
   const restoreFocusTo = useRef<HTMLElement | null>(null);
+  /* `onClose` is READ THROUGH A REF so it can stay out of the deps below.
+     With it in the deps this effect re-runs on every parent render whose
+     handler identity changed, and its cleanup calls `restoreFocusTo.current
+     .focus()` - which yanks focus back to whatever opened the panel WHILE THE
+     PANEL IS STILL OPEN, on every websocket tick behind a live table.
+     It is safe today only because TablePage happens to wrap
+     `handleCloseHandHistory` in useCallback([]), for an unrelated 2026-08-27
+     bug. That is a coupling nothing here enforces and the next caller has no
+     way to know about; HandDetailModal already reads its handler this way for
+     exactly this reason (deep dive 2026-09-06). */
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!isOpen) return;
     restoreFocusTo.current = document.activeElement as HTMLElement | null;
@@ -627,7 +639,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
       'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab' || !panelRef.current) return;
@@ -659,7 +671,9 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
       document.removeEventListener('keydown', onKey);
       restoreFocusTo.current?.focus?.();
     };
-  }, [isOpen, onClose]);
+    /* `isOpen` ONLY - see the onCloseRef note above. Adding the handler back
+       here re-arms the focus restore on every parent render. */
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

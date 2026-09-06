@@ -164,6 +164,29 @@ export async function readServiceRows<T>(
   return serviceRequest<T[]>(environment, `/rest/v1/${table}?${query.toString()}`);
 }
 
+export async function insertServiceRows<T>(
+  environment: CustomizationCertificationEnvironment,
+  table: string,
+  rows: JsonObject | JsonObject[]
+): Promise<T[]> {
+  return serviceRequest<T[]>(environment, `/rest/v1/${table}`, {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(rows),
+  });
+}
+
+export async function deleteServiceRows(
+  environment: CustomizationCertificationEnvironment,
+  table: string,
+  query: URLSearchParams
+): Promise<void> {
+  await serviceRequest<void>(environment, `/rest/v1/${table}?${query.toString()}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' },
+  });
+}
+
 export async function callServiceRpc<T>(
   environment: CustomizationCertificationEnvironment,
   rpc: string,
@@ -461,6 +484,8 @@ async function cleanupTemporaryCustomizationAccountOnce(
     'daily_challenge_event_outbox',
     'daily_challenge_milestone_claims',
     'daily_challenge_claim_batches',
+    'daily_challenge_reroll_receipts',
+    'daily_challenge_freeze_entitlements',
     'user_daily_challenges',
     'challenge_streak_state',
     'user_notification_preferences',

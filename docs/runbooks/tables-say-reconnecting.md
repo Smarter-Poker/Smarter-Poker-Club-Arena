@@ -132,8 +132,7 @@ token.
 
 The engine no longer does that for an invalid token - it completes the
 handshake and closes with 4401. **But five other refusals are still written
-before the handshake**, and every one of them reaches the client as a bare
-1006. Find out which by replaying the upgrade by hand (`--http1.1` matters:
+before the handshake**, and every one of them reaches the client as a bare 1006. Find out which by replaying the upgrade by hand (`--http1.1` matters:
 over HTTP/2 curl cannot upgrade at all and the engine answers a misleading
 404):
 
@@ -145,13 +144,13 @@ curl -sS -i --http1.1 --max-time 15 \
   "https://engine.smarter.poker/ws/table/$TABLE_ID?v=1"
 ```
 
-| status | meaning |
-| --- | --- |
-| `101` | the upgrade worked; the fault is after it - go to `no_snapshot` |
-| `403` | one of four viewer gates: **not a member of the table's club**, banned by a club/union blacklist, the table is seats-only (`restrict_observers`), or the IP rule found a different account at that table from this address |
-| `404` | the table does not exist and could not be started |
-| `503` | the engine could not CHECK the token (GoTrue unreachable) - deliberate, and the client is meant to keep retrying |
-| nothing / connection reset | the proxy or the engine is not answering - check `EngineDown` and the Caddy log, and question 3 |
+| status                     | meaning                                                                                                                                                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `101`                      | the upgrade worked; the fault is after it - go to `no_snapshot`                                                                                                                                                            |
+| `403`                      | one of four viewer gates: **not a member of the table's club**, banned by a club/union blacklist, the table is seats-only (`restrict_observers`), or the IP rule found a different account at that table from this address |
+| `404`                      | the table does not exist and could not be started                                                                                                                                                                          |
+| `503`                      | the engine could not CHECK the token (GoTrue unreachable) - deliberate, and the client is meant to keep retrying                                                                                                           |
+| nothing / connection reset | the proxy or the engine is not answering - check `EngineDown` and the Caddy log, and question 3                                                                                                                            |
 
 **A 403 here is the trap.** It is a correct refusal, it is permanent, and the
 client cannot tell it from a flaky link - so the tab reconnects forever with no

@@ -16,7 +16,7 @@ verification when it lands.
 | 2     | See the client             | Beacon from four client failure sites -> `POST /client-event`; bounded per-user counting in the engine; `PlayersReconnectingRepeatedly` + `TablesAreReloadingThemselves` alerts; two laws | done   |
 | 3     | Do no harm                 | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   | done   |
 | 4     | Restart handoff + protocol | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 | done   |
-| 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      |        |
+| 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      | done   |
 | 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      |        |
 | 7     | Guardrails                 | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        |        |
 
@@ -160,6 +160,46 @@ now watches. Building the channel properly (server-side emission from
 belongs in its own phase with Dan's sign-off, not smuggled into an
 observability phase. It is recorded here so nobody reads the existing code as
 a working path.
+
+## Phase 5 - Trust and limits (2026-09-06)
+
+**Why.** Three things a live socket still took on trust: that the device's
+clock is right, that the session behind it is still valid, and that one account
+cannot open sockets without limit.
+
+**What.**
+
+1. **There is one server clock.** This phase was meant to ADD an offset; it
+   already existed TWICE, with opposite signs, born eighteen days apart -
+   `utils/serverClock` (`Date.now() - offset`) and `lib/serverClock`
+   (`Date.now() + offset`). Same name, same meaning, inverted arithmetic, so
+   one wrong import path would have turned a three-second-fast phone into a
+   three-second-SLOW one and doubled the error on the turn ring. The
+   latency-corrected estimator was fed only by snapshots and drove the turn
+   clock; the rough one, which ignores latency on purpose, was fed by every
+   frame. Folded into one, `lib/serverClock` deleted.
+2. **Trust has to be renewed.** A socket was authenticated once at the upgrade
+   and trusted forever after - the 2026-09-03 outage from the other side. Every
+   live socket now re-asks GoTrue every five minutes, staggered per socket and
+   bounded per sweep, and ONLY a definitive rejection closes it.
+3. **A cap of ten sockets per account**, refusing the ARRIVING socket with 4429
+   rather than evicting one that may be carrying a hand.
+4. **The socket clocks agree.** Four clocks in four files, one of them not in
+   this repo, held together by relationships nothing checked. Now pinned.
+   Measured on the box: Caddy sets no timeout at all for the engine vhost, so
+   the 25-second ping clears every default comfortably.
+
+**Found and NOT fixed here:** the repo carries TWO Caddyfiles for
+`engine.smarter.poker` and neither is what is running. Same shape as the Phase 1
+alert-rules finding; it belongs to Phase 7's reconciler, and picking a winner
+between three files is a decision rather than a cleanup.
+
+**Laws.** `tests/there-is-one-server-clock.law.test.ts`,
+`server/src/transport/trustIsRenewedAndBounded.law.test.ts`, and the socket
+clocks added to `the-break-clocks-agree`. Six mutations, six reds. Full
+reasoning: `docs/changelog/2026-09-06-realtime-phase-5-trust-and-limits.md`.
+
+**Verification.** Recorded below when it has been read from production.
 
 ## Phase 4 - Restart handoff and protocol (2026-09-05)
 

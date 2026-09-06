@@ -1,0 +1,3 @@
+# tests/the-phase-5-gate-closes-what-it-found.law.test.ts
+
+Chip standard Phase 5 gate (2026-09-05): a spin books its entry with the escrow lock first (the deadlock between registration and the unbooked sweep); every new money door is registered after reading and no sweep moves money in the freeze; the spin is enforced with its reserve move exempt and the satellite seat reads the money that arrived on the pool_transfer leg; a cash entrant who wins a seat is paid the seat in cash; a cancelled target refunds every satellite seat it holds and a cancel's fee reversal is attribution, never escrow money

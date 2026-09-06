@@ -90,6 +90,18 @@ export interface ShareablePlayer {
   mucked?: boolean;
   /** v4: the made hand this seat showed ("Flush, Ace High"), when it showed. */
   handName?: string;
+  /**
+   * v4: THE CHIPS THIS SEAT WAS ACTUALLY PAID, after rake.
+   *
+   * Not the same number as the per-board shares in `winners`, and the wire
+   * used to carry only one of them. Measured on production hand #6421788: the
+   * record pays `winners[].amount` = 49.74, while `winners_by_board` shares
+   * are 26.12 + 26.12 = 52.24, because the per-board figures are PRE-rake and
+   * the payment is post-rake. Sending the per-board shares as the payment told
+   * the recipient the winner collected 2.50 more than they did - the rake,
+   * exactly - on every raked run-it-twice hand.
+   */
+  won?: number;
 }
 
 export interface ShareableHand {
@@ -125,6 +137,12 @@ export interface ShareableHand {
    */
   discard?: { actions: ShareableAction[] };
   /**
+   * The SHOWDOWN street's own rows. Small but not empty: the engine writes a
+   * returned uncalled bet with stage `showdown`, and a wire with no slot for
+   * that street dropped it - see the note in `encodeHand`.
+   */
+  showdown?: { actions: ShareableAction[] };
+  /**
    * Run-it-twice runs 2..N, and the second and third boards of a
    * double-board bomb pot. Board one stays in flop / turn / river. Each entry
    * is the whole board that run finished on.
@@ -150,6 +168,16 @@ export interface ShareableHand {
   wireVersion?: 'v1' | 'v2' | 'v3' | 'v4';
 }
 
+/**
+ * A SHARE OF THE POT.
+ *
+ * On v1-v3 this list WAS the payment: one row per winner, the chips they
+ * collected. On v4 it is the record's own breakdown - one row per board and
+ * per half when the hand had them - and what each player was PAID lives on
+ * `ShareablePlayer.won`, because those are two different numbers (see there).
+ * A v4 hand with no per-board awards still writes one row per winner here, so
+ * the two agree on an ordinary pot.
+ */
 export interface ShareableWinner {
   seat: number;
   /** GROSS chips out of the pot, before rake. */
@@ -344,6 +372,35 @@ function unb64utf8(text: string): string {
   }
 }
 
+/**
+ * TRIM A LABEL WITHOUT CUTTING A CHARACTER IN HALF.
+ *
+ * `String.prototype.slice` counts UTF-16 code units, so it splits a surrogate
+ * pair - an emoji in a player's name came back as a replacement character on
+ * exactly the wrong boundary. `Array.from` iterates code points, so a trim
+ * lands between characters.
+ *
+ * The CAPS were also too tight, measured against production 2026-09-05:
+ *
+ *   player name   longest real 23  (cap was 24 - one character of headroom)
+ *   table name    longest real 59  (cap was 40, and 1,484 tables are over it)
+ *
+ * The table-name cut was not cosmetic. Tournament tables are named
+ * "DSS Wednesday $16.50 NLH Bounty Hunter - 5 PM CT - Table 10", so 40
+ * characters removed THE TABLE NUMBER: every table of one tournament shared
+ * under the same truncated name, and the header of a shared hand no longer
+ * said which table it came from.
+ */
+function clip(text: string | null | undefined, max: number): string {
+  const chars = Array.from(String(text ?? ''));
+  return chars.length <= max ? chars.join('') : chars.slice(0, max).join('');
+}
+
+/** How much of each label the wire carries. See `clip` for the measurements. */
+const CAP_NAME = 40;
+const CAP_TABLE = 80;
+const CAP_HAND = 48;
+
 // Full hand encoding
 export function encodeHand(hand: ShareableHand): string {
   const parts: string[] = [];
@@ -376,13 +433,15 @@ export function encodeHand(hand: ShareableHand): string {
         `${p.isHero ? 'h' : ''}${p.isWinner ? 'w' : ''}` +
         `${p.mucked ? 'm' : ''}${p.privateCards ? 'p' : ''}`;
       const cards = p.cards?.length ? encodeCards(p.cards) : '';
-      const handName = p.handName ? b64utf8(p.handName.slice(0, 40)) : '';
+      const handName = p.handName ? b64utf8(clip(p.handName, CAP_HAND)) : '';
       /* An UNKNOWN stack is empty, not zero. `encodeMoney(undefined)` is '0',
          so a hand shared from the archive - which carries no stacks at all -
          used to reach the recipient with every seat sitting behind nothing,
          which reads as fact and is not one. */
       const stack = p.stack == null ? '' : encodeMoney(p.stack);
-      return `${p.seat}:${b64utf8((p.name || '').slice(0, 24))}:${stack}:${cards}:${flags}:${handName}`;
+      /* What this seat was PAID, after rake. Empty when they won nothing. */
+      const won = p.won ? encodeMoney(p.won) : '';
+      return `${p.seat}:${b64utf8(clip(p.name, CAP_NAME))}:${stack}:${cards}:${flags}:${handName}:${won}`;
     })
     .join(';');
   parts.push(playerStr);
@@ -419,14 +478,14 @@ export function encodeHand(hand: ShareableHand): string {
           encodeMoney(w.amount),
           w.board ?? '',
           w.low ? '1' : '',
-          w.hand ? b64utf8(w.hand.slice(0, 40)) : '',
+          w.hand ? b64utf8(clip(w.hand, CAP_HAND)) : '',
         ].join(':')
       )
       .join(';')
   );
   // v2 field — the table name. v1 hard-coded "Shared Hand" on decode, so the
   // recipient never saw which table the hand came from.
-  parts.push(b64utf8((hand.tableName || '').slice(0, 40)));
+  parts.push(b64utf8(clip(hand.tableName, CAP_TABLE)));
 
   // ── v4 fields, appended so every earlier payload still parses ───────────
   // 13: run-it-twice / bomb-pot boards 2..N, whole boards, ';'-joined.
@@ -434,11 +493,17 @@ export function encodeHand(hand: ShareableHand): string {
   // 14: what the house took, and the jackpot drop.
   parts.push(`${encodeMoney(hand.rake)}:${encodeMoney(hand.bbjFee)}`);
   // 15: the hand's own number.
-  parts.push(hand.handNumber == null ? '' : b64utf8(String(hand.handNumber).slice(0, 24)));
+  parts.push(hand.handNumber == null ? '' : b64utf8(clip(String(hand.handNumber), 24)));
   // 16: Crazy Pineapple's discard street (the card itself never travels).
   parts.push(hand.discard ? encodeActions(hand.discard.actions) : '');
   // 17: hand-level flags. 'b' — a bomb pot, which posts antes and NO blinds.
   parts.push(hand.bombPot ? 'b' : '');
+  /* 18: the SHOWDOWN street's own rows. The engine writes the returned
+     uncalled bet with stage `showdown`, and the wire had no slot for that
+     street - so the return never travelled, the recipient's reconstruction
+     inferred one of its own and hung it on the river, and the river's pot
+     line read the hand 7.70 lighter than it was (production #5087420). */
+  parts.push(hand.showdown ? encodeActions(hand.showdown.actions) : '');
 
   // Base64 URL-safe encode. Everything above is ASCII by construction (names
   // are base64'd), so btoa cannot throw here.
@@ -472,7 +537,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
       .split(';')
       .filter(Boolean)
       .map((ps) => {
-        const [seat, nameB64, stackB36, cardsStr, flags, handNameB64] = ps.split(':');
+        const [seat, nameB64, stackB36, cardsStr, flags, handNameB64, wonB36] = ps.split(':');
         const player: ShareablePlayer = {
           seat: parseInt(seat, 10) || 0,
           name: unb64utf8(nameB64) || `Seat ${seat}`,
@@ -488,6 +553,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
         }
         const handName = unb64utf8(handNameB64);
         if (handName) player.handName = handName;
+        if (wonB36) player.won = decodeMoney(wonB36, version);
         return player;
       });
 
@@ -555,6 +621,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
     const handNumber = unb64utf8(parts[15]);
     const discardActions = decodeActions(parts[16], version);
     const handFlags = parts[17] || '';
+    const showdownActions = decodeActions(parts[18], version);
 
     // Build hand object
     const hand: ShareableHand = {
@@ -578,6 +645,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
     if (bbjStr) hand.bbjFee = decodeMoney(bbjStr, version);
     if (handNumber) hand.handNumber = handNumber;
     if (discardActions.length) hand.discard = { actions: discardActions };
+    if (showdownActions.length) hand.showdown = { actions: showdownActions };
     if (handFlags.includes('b')) hand.bombPot = true;
 
     return hand;

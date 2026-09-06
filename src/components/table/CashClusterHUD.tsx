@@ -125,6 +125,13 @@ export function CashClusterHUD({
     }
   };
 
+  /* NOTHING TO SAY, NOTHING DRAWN (2026-09-05). With the bar gone this column
+     is only a notice and up to two buttons, and a player sitting quietly in
+     the main game has none of them. An empty flex box in the corner is not
+     visible, but it is still a pointer-events:auto node over the felt (see
+     .hud-ur-column in TableHUD.css), so it does not get rendered at all. */
+  if (!moveNotice && !seatChangeAvailable && !listed && !onWaitlist) return null;
+
   return (
     <div className="cch-column">
       {/* THE BAR IS GONE FROM THE FELT (Dan 2026-09-05). It read MUST MOVE /

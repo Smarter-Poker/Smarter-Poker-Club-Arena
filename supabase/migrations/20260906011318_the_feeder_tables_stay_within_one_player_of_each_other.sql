@@ -1,4 +1,4 @@
--- 20260906002522_the_feeder_tables_stay_within_one_player_of_each_other.sql
+-- 20260906011318_the_feeder_tables_stay_within_one_player_of_each_other.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
@@ -155,13 +155,30 @@ BEGIN
     SELECT * FROM pool WHERE room > 0
      ORDER BY n ASC, main_index ASC NULLS LAST, created_at ASC LIMIT 1
   ),
-  -- WITHIN ONE PLAYER IS BALANCED. A gap of one is the normal state of an odd
-  -- headcount and must not start a move that the next tick reverses.
+  /*
+   * WITHIN ONE PLAYER IS BALANCED. A gap of one is the normal state of an odd
+   * headcount and must not start a move that the next tick reverses.
+   *
+   * AND BALANCING NEVER MAKES TWO TABLES THAT CANNOT DEAL. Without the two
+   * floors below, a cluster holding a Main 2 with two players and a live table
+   * with none reads as a gap of two, and the "fix" is to move one player and
+   * leave 1 and 1 - two tables that cannot deal a hand, out of one that could.
+   * A room does not balance a thin game, it BREAKS one, and the tick's step 5
+   * already does exactly that once everyone fits elsewhere. So:
+   *
+   *   hi.n >= 3   the table giving up a player still has 2 afterwards;
+   *   lo.n >= 1   the table receiving one has 2 afterwards.
+   *
+   * A live table at 0 or 1 is a break candidate, not a destination, and the
+   * step that owns it is the one that should have it.
+   */
   pair AS (
     SELECT hi.id AS from_id, lo.id AS to_id
       FROM hi, lo
      WHERE hi.id <> lo.id
        AND hi.n - lo.n >= 2
+       AND hi.n >= 3
+       AND lo.n >= 1
   ),
   mover AS (
     SELECT p.from_id, p.to_id, ts.user_id

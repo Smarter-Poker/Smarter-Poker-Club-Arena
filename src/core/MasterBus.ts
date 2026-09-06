@@ -1391,6 +1391,13 @@ class MasterBusCore {
     'RIT_OFFERED',
     'BBJ_HIT',
     'POT_DISTRIBUTED',
+    /* A TAP IS A TAP (Dan 2026-09-05). The LOBBY button in the action pill row
+       carries the same payload every time - the table it is labelling - so the
+       fingerprint is identical on every press. Open the lobby, close it, press
+       LOBBY again inside 500ms and the second press would be swallowed and the
+       button would read as broken. Same reasoning as UI_THEME_CHANGED above:
+       an event that IS a user's tap must never be deduplicated by payload. */
+    'OPEN_MUST_MOVE_LOBBY',
   ];
 
   // #4b Channel factory registry for auto-recovery

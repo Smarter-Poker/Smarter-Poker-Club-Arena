@@ -229,17 +229,30 @@
   appearance: none;
   /* The standard way to stand a native range on end (Chrome 121+, Safari
      17.5+, Firefox). `direction: rtl` puts the MAXIMUM at the top, which is
-     the only orientation a "buy in for more" gesture can have. */
+     the only orientation a "buy in for more" gesture can have.
+
+     The pre-standard `-webkit-appearance: slider-vertical` is deliberately
+     NOT here. It is a second appearance declaration and it wins over the
+     `appearance: none` above, which hands the track back to the UA and undoes
+     every rule below it - a legacy fallback that breaks the modern path is
+     worse than no fallback. Both spellings of the standard pair have shipped
+     since Safari 17.5 / Chrome 121, which is the floor this app already
+     assumes elsewhere. */
   writing-mode: vertical-lr;
   direction: rtl;
-  /* The pre-standard WebKit spelling, for older iOS WebViews. Harmless where
-     the modern pair is honoured; without it those browsers draw the track
-     flat and the whole fix is undone on the devices Dan tests on. */
-  -webkit-appearance: slider-vertical;
   width: 6px;
   height: 168px;
   padding: 0;
-  background: rgba(255, 255, 255, 0.1);
+  /* The fill the horizontal track never had: `--slider-percent` is set inline
+     by the component and, until now, was read by nothing at all - the element
+     meant to paint it was in the stylesheet and never in the markup. It grows
+     UPWARD from the bottom, toward the maximum at the top. */
+  background: linear-gradient(
+    to top,
+    #6fdcff 0%,
+    #0a5dc2 var(--slider-percent, 0%),
+    rgba(255, 255, 255, 0.1) var(--slider-percent, 0%)
+  );
   border-radius: 3px;
   outline: none;
   /* The other half of the fix: the sheet must not take this drag away as a

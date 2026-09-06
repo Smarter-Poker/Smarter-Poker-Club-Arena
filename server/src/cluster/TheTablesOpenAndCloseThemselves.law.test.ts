@@ -50,7 +50,7 @@ const SEATING = read('server/src/engine/ServerTableEngineSeating.ts');
    20260905091025 would keep passing while describing a function that is no
    longer the one running. */
 const TICK_ALL = read(
-  'supabase/migrations/20260906002522_the_feeder_tables_stay_within_one_player_of_each_other.sql'
+  'supabase/migrations/20260906011318_the_feeder_tables_stay_within_one_player_of_each_other.sql'
 );
 
 describe('the controller is wired on the leader, beside the fleet', () => {
@@ -987,7 +987,7 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
 
 /**
  * THE FEEDER TABLES STAY WITHIN ONE PLAYER OF EACH OTHER (Dan 2026-09-05,
- * 20260906002522). Measured on NLH 0.05/0.10 Classic: 39 players over 5 tables
+ * 20260906011318). Measured on NLH 0.05/0.10 Classic: 39 players over 5 tables
  * seated 9/9/9/9/3, because nothing had ever moved a player SIDEWAYS - only up
  * to the main game, and only out of a breaking table. Dan asked for the card
  * room's own rule and it has three parts: the main game is fed and never
@@ -1010,6 +1010,12 @@ describe('the must-move tables balance themselves, and Main 1 is fed', () => {
 
   it('within one player is balanced; two is a move', () => {
     expect(bal).toMatch(/hi\.n - lo\.n >= 2/);
+    /* AND NEVER TWO TABLES THAT CANNOT DEAL. A Main 2 with two players beside
+       a live table with none is a gap of two, and moving one leaves 1 and 1 -
+       two tables that cannot deal a hand, made out of one that could. A room
+       breaks a thin game rather than balancing it, and step 5 already does.
+       The source keeps 2, the destination reaches 2, or nothing moves. */
+    expect(bal).toMatch(/AND hi\.n >= 3\s*AND lo\.n >= 1/);
     // Projected headcount, not the live one: the must-move step runs first in
     // the same pass and its planned arrivals must already count.
     expect(bal).toMatch(/WHERE m\.from_table_id = c\.id AND m\.state = 'pending'/);

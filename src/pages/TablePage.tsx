@@ -6485,8 +6485,18 @@ export default function TablePage({
     const WINNER_STUCK_TICK_MS = 2000;
     const WINNER_STUCK_TICKS = 6;
     const id = window.setInterval(() => {
-      // Something is going to take it down. Leave it alone.
-      if (handCompleteTimerRef.current) {
+      /*
+       * Something is going to take it down, OR the award sequence this label
+       * describes is still in flight. Either way, leave it alone.
+       *
+       * The second half matters in the one case the first half misses: a
+       * pot_win that lands AFTER the reset already ran has no timer to point
+       * at, but it still starts chip flights, and `potAwardAnimEndAtRef` is
+       * the instant the last of them lands. Clearing the label while the
+       * chips it belongs to are still moving would be the animation law's
+       * own complaint, in a backstop written to honour it.
+       */
+      if (handCompleteTimerRef.current || potAwardAnimEndAtRef.current > Date.now()) {
         winnerStuckTicksRef.current = 0;
         return;
       }

@@ -100,7 +100,7 @@ and the lobby must never describe one move two ways.
 **LAW 10.5:** there is no `is_horse` anywhere in the planner. A horse is
 balanced exactly like a human, by the same rule, into the same seats.
 
-**Files:** `supabase/migrations/20260906002522_the_feeder_tables_stay_within_one_player_of_each_other.sql`,
+**Files:** `supabase/migrations/20260906011318_the_feeder_tables_stay_within_one_player_of_each_other.sql`,
 `server/src/services/supabase/seatMoves.ts`, `src/services/cashGameLobby.ts`,
 `server/src/cluster/TheTablesOpenAndCloseThemselves.law.test.ts` (the
 `fn_cash_clusters_tick_all` pin moved to the new migration, which is now the
@@ -264,11 +264,19 @@ the amount rather than under it (a 200px-tall track below would push the quick
 buttons and BUY CHIPS off the bottom of a 375x812 screen). The min and max were
 labels either side of the amount AND the words "Min"/"Max" under the track -
 four things saying two; they are the ends of the track now, max at the top where
-the thumb reaches it. `writing-mode: vertical-lr` + `direction: rtl` is the
-standard spelling; the pre-standard `-webkit-appearance: slider-vertical` rides
-along for older iOS WebViews, without which the fix is undone on the devices
-Dan tests on. Nothing about the value, the step grid or the 2026-08-20
-MAX-is-reachable fix changed.
+the thumb reaches it. `writing-mode: vertical-lr` + `direction: rtl` is the standard spelling
+(Safari 17.5+, Chrome 121+). The pre-standard
+`-webkit-appearance: slider-vertical` is deliberately absent: it is a second
+appearance declaration that wins over `appearance: none` and hands the track
+back to the UA, so a fallback for old WebKit would have unstyled the control
+everywhere else.
+
+While there: `--slider-percent` has been set inline by this component and read
+by **nothing** — the element that was supposed to paint the fill
+(`.buy-in-modal__slider-track`) lived in the stylesheet and was never in the
+markup, so the track had no fill at all. The vertical track paints it as a
+gradient stop, growing upward toward the maximum. Nothing about the value, the
+step grid or the 2026-08-20 MAX-is-reachable fix changed.
 
 **Files:** `src/components/table/BuyInModal.tsx` + `.css`.
 
@@ -336,3 +344,73 @@ numeric width on that breakpoint.
 
 **Files:** `src/components/navigation/GlobalHeader.module.css`,
 `tests/unit/GlobalHeaderNav.test.ts`.
+
+---
+
+## The verification pass, and the six things it found
+
+Dan: "before you CLAIM SUCCESS, you need to do a deep dive and verify that
+everything you've built is 100% fully built, coded, wired in and tested."
+Six real gaps came out of it. None of them would have shown up in a test run.
+
+**1. THE MIGRATION WAS NEVER APPLIED, and the PR could not have merged.**
+`scripts/ci/check-migrations-applied.mjs` is a required check: it asks whether
+the objects a branch's new migrations declare exist in the LIVE schema, because
+in this repo schema is applied to production by hand and the file is the record,
+not the mechanism. Read against production, `fn_cash_cluster_balance` did not
+exist and `cash_seat_moves_reason_check` still listed three reasons. Applied
+2026-09-06 01:13 UTC, one transaction, one schema-cache reload, at minute 13 -
+well clear of the :53 freeze. Declared in
+`scripts/ci/schema-manifest.d/mobile-ux-batch.json` (the base snapshot is a
+nightly and predates it), and the gate now reports
+"0 unapplied object(s)".
+
+**Verified live, not assumed:** within 40 seconds of the apply the engine's next
+pass had planned **8 balance moves** across the real clusters that needed them -
+7/9/3, 6/1, 6/6/4 - with zero `controller_tick_error` rows in the window.
+
+**2. THE PLANNER COULD MAKE TWO TABLES THAT CANNOT DEAL.** Found by reading it
+back before applying, not by a test. A cluster holding a live table with two
+players beside a live table with none is a gap of two, so the first draft would
+move one player and leave 1 and 1 - two tables that cannot deal a hand, made out
+of one that could. A room does not balance a thin game, it BREAKS one, and the
+tick's step 5 already does that once everyone fits elsewhere. Two floors now:
+`hi.n >= 3` (the source keeps two) and `lo.n >= 1` (the destination reaches
+two). A live table at 0 or 1 is a break candidate, not a destination.
+
+**3. THE MIGRATION FILE AND THE DATABASE DISAGREED ABOUT ITS VERSION.** The
+apply recorded `20260906011318`; the file was `20260906002522`.
+`applied-migrations-recorded.yml` runs twice a day and files an issue for
+exactly that - a version in the live history with no file on main. The file is
+renamed to the recorded version, and the law test and this changelog with it.
+
+**4. A TAP THAT LOOKS BROKEN.** `MasterBus` fingerprint-deduplicates identical
+event + payload pairs inside a 500ms window. `OPEN_MUST_MOVE_LOBBY` carries the
+same payload every press - the table it labels - so open, close, press again
+inside half a second and the second press vanishes. Added to `DEDUP_BYPASS`,
+for the reason already written there for `UI_THEME_CHANGED`: an event that IS a
+user's tap must never be deduplicated by payload.
+
+**5. THE WIN BACKSTOP COULD STILL CUT AN AWARD ANIMATION.** It waived itself
+while a reset timer was pending, which covers every ordinary hand. It did not
+cover the case it was written for: a `pot_win` landing after the reset already
+ran has no timer to point at, but it still starts chip flights.
+`potAwardAnimEndAtRef` - the instant the last flight lands - is now the second
+half of the test, so the backstop cannot clear a label while the chips it
+belongs to are still moving. That is the animation law's own complaint, and it
+would have been in the backstop written to honour it.
+
+**6. TWO DEAD THINGS AND AN EMPTY BOX.**
+
+- `--slider-percent` has been set inline by `BuyInModal` and read by NOTHING:
+  the element meant to paint the fill (`.buy-in-modal__slider-track`) was in the
+  stylesheet and never in the markup, so the track has never had a fill. The
+  vertical track paints it now.
+- `-webkit-appearance: slider-vertical` was dropped from the same rule. It is a
+  second appearance declaration that WINS over `appearance: none` and hands the
+  track back to the UA - a legacy fallback that breaks the modern path is worse
+  than no fallback.
+- `CashClusterHUD` returns null when it has nothing to show. With the bar gone
+  it is a notice and up to two buttons, and a player sitting quietly in the main
+  game has none of them; an empty `.cch-column` is invisible but still a
+  `pointer-events: auto` node over the felt.

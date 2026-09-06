@@ -16,6 +16,7 @@
  * and the offending element without blocking anyone's merge.
  */
 import { test, expect } from '@playwright/test';
+import { evaluateAcrossDocumentReplacement } from './support/evaluateAcrossDocumentReplacement';
 
 const ROUTES = [
   '',
@@ -170,7 +171,7 @@ test('no Club Arena route scrolls horizontally at 375px', async ({ page }) => {
       continue;
     }
 
-    const result = await page.evaluate(() => {
+    const result = await evaluateAcrossDocumentReplacement(page, () => {
       const vw = window.innerWidth;
       const doc = document.documentElement;
       const overflow = doc.scrollWidth - vw;

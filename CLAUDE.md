@@ -1289,6 +1289,57 @@ Full timeline: `docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.m
 
 ---
 
+## 10.11 FIX IT AT THE ROOT. A DETECTOR IS NOT A FIX (Dan, 2026-09-06, BINDING)
+
+**Dan, verbatim: "I WANT HARD CODED FIXES FOR THINGS THAT BREAK, LIKE THE BOMB
+POTS NOT PAYING OUT OR HAVING ISSUES, I DON'T JUST WANT IT 'FLAGGED' AND
+'RECONCILED'. I WANT THEM FIXED AT THE ROOT CAUSE AND STOPPED FROM HAPPENING
+AGAIN. MAKE SURE THIS IS HOW ALL ISSUES ARE HANDLED MOVING FORWARD."**
+
+This applies to EVERY defect, not only money: a payout, a stall, a lost
+broadcast, a wrong number on a screen, a slow query. It is the general form of
+what 10.9 already requires for a settlement, and it outranks the instinct to
+make a problem visible and move on.
+
+### What is NOT a fix, on its own
+
+- a watcher, a health check, an audit function, a nightly `fn_ca_*_check`;
+- a repair job, a sweep, a back-pay pass, a "reconcile" cron;
+- a `financial_alerts` row, an incident, an issue, a changelog entry;
+- a retry that hides a path that should not have failed.
+
+Every one of those is a NET. Nets are welcome and several exist here for good
+reason. But a net catches the thing after it has already gone wrong, and a
+defect that is only ever caught is a defect that happens for ever - it just
+happens with paperwork. If a repair job has run more than once for the same
+cause, the cause has not been fixed.
+
+### What a finished fix looks like
+
+1. **The cause is named and read from rows**, not guessed. You can say which
+   line of which function or which write produced the wrong outcome.
+2. **That line is changed** so the outcome cannot occur again - the hard-coded
+   fix. Not a guard around it, not a compensating write afterwards.
+3. **The damage already done is settled** through the platform's own
+   idempotent path (10.9), so nobody is short and nobody is paid twice.
+4. **A test pins the cause**, so the next agent cannot reintroduce it. Where
+   the behaviour is a rule Dan has stated, that is a `*.law.test.*` with its
+   file in `docs/laws.d/`.
+5. **The net stays**, and is now expected to find nothing. A net that starts
+   finding things again is telling you the cause came back.
+
+### The order to work in
+
+Find it, fix the cause, settle the damage, pin it, and only then decide
+whether a detector is still worth keeping. If you cannot reach the cause in
+the time you have, say so plainly and say what you know - do not ship the
+detector and describe it as handled.
+
+**"Flagged for review", "the reconciler will pick it up" and "an alert now
+fires" are not outcomes.** The outcome is that it does not happen again.
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK
 
 ### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)

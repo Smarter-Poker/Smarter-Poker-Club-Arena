@@ -23,6 +23,28 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from './useAuthUser';
 import { reportError } from '../utils/errorReporter';
 
+type MountedRef = { current: boolean };
+
+async function readCapabilityWithRetry<T>(
+  read: () => PromiseLike<T> | Promise<T>,
+  isMountedRef: MountedRef
+): Promise<T> {
+  /*
+   * These RPCs are read-only permission questions even though PostgREST sends
+   * RPCs as POST requests. The transport layer correctly refuses to replay an
+   * arbitrary rejected POST because it may have executed; here the operation
+   * is explicitly side-effect-free, so the component-level Supabase retry is
+   * both safe and necessary. Keep the import lazy: this hook is in the entry
+   * chunk and the retry path should not increase every player's first load.
+   */
+  const { retryFetch } = await import('../utils/retryFetch');
+  return retryFetch(read, { maxRetries: 2, baseDelayMs: 300, isMountedRef });
+}
+
+function retryStoppedBecauseUnmounted(error: unknown): boolean {
+  return error instanceof Error && error.name === 'Unmounted';
+}
+
 export function useCanCreateUnion(): { canCreateUnion: boolean; checking: boolean } {
   const { user } = useAuthUser();
   const [state, setState] = useState<{ allowed: boolean; checking: boolean }>({
@@ -35,22 +57,28 @@ export function useCanCreateUnion(): { canCreateUnion: boolean; checking: boolea
       setState({ allowed: false, checking: false });
       return;
     }
-    let live = true;
+    const mounted = { current: true };
     setState({ allowed: false, checking: true });
     // No argument on purpose: the answer is about auth.uid(). The uuid-taking
     // fn_can_create_union is revoked from every browser role precisely so a
     // client cannot ask about somebody else.
-    supabase.rpc('fn_can_i_create_a_union').then(({ data, error }) => {
-      if (!live) return;
-      if (error) {
+    void readCapabilityWithRetry(() => supabase.rpc('fn_can_i_create_a_union'), mounted)
+      .then(({ data, error }) => {
+        if (!mounted.current) return;
+        if (error) {
+          reportError(error, 'useCanCreateUnion');
+          setState({ allowed: false, checking: false });
+          return;
+        }
+        setState({ allowed: data === true, checking: false });
+      })
+      .catch((error: unknown) => {
+        if (!mounted.current || retryStoppedBecauseUnmounted(error)) return;
         reportError(error, 'useCanCreateUnion');
         setState({ allowed: false, checking: false });
-        return;
-      }
-      setState({ allowed: data === true, checking: false });
-    });
+      });
     return () => {
-      live = false;
+      mounted.current = false;
     };
   }, [user?.id]);
 
@@ -106,20 +134,26 @@ export function useCanOperateUnionNetwork(): {
       setState({ allowed: false, checking: false });
       return;
     }
-    let live = true;
+    const mounted = { current: true };
     setState({ allowed: false, checking: true });
     // No argument on purpose: the answer is about auth.uid().
-    supabase.rpc('fn_can_i_operate_the_union_network').then(({ data, error }) => {
-      if (!live) return;
-      if (error) {
+    void readCapabilityWithRetry(() => supabase.rpc('fn_can_i_operate_the_union_network'), mounted)
+      .then(({ data, error }) => {
+        if (!mounted.current) return;
+        if (error) {
+          reportError(error, 'useCanOperateUnionNetwork');
+          setState({ allowed: false, checking: false });
+          return;
+        }
+        setState({ allowed: data === true, checking: false });
+      })
+      .catch((error: unknown) => {
+        if (!mounted.current || retryStoppedBecauseUnmounted(error)) return;
         reportError(error, 'useCanOperateUnionNetwork');
         setState({ allowed: false, checking: false });
-        return;
-      }
-      setState({ allowed: data === true, checking: false });
-    });
+      });
     return () => {
-      live = false;
+      mounted.current = false;
     };
   }, [user?.id]);
 

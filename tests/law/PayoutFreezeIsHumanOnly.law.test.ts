@@ -27,6 +27,30 @@
  * If you are here because you want the trial balance to open the freeze
  * automatically: that is a decision for Dan, not a test to weaken. Put the
  * threshold and the false-positive cost in front of him first.
+ *
+ * ─── ONE SUPERSEDED FILE, AND WHAT IT COST (2026-09-05) ─────────────────────
+ *
+ * This law did its job on 2026-09-05. Phase 6.2 (20260905203905) built the
+ * roadmap's "kill switch automation at Dan's threshold" as a detector that
+ * opened the freeze itself at 1,000 chips, and the full suite caught it at the
+ * phase gate (the pre-push hook runs the tests covering the diff; this law
+ * reads every migration instead). It was corrected forward the same hour by
+ * 20260905224524, which rewrites fn_ca_kill_switch_trip to ESCALATE - a
+ * critical incident, a senior page, an alert - and never to freeze; production
+ * was disarmed before the correction was written.
+ *
+ * The law was right on the evidence: at 03:05 UTC that day the supply meter
+ * read -3,305.68 unexplained in one hour, and nothing had leaked - the meter
+ * had changed DEFINITION at 02:56. An armed automatic switch would have frozen
+ * every tournament payout on the platform, which is the false alarm the law
+ * describes. Whether an automatic opener is ever armed remains Dan's decision.
+ *
+ * An applied migration is never edited (it is mirrored byte-exact against
+ * production and a replay must reproduce what ran), so the offending body
+ * stays in the tree as history. It is listed below, and the exemption is
+ * SPENT ON EVIDENCE: the correcting migration must exist, its
+ * fn_ca_kill_switch_trip must contain no insert, and it must assert the same
+ * at apply time. Every other migration, and any new one, is caught as before.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -65,12 +89,51 @@ function functionBodies(sql: string): Array<{ name: string; start: number; end: 
   return out;
 }
 
+/**
+ * The same text with every single-quoted SQL string blanked (same length, so
+ * every offset still lines up). An INSERT written INSIDE a quoted string is
+ * not a statement: it is an assertion about one, and the correcting migration
+ * of 2026-09-05 asserts exactly that ("the kill switch still writes the payout
+ * freeze" refuses to apply if the switch ever writes it again). Scanning the
+ * raw text called that assertion an opener. The negative controls below
+ * smuggle REAL statements, unquoted, and still fail as they must.
+ */
+function withoutStringLiterals(sql: string): string {
+  let out = '';
+  let inStr = false;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    if (!inStr && ch === "'") {
+      inStr = true;
+      out += ' ';
+      continue;
+    }
+    if (inStr) {
+      if (ch === "'" && sql[i + 1] === "'") {
+        out += '  ';
+        i++;
+        continue;
+      }
+      if (ch === "'") {
+        inStr = false;
+        out += ' ';
+        continue;
+      }
+      out += ch === '\n' ? '\n' : ' ';
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 /** Offsets of every INSERT INTO ca_payout_freeze in the text. */
 function freezeInserts(sql: string): number[] {
   const re = /INSERT\s+INTO\s+(?:public\.)?ca_payout_freeze\b/gi;
+  const scan = withoutStringLiterals(sql);
   const out: number[] = [];
   let m: RegExpExecArray | null;
-  while ((m = re.exec(sql))) out.push(m.index);
+  while ((m = re.exec(scan))) out.push(m.index);
   return out;
 }
 
@@ -99,8 +162,44 @@ describe('the payout freeze is human-only', () => {
     expect(controls).toMatch(/ca_payout_freeze must be created EMPTY/);
   });
 
+  /**
+   * file that broke it -> migration that corrected it forward. An entry buys
+   * nothing on its own: the correction is verified in the test below.
+   */
+  const SUPERSEDED: Record<string, string> = {
+    '20260905203905_phase_6_2_the_kill_switch_trips_itself_at_a_thousand_chips.sql':
+      '20260905224524_the_kill_switch_escalates_and_only_a_human_freezes_a_payout.sql',
+  };
+
+  it('every superseded opener was actually corrected forward, and the correction says so', () => {
+    for (const [broke, fixedBy] of Object.entries(SUPERSEDED)) {
+      const files = allMigrations().map(([n]) => n);
+      expect(files, `${broke} is listed as superseded but is not in the tree`).toContain(broke);
+      expect(
+        files,
+        `${broke} names ${fixedBy} as its correction, which is not in the tree`
+      ).toContain(fixedBy);
+      const fix = read(fixedBy);
+      // the corrected body opens nothing
+      expect(insertsOutsideTheHumanOpener(fix)).toEqual([]);
+      const bodies = functionBodies(fix).filter((b) => b.name === 'fn_ca_kill_switch_trip');
+      expect(bodies.length, `${fixedBy} does not re-create fn_ca_kill_switch_trip`).toBeGreaterThan(
+        0
+      );
+      for (const b of bodies) {
+        expect(fix.slice(b.start, b.end)).not.toMatch(
+          /INSERT\s+INTO\s+(?:public\.)?ca_payout_freeze\b/i
+        );
+      }
+      // and it refuses to apply if the switch ever writes the freeze again
+      expect(fix).toMatch(/the kill switch still writes the payout freeze/);
+      expect(fix).toMatch(/PayoutFreezeIsHumanOnly/);
+    }
+  });
+
   it('no migration in the repo inserts into ca_payout_freeze outside fn_ca_open_payout_freeze', () => {
     const offenders = allMigrations()
+      .filter(([name]) => !(name in SUPERSEDED))
       .map(([name, sql]) => [name, insertsOutsideTheHumanOpener(sql)] as const)
       .filter(([, hits]) => hits.length > 0)
       .map(([name]) => name);
@@ -113,7 +212,7 @@ describe('the payout freeze is human-only', () => {
   });
 
   it('no cron job and no watch function calls the opener', () => {
-    for (const [name, sql] of allMigrations()) {
+    for (const [name, sql] of allMigrations().filter(([n]) => !(n in SUPERSEDED))) {
       const crons = sql.match(/cron\.schedule\([\s\S]*?\);/g) ?? [];
       for (const job of crons) {
         expect(job, `${name}: a cron job references the payout freeze opener`).not.toMatch(

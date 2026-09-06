@@ -803,12 +803,18 @@
   cursor: pointer;
   transition:
     background 0.18s ease,
-    border-color 0.18s ease;
+    border-color 0.18s ease,
+    transform 0.12s ease;
 }
 
-.hdm-rabbit__btn:hover:not(:disabled) {
+/* PRESS, NOT HOVER (tests/no-hover-effects.law.test.ts). Dan: "Remove hover
+   entirely, everywhere." Most play is on a phone, where :hover does not
+   exist and iOS synthesises a sticky one on first tap. :active is the
+   affordance a finger actually produces. */
+.hdm-rabbit__btn:active:not(:disabled) {
   background: rgba(240, 180, 70, 0.2);
   border-color: rgba(240, 180, 70, 0.55);
+  transform: scale(0.98);
 }
 
 .hdm-rabbit__btn:disabled {

@@ -36,7 +36,12 @@ import {
   wsProtocolRefusalPrometheusLines,
   wsTrustLimitPrometheusLines,
 } from './transport/wsHelpers.js';
-import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
+import {
+  alwaysOnPrometheusLines,
+  equityGovernorScale,
+  eventLoopDelayP50,
+  eventLoopDelayP99,
+} from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
@@ -601,6 +606,13 @@ export class GameServer {
     // Initialize Sentry FIRST so all subsequent errors are captured
     initSentry();
 
+    /* THE CORE IS MEASURED FROM BOOT (2026-09-06). The governor used to take
+       a reading only when a horse computed equity, so a loop saturated by
+       anything else - settlement, broadcasts, a boot adopting 195 tables -
+       was never sampled, which is exactly when it should be shedding load.
+       Unref'd, so it can never hold the process open. */
+    equityGovernor.startSampling();
+
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(' SMARTER POKER GAME SERVER - Starting...');
     if (testTableId) {
@@ -919,6 +931,10 @@ export class GameServer {
   }
 
   async stop(): Promise<void> {
+    // The governor's sampler is unref'd, so this is tidiness rather than a
+    // leak - but a stopped engine should not keep reading a loop it no
+    // longer drives.
+    equityGovernor.stopSampling();
     this.running = false;
     console.log('[GameServer] Shutting down...');
 
@@ -1669,6 +1685,17 @@ export class GameServer {
       // time. Two series (audience=human|horse), never per table. See
       // observability/engineInstruments.ts and ActionLatency* in
       // infra/monitoring/alert-rules.yml.
+      // THE CORE, READ AT SCRAPE TIME (2026-09-06). The governor's own
+      // one-second timer keeps these fresh; this only copies the current
+      // reading onto the gauges the scrape renders, so /metrics can never
+      // show a number older than the last sample.
+      ...(() => {
+        const g = equityGovernor.snapshot();
+        eventLoopDelayP50.set(Number.isFinite(g.p50Ms) ? g.p50Ms : 0);
+        eventLoopDelayP99.set(Number.isFinite(g.p99Ms) ? g.p99Ms : 0);
+        equityGovernorScale.set(Number.isFinite(g.scale) ? g.scale : 1);
+        return [];
+      })(),
       ...alwaysOnPrometheusLines(),
       // ── WHAT THE PLAYER'S BROWSER SAW (Phase 2, 2026-09-05) ──────────
       // The client-side twin of poker_ws_auth_refused_total: that counts

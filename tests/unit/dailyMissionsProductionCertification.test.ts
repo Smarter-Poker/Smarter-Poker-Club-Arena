@@ -31,6 +31,7 @@ describe('Daily Missions production certification', () => {
       "getByText('Live Now')",
       'claim_daily_challenges',
       'Preference On, Device Disconnected',
+      'subscription.unsubscribe()',
       'Challenge Ledger Unavailable',
       'firstRerollButton',
       'document.documentElement.scrollWidth',

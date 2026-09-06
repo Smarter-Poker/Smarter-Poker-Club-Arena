@@ -141,7 +141,7 @@ describe('the seeding loop', () => {
     const skipAt = LOOP.indexOf('if (isTableOfDisabledGame(table, disabledGameIds)) {');
     expect(skipAt).toBeGreaterThan(0);
     expect(LOOP.slice(skipAt)).toMatch(
-      /^if \(isTableOfDisabledGame\(table, disabledGameIds\)\) \{\s*disabledGameTables\+\+;\s*continue;\s*\}/
+      /^if \(isTableOfDisabledGame\(table, disabledGameIds\)\) \{\s*disabledGameTables\+\+;\s*if \(diag\) diag\.withheld = 'game_disabled';\s*continue;\s*\}/
     );
     // right after the lifecycle skip, before the first seat is counted
     expect(skipAt).toBeGreaterThan(

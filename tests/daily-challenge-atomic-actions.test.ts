@@ -89,9 +89,20 @@ describe('Daily Missions atomic action receipts', () => {
       'setConfirmingRerollId(null)',
       page.indexOf('if (!result.success)')
     );
-    const missingReceipt = page.indexOf('if (!result.challenge)', rerollSuccess);
+    const authoritativeReload = page.indexOf(
+      "await loadChallenges(userId, 'silent')",
+      rerollSuccess
+    );
+    const globalBalanceRefresh = page.indexOf(
+      "masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_reroll', userId })",
+      authoritativeReload
+    );
     expect(rerollSuccess).toBeGreaterThan(-1);
-    expect(rerollSuccess).toBeLessThan(missingReceipt);
+    expect(authoritativeReload).toBeGreaterThan(rerollSuccess);
+    expect(globalBalanceRefresh).toBeGreaterThan(authoritativeReload);
+    expect(page).not.toContain('if (!result.challenge)');
+    expect(page).not.toContain('setDiamondBalance(result.diamondBalance)');
+    expect(page).not.toContain('result.challenge!');
 
     const rerollRefusalStart = page.indexOf('if (!result.success)');
     const rerollRefusalEnd = page.indexOf('setConfirmingRerollId(null)', rerollRefusalStart);

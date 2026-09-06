@@ -177,3 +177,150 @@ Nightly ledger-replay sampling (derive balances from the journal and diff); dail
 ## 4. How to read progress
 
 `fn_ca_trial_balance(now() - interval '24 hours')` names the account that drifted; `ca_money_path_violations` counts the legacy tournament writers still alive; `tournament_escrow_shadow` shows every event's held-versus-paid; `ca_direct_balance_writes` shows who wrote a balance outside a declared path. When all four read zero for seven days, Phase 3's deletions are due.
+
+## The board clearance - 2026-09-06 (status: DONE)
+
+Dan, 2026-09-06: "finish up everything thats still pending and not finished OR
+STILL NEEDS TO BE FIXED, IMPROVED, ENHANCED OR OPTIMIZED STILL."
+
+`financial_alerts` held **894 open rows**; it holds **294**. Read one class at a
+time they were four real defects, one stale baseline, one repair queue nobody
+was draining, and 152 rows of my own noise.
+
+| what the board said                                  | what it was                                                                                                                                                                                | migration                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| 246 x "tournament paid out money it never collected" | the conservation delta read the guarantee overlay from a side table that only ONE of the two funding paths writes; the union bank had paid every one of them and journalled it             | `20260906015217` (+ two indexes, `20260906015837`, `20260906020707`) |
+| 151 events still short after that fix                | guarantees paid before `fn_ca_fund_overlay_on_lock` existed to fund them, 2026-07-24 to 2026-09-03, 39,685.56 chips; acknowledged, not clawed back                                         | `20260906021514`                                                     |
+| 3 x critical "the dead pool changed by -10,700.00"   | the baseline had not followed the authorised phantom promo retirement of 2026-09-03; it may now move only beside a recorded reason                                                         | `20260906022011`                                                     |
+| 180 x "unbanked BBJ contribution"                    | duplicate rake rows, not lost chips - `atomic_distribute_rake` keyed BOTH idempotency guards on a hand id that is NULL on the engine's first call, and its leg key was a fresh random uuid | `20260906023024`                                                     |
+| 21 x critical "ledger write failure"                 | 116 swallowed journal rows and a working drain nobody had called; 113 legs written back, no balance touched                                                                                | `20260906023900`                                                     |
+| 152 rows of mine                                     | a detector retired at the Phase 6.3 gate, and four replay runs superseded by the migrations that followed them                                                                             | `20260906021758`                                                     |
+
+Left open on purpose: the felt's -10.74 (engine item 8.5), the 30
+`escrow:<id>` residues (the epoch reset gate's list, Dan's), and one diamond
+audit row that is not a chip leg.
+
+Recorded and NOT acted on: 4,452 duplicate rake rows carrying **16,426.46 of
+over-attributed rake** between 2026-04-16 and 2026-09-05. The producer is
+closed. Only 371 can be proven duplicates from surviving hand rows; the rest sit
+behind five months of VIP points and agent commissions already paid, and
+restating settled earnings is a decision to be taken deliberately.
+
+Carried into Phase 8: 8.2 (the bust rebuy goes through the pending ledger),
+8.3 (the PITR drill), 8.4 (`chip_ledger` partitioning before December), 8.5
+(the engine settles a hand in one transaction).
+
+### 8.3 - the PITR drill (status: MEASURED, restore rehearsal still open)
+
+Measured on production 2026-09-06 02:48 UTC, because a chip and balance reset
+must not be the first time anyone asks whether the platform can be put back.
+
+| what                  | reading                                             |
+| --------------------- | --------------------------------------------------- |
+| `wal_level`           | `logical`                                           |
+| `archive_mode`        | `on`                                                |
+| `archive_command`     | `/usr/bin/admin-mgr wal-push %p` (wal-g)            |
+| `archive_timeout`     | 120 seconds - the worst-case RPO                    |
+| WAL segments archived | 22,358                                              |
+| **archive failures**  | **0**, since the counter was reset 2026-09-02 21:04 |
+| last archive          | 10 seconds before the reading                       |
+| database size         | 126 GB                                              |
+
+So point-in-time recovery is armed and healthy, and the recovery point is at
+worst two minutes behind. What is NOT yet done is a rehearsal: restoring to a
+branch and proving the restored copy reconciles. That is the remaining half of
+8.3 and it costs a 126 GB restore.
+
+**It is also not the right safety net for the reset.** A reset should be
+reversible by construction - the closing position of every account recorded
+before anything is zeroed - rather than by rolling the whole platform back two
+minutes at a time. PITR is the net under the net.
+
+## Phase 9 - what the standard still does not say (proposed 2026-09-06)
+
+Dan asked what else belongs here. These are not leftovers from phases 1-8; they
+are things the standard has never covered. Each one is grounded in something
+measured today rather than proposed from general principle.
+
+### 9.1 ONE DEFINITION OF A CHIP (do this before the reset)
+
+A chip has three different definitions in this schema right now:
+
+| shape                    | columns                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `numeric(_,2)` - correct | `chip_ledger.amount`, `club_members.chip_balance`, `table_seats.stack`, `clubs.chip_treasury`, `wallet_transactions.amount`, all three `bbj_pools` banks, `spin_bonus_pools.balance`                                                                                                                                                    |
+| `numeric(_,4)`           | `agents.agent_wallet_balance`, `agents.player_wallet_balance`, `agents.promo_wallet_balance`, `club_wallets.chip_balance`, `rake_records.rake_amount`, `tournaments.total_rake`                                                                                                                                                         |
+| unconstrained `numeric`  | `union_wallets.chip_balance` and `.rake_wallet`, `tournament_escrow.prize_balance` / `.bounty_balance` / `.fee_balance`, `tournament_payouts.amount`, `tournaments.prize_pool` / `.bounty_pool`, `clubs.chip_pool`, `wallet_transactions.balance_after`, `chip_ledger`'s four pre/post balance columns, `rake_attributions.rake_amount` |
+
+A balance that can hold four decimal places, against a journal that can only
+record two, is a rounding leak by construction: the fraction lives in the
+balance and can never appear in a leg.
+
+**It has not happened yet.** Every one of those columns was checked on
+2026-09-06 and there is not one sub-cent residue in live data. That is exactly
+why this is cheap now: declare the unit, add the CHECK, and it can never open.
+Doing it after a reset means doing it against balances that have already
+started to drift.
+
+### 9.2 THE ATTESTATION LIVES INSIDE THE THING IT ATTESTS
+
+`ca_ledger_day_manifests` is the right idea and it works - one row per day with
+`row_count`, `first_seq`, `last_seq`, `net_amount` and a `sha256`, seven days
+deep. But it is a row in the same database as the journal it hashes, so it
+proves the journal has not been altered only to somebody who already trusts the
+database. Anchor the daily sha somewhere with a different owner - a commit in
+this repo, an object in S3, an email - and the proof becomes worth something.
+One line a day.
+
+### 9.3 THERE IS NO RESTATEMENT POLICY, AND IT WAS NEEDED TODAY
+
+The 2026-09-06 clearance found 16,426.46 chips of rake attributed to clubs by
+duplicate rows, spread over five months and already paid out as VIP points and
+agent commissions. 10.9 says a past event's money is the agent's to settle and a
+future event's terms are Dan's. **A restatement of settled earnings is neither**,
+and the standard says nothing about it: who decides, at what size, what a player
+or agent is told, and whether the correction is a clawback (forbidden), a
+write-off (what happened), or a re-run. I made the call and wrote down why. The
+next agent should be reading a rule, not repeating my judgement.
+
+### 9.4 THE JOURNAL HAS NO RETENTION OR ARCHIVE POLICY
+
+232k rows a day, 1.68M rows and 1.3 GB today. 8.4 partitions it, which is a
+storage answer, not a policy: nobody has written down how long a leg is kept,
+what happens to a partition when it ages out, or where it goes. A journal that
+can be silently dropped is not a journal. This has to be settled in the same
+work as 8.4, not after it.
+
+### 9.5 A PLAYER CAN ALREADY AUDIT THEIR OWN CHIPS, AND HAS NOWHERE TO DO IT
+
+`chip_ledger` carries RLS - a player may read any leg where they are
+`performed_by`, `from_entity_id` or `to_entity_id` - and no surface anywhere
+shows it. A standard nobody outside the team can check is half a standard, and
+this is also the cheapest support tool on the platform: "where did my chips go"
+answers itself. Same for a club operator and their treasury.
+
+### 9.6 THE SECOND WRITER HAS NEVER BEEN AUDITED
+
+Phase 5 registered every money door in the database. The World Hub carries its
+own money routes under `pages/api/club-arena/`, in another repo, and nothing has
+ever been checked against that register. A door is only closed if both repos
+agree it is closed.
+
+### 9.7 THE OTHER CURRENCIES HAVE NO LEDGER AT ALL
+
+Diamonds have their own programme and their own drift. **VIP points, rakeback
+and agent commissions have no journal, no meter and no conservation check** -
+they are liabilities the platform owes, tracked only as counters. That is
+precisely why 9.3's 16,426.46 was invisible for five months: rake attribution
+has nothing to reconcile against. The chip standard should either extend to
+them or say plainly that it does not, and why.
+
+### 9.8 THE RESET IS A PHASE, NOT AN EVENT (Dan: Monday)
+
+`ca_financial_epochs` already exists with `is_current`, which is the right hook.
+A reset needs its own contract: the closing position of every account recorded
+and journalled before anything is zeroed, the reset itself inside a :55 freeze
+with nobody seated, one migration able to put every balance back, and the
+opening grants issued through the Mint so the new epoch starts from a known
+number rather than an assumed one. PITR is measured healthy (8.3) and is the net
+under the net, not the plan.

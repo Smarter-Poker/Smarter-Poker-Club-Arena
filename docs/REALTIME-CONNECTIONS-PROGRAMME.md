@@ -18,7 +18,7 @@ verification when it lands.
 | 4     | Restart handoff + protocol | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 | done   |
 | 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      | done   |
 | 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      | done   |
-| 7     | Guardrails                 | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        |        |
+| 7     | Guardrails                 | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        | done   |
 
 Not in the programme, because they are Dan's decisions, recorded so they are
 not lost: Log Out scope (global today; local by default with an explicit
@@ -160,6 +160,96 @@ now watches. Building the channel properly (server-side emission from
 belongs in its own phase with Dan's sign-off, not smuggled into an
 observability phase. It is recorded here so nobody reads the existing code as
 a working path.
+
+## Phase 7 - Guardrails (2026-09-06)
+
+**Why.** Phase 1 wrote down, as its biggest single finding and not one of its
+own deliverables, that the alert rules running on engine-01 were not the alert
+rules in this repo IN BOTH DIRECTIONS. Everything phases 1 to 6 built ends in an
+alert or a number, so a monitoring stack nobody can trust makes all of it
+decoration.
+
+**What was true, measured before anything was changed:** 72 alerts running on
+the box, 79 declared here, **15 declared and never once evaluated** - among them
+`EngineRefusingSessions` and `EngineCannotReachAuth`, the two THIS PROGRAMME
+wrote in phase 1 so the outage it exists to prevent would page somebody - and
+**8 running that this repo had never seen**, hand-authored on the box on
+2026-09-04 with good reasoning and a changelog reference that was never
+committed. `deploy.sh` symlinks this repo over the live files, so the first
+person to run it would have deleted all eight.
+
+**Why it drifted, which is the part worth fixing.** Nobody was careless. THREE
+LISTS had to agree and nothing checked them: `prometheus.yml`'s `rule_files`
+(7 files), `docker-compose.yml`'s mounts (7), and `deploy.sh`'s symlink loop
+(**4**). Four rule files therefore existed on the box only because a hand had
+put them there. This repo also carried three EMPTY alert groups - headings with
+no rules under them, which read as coverage.
+
+**What.**
+
+1. **The reconciliation is a union - nothing deleted.** The 8 box-only alerts
+   are here now, verbatim, comments intact. `vercel-health` is deleted rather
+   than left empty, carrying the box author's reason. Of the 38 alerts in both,
+   **zero** differ in `expr` or `for` except three, all the same way, and the
+   repo is right: `EngineHandsStopped`, `EngineLivenessDead` and
+   `EngineScrapeDown` carry the maintenance-break guard here and did not on the
+   box, so those three have been paging about the `:55` break every hour -
+   CLAUDE.md 13 rule 6 written down and violated in production.
+2. **`deploy.sh` symlinks every rule file Prometheus loads** - four became ten.
+   Without this the reconciliation drifts again inside a week.
+3. **A threshold re-derived, not guessed.** `EngineRefusingSessions` shipped as
+   `>= 6 in 15m`; the live series measures avg 1.1, p95 9.2, max 32.3 per 15
+   minutes, so it sat BELOW the ordinary p95 and would have fired for ever on
+   expiring tokens. It now fires on refusals happening WHILE a client is stuck
+   in a reconnect loop - both true continuously on 2026-09-03, and
+   `poker_ws_clients_reconnecting_badly` measured 0 for 24 hours straight in
+   ordinary churn. A volume-only backstop at `>= 60` covers a broken beacon.
+4. **The canary.** `MonitoringCanary` fires unconditionally, wakes nobody, and
+   its ABSENCE is the signal.
+5. **`scripts/ci/check-alert-rules-match.mjs`** asks Prometheus what it runs and
+   Alertmanager whether it holds the canary. It **exits 2 when it cannot reach
+   the stack**: a monitoring check that goes green when it can see nothing is
+   the bug it exists to catch.
+6. **CLAUDE.md 10.84**, two rules from the two halves of the outage: an agent
+   never SETS a credential (the twenty-two hours began with one environment
+   variable), and never hand-writes what a monitor reads.
+
+**Laws.** `tests/what-a-monitor-reads-is-what-the-repo-says.law.test.ts`. Six
+mutations, six reds - including one found by mutating the law itself, where a
+pin passed because the checker's header still mentioned the canary it had
+stopped looking for. Full reasoning:
+`docs/changelog/2026-09-06-realtime-phase-7-guardrails.md`.
+
+**Still open, recorded rather than quietly fixed:** 32 of 89 alerts carry no
+`runbook:` annotation; six of twelve `engine-freeze` alerts have no break guard
+and whether each NEEDS one is a per-alert judgement; `slo-rules.yml` and
+`slo-alerts.yml` read a blackbox exporter this stack does not deploy.
+
+## Phase 7 audit (2026-09-06) - the one that would have deleted the pager
+
+1. **A deploy would have DELETED THE 3AM PAGER.** `deploy.sh` symlinks
+   `alertmanager.yml` too, and the live file carried a `pager-sms` receiver and
+   a `page="sms"` route this repo did not have - added on the box 2026-09-04,
+   its comment citing a test that was never committed here either. The next
+   deploy would have removed paging silently, and the rule-orphan guard would
+   have said nothing because it only reads alerts. The routing is in the repo
+   now, and the deploy has a second guard that refuses to lose a receiver or a
+   route matcher.
+2. **The canary would have emailed ops every hour, for ever.** The top-level
+   fallthrough receiver is `email-critical` and nothing matched
+   `severity="canary"` - alert fatigue manufactured by the thing built to
+   prevent it. Explicit route to `null-receiver`, pinned by the law.
+3. **The last report ended by asking Dan to run a command.** A deploy that
+   depends on somebody remembering is the same class of thing as a rule nobody
+   loaded. `.github/workflows/deploy-monitoring.yml` now does it on merge,
+   guards both hazards first, and verifies by reading.
+
+**Verification.** `promtool` validates all seven rule files (96 rules) and
+`amtool` the routing. Against `main`, `alert-rules.yml` gained the eight
+rescued alerts and removed nothing, with no shared expression changed. The
+deploy and its final `check-alert-rules-match.mjs` run automatically on the
+merge that carries this; before it, the checker reads 72 running against 89
+declared and no canary, which is the "before" this phase closes.
 
 ## Phase 6 - Prove it from outside (2026-09-06)
 

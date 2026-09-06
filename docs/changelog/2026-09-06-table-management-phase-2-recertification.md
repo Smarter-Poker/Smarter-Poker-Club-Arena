@@ -39,6 +39,12 @@ its final guarantees were weaker than its description in four places:
 - A dedicated chronological migration-law suite covers re-publication,
   immutable history, exact-`NEW` validation, bank serialization, safe JSON,
   satellite guarantees, funding-scope parity, grants, and installation asserts.
+- The full certification pass exposed and repaired a migration-reservation
+  SIGPIPE race that could mistake an existing version for an available one.
+- Migration-heavy union laws now cache migration source reads, the equity
+  governor benchmark resists one scheduler interruption, and the two-stage
+  insurance/run-it-twice test carries a timeout large enough for both of its
+  bounded condition waits.
 - SQL parsing, focused Table Management tests, TypeScript, lint, full client and
   server suites, production build, live migration application, merge provenance,
   and production provenance are recorded in the Phase 2 completion summary.

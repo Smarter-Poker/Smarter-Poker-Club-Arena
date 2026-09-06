@@ -74,6 +74,13 @@ services:
     volumes:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - ./resend_key:/etc/alertmanager/resend_key:ro
+      # alertmanager.yml reads the pager webhook's bearer token from this
+      # file (credentials_file). The box has carried this mount by hand since
+      # 2026-09-04; the repo did not, so a deploy that symlinked this compose
+      # over the live one would have unmounted the secret and every page
+      # would have 401'd (found 2026-09-06, the day the deploy workflow first
+      # tried to run). deploy.sh refuses to start without the file.
+      - ./cron_secret:/etc/alertmanager/cron_secret:ro
       - alertmanager-data:/alertmanager
     env_file: .env
     networks:

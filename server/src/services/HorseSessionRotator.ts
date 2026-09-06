@@ -43,6 +43,7 @@ import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { selectInChunks } from './supabase/chunkedIn.js';
+import { fetchAllRows } from './supabase/pagination.js';
 import {
   cashTableFill,
   isActiveNow,
@@ -60,6 +61,12 @@ import {
 } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { LONE_TABLE_MINUTES, loneStandVerdict } from './HorseLoneTable.js';
+import {
+  LEAVE_FOR_TOURNAMENT_FROM_MS,
+  tournamentCommitmentVerdict,
+  type CommittedCashSeat,
+  type ImminentBooking,
+} from './HorseTournamentCommitment.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
@@ -147,9 +154,15 @@ export class HorseSessionRotator {
    * hand dealt. Exposed for the cycle log and the beat; see standLoneHorses.
    */
   private lastLoneStands = 0;
+  /** Cash seats vacated this cycle for an imminent tournament booking. */
+  private lastTournamentLeaves = 0;
 
   get loneStands(): number {
     return this.lastLoneStands;
+  }
+
+  get tournamentLeaves(): number {
+    return this.lastTournamentLeaves;
   }
 
   private static breakKey(tableId: string, userId: string): string {
@@ -517,6 +530,36 @@ export class HorseSessionRotator {
       console.log(
         `[SessionRotator] loneStands=${this.lastLoneStands} - horse(s) alone at a cluster table ` +
           `for ${LONE_TABLE_MINUTES}+ min with no hand dealt left it (no lone horse)`
+      );
+    }
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A HORSE LEAVES CASH FOR ITS TOURNAMENT (2026-09-06)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * A booking counts as one of the four games only inside the hour before
+     * it starts (migration 20260906144448, HorseGameLoad.ts). A horse can
+     * therefore hold four cash seats with a tournament two hours out, and
+     * the fifth LIVE seat is still refused at the start. A person with a
+     * tournament in an hour finishes the session they have been in longest
+     * and gets up in good time; this is the horse doing the same. Outside
+     * the realism cap for the same reason the lone stand is: a commitment,
+     * not the floor thinning itself. See HorseTournamentCommitment.ts.
+     */
+    this.lastTournamentLeaves = await this.leaveCashForTournaments(
+      seats,
+      byTable,
+      horseIds,
+      departedThisCycle
+    ).catch((err) => {
+      reportError(err, 'HorseSessionRotator.tournamentLeaves');
+      return 0;
+    });
+    if (this.lastTournamentLeaves > 0) {
+      console.log(
+        `[SessionRotator] tournamentLeaves=${this.lastTournamentLeaves} - horse(s) left a cash ` +
+          `seat for a tournament starting within the hour (four games, counting the booking)`
       );
     }
 
@@ -898,6 +941,158 @@ export class HorseSessionRotator {
       }
     }
     return stood;
+  }
+
+  /**
+   * A HORSE LEAVES CASH FOR ITS TOURNAMENT. The decision is
+   * `tournamentCommitmentVerdict` (pure, tested); this reads what it needs
+   * and acts on it through `engine.leaveTable`, the door a human uses.
+   *
+   * Two reads, both small and both once per cycle: the bookings for
+   * tournaments that start inside the window, and the same for seat-first
+   * games with no start time. A read that fails leaves nobody: the horse is
+   * seated late by `ensureLateRegSeated` as it was before today, and the
+   * beat says nothing moved.
+   */
+  private async leaveCashForTournaments(
+    allSeats: any[],
+    byTable: Map<string, any[]>,
+    horseIds: Set<string>,
+    departedThisCycle: Set<string>
+  ): Promise<number> {
+    const now = Date.now();
+    /* Every live seat per horse (cash and tournament), and the tournaments
+       the horse already sits in - the SQL's NEVER BOTH exclusion. */
+    const liveSeatsTotal = new Map<string, number>();
+    const seatedTournaments = new Map<string, Set<string>>();
+    for (const s of allSeats) {
+      const uid = String(s.user_id ?? '');
+      if (!horseIds.has(uid)) continue;
+      const t = s.tables;
+      if (!t || t.status === 'closed') continue;
+      liveSeatsTotal.set(uid, (liveSeatsTotal.get(uid) ?? 0) + 1);
+      if (t.tournament_id) {
+        if (!seatedTournaments.has(uid)) seatedTournaments.set(uid, new Set());
+        seatedTournaments.get(uid)!.add(String(t.tournament_id));
+      }
+    }
+    if (liveSeatsTotal.size === 0) return 0;
+
+    const until = new Date(now + LEAVE_FOR_TOURNAMENT_FROM_MS).toISOString();
+    type BookingRow = {
+      id: string;
+      user_id: string;
+      tournament_id: string;
+      tournaments:
+        | { start_time: string | null; status: string }
+        | Array<{ start_time: string | null; status: string }>
+        | null;
+    };
+    /* Paged, keyset on id, never a row ceiling: a read that stops short
+       cannot lie about being complete (PagedReadsCannotLieAboutBeingComplete).
+       Two reads because PostgREST cannot express `IS NULL OR <=` on an
+       embedded column in one filter: timed starts inside the window, and
+       seat-first games with no start at all. */
+    const bookingRead = (startFilter: 'timed' | 'seat_first') =>
+      fetchAllRows<BookingRow>(
+        (cursor, want) => {
+          let q = supabase
+            .from('tournament_players')
+            .select('id, user_id, tournament_id, tournaments!inner(start_time, status)')
+            .in('status', ['registered', 'playing'])
+            .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+            .order('id', { ascending: true })
+            .limit(want);
+          q =
+            startFilter === 'timed'
+              ? q.lte('tournaments.start_time', until)
+              : q.is('tournaments.start_time', null);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        {
+          label:
+            startFilter === 'timed'
+              ? 'HorseSessionRotator.tournamentLeavesTimed'
+              : 'HorseSessionRotator.tournamentLeavesSeatFirst',
+          maxRows: 50_000,
+        }
+      );
+    const timed = await bookingRead('timed');
+    const seatFirst = await bookingRead('seat_first');
+    /* A short read leaves nobody this cycle rather than guessing who is
+       committed; the horse is seated late by ensureLateRegSeated, as before. */
+    if (!timed.complete || !seatFirst.complete) return 0;
+    const bookingsByHorse = new Map<string, ImminentBooking[]>();
+    const seen = new Set<string>();
+    for (const row of [...timed.rows, ...seatFirst.rows]) {
+      const uid = String(row.user_id ?? '');
+      if (!liveSeatsTotal.has(uid)) continue;
+      const tid = String(row.tournament_id ?? '');
+      if (!tid || seen.has(`${uid}|${tid}`)) continue;
+      seen.add(`${uid}|${tid}`);
+      if (seatedTournaments.get(uid)?.has(tid)) continue;
+      const t = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
+      const start = t?.start_time ? Date.parse(t.start_time) : NaN;
+      if (!bookingsByHorse.has(uid)) bookingsByHorse.set(uid, []);
+      bookingsByHorse
+        .get(uid)!
+        .push({ tournamentId: tid, startMs: Number.isFinite(start) ? start : null });
+    }
+    if (bookingsByHorse.size === 0) return 0;
+
+    /* The horse's cash seats, with whether a person is at that table. */
+    const cashSeatsByHorse = new Map<string, CommittedCashSeat[]>();
+    for (const [tableId, tableSeats] of byTable) {
+      const humanPresent = tableSeats.some((x) => !horseIds.has(String(x.user_id)));
+      for (const x of tableSeats) {
+        const uid = String(x.user_id ?? '');
+        if (!bookingsByHorse.has(uid)) continue;
+        if (departedThisCycle.has(`${tableId}:${uid}`)) continue;
+        const joined = Date.parse(String(x.joined_at ?? ''));
+        if (!cashSeatsByHorse.has(uid)) cashSeatsByHorse.set(uid, []);
+        cashSeatsByHorse.get(uid)!.push({
+          tableId,
+          joinedAtMs: Number.isFinite(joined) ? joined : now,
+          humanPresent,
+        });
+      }
+    }
+
+    let left = 0;
+    for (const [uid, imminentBookings] of bookingsByHorse) {
+      const cashSeats = cashSeatsByHorse.get(uid) ?? [];
+      if (cashSeats.length === 0) continue;
+      const verdict = tournamentCommitmentVerdict({
+        cashSeats,
+        liveSeatsTotal: liveSeatsTotal.get(uid) ?? cashSeats.length,
+        imminentBookings,
+        nowMs: now,
+        cycleMs: CYCLE_MS,
+        random: Math.random(),
+      });
+      for (const s of verdict.leaveNow) {
+        if (isMaintenanceFrozen()) return left;
+        const engine = this.getEngine(s.tableId);
+        if (!engine) continue;
+        try {
+          const result = await engine.leaveTable(uid);
+          if (result.success) {
+            left++;
+            departedThisCycle.add(`${s.tableId}:${uid}`);
+            this.breaks.delete(HorseSessionRotator.breakKey(s.tableId, uid));
+            console.log(
+              `[SessionRotator] horse=${uid.slice(0, 8)} leaving table=${s.tableId.slice(0, 8)} ` +
+                `for a tournament in ${Math.round(verdict.minutesToStart)} min ` +
+                `(${verdict.reason}, ${verdict.excess} over four games)`
+            );
+          }
+        } catch (err) {
+          reportError(err, 'HorseSessionRotator.tournamentLeave');
+        }
+      }
+    }
+    return left;
   }
 
   /**

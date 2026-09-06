@@ -599,9 +599,46 @@
     flex: 1;
   }
 
+  /**
+   * NINE SEATS DO NOT FIT A 419px FELT, AND FOUR OF THEM WERE COVERING EACH
+   * OTHER'S STACKS (Phase 7, 2026-09-06).
+   *
+   * MEASURED ON THE LIVE SHARE PAGE at 375x812, an 8-handed PLO8 hand
+   * (`/replay?h=...` needs no login, so this is the real felt, not a mock).
+   * The felt was 335x419, each seat 82px wide and 78px tall with a 79px card
+   * fan, and the boxes ran into each other:
+   *
+   *   Player u49 cards x Player u50 plate   27 x 32 px
+   *   Player u52 cards x Player u53 plate   45 x 12 px
+   *   Player u54 plate x Player u55 cards   45 x 12 px
+   *   Player u49 plate x Player u50 plate   29 x  5 px
+   *
+   * The middle two are what a player actually notices: "CO 221.76" was cut in
+   * half by the seat above's cards. A stack you cannot read is the one number
+   * on the felt that has to be right.
+   *
+   * The seats are placed round an ellipse, so the ones that collide are
+   * DIAGONAL neighbours - they overlap horizontally because they sit at
+   * different heights. More VERTICAL room separates them without shrinking a
+   * single card: 4/6.4 takes the felt to 536px and clears three of the four.
+   *
+   * The fourth is the hero, bottom centre, whose card row reaches up into the
+   * bottom-left seat's plate. Shrinking cards never fixed it (27px of overlap
+   * became 7px at a 21px card, illegible and still overlapping); moving the
+   * hero DOWN did, at 36px, with nothing left hanging outside the felt.
+   *
+   * Re-measured with both applied: ZERO overlapping pairs, zero seats outside
+   * the felt.
+   */
   .hr-felt {
-    aspect-ratio: 4 / 5;
+    aspect-ratio: 4 / 6.4;
     min-height: 360px;
+  }
+
+  /* The bottom-centre seat sits below the arc the others share, so its cards
+     have somewhere to go that is not the next seat's name. */
+  .hr-seat.is-hero {
+    margin-top: 36px;
   }
 
   .hr-felt__oval {

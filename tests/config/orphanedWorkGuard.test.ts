@@ -75,6 +75,7 @@ function runGuard(sha: string, note: string): { code: number; out: string } {
     const out = execFileSync('node', [GUARD], {
       cwd: repo,
       encoding: 'utf8',
+      env: scratchGitEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return { code: 0, out };

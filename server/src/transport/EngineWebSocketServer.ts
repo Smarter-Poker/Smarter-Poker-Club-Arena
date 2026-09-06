@@ -45,6 +45,7 @@ import {
   authRejectionReason,
   tokenDenial,
   recordWsAuthRefusal,
+  recordWsProtocolRefusal,
   type TokenVerdict,
   type TokenDenial,
 } from './wsHelpers.js';
@@ -311,14 +312,24 @@ function refuseUpgrade(
  * 1006 means "try again", which is the one thing a stale bundle must not do.
  * The reason carries the number it needs to reach, so the close is readable in
  * a console and in a log without cross-referencing anything.
+ *
+ * EXPORTED, and the counter is inside it (audit, 2026-09-05). The first
+ * version was private here and the channel server inlined its own copy of the
+ * same four lines - two implementations of one refusal, one of which would
+ * have been the one nobody updated. It also recorded nothing, which is the
+ * defect the auth counter beside it exists to remember: on the day
+ * MIN_CLIENT_PROTOCOL is raised, the wave of stale tabs being turned away is
+ * the one thing worth watching, and it would not have been a number anywhere.
  */
-function refuseProtocol(
+export function refuseProtocol(
   wss: WebSocketServer,
   req: IncomingMessage,
   socket: import('stream').Duplex,
   head: Buffer,
-  saw: number
+  saw: number,
+  path: 'table' | 'multi' | 'channel'
 ): void {
+  recordWsProtocolRefusal(path);
   wss.handleUpgrade(req, socket, head, (ws) => {
     try {
       ws.close(CLOSE_UPGRADE_REQUIRED, `upgrade_required:${saw}<${MIN_CLIENT_PROTOCOL}`);
@@ -392,7 +403,14 @@ export class EngineWebSocketServer {
         (url.pathname === '/ws/multi' || url.pathname.startsWith('/ws/table/')) &&
         clientProtocolVersion(url) < MIN_CLIENT_PROTOCOL
       ) {
-        refuseProtocol(this.wss, req, socket, head, clientProtocolVersion(url));
+        refuseProtocol(
+          this.wss,
+          req,
+          socket,
+          head,
+          clientProtocolVersion(url),
+          url.pathname === '/ws/multi' ? 'multi' : 'table'
+        );
         return;
       }
 

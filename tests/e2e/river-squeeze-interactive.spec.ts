@@ -238,9 +238,15 @@ test.describe('the river squeeze, with a real mouse', () => {
     await page.waitForTimeout(700);
     const end = await page.evaluate((selector) => {
       const card = document.querySelector(selector) as HTMLElement | null;
+      const board = document.querySelectorAll('.community-cards__card');
+      const river = board.item(board.length - 1);
       return {
         gone: card === null,
-        settledRiver: document.querySelectorAll('.community-cards__card').length === 5,
+        settledRiver: board.length === 5,
+        settledRiverFaceUp:
+          river !== null &&
+          river.querySelector('.card-squeeze') === null &&
+          river.querySelector('.card-image:not(.card-image--back)') !== null,
         transform: card ? getComputedStyle(card).transform : null,
       };
     }, `${HOST} .card-squeeze`);
@@ -248,7 +254,7 @@ test.describe('the river squeeze, with a real mouse', () => {
     const openedBeforeUnmount =
       Number.isFinite(endRotation) && Math.abs(Math.abs(endRotation) - 180) < 15;
     expect(
-      openedBeforeUnmount || (end.gone && end.settledRiver),
+      openedBeforeUnmount || (end.gone && end.settledRiver && end.settledRiverFaceUp),
       `released river did not settle face up (${JSON.stringify({ ...end, endRotation })})`
     ).toBe(true);
   });

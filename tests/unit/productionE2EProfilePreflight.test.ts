@@ -181,7 +181,10 @@ describe('authenticated production account preflight', () => {
 
     const riverSqueeze = source('tests/e2e/river-squeeze-interactive.spec.ts');
     expect(riverSqueeze).toContain('settledRiver');
-    expect(riverSqueeze).toContain('openedBeforeUnmount || (end.gone && end.settledRiver)');
+    expect(riverSqueeze).toContain('settledRiverFaceUp');
+    expect(riverSqueeze).toContain(
+      'openedBeforeUnmount || (end.gone && end.settledRiver && end.settledRiverFaceUp)'
+    );
     expect(riverSqueeze).toContain('released river did not settle face up');
   });
 

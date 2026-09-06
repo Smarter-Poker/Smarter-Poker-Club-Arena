@@ -93,6 +93,8 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // this file cancels a tournament any more — it fills, resumes or settles.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { managerHasOverstayed, selectCompletingDue } from './tournament/completingDwell.js';
+import { fieldIsStillLive } from './tournament/recoveryFieldGuard.js';
+import { resolvePayoutStructure } from './tournament/payoutStructure.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
 import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
@@ -2534,11 +2536,38 @@ export class GameServer {
           const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
           const recentActivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
           // Find stale RUNNING tournaments with no recent hand activity
+          /**
+           * TWELVE HOURS OF PLAYING, NOT TWELVE HOURS OF EXISTING
+           * (2026-09-06). This asked `created_at`, which for a scheduled or
+           * recurring event is when the ROW was written, not when the cards
+           * went in the air. Measured on production the day this was fixed:
+           * 94 RUNNING tournaments, 5 of them "stale" by `created_at` and
+           * ZERO by `started_at` - all five created on 09-03 as scheduled
+           * rows, started this morning, at level 4 and level 10 of 40, and
+           * dealing 100+ hands an hour while this sweep sized them up for
+           * settlement every time the engine booted.
+           *
+           * Only the hand-activity check below stood between five healthy
+           * games (21-28 players, 405 to 600 in prize pools) and being
+           * ranked by chipstack and paid out. One quiet hour - a stall, a
+           * long break, a slow Postgres - and the wrong axis becomes an
+           * outage. `started_at` is the question this sweep is actually
+           * asking; `created_at` remains the fallback for a row that somehow
+           * never recorded one.
+           */
           const { data: staleTourneys } = await supabase
             .from('tournaments')
-            .select('id, name')
+            // payout_structure / variant / tournament_type / spin_multiplier
+            // joined the list on 2026-09-06: the sweep now asks the SAME
+            // structural question the recovery will ask before it claims the
+            // row. See the guard below.
+            .select(
+              'id, name, started_at, created_at, payout_structure, variant, tournament_type, spin_multiplier, prize_pool'
+            )
             .eq('status', 'RUNNING')
-            .lt('created_at', twelveHoursAgo);
+            .or(
+              `started_at.lt.${twelveHoursAgo},and(started_at.is.null,created_at.lt.${twelveHoursAgo})`
+            );
           for (const t of staleTourneys || []) {
             const { data: recentHands, error } = await supabase
               .from('hand_history')
@@ -2549,14 +2578,14 @@ export class GameServer {
 
             if (error) {
               console.log(
-                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — error checking activity, assuming active.`
+                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} - error checking activity, assuming active.`
               );
               continue;
             }
 
             if (recentHands && recentHands.length > 0) {
               console.log(
-                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — found recent hands in last hour (still active)`
+                `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} - found recent hands in last hour (still active)`
               );
               continue;
             }
@@ -2576,6 +2605,66 @@ export class GameServer {
              * and flips to COMPLETED. Money reaches the players who earned it and
              * the game shows a real result instead of vanishing.
              */
+            /**
+             * A SWEEP NEVER MAKES A ROW THE RECOVERY WILL REFUSE (2026-09-06).
+             *
+             * `recoverStuckCompletingTournaments` asks `fieldIsStillLive`
+             * before it pays anything, and refuses a field with more players
+             * left than the structure has places - correctly, since ranking a
+             * live tournament by chipstack once paid an entire 20,880 pool to
+             * nine of ninety players (see recoveryFieldGuard.ts).
+             *
+             * The sweep did not ask. It flipped the row to COMPLETING anyway
+             * and handed it over, and the recovery then refused it - leaving
+             * the event in a state NOTHING can finish: the discovery loop
+             * resumes RUNNING tournaments only, so a COMPLETING row is
+             * invisible to the one path that could have played it out. The
+             * sweep took a stalled game that a manager could still adopt and
+             * made it permanently stuck.
+             *
+             * PLO4 Heads-Up 25 (3e281f5c) was in exactly that state for three
+             * days with two players still holding chips, and had to be settled
+             * by hand on 2026-09-06 (migration 20260906153943).
+             *
+             * So ask first, with the same numbers and the same pure guard. A
+             * field the recovery would refuse is LEFT RUNNING - the state it
+             * can still be rescued from - and reported. `count: 'exact'` on
+             * both reads, and an unreadable count skips the row rather than
+             * guessing: a sweep that cannot tell must not act (10.86).
+             */
+            const [{ count: liveCount, error: liveErr }, { count: fieldCount, error: fieldErr }] =
+              await Promise.all([
+                supabase
+                  .from('tournament_players')
+                  .select('id', { count: 'exact', head: true })
+                  .eq('tournament_id', t.id)
+                  .eq('status', 'playing'),
+                supabase
+                  .from('tournament_players')
+                  .select('id', { count: 'exact', head: true })
+                  .eq('tournament_id', t.id),
+              ]);
+            if (liveErr || fieldErr || typeof liveCount !== 'number') {
+              console.log(
+                `[GameServer] Skipping settlement of tournament ${t.id.slice(0, 8)} - could not read its field (${liveErr?.message ?? fieldErr?.message ?? 'no count'}); left RUNNING.`
+              );
+              continue;
+            }
+            const sweepPayouts =
+              resolvePayoutStructure(
+                t as never,
+                typeof fieldCount === 'number' && fieldCount >= 1 ? fieldCount : undefined
+              ) ?? [];
+            if (fieldIsStillLive({ livePlayers: liveCount, paidPlaces: sweepPayouts.length })) {
+              reportError(
+                new Error(
+                  `[GameServer] ${t.name} (${t.id.slice(0, 8)}) has been RUNNING over 12h with no hand in the last hour, but ${liveCount} player(s) are still in it against ${sweepPayouts.length} paid place(s) - the recovery would refuse to settle that, and a COMPLETING row cannot be resumed by anything. LEFT RUNNING so a manager can adopt and play it out; it needs an operator if it does not deal.`
+                ),
+                'GameServer.stale_sweep_left_live_field_running'
+              );
+              continue;
+            }
+
             const { data: completingClaim } = await supabase
               .from('tournaments')
               .update({ status: 'COMPLETING' })

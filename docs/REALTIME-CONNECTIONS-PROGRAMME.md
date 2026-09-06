@@ -278,14 +278,28 @@ it by hand meanwhile.
    is now `PROBE_OUTCOMES`, pinned in both directions, which immediately caught
    two more outcomes hidden inside a ternary.
 
-**Verification.** Client half: `fn_probe_table_candidate` live, the service
-identity a member of both fleet clubs with zero chips, and a real `wss://`
-socket to a live table returning `SNAPSHOT` in 1.63 s. Engine half: nothing to
-deploy - the probe runs outside the engine, which is the point. **Remaining
-manual step: `bash scripts/deploy-openclaw.sh` once the World Hub PR merges**,
-or the schedule exists in the repo and not on the box (World Hub CLAUDE.md
-11.3). The live dispatcher was checked and is currently byte-identical to
-`main`, so there is no pre-existing drift to untangle.
+**Verification - the probe is LIVE and green in production.** World Hub #1435
+merged; the three files were checked on `main` by content, not by the merge
+tick (10.82 rule 2). The dispatcher registered the job at 10:22:20 UTC and it
+has been firing on its five-minute schedule since. Read from
+`probe_heartbeats`:
+
+    occurred_at  2026-09-06 10:28:02 UTC
+    status       ok          duration_ms 1290
+    login        323 ms
+    socket open  794 ms      SNAPSHOT at 796 ms
+    table        9cc1131e-42d7-4b8c-816b-704144016c9f
+
+and `cron_health_log` carries the matching `success`, so
+`check-cron-fleet-alive.mjs` can see it stop.
+
+**One trap worth recording.** The FIRST scheduled run, at 10:23:00, returned
+`vercel 200 in 0.4s` and wrote no heartbeat - because Vercel had not finished
+deploying the merge and something upstream answered 200 for a route that did
+not exist yet. A 200 from the scheduler is not proof the job ran; the row in
+`probe_heartbeats` is. The 10:28 run took 3.0 s at the dispatcher and left the
+row above. That is the same lesson as "a green deploy run is not a deployment",
+one layer up, and it is why this phase measures the row and never the tick.
 
 ## Phase 5 - Trust and limits (2026-09-06)
 

@@ -277,6 +277,23 @@ immediately caught a second problem - two outcomes hidden inside a ternary,
 which the scan could not see - so the ternary became two explicit branches.
 Three mutations, three reds.
 
+### 5. A scheduler's 200 is not proof the job ran
+
+The probe's FIRST scheduled run, 10:23:00 UTC, returned `vercel 200 in 0.4s` -
+and wrote no heartbeat row. Vercel had not finished deploying the merge, and
+something upstream answered 200 for a route that did not exist yet. Had the
+audit stopped at the dispatcher's green tick, the phase would have been
+reported as verified while the probe had never executed once.
+
+The 10:28:00 run took 3.0 s at the dispatcher and left this in
+`probe_heartbeats`:
+
+    status ok · 1290 ms · login 323 ms · socket open 794 ms · SNAPSHOT at 796 ms
+
+with the matching `success` in `cron_health_log`, so `check-cron-fleet-alive`
+can see it stop. **The row is the proof. The tick is not** - which is the same
+lesson as "a green deploy run is not a deployment", one layer up.
+
 ### Also checked, and correct
 
 - `maxDuration: 60` is already used by sixteen other routes on this plan.

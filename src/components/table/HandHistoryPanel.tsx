@@ -603,13 +603,62 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
     };
   }, [isOpen, idSignature]);
 
+  /**
+   * A DIALOG THAT KEEPS THE KEYBOARD (Phase 7, 2026-09-06).
+   *
+   * This said `role="dialog"` and `aria-modal="true"` and did neither: focus
+   * stayed wherever it was when the panel opened, Tab walked straight out of
+   * it into the live table underneath, and closing it left focus nowhere. A
+   * player driving the panel by keyboard was tabbing through seats and the
+   * action bar of a hand in progress, behind a panel that claimed to be modal.
+   *
+   * `aria-modal` is a promise to a screen reader, not a mechanism - the
+   * browser still walks the whole document. So: focus in on open, Tab and
+   * Shift+Tab cycle inside, and focus goes back to whatever opened it.
+   */
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const restoreFocusTo = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!isOpen) return;
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    restoreFocusTo.current = document.activeElement as HTMLElement | null;
+    panelRef.current?.focus();
+
+    const FOCUSABLE =
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !panelRef.current) return;
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      /* Focus OUTSIDE the panel is the common case, not an edge one: click any
+         non-focusable part of it and activeElement becomes <body>. Without
+         this branch the next Tab walks to the first tabbable node in the
+         document, which is the table behind. */
+      if (!panelRef.current.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+        return;
+      }
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      restoreFocusTo.current?.focus?.();
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -621,6 +670,8 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
       <div className="hh-backdrop" onClick={onClose} aria-hidden="true" />
       <div
         className="hh-panel"
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Hand History"

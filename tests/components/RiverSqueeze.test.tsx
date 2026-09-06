@@ -548,8 +548,13 @@ describe('the squeeze on the board', () => {
     act(() => {
       rerender(<CommunityCards {...props()} cards={BOARD} stage="river" />);
     });
+    /* PHASE 7 (2026-09-06): the words changed, the claim did not. This region
+       built its sentence from the RAW fields - "7 of c" is the rank letter and
+       the suit LETTER, which is what a screen reader was actually being read.
+       It speaks through `cardWords` now, so the river is "Seven Of Clubs".
+       Still asserting the river specifically, which is what spec 50 is about. */
     expect(container.querySelector('[role="region"]')!.getAttribute('aria-label')).toContain(
-      '7 of c'
+      'Seven Of Clubs'
     );
   });
 });

@@ -65,13 +65,14 @@ export interface ClusterHealthSnapshot {
   woken: number;
   errors: number;
   rested: number;
+  deferred: number;
   rpcs: number;
   stalled: number;
   skippedFrozen: number;
 }
 
 /** The summary as the sibling branch extends it. Both shapes are accepted. */
-type SummaryLike = ClusterTickSummary & Partial<{ rested: number; rpcs: number }>;
+type SummaryLike = ClusterTickSummary & Partial<{ rested: number; rpcs: number; deferred: number }>;
 
 /**
  * Derive the metric `kind` of one action object. Exported so the test and the
@@ -101,6 +102,7 @@ export class ClusterMetrics {
   readonly passTicked: Gauge;
   readonly passWoken: Gauge;
   readonly passRested: Gauge;
+  readonly passDeferred: Gauge;
   readonly passErrorsTotal: Counter;
   readonly passStalledTotal: Counter;
   readonly passSkippedFrozenTotal: Counter;
@@ -140,6 +142,10 @@ export class ClusterMetrics {
     this.passRested = registry.gauge(
       'poker_cluster_pass_rested',
       'Dormant games the last pass let sleep instead of ticking'
+    );
+    this.passDeferred = registry.gauge(
+      'poker_cluster_pass_deferred',
+      'Due games the last pass did not start because it reached its 5.5 s budget (20260906150956); first in line next pass'
     );
     this.passErrorsTotal = registry.counter(
       'poker_cluster_pass_errors_total',
@@ -187,6 +193,7 @@ export class ClusterMetrics {
     this.passTicked.set(s.ticked);
     this.passWoken.set(s.woken);
     this.passRested.set(s.rested ?? 0);
+    this.passDeferred.set(s.deferred ?? 0);
     if (s.errors > 0) this.passErrorsTotal.inc(s.errors);
     if ((s.rpcs ?? 0) > 0) this.rpcsTotal.inc(s.rpcs ?? 0);
     this.lastPassTimestamp.set(Math.floor(at / 1000));
@@ -236,6 +243,7 @@ export class ClusterMetrics {
       woken: s?.woken ?? 0,
       errors: s?.errors ?? 0,
       rested: s?.rested ?? 0,
+      deferred: s?.deferred ?? 0,
       rpcs: s?.rpcs ?? 0,
       stalled: this.stalled,
       skippedFrozen: this.skippedFrozen,

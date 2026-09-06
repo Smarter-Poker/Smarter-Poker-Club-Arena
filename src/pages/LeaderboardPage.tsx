@@ -444,6 +444,10 @@ export default function LeaderboardPage() {
     const requestKey = requestedClubId;
     if (
       selectedClubId === requestedClubId &&
+      // A club switch and this effect can share one render. React has queued
+      // the stale settings reset by then, but this closure can still see the
+      // previous club's owner record. Never open that record under the new URL.
+      settings?.club_id === requestedClubId &&
       settings?.can_manage &&
       openedSetupLinkRef.current !== requestKey
     ) {

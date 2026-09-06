@@ -57,6 +57,16 @@ import { toPokerStarsFile } from '../utils/pokerStarsExport';
  */
 type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots' | 'showdown' | 'all-in' | 'noted';
 const PAGE_SIZE = 25;
+/** The cards that actually fade in one after another; the rest arrive together. */
+const STAGGER_CARDS = 12;
+const STAGGER_STEP_MS = 40;
+/**
+ * Past this many rows the browser is told it may skip rendering a card that is
+ * off screen (`content-visibility`), which is what "virtualise the archive past
+ * 100 hands" means here. See the class in HandHistoryPage.css for why it is
+ * this rather than hand-rolled windowing.
+ */
+const DEFER_OFFSCREEN_AFTER = 100;
 const FILTERS: Array<{ id: HistoryFilter; label: string }> = [
   { id: 'all', label: 'All Hands' },
   { id: 'won', label: 'Won' },
@@ -420,16 +430,54 @@ export default function HandHistoryPage() {
     }
   }, [linkedHandId, hands]);
 
+  /**
+   * THE FADE-IN COSTS ONE TIMER PER CARD, AND IT SHOULD NOT (Phase 7).
+   *
+   * Measured: this set a `setTimeout` for EVERY loaded hand and each callback
+   * copied the whole visibility map (`{...prev, [id]: true}`). The delay is
+   * `Math.min(i, 12) * 40`, so past the thirteenth card every timer fires at
+   * the same 480ms - 487 timers in one tick at 500 hands, each one a separate
+   * state update copying a 500-key object. And it re-ran on every change to
+   * the id list: every search keystroke, every chip, every Load More.
+   *
+   * Only the first dozen are actually staggered, so only the first dozen need
+   * a timer. Everything after the window is shown in ONE update, which is
+   * also what it looked like before - they were all arriving together anyway.
+   */
   const idSignature = hands.map((h) => h.id).join('|');
   useEffect(() => {
     const ids = idSignature ? idSignature.split('|') : [];
-    const timers = ids.map((id, i) =>
+    if (ids.length === 0) return;
+    const staggered = ids.slice(0, STAGGER_CARDS);
+    const rest = ids.slice(STAGGER_CARDS);
+
+    if (rest.length > 0) {
+      const t = setTimeout(() => {
+        setVisible((prev) => {
+          const next = { ...prev };
+          for (const id of rest) next[id] = true;
+          return next;
+        });
+      }, STAGGER_CARDS * STAGGER_STEP_MS);
+      const timers = staggered.map((id, i) =>
+        setTimeout(
+          () => setVisible((prev) => (prev[id] ? prev : { ...prev, [id]: true })),
+          i * STAGGER_STEP_MS
+        )
+      );
+      return () => {
+        clearTimeout(t);
+        timers.forEach(clearTimeout);
+      };
+    }
+
+    const timers = staggered.map((id, i) =>
       setTimeout(
         () => setVisible((prev) => (prev[id] ? prev : { ...prev, [id]: true })),
-        Math.min(i, 12) * 40
+        i * STAGGER_STEP_MS
       )
     );
-    return () => timers.forEach((t) => clearTimeout(t));
+    return () => timers.forEach(clearTimeout);
   }, [idSignature]);
 
   const stats = useMemo(() => {
@@ -724,19 +772,24 @@ export default function HandHistoryPage() {
             </p>
           </div>
         ) : (
-          hands.map((hand) => {
+          hands.map((hand, index) => {
             const me = hand.replay.players.find((p) => p.userId === userId);
             const net = me?.net ?? 0;
             const expanded = expandedId === hand.id;
             const variant = gameTypeLabel(hand.replay.gameVariant) || hand.gameType;
             const runs = hand.replay.boards.length;
+            /* Past the first hundred, a card that is off screen need not be
+               laid out or painted. An EXPANDED card never defers - it holds
+               the rundown the player is reading, and its height is nothing
+               like the intrinsic guess. */
+            const deferred = index >= DEFER_OFFSCREEN_AFTER && !expanded;
             return (
               <article
                 key={hand.id}
                 id={`hand-${hand.id}`}
                 className={`hand-card${expanded ? ' hand-card--expanded' : ''}${visible[hand.id] ? ' hand-card--in' : ''}${
                   hand.id === linkedHandId ? ' hand-card--linked' : ''
-                }`}
+                }${deferred ? ' hand-card--deferred' : ''}`}
               >
                 <button
                   type="button"

@@ -32,15 +32,12 @@
 
 import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
 import HandDetailView from '../handdetail/HandDetailView';
+import HandNoteEditor from '../handdetail/HandNoteEditor';
 import type { ReplayModel } from '../../utils/handReplay';
 import type { HeroHandFacts } from '../../services/HandHistoryService';
 import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
-import {
-  handMatchesQuery,
-  handQueryIsActive,
-  handSearchSubject,
-  type HandQuery,
-} from '../../lib/handSearch';
+import { handNotesService, type HandNote } from '../../services/HandNotesService';
+import { filterBySubjects, handSearchSubject } from '../../lib/handSearch';
 import { formatTableChips } from '../../utils/format';
 import './HandHistoryPanel.css';
 
@@ -86,6 +83,8 @@ export interface HandRecord {
   id: string;
   handNumber: number;
   timestamp: number;
+  /** Seats at the table this was dealt at, when the table row still exists. */
+  tableMaxSeats?: number | null;
   gameType: string;
   blinds: string;
   players: Array<{
@@ -304,6 +303,9 @@ function HandEntry({
   onToggle,
   onReplay,
   onOpenDetail,
+  note,
+  noteKnown,
+  onNoteSaved,
 }: {
   hand: HandRecord;
   heroId: string;
@@ -311,6 +313,9 @@ function HandEntry({
   onToggle: () => void;
   onReplay?: (hand: HandRecord) => void;
   onOpenDetail?: (hand: HandRecord) => void;
+  note?: HandNote | null;
+  noteKnown?: boolean;
+  onNoteSaved?: (handId: string, note: HandNote | null) => void;
 }) {
   const heroNet = hand.replay.players.find((p) => p.userId === heroId)?.net ?? hand.heroResult;
   const tone = heroNet > 0 ? 'up' : heroNet < 0 ? 'down' : 'flat';
@@ -371,6 +376,18 @@ function HandEntry({
             badge={variant}
             viewerFacts={hand.heroFacts}
           />
+          {/* THE SAME NOTE, ON THE SAME EXPANDED HAND. The panel could SEARCH
+              a tag before it could show one: a player found "the hand I tagged
+              leak" at the table and then saw no tag on the card, and could not
+              write one without leaving the felt for the archive. Same
+              component, same service - `useTableKeyboard` already declines to
+              read the keyboard while a TEXTAREA has it. */}
+          <HandNoteEditor
+            handId={hand.id}
+            note={note}
+            noteKnown={noteKnown}
+            onSaved={onNoteSaved}
+          />
           {(onReplay || onOpenDetail) && (
             <div className="hh-entry__actions-row">
               {onOpenDetail && (
@@ -418,20 +435,63 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
    * KingFish", not its position in a list.
    */
   const [search, setSearch] = useState('');
-  const shown = useMemo(() => {
-    const query: HandQuery = { text: search };
-    if (!handQueryIsActive(query)) return hands;
-    return hands.filter((h) =>
-      handMatchesQuery(
-        handSearchSubject(h.replay, {
-          heroUserId: heroId,
-          handNumber: h.handNumber,
-          playedAtMs: h.timestamp,
-        }),
-        query
-      )
-    );
-  }, [hands, search, heroId]);
+  /**
+   * THE VIEWER'S OWN NOTES ON THESE HANDS, because the box beside this says it
+   * searches tags and it could not: the panel never loaded a note, so
+   * `subject.note` and `subject.tags` were always empty and those two branches
+   * of the shared predicate were dead here. A player typed a tag they had
+   * written themselves and was told "No Hands Here Match That Search" - a
+   * confident false answer about their own data, and exactly the drift between
+   * two surfaces that running ONE predicate was meant to make impossible.
+   *
+   * Asked by hand id, so the answer covers these hands however old the notes
+   * are. RLS returns nobody else's; a failure returns an empty map and the
+   * search falls back to numbers and names.
+   */
+  const [notes, setNotes] = useState<Map<string, HandNote>>(new Map());
+  const [notesKnown, setNotesKnown] = useState(false);
+  const noteIdKey = hands.map((h) => h.id).join('|');
+  useEffect(() => {
+    const ids = noteIdKey ? noteIdKey.split('|') : [];
+    if (ids.length === 0) return;
+    let alive = true;
+    void handNotesService.listFor(ids).then((map) => {
+      if (!alive) return;
+      setNotes(map);
+      setNotesKnown(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [noteIdKey]);
+
+  const onNoteSaved = useCallback((handId: string, saved: HandNote | null) => {
+    setNotes((prev) => {
+      const next = new Map(prev);
+      if (saved) next.set(handId, saved);
+      else next.delete(handId);
+      return next;
+    });
+  }, []);
+
+  const shown = useMemo(
+    () =>
+      filterBySubjects(
+        hands,
+        (h) => {
+          const note = notes.get(h.id);
+          return handSearchSubject(h.replay, {
+            heroUserId: heroId,
+            handNumber: h.handNumber,
+            playedAtMs: h.timestamp,
+            note: note?.note,
+            tags: note?.tags,
+          });
+        },
+        { text: search }
+      ),
+    [hands, search, heroId, notes]
+  );
   const idSignature = shown.map((h) => h.id).join('|');
 
   const toggleExpand = useCallback((id: string) => {
@@ -672,6 +732,9 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
                   onToggle={() => toggleExpand(hand.id)}
                   onReplay={onReplay}
                   onOpenDetail={onOpenDetail}
+                  note={notes.get(hand.id) ?? null}
+                  noteKnown={notesKnown}
+                  onNoteSaved={onNoteSaved}
                 />
               </div>
             ))

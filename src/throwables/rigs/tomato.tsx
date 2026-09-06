@@ -77,7 +77,7 @@ const STEM_GREEN = '#4a8a2c';
  */
 function Calyx() {
   return (
-    <g className="thr-tomato__calyx">
+    <g>
       {/* left leaf, pointing left and a little down */}
       <path
         d="M -1 0 C -6 -5, -15 -4, -19 2 C -13 4, -5 3, -1 0 Z"
@@ -117,7 +117,7 @@ function Calyx() {
 function Tomato({ uid, k }: { uid: string; k: string }) {
   const g = (n: string) => `thr-tomato-${n}-${uid}-${k}`;
   return (
-    <g className="thr-tomato__fruit">
+    <g>
       <defs>
         <radialGradient id={g('body')} cx="0.36" cy="0.32" r="0.8" fx="0.3" fy="0.27">
           <stop offset="0%" stopColor="#ff8a7a" />

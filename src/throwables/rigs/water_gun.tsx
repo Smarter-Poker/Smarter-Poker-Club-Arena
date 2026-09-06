@@ -81,7 +81,7 @@ preloadThrowableCues(waterGunSpec.audio.map((c) => c.sample));
 function Gun({ uid, k }: { uid: string; k: string }) {
   const g = (n: string) => `thr-water_gun-${n}-${uid}-${k}`;
   return (
-    <g className="thr-water_gun__gun">
+    <g>
       <defs>
         <linearGradient id={g('body')} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#7cc4ff" />
@@ -193,7 +193,7 @@ const STREAM_D = 'M 31 -4.5 Q 100 -9 172 -8.5 L 172 6.5 Q 100 7 31 1.5 Z';
 function Stream({ uid }: { uid: string }) {
   const id = (n: string) => `thr-water_gun-${n}-${uid}`;
   return (
-    <g className="thr-water_gun__stream">
+    <g>
       <defs>
         <linearGradient id={id('stream')} x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor="#c6fff9" />

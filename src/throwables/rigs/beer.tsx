@@ -73,7 +73,7 @@ preloadThrowableCues(beerSpec.audio.map((c) => c.sample));
 function Mug({ uid, k }: { uid: string; k: string }) {
   const g = (n: string) => `thr-beer-${n}-${uid}-${k}`;
   return (
-    <g className="thr-beer__mug">
+    <g>
       <defs>
         <linearGradient id={g('beer')} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#f5b533" />
@@ -192,7 +192,7 @@ function Payload({ uid }: RigProps) {
       {/* THE CLINK: a plume of foam up from where the rims meet, 0.8 u above
           them, drawn AFTER the mugs so it blows out over them. */}
       <g className="thr-beer__plume">
-        <ellipse className="thr-beer__plume-core" cx="4" cy="-58" rx="16" ry="12" fill="#ffffff" />
+        <ellipse cx="4" cy="-58" rx="16" ry="12" fill="#ffffff" />
         <ellipse cx="-6" cy="-50" rx="10" ry="8" fill="#fbf8f0" />
         <ellipse cx="14" cy="-48" rx="9" ry="7" fill="#fbf8f0" />
         {DROPLETS.map(([dx, dy, r, step], i) => (

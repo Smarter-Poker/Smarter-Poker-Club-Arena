@@ -82,7 +82,7 @@ const defId = (uid: string, name: string) => `thr-cracked_egg-${name}-${uid}`;
 function Egg({ uid, k }: { uid: string; k: string }) {
   const shell = defId(uid, `shell-${k}`);
   return (
-    <g className="thr-cracked_egg__egg-shape" transform="rotate(30)">
+    <g transform="rotate(30)">
       <defs>
         <radialGradient id={shell} cx="0.36" cy="0.3" r="0.78">
           <stop offset="0%" stopColor="#f7e5cc" />
@@ -197,7 +197,7 @@ function Payload({ uid }: RigProps) {
             grow down the face from +33 to about +250, each to its own length.
             One group opacity so the pool and the drips never double up where
             they overlap; the avatar reads through all of it. */}
-        <g className="thr-cracked_egg__whites" opacity="0.65">
+        <g opacity="0.65">
           <path
             d="M -40 -34 C -41 -42, -30 -46, -20 -44 C -8 -46, 10 -46, 24 -44 C 34 -43, 42 -38, 40 -30 C 38 -22, 28 -19, 16 -19 C 4 -18, -10 -18, -22 -20 C -32 -21, -39 -26, -40 -34 Z"
             fill="#ffffff"

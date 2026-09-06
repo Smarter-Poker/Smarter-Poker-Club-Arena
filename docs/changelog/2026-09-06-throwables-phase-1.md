@@ -103,6 +103,76 @@ is **332 passed, 0 failed**, so the migration seam did not disturb a single
 existing pin. The darkroom sheet is the visual record and is what the next
 review looks at.
 
+## The verification pass, and the two things a seven-file run could not see
+
+Dan, before phase 2: "verify that everything you've built in the previous phase
+is 100% fully built, coded, wired in and tested ... make sure that everything
+has been fully pushed and published."
+
+It was pushed. **It was not published**, and the seven-file test run above is
+exactly why nobody knew: it proved the files I touched were consistent with
+each other, which is a different claim from "the repo is green". PR #3347 went
+red on `Client Unit Tests` shard 1 four minutes after the push, autopilot
+correctly refused to merge it, and the branch sat unmerged with production
+still serving `d1ba30dae`. A seven-file subset cannot fail on a repo-wide
+ratchet, so **the full `tests/` suite is what the next phase runs before it
+claims anything.**
+
+**1. Eight class names that named nothing.** `tests/unit/classNamesResolve.test.ts`
+holds a ratchet at 41 unresolved BEM class names and my rigs took it to 47.
+`thr-beer__mug`, `thr-beer__plume-core`, `thr-cracked_egg__egg-shape`,
+`thr-cracked_egg__whites`, `thr-tomato__calyx`, `thr-tomato__fruit`,
+`thr-water_gun__gun` and `thr-water_gun__stream` were on structural `<g>`
+elements, referenced once each - in their own file - and defined in no
+stylesheet at all. Nothing selected them, nothing styled them, and every one of
+those groups is animated by a WRAPPER (`__track`, `__aim`, `__jitter`,
+`__live`, `__splat`, `__pulse`) that does have a rule. So no animation was
+missing; the names were decoration that read like a contract. Deleted, all
+eight. The baseline stays at 41, where it can only fall.
+
+The bidirectional check is worth recording because it is the one that would
+have found a real bug: there is no CSS rule in any of the four rigs that no
+element carries. A dead RULE would have meant an animation nobody plays.
+
+**2. A cue that made no sound said nothing about it.** `scheduleCues` had three
+bare `return`s - the buffer failed to load, a one-shot decoded more than a beat
+late, a loop's window was already behind the clock - and none of them throws.
+The 404 case is the one that matters: had `public/sounds/throwables/` failed to
+reach the origin, every throw would have played in silence and the only
+symptom would have been a quiet table. "The audio pipeline is fine" and "every
+file is missing" were the same observation, which is CLAUDE.md 10.86 rule 1
+almost word for word. Each drop now increments `droppedCues` by reason and
+reports `AnimationLaw.throw_cue_silent` **once per reason per cue per session**,
+so eight simultaneous throws cannot spam the same broken URL. Pinned by a new
+case in the law.
+
+**What the pass confirmed rather than changed**, each read rather than assumed:
+
+- `tomato` and `cracked_egg` (the two rigs a subagent drew) hold the same
+  landing contract `water_gun` had violated: tomato's delays count from 233 and
+  cracked_egg's from 367, and both equal their own `flight.ms`.
+- The four catalogue ids the rigs claim - `beer`, `water_gun`, `tomato`,
+  `cracked_egg` - are the ids `ThrowableService` resolves to, `LEGACY_ID_MAP`
+  included (`egg`, `water-balloon`, `tsunami` all bridge onto rigged items), so
+  no throw silently falls through the seam to the legacy renderer.
+- The audio survives the build **byte for byte**: `RASTER_RE` is
+  `/\.(png|jpe?g|webp)$/i`, and `.webm` is not `.webp`, so
+  `optimize-dist-media.mjs` never opens them. A real `npm run build` put all
+  nine files in `dist/sounds/throwables/` with matching sha256.
+- Reduced motion is handled and not merely survived: the player starts at the
+  payload phase, offsets the cues to 0, and marks the payload
+  `data-motion="keep"` so `reducedMotion.css` does not collapse the beats that
+  ARE the throw.
+- No TODO, FIXME, `@ts-ignore`, `as any` or empty catch anywhere in the phase 1
+  tree; every catch that exists has a stated reason.
+
+One local-environment finding worth writing down so the next agent does not
+chase it: `tests/the-media-optimizer-remembers-and-is-idempotent.law.test.ts`
+fails in a fresh WORKTREE with `Failed to resolve import "sharp"`. `sharp` is a
+declared devDependency (CLAUDE.md 1.1.6) and CI's `npm ci` has it; a worktree
+whose `node_modules` predates that entry does not. It is not a code defect, and
+CI never showed it because that file was in the shard autopilot cancelled.
+
 ## Honest gaps
 
 1. **Never seen on a real table.** Every judgement here came from the darkroom
@@ -128,7 +198,14 @@ added    scripts/dev/preview-throwable.mjs
 added    public/sounds/throwables/*.webm + *.m4a + CREDITS.md
 added    tests/unit/throwableSpecs.test.ts, tests/unit/throwableCuesAreLicensed.test.ts
 added    tests/throwables-play-the-measured-grammar.law.test.ts + docs/laws.d entry
-changed  src/services/ThrowableSoundService.ts (sample loader + scheduler)
+changed  src/services/ThrowableSoundService.ts (sample loader + scheduler;
+         then the verification pass added droppedCues + dropCue reporting)
 changed  src/components/table/ThrowAnimation.tsx (the migration seam)
 changed  docs/throwables/THROWABLES-PREMIUM-ANIMATION-PLAN.md (section 5 re-cut)
+
+verification pass (same branch, PR #3347):
+changed  src/throwables/rigs/{beer,water_gun,tomato,cracked_egg}.tsx
+         (eight class names that resolved to no stylesheet, deleted)
+changed  tests/throwables-play-the-measured-grammar.law.test.ts
+         (a cue that produces no sound must name a reason)
 ```

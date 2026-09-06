@@ -128,6 +128,30 @@ describe('LAW: a paid throw is never silent and never invisible', () => {
     expect(SOUND).toMatch(/get placeholderCuesPlayed/);
     expect(PLAYER).toMatch(/playPlaceholder/);
   });
+
+  it('a cue that produces NO sound names a reason, and never returns silently', () => {
+    // THE GAP THIS PINS (found by the phase 1 verification pass): a scheduled
+    // cue has three ways to make no sound and none of them throws - the file
+    // 404s or fails to decode, a one-shot decodes more than a beat late, or a
+    // loop's window is already behind the clock. All three were a bare
+    // `return`, so "the cues are fine" and "every file is missing" were the
+    // same observation. CLAUDE.md 10.86 rule 1: could-not-play is its own
+    // outcome and must have a name.
+    const SOUND = code(read('src/services/ThrowableSoundService.ts'));
+    expect(SOUND).toMatch(
+      /export type CueDropReason =[\s\S]*?'no_buffer'[\s\S]*?'late'[\s\S]*?'window_passed'/
+    );
+    expect(SOUND).toMatch(/get droppedCues\(\)/);
+    for (const reason of ['no_buffer', 'late', 'window_passed']) {
+      expect(SOUND, `the '${reason}' path must count, not return silently`).toMatch(
+        new RegExp(`return this\\.dropCue\\(cue\\.sample, '${reason}'\\)`)
+      );
+    }
+    // Once per reason per cue: a table throwing eight items must not report
+    // the same broken URL eight times a second.
+    expect(SOUND).toMatch(/cueDropReported\.has\(key\)/);
+    expect(SOUND).toMatch(/AnimationLaw\.throw_cue_silent/);
+  });
 });
 
 describe('LAW: the migration seam stays honest', () => {

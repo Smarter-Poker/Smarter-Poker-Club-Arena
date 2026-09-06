@@ -31,8 +31,12 @@
 
 import { soundService, haptic } from './SoundService';
 import type { ThrowWeight } from './ThrowableService';
+import { reportError } from '../utils/errorReporter';
 
 type Wave = OscillatorType;
+
+/** Why a scheduled cue produced no sound. Never folded into silence. */
+export type CueDropReason = 'no_buffer' | 'late' | 'window_passed';
 
 class ThrowableSoundServiceClass {
   private ctx: AudioContext | null = null;
@@ -784,14 +788,47 @@ class ThrowableSoundServiceClass {
   //   - a cue with NO file is never silent. The manifest marks it `placeholder`
   //     and the caller supplies the legacy recipe to play instead; the count is
   //     exposed so a test can say how many placeholders are still shipping.
+  //   - AND A CUE THAT DOES NOT PLAY SAYS SO. There are three ways a scheduled
+  //     cue can produce no sound and none of them throws: the file 404s or
+  //     fails to decode, a one-shot's decode lands more than a beat late, or a
+  //     loop's whole window is already behind the clock. Silently returning on
+  //     any of those makes "the audio pipeline is fine" and "every cue is
+  //     missing" the same observation (CLAUDE.md 10.86 rule 1). Each drop is
+  //     counted by reason and reported ONCE per reason per session, because a
+  //     table throwing eight items would otherwise report the same broken URL
+  //     eight times a second.
 
   private cueBytes = new Map<string, Promise<ArrayBuffer | null>>();
   private cueBuffers = new Map<string, Promise<AudioBuffer | null>>();
   private cuePlaceholdersPlayed = 0;
+  private cueDrops: Record<CueDropReason, number> = { no_buffer: 0, late: 0, window_passed: 0 };
+  private cueDropReported = new Set<string>();
 
   /** How many cues fell back to a procedural recipe in this session. */
   get placeholderCuesPlayed(): number {
     return this.cuePlaceholdersPlayed;
+  }
+
+  /** Cues that were scheduled and produced no sound, by reason. A non-zero
+   *  `no_buffer` means the files are not reaching the browser at all. */
+  get droppedCues(): Readonly<Record<CueDropReason, number>> {
+    return this.cueDrops;
+  }
+
+  /** One report per reason per cue per session; the counter takes the rest. */
+  private dropCue(name: string, reason: CueDropReason) {
+    this.cueDrops[reason] += 1;
+    const key = `${name}:${reason}`;
+    if (this.cueDropReported.has(key)) return;
+    this.cueDropReported.add(key);
+    try {
+      reportError(
+        new Error(`throwable cue '${name}' produced no sound (${reason})`),
+        'AnimationLaw.throw_cue_silent'
+      );
+    } catch {
+      /* telemetry must never break the table */
+    }
   }
 
   /** Start fetching the bytes for these cues now (rig modules call this at
@@ -892,7 +929,10 @@ class ThrowableSoundServiceClass {
       }
 
       void this.loadCue(cue.sample, opts.urlFor).then((buffer) => {
-        if (!buffer || !this.ctx || this.ctx !== ctx) return;
+        // A context swapped underneath us (the sound setting was reloaded) is
+        // a cancellation, not a drop: this throw's audio graph is simply gone.
+        if (!this.ctx || this.ctx !== ctx) return;
+        if (!buffer) return this.dropCue(cue.sample, 'no_buffer');
         try {
           this.setVoice(pan);
           const src = ctx.createBufferSource();
@@ -906,13 +946,13 @@ class ThrowableSoundServiceClass {
           if (cue.loopUntil !== undefined) {
             src.loop = true;
             const stopAt = t0 + ((opts.offsetMs + cue.loopUntil) / 1000) * s;
-            if (stopAt <= now) return;
+            if (stopAt <= now) return this.dropCue(cue.sample, 'window_passed');
             src.start(Math.max(startAt, now));
             src.stop(stopAt);
           } else {
             // A decode that finished after its beat still plays (late is
             // better than silent), but never more than one beat late.
-            if (now - startAt > 0.25) return;
+            if (now - startAt > 0.25) return this.dropCue(cue.sample, 'late');
             src.start(Math.max(startAt, now));
           }
           sources.push(src);

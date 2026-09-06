@@ -60,7 +60,7 @@ describe('PineappleDiscard', () => {
     fireEvent.click(screen.getByLabelText('Discard King Of Hearts'));
     fireEvent.click(
       screen
-        .getAllByRole('button', { name: /discard kh/i })
+        .getAllByRole('button', { name: /discard king of hearts/i })
         .find((b) => b.classList.contains('pineapple-discard__confirm'))!
     );
 
@@ -88,7 +88,7 @@ describe('PineappleDiscard', () => {
     fireEvent.click(screen.getByLabelText('Discard Ace Of Spades'));
     fireEvent.click(
       screen
-        .getAllByRole('button', { name: /discard as/i })
+        .getAllByRole('button', { name: /discard ace of spades/i })
         .find((b) => b.classList.contains('pineapple-discard__confirm'))!
     );
 

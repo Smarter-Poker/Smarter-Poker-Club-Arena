@@ -117,6 +117,40 @@ the merge base, diff two refs, and fall back to the whole tree if there is no
 common base. Never nothing. Pinned in `tests/the-guards-are-wired.law.test.ts`,
 which goes red if the one-ref diff comes back.
 
+## 5. The same button's VISIBLE text, found in the shipped bundle
+
+After 1-4 merged and published, I read the live chunks rather than the source
+and found this still in them:
+
+```
+Discard ${t[g].rank}${t[g].suit}
+```
+
+Fifty lines below the `aria-label` finding 2 had already fixed, in the same
+component, the **confirm button** - the last thing anybody reads before the
+card is gone - printed `Discard As`, `Discard Kh`, `Discard 2d`. Not an
+attribute: visible text, on screen, for every player, sighted or not. Not Title
+Cased either, so it was also a standing violation of CLAUDE.md 5.7 that the
+painted-text checker cannot see through an interpolation.
+
+**The pin I wrote for finding 2 was green, because I pinned the shape I had
+just fixed rather than the property.** It matched `aria-label`/`alt`/`title`
+only. The rule is now "a card named in raw field values **wherever a player
+reads it**" - a raw rank immediately followed by a raw suit, in a template that
+also contains prose.
+
+The prose test is what keeps the law usable. `${c.rank}${c.suit}` on its own is
+how this codebase KEYS a card - React keys, `indexOf` against the engine's card
+order, the PokerStars export's own notation - and there are eight such lines
+that are all correct. Flagging them would have put eight false positives in
+front of the next agent, and a law that cries wolf is a law that gets deleted.
+Stripping the interpolations and requiring a word is what separates
+`Discard ${...}` from `${...}-${i}`.
+
+Lesson, three times in one deep dive: **pin the property, not the mechanism you
+happened to use.** Finding 1's law watched a container attribute, finding 2's
+watched an attribute name, and both were green over a live defect.
+
 ## Checked and found correct
 
 - `cardWords` agrees with what `CardImage` will actually render: it uppercases

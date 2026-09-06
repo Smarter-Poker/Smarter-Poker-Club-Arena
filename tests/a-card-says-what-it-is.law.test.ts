@@ -140,21 +140,51 @@ describe('a card says what it is', () => {
        One renderer was never the whole surface: a label is written by hand
        anywhere somebody needs one, so the class has to be pinned, not the
        instance. */
-    const spoken = /(aria-label|alt|title)=\{`[^`]*\$\{[^}]*\.(rank|suit)\b/;
+    /* WIDENED 2026-09-06, after the first version of this pin shipped and was
+       still wrong. It matched only ATTRIBUTES (aria-label / alt / title), so
+       it passed while the CONFIRM BUTTON fifty lines below the label it had
+       just fixed still PRINTED "Discard As" - visible text, read by everyone,
+       the last thing anybody sees before the card is gone. Found by grepping
+       the shipped bundle, not the source.
+       So the rule is the property, not the shape: a raw rank immediately
+       followed by a raw suit is a card being named in field values, wherever
+       a player reads it.
+       `${c.rank}${String(c.suit).charAt(0)}` is deliberately NOT matched -
+       that is the plain-text hand summary a player COPIES, where poker
+       notation is the correct output and not speech. */
+    const attrOnly = /(aria-label|alt|title)=\{`[^`]*\$\{[^}]*\.(rank|suit)\b/;
+    /* A raw rank immediately followed by a raw suit, inside a template. */
+    const rawPair = /`[^`]*\$\{[^}]*\.rank\}\$\{[^}]*\.suit\}[^`]*`/g;
+
+    /**
+     * Is this template a SENTENCE, or an identity string?
+     *
+     * `${c.rank}${c.suit}` on its own is how this codebase keys a card - React
+     * keys, `indexOf` against the engine's card order, the PokerStars export's
+     * own notation. Those are correct and nobody reads them. Flagging them
+     * would put eight false positives in front of the next agent, and a law
+     * that cries wolf is a law that gets deleted.
+     *
+     * What makes the two real defects different is PROSE beside the pair:
+     * "Discard ${...}${...}". So strip the interpolations and look for a word.
+     */
+    const isSentence = (tpl: string) => /[A-Za-z]{2,}/.test(tpl.replace(/\$\{[^}]*\}/g, ''));
+
     const offenders: string[] = [];
     for (const rel of walk(resolve(__dirname, '../src'))) {
       if (!rel.endsWith('.tsx')) continue;
       const src = readFileSync(rel, 'utf8');
-      /* `.rank` is also a LEADERBOARD position, which is a legitimate thing to
-         say out loud. Only card-shaped names count. */
       for (const line of src.split('\n')) {
-        if (!spoken.test(line)) continue;
-        if (/\.suit\b/.test(line) || /\bcard\.rank\b/.test(line)) {
+        /* `.rank` is also a LEADERBOARD position, which is a legitimate thing
+           to say out loud. Only card-shaped names count. */
+        const attr = attrOnly.test(line) && (/\.suit\b/.test(line) || /\bcard\.rank\b/.test(line));
+        const spokenPair = (line.match(rawPair) ?? []).some(isSentence);
+        if (attr || spokenPair) {
           offenders.push(`${rel.split('/src/')[1]}: ${line.trim()}`);
         }
       }
     }
-    expect(offenders, 'a spoken label built from raw rank/suit').toEqual([]);
+    expect(offenders, 'a card named in raw field values where a player reads it').toEqual([]);
   });
 
   it('leaves the poker room its own words', () => {

@@ -12,6 +12,18 @@ BEGIN;
 
 SET LOCAL lock_timeout = '4s';
 
+-- A live tournament write owns tournament_players before its trigger enters
+-- the outbox and records progress. Acquire the complete relation prefix in that
+-- same order before any DDL can hold a downstream relation while waiting for
+-- tournament_players. A busy deploy then waits or times out cleanly instead of
+-- forming a lock-order cycle with the tournament engine or outbox drain.
+LOCK TABLE public.tournament_players
+  IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.daily_challenge_event_outbox
+  IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.daily_challenge_progress_events
+  IN ACCESS EXCLUSIVE MODE;
+
 -- One lock order for the whole Daily Missions subsystem:
 -- advisory player lock -> profile -> subsystem rows -> revision cursor.
 CREATE OR REPLACE FUNCTION public.fn_lock_daily_mission_user(p_user_id uuid)
@@ -958,6 +970,56 @@ $function$;
 REVOKE ALL ON FUNCTION public.fn_drain_daily_challenge_event_outbox(integer)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_drain_daily_challenge_event_outbox(integer)
+  TO service_role;
+
+-- Retention used to delete progress receipts before dead-lettered outbox rows,
+-- the inverse of every live producer and drain. Keep maintenance on the same
+-- relation order so the 05:23 UTC cron cannot deadlock an event worker.
+CREATE OR REPLACE FUNCTION public.fn_prune_daily_mission_operations(
+  p_keep_days integer DEFAULT 30
+)
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_total bigint := 0;
+  v_rows bigint;
+BEGIN
+  IF p_keep_days IS NULL OR p_keep_days < 7 OR p_keep_days > 180 THEN
+    RAISE EXCEPTION 'p_keep_days must be between 7 and 180';
+  END IF;
+
+  DELETE FROM public.daily_mission_operations
+  WHERE created_at < now() - make_interval(days => p_keep_days);
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  v_total := v_total + v_rows;
+
+  DELETE FROM public.daily_challenge_event_outbox
+  WHERE dead_lettered_at < now() - interval '180 days';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  v_total := v_total + v_rows;
+
+  -- Receipts outlive the 35-day accepted event horizon, so a delayed replay
+  -- can never become payable again after its immutable dedupe row is pruned.
+  DELETE FROM public.daily_challenge_progress_events
+  WHERE created_at < now() - make_interval(days => GREATEST(p_keep_days, 45));
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  v_total := v_total + v_rows;
+
+  DELETE FROM public.daily_challenge_claim_batches
+  WHERE created_at < now() - make_interval(days => p_keep_days);
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  v_total := v_total + v_rows;
+
+  RETURN v_total;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.fn_prune_daily_mission_operations(integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_prune_daily_mission_operations(integer)
   TO service_role;
 
 -- Dashboard entrypoints take the player/profile lock before the revision-aware

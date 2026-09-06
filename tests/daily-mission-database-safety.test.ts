@@ -34,6 +34,35 @@ describe('Daily Missions database safety certification', () => {
     expect(migration.indexOf('DO $verify$')).toBeLessThan(migration.indexOf('COMMIT;'));
   });
 
+  it('prelocks the full tournament event pipeline before downstream DDL', () => {
+    const tournamentLock = 'LOCK TABLE public.tournament_players\n  IN ACCESS EXCLUSIVE MODE;';
+    const outboxLock =
+      'LOCK TABLE public.daily_challenge_event_outbox\n  IN ACCESS EXCLUSIVE MODE;';
+    const progressLock =
+      'LOCK TABLE public.daily_challenge_progress_events\n  IN ACCESS EXCLUSIVE MODE;';
+    const firstProgressAlter = 'ALTER TABLE public.daily_challenge_progress_events';
+    const firstOutboxAlter = 'ALTER TABLE public.daily_challenge_event_outbox';
+    const firstTournamentDdl = 'DROP TRIGGER IF EXISTS trg_daily_missions_tournament_registered';
+    const prune = section(
+      'CREATE OR REPLACE FUNCTION public.fn_prune_daily_mission_operations(',
+      'REVOKE ALL ON FUNCTION public.fn_prune_daily_mission_operations(integer)'
+    );
+    const pruneOutboxDelete = 'DELETE FROM public.daily_challenge_event_outbox';
+    const pruneProgressDelete = 'DELETE FROM public.daily_challenge_progress_events';
+
+    expect(migration).toContain(tournamentLock);
+    expect(migration).toContain(outboxLock);
+    expect(migration).toContain(progressLock);
+    expect(migration.indexOf(tournamentLock)).toBeLessThan(migration.indexOf(outboxLock));
+    expect(migration.indexOf(outboxLock)).toBeLessThan(migration.indexOf(progressLock));
+    expect(migration.indexOf(progressLock)).toBeLessThan(migration.indexOf(firstProgressAlter));
+    expect(migration.indexOf(progressLock)).toBeLessThan(migration.indexOf(firstOutboxAlter));
+    expect(migration.indexOf(progressLock)).toBeLessThan(migration.indexOf(firstTournamentDdl));
+    expect(prune).toContain(pruneOutboxDelete);
+    expect(prune).toContain(pruneProgressDelete);
+    expect(prune.indexOf(pruneOutboxDelete)).toBeLessThan(prune.indexOf(pruneProgressDelete));
+  });
+
   it('serializes one player transaction before locking the profile or revision cursor', () => {
     const lock = section(
       'CREATE OR REPLACE FUNCTION public.fn_lock_daily_mission_user',

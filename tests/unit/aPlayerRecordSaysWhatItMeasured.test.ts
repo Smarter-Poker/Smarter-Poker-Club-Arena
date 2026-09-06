@@ -41,6 +41,7 @@ const MIGRATION = readFileSync(
 const MODAL = readFileSync('src/components/agent/ChipTransferModal.tsx', 'utf8');
 const MEMBER = readFileSync('src/pages/MemberManagementPage.tsx', 'utf8');
 const STATS = readFileSync('src/pages/PlayerStatisticsPage.tsx', 'utf8');
+const PRODUCTION_PLAYERS = readFileSync('tests/e2e/production-club-members.spec.ts', 'utf8');
 const ROSTER = readFileSync('src/pages/ClubMembersPage.tsx', 'utf8');
 const SERVICE = readFileSync('src/services/ClubRosterService.ts', 'utf8');
 
@@ -144,6 +145,15 @@ describe('the statistics page', () => {
     expect(STATS).toContain('aria-pressed={rangeMode === mode}');
     expect(STATS).toContain("? 'Loading The Selected Range...'");
     expect(STATS).toContain('aria-busy={loading}');
+  });
+
+  it('keeps production certification aligned with every real range control', () => {
+    expect(STATS).toContain("day: 'Day'");
+    expect(STATS).toContain("week: 'Week'");
+    expect(STATS).toContain("month: 'Month'");
+    expect(STATS).toContain("custom: 'Custom'");
+    expect(PRODUCTION_PLAYERS).toContain("['Day', 'Week', 'Month', 'Custom']");
+    expect(PRODUCTION_PLAYERS).not.toContain("['Overall', '7 Days', 'Custom']");
   });
 });
 

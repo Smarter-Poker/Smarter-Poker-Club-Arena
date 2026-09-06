@@ -55,14 +55,46 @@ describe('waitlist writers agree with the widened unique index', () => {
     expect(join).toMatch(/reportError/);
   });
 
-  it('the horse seeder counts BOTH active states as already queued', () => {
+  it('the horse seeder no longer queues horses at all, and the two reads that remain differ on purpose', () => {
     const src = read('server/src/services/HorseFleetManager.ts');
-    const fn = src.slice(src.indexOf('ensureWaitlist'));
-    const select = fn.slice(0, fn.indexOf('const have'));
-    // Reading only 'waiting' is the bug: it puts an already-active horse back
-    // into a batch insert, and one 23505 loses every row in that batch.
-    expect(select).toMatch(/\.in\(\s*'status',\s*\[\s*'waiting',\s*'notified'\s*\]\s*\)/);
-    expect(select).not.toMatch(/\.eq\(\s*'status',\s*'waiting'\s*\)/);
+
+    /* ── THIS PIN WAS VACUOUS (2026-09-06) ────────────────────────────────
+       It read `src.slice(src.indexOf('ensureWaitlist'))` and then
+       `.indexOf('const have')`. `ensureWaitlist` was DELETED when Dan ruled
+       that horses do not queue (2026-09-02) - the only occurrences left are
+       two words inside comments explaining the deletion - and `const have`
+       went with it, so `indexOf` returned -1 and the slice was "everything
+       after that comment, minus one character": most of a 3,800-line file.
+       The assertion therefore passed on any file that happened not to contain
+       `.eq('status', 'waiting')` ANYWHERE, and went red the moment a fix
+       three hundred lines away used that phrase legitimately. A pin that
+       cannot fail for its own reason is not a pin.
+
+       What is actually true is worth pinning, so this now pins it. */
+    expect(src).not.toMatch(/private async ensureWaitlist\(/);
+
+    /* humansWaitingByTable counts BOTH active states. A `notified` human is a
+       person whose seat is already being held, so the seat is spoken for and
+       leaving them out would have the fleet fill the very chair the queue is
+       about. */
+    const humans = src.slice(
+      src.indexOf('private async humansWaitingByTable('),
+      src.indexOf('private async pruneHorseWaitlist(')
+    );
+    expect(humans).toMatch(/\.in\(\s*'status',\s*\[\s*'waiting',\s*'notified'\s*\]\s*\)/);
+
+    /* pruneHorseWaitlist clears ONLY `waiting`. A `notified` row is an OFFER
+       the platform made to that horse through fn_offer_open_seat, and this
+       method runs BEFORE claimOfferedSeats in the same cycle - so clearing
+       `notified` here was the platform withdrawing its own offer, and it made
+       "MAKE HORSES ANSWER A SEAT CALL" (Dan 2026-08-31) unreachable in the one
+       direction Law 10.5 forbids: a human's offer stood and a horse's did not. */
+    const prune = src.slice(
+      src.indexOf('private async pruneHorseWaitlist('),
+      src.indexOf('private resolveSeatClub(')
+    );
+    expect(prune).toMatch(/\.eq\(\s*'status',\s*'waiting'\s*\)/);
+    expect(prune).not.toMatch(/'notified'/);
   });
 
   it('WaitlistService.joinWaitlist still pre-checks both active states', () => {

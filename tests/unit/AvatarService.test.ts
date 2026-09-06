@@ -13,8 +13,10 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { avatarService } from '../../src/services/AvatarService';
 
 const HUB_AVATARS = [
-  { id: 'av_shark', name: 'Shark', tier: 'FREE', image: 'https://smarter.poker/avatars/shark.png' },
-  { id: 'av_wolf', name: 'Wolf', tier: 'VIP', image: 'https://smarter.poker/avatars/wolf.png' },
+  { id: 'av_shark', name: 'Shark', tier: 'FREE', image: '/avatars/free/shark.webp' },
+  { id: 'av_wolf', name: 'Wolf', tier: 'VIP', image: '/avatars/vip/wolf.webp' },
+  // The live catalog intentionally grants this VIP-directory art as FREE.
+  { id: 'av_wrestler', name: 'Wrestler', tier: 'FREE', image: '/avatars/vip/wrestler.webp' },
 ];
 
 describe('AvatarService presets via the unified Hub API', () => {
@@ -38,9 +40,12 @@ describe('AvatarService presets via the unified Hub API', () => {
     const wolf = lib.find((a) => a.id === 'av_wolf');
     expect(shark).toBeTruthy();
     expect(wolf).toBeTruthy();
-    expect(shark!.imageUrl).toBe('https://smarter.poker/avatars/shark.png');
+    expect(shark!.imageUrl).toBe('/avatars/free/shark.webp');
     expect(shark!.thumbUrl).toBe('/avatars/table/free_shark@2x.webp');
     expect(wolf!.thumbUrl).toBe('/avatars/table/vip_wolf@2x.webp');
+    expect(lib.find((a) => a.id === 'av_wrestler')!.thumbUrl).toBe(
+      '/avatars/table/vip_wrestler@2x.webp'
+    );
     expect(shark!.isOwned).toBe(true);
   });
 

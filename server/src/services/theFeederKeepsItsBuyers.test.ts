@@ -120,7 +120,11 @@ describe('a booking is a game: the fleet reads what the database counts', () => 
 
 describe('the feeder reserves the buyers it was opened for', () => {
   it('every cluster pool declares its claim, and only an opening feeder reserves', () => {
-    expect(SEED).toContain("claim: openingFeeder ? 'reserved' : countOnly ? 'probe' : 'seating',");
+    // 2026-09-06: only a table with NO open seat is a probe - see
+    // TheTablesOpenAndCloseThemselves.law.test.ts for why.
+    expect(SEED).toMatch(
+      /claim: openingFeeder\s*\?\s*'reserved'\s*:\s*countOnly && emptySeats\.length === 0\s*\?\s*'probe'\s*:\s*'seating',/
+    );
     expect(SEED).toContain(
       "const openingFeeder = !!table.cluster_id && table.lifecycle === 'opening';"
     );

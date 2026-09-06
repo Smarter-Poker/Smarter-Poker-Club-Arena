@@ -37,6 +37,14 @@ beforeEach(() => {
 });
 
 describe('avatar mutation ordering', () => {
+  it('persists the current Hub WebP catalog path as retina table art', async () => {
+    await expect(avatarService.setUserAvatar('user-1', '/avatars/free/shark.webp')).resolves.toBe(
+      true
+    );
+
+    expect(profileRows).toEqual([{ arena_avatar_url: '/avatars/table/free_shark@2x.webp' }]);
+  });
+
   it('persists rapid avatar choices in tap order', async () => {
     let resolveFirst: ((value: { error: null }) => void) | undefined;
     profileWrites.push(

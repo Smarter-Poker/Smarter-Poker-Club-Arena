@@ -44,6 +44,8 @@ import { ThrowableImage } from './ThrowableImage';
    THROWABLE. SAME ANIMATION, SAME SOUND EFFECTS (MINUS THE K.O. AT THE END)."
    One implementation, two callers — see KnockoutFlurry's own header. */
 import { KnockoutFlurry } from './SeatKnockout';
+import { ThrowablePlayer } from './ThrowablePlayer';
+import { riggedThrowable } from '../../throwables/registry';
 import { soundService } from '../../services/SoundService';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import './ThrowAnimation.css';
@@ -714,16 +716,36 @@ export function ThrowAnimationContainer({
     [onEventComplete]
   );
 
+  /* THE MIGRATION SEAM (throwables programme, phase 1, 2026-09-06).
+     An item with a rig in src/throwables/registry.ts plays through
+     ThrowablePlayer: the reference grammar (spawn on the face, straight
+     flight, blink-and-pop, a performance on the chair, hard cut) with art
+     drawn to the measured beats. Everything else keeps playing through the
+     legacy ThrowAnimation above, unchanged, until its rig ships. The wire
+     format, the events, the seat map and the completion callback are the
+     same for both, so a table can show one of each side by side. */
   return (
     <div className="throw-animation-container">
-      {events.map((event) => (
-        <ThrowAnimation
-          key={event.id}
-          event={event}
-          seatPositions={seatPositions}
-          onComplete={() => handleComplete(event.id)}
-        />
-      ))}
+      {events.map((event) => {
+        const rigged = riggedThrowable(event.throwable.id);
+        return rigged ? (
+          <ThrowablePlayer
+            key={event.id}
+            event={event}
+            spec={rigged.spec}
+            rig={rigged.rig}
+            seatPositions={seatPositions}
+            onComplete={() => handleComplete(event.id)}
+          />
+        ) : (
+          <ThrowAnimation
+            key={event.id}
+            event={event}
+            seatPositions={seatPositions}
+            onComplete={() => handleComplete(event.id)}
+          />
+        );
+      })}
     </div>
   );
 }

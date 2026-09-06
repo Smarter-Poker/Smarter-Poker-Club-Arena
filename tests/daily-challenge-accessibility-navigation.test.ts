@@ -53,7 +53,10 @@ describe('Daily Missions accessibility contract', () => {
   });
 
   it('makes the reward payoff a labelled, trapped, untimed dialog', () => {
-    expect(PAGE).toContain('useFocusTrap(!!reward)');
+    expect(PAGE).toContain("useFocusTrap(!!reward, '#challenge-reward-title')");
+    expect(PAGE).toContain("useFocusTrap(confirmingFreeze, '#freeze-purchase-title')");
+    expect(PAGE).toMatch(/id="challenge-reward-title"[\s\S]{0,120}tabIndex=\{-1\}/);
+    expect(PAGE).toMatch(/id="freeze-purchase-title"[\s\S]{0,120}tabIndex=\{-1\}/);
     expect(PAGE).toContain('aria-modal="true"');
     expect(PAGE).toContain('aria-labelledby="challenge-reward-title"');
     expect(PAGE).toContain('aria-describedby="challenge-reward-description"');

@@ -43,12 +43,11 @@
  * NEVER refer to the horses as "bots" - they are HORSES only.
  */
 
+import { GTO_BB_DEFEND_MAX_BB, GTO_OPEN_JAM_MAX_BB, snapDepth } from '../engine/GtoCharts.js';
 import {
-  gtoOpenJam,
-  gtoBbVsSbJam,
-  gtoChartCount,
-  GTO_OPEN_JAM_MAX_BB,
-} from '../engine/GtoCharts.js';
+  lookupChartPolicyAdvice,
+  solverPolicyArtifactStatus,
+} from '../gto/SolverPolicyArtifactLoader.js';
 import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { HorseMind } from '../engine/HorseMind.js';
 import { seedFastRandom, saveFastRandom, restoreFastRandom } from '../engine/HorseEval.js';
@@ -217,19 +216,31 @@ export function stateForSpot(spot: AgreementSpot): { hero: SeatPlayer; gs: Horse
 }
 
 /** What the solver says about this spot, or null when it has no cell. */
-export function solverAdvice(spot: AgreementSpot): { action: string; freq: number } | null {
-  return spot.kind === 'open_jam'
-    ? gtoOpenJam({
-        isTournament: spot.isTournament,
-        position: spot.position,
-        stackBB: spot.stackBB,
-        hand: spot.hand,
-      })
-    : gtoBbVsSbJam({
-        isTournament: spot.isTournament,
-        effectiveBB: spot.stackBB,
-        hand: spot.hand,
-      });
+export function solverAdvice(
+  spot: AgreementSpot
+): { action: string; freq: number; chart: string } | null {
+  if (!(spot.stackBB > 0)) return null;
+  if (spot.kind === 'open_jam' && spot.stackBB > GTO_OPEN_JAM_MAX_BB) return null;
+  if (spot.kind === 'bb_defend' && spot.stackBB > GTO_BB_DEFEND_MAX_BB) return null;
+  const advice = lookupChartPolicyAdvice({
+    gameType: spot.isTournament ? 'Tournament' : 'Cash',
+    villainAction: spot.kind === 'open_jam' ? 'fold_to_hero' : 'sb_push',
+    position: spot.position,
+    depth: snapDepth(spot.stackBB),
+    hand: spot.hand,
+  });
+  return advice
+    ? {
+        action: advice.action,
+        freq: advice.freq,
+        chart: [
+          spot.isTournament ? 'Tournament' : 'Cash',
+          spot.kind === 'open_jam' ? 'fold_to_hero' : 'sb_push',
+          spot.position,
+          String(snapDepth(spot.stackBB)),
+        ].join('|'),
+      }
+    : null;
 }
 
 /** Map a horse decision onto the solver's vocabulary. */
@@ -245,7 +256,7 @@ export function actionLabel(kind: AgreementSpot['kind'], action: string): string
  * inside the live engine process and must not move the live stream.
  */
 export function scoreSolverAgreement(maxSpots = 600): AgreementResult {
-  if (gtoChartCount() === 0) {
+  if (solverPolicyArtifactStatus().charts.count === 0) {
     return { spots: 0, agreement: 0, pureMisses: 0, reference: null };
   }
   const all = buildSpots();

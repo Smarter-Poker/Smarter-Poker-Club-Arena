@@ -26,6 +26,16 @@ const SEATS = [
   { name: 'Tiffany', stack: '176K' },
 ];
 
+function PreviewAvatar({ src }: { src?: string }) {
+  const [failed, setFailed] = React.useState(false);
+
+  if (!src || failed) {
+    return <span className="studio-game-preview__avatar-loading" aria-hidden="true" />;
+  }
+
+  return <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />;
+}
+
 export function TableStudioGameplayPreview({ selection, avatarUrls, finalTable }: Props) {
   const background = finalTable
     ? TABLE_BACKGROUNDS.final_table_broadcast
@@ -80,11 +90,10 @@ export function TableStudioGameplayPreview({ selection, avatarUrls, finalTable }
           className={`studio-game-preview__seat studio-game-preview__seat--${index + 1}`}
           key={seat.name}
         >
-          {avatarUrls[index] ? (
-            <img src={avatarUrls[index]} alt="" loading="lazy" decoding="async" />
-          ) : (
-            <span className="studio-game-preview__avatar-loading" aria-hidden="true" />
-          )}
+          <PreviewAvatar
+            key={avatarUrls[index] || `${seat.name}-loading`}
+            src={avatarUrls[index]}
+          />
           <span className="studio-game-preview__plate">
             <strong>{seat.name}</strong>
             <b>{seat.stack}</b>

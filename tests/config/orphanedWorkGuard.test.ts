@@ -38,9 +38,22 @@ const GUARD = path.resolve(__dirname, '../..', 'scripts/ci/check-no-orphaned-wor
 
 let repo: string;
 
+// Git exports repository-local variables to push hooks. If those variables
+// leak into this fixture, every command below targets the caller's worktree
+// instead of the throwaway repository, and `commit('base')` can stage the
+// real checkout as deleted. Strip every GIT_* override before invoking Git so
+// cwd is the only repository selector.
+const scratchGitEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))
+);
+
 /** Run a git command in the scratch repo; throws with output on failure. */
 function git(...args: string[]): string {
-  return execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  return execFileSync('git', args, {
+    cwd: repo,
+    encoding: 'utf8',
+    env: scratchGitEnv,
+  }).trim();
 }
 
 function write(file: string, body: string): void {
@@ -62,6 +75,7 @@ function runGuard(sha: string, note: string): { code: number; out: string } {
     const out = execFileSync('node', [GUARD], {
       cwd: repo,
       encoding: 'utf8',
+      env: scratchGitEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     return { code: 0, out };
@@ -113,7 +127,9 @@ beforeAll(() => {
   git('checkout', '-q', 'main');
   write('c.js', 'base\n// Derive the count from SEAT rows, never the counter column.\n');
   commit('stale-side merge: comment survived, code flattened away');
-});
+  // The full suite creates substantial concurrent filesystem pressure. Keep
+  // the guard strict while allowing its real multi-branch Git fixture to land.
+}, 30_000);
 
 afterAll(() => {
   if (repo) rmSync(repo, { recursive: true, force: true });

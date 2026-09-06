@@ -50,6 +50,30 @@
  * Pure decision logic lives in `scaleForLoopDelay` so it is unit-testable;
  * the module-level singleton wires it to perf_hooks. `EQUITY_GOVERNOR=off`
  * disables it (tests run with it off; their loops are idle anyway).
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE SAMPLE IS ON A CLOCK, NOT ON A HORSE'S TURN (2026-09-06)
+ *
+ * The paragraph above said "it samples the event-loop delay once a second"
+ * and the code did not: `current()` was the only sampler, and `current()` is
+ * called from `simulateEquity`. So the delay was measured when a horse
+ * happened to be thinking, and at no other time - a quiet minute left the
+ * reading a minute stale, and a loop saturated by something OTHER than horse
+ * arithmetic (settlement, broadcasts, logging, a boot adopting 195 tables)
+ * was never measured at all, which is precisely when the governor should be
+ * shedding load.
+ *
+ * It now owns an unref'd one-second timer. `current()` still samples on
+ * demand if the timer is not running, so nothing changes for a test or a
+ * process that never starts it. The scale table is untouched.
+ *
+ * AND THE NUMBER LEAVES THE PROCESS. The engine is one core (see above), and
+ * that ceiling had no time series: the p50 lived in `equityGovernor.snapshot()`
+ * inside the `/health` JSON and nowhere else, so nobody could chart it, alert
+ * on it, or correlate it with a slow controller pass. `HorseDataLedger` says
+ * so in as many words - "the ONLY visibility the governor has outside the
+ * GameServer status payload". It is on `/metrics` now, on the always-on
+ * registry, beside the scale it produces.
  */
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 
@@ -93,6 +117,7 @@ class EquityLoadGovernor {
   private throttledSince = 0;
   private lastLogAt = 0;
   private override: number | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.enabled = (process.env.EQUITY_GOVERNOR || 'on').toLowerCase() !== 'off';
@@ -106,11 +131,14 @@ class EquityLoadGovernor {
     }
   }
 
-  /** Current scale; re-samples the loop delay at most once a second. */
-  current(now: number = Date.now()): number {
+  /**
+   * Take a reading now, whatever the caller. The one-second timer calls this;
+   * so does `current()` when no timer is running. Cheap: two percentile reads
+   * and a reset on a histogram perf_hooks is already maintaining.
+   */
+  sample(now: number = Date.now()): number {
     if (this.override !== null) return this.override;
     if (!this.enabled || !this.histogram) return 1;
-    if (now - this.sampledAt < SAMPLE_EVERY_MS) return this.scale;
     this.sampledAt = now;
     // percentile() is in nanoseconds.
     this.p50Ms = this.histogram.percentile(50) / 1e6;
@@ -132,6 +160,36 @@ class EquityLoadGovernor {
       );
     }
     return this.scale;
+  }
+
+  /** Current scale; re-samples the loop delay at most once a second. */
+  current(now: number = Date.now()): number {
+    if (this.override !== null) return this.override;
+    if (!this.enabled || !this.histogram) return 1;
+    if (now - this.sampledAt < SAMPLE_EVERY_MS) return this.scale;
+    return this.sample(now);
+  }
+
+  /**
+   * Start the one-second sampler. Idempotent, and `unref`'d so it can never
+   * hold the process open - a governor timer must not be the reason a test
+   * runner or a drained engine refuses to exit.
+   */
+  startSampling(): void {
+    if (this.timer || !this.enabled || !this.histogram) return;
+    this.timer = setInterval(() => {
+      try {
+        this.sample(Date.now());
+      } catch {
+        /* a reading we could not take is not a reason to stop taking them */
+      }
+    }, SAMPLE_EVERY_MS);
+    this.timer.unref?.();
+  }
+
+  stopSampling(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
   }
 
   snapshot(now: number = Date.now()): GovernorSnapshot {

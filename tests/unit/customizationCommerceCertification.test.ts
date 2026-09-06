@@ -48,12 +48,14 @@ describe('customization commerce certification', () => {
     expect(helper).toContain("email.endsWith('@example.invalid')");
     expect(helper).toContain("key.startsWith('sb_secret_')");
     expect(helper).toContain("'cleanup_reserved_certification_account'");
-    expect(helper).toContain('p_user_id: account.id');
+    expect(helper).toContain('{ p_user_id: userId }');
     expect(helper).not.toContain('/auth/v1/admin/users/${encodeURIComponent(account.id)}');
     expect(helper).toContain('reserved fixture still exists after hard delete');
     expect(helper).toContain('withCleanupRetries');
     expect(helper).toContain('PGRST00[0123]');
     expect(helper).toContain('CLEANUP_RETRY_DELAYS_MS');
+    expect(helper).toContain("reason !== 'platform_is_frozen'");
+    expect(helper).toContain('PLATFORM_FREEZE_CLEANUP_ATTEMPTS');
   });
 
   it('certifies all live SKUs, double-buy serialization, realtime delivery and RLS', () => {
@@ -66,6 +68,7 @@ describe('customization commerce certification', () => {
     expect(spec).toContain("expect(linkedPurchase?.ownership_source).toBe('entitlement')");
     expect(spec).toContain('expect(leakedUnlocks).toEqual([])');
     expect(spec).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
+    expect(spec).toContain('await Promise.allSettled(');
   });
 
   it('runs the isolated certification after every successful production publish', () => {

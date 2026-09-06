@@ -390,6 +390,97 @@ test.describe('production Daily Missions certification', () => {
         await expect(page.locator('[id^="mission-card-"]')).not.toHaveCount(0);
       });
 
+      await test.step('every mission card has a continuous frame and a live icon instrument', async () => {
+        const cards = page.locator('article[id^="mission-card-"]');
+        const icons = cards.locator('[data-mission-icon][data-icon-state]');
+        const cardCount = await cards.count();
+        await expect(icons).toHaveCount(cardCount);
+        expect(cardCount).toBeGreaterThan(0);
+
+        const frameProof = await cards.evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const card = node as HTMLElement;
+            const frame = card.querySelector<HTMLElement>(':scope > span[aria-hidden="true"]');
+            if (!frame) throw new Error('Mission card is missing its continuous frame rail.');
+            const cardRect = card.getBoundingClientRect();
+            const frameRect = frame.getBoundingClientRect();
+            const background = getComputedStyle(frame).backgroundImage;
+            return {
+              edgeOffsets: [
+                frameRect.top - cardRect.top,
+                cardRect.right - frameRect.right,
+                cardRect.bottom - frameRect.bottom,
+                frameRect.left - cardRect.left,
+              ],
+              railLayers: background.split('linear-gradient').length - 1,
+            };
+          })
+        );
+        for (const proof of frameProof) {
+          expect(proof.railLayers).toBeGreaterThanOrEqual(6);
+          for (const offset of proof.edgeOffsets) expect(Math.abs(offset)).toBeLessThanOrEqual(1);
+        }
+
+        const readMotion = () =>
+          icons.evaluateAll((nodes) =>
+            nodes.map((node) => {
+              const animations = node.getAnimations({ subtree: true }).map((animation) => ({
+                name:
+                  'animationName' in animation
+                    ? String((animation as CSSAnimation).animationName)
+                    : '',
+                currentTime:
+                  typeof animation.currentTime === 'number'
+                    ? animation.currentTime
+                    : Number(animation.currentTime ?? 0),
+                playState: animation.playState,
+              }));
+              const card = node.closest<HTMLElement>('[data-mission-state]');
+              return {
+                type: node.getAttribute('data-mission-icon'),
+                state: node.getAttribute('data-icon-state'),
+                progress: card
+                  ? getComputedStyle(card).getPropertyValue('--mission-progress').trim()
+                  : '',
+                animations,
+              };
+            })
+          );
+
+        const before = await readMotion();
+        for (const icon of before) {
+          expect(icon.type).toBeTruthy();
+          expect(['active', 'complete']).toContain(icon.state);
+          expect(icon.progress).toMatch(/^\d+(?:\.\d+)?%$/);
+          for (const channel of [
+            'missionCircuitSignal',
+            'missionFacetSweep',
+            'missionPulseRing',
+            'missionScannerOrbit',
+          ]) {
+            expect(icon.animations.some(({ name }) => name.includes(channel))).toBe(true);
+          }
+          expect(
+            icon.animations.find(({ name }) => name.includes('missionScannerOrbit'))?.playState
+          ).toBe('running');
+        }
+
+        await page.waitForTimeout(240);
+        const after = await readMotion();
+        expect(after).toHaveLength(before.length);
+        for (let index = 0; index < before.length; index += 1) {
+          const beforeScanner = before[index].animations.find(({ name }) =>
+            name.includes('missionScannerOrbit')
+          );
+          const afterScanner = after[index].animations.find(({ name }) =>
+            name.includes('missionScannerOrbit')
+          );
+          expect(afterScanner?.currentTime ?? 0).toBeGreaterThan(
+            (beforeScanner?.currentTime ?? 0) + 100
+          );
+        }
+      });
+
       await test.step('every challenge cycle is a durable direct subpage with certified copy', async () => {
         const waitForCycle = async (cycle: 'daily' | 'weekly' | 'monthly') => {
           await expect(

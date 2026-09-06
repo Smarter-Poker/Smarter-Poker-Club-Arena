@@ -54,6 +54,39 @@ export const allInEquityDuration: Histogram = metricsRegistry.histogram(
  * audit caught twice) shows up here as mucked_hands_total flatlining while
  * showdown_hands_total keeps climbing — no DB sampling required.
  */
+/**
+ * ═══ THE BAD BEAT JACKPOT, COUNTED (BBJ phase 2.4, 2026-09-06) ═════════════
+ *
+ * A jackpot is the rarest event on the platform - one every few weeks - so
+ * "did it work" has never been answerable from a graph, only by reading the
+ * ledger after somebody noticed. These four make the whole path observable:
+ * DETECTED is what the engine ruled at showdown, PAID is what actually
+ * landed, QUEUED is what could not be paid this instant (the :55 freeze is
+ * the ordinary cause) and PARKED is a single recipient's share held because
+ * no club wallet would take it.
+ *
+ * The useful reading is the DIFFERENCE. detected == paid is health. A
+ * detected that never becomes paid or queued is the failure mode the whole
+ * of phase 2 exists to make impossible, and it would now be visible as two
+ * counters that stopped agreeing.
+ */
+export const bbjHitsDetectedTotal: Counter = metricsRegistry.counter(
+  'poker_bbj_hits_detected_total',
+  'Bad Beat Jackpot hits the engine ruled qualifying at showdown (label: table_id)'
+);
+export const bbjPayoutsPaidTotal: Counter = metricsRegistry.counter(
+  'poker_bbj_payouts_paid_total',
+  'Bad Beat Jackpot payouts that landed on the first live attempt (label: table_id)'
+);
+export const bbjPayoutsQueuedTotal: Counter = metricsRegistry.counter(
+  'poker_bbj_payouts_queued_total',
+  'Bad Beat Jackpot payouts that could not be paid live and were queued for the reconciler (label: table_id)'
+);
+export const bbjSharesParkedTotal: Counter = metricsRegistry.counter(
+  'poker_bbj_shares_parked_total',
+  'Bad Beat Jackpot recipient shares parked because no club wallet would take them (label: table_id)'
+);
+
 export const showdownHandsTotal: Counter = metricsRegistry.counter(
   'poker_showdown_hands_total',
   'Hands that reached a contested showdown (label: table_id)'

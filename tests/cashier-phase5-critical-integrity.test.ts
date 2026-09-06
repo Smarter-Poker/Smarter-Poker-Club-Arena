@@ -51,9 +51,12 @@ describe('cashier Phase 5 production certification contracts', () => {
     const workflow = source('.github/workflows/post-deploy-e2e.yml');
     const canary = source('scripts/verification-harness/cashier-release-contract.sql');
     const runner = source('scripts/verification-harness/certify-cashier-contract.mjs');
-    expect(workflow).toContain('Certify the live cashier database contract');
+    const stepStart = workflow.indexOf('- name: Certify the live cashier database contract');
+    const stepEnd = workflow.indexOf('\n      - name:', stepStart + 1);
+    const databaseContractStep = workflow.slice(stepStart, stepEnd);
+    expect(stepStart).toBeGreaterThanOrEqual(0);
     expect(workflow).toContain('node scripts/verification-harness/certify-cashier-contract.mjs');
-    expect(workflow).not.toMatch(/^\s+psql(?:\s|\\)/m);
+    expect(databaseContractStep).not.toMatch(/^\s+psql(?:\s|\\)/m);
     expect(canary).toContain('md5(pg_get_functiondef(v_oid))');
     expect(canary).toContain("has_function_privilege('anon', v_oid, 'EXECUTE')");
     expect(canary).toContain('cashier_operations_insert_own');

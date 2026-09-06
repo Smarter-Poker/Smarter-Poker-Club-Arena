@@ -128,23 +128,34 @@ describe('a slow socket does not mean an empty table', () => {
 });
 
 describe('a jackpot that paid always announces', () => {
+  /* THE PINS MOVED WITH THE MECHANISM (BBJ phase 3.1, 2026-09-06). This
+     guarded TablePage's `bbj_pools` hit_count subscription. The announcement
+     now comes from the `bbj_winners` INSERT - one row per jackpot, written
+     inside the payout transaction - so the same three guarantees are pinned
+     against lib/bbjHitFeed, which is where they now live. The guarantee is
+     unchanged and it is the reason this describe exists: the row only exists
+     because the money moved, so nothing downstream may decide not to
+     announce; it may only decide how much it knows. */
+  const HIT_FEED = read('src/lib/bbjHitFeed.ts');
+
   it('announces even when the detail lookup fails', () => {
-    /* `hit_count` incremented, so the money HAS moved. The old code marked
-       the hit as seen before the try, then swallowed the error — so a single
-       failed fetch meant the biggest event on the platform passed in total
-       silence, permanently, for everyone at the table. */
-    expect(TABLE_PAGE).toMatch(/let announced = false;/);
-    expect(TABLE_PAGE).toMatch(/if \(!announced\)/);
-    expect(TABLE_PAGE).not.toMatch(/Failed to fetch BBJ hit details/);
+    /* The old code marked the hit seen before the try and then swallowed the
+       error, so a single failed fetch meant the biggest event on the platform
+       passed in total silence, permanently, for everyone at the table. */
+    expect(HIT_FEED).toMatch(/if \(hit\) \{/);
+    expect(HIT_FEED).toMatch(/row\.winner_display_name/);
+    expect(HIT_FEED).toMatch(/Number\(row\.total_payout\)/);
   });
 
   it('retries the detail lookup before falling back', () => {
-    // The award and the ledger row are written in separate statements.
-    expect(TABLE_PAGE).toMatch(/attempt <= 2 && !data\?\.length/);
+    // The award and the ledger row can be read between under replica lag.
+    expect(HIT_FEED).toMatch(/attempt <= 2/);
+    expect(HIT_FEED).toMatch(/ENRICH_RETRY_MS/);
   });
 
   it('reports the degraded announcement', () => {
-    expect(TABLE_PAGE).toMatch(/TablePage\.bbj_hit_details_failed/);
+    expect(HIT_FEED).toMatch(/bbjHitFeed\.enrich_failed/);
+    expect(HIT_FEED).toMatch(/bbjHitFeed\.hit_without_table/);
   });
 });
 

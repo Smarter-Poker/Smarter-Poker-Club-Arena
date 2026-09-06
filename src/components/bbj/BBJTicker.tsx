@@ -17,6 +17,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { watchBbjPool } from '../../lib/bbjPoolFeed';
 import './BBJTicker.css';
 import { titleCase } from '../../utils/handReplay';
 
@@ -76,6 +77,7 @@ export function BBJTicker({
     if (!clubId) return;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    let stopPool: (() => void) | null = null;
 
     const load = async () => {
       // OPTIMISED 2026-08-18: one RPC; the union rule lives server-side in
@@ -89,6 +91,20 @@ export function BBJTicker({
       if (cancelled || !poolRow) return;
       poolIdRef.current = poolRow.pool_id;
       if (typeof poolAmount !== 'number') setPool(Number(poolRow.main_balance) || 0);
+
+      /* THE FIGURE IS POLLED, NOT PUSHED (BBJ phase 3.2, 2026-09-06). The
+         `bbj_pools` UPDATE binding that used to live on this channel watched a
+         row that moves on every raked hand - 40,219 times in twenty-four
+         hours, measured on production - to keep a ticker figure current. One
+         shared ten-second poll per club now feeds every surface, so this
+         component no longer carries a subscription of its own for it. The
+         `bbj_winners` INSERT below stays: that is one row per jackpot, and it
+         is the thing the ticker actually exists to show. */
+      if (typeof poolAmount !== 'number') {
+        stopPool = watchBbjPool(clubId, (snap) => {
+          if (!cancelled) setPool(snap.mainBalance);
+        });
+      }
 
       const { data: winners } = await supabase
         .from('bbj_winners')
@@ -115,26 +131,13 @@ export function BBJTicker({
             setHits((prev) => [row, ...prev.filter((h) => h.id !== row.id)].slice(0, maxHits));
           }
         )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'bbj_pools',
-            filter: `id=eq.${poolRow.pool_id}`,
-          },
-          (payload) => {
-            if (typeof poolAmount === 'number' || cancelled) return;
-            const next = Number((payload.new as { main_balance?: number })?.main_balance);
-            if (Number.isFinite(next)) setPool(next);
-          }
-        )
         .subscribe();
     };
 
     load();
     return () => {
       cancelled = true;
+      if (stopPool) stopPool();
       if (channel) supabase.removeChannel(channel);
     };
     // poolAmount intentionally excluded — it only decides who owns the value,

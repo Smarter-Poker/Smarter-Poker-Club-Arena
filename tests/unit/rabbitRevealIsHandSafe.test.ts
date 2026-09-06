@@ -29,6 +29,18 @@ import {
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const page = read('src/pages/TablePage.tsx');
 
+/**
+ * WHERE PRETTIER WRAPS A LONG JSX EXPRESSION IS NOT BEHAVIOUR.
+ *
+ * `squash` removes every space, so a pin matches the same code whether the
+ * formatter put it on one line or four. One of these pins went RED ON CI
+ * while passing locally for exactly this reason: the pre-commit hook
+ * reformats the file after the local run, so what CI reads is not what the
+ * local run read. A pin that breaks on reformatting cries wolf.
+ */
+const squash = (t: string) => t.replace(/\s+/g, '');
+const squashedPage = squash(page);
+
 const c = (rank: string, suit: 'h' | 'd' | 'c' | 's') => ({ rank: rank as never, suit });
 const flop = [c('A', 's'), c('K', 'd'), c('7', 'c')];
 const retained: RetainedRabbitBoard = {
@@ -100,11 +112,11 @@ describe('the page', () => {
     expect(page).toContain('}, RABBIT_REVEAL_MIN_VISIBLE_MS);');
   });
   it('the felt paints the retained copy - cards, ghost cards, stage and hand id together', () => {
-    expect(page).toContain(
-      'cards={showRetainedRabbitBoard ? retainedCards : tableState.communityCards}'
+    expect(squashedPage).toContain(
+      squash('cards={showRetainedRabbitBoard ? retainedCards : tableState.communityCards}')
     );
-    expect(page).toContain(
-      'rabbitCards={showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards}'
+    expect(squashedPage).toContain(
+      squash('rabbitCards={showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards}')
     );
     // The HAND_STARTED event clears the live ghost cards before the snapshot
     // moves the hand number; the live path borrows the retained copy's for
@@ -113,8 +125,10 @@ describe('the page', () => {
       /const liveRabbitCards =[\s\S]*retainedRabbitBoard\.handNumber === \(tableState\.handNumber \?\? 0\)/
     );
     expect(page).toContain('? retainedRabbitBoard!.stage');
-    expect(page).toContain(
-      'handId={showRetainedRabbitBoard ? retainedRabbitBoard!.handNumber : tableState.handNumber}'
+    expect(squashedPage).toContain(
+      squash(
+        'handId={showRetainedRabbitBoard ? retainedRabbitBoard!.handNumber : tableState.handNumber}'
+      )
     );
   });
   it('the hand-boundary clears are untouched (Dan 2026-08-26: the cards never linger)', () => {

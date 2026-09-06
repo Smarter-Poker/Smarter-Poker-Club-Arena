@@ -47,6 +47,19 @@ const HANDLER = strip(read('server/src/handlers/rabbithunt.ts'));
 const MIGRATION = read('supabase/migrations/20260825_fn_consume_rabbit_hunt.sql');
 const COMPONENT = strip(read('src/components/table/RabbitHunt.tsx'));
 const TABLE_PAGE = strip(read('src/pages/TablePage.tsx'));
+
+/**
+ * WHERE PRETTIER WRAPS A LONG JSX EXPRESSION IS NOT BEHAVIOUR.
+ *
+ * `squash` removes every space, so a pin matches the same code whether the
+ * formatter put it on one line or four. One of these pins went RED ON CI
+ * while passing locally for exactly this reason: the pre-commit hook
+ * reformats the file after the local run, so what CI reads is not what the
+ * local run read. A pin that breaks on reformatting cries wolf.
+ */
+const squash = (t: string) => t.replace(/\s+/g, '');
+const SQUASHED_TABLE_PAGE = squash(TABLE_PAGE);
+
 const API = strip(read('src/services/GameServerAPI.ts'));
 
 describe('the cards never go out in a broadcast', () => {
@@ -318,8 +331,8 @@ describe('who is offered a hunt, and for how many cards', () => {
     // liveRabbitCards, which borrows the retained copy's for one render at
     // the hand boundary); the retained path paints the copy. Both are the
     // reveal as its own prop, never appended into `cards`.
-    expect(TABLE_PAGE).toMatch(
-      /rabbitCards=\{showRetainedRabbitBoard \? retainedRabbitCards : liveRabbitCards\}/
+    expect(SQUASHED_TABLE_PAGE).toContain(
+      squash('rabbitCards={showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards}')
     );
     expect(TABLE_PAGE).toMatch(/: rabbitRevealedCards;/);
     // The old shape must not come back: appending the reveal into `cards`

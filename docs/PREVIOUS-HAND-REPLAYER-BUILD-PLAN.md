@@ -143,8 +143,23 @@ BUILT 2026-09-06 (`feat/previous-hand-phase-6`); see
 
 ## Phase 7 of 7 - Accessibility, devices, performance
 
-BUILT 2026-09-06 (`feat/previous-hand-phase-7`); see
-`docs/changelog/2026-09-06-previous-hand-phase-7.md`. The last phase.
+LIVE 2026-09-06 (squash `71feeebd3c`); see
+`docs/changelog/2026-09-06-previous-hand-phase-7.md`. The last phase, and the
+programme is complete.
+
+Verified in the bytes players download, not only in the sha: the entry chunk
+carries all thirteen rank words, all four suits and `Face Down Card`;
+`HandReplay`'s chunk carries `hr-panel-replay`, the arrow-key handler and the
+container's key label; its stylesheet carries `4 / 6.4` and the hero seat's
+`margin-top: 36px`; the archive's stylesheet carries `content-visibility` and
+`contain-intrinsic-size`, and its chunk carries `hand-card--deferred`.
+`Deuce` is correctly ABSENT from the entry chunk - `replayMotion` is lazy, and
+the poker room's own vocabulary was never meant to reach first paint.
+
+`src/utils/cardWords.ts` is a reviewed entry-chunk module (+1kB gz, 157 -> 158).
+That is deliberate: `CardImage` is already in the entry, so deferring the words
+would mean the first cards a player sees announce nothing - the defect this
+phase exists to fix, reintroduced behind a dynamic import.
 
 - Every card announces itself through ONE helper (`utils/cardWords`). The alt
   text interpolated the rank raw, so every card everywhere was read as "A Of

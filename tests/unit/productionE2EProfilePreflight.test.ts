@@ -139,6 +139,8 @@ describe('authenticated production account preflight', () => {
     expect(helper).toContain("getByRole('button', { name: 'Try Again' })");
     expect(helper).toContain("waitUntil: 'commit'");
     expect(helper).toContain('CLUB_ROUTE_ATTEMPTS');
+    expect(helper).toContain('club navigation timed out; retrying');
+    expect(helper).toContain('did not commit after ${CLUB_ROUTE_ATTEMPTS} attempts');
     expect(helper).toContain('POST_JOIN_DECISION_SELECTOR');
     expect(helper).toContain("textContent({ timeout: 1_000 }).catch(() => '')");
     expect(helper).not.toContain(

@@ -1539,6 +1539,17 @@ test.describe('production Daily Missions certification', () => {
           }),
         ]);
 
+        // The recovery contract is specifically preference-on with this
+        // browser disconnected. A reused CI worker can retain a root-scoped
+        // push subscription even though this test creates a fresh account and
+        // browser context, so make the device state explicit before reloading.
+        // This does not alter the account preference or the delivery receipts
+        // certified above.
+        await page.evaluate(async () => {
+          const registration = await navigator.serviceWorker.getRegistration('/');
+          const subscription = await registration?.pushManager.getSubscription();
+          if (subscription) await subscription.unsubscribe();
+        });
         await page.reload({ waitUntil: 'domcontentloaded' });
         await expect(page.getByText('Preference On, Device Disconnected')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,

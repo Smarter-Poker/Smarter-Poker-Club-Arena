@@ -348,11 +348,9 @@ Where Lottie is the wrong tool (a dense particle fireworks burst, a
 photographic splat), the composition embeds a small WebP/APNG sprite for
 that layer. The rule: one file per item, and the file is the whole animation.
 
-The art direction is Dan's call (section 6): a consistent 2D cartoon set like
-the reference, or 2D animation built AROUND our existing 3D renders (the
-renders become the "hero" layer, animated parts are drawn to match). The
-second keeps the 49 renders Dan already approved and is faster; the first
-reads more like the reference.
+The art direction is decided (section 6, ruling 1): one 2D cartoon set drawn
+for animation, every item, with the 48 approved 3D renders as the design
+brief for their 2D counterparts and as the marketplace stills.
 
 ### 3.2 The spec: one script per item, and the code just plays it
 
@@ -413,6 +411,79 @@ price are consistent. The reference's grammar becomes a test, not a memory.
   how (300 ms, close-mic'd, no reverb).
 - Preload policy: the picker's visible tiles' cues on open; everything else
   on first use; the whole library is ~3 MB, cached by the service worker.
+
+### 3.3.1 Where the sounds come from: the open-source library (decided 2026-09-06)
+
+Dan: "FIND A OPEN SOURCE SFX LIBRARY WE CAN USE FOR SOUND EFFECTS AND
+VOICES." Checked against each source's own licence page on 2026-09-06, not
+from memory. The rule for every file that ships: **CC0, public domain, or a
+royalty-free licence that permits commercial use in a shipped product with
+no attribution requirement**, recorded per cue in a manifest. Nothing
+CC-BY-NC, nothing ND, nothing from the PokerBros captures.
+
+**Tier 1, CC0 (public domain, no attribution, no conditions):**
+
+| Source                                                                                                                                     | What it gives us                                                                                                                                                                                                                                                                | Licence (verified)                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Kenney "Casino Audio"** (50 files: cards, chips, dice)                                                                                   | `chip_cascade`, `dice_rattle` clicks, `card_slap`, `card_slide_ticks`, `reel_stop`, chip clatter for the magnet                                                                                                                                                                 | CC0, kenney.nl/assets/casino-audio                                                                          |
+| **Kenney "Impact Sounds"** (130 files)                                                                                                     | `thud_land`, `splat_*` bodies, `boing`, `anvil_clang`, `lid_clank`, `tick_land`, glass and metal hits                                                                                                                                                                           | CC0, kenney.nl/assets/impact-sounds                                                                         |
+| **Kenney "Interface Sounds"**, "Digital Audio", "Sci-fi Sounds"                                                                            | `lock_beep`, `lock_confirm`, `ding`, `ping`, `pop_soft` / `pop_high`, `beep_moon`, ufo/robot/alien electronics                                                                                                                                                                  | CC0                                                                                                         |
+| **Kenney "Voiceover Pack"** (90 files, male + female) and "Voiceover Pack (Fighter)"                                                       | a CC0 human voice we may clone from (see voices below), plus stock game calls                                                                                                                                                                                                   | CC0, kenney.nl/assets/voiceover-pack                                                                        |
+| **Freesound, filtered to `license:"Creative Commons 0"`** (700k+ sounds; the API's `license` field reports "Creative Commons 0" per sound) | every organic cue: cartoon laughs, sobs and wails, donkey bray, chicken bawk and cluck bed, bear roar, rat squeaks, whale call, crowd cheer and applause beds, cork pop, champagne fizz, water squirt loop, fuse sizzle, glass clinks, party horn, snore, bubble pop, fish flop | CC0 per sound; the manifest stores the Freesound id and the licence string returned by the API for each one |
+
+**Tier 2, royalty-free with commercial use and no attribution (not CC0,
+so it is recorded as such):**
+
+| Source                                                                                | What it gives us                                                                                                                                                                                        | Licence (verified)                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Sonniss GameAudioGDC bundles** (2015-2024, ~10 collections, professional libraries) | the polished cinematic layer: `explosion_boom` + rumble, `missile_whistle`, `fw_barrage`, `thunder_rumble` / `strike_crack`, `blade_whoosh`, `fanfare_royal` / `fanfare_short`, `cash_register_cascade` | "royalty free and commercially usable, no attribution required, unlimited projects"; may not be redistributed as raw files or used for AI/ML training. Our use (baked cues inside the app) is the licensed use |
+
+**Excluded on licence grounds:** BBC Sound Effects (RemArc: non-commercial
+only), anything on Freesound under CC-BY-NC, Pixabay/Zapsplat/Mixkit (each
+has its own licence with conditions; not needed when the two tiers above
+cover the set), and any recording lifted from the PokerBros captures (that is
+their asset; section 1.4 measured it so ours can be made, not copied).
+
+**Voices.** Two spoken lines exist in the reference ("Good luck"; "Ooooh!
+Loser, loser, loser") and section 4 adds a few ("Bravo!", "Strike!", the
+tilt whistle's shout). They are generated ONCE, offline, and shipped as
+files; nothing speaks at runtime.
+
+- Engine: **Chatterbox** by Resemble AI, MIT licence (github.com/resemble-ai/
+  chatterbox, verified 2026-09-06). `Chatterbox-Turbo` (350M, English) and
+  `Chatterbox-Nano` (110M, runs 3x realtime on 8 CPU cores, so it runs on
+  the Mac or a Hetzner box with no GPU) both carry native paralinguistic
+  tags: `[laugh]`, `[chuckle]`, `[cough]` and more. That is what makes it
+  the pick over a plain TTS: the same engine that says "Loser, loser,
+  loser" can also produce a laugh in the same voice, and the "exaggeration"
+  control on the base model is how a line becomes a taunt rather than a
+  reading. Every output carries Resemble's inaudible Perth watermark, which
+  is fine for a game cue.
+- Reference voice: Chatterbox clones from a 10-second clip, so the clip must
+  be one we own. **Dan records ten seconds on his phone** (any sentence,
+  quiet room); that becomes the platform's voice for every throwable line
+  and the K.O. call, and it is distinct from anything PokerBros has. Until
+  that recording exists, the fallback reference is a clip from Kenney's CC0
+  Voiceover Pack, which is legally clean to clone.
+- Plain fallback for lines with no expression needed: **Kokoro-82M**
+  (Apache 2.0). Not needed if Chatterbox runs.
+- Character vocalisations that are not words (bray, bawk, squeak, roar,
+  sobs, the crying face's 350 Hz wail, the crowd) come from Freesound CC0
+  first; Chatterbox `[laugh]` fills the human laughs where a Freesound take
+  is not right.
+
+**The pipeline, in the repo:** `scripts/audio/throwable-cues.manifest.json`
+(one row per cue: cue name, source, source id or file, licence, original
+URL) and `scripts/audio/build-throwable-cues.mjs`, which fetches by manifest
+(Freesound API v2 with an API key for search and previews; original-quality
+downloads use the API's OAuth2 flow, which Dan authorises once; the key is
+read from `.env.local`, never committed), trims, loudness-normalises to
+-16 LUFS / -1 dBTP, encodes Opus `.webm` + AAC `.m4a`, and writes
+`public/sounds/throwables/CREDITS.md` from the manifest even for CC0 files.
+`tests/unit/throwableCuesAreLicensed.test.ts` fails the build if a cue in any
+spec has no manifest row, or a row whose licence is not on the allowed list.
+The Freesound API key and the OAuth authorisation are Dan's to create
+(CLAUDE.md 10.84); the script says exactly which variable it reads.
 
 ### 3.4 Entitlement: catalogue, ownership, and a refusing RPC
 
@@ -891,8 +962,9 @@ phases 1-4. Sound work is a third stream and does not block the visuals
 
 ### Phase 0: foundation (engineer 1 week; animator onboarding in parallel)
 
-- Art direction decided (section 6, decision 1) and the animator briefed
-  with this document and the two reference files. Asset conventions written
+- Art direction is decided (section 6, ruling 1); the animator is briefed
+  with this document and the two reference files, and delivers the style
+  frame (beer + doge beside their renders) before anything else. Asset conventions written
   down: 512 px composition, 30 fps, named markers per beat, three named
   comps (`projectile`, `payload`, `residue`), colour palette, the seat plate
   as a guide layer.
@@ -904,11 +976,19 @@ phases 1-4. Sound work is a third stream and does not block the visuals
   impact profiles remain behind a flag until phase 3 removes them.
 - `ThrowableSoundService` v2: sample loader, AudioContext scheduling, pan,
   loops. TTS retired (`ThrowableVoice` deleted).
+- The sound pipeline from 3.3.1: `scripts/audio/throwable-cues.manifest.json`,
+  `scripts/audio/build-throwable-cues.mjs`, the Chatterbox line generator
+  (`scripts/audio/generate-throwable-voices.py`, reads the reference clip
+  path from `.env.local`), `CREDITS.md` generation, and
+  `tests/unit/throwableCuesAreLicensed.test.ts`. Dan's ten-second reference
+  clip and the Freesound API key are requested in the first phase-0 report.
 - `throwable_catalog` + `user_throwables` migration (via
   `node scripts/new-migration.mjs`), `fn_use_throwable` tier checks,
   `fn_purchase_throwable`, and the picker's badges, locks and purchase sheet.
-  Catalogue seeded with all 48 current ids at their proposed tiers so nothing
-  a player owns today disappears.
+  Catalogue seeded with all 48 current ids at their decided tiers so nothing
+  a player owns today disappears; the 30-per-month member allowance
+  (ruling 3) lands in the same migration as a second constant in
+  `fn_use_throwable`.
 - `scripts/dev/preview-throwable.mjs` darkroom: spec -> harness beside the
   reference frames at the four seat rungs.
 - Laws from 3.6 written first, `it.skip` where the asset does not exist yet,
@@ -957,7 +1037,7 @@ enabled by `season` with a date window.
 Every placeholder cue replaced; loudness-normalised; the library size and the
 preload policy measured on a real phone; 60 fps at eight simultaneous
 throws on a 375 px device; every darkroom sheet reviewed by Dan; the free
-allowance decision (section 6) applied; telemetry: throws per item per day,
+allowance ruling (section 6) applied; telemetry: throws per item per day,
 per-tier, purchase conversions, and a `throw_render_failed` counter (the
 animation law's "a paid throw must never vanish silently").
 
@@ -966,58 +1046,84 @@ engineering is roughly five weeks of the ten and is front-loaded.
 
 ---
 
-## 6. Dan's decisions
+## 6. The rulings (decided 2026-09-06)
 
-None of these blocks phase 0. All of them shape phase 1.
+Dan, verbatim: "YOU DECIDE ON ALL OF THESE, I TRUST YOUR JUDGEMENT, AND FIND
+A OPEN SOURCE SFX LIBRARY WE CAN USE FOR SOUND EFFECTS AND VOICES." So these
+are decided, not proposed. Each is recorded with the reason so the next agent
+does not reopen it as a question; if one turns out wrong in the darkroom, the
+fix is a changelog under `docs/changelog/` that says what was measured, not a
+silent edit here.
 
-1. **Art direction.** (a) A consistent 2D cartoon set drawn for animation,
-   like the reference, or (b) animation built around the 48 existing 3D
-   renders as hero layers. Recommendation: (a) for characters and emoticons
-   (a 3D still cannot wink, chew or cry), (b) is acceptable for the objects
-   if you want to keep the renders you approved on 2026-08-20; mixing the two
-   will read as two sets. Either way the animator needs the answer first.
+1. **Art direction: one 2D cartoon set, drawn for animation.** Every item,
+   objects included. A 3D still cannot wink, chew, pour or cry, and a set
+   that mixes animated 2D characters with 3D-rendered objects reads as two
+   products on one felt. The 48 approved renders are not thrown away: they
+   become the DESIGN BRIEF for their 2D counterparts (same silhouette, same
+   palette, same read at 40 px), and they stay as the marketplace / lobby
+   art where a still is the right thing. The animator's first deliverable is
+   a style frame of the beer mug and the doge side by side with their
+   renders, approved before phase 1 starts.
 
-2. **Tiers and prices.** Section 4 proposes, across the 75 items: free 43,
-   VIP-only 18, premium 14 (+4 seasonal premium). Every emoticon is free,
-   because that is the social layer and the reference gives every account
-   100 of them. The reference gates bear, cake, missile, rat, poop as VIP
-   and locks two "Special". Premium prices need a number in diamonds; the
-   existing `feature_pricing` table is the place. Recommendation: 25-50
-   diamonds for a premium throwable, seasonal 15, and a "Premium Pack" bundle
-   of all eight at a discount.
+2. **Tiers and prices.** As section 4 lists them: 43 free, 18 VIP-only, 14
+   premium, 4 seasonal premium. Premium items are **40 diamonds** each,
+   seasonal **15**, and a **Premium Pack** of all eight non-parity premium
+   items (tilt_meter, bad_beat_bandage, bubble_boy, slot_machine,
+   energy_ball, sloth, ufo, alien) at **200** (a 37% discount). The four
+   parity premium items (missile, rat_card, shark, donkey) are also in a
+   **Rivals Pack** at **120**. Prices live in `feature_pricing` beside the
+   time-bank price so one table owns every diamond price. These are the
+   OPENING prices and the telemetry in phase 5 (purchase conversion per tile
+   impression) is what changes them.
 
-3. **Free allowance for everyone.** PokerBros shows "Free emojis left: 100"
-   on a fresh account. Ours: VIP 500/month, non-VIP zero (one diamond each),
-   and `throw_usage` says nobody throws. Recommendation: 30 free per month
-   for every member, 500 for VIP, then packs, then diamonds. This is what
-   players are owed in future, so it is yours (CLAUDE.md 10.9).
+3. **Free allowance: 30 per month for every member, 500 for VIP, then pack
+   credits, then diamonds.** A non-VIP with zero free throws is why
+   `throw_usage` has 100 rows in three weeks: the feature cannot be
+   discovered by a player who has to pay a diamond to find out what it does.
+   Thirty is enough to learn the set and not enough to replace VIP. The
+   allowance resets on the calendar month like the VIP one; `fn_use_throwable`
+   gets a second constant beside `v_free`. Emoticons draw from the same
+   allowance, as in the reference.
 
-4. **Copy or differentiate the reference's signature gags.** The beats are
-   ideas and ideas are not protected; the ART is. Every asset here is drawn
-   by us. The question is whether the 2-7 trash can, the cheating rat and the
-   card shark should be built beat-for-beat (parity) or with our own twist.
-   Recommendation: parity on the beats, our own art and our own sounds, and
-   at least one twist per gag so a side-by-side is not identical (the rat
-   flips OUR club's card back; the 2-7 can is stamped with the club logo).
+4. **Signature gags: parity on the beats, our own art, our own sounds, and
+   one twist each.** The beats are the joke and the joke is not protected;
+   the drawings and the recordings are, so none of theirs are used. The
+   twists, fixed now so the animator can build them in: the 2-7 can carries
+   the club's logo on its lid; the rat's card is the club's OWN card back
+   and the ace it flips is our ace; the shark's fork holds a chip; the doge's
+   sunglasses are gold-rimmed; the horseshoe's clovers are chips.
 
-5. **Sound sourcing.** (a) License a commercial SFX library for the
-   mechanical cues (cork, register, clinks, booms) and COMMISSION the
-   character vocalisations (laughs, bray, squeaks, sobs, bawk, "bravo"); or
-   (b) commission everything. The knockout's K.O. call note already says the
-   platform wants a real voice; a two-hour session with a voice actor covers
-   every vocalisation in section 4E. Recommendation: (a). Do you want your
-   own voice on any of them?
+5. **Sound: the open-source library in 3.3.1, and Chatterbox for every
+   spoken line in Dan's own voice.** CC0 first (Kenney, Freesound CC0),
+   Sonniss GDC for the cinematic layer, nothing else. Dan records one
+   ten-second clip on his phone and that clip is the reference voice for
+   "Good luck", "Loser, loser, loser", "Bravo!", "Strike!" and the K.O. call;
+   until it exists the Kenney CC0 voice is the stand-in and every line is
+   regenerated the day the clip arrives (it is a build step, not a
+   re-record). No voice actor is commissioned; if Chatterbox's laughs are
+   not good enough for a specific character, that one cue comes from
+   Freesound CC0.
 
-6. **Avatar reaction.** The reference never moves the avatar; everything is
-   in the overlay. Ours flinches the seat and shakes the table for heavy
-   items. Recommendation: drop the seat flinch and the table shake for
-   throwables (keep both for the knockout, which is a different event), so
-   the target's cards, stack and badge never move while a hand is live.
+6. **Avatar reaction: none for throwables.** The seat flinch and the table
+   shake are removed from the throwable player. The target's cards, stack
+   and action badge never move during a live hand; everything a throwable
+   does happens in the overlay, exactly as the reference does it. The
+   knockout keeps its flinch (a knockout IS the seat changing) and the
+   boxing-glove throwable, which reuses the knockout flurry, keeps the
+   flurry but not the flinch.
 
-7. **Words on the felt.** The reference shows one label in 31 throws ("GOOD
-   LUCK"). Ours puts captions on ten items and speaks seventeen lines.
-   Recommendation: keep GOOD LUCK, STRIKE!, IT'S GOOD!, OOF and TILT as
-   captions (they are the joke), retire the rest with the TTS.
+7. **Words on the felt: five captions survive, and only as the reference
+   does it.** GOOD LUCK (horseshoe), STRIKE! (bowling ball), IT'S GOOD!
+   (football), OOF (anvil), TILT (tilt meter). All other `IMPACT_CAPTION`
+   entries are deleted with the TTS. A caption is drawn by the Lottie at
+   the beat the spec names, in the same Title Case the toast layer enforces,
+   never by a DOM text node laid over the felt.
+
+Two consequences follow and are decided with them: the throwable pass
+starts with the emoticon rig (decision 1 makes the rig the critical path,
+and 14 of the 75 items share it), and phase 0's acceptance beer is built in
+the 2D style against its render, so the first thing Dan sees is the answer
+to decision 1 on a real seat.
 
 ---
 
@@ -1032,6 +1138,8 @@ phase 0  src/components/table/ThrowablePlayer.tsx (+ .css, small)
 phase 0  src/services/ThrowableSoundService.ts (rewritten), ThrowableVoice.ts (deleted)
 phase 0  supabase/migrations/<reserved>_throwable_catalog_and_ownership.sql
 phase 0  scripts/dev/preview-throwable.mjs
+phase 0  scripts/audio/throwable-cues.manifest.json, build-throwable-cues.mjs,
+         generate-throwable-voices.py, public/sounds/throwables/CREDITS.md
 phase 0  tests/throwables-always-play.law.test.ts, tests/unit/throwableSpecs.test.ts,
          tests/unit/throwableEntitlement.test.ts, docs/laws.d/<law>.md
 phase 3  deleted: ThrowableSignatures.css, the physics/impact half of

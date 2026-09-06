@@ -136,25 +136,23 @@
    AMOUNT DISPLAY
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.buy-in-modal__amount-display {
+/* THE AMOUNT AND THE TRACK ARE ONE ROW NOW (Dan 2026-09-05). The old
+   `.buy-in-modal__amount-display` row - min label, amount, max label - is
+   replaced by this: the amount takes the width it always had, and the
+   vertical track stands beside it wearing the min and max at its ends. Laying
+   a 200px-tall track UNDER the amount instead would have pushed the quick
+   buttons and BUY CHIPS off the bottom of a 375x812 screen, which is the one
+   screen this sheet has to fit. */
+.buy-in-modal__stage {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.buy-in-modal__min-label,
-.buy-in-modal__max-label {
-  font-size: 0.875rem;
-  color: #8b949e;
-  font-weight: 600;
-  width: 48px;
-  text-align: center;
+  gap: 14px;
+  margin-bottom: 20px;
 }
 
 .buy-in-modal__current-amount {
   flex: 1;
-  margin: 0 8px;
+  min-width: 0;
   height: 64px;
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(111, 220, 255, 0.2);
@@ -199,32 +197,70 @@
    SLIDER
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* ── UP AND DOWN, NEVER SIDE TO SIDE (Dan 2026-09-05) ────────────────────
+   "THE SLIDER FOR ADJUSTING YOUR 'BUY IN' NEEDS TO GO UP AND DOWN, NOT SIDE
+   TO SIDE. (SIDE TO SIDE SWIPES THE PAGE)". A horizontal drag at a table is
+   the table-switch gesture, so the sit-down control and the navigation were
+   fighting over the same touch. Vertical takes it out of that axis. */
 .buy-in-modal__slider-container {
-  margin-bottom: 24px;
-  position: relative;
-  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  /* The thumb is 24px, and 40px on a touch device (the block at the foot of
+     this file). A 6px track would clip it against `.buy-in-modal`'s
+     `overflow: hidden`, so the column reserves the wider of the two. */
+  min-width: 44px;
+}
+
+/* Max at the top, min at the bottom - the numbers that used to sit either
+   side of the amount, now at the ends of the track that reaches them. */
+.buy-in-modal__slider-cap {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #8b949e;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .buy-in-modal__slider {
   -webkit-appearance: none;
-  width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.1);
+  appearance: none;
+  /* The standard way to stand a native range on end (Chrome 121+, Safari
+     17.5+, Firefox). `direction: rtl` puts the MAXIMUM at the top, which is
+     the only orientation a "buy in for more" gesture can have.
+
+     The pre-standard `-webkit-appearance: slider-vertical` is deliberately
+     NOT here. It is a second appearance declaration and it wins over the
+     `appearance: none` above, which hands the track back to the UA and undoes
+     every rule below it - a legacy fallback that breaks the modern path is
+     worse than no fallback. Both spellings of the standard pair have shipped
+     since Safari 17.5 / Chrome 121, which is the floor this app already
+     assumes elsewhere. */
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 6px;
+  height: 168px;
+  padding: 0;
+  /* The fill the horizontal track never had: `--slider-percent` is set inline
+     by the component and, until now, was read by nothing at all - the element
+     meant to paint it was in the stylesheet and never in the markup. It grows
+     UPWARD from the bottom, toward the maximum at the top. */
+  background: linear-gradient(
+    to top,
+    #6fdcff 0%,
+    #0a5dc2 var(--slider-percent, 0%),
+    rgba(255, 255, 255, 0.1) var(--slider-percent, 0%)
+  );
   border-radius: 3px;
   outline: none;
+  /* The other half of the fix: the sheet must not take this drag away as a
+     scroll. Removing this returns the control to the gesture race, just on
+     the other axis. */
+  touch-action: none;
   position: relative;
   z-index: 2;
-}
-
-.buy-in-modal__slider-track {
-  position: absolute;
-  top: 10px;
-  left: 0;
-  height: 6px;
-  background: linear-gradient(90deg, #6fdcff, #0a5dc2);
-  border-radius: 3px;
-  z-index: 1;
-  pointer-events: none;
 }
 
 /* WebKit Thumb */
@@ -259,14 +295,10 @@
     transform 0.1s ease,
     box-shadow 0.15s ease;
 }
-.buy-in-modal__slider-labels {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
-  font-size: 0.75rem;
-  color: #6e7681;
-  font-weight: 600;
-}
+/* `.buy-in-modal__slider-labels` (the "Min" / "Max" words under a horizontal
+   track) was deleted 2026-09-05 with the horizontal track. The ends of the
+   vertical track carry the actual figures instead - see
+   `.buy-in-modal__slider-cap` above. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    QUICK BUTTONS

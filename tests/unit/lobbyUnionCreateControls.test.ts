@@ -30,7 +30,8 @@ describe('club lobby creation controls', () => {
     expect(page).toContain('canCreateClubGames && (');
     expect(page).toContain('GameCreationActions');
     expect(gameCreationGuard).toContain('fetchGameCreationAccess');
-    expect(gameCreationGuard).toContain('if (!access.allowed)');
+    expect(gameCreationGuard).toContain('if (!canUseStandaloneClubCreationRoute(access))');
+    expect(gameCreationGuard).toContain('Create Games From The Union Console');
     expect(tableConfig).toContain('const canBuildHere = access?.allowed === true');
   });
 

@@ -188,6 +188,8 @@ export function wsAuthRefusalPrometheusLines(): string[] {
 export function _resetWsAuthRefusalsForTests(): void {
   wsAuthRefusals.clear();
   wsProtocolRefusals.clear();
+  wsReauthCloses = 0;
+  wsSocketCapRefusals = 0;
 }
 
 // ─── The protocol counter (Phase 4 audit, 2026-09-05) ───────────────────────
@@ -207,6 +209,43 @@ const wsProtocolRefusals = new Map<string, number>();
 
 export function recordWsProtocolRefusal(path: 'table' | 'multi' | 'channel'): void {
   wsProtocolRefusals.set(path, (wsProtocolRefusals.get(path) ?? 0) + 1);
+}
+
+// ─── Trust and limits (Phase 5, 2026-09-06) ────────────────────────────────
+//
+// Two more refusals that would otherwise happen in silence, counted for the
+// same reason as the two above: a refusal nobody can see is how twenty-two
+// hours went by.
+//
+//   reauth  - a live socket whose session GoTrue has since rejected. Should be
+//             a trickle (a player signing out with a tab open); a step change
+//             is a revocation loop, and a revocation loop is what 2026-09-03
+//             was.
+//   cap     - a socket refused for taking one account past MAX_SOCKETS_PER_USER.
+//             Flat zero in normal play - a tab is ONE socket however many
+//             tables it carries - so anything here is either abuse or a client
+//             stuck in a connect loop, and both are worth seeing.
+
+let wsReauthCloses = 0;
+let wsSocketCapRefusals = 0;
+
+export function recordWsReauthClose(): void {
+  wsReauthCloses++;
+}
+
+export function recordWsSocketCapRefusal(): void {
+  wsSocketCapRefusals++;
+}
+
+export function wsTrustLimitPrometheusLines(): string[] {
+  return [
+    '# HELP poker_ws_reauth_closed_total Live sockets closed because a periodic re-check found the session no longer valid. A trickle is normal (someone signed out with a tab open); a step change is a revocation loop',
+    '# TYPE poker_ws_reauth_closed_total counter',
+    `poker_ws_reauth_closed_total ${wsReauthCloses}`,
+    '# HELP poker_ws_socket_cap_refused_total Sockets refused for taking one account past the per-user cap. Zero in normal play: one tab is one socket however many tables it carries',
+    '# TYPE poker_ws_socket_cap_refused_total counter',
+    `poker_ws_socket_cap_refused_total ${wsSocketCapRefusals}`,
+  ];
 }
 
 /** Prometheus lines for the protocol counter (always present, even at zero). */

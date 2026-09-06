@@ -54,3 +54,20 @@ Rollback.
 This Phase Adds A Fail-Closed Publication Gate And Derived Accounting Only.
 The Existing Service-Role Settlement Function Remains The Only Automatic Money
 Path. No Browser Role Receives A New Table Grant Or Money-Movement Function.
+
+## Deep-Audit Repair Before Phase 4
+
+The Pre-Phase-4 Trace Found Two Scheduler Defects Outside The Publication UI:
+
+- Settlement Chose A Club's Newest Mutable Metric And Enabled Flag Even Though
+  The Period That Just Closed Could Be Governed By An Older Immutable Program.
+  A Next-Period Metric Change Could Reject The Valid Closed Round, And Disabling
+  The Next Period Could Skip The Valid Closed Round Entirely.
+- The Scheduler Considered A Round Only On Its Exact UTC Boundary Date. An
+  Outage Or Transient Failure That Lasted Past That Date Had No Automatic Retry.
+
+`fn_settle_due_leaderboards` Now Enumerates Closed, Unpaid Rounds From Immutable
+Program Effective Dates, Resolves The Exact Program For Each Period, Skips A
+Disabled Contract Without Reviving Older Rules, And Passes That Program's Metric
+To The Existing Atomic Payout Function. It Remains Service-Role-Only And Adds No
+Direct Balance Mutation.

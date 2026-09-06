@@ -301,8 +301,13 @@ describe('the box in the corner', () => {
        lobby over the bus - the strip cannot reach the felt's own state. */
     expect(page).toMatch(/className="mtp-lobby-btn"/);
     expect(page).toMatch(/masterBus\.emit\('OPEN_MUST_MOVE_LOBBY', \{ tableId: activeTableId \}\)/);
-    /* Only a table that belongs to a must-move game has a lobby to open. */
-    expect(page).toMatch(/\{activeClusterId && \(\s*<button/);
+    /* Only a table that belongs to a must-move game has a lobby to open - and
+       never in TILE view (2026-09-06): the lobby is a child of the `.table-page`
+       root, which tile view scales to 0.5 and makes `pointer-events: none`, so
+       a button in this un-scaled strip opened a half-size modal inside one tile
+       that could not be scrolled, clicked or closed. */
+    expect(page).toMatch(/\{activeClusterId && !isTileView && \(\s*<button/);
+    expect(page).toMatch(/activeClusterId && !isTileView \? ' tile-toggle-btn--shifted' : ''/);
     /* 4-square first in the markup, LOBBY after it: source order IS the
        left-to-right order Dan asked for. */
     expect(page.indexOf('tile-toggle-btn--shifted')).toBeLessThan(
@@ -311,8 +316,15 @@ describe('the box in the corner', () => {
     const css = read('src/pages/MultiTablePage.css');
     /* Both sit in the same fixed band; LOBBY takes the outer position and the
        4-square steps left of it by exactly its width plus the gap. */
-    expect(css).toMatch(/\.mtp-lobby-btn \{[\s\S]*?right: 6px/);
-    expect(css).toMatch(/\.tile-toggle-btn--shifted \{\s*right: calc\(6px \+ 62px \+ 6px\)/);
+    /* The pair's geometry is three custom properties now, declared once
+       (2026-09-06): the button's width used to be a `min-width` while the shift
+       was a literal `62px`, so the real gap was 0-4px and closed to an overlap
+       under a reader's font scale. */
+    expect(css).toMatch(/--mtp-lobby-w: \d+px;/);
+    expect(css).toMatch(/\.mtp-lobby-btn \{[\s\S]*?width: var\(--mtp-lobby-w\)/);
+    expect(css).toMatch(
+      /\.tile-toggle-btn--shifted \{\s*right: calc\(var\(--mtp-edge\) \+ var\(--mtp-lobby-w\) \+ var\(--mtp-edge\)\)/
+    );
     /* And the felt does not draw it any more. */
     expect(read('src/components/table/CashClusterHUD.tsx')).not.toMatch(
       /className="cash-cluster-hud-bar"/

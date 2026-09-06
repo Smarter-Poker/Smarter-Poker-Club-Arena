@@ -110,18 +110,54 @@ describe('cards outside the winning five drop to 0.28 (measured, channel-neutral
     const uses = SEAT.match(/isDimmed=\{\s*winnerDisplayActive\s*&&/g) || [];
     expect(uses.length, 'villain row AND hero row must both dim').toBeGreaterThanOrEqual(2);
     expect(SEAT).toMatch(/prev\.winnerDisplayActive\s*!==\s*next\.winnerDisplayActive/);
-    /* The table-wide dim is still driven from winnerInfo here - that is what
-       this spec is about and it is unchanged. The expression gained a second
-       clause on 2026-08-27 (Dan: "cards dim like you folded even though you
-       are live in a hand"): the winners must also belong to the hand ON THE
-       FELT. A POT_WIN for hand N arriving after hand N+1 started used to merge
-       into the fresh hand and dim the hero's brand-new hole cards. This pin
-       now requires BOTH halves, so neither the dim nor its fence can be
-       dropped without failing here. */
-    expect(TABLE_PAGE).toMatch(
-      /winnerDisplayActive=\{[\s\S]{0,400}winnerInfo\.playerIds\.length\s*>\s*0/
-    );
+    /* The table-wide dim is still driven from winnerInfo - that is what this
+       spec is about and it is unchanged. The expression gained a second clause
+       on 2026-08-27 (Dan: "cards dim like you folded even though you are live
+       in a hand"): the winners must also belong to the hand ON THE FELT. A
+       POT_WIN for hand N arriving after hand N+1 started used to merge into the
+       fresh hand and dim the hero's brand-new hole cards.
+
+       PIN MOVED 2026-09-06. That expression was written out inline here AND
+       again for the board band, and the second copy is how the board kept
+       lighting up after the seats had gone quiet. It is one const now,
+       `winnerBandActive`, declared above the derivations that consume it. Both
+       halves of the rule are still required - they are just required in one
+       place - and the pin below proves every winner surface reads it. */
+    expect(TABLE_PAGE).toMatch(/winnerDisplayActive=\{winnerBandActive\}/);
+    expect(TABLE_PAGE).toMatch(/const winnerBandActive =\s*winnerInfo\.playerIds\.length > 0 &&/);
     expect(TABLE_PAGE).toMatch(/winnerInfo\.handNumber === \(tableState\.handNumber \?\? 0\)/);
+  });
+
+  /**
+   * ONE FENCE, EVERY WINNER SURFACE (2026-09-06).
+   *
+   * The 2026-09-05 pass fenced the board band's TEXT and left the card
+   * highlight, the felt-wide flash, the pot award and the seat's own winner
+   * props reading `winnerInfo` raw. A stale pot_win therefore still lit the
+   * live board's winning five, still dimmed every other face-up card, still
+   * flashed the felt and still popped a seat - with the sentence above them
+   * correctly silent. Half a fence is a bug with extra steps, so this pins the
+   * whole set by name.
+   */
+  it('every winner surface is fenced on the hand being played, not just the label', () => {
+    for (const [surface, re] of [
+      ['felt flash', /\$\{winnerBandActive \? ' table-page--winner-flash' : ''\}/],
+      [
+        'board 1 highlight',
+        /highlightedIndices=\{winnerBandActive \? winnerInfo\.cardIndices : \[\]\}/,
+      ],
+      ['pot award', /awardedPot=\{\s*winnerBandActive/],
+      ['seat isWinner', /isWinner=\{\s*winnerBandActive && player/],
+      ['seat hand name', /winnerBandActive && player && winnerInfo\.playerIds\.includes/],
+    ] as const) {
+      expect(TABLE_PAGE, `${surface} must be fenced on winnerBandActive`).toMatch(re);
+    }
+    /* Boards 2 and 3 are fenced at the source, inside the memos that derive
+       their highlights, so no caller can forget. */
+    expect(
+      (TABLE_PAGE.match(/if \(!winnerBandActive\) return \[\];/g) ?? []).length,
+      'board 2 and board 3 highlight memos both bail when the winner is not this hand'
+    ).toBe(2);
   });
 });
 

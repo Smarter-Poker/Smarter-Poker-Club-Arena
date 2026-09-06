@@ -45,6 +45,8 @@ interface TournamentHUDProps {
   playersRemaining?: number;
   /** Optional override for average stack display. */
   averageStack?: number;
+  /** Spin prize pool replaces the low-value average stack readout. */
+  spinPrizePool?: number;
   /** Hide the HUD entirely (e.g. between hands) without unmounting. */
   hidden?: boolean;
   /**
@@ -74,6 +76,7 @@ export function TournamentHUD({
   tournamentId,
   playersRemaining,
   averageStack,
+  spinPrizePool,
   hidden = false,
   onOpen,
 }: TournamentHUDProps) {
@@ -509,8 +512,8 @@ export function TournamentHUD({
         </div>
       )}
 
-      {/* Average stack */}
-      {shownAvg !== undefined && (
+      {/* Spin prize pool, or average stack for longer tournament formats. */}
+      {(spinPrizePool !== undefined || shownAvg !== undefined) && (
         <div
           style={{
             display: 'flex',
@@ -524,9 +527,11 @@ export function TournamentHUD({
           <span
             style={{ fontSize: 9, letterSpacing: 0.6, opacity: 0.7, textTransform: 'uppercase' }}
           >
-            Avg
+            {spinPrizePool !== undefined ? 'Prize' : 'Avg'}
           </span>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>{fmtChips(shownAvg)}</span>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>
+            {fmtChips(spinPrizePool ?? shownAvg ?? 0)}
+          </span>
         </div>
       )}
     </div>

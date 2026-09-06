@@ -774,7 +774,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /** Live seat count from get_club_home. Null until it answers; see the note
       where it is set - the stale clubs.online_count is never used. */
   const [playersPlaying, setPlayersPlaying] = useState<number | null>(null);
-  const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
+  /* undefined = unresolved; null = positively verified standalone; string =
+     union-managed. Keeping all three states prevents a union_clubs-only club
+     from flashing standalone-only onboarding while its scope is loading. */
+  const [unionIdForCreate, setUnionIdForCreate] = useState<string | null | undefined>(undefined);
   /** Owning-club names for a union board. Empty for a club that is in no union. */
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
   const [showOpeningWizard, setShowOpeningWizard] = useState(false);
@@ -800,7 +803,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
-  const openingChecklistEligible = hasNewClubOpeningChecklist(club);
+  const openingChecklistEligible = hasNewClubOpeningChecklist(club, unionIdForCreate);
   const toast = useToast();
   useEffect(() => {
     if (
@@ -2336,6 +2339,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             // Same reasoning as the error branch above: no inline read here.
           } else {
             cacheUnion(null); // genuinely standalone, on positive evidence
+            setUnionIdForCreate(null);
           }
         }
         if (!ucErr && ucRow) {
@@ -4935,6 +4939,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
         {showLaunchChecklist && (
           <ClubLaunchProgress
+            key={`${club.id}:${currentUserId || 'unknown'}`}
+            clubId={club.id}
+            viewerId={currentUserId || 'unknown'}
             clubName={club.name}
             openingBank={Number(club.chip_treasury) || 0}
             tasks={launchTasks}

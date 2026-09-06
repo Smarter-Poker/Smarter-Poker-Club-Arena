@@ -777,3 +777,56 @@
     padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RABBIT HUNT FROM THE REPLAYER (P5, 2026-09-05)
+   The felt shows the offer for ~2.5s; the engine holds it for ninety seconds.
+   This is the rest of that window. The cards belong to the buyer alone, so
+   they are marked apart from the board that actually ran.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.hdm-rabbit {
+  margin-top: 10px;
+}
+
+.hdm-rabbit__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 180, 70, 0.35);
+  background: rgba(240, 180, 70, 0.12);
+  color: rgba(255, 226, 160, 0.95);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.12s ease;
+}
+
+/* PRESS, NOT HOVER (tests/no-hover-effects.law.test.ts). Dan: "Remove hover
+   entirely, everywhere." Most play is on a phone, where :hover does not
+   exist and iOS synthesises a sticky one on first tap. :active is the
+   affordance a finger actually produces. */
+.hdm-rabbit__btn:active:not(:disabled) {
+  background: rgba(240, 180, 70, 0.2);
+  border-color: rgba(240, 180, 70, 0.55);
+  transform: scale(0.98);
+}
+
+.hdm-rabbit__btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* These cards never ran. They are the buyer's alone, and they must not read
+   as part of the board above them. */
+.hdm-card--rabbit {
+  opacity: 0.9;
+  outline: 1px dashed rgba(240, 180, 70, 0.5);
+  outline-offset: 1px;
+  border-radius: 3px;
+}

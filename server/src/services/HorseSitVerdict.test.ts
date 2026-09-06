@@ -386,9 +386,14 @@ describe('the fleet: an opening feeder says what happened', () => {
     expect(finBlock).toContain(
       '`[HorseFleet] opening feeder "${diag.name}": candidates ${diag.candidates}, `'
     );
+    /* PIN MOVED 2026-09-06: the line now carries the RESERVATION the feeder
+       holds (HorseBuyerAllocation), between what it wanted and the seats it
+       found. Same line, same finally, one more number - the one that says the
+       claim mechanism is running. */
     expect(finBlock).toContain(
-      '`sittable ${diag.sittable}, wanted ${diag.wanted}, empty seats ${diag.empty_seats}, `'
+      '`sittable ${diag.sittable}, wanted ${diag.wanted}, reserved ${diag.reserved}, `'
     );
+    expect(finBlock).toContain('`empty seats ${diag.empty_seats}, `');
     expect(finBlock).toContain('`selected ${diag.selected}, seated ${diag.seated}, `');
     expect(finBlock).toContain(
       '`skipped {${formatSkipCounts(new Map(Object.entries(diag.skipped)))}}`'

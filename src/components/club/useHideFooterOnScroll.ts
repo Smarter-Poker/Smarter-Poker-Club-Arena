@@ -146,9 +146,19 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
       const y = scrollTopOf(source);
       const limit = scrollLimitOf(source);
 
-      /* Too small to be "the page". Tracked as nothing at all - not even an
-         anchor - so a later, larger scroll from the same target starts clean. */
-      if (limit < MIN_SCROLLER_RANGE) return;
+      /* Too small to be "the page" any more - and if the bar is down, PUT IT
+         BACK (corrected 2026-09-06). This used to `return` bare, which strands
+         the footer: a list that collapses under a filter, images that unload,
+         or a soft keyboard cutting clientHeight can all drop a scroller below
+         this floor WHILE the bar is hidden, and from there no amount of
+         scrolling can reveal it - only a route change. The travel entry is
+         dropped too, so if the scroller grows back the next event starts from a
+         fresh anchor instead of comparing against a stale one. */
+      if (limit < MIN_SCROLLER_RANGE) {
+        travel.delete(source);
+        setHidden(false);
+        return;
+      }
 
       const state = travel.get(source);
       if (!state) {
@@ -178,7 +188,11 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
          nothing left to read down here, so there is nothing for the bar to be
          in the way of. The clearance below the content (--bottom-nav-clearance)
          is reserved whether the bar is up or not, so this covers nothing. */
-      if (y >= limit) {
+      /* A PIXEL OF TOLERANCE (2026-09-06). `scrollY` is fractional and
+         `scrollHeight` is an integer, so on a fractional-DPR or zoomed phone
+         the true bottom is routinely `limit - 0.5` and an exact `>=` never
+         fires - on precisely the class of device this reveal was written for. */
+      if (y >= limit - 1) {
         setHidden(false);
         return;
       }

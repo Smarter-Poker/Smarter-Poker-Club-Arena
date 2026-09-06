@@ -10,6 +10,7 @@
   "functions": [
     "fn_cancel_managed_game_schedule",
     "fn_capture_managed_game_contract",
+    "fn_cash_game_create_impl_20260905",
     "fn_close_managed_game",
     "fn_emit_club_union_access_event",
     "fn_emit_game_management_event",

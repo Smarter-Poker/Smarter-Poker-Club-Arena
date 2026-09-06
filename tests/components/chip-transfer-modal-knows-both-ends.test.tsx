@@ -270,5 +270,38 @@ describe('the dialog', () => {
     expect(screen.getByLabelText('Amount')).toBeTruthy();
     expect(screen.getByLabelText('Note (Optional)')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Your Club Bank:')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Agent Wallet')).toBeTruthy());
+  });
+
+  it('locks background scroll, traps keyboard focus, and restores the opener', async () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'Open Cashier';
+    document.body.appendChild(opener);
+    opener.focus();
+
+    const view = render(
+      <ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />
+    );
+    const dialog = screen.getByRole('dialog');
+    const close = screen.getByRole('button', { name: 'Close' });
+    await waitFor(() => expect(close).toHaveFocus());
+    expect(document.body.style.overflow).toBe('hidden');
+
+    await waitFor(() => expect(screen.getByText('Agent Wallet')).toBeTruthy());
+    const enabled = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    );
+    const last = enabled.at(-1)!;
+    last.focus();
+    fireEvent.keyDown(dialog.parentElement!, { key: 'Tab' });
+    expect(close).toHaveFocus();
+
+    view.rerender(<ChipTransferModal isOpen={false} onClose={() => {}} clubId={CLUB} />);
+    expect(document.body.style.overflow).toBe('');
+    expect(opener).toHaveFocus();
+    opener.remove();
   });
 });

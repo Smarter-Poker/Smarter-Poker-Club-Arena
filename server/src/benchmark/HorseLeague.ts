@@ -1041,6 +1041,56 @@ const CLAIM_EVIDENCE_IS_PARTIAL: Record<string, { timeColumn: string }> = {
   league_pm: { timeColumn: 'created_at' },
 };
 
+/**
+ * ═══ A CLAIM FROM BEFORE THIS PROCESS BOOTED IS A CORPSE (2026-09-06) ═══
+ *
+ * MEASURED, from horse_job_runs and horse_league_results, by the 2026-09-05
+ * daily analysis:
+ *
+ *   2026-09-05  league     claimed 06:56:50 (last takeover)  ZERO matchups
+ *   2026-09-05  league_pm  claimed 18:56:38 (last takeover)  ZERO matchups
+ *   2026-09-06  league     first matchup written 04:51, second 06:48 -
+ *               117 minutes between two matchups that take 9-16 minutes.
+ *
+ * The engine restarts at :55 of every hour (CLAUDE.md 13), so the run that
+ * opens at ~04:00 is killed at 04:55 with a matchup in flight. Its
+ * replacement boots at ~04:58 and arrives here at ~05:00, where the thirty-
+ * minute clock refuses it TWICE: the claim is still under CLAIM_STALE_MS, and
+ * once it is not, the newest row (written at ~04:50 by the dead process) is
+ * still "fresh". So every restart costs the league the in-flight matchup PLUS
+ * up to thirty minutes of standing down in front of a corpse - roughly half
+ * of every hour, and the whole of a window when a matchup is slow. That is
+ * how a three-hour window produced nothing at all on 2026-09-05, twice.
+ *
+ * A clock was the wrong instrument. The calendar already answers: this engine
+ * is ONE container, recreated on every deploy and every :55, and nothing
+ * survives that recreation. A claim stamped before THIS process booted was
+ * made by a process that no longer exists, and a row written before this
+ * process booted proves nothing about anyone being alive now. So a claim that
+ * predates the boot is taken over at the boot check, ninety seconds after the
+ * restart, instead of thirty minutes later.
+ *
+ * The grace below is for the one shape that could be alive: a leader/standby
+ * sibling that booted a little before this one and claimed at ITS boot check.
+ * Two minutes covers any stagger a paired deploy has ever shown; the hourly
+ * corpse is fifty-plus minutes older than that. A mistaken takeover is still
+ * harmless - the (run_date, matchup) upsert makes a duplicated matchup
+ * idempotent - so the grace is a courtesy to the sibling's CPU, not a lock.
+ */
+const PROCESS_BOOT_MS = Date.now() - Math.floor(process.uptime() * 1000);
+const BOOT_CORPSE_GRACE_MS = 2 * 60 * 1000;
+let bootMsOverride: number | null = null;
+/** Tests only: pretend this process booted at `ms` (null restores the truth). */
+export function __setProcessBootMsForTest(ms: number | null): void {
+  bootMsOverride = ms;
+}
+const processBootMs = (): number => bootMsOverride ?? PROCESS_BOOT_MS;
+
+/** Was this timestamp written by a process that cannot be alive any more? */
+function predatesThisProcess(ms: number): boolean {
+  return isFinite(ms) && ms < processBootMs() - BOOT_CORPSE_GRACE_MS;
+}
+
 /** Rows already written for this job+date - the proof a claim did work. */
 async function claimProducedRows(job: string, date: string): Promise<boolean | null> {
   const evidence = CLAIM_EVIDENCE[job];
@@ -1058,8 +1108,12 @@ async function claimProducedRows(job: string, date: string): Promise<boolean | n
     const rows = data as unknown as Array<Record<string, string>> | null;
     const newest = rows?.[0]?.[partial.timeColumn];
     if (newest === undefined) return false; // nothing at all - a plain corpse
-    const ageMs = Date.now() - Date.parse(newest);
+    const newestMs = Date.parse(newest);
+    const ageMs = Date.now() - newestMs;
     if (!isFinite(ageMs)) return true; // unreadable stamp - do not take it over
+    // A row from before this process booted was written by a process that is
+    // gone. It is history, not a heartbeat - see the boot note above.
+    if (predatesThisProcess(newestMs)) return false;
     return ageMs < CLAIM_STALE_MS; // fresh row = alive; stale row = abandoned
   }
   const { data, error } = await supabase
@@ -1093,7 +1147,11 @@ export async function claimNightlyJob(job: string, date: string): Promise<boolea
 
     const claimedAtMs = Date.parse(String(existing.claimed_at));
     const ageMs = isFinite(claimedAtMs) ? Date.now() - claimedAtMs : 0;
-    if (ageMs < CLAIM_STALE_MS) return false; // still plausibly working
+    // A claim stamped before this process booted belongs to a process that
+    // no longer exists (the boot note above claimProducedRows). Its age on the
+    // clock is irrelevant; only its evidence can still speak for it.
+    const claimIsFromBeforeBoot = predatesThisProcess(claimedAtMs);
+    if (ageMs < CLAIM_STALE_MS && !claimIsFromBeforeBoot) return false; // still plausibly working
 
     const produced = await claimProducedRows(job, date);
     if (produced !== false) return false; // it delivered, or cannot be judged
@@ -1117,7 +1175,9 @@ export async function claimNightlyJob(job: string, date: string): Promise<boolea
     console.warn(
       `[HorseLeague] ${job} ${date} was claimed by ${prevOwner} ` +
         `${Math.round(ageMs / 60000)} min ago and wrote NOTHING - taking it over. ` +
-        `A restart inside a run is the usual cause.`
+        (claimIsFromBeforeBoot
+          ? `The claim predates this process's boot, so its owner is gone (a restart inside a run).`
+          : `A restart inside a run is the usual cause.`)
     );
     return true;
   } catch (err) {
@@ -1334,6 +1394,50 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       `rotation offset ${rotateBy} -> first up ${card[0]?.name}`
   );
   try {
+    // ═══ V47 SOLVER AGREEMENT (2026-09-05) ═══════════════════════════════
+    // The matchups below measure a DIFFERENCE between two configs. This is
+    // the absolute score, against the only reference in the building: the
+    // hold'em push/fold charts. It costs a few hundred synchronous decisions
+    // once a night, and it is the one number that can say the brain got
+    // WORSE without another config to compare it to.
+    //
+    // IT RUNS FIRST (2026-09-06). It used to run after the card, and the
+    // card never ends: the engine restarts at :55 of every hour, a matchup
+    // in flight dies with it, and the loop below is killed before it returns
+    // on every attempt that does not run out of budget first. Measured by
+    // the 2026-09-05 daily analysis: horse_solver_agreement had ZERO rows,
+    // ever - the audit's `data_stale` and `solver_agreement_missing` findings
+    // were both this ordering. A few hundred synchronous decisions cost
+    // seconds; putting them before the hours-long part means the one number
+    // that needs no second config exists on every night the league is even
+    // attempted. fn_horse_solver_agreement_add upserts on (run_date,
+    // reference), so a resumed card re-scores the same day harmlessly.
+    try {
+      const agreement = scoreSolverAgreement();
+      if (agreement.reference) {
+        const { error } = await supabase.rpc('fn_horse_solver_agreement_add', {
+          p_rows: [
+            {
+              run_date: date,
+              reference: agreement.reference,
+              spots: agreement.spots,
+              agreement: round4(agreement.agreement),
+              pure_misses: agreement.pureMisses,
+            },
+          ],
+        });
+        if (error) throw new Error(error.message);
+        console.log(
+          `[HorseLeague] solver agreement ${round4(agreement.agreement)} over ${agreement.spots} ` +
+            `spots (${agreement.pureMisses} pure misses)`
+        );
+      } else {
+        console.log('[HorseLeague] solver agreement skipped - the chart store is empty here');
+      }
+    } catch (err) {
+      reportError(err, 'HorseLeague.agreement');
+    }
+
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
     for (const m of card) {
       // V13: a wall-clock budget. The league shares the event loop with live
@@ -1381,37 +1485,6 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       );
       // Yield the event loop between matchups — production tables come first.
       await new Promise((res) => setTimeout(res, 250));
-    }
-    // ═══ V47 SOLVER AGREEMENT (2026-09-05) ═══════════════════════════════
-    // The matchups above measure a DIFFERENCE between two configs. This is
-    // the absolute score, against the only reference in the building: the
-    // hold'em push/fold charts. It costs a few hundred synchronous decisions
-    // once a night, and it is the one number that can say the brain got
-    // WORSE without another config to compare it to.
-    try {
-      const agreement = scoreSolverAgreement();
-      if (agreement.reference) {
-        const { error } = await supabase.rpc('fn_horse_solver_agreement_add', {
-          p_rows: [
-            {
-              run_date: date,
-              reference: agreement.reference,
-              spots: agreement.spots,
-              agreement: round4(agreement.agreement),
-              pure_misses: agreement.pureMisses,
-            },
-          ],
-        });
-        if (error) throw new Error(error.message);
-        console.log(
-          `[HorseLeague] solver agreement ${round4(agreement.agreement)} over ${agreement.spots} ` +
-            `spots (${agreement.pureMisses} pure misses)`
-        );
-      } else {
-        console.log('[HorseLeague] solver agreement skipped - the chart store is empty here');
-      }
-    } catch (err) {
-      reportError(err, 'HorseLeague.agreement');
     }
 
     console.log(

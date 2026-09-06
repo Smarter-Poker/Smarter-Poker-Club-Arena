@@ -22,6 +22,7 @@ import {
   assignTags,
   tagSplit,
   MAX_TABLES_BY_PERSONA,
+  type CashPersona,
   MAX_TABLES_TOURNEY_ONLY,
   allocateByMix,
   CASH_PERSONA_MIX,
@@ -262,7 +263,14 @@ describe('T8 - the tagger is idempotent, within 1 of target, and matches persona
     tags.filter((t) => t.cashFreeroll).forEach((t) => expect(t.mode).toBe('cash'));
   });
 
-  it('gives every persona its own max_tables and tourney-only exactly one', () => {
+  it('gives every cash-mode persona four tables and tourney-only exactly one', () => {
+    // Dan 2026-09-02: "THEY SHOULD BE PLAYING 4 TABLES AT ONCE." The persona
+    // table used to hand out 2 and 3; 2026-09-06 made every cash persona the
+    // platform ceiling. A persona below four here re-ships the sit_cap that
+    // left feeders empty.
+    for (const persona of Object.keys(MAX_TABLES_BY_PERSONA) as CashPersona[]) {
+      expect(MAX_TABLES_BY_PERSONA[persona]).toBe(4);
+    }
     const tags = assignTags(memberships);
     tags.forEach((t) => {
       if (t.mode === 'tourney') {
@@ -270,7 +278,7 @@ describe('T8 - the tagger is idempotent, within 1 of target, and matches persona
         expect(t.personaCash).toBeNull();
       } else {
         expect(t.personaCash).not.toBeNull();
-        expect(t.maxTables).toBe(MAX_TABLES_BY_PERSONA[t.personaCash!]);
+        expect(t.maxTables).toBe(4);
       }
     });
   });

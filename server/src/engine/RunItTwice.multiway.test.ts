@@ -14,6 +14,7 @@ import { HandController } from './HandController.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import type { DeadlineScheduler } from './DeadlineScheduler.js';
 import type { Card, HandConfig, HandEvent, SeatPlayer } from '../types.js';
+import { waitForEvent } from '../testing/waitBudget.js';
 
 const TABLE = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 const c = (rank: string, suit: string) => ({ rank, suit }) as Card;
@@ -254,15 +255,19 @@ describe('decline → the pot runs ONCE (full flow through the real wait)', () =
     // that the machine finishes in 900ms. Alone it always did; inside the full
     // 97-file suite it lost that bet about half the time, and the whole
     // "Server Engine" CI job went red with "expected undefined to be defined"
-    // — on branches that had touched nothing near this code. Wait for the
-    // event instead of for the clock: normally faster than 900ms, and it
-    // cannot be starved by a loaded runner.
-    const deadline = Date.now() + 10_000;
-    let complete = events.find((e) => e.type === 'HAND_COMPLETE');
-    while (!complete && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 25));
-      complete = events.find((e) => e.type === 'HAND_COMPLETE');
-    }
+    // - on branches that had touched nothing near this code. Wait for the
+    // event instead of for the clock.
+    //
+    // DE-FLAKE 2026-09-06 (PR #3272): the wait above was right, its budget was
+    // not. It was a hardcoded `Date.now() + 10_000`, and vitest.config.ts said
+    // `testTimeout: 10_000` - THE SAME NUMBER - so the loop could never reach
+    // its own `expect`. Vitest killed the test at the identical instant and
+    // printed "Test timed out in 10000ms", naming nothing. On a box running 18
+    // runners across 16 cores (a pure-arithmetic SeededRandom assertion in the
+    // same run took 3,045ms) ten seconds was never the right budget either.
+    // Both numbers now come from src/testing/waitBudget.ts, where the budget is
+    // strictly under the ceiling so an exhausted wait can say what was missing.
+    const complete = await waitForEvent(events, 'HAND_COMPLETE');
     expect(complete).toBeDefined();
     const st = (hc as unknown as { state: { players: SeatPlayer[]; communityCards: Card[] } })
       .state;

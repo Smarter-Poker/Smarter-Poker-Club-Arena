@@ -169,6 +169,19 @@ async function tapReadyControl(control: Locator) {
   await control.evaluate((element: HTMLElement) => element.click());
 }
 
+const COORDINATED_LOOKS = [
+  'House Classic',
+  'Carbon Club',
+  'Neon Ice',
+  'Golden Dusk',
+  'Jade Casino',
+  'Ocean Suite',
+  'Crimson Club',
+  'Arctic Suite',
+  'Amethyst Night',
+  'Carbon Ion',
+];
+
 test.describe('real Table Studio browser flows', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
@@ -296,64 +309,53 @@ test.describe('real Table Studio browser flows', () => {
     await expect(studio.getByRole('button', { name: 'Done' })).toBeVisible();
   });
 
-  test('all ten coordinated looks retain their mobile, tablet, light, dark, and final-table visuals', async ({
-    context,
-    page,
-  }) => {
-    test.slow();
-    await mockStudioBackend(context, { unlockAllLooks: true });
-    const studio = await openStudio(page);
-    const shell = studio.locator('.theme-modal__preview-shell');
-    const looks = [
-      'House Classic',
-      'Carbon Club',
-      'Neon Ice',
-      'Golden Dusk',
-      'Jade Casino',
-      'Ocean Suite',
-      'Crimson Club',
-      'Arctic Suite',
-      'Amethyst Night',
-      'Carbon Ion',
-    ];
+  // Each look is an independent verdict. Keeping all thirty screenshots in one
+  // test made the timeout grow with the catalog and hid which look never ran.
+  for (const look of COORDINATED_LOOKS) {
+    test(`${look} retains its mobile, tablet, light, dark, and final-table visuals`, async ({
+      context,
+      page,
+    }) => {
+      await mockStudioBackend(context, { unlockAllLooks: true });
+      const studio = await openStudio(page);
+      const shell = studio.locator('.theme-modal__preview-shell');
 
-    await page.addStyleTag({
-      content: '*,*::before,*::after{animation:none!important;transition:none!important}',
-    });
-
-    const settleArtwork = async () => {
-      await shell.evaluate(async (preview) => {
-        await document.fonts.ready;
-        await Promise.all(
-          Array.from(
-            preview.querySelectorAll<HTMLImageElement>(
-              '.studio-game-preview__background-ambient, .studio-game-preview__background, .studio-game-preview__table'
-            )
-          ).map((image) => image.decode?.().catch(() => undefined))
-        );
+      await page.addStyleTag({
+        content: '*,*::before,*::after{animation:none!important;transition:none!important}',
       });
-    };
-    const capture = async (name: string) => {
-      await settleArtwork();
-      await shell.scrollIntoViewIfNeeded();
-      const bounds = await shell.boundingBox();
-      expect(bounds, `preview bounds for ${name}`).not.toBeNull();
-      const clip = {
-        x: Math.floor(bounds!.x),
-        y: Math.floor(bounds!.y),
-        width: Math.ceil(bounds!.x + bounds!.width) - Math.floor(bounds!.x),
-        height: Math.ceil(bounds!.y + bounds!.height) - Math.floor(bounds!.y),
+
+      const settleArtwork = async () => {
+        await shell.evaluate(async (preview) => {
+          await document.fonts.ready;
+          await Promise.all(
+            Array.from(
+              preview.querySelectorAll<HTMLImageElement>(
+                '.studio-game-preview__background-ambient, .studio-game-preview__background, .studio-game-preview__table'
+              )
+            ).map((image) => image.decode?.().catch(() => undefined))
+          );
+        });
       };
-      const screenshot = await page.screenshot({
-        animations: 'disabled',
-        caret: 'hide',
-        clip,
-        scale: 'css',
-      });
-      expect(screenshot).toMatchSnapshot(name, { maxDiffPixelRatio: 0.02 });
-    };
+      const capture = async (name: string) => {
+        await settleArtwork();
+        await shell.scrollIntoViewIfNeeded();
+        const bounds = await shell.boundingBox();
+        expect(bounds, `preview bounds for ${name}`).not.toBeNull();
+        const clip = {
+          x: Math.floor(bounds!.x),
+          y: Math.floor(bounds!.y),
+          width: Math.ceil(bounds!.x + bounds!.width) - Math.floor(bounds!.x),
+          height: Math.ceil(bounds!.y + bounds!.height) - Math.floor(bounds!.y),
+        };
+        const screenshot = await page.screenshot({
+          animations: 'disabled',
+          caret: 'hide',
+          clip,
+          scale: 'css',
+        });
+        expect(screenshot).toMatchSnapshot(name, { maxDiffPixelRatio: 0.02 });
+      };
 
-    for (const look of looks) {
       const slug = look.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       await tapReadyControl(studio.getByRole('button', { name: look, exact: true }));
       await expect(studio.getByRole('button', { name: look, exact: true })).toHaveAttribute(
@@ -373,6 +375,6 @@ test.describe('real Table Studio browser flows', () => {
       await tapReadyControl(studio.getByRole('button', { name: 'Light', exact: true }));
       await tapReadyControl(studio.getByRole('button', { name: 'Standard', exact: true }));
       await capture(`${slug}-tablet-light-standard.png`);
-    }
-  });
+    });
+  }
 });

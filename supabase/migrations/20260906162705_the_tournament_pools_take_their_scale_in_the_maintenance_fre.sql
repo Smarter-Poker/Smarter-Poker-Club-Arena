@@ -1,4 +1,4 @@
--- THE TOURNAMENT POOLS TAKE THEIR SCALE IN THE MAINTENANCE FREEZE.
+-- THE TOURNAMENT POOLS (AND ITS RAKE) TAKE THEIR SCALE IN THE MAINTENANCE FREEZE.
 --
 -- The other half of 20260906162156. That migration gave eight unconstrained
 -- money columns a scale of 2; these two were in it and had to come out,
@@ -28,7 +28,18 @@
 -- full binary expansion - the way tournament_payouts came to hold
 -- 55.629999999999995. No value moves; the door closes.
 --
--- Both columns in ONE statement so the table is rewritten once, not twice.
+-- AND total_rake RIDES ALONG, because the rewrite is already being paid for.
+-- It is scale 4, not unconstrained, so it rounds on write and cannot hold a
+-- JS float's expansion - but numeric(18,4) rounds at the FOURTH place, which
+-- means it can still store a genuine sub-cent like 0.1665 if a rake
+-- calculation ever stops rounding. That is a dormant leak vector (0 of
+-- 116,453 rows hold one today, maximum 4,960.0000), and closing it here costs
+-- nothing: the same single rewrite of the same table. The other scale-4
+-- columns are NOT here - notably rake_records, whose two columns would mean
+-- rewriting 1.5 GB, which needs its own decision rather than a free ride.
+--
+-- All three columns in ONE statement so the table is rewritten once, not three
+-- times.
 -- `lock_timeout` is deliberately short: inside the freeze the lock is free
 -- and the wait is nil, so anything longer means the freeze is NOT in effect
 -- and the migration should abort rather than fight live play again.
@@ -44,21 +55,23 @@ SET LOCAL lock_timeout = '4s';
 
 ALTER TABLE public.tournaments
   ALTER COLUMN prize_pool  TYPE numeric(18,2),
-  ALTER COLUMN bounty_pool TYPE numeric(18,2);
+  ALTER COLUMN bounty_pool TYPE numeric(18,2),
+  ALTER COLUMN total_rake  TYPE numeric(18,2);
 
 DO $verify$
 DECLARE v_notscaled int; v_bad int;
 BEGIN
   SELECT count(*) INTO v_notscaled FROM information_schema.columns
    WHERE table_schema='public' AND table_name='tournaments'
-     AND column_name IN ('prize_pool','bounty_pool')
+     AND column_name IN ('prize_pool','bounty_pool','total_rake')
      AND numeric_scale IS DISTINCT FROM 2;
   IF v_notscaled <> 0 THEN
     RAISE EXCEPTION 'VERIFY FAILED: % tournament pool column(s) still carry no scale', v_notscaled;
   END IF;
 
   SELECT count(*) INTO v_bad FROM public.tournaments
-   WHERE prize_pool <> round(prize_pool,2) OR bounty_pool <> round(bounty_pool,2);
+   WHERE prize_pool <> round(prize_pool,2) OR bounty_pool <> round(bounty_pool,2)
+      OR total_rake <> round(total_rake,2);
   IF v_bad <> 0 THEN
     RAISE EXCEPTION 'VERIFY FAILED: % tournament row(s) hold a sub-cent pool', v_bad;
   END IF;

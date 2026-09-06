@@ -82,3 +82,24 @@ given scale 2 by the TYPE and never by a CHECK; the hot table is altered only
 in the freeze migration and says why; both pool columns move in one statement
 so the table rewrites once; the union auto-ledger is captured and restored
 rather than hand-written; and each migration proves the scale it claims.
+
+## And `total_rake` rides the same rewrite
+
+The freeze migration carries a third column: `tournaments.total_rake`. It is
+scale **4**, not unconstrained, so the "it rounds on write" argument above
+applies — but `numeric(18,4)` rounds at the **fourth** place, which means it
+can still store a genuine sub-cent like `0.1665` if a rake calculation ever
+stops rounding. That is a dormant leak vector rather than a harmless
+imprecision, and my first reading of the scale-4 columns was too generous
+about it.
+
+Zero of 116,453 rows hold one today (maximum 4,960.0000), and closing it here
+costs nothing: the same single rewrite of the same table, in the same freeze
+window. All three columns move in one `ALTER TABLE` so `tournaments` is
+rewritten once rather than three times.
+
+The other scale-4 columns are deliberately **not** included. `rake_records`
+carries two of them across 1.5 GB and 2.1M rows; that is a rewrite that needs
+its own decision and its own window, not a free ride on this one. Same for
+`agents.agent_wallet_balance` and the three `club_wallets` columns, which are
+tiny but unrelated tables. They are the remaining phase-3 work.

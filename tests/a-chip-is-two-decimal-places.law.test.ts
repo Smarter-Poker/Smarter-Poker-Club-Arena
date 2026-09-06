@@ -93,6 +93,10 @@ describe('a chip is two decimal places everywhere it is stored', () => {
     );
     expect(stmt).toMatch(/prize_pool/);
     expect(stmt).toMatch(/bounty_pool/);
+    // total_rake rides the same rewrite: scale 4 rounds only at the FOURTH
+    // place, so it can still hold a genuine sub-cent if a rake calculation
+    // ever stops rounding. Free to close while the table is already moving.
+    expect(stmt).toMatch(/total_rake/);
   });
 
   it('the union auto-ledger is captured and restored, never hand-retyped', () => {

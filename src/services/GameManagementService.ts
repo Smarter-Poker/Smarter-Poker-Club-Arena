@@ -254,13 +254,16 @@ function mapCommandReceipt(
     gameId: String(raw.game_id || ''),
     commandId: String(raw.command_id || ''),
     action: raw.command_action === 'close' ? 'close' : 'update',
+    // Receipt evidence fails closed. Only the two explicit terminal values
+    // may paint a terminal outcome; malformed, old, or partial payloads stay
+    // processing instead of being presented to an operator as succeeded.
     status:
-      raw.command_status === 'processing' ||
+      raw.command_status === 'succeeded' ||
       raw.command_status === 'rejected' ||
-      raw.status === 'processing' ||
+      raw.status === 'succeeded' ||
       raw.status === 'rejected'
         ? ((raw.command_status || raw.status) as ManagedGameCommandReceipt['status'])
-        : 'succeeded',
+        : 'processing',
     versionBefore: numberValue(raw.version_before ?? raw.contract_version_before),
     versionAfter: numberValue(raw.version_after ?? raw.contract_version_after),
     createdAt: String(raw.created_at || ''),
@@ -271,6 +274,22 @@ function mapCommandReceipt(
         : 'confirmed',
     replayed: Boolean(raw.replayed),
   };
+}
+
+function isTerminalCommandResult(
+  result: ManagedGameCommandResult | null | undefined,
+  commandId: string
+): boolean {
+  return Boolean(
+    result &&
+    typeof result.ok === 'boolean' &&
+    result.command_id === commandId &&
+    (result.command_status === 'succeeded' || result.command_status === 'rejected') &&
+    Number.isInteger(result.version_before) &&
+    Number(result.version_before) > 0 &&
+    Number.isInteger(result.version_after) &&
+    Number(result.version_after) > 0
+  );
 }
 
 async function reconcileCommand(commandId: string): Promise<ManagedGameCommandResult | null> {
@@ -284,7 +303,9 @@ async function reconcileCommand(commandId: string): Promise<ManagedGameCommandRe
       found?: boolean;
       receipt?: ManagedGameCommandResult;
     } | null;
-    return result?.ok && result.found && result.receipt ? result.receipt : null;
+    return result?.ok && result.found && isTerminalCommandResult(result.receipt, commandId)
+      ? (result.receipt ?? null)
+      : null;
   } catch {
     return null;
   }
@@ -303,16 +324,37 @@ async function executeCommand(
   // first request failed before execution, committed and lost its response, or
   // is still finishing: the database returns the one durable receipt.
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const { data, error } = await supabase.rpc('fn_execute_managed_game_command', {
-      p_command_id: commandId,
-      p_kind: kind,
-      p_game_id: gameId,
-      p_action: action,
-      p_expected_version: expectedVersion,
-      p_payload: payload,
-    });
-    if (!error) return (data || {}) as ManagedGameCommandResult;
-    reportError(error, 'GameManagementService.executeCommand', {
+    let data: unknown = null;
+    let requestError: unknown = null;
+    try {
+      const response = await supabase.rpc('fn_execute_managed_game_command', {
+        p_command_id: commandId,
+        p_kind: kind,
+        p_game_id: gameId,
+        p_action: action,
+        p_expected_version: expectedVersion,
+        p_payload: payload,
+      });
+      data = response.data;
+      requestError = response.error;
+    } catch (error) {
+      // A custom fetch implementation can reject instead of returning the
+      // normal PostgREST error object. It is still an ambiguous response and
+      // must take the same receipt-reconciliation path.
+      requestError = error;
+    }
+
+    const result = (data || {}) as ManagedGameCommandResult;
+    if (!requestError) {
+      if (isTerminalCommandResult(result, commandId)) return result;
+      // Preflight refusals happen before a receipt can exist and are already
+      // definitive. Successful or receipt-bearing responses are not accepted
+      // without terminal command evidence.
+      if (result.ok === false && !result.command_id) return result;
+      requestError = new Error('The command response did not contain terminal receipt evidence.');
+    }
+
+    reportError(requestError, 'GameManagementService.executeCommand', {
       commandId,
       kind,
       gameId,

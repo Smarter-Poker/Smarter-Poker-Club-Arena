@@ -421,7 +421,10 @@ test.describe('Production Shark Club Players', () => {
       )
       .toBe(true);
 
-    for (const range of ['Overall', '7 Days', 'Custom']) {
+    // Player Statistics owns a calendar-oriented range selector. Keep this
+    // production contract aligned with the controls the page actually ships,
+    // rather than the older Member Management range labels.
+    for (const range of ['Day', 'Week', 'Month', 'Custom']) {
       const control = page.getByRole('button', { name: range, exact: true });
       await control.click();
       await expect(control).toHaveAttribute('aria-pressed', 'true');

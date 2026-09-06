@@ -783,14 +783,36 @@ export default function DailyChallengesPage() {
     };
   }, [userId, loadChallenges]);
 
-  const scheduleRealtimeRefresh = useCallback(() => {
-    if (!userId) return;
-    if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
-    realtimeRefreshTimerRef.current = setTimeout(() => {
-      realtimeRefreshTimerRef.current = null;
-      loadChallenges(userId, 'silent');
-    }, 250);
-  }, [userId, loadChallenges]);
+  const scheduleRealtimeRefresh = useCallback(
+    (payload?: unknown) => {
+      if (!userId) return;
+      const envelope =
+        payload && typeof payload === 'object' ? (payload as Record<string, any>) : {};
+      const announcedRevision = Number(
+        envelope.revision ??
+          envelope.payload?.revision ??
+          envelope.data?.revision ??
+          envelope.payload?.data?.revision
+      );
+      const hasAnnouncedRevision = Number.isFinite(announcedRevision) && announcedRevision > 0;
+
+      // The dashboard RPC can assign a brand-new account's first missions. Those
+      // inserts broadcast their revision before the same atomic RPC receipt
+      // reaches the browser. Scheduling another full dashboard read here made a
+      // cold open perform two identical RPCs. Keep the event for the debounce,
+      // then compare it with the revision actually rendered by the first receipt:
+      // the matching echo is already covered; a genuinely newer mutation still
+      // refreshes immediately.
+      if (hasAnnouncedRevision && announcedRevision <= dashboardRevisionRef.current) return;
+      if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+      realtimeRefreshTimerRef.current = setTimeout(() => {
+        realtimeRefreshTimerRef.current = null;
+        if (hasAnnouncedRevision && announcedRevision <= dashboardRevisionRef.current) return;
+        loadChallenges(userId, 'silent');
+      }, 250);
+    },
+    [userId, loadChallenges]
+  );
 
   // Realtime is the immediate path, while this tiny cursor read is the durable
   // repair path for a WebSocket event that was lost after subscription. It

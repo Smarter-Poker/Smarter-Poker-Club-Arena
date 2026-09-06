@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/the-absolute-score-runs-first",
+  "_comment": "20260906101306, 20260906101342, 20260906101519 and 20260906101611 - fn_audit_behaviour_has_a_stage, applied to production 2026-09-06 via the Supabase MCP. A receipt can read zero because the behaviour is broken OR because the world never presents the spot; those want opposite fixes. It found that the fleet stopped opening straddle tables on 2026-09-02, three days before V48's voluntary straddle shipped.",
+  "tables": [],
+  "functions": ["fn_audit_behaviour_has_a_stage"],
+  "columns": {}
+}

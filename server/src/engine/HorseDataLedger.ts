@@ -1396,10 +1396,29 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
    * 0.1% expectation being wrong), so guessing between them is how a layer
    * stays dark for a week.
    *
-   * They partition every horse decision: the gates are checked in order and
-   * exactly one receipt fires per declined decision, so the five counts plus
-   * v44_second_look sum to `decide`. No expectation is declared on any of
-   * them - a decline is an observation, not a promise.
+   * They partition every decision that REACHES the planner: the gates are
+   * checked in order and exactly one receipt fires per declined decision.
+   * MEASURED 2026-09-06, the first day they ran:
+   *
+   *   decide                       935,032
+   *   v44_declined_small_pot       370,198
+   *   v44_declined_not_facing_bet  112,297
+   *   v44_second_look               29,169
+   *   v44_declined_no_think_time     4,326
+   *   v44_declined_action_shape        619
+   *   v44_declined_governor            333
+   *                                -------
+   *                                516,942  (55% of `decide`)
+   *
+   * They do NOT sum to `decide`, and an earlier version of this note claimed
+   * they would. `decide` counts every call into the brain; the planner is
+   * reached only where a horse has a live action to take at a table. The
+   * receipts are a partition of the second set, not the first.
+   *
+   * What they immediately established: the GOVERNOR IS NOT THE BOTTLENECK
+   * (333 declines, not the capacity story everyone assumed) and the answer is
+   * simply that most decisions happen in pots under 20bb. No expectation is
+   * declared on any of them - a decline is an observation, not a promise.
    */
   receipt(
     'v44_declined_not_facing_bet',

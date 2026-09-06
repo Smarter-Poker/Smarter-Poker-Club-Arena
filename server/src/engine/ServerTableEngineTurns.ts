@@ -233,6 +233,20 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
      * expectation. Guessing between those is how a layer stays dark for a
      * week; the reason is one string, and it turns tomorrow's audit line into
      * a diagnosis.
+     *
+     * IT ANSWERED ON THE FIRST DAY, and the answer was not what anyone
+     * expected. 2026-09-06: 370,198 small_pot, 112,297 not_facing_bet, 4,326
+     * no_think_time, 619 action_shape, and 333 GOVERNOR. The governor - the
+     * gate everybody assumed, and the only one with no observability of its
+     * own - accounts for 0.06% of declines. Most decisions simply happen in
+     * pots under 20bb.
+     *
+     * And the 0-fire report that prompted all this turned out to be DEPLOY
+     * LAG rather than a closed gate: on the same day these receipts first
+     * ran, the second look itself fired 29,169 times and overturned the fast
+     * answer on 819 of them. The layer was never dark - the box was serving a
+     * build from before it existed. The receipts are what made that provable
+     * in a day instead of a week, which is the whole reason to name a decline.
      */
     if (toCall <= 0) return { ok: false, reason: 'not_facing_bet' };
     if (pot < ServerTableEngineTurns.SECOND_LOOK_MIN_POT_BB * Math.max(bigBlind, 0.01))

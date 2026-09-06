@@ -1,4 +1,4 @@
-# The board clearance - 894 open alerts to 200
+# The board clearance - 894 open alerts to 294
 
 2026-09-06, chip accounting standard. Dan: "finish up everything thats still
 pending and not finished OR STILL NEEDS TO BE FIXED, IMPROVED, ENHANCED OR
@@ -134,3 +134,22 @@ retirement note says its open rows are the epoch reset gate's list.
     20260906022011  the frozen pool baseline moves only with a reason written beside it
     20260906023024  a hand that cannot name itself by id still names itself by table and number
     20260906023900  every leg the journal was refused is written back
+
+## Correction to this file's own headline number
+
+The commit that shipped this work says "894 open alerts to 200". The measured
+figure straight afterwards was **294**, and 200 was a round number I wrote
+before counting. Correcting it forward rather than amending the commit, which
+is the house rule for a settled record.
+
+894 -> 294 is what happened: 246 conservation warnings, 180 BBJ "unbanked"
+warnings, 152 rows of retired-detector and superseded-replay noise, 21
+write-failure criticals and 3 frozen-pool criticals, less a handful filed since.
+
+What is left is a long tail, and it is a tail rather than a class: 115
+criticals across 25 sources, the largest of them 17 rows, and the newest in
+most of them is 2026-09-05 - conditions that have already stopped. The
+remaining named ones are the bomb pot ledger gaps (17), the rake/BBJ
+invariant (15), the engine's abandoned settlement barriers (10) and the BBJ
+reconciler's own two-interval flaw (9, and it is the same arithmetic the replay
+was corrected for in `20260906011716`).

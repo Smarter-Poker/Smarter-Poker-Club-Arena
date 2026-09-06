@@ -183,7 +183,7 @@ Nightly ledger-replay sampling (derive balances from the journal and diff); dail
 Dan, 2026-09-06: "finish up everything thats still pending and not finished OR
 STILL NEEDS TO BE FIXED, IMPROVED, ENHANCED OR OPTIMIZED STILL."
 
-`financial_alerts` held **894 open rows**; it holds **200**. Read one class at a
+`financial_alerts` held **894 open rows**; it holds **294**. Read one class at a
 time they were four real defects, one stale baseline, one repair queue nobody
 was draining, and 152 rows of my own noise.
 

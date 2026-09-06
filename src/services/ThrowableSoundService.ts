@@ -31,8 +31,12 @@
 
 import { soundService, haptic } from './SoundService';
 import type { ThrowWeight } from './ThrowableService';
+import { reportError } from '../utils/errorReporter';
 
 type Wave = OscillatorType;
+
+/** Why a scheduled cue produced no sound. Never folded into silence. */
+export type CueDropReason = 'no_buffer' | 'late' | 'window_passed';
 
 class ThrowableSoundServiceClass {
   private ctx: AudioContext | null = null;
@@ -763,6 +767,212 @@ class ThrowableSoundServiceClass {
       this.noise(0.12, 0.1, 900, 'lowpass', 0.42); // sploosh
     },
   };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  SAMPLE CUES (throwables programme, phase 1, 2026-09-06)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // The rebuilt throwables play RECORDED cues from the open-source library
+  // (docs/throwables/THROWABLES-PREMIUM-ANIMATION-PLAN.md 3.3.1), shipped as
+  // `public/sounds/throwables/<cue>.webm` (Opus) with an `.m4a` (AAC) twin for
+  // Safari. Every cue is scheduled on THIS context's clock at the beat its
+  // spec names, through the same bus, compressor, panner and volume as the
+  // procedural recipes above, so the two coexist during the migration.
+  //
+  // The rules, learned by the knockout and kept here:
+  //   - schedule on the AudioContext clock, never a setTimeout: a main thread
+  //     laying out a table drifts a timer by tens of milliseconds;
+  //   - decode ONCE and cache the AudioBuffer; the bytes are fetched at preload
+  //     (when a rigged item's module loads) so the first throw of a session
+  //     does not wait on the network;
+  //   - a cue with NO file is never silent. The manifest marks it `placeholder`
+  //     and the caller supplies the legacy recipe to play instead; the count is
+  //     exposed so a test can say how many placeholders are still shipping.
+  //   - AND A CUE THAT DOES NOT PLAY SAYS SO. There are three ways a scheduled
+  //     cue can produce no sound and none of them throws: the file 404s or
+  //     fails to decode, a one-shot's decode lands more than a beat late, or a
+  //     loop's whole window is already behind the clock. Silently returning on
+  //     any of those makes "the audio pipeline is fine" and "every cue is
+  //     missing" the same observation (CLAUDE.md 10.86 rule 1). Each drop is
+  //     counted by reason and reported ONCE per reason per session, because a
+  //     table throwing eight items would otherwise report the same broken URL
+  //     eight times a second.
+
+  private cueBytes = new Map<string, Promise<ArrayBuffer | null>>();
+  private cueBuffers = new Map<string, Promise<AudioBuffer | null>>();
+  private cuePlaceholdersPlayed = 0;
+  private cueDrops: Record<CueDropReason, number> = { no_buffer: 0, late: 0, window_passed: 0 };
+  private cueDropReported = new Set<string>();
+
+  /** How many cues fell back to a procedural recipe in this session. */
+  get placeholderCuesPlayed(): number {
+    return this.cuePlaceholdersPlayed;
+  }
+
+  /** Cues that were scheduled and produced no sound, by reason. A non-zero
+   *  `no_buffer` means the files are not reaching the browser at all. */
+  get droppedCues(): Readonly<Record<CueDropReason, number>> {
+    return this.cueDrops;
+  }
+
+  /** One report per reason per cue per session; the counter takes the rest. */
+  private dropCue(name: string, reason: CueDropReason) {
+    this.cueDrops[reason] += 1;
+    const key = `${name}:${reason}`;
+    if (this.cueDropReported.has(key)) return;
+    this.cueDropReported.add(key);
+    try {
+      reportError(
+        new Error(`throwable cue '${name}' produced no sound (${reason})`),
+        'AnimationLaw.throw_cue_silent'
+      );
+    } catch {
+      /* telemetry must never break the table */
+    }
+  }
+
+  /** Start fetching the bytes for these cues now (rig modules call this at
+   *  import time). Safe to call repeatedly; safe without an AudioContext. */
+  preloadCues(names: readonly string[], urlFor: (name: string, ext: 'webm' | 'm4a') => string) {
+    if (typeof window === 'undefined' || typeof fetch !== 'function') return;
+    for (const name of names) {
+      if (this.cueBytes.has(name)) continue;
+      const p = (async () => {
+        for (const ext of ['webm', 'm4a'] as const) {
+          try {
+            const res = await fetch(urlFor(name, ext));
+            if (res.ok) return await res.arrayBuffer();
+          } catch {
+            /* try the other container */
+          }
+        }
+        return null;
+      })();
+      this.cueBytes.set(name, p);
+    }
+  }
+
+  private loadCue(
+    name: string,
+    urlFor: (name: string, ext: 'webm' | 'm4a') => string
+  ): Promise<AudioBuffer | null> {
+    const cached = this.cueBuffers.get(name);
+    if (cached) return cached;
+    if (!this.cueBytes.has(name)) this.preloadCues([name], urlFor);
+    const p = (async () => {
+      const bytes = await this.cueBytes.get(name)!;
+      if (!bytes || !this.ctx) return null;
+      try {
+        // decodeAudioData detaches the buffer; hand it a copy so a second
+        // context (a reload of the sound setting) can decode again.
+        return await this.ctx.decodeAudioData(bytes.slice(0));
+      } catch {
+        return null;
+      }
+    })();
+    this.cueBuffers.set(name, p);
+    return p;
+  }
+
+  /**
+   * Schedule a spec's cues. `offsetMs` is the spec's spawn time (cues are "ms
+   * from launch" and the throw is mounted `spawnMs` before launch); `speed`
+   * is the player's Animation Speed, applied to every offset and every loop.
+   * Returns a cancel function that stops any loop still playing.
+   */
+  scheduleCues(
+    cues: ReadonlyArray<{
+      at: number;
+      sample: string;
+      gain?: number;
+      loopUntil?: number;
+      pan?: 'target' | 'thrower';
+    }>,
+    opts: {
+      speed: number;
+      offsetMs: number;
+      panTarget: number;
+      panThrower: number;
+      urlFor: (name: string, ext: 'webm' | 'm4a') => string;
+      isPlaceholder: (name: string) => boolean;
+      playPlaceholder: (name: string, pan: number) => void;
+    }
+  ): () => void {
+    if (!this.ensureContext() || !this.ctx || !this.bus) return () => {};
+    const ctx = this.ctx;
+    const s = Math.min(4, Math.max(0.1, opts.speed || 1));
+    const t0 = ctx.currentTime;
+    const sources: AudioBufferSourceNode[] = [];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    for (const cue of cues) {
+      const pan = cue.pan === 'thrower' ? opts.panThrower : opts.panTarget;
+      const atSec = ((opts.offsetMs + cue.at) / 1000) * s;
+
+      if (opts.isPlaceholder(cue.sample)) {
+        // No file yet: the legacy recipe, on a timer (placeholders are the
+        // only thing here allowed on a timer, and they are counted).
+        timers.push(
+          setTimeout(
+            () => {
+              this.cuePlaceholdersPlayed += 1;
+              try {
+                opts.playPlaceholder(cue.sample, pan);
+              } catch {
+                /* best effort */
+              }
+            },
+            Math.max(0, atSec * 1000)
+          )
+        );
+        continue;
+      }
+
+      void this.loadCue(cue.sample, opts.urlFor).then((buffer) => {
+        // A context swapped underneath us (the sound setting was reloaded) is
+        // a cancellation, not a drop: this throw's audio graph is simply gone.
+        if (!this.ctx || this.ctx !== ctx) return;
+        if (!buffer) return this.dropCue(cue.sample, 'no_buffer');
+        try {
+          this.setVoice(pan);
+          const src = ctx.createBufferSource();
+          src.buffer = buffer;
+          const gain = ctx.createGain();
+          gain.gain.value = this.humanGain(cue.gain ?? 1);
+          src.connect(gain);
+          gain.connect(this.out!);
+          const startAt = t0 + atSec;
+          const now = ctx.currentTime;
+          if (cue.loopUntil !== undefined) {
+            src.loop = true;
+            const stopAt = t0 + ((opts.offsetMs + cue.loopUntil) / 1000) * s;
+            if (stopAt <= now) return this.dropCue(cue.sample, 'window_passed');
+            src.start(Math.max(startAt, now));
+            src.stop(stopAt);
+          } else {
+            // A decode that finished after its beat still plays (late is
+            // better than silent), but never more than one beat late.
+            if (now - startAt > 0.25) return this.dropCue(cue.sample, 'late');
+            src.start(Math.max(startAt, now));
+          }
+          sources.push(src);
+        } catch {
+          /* audio is best-effort */
+        }
+      });
+    }
+
+    return () => {
+      for (const t of timers) clearTimeout(t);
+      for (const src of sources) {
+        try {
+          src.stop();
+        } catch {
+          /* already stopped */
+        }
+      }
+    };
+  }
 }
 
 export const throwableSoundService = new ThrowableSoundServiceClass();

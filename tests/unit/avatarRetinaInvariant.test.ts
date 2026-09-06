@@ -51,6 +51,11 @@ describe('getAvatarWithFallback', () => {
       'https://smarter.poker/avatars/table/free_shark.webp'
     );
   });
+  it('maps the current Hub library webp to the table webp', () => {
+    expect(getAvatarWithFallback('/avatars/free/shark.webp', 'seed', 'Name')).toBe(
+      'https://smarter.poker/avatars/table/free_shark.webp'
+    );
+  });
   it('routes storage objects through the resize endpoint when sized', () => {
     const url = 'https://x.supabase.co/storage/v1/object/public/social-media/avatars/a.png';
     const out = getAvatarWithFallback(url, 'seed', 'Name', 44);

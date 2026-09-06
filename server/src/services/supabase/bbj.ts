@@ -15,6 +15,7 @@
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { raiseFinancialAlert } from '../financialAlerts.js';
+import { bbjSharesParkedTotal } from '../../observability/engineInstruments.js';
 
 /**
  * BBJ AUDIT 2026-09-05: every club that shares a jackpot pool with `clubId`.
@@ -687,6 +688,12 @@ async function attemptBBJPayoutOnce(
       .is('paid_at', null);
     if (parked && parked.length > 0) {
       const total = parked.reduce((n, r) => n + Number(r.amount || 0), 0);
+      /* COUNTED WHERE IT HAPPENS (BBJ phase 2.4). This counter was declared
+         beside detected/paid/queued and incremented nowhere, which is the
+         worse half of having no metric at all: `poker_bbj_shares_parked_total`
+         would have read 0 for ever and been indistinguishable from "no share
+         was ever parked". A number nobody writes to is not coverage. */
+      bbjSharesParkedTotal.inc(parked.length, { table_id: params.tableId });
       await raiseFinancialAlert(
         'warning',
         'processBBJPayout.share_parked',

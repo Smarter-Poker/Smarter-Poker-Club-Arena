@@ -88,8 +88,12 @@ const memory = new Set<string>();
  * is unique per table and never reused within a session, so the pair is
  * unique per hit without needing the engine to mint an id.
  */
-export function bbjHitKey(tableId: string | undefined, handNumber: number | undefined): string {
-  return `${tableId ?? 'unknown'}:${handNumber ?? 0}`;
+export function bbjHitKey(
+  tableId: string | undefined,
+  handNumber: number | undefined,
+  kind = ''
+): string {
+  return `${kind}${kind ? ':' : ''}${tableId ?? 'unknown'}:${handNumber ?? 0}`;
 }
 
 function readSeen(): Set<string> {
@@ -132,6 +136,25 @@ export interface BbjAnnounceInput {
    * carries the engine's stamp, and does not set this flag).
    */
   requireStamp?: boolean;
+  /**
+   * WHICH ANNOUNCEMENT THIS IS, and why the key needs it (BBJ phase 2.2).
+   *
+   * One jackpot can now produce THREE separate things to say: the celebration
+   * (`bbj_payout_complete`), "it is coming" when the money could not land this
+   * instant (`bbj_payout_pending`), and "it landed" when the reconciler
+   * delivers it (`bbj_payout_paid`). The identity was table + hand ALONE, so
+   * the first of those to arrive marked the hit seen and every later one was
+   * refused as a replay: a queued jackpot told the player it was coming and
+   * then never told them it had arrived.
+   *
+   * Each kind therefore de-duplicates on its own, and each is still announced
+   * at most once per session. The default is the empty string so the two
+   * callers that existed before - the table celebration and the club-wide card
+   * - keep the exact key they had, and keep sharing it: those two are the same
+   * announcement seen from two places, and the card already refuses the table
+   * you are looking at.
+   */
+  kind?: string;
   /** Injectable for tests. */
   now?: number;
 }
@@ -167,7 +190,7 @@ export function shouldAnnounceBbjHit(input: BbjAnnounceInput): boolean {
     return false;
   }
 
-  const key = bbjHitKey(input.tableId, input.handNumber);
+  const key = bbjHitKey(input.tableId, input.handNumber, input.kind);
   const seen = readSeen();
   if (seen.has(key)) return false;
 

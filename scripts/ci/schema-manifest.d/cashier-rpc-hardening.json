@@ -1,0 +1,5 @@
+{
+  "_owner": "codex/phase4-deep-certification",
+  "_comment": "20260906093024: Cashier telemetry writes through an auth-derived, club-scoped RPC; direct authenticated table INSERT is revoked.",
+  "functions": ["fn_record_cashier_operation"]
+}

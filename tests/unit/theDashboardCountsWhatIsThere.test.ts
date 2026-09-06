@@ -409,13 +409,17 @@ describe('the member panel cannot destroy a wallet by deleting its row', () => {
     expect(kick.indexOf('chipsAtRisk > 0')).toBeLessThan(kick.indexOf('confirmDialog({'));
   });
 
-  it('checks the row count on every write, so a 204 is not reported as success', () => {
+  it('requires an authoritative success signal for every membership write', () => {
     const kick = sliceMethod(PANEL, 'const kickMember = async');
     const ban = sliceMethod(PANEL, 'const toggleBan = async');
-    for (const body of [kick, ban]) {
-      expect(body).toContain(".select('user_id')");
-      expect(body).toContain('if (!data || data.length === 0) {');
-    }
+    expect(kick).toContain('await MembershipService.removeMember(resolvedId, member.id)');
+    expect(ban).toContain(".select('user_id')");
+    expect(ban).toContain('if (!data || data.length === 0) {');
+
+    const service = readFileSync('src/services/MembershipService.ts', 'utf8');
+    const remove = sliceMethod(service, 'async removeMember');
+    expect(remove).toContain("rpc('fn_remove_settled_club_member'");
+    expect(remove).toContain('if (!result?.success) {');
   });
 
   it('surfaces a failed read instead of an empty roster', () => {

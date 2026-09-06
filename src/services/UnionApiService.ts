@@ -16,8 +16,9 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { uuid } from '../utils/uuid';
 
-interface ApiResult<T = Record<string, unknown>> {
+interface ApiResult {
   success: boolean;
   error?: string;
   [key: string]: unknown;
@@ -26,8 +27,8 @@ interface ApiResult<T = Record<string, unknown>> {
 async function callUnionApi<T = Record<string, unknown>>(
   endpoint: 'manage-union' | 'union-wallet' | 'union-application',
   body: Record<string, unknown>,
-  opts: { idempotent?: boolean } = {}
-): Promise<ApiResult<T> & T> {
+  opts: { idempotent?: boolean; idempotencyKey?: string } = {}
+): Promise<ApiResult & T> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -39,7 +40,10 @@ async function callUnionApi<T = Record<string, unknown>>(
     'Content-Type': 'application/json',
   };
   if (opts.idempotent !== false) {
-    headers['X-Idempotency-Key'] = crypto.randomUUID();
+    /* The caller owns retry identity. Minting here is still the safe default
+       for one-shot commands, but a UI retry after a lost response must pass
+       its original key or the server will apply a second money movement. */
+    headers['X-Idempotency-Key'] = opts.idempotencyKey || uuid();
   }
 
   const response = await fetch(`/api/club-arena/${endpoint}`, {
@@ -51,7 +55,21 @@ async function callUnionApi<T = Record<string, unknown>>(
     .json()
     .catch(() => ({ success: false, error: `HTTP ${response.status}` }));
   if (!data.success) {
-    throw new Error(data.error || `Union API request failed (HTTP ${response.status})`);
+    const error = new Error(
+      data.error || `Union API request failed (HTTP ${response.status})`
+    ) as Error & {
+      definitive?: boolean;
+      status?: number;
+    };
+    error.status = response.status;
+    /* Only terminal validation/auth/not-found responses retire a money key.
+       408/409/425/429 are deliberately ambiguous: a proxy timeout or an
+       idempotency "already in progress" conflict can arrive while the first
+       command is still committing. Retrying either with a fresh key can move
+       funds twice. Transport exceptions and 5xx are ambiguous for the same
+       reason. */
+    error.definitive = [400, 401, 403, 404, 405, 422].includes(response.status);
+    throw error;
   }
   return data;
 }
@@ -153,8 +171,18 @@ export const unionApi = {
       { idempotent: false }
     );
   },
-  sendToClub(unionId: string, clubId: string, amount: number, notes?: string) {
-    return callUnionApi('union-wallet', { action: 'send_to_club', unionId, clubId, amount, notes });
+  sendToClub(
+    unionId: string,
+    clubId: string,
+    amount: number,
+    notes?: string,
+    idempotencyKey?: string
+  ) {
+    return callUnionApi(
+      'union-wallet',
+      { action: 'send_to_club', unionId, clubId, amount, notes },
+      { idempotencyKey }
+    );
   },
   moveRakeToChips(unionId: string, amount: number, notes?: string) {
     return callUnionApi('union-wallet', { action: 'move_rake_to_chips', unionId, amount, notes });
@@ -277,16 +305,21 @@ export const unionApi = {
     amount: number,
     destination: 'club' | 'bbj_main',
     clubId?: string,
-    notes?: string
+    notes?: string,
+    idempotencyKey?: string
   ) {
-    return callUnionApi('union-wallet', {
-      action: 'promo_send',
-      unionId,
-      amount,
-      destination,
-      clubId,
-      notes,
-    });
+    return callUnionApi(
+      'union-wallet',
+      {
+        action: 'promo_send',
+        unionId,
+        amount,
+        destination,
+        clubId,
+        notes,
+      },
+      { idempotencyKey }
+    );
   },
 };
 

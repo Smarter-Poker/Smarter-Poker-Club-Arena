@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+const authState = vi.hoisted(() => ({ userId: 'test-user-123' }));
 const inMock = vi.fn();
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -23,7 +24,7 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 vi.mock('@/hooks/useAuthUser', () => ({
-  useAuthUser: () => ({ user: { id: 'test-user-123' } }),
+  useAuthUser: () => ({ user: { id: authState.userId } }),
 }));
 
 vi.mock('@/hooks/useMasterBusSubscription', () => ({
@@ -56,6 +57,14 @@ const UNION = {
   is_owner: true,
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 function renderTile(props: Record<string, unknown> = {}) {
   const merged = {
     tile: TILE,
@@ -70,6 +79,7 @@ function renderTile(props: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  authState.userId = 'test-user-123';
   localStorage.clear();
   clearClubChipBalanceCache();
   inMock.mockReset();
@@ -157,11 +167,36 @@ describe('ClubQuickLinkTile', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/Wallet Balances Unavailable/i);
     expect(screen.getByRole('menuitem', { name: /Balance Unavailable/i })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Retry/i }));
+    const retry = screen.getByRole('button', { name: /Retry/i });
+    expect(retry).toHaveFocus();
+    await user.keyboard('{Enter}');
 
     expect(await screen.findByRole('menuitem', { name: /77 Chips/i })).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(inMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("never paints a previous account's balances while the next account read is pending", async () => {
+    const nextRead = deferred<{ data: null; error: Error }>();
+    inMock
+      .mockResolvedValueOnce({ data: [{ club_id: A.id, chip_balance: 1234 }], error: null })
+      .mockReturnValueOnce(nextRead.promise);
+    const rendered = renderTile({ clubs: [A], targetClub: A });
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
+    expect(await screen.findByRole('menuitem', { name: /1,234 Chips/i })).toBeInTheDocument();
+
+    authState.userId = 'next-user-456';
+    rendered.rerender(<ClubQuickLinkTile {...(rendered.props as never)} />);
+
+    expect(screen.queryByText(/1,234 Chips/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/Reading Wallet Balances/i);
+
+    await act(async () => {
+      nextRead.resolve({ data: null, error: new Error('next account read failed') });
+      await nextRead.promise;
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Wallet Balances Unavailable/i);
+    expect(screen.queryByText(/1,234 Chips/i)).not.toBeInTheDocument();
   });
 
   it('closes the popover on Escape and returns focus to the tile trigger', async () => {

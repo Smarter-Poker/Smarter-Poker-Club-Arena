@@ -69,7 +69,8 @@ vi.mock('../../src/core/MasterBus', () => ({
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
-import { ClubsService, searchClubs, getClub } from '../../src/services/ClubsService';
+import { supabase } from '../../src/lib/supabase';
+import { ClubsService, searchClubs, getClub, retireClub } from '../../src/services/ClubsService';
 
 describe('ClubsService', () => {
   beforeEach(() => {
@@ -117,6 +118,28 @@ describe('ClubsService', () => {
     });
   });
 
+  describe('retireClub', () => {
+    it('forwards the human-typed club name instead of refetching a confirmation value', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: { success: true, already_retired: false },
+        error: null,
+      } as any);
+
+      await retireClub('25450', 'Human Typed Name', 'Owner chose to close');
+
+      expect(supabase.rpc).toHaveBeenCalledWith('fn_retire_settled_club', {
+        p_club_id: 'resolved-uuid',
+        p_confirm_name: 'Human Typed Name',
+        p_reason: 'Owner chose to close',
+      });
+    });
+
+    it('fails closed before the RPC when no confirmation was typed', async () => {
+      await expect(retireClub('25450', '   ')).rejects.toThrow(/type the club name/i);
+      expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // SERVICE OBJECT SHAPE
   // ─────────────────────────────────────────────────────────────────────────
@@ -129,6 +152,7 @@ describe('ClubsService', () => {
       expect(typeof ClubsService.update).toBe('function');
       expect(typeof ClubsService.join).toBe('function');
       expect(typeof ClubsService.leave).toBe('function');
+      expect(typeof ClubsService.retire).toBe('function');
       expect(typeof ClubsService.delete).toBe('function');
       expect(typeof ClubsService.getUserMemberships).toBe('function');
       expect(typeof ClubsService.getMembers).toBe('function');

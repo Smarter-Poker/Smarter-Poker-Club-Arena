@@ -274,7 +274,7 @@ export default function CashierPage() {
     if (clubId || !user?.id) return;
     let live = true;
     (async () => {
-      let target = resolveTargetClub(readCachedQuickLinkClubs());
+      let target = resolveTargetClub(readCachedQuickLinkClubs(user.id));
       if (!target) target = resolveTargetClub(await fetchQuickLinkClubs(user.id));
       if (!live) return;
       if (target) navigate(`/clubs/${target.id}/cashier`, { replace: true });

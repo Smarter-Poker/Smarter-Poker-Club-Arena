@@ -32,6 +32,7 @@ import { useInTabLobby } from '../../context/InTabLobbyContext';
 import type { Tournament, BlindLevel } from '../../types/database.types';
 import { parsePayoutStructure } from '../tournament/details/types';
 import type { PayoutPlace } from '../tournament/details/types';
+import { staffTickLine, tickIsStale } from './cashGameTick';
 import './GameLobbyPanel.css';
 import './PremiumGameLobbyPanel.css';
 
@@ -50,6 +51,13 @@ export interface GameLobbyPanelProps {
   onRegister: (t: LobbyTournamentRow) => void;
   onUnregister: (t: LobbyTournamentRow) => void;
   onSpinJoin: (t: LobbyTournamentRow, variant: 'spin' | 'sng') => void;
+  /**
+   * THE TICK FOR STAFF (Dan 2026-09-05): owner or staff of the club. On a
+   * must-move game the panel reads `cash_games.last_tick_at` and
+   * `last_tick_actions` and prints one monospace line under the game facts.
+   * Players never see it.
+   */
+  staff?: boolean;
   /** Club owner / admin only: opens the existing delete confirmation flow. */
   canDelete?: boolean;
   onDeleteTable?: (tableId: string) => void;
@@ -105,6 +113,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     canDelete,
     onDeleteTable,
     embedded,
+    staff,
   } = props;
 
   /**
@@ -151,6 +160,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const [waitlistError, setWaitlistError] = useState(false);
   const [avgPot, setAvgPot] = useState<number | null>(null);
   const [seatMap, setSeatMap] = useState<{ seat_number: number; user_id: string }[] | null>(null);
+  const [tick, setTick] = useState<{
+    last_tick_at: string | null;
+    last_tick_actions: unknown;
+    readAt: number;
+  } | null>(null);
   const [tab, setTab] = useState<TournTab>('overview');
   const [detailError, setDetailError] = useState(false);
 
@@ -250,6 +264,47 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
       cancelled = true;
     };
   }, [entry.id, isCash, entry.capacity, entry.players]);
+
+  // ── THE TICK FOR STAFF (Dan 2026-09-05). Staff only, must-move games only:
+  //    the controller's last pass, read straight off cash_games (its columns;
+  //    authenticated may read the row - cash_games_read) on open and every
+  //    ten seconds while the panel is up. Read-only enrichment: a failed read
+  //    prints nothing and never raises. ──
+  const gameId = entry.game?.id ?? null;
+  useEffect(() => {
+    if (!isCash || !staff || !gameId) {
+      setTick(null);
+      return;
+    }
+    let cancelled = false;
+    const read = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('cash_games')
+          .select('last_tick_at, last_tick_actions')
+          .eq('id', gameId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (error) {
+          reportError(error, 'GameLobbyPanel.loadTick');
+          return;
+        }
+        setTick({
+          last_tick_at: (data?.last_tick_at as string | null) ?? null,
+          last_tick_actions: data?.last_tick_actions ?? null,
+          readAt: Date.now(),
+        });
+      } catch (err) {
+        reportError(err, 'GameLobbyPanel.loadTick');
+      }
+    };
+    void read();
+    const id = window.setInterval(() => void read(), 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [isCash, staff, gameId]);
 
   // ── CTA derivation from EXISTING state, never invented ──
   const cta = useMemo<CtaSpec>(() => {
@@ -683,6 +738,19 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                     <dd>{entry.statusLabel}</dd>
                   </div>
                 </dl>
+                {/* THE TICK FOR STAFF (Dan 2026-09-05): "Tick 4s Ago: Moves
+                    Planned 2, Feeder Opened". Staff of the club, must-move
+                    games only. Amber once the controller has been quiet for
+                    two minutes. */}
+                {staff && tick && (
+                  <p
+                    className={`glp__tick glp__mono${tickIsStale(tick.last_tick_at, tick.readAt) ? ' is-stale' : ''}`}
+                    data-testid="glp-staff-tick"
+                    title="The Cluster Controller's Last Pass"
+                  >
+                    {staffTickLine(tick.last_tick_at, tick.last_tick_actions, tick.readAt)}
+                  </p>
+                )}
               </section>
 
               {seatMap && entry.capacity > 0 && (

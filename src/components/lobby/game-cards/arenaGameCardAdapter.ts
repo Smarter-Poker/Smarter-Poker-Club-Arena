@@ -1,4 +1,5 @@
 import {
+  cashTemplateLabel,
   cashTitleLines,
   levelSpeedLabel,
   spinPayoutLabel,
@@ -82,6 +83,21 @@ export function cashCardTitle(entry: LobbyEntry): { title: string; subtitle?: st
   }
 
   const title = tableName || entry.gameLabel;
+  /* THE MOBILE CARD SAYS THE STYLE TOO (Dan 2026-09-05). The desktop board
+     has said Classic / Action / Madness on line two since 2026-09-04; the
+     phone card said the club or the long variant name. A templated game now
+     leads its second line with the style - unless the title already carries
+     the word (the default game name is "NLH 1/2 Classic"), in which case the
+     line is left as Dan approved it for phones. The club name, when the board
+     shows one, rides after the style; the variant gives way to it, as it does
+     on the desktop. The stakes and the player count are separate zones of the
+     card and are never touched by this line. */
+  const style = cashTemplateLabel(entry.game?.template);
+  const titleSaysStyle = style ? normalizedWords(title).includes(style.toLowerCase()) : false;
+  if (style && !titleSaysStyle) {
+    const subtitle = [style, entry.clubLabel].filter(Boolean).join(', ');
+    return { title, subtitle };
+  }
   const subtitle =
     entry.clubLabel || (repeatsTitle(title, entry.variantLabel) ? undefined : entry.variantLabel);
   return { title, subtitle: subtitle || undefined };

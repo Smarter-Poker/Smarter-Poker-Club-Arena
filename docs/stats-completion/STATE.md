@@ -2,11 +2,12 @@
 
 - Program: Active
 - Current Phase: 1 Of 10
-- Current Phase Status: Reopened — Final Audit Repairs Awaiting Protected Merge And Production Recertification
-- Publication Status: Published By PR #2094; Production Certification Follow-Up Merged By PR #2150 At `0786a1ced8c4060a92c48d17a534eb2d5078690d`
-- Production Build: `6a1992d270ed001ce5b4fa7ea5603b6432dd6767`
-- Production Acceptance: Prior Stats Sub-Suite Passed `3/3`, But Its Overall Run Failed; Replacement Honest Gate Is Pending
-- Next Gate: Phase 2 Remains Blocked Until This Repair Is Merged, Published, And Fully Green In Production.
+- Current Phase Status: Complete
+- Publication Status: All Phase 1 Repairs Are Protected, Merged, And Published. The Core Stats Foundation Landed In PR #2094; Hardening And Certification Landed In PRs #2150, #2227, #2284, #2288, #2308, #2320, And #2354. Publication Reliability Follow-Ups Landed In PRs #2372 And #2375.
+- Production Build: `d6717a0ce09c6c055d50ed5d1b18b6891490ca05` (`Publish Club Arena` Run `34015358088`)
+- Production Acceptance: `Post-Deploy E2E (production)` Run `34011241354` Passed With 190 Executed, 1 Intentional Skip, 0 Failed, And 0 Flaky Tests Across 30 Spec Files. Stats Passed 3/3; Authenticated Cashier, Club Lobby, Club Members, Realtime Customization, Customization Commerce, Daily Missions, And The 174-Test Route Sweep All Passed. The Reserved Test Account Was Hard-Deleted And Its Absence Verified.
+- Scheduler Acceptance: The World Hub Deadline Fix From PR #1152 (`fc7a94e7767e56c014f9bce2939ddd417597ae72`) Is In The Live World Lineage. On 2026-09-06, Four Consecutive `club-stats-maintenance` Cycles Returned HTTP 200 In 63.8s, 64.7s, 62.9s, And 46.2s. `openclaw.service` Was Active And Running With Zero Restarts And Exit Status 0.
+- Next Gate: Ready To Start Phase 2 Of 10.
 
 ## Phase 1 Acceptance Checklist
 

@@ -419,3 +419,47 @@ Each is shipped, published and verified before the next starts.
 
 See `docs/changelog/2026-09-06-the-drain-waits-for-the-money.md`.
 Pinned by `server/src/engine/TheDrainWaitsForTheMoney.law.test.ts`.
+
+---
+
+## THE 323 INCIDENT SWEEP (2026-09-06) — and what it changed about the plan
+
+Read one at a time, per Dan. **323 open -> 86; criticals 135 -> 25.** Full
+account: `docs/changelog/2026-09-06-the-323-open-drift-incidents.md`.
+
+**Dan's ruling, mid-sweep, now binding on this programme:**
+
+> "WE AREN'T USING ANY CRONS TO MONITOR OR FIX, THATS A BANDAID, NOT A HARD
+> CODED SOLUTION. WE NEED TO FIX THE ISSUES AT THE CODE LEVEL. NOT CONSTANTLY
+> RUNNING AROUND RECONCILING. I WANT NOTHING BUT CODE BASE FIXES FOR ANY AND
+> ALL CHIP DRIFT ISSUES."
+
+Every remaining phase is re-scoped against this. A repair sweep, a backfill
+pass or a reconciliation job is **not** an acceptable answer to a drift; the
+answer is the write that cannot lose. Two sweeps I scheduled during this session
+were unscheduled again in `20260906100735`.
+
+This retires the "detector + repair" pattern the earlier phases leaned on. It
+does **not** retire detectors — a detector says whether the code fix worked. It
+retires the repair as the fix.
+
+### Re-ordered remaining work, each one a code fix
+
+| #   | what                                                                                 | the code fix, not the sweep                                                                                                                                         |
+| --- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2a  | Bomb award units                                                                     | **Done, pending engine deploy.** One transaction via `fn_ca_insert_hand_with_awards`. The constraint trigger goes on in the same PR once the engine can satisfy it. |
+| 2b  | Escrow residue (30 incidents)                                                        | The SNG/heads-up close path never drains the fee sub-balance. Fix the close, not the leftovers.                                                                     |
+| 2c  | The live 2,523.48 (7 incidents, kill switch tripped)                                 | One account disagrees with its journal. Find the write that skipped a leg.                                                                                          |
+| 2d  | Deep Stack Society treasury (5 incidents)                                            | A club created after the baseline snapshot has no opening row. Give club creation the row, rather than a snapshot that ages.                                        |
+| 2e  | Diamond supply, insurance offers, R3 credits, the 0.30 residual                      | One write path each.                                                                                                                                                |
+| 3   | One definition of a chip — scale 2 everywhere (9.1)                                  | unchanged                                                                                                                                                           |
+| 4+  | Attestation, retention, player statement, second writer, other currencies, the reset | unchanged                                                                                                                                                           |
+
+### Two corrections of mine from this session, recorded so they are not repeated
+
+1. **I answered a drift with a cron.** Rejected and reverted.
+2. **I attached a constraint trigger before the engine could satisfy it**, then
+   dropped it on a misreading (a 2m41s gap in bomb pots whose normal maximum gap
+   that hour was 489s; and three unit-less hands committed while it was live, so
+   it was not blocking anything). A rule must land with, or after, the code that
+   can obey it — never before.

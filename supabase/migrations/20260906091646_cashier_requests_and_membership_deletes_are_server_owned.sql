@@ -31,15 +31,36 @@ BEGIN;
 
 SET LOCAL lock_timeout = '5s';
 
--- Acquire the three hot parent/account tables in the same order as club and
--- cashier writers before changing any one of them. Without this preflight the
--- migration held chip_requests while waiting for club_members, while a live
--- cashier transaction held club_members and waited for chip_requests: the
--- database correctly detected and rolled back that deadlock. A five-second
--- timeout keeps this an all-or-nothing retry during sustained traffic.
-LOCK TABLE public.clubs IN ACCESS EXCLUSIVE MODE;
-LOCK TABLE public.club_members IN ACCESS EXCLUSIVE MODE;
-LOCK TABLE public.chip_requests IN ACCESS EXCLUSIVE MODE;
+-- Acquire every relation whose policy, shape, or triggers change before
+-- changing any one of them. NOWAIT is essential on a live estate: holding one
+-- hot relation while waiting for another can form a cycle with an ordinary
+-- cashier/gameplay transaction. If any relation is busy, the whole transaction
+-- exits immediately and is retried later with no partial DDL.
+LOCK TABLE
+  public.clubs,
+  public.club_members,
+  public.chip_requests,
+  public.agents,
+  public.club_wallets,
+  public.club_diamond_wallets,
+  public.bbj_pools,
+  public.spin_bonus_pools,
+  public.tables,
+  public.tournaments,
+  public.table_seats,
+  public.tournament_players,
+  public.tournament_escrow,
+  public.cashout_requests,
+  public.chip_escrow,
+  public.chip_escrow_holds,
+  public.tournament_tickets,
+  public.credit_invoices,
+  public.settlement_periods,
+  public.promo_vault_inventory,
+  public.club_opening_setups,
+  public.union_clubs,
+  public.unions
+IN ACCESS EXCLUSIVE MODE NOWAIT;
 
 -- ---------------------------------------------------------------------------
 -- Chip-request visibility: one permissive SELECT policy, no legacy OR arm.

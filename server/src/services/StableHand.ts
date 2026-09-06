@@ -17,6 +17,7 @@
  */
 
 import { createHash } from 'crypto';
+import { stakeBandForBigBlind, type HorseStakeBand } from './HorseBehavior.js';
 
 /* ------------------------------------------------------------------ */
 /* Identity                                                            */
@@ -370,6 +371,38 @@ export function variantLabel(variant: string): string {
   return VARIANT_LABEL[key] ?? key.toUpperCase();
 }
 
+/**
+ * THE STAKE LADDER - every rung the platform actually deals.
+ *
+ * THERE IS NO CAP (Dan, 2026-09-05): "THERE ISN'T A 'CAP'. HORSES CAN ONLY
+ * PLAY ABOVE 1/2 IF THEY HAVE THE 'PROPER BANKROLL' TO PLAY A BIGGER STAKE."
+ *
+ * This list used to stop at 1/2 and a `PHASE_MAX_BB = 2` clamp refused
+ * everything above it "however rich the wallet". Nothing asked for that
+ * clamp. Measured on production 2026-09-05, its effect was that
+ * `stable_hand_membership_tags.preferred_stakes` held only 0.02 through 2.00
+ * for all 1,000 horses, so every 2/5, 5/10, 10/20 and 25/50 game on the
+ * platform was permanently unpopulated and the fleet logged "No available
+ * horses ... band mid" every cycle - while 814 of those horses held 20+
+ * buy-ins for 2/5 and 289 held 20+ buy-ins for 25/50. The bankroll is the
+ * only gate now, and it is the one Dan named.
+ *
+ * The rungs are READ from `cash_games`, not invented (measured 2026-09-05).
+ * Two live (sb, bb) pairs are deliberately NOT here:
+ *   - 0.13/0.25 - one classic game, a stray small blind on a rung whose
+ *     canonical blinds are 0.10/0.25 (23 games). Every gate that matters
+ *     keys on the BIG blind, so a horse tagged for 0.25 plays it anyway;
+ *     what the ladder decides is the blinds a NEW table opens at, and that
+ *     must be the canonical pair.
+ *   - 2.00/4.00 - one classic game, disabled, on a rung whose canonical
+ *     blinds are 2.00/5.00 (16 enabled games). Same reasoning, and nothing
+ *     is dealing it.
+ *
+ * 25/50 IS THE TOP RUNG, matching the DEFAULT_TABLES comment in
+ * HorseFleetManager: 25/50 is the top by order and "anything above it is not
+ * added here and must not be". That is the ladder's own ceiling, not a phase
+ * clamp - a rung nobody deals is not a stake.
+ */
 export const STAKE_LADDER: Stake[] = [
   { sb: 0.01, bb: 0.02 },
   { sb: 0.02, bb: 0.05 },
@@ -378,47 +411,100 @@ export const STAKE_LADDER: Stake[] = [
   { sb: 0.25, bb: 0.5 },
   { sb: 0.5, bb: 1 },
   { sb: 1, bb: 2 },
+  { sb: 2, bb: 5 },
+  { sb: 5, bb: 10 },
+  { sb: 10, bb: 20 },
+  { sb: 25, bb: 50 },
 ];
 
-/** Section 8.3 phase clamp. NOTHING sits above 1/2 this phase, however rich
- *  the wallet. 10,000 chips would license 2/5 on the 20-buy-in rule; the
- *  clamp still forbids it, and the clamp wins. */
-export const PHASE_MAX_BB = 2;
+/** The biggest big blind the platform deals. Derived from the ladder so it
+ *  cannot drift from it: add a rung and the ceiling moves with it. */
+export const LADDER_MAX_BB = STAKE_LADDER[STAKE_LADDER.length - 1].bb;
 
-export function stakeIsLegalThisPhase(bb: number): boolean {
-  return bb <= PHASE_MAX_BB;
+/** Is this a stake the platform deals at all? A table above the top rung is
+ *  not a stake a horse declines on bankroll grounds - it is a table that
+ *  should not exist. */
+export function stakeIsOnLadder(bb: number): boolean {
+  return STAKE_LADDER.some((s) => Math.abs(s.bb - bb) < 1e-9);
 }
 
-export type StakeBand = 'micro' | 'low' | 'top';
-
-export function stakeBandOf(bb: number): StakeBand | null {
-  if (bb <= 0.1) return 'micro';
-  if (bb <= 0.5) return 'low';
-  if (bb <= PHASE_MAX_BB) return 'top';
-  return null;
+/** Everything at or below the ladder's top rung. This is the ONLY stake
+ *  ceiling left; a stake below it is decided by the bankroll and nothing
+ *  else. */
+export function stakeIsWithinLadder(bb: number): boolean {
+  return Number.isFinite(bb) && bb > 0 && bb <= LADDER_MAX_BB + 1e-9;
 }
 
+/**
+ * THE BANDS ARE ONE DEFINITION (2026-09-05).
+ *
+ * This module used to carry its own three-band `stakeBandOf` (micro / low /
+ * top, null above 2) while HorseBehavior carried a four-band
+ * `stakeBandForBigBlind` (micro / low / mid / high, no ceiling). Two band
+ * functions that disagree is a coin flip decided by whichever one a caller
+ * happened to import. The four-band one is canonical - it is the one the
+ * database writes (`fn_assign_horse_stake_bands` stores micro/low/mid/high
+ * into `profiles.horse_profile`), the one `stakeBandAllows` gates seats on,
+ * and the one Dan named. StableHand re-exports it rather than restating it.
+ *
+ * ('low' is the band Dan calls small. The name is the one already stored in
+ * the database and in `profiles.horse_profile`; renaming it here would make
+ * every stored band unreadable, so it stays.)
+ */
+export type StakeBand = HorseStakeBand;
+export const stakeBandOf: (bb: number) => StakeBand = stakeBandForBigBlind;
+
+export const STAKE_BANDS: readonly StakeBand[] = ['micro', 'low', 'mid', 'high'] as const;
+
+/**
+ * The share of seats each band should hold.
+ *
+ * These are the fleet's own band proportions, already measured and already
+ * written down in HorseBehavior: 22/52/15/11 follows live seat demand, "so
+ * merit decides WHO is in a band and demand decides HOW MANY - no stake level
+ * ends up without enough horses to fill it". Using the same four numbers here
+ * means the floor the planner shapes and the fleet that populates it are
+ * working from ONE distribution rather than two.
+ *
+ * The old 40/35/25 could not be carried forward: it was written over three
+ * bands that all sat at or below 1/2, so every share of it lived inside what
+ * is now the micro and low bands, and mid and high would have had a target of
+ * zero seats forever.
+ */
 export const STAKE_MIX: Record<StakeBand, number> = {
-  micro: 0.4,
-  low: 0.35,
-  top: 0.25,
+  micro: 0.22,
+  low: 0.52,
+  mid: 0.15,
+  high: 0.11,
 };
 
 /** Which band is furthest below its share right now. Drives which stake the
- *  launcher reaches for next. */
+ *  launcher reaches for next.
+ *
+ *  A band with a target of ZERO is skipped rather than compared: an empty
+ *  band with a zero target has a deficit of exactly 0, which beats every
+ *  oversubscribed band's negative deficit and would make the launcher chase
+ *  a band nobody asked for. */
 export function neediestStakeBand(seatsByBand: Record<StakeBand, number>): StakeBand {
-  const total = seatsByBand.micro + seatsByBand.low + seatsByBand.top;
+  const total = STAKE_BANDS.reduce((n, b) => n + (seatsByBand[b] ?? 0), 0);
   if (total === 0) return 'micro';
   let best: StakeBand = 'micro';
   let largestDeficit = -Infinity;
-  (['micro', 'low', 'top'] as StakeBand[]).forEach((b) => {
-    const deficit = STAKE_MIX[b] - seatsByBand[b] / total;
+  STAKE_BANDS.forEach((b) => {
+    if (STAKE_MIX[b] <= 0) return;
+    const deficit = STAKE_MIX[b] - (seatsByBand[b] ?? 0) / total;
     if (deficit > largestDeficit) {
       largestDeficit = deficit;
       best = b;
     }
   });
   return best;
+}
+
+/** An empty per-band seat tally. One helper so a new band cannot be
+ *  forgotten at one of the call sites that counts seats. */
+export function emptyBandSeats(): Record<StakeBand, number> {
+  return { micro: 0, low: 0, mid: 0, high: 0 };
 }
 
 /* ------------------------------------------------------------------ */
@@ -750,12 +836,61 @@ export function availableOf(balance: number, chipsOnOpenTables: number): number 
 }
 
 /**
- * Section 8.3. The phase clamp is checked FIRST and is not negotiable:
- * a wallet rich enough for 2/5 is still refused 2/5 this phase.
+ * Section 8.3, as Dan ruled it on 2026-09-05: THE BANKROLL IS THE WHOLE RULE.
+ *
+ * This function used to check a phase clamp FIRST and refuse a wallet rich
+ * enough for 2/5 anyway. There is no clamp. Twenty buy-ins of the game is
+ * what licenses a horse to sit in it, at every rung of the ladder, and that
+ * is the only thing this asks.
  */
 export function isLicensed(available: number, bb: number): boolean {
-  if (!stakeIsLegalThisPhase(bb)) return false;
   return available >= BUYINS_TO_LICENSE * bi100(bb);
+}
+
+/**
+ * The buy-ins a horse must hold behind a stake before it may be TAGGED for
+ * it - the same bar the seat gate applies, so a tag can never name a stake
+ * the gate would then refuse.
+ *
+ * Two rules guard a seat and they are not the same number: `isLicensed` here
+ * wants BUYINS_TO_LICENSE (20), and HorseBankroll's `canSit` wants the
+ * horse's own temperament (a nit 40, a standard 25, a gambler 12). A horse
+ * passes a seat only if BOTH say yes, so the tag takes the higher of them.
+ * Pass the horse's `buyInsToSit` from `bankrollPolicyFor(horseId)`; omit it
+ * and the licence bar alone applies.
+ */
+export function buyInsRequiredFor(buyInsToSit?: number): number {
+  return Math.max(
+    BUYINS_TO_LICENSE,
+    Number.isFinite(buyInsToSit as number) ? (buyInsToSit as number) : 0
+  );
+}
+
+/** May a roll of `available` chips play this stake at all? */
+export function rollSupportsStake(available: number, bb: number, buyInsToSit?: number): boolean {
+  if (!(bb > 0)) return false;
+  return available >= buyInsRequiredFor(buyInsToSit) * bi100(bb);
+}
+
+/**
+ * The biggest ladder rung this roll supports, or null when it supports none.
+ *
+ * This is the ceiling Dan described: a horse plays the stake its bankroll
+ * supports, and nothing above it. It is a CEILING, never a floor - a rich
+ * horse is not forced up a ladder it did not draw into.
+ */
+export function highestStakeSupported(available: number, buyInsToSit?: number): number | null {
+  for (let i = STAKE_LADDER.length - 1; i >= 0; i--) {
+    if (rollSupportsStake(available, STAKE_LADDER[i].bb, buyInsToSit)) return STAKE_LADDER[i].bb;
+  }
+  return null;
+}
+
+/** The band of the biggest rung this roll supports; null when it supports
+ *  nothing on the ladder at all. */
+export function highestBandSupported(available: number, buyInsToSit?: number): StakeBand | null {
+  const bb = highestStakeSupported(available, buyInsToSit);
+  return bb === null ? null : stakeBandOf(bb);
 }
 
 /** Section 8.4. Cap measured against the SESSION START balance, so winning
@@ -807,7 +942,10 @@ export function mayStepUp(
   nextBb: number,
   consecutiveQualifyingDays: number
 ): boolean {
-  if (!stakeIsLegalThisPhase(nextBb)) return false;
+  /* The ONLY ceiling: the ladder's own top rung. There is no rung above
+     25/50 to step up into, so a request to is a request to play a game the
+     platform does not deal. Everything below it is decided by the roll. */
+  if (!stakeIsWithinLadder(nextBb)) return false;
   return (
     available >= BUYINS_TO_STEP_UP * bi100(nextBb) &&
     consecutiveQualifyingDays >= STEP_UP_CONSECUTIVE_DAYS
@@ -1096,7 +1234,7 @@ export type SitRejection =
   | 'brm'
   | 'sit_cap'
   | 'bullet_cap'
-  | 'stake_above_phase_cap'
+  | 'stake_above_ladder_top'
   | 'rest_day'
   | 'killed';
 
@@ -1131,7 +1269,12 @@ export function evaluateSit(r: SitRequest): SitRejection {
   if (r.activeClubId && r.activeClubId !== r.clubId) return 'other_club';
   if (r.activeHostId && r.activeHostId !== r.tableHostId) return 'other_host';
   if (r.activeSeatCount >= Math.min(4, r.maxTables)) return 'seat_cap';
-  if (!stakeIsLegalThisPhase(r.bb)) return 'stake_above_phase_cap';
+  /* THE ONLY STAKE CEILING LEFT (2026-09-05). This used to be the invented
+     `PHASE_MAX_BB = 2` clamp, which refused 2/5 to a wallet that covered it
+     and left every game above 1/2 on the platform empty. What remains is the
+     ladder's top rung: a table above 25/50 is not a stake this platform
+     deals. The bankroll decides everything below it, three lines down. */
+  if (!stakeIsWithinLadder(r.bb)) return 'stake_above_ladder_top';
   if (r.isRestDay) return 'rest_day';
   if (!maySitOnKey(r.persona, r.sitsOnKeyToday)) return 'sit_cap';
   if (!isLicensed(r.available, r.bb)) return 'brm';
@@ -1405,13 +1548,89 @@ export function assignVariants(horseIds: string[], seed = STABLE_HAND_SEED): Map
   return out;
 }
 
-/** A horse plays a stake and the one adjacent legal stake (Section 8.7),
- *  drawn from its band so the 40/35/25 mix holds. */
-export function assignPreferredStakes(horseId: string, seed = STABLE_HAND_SEED): number[] {
-  const h = shHash(horseId, 'stake-band', seed);
-  const roll = h % 100;
-  const band: StakeBand = roll < 40 ? 'micro' : roll < 75 ? 'low' : 'top';
-  const inBand = STAKE_LADDER.filter((s) => stakeBandOf(s.bb) === band).map((s) => s.bb);
+export interface PreferredStakeOptions {
+  /**
+   * The horse's chip balance in the wallet this tag belongs to
+   * (`club_members.chip_balance`), which is what the seat gate reads.
+   * Omit it and no ceiling is applied - the draw stands on its own, which is
+   * the behaviour a caller with no wallet in hand should get.
+   */
+  roll?: number;
+  /** `bankrollPolicyFor(horseId).buyInsToSit`. See buyInsRequiredFor. */
+  buyInsToSit?: number;
+  seed?: string;
+}
+
+/**
+ * The stakes a horse is tagged for: an anchor and the one adjacent lower rung
+ * (Section 8.7 - a horse plays a stake and the one next to it, never 1/2
+ * alongside 0.01/0.02).
+ *
+ * ── THE DRAW IS A HASH; THE ROLL IS A CEILING (Dan, 2026-09-05) ────────────
+ *
+ * "THERE ISN'T A 'CAP'. HORSES CAN ONLY PLAY ABOVE 1/2 IF THEY HAVE THE
+ * 'PROPER BANKROLL' TO PLAY A BIGGER STAKE."
+ *
+ * Two things decide the band, in this order:
+ *
+ *  1. A DETERMINISTIC DRAW from STAKE_MIX, keyed on (horseId, seed). This is
+ *     what keeps the floor spread across the ladder instead of every solvent
+ *     horse crowding the biggest game it can afford - and 814 of 1,000 could
+ *     afford 2/5 today, so "highest affordable" as a rule would empty the
+ *     micro floor overnight. It is also what makes a re-tag reproduce the
+ *     previous run byte for byte.
+ *  2. THE ROLL, applied as a CEILING and never as a floor. A horse drawn into
+ *     a band it cannot fund drops to the highest band it can; a horse drawn
+ *     into micro stays in micro however rich it is. Within the band, only the
+ *     rungs the roll actually supports are eligible.
+ *
+ * The affordability test is the seat gate's own (see `rollSupportsStake`), so
+ * a tag can never name a stake the gate would refuse - which was the other
+ * half of the bug: a tag that outran the bankroll would have produced a horse
+ * that is a "buyer" for a feeder it can never sit at.
+ */
+export function assignPreferredStakes(horseId: string, opts: PreferredStakeOptions = {}): number[] {
+  const seed = opts.seed ?? STABLE_HAND_SEED;
+  const roll = opts.roll;
+  const hasRoll = typeof roll === 'number' && Number.isFinite(roll);
+
+  // 1. The draw: cumulative STAKE_MIX over the four bands.
+  const draw = (shHash(horseId, 'stake-band', seed) % 10_000) / 10_000;
+  let acc = 0;
+  let band: StakeBand = STAKE_BANDS[STAKE_BANDS.length - 1];
+  for (const b of STAKE_BANDS) {
+    acc += STAKE_MIX[b];
+    if (draw < acc) {
+      band = b;
+      break;
+    }
+  }
+
+  // 2. The ceiling: never a band above what the wallet funds.
+  if (hasRoll) {
+    const ceiling = highestBandSupported(roll as number, opts.buyInsToSit);
+    if (ceiling === null) {
+      // Cannot fund even the cheapest rung. It plays the cheapest game there
+      // is, which is where `isBroke` will meet it and send it to a freeroll.
+      return [STAKE_LADDER[0].bb];
+    }
+    const drawnIdx = STAKE_BANDS.indexOf(band);
+    const ceilingIdx = STAKE_BANDS.indexOf(ceiling);
+    if (ceilingIdx < drawnIdx) band = ceiling;
+  }
+
+  const inBand = STAKE_LADDER.filter(
+    (s) =>
+      stakeBandOf(s.bb) === band &&
+      (!hasRoll || rollSupportsStake(roll as number, s.bb, opts.buyInsToSit))
+  ).map((s) => s.bb);
+
+  /* A band whose every rung is out of reach cannot happen once the ceiling
+     above has run - the ceiling picked this band precisely because one of its
+     rungs is affordable - but a caller that hands in a band and a roll that
+     disagree gets the cheapest rung rather than a crash. */
+  if (inBand.length === 0) return [STAKE_LADDER[0].bb];
+
   const anchorIdx = shHash(horseId, 'stake-anchor', seed) % inBand.length;
   const anchor = inBand[anchorIdx];
   const ladderIdx = STAKE_LADDER.findIndex((s) => s.bb === anchor);

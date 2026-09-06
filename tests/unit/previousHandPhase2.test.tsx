@@ -283,9 +283,13 @@ describe('every rundown surface passes the viewer facts through', () => {
     ['src/components/table/HandHistoryPanel.tsx', 'viewerFacts={hand.heroFacts}'],
     ['src/components/table/HandDetailModal.tsx', 'viewerFacts={hand.heroFacts}'],
     ['src/pages/HandHistoryPage.tsx', 'viewerFacts={hand.heroFacts}'],
+    /* PHASE 4 2026-09-05: the replayer reads one `source` whichever door the
+       hand came through, and the facts are picked off the fetched row when it
+       builds that source. Same facts, one hop earlier. */
+    ['src/components/replay/HandReplay.tsx', 'viewerFacts={source.viewerFacts}'],
     [
       'src/components/replay/HandReplay.tsx',
-      'viewerFacts={handData.players.find((p) => p.user_id === heroId)?.facts}',
+      'viewerFacts: handData.players.find((p) => p.user_id === authId)?.facts ?? null,',
     ],
   ])('%s', (file, needle) => {
     expect(read(file)).toContain(needle);

@@ -384,7 +384,6 @@ function CardFace({
       setDragging(false);
     }
     // `detach` is stable in effect: it only reads a ref.
-     
   }, [hold]);
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;

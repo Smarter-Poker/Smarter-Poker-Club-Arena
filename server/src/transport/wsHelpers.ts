@@ -187,4 +187,38 @@ export function wsAuthRefusalPrometheusLines(): string[] {
 /** Test seam. */
 export function _resetWsAuthRefusalsForTests(): void {
   wsAuthRefusals.clear();
+  wsProtocolRefusals.clear();
+}
+
+// ─── The protocol counter (Phase 4 audit, 2026-09-05) ───────────────────────
+//
+// The auth counter above exists because 22 hours of refusals were not a number
+// anywhere. The protocol gate shipped with exactly that defect: it refuses a
+// socket and records nothing, so the day `MIN_CLIENT_PROTOCOL` is raised, the
+// wave of stale tabs being turned away would be invisible - and that wave is
+// the ONE thing you want to watch on that day, because it tells you whether it
+// is draining (tabs reloading, as designed) or flat (tabs reloading into the
+// same refusal, which would be a loop).
+//
+// It should read zero forever until a floor is raised, and then spike and
+// drain. One label, the socket it happened on.
+
+const wsProtocolRefusals = new Map<string, number>();
+
+export function recordWsProtocolRefusal(path: 'table' | 'multi' | 'channel'): void {
+  wsProtocolRefusals.set(path, (wsProtocolRefusals.get(path) ?? 0) + 1);
+}
+
+/** Prometheus lines for the protocol counter (always present, even at zero). */
+export function wsProtocolRefusalPrometheusLines(): string[] {
+  const lines = [
+    '# HELP poker_ws_protocol_refused_total WebSocket upgrades refused for speaking a protocol older than the engine serves (label: path). Zero until MIN_CLIENT_PROTOCOL is raised; then it should spike and drain as stale tabs fetch a new bundle',
+    '# TYPE poker_ws_protocol_refused_total counter',
+  ];
+  for (const path of ['table', 'multi', 'channel'] as const) {
+    lines.push(
+      `poker_ws_protocol_refused_total{path="${path}"} ${wsProtocolRefusals.get(path) ?? 0}`
+    );
+  }
+  return lines;
 }

@@ -329,17 +329,33 @@ describe('turning a recorded hand into a share link', () => {
   it('carries the real action log rather than an empty preflop', () => {
     // HandHistoryPage's own converter hardcodes `preflop: []`, which is how a
     // shared hand ends up with players and a board but no betting at all.
+    //
+    // PHASE 4 2026-09-05: the link is built from `hand.replay` - the one
+    // reconstruction - rather than re-read off the panel record, so it now
+    // carries what the reconstruction carries and nothing else does. On this
+    // fixture that is the two blinds it synthesises (the row stores no blind
+    // actions), the raise as the INCREMENT over the small blind already in
+    // front of seat 1 rather than the raise-TO level, and the uncalled bets
+    // coming back out. All four are the model's reading of this hand; the
+    // share used to disagree with the rundown beside it about every one.
     const s = shared();
     expect(s.preflop).toEqual([
-      { seat: 1, action: 'RAISE', amount: 6 },
+      { seat: 1, action: 'SB', amount: 1 },
+      { seat: 2, action: 'BB', amount: 2 },
+      { seat: 1, action: 'RAISE', amount: 5 },
       { seat: 2, action: 'CALL', amount: 6 },
+      { seat: 2, action: 'RETURN', amount: 2 },
     ]);
     expect(s.flop?.actions).toEqual([
-      { seat: 2, action: 'CHECK', amount: 0 },
+      { seat: 2, action: 'CHECK' },
       { seat: 1, action: 'BET', amount: 10 },
+      { seat: 1, action: 'RETURN', amount: 10 },
     ]);
     // `all_in` is what the engine stores; the share union spells it ALL_IN.
-    expect(s.river?.actions).toEqual([{ seat: 1, action: 'ALL_IN', amount: 60 }]);
+    expect(s.river?.actions).toEqual([
+      { seat: 1, action: 'ALL_IN', amount: 60 },
+      { seat: 1, action: 'RETURN', amount: 60 },
+    ]);
   });
 
   it('slices the board back into the streets that revealed it', () => {
@@ -361,7 +377,10 @@ describe('turning a recorded hand into a share link', () => {
     // Sharing the net would understate every pot by the winner's own
     // investment — the same conflation that made Hand Detail and Hand History
     // print two different numbers for one hand.
-    expect(shared().winners).toEqual([{ seat: 1, amount: 201 }]);
+    // The hand it was won with travels too (Phase 4); the AMOUNT is the same
+    // gross it has been since 2026-08-23. There is no `board` on it because
+    // this row carries no per-board awards - see `perBoardAwards`.
+    expect(shared().winners).toEqual([{ seat: 1, amount: 201, hand: 'Three Of A Kind, Aces' }]);
   });
 
   it('omits a stack it does not know rather than inventing one', () => {
@@ -387,19 +406,39 @@ describe('turning a recorded hand into a share link', () => {
     expect(shared().players.find((p) => p.seat === 2)?.isWinner).toBe(false);
   });
 
-  it('drops a pineapple discard rather than relabelling it as a real action', () => {
+  /**
+   * PHASE 4 2026-09-05: the discard is a STREET on the wire now, not a
+   * casualty of it.
+   *
+   * This used to assert that a pineapple discard was dropped from the link
+   * entirely - which was the right call while the wire had nowhere to put it,
+   * because the alternative the code had been doing was relabelling it as a
+   * different action. v4 gives it its own segment, so it travels where it
+   * happened: after preflop, before the flop, under its own heading. What
+   * still never travels is the CARD, which is the viewer's own and is not in
+   * the payload at all.
+   */
+  it('carries a pineapple discard as its own street, and never the card', () => {
     const hand = adaptServiceHandToPanel(
       baseHand({
         actions: [
           { street: 'preflop', player_id: HERO, action: 'raise', amount: 6 },
-          { street: 'pineapple_discard', player_id: HERO, action: 'discard', amount: 0 },
+          {
+            street: 'pineapple_discard',
+            player_id: HERO,
+            action: 'discard',
+            amount: 0,
+            discarded_card: { rank: '9', suit: 'hearts' },
+          },
         ],
       }),
       HERO
     );
     const s = panelHandToShareable(hand, 'T');
-    expect(s.preflop).toEqual([{ seat: 1, action: 'RAISE', amount: 6 }]);
-    expect(JSON.stringify(s)).not.toContain('discard');
+    expect(s.discard?.actions).toEqual([{ seat: 1, action: 'DISCARD' }]);
+    expect(s.preflop.some((a) => a.action === 'DISCARD')).toBe(false);
+    // The thrown card is nowhere in the payload.
+    expect(JSON.stringify(s)).not.toContain('"9"');
   });
 
   /**

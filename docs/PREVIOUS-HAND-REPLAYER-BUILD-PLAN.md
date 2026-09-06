@@ -59,11 +59,25 @@ BUILT 2026-09-05 (`feat/previous-hand-phase-3`); see
 
 ## Phase 4 of 7 - One replayer everywhere
 
+BUILT 2026-09-05 (`feat/previous-hand-phase-4`); see
+`docs/changelog/2026-09-05-previous-hand-phase-4.md`.
+
 - `SharedHandReplayPage` (what a share link opens) renders the felt replayer:
-  `ShareableHand` -> `buildReplay` adapter.
-- `HandReplayerPage` (`/replay/:id`) renders the same replayer; `HandReplay3D`
-  keeps its snapshot feed or is retired if nothing else uses it.
-- Share link v4: run-it-twice boards, hi-lo halves, rake and jackpot fee travel.
+  `ShareableHand` -> `replayFromShareable` -> `buildReplay`, with no database
+  read, so a recipient who never played the hand can watch it.
+- `HandReplayerPage` (`/share/hand/:handId`) renders the same replayer.
+  `HandReplay3D`, `components/hand-replayer/**` and `types/engine/handReplay`
+  are RETIRED - nothing else rendered them, and gsap left the app with them.
+- Share link v4: run-it-twice and bomb-pot boards, per-board and per-half
+  awards, rake and jackpot fee, the hand number, the discard street, dead
+  money, and a bomb-pot mark so no reconstruction invents blinds. Amounts are
+  the model's own increments; v1-v3 still decode as raise-TO levels
+  (`wireVersion` says which), so no link rots.
+- Found on the way, in code this phase did not write: the live table shared
+  four of the seven variants as hold'em and every blind as an all-in;
+  `reportError` threw on any DOMException, from inside the catch that called
+  it; and a showdown row's `net` is not a pot share unless the record carried
+  per-board awards (now published as `ReplayModel.perBoardAwards`).
 
 ## Phase 5 of 7 - Find it, keep it, take it with you
 

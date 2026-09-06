@@ -320,6 +320,8 @@ describe('Player Command resilience wiring', () => {
   it('exposes virtualized roster positions as one accessible list', () => {
     expect(PAGE).toContain('role="list"');
     expect(PAGE).toContain('role="listitem"');
+    expect(PAGE).toMatch(/<div[\s\S]*className=\{`member-row[\s\S]*role="listitem"/);
+    expect(PAGE).not.toMatch(/<article[\s\S]*role="listitem"/);
     expect(PAGE).toContain('aria-posinset={position}');
     expect(PAGE).toContain('aria-setsize={total}');
   });

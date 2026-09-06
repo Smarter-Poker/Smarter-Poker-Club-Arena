@@ -39,7 +39,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 });
 
 import CashierClubSwitcher from '@/components/club/CashierClubSwitcher';
-import { clearClubChipBalanceCache } from '@/utils/clubQuickLink';
+import { clearClubChipBalanceCache, writeCachedQuickLinkClubs } from '@/utils/clubQuickLink';
 import { STORAGE_KEYS } from '@/lib/storage';
 
 const A = { id: 'aaaaaaaa-0000-0000-0000-000000000001', name: 'Alpha Club', club_id: 11111 };
@@ -70,7 +70,7 @@ beforeEach(() => {
 describe('CashierClubSwitcher', () => {
   it('shows the current club and switches to another club cashier', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, B]));
+    writeCachedQuickLinkClubs('test-user-123', [A, B]);
     renderSwitcher(A.id);
 
     await user.click(screen.getByRole('button', { name: /Current Club: Alpha Club/ }));
@@ -80,7 +80,7 @@ describe('CashierClubSwitcher', () => {
 
   it('selecting the current club closes without navigating', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, B]));
+    writeCachedQuickLinkClubs('test-user-123', [A, B]);
     renderSwitcher(A.id);
 
     await user.click(screen.getByRole('button', { name: /Current Club: Alpha Club/ }));
@@ -91,7 +91,7 @@ describe('CashierClubSwitcher', () => {
 
   it('shows each club chip balance in the dropdown', async () => {
     const user = userEvent.setup();
-    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, B]));
+    writeCachedQuickLinkClubs('test-user-123', [A, B]);
     inMock.mockResolvedValue({
       data: [
         { club_id: A.id, chip_balance: 4200 },
@@ -108,7 +108,7 @@ describe('CashierClubSwitcher', () => {
   });
 
   it('never offers a union as a cashier destination', () => {
-    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, UNION]));
+    writeCachedQuickLinkClubs('test-user-123', [A, UNION]);
     renderSwitcher(A.id);
     // Only one eligible club remains, so it degrades to the static chip
     expect(screen.queryByRole('button', { name: /Switch club cashier/ })).not.toBeInTheDocument();
@@ -116,13 +116,13 @@ describe('CashierClubSwitcher', () => {
   });
 
   it('resolves numeric club-code route params against the cache', () => {
-    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A, B]));
+    writeCachedQuickLinkClubs('test-user-123', [A, B]);
     renderSwitcher('22222');
     expect(screen.getByRole('button', { name: /Current Club: Bravo Club/ })).toBeInTheDocument();
   });
 
   it('renders a static chip (no dropdown) for single-club users', () => {
-    localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify([A]));
+    writeCachedQuickLinkClubs('test-user-123', [A]);
     renderSwitcher(A.id);
     expect(screen.getByText('Alpha Club')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Switch club/ })).not.toBeInTheDocument();

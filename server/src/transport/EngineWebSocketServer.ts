@@ -48,6 +48,9 @@ import {
   recordWsProtocolRefusal,
   recordWsReauthClose,
   recordWsSocketCapRefusal,
+  runReauthSweep,
+  socketsHeldBy,
+  staggeredReauthAt,
   type TokenVerdict,
   type TokenDenial,
 } from './wsHelpers.js';
@@ -137,10 +140,10 @@ export const CLOSE_UPGRADE_REQUIRED = 4426;
  *   - IT IS BOUNDED PER SWEEP, so a backlog drains at a fixed rate rather than
  *     arriving all at once.
  */
-const REAUTH_INTERVAL_MS = 5 * 60_000;
+export const REAUTH_INTERVAL_MS = 5 * 60_000;
 
 /** At most this many sockets are re-checked in any one heartbeat sweep. */
-const REAUTH_MAX_PER_SWEEP = 20;
+export const REAUTH_MAX_PER_SWEEP = 20;
 
 /**
  * How many sockets one account may hold at once.
@@ -152,7 +155,7 @@ const REAUTH_MAX_PER_SWEEP = 20;
  * several tabs open. It is a bound on abuse and on a client stuck in a
  * connect loop, not a product limit anyone should ever meet.
  */
-const MAX_SOCKETS_PER_USER = 10;
+export const MAX_SOCKETS_PER_USER = 10;
 
 /**
  * The protocol a socket claims, from `?v=`. Absent, malformed or negative all
@@ -389,19 +392,6 @@ export function refuseProtocol(
       ws.terminate();
     }
   });
-}
-
-/**
- * A re-auth deadline spread across the period rather than all on the hour.
- *
- * Every socket that connects in the same second would otherwise come due in
- * the same second, five minutes later, forever - a self-organising thundering
- * herd against GoTrue, built by the very mechanism meant to protect the
- * platform. A uniform random point in the first period breaks that up on the
- * first cycle and it stays broken.
- */
-function staggeredReauthAt(): number {
-  return Date.now() + Math.floor(Math.random() * REAUTH_INTERVAL_MS);
 }
 
 // ─── EngineWebSocketServer ────────────────────────────────────────────────────
@@ -973,7 +963,7 @@ export class EngineWebSocketServer {
       id: randomUUID(),
       userId,
       token,
-      nextReauthAt: staggeredReauthAt(),
+      nextReauthAt: staggeredReauthAt(REAUTH_INTERVAL_MS),
       tableId,
       ws,
       lastPongAt: Date.now(),
@@ -1043,7 +1033,7 @@ export class EngineWebSocketServer {
       id: randomUUID(),
       userId,
       token,
-      nextReauthAt: staggeredReauthAt(),
+      nextReauthAt: staggeredReauthAt(REAUTH_INTERVAL_MS),
       tableId: '',
       ws,
       lastPongAt: Date.now(),
@@ -1391,10 +1381,7 @@ export class EngineWebSocketServer {
    * 2026-09-03 lesson.
    */
   private refuseIfOverSocketCap(ws: WebSocket, userId: string): boolean {
-    let held = 0;
-    for (const c of this.connections.values()) {
-      if (c.userId === userId) held++;
-    }
+    const held = socketsHeldBy(this.connections, userId);
     if (held < MAX_SOCKETS_PER_USER) return false;
     recordWsSocketCapRefusal();
     try {
@@ -1422,37 +1409,30 @@ export class EngineWebSocketServer {
    * and tries again next period: an auth outage must never close a table.
    */
   private reauthSweep(now: number): void {
-    let checked = 0;
-    for (const [ws, conn] of this.connections) {
-      if (checked >= REAUTH_MAX_PER_SWEEP) break;
-      if (now < conn.nextReauthAt) continue;
-      if (!conn.token) continue; // nothing to re-check (test fixtures)
-      checked++;
-      // Claim the next slot BEFORE the await, so a slow GoTrue cannot make the
-      // same socket be re-checked on every sweep until it answers.
-      conn.nextReauthAt = now + REAUTH_INTERVAL_MS;
-      void this.verifyToken(conn.token)
-        .then((verdict) => {
-          if (!this.connections.has(ws)) return; // gone while we asked
-          const denial = tokenDenial(verdict);
-          if (!denial) return; // still good
-          if (denial.denied !== 'invalid') return; // could not ask: not a refusal
-          recordWsAuthRefusal(conn.isMux ? 'multi' : 'table', 'invalid');
-          recordWsReauthClose();
+    /* The SHARED sweep (audit, 2026-09-06). This was a private copy here and
+       the channel socket had none at all - the same "two of the three sockets"
+       gap Phase 4 warned about, one phase later. One implementation now, in
+       wsHelpers, handed each server's own connection map. */
+    runReauthSweep({
+      now,
+      connections: this.connections,
+      path: (conn) => (conn.isMux ? 'multi' : 'table'),
+      verify: (token) => this.verifyToken(token),
+      close: (ws, code, reason) => {
+        try {
+          ws.close(code, reason);
+        } catch {
           try {
-            ws.close(CLOSE_AUTH_FAILED, authRejectionReason(denial.code));
+            ws.terminate();
           } catch {
-            try {
-              ws.terminate();
-            } catch {
-              /* ignore */
-            }
+            /* ignore */
           }
-        })
-        .catch(() => {
-          /* an unreachable auth service is never a refusal */
-        });
-    }
+        }
+      },
+      intervalMs: REAUTH_INTERVAL_MS,
+      maxPerSweep: REAUTH_MAX_PER_SWEEP,
+      closeCode: CLOSE_AUTH_FAILED,
+    });
   }
 
   private heartbeatSweep(): void {

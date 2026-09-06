@@ -92,3 +92,58 @@ test('Escape uses the final decline path once, then Rabbit Hunt announces price 
   await expect(page.getByTestId('rabbit-request-count')).toHaveText('1');
   await expect(rabbitButton).toHaveCount(0);
 });
+
+test('A 60-second waitlist offer counts down, fits a phone, and hands off to the held seat', async ({
+  page,
+}) => {
+  await page.getByRole('dialog', { name: 'All-In Insurance' }).press('Escape');
+  await expect(page.getByRole('dialog', { name: 'All-In Insurance' })).toHaveCount(0);
+  await page.getByTestId('waitlist-seat-offer').click();
+
+  const card = page.getByTestId('waitlist-banner-card');
+  await expect(card).toBeVisible();
+  await expect(card).toHaveAttribute(
+    'aria-label',
+    /Your Seat Is Held For \d+ More Seconds\. Tap To Take It\./
+  );
+  await expect(card.getByText('Phase Five Hold Table')).toBeVisible();
+
+  // Measure the settled card, not the intentional overshoot in its 400ms
+  // entrance animation. The animation briefly travels below its final fixed
+  // position and made an otherwise-correct clearance check timing-dependent.
+  await card.evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+  });
+
+  const box = await card.boundingBox();
+  const viewport = await page.evaluate(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(viewport.width).toBe(375);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height - 52 - 12);
+
+  const countdown = page.getByTestId('waitlist-hold-countdown');
+  const readSeconds = async () =>
+    Number(((await countdown.innerText()).match(/:(\d{2})/) ?? [])[1]);
+  const first = await readSeconds();
+  await page.waitForTimeout(2_100);
+  const later = await readSeconds();
+  expect(first).toBeGreaterThan(later);
+  expect(first - later).toBeLessThanOrEqual(4);
+
+  const dismiss = card.getByRole('button', {
+    name: 'Dismiss The Waitlist Notice For Phase Five Hold Table',
+  });
+  const dismissHitArea = await dismiss.evaluate((button) => {
+    const pseudo = getComputedStyle(button, '::after');
+    return { width: pseudo.width, height: pseudo.height };
+  });
+  expect(dismissHitArea).toEqual({ width: '44px', height: '44px' });
+
+  await card.press('Enter');
+  await expect(page).toHaveURL(/\/table\/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\?buyin=1$/);
+});

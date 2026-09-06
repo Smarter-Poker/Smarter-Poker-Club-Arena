@@ -683,7 +683,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state(
     'vpipFloor',
     'the table VPIP floor a seat is stood up under after ten hands (Dan 2026-09-04)',
-    'HorseLogic.vpipFloorMul'
+    // Two consumers, and the second one is the point (2026-09-06): the floor
+    // does not only widen the brain, it travels to settlement and keys the
+    // horse_daily_play row apart, so no band ever judges required-loose play.
+    'HorseLogic.vpipFloorMul; ServerTableEngineSettlement -> HorseHandReview (horse_daily_play.floored)'
   ),
   state(
     'ownVpip',
@@ -758,8 +761,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_daily_play',
     'nightly',
-    'HorseSelfTuner (loadPlayRows: every horse studied from its own rows; HorseHandReview compiles them at settlement with HorsePlayStats)',
-    'per horse/day/format VPIP, PFR, 3-bet, fold-to-3-bet, saw flop, WWSF, postflop aggression',
+    'HorseSelfTuner (loadPlayRows: every horse studied from its own rows, floored = false only; HorseHandReview compiles them at settlement with HorsePlayStats); fn_horse_frequency_leaks; fn_audit_frequency_leaks (which reports the floored share so the exclusion stays visible)',
+    'per horse/day/format/floored VPIP, PFR, 3-bet, fold-to-3-bet, saw flop, WWSF, postflop aggression. `floored` splits play at a VPIP-floored table, where the horse was REQUIRED to be loose, away from play the winning-player bands may judge (2026-09-06)',
     '2026-09-05',
     { dayColumn: 'day', freshnessDays: 1 }
   ),

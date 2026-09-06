@@ -51,8 +51,24 @@ count of early `RETURN NEW` branches is unchanged, and it still raises
 ## A note on probing this guard
 
 A behavioural probe from `psql` cannot test the refusal: `fn_caller_is_engine()`
-deliberately trusts a session with no JWT (psql, pg_cron, a migration), so an
-undeclared insert from a superuser session is _supposed_ to pass. My first
+deliberately trusts a session with no JWT (psql, pg*cron, a migration), so an
+undeclared insert from a superuser session is \_supposed* to pass. My first
 probe read that as "the guard let a 999-chip seat through" and it was the probe
 that was wrong. Comparing the compiled body is the honest check for a
 comment-only change, and it is the one that ran.
+
+## The law moved with the mechanism (CLAUDE.md 5.8)
+
+`tests/theSeatGuardIsArmed.law.test.ts` required that the LAST migration
+declaring the guard be `_the_seat_guard_is_armed.sql` itself. That pins the
+migration's **identity**, not the guard's **property**, so a comment
+correction that leaves the compiled body byte-identical failed a law about
+arming.
+
+Its other two assertions are the real ones and both still pass unchanged: the
+live body raises `SEAT_NOT_FUNDED`, and it is not the dry-run body. What is
+kept from the third is deliberateness - a migration may re-declare the guard
+only by naming itself in `SANCTIONED_REDECLARATIONS`, so the body can never be
+swapped in a file nobody reviewed. What is dropped is the part that would have
+pushed the next agent to weaken the law or to leave a false sentence in a money
+guard rather than touch it.

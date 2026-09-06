@@ -435,6 +435,9 @@ test.describe('Production Shark Club Players', () => {
       )
     ).toEqual([]);
     expect(probe.responseFailures).toEqual([]);
-    expect(probe.pageErrors).toEqual([]);
+    expect(probe.requestFailureCount).toBe(0);
+    expect(probe.requestAbortCount).toBe(0);
+    expect(probe.pageErrorCount).toBe(0);
+    expect(probe.criticalConsoleErrorCount).toBe(0);
   });
 });

@@ -80,7 +80,7 @@ inside that retained architecture rather than changing the architecture again.
   rebasing the upstream deadline, club-first-index, and certification changes.
 - TypeScript `--noEmit`, changed-file ESLint, and `git diff --check`: passed.
 - Production build: passed and stamped from the then-current main base.
-- Playwright discovers both production Player Command checks.
+- Playwright discovers all three production Player Command checks.
 
 Publication and a new zero-retry exact-current post-deploy run are required
 before this repair can be called complete.

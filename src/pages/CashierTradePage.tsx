@@ -5,8 +5,8 @@
  *
  * The cashier the way an agent actually works it:
  *
- *   Header    « CASHIER  [CLUB ▾] — entity switcher listing EVERY club and
- *             union the viewer belongs to, with balances (Dan: "I also own
+ *   Header    « CASHIER  [CLUB ▾] — entity switcher listing EVERY club wallet
+ *             plus unions the viewer owns (never admin-only treasuries), with balances (Dan: "I also own
  *             the midway union... show wallets for all the clubs, unions a
  *             user is a part of").
  *   Tabs      Trade | Trade Record | Leaderboard Record | Chip Request
@@ -66,10 +66,13 @@ import { reportError } from '../utils/errorReporter';
 import { cashierReasonCode, recordCashierOperation } from '../services/CashierOperationsTelemetry';
 import {
   cashierReceiptText,
+  clearCashierChipRequestOperation,
   clearCashierTransferRecovery,
   copyCashierText,
   readCashierTransferRecovery,
+  readCashierTransferRecoveryBySubmission,
   readCashierOnlineState,
+  reserveCashierChipRequestOperation,
   writeCashierTransferRecovery,
   type CashierTransferRecovery,
 } from '../services/CashierResilience';
@@ -88,16 +91,21 @@ import {
   type CashierRosterRpcRow,
   type DownlineRow,
 } from '../lib/cashierRoster';
+import { UnionService } from '../services/UnionService';
+import { unionRouteRef } from '../utils/unionIdResolver';
+import { rememberLastClub } from '../utils/clubQuickLink';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Membership {
   clubUuid: string;
   clubCode: number | null;
+  slug: string | null;
   name: string;
   logoUrl: string | null;
   role: string;
   chipBalance: number;
+  entityType: 'club' | 'union';
 }
 
 /**
@@ -138,7 +146,8 @@ interface TradeRecordRow {
   createdAt: string;
   type: string;
   amount: number;
-  direction: 'in' | 'out';
+  /** Relative to the viewer; managed means neither party is the viewer. */
+  direction: 'in' | 'out' | 'managed';
   counterparty: string;
   /**
    * Dan 2026-09-02: a ledger line must say which wallet the chips left and
@@ -257,6 +266,7 @@ export default function CashierTradePage() {
 
   const [myRole, setMyRole] = useState<string>('player');
   const [roleResolved, setRoleResolved] = useState(false);
+  const initialTabResolvedRef = useRef(false);
   const [myBalance, setMyBalance] = useState(0);
   /**
    * agents.agent_wallet_balance for the viewer IN THIS CLUB - the account
@@ -292,7 +302,7 @@ export default function CashierTradePage() {
 
   const [records, setRecords] = useState<TradeRecordRow[]>([]);
   const [recordQuery, setRecordQuery] = useState('');
-  const [recordDirection, setRecordDirection] = useState<'all' | 'in' | 'out'>('all');
+  const [recordDirection, setRecordDirection] = useState<'all' | 'in' | 'out' | 'managed'>('all');
   const [recordsLimit, setRecordsLimit] = useState(50);
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsReload, setRecordsReload] = useState(0);
@@ -424,10 +434,14 @@ export default function CashierTradePage() {
   /** Suppresses the "new intent" reset while a persisted intent is restored. */
   const restoringTransferRecoveryRef = useRef(false);
   /** The exact local-storage scope owned by the retained batch nonce. */
-  const transferRecoveryScopeRef = useRef<{ userId: string; clubId: string } | null>(null);
+  const transferRecoveryScopeRef = useRef<{
+    userId: string;
+    clubId: string;
+    submissionId: string;
+  } | null>(null);
   /** One idempotency key per claim intent, retained across an uncertain retry. */
   const claimOpIdsRef = useRef<Map<string, string>>(new Map());
-  /** One request intent survives an uncertain network retry. */
+  /** In-memory mirror of the durable journal entry for this request click. */
   const requestOpIdRef = useRef<string | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const entityButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -503,30 +517,63 @@ export default function CashierTradePage() {
     setMemberships([]);
     (async () => {
       try {
-        const { data, error } = await supabase
-          .from('club_members')
-          .select('club_id, role, chip_balance, clubs:club_id (name, club_id, logo_url)')
-          .eq('user_id', user.id)
-          .in('status', MEMBER_IN_CLUB);
+        const [membershipResult, ownedUnions] = await Promise.all([
+          supabase
+            .from('club_members')
+            .select(
+              'club_id, role, chip_balance, clubs:club_id (name, club_id, slug, logo_url, is_union, owner_id)'
+            )
+            .eq('user_id', user.id)
+            .in('status', MEMBER_IN_CLUB),
+          // Union ownership comes from the canonical unions table. An admin
+          // membership in a legacy union house-club is not treasury ownership.
+          // It is a required half of this directory: a failed ownership read
+          // must render the existing retry state, never a successful-looking
+          // list that silently omits the user's union treasury.
+          UnionService.getOwnedUnions(user.id),
+        ]);
+        const { data, error } = membershipResult;
         if (error) throw error;
         if (!live) return;
-        const rows: Membership[] = (data || [])
+        const clubRows: Membership[] = (data || [])
           .map((r) => {
             const c = (Array.isArray(r.clubs) ? r.clubs[0] : r.clubs) as {
               name?: string;
               club_id?: number;
+              slug?: string;
               logo_url?: string;
+              is_union?: boolean;
+              owner_id?: string;
             } | null;
             return {
               clubUuid: r.club_id as string,
               clubCode: c?.club_id ?? null,
+              slug: c?.slug || null,
               name: c?.name || 'Club',
               logoUrl: c?.logo_url || null,
               role: (r.role as string) || 'player',
               chipBalance: Number(r.chip_balance) || 0,
+              entityType: c?.is_union === true ? ('union' as const) : ('club' as const),
+              isOwnedUnion: c?.is_union === true && c.owner_id === user.id,
             };
           })
-          .sort((a, b) => b.chipBalance - a.chipBalance);
+          // Never advertise a union treasury because the viewer merely has a
+          // membership/admin role in its companion club.
+          .filter((row) => row.entityType === 'club' || row.isOwnedUnion)
+          .map(({ isOwnedUnion: _isOwnedUnion, ...row }) => row);
+        const unionRows: Membership[] = ownedUnions.map((union) => ({
+          clubUuid: union.id,
+          clubCode: null,
+          slug: union.slug || null,
+          name: union.name,
+          logoUrl: union.avatarUrl || null,
+          role: 'owner',
+          chipBalance: 0,
+          entityType: 'union',
+        }));
+        const byId = new Map<string, Membership>();
+        for (const row of [...clubRows, ...unionRows]) byId.set(row.clubUuid, row);
+        const rows = Array.from(byId.values()).sort((a, b) => b.chipBalance - a.chipBalance);
         setMemberships(rows);
       } catch (error) {
         reportError(error, 'CashierTradePage.memberships');
@@ -772,6 +819,10 @@ export default function CashierTradePage() {
           pageNumber++;
 
           if (isMounted.current && !stale()) {
+            if (!initialTabResolvedRef.current) {
+              setTab(role === 'player' ? 'record' : 'trade');
+              initialTabResolvedRef.current = true;
+            }
             setMyRole(role);
             setRoleResolved(true);
             setMyBalance(bal);
@@ -788,6 +839,10 @@ export default function CashierTradePage() {
       }
 
       if (!isMounted.current || stale()) return false;
+      if (!initialTabResolvedRef.current) {
+        setTab(role === 'player' ? 'record' : 'trade');
+        initialTabResolvedRef.current = true;
+      }
       setMyRole(role);
       setRoleResolved(true);
       setMyBalance(bal);
@@ -842,17 +897,6 @@ export default function CashierTradePage() {
     return () => unsubs.forEach((u) => u());
   }, [loadClub, clubUuid, loadPendingCount, loadHeldTicketCount]);
 
-  /**
-   * Players have no Trade tab. This lived inside loadClub, which is recreated
-   * only on user/club change and therefore captured whatever `tab` was THEN -
-   * 'trade' for a player who had since moved to Chip Request. Every one of the
-   * six bus events re-ran it, saw the stale value and snatched them back out
-   * of the tab they were typing in.
-   */
-  useEffect(() => {
-    if (roleResolved && myRole === 'player' && tab === 'trade') setTab('record');
-  }, [roleResolved, myRole, tab]);
-
   // ── Trade record tab data ──────────────────────────────────────────────────
   // Cleared BEFORE every club load: the previous club's trades used to stay on
   // screen until the new query landed.
@@ -873,6 +917,7 @@ export default function CashierTradePage() {
     ++recordSeqRef.current;
     ++invoiceSeqRef.current;
     setTab('trade');
+    initialTabResolvedRef.current = false;
     setRoleResolved(false);
     setRecords([]);
     setRecordsError(null);
@@ -930,57 +975,58 @@ export default function CashierTradePage() {
     setRecordsLoading(true);
     setRecordsError(null);
     try {
-      const { data, error } = await supabase
-        .from('chip_transactions')
-        .select(
-          'id, created_at, transaction_type, amount, from_user_id, to_user_id, notes, metadata'
-        )
-        .eq('club_id', clubUuid)
-        .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
-        .order('created_at', { ascending: false })
+      // One server-owned role matrix for every viewer. The previous direct
+      // table query forced from/to = auth.uid() in the browser, overriding the
+      // database contract and hiding the club book from owners/admins and the
+      // recursive downline book from agents.
+      const { data, error } = await supabase.rpc('fn_club_trade_ledger', {
+        p_club_id: clubUuid,
         // Fetch one sentinel row so the UI only offers "Load Older Entries"
         // when another page really exists. Initial wire cost stays at 51 rows.
-        .limit(recordsLimit + 1);
+        p_limit: recordsLimit + 1,
+        p_offset: 0,
+      });
       if (!isMounted.current || seq !== recordSeqRef.current) return false;
       // A discarded error rendered as "No trades recorded yet", which is a
       // different statement from "we could not read them".
       if (error) throw error;
-      const pageRows = (data || []).slice(0, recordsLimit);
-      const ids = new Set<string>();
-      for (const r of pageRows) {
-        if (r.from_user_id) ids.add(r.from_user_id);
-        if (r.to_user_id) ids.add(r.to_user_id);
-      }
-      const { data: profs, error: profilesError } = ids.size
-        ? await supabase
-            .from('profiles')
-            .select(`id, ${PLAYER_NAME_COLUMNS}`)
-            .in('id', Array.from(ids))
-        : { data: [], error: null };
-      // The ledger itself is authoritative. A profile outage must not hide
-      // the money rows, but reconciliation must report the degraded name
-      // surface rather than announcing complete success.
-      if (profilesError) reportError(profilesError, 'CashierTradePage.recordProfiles');
-      const nameOf = new Map((profs || []).map((p) => [p.id, playerDisplayName(p)]));
-      if (!isMounted.current || seq !== recordSeqRef.current) return false;
+      const pageRows = (data || []).slice(0, recordsLimit) as Array<{
+        id: string;
+        created_at: string;
+        transaction_type: string | null;
+        amount: number | string | null;
+        from_user_id: string | null;
+        to_user_id: string | null;
+        notes: string | null;
+        metadata: Record<string, unknown> | null;
+        from_name: string | null;
+        to_name: string | null;
+      }>;
       setRecordsHasMore((data || []).length > recordsLimit);
       setRecords(
         pageRows.map((r) => {
           const out = r.from_user_id === user.id;
-          const other = out ? r.to_user_id : r.from_user_id;
+          const incoming = r.to_user_id === user.id;
+          const managed = !out && !incoming;
+          const nameOf = new Map<string, string>();
+          if (r.from_user_id && r.from_name) nameOf.set(r.from_user_id, r.from_name);
+          if (r.to_user_id && r.to_name) nameOf.set(r.to_user_id, r.to_name);
+          const otherName = out ? r.to_name : r.from_name;
           return {
             id: r.id,
             createdAt: r.created_at,
             type: (r.transaction_type as string) || 'transfer',
             amount: Number(r.amount) || 0,
-            direction: out ? ('out' as const) : ('in' as const),
-            counterparty: (other && nameOf.get(other)) || 'Club',
+            direction: managed ? ('managed' as const) : out ? ('out' as const) : ('in' as const),
+            counterparty: managed
+              ? `${r.from_name || 'A Member'} To ${r.to_name || 'A Member'}`
+              : otherName || 'Club',
             route: walletRoute(r),
             narrative: describeChipTransaction(r, nameOf, user.id),
           };
         })
       );
-      return !profilesError;
+      return true;
     } catch (e) {
       reportError(e, 'CashierTradePage.records');
       if (isMounted.current && seq === recordSeqRef.current) {
@@ -1227,6 +1273,10 @@ export default function CashierTradePage() {
 
   const askForChips = async () => {
     if (!requireOnline()) return;
+    if (!user?.id || !clubUuid) {
+      toast?.error?.('Choose A Club Cashier');
+      return;
+    }
     const raw = Number(askAmount);
     if (!Number.isFinite(raw) || raw <= 0) {
       toast?.error?.('Enter A Positive Amount');
@@ -1241,16 +1291,33 @@ export default function CashierTradePage() {
     askingRef.current = true;
     setAsking(true);
     try {
-      if (!requestOpIdRef.current) requestOpIdRef.current = newOpId();
+      const canonicalNote = askNote.trim() || null;
+      const recovery = await reserveCashierChipRequestOperation(
+        { userId: user.id, clubId: clubUuid, amount: v, note: canonicalNote },
+        newOpId
+      );
+      if (!recovery) {
+        toast?.error?.('Cashier Safety Storage Is Unavailable');
+        return;
+      }
+      requestOpIdRef.current = recovery.operationId;
       const { data, error } = await supabase.rpc('fn_request_chips', {
         p_club_id: clubUuid,
         p_amount: v,
-        p_note: askNote || null,
+        p_note: canonicalNote,
         p_op_id: requestOpIdRef.current,
       });
       if (error) throw error;
       const res = data as { success?: boolean; error?: string } | null;
-      if (!res?.success) throw new Error(res?.error || 'Refused');
+      if (!res || typeof res.success !== 'boolean') {
+        throw new Error('Request Outcome Needs Verification');
+      }
+      if (!res.success) {
+        clearCashierChipRequestOperation(recovery);
+        requestOpIdRef.current = null;
+        throw new Error(res.error || 'Refused');
+      }
+      clearCashierChipRequestOperation(recovery);
       toast?.success?.('Chip Request Sent');
       setAskOpen(false);
       setAskAmount('');
@@ -1391,7 +1458,11 @@ export default function CashierTradePage() {
       (sum, row) => (row.direction === 'out' ? sum + row.amount : sum),
       0
     );
-    return { incoming, outgoing, net: incoming - outgoing };
+    const managed = records.reduce(
+      (sum, row) => (row.direction === 'managed' ? sum + row.amount : sum),
+      0
+    );
+    return { incoming, outgoing, managed, net: incoming - outgoing };
   }, [records]);
 
   const visibleTabs = useMemo<[TabKey, string][]>(() => {
@@ -1406,6 +1477,18 @@ export default function CashierTradePage() {
       ? all.filter(([key]) => key === 'record' || key === 'request' || key === 'tickets')
       : all;
   }, [roleResolved, myRole]);
+
+  /**
+   * The active tab must always exist in the resolved role's tablist. This is a
+   * generic invariant rather than a player/Trade special case, so a role change
+   * or a future role-scoped tab cannot leave an invisible second-tab state.
+   * The fallback is deliberately index zero: the default page is always the
+   * first tab the current viewer can actually see.
+   */
+  useEffect(() => {
+    if (!roleResolved || visibleTabs.length === 0) return;
+    if (!visibleTabs.some(([key]) => key === tab)) setTab(visibleTabs[0][0]);
+  }, [roleResolved, tab, visibleTabs]);
 
   useEffect(() => {
     setVisibleCount(25);
@@ -1453,9 +1536,17 @@ export default function CashierTradePage() {
     opIdsRef.current = new Map();
     transferRecoveryScopeRef.current = null;
     if (recoveryScope) {
-      clearCashierTransferRecovery(recoveryScope.userId, recoveryScope.clubId);
+      clearCashierTransferRecovery(
+        recoveryScope.userId,
+        recoveryScope.clubId,
+        recoveryScope.submissionId
+      );
+      // Another browser tab may have its own unresolved batch in the same
+      // club. Retiring this tab's changed intent must reveal, not erase, it.
+      setTransferRecovery(readCashierTransferRecovery(recoveryScope.userId, recoveryScope.clubId));
+    } else {
+      setTransferRecovery(null);
     }
-    setTransferRecovery(null);
   }, [amount, selected]);
 
   useEffect(() => {
@@ -1467,7 +1558,11 @@ export default function CashierTradePage() {
     restoringTransferRecoveryRef.current = true;
     submissionIdRef.current = saved.submissionId;
     opIdsRef.current = new Map(Object.entries(saved.opIds));
-    transferRecoveryScopeRef.current = { userId: user.id, clubId: clubUuid };
+    transferRecoveryScopeRef.current = {
+      userId: user.id,
+      clubId: clubUuid,
+      submissionId: saved.submissionId,
+    };
     setTransferRecovery(saved);
   }, [user?.id, clubUuid]);
 
@@ -1552,9 +1647,6 @@ export default function CashierTradePage() {
       return;
     }
     if (busyRef.current) return; // a fast double-tap must not send twice
-    busyRef.current = true;
-    setBusy(true);
-    setBatchProgress({ processed: 0, total: targets.length });
     /**
      * IDEMPOTENCY (2026-08-24). busyRef stops a double-TAP, but it cannot stop
      * a double-CHARGE. The dangerous shape is a claim that COMMITTED on the
@@ -1575,7 +1667,7 @@ export default function CashierTradePage() {
       submissionIdRef.current = newOpId();
     }
     const submissionId = submissionIdRef.current;
-    transferRecoveryScopeRef.current = { userId: user.id, clubId: clubUuid };
+    transferRecoveryScopeRef.current = { userId: user.id, clubId: clubUuid, submissionId };
     /** The op_id for one target, minted once and reused by every retry. */
     const opIdFor = (userId: string) => {
       const held = opIdsRef.current.get(userId);
@@ -1607,7 +1699,23 @@ export default function CashierTradePage() {
       opIds: Object.fromEntries(opIdsRef.current),
       createdAt: recoveryCreatedAt,
     };
-    writeCashierTransferRecovery(uncertainRecovery);
+    if (!writeCashierTransferRecovery(uncertainRecovery)) {
+      // Fail closed. If the server commits and the response is lost, only this
+      // preflight journal lets a reload replay the SAME operation ids instead
+      // of minting a second money movement. Continuing without it turns a
+      // storage quota/private-mode failure into a double-send risk.
+      reportError(
+        new Error('The transfer recovery journal could not be persisted'),
+        'CashierTradePage.Transfer_recovery_write_failed'
+      );
+      toast?.error?.('Cashier Safety Storage Is Unavailable. Free Browser Storage And Try Again');
+      return;
+    }
+    // No await occurs before this point, so the journal and the in-memory lock
+    // become visible atomically to a second click in the browser event loop.
+    busyRef.current = true;
+    setBusy(true);
+    setBatchProgress({ processed: 0, total: targets.length });
     let ok = 0;
     const failed: Array<{ userId: string; name: string; message: string }> = [];
     const batchStartedAt = Date.now();
@@ -1682,13 +1790,12 @@ export default function CashierTradePage() {
       }
       if (failed.length > 0) {
         batchFailureReason ||= 'item_refused';
+        // Diagnostics receive counts and a bounded reason code only. Player
+        // UUIDs, names and raw database messages remain in the operator UI and
+        // must not be copied into console/Sentry payloads.
         reportError(
           new Error(
-            `${kind} batch ${submissionId}: ${failed.length}/${targets.length} failed; ` +
-              failed
-                .slice(0, 5)
-                .map((entry) => `${entry.userId}:${entry.message}`)
-                .join(', ')
+            `${kind} batch: ${failed.length}/${targets.length} failed; reason=${batchFailureReason}`
           ),
           `CashierTradePage.${kind}Batch`
         );
@@ -1714,10 +1821,9 @@ export default function CashierTradePage() {
       // same op_id per target, so whichever targets already committed replay
       // instead of being charged a second time.
       if (ok === targets.length) {
-        clearCashierTransferRecovery(user.id, clubUuid);
+        clearCashierTransferRecovery(user.id, clubUuid, submissionId);
         submissionIdRef.current = null;
         opIdsRef.current = new Map();
-        transferRecoveryScopeRef.current = null;
         setTransferRecovery(null);
       }
       const recovery: CashierTransferRecovery | null =
@@ -1924,7 +2030,9 @@ export default function CashierTradePage() {
 
   const reopenTransferRecovery = () => {
     if (!user?.id || !clubUuid || !transferRecovery || transferRecovery.clubId !== clubUuid) return;
-    const saved = readCashierTransferRecovery(user.id, clubUuid) || transferRecovery;
+    const saved =
+      readCashierTransferRecoveryBySubmission(user.id, clubUuid, transferRecovery.submissionId) ||
+      transferRecovery;
     const authorized = new Set(downline.map((row) => row.userId));
     if (saved.targetIds.some((targetId) => !authorized.has(targetId))) {
       toast?.error?.('Recipients Changed. Review The Roster Before Starting A New Transfer');
@@ -1933,13 +2041,25 @@ export default function CashierTradePage() {
     restoringTransferRecoveryRef.current = true;
     submissionIdRef.current = saved.submissionId;
     opIdsRef.current = new Map(Object.entries(saved.opIds));
-    transferRecoveryScopeRef.current = { userId: user.id, clubId: clubUuid };
+    transferRecoveryScopeRef.current = {
+      userId: user.id,
+      clubId: clubUuid,
+      submissionId: saved.submissionId,
+    };
     setSearch('');
     setMineOnly(false);
     setAmount(String(saved.amount));
     setSelected(new Set(saved.targetIds));
     setTransferRecovery(saved);
-    setTransferFailures(saved.failures);
+    // Persisted recovery deliberately omits names and raw server messages.
+    // Restore names only from the freshly authorized roster for this club.
+    const names = new Map(downline.map((row) => [row.userId, row.name]));
+    setTransferFailures(
+      saved.failures.map((failure) => ({
+        ...failure,
+        name: names.get(failure.userId) || 'Cashier Recipient',
+      }))
+    );
     setAmountModal(saved.kind);
   };
 
@@ -2188,7 +2308,12 @@ export default function CashierTradePage() {
                   aria-selected={m.clubUuid === clubUuid}
                   onClick={() => {
                     setPickerOpen(false);
-                    if (m.clubUuid !== clubUuid) {
+                    rememberLastClub(m.clubUuid);
+                    if (m.entityType === 'union') {
+                      navigate(
+                        `/unions/${m.slug || unionRouteRef(m.clubUuid)}/operations?tab=wallet`
+                      );
+                    } else if (m.clubUuid !== clubUuid) {
                       navigate(`/clubs/${m.clubCode ?? m.clubUuid}/cashier`);
                     }
                   }}
@@ -2199,7 +2324,9 @@ export default function CashierTradePage() {
                     <span className={styles.entityInitial}>{initial(m.name)}</span>
                   )}
                   <span className={styles.pickerName}>{m.name}</span>
-                  <span className={styles.pickerBalance}>{fmt(m.chipBalance)} Chips</span>
+                  <span className={styles.pickerBalance}>
+                    {m.entityType === 'union' ? 'Union Wallets' : `${fmt(m.chipBalance)} Chips`}
+                  </span>
                 </button>
               ))}
             </div>
@@ -2654,6 +2781,10 @@ export default function CashierTradePage() {
               </strong>
             </div>
             <div className={styles.summaryCell}>
+              <span className={styles.summaryLabel}>Managed</span>
+              <strong className={styles.summaryValue}>{fmt(recordSummary.managed)}</strong>
+            </div>
+            <div className={styles.summaryCell}>
               <span className={styles.summaryLabel}>Net</span>
               <strong
                 className={`${styles.summaryValue} ${recordSummary.net >= 0 ? styles.amtIn : styles.amtOut}`}
@@ -2674,7 +2805,7 @@ export default function CashierTradePage() {
               aria-label="Search Trade Record"
             />
             <div className={styles.ledgerFilters} aria-label="Filter Trade Direction">
-              {(['all', 'in', 'out'] as const).map((direction) => (
+              {(['all', 'in', 'out', 'managed'] as const).map((direction) => (
                 <button
                   key={direction}
                   type="button"
@@ -2682,7 +2813,13 @@ export default function CashierTradePage() {
                   aria-pressed={recordDirection === direction}
                   onClick={() => setRecordDirection(direction)}
                 >
-                  {direction === 'all' ? 'All' : direction === 'in' ? 'Incoming' : 'Outgoing'}
+                  {direction === 'all'
+                    ? 'All'
+                    : direction === 'in'
+                      ? 'Incoming'
+                      : direction === 'out'
+                        ? 'Outgoing'
+                        : 'Managed'}
                 </button>
               ))}
             </div>
@@ -2719,11 +2856,15 @@ export default function CashierTradePage() {
                     dialogTriggerRef.current = event.currentTarget;
                     setReceipt(r);
                   }}
-                  aria-label={`Open Receipt For ${r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}, ${fmt(r.amount)} Chips`}
+                  aria-label={`Open Receipt For ${r.direction === 'managed' ? 'Managed Transfer' : r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}, ${fmt(r.amount)} Chips`}
                 >
                   <div className={styles.rowInfo}>
                     <span className={styles.rowName}>
-                      {r.direction === 'out' ? 'To ' : 'From '}
+                      {r.direction === 'managed'
+                        ? 'Transfer '
+                        : r.direction === 'out'
+                          ? 'To '
+                          : 'From '}
                       {r.counterparty}
                     </span>
                     <span className={styles.rowSub}>
@@ -2738,9 +2879,9 @@ export default function CashierTradePage() {
                     </span>
                   </div>
                   <span
-                    className={`${styles.rowBalance} ${r.direction === 'in' ? styles.amtIn : styles.amtOut}`}
+                    className={`${styles.rowBalance} ${r.direction === 'in' ? styles.amtIn : r.direction === 'out' ? styles.amtOut : ''}`}
                   >
-                    {r.direction === 'in' ? '+' : '-'}
+                    {r.direction === 'in' ? '+' : r.direction === 'out' ? '-' : ''}
                     {fmt(r.amount)}
                   </span>
                   <span className={styles.receiptCue}>Receipt</span>
@@ -3018,9 +3159,23 @@ export default function CashierTradePage() {
               </div>
             </div>
             <div className={styles.receiptAmount}>
-              <span>{receipt.direction === 'in' ? 'Incoming' : 'Outgoing'}</span>
-              <strong className={receipt.direction === 'in' ? styles.amtIn : styles.amtOut}>
-                {receipt.direction === 'in' ? '+' : '-'}
+              <span>
+                {receipt.direction === 'managed'
+                  ? 'Managed Transfer'
+                  : receipt.direction === 'in'
+                    ? 'Incoming'
+                    : 'Outgoing'}
+              </span>
+              <strong
+                className={
+                  receipt.direction === 'in'
+                    ? styles.amtIn
+                    : receipt.direction === 'out'
+                      ? styles.amtOut
+                      : undefined
+                }
+              >
+                {receipt.direction === 'in' ? '+' : receipt.direction === 'out' ? '-' : ''}
                 {fmt(receipt.amount)}
               </strong>
               <small>Chips</small>
@@ -3031,7 +3186,13 @@ export default function CashierTradePage() {
                 <dd className={styles.integrityGood}>Recorded In Ledger</dd>
               </div>
               <div>
-                <dt>{receipt.direction === 'in' ? 'From' : 'To'}</dt>
+                <dt>
+                  {receipt.direction === 'managed'
+                    ? 'Transfer'
+                    : receipt.direction === 'in'
+                      ? 'From'
+                      : 'To'}
+                </dt>
                 <dd>{receipt.counterparty}</dd>
               </div>
               <div>

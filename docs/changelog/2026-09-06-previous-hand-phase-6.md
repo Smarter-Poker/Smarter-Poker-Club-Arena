@@ -116,6 +116,21 @@ in it was **refused at the permission gate before reaching the insert**. A
 test that only exercises the refusals never reaches the write. The second
 probe impersonated a real operator and ran the whole path.
 
+**And then I nearly lost the fix.** It went to production as its own migration
+(`20260906111919`) during the debugging, and I did not write the file. So
+production was correct and the REPO still held the broken casts - a fresh
+database built from these files would have had functions that throw on first
+use, and nothing in any test run would ever have shown it, because every test
+runs against a database that already has the fix.
+
+`Applied Migrations Are Recorded` caught it: "Production has applied migrations
+that this repo has no file for", naming all three of mine. The file is written
+now and its SQL is the SQL production actually holds, checked back out of
+`pg_get_functiondef`. The rule I broke and am writing down: **an
+`apply_migration` and its file are one action, not two** - the gap between them
+is a database and a repo that disagree, in the direction where the repo is the
+one that is wrong.
+
 ## Verified against production
 
 One self-aborting `DO` block (CLAUDE.md 11.5), which rolled everything back -

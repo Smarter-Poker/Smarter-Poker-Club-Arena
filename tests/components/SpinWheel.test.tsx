@@ -281,7 +281,7 @@ describe('sequence', () => {
     expect(seen.size).toBeGreaterThanOrEqual(4);
   });
 
-  it('hands the ticking the light\'s OWN schedule, so a click is a peg crossed', () => {
+  it("hands the ticking the light's OWN schedule, so a click is a peg crossed", () => {
     // Dan 2026-08-21: "CLICKING SOUNDS AS IT PASSES." A duration alone let the
     // sound invent its own tick spacing and hope it tracked the light; the two
     // then drifted apart on any easing change. Passing the same array the
@@ -289,9 +289,11 @@ describe('sequence', () => {
     render(<SpinWheel data={SPIN} onDone={() => {}} />);
     runToChase();
     expect(soundService.playSpinTicking).toHaveBeenCalledTimes(1);
-    const [durationMs, schedule] = (soundService.playSpinTicking as unknown as {
-      mock: { calls: [number, number[]][] };
-    }).mock.calls[0];
+    const [durationMs, schedule] = (
+      soundService.playSpinTicking as unknown as {
+        mock: { calls: [number, number[]][] };
+      }
+    ).mock.calls[0];
     expect(durationMs).toBe(CHASE_MS);
     expect(Array.isArray(schedule)).toBe(true);
     const target = buildWheelOrder(DEFAULT_SPIN_TIERS).findIndex(
@@ -379,13 +381,9 @@ describe('sequence', () => {
     const { container } = render(<SpinWheel data={SPIN} onDone={() => {}} />);
     runToChase();
     expect(container.querySelector('svg.sw__svg')).toBeTruthy();
-    expect(container.querySelectorAll('path.sw__seg-face').length).toBe(
-      DEFAULT_SPIN_TIERS.length
-    );
+    expect(container.querySelectorAll('path.sw__seg-face').length).toBe(DEFAULT_SPIN_TIERS.length);
     // A peg per segment: the clicking needs a visible thing to be striking.
-    expect(container.querySelectorAll('circle.sw__peg').length).toBe(
-      DEFAULT_SPIN_TIERS.length
-    );
+    expect(container.querySelectorAll('circle.sw__peg').length).toBe(DEFAULT_SPIN_TIERS.length);
     expect(container.querySelector('.sw__rim')).toBeTruthy();
   });
 
@@ -546,5 +544,62 @@ describe('CSS hygiene', () => {
     expect(css).toMatch(/\.sw__dim/);
     expect(css).toMatch(/\.sw__beam/);
     expect(css).not.toMatch(/backdrop-filter:\s*blur/);
+  });
+});
+
+describe('phase 6 presentation hardening', () => {
+  it('contains a reveal in a multi-table tile and does not claim modal focus', () => {
+    render(<SpinWheel data={SPIN} contained onDone={() => {}} />);
+    const region = screen.getByRole('region', { name: 'Spin Multiplier Draw' });
+    expect(region.classList.contains('sw--contained')).toBe(true);
+    expect(region.getAttribute('aria-modal')).toBeNull();
+  });
+
+  it('distributes every celebration piece across its actual piece count', () => {
+    const { container } = render(
+      <SpinWheel data={{ ...SPIN, multiplier: 100 }} onDone={() => {}} />
+    );
+    runToResult();
+    const pieces = [...container.querySelectorAll<HTMLElement>('.sw__conf')];
+    expect(pieces.length).toBeGreaterThan(2);
+    expect(
+      pieces.every((piece) => piece.style.getPropertyValue('--sw-count') === String(pieces.length))
+    ).toBe(true);
+    expect(
+      Math.max(
+        ...pieces.map((piece) => Number.parseInt(piece.style.getPropertyValue('--sw-delay')))
+      )
+    ).toBeLessThanOrEqual(720);
+  });
+
+  it('holds a reduced-motion result until the shared deal deadline', () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    const done = vi.fn();
+    const now = Date.now();
+    render(
+      <SpinWheel
+        data={{ ...SPIN, revealAtMs: now, revealDeadlineMs: now + 10_000 }}
+        onDone={done}
+      />
+    );
+    act(() => vi.advanceTimersByTime(900));
+    expect(screen.getByRole('region', { name: 'Spin Multiplier Draw' })).toBeTruthy();
+    expect(done).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(9_200));
+    expect(done).toHaveBeenCalledOnce();
+    window.matchMedia = original;
+  });
+
+  it('joins a late shared reveal at the result without flashing countdown', () => {
+    const now = Date.now();
+    const { container } = render(
+      <SpinWheel
+        data={{ ...SPIN, revealAtMs: now - 14_000, revealDeadlineMs: now + 2_600 }}
+        onDone={() => {}}
+      />
+    );
+    expect(container.querySelector('.sw--result')).toBeTruthy();
+    expect(container.querySelector('.sw--countdown')).toBeNull();
   });
 });

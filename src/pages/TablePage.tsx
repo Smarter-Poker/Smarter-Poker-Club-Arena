@@ -287,7 +287,9 @@ import SpinWheel, {
   parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
-import { spinRevealTotalMs } from '../config/spinSpec';
+import { spinRevealToDealMs, spinRevealTotalMs } from '../config/spinSpec';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useDialogEscape } from '../hooks/useDialogEscape';
 import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
 import { tournamentService } from '../services/TournamentService';
@@ -1257,6 +1259,21 @@ function spinRevealStillLive(revealAtMs: number | null): boolean {
   return Date.now() - revealAtMs < spinRevealTotalMs();
 }
 
+export function seatFillEtaLabel(elapsedMs: number): string {
+  const typicalMs = 188_000;
+  if (elapsedMs < typicalMs) {
+    const minutes = Math.max(1, Math.ceil((typicalMs - elapsedMs) / 60_000));
+    return `Typical Fill In About ${minutes} Min`;
+  }
+  return 'Beyond Typical 3 Min, Waits Can Vary';
+}
+
+export function seatFillDots(taken: number, total: number): string {
+  const safeTotal = Math.max(0, Math.trunc(total));
+  const safeTaken = Math.min(safeTotal, Math.max(0, Math.trunc(taken)));
+  return `${Array.from({ length: safeTotal }, (_, index) => (index < safeTaken ? '●' : '○')).join(' ')} · ${safeTaken}/${safeTotal}`;
+}
+
 /** The tournament columns the wheel needs, and nothing else. */
 interface SpinDrawRow {
   spin_multiplier?: number | string | null;
@@ -1314,6 +1331,7 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
        SpinWheel skip to wherever the shared sequence already is instead of
        starting a private countdown from the top. */
     revealAtMs: revealAtMs ?? Date.now(),
+    revealDeadlineMs: (revealAtMs ?? Date.now()) + spinRevealToDealMs(),
   };
 }
 
@@ -4661,6 +4679,29 @@ export default function TablePage({
   // Which tournament family this table belongs to — drives the format word on
   // masthead line 1. null = cash table, which keeps its own layout.
   const [tournamentFormat, setTournamentFormat] = useState<'spin' | 'sng' | 'mtt' | null>(null);
+  const headsUpAnnouncedRef = useRef<Set<string>>(new Set());
+  const [spinHeadsUpNote, setSpinHeadsUpNote] = useState(false);
+  const spinPlayersRemaining = tableState.players.filter(
+    (player) => player && String(player.status) !== 'eliminated'
+  ).length;
+  useEffect(() => {
+    const tid = tableState.tournamentId;
+    if (
+      tournamentFormat !== 'spin' ||
+      !tid ||
+      spinPlayersRemaining !== 2 ||
+      headsUpAnnouncedRef.current.has(tid)
+    ) {
+      return;
+    }
+    headsUpAnnouncedRef.current.add(tid);
+    setSpinHeadsUpNote(true);
+  }, [tournamentFormat, tableState.tournamentId, spinPlayersRemaining]);
+  useEffect(() => {
+    if (!spinHeadsUpNote) return;
+    const timer = window.setTimeout(() => setSpinHeadsUpNote(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [spinHeadsUpNote]);
   /**
    * SEAT-FIRST (Dan 2026-08-21): "A PLAYER SITS DOWN AT A TABLE AND BUYS INTO
    * THE SPIN OR HEADS UP, LIKE A CASH GAME." When this table is a Spin or a
@@ -4708,6 +4749,7 @@ export default function TablePage({
    * long human wait is a searchable production fact.
    */
   const [seatFirstWaitLong, setSeatFirstWaitLong] = useState(false);
+  const [seatFillClock, setSeatFillClock] = useState(() => Date.now());
   const seatFirstWaitReportedRef = useRef(false);
   useEffect(() => {
     const holding = !!seatFirstBuyIn && tableState.heroSeat > 0 && !playHasBegun;
@@ -4742,6 +4784,13 @@ export default function TablePage({
     playHasBegun,
     tableState.players.filter(Boolean).length,
   ]);
+  useEffect(() => {
+    const holding = !!seatFirstBuyIn && tableState.heroSeat > 0 && !playHasBegun;
+    if (!holding) return;
+    setSeatFillClock(Date.now());
+    const timer = window.setInterval(() => setSeatFillClock(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, [seatFirstBuyIn, tableState.heroSeat, playHasBegun]);
   /**
    * Which tournament the seat-first recovery has already settled, so it asks
    * once per game rather than on every render that leaves seat-first null. A
@@ -4777,6 +4826,8 @@ export default function TablePage({
    * until the player confirms the price, and nothing is charged until they do.
    */
   const [seatFirstConfirm, setSeatFirstConfirm] = useState<number | null>(null);
+  const seatBuyInDialogRef = useFocusTrap<HTMLDivElement>(seatFirstConfirm !== null);
+  useDialogEscape(seatFirstConfirm !== null, () => setSeatFirstConfirm(null), seatFirstPending);
   /* ── THE DUPLICATE BUY-IN TIMER IS DELETED (2026-08-29, round 14) ─────────
    *
    * A second 60-second timer used to live here, and it is the "never registers
@@ -12544,6 +12595,17 @@ export default function TablePage({
                     });
                     goToLobbyWithResult(1, elimData.prize || 0, 7000);
                   } else {
+                    const paidPosition = Number(elimData.position) || 0;
+                    const paidPrize = Number(elimData.prize) || 0;
+                    if (tournamentFormatRef.current === 'spin' && paidPrize > 0) {
+                      setTournamentWinner({
+                        prize: paidPrize,
+                        name: tableStateRef.current.tableName || 'Tournament',
+                        position: paidPosition,
+                      });
+                      goToLobbyWithResult(paidPosition, paidPrize, 5000);
+                      return;
+                    }
                     /* Busted: a short beat so the elimination lands, then out.
                        The result card in the lobby says everything the old
                        toast said, in a place you can actually read it.
@@ -13978,7 +14040,6 @@ export default function TablePage({
    * (see the HEADS_UP_SWITCH block), so the ONE-SHOT has to live here rather
    * than in the arithmetic.
    */
-  const headsUpAnnouncedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     tournamentFormatRef.current = tournamentFormat;
   }, [tournamentFormat]);
@@ -18492,7 +18553,9 @@ export default function TablePage({
       attempts += 1;
       const { data, error } = await supabase
         .from('tournaments')
-        .select('spin_multiplier, spin_locked_tiers, buy_in_amount, started_at, spin_reveal_at')
+        .select(
+          'spin_multiplier, spin_locked_tiers, buy_in_amount, started_at, spin_reveal_at, prize_pool'
+        )
         .eq('id', tournId)
         .maybeSingle();
       if (cancelled) return;
@@ -20875,6 +20938,7 @@ export default function TablePage({
           seat. */}
       <SpinWheel
         data={spinDraw}
+        contained={isMultiTable}
         onDone={() => {
           /* D1: the shared sessionStorage key is stamped HERE, at completion,
              never on arrival. A tab that reloads mid-sequence finds no stamp
@@ -20885,6 +20949,11 @@ export default function TablePage({
         }}
         playSounds={ambientSoundsAllowed}
       />
+      {spinHeadsUpNote && (
+        <div className="spin-heads-up-note" role="status" aria-live="polite">
+          Heads Up · Playing For {Math.round(tableState.spinPrizePool ?? 0).toLocaleString()}
+        </div>
+      )}
 
       {/* Dan 2026-08-19, bug list item 2: "no winner banner at showdown - just
           ship the pot." The centre banner that used to live here (YOU WIN /
@@ -21225,6 +21294,7 @@ export default function TablePage({
             {tableState.isTournament && tableState.tournamentId && (
               <TournamentHUD
                 tournamentId={tableState.tournamentId}
+                spinPrizePool={tournamentFormat === 'spin' ? tableState.spinPrizePool : undefined}
                 onOpen={() => setShowTournamentLobby(true)}
               />
             )}
@@ -22955,7 +23025,13 @@ export default function TablePage({
           until Buy In is pressed and the debit succeeds.
           ═══════════════════════════════════════════════════════════════════════ */}
       {seatFirstBuyIn && seatFirstConfirm !== null && (
-        <div className="seat-buyin-confirm" role="dialog" aria-modal="true">
+        <div
+          ref={seatBuyInDialogRef}
+          className="seat-buyin-confirm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="seat-buyin-confirm-title"
+        >
           <div
             className="seat-buyin-confirm__backdrop"
             onClick={() => !seatFirstPending && setSeatFirstConfirm(null)}
@@ -22964,7 +23040,9 @@ export default function TablePage({
             <div className="seat-buyin-confirm__eyebrow">
               Seat {seatFirstConfirm} · {seatFirstBuyIn.label}
             </div>
-            <div className="seat-buyin-confirm__title">Buy In</div>
+            <div id="seat-buyin-confirm-title" className="seat-buyin-confirm__title">
+              Buy In
+            </div>
             <div className="seat-buyin-confirm__amount">{seatFirstBuyIn.cost.toLocaleString()}</div>
             <div className="seat-buyin-confirm__meta">
               {/* An unknown balance prints as "—", never as a confident 0
@@ -23188,6 +23266,13 @@ export default function TablePage({
                     ? `Seat Reserved, Waiting For ${left} More Players`
                     : 'Seat Reserved, Game Starting';
               })()}
+            </span>
+            <span className="seat-fill-status">
+              {seatFillDots(tableState.players.filter(Boolean).length, seatFirstBuyIn.seats)}
+              {' · '}
+              {seatFillEtaLabel(
+                Math.max(0, seatFillClock - (seatAcquiredAtRef.current ?? seatFillClock))
+              )}
             </span>
             <button
               type="button"

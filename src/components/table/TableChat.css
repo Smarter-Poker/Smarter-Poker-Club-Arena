@@ -403,7 +403,7 @@
 
 .chat-message__dealer-text {
   font-size: 0.75rem;
-  color: #ffb800;
+  color: var(--sp-warn);
 }
 
 /* Avatar */

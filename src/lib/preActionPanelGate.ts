@@ -52,6 +52,29 @@ export type ArmedPreAction = 'fold' | 'check' | 'call' | 'callAny' | null;
 export const PRE_ACTION_EXEC_GRACE_MS = 2500;
 
 /**
+ * HOW LONG "NOBODY IS ON THE CLOCK" IS ALLOWED TO MEAN "THE NEXT ACTOR IS
+ * STILL BEING DECIDED" (Dan 2026-09-07, item 5).
+ *
+ * `currentPlayerSeat` is blanked to 0 the moment any player acts and is only
+ * set again when the engine names the next actor, so every action at the table
+ * produces `seat N -> 0 -> seat M`. The pre-action bar used to require
+ * `> 0` and therefore unmounted in that gap, remounting a moment later and
+ * replaying its 300ms entrance for a change that had not happened - the
+ * "constantly disappears and reappears" Dan filmed.
+ *
+ * There is no event for "the next actor is being decided", so this is the one
+ * place a duration is the honest answer. It is deliberately SHORT: long enough
+ * to cover the engine beat plus a slow phone's round trip, short enough that
+ * any other silence - an all-in runout, a stalled engine - stops claiming a
+ * turn is coming within about a second rather than for the rest of the hand.
+ *
+ * The end of a hand does NOT rely on this: HAND_COMPLETE is an event, and
+ * TablePage's `handSettling` flag reads it directly. A timer is the fallback
+ * for the silence that has no event, never a substitute for one that does.
+ */
+export const PRE_ACTION_GAP_BRIDGE_MS = 1200;
+
+/**
  * The margin the grace must keep over the engine's visible beat, covering a
  * slow broadcast round trip on a phone. Pinned with the contract test.
  */

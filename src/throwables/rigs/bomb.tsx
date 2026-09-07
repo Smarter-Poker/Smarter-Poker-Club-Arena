@@ -133,11 +133,44 @@ function BombSphere({ uid, k }: { uid: string; k: string }) {
       <defs>
         <radialGradient id={g('sphere')} cx="0.32" cy="0.28" r="0.85">
           <stop offset="0%" stopColor={BOMB_BLACK_LIGHT} />
-          <stop offset="45%" stopColor={BOMB_BLACK} />
+          <stop offset="23%" stopColor="#767982" />
+          <stop offset="37%" stopColor="#303239" />
+          <stop offset="58%" stopColor={BOMB_BLACK} />
+          <stop offset="84%" stopColor="#07080c" />
           <stop offset="100%" stopColor={BOMB_BLACK_DEEP} />
         </radialGradient>
       </defs>
-      <circle cx="0" cy="0" r="20" fill={`url(#${g('sphere')})`} />
+      <ellipse cx="2" cy="19" rx="17" ry="3" fill="#06090c" opacity="0.28" />
+      <circle
+        cx="0"
+        cy="0"
+        r="20"
+        fill={`url(#${g('sphere')})`}
+        stroke="#141720"
+        strokeWidth="0.7"
+      />
+      <path
+        d="M -18 4 C -21 -8 -13 -19 -3 -19 M 9 17 Q 18 12 19 2"
+        fill="none"
+        stroke="#9ba9bb"
+        strokeWidth="0.75"
+        opacity="0.58"
+      />
+      <path d="M -17 7 C -8 13 6 14 17 7" fill="none" stroke="#05060a" strokeWidth="1.2" />
+      <path
+        d="M -17 6 C -7 11 6 12 17 6"
+        fill="none"
+        stroke="#646972"
+        strokeWidth="0.5"
+        opacity="0.65"
+      />
+      <path
+        d="M 0 -19 L 3 -24 L 10 -21 L 9 -16 Z"
+        fill="#72717a"
+        stroke="#16181e"
+        strokeWidth="0.8"
+      />
+      <path d="M 3 -23 L 9 -20 M 2 -21 L 8 -18" stroke="#b5adb0" strokeWidth="0.65" />
       {/* a crisp highlight, top-left */}
       <ellipse
         cx="-7"
@@ -205,7 +238,8 @@ function Payload({ uid }: RigProps) {
         </radialGradient>
         <radialGradient id={g('smoke')} cx="0.5" cy="0.5" r="0.6">
           <stop offset="0%" stopColor={SMOKE_KHAKI_LIGHT} />
-          <stop offset="100%" stopColor={SMOKE_KHAKI} />
+          <stop offset="52%" stopColor={SMOKE_KHAKI} />
+          <stop offset="100%" stopColor="#84765d" />
         </radialGradient>
       </defs>
 
@@ -256,7 +290,21 @@ function Payload({ uid }: RigProps) {
           (+1233), fading out as the smoke takes over. */}
       <g className="thr-bomb__burst">
         <path d={BURST_PATH} fill={`url(#${g('burst')})`} stroke={BURST_ORANGE} strokeWidth="1.2" />
-        <circle cx="0" cy="0" r="24" fill={`url(#${g('burst')})`} opacity="0.9" />
+        <path
+          d="M -31 9 C -43 -2 -32 -18 -20 -16 C -25 -34 -5 -41 5 -25 C 15 -38 34 -29 28 -14 C 48 -12 41 10 28 13 C 34 32 9 38 2 24 C -13 36 -33 26 -27 14 Z"
+          fill={`url(#${g('burst')})`}
+          stroke="#ffb138"
+          strokeWidth="1.8"
+        />
+        <path
+          d="M -20 -5 C -23 -17 -8 -26 0 -16 C 12 -27 26 -12 19 -3 C 31 6 18 22 8 15 C -5 28 -20 15 -15 6 C -26 8 -29 -2 -20 -5 Z"
+          fill="#fff0a5"
+          opacity="0.9"
+        />
+        <path
+          d="M -12 -10 C -6 -17 2 -11 1 -5 C 12 -12 17 0 9 6 C 5 15 -9 12 -8 5 C -19 5 -20 -4 -12 -10 Z"
+          fill="#fff9db"
+        />
       </g>
 
       {/* 1600 (+1333): the smoke puff, drifting up-left and fading to clean
@@ -269,6 +317,22 @@ function Payload({ uid }: RigProps) {
         <circle cx="-26" cy="20" r="18" fill={`url(#${g('smoke')})`} />
         <circle cx="0" cy="32" r="16" fill={`url(#${g('smoke')})`} />
         <circle cx="0" cy="-34" r="16" fill={`url(#${g('smoke')})`} />
+        <path
+          d="M -42 -14 C -44 -30 -25 -39 -15 -24 M 10 -37 C 23 -45 40 -31 36 -18 M 31 9 C 49 12 43 34 27 34 M -28 29 C -13 40 1 28 -3 17"
+          fill="none"
+          stroke="#f0dfb8"
+          strokeWidth="2.3"
+          opacity="0.48"
+          strokeLinecap="round"
+        />
+        <path
+          d="M -21 -14 C -4 -29 17 -17 11 -5 C 31 -5 34 18 18 25 C 8 31 -3 25 -5 15"
+          fill="none"
+          stroke="#7c6e57"
+          strokeWidth="3"
+          opacity="0.28"
+          strokeLinecap="round"
+        />
       </g>
     </svg>
   );

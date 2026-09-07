@@ -189,15 +189,37 @@ function Burst({
         </radialGradient>
       </defs>
       <circle cx="0" cy="0" r={Math.round(r * 0.85)} fill={`url(#${g('glow')})`} />
-      {PARTICLES.slice(0, n).map(([nx, ny, rr], i) => (
-        <circle
-          key={i}
-          cx={Number((nx * r).toFixed(1))}
-          cy={Number((ny * r).toFixed(1))}
-          r={Number((dot * rr).toFixed(1))}
-          fill={`url(#${g('dot')})`}
-        />
-      ))}
+      {PARTICLES.slice(0, n).map(([nx, ny, rr], i) => {
+        const x = nx * r;
+        const y = ny * r;
+        const width = dot * rr * 0.3;
+        const length = Math.hypot(nx, ny) || 1;
+        const tx = (-ny / length) * width;
+        const ty = (nx / length) * width;
+        return (
+          <g key={i}>
+            <path
+              d={`M ${x * 0.58} ${y * 0.58} L ${x + tx} ${y + ty} L ${x - tx} ${y - ty} Z`}
+              fill={c1}
+              opacity="0.42"
+            />
+            <circle
+              cx={Number(x.toFixed(1))}
+              cy={Number(y.toFixed(1))}
+              r={Number((dot * rr).toFixed(1))}
+              fill={`url(#${g('dot')})`}
+            />
+            <ellipse
+              cx={Number(x.toFixed(1))}
+              cy={Number(y.toFixed(1))}
+              rx={Math.max(0.4, dot * rr * 0.22)}
+              ry={Math.max(0.6, dot * rr * 0.4)}
+              fill={c0}
+              opacity="0.95"
+            />
+          </g>
+        );
+      })}
     </g>
   );
 }

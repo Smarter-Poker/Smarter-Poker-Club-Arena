@@ -120,7 +120,7 @@
   font-size: 0.875rem;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
-  color: #ffb800;
+  color: var(--sp-warn);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

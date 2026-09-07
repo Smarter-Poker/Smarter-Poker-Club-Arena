@@ -1,0 +1,271 @@
+/**
+ * ROSE - keyframes. Every delay is from LANDING (launch + 333 ms); the comment
+ * on each rule gives the catalogue's ms from launch as well. Every duration and
+ * delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 2's target
+ * avatar was ~40 px wide, so measured pixels are scaled by 100/40 = 2.5.
+ *
+ * THREE INDEPENDENT THREADS, each on its own clock from the moment it appears:
+ *   the ear rose   333 -> 667   landed frame, four blank frames, bud, bloom
+ *   the butterfly  867 -> 3033  a drifting loop with wings on a 67 ms step
+ *   the kiss       1467 -> 3033 appears, grows, then walks down to the chin
+ *
+ * THE IDIOM for an element that appears at a beat: `opacity: 0` in its own
+ * rule, `forwards` (not `both`), and a 0% frame that is already VISIBLE. With
+ * `both` the backwards fill puts the 0% frame into the delay, so a hidden 0%
+ * hides the element on the very frame it is supposed to appear - which is what
+ * the darkroom photographed here at 567 (no bloom) and 1467 (no kiss).
+ */
+
+.thr-rose {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* == THE LANDED ROSE: one frame at 333, gone in one frame at 367. It is on
+   screen from the landing, so `both` is right here and the 0% frame is the
+   visible one. steps(1) holds it for the whole 34 ms and then drops it. == */
+.thr-rose__landed {
+  animation: thr-rose-landed calc(0.034s * var(--animation-speed, 1)) steps(1, end) both;
+}
+
+@keyframes thr-rose-landed {
+  0% {
+    /* 333: the rose that flew, whole, where the flight left it */
+    opacity: 1;
+  }
+  100% {
+    /* 367: gone. Four blank frames follow before the bud */
+    opacity: 0;
+  }
+}
+
+/* == THE BUD: 500 (+167) behind the right ear, gone at 567 (+234) when the
+   bloom takes its place. ================================================ */
+.thr-rose__bud {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-rose-bud calc(0.067s * var(--animation-speed, 1)) ease-out
+    calc(0.167s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-rose-bud {
+  0% {
+    /* 500: the bud is THERE on this frame, small */
+    opacity: 1;
+    transform: scale(0.6);
+  }
+  96% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    /* 567: handed over to the bloom in one frame */
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* == THE EAR ROSE: grows out of the bud 567-667 (+234..+334) and is then
+   STATIC for the rest of the throw. The 30 degree tilt is a fixed transform
+   on the group above it in the markup, so nothing rotates at runtime. ==== */
+.thr-rose__ear {
+  transform-box: fill-box;
+  transform-origin: 50% 90%;
+  opacity: 0;
+  animation: thr-rose-bloom calc(0.1s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.9, 0.3, 1)
+    calc(0.234s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-rose-bloom {
+  0% {
+    /* 567: on screen at the bud's size, in the bud's place */
+    opacity: 1;
+    transform: scale(0.45);
+  }
+  100% {
+    /* 667: full bloom; held to the cut */
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* == THE KISS: on at 1467 (+1134), grows 1 -> 1.375x by 2500 (+2167), holds,
+   then WALKS DOWN the face 0.375 u (37.5 units) between 2633 and 3033
+   (+2300..+2700) at about 1 px per frame. One animation, because the three
+   are one continuous life and splitting them would need three delays that
+   could drift apart. ==================================================== */
+.thr-rose__kiss {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-rose-kiss calc(1.566s * var(--animation-speed, 1)) linear
+    calc(1.134s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-rose-kiss {
+  0% {
+    /* 1467: the print is on the cheek on this frame, at its measured 8 px */
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  66% {
+    /* 2500: grown to the measured 11 px */
+    opacity: 1;
+    transform: translateY(0) scale(1.375);
+  }
+  74.5% {
+    /* 2633: the drift starts */
+    opacity: 1;
+    transform: translateY(0) scale(1.375);
+  }
+  100% {
+    /* 3033: at the chin, held there until the player cuts at 3500 */
+    opacity: 1;
+    transform: translateY(37.5px) scale(1.375);
+  }
+}
+
+/* == THE BUTTERFLY: 867-3033 (+534..+2700). It is there on its first frame and
+   then drifts an 8 px (20 unit) loop four times before fading on the last few.
+   The loop is written as waypoints rather than an infinite animation so the
+   whole life is one deterministic timeline the darkroom can photograph at any
+   beat. ================================================================ */
+.thr-rose__butterfly {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-rose-butterfly calc(2.166s * var(--animation-speed, 1)) linear
+    calc(0.534s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-rose-butterfly {
+  0% {
+    /* 867 */
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  9% {
+    transform: translate(10px, 4px);
+  }
+  16% {
+    transform: translate(2px, 9px);
+  }
+  22% {
+    transform: translate(-7px, 3px);
+  }
+  28% {
+    transform: translate(-5px, -6px);
+  }
+  35% {
+    transform: translate(4px, -9px);
+  }
+  41% {
+    transform: translate(10px, -1px);
+  }
+  47% {
+    transform: translate(5px, 7px);
+  }
+  54% {
+    transform: translate(-4px, 8px);
+  }
+  60% {
+    transform: translate(-9px, 0);
+  }
+  66% {
+    transform: translate(-3px, -8px);
+  }
+  73% {
+    transform: translate(6px, -6px);
+  }
+  79% {
+    transform: translate(9px, 3px);
+  }
+  85% {
+    transform: translate(1px, 8px);
+  }
+  92% {
+    opacity: 1;
+    transform: translate(-6px, 4px);
+  }
+  100% {
+    /* 3033: out, a few frames before the cut */
+    opacity: 0;
+    transform: translate(-8px, -2px);
+  }
+}
+
+/* A small body bob under the drift, so the butterfly rises on each wingbeat
+   instead of sliding flatly along its path. */
+.thr-rose__flutter {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-rose-flutter calc(0.268s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+@keyframes thr-rose-flutter {
+  0%,
+  100% {
+    transform: translateY(1.4px);
+  }
+  50% {
+    transform: translateY(-1.4px);
+  }
+}
+
+/* The wings alternate open/closed EVERY 2 FRAMES at 30 fps = a 67 ms step, so
+   the cycle is 134 ms and `steps(2)` holds each state for one of them. This is
+   the reference's flap exactly: two poses, no in-between. */
+.thr-rose__wings {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-rose-wings calc(0.134s * var(--animation-speed, 1)) steps(2, jump-none) infinite;
+}
+
+@keyframes thr-rose-wings {
+  0% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0.34);
+  }
+}
+
+/* == REDUCED MOTION: the scene, arrived. The rose is behind the ear, the kiss
+   has already walked to the chin, the butterfly is present and still with its
+   wings open. Every beat's MEANING survives; none of the motion does. ==== */
+@media (prefers-reduced-motion: reduce) {
+  .thr-rose__landed,
+  .thr-rose__bud {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-rose__ear {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+
+  .thr-rose__kiss {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translateY(37.5px) scale(1.375) !important;
+  }
+
+  .thr-rose__butterfly {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translate(6px, -3px) !important;
+  }
+
+  .thr-rose__flutter,
+  .thr-rose__wings {
+    animation: none !important;
+    transform: none !important;
+  }
+}

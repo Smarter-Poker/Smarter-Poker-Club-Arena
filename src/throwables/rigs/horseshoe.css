@@ -1,0 +1,235 @@
+/**
+ * HORSESHOE - keyframes. Every delay is from LANDING (launch + 200 ms); the
+ * comment on each stop gives the catalogue's ms from launch. Every duration
+ * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 1's target
+ * avatar was ~30 px wide, so measured pixel offsets are scaled by 100/30.
+ *
+ * FOUR THREADS on their own clocks from the moment each appears:
+ *   the bob         200 -> 1000  a soft rise-and-settle, position only
+ *   the glow bloom   967 -> 1467  the shaded horseshoe crossfades to a
+ *                                 blooming flat-yellow silhouette
+ *   the label       1267 -> cut   "GOOD LUCK" grows out with a ray burst
+ *                                 and holds
+ *   the clovers     1667 -> cut   four clovers grow from the label's corners
+ *
+ * THE IDIOM: an element that APPEARS at a beat carries `opacity: 0` in its
+ * own rule, runs `forwards` (NOT `both`), and its 0% frame is the VISIBLE
+ * opening frame. The shaded horseshoe is on screen FROM LANDING and only
+ * later disappears, so it is the one element here that uses `both` with a
+ * visible 0% - every other element here is born mid-throw and uses the
+ * born-and-dies idiom.
+ */
+
+.thr-horseshoe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* == THE BOB: a position-only wrapper around the horseshoe artwork, 400-1000
+   (+200..+800). Rises 12 px (40 units) then settles back to where it landed. */
+.thr-horseshoe__bob {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-horseshoe-bob calc(0.6s * var(--animation-speed, 1)) ease-in-out
+    calc(0.2s * var(--animation-speed, 1)) both;
+}
+
+@keyframes thr-horseshoe-bob {
+  0% {
+    /* 400: the bob begins, at the landed position */
+    transform: translateY(0);
+  }
+  30% {
+    /* ~580: risen 12 px */
+    transform: translateY(-40px);
+  }
+  65% {
+    /* ~790: back down, near the clank */
+    transform: translateY(0);
+  }
+  100% {
+    /* 1000: settled, held until the glow takes over */
+    transform: translateY(0);
+  }
+}
+
+/* == THE SHADED HORSESHOE: on screen from landing (200), fades out as the
+   glow bloom takes over (~1367, well before the label appears at 1467). It is
+   on screen from the moment the Payload mounts, so `both` with a visible 0%
+   is correct here - unlike everything else in this file. ================= */
+.thr-horseshoe__shaded {
+  animation: thr-horseshoe-shaded calc(1.167s * var(--animation-speed, 1)) ease-in both;
+}
+
+@keyframes thr-horseshoe-shaded {
+  0% {
+    /* 200: landed, full 3D gold horseshoe */
+    opacity: 1;
+  }
+  82% {
+    /* ~1167: still visible; the glow is about to bloom over it */
+    opacity: 1;
+  }
+  100% {
+    /* ~1367: faded out */
+    opacity: 0;
+  }
+}
+
+/* == THE GLOW BLOOM: born at 1167 (+967), blooms to 1.4x, gone by 1667
+   (+1467) as the label finishes forming. Not present at landing, so this is
+   the born-and-dies idiom: its own `opacity: 0`, `forwards`, a visible 0%. */
+.thr-horseshoe__glow {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-horseshoe-glow calc(0.5s * var(--animation-speed, 1)) ease-out
+    calc(0.967s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-horseshoe-glow {
+  0% {
+    /* 1167: shading is lost - flat yellow, already blooming */
+    opacity: 1;
+    transform: scale(0.85);
+  }
+  53% {
+    /* ~1432: peak bloom, ~1.4x */
+    opacity: 1;
+    transform: scale(1.4);
+  }
+  73% {
+    /* ~1532: the horseshoe is basically gone, replaced by the label */
+    opacity: 0.3;
+    transform: scale(1.4);
+  }
+  100% {
+    /* 1667: the horseshoe itself is gone, but a FAINT yellow glow stays behind
+       the settled label for the whole hold. The reference is explicit about it
+       ("Text hold 1667-3767+: ... centred over the avatar/cards, with a faint
+       yellow glow"), and this used to end at 0 - the darkroom's 1867 frame
+       photographed the label sitting on a bare avatar. */
+    opacity: 0.22;
+    transform: scale(1.15);
+  }
+}
+
+/* == THE RAY BURST: born with the label at 1467 (+1267), peaks around 1567,
+   gone by 1667 (+1467). ================================================= */
+.thr-horseshoe__rays {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-horseshoe-rays calc(0.2s * var(--animation-speed, 1)) ease-out
+    calc(1.267s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-horseshoe-rays {
+  0% {
+    /* 1467: tiny, already visible */
+    opacity: 0.5;
+    transform: scale(0.35);
+  }
+  45% {
+    /* ~1557: the full ray burst */
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    /* 1667: gone */
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+
+/* == THE LABEL: "GOOD LUCK", born at 1467 (+1267), grows tiny -> near-full,
+   pops on settle by ~1767 (+1567), and holds to the cut at 4500. ========== */
+.thr-horseshoe__label {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-horseshoe-label calc(0.3s * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.8, 0.3, 1) calc(1.267s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-horseshoe-label {
+  0% {
+    /* 1467: tiny, already visible - "grows out of the glow" */
+    opacity: 1;
+    transform: scale(0.12);
+  }
+  45% {
+    /* ~1602: near-full */
+    opacity: 1;
+    transform: scale(0.9);
+  }
+  70% {
+    /* ~1677: the pop overshoot */
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    /* 1767: settled; held to the cut */
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* == THE CLOVERS: four, born at 1867 (+1667) with a 0/100 ms stagger set
+   inline per clover (upper two first, matching the reference), grown by
+   ~2100 and held to the cut. ============================================= */
+.thr-horseshoe__clover {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-horseshoe-clover calc(0.25s * var(--animation-speed, 1)) ease-out forwards;
+}
+
+@keyframes thr-horseshoe-clover {
+  0% {
+    opacity: 0.6;
+    transform: scale(0.2);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* == REDUCED MOTION: the scene, arrived - "GOOD LUCK" settled with its four
+   clovers; the horseshoe itself (shaded and glow) and the transient ray
+   burst are gone, exactly as the reference shows by the time the label has
+   fully formed. Every beat's MEANING survives; none of the motion does. == */
+@media (prefers-reduced-motion: reduce) {
+  .thr-horseshoe__bob {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .thr-horseshoe__shaded,
+  .thr-horseshoe__glow,
+  .thr-horseshoe__rays {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-horseshoe__label {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+
+  .thr-horseshoe__clover {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+}

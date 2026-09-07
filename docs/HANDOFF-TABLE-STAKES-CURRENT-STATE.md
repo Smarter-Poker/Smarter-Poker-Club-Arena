@@ -101,8 +101,8 @@ Migrations applied and recorded under their own version today:
   in the minutes after a cutover and 0.86 s at steady state. I nearly "fixed"
   the transient. Take quantiles over a 5-minute window, not a single
   `/health` sample.
-- **`fn_caller_is_engine()` trusts a session with no JWT** - psql, pg_cron, a
-  migration. A behavioural probe of a money guard from psql is _supposed_ to
+- **`fn_caller_is_engine()` trusts a session with no JWT** - psql, pg*cron, a
+  migration. A behavioural probe of a money guard from psql is \_supposed* to
   pass; that is not the guard failing.
 - Em dashes in a file you touch fail `check-ui-text` even when they were
   already there. Fix them (fix-first); `--fix` does it.

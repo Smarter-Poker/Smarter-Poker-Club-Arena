@@ -195,10 +195,14 @@ jobs:
     # copies each day's line into docs/attestation/chip-ledger-days.tsv, where
     # git owns the history instead.
     #
-    # It rides this workflow's existing 05:20 UTC schedule - after the 04:25
-    # manifest cron - so no new scheduled trigger is added anywhere
-    # (CLAUDE.md 10.85, and the precedent in 10.83 for carrying extra checks on
-    # a schedule that already exists).
+    # It rides this workflow's existing schedules - BOTH of them, the daily
+    # 05:20 and the hourly :40, because unlike `refresh` it carries no `if:`
+    # that skips the hourly cron - so no new scheduled trigger is added
+    # anywhere (CLAUDE.md 10.85, and the precedent in 10.83 for carrying extra
+    # checks on a schedule that already exists). Hourly is the better cadence
+    # for an alarm: an unexplained change is seen within the hour, not the
+    # next morning, and a run with nothing new is a no-op. The 04:25 manifest
+    # cron's new day is picked up by the first run after it.
     #
     # THE SCRIPT FAILS when a day this file already carries hashes differently
     # in the database and no restatement explains it. That failure is the whole
@@ -281,9 +285,37 @@ jobs:
           gh issue comment "$N" --repo "$REPO" --body "Recovered. Every day the database attests now matches the line git already carries, or is explained by a restatement. Closing." || true
           gh issue close "$N" --repo "$REPO" || true
 
+      # THE LINE HAS TO REACH MAIN, AND GITHUB_TOKEN CANNOT TAKE IT THERE.
+      #
+      # Found by the deep dive over phase 6 (2026-09-07 evening). This step
+      # used to push with secrets.GITHUB_TOKEN and then `gh pr create`. A push
+      # made with GITHUB_TOKEN emits no `push` event, so agent-open-pr.yml
+      # never saw the branch, and `gh pr create` needs the "Allow GitHub
+      # Actions to create pull requests" setting, which is off here - the
+      # refresh job above says so in its own comment. github-actions[bot] has
+      # opened ZERO pull requests in this repository, ever. So the first new
+      # day after the 35 an agent pushed by hand would have been appended to a
+      # branch nobody sees, for ever, while this job stayed green - an anchor
+      # that never advances, reporting success.
+      #
+      # It now mints the estate's own App token exactly as agent-open-pr.yml
+      # does, and pushes with THAT: the push fires agent-open-pr (which opens
+      # the pull request) and agent-autopilot (which merges it on green), the
+      # same route every other change takes to main. If the App is not
+      # configured the step still pushes, but says out loud that nothing will
+      # open the pull request, rather than pretending the notice is delivery.
+      - name: Mint a GitHub App installation token
+        id: app-token
+        if: vars.AUTOPILOT_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+
       - name: Commit the new lines
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          PUSH_TOKEN_KIND: ${{ steps.app-token.outputs.token && 'app' || secrets.GH_PAT && 'pat' || 'github-token' }}
         run: |
           set -euo pipefail
 
@@ -302,17 +334,27 @@ jobs:
           Appended by .github/workflows/schema-manifest-refresh.yml from
           ca_ledger_day_manifests. Append-only: a day already anchored is never
           rewritten, and a change with no restatement fails the job instead."
-          git push -f origin "$BRANCH"
+
+          # Push with the token in hand, not the checkout's default credential:
+          # only a push made with the App (or a PAT) fires agent-open-pr.yml.
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+
+          if [ "$PUSH_TOKEN_KIND" = "github-token" ]; then
+            echo "::error::Branch $BRANCH was pushed with GITHUB_TOKEN, which fires no push event and cannot open a pull request here. The new anchor line will NOT reach main until vars.AUTOPILOT_APP_ID / secrets.AUTOPILOT_APP_PRIVATE_KEY are set (agent-open-pr.yml uses the same pair)."
+            exit 1
+          fi
 
           OPEN=$(gh pr list --state open --head "$BRANCH" --json number --jq 'length' 2>/dev/null || echo 0)
           if [ "$OPEN" != "0" ]; then
             echo "::notice::Anchored in the existing PR for branch $BRANCH."
             exit 0
           fi
+          # agent-open-pr.yml opens it on the push event; this is the same
+          # request made directly, so the line does not wait on a sweep.
           gh pr create --head "$BRANCH" --base main \
             --title "chore(attestation): anchor the ledger day manifests" \
             --body "One line per attested day, appended from ca_ledger_day_manifests. See docs/attestation/README.md." \
-            || echo "::notice::Branch $BRANCH is pushed; open the PR by hand if Actions cannot."
+            || echo "::notice::agent-open-pr.yml will open the pull request for $BRANCH on the push event."
 
   definer-exposure:
     name: No unaccounted DEFINER writer is reachable from a browser

@@ -184,6 +184,136 @@ jobs:
         run: |
           echo "::error title=Stale manifest fragment::See the Absorb step - a fragment has declared something production does not have for over a day."
           exit 1
+  anchor-ledger-days:
+    name: The ledger attestation is anchored outside the database
+    runs-on: ubuntu-latest
+    # WHY THIS RUNS HERE AND NOT ON A SCHEDULE OF ITS OWN
+    #
+    # ca_ledger_day_manifests hashes each day of chip_ledger and stores the sha
+    # in the same database as the journal it hashes, so it proves nothing to
+    # anybody who does not already trust that database (roadmap 9.2). This
+    # copies each day's line into docs/attestation/chip-ledger-days.tsv, where
+    # git owns the history instead.
+    #
+    # It rides this workflow's existing 05:20 UTC schedule - after the 04:25
+    # manifest cron - so no new scheduled trigger is added anywhere
+    # (CLAUDE.md 10.85, and the precedent in 10.83 for carrying extra checks on
+    # a schedule that already exists).
+    #
+    # THE SCRIPT FAILS when a day this file already carries hashes differently
+    # in the database and no restatement explains it. That failure is the whole
+    # point of the file: on 2026-09-07 the eight retained days were recomputed
+    # for the first time and 2026-08-31 had been wrong for six days, because
+    # fn_ca_ledger_day_manifest only ever examines CURRENT_DATE - 1.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Anchor every day the database has attested
+        id: anchor
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          node scripts/ci/anchor-ledger-days.mjs 2>&1 | tee /tmp/anchor-ledger-days.log
+
+      # A RED JOB IN A SCHEDULED WORKFLOW IS A TREE NOBODY HEARS FALL.
+      #
+      # Added 2026-09-07 by the deep dive over the phase 6 work this job shipped
+      # in. Without these two steps the strongest signal in the whole ledger
+      # attestation - "a day already anchored now hashes differently and nothing
+      # explains it" - reached a person only as `check-main-is-green` reporting
+      # "Schema Manifest Refresh has been red for six hours", indistinguishable
+      # from a manifest-refresh hiccup, and MASKED ENTIRELY whenever any open
+      # issue already named this workflow (that detector matches on the workflow
+      # name, so it is per-workflow, not per-job). The definer-exposure job below
+      # already solved this in this same file; the anchor did not copy it.
+      #
+      # CLAUDE.md 10.86 rule 3: a guard must have a reader, and you must name
+      # them. The reader is this issue.
+      - name: Raise the alarm
+        if: failure() && steps.anchor.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Ledger attestation: an anchored day now hashes differently"
+          # The plain list endpoint, never --search: the search index is
+          # eventually consistent and duplicate issues have been filed that way.
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          BODY=$(printf '%s\n' \
+            "\`scripts/ci/anchor-ledger-days.mjs\` refused to append. A day already carried by \`docs/attestation/chip-ledger-days.tsv\` now hashes differently in the database, and no row in \`ca_ledger_day_manifest_restatements\` explains it." \
+            "" \
+            "That means the journal for a day already attested changed, and either it changed outside the sanctioned maintenance path or the change was never recorded. Both are incidents." \
+            "" \
+            '\`\`\`' \
+            "$(sed -e 's/\x1b\[[0-9;]*m//g' /tmp/anchor-ledger-days.log | head -60)" \
+            '\`\`\`' \
+            "" \
+            "Do NOT edit the anchor file to make this pass. Read \`ca_ledger_mutation_log\` for that day first - every sanctioned change keeps the old row." \
+            "" \
+            "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          if [ -n "${N:-}" ]; then
+            gh issue comment "$N" --repo "$REPO" --body "$BODY" || echo "::error::could not comment on #$N"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" || echo "::error::could not open the issue"
+          fi
+
+      - name: Close the alarm when the anchor agrees again
+        if: success() && steps.anchor.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Ledger attestation: an anchored day now hashes differently"
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          [ -n "${N:-}" ] || exit 0
+          gh issue comment "$N" --repo "$REPO" --body "Recovered. Every day the database attests now matches the line git already carries, or is explained by a restatement. Closing." || true
+          gh issue close "$N" --repo "$REPO" || true
+
+      - name: Commit the new lines
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- docs/attestation/; then
+            echo "No new day to anchor."
+            exit 0
+          fi
+
+          BRANCH="chore/anchor-ledger-days"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -A docs/attestation/
+          git commit -m "chore(attestation): anchor the ledger day manifests
+
+          Appended by .github/workflows/schema-manifest-refresh.yml from
+          ca_ledger_day_manifests. Append-only: a day already anchored is never
+          rewritten, and a change with no restatement fails the job instead."
+          git push -f origin "$BRANCH"
+
+          OPEN=$(gh pr list --state open --head "$BRANCH" --json number --jq 'length' 2>/dev/null || echo 0)
+          if [ "$OPEN" != "0" ]; then
+            echo "::notice::Anchored in the existing PR for branch $BRANCH."
+            exit 0
+          fi
+          gh pr create --head "$BRANCH" --base main \
+            --title "chore(attestation): anchor the ledger day manifests" \
+            --body "One line per attested day, appended from ca_ledger_day_manifests. See docs/attestation/README.md." \
+            || echo "::notice::Branch $BRANCH is pushed; open the PR by hand if Actions cannot."
+
   definer-exposure:
     name: No unaccounted DEFINER writer is reachable from a browser
     runs-on: ubuntu-latest

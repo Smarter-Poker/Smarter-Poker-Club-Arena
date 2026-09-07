@@ -236,3 +236,160 @@ describe('the attestation covers the journal, not the last eight days', () => {
     expect(crons, 'no new scheduled trigger (CLAUDE.md 10.85)').toBeLessThanOrEqual(2);
   });
 });
+
+/**
+ * AND THE ATTESTATION RESTATES ITSELF, AND NEVER OUTGROWS ITS BUDGET.
+ *
+ * The deep dive over phase 6, the same evening (migration
+ * `the_attestation_restates_itself_and_never_outgrows_its_budget`). Four more
+ * of the same shape:
+ *
+ *   1. A sanctioned change to an attested day was still a detector plus a
+ *      human: the verifier raised an incident at 04:25 and somebody had to
+ *      hand-write a restatement, exactly as 2026-08-31 was fixed. Now the
+ *      maintenance statement restates the day ITSELF, in its own transaction,
+ *      through the writer; the manifest tables refuse a hand edit or a delete;
+ *      and the guard writes the restatement row, so one exists by construction.
+ *   2. The one-pass verifier was linear in a journal kept for ever: 53,513 ms
+ *      under evening load against the cron role's 2-minute statement_timeout -
+ *      about ten weeks from failing every night. chip_ledger had no index on
+ *      created_at alone (a per-day read was 30,124 ms for 24,107 legs). Now it
+ *      does, and the verifier re-reads days on a rotation under a wall-clock
+ *      budget, stamping last_checked_at, with `oldest_check_age_days` in the
+ *      answer and a warning past 30 days.
+ *   3. Every day boundary was evaluated in the caller's TimeZone. Pinned UTC.
+ *   4. The anchor's append step pushed with GITHUB_TOKEN and called
+ *      `gh pr create`; github-actions has opened zero pull requests in this
+ *      repository, ever. It now mints the App token agent-open-pr.yml uses.
+ *      And the script's REST reads had no pagination guard (1,000-row cap).
+ */
+describe('the attestation restates itself, and never outgrows its budget', () => {
+  const restate = readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .find((f) => f.includes('the_attestation_restates_itself'));
+  const rsql = restate ? readFileSync(join(MIGRATIONS, restate), 'utf8') : '';
+  const wf = readFileSync(workflow, 'utf8');
+  const js = readFileSync(anchorScript, 'utf8');
+
+  it('the migration exists', () => {
+    expect(restate, 'the restatement migration must not be deleted').toBeTruthy();
+  });
+
+  it('a sanctioned change to an attested day restates the manifest in the same transaction', () => {
+    expect(rsql).toContain('CREATE OR REPLACE FUNCTION public.fn_ca_attested_day_is_restated');
+    // statement-level, with transition tables, on both mutations the
+    // maintenance path permits
+    expect(rsql).toMatch(
+      /AFTER DELETE ON public\.chip_ledger\s+REFERENCING OLD TABLE AS old_rows\s+FOR EACH STATEMENT/
+    );
+    expect(rsql).toMatch(
+      /AFTER UPDATE ON public\.chip_ledger\s+REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows\s+FOR EACH STATEMENT/
+    );
+    // through the writer, with the maintenance reason - no third hash copy
+    expect(rsql).toMatch(/fn_ca_ledger_day_manifest\(r\.day, 'maintenance:' \|\| v_reason\)/);
+    // and it is PROVED in the migration by a rolled-back probe
+    expect(rsql).toMatch(/VERIFY FAILED: a sanctioned DELETE on % left its manifest unchanged/);
+    expect(rsql).toMatch(/VERIFY FAILED: the restatement for % was not written by the guard/);
+    expect(rsql).toMatch(/VERIFY FAILED: the probe restatement survived the rollback/);
+  });
+
+  it('a manifest is restated, never edited, and a restatement is never edited', () => {
+    expect(rsql).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_manifest_is_restated_not_edited'
+    );
+    expect(rsql).toMatch(/BEFORE UPDATE OR DELETE ON public\.ca_ledger_day_manifests/);
+    expect(rsql).toMatch(/BEFORE UPDATE OR DELETE ON public\.ca_ledger_day_manifest_restatements/);
+    // the guard writes the restatement row itself
+    expect(rsql).toMatch(
+      /INSERT INTO public\.ca_ledger_day_manifest_restatements[\s\S]*VALUES\s*\(OLD\.day, OLD\.row_count, NEW\.row_count, OLD\.sha256, NEW\.sha256, v_reason/
+    );
+    // an attested day cannot be emptied
+    expect(rsql).toMatch(/an attested day cannot be emptied/);
+    expect(rsql).toMatch(/VERIFY FAILED: a manifest sha was edited by hand and nothing refused it/);
+    expect(rsql).toMatch(/VERIFY FAILED: a manifest was deleted and nothing refused it/);
+  });
+
+  it('the per-day read is an index range, and the days of the journal are a loose index scan', () => {
+    expect(rsql).toMatch(
+      /CREATE INDEX IF NOT EXISTS idx_chip_ledger_created_at\s+ON public\.chip_ledger USING btree \(created_at\)/
+    );
+    expect(rsql).toMatch(/VERIFY FAILED: idx_chip_ledger_created_at is missing or invalid/);
+    expect(rsql).toContain('CREATE OR REPLACE FUNCTION public.fn_ca_ledger_finished_days');
+    expect(rsql).toMatch(/WITH RECURSIVE d AS/);
+    // the backfill and the verifier share that one definition of "which days"
+    const backfill = rsql.slice(rsql.indexOf('FUNCTION public.fn_ca_ledger_day_manifest_backfill'));
+    expect(backfill).toMatch(/FROM public\.fn_ca_ledger_finished_days\(\) d\(day\)/);
+    expect(backfill).not.toMatch(/SELECT DISTINCT created_at::date/);
+  });
+
+  it('the verifier works under a budget and its answer says how stale the oldest re-read is', () => {
+    const body = rsql.slice(
+      rsql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_ledger_day_manifest_verify_all')
+    );
+    expect(body).toMatch(/p_budget_ms integer DEFAULT 60000/);
+    expect(body).toMatch(/ORDER BY m\.last_checked_at ASC NULLS FIRST, m\.day ASC/);
+    expect(body).toMatch(/> p_budget_ms THEN\s+v_deferred := v_deferred \+ 1;/);
+    expect(body).toMatch(/SET last_checked_at = now\(\) WHERE day = r\.day/);
+    expect(body).toMatch(/'deferred', v_deferred/);
+    expect(body).toMatch(/'oldest_check_age_days'/);
+    expect(body).toContain('manifest-rotation-stale');
+    // the whole journal is NOT re-read every night any more, on purpose, and
+    // the old full-table pass must not come back as the default
+    expect(body).not.toMatch(/WITH actual AS \(/);
+    expect(body).not.toMatch(/FULL JOIN public\.ca_ledger_day_manifests/);
+    // unattested days are still counted every run
+    expect(body).toContain('manifest-unattested-days');
+    expect(rsql).toMatch(/VERIFY FAILED: checked % \+ deferred % <> % manifests/);
+  });
+
+  it('the writer still hashes exactly what the verifier hashes, re-proved from the catalogue', () => {
+    const writer = rsql.slice(rsql.indexOf('CREATE FUNCTION public.fn_ca_ledger_day_manifest('));
+    expect(writer).toContain(HASH_FINGERPRINT);
+    expect(rsql).toMatch(
+      /VERIFY FAILED: the writer and the verifier no longer hash the same thing/
+    );
+    // the (date) overload is gone, or the cron call is ambiguous
+    expect(rsql).toMatch(/DROP FUNCTION IF EXISTS public\.fn_ca_ledger_day_manifest\(date\);/);
+    expect(rsql).toMatch(/VERIFY FAILED: % overloads of fn_ca_ledger_day_manifest \(want 1\)/);
+  });
+
+  it('a day is a UTC day, pinned on every function that decides one', () => {
+    const pins = [...rsql.matchAll(/SET timezone = 'UTC'/g)].length;
+    expect(pins).toBeGreaterThanOrEqual(6);
+    expect(rsql).toMatch(/VERIFY FAILED: % does not pin timezone=UTC/);
+  });
+
+  it('the daily job is unchanged in shape and schedule', () => {
+    expect(rsql).toContain('cron.alter_job');
+    expect(rsql).not.toMatch(/cron\.schedule\s*\(/);
+    expect(rsql).toMatch(/VERIFY FAILED: the daily job does not call the backfill/);
+    expect(rsql).toMatch(
+      /VERIFY FAILED: extending the job dropped the verification it already did/
+    );
+    expect(rsql).toMatch(
+      /VERIFY FAILED: extending the job dropped the manifest write it already did/
+    );
+  });
+
+  it('the anchor line is pushed with a token that can reach main', () => {
+    const job = wf.slice(wf.indexOf('anchor-ledger-days:'), wf.indexOf('definer-exposure:'));
+    expect(job).toMatch(/uses: actions\/create-github-app-token@v1/);
+    expect(job).toMatch(/app-id: \$\{\{ vars\.AUTOPILOT_APP_ID \}\}/);
+    expect(job).toMatch(/private-key: \$\{\{ secrets\.AUTOPILOT_APP_PRIVATE_KEY \}\}/);
+    // the push itself carries the token; the checkout's credential is GITHUB_TOKEN
+    expect(job).toMatch(
+      /git push -f "https:\/\/x-access-token:\$\{GH_TOKEN\}@github\.com\/\$\{GITHUB_REPOSITORY\}\.git"/
+    );
+    // and a fall-through to GITHUB_TOKEN is a loud failure, not a green notice
+    expect(job).toMatch(/PUSH_TOKEN_KIND" = "github-token" \]; then\s+echo "::error::/);
+    expect(job).not.toMatch(/git push -f origin "\$BRANCH"/);
+  });
+
+  it('the anchor refuses a truncated answer from PostgREST', () => {
+    expect(js).toMatch(/Prefer: 'count=exact'/);
+    expect(js).toMatch(/content-range/);
+    expect(js).toMatch(/the response was truncated/);
+    expect(js).toMatch(/refusing to guess whether the answer is complete/);
+  });
+});

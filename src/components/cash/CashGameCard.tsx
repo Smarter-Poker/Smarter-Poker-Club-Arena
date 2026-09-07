@@ -275,8 +275,9 @@ export function rulesLineFor(snapshot: {
     parts.push(
       snapshot.bombs.trigger === 'every_orbit' ? 'Bombs Every Orbit' : 'Bombs Every 15 Min'
     );
+    /* Three boards is worth a word; two is what a bomb pot already means here
+       and is not repeated (Dan 2026-09-07, item 7D). */
     if ((snapshot.bombs.boards ?? 0) >= 3) parts.push('Triple Board');
-    else if ((snapshot.bombs.boards ?? 0) === 2) parts.push('Double Board');
   } else {
     parts.push('No Bomb Pots');
   }

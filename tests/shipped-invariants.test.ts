@@ -36,6 +36,11 @@ const has = (p: string, needle: string) => existsSync(root(p)) && read(p).includ
 
 /** Behaviour that is live and must stay live. */
 const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
+  [
+    'supabase/migrations/20260907194634_mini_jackpot_allocations_conserve_before_recipient_credit.sql',
+    'CREATE OR REPLACE FUNCTION public.fn_bbj_mini_payout',
+    'Mini jackpot allocation is corrected at its original payout RPC',
+  ],
   // Roles — the grant matrix lives in Postgres; the client must ASK it.
   ['src/types/clubRoles.ts', 'co_owner', 'the seven club roles, including co_owner'],
   // 2026-08-23: re-anchored from ClubMembersPage to MemberManagementPage. The
@@ -462,3 +467,4 @@ describe('shipped functionality is still here', () => {
     }
   });
 });
+

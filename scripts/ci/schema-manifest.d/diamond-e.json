@@ -1,6 +1,5 @@
 {
-  "_owner": "fix/diamond-e-earn",
-  "_note": "Diamond Accounting Standard Lane E: earn budgets, per-user per-day cap ledger, catalog history, the house ledger. Migration 20260903002841.",
+  "_owner": "fix/diamond-e-earn. Diamond Accounting Standard Lane E: earn budgets, per-user per-day cap ledger, catalog history, the house ledger. Migration 20260903002841.",
   "tables": [
     "diamond_engine_daily_caps",
     "diamond_user_daily_awards",

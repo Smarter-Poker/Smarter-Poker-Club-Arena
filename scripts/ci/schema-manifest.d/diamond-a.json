@@ -1,6 +1,5 @@
 {
-  "_owner": "fix/diamond-a-identity",
-  "_note": "Diamond Accounting Standard Lane A created NO new table, function or column. It replaced the bodies of five functions that already exist in production and revoked two grants, so there is nothing new for the CI gates to learn. The names below are declared as an ownership record only; every one of them predates this branch. The foundation's own objects (ca_diamond_house, diamond_reward_budgets, ca_diamond_incidents, fn_ca_diamond_incident, diamond_transactions.counterparty, diamond_transactions.issuance_class) belong to the foundation migration and are deliberately not repeated here.",
+  "_owner": "fix/diamond-a-identity. Diamond Accounting Standard Lane A created NO new table, function or column. It replaced the bodies of five functions that already exist in production and revoked two grants, so there is nothing new for the CI gates to learn. The names below are declared as an ownership record only; every one of them predates this branch. The foundation's own objects (ca_diamond_house, diamond_reward_budgets, ca_diamond_incidents, fn_ca_diamond_incident, diamond_transactions.counterparty, diamond_transactions.issuance_class) belong to the foundation migration and are deliberately not repeated here.",
   "functions": [
     "fn_ca_diamond_snapshot",
     "fn_diamond_side_tables_follow_profiles",

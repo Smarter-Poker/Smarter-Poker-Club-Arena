@@ -167,7 +167,16 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(page).toContain('p_limit: GAME_PAGE_SIZE * 2');
     expect(page).toContain('prefetchedGamePageRef.current');
     expect(page).toMatch(/gameSort === 'recent'[\s\S]{0,80}\? recentCursor\(rows\)/);
-    expect(page).toContain('setPlayersLoading(!preserveOnError || !playersRef.current);');
+    // Moved 2026-09-07 to the mechanism that replaced it. The rule is
+    // unchanged and is what this line always guarded: a background refresh
+    // that already has rows on screen must not pull a skeleton over them. It
+    // is the condition now rather than a setState argument, because the same
+    // flag also had to stop being clearable by a background poll. See "lets
+    // only a foreground request raise and clear the players skeleton" below.
+    expect(page).toContain('const showSpinner = !preserveOnError || !playersRef.current;');
+    expect(sliceCall(page, 'const loadPlayers = useCallback(')).toMatch(
+      /if \(showSpinner\) \{\s*playersSpinnerVersion\.current = myVersion;\s*setPlayersLoading\(true\);/
+    );
     expect(page).toContain('if (manualRefreshingRef.current) return;');
     expect(page).toContain('disabled={manualRefreshing || !clubUuid || isHydrating}');
   });
@@ -397,6 +406,62 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     );
     expect(queue).toContain('}, delay);');
     expect(queue).not.toContain('}, 750);');
+  });
+
+  /**
+   * The games ledger was fixed first and the players ledger was left with the
+   * identical fault, which is what Post-Deploy E2E found next: Load More
+   * Players clicked, and the label never moved off
+   * "Load More Players - 100 Of 571" for sixty seconds. `loadMorePlayers`
+   * refuses to run while `playersLoading` is true, and `playersLoading` was
+   * cleared only by the newest read of any kind. 10.86 rule 4: a fix that
+   * leaves the same trap one level over has not landed.
+   */
+  it('lets only a foreground request raise and clear the players skeleton', () => {
+    const loadPlayers = sliceCall(page, 'const loadPlayers = useCallback(');
+    expect(loadPlayers).toContain('playersSpinnerVersion.current = myVersion;');
+    expect(loadPlayers).toContain(
+      'if (!cancelledRef.current && showSpinner && playersSpinnerVersion.current === myVersion)'
+    );
+    expect(loadPlayers).toContain(
+      'if (preserveOnError && backgroundPlayersInFlight.current) return true;'
+    );
+    expect(loadPlayers.match(/setPlayersLoading\(false\)/g)).toHaveLength(1);
+  });
+
+  /**
+   * A REFRESH IS NOT A NEW QUESTION. Both Load More paths captured the read
+   * version and discarded their page if anything bumped it mid-flight - which
+   * the 60s poll and every realtime row do. That check belongs to a sort or
+   * filter change, where the page really does belong to a ledger nobody is
+   * looking at; a refresh of the same query must not throw away the page the
+   * operator just asked for, and must never leave its own spinner up.
+   */
+  it('keys pagination to the question, not to every read', () => {
+    for (const [fn, epoch] of [
+      ['const loadMoreGames = useCallback(', 'gamesQueryEpoch'],
+      ['const loadMorePlayers = useCallback(', 'playersQueryEpoch'],
+    ] as const) {
+      const body = sliceCall(page, fn);
+      expect(body).toContain(`const myEpoch = ${epoch}.current;`);
+      expect(body).toContain(`${epoch}.current !== myEpoch`);
+      // The read-ordering version must not be what pagination watches.
+      expect(body).not.toContain('loadVersion.current !== myVersion');
+      expect(body).not.toContain('playersVersion.current !== myVersion');
+    }
+    // The epoch moves on a foreground load and on a club change, never on a
+    // background refresh.
+    const load = sliceCall(page, 'const load = useCallback(');
+    expect(load).toContain('if (!preserveOnError) gamesQueryEpoch.current += 1;');
+    const loadPlayers = sliceCall(page, 'const loadPlayers = useCallback(');
+    expect(loadPlayers).toContain('if (!preserveOnError) playersQueryEpoch.current += 1;');
+    // Whoever raised a Load More spinner puts it down, superseded or not.
+    expect(sliceCall(page, 'const loadMoreGames = useCallback(')).toContain(
+      'if (!cancelledRef.current) setGamesLoadingMore(false);'
+    );
+    expect(sliceCall(page, 'const loadMorePlayers = useCallback(')).toContain(
+      'if (!cancelledRef.current) setPlayersLoadingMore(false);'
+    );
   });
 
   it('keeps complete browsing server-sorted and DOM-windowed', () => {

@@ -251,3 +251,83 @@ week, which is the exact failure mode that hid three unsettled weeks.
 - **Deep Stack Society** generated 17,193.48 of rake this week while belonging
   to no union.
 - The World Hub club-level settlement defects listed above.
+
+---
+
+# The half-finished change, and closing it
+
+Migration `20260907052051_every_union_week_is_the_same_week`.
+
+Moving `fn_union_week_start` moved the **settlement**. It did not move the
+thirteen other union, agent and rake functions that computed the week with
+`date_trunc('week', now())` in UTC. The settlement closed Aug 31 07:00 to
+Sep 7 07:00 while the operator preview, the agent statements and the risk
+reports all described Aug 31 00:00 to Sep 7 00:00. Same nouns, different seven
+hours. That is a wiring gap, and it was mine.
+
+Two were worse than cosmetic:
+
+- **`fn_union_settlement_preview`** mirrors rounds 2 and 3 exactly and is what
+  an operator reads _before_ approving a settlement. It was previewing a period
+  the cascade would not settle.
+- **`fn_execute_union_rakeback`** validates week alignment with
+  `p_period_start <> date_trunc('week', p_period_start) -> refuse`. In UTC that
+  **refuses a Pacific period outright**:
+
+      '2026-08-31 07:00+00' = date_trunc('week', '2026-08-31 07:00+00')  ->  false
+
+  No database caller, no cron caller, no caller in either repo - but granted to
+  `authenticated`, so it was a loaded gun aimed at whoever called it next.
+
+## How it was applied
+
+Thirteen function bodies were **not** retyped. Several are 3-5 KB money
+functions and a transcription slip in one would be silent. Each definition was
+read back with `pg_get_functiondef`, the exact substrings replaced longest-first,
+and re-executed - so the only thing that can change is the text being swapped.
+One transaction, so `pgrst_ddl_watch` coalesces to a single schema reload.
+
+The migration asserts, end to end, that the preview's period now equals the
+cascade's period. Not the text - the wiring.
+
+## Deliberately not touched, each one checked rather than assumed
+
+- **`fn_rakeback_recompute_all_clubs`** runs at 06:45, _before_ the 07:00
+  boundary, where `fn_union_week_start(now())` still returns **last** week.
+  Swapping the helper in would have made it recompute 2026-08-24 instead of
+  2026-08-31. Its UTC arithmetic already yields the correct window. This one
+  nearly became a regression introduced by the fix for a regression.
+- **`trg_union_rake_weekly` / `fn_union_rake_weekly_verify`** bucket
+  `union_rake_weekly` by UTC week. They agree with each other, the table is a
+  display rollup whose own trigger comment says the fallback reads the ledger,
+  and moving them needs the existing rows rebucketed in the same change.
+- **`rakeback_periods` are UTC-DATE buckets**, so a Pacific week cannot align to
+  them exactly. Round 3 claims
+  `period_start >= p_period_start::date AND < p_period_end::date + 1`, which is
+  eight date-buckets for a seven-day week. Pre-existing, unchanged by the
+  boundary move, cannot double-pay (status flips `pending` -> `paid`), and the
+  steady state is seven days per week. The off-by-one is real and is recorded
+  here rather than changed at 05:30 on the morning the invoices go out.
+
+## Also verified this pass
+
+- **The frozen-invoice guard works.** Re-issuing the already-delivered
+  2026-08-10 period in a rolled-back probe: `gross_amount` unchanged at
+  220,615.68, **0** new notifications, `already_sent = [true, true]`, 0
+  messenger deliveries. Under the old code that upsert would have restated both
+  invoices while `message_sent` suppressed the corrected statement.
+- **A correction to the first report in this changelog.** It said no invoice had
+  ever been issued. Two were: `0851b4d8` (Club JAQK, 7,531.11) and `a446fdc5`
+  (SHARK CLUB, 220,615.68), both created 2026-08-20 and delivered 2026-08-21
+  for the 2026-08-10 period. What never ran was **round 4 of the cascade** -
+  those two went out through the API route. The stronger claim was wrong.
+
+## Recommended next, not done here
+
+A law test pinning the boundary. `tests/the-break-clocks-agree.law.test.ts` is
+the precedent for pinning a constant across surfaces, but the union boundary
+lives only in the database, so a meaningful law needs a schema-manifest entry
+or a DB-backed check rather than a source grep. Writing a weak one that greps
+migrations would fail on the historical migrations that legitimately contain
+`date_trunc('week', now())`, and a red law blocks every publish. Designed and
+left for a change that can be tested properly.

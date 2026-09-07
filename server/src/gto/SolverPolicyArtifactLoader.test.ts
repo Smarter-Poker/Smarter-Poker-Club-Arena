@@ -381,15 +381,18 @@ describe('atomic artifact hydration', () => {
   });
 
   it('rejects chart artifacts whose lookup identity or canonical range semantics drift', () => {
-    const wrongIdentity = structuredClone(createChartSolverPolicy(chartRow));
+    const baseline = createChartSolverPolicy(chartRow);
+    expect(replaceSolverPolicyArtifact(bundle(baseline))).toBe(1);
+
+    const wrongIdentity = structuredClone(baseline);
     wrongIdentity.key.positions.hero = 'CO';
     wrongIdentity.key.stackVector[0].position = 'CO';
     wrongIdentity.node.actor = 'CO';
 
-    const incompleteRange = structuredClone(createChartSolverPolicy(chartRow));
+    const incompleteRange = structuredClone(baseline);
     delete incompleteRange.rangeDistribution!.AA;
 
-    const contradictoryAggregate = structuredClone(createChartSolverPolicy(chartRow));
+    const contradictoryAggregate = structuredClone(baseline);
     contradictoryAggregate.actions[0].frequency = 0.25;
     contradictoryAggregate.actions[1].frequency = 0.75;
     contradictoryAggregate.distribution = { all_in: 0.25, fold: 0.75 };
@@ -398,7 +401,15 @@ describe('atomic artifact hydration', () => {
       expect(validateSolverPolicyAnswer(policy)).toEqual({ valid: true, errors: [] });
       expect(() => replaceSolverPolicyArtifact(bundle(policy))).toThrow(/chart_artifact_identity/);
     }
-    expect(solverPolicyArtifactStatus().external.count).toBe(0);
+    expect(solverPolicyArtifactStatus().external.count).toBe(1);
+    expect(
+      lookupChartPolicy({
+        gameType: 'Tournament',
+        villainAction: 'fold_to_hero',
+        position: 'BTN',
+        depth: 10,
+      })
+    ).toEqual(baseline);
   });
 
   it('clears a stale external map when no deployment artifact is configured', () => {

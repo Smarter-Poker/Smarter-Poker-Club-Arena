@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/union-rakeback-drain",
+  "functions": [
+    "fn_settle_club_rakeback_batch"
+  ],
+  "columns": {
+    "rakeback_periods": ["deferred_reason", "deferred_at", "defer_count"]
+  }
+}

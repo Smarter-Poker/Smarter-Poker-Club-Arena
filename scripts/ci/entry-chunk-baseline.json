@@ -1,5 +1,5 @@
 {
-  "entry_gz_kb": 153,
+  "entry_gz_kb": 154,
   "modules": [
     "src/App.tsx",
     "src/components/ConnectionStatusBar.tsx",
@@ -195,6 +195,7 @@
     "src/utils/mediaBase.ts",
     "src/utils/overlayAnnouncements.ts",
     "src/utils/parseJsonCached.ts",
+    "src/utils/platformRoles.ts",
     "src/utils/playerDisplayName.ts",
     "src/utils/popupStyle.ts",
     "src/utils/retryAsync.ts",

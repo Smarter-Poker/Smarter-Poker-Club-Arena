@@ -48,7 +48,6 @@
 import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { profileService } from '../../services/ProfileService';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 /* LAZY on purpose. This guard wraps the entire router, so a static import
@@ -91,8 +90,13 @@ export default function TOSGuard({ children }: TOSGuardProps) {
       return;
     }
     let cancelled = false;
-    void profileService
-      .getTOSStatus(user.id)
+    /* Dynamic for the same reason the modal is lazy: ProfileService pulls its
+       own dependency tree, and this guard sits above every route, so a static
+       import here lands it in the entry chunk for every player on every load.
+       The status read happens once per session; the 3kB it would add to first
+       paint is not worth paying on every visit. */
+    void import('../../services/ProfileService')
+      .then(({ profileService }) => profileService.getTOSStatus(user.id))
       .then((status) => {
         if (!cancelled) setState(status);
       })

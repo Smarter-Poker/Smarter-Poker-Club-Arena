@@ -119,7 +119,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
     // Use the throwable (deducts from allowance or charges diamonds)
     const result = await throwableService.useThrowable(userId, throwable.id);
     if (!result.success) {
-      if (result.error?.includes('diamond') || result.error?.includes('insufficient')) {
+      if (/diamond|insufficient/i.test(result.error || '')) {
         showDiamondTopUp(toast, navigate, {
           feature: 'Throwable',
           cost: allowance?.diamondCost || 1,
@@ -129,9 +129,6 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
       }
       return;
     }
-    // Refresh allowance
-    const newAllowance = await throwableService.getThrowAllowance(userId);
-    setAllowance(newAllowance);
     onSelect(throwable);
     onClose();
   };
@@ -150,7 +147,11 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
         <h3 className="throwable-selector__title">Send Reaction</h3>
         {allowance && (
           <span className="throwable-selector__allowance">
-            {allowance.isVip && allowance.freeThrowsRemaining > 0 ? (
+            {allowance.unavailable ? (
+              <span className="throwable-selector__cost">Allowance Unavailable</span>
+            ) : allowance.unlimited ? (
+              <span className="throwable-selector__free">Unlimited</span>
+            ) : allowance.isVip && allowance.freeThrowsRemaining > 0 ? (
               <span className="throwable-selector__free">
                 {' '}
                 {allowance.freeThrowsRemaining} Free
@@ -165,7 +166,11 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
             )}
           </span>
         )}
-        <button className="throwable-selector__close" onClick={onClose}>
+        <button
+          className="throwable-selector__close"
+          aria-label="Close throwables"
+          onClick={onClose}
+        >
           ×
         </button>
       </div>

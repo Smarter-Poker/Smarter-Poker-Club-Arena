@@ -7,5 +7,8 @@
     "fn_union_club_statement_of_account",
     "fn_union_dispute_invoice",
     "fn_union_resolve_invoice_dispute"
-  ]
+  ],
+  "columns": {
+    "settlement_invoices": ["invoice_number", "adjusts_invoice_id"]
+  }
 }

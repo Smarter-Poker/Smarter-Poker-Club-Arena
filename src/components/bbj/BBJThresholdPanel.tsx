@@ -37,6 +37,7 @@ import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { watchBbjPool } from '../../lib/bbjPoolFeed';
 import { money } from '../../utils/handFormat';
+import './BBJThresholdPanel.css';
 
 interface Threshold {
   id: string;

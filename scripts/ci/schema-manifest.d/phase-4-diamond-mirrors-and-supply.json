@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/a-profile-is-born-with-its-diamond-mirrors",
+  "_comment": "Phase 4: the diamond mirrors follow profiles from birth (20260907035121, 20260907035309), the nine supply columns carry scale 2 (20260907035639), restored views keep their own grants (20260907040146), and a short escrow bank pays what it holds (20260907040959).",
+  "tables": [],
+  "functions": [],
+  "columns": {}
+}

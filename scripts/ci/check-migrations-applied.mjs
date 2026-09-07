@@ -34,7 +34,7 @@
  * Exit:   0 clean · 1 an unapplied object · 2 script error
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadSchemaManifest, loadColumnsManifest } from './schema-manifest.mjs';
 
@@ -96,13 +96,54 @@ function changedMigrations(base) {
     // genuinely gone; the byte-exact record is correct and the live schema is
     // correct. The gate stays strict on every genuinely new migration. Marker
     // written by scripts/ci/backfill-unrecorded-migrations.mjs.
+    // SUPERSEDED EXEMPTION (2026-09-07), and it is deliberately narrower than
+    // the one above. A migration can be applied and then correctly undone in
+    // the SAME session: 20260907192843 added three columns to hand_history so
+    // a repair job could rebuild rake attribution, the root fix landed in the
+    // engine two hours later, and 20260907195116 dropped them again because
+    // 1.3 GB a month to feed a job that must never run is the band-aid 10.12
+    // forbids. Both files must stay - both ran, and
+    // check-applied-migrations-are-recorded demands a file for each - but the
+    // first one declares columns that are deliberately gone, so this gate
+    // failed the branch for doing exactly the right thing.
+    //
+    // The marker is NOT a free pass, because "this was superseded" is the
+    // easiest possible lie to tell about a migration that simply never
+    // applied. It must NAME the migration that superseded it, and that file
+    // must exist in this directory, or the exemption does not apply and the
+    // file is checked as strictly as any other:
+    //
+    //   -- SUPERSEDED BY 20260907195116
     .filter((f) => {
+      let head;
       try {
-        return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(readFileSync(join(REPO, f), 'utf8'));
+        head = readFileSync(join(REPO, f), 'utf8').slice(0, 400);
       } catch {
         return true; // unreadable: check it rather than skip it
       }
+      if (/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(head)) return false;
+      const superseded = head.match(/^--\s*SUPERSEDED BY\s+(\d{14})\b/m);
+      if (superseded) {
+        const named = migrationFileFor(superseded[1]);
+        if (named) return false;
+        console.error(
+          `[check-migrations-applied] ${f} claims "SUPERSEDED BY ${superseded[1]}" ` +
+            'but no migration with that version exists in this tree. A superseding ' +
+            'migration that is not here is a migration that did not run.'
+        );
+      }
+      return true;
     });
+}
+
+/** Does a migration with this version exist on disk? The superseded marker is
+ *  worthless without it - see the exemption above. */
+function migrationFileFor(version) {
+  try {
+    return readdirSync(join(REPO, DIR)).find((n) => n.startsWith(`${version}_`)) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Objects a migration CREATES or ADDS. Drops and alters of existing objects

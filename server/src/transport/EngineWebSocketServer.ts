@@ -266,11 +266,11 @@ interface ConnectionState {
    * Roadmap batch 6 (2026-08-21) — multiplexed connection (/ws/multi).
    * One socket carries up to MUX_MAX_TABLES table subscriptions; every
    * per-table gate (exists / blacklist / ip-restriction / audit) runs at
-   * SUBSCRIBE time instead of upgrade time. 'pending' marks an in-flight
-   * async subscribe so a repeated SUBSCRIBE cannot double-register.
+   * SUBSCRIBE time instead of upgrade time. A unique symbol marks each
+   * in-flight attempt so cancelled checks cannot mutate a replacement.
    */
   isMux?: boolean;
-  subs?: Map<string, HubSubscriber | 'pending'>;
+  subs?: Map<string, HubSubscriber | symbol>;
 }
 
 /** Mux cap — matches the client's 4-table device cap. */
@@ -1065,7 +1065,7 @@ export class EngineWebSocketServer {
   private async handleMuxSubscribe(conn: ConnectionState, tableId: string): Promise<void> {
     if (!conn.subs) return;
     const existing = conn.subs.get(tableId);
-    if (existing === 'pending') return; // in flight - first one wins
+    if (typeof existing === 'symbol') return; // in flight - first one wins
     if (existing) {
       // Idempotent: already subscribed. Re-ack + resync so a client retry
       // converges instead of erroring.
@@ -1090,7 +1090,9 @@ export class EngineWebSocketServer {
       );
       return;
     }
-    conn.subs.set(tableId, 'pending');
+    let owned: HubSubscriber | symbol = Symbol('pending subscription');
+    conn.subs.set(tableId, owned);
+    const isCurrent = () => this.connections.has(conn.ws) && conn.subs?.get(tableId) === owned;
     try {
       /* THE FOUR GATES RUN TOGETHER HERE TOO (2026-09-03). The 2026-09-02
          change above made the single-table upgrade path ask its four gates at
@@ -1113,6 +1115,9 @@ export class EngineWebSocketServer {
         this.isRestrictedObserver(tableId, conn.userId).catch(() => false),
         this.isIpConflict(tableId, conn.userId, conn.clientIp).catch(() => false),
       ]);
+      // UNSUBSCRIBE, close, or a new attempt may have won during the await.
+      // Neither a stale success nor a stale refusal belongs to that attempt.
+      if (!isCurrent()) return;
       if (!viewerAccess.allowed) {
         conn.subs.delete(tableId);
         this.sendMuxError(
@@ -1138,7 +1143,10 @@ export class EngineWebSocketServer {
       // The multiplexed path must wake new empty tables exactly like the
       // single-table WebSocket path, or multi-table users still get the old
       // permanent TABLE_NOT_FOUND loop.
-      if (!this.tableExists(tableId) && !(this.ensureTable && (await this.ensureTable(tableId)))) {
+      const tableReady =
+        this.tableExists(tableId) || (this.ensureTable && (await this.ensureTable(tableId)));
+      if (!isCurrent()) return;
+      if (!tableReady) {
         conn.subs.delete(tableId);
         this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
         return;
@@ -1172,7 +1180,7 @@ export class EngineWebSocketServer {
         return;
       }
       // The socket may have closed while the async gates ran.
-      if (!this.connections.has(conn.ws) || conn.subs.get(tableId) !== 'pending') return;
+      if (!isCurrent()) return;
       this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
       const ws = conn.ws;
       // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -1198,6 +1206,7 @@ export class EngineWebSocketServer {
           self.sendMuxError(conn, tableId, 'EVICTED', 'backpressure evict - resubscribe');
         },
       };
+      owned = subscriber;
       conn.subs.set(tableId, subscriber);
       try {
         conn.ws.send(JSON.stringify({ type: 'SUBSCRIBED', tableId }));
@@ -1217,6 +1226,8 @@ export class EngineWebSocketServer {
         /* engine wiring must never take down the transport */
       }
     } catch (err) {
+      if (!isCurrent()) return;
+      if (typeof owned !== 'symbol') this.hub.unsubscribe(tableId, owned);
       conn.subs.delete(tableId);
       this.sendMuxError(conn, tableId, 'SUB_FAILED', 'Subscribe failed');
     }
@@ -1236,14 +1247,14 @@ export class EngineWebSocketServer {
         if (!tableId || !conn.subs) return;
         const sub = conn.subs.get(tableId);
         conn.subs.delete(tableId);
-        if (sub && sub !== 'pending') this.hub.unsubscribe(tableId, sub);
+        if (sub && typeof sub !== 'symbol') this.hub.unsubscribe(tableId, sub);
         this.forgetTableIfEmpty(tableId);
         return;
       }
       case 'RESYNC': {
         if (!tableId || !conn.subs) return;
         const sub = conn.subs.get(tableId);
-        if (sub && sub !== 'pending') {
+        if (sub && typeof sub !== 'symbol') {
           this.hub.resync(tableId, sub);
           this.onResync?.(tableId, conn.userId);
         }
@@ -1326,7 +1337,7 @@ export class EngineWebSocketServer {
       this.connections.delete(ws);
       if (conn.subs) {
         for (const [tableId, sub] of conn.subs) {
-          if (sub !== 'pending') this.hub.unsubscribe(tableId, sub);
+          if (typeof sub !== 'symbol') this.hub.unsubscribe(tableId, sub);
         }
         const tableIds = [...conn.subs.keys()];
         conn.subs.clear();

@@ -250,18 +250,32 @@ describe('the state lands as a CUT — nothing slower than 120ms', () => {
 });
 
 describe('the winner sequence details match the reference', () => {
-  it('the +N float is the measured bright yellow and rides above the dim', () => {
+  /* ── ONE COLOUR FOR THE WHOLE +N STORY, AND IT IS NO LONGER YELLOW ────────
+     These two pinned #ffe94a, sampled off the PokerBros reference, at the two
+     places the winning amount appears: above the seat and riding the pot.
+     Dan 2026-09-07, item 8: "WE DON'T USE YELLOW, CHANGE ALL THE YELLOW FONTS
+     TO SMARTER.POKER COLOR SCHEMAS."
+
+     The INVARIANT these tests exist for is unchanged and is the thing worth
+     keeping: the two floats are the same colour as each other (they are one
+     story told in two places, and they drifted apart once before — the second
+     test's name still records the cyan), and neither is the felt's own text
+     grey. Only the constant moves, from a sampled hex to the house token. */
+  it('the +N float is the house bright, and rides above the dim', () => {
     const at = SEAT_CSS.indexOf('.seat__net-win {');
     expect(at).toBeGreaterThan(-1);
-    expect(SEAT_CSS.slice(at, SEAT_CSS.indexOf('}', at))).toMatch(/#ffe94a/i);
+    expect(SEAT_CSS.slice(at, SEAT_CSS.indexOf('}', at))).toMatch(
+      /color:\s*var\(--sp-text-bright\)/
+    );
   });
 
-  it('the riding pot-win amount is the same measured yellow, not cyan', () => {
+  it('the riding pot-win amount is the SAME house bright, not cyan', () => {
     const at = TABLE_CSS.indexOf('.pot-win-float {');
     expect(at).toBeGreaterThan(-1);
     const body = TABLE_CSS.slice(at, TABLE_CSS.indexOf('}', at));
-    expect(body).toMatch(/#ffe94a/i);
+    expect(body).toMatch(/color:\s*var\(--sp-text-bright\)/);
     expect(body).not.toMatch(/#00d4ff/i);
+    expect(body).not.toMatch(/#ffe94a/i);
   });
 
   it('four-point star sparkles render over a positive win, and only a positive one', () => {

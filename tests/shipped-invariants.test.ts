@@ -41,6 +41,11 @@ const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
     'CREATE OR REPLACE FUNCTION public.fn_bbj_mini_payout',
     'Mini jackpot allocation is corrected at its original payout RPC',
   ],
+  [
+    'supabase/migrations/20260907195229_union_statements_retain_opening_balance_and_check_finance_access.sql',
+    'CREATE OR REPLACE FUNCTION public.fn_union_club_statement_of_account',
+    'union statements retain their opening balance and check finance access',
+  ],
   // Roles — the grant matrix lives in Postgres; the client must ASK it.
   ['src/types/clubRoles.ts', 'co_owner', 'the seven club roles, including co_owner'],
   // 2026-08-23: re-anchored from ClubMembersPage to MemberManagementPage. The

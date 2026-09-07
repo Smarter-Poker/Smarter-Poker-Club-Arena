@@ -54,6 +54,18 @@ describe('throwable darkroom commands', () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('Unknown rig(s): does_not_exist');
   });
+  it('keeps the trash lid attached during the rise and visible after closing', () => {
+    const result = run(out, '--items=trash_can', '--html-only');
+    expect(result.status, result.stderr).toBe(0);
+    const html = readFileSync(join(out, 'harness.html'), 'utf8');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const lids = [...doc.querySelectorAll('.thr-trash_can__lid')];
+    expect(lids.length).toBeGreaterThan(0);
+    for (const lid of lids)
+      expect(lid.parentElement?.classList.contains('thr-trash_can__can-return')).toBe(true);
+    const frame = html.split('@keyframes thr-trash_can-lid')[1]?.split('100%')[1]?.split('}')[0];
+    expect(frame).toMatch(/opacity:\s*1\s*;/);
+  });
   it('fails required screenshots when the browser cannot launch', () => {
     const result = run(out, '--items=beer', '--shots', '--executable-path=/does/not/exist');
     expect(result.status).not.toBe(0);

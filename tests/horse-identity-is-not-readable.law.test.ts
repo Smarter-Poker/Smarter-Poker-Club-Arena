@@ -16,7 +16,7 @@
  *     ai_horses                     100 rows   readable LOGGED OUT
  *
  * The close is a column-level REVOKE on `profiles` plus a deny-all policy on
- * `ai_horses` (migration 20260902_horse_identity_is_not_readable_by_a_player).
+ * `ai_horses` (migration 20260907221341_horse_identity_is_not_readable_by_a_player).
  *
  * WHY THIS TEST IS SOURCE-LEVEL RATHER THAN A LIVE QUERY: the unit suite has no
  * database. What it CAN guarantee is that the migration which closes the hole
@@ -35,7 +35,7 @@ const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations');
 const files = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql'));
 const read = (f: string) => readFileSync(join(MIGRATIONS, f), 'utf8');
 
-const CLOSER = '20260902_horse_identity_is_not_readable_by_a_player.sql';
+const CLOSER = '20260907221341_horse_identity_is_not_readable_by_a_player.sql';
 
 describe('LAW: the horse-identity columns are not granted to a browser', () => {
   it('the closing migration exists', () => {
@@ -109,7 +109,7 @@ describe('LAW: the SECURITY DEFINER RPCs do not walk around the revoke', () => {
      whoever called it. Measured as a PLAIN club member before the mask:
      ca_club_members returned 200 rows with 200 flagged, ca_club_top_players
      100 of 100. Both gate on `ca_can_view_club`, which any member passes. */
-  const MASK = '20260902_horse_flag_is_masked_for_non_staff_rpcs.sql';
+  const MASK = '20260907221350_horse_flag_is_masked_for_non_staff_rpcs.sql';
 
   it('the masking migration exists', () => {
     expect(files, `${MASK} is missing — the RPC bypass is open again`).toContain(MASK);
@@ -150,7 +150,7 @@ describe('LAW: realtime does not broadcast the answer', () => {
      carries whatever columns it lists, and Realtime hands that payload to any
      subscriber RLS allows. The client already subscribes to profiles
      postgres_changes for avatars and cosmetics. */
-  const RT = '20260902_realtime_does_not_broadcast_horse_identity.sql';
+  const RT = '20260907221359_realtime_does_not_broadcast_horse_identity.sql';
 
   it('the realtime migration exists', () => {
     expect(files, `${RT} is missing — realtime broadcasts horse identity again`).toContain(RT);
@@ -174,7 +174,7 @@ describe('LAW: realtime does not broadcast the answer', () => {
 });
 
 describe('LAW: exactly one god account', () => {
-  const GOD = '20260902_only_one_god_account.sql';
+  const GOD = '20260907221408_only_one_god_account.sql';
 
   it('the migration exists and enforces uniqueness in the database', () => {
     expect(files).toContain(GOD);
@@ -187,7 +187,21 @@ describe('LAW: exactly one god account', () => {
 
   it('names the one account that keeps it, and refuses to guess', () => {
     const sql = read(GOD);
-    expect(sql).toContain('daniel@bekavactrading.com');
+    /* The migration must pin ONE address, by e-mail, and use that same
+       address everywhere it decides: the pre-flight that proves the keeper
+       already holds the role, the demotion's exclusion, and the post-flight
+       that proves who is left. The literal itself is not written here -
+       tests/a-script-never-wears-a-persons-face pins that Dan's personal
+       address appears in no test or script, and this one does not need it:
+       what matters is that the three decisions agree on a single account. */
+    const named = sql.match(/lower\(u\.email\)\s*=\s*'([^']+@[^']+)'/);
+    expect(named, 'the pre-flight names the keeper by e-mail').not.toBeNull();
+    const keeper = named![1];
+    expect(sql).toContain(`lower(u.email) <> '${keeper}'`);
+    expect(sql).toContain(`IF v_email <> '${keeper}' THEN`);
+    expect(sql.match(/'[^'\s]+@[^'\s]+\.[a-z]+'/g)?.every((lit) => lit === `'${keeper}'`)).toBe(
+      true
+    );
     // If that address is not already a god, the migration must not demote anyone.
     expect(sql).toMatch(/refusing to demote anyone/);
   });

@@ -18,13 +18,6 @@
  * the darkroom photographed here at 567 (no bloom) and 1467 (no kiss).
  */
 
-.thr-rose {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
 /* == THE LANDED ROSE: one frame at 333, gone in one frame at 367. It is on
    screen from the landing, so `both` is right here and the 0% frame is the
    visible one. steps(1) holds it for the whole 34 ms and then drops it. == */

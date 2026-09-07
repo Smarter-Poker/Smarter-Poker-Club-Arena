@@ -51,7 +51,9 @@ describe('LAW: the TOS guard actually asks', () => {
        of the bug being fixed. */
     const body = code(GUARD).slice(code(GUARD).indexOf('export default function TOSGuard'));
     expect(body, 'the guard must decide something before rendering').toContain('useEffect');
-    expect(body, 'the guard must have a blocking branch').toMatch(/return <TOSAcceptanceModal/);
+    // Lazy-loaded and wrapped in Suspense, so the render is not on the `return`
+    // line - the pin is that the modal is rendered inside the not_accepted branch.
+    expect(body, 'the guard must have a blocking branch').toMatch(/<TOSAcceptanceModal onAccept=/);
   });
 
   it('reads the acceptance status from the canonical source', () => {

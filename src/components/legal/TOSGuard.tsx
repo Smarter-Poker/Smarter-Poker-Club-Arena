@@ -45,13 +45,19 @@
  * before acceptance exists would simply stop every human from sitting down.
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { profileService } from '../../services/ProfileService';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
-import TOSAcceptanceModal from './TOSAcceptanceModal';
+/* LAZY on purpose. This guard wraps the entire router, so a static import
+   here would put the whole acceptance modal and its stylesheet into the chunk
+   every player downloads before first paint - and once a player has accepted,
+   they never see it again. `entry-chunk-delta.mjs` is the CI guard that would
+   catch that, and lazy-loading is its own recommended fix. The modal arrives
+   only for the one state that needs it. */
+const TOSAcceptanceModal = lazy(() => import('./TOSAcceptanceModal'));
 
 interface TOSGuardProps {
   children: ReactNode;
@@ -139,7 +145,14 @@ export default function TOSGuard({ children }: TOSGuardProps) {
   if (isAlwaysReachable(location.pathname)) return <>{children}</>;
 
   if (state === 'not_accepted') {
-    return <TOSAcceptanceModal onAccept={handleAccept} />;
+    /* No fallback UI: an empty frame for the ~100ms the chunk takes is
+       preferable to a spinner that implies the app is loading normally, and
+       to rendering the app underneath a gate that has already said no. */
+    return (
+      <Suspense fallback={null}>
+        <TOSAcceptanceModal onAccept={handleAccept} />
+      </Suspense>
+    );
   }
 
   // 'accepted', 'checking' and 'unknown' all render the app — see the header.

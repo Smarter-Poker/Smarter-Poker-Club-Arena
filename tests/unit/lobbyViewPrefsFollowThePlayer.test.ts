@@ -20,6 +20,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../..', p), 'utf8');
 
@@ -129,17 +130,21 @@ describe('the page wires both halves in the right order', () => {
     expect(remote).toBeGreaterThan(local);
   });
 
+  /* Windows bounded by STRUCTURE, never by a byte count
+     (tests/helpers/sourceWindow, and the law that reads it): a fixed-size
+     window drifts off the code it guards the moment someone adds a comment —
+     silently, in the direction that still passes. */
   it('the correction refuses a stale club, a mid-flight choice, and a null', () => {
-    const at = PAGE.indexOf('void fetchRemoteViewPrefs(resolvedClubId)');
-    const block = PAGE.slice(at, at + 700);
+    // The hydration effect's own body, which encloses both the call and the
+    // callback whose guards are the point of this test.
+    const block = sliceEnclosingBlock(PAGE, 'void fetchRemoteViewPrefs(resolvedClubId)');
     expect(block).toContain('if (cancelled || !remote) return;');
     expect(block).toContain('if (viewPrefsOwner.current !== resolvedClubId) return;');
     expect(block).toContain('if (viewPrefsTouched.current) return;');
   });
 
   it('every settled change is written to BOTH the cache and the row', () => {
-    const at = PAGE.indexOf('saveViewPrefs(resolvedClubId, viewPrefs);');
-    expect(at).toBeGreaterThan(-1);
-    expect(PAGE.slice(at, at + 600)).toContain('pushRemoteViewPrefs(resolvedClubId, viewPrefs);');
+    const effect = sliceEnclosingBlock(PAGE, 'saveViewPrefs(resolvedClubId, viewPrefs);');
+    expect(effect).toContain('pushRemoteViewPrefs(resolvedClubId, viewPrefs);');
   });
 });

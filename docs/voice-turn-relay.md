@@ -38,43 +38,23 @@ behind any NAT because the client dials out to it.
 
 ---
 
-## 2. CO-TENANCY RISK -- read this before choosing a host
+## 2. Shared Infrastructure Risk
 
-The obvious candidate is `engine.smarter.poker` (5.161.252.33, Ubuntu 24.04,
-3 vCPU, 3.8 GB RAM). It is **not a dedicated box**. It currently runs:
+The engine host is `engine.smarter.poker` (5.161.252.33), named
+`club-arena-engine` in Hetzner and the OS as of 2026-09-07. It runs the poker
+engine container, Caddy, and the monitoring stack. The retired application is
+absent and its obsolete deployment configuration has been removed. The TURN
+relay already has its own host, `club-arena-turn`; keep that separation.
 
-| Workload                                                          | Ours?                                                                                          |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `pepnationrx.service` and its Caddy sites and Let's Encrypt certs | **No. An unrelated business. The product owner's instruction is that it must not be touched.** |
-| `club-arena-engine` container (the poker engine)                  | Yes, and it is mid-hand at any given moment                                                    |
-| Caddy (shared, fronts both tenants)                               | Shared                                                                                         |
-| Prometheus, Grafana, Alertmanager                                 | Ours                                                                                           |
+CPU, bandwidth, firewall rules and internal HTTP services remain resources
+that an installation must protect. `scripts/install-turn-relay.sh` records
+**every** running service before installation and checks them afterward. It
+also explicitly recognizes Caddy, Docker and the engine container. Retiring an
+unrelated service does not weaken those continuity checks.
 
-Four things are shared, and each is a distinct way to hurt the neighbour.
-
-**Shared CPU.** Three vCPU already run a poker engine, a monitoring stack, a web
-server and somebody else's service. coturn is cheap per stream but it is a
-packet forwarder: at the ceiling in section 6 it is doing real work on every
-40 ms of audio for every relayed stream on every table. If the engine's
-turn-timer loop is starved, hands time out. Mitigation: the `total-quota` cap in
-the config, and the fact that voice is opt-in and cash-tables-only.
-
-**Shared bandwidth.** One NIC and one traffic allowance for both tenants. Voice
-relay is the first workload here that scales with _player-minutes_ rather than
-with requests. `total-quota=200000` (200 Mbit/s) exists precisely so a busy
-Saturday cannot starve the co-tenant. Section 6 has the arithmetic.
-
-**Shared firewall.** The co-tenant's rules are on the same firewall as ours.
-`scripts/install-turn-relay.sh` therefore **only ever adds** rules. There is no
-`ufw reset`, no `iptables -F`, no rule renumbering, and there must never be. If
-the host uses a raw nftables ruleset rather than ufw, the script refuses to edit
-it and prints the three rules for a human to add in whatever manages it --
-because a ruleset that is not ufw's is almost certainly managed by someone else's
-tooling, and blind edits to it are exactly the change that takes a neighbour
-down.
-
-**Blast radius of a misconfigured relay.** This is the big one, and it has its
-own section.
+Keep the relay quotas and private-address restrictions below. Firewall changes
+remain additive only: never reset ufw or flush iptables. A raw nftables ruleset
+is still outside the installer's ownership and must not be rewritten blindly.
 
 ### 2.1 Deny relaying to private ranges -- the single most important line
 

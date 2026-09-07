@@ -132,7 +132,16 @@ export const THROWABLE_GRAMMAR = {
   spawnMs: { min: 0, max: 400 },
   flightMs: { min: 133, max: 400 },
   /** ms from landing. */
-  payloadMs: { min: 1800, max: 5800 },
+  /**
+   * ms from landing. The floor was 1800 until 2026-09-06, and that number was
+   * derived from a sample that did not include the SHORTEST item in the
+   * reference. The clown/snowman gag runs 600 to 2233 from its own launch -
+   * 1633 ms on target - and the plan's own life table lists it at 2.23 s
+   * alongside the glove at 2.07 and the bomb at 2.0. A bound that excludes
+   * three measured items is the bound that is wrong, not the items, so it is
+   * 1600 now. Raising it again would fail those three.
+   */
+  payloadMs: { min: 1600, max: 5800 },
   /** From first pixel to clean, at speed 1. */
   totalMs: { min: 2000, max: 6500 },
   /** Blink-and-pop arrival, from the reference's 2-8 frame settle. */

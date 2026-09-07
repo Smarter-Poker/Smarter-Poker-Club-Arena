@@ -175,6 +175,8 @@
     "src/stores/useWalletStore.ts",
     "src/styles/animations.css",
     "src/styles/club-engine.css",
+    "src/styles/design-tokens.css",
+    "src/styles/globals.css",
     "src/styles/metallic-popups.css",
     "src/styles/reducedMotion.css",
     "src/types/clubRoles.ts",

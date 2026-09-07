@@ -73,6 +73,15 @@
         rel="stylesheet"
       />
     </noscript>
+    <!-- Global stylesheets. These two <link rel="preload"> tags are NOT dead:
+       Vite treats a root-relative /src/*.css reference in index.html as an
+       entry stylesheet and bundles it into the index CSS, and this is the
+       ONLY way globals.css (.btn, .card, .badge, .input, .skip-link ...) and
+       design-tokens.css reach the bundle - no TSX imports them. Removing
+       them on 2026-09-07 silently dropped 18 kB of rules from production CSS;
+       the entry-chunk gate caught it. Leave them. -->
+    <link rel="preload" href="/src/styles/globals.css" as="style" />
+    <link rel="preload" href="/src/styles/design-tokens.css" as="style" />
     <!-- Preload club card frame template (used by carousel) -->
     <link rel="preload" href="/images/club-card-frame-template.webp" as="image" type="image/webp" />
 

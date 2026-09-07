@@ -88,9 +88,14 @@ ones in phase 4.
   a visible "Loading Failed / Try Again" that does not mention browser caches.
 - `apple-touch-icon` is root-relative like the manifest, so Vite rewrites it
   for whichever base the bundle is built with (web output is identical).
-- The two `/src/styles/*.css` preloads are deleted. They were dev-server
-  paths; the production HTML never contained them (verified against the live
-  page), and `globals.css` is not loaded by this SPA at all.
+- The two `/src/styles/*.css` preloads STAY, and the audit's "two dead lines"
+  finding is wrong: Vite treats a root-relative `/src/*.css` in index.html as
+  an entry stylesheet and bundles it into the index CSS, and those tags are the
+  only way `globals.css` and `design-tokens.css` reach the bundle. Deleting
+  them dropped 18 kB of rules (`.btn`, `.card`, `.badge`, `.skip-link` ...)
+  from the web CSS; the entry-chunk gate caught it before merge. Restored, with
+  a comment saying why, and the index CSS is now byte-identical to production
+  (177,902 bytes, `cmp` clean).
 
 ### ~70 hardcoded asset addresses (audit tier 1, "not broken today")
 
@@ -133,8 +138,7 @@ Phase 2 is next, on a fresh branch off main.
 
 `src/lib/appBase.ts` enters the entry chunk, by design: it is the router
 basename, which `main.tsx` needs before the first render, and the whole module
-is ~1 kB with no imports. The gate saw +1 kB gz and one module against the
-baseline (which also drops two modules that left the entry independently);
-the baseline is updated in the same commit, as the gate asks. Nothing else
+is ~1 kB with no imports. The baseline is updated in the same commit, as the
+gate asks: +1 module, +1 kB gz, nothing else. Nothing else
 moved into first paint: `nativeShell` and every Capacitor plugin are behind a
 dynamic import that the web build eliminates.

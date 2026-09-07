@@ -32,9 +32,12 @@ type Minute = {
 };
 
 let stormsByMinute: (rows: Row[], threshold?: number) => Minute[];
+let loggerAgeHours: (newestIso: string | null, now?: number) => number | null;
+let loggerIsStale: (ageHours: number | null, staleHours?: number) => boolean;
 let DEFAULT_THRESHOLD: number;
 let DEFAULT_HOURS: number;
 let CONTEXT_FLOOR: number;
+let STALE_HOURS: number;
 
 beforeAll(async () => {
   const href = pathToFileURL(
@@ -42,9 +45,12 @@ beforeAll(async () => {
   ).href;
   const mod = await import(/* @vite-ignore */ href);
   stormsByMinute = mod.stormsByMinute;
+  loggerAgeHours = mod.loggerAgeHours;
+  loggerIsStale = mod.loggerIsStale;
   DEFAULT_THRESHOLD = mod.DEFAULT_THRESHOLD;
   DEFAULT_HOURS = mod.DEFAULT_HOURS;
   CONTEXT_FLOOR = mod.CONTEXT_FLOOR;
+  STALE_HOURS = mod.STALE_HOURS;
 });
 
 /** `n` statements in one minute, each with its own query text. */
@@ -169,6 +175,54 @@ describe('rows it cannot read do not become rows that are fine', () => {
     expect(out[0].distinct).toBe(30);
     expect(out[0].storm).toBe(true);
     expect(out[0].apps).toEqual([]);
+  });
+});
+
+/**
+ * The detector's own 10.86 rule 1, found in the verification pass rather than
+ * by anything going wrong.
+ *
+ * `ca_ddl_events` is filled by two EVENT TRIGGERS, and event triggers on this
+ * database are created, replaced and dropped by agents all day. Disable either
+ * one and "no storm in the window" becomes indistinguishable from "nothing is
+ * recording DDL any more" - a permanent, confident green from a check whose
+ * whole purpose is to notice.
+ */
+describe('a dead logger is not a quiet platform', () => {
+  const NOW = Date.parse('2026-09-07T04:00:00.000Z');
+
+  it('reads the age of the newest row', () => {
+    expect(loggerAgeHours('2026-09-07T03:00:00.000Z', NOW)).toBeCloseTo(1, 6);
+  });
+
+  it('treats an empty table as unknown age, not as age zero', () => {
+    // The dangerous coercion: no rows reading as "fresh".
+    expect(loggerAgeHours(null, NOW)).toBeNull();
+    expect(loggerIsStale(loggerAgeHours(null, NOW))).toBe(true);
+  });
+
+  it('treats an unparseable timestamp as unknown, not as fresh', () => {
+    expect(loggerAgeHours('not-a-timestamp', NOW)).toBeNull();
+    expect(loggerIsStale(loggerAgeHours('not-a-timestamp', NOW))).toBe(true);
+  });
+
+  it('accepts a genuinely quiet night', () => {
+    // The worst gap measured over seven days was 8.93 hours. That is quiet,
+    // not broken, and must not be reported as either a storm or an outage.
+    expect(loggerIsStale(8.93)).toBe(false);
+    expect(loggerIsStale(23.9)).toBe(false);
+  });
+
+  it('refuses to answer once the newest row is past the horizon', () => {
+    expect(loggerIsStale(24.1)).toBe(true);
+    expect(loggerIsStale(72)).toBe(true);
+  });
+
+  it('keeps the horizon clear of the worst observed quiet period', () => {
+    // 8.93h measured; 24h is 2.7x it. Lowering this below ~9 makes the check
+    // page on an ordinary quiet night. Re-measure before moving it.
+    expect(STALE_HOURS).toBe(24);
+    expect(STALE_HOURS).toBeGreaterThan(8.93 * 2);
   });
 });
 

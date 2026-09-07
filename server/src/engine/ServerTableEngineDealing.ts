@@ -1420,6 +1420,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log
     this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
     this.currentHandBBJPayoutConfig = null;
+    this.currentHandMiniBBJHit = null;
+    this.currentHandMiniBBJTierId = null;
     // NOTE: rabbitHuntInFlight is deliberately NOT cleared here. It looks like
     // per-hand state and is not — it is a concurrency LOCK, taken immediately
     // before the billing RPC and released in that call's `finally`. Clearing it

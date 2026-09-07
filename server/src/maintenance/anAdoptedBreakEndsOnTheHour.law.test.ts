@@ -101,13 +101,21 @@ function build(engineCount = 3) {
   return { mb, engines, store };
 }
 
-/** The next :00 after `t`, on the same clock the engine uses. */
-function hourAfter(t: number): number {
-  const d = new Date(t);
-  d.setMinutes(0, 0, 0);
-  const at = d.getTime();
-  return at <= t ? at + 60 * 60 * 1000 : at;
-}
+/**
+ * LITERAL INSTANTS, NOT A TRANSCRIPTION OF THE CODE UNDER TEST.
+ *
+ * This file used to carry a `hourAfter()` helper that reimplemented
+ * `nextHourBoundary()`, `<=` included — so when that function turned out to
+ * return the FOLLOWING hour for a boot at exactly :00:00.000, the oracle
+ * agreed with it and the test ratified a sixty-minute fleet freeze. A test
+ * whose expectation is the implementation restated cannot catch the
+ * implementation being wrong.
+ *
+ * Every expectation below is now a hard-coded instant a human can check
+ * against §13's timeline (announce :53, park :55, resume :00), plus the
+ * invariant that no adopted break may ever exceed a break's length.
+ */
+const AT = (iso: string): number => new Date(iso).getTime();
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
@@ -132,8 +140,11 @@ describe('an adopted last-hand break', () => {
       expect(e.paused, `${id} came back dealing under the overlay`).toBe(true);
     }
 
-    const hour = hourAfter(boot);
-    // boot + 5min would be 18:58:48.433 — the bug, to the millisecond.
+    // The break was announced at 18:53, so it ends at 19:00:00.000 exactly.
+    // Written as the instant, not as a re-derivation of the production
+    // arithmetic. boot + 5min would be 18:58:48.433 — the original bug, to
+    // the millisecond.
+    const hour = AT('2026-09-06T19:00:00.000Z');
     expect(boot + MaintenanceBreak.BREAK_DURATION_MS).toBeLessThan(hour);
     expect(mb.remainingMs()).toBe(hour - boot);
 
@@ -148,6 +159,50 @@ describe('an adopted last-hand break', () => {
     await vi.advanceTimersByTimeAsync(hour - Date.now() + 1_000);
     for (const [id, e] of engines) {
       expect(e.paused, `${id} never resumed`).toBe(false);
+    }
+  });
+
+  /**
+   * THE SIXTY-MINUTE FREEZE. The first fix computed "the next :00", and
+   * `nextHourBoundary()` returned the FOLLOWING hour for a boot at exactly
+   * :00:00.000 — while the staleness guard admits rows up to eight minutes
+   * old, leaving a sixty-second window right after the hour in which an
+   * adopted break would have parked the whole fleet for an hour.
+   *
+   * Nothing would have caught it in production: `fn_platform_frozen` only arms
+   * within fifteen minutes of the end, so buy-ins would have flowed while
+   * nothing dealt; `fn_thaw_platform` refuses anything over 900s, so every
+   * in-flight deadline would have burned; and every fleet alarm is muted while
+   * `poker_maintenance_break_active == 1`.
+   */
+  it('NEVER holds the fleet longer than a break, whatever instant it boots at', async () => {
+    // Walk the whole admission window a second at a time, straddling the hour.
+    for (const offsetS of [-2, -1, 0, 1, 2, 30, 59, 60, 61, 120]) {
+      const boot = AT('2026-09-06T19:00:00.000Z') + offsetS * 1000;
+      vi.setSystemTime(boot);
+      const { mb, store } = build(2);
+      store.row = {
+        phase: 'last_hand',
+        // Announced at :53 of the hour that has just ended - the row the
+        // staleness guard still (correctly) admits for a few more minutes.
+        announcedAt: AT('2026-09-06T18:53:00.000Z'),
+        breakStartedAt: null,
+        breakEndsAt: null,
+        reason: 'Scheduled Engine Maintenance',
+      } as PersistedMaintenanceBreak;
+
+      await mb.start();
+
+      expect(
+        mb.remainingMs(),
+        `booting at :00 + ${offsetS}s held the fleet for ` +
+          `${Math.round(mb.remainingMs() / 60000)} minutes. Tables are parked ` +
+          'from the :53 announcement, so the longest an adopted break can ' +
+          'legitimately hold is the whole :53 -> :00 span - seven minutes.'
+      ).toBeLessThanOrEqual(
+        MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS
+      );
+      mb.stop();
     }
   });
 
@@ -196,7 +251,9 @@ describe('an adopted last-hand break', () => {
     for (const [id, e] of engines) {
       expect(e.paused, `${id} came back dealing at :58`).toBe(true);
     }
-    expect(mb.remainingMs()).toBe(hourAfter(boot) - boot);
+    // Announced 18:53, so it ends 19:00:00.000 — two minutes after this boot.
+    expect(mb.remainingMs()).toBe(AT('2026-09-06T19:00:00.000Z') - boot);
+    expect(mb.remainingMs()).toBeLessThanOrEqual(MaintenanceBreak.BREAK_DURATION_MS);
   });
 });
 

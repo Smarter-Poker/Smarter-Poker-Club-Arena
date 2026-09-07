@@ -468,6 +468,10 @@ export class RakebackSettlerService {
       // no-ops mid-week, so a close that fails (or an engine outage spanning a
       // Monday) is retried within 30 minutes instead of 7 days.
       await this.runUnionWeeklyRakeback();
+      // Player rakeback, every cycle. See runRakebackDrain: settle_club_rakeback
+      // is bounded, so it must be drained in a loop rather than called once a
+      // week. Ordered after the union 90% because that is what funds it.
+      await this.runRakebackDrain();
       await this.runWeeklyFinancialClose();
       // SWEEP #6: post-tournament money-conservation sentinel. Scans every
       // tournament that reached COMPLETED since the last cycle and asserts the
@@ -1023,6 +1027,121 @@ export class RakebackSettlerService {
     }
   }
 
+  /**
+   * PLAYER RAKEBACK DRAIN - every cycle, not once a week (2026-09-07).
+   *
+   * settle_club_rakeback became BOUNDED on 2026-09-07: it settles at most 40
+   * periods and stops after ~4s of wall clock. It had to be - the unbounded
+   * version could not finish a 1,769-period backlog inside the 8s
+   * statement_timeout service_role carries, so it was cancelled every Monday
+   * and had settled nothing since 2026-08-20 while 443,513.92 sat owed to
+   * 1,005 players.
+   *
+   * A bound puts an obligation on the caller: DRAIN IN A LOOP. This used to be
+   * step 1 of runWeeklyFinancialClose, which sits behind a once-per-ISO-week
+   * gate and stamps the week closed whether or not anything drained - so one
+   * bounded pass per club would have paid 40 periods and then latched for
+   * seven days.
+   *
+   * So it moves here, for the reason the comment above runUnionWeeklyRakeback
+   * already gives: the RPC is idempotent and no-ops when nothing is due, so a
+   * club not finished this cycle is finished 30 minutes later instead of next
+   * Monday. It runs AFTER the union 90% lands, because player rakeback is
+   * funded from clubs.chip_treasury and the union payback is what fills it.
+   *
+   * It reads the response. supabaseRpc() discards `data`, and a refusal comes
+   * back as HTTP 200 with success:false - so a call that settles nothing
+   * because it was not authorised is invisible unless somebody looks.
+   */
+  private async runRakebackDrain(): Promise<void> {
+    const DEADLINE_MS = 60 * 1000; // one cycle spends at most a minute here
+    const MAX_PASSES_PER_CLUB = 40; // 40 passes x 40 periods = 1,600 per club
+    const started = Date.now();
+    let settled = 0;
+    let paid = 0;
+    let deferred = 0;
+    let errors = 0;
+    const reasons: Record<string, number> = {};
+
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: pendingClubs, error: readErr } = await supabase
+        .from('rakeback_periods')
+        .select('club_id')
+        .eq('status', 'pending')
+        .lt('period_end', today)
+        .limit(5000);
+      if (readErr) {
+        reportError(
+          new Error(`rakeback drain could not read pending clubs: ${readErr.message}`),
+          'RakebackSettler.rakeback_drain_read'
+        );
+        return;
+      }
+      const clubIds = [...new Set((pendingClubs ?? []).map((r) => r.club_id).filter(Boolean))];
+
+      for (const clubId of clubIds) {
+        for (let pass = 0; pass < MAX_PASSES_PER_CLUB; pass++) {
+          if (Date.now() - started > DEADLINE_MS) return;
+
+          const { data, error } = await supabase.rpc('settle_club_rakeback', {
+            p_club_id: clubId,
+          });
+          if (error) {
+            errors++;
+            reportError(
+              new Error(
+                `settle_club_rakeback failed for club ${clubId}: ${JSON.stringify(error)}`
+              ),
+              'RakebackSettler.rakeback_drain'
+            );
+            break;
+          }
+          const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+          if (!r || r.success !== true) {
+            errors++;
+            reportError(
+              new Error(
+                `settle_club_rakeback refused for club ${clubId}: ${JSON.stringify(r)}`
+              ),
+              'RakebackSettler.rakeback_drain_refused'
+            );
+            break;
+          }
+
+          const settledThisPass = Number(r.periods_settled ?? 0);
+          settled += settledThisPass;
+          paid += Number(r.total_payout ?? 0);
+          deferred += Number(r.deferred ?? 0);
+          errors += Number(r.errors ?? 0);
+          for (const [k, v] of Object.entries(
+            (r.deferred_reasons ?? {}) as Record<string, number>
+          )) {
+            reasons[k] = (reasons[k] ?? 0) + Number(v ?? 0);
+          }
+
+          // Drained, or this pass could move nothing. Either way stop asking:
+          // the batch orders least-refused first, so a pass that settles zero
+          // has already looked past everything it was going to skip.
+          if (Number(r.periods_remaining ?? 0) === 0) break;
+          if (settledThisPass === 0) break;
+        }
+      }
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'RakebackSettler.rakeback_drain_threw'
+      );
+    }
+
+    if (settled > 0 || deferred > 0 || errors > 0) {
+      console.log(
+        `[RakebackSettler] Player rakeback: ${settled} periods paid, ${paid.toFixed(2)} chips, ` +
+          `${deferred} deferred ${JSON.stringify(reasons)}, ${errors} errors`
+      );
+    }
+  }
+
   private async runWeeklyFinancialClose(): Promise<void> {
     const WEEKLY_KEY = 'weekly_financial_close';
     try {
@@ -1045,23 +1164,13 @@ export class RakebackSettlerService {
         `[RakebackSettler] Weekly financial close starting (week of ${currentWeekStart})`
       );
 
-      // 1. Pay out lapsed rakeback periods per club
-      const { data: pendingClubs } = await supabase
-        .from('rakeback_periods')
-        .select('club_id')
-        .eq('status', 'pending')
-        .lt('period_end', currentWeekStart)
-        .limit(5000);
-      const clubIds = [...new Set((pendingClubs ?? []).map((r) => r.club_id).filter(Boolean))];
-      for (const clubId of clubIds) {
-        const { error } = await this.supabaseRpc('settle_club_rakeback', { p_club_id: clubId });
-        if (error) {
-          reportError(
-            new Error(`settle_club_rakeback failed for club ${clubId}: ${JSON.stringify(error)}`),
-            'RakebackSettler.weekly_settle_club'
-          );
-        }
-      }
+      // 1. Player rakeback payout MOVED OUT of this weekly gate on 2026-09-07,
+      //    to runRakebackDrain(), which runs every cycle. settle_club_rakeback
+      //    is bounded now (40 periods / ~4s per call), so it has to be called
+      //    in a loop - and this method runs once per ISO week and stamps the
+      //    week closed at step 4 whether or not anything drained. One bounded
+      //    pass per club here would have paid 40 periods and latched for seven
+      //    days. See the header of runRakebackDrain.
 
       // 2. Weekly agent credit invoices
       {
@@ -1098,7 +1207,7 @@ export class RakebackSettlerService {
         { onConflict: 'daemon' }
       );
       console.log(
-        `[RakebackSettler] Weekly financial close done: ${clubIds.length} clubs settled, invoices generated, weekly counters reset`
+        '[RakebackSettler] Weekly financial close done: invoices generated, weekly counters reset'
       );
     } catch (e) {
       reportError(

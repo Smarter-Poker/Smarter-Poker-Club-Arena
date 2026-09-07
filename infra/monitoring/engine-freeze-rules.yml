@@ -103,11 +103,45 @@ groups:
             self-healing restart is not working — investigate the healthcheck.
 
       # ── Throughput floor. Uses the metric the engine ACTUALLY emits. ────
+      #
+      # ── THIS RULE WAS TRUE ON A HEALTHY ENGINE FOR MONTHS (2026-09-07) ───
+      #
+      # `poker_hands_dealt_total` was computed from `tableTimings.length`, a
+      # ring buffer capped at 100. Every dealing table reached 100 within a
+      # couple of minutes and never moved again, so `increase(...)` was 0
+      # FOREVER. And because /metrics emitted the gauge once per table engine
+      # with no distinguishing label, Prometheus kept ONE arbitrary sample of
+      # the 272 in each scrape. Measured on production 2026-09-07: this alert
+      # had been firing continuously for over three hours while the fleet dealt
+      # ~27,000 hands an hour. Fixed in EngineTelemetry.renderFleetMetrics and
+      # pinned by server/src/engine/oneSeriesPerMetricName.law.test.ts; the
+      # counter is monotonic and fleet-wide now, so this expression finally
+      # measures what it says.
+      #
+      # THE THRESHOLD STAYS AT ZERO, DELIBERATELY, and here is the measurement
+      # that says it must. Over 7 days of `hand_history`, excluding the :53-:01
+      # break window, per 5-minute bucket:
+      #
+      #                        min    p01     p50
+      #     healthy            62     257     2267
+      #     the 04:05 incident 94     387     1286
+      #
+      # The platform's quiet nights go LOWER than its worst outage. Any
+      # non-zero floor either misses the outage or pages on a Tuesday at 4am.
+      # Zero is the one threshold that means exactly what the summary claims -
+      # "nothing at all is being dealt" - and nothing else. The detector for a
+      # slow-but-alive engine is EngineFleetThroughputCollapsed below, and the
+      # detector that actually caught 2026-09-07 was EngineCoreSaturated.
       - alert: EngineHandsStopped
         expr: |
           sum(increase(poker_hands_dealt_total[10m])) == 0
           and sum(poker_active_players) > 1
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          # `unless on()`, not a bare `unless`: this expression aggregates its
+          # left side away from {job, instance}, and `unless` matches on the
+          # EXACT label set - so a plain one finds no matching series and
+          # guards nothing. alert-rules.yml's engine-core group already says
+          # this in as many words; these three had it wrong.
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: critical
@@ -118,6 +152,74 @@ groups:
             Platform-wide dealing stop. Distinct from PokerTablesFrozen: this
             fires even if the per-table progress accounting is itself broken,
             so it is the backstop for a bug in the freeze detector.
+
+            This detects a TOTAL stop only. An engine that is merely crawling
+            will not trip it — see EngineFleetThroughputCollapsed.
+          runbook: "docs/changelog/2026-09-07-the-core-the-break-and-the-metric-that-was-reading-one-table.md"
+
+      # ── AN ENGINE THAT IS ALIVE AND CRAWLING (added 2026-09-07) ──────────
+      #
+      # On 2026-09-07 at 04:05 UTC the fleet fell from ~480 hands a minute to
+      # 6 and stayed down for about two hours. NOTHING in this file fired.
+      # EngineHandsStopped needs zero and it was not zero;
+      # EngineTableCountAnomaly compares against the hour before and the ratio
+      # was exactly 0.50, which is not < 0.50. The only alarms that spoke were
+      # EngineCoreOutOfHeadroom and EngineCoreSaturated, on event-loop delay.
+      #
+      # This is the throughput-shaped backstop for that class, and its numbers
+      # are measured rather than chosen. Hands per dealing table per minute,
+      # 5-minute buckets, 7 days, break window excluded:
+      #
+      #                    min     p01     p05     p50     max
+      #     healthy        0.482   0.628   1.168   2.111   3.363
+      #     the incident   0.416   0.693     -       -     1.254
+      #
+      # The LEVELS overlap, so the level alone cannot separate an outage from a
+      # quiet hour. The DURATION does. Longest continuous run below 1.0:
+      #
+      #     the incident        60 minutes
+      #     worst healthy run   35 minutes   (2026-09-04 16:05)
+      #     next healthy runs   25, 25, 20, 15 minutes
+      #
+      # Hence `< 1.0 for: 40m`: it would have fired on the incident with 20
+      # minutes to spare and cleared the worst healthy week by 5.
+      #
+      # BE HONEST ABOUT THE MARGIN. Five minutes is thin, and this fires 40
+      # minutes into an outage, which is far too late to be a primary signal.
+      # It is a BACKSTOP for the case where the loop-delay alarms are the ones
+      # that are broken. If it turns out to page on a quiet holiday, raise the
+      # duration rather than lowering the rate - a quiet night is long and
+      # shallow, an outage is deep, and the rate is the half that overlaps.
+      - alert: EngineFleetThroughputCollapsed
+        expr: |
+          (
+            sum(increase(poker_hands_dealt_total[5m])) / 5
+            /
+            clamp_min(sum(poker_active_tables), 1)
+          ) < 1.0
+          and sum(poker_active_tables) > 20
+          # `unless on()`, not a bare `unless`: this expression aggregates its
+          # left side away from {job, instance}, and `unless` matches on the
+          # EXACT label set - so a plain one finds no matching series and
+          # guards nothing. alert-rules.yml's engine-core group already says
+          # this in as many words; these three had it wrong.
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 40m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: "Fleet is dealing under 1 hand per table per minute for 40 minutes"
+          description: |
+            The engine is alive and tables are seated, but each one is dealing
+            at roughly half the rate a healthy fleet sustains. Measured median
+            is 2.1 hands per table per minute; this fires under 1.0.
+
+            Look at the event loop first: poker_event_loop_delay_p50_ms and
+            poker_equity_governor_scale. A saturated single thread produces
+            exactly this shape - normal table count, collapsed per-table rate -
+            because every timer in the process runs late.
+          runbook: "docs/changelog/2026-09-07-the-core-the-break-and-the-metric-that-was-reading-one-table.md"
 
       # ── EVERY RESTART IS ANNOUNCED, OR IT IS AN INCIDENT (2026-09-05) ────
       #

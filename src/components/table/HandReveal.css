@@ -42,7 +42,7 @@
 .hand-reveal__timer {
   font-size: 14px;
   font-weight: 600;
-  color: #f59e0b;
+  color: var(--sp-warn);
   min-width: 28px;
   text-align: right;
 }

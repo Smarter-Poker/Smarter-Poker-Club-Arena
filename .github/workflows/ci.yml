@@ -1390,9 +1390,38 @@ jobs:
 
       # Real browser performance and responsive budgets. This replaces the old
       # file-count step that was labelled Lighthouse but never opened a page.
+      #
+      # BRANCHED ON THE RUNNER 2026-09-07, and this was the last unguarded
+      # `--with-deps` in the estate. `--with-deps` shells out to apt-get, which
+      # takes a machine-wide lock at /var/lib/apt/lists/lock. The EU boxes run
+      # 12 to 18 runners each, so two Production Build jobs landing on one box
+      # at the same moment is ordinary, not rare - and the second one dies:
+      #
+      #   E: Could not get lock /var/lib/apt/lists/lock. It is held by
+      #      process 1672233 (apt-get)
+      #   Failed to install browsers
+      #   Error: Installation process exited with code: 100
+      #
+      # That is #3487's Production Build, read from its job log. Nothing was
+      # wrong with the build; a sibling job was holding apt. The estate boxes
+      # already carry the browser system libraries - provision-ci-box.sh
+      # section 6 installs them once and then VERIFIES every unpacked browser
+      # resolves its shared libraries - so calling apt again bought nothing and
+      # cost a red required check.
+      #
+      # Two other steps in this file and one in post-deploy-e2e.yml have keyed
+      # on runner.environment for exactly this reason since 2026-09-04. This
+      # one was simply missed. Keyed on runner.environment and NOT on
+      # vars.CI_RUNNER: that variable is repo-wide, so it reads true even for a
+      # job still pinned to ubuntu-latest, where the libraries are NOT present.
       - name: Install Performance Browser
         if: success()
-        run: npx playwright install --with-deps chromium
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       - name: Route Performance Budget
         if: success()

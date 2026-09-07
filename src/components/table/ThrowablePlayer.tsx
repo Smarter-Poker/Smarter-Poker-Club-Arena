@@ -49,7 +49,6 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ThrowEvent } from '../../services/ThrowableService';
 import { throwableSoundService } from '../../services/ThrowableSoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
-import { reportError } from '../../utils/errorReporter';
 import type { ThrowableSpec } from '../../throwables/spec';
 import { THROWABLE_GRAMMAR, throwableLandingMs } from '../../throwables/spec';
 import type { ThrowableRig } from '../../throwables/rig';
@@ -123,14 +122,6 @@ export function ThrowablePlayer({
 
   useEffect(() => {
     if (!toPos) {
-      try {
-        reportError(
-          new Error(`ThrowablePlayer: no position for target seat ${event.toSeat}`),
-          'AnimationLaw.throw_target_unresolved'
-        );
-      } catch {
-        /* telemetry must never break the table */
-      }
       onCompleteRef.current();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,6 +197,7 @@ export function ThrowablePlayer({
         : toPos.x;
 
   const vars = {
+    '--animation-speed': speed,
     '--thr-u': `${unit}px`,
     '--thr-from-x': `${spawnX}px`,
     '--thr-from-y': `${spawnY}px`,

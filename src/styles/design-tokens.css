@@ -11,6 +11,38 @@
  */
 
 :root {
+  /* ═════════════════════════════════════════════════════════════════════════
+     SMARTER.POKER TEXT ACCENTS — "WE DON'T USE YELLOW" (Dan 2026-09-07, item 8)
+     ═════════════════════════════════════════════════════════════════════════
+
+     There was no house palette to point at. Two stylesheets assert the rule in
+     prose ("STRICT SMARTER.POKER PALETTE. NO BROWN. NO YELLOW. NO GOLD." —
+     tournament-lobby-3d.css, TournamentDetails.css) and nothing enforced it,
+     so ~60 files each reached for their own #ffd700. Prose is not a lever.
+
+     These three are. Every gold TEXT colour on the table screen now resolves
+     through one of them, chosen by what the text is DOING rather than by how
+     warm it looked:
+
+       --sp-text-bright  a figure or label that needs to stand out. Gold was
+                         doing separation-by-hue; this does it by brightness,
+                         against a felt that is already dark and cool.
+       --sp-warn         urgency and live states — a running clock, a bomb pot
+                         on the next hand. Warm, because urgency should be, but
+                         the table's own red rather than a caution yellow.
+       --sp-accent       decorative accent. The club blue, which is already
+                         --club-blue / --realism-blue in club-engine.css.
+
+     These deliberately do NOT touch chip colours, card faces, suit glyphs, or
+     the gold FELT THEME ([data-theme='gold'] below) — a player who chooses a
+     gold table is choosing it, which is a different thing from the product
+     printing gold at them. */
+  --sp-text-bright: rgba(236, 242, 252, 0.95);
+  --sp-text: rgba(214, 226, 244, 0.72);
+  --sp-text-dim: rgba(214, 226, 244, 0.5);
+  --sp-warn: #e2565f;
+  --sp-accent: #4169e1;
+
   /* ─── Spacing Scale ─── */
   --space-2xs: 2px;
   --space-xs: 4px;

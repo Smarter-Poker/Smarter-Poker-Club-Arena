@@ -112,10 +112,24 @@ describe('LAW: the payload is measured in AVATAR UNITS, on this table', () => {
 });
 
 describe('LAW: a paid throw is never silent and never invisible', () => {
-  it('reports a throw whose target seat cannot be resolved', () => {
-    // The item was paid for and broadcast. A render that draws nothing must
-    // say so, or the failure is invisible.
-    expect(PLAYER).toMatch(/AnimationLaw\.throw_target_unresolved/);
+  it('keeps throwable failures out of external telemetry, as Dan requested', () => {
+    // Dan explicitly removed throwable Sentry reporting on 2026-09-07.
+    // The completion path and local cue counters are still required below.
+    const paths = [
+      'src/components/table/ThrowablePlayer.tsx',
+      'src/components/table/ThrowAnimation.tsx',
+      'src/services/ThrowableService.ts',
+      'src/services/ThrowableSoundService.ts',
+      'src/services/ThrowableVoice.ts',
+      'src/services/ThrowableCutout.ts',
+      'src/components/table/ThrowableImage.tsx',
+      'src/components/table/ThrowableSelector.tsx',
+    ];
+    for (const file of paths) {
+      expect(code(read(file)), file).not.toMatch(
+        /reportError|captureException|captureMessage|addBreadcrumb|SentryInit|@sentry\//
+      );
+    }
   });
 
   it('completes even when it cannot draw, so the parent never leaks it', () => {
@@ -144,13 +158,11 @@ describe('LAW: a paid throw is never silent and never invisible', () => {
     expect(SOUND).toMatch(/get droppedCues\(\)/);
     for (const reason of ['no_buffer', 'late', 'window_passed']) {
       expect(SOUND, `the '${reason}' path must count, not return silently`).toMatch(
-        new RegExp(`return this\\.dropCue\\(cue\\.sample, '${reason}'\\)`)
+        new RegExp(`return this\\.dropCue\\('${reason}'\\)`)
       );
     }
-    // Once per reason per cue: a table throwing eight items must not report
-    // the same broken URL eight times a second.
-    expect(SOUND).toMatch(/cueDropReported\.has\(key\)/);
-    expect(SOUND).toMatch(/AnimationLaw\.throw_cue_silent/);
+    expect(SOUND).toMatch(/this\.cueDrops\[reason\] \+= 1/);
+    expect(SOUND).not.toMatch(/cueDropReported|AnimationLaw\.throw_cue_silent/);
   });
 });
 
@@ -250,6 +262,48 @@ describe('LAW: a rig names nothing it does not draw', () => {
       offenders,
       'put the measured position on a wrapper <g> and the animation on the child'
     ).toEqual([]);
+  });
+
+  it('one hundred units is one avatar width, in every rig, always', () => {
+    // Every rig's geometry is measured in units and converted with "measured
+    // pixels x (100 / reference avatar px)". That conversion is only true
+    // because the payload box is ALWAYS three avatar widths and the viewBox is
+    // ALWAYS -150 -150 300 300 - 300 units across three avatar widths.
+    //
+    // `payload.sizeU` looks like it sets that box. It does not: it is
+    // declarative, nothing reads it, and it was documented as "width of the
+    // payload's own box" until 2026-09-07, which is exactly how an author ends
+    // up sizing artwork against a number that does nothing. This pins the two
+    // halves that ARE real, so that wiring sizeU up - which would silently
+    // rescale all eighteen rigs at once - has to be a deliberate act that moves
+    // this law with it.
+    expect(PLAYER_CSS).toMatch(/\.thr__payload \{[^}]*width: calc\(var\(--thr-u\) \* 3\)/);
+    expect(read('src/throwables/rig.ts')).toMatch(/RIG_VIEWBOX\s*=\s*'-150 -150 300 300'/);
+    expect(PLAYER, 'the player must not read sizeU without moving this law').not.toMatch(/sizeU/);
+  });
+
+  it('the payload floor is DERIVED from the shortest measured payload', () => {
+    // THE BOUND HAS BEEN WRONG TWICE - 1800, then 1600 - and both times because
+    // it was read off the plan's life table, which measures SPAWN TO CLEAN,
+    // while the bound governs LANDING TO CLEAN. The bomb is the worked example:
+    // the life table says 2.0 s and its payload is 1566, because 167 ms of
+    // spawn and 267 ms of flight happen before the payload exists. 2000 - 434.
+    //
+    // So the floor is not a judgement any more, it is the minimum of the
+    // measured set, and this is the equality that keeps it that way. A shorter
+    // item turns this red, and the bound then has to be RE-DERIVED rather than
+    // nudged until the newest rig fits.
+    const shortest = Math.min(
+      ...ids.map((id) => {
+        const tsx = fs.readFileSync(path.join(rigDir, `${id}.tsx`), 'utf8');
+        return Number(/payload:\s*\{[^}]*\bms:\s*(\d+)/.exec(tsx)?.[1] ?? Infinity);
+      })
+    );
+    const floor = Number(/payloadMs:\s*\{\s*min:\s*(\d+)/.exec(SPEC)?.[1] ?? NaN);
+    expect(
+      floor,
+      `THROWABLE_GRAMMAR.payloadMs.min is ${floor} but the shortest measured payload is ${shortest}`
+    ).toBe(shortest);
   });
 
   it('a keyframe stop lands on the millisecond its own comment names', () => {

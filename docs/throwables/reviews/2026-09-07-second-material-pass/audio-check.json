@@ -1,0 +1,622 @@
+{
+  "source": "https://smarter.poker/hub/club-arena/sounds/throwables/",
+  "method": "Downloaded each deployed file and inspected audio streams with ffprobe. Six initial network timeouts succeeded on retry. This is codec inspection, not a listening or real-device test.",
+  "files": [
+    {
+      "file": "boing_splat.webm",
+      "bytes": 8218,
+      "codec": "opus",
+      "duration": "0.593000",
+      "valid": true
+    },
+    {
+      "file": "boing_splat.m4a",
+      "bytes": 8109,
+      "codec": "aac",
+      "duration": "0.585000",
+      "valid": true
+    },
+    {
+      "file": "boom.webm",
+      "bytes": 4132,
+      "codec": "opus",
+      "duration": "0.460000",
+      "valid": true
+    },
+    {
+      "file": "boom.m4a",
+      "bytes": 6606,
+      "codec": "aac",
+      "duration": "0.453000",
+      "valid": true
+    },
+    {
+      "file": "bubble_tick.webm",
+      "bytes": 2851,
+      "codec": "opus",
+      "duration": "0.171000",
+      "valid": true
+    },
+    {
+      "file": "bubble_tick.m4a",
+      "bytes": 3219,
+      "codec": "aac",
+      "duration": "0.164000",
+      "valid": true
+    },
+    {
+      "file": "can_rattle_rise.webm",
+      "bytes": 4057,
+      "codec": "opus",
+      "duration": "0.440000",
+      "valid": true
+    },
+    {
+      "file": "can_rattle_rise.m4a",
+      "bytes": 6699,
+      "codec": "aac",
+      "duration": "0.432000",
+      "valid": true
+    },
+    {
+      "file": "card_slap.webm",
+      "bytes": 4128,
+      "codec": "opus",
+      "duration": "0.407000",
+      "valid": true
+    },
+    {
+      "file": "card_slap.m4a",
+      "bytes": 6223,
+      "codec": "aac",
+      "duration": "0.400000",
+      "valid": true
+    },
+    {
+      "file": "cash_register_cascade.webm",
+      "bytes": 24510,
+      "codec": "opus",
+      "duration": "2.660000",
+      "valid": true
+    },
+    {
+      "file": "cash_register_cascade.m4a",
+      "bytes": 32397,
+      "codec": "aac",
+      "duration": "2.653000",
+      "valid": true
+    },
+    {
+      "file": "chime_shimmer.webm",
+      "bytes": 13303,
+      "codec": "opus",
+      "duration": "1.488000",
+      "valid": true
+    },
+    {
+      "file": "chime_shimmer.m4a",
+      "bytes": 19246,
+      "codec": "aac",
+      "duration": "1.480000",
+      "valid": true
+    },
+    {
+      "file": "cork_pop.webm",
+      "bytes": 3514,
+      "codec": "opus",
+      "duration": "0.339000",
+      "valid": true
+    },
+    {
+      "file": "cork_pop.m4a",
+      "bytes": 5155,
+      "codec": "aac",
+      "duration": "0.333000",
+      "valid": true
+    },
+    {
+      "file": "dice_rattle.webm",
+      "bytes": 8795,
+      "codec": "opus",
+      "duration": "0.758000",
+      "valid": true
+    },
+    {
+      "file": "dice_rattle.m4a",
+      "bytes": 10637,
+      "codec": "aac",
+      "duration": "0.750000",
+      "valid": true
+    },
+    {
+      "file": "drip.webm",
+      "bytes": 2375,
+      "codec": "opus",
+      "duration": "0.198000",
+      "valid": true
+    },
+    {
+      "file": "drip.m4a",
+      "bytes": 3544,
+      "codec": "aac",
+      "duration": "0.191000",
+      "valid": true
+    },
+    {
+      "file": "drip_tick.webm",
+      "bytes": 1158,
+      "codec": "opus",
+      "duration": "0.030000",
+      "valid": true
+    },
+    {
+      "file": "drip_tick.m4a",
+      "bytes": 1445,
+      "codec": "aac",
+      "duration": "0.023000",
+      "valid": true
+    },
+    {
+      "file": "egg_crack.webm",
+      "bytes": 6334,
+      "codec": "opus",
+      "duration": "0.504000",
+      "valid": true
+    },
+    {
+      "file": "egg_crack.m4a",
+      "bytes": 8585,
+      "codec": "aac",
+      "duration": "0.496000",
+      "valid": true
+    },
+    {
+      "file": "explosion_boom.webm",
+      "bytes": 11441,
+      "codec": "opus",
+      "duration": "1.608000",
+      "valid": true
+    },
+    {
+      "file": "explosion_boom.m4a",
+      "bytes": 20141,
+      "codec": "aac",
+      "duration": "1.600000",
+      "valid": true
+    },
+    {
+      "file": "fanfare_short.webm",
+      "bytes": 16372,
+      "codec": "opus",
+      "duration": "1.808000",
+      "valid": true
+    },
+    {
+      "file": "fanfare_short.m4a",
+      "bytes": 23162,
+      "codec": "aac",
+      "duration": "1.800000",
+      "valid": true
+    },
+    {
+      "file": "fizz_loop.webm",
+      "bytes": 20810,
+      "codec": "opus",
+      "duration": "2.408000",
+      "valid": true
+    },
+    {
+      "file": "fizz_loop.m4a",
+      "bytes": 30674,
+      "codec": "aac",
+      "duration": "2.400000",
+      "valid": true
+    },
+    {
+      "file": "flies_buzz.webm",
+      "bytes": 14054,
+      "codec": "opus",
+      "duration": "1.108000",
+      "valid": true
+    },
+    {
+      "file": "flies_buzz.m4a",
+      "bytes": 15113,
+      "codec": "aac",
+      "duration": "1.100000",
+      "valid": true
+    },
+    {
+      "file": "flute_clink.webm",
+      "bytes": 3920,
+      "codec": "opus",
+      "duration": "0.295000",
+      "valid": true
+    },
+    {
+      "file": "flute_clink.m4a",
+      "bytes": 4850,
+      "codec": "aac",
+      "duration": "0.288000",
+      "valid": true
+    },
+    {
+      "file": "flute_clink_soft.webm",
+      "bytes": 3014,
+      "codec": "opus",
+      "duration": "0.216000",
+      "valid": true
+    },
+    {
+      "file": "flute_clink_soft.m4a",
+      "bytes": 3798,
+      "codec": "aac",
+      "duration": "0.210000",
+      "valid": true
+    },
+    {
+      "file": "fuse_ignite.webm",
+      "bytes": 2401,
+      "codec": "opus",
+      "duration": "0.168000",
+      "valid": true
+    },
+    {
+      "file": "fuse_ignite.m4a",
+      "bytes": 3355,
+      "codec": "aac",
+      "duration": "0.160000",
+      "valid": true
+    },
+    {
+      "file": "fuse_sizzle.webm",
+      "bytes": 6660,
+      "codec": "opus",
+      "duration": "0.758000",
+      "valid": true
+    },
+    {
+      "file": "fuse_sizzle.m4a",
+      "bytes": 10454,
+      "codec": "aac",
+      "duration": "0.750000",
+      "valid": true
+    },
+    {
+      "file": "fw_barrage.webm",
+      "bytes": 12873,
+      "codec": "opus",
+      "duration": "1.408000",
+      "valid": true
+    },
+    {
+      "file": "fw_barrage.m4a",
+      "bytes": 17691,
+      "codec": "aac",
+      "duration": "1.400000",
+      "valid": true
+    },
+    {
+      "file": "fw_crackle.webm",
+      "bytes": 9116,
+      "codec": "opus",
+      "duration": "0.957000",
+      "valid": true
+    },
+    {
+      "file": "fw_crackle.m4a",
+      "bytes": 13332,
+      "codec": "aac",
+      "duration": "0.949000",
+      "valid": true
+    },
+    {
+      "file": "fw_rumble.webm",
+      "bytes": 10746,
+      "codec": "opus",
+      "duration": "1.508000",
+      "valid": true
+    },
+    {
+      "file": "fw_rumble.m4a",
+      "bytes": 19418,
+      "codec": "aac",
+      "duration": "1.500000",
+      "valid": true
+    },
+    {
+      "file": "fw_whistle.webm",
+      "bytes": 8444,
+      "codec": "opus",
+      "duration": "0.858000",
+      "valid": true
+    },
+    {
+      "file": "fw_whistle.m4a",
+      "bytes": 11569,
+      "codec": "aac",
+      "duration": "0.850000",
+      "valid": true
+    },
+    {
+      "file": "glass_clink_rattle.webm",
+      "bytes": 12008,
+      "codec": "opus",
+      "duration": "0.949000",
+      "valid": true
+    },
+    {
+      "file": "glass_clink_rattle.m4a",
+      "bytes": 13608,
+      "codec": "aac",
+      "duration": "0.943000",
+      "valid": true
+    },
+    {
+      "file": "harp_sparkle.webm",
+      "bytes": 12339,
+      "codec": "opus",
+      "duration": "0.881000",
+      "valid": true
+    },
+    {
+      "file": "harp_sparkle.m4a",
+      "bytes": 12778,
+      "codec": "aac",
+      "duration": "0.874000",
+      "valid": true
+    },
+    {
+      "file": "horseshoe_clank.webm",
+      "bytes": 4803,
+      "codec": "opus",
+      "duration": "0.442000",
+      "valid": true
+    },
+    {
+      "file": "horseshoe_clank.m4a",
+      "bytes": 5530,
+      "codec": "aac",
+      "duration": "0.435000",
+      "valid": true
+    },
+    {
+      "file": "lid_clank.webm",
+      "bytes": 6755,
+      "codec": "opus",
+      "duration": "0.708000",
+      "valid": true
+    },
+    {
+      "file": "lid_clank.m4a",
+      "bytes": 9218,
+      "codec": "aac",
+      "duration": "0.700000",
+      "valid": true
+    },
+    {
+      "file": "lock_beep.webm",
+      "bytes": 3161,
+      "codec": "opus",
+      "duration": "0.178000",
+      "valid": true
+    },
+    {
+      "file": "lock_beep.m4a",
+      "bytes": 3197,
+      "codec": "aac",
+      "duration": "0.170000",
+      "valid": true
+    },
+    {
+      "file": "lock_confirm.webm",
+      "bytes": 3493,
+      "codec": "opus",
+      "duration": "0.208000",
+      "valid": true
+    },
+    {
+      "file": "lock_confirm.m4a",
+      "bytes": 3558,
+      "codec": "aac",
+      "duration": "0.200000",
+      "valid": true
+    },
+    {
+      "file": "missile_whistle.webm",
+      "bytes": 8541,
+      "codec": "opus",
+      "duration": "0.838000",
+      "valid": true
+    },
+    {
+      "file": "missile_whistle.m4a",
+      "bytes": 11306,
+      "codec": "aac",
+      "duration": "0.830000",
+      "valid": true
+    },
+    {
+      "file": "poof_soft.webm",
+      "bytes": 6714,
+      "codec": "opus",
+      "duration": "0.758000",
+      "valid": true
+    },
+    {
+      "file": "poof_soft.m4a",
+      "bytes": 9785,
+      "codec": "aac",
+      "duration": "0.750000",
+      "valid": true
+    },
+    {
+      "file": "pop_soft.webm",
+      "bytes": 2311,
+      "codec": "opus",
+      "duration": "0.142000",
+      "valid": true
+    },
+    {
+      "file": "pop_soft.m4a",
+      "bytes": 2736,
+      "codec": "aac",
+      "duration": "0.135000",
+      "valid": true
+    },
+    {
+      "file": "sparkle_bed.webm",
+      "bytes": 26555,
+      "codec": "opus",
+      "duration": "2.535000",
+      "valid": true
+    },
+    {
+      "file": "sparkle_bed.m4a",
+      "bytes": 24354,
+      "codec": "aac",
+      "duration": "2.528000",
+      "valid": true
+    },
+    {
+      "file": "splat_heavy.webm",
+      "bytes": 8496,
+      "codec": "opus",
+      "duration": "0.845000",
+      "valid": true
+    },
+    {
+      "file": "splat_heavy.m4a",
+      "bytes": 11542,
+      "codec": "aac",
+      "duration": "0.838000",
+      "valid": true
+    },
+    {
+      "file": "splat_wet.webm",
+      "bytes": 7042,
+      "codec": "opus",
+      "duration": "0.525000",
+      "valid": true
+    },
+    {
+      "file": "splat_wet.m4a",
+      "bytes": 6551,
+      "codec": "aac",
+      "duration": "0.517000",
+      "valid": true
+    },
+    {
+      "file": "splat_wet_small.webm",
+      "bytes": 4414,
+      "codec": "opus",
+      "duration": "0.291000",
+      "valid": true
+    },
+    {
+      "file": "splat_wet_small.m4a",
+      "bytes": 3771,
+      "codec": "aac",
+      "duration": "0.284000",
+      "valid": true
+    },
+    {
+      "file": "squirt_loop.webm",
+      "bytes": 22606,
+      "codec": "opus",
+      "duration": "2.510000",
+      "valid": true
+    },
+    {
+      "file": "squirt_loop.m4a",
+      "bytes": 31801,
+      "codec": "aac",
+      "duration": "2.494000",
+      "valid": true
+    },
+    {
+      "file": "squirt_start.webm",
+      "bytes": 5326,
+      "codec": "opus",
+      "duration": "0.458000",
+      "valid": true
+    },
+    {
+      "file": "squirt_start.m4a",
+      "bytes": 5630,
+      "codec": "aac",
+      "duration": "0.450000",
+      "valid": true
+    },
+    {
+      "file": "swell_low.webm",
+      "bytes": 11031,
+      "codec": "opus",
+      "duration": "0.858000",
+      "valid": true
+    },
+    {
+      "file": "swell_low.m4a",
+      "bytes": 11689,
+      "codec": "aac",
+      "duration": "0.850000",
+      "valid": true
+    },
+    {
+      "file": "thump_soft.webm",
+      "bytes": 3548,
+      "codec": "opus",
+      "duration": "0.190000",
+      "valid": true
+    },
+    {
+      "file": "thump_soft.m4a",
+      "bytes": 3350,
+      "codec": "aac",
+      "duration": "0.183000",
+      "valid": true
+    },
+    {
+      "file": "tick_land.webm",
+      "bytes": 1463,
+      "codec": "opus",
+      "duration": "0.055000",
+      "valid": true
+    },
+    {
+      "file": "tick_land.m4a",
+      "bytes": 1707,
+      "codec": "aac",
+      "duration": "0.048000",
+      "valid": true
+    },
+    {
+      "file": "tick_settle.webm",
+      "bytes": 1680,
+      "codec": "opus",
+      "duration": "0.065000",
+      "valid": true
+    },
+    {
+      "file": "tick_settle.m4a",
+      "bytes": 1967,
+      "codec": "aac",
+      "duration": "0.058000",
+      "valid": true
+    },
+    {
+      "file": "whoosh_low.webm",
+      "bytes": 3470,
+      "codec": "opus",
+      "duration": "0.408000",
+      "valid": true
+    },
+    {
+      "file": "whoosh_low.m4a",
+      "bytes": 6030,
+      "codec": "aac",
+      "duration": "0.400000",
+      "valid": true
+    }
+  ]
+}

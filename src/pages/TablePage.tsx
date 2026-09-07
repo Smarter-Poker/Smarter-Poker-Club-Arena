@@ -156,7 +156,11 @@ import {
 } from '../lib/chipContinuity';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
-import { isPreActionHonorable, PRE_ACTION_EXEC_GRACE_MS } from '../lib/preActionPanelGate';
+import {
+  isPreActionHonorable,
+  PRE_ACTION_EXEC_GRACE_MS,
+  PRE_ACTION_GAP_BRIDGE_MS,
+} from '../lib/preActionPanelGate';
 import { seatTapTarget } from '../lib/heroSeatTap';
 import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSeatReconcile';
 
@@ -289,6 +293,10 @@ import SpinWheel, {
   parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
+import BombPotWheel, {
+  BOMB_WHEEL_MAX_HANDS,
+  BOMB_WHEEL_MIN_HANDS,
+} from '../components/table/BombPotWheel';
 import { spinRevealToDealMs, spinRevealTotalMs } from '../config/spinSpec';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
@@ -629,7 +637,13 @@ interface TableState {
    * the hero's tracker shows their own number; this is the rule of the game.
    */
   vpipFloor: number | null;
-  vpipWindow: number | null;
+  /* `vpipWindow` was removed on 2026-09-07. It was written from
+     `maintain_hands` and read by exactly one thing: the masthead's
+     "VPIP 40% Min - 10 Hands" suffix, which Dan removed the same day ("NO NEED
+     FOR ANYTHING ELSE ABOUT HANDS", item 7C). Carrying state nothing reads is
+     how the next reader concludes the window is on screen somewhere. The
+     figure is still in the database and still enforces the rule; it is simply
+     not on the felt. */
   /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
    * as — differs from gameType on a variant-override bomb pot (e.g. a PLO4
@@ -2169,7 +2183,6 @@ export default function TablePage({
       gameStyle: null,
       clusterId: null,
       vpipFloor: null,
-      vpipWindow: null,
       handVariant: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
@@ -6101,6 +6114,8 @@ export default function TablePage({
   // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
   const [showBBJCelebration, setShowBBJCelebration] = useState(false);
   const bbjHitDataRef = useRef<{
+    /** BBJ phase 6: which jackpot this hit was. Absent means the main one. */
+    kind?: 'main' | 'mini';
     loserUserId: string;
     loserHandName: string;
     winnerUserId: string;
@@ -6116,6 +6131,8 @@ export default function TablePage({
     tablePlayerCount: number;
     qualifyingLabel: string;
     heroShare: number;
+    /** BBJ phase 6: 'mini' is the flat second tier out of the backup reserve. */
+    kind: 'main' | 'mini';
   } | null>(null);
   // BBJ-FLOAT 2026-08-18: per-seat gold "BBJ +$X" floats, keyed by userId.
   // Set alongside the celebration, cleared 4.5s later.
@@ -6782,14 +6799,96 @@ export default function TablePage({
    * Deciding it twice is how the felt and the masthead would start disagreeing
    * about whether a bomb is coming.
    */
+  /**
+   * ── THE COUNTDOWN BECOMING A HAND COUNT IS AN EVENT (Dan 2026-09-07, 7D) ──
+   *
+   * "WHEN IT CHANGES TO A CERTAIN AMOUNT OF HANDS FROM THE COUNTDOWN CLOCK
+   *  FROM 1-5 HANDS, WE SHOULD HAVE A 'WHEEL SPINNER' ANIMATION ... THAT POPS
+   *  UP AFTER THE HAND IS OVER"
+   *
+   * Two conditions, and the second is the one that is easy to drop: the
+   * transition must be DETECTED whenever the engine reports it, but SHOWN only
+   * at a hand boundary. Firing on detection alone would drop a disc over the
+   * felt mid-street, over live cards, on the hand a player is deciding.
+   *
+   * So the transition is latched here and drained by the HAND_COMPLETE path.
+   * `armedFor` remembers which hand-count the latch is holding, so a re-render,
+   * a resubscribe or a snapshot replay cannot re-arm a reveal that has already
+   * played — the same identity check the pre-action beat needs, for the same
+   * reason.
+   */
+  /**
+   * True from HAND_COMPLETE until the next HAND_STARTED - the window in which
+   * the hand is being settled rather than played. Declared HERE, well above
+   * `handleHandEvent`, and not beside the `handStillTakingAction` expression
+   * that consumes it: both of the setter's call sites live in that handler,
+   * which is earlier in the file, and reading a `const` above its declaration
+   * is what tests/no-tdz-in-table-route.law.test.ts exists to refuse. Safe at
+   * runtime inside a deferred callback, but the law prefers the declaration
+   * moved over the exception baselined, and it is right to.
+   */
+  const [handSettling, setHandSettling] = useState(false);
+
+  const [bombWheelHands, setBombWheelHands] = useState<number | null>(null);
+  const bombWheelPendingRef = useRef<number | null>(null);
+  const bombWheelTimerRef = useRef<number | null>(null);
+  /**
+   * `null` until this client has seen at least one snapshot, then the last
+   * count it saw. The DISTINCTION between "no snapshot yet" and "a snapshot
+   * that carried no bomb" is the whole point of the extra state - see below.
+   */
+  const bombWheelSeenRef = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    const n = tableState.bombPotIn;
+    const inWindow = n != null && n >= BOMB_WHEEL_MIN_HANDS && n <= BOMB_WHEEL_MAX_HANDS;
+    const wasFirstSnapshot = bombWheelSeenRef.current === undefined;
+    const wasInWindow = bombWheelSeenRef.current != null && bombWheelSeenRef.current !== undefined;
+    bombWheelSeenRef.current = inWindow ? (n as number) : null;
+
+    if (!inWindow) {
+      /* THE LATCH IS DROPPED, NOT LEFT ARMED. It used to reset only the
+         "seen" ref here, so a bomb that fired or was cancelled before the
+         next hand boundary left a pending reveal behind - and the drain then
+         announced a bomb that had already happened. Leaving the window is
+         exactly the signal that there is nothing to reveal. */
+      bombWheelPendingRef.current = null;
+      return;
+    }
+    if (wasInWindow) return; // already inside; 5 -> 4 -> 3 is the clock ticking
+
+    /* ARRIVING AT A TABLE IS NOT AN ANNOUNCEMENT. On the first snapshot this
+       client has no idea whether the countdown just resolved or has been
+       sitting at "3 hands" since before it subscribed, so it must not claim
+       the former. The reveal belongs to the TRANSITION, and a transition needs
+       a before as well as an after. Without this guard every player opening a
+       table already inside the announce window got the wheel - which the
+       previous version's own comment said it was preventing, while doing the
+       opposite. */
+    if (wasFirstSnapshot) return;
+
+    bombWheelPendingRef.current = n as number;
+  }, [tableState.bombPotIn]);
+
+  /* A reveal scheduled at a hand boundary must not fire into an unmounted
+     tree (leave table, tab close, table switch). */
+  useEffect(
+    () => () => {
+      if (bombWheelTimerRef.current) window.clearTimeout(bombWheelTimerRef.current);
+    },
+    []
+  );
+
   const bombPotBadge = useMemo<{ text: string; state: 'live' | 'next' | 'eta' } | null>(() => {
+    /* "DOUBLE BOARD" IS NOT NEWS (Dan 2026-09-07, 7D): "BECAUSE ALL BOMB POTS
+       ARE DOUBLE BOARD, IT DOESN'T NEED TO SAY DOUBLE BOARD, JUST BOMB POT IN
+       X HANDS OR NEXT HAND ETC."
+       A prefix that is always the same carries no information and costs the
+       longest row in the masthead most of its width. TRIPLE is kept, because
+       that one IS the exception a player needs to see coming; two boards, the
+       house default, now says nothing. `boardCount` remains the source, so a
+       club that configures three still gets told. */
     const boards = bombPotRules?.boardCount ?? 0;
-    const prefix =
-      boards >= 3
-        ? 'TRIPLE BOARD '
-        : boards === 2 || bombPotRules?.doubleBoard
-          ? 'DOUBLE BOARD '
-          : '';
+    const prefix = boards >= 3 ? 'TRIPLE BOARD ' : '';
     if (bombPotActive) return { text: `${prefix}BOMB POT`, state: 'live' };
     /* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits for
        bomb_pot_min_players, and the engine held it in silence - the pill said
@@ -10603,6 +10702,10 @@ export default function TablePage({
           winnerUserId: winnerData?.userId || '',
           winnerHandName: winnerData?.hand?.name || 'Unknown',
           qualifyingHandLabel: (handState.qualifyingHandLabel as string) || '',
+          /* BBJ phase 6. The engine stamps the mini's events with kind:'mini';
+             an event without one is the main jackpot, which is what every
+             event before today was. */
+          kind: (handState.kind as 'main' | 'mini') || 'main',
         };
         // Don't show toast or HUD hit yet — wait for payout_complete after showdown finishes
         return;
@@ -10791,6 +10894,13 @@ export default function TablePage({
                   : userId && tablePlayerIds.includes(userId)
                     ? perPlayer
                     : 0,
+            /* BBJ phase 6. Prefer the kind on THIS event; fall back to the
+               one bbj_hit carried, and to 'main' for any event emitted before
+               the mini existed. */
+            kind:
+              ((handState.kind as 'main' | 'mini') || hitData?.kind || 'main') === 'mini'
+                ? 'mini'
+                : 'main',
           });
 
           // NOW trigger the HUD hit animation + full celebration overlay
@@ -11264,10 +11374,6 @@ export default function TablePage({
           vpipFloor:
             table.nit_game === true && Number(table.maintain_percent_min) > 0
               ? Number(table.maintain_percent_min)
-              : null,
-          vpipWindow:
-            table.nit_game === true && Number(table.maintain_hands) > 0
-              ? Number(table.maintain_hands)
               : null,
           players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),
@@ -15005,6 +15111,11 @@ export default function TablePage({
       // change. The four events below were added with this fix; client must
       // act on them directly, never wait for snapshot diff.
       case 'HAND_STARTED': {
+        /* A new hand is taking action again (Dan 2026-09-07, item 5). The
+           partner of the flag set at HAND_COMPLETE: cleared HERE rather than
+           on a timer, because the start of a hand is an event and a duration
+           would only be a guess at one. */
+        setHandSettling(false);
         // AUDIT FIX 2026-07-19: track the new hand number and CLEAR hero hole
         // cards so a dropped card-insert can't leave the previous hand's cards
         // showing; then re-arm the hand-aware fetch to recover the new cards.
@@ -16114,6 +16225,40 @@ export default function TablePage({
           () => handCompleteResetFnRef.current?.(),
           holdMs
         );
+
+        /* THE HAND HAS STOPPED TAKING ACTION (Dan 2026-09-07, item 5).
+           Read from the event rather than inferred: `isHandInProgress` is
+           `boardStage !== 'waiting'` and stays TRUE through this entire hold,
+           so nothing else here distinguishes "the winner is being paid" from
+           "the next actor is being decided". See `handStillTakingAction`. */
+        setHandSettling(true);
+
+        /* THE BOMB POT REVEAL, DRAINED AT THE HAND BOUNDARY (Dan 2026-09-07,
+           7D: "POPS UP AFTER THE HAND IS OVER"). The latch was armed the
+           moment the engine resolved its countdown into a hand count; this is
+           the first instant it is safe to show, with the cards down and the
+           pot shipped. Scheduled just after the hold so it does not land on
+           top of the pot push it would otherwise cover.
+
+           RE-READ AT DRAIN TIME, not trusted from arm time: between arming and
+           this boundary the bomb can fire or be cancelled, and revealing "in N
+           hands" for a bomb that has already happened is worse than revealing
+           nothing. `bombPotIn` is re-checked against the live snapshot here.
+
+           The handle is STORED so leaving the table cannot fire this into an
+           unmounted tree - the same discipline as handCompleteTimerRef above,
+           which this originally forgot. */
+        if (bombWheelPendingRef.current != null) {
+          bombWheelPendingRef.current = null;
+          if (bombWheelTimerRef.current) window.clearTimeout(bombWheelTimerRef.current);
+          bombWheelTimerRef.current = window.setTimeout(() => {
+            bombWheelTimerRef.current = null;
+            const live = tableStateRef.current.bombPotIn;
+            if (live != null && live >= BOMB_WHEEL_MIN_HANDS && live <= BOMB_WHEEL_MAX_HANDS) {
+              setBombWheelHands(live);
+            }
+          }, holdMs + 120);
+        }
         break;
       }
 
@@ -19402,6 +19547,53 @@ export default function TablePage({
     isHeroTurnContext &&
     preAction !== null &&
     isPreActionHonorable(preAction, preActionCallDue, preActionCallAmountRef.current);
+  /**
+   * ═══ IS THERE STILL ACTION TO COME? (Dan 2026-09-07, corrected same day) ══
+   *
+   * The pre-action bar exists so a player can ARM a decision for a turn that is
+   * still coming. It must therefore be up whenever one is, and down whenever
+   * one is not - and "is somebody on the clock right now" answers neither
+   * question honestly, because `currentPlayerSeat` is blanked to 0 between
+   * every pair of actors AND left at 0 once the hand stops taking action.
+   *
+   * The first version of this fix dropped the `currentPlayerSeat > 0` clause
+   * outright, which fixed the blink and introduced a worse defect: with
+   * `0 !== heroSeat` always true, the bar rendered through the entire
+   * HAND_COMPLETE hold (2.1-3.5s of pot push and winner presentation) and
+   * through an all-in runout, offering pre-actions that could never be armed.
+   * `isHandInProgress` does not save you - it is `boardStage !== 'waiting'`
+   * (see its assignment), so it stays TRUE through showdown and the whole
+   * hold, and HAND_COMPLETE sets `currentPlayerSeat: 0` without clearing it.
+   *
+   * Two mechanisms, because there are two different silences:
+   *
+   *   `handSettling` is EXACT. Set at HAND_COMPLETE, cleared at HAND_STARTED.
+   *   The end of a hand is an event the engine tells us about, so it is read
+   *   from that event rather than inferred from a clock.
+   *
+   *   `actorGapBridged` is BOUNDED. Between two actors the seat is 0 for one
+   *   engine round trip; there is no event for "the next actor is being
+   *   decided", so this holds the bar for a window that is long enough to
+   *   cover the gap and short enough that any OTHER silence - a runout, a
+   *   stall - gives up quickly instead of lying for the rest of the hand.
+   */
+  const [actorGapBridged, setActorGapBridged] = useState(false);
+  useEffect(() => {
+    if (tableState.currentPlayerSeat > 0 || !tableState.isHandInProgress) {
+      setActorGapBridged(false);
+      return;
+    }
+    setActorGapBridged(true);
+    const t = window.setTimeout(() => setActorGapBridged(false), PRE_ACTION_GAP_BRIDGE_MS);
+    return () => window.clearTimeout(t);
+  }, [tableState.currentPlayerSeat, tableState.isHandInProgress]);
+
+  /** True while a turn is still to be taken by somebody at this table. */
+  const handStillTakingAction =
+    tableState.isHandInProgress &&
+    !handSettling &&
+    (tableState.currentPlayerSeat > 0 || actorGapBridged);
+
   const [preActionOverdue, setPreActionOverdue] = useState(false);
   useEffect(() => {
     if (!awaitingPreActionExec) {
@@ -20760,6 +20952,70 @@ export default function TablePage({
     setShowWaitList(true);
   }, [loadWaitlist]);
 
+  /**
+   * ── IS THERE ACTUALLY A SEAT AT THIS TABLE? (Dan 2026-09-07, item 9) ──────
+   *
+   * The spectator footer told every viewer to "Tap An Open Seat To Join"
+   * whether or not one existed, and CashClusterHUD simultaneously offered a
+   * chair that belonged to a different table in the cluster. Neither consulted
+   * the felt in front of the player.
+   *
+   * `maxPlayers` is the ring size the seat layout is drawn from
+   * (seatLayoutFor), so counting occupied seats against it is the same
+   * arithmetic the felt itself uses — no second source of truth about how big
+   * this table is.
+   *
+   * FAIL TOWARDS "LOOK FOR YOURSELF". A table whose ring size has not resolved
+   * yet reports 0 occupied out of a default, which reads as open, and the
+   * player is invited to tap a seat that will simply do nothing if it is
+   * taken. The opposite failure - telling a player a live table is full and
+   * offering a waiting list they do not need - is the one that loses a seat,
+   * so the "full" branch requires a ring size we actually have.
+   */
+  const spectatorSeatState = useMemo<'open-here' | 'no-seats-here'>(() => {
+    const ring = tableState.maxPlayers ?? 0;
+    if (ring <= 0) return 'open-here';
+    /* OCCUPIED IS NOT THE SAME QUESTION AS UNAVAILABLE, and the first version
+       of this asked the wrong one. `players.filter(Boolean)` counts a seat
+       held by somebody sitting out, waiting for the big blind, or holding a
+       reserved seat-first chair - all of which are seats a spectator cannot
+       take, so counting them is right - but it ALSO has to agree with what the
+       felt is showing. SeatSlot draws a tappable SIT coin for a null seat and
+       an inert EMPTY coin otherwise, so "a seat the player can see and tap" is
+       exactly a null entry in this array. Counting the same thing the felt
+       counts is what keeps the footer's sentence true of the picture above
+       it. */
+    const occupied = tableState.players.filter(Boolean).length;
+    return occupied >= ring ? 'no-seats-here' : 'open-here';
+  }, [tableState.maxPlayers, tableState.players]);
+
+  /** Hero's own place in the queue, or null when they are not on it. */
+  const heroWaitlistPosition = useMemo<number | null>(() => {
+    if (!userId) return null;
+    const mine = waitListPlayers.find((w) => w.playerId === userId);
+    return mine ? mine.position : null;
+  }, [waitListPlayers, userId]);
+
+  /* The footer can offer the list, so it needs to KNOW the list — otherwise a
+     player already queued is invited to join a queue they are in.
+
+     AND IT HAS TO KEEP KNOWING IT. The first version read the queue once, on
+     the transition into 'no-seats-here', and the footer then printed
+     "#3 Of 7" for as long as the table stayed full — a frozen position and a
+     frozen total on the one screen a queued player is watching precisely
+     because they want to see it move. That is the same defect Dan raised item
+     9 about: a display that is not true.
+
+     A hand boundary is the honest tick. Seats change when hands end, the
+     table already re-renders then, and it costs one read per hand rather than
+     a timer of its own — no polling loop, nothing running while nothing is
+     happening. */
+  useEffect(() => {
+    if (spectatorSeatState !== 'no-seats-here') return;
+    if (tableState.heroSeat > 0) return;
+    void loadWaitlist();
+  }, [spectatorSeatState, tableState.heroSeat, tableState.handNumber, loadWaitlist]);
+
   // P2-1 FIX: Pre-action auto-execution is server-owned (Bible V8 §4.15). The
   // client's delayed executor was removed: it ran ~100ms after the turn
   // arrived and re-submitted the same action the server had already
@@ -21165,6 +21421,16 @@ export default function TablePage({
           A takeover, like the chest: it happens before the cards and it is the
           reason the player opened a Spin. Server-decided, identical on every
           seat. */}
+      {/* Dan 2026-09-07, 7D. Beside the Spins reveal because it is the same
+          kind of moment and shares its drawing and timing primitives; one
+          z-index lower, so a real Spins draw always wins if the two coincide.
+          `contained` for the reason SpinWheel takes it: a fixed overlay in the
+          multi-table grid would dim four felts for one table's bomb. */}
+      <BombPotWheel
+        handsAway={bombWheelHands}
+        contained={isMultiTable}
+        onDone={() => setBombWheelHands(null)}
+      />
       <SpinWheel
         data={spinDraw}
         contained={isMultiTable}
@@ -21766,6 +22032,9 @@ export default function TablePage({
                   status={engineWsStatus}
                   isActive={isActive}
                   authRefused={engineRefusedAuth}
+                  /* A dealt hand number proves the felt is showing real state,
+                     which silences 'connecting' — see the prop's own doc. */
+                  hasLiveState={(tableState.handNumber ?? 0) > 0}
                 />
                 {/* The engine's verdict on THIS seat's presence, on the same
                     line. Defers to the socket banner whenever the socket is
@@ -21889,82 +22158,101 @@ export default function TablePage({
                          .table-brand__hand in TablePage.css). */
                       return (
                         <>
+                          {/* ── LINE 1: WHO THIS TABLE BELONGS TO ────────────
+                              Dan 2026-09-07, 7A: "LINE ONE UNDER SMARTER.POKER
+                              IS THE CLUB NAME AND THE UNION NAME, (NEVER
+                              ABBREVIATE ANY NAME, THEY NEED TO BE FULLY SPELT
+                              OUT ON DESK TOP AND MOBILE (NEVER USE ... IT CAN
+                              EXCEED THE LENGTH OF SMARTER.POKER)"
+
+                              So this row alone opts out of the masthead's
+                              ellipsis and out of its width box - see
+                              .table-brand__line--identity in TablePage.css.
+                              "MIDWAY U..." is not a shorter name, it is a
+                              wrong one, and a club paying to be on this felt
+                              should not be truncated to fit a wordmark. */}
                           {(tableState.clubName || tableState.unionName) && (
-                            <span className="table-brand__line">
+                            <span className="table-brand__line table-brand__line--identity">
                               <span className="table-brand__club">
                                 {tableState.clubName}
                                 {tableState.unionName && (
                                   <span className="table-brand__union">
-                                    {tableState.clubName ? ' - ' : ''}
+                                    {tableState.clubName ? ' · ' : ''}
                                     {tableState.unionName}
                                   </span>
                                 )}
                               </span>
                             </span>
                           )}
-                          {/* Dan 2026-09-05: "THE GAME NAME AND BLINDS ARE WAY
-                              TOO SMALL FONT." Line 2 is now the game and the
-                              blinds alone, twice the size of the club line;
-                              the hand number moves to its own row below so it
-                              still can never be cut off (2026-08-26 item 5). */}
+                          {/* ── LINE 2: THE GAME, ON ONE LINE ────────────────
+                              Dan 2026-09-07, 7B: "LINE TWO SHOULD HAVE THE
+                              GAME TYPE 'CLASSIC, ACTION, MADNESS' AND THEN THE
+                              GAME AND STAKES. (SO 'ACTION PLO4 2/5' ALL ON ONE
+                              LINE, NOT STACKED. IF ITS AN ACTION OR MADNESS
+                              GAME IT SHOULD HAVE '+ SB ANTE OR + BB ANTE'
+                              ADDED TO THE STAKES."
+
+                              This replaces two stacked rows (style on its own
+                              line above the stakes, from 2026-09-04) with one.
+
+                              ON THE ANTE WORDING: the engine models an ante as
+                              per_player or big_blind (ServerTableEngine
+                              .anteSnapshotFields), and there is no small-blind
+                              ante anywhere in the schema. big_blind prints
+                              "+ BB Ante"; per_player is every seat, so calling
+                              it either blind would be a lie and it prints
+                              "+ Ante". If SB antes are a real format here they
+                              need a column before they can be a label. */}
                           <span className="table-brand__line table-brand__line--level">
                             <span className="table-brand__game">
+                              {tableState.gameStyle ? `${tableState.gameStyle} ` : ''}
                               {gameShort} {tableState.blinds || '1/2'}
+                              {tableState.ante > 0 &&
+                                (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
                             </span>
                           </span>
-                          {/* THE GAME STYLE (Dan 2026-09-04): "IF THE GAME IS
-                              CLASSIC, ACTION OR MADNESS, IT MUST SAY IT ON THE
-                              TABLE UNDER THE BLINDS." */}
-                          {tableState.gameStyle && (
-                            <span className="table-brand__line table-brand__line--style">
-                              <span className="table-brand__style">{tableState.gameStyle}</span>
-                            </span>
-                          )}
-                          {/* THE RULES OF THE GAME (Dan 2026-09-04/05: "ANTES
-                              ... ARE NOT DISPLAYING"; "IF THEY HAVE AN ANTE OR
-                              VPIP REQUIREMENT THAT SHOULD ALSO BE ON THE
-                              TABLE"). One row, in chips and percent, the way a
-                              card room's placard prints it. Absent on a table
-                              with neither. */}
-                          {(tableState.ante > 0 || tableState.vpipFloor != null) && (
-                            <span className="table-brand__line table-brand__line--rules">
-                              {tableState.ante > 0 && (
-                                <span className="table-brand__ante">
-                                  Ante {formatChipFigure(tableState.ante)}
-                                </span>
-                              )}
-                              {tableState.ante > 0 && tableState.vpipFloor != null && (
-                                <span className="table-brand__rules-sep">{'\u00B7'}</span>
-                              )}
-                              {tableState.vpipFloor != null && (
-                                <span className="table-brand__vpip">
-                                  VPIP {tableState.vpipFloor}% Min
-                                  {tableState.vpipWindow
-                                    ? ` \u00B7 ${tableState.vpipWindow} Hands`
-                                    : ''}
-                                </span>
-                              )}
-                            </span>
-                          )}
-                          {/* WHAT THIS TABLE IS PLAYING FOR (BBJ phase 3.3).
-                              A card room prints the jackpot on the placard,
-                              and until now the only way to see it here was to
-                              open the jackpot widget. It is the reason the
-                              drop comes off every raked pot, so it belongs
-                              beside the stakes that produce it.
+                          {/* \u2500\u2500 LINE 3: THE ONE HOUSE RULE THAT CHANGES PLAY \u2500
+                              Dan 2026-09-07, 7C: "YOU HAVE WEIRD TEXT WHERE
+                              THE GAME DYNAMICS ARE, VPIP 30% (FOR ACTION AND
+                              50% FOR MADNESS) IS ALL THAT SHOULD BE THERE (NO
+                              NEED FOR ANYTHING ELSE ABOUT HANDS)"
 
-                              Only when there IS one: a club with no jackpot,
-                              or a figure not yet loaded, prints nothing rather
-                              than "Playing For $0.00", which would read as a
-                              promise of nothing on a table that is quietly
-                              taking a drop. */}
-                          {bbjAmount > 0 && (
-                            <span className="table-brand__line table-brand__line--jackpot">
-                              <span className="table-brand__jackpot">
-                                Playing For ${money(bbjAmount)}
+                              Three things left this row. The ante moved up to
+                              the stakes on line 2 where he asked for it, so
+                              printing it twice is out. The measurement window
+                              ("\u00B7 10 Hands") is an implementation detail of how
+                              the floor is enforced, not a rule anyone plays
+                              differently for. And "Min" stays because the
+                              number is a FLOOR, not the table average - a
+                              player who reads it as a stat has misread the
+                              game they just sat in.
+
+                              A Classic table has no VPIP floor and so prints
+                              no row at all, which is what makes the row mean
+                              something on the tables that do. */}
+                          {tableState.vpipFloor != null && (
+                            <span className="table-brand__line table-brand__line--rules">
+                              <span className="table-brand__vpip">
+                                VPIP {tableState.vpipFloor}% Min
                               </span>
                             </span>
                           )}
+                          {/* THE JACKPOT ROW IS GONE (Dan 2026-09-07, item 6).
+                              "YOU'VE ADDED THE BOMBPOT TOTAL TO ALL OF THE
+                              TABLES, THAT SHOULD NEVER BE THERE."
+
+                              He is describing this line. It was the BAD BEAT
+                              JACKPOT, not the bomb pot (BBJ phase 3.3,
+                              2026-09-05) - and the reason it read as a stray
+                              number is that the SAME figure is already on
+                              screen, in the BAD BEAT JACKPOT pill above the
+                              table, four rows higher. The felt was printing
+                              one club's jackpot twice and calling it two
+                              different things.
+                              The pill stays; it is the one that says what the
+                              number is. If the placard idea comes back it
+                              belongs in the jackpot widget, not on the felt
+                              between the stakes and the hand number. */}
                           {(tableState.handNumber ?? 0) > 0 && (
                             <span className="table-brand__line table-brand__line--hand">
                               <span className="table-brand__hand">
@@ -23413,23 +23701,64 @@ export default function TablePage({
             </span>
           </div>
         ) : !tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (
-          <div className="spectator-footer-bar">
+          /* ── THE FOOTER TELLS THE TRUTH ABOUT *THIS* TABLE (Dan 2026-09-07,
+                item 9) ──────────────────────────────────────────────────────
+             "THE 'CHAIR OPEN, TAKE A SEAT' SHOULD BE ON THE BOTTOM, WHERE
+              'SPECTATING, TAP AN OPEN SEAT TO JOIN' IS, BUT THESE AREN'T TRUE
+              AND THE DISPLAYS NEED TO BE DYNAMIC AND SMART... THERE CURRENTLY
+              ISN'T A SEAT OPEN IN THIS GAME, SO IT SHOULD SAY JOIN THE WAITING
+              LIST"
+
+             Two separate wrongs in his screenshot. CashClusterHUD's floating
+             "Chair Open: Take A Seat" was computing `chairOpen` across every
+             table in the CLUSTER, so a free seat two tables away invited him
+             to sit at a full one — that is fixed at its source in
+             CashClusterHUD. And this line invited a tap on an open seat
+             without ever checking whether one existed.
+
+             Both said their piece at once, in opposite corners, and neither
+             was about the table on screen. So there is one line now, at the
+             bottom, and it counts the seats in front of it. */
+          <div
+            className="spectator-footer-bar"
+            data-state={spectatorSeatState}
+            data-testid="spectator-footer-bar"
+          >
             <span className="spectator-footer-bar__label">
-              {/* An MTT table has no seat a spectator may take — `canSit` is
-                  false for every one of them (see the SeatSlot `canSit` prop
-                  below), so telling them to tap one is an instruction the same
-                  screen refuses. Only a table that actually sells seats gets
-                  the invitation. */}
-              {tableState.isTournament && !seatFirstBuyIn
-                ? 'Spectating'
-                : /* Seat-first: carry the live fill state so a spectator can
-                     see how close the game is to firing without counting
-                     avatars (Dan 2026-08-28 polish pass). The roster
-                     live-sync keeps players[] current pre-start, so this
-                     number moves the moment a seat sells. */
-                  seatFirstBuyIn
-                  ? `Spectating, Tap An Open Seat To Join · ${tableState.players.filter(Boolean).length} Of ${seatFirstBuyIn.seats} Seats Taken`
-                  : 'Spectating, Tap An Open Seat To Join'}
+              {spectatorSeatState === 'no-seats-here' ? (
+                /* A button, not a sentence: "join the waiting list" is an
+                   action he asked for, and the waitlist modal is already
+                   built and wired (handleOpenWaitlist). Telling a player a
+                   table is full and leaving them to find the hamburger menu
+                   is how the old copy ended up lying instead. */
+                <button
+                  type="button"
+                  className="spectator-footer-bar__cta"
+                  onClick={handleOpenWaitlist}
+                >
+                  {heroWaitlistPosition != null
+                    ? `On The Waiting List · #${heroWaitlistPosition} Of ${waitListPlayers.length}`
+                    : 'Table Full · Join The Waiting List'}
+                </button>
+              ) : (
+                <>
+                  {/* An MTT table has no seat a spectator may take — `canSit`
+                      is false for every one of them (see the SeatSlot `canSit`
+                      prop below), so telling them to tap one is an instruction
+                      the same screen refuses. Only a table that actually sells
+                      seats gets the invitation. */}
+                  {tableState.isTournament && !seatFirstBuyIn
+                    ? 'Spectating'
+                    : /* Seat-first: carry the live fill state so a spectator
+                         can see how close the game is to firing without
+                         counting avatars (Dan 2026-08-28 polish pass). The
+                         roster live-sync keeps players[] current pre-start, so
+                         this number moves the moment a seat sells. */
+                      seatFirstBuyIn
+                      ? `Spectating, Tap An Open Seat To Join · ${tableState.players.filter(Boolean).length} Of ${seatFirstBuyIn.seats} Seats Taken`
+                      : 'Spectating, Tap An Open Seat To Join'}
+                </>
+              )}
             </span>
           </div>
         ) : !tableState.players.some((p) => p?.isHero) &&
@@ -23941,12 +24270,43 @@ export default function TablePage({
 
             {/* ─── PRE-ACTION BAR — Show when hero is seated AND not their turn.
                  2026-04-14 fix: also require heroSeat > 0 so observers (heroSeat=0)
-                 don't see the pre-action bar; and require currentPlayerSeat to be
-                 a real player — if 0 (transient between hands), hide the bar so
-                 it doesn't flicker against the ActionPanel during the same window. */}
-            {tableState.isHandInProgress &&
+                 don't see the pre-action bar.
+
+                 ═══ AND IT NO LONGER ASKS WHETHER ANYBODY IS ON THE CLOCK ═══
+                 Dan 2026-09-07, verbatim: "THE ACTION TAB CONSTANTLY DISAPPEARS
+                 AND REAPPEARS ON THE BOTTOM, WHEN ACTION MOVES, EVEN IF THE
+                 ACTION HAS NOT CHANGED ... PRE ACTION SELECTOR SHOULD STAY ON
+                 THE BOTTOM, AND DYNAMICALLY CHANGE IF THE ACTION CHANGES, NOT
+                 KEEP RE APPEARING EACH TIME."
+
+                 This gate used to carry `currentPlayerSeat > 0`, and that one
+                 clause is the whole bug. EVERY action by EVERY player blanks the
+                 seat before the next one is known - `handleHandEvent` does it on
+                 the acting seat (search `currentPlayerSeat: 0`), and so does the
+                 hero's own optimistic apply - so the live value goes
+                 `seat N -> 0 -> seat M` on every single action at the table.
+                 With `> 0` in the gate the bar unmounted in that gap and
+                 remounted a moment later, replaying its 300ms preActionCrossFade
+                 entrance. Nothing about the hero's options had changed; the bar
+                 was blinking at the reconciler.
+
+                 CORRECTED THE SAME DAY. The first version of this fix simply
+                 deleted the clause, and `0 !== heroSeat` is true in two very
+                 different situations: between two actors (where the bar
+                 belongs) and after the hand has stopped taking action (where
+                 it does not). `isHandInProgress` does not separate them - it
+                 is `boardStage !== 'waiting'`, so it stays true through
+                 showdown and the whole 2.1-3.5s HAND_COMPLETE hold, and
+                 HAND_COMPLETE blanks the seat without clearing it. The bar
+                 sat over every winner presentation and every all-in runout,
+                 offering pre-actions that could never be armed. A blink traded
+                 for a persistent lie is not a fix.
+
+                 `handStillTakingAction` is the honest question - see it above:
+                 an EXACT settling flag off the engine's own HAND_COMPLETE, and
+                 a BOUNDED bridge for the one silence that has no event. */}
+            {handStillTakingAction &&
               tableState.heroSeat > 0 &&
-              tableState.currentPlayerSeat > 0 &&
               tableState.currentPlayerSeat !== tableState.heroSeat &&
               /* Dan 2026-04-17: after hero folds, hide PreActionBar — the
                  "weird lingering bar" bug. Folded hero has no pre-turn action. */

@@ -43,9 +43,23 @@ groups:
         # the hour() clause was unsatisfiable: `hour() >= 13 and hour() < 6`
         # is never true. Both corrected; see EngineHandsStopped in
         # engine-freeze-rules.yml for the always-on variant.
+        # 2026-09-07: carries the break guard now. CLAUDE.md 13 rule 6 -
+        # "fleet-level alert rules carry the break guard, or they page hourly
+        # about a stop we scheduled". This one never had it, and only escaped
+        # paging hourly because `poker_hands_dealt_total` was pinned at 100 and
+        # `increase(...)` was permanently 0, so the alert was ALSO permanently
+        # true and long since muted. Both halves are fixed; see the long note
+        # on EngineHandsStopped in engine-freeze-rules.yml for why the
+        # threshold stays at zero.
         expr: |
           sum(increase(poker_hands_dealt_total[5m])) == 0
           and sum(poker_active_players) > 1
+          # `unless on()`, not a bare `unless`: this expression aggregates its
+          # left side away from {job, instance}, and `unless` matches on the
+          # EXACT label set - so a plain one finds no matching series and
+          # guards nothing. alert-rules.yml's engine-core group already says
+          # this in as many words; these three had it wrong.
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: critical
@@ -56,20 +70,57 @@ groups:
             No hands played during peak hours. Likely the dealer tick is
             blocked. Check engine-01 logs and pm2 list.
 
+            A TOTAL stop only. An engine that is crawling rather than stopped
+            is EngineFleetThroughputCollapsed.
+
       - alert: EngineTableCountAnomaly
-        # If the active table count drops more than 50% from the 1h baseline
-        # we probably lost a shard or the lobby is failing to promote tables.
+        # If the active table count drops sharply from the 1h baseline we
+        # probably lost a shard or the lobby is failing to promote tables.
+        #
+        # ── 0.5 WAS NEVER DERIVED, AND IT WAS BOTH TOO LOOSE AND USELESS ────
+        # (2026-09-07)
+        #
+        # Until today `poker_active_tables` answered `1` on a fleet of 272,
+        # because /metrics emitted that gauge once per table engine with no
+        # label and Prometheus kept one arbitrary sample. So this expression
+        # compared 1 with 1 and COULD NOT FIRE, ever. The metric is fleet-wide
+        # now (EngineTelemetry.renderFleetMetrics), which means this threshold
+        # is about to be load-bearing for the first time and had to be measured
+        # before it could be trusted.
+        #
+        # Hour-over-hour ratio of mean dealing tables, 14 days, break window
+        # excluded, 227 comparisons:
+        #
+        #     min 0.236 | p01 0.440 | p05 0.700 | p10 0.806 | p50 1.000
+        #
+        #     below 0.5 → 3 of 227      below 0.6 → 5      below 0.7 → 11
+        #
+        # At 0.5 this would page roughly once every five days on ordinary
+        # diurnal traffic. 0.4 sits just under p01 and fires on 1 of 227 — a
+        # genuine step change, which is what "we lost a shard" looks like.
+        #
+        # AND IT IS NOT THE FLEET-COLLAPSE DETECTOR, whatever its name suggests.
+        # On 2026-09-07 the 04:00 hour averaged 414 tables against 829 the hour
+        # before: a ratio of exactly 0.50, which is not < 0.50. It would have
+        # missed the incident at the old threshold and misses it at the new one,
+        # because table COUNT barely moved while throughput fell 80%. That case
+        # belongs to EngineFleetThroughputCollapsed and EngineCoreSaturated.
         expr: |
-          poker_active_tables < 0.5 * avg_over_time(poker_active_tables[1h] offset 1h)
+          poker_active_tables < 0.4 * avg_over_time(poker_active_tables[1h] offset 1h)
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 15m
         labels:
           severity: warning
           component: engine
         annotations:
-          summary: 'Active table count dropped >50% vs 1h baseline'
+          summary: 'Active table count dropped >60% vs 1h baseline'
           description: |
             {{ $labels.instance }} reports {{ $value }} tables. Baseline was
             much higher. Investigate lobby.promote failures.
+
+            This detects the fleet SHRINKING. It does not detect a fleet that
+            is the right size and dealing slowly - that is
+            EngineFleetThroughputCollapsed.
 
   # ═══════════════════════════════════════════════════════════════════
   # RECOVERED FROM engine-01, 2026-09-06 (Realtime Programme phase 7).

@@ -264,6 +264,8 @@ export interface TableModalsLayerProps {
     tablePlayerCount: number;
     qualifyingLabel?: string;
     heroShare?: number;
+    /** BBJ phase 6: 'mini' is the flat second tier out of the backup reserve. */
+    kind?: 'main' | 'mini';
   } | null;
   onBBJCelebrationComplete: () => void;
 
@@ -992,6 +994,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           tablePlayerCount={bbjCelebrationData.tablePlayerCount}
           qualifyingLabel={bbjCelebrationData.qualifyingLabel}
           heroShare={bbjCelebrationData.heroShare}
+          kind={bbjCelebrationData.kind}
           /* Audit 2026-08-25 (multi-table): a BBJ hit at a BACKGROUND table fired
              a 10-second fanfare plus a reveal sting over whatever table the
              player was actually looking at. `display: none` hides the overlay;

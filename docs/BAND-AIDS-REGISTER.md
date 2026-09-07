@@ -252,17 +252,50 @@ start.
 it plainly: _"Recovered N unbanked rake hand(s) ... (engine did not survive to
 bank them)"_. **22 fires in 7 days, newest today 08:52.**
 
-**Root cause, named.** The engine takes rake from the pot and banks it in a
-SEPARATE step. Between the two it can die — and with an hourly `:55` restart it
-reliably will.
+**Root cause, named — CORRECTED 2026-09-07, and it was not what this row said.**
+The paragraph below used to read "the engine takes rake from the pot and banks
+it in a SEPARATE step. Between the two it can die — and with an hourly `:55`
+restart it reliably will." That is a good story and the measurement does not
+support it: the orphans do NOT cluster at `:55` (the `:55` five-minute bucket
+has **zero** of them, because play is parked), and the engine surviving is not
+the variable.
 
-**The hard fix.** Taking the rake and banking it are one write. The pot cannot
-be reduced by a fee that has not landed; if the bank write fails the pot is not
-raked. This is a two-phase problem with a one-phase answer available: bank the
-fee in the same statement that removes it from the pot.
+What was actually happening, read from rows on 2026-09-07:
+
+`hand_history.id` defaulted to `gen_random_uuid()`, so settlement could not know
+the hand's identity until the INSERT came back. When that insert was slow or
+failed — 143 of 11,485 hands in two hours landed more than 30 seconds after
+`ended_at`, 66 of them over two minutes, worst 252s — the hand went to the retry
+queue and the rake was banked with **`p_hand_id => NULL`**. That one null cost
+three separate things:
+
+- **nobody earned.** `atomic_distribute_rake` writes `rake_attributions` only
+  `IF v_first_claim AND p_hand_id IS NOT NULL`. 173 cash hands in 24 hours, and
+  **zero** attribution rows between them: no VIP points, no agent or super-agent
+  commission, no rakeback basis, for every player at those tables (10.5);
+- **the unique index was off.** `uq_rake_records_hand_id` is `UNIQUE (hand_id)
+WHERE hand_id IS NOT NULL`. 36 hands in seven days carried two or three copies;
+- **the club was paid twice.** `v_leg_key` is `COALESCE(p_hand_id,
+md5('rake:'||table||':'||hand_number))`, so the live call and this row's own
+  re-drive took different keys and `rake_distribution_legs` deduped neither.
+  99 hands, 166.38 chips of rake and 26.18 of BBJ drop that no pot ever paid.
+
+**The hard fix — SHIPPED 2026-09-07.** `ServerTableEngineSettlement` mints the
+hand's uuid itself before anything is written and gives the same value to the
+`hand_history` insert, to `atomic_distribute_rake` and to the BBJ contribution.
+The row then lands under that id in line, from the queue minutes later, or never
+— and the booking names the same hand either way. Pinned by
+`server/src/engine/aHandNamesItselfBeforeItBanksItsRake.law.test.ts`. The club
+accumulators were corrected by `20260907200330`; the doubled VIP points stay
+with the players (10.9 rule 3, absorbed and reported).
+
+Note this makes the pot/bank atomicity above **unnecessary**, not merely
+deferred: the second write is now idempotent on the hand, so a death between the
+two steps is repaired by the next call rather than by a job.
 
 **Delete when:** `I7_raked_hand_never_banked` returns zero for 30 days with the
-repair job **off**.
+repair job **off**. Both jobs are now expected to find nothing; a fire is a P0
+that says the mint regressed.
 
 ---
 

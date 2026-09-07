@@ -1140,14 +1140,29 @@ function CommunityCardsComponent({
                and river that appear after the flop." They stay removed: an
                undealt slot DRAWS nothing - no dashed outline, no card shape.
 
-               RIVER SQUEEZE 2026-09-04 (spec 11): it does keep its GEOMETRY.
-               With nothing at all in the slot the centred row slid left by
-               half a card when the turn landed and again on the river, the
-               stage separators (60% / 80% of the row) only lined up once all
-               five were out, and the community area's own height changed
-               street to street. The reserve is visibility:hidden, so the
-               river materialises in a slot that was always there and nothing
-               else on the felt moves to make room. */
+               ── AND AS OF 2026-09-07 IT TAKES NO SPACE EITHER (item 11) ────
+               "THE BOARDS AREN'T DYNAMICALLY SHIFTING ... THEY USED TO START
+                OFF CENTER ON THE FLOP, AND SHIFT LEFT AS THE TURN AND RIVER
+                CAME OUT, NOW THEY ARE JUST STARTING ALL TO THE LEFT."
+
+               He is describing the 2026-09-04 reserve, and he is right about
+               what it looks like. Holding five fixed positions puts a flop in
+               the LEFT THREE of them, so a three-card board sits a full card's
+               width left of the felt's centreline and looks misplaced rather
+               than incomplete. The slide the reserve was added to prevent is
+               the thing he is asking for: a row centred on the cards that
+               ARE out, drifting left as each new one is appended.
+
+               `--cc-slide-reserve` decides which behaviour ships, so the
+               reserve is one CSS value away rather than a deleted branch.
+               What was traded to get the slide back:
+                 - the separators are positioned in CARD UNITS from the row's
+                   left edge (see --separator--flop), not in percentages, so
+                   they follow the cards and stay correct at 3, 4 and 5;
+                 - the row's HEIGHT is unchanged either way, since every slot
+                   is one card tall and the flop always fills three;
+                 - the river still materialises in place, because the squeeze
+                   host is the card element itself, not the slot. */
             <div
               key={`reserve-${i}`}
               className="community-cards__slot-reserve"

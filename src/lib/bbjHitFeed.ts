@@ -64,6 +64,11 @@ interface BbjWinnerRow {
   winner_payout?: number | string;
   total_payout?: number | string;
   awarded_at?: string;
+  /**
+   * Which jackpot paid it (BBJ phase 6, 2026-09-07). Absent on every row
+   * written before the mini existed, which is why it defaults to main.
+   */
+  kind?: string | null;
 }
 
 interface PoolWatch {
@@ -99,6 +104,23 @@ async function enrich(poolId: string): Promise<Record<string, unknown> | null> {
 }
 
 async function announce(row: BbjWinnerRow, poolId: string): Promise<void> {
+  /* THE MINI DOES NOT TAKE OVER EVERY SCREEN ON THE PLATFORM (BBJ phase 6).
+     This feed drives BBJ_HIT_GLOBAL, and BBJHitAnnouncer turns that into a
+     full announcement on every page every player has open - which is right for
+     a jackpot that fires about once a fortnight and is measured in six figures.
+     A mini fires ABOUT FOUR TIMES A DAY for a few hundred chips. Announcing it
+     the same way would put a takeover on every screen every six hours, and an
+     alarm that is always on is an alarm that gets muted (CLAUDE.md 10.84) -
+     except here what gets muted is the real jackpot.
+
+     A mini is not hidden: it gets the full celebration AT ITS OWN TABLE from
+     the engine's `bbj_hit` event, it appears in the ticker, and it is listed
+     and badged on the Previous Winners page. It just does not interrupt
+     everybody else.
+
+     A row with no `kind` is a main jackpot - every row written before today. */
+  if ((row.kind || 'main') !== 'main') return;
+
   /* THE HIT IS REAL BEFORE ANY OF THIS RUNS. The row only exists because the
      payout transaction committed, so nothing below may decide not to announce
      - it can only decide how much it knows. A jackpot nobody saw is the

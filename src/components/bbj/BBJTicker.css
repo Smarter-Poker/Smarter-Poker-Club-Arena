@@ -111,3 +111,19 @@
     font-size: 18px;
   }
 }
+
+/* THE MINI MARKER (BBJ phase 6, 2026-09-07). The strip carries both tiers, and
+   a few hundred chips printed beside a five-figure jackpot with nothing to
+   separate them reads as the big one having paid almost nothing. Deliberately
+   quiet - it is a qualifier on the amount, not a second headline. */
+.bbj-ticker__hit-mini {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}

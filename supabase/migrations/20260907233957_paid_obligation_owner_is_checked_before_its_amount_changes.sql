@@ -330,4 +330,8 @@ BEGIN
 END;
 $function$;
 
+-- Explicitly preserve the existing service-only ACL on fresh installation.
+-- These ACL statements were separately applied as migration 20260907235228.
+REVOKE ALL ON FUNCTION public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid) TO service_role;
 COMMIT;

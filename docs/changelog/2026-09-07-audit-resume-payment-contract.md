@@ -17,3 +17,5 @@ The live settlement function increased amount_owed before rejecting a different 
 Both metrics isolation suites now pass: 25 tests. No assertions or time limits were weakened. Full server rerun and delivery verification remain pending.
 
 Full server verification completed successfully: 456 test files, 6,482 tests passed, exit 0. The metrics fixtures now explicitly simulate an unavailable database, as their assertions require. Root and server TypeScript checks and 48 shipped-invariant tests also passed. These results do not certify all 216 audit requirements or live end-to-end money behavior.
+
+The first push was correctly blocked by the static definer-authorization gate: the CREATE OR REPLACE preserved live permissions but did not carry an explicit fresh-install permission contract. The body migration now states the existing service-only ACL explicitly; those additional ACL statements were separately applied in migration 20260907235228 and mirrored in that file. Live ACL remains postgres/service_role only, anonymous/authenticated execution false, definition MD5 unchanged. No allowlist or hook bypass was used.

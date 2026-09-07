@@ -491,3 +491,57 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(hub.subscribe).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('engine resync failure isolation', () => {
+  const brokenResync = () => {
+    throw new Error('engine rebuilding');
+  };
+
+  it('still marks the player connected when initial private-state replay throws', async () => {
+    const onConnect = vi.fn();
+    const { server, hub } = makeServer({ onResync: brokenResync, onConnect });
+    const ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(hub.subscribe).toHaveBeenCalledOnce();
+    expect(onConnect).toHaveBeenCalledWith(T1, 'user-1');
+    ws.emitClose();
+  });
+
+  it('keeps a RESYNC error inside the transport and allows a later retry', async () => {
+    const onResync = vi
+      .fn()
+      .mockImplementationOnce(() => {})
+      .mockImplementationOnce(brokenResync);
+    const { server, hub } = makeServer({ onResync });
+    const ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(() => ws.emitMessage({ type: 'RESYNC', tableId: T1 })).not.toThrow();
+    ws.emitMessage({ type: 'RESYNC', tableId: T1 });
+    expect(hub.resync).toHaveBeenCalledTimes(2);
+    expect(onResync).toHaveBeenCalledTimes(3);
+    expect(ws.close).not.toHaveBeenCalled();
+    ws.emitClose();
+  });
+
+  it('does not reject an idempotent subscribe when private-state replay throws', async () => {
+    const { server, hub } = makeServer({ onResync: brokenResync });
+    const ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    const internal = server as unknown as {
+      connections: Map<unknown, unknown>;
+      handleMuxSubscribe: (conn: unknown, table: string) => Promise<void>;
+    };
+    await expect(
+      internal.handleMuxSubscribe(internal.connections.get(ws), T1)
+    ).resolves.toBeUndefined();
+    expect(hub.subscribe).toHaveBeenCalledOnce();
+    expect(hub.resync).toHaveBeenCalledOnce();
+    ws.emitClose();
+  });
+});

@@ -2,7 +2,9 @@
  * Atomic, in-memory loader for versioned solver-policy artifacts.
  *
  * File and database I/O happen during boot or background refresh. The action
- * clock only performs synchronous Map reads.
+ * clock only performs synchronous Map reads. Club Arena's production callers
+ * are the horse action path, the nightly solver-agreement score, and health;
+ * post-session analysis is owned by World Hub's canonical policy service.
  */
 
 import { readFileSync } from 'node:fs';
@@ -48,7 +50,6 @@ interface LoadState {
 }
 
 let externalByScenario = new Map<string, SolverPolicyAnswer>();
-let externalByKey = new Map<string, SolverPolicyAnswer>();
 let chartByLookup = new Map<string, SolverPolicyAnswer>();
 let externalState: LoadState = {
   configured: false,
@@ -165,14 +166,22 @@ function chartLookupKey(
   return `${gameType}|${villainAction}|${position}|${depth}`;
 }
 
+function chartScenarioHashParts(
+  gameType: string,
+  villainAction: string,
+  position: string,
+  depth: number
+): string {
+  return ['chart', gameType, villainAction, position, String(depth)].join('|');
+}
+
 function chartScenarioHash(row: ChartPolicyRow): string {
-  return [
-    'chart',
+  return chartScenarioHashParts(
     row.game_type,
     row.villain_action,
     row.hero_position,
-    String(row.stack_depth),
-  ].join('|');
+    row.stack_depth
+  );
 }
 
 function decisionKeyForChart(row: ChartPolicyRow): SolverPolicyDecisionKey {
@@ -386,23 +395,20 @@ export function createChartSolverPolicy(row: ChartPolicyRow): SolverPolicyAnswer
   return deepFreezeSolverPolicy(policy);
 }
 
-function buildPolicyIndexes(bundle: SolverPolicyArtifactBundle): {
-  byScenario: Map<string, SolverPolicyAnswer>;
-  byKey: Map<string, SolverPolicyAnswer>;
-} {
+function buildPolicyIndex(bundle: SolverPolicyArtifactBundle): Map<string, SolverPolicyAnswer> {
   const byScenario = new Map<string, SolverPolicyAnswer>();
-  const byKey = new Map<string, SolverPolicyAnswer>();
+  const decisionKeys = new Set<string>();
   for (const sourcePolicy of bundle.policies) {
     const policy = deepFreezeSolverPolicy(structuredClone(sourcePolicy));
     const scenario = policy.sourceArtifact.scenarioHash;
     const key = stableSolverPolicyJson(policy.key);
     if (scenario && byScenario.has(scenario))
       throw new Error(`duplicate_scenario_hash:${scenario}`);
-    if (byKey.has(key)) throw new Error('duplicate_decision_key');
+    if (decisionKeys.has(key)) throw new Error('duplicate_decision_key');
     if (scenario) byScenario.set(scenario, policy);
-    byKey.set(key, policy);
+    decisionKeys.add(key);
   }
-  return { byScenario, byKey };
+  return byScenario;
 }
 
 /** Validate the entire bundle before atomically replacing the live maps. */
@@ -412,9 +418,8 @@ export function replaceSolverPolicyArtifact(value: unknown): number {
     if (!validation.valid || !validation.bundle) {
       throw new Error(`invalid_solver_policy_artifact:${validation.errors.join(',')}`);
     }
-    const next = buildPolicyIndexes(validation.bundle);
-    externalByScenario = next.byScenario;
-    externalByKey = next.byKey;
+    const next = buildPolicyIndex(validation.bundle);
+    externalByScenario = next;
     externalState = {
       configured: true,
       count: validation.bundle.policies.length,
@@ -469,23 +474,16 @@ export function hydrateChartPolicyArtifact(rows: ChartPolicyRow[]): number {
   }
 }
 
-export function lookupSolverPolicy(args: {
-  scenarioHash?: string;
-  key?: SolverPolicyDecisionKey;
-}): SolverPolicyAnswer | null {
-  if (args.scenarioHash) {
-    const byScenario = externalByScenario.get(args.scenarioHash);
-    if (byScenario) return byScenario;
-  }
-  return args.key ? externalByKey.get(stableSolverPolicyJson(args.key)) || null : null;
-}
-
 export function lookupChartPolicy(args: {
   gameType: string;
   villainAction: string;
   position: string;
   depth: number;
 }): SolverPolicyAnswer | null {
+  const external = externalByScenario.get(
+    chartScenarioHashParts(args.gameType, args.villainAction, args.position, args.depth)
+  );
+  if (external?.kind === 'chart') return external;
   return (
     chartByLookup.get(
       chartLookupKey(args.gameType, args.villainAction, args.position, args.depth)
@@ -538,7 +536,6 @@ export function loadConfiguredSolverPolicyArtifact(): number {
   const filePath = process.env.SOLVER_POLICY_ARTIFACT_PATH;
   if (!filePath) {
     externalByScenario = new Map();
-    externalByKey = new Map();
     externalState = {
       configured: false,
       count: 0,
@@ -611,7 +608,6 @@ export function recordChartPolicyRefreshError(error: unknown): void {
 
 export function _clearSolverPolicyArtifactsForTests(): void {
   externalByScenario = new Map();
-  externalByKey = new Map();
   chartByLookup = new Map();
   externalState = {
     configured: false,

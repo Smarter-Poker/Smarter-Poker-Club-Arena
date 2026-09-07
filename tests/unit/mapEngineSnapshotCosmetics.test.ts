@@ -32,6 +32,25 @@ function makeSnapshot(players: unknown[]) {
   } as Parameters<typeof mapEngineSnapshot>[0];
 }
 
+describe('mapEngineSnapshot — anonymous table flag (2026-09-07)', () => {
+  it('reads is_anonymous true from the engine', () => {
+    const snap = makeSnapshot([]) as unknown as Record<string, unknown>;
+    snap.is_anonymous = true;
+    expect(
+      mapEngineSnapshot(snap as Parameters<typeof mapEngineSnapshot>[0], 'hero', 9).isAnonymous
+    ).toBe(true);
+  });
+
+  it("maps an absent or non-boolean field to false, so an older engine keeps today's behaviour", () => {
+    expect(mapEngineSnapshot(makeSnapshot([]), 'hero', 9).isAnonymous).toBe(false);
+    const snap = makeSnapshot([]) as unknown as Record<string, unknown>;
+    snap.is_anonymous = 'true';
+    expect(
+      mapEngineSnapshot(snap as Parameters<typeof mapEngineSnapshot>[0], 'hero', 9).isAnonymous
+    ).toBe(false);
+  });
+});
+
 describe('mapEngineSnapshot — avatar cosmetics', () => {
   it('carries equipped_frame and equipped_aura onto the seat', () => {
     const out = mapEngineSnapshot(

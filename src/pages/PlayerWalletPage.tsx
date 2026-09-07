@@ -43,7 +43,7 @@ import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
-import TransactionLedgerView from '../components/common/TransactionLedgerView';
+import ChipStatement from '../components/wallet/ChipStatement';
 import { DiamondService } from '../services/DiamondService';
 import { storeFetch } from './marketplace/marketplaceShared';
 import { diamondTxLabel } from '../components/wallet/DiamondWalletModal';
@@ -1451,11 +1451,16 @@ export default function PlayerWalletPage() {
               </h3>
               <TransactionHistory walletId={user.id} limit={50} />
             </section>
+            {/* Phase 7 (roadmap 9.5): a statement the player can AUDIT, not a
+                feed. The feed this replaces asked chip_ledger for legs where the
+                player was performed_by or to_entity_id, so every chip that LEFT
+                the player was invisible. The statement shows both directions and
+                the nightly reading the balance is checked against. */}
             <section className="vault-panel" aria-labelledby="audit-title">
               <h3 id="audit-title" className="vault-panel__title">
-                Chip Movement Audit Trail
+                Chip Statement
               </h3>
-              <TransactionLedgerView userId={user.id} limit={20} />
+              <ChipStatement scope="player" />
             </section>
           </div>
         )}

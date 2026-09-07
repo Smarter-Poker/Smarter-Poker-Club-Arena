@@ -24,3 +24,17 @@ coverage follows the JOURNAL (`fn_ca_ledger_day_manifest_backfill`, no third
 copy of the hash expression), that the recompute is ONE pass and the per-day
 loop cannot come back, that the answer carries what it could NOT check
 (`unattested`), and that the anchor raises and closes a named issue of its own.
+
+Extended again the same evening by the deep dive over both of the above
+(migration `the_attestation_restates_itself_and_never_outgrows_its_budget`):
+a sanctioned maintenance change to an attested day now RESTATES the manifest
+in its own transaction through the writer (statement-level triggers on
+`chip_ledger`), the manifest tables refuse a hand edit or a delete and the
+guard writes the restatement row itself; `chip_ledger` has an index on
+`created_at` (a per-day read was 30 s without it); the verifier re-reads days
+on a rotation under a 60 s wall-clock budget instead of one pass over a
+journal kept for ever (53 s under load against a 2-minute timeout), and its
+answer carries `deferred` and `oldest_check_age_days`; every day boundary is
+pinned to UTC; and the anchor's append step pushes with the estate's App
+token, because github-actions has opened zero pull requests here and the line
+would never have reached main.

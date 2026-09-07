@@ -1860,9 +1860,22 @@
   }
 
   .boardHeader {
-    align-items: flex-start;
+    align-items: stretch;
     flex-direction: column;
     gap: 14px;
+  }
+
+  .boardHeader > div,
+  .boardHeader h2,
+  .resetReadout {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .boardHeader h2,
+  .resetReadout > * {
+    overflow-wrap: anywhere;
   }
 
   .resetReadout {
@@ -3139,7 +3152,24 @@
   }
 
   .cardActions {
-    grid-template-columns: 1fr;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cardActions > *,
+  .missionActionButton,
+  .rerollButton {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .missionActionButton,
+  .rerollButton {
+    padding-inline: 10px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .claimButton,

@@ -313,6 +313,29 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
         const toastItems = Array.from(
           toastContainer?.querySelectorAll<HTMLElement>('.toast') || []
         );
+        const cardInnerOffenders = missionCards.flatMap((card) => {
+          const cardBounds = card.getBoundingClientRect();
+          return Array.from(
+            card.querySelectorAll<HTMLElement>(
+              'h3, p, button, [role="progressbar"], [data-mission-instrument]'
+            )
+          )
+            .filter((node) => {
+              const bounds = node.getBoundingClientRect();
+              return bounds.left < cardBounds.left - 1 || bounds.right > cardBounds.right + 1;
+            })
+            .map((node) => {
+              const bounds = node.getBoundingClientRect();
+              return {
+                element: node.tagName.toLowerCase(),
+                label: node.getAttribute('aria-label') || (node.textContent || '').trim(),
+                left: bounds.left,
+                right: bounds.right,
+                cardLeft: cardBounds.left,
+                cardRight: cardBounds.right,
+              };
+            });
+        });
         const headingBox = heading?.getBoundingClientRect();
         const tabBoxes = tabs.map((tab) => tab.getBoundingClientRect());
         const overlappingTabs = tabBoxes.some((box, index) =>
@@ -358,17 +381,7 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
               return childBounds.left >= bounds.left - 1 && childBounds.right <= bounds.right + 1;
             });
           }),
-          cardInnerNodesFit: missionCards.every((card) => {
-            const bounds = card.getBoundingClientRect();
-            return Array.from(
-              card.querySelectorAll<HTMLElement>(
-                'h3, p, button, [role="progressbar"], [data-mission-instrument]'
-              )
-            ).every((node) => {
-              const nodeBounds = node.getBoundingClientRect();
-              return nodeBounds.left >= bounds.left - 1 && nodeBounds.right <= bounds.right + 1;
-            });
-          }),
+          cardInnerOffenders,
           glyphsFitHousing: glyphs.every((glyph) => {
             const housing = glyph.parentElement?.getBoundingClientRect();
             const bounds = glyph.getBoundingClientRect();
@@ -409,7 +422,7 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
         cardToplinesFit: true,
         overflowingFrames: [],
         ornamentedFrameChildrenFit: true,
-        cardInnerNodesFit: true,
+        cardInnerOffenders: [],
         glyphsFitHousing: true,
         toastStackBounded: true,
         firstToastCloseVisible: true,
@@ -440,13 +453,30 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
           const bounds = group.getBoundingClientRect();
           return {
             groupInsideViewport: bounds.left >= -1 && bounds.right <= innerWidth + 1,
-            descendantsFit: Array.from(group.querySelectorAll<HTMLElement>('*')).every((node) => {
-              const nodeBounds = node.getBoundingClientRect();
-              return nodeBounds.left >= bounds.left - 1 && nodeBounds.right <= bounds.right + 1;
-            }),
+            descendantOffenders: Array.from(group.querySelectorAll<HTMLElement>('*'))
+              .filter((node) => {
+                const nodeBounds = node.getBoundingClientRect();
+                // SVG paint definitions (`defs`, gradients, and stops) have no
+                // rendered box and report a 0x0 rectangle at document origin.
+                // They power the live control icons but cannot overflow the
+                // confirmation. Keep checking every rendered HTML/SVG box.
+                if (nodeBounds.width === 0 && nodeBounds.height === 0) return false;
+                return nodeBounds.left < bounds.left - 1 || nodeBounds.right > bounds.right + 1;
+              })
+              .map((node) => {
+                const nodeBounds = node.getBoundingClientRect();
+                return {
+                  element: node.tagName.toLowerCase(),
+                  label: node.getAttribute('aria-label') || (node.textContent || '').trim(),
+                  left: nodeBounds.left,
+                  right: nodeBounds.right,
+                  groupLeft: bounds.left,
+                  groupRight: bounds.right,
+                };
+              }),
           };
         });
-        expect(confirmationFits).toEqual({ groupInsideViewport: true, descendantsFit: true });
+        expect(confirmationFits).toEqual({ groupInsideViewport: true, descendantOffenders: [] });
         await confirmation.getByRole('button', { name: 'Keep It' }).click();
         await expect(confirmation).toHaveCount(0);
       } else if ((await reroll.count()) > 0) {
@@ -508,17 +538,20 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
         documentOverflow:
           document.documentElement.scrollWidth - document.documentElement.clientWidth,
         surfaceInsideViewport: bounds.left >= -1 && bounds.right <= innerWidth + 1,
-        descendantsFit: Array.from(surface.querySelectorAll<HTMLElement>('*')).every((node) => {
-          const nodeBounds = node.getBoundingClientRect();
-          return nodeBounds.left >= bounds.left - 1 && nodeBounds.right <= bounds.right + 1;
-        }),
+        descendantOffenders: Array.from(surface.querySelectorAll<HTMLElement>('*'))
+          .filter((node) => {
+            const nodeBounds = node.getBoundingClientRect();
+            if (nodeBounds.width === 0 && nodeBounds.height === 0) return false;
+            return nodeBounds.left < bounds.left - 1 || nodeBounds.right > bounds.right + 1;
+          })
+          .map((node) => node.getAttribute('aria-label') || (node.textContent || '').trim()),
         retryTouchTarget: Boolean(retry && retry.width >= 44 && retry.height >= 44),
       };
     });
     expect(geometry).toEqual({
       documentOverflow: 0,
       surfaceInsideViewport: true,
-      descendantsFit: true,
+      descendantOffenders: [],
       retryTouchTarget: true,
     });
     economy.assertNone();

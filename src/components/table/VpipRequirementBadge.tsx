@@ -23,23 +23,27 @@
  * it - in particular the badge does NOT colour itself green or red by whether
  * the player is passing (spec §25).
  *
- * ── THE ONE PLACE THIS SPEC MEETS PRODUCTION, AND IT DISAGREES ──────────────
- * Spec §1 says the minimum is `30 | 50` and that anything else must "fail
- * visibly in development and log an error rather than silently inventing
- * another display state".
+ * ── §1's TWO VARIANTS ARE NOW TRUE OF THE DATABASE TOO (2026-09-07) ─────────
+ * When this was first written the spec and production disagreed: §1 allows
+ * only `30 | 50`, and live tables were running 35, 40, 60, 65 and 70. Dan:
+ * "vpip for action is supposed to be 30% and vpip for madness is 50%. we fixed
+ * and updated that a couple days ago."
  *
- * Live tables are not all 30 or 50. Dan's own screenshots in the same message
- * show "VPIP 40% MIN", and `fn_cash_vpip_status.required` returns whatever the
- * club configured. So a literal `throw` would take the felt down on every
- * table a club has set to 40.
+ * He was right that the DEFAULT was fixed - `fn_cash_template_defaults` has
+ * said classic 0 / action 30 / madness 50 since 2026-09-05. What had not
+ * happened is that every action and madness game was created the day BEFORE,
+ * and a game's `ruleset_snapshot` is written once at creation, so 54 games
+ * still carried the old numbers and `fn_cash_apply_ruleset` kept pushing them
+ * onto their tables. Migration 20260907190515 backfilled the snapshots and put
+ * the rule where it cannot drift again: a BEFORE trigger on `cash_games` that
+ * normalises the floor and window to the template on every write.
  *
- * This implements exactly what §1 asks for and no more: DEV throws, so the
- * mismatch is impossible to miss while building; production reports it once
- * and prints the REAL configured number. Printing the truth is not inventing a
- * display state - inventing one would be rounding 40 to "MIN 50%" and telling
- * a player they are failing a rule that does not exist. Which of the two has
- * to move (the component's contract, or the clubs' config) is a product
- * decision, and it is flagged rather than guessed.
+ * So the guard below is no longer a disagreement with production - it is a
+ * second assertion of the same rule, one layer out. It still does exactly what
+ * §1 asks: DEV throws, so a mismatch is impossible to miss while building;
+ * production reports once and prints the configured number rather than
+ * rounding it, because telling a player they are failing a rule nobody set is
+ * the one outcome worse than an odd-looking badge.
  */
 import React, { useEffect, useRef } from 'react';
 import { reportError } from '../../utils/errorReporter';

@@ -54,3 +54,19 @@ and complete authenticated production verification. Visible cash prewarming
 is bounded client speculation, not a claim that every table in the estate is
 subscribed by every browser. All-table server continuity remains a separate
 audit concern. Do not call this programme complete from the test counts alone.
+
+## Tournament Entry Follow-Up
+
+Tournament Tables now applies the same viewport preparation to actual open
+table IDs. Pointer, touch and keyboard focus prepare the chosen table. The
+shared requestObserveTable utility warms before OPEN_OBSERVE_TABLE and
+navigation, covering Ranking and other callers. TournamentAutoSeat starts
+preparation before emitting TABLE_SEATED. warmTable also loads the correct
+page chunks for all callers. Closed tournament rows are not prewarmed.
+
+The expanded test run passed 138 tests across five files, including ordering
+of observer preparation before the event and navigation, and refusal of empty
+IDs. TypeScript and targeted lint passed. The earlier full local build passed
+with source-map upload disabled; no approval guard was bypassed. The merge
+hook reformatted tests/shipped-invariants.test.ts without changing assertions.
+Authenticated browser verification and broader network soak checks remain open.

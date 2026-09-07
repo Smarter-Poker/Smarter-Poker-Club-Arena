@@ -124,6 +124,7 @@ async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
  */
 export function warmTable(tableId: string | null | undefined): void {
   if (!tableId) return;
+  preloadRoute(`/table/${tableId}`);
   const existing = entries.get(tableId);
   if (existing && Date.now() - existing.startedAt < SEATS_FRESH_MS) return;
   // Refresh roster data without tearing down a healthy speculative stream.
@@ -197,7 +198,7 @@ export function __resetTableWarmupForTests(): void {
   entries.clear();
 }
 
-/** Prepare the shared transport and visible cash tables as the lobby renders. */
+/** Prepare the shared transport and visible table IDs as a lobby renders. */
 export function observeLobbyTableWarmups(roots: HTMLElement[]): () => void {
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | null = null;

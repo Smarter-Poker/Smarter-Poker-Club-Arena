@@ -25,3 +25,12 @@ Verification: 67 focused tests passed, TypeScript and targeted ESLint passed.
 A subsequent public engine health sample reported running=true, 313 active
 tables, 281 hands in flight and zero stalled tables. This is a sampled server
 health result, not proof of browser entry performance.
+
+Release follow-up: the blocking phone squeeze CSS test mounted the actual
+application before replacing its body with a fixture, allowing asynchronous
+application startup to alter that fixture. It now fetches the built entry
+and referenced CSS through the request context and mounts them in a blank
+document with an explicit mobile viewport. Missing assets now fail clearly.
+All six phone squeeze browser checks pass against the local production assets,
+including geometry, layer lifetime, animation durations and reduced motion.
+No production CSS or animation thresholds were changed.

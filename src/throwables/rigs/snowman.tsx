@@ -218,8 +218,10 @@ function Payload({ uid }: RigProps) {
           was, lingers with a slow lobe shift 800-1733 (+400..+1333, raw
           1000-1933), then fades 1767-2200 (+1367..+1800, stretched past the
           reference's own ~2200 raw tail - see the file header). */}
-      <g className="thr-snowman__plume" transform="translate(0 -46)">
-        <Plume uid={uid} />
+      <g transform="translate(0 -46)">
+        <g className="thr-snowman__plume">
+          <Plume uid={uid} />
+        </g>
       </g>
 
       {/* 567 (+167, raw 767): specks spray sideways and upward from the

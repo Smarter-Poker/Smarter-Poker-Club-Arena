@@ -48,22 +48,31 @@ export const waterGunSpec: ThrowableSpec = {
   tier: 'free',
   category: 'objects',
   spawn: 'avatar-corner',
-  spawnMs: 100,
+  // RE-BASED 2026-09-07. The reference's "Launch frame L = f174" is the SPAWN
+  // frame - its own first table row is "Spawn at thrower 174-177" - and the
+  // flight does not begin until f178 = 133. Ten of video 1's twelve tables are
+  // labelled that way; the doc now says so at the top of each. Every number
+  // below is the catalogue's ms MINUS 133, so `at` is ms from LAUNCH as spec.ts
+  // requires, and `land` equals `flight.ms`, which is what the player actually
+  // mounts the payload at. The four timeline delays in water_gun.css moved by
+  // the same 33 ms, so the real-time behaviour is IDENTICAL - this corrects the
+  // record, not the animation.
+  spawnMs: 133,
   flight: { ms: 300, mode: 'straight', upright: true },
   arrival: 'blink-pop',
-  payload: { sizeU: 2.0, anchor: 'face', coversAvatar: true, ms: 3270 },
+  payload: { sizeU: 2.0, anchor: 'face', coversAvatar: true, ms: 3134 },
   beats: [
-    { at: 400, marker: 'land' },
-    { at: 767, marker: 'pull-back' },
-    { at: 933, marker: 'squirt' },
-    { at: 3433, marker: 'loop-end' },
-    { at: 3467, marker: 'cut' },
-    { at: 3567, marker: 'gun-out' },
+    { at: 300, marker: 'land' },
+    { at: 634, marker: 'pull-back' },
+    { at: 800, marker: 'squirt' },
+    { at: 3300, marker: 'loop-end' },
+    { at: 3334, marker: 'cut' },
+    { at: 3434, marker: 'gun-out' },
   ],
   audio: [
-    { at: 933, sample: 'squirt_start' },
-    { at: 933, sample: 'squirt_loop', loopUntil: 3433, gain: 0.8 },
-    { at: 3467, sample: 'drip', gain: 0.7 },
+    { at: 800, sample: 'squirt_start' },
+    { at: 800, sample: 'squirt_loop', loopUntil: 3300, gain: 0.8 },
+    { at: 3334, sample: 'drip', gain: 0.7 },
   ],
   reference: { video: 1, launchFrame: 174, throw: 'THROW 1' },
 };
@@ -349,7 +358,7 @@ function Payload({ uid }: RigProps) {
               {
                 '--dx': `${dx}px`,
                 '--dy': `${dy}px`,
-                animationDelay: `calc((0.633s + ${(step * 0.03).toFixed(2)}s) * var(--animation-speed, 1))`,
+                animationDelay: `calc((0.6s + ${(step * 0.03).toFixed(2)}s) * var(--animation-speed, 1))`,
               } as React.CSSProperties
             }
           />

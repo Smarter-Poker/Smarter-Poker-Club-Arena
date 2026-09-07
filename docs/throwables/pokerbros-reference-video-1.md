@@ -122,6 +122,24 @@ Loudest sound in the whole video: f2047 (RMS 0.643, the champagne cork pop).
 Everything below is measured in these 220x480 pixels; multiply by (your avatar diameter / 30)
 to scale.
 
+> **READ THIS BEFORE USING ANY `ms from L` NUMBER IN THIS FILE.** In TEN of
+> the twelve tables below, `L` is the frame the item first appears **on the
+> THROWER** - the first table row is `Spawn at thrower`, starting at `L`
+> itself - **not** the frame it departs. The launch is the first frame of the
+> `Flight` row. `src/throwables/spec.ts` requires every `beats[].at` to be ms
+> from LAUNCH, so for those ten you must subtract the flight row's start:
+> `at = catalogue_ms - flight_row_start_ms`, and `flight.ms` is the flight's
+> own DURATION, not the catalogue ms of the landing.
+>
+> Only THROW 3 (fireworks, which spawns nothing) and THROW 4 (doge, whose
+> first row is the glasses on the thrower) have `L` at a different place;
+> read their first rows rather than assuming.
+>
+> This wording was added 2026-09-07 after the mislabelling put `snowman` one
+> frame out, `dice` one frame out and `water_gun`'s recorded numbers 133 ms
+> off their own reference. `tests/throwables-play-the-measured-grammar.law.test.ts`
+> now fails any rig whose `land` beat is not exactly `flight.ms`.
+
 ## Throws
 
 ### THROW 1 - Water gun (hero SunBum45 -> Briz3300, upper-right seat)

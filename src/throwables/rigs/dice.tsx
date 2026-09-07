@@ -56,30 +56,30 @@ export const diceSpec: ThrowableSpec = {
   category: 'objects',
   spawn: 'avatar-face',
   spawnMs: 100,
-  flight: { ms: 233, mode: 'straight', tumble: true },
+  flight: { ms: 200, mode: 'straight', tumble: true },
   arrival: 'land',
-  payload: { sizeU: 1.3, anchor: 'left', coversAvatar: true, ms: 5367 },
+  payload: { sizeU: 1.3, anchor: 'left', coversAvatar: true, ms: 5300 },
   beats: [
-    { at: 233, marker: 'land' },
-    { at: 367, marker: 'hand-in' },
-    { at: 1300, marker: 'shake-1' },
-    { at: 2800, marker: 'shake-2' },
-    { at: 5000, marker: 'shake-3' },
-    { at: 5600, marker: 'cut' },
+    { at: 200, marker: 'land' },
+    { at: 267, marker: 'hand-in' },
+    { at: 1200, marker: 'shake-1' },
+    { at: 2700, marker: 'shake-2' },
+    { at: 4900, marker: 'shake-3' },
+    { at: 5500, marker: 'cut' },
   ],
   audio: [
-    { at: 1300, sample: 'dice_rattle' },
-    { at: 1433, sample: 'dice_rattle' },
-    { at: 1567, sample: 'dice_rattle' },
-    { at: 1700, sample: 'dice_rattle' },
-    { at: 1833, sample: 'dice_rattle' },
-    { at: 2033, sample: 'dice_rattle' },
-    { at: 2767, sample: 'dice_rattle' },
-    { at: 2900, sample: 'dice_rattle' },
-    { at: 4967, sample: 'dice_rattle' },
-    { at: 5133, sample: 'dice_rattle' },
-    { at: 5367, sample: 'dice_rattle' },
-    { at: 5500, sample: 'dice_rattle' },
+    { at: 1200, sample: 'dice_rattle' },
+    { at: 1333, sample: 'dice_rattle' },
+    { at: 1467, sample: 'dice_rattle' },
+    { at: 1600, sample: 'dice_rattle' },
+    { at: 1733, sample: 'dice_rattle' },
+    { at: 1933, sample: 'dice_rattle' },
+    { at: 2667, sample: 'dice_rattle' },
+    { at: 2800, sample: 'dice_rattle' },
+    { at: 4867, sample: 'dice_rattle' },
+    { at: 5033, sample: 'dice_rattle' },
+    { at: 5267, sample: 'dice_rattle' },
+    { at: 5400, sample: 'dice_rattle' },
   ],
   reference: { video: 1, launchFrame: 1716, throw: 'THROW 8' },
 };
@@ -266,8 +266,10 @@ function Payload({ uid }: RigProps) {
       {/* 367 (+134): the hand, already cupping the dice. The player's own
           `thr__payload--land` class supplies the pop-in; this group owns
           only the repeating shake. */}
-      <g className="thr-dice__hand" transform="translate(0 12)">
-        <Hand uid={uid} />
+      <g transform="translate(0 12)">
+        <g className="thr-dice__hand">
+          <Hand uid={uid} />
+        </g>
       </g>
     </svg>
   );

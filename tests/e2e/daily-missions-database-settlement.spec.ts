@@ -22,15 +22,30 @@ const HISTORICAL_MILESTONE_ACTUAL_DIAMONDS = 15;
 
 type JsonObject = Record<string, unknown>;
 
-type DailyChallengeCatalogRow = {
+type DailyChallengeContract = {
+  assignmentId: string;
+  assignedDate: string;
   id: string;
   requirement: number;
   diamond_reward: number;
 };
 
+type CanonicalDailyChallengeRow = {
+  id: string;
+  challenge_id: string;
+  challenge_type_snapshot: string;
+  requirement_snapshot: number;
+  diamond_reward_snapshot: number;
+  progress: number;
+  completed: boolean;
+  claimed: boolean;
+  assigned_date: string;
+};
+
 type DailyChallengeRow = {
   id: string;
   assigned_date: string;
+  progress: number;
   completed: boolean;
   claimed: boolean;
   diamond_reward_snapshot: number;
@@ -101,6 +116,9 @@ type ClaimReceipt = JsonObject & {
 
 type DashboardReceipt = JsonObject & {
   diamondBalance: number;
+  periodKeys: {
+    daily: string;
+  };
   stats: {
     totalClaimed: number;
     totalDiamondsEarned: number;
@@ -153,24 +171,137 @@ async function playerDiamondBalance(
   return numeric(rows[0].diamonds);
 }
 
-async function dailyCatalogContract(
-  environment: CustomizationCertificationEnvironment
-): Promise<DailyChallengeCatalogRow> {
-  const rows = await readServiceRows<DailyChallengeCatalogRow>(
+async function canonicalDailyContract(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount
+): Promise<DailyChallengeContract> {
+  const dashboard = await authenticatedDashboard(account);
+  const assignedDate = dashboard.periodKeys.daily;
+  expect(assignedDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  const rows = await readServiceRows<CanonicalDailyChallengeRow>(
+    environment,
+    'user_daily_challenges',
+    query(
+      'id,challenge_id,challenge_type_snapshot,requirement_snapshot,diamond_reward_snapshot,progress,completed,claimed,assigned_date',
+      {
+        user_id: `eq.${account.id}`,
+        assigned_date: `eq.${assignedDate}`,
+        tier_snapshot: 'eq.daily',
+        order: 'diamond_reward_snapshot.asc,challenge_id.asc',
+      }
+    )
+  );
+  expect(rows).toHaveLength(5);
+  const pendingOutbox = await readServiceRows<{ event_key: string }>(
+    environment,
+    'daily_challenge_event_outbox',
+    query('event_key', { user_id: `eq.${account.id}` })
+  );
+  expect(pendingOutbox).toEqual([]);
+  for (const row of rows) {
+    expect(
+      row.claimed,
+      `Canonical Mission ${row.id} Must Not Already Be Claimed By A Fresh Certification Account.`
+    ).toBe(false);
+    if (numeric(row.progress) > 0 || row.completed) {
+      expect(
+        row.challenge_type_snapshot,
+        `Only The Known Signup Friendship Event May Progress Mission ${row.id}.`
+      ).toBe('friends_added');
+    }
+  }
+
+  // Signup's two real auto-connect friendship events may progress or complete
+  // a canonical friendship mission. Neutralize only those known pre-test facts
+  // after proving none is settled, so the seven-day accounting starts at zero.
+  const normalizedRows = await updateServiceRows<CanonicalDailyChallengeRow>(
+    environment,
+    'user_daily_challenges',
+    query(
+      'id,challenge_id,challenge_type_snapshot,requirement_snapshot,diamond_reward_snapshot,progress,completed,claimed,assigned_date',
+      {
+        user_id: `eq.${account.id}`,
+        assigned_date: `eq.${assignedDate}`,
+        tier_snapshot: 'eq.daily',
+        claimed: 'eq.false',
+      }
+    ),
+    { progress: 0, completed: false, completed_at: null }
+  );
+  expect(normalizedRows).toHaveLength(5);
+  for (const row of normalizedRows) {
+    expect(row).toMatchObject({
+      assigned_date: assignedDate,
+      progress: 0,
+      completed: false,
+      claimed: false,
+    });
+  }
+
+  const row = [...normalizedRows].sort(
+    (left, right) =>
+      numeric(left.diamond_reward_snapshot) - numeric(right.diamond_reward_snapshot) ||
+      left.challenge_id.localeCompare(right.challenge_id)
+  )[0];
+  expect(numeric(row.requirement_snapshot)).toBeGreaterThan(0);
+  expect(numeric(row.diamond_reward_snapshot)).toBeGreaterThan(0);
+  return {
+    assignmentId: row.id,
+    assignedDate,
+    id: row.challenge_id,
+    requirement: numeric(row.requirement_snapshot),
+    diamond_reward: numeric(row.diamond_reward_snapshot),
+  };
+}
+
+async function completeCanonicalDailyAssignment(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount,
+  challenge: DailyChallengeContract
+): Promise<DailyChallengeRow> {
+  const rows = await updateServiceRows<DailyChallengeRow>(
+    environment,
+    'user_daily_challenges',
+    query('id,assigned_date,progress,completed,claimed,diamond_reward_snapshot', {
+      id: `eq.${challenge.assignmentId}`,
+      user_id: `eq.${account.id}`,
+      progress: 'eq.0',
+      completed: 'eq.false',
+      claimed: 'eq.false',
+    }),
+    {
+      progress: challenge.requirement,
+      completed: true,
+      completed_at: new Date().toISOString(),
+    }
+  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    assigned_date: challenge.assignedDate,
+    progress: challenge.requirement,
+    completed: true,
+    claimed: false,
+    diamond_reward_snapshot: challenge.diamond_reward,
+  });
+  return rows[0];
+}
+
+async function catalogContractStillMatches(
+  environment: CustomizationCertificationEnvironment,
+  challenge: DailyChallengeContract
+): Promise<void> {
+  const rows = await readServiceRows<{ requirement: number; diamond_reward: number }>(
     environment,
     'daily_challenge_catalog',
-    query('id,requirement,diamond_reward', {
-      tier: 'eq.daily',
+    query('requirement,diamond_reward', {
+      id: `eq.${challenge.id}`,
       is_active: 'eq.true',
-      diamond_reward: 'gt.0',
-      order: 'diamond_reward.asc,id.asc',
       limit: '1',
     })
   );
   expect(rows).toHaveLength(1);
-  expect(numeric(rows[0].requirement)).toBeGreaterThan(0);
-  expect(numeric(rows[0].diamond_reward)).toBeGreaterThan(0);
-  return rows[0];
+  expect(numeric(rows[0].requirement)).toBe(challenge.requirement);
+  expect(numeric(rows[0].diamond_reward)).toBe(challenge.diamond_reward);
 }
 
 async function sevenDayMilestone(
@@ -190,7 +321,7 @@ async function sevenDayMilestone(
 async function seedCompletedDailyRun(
   environment: CustomizationCertificationEnvironment,
   account: TemporaryCustomizationAccount,
-  challenge: DailyChallengeCatalogRow,
+  challenge: DailyChallengeContract,
   assignedDates: string[]
 ): Promise<DailyChallengeRow[]> {
   const timestamp = new Date().toISOString();
@@ -340,10 +471,11 @@ test.describe('Daily Missions Database Settlement Certification', () => {
     try {
       account = await createTemporaryCustomizationAccount(environment, 'settlement', 100);
       const fundedOpeningBalance = await playerDiamondBalance(environment, account.id);
-      const challenge = await dailyCatalogContract(environment);
+      const challenge = await canonicalDailyContract(environment, account);
+      const today = challenge.assignedDate;
+      const utcOrigin = new Date(`${today}T12:00:00.000Z`);
+      await catalogContractStillMatches(environment, challenge);
       const milestone = await sevenDayMilestone(environment);
-      const utcOrigin = new Date();
-      const today = utcDateOffset(0, utcOrigin);
       const completedDates = Array.from({ length: 7 }, (_, index) =>
         utcDateOffset(index - 6, utcOrigin)
       );
@@ -386,7 +518,7 @@ test.describe('Daily Missions Database Settlement Certification', () => {
         });
       }
 
-      const [target] = await seedCompletedDailyRun(environment, account, challenge, [today]);
+      const target = await completeCanonicalDailyAssignment(environment, account, challenge);
       assignments.push(target);
       expect(assignments).toHaveLength(7);
       expect(target).toMatchObject({ completed: true, claimed: false });
@@ -653,9 +785,10 @@ test.describe('Daily Missions Database Settlement Certification', () => {
 
     try {
       account = await createTemporaryCustomizationAccount(environment, 'freeze', 0);
-      const challenge = await dailyCatalogContract(environment);
-      const utcOrigin = new Date();
-      const today = utcDateOffset(0, utcOrigin);
+      const challenge = await canonicalDailyContract(environment, account);
+      const today = challenge.assignedDate;
+      const utcOrigin = new Date(`${today}T12:00:00.000Z`);
+      await catalogContractStillMatches(environment, challenge);
       const missedDate = utcDateOffset(-1, utcOrigin);
       const oldestCompletedDate = utcDateOffset(-4, utcOrigin);
       const completedDates = [
@@ -664,12 +797,16 @@ test.describe('Daily Missions Database Settlement Certification', () => {
         utcDateOffset(-3, utcOrigin),
         oldestCompletedDate,
       ];
-      const assignments = await seedCompletedDailyRun(
+      const historicalAssignments = await seedCompletedDailyRun(
         environment,
         account,
         challenge,
-        completedDates
+        completedDates.filter((assignedDate) => assignedDate !== today)
       );
+      const assignments = [
+        ...historicalAssignments,
+        await completeCanonicalDailyAssignment(environment, account, challenge),
+      ];
       expect(assignments).toHaveLength(4);
 
       await deleteServiceRows(

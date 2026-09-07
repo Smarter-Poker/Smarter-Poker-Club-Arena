@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const claimMigration = readFileSync(
   resolve(
     __dirname,
-    '../supabase/migrations/20260907043114_daily_mission_claim_receipts_account_for_every_diamond.sql'
+    '../supabase/migrations/20260907070111_daily_mission_claim_receipts_account_for_every_diamond.sql'
   ),
   'utf8'
 );
@@ -13,7 +13,7 @@ const claimMigration = readFileSync(
 const freezeMigration = readFileSync(
   resolve(
     __dirname,
-    '../supabase/migrations/20260907043126_daily_mission_freeze_history_survives_reload.sql'
+    '../supabase/migrations/20260907070134_daily_mission_freeze_history_survives_reload.sql'
   ),
   'utf8'
 );

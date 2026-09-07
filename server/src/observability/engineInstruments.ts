@@ -87,6 +87,20 @@ export const bbjSharesParkedTotal: Counter = metricsRegistry.counter(
   'Bad Beat Jackpot recipient shares parked because no club wallet would take them (label: table_id)'
 );
 
+/**
+ * DRILLS, COUNTED SEPARATELY FROM JACKPOTS (BBJ phase 4.1).
+ *
+ * A drill produces a REAL payout at a drill club - real chips, real
+ * recipients - so it also increments detected and paid. Counting it here as
+ * well is what lets anybody reading the graphs subtract: `detected - drills`
+ * is how many genuine bad beats the platform has ruled. Without this, the
+ * first drill would look exactly like the jackpot finally hitting.
+ */
+export const bbjDrillsFiredTotal: Counter = metricsRegistry.counter(
+  'poker_bbj_drills_fired_total',
+  'Bad Beat Jackpot DRILLS fired by an armed table - real payouts, synthetic verdict (label: table_id)'
+);
+
 export const showdownHandsTotal: Counter = metricsRegistry.counter(
   'poker_showdown_hands_total',
   'Hands that reached a contested showdown (label: table_id)'

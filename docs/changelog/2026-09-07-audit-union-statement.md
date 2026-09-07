@@ -9,3 +9,5 @@ A self-aborting pg_temp test passed opening balance, whole-history totals, credi
 Production migration 20260907195229 was assigned by Supabase MCP, applied under a source-hash precondition, then the deployed function body passed the same rollback-only test. Source uses that actual migration version. No financial mutation or reimbursement was necessary for a corrected read.
 
 GitHub MCP submission is used because direct clone authentication is unavailable. Full project TypeScript/build checks and browser flows were not executable locally and are not claimed. Required repository gates remain enabled. This closes the specific read-path defects, not the entire union accounting audit.
+
+CI follow-up: server engine passed. The source ACL checker required explicit REVOKE/GRANT statements in the new migration even though CREATE OR REPLACE retained the verified live grants. Those existing grants are now restated. The migration assertions were moved into a separate test rather than the sentinel array that intentionally accepts only src/ paths. No gate or expectation was weakened. Full replacement-run results must be checked separately.

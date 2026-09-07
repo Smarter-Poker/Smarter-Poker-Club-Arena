@@ -77,4 +77,7 @@ AS $function$
    ORDER BY b.entry_at, b.reference, b.entry_type, b.entry_id;
 $function$;
 
+-- State the existing ACL explicitly for source replay and static validation.
+REVOKE ALL ON FUNCTION public.fn_union_club_statement_of_account(uuid, uuid, timestamptz) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_union_club_statement_of_account(uuid, uuid, timestamptz) TO authenticated, service_role;
 COMMIT;

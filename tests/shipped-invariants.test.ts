@@ -36,16 +36,6 @@ const has = (p: string, needle: string) => existsSync(root(p)) && read(p).includ
 
 /** Behaviour that is live and must stay live. */
 const MUST_CONTAIN: Array<[file: string, needle: string, why: string]> = [
-  [
-    'supabase/migrations/20260907194634_mini_jackpot_allocations_conserve_before_recipient_credit.sql',
-    'CREATE OR REPLACE FUNCTION public.fn_bbj_mini_payout',
-    'Mini jackpot allocation is corrected at its original payout RPC',
-  ],
-  [
-    'supabase/migrations/20260907195229_union_statements_retain_opening_balance_and_check_finance_access.sql',
-    'CREATE OR REPLACE FUNCTION public.fn_union_club_statement_of_account',
-    'union statements retain their opening balance and check finance access',
-  ],
   // Roles — the grant matrix lives in Postgres; the client must ASK it.
   ['src/types/clubRoles.ts', 'co_owner', 'the seven club roles, including co_owner'],
   // 2026-08-23: re-anchored from ClubMembersPage to MemberManagementPage. The
@@ -459,6 +449,17 @@ describe('shipped functionality is still here', () => {
       existsSync(root('supabase/migrations/20260825_tournaments_allow_rabbit_hunt.sql')),
       'the tournaments.allow_rabbit_hunt migration is gone'
     ).toBe(true);
+  });
+
+  it('the financial audit corrections retain their canonical RPCs', () => {
+    expect(has(
+      'supabase/migrations/20260907194634_mini_jackpot_allocations_conserve_before_recipient_credit.sql',
+      'CREATE OR REPLACE FUNCTION public.fn_bbj_mini_payout'
+    )).toBe(true);
+    expect(has(
+      'supabase/migrations/20260907195229_union_statements_retain_opening_balance_and_check_finance_access.sql',
+      'CREATE OR REPLACE FUNCTION public.fn_union_club_statement_of_account'
+    )).toBe(true);
   });
 
   it('the sentinel list is not empty or trivially passing', () => {

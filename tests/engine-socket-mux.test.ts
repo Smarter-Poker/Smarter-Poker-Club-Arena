@@ -157,7 +157,114 @@ describe('EngineSocketMux', () => {
     expect(engineSocketMux.isSubscribed(T1)).toBe(true);
     f1.close();
     // The superseded facade was already closed; the live one still owns it.
+    expect(engineSocketMux.isSubscribed(T1)).toBe(true);
     expect(engineSocketMux.isSubscribed(T2)).toBe(false);
+  });
+
+  it('late cleanup of a superseded facade cannot unsubscribe its replacement', () => {
+    const old = engineSocketMux.acquire('https://e', T1, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const current = engineSocketMux.acquire('https://e', T1, 'jwt');
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const closed = vi.fn();
+    const message = vi.fn();
+    current.onclose = closed;
+    current.onmessage = message;
+    ws.sent = [];
+
+    old.close();
+    old.send(JSON.stringify({ type: 'RESYNC' }));
+    ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 2, state: {} });
+
+    expect(current.readyState).toBe(1);
+    expect(engineSocketMux.isSubscribed(T1)).toBe(true);
+    expect(closed).not.toHaveBeenCalled();
+    expect(message).toHaveBeenCalledOnce();
+    expect(ws.sent).toEqual([]);
+    current.close();
+    expect(engineSocketMux.isSubscribed(T1)).toBe(false);
+    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([{ type: 'UNSUBSCRIBE', tableId: T1 }]);
+  });
+
+  it.each([false, true])(
+    'acquiring after browser sleep preserves the new facade (prior table: %s)',
+    async (hadTable) => {
+      engineSocketMux.prewarm('https://e', 'jwt');
+      const stale = lastSocket();
+      stale._open();
+      if (hadTable) {
+        engineSocketMux.acquire('https://e', T1, 'jwt');
+        stale._frame({ type: 'SUBSCRIBED', tableId: T1 });
+      }
+      // A sleeping browser advances wall time without running watchdog timers.
+      vi.setSystemTime(Date.now() + 61_000);
+      const current = engineSocketMux.acquire('https://e', T1, 'jwt');
+      const opened = vi.fn();
+      current.onopen = opened;
+      const fresh = lastSocket();
+      expect(fresh).not.toBe(stale);
+      await Promise.resolve();
+      // A prior ack on the dead physical socket cannot authorize this one.
+      expect(current.readyState).toBe(0);
+      fresh._open();
+      expect(fresh.sent.map((s) => JSON.parse(s))).toContainEqual({
+        type: 'SUBSCRIBE',
+        tableId: T1,
+      });
+      fresh._frame({ type: 'SUBSCRIBED', tableId: T1 });
+      expect(current.readyState).toBe(1);
+      expect(opened).toHaveBeenCalledOnce();
+    }
+  );
+
+  it('reports constructor failure after acquire returns so the reconnect owner can hear it', async () => {
+    vi.stubGlobal(
+      'WebSocket',
+      class extends FakeWebSocket {
+        constructor(url: string, protocols?: unknown) {
+          super(url, protocols);
+          throw new Error('invalid WebSocket construction');
+        }
+      }
+    );
+    const facade = engineSocketMux.acquire('https://e', T1, 'jwt');
+    const closed = vi.fn();
+    facade.onclose = closed;
+    await Promise.resolve();
+    expect(closed).toHaveBeenCalledOnce();
+    expect(closed).toHaveBeenCalledWith({
+      code: 4500,
+      reason: 'mux socket construction failed',
+    });
+    expect(facade.readyState).toBe(3);
+  });
+
+  it('a deferred construction failure cannot close a subsequent successful acquire', async () => {
+    vi.stubGlobal(
+      'WebSocket',
+      class extends FakeWebSocket {
+        constructor(url: string, protocols?: unknown) {
+          super(url, protocols);
+          throw new Error('first construction fails');
+        }
+      }
+    );
+    const failed = engineSocketMux.acquire('https://e', T1, 'jwt');
+    const failedClose = vi.fn();
+    failed.onclose = failedClose;
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const current = engineSocketMux.acquire('https://e', T1, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    await Promise.resolve();
+    expect(failedClose).toHaveBeenCalledOnce();
+    expect(current.readyState).toBe(1);
+    expect(engineSocketMux.isSubscribed(T1)).toBe(true);
+    failed.close();
+    expect(current.readyState).toBe(1);
   });
 
   it('routes frames by tableId and fans PING out to every facade', () => {

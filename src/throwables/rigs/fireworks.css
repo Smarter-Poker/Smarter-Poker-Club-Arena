@@ -37,13 +37,6 @@
  * elapses, then plays a 0% frame that is already on screen.
  */
 
-.thr-fireworks {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
 /* == THE ROCKET TRAILS ====================================================
    A tapered streak that rises and dies, gone by the frame its burst opens.
    The reference climbs about 5 px per frame for 6-7 frames. ============ */

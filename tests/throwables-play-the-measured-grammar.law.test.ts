@@ -154,6 +154,188 @@ describe('LAW: a paid throw is never silent and never invisible', () => {
   });
 });
 
+describe('LAW: a rig names nothing it does not draw', () => {
+  const rigDir = path.join(process.cwd(), 'src/throwables/rigs');
+  const ids = fs
+    .readdirSync(rigDir)
+    .filter((f) => f.endsWith('.tsx'))
+    .map((f) => f.replace(/\.tsx$/, ''));
+
+  it('has a rig to check', () => {
+    expect(ids.length).toBeGreaterThanOrEqual(11);
+  });
+
+  it('every class a rig writes has a rule in that rig stylesheet', () => {
+    // THE HOLE THIS CLOSES. `tests/unit/classNamesResolve.test.ts` only reads
+    // SINGLE-class attributes - its regex is `className="one-name"` - so
+    // `className="thr-beer thr-beer--proj"` was invisible to it. Twenty-one
+    // `--proj` / `--payload` modifiers accumulated across eleven rigs that no
+    // stylesheet defined and nothing selected: the PLAYER puts its own
+    // `thr__proj` / `thr__payload` on the wrapper div, so the rig-level ones
+    // named nothing at all. Phase 1 found eight of these by hand; this is the
+    // check that means nobody has to.
+    const offenders: string[] = [];
+    for (const id of ids) {
+      const tsx = fs.readFileSync(path.join(rigDir, `${id}.tsx`), 'utf8');
+      const css = code(fs.readFileSync(path.join(rigDir, `${id}.css`), 'utf8'));
+      const defined = new Set([...css.matchAll(/\.(thr[a-zA-Z0-9_-]*)/g)].map((m) => m[1]));
+      for (const m of tsx.matchAll(/className="([^"{}]+)"/g)) {
+        for (const name of m[1].split(/\s+/).filter(Boolean)) {
+          if (!defined.has(name)) offenders.push(`${id}.tsx -> ${name}`);
+        }
+      }
+    }
+    expect(offenders, `a class with no rule draws nothing and hides a missing animation`).toEqual(
+      []
+    );
+  });
+
+  it('a measured position is never on the same element as an animated transform', () => {
+    // A CSS `transform` in a keyframe REPLACES the SVG `transform` ATTRIBUTE on
+    // the same element - it does not compose with it. So
+    //
+    //   <g className="thr-cake__berry" transform="translate(2 -46)">
+    //
+    // with `@keyframes thr-cake-berry { 0% { transform: scale(0.6) } }` throws
+    // the translate away the instant the animation starts, and the element
+    // renders at the SVG ORIGIN. The strawberry that was measured at the crown
+    // of the head drew in the middle of the face, and the darkroom is what
+    // caught it.
+    //
+    // It was never one rig. The same shape was in EIGHT places across five:
+    // cake's berry, dice's hand, horseshoe's bob / rays / label, snowman's
+    // plume, and BOTH trophy sparkles - which is worse than a wrong offset,
+    // because two glints measured at different points on the cup collapsed
+    // onto each other and read as one.
+    //
+    // The fix is the pattern rose.tsx already used deliberately: the measured
+    // position goes on a PLAIN WRAPPER, the animation goes on the child. This
+    // is the check that keeps it that way.
+    const offenders: string[] = [];
+    for (const id of ids) {
+      const tsx = fs.readFileSync(path.join(rigDir, `${id}.tsx`), 'utf8');
+      const css = fs.readFileSync(path.join(rigDir, `${id}.css`), 'utf8');
+
+      // classes whose animation writes `transform` at least once
+      const moves = new Set<string>();
+      for (const rule of css.matchAll(/\.([a-zA-Z0-9_-]*thr[a-zA-Z0-9_-]*)\s*\{([^}]*)\}/g)) {
+        const name = /animation:\s*([a-zA-Z0-9_-]+)/.exec(rule[2])?.[1];
+        if (!name || name === 'none') continue;
+        const frames = new RegExp(`@keyframes\\s+${name}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(css);
+        if (frames && /transform\s*:/.test(frames[1])) moves.add(rule[1]);
+      }
+
+      for (const el of tsx.matchAll(/<(\w+)([^>]*)>/g)) {
+        const attrs = el[2];
+        const cls = /className="([^"{}]+)"/.exec(attrs);
+        const xf = /\btransform="([^"]*)"/.exec(attrs);
+        if (!cls || !xf) continue;
+        for (const name of cls[1].split(/\s+/).filter(Boolean)) {
+          if (moves.has(name)) {
+            offenders.push(
+              `${id}.tsx: ${name} carries transform="${xf[1]}", which its own keyframes discard`
+            );
+          }
+        }
+      }
+    }
+    expect(
+      offenders,
+      'put the measured position on a wrapper <g> and the animation on the child'
+    ).toEqual([]);
+  });
+
+  it('the beat called `land` IS the landing, to the millisecond', () => {
+    // `throwableLandingMs` returns `flight.ms` and the player mounts the payload
+    // there. A beat named `land` that says anything else is a rig measuring from
+    // a different zero than the code - and the whole stylesheet's delays are
+    // `beat.at - flight.ms`, so the error is silent and systematic.
+    //
+    // THIS IS WHY IT EXISTS. Ten of the twelve tables in
+    // pokerbros-reference-video-1.md label the SPAWN frame "Launch frame L" -
+    // their own first row is `Spawn at thrower` starting at L. Three rigs were
+    // built on that reading: `snowman` and `dice` came out one frame short, and
+    // `water_gun`'s recorded beats sat 133 ms from its own reference. The doc
+    // now says where L really is; this is the check that does not rely on
+    // anyone reading it.
+    const rigDirFiles = fs.readdirSync(rigDir).filter((f) => f.endsWith('.tsx'));
+    const offenders: string[] = [];
+    for (const f of rigDirFiles) {
+      const tsx = fs.readFileSync(path.join(rigDir, f), 'utf8');
+      const mode = (/mode:\s*'(straight|none)'/.exec(tsx) || [])[1];
+      const flight = Number((/flight:\s*\{\s*ms:\s*(\d+)/.exec(tsx) || [])[1]);
+      const land = /\{ at: (\d+), marker: 'land' \}/.exec(tsx);
+      if (!land) continue; // fireworks and other spawn-at-target items have none
+      const expected = mode === 'none' ? 0 : flight;
+      if (Number(land[1]) !== expected) {
+        offenders.push(`${f}: land beat ${land[1]} but the payload mounts at ${expected}`);
+      }
+    }
+    expect(
+      offenders,
+      'a `land` beat that is not the landing means a rig and the player disagree'
+    ).toEqual([]);
+  });
+
+  it('nothing is invisible on the frame its own beat names', () => {
+    // THE IDIOM, and the bug it replaced. `animation-fill-mode: both` fills the
+    // DELAY with the 0% frame. So a DELAYED animation whose 0% is hidden is
+    // invisible on the very frame it is meant to appear - the element waits,
+    // correctly, and then keeps waiting for one more frame.
+    //
+    // Phase 1 shipped seven of these across beer and tomato, and the darkroom
+    // photographed the tomato's burst as an empty seat at 300. In playback it
+    // is four milliseconds late and nobody sees it; in the DARKROOM, which
+    // freezes exactly on the beat, it is a black frame at a documented moment -
+    // and the darkroom is the instrument this whole programme verifies itself
+    // with. Two real bugs (fireworks rendering nothing, champagne's cork and
+    // jet missing) were nearly lost in that noise.
+    //
+    // So: a delayed animation is `forwards` with a VISIBLE 0% frame. `both` is
+    // for an element that is already on screen when its animation starts.
+    const offenders: string[] = [];
+    for (const id of ids) {
+      const css = code(fs.readFileSync(path.join(rigDir, `${id}.css`), 'utf8'));
+      const opensHidden = new Map<string, boolean>();
+      for (const m of css.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\n\}/g)) {
+        const first = /0%\s*\{([^}]*)\}/.exec(m[2]);
+        opensHidden.set(m[1], first ? /opacity:\s*0(?!\.\d*[1-9])/.test(first[1]) : false);
+      }
+      for (const m of css.matchAll(/\.([\w-]+)\s*\{[^}]*?animation:\s*([^;]+);/g)) {
+        const shorthand = m[2];
+        const name = (shorthand.match(/^\s*([\w-]+)/) || [])[1];
+        const times = [...shorthand.matchAll(/calc\((\d*\.?\d+)s \* var/g)].map((x) => +x[1]);
+        const delayed = times.length > 1 && times[1] > 0;
+        if (delayed && /\bboth\b/.test(shorthand) && opensHidden.get(name)) {
+          offenders.push(`${id}.css .${m[1]} (${name})`);
+        }
+      }
+    }
+    expect(
+      offenders,
+      'a delayed `both` with a hidden 0% is invisible on its own beat: use `forwards` and open visible'
+    ).toEqual([]);
+  });
+
+  it('every rule in a rig stylesheet is worn by something', () => {
+    // The other direction, and the more dangerous one: a rule nobody wears is
+    // an ANIMATION NOBODY PLAYS. A beat can go missing this way without any
+    // test noticing, because the keyframes are all still there and correct.
+    const offenders: string[] = [];
+    for (const id of ids) {
+      const tsx = fs.readFileSync(path.join(rigDir, `${id}.tsx`), 'utf8');
+      const css = code(fs.readFileSync(path.join(rigDir, `${id}.css`), 'utf8'));
+      const worn = new Set<string>();
+      for (const m of tsx.matchAll(/className="([^"{}]+)"/g))
+        for (const n of m[1].split(/\s+/).filter(Boolean)) worn.add(n);
+      for (const m of css.matchAll(/\.(thr[a-zA-Z0-9_-]*)/g)) {
+        if (!worn.has(m[1])) offenders.push(`${id}.css -> .${m[1]}`);
+      }
+    }
+    expect(offenders, `a rule nothing wears is an animation nobody plays`).toEqual([]);
+  });
+});
+
 describe('LAW: the migration seam stays honest', () => {
   it('routes a rigged item to the player and everything else to the legacy engine', () => {
     // One container, two engines, for exactly as long as the rebuild takes.

@@ -75,10 +75,12 @@ function Mug({ uid, k }: { uid: string; k: string }) {
   return (
     <g>
       <defs>
-        <linearGradient id={g('beer')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#f5b533" />
-          <stop offset="55%" stopColor="#e8931a" />
-          <stop offset="100%" stopColor="#b8620c" />
+        <linearGradient id={g('beer')} x1="0" y1="0" x2="0.85" y2="1">
+          <stop offset="0%" stopColor="#fff0a2" />
+          <stop offset="22%" stopColor="#ffc84b" />
+          <stop offset="48%" stopColor="#e8931a" />
+          <stop offset="76%" stopColor="#c16a0d" />
+          <stop offset="100%" stopColor="#703608" />
         </linearGradient>
         <linearGradient id={g('glass')} x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor="#ffffff" stopOpacity="0.55" />
@@ -92,12 +94,24 @@ function Mug({ uid, k }: { uid: string; k: string }) {
           <stop offset="70%" stopColor="#f6f1e4" />
           <stop offset="100%" stopColor="#d9cfb5" />
         </radialGradient>
+        <linearGradient id={g('handle')} x1="0" y1="0" x2="1" y2="0.75">
+          <stop offset="0%" stopColor="#50616a" />
+          <stop offset="26%" stopColor="#edf8fa" />
+          <stop offset="45%" stopColor="#98b7c0" />
+          <stop offset="60%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#526973" />
+        </linearGradient>
+        <radialGradient id={g('contact')}>
+          <stop offset="0%" stopColor="#101015" stopOpacity="0.48" />
+          <stop offset="100%" stopColor="#101015" stopOpacity="0" />
+        </radialGradient>
       </defs>
+      <ellipse cx="2" cy="45" rx="25" ry="6" fill={`url(#${g('contact')})`} />
       {/* handle, behind the body */}
       <path
         d="M22 -14 C 50 -16, 50 26, 22 24"
         fill="none"
-        stroke="#c9d3dc"
+        stroke={`url(#${g('handle')})`}
         strokeWidth="9"
         strokeLinecap="round"
         opacity="0.9"
@@ -116,6 +130,21 @@ function Mug({ uid, k }: { uid: string; k: string }) {
       <circle cx="-9" cy="18" r="1.8" fill="#ffd47a" opacity="0.8" />
       <circle cx="4" cy="6" r="1.4" fill="#ffd47a" opacity="0.8" />
       <circle cx="10" cy="26" r="1.2" fill="#ffd47a" opacity="0.7" />
+      {/* Amber caustics and vertical glass flutes retain weight at phone scale. */}
+      <path
+        d="M -15 -20 L -13 32 M -3 -20 L -2 35 M 10 -20 L 9 33"
+        fill="none"
+        stroke="#71330c"
+        strokeWidth="3.2"
+        opacity="0.3"
+      />
+      <path
+        d="M -17 -20 L -15 31 M -5 -20 L -4 34 M 8 -20 L 7 32"
+        fill="none"
+        stroke="#ffe7aa"
+        strokeWidth="1.6"
+        opacity="0.62"
+      />
       {/* the glass over it: a tapered body with a thick base */}
       <path
         d="M-24 -30 L 24 -30 L 21 42 Q 0 49 -21 42 Z"
@@ -125,6 +154,21 @@ function Mug({ uid, k }: { uid: string; k: string }) {
         strokeLinejoin="round"
       />
       <path d="M-21 34 Q 0 41 21 34 L 20 42 Q 0 49 -20 42 Z" fill="#ffffff" opacity="0.22" />
+      <path
+        d="M -21 -19 L -19 24 M 20 -18 L 18 27 M -16 41 Q 0 46 16 41"
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        opacity="0.76"
+      />
+      <path
+        d="M -23 -27 Q 0 -19 23 -27"
+        fill="none"
+        stroke="#744011"
+        strokeWidth="2.3"
+        opacity="0.5"
+      />
       {/* foam head: overhangs the rim on both sides */}
       <g fill={`url(#${g('foam')})`}>
         <ellipse cx="0" cy="-32" rx="27" ry="9" />
@@ -134,6 +178,24 @@ function Mug({ uid, k }: { uid: string; k: string }) {
         <circle cx="24" cy="-31" r="6" />
         <circle cx="-25" cy="-30" r="6" />
       </g>
+      {/* Foam lobes overlap as a continuous head, with warm undersides. */}
+      <path
+        d="M -23 -29 Q -12 -24 -7 -29 Q 3 -23 11 -29 Q 18 -25 25 -30"
+        fill="none"
+        stroke="#b9a889"
+        strokeWidth="1.5"
+        opacity="0.55"
+      />
+      <path
+        d="M -21 -39 Q -17 -44 -12 -42 M -8 -46 Q -3 -51 3 -47 M 10 -41 Q 14 -44 18 -41"
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+      <circle cx="-11" cy="-32" r="1.8" fill="#cbbd9f" opacity="0.55" />
+      <circle cx="4" cy="-36" r="1.3" fill="#cbbd9f" opacity="0.45" />
+      <circle cx="14" cy="-31" r="1.6" fill="#ffffff" />
       {/* a drip of foam down the left */}
       <path d="M-24 -28 q -2 8 1 14 q 3 -5 1 -14 z" fill="#f6f1e4" />
     </g>

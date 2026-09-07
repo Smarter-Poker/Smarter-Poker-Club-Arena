@@ -37,6 +37,14 @@ interface HitRow {
   loser_hand: string | null;
   total_payout: number;
   awarded_at: string;
+  /**
+   * Which jackpot paid it (BBJ phase 6, 2026-09-07). The strip carries minis
+   * alongside main hits so the second tier is visible rather than invisible -
+   * but a 700-chip mini printed next to a 7,883.92 main with no label reads as
+   * a main jackpot that paid almost nothing. Absent means main; every row
+   * written before today is.
+   */
+  kind?: string | null;
 }
 
 function timeAgo(iso: string): string {
@@ -108,7 +116,9 @@ export function BBJTicker({
 
       const { data: winners } = await supabase
         .from('bbj_winners')
-        .select('id, loser_display_name, winner_display_name, loser_hand, total_payout, awarded_at')
+        .select(
+          'id, loser_display_name, winner_display_name, loser_hand, total_payout, awarded_at, kind'
+        )
         .eq('pool_id', poolRow.pool_id)
         .order('awarded_at', { ascending: false })
         .limit(maxHits);
@@ -179,6 +189,7 @@ export function BBJTicker({
             {hits.map((h) => (
               <span className="bbj-ticker__hit" key={h.id}>
                 <span className="bbj-ticker__hit-amount">${money(h.total_payout)}</span>
+                {h.kind === 'mini' && <span className="bbj-ticker__hit-mini">MINI</span>}
                 <span className="bbj-ticker__hit-who">
                   {h.loser_display_name || 'Player'}
                   {/* titleCase, because loser_hand is written by the engine

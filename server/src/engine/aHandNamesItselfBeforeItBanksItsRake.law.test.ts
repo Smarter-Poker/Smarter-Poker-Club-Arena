@@ -32,8 +32,14 @@
  *     `COALESCE(p_hand_id, md5('rake:'||table||':'||hand_number))`, so the live
  *     call (null id) and the 15-minute re-drive (real id) took DIFFERENT leg
  *     keys, `rake_distribution_legs` could not dedupe them, and `club_wallets`
- *     was incremented twice. 384 hands 2026-09-02 to 2026-09-07: 719.49 chips
- *     of rake and 93.14 of BBJ drop that no pot ever paid.
+ *     was incremented twice. 384 hands 2026-09-02 to 2026-09-07 were booked a
+ *     second time; of those, the 99 with BOTH leg rows on record - the ones
+ *     where the double credit can be PROVEN rather than inferred - carry
+ *     166.38 chips of rake and 26.18 of BBJ drop that no pot ever paid. That
+ *     is the figure `20260907200330` corrected, because the wider 719.49 is
+ *     what the earlier rows would have cost if `rake_distribution_legs` had
+ *     existed to record them, and a number you cannot read is not a number you
+ *     settle (CLAUDE.md 10.86).
  *
  * THE FIX, and what this law protects: settlement MINTS the uuid itself before
  * anything is written, and hands the same value to the `hand_history` insert,

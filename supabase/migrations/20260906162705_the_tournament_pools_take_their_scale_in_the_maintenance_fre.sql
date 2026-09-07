@@ -40,23 +40,133 @@
 --
 -- All three columns in ONE statement so the table is rewritten once, not three
 -- times.
--- `lock_timeout` is deliberately short: inside the freeze the lock is free
--- and the wait is nil, so anything longer means the freeze is NOT in effect
--- and the migration should abort rather than fight live play again.
+-- `lock_timeout` is deliberately short: inside the freeze the lock should be
+-- free, so a long wait means something is holding the table and the migration
+-- should abort rather than queue behind it.
 --
--- RUN IT BETWEEN :55 AND :00. If it aborts on lock_timeout, that is the
--- guard telling you the platform is not frozen - check
--- `select public.fn_platform_frozen()` and try the next break, never by
--- widening the timeout.
+-- ==========================================================================
+-- WHAT THE FIRST FREEZE ATTEMPT TAUGHT, 2026-09-06 23:55-23:57 (both facts
+-- were found by running it, and both are why this file changed):
+--
+-- 1. THE FREEZE IS NOT THE SAME THING AS AN IDLE TABLE. Four consecutive
+--    attempts died on `55P03 canceling statement due to lock timeout` while
+--    `fn_platform_frozen()` was true the whole time. The holder was not live
+--    play at all: pg_cron pid 1035737, `tourney-payout-sweep-hourly`, running
+--    244 seconds into a `statement_timeout = 300s` and holding RowShare +
+--    AccessShare on `tournaments`. pg_cron does not stop for the freeze -
+--    CLAUDE.md 13 says as much, and this is the cost of it. The sweep starts
+--    around :51 and can run to :56, so the ACCESS EXCLUSIVE window inside a
+--    five-minute freeze is realistically :57 to :00. A retry loop that waits
+--    it out lands; widening lock_timeout would only mean queueing behind it,
+--    which is what the short timeout exists to prevent.
+--
+-- 2. A VIEW OWNS A COPY OF THE COLUMN TYPE. Once the lock was granted at
+--    23:57:13 the real error arrived: `0A000 cannot alter type of a column
+--    used by a view or rule`. `public.tournament_escrow_shadow` selects
+--    prize_pool, bounty_pool and total_rake, and Postgres will not retype a
+--    column a view reads. Nothing was applied; the transaction rolled back
+--    whole, exactly as the deadlock had.
+--
+--    So the view stands aside and comes back EXACTLY as it was, by the same
+--    rule 20260906162156 used for the union auto-ledger trigger: its
+--    definition, its options, its comment and its grants are READ FROM THE
+--    CATALOGUE, not retyped here, and the recreation cannot drift from the
+--    original because it IS the original. It is the escrow shadow - the
+--    report that phase 2 used to tell a stale counter from a real gap - so
+--    losing or altering it silently would blind exactly the check that finds
+--    money problems. The verify block below compares the restored definition
+--    against the captured one character for character and aborts if they
+--    differ.
+-- ==========================================================================
+--
+-- RUN IT BETWEEN :55 AND :00. If it aborts on lock_timeout, that is the guard
+-- telling you something still holds `tournaments` - check
+-- `select public.fn_platform_frozen()`, look for the payout sweep in
+-- pg_stat_activity, and retry inside the same freeze or take the next break.
+-- Never by widening the timeout.
 
 BEGIN;
 
 SET LOCAL lock_timeout = '4s';
 
-ALTER TABLE public.tournaments
-  ALTER COLUMN prize_pool  TYPE numeric(18,2),
-  ALTER COLUMN bounty_pool TYPE numeric(18,2),
-  ALTER COLUMN total_rake  TYPE numeric(18,2);
+DO $pools$
+DECLARE
+  v_def     text;
+  v_opts    text;
+  v_comment text;
+  v_acl     aclitem[];
+  v_back    text;
+  r         record;
+BEGIN
+  -- ------------------------------------------------------------------
+  -- CAPTURE. Everything that makes the view what it is, from the catalogue.
+  -- ------------------------------------------------------------------
+  SELECT pg_get_viewdef(c.oid, true),
+         array_to_string(c.reloptions, ', '),
+         obj_description(c.oid, 'pg_class'),
+         c.relacl
+    INTO v_def, v_opts, v_comment, v_acl
+    FROM pg_class c
+   WHERE c.oid = 'public.tournament_escrow_shadow'::regclass;
+
+  IF v_def IS NULL OR length(v_def) = 0 THEN
+    RAISE EXCEPTION 'ABORT: tournament_escrow_shadow has no definition to restore - do not proceed blind, read the catalogue first';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_depend d
+               JOIN pg_rewrite rw ON rw.oid = d.objid
+               JOIN pg_class dep ON dep.oid = rw.ev_class
+              WHERE d.refobjid = 'public.tournament_escrow_shadow'::regclass
+                AND dep.oid <> 'public.tournament_escrow_shadow'::regclass) THEN
+    RAISE EXCEPTION 'ABORT: something now depends on tournament_escrow_shadow; this migration only knows how to restore the view itself';
+  END IF;
+
+  DROP VIEW public.tournament_escrow_shadow;
+
+  ALTER TABLE public.tournaments
+    ALTER COLUMN prize_pool  TYPE numeric(18,2),
+    ALTER COLUMN bounty_pool TYPE numeric(18,2),
+    ALTER COLUMN total_rake  TYPE numeric(18,2);
+
+  -- ------------------------------------------------------------------
+  -- RESTORE, from the captured strings and nothing else.
+  -- ------------------------------------------------------------------
+  EXECUTE format('CREATE VIEW public.tournament_escrow_shadow %s AS %s',
+                 CASE WHEN COALESCE(v_opts, '') <> '' THEN 'WITH (' || v_opts || ')' ELSE '' END,
+                 v_def);
+
+  IF v_comment IS NOT NULL THEN
+    EXECUTE format('COMMENT ON VIEW public.tournament_escrow_shadow IS %L', v_comment);
+  END IF;
+
+  FOR r IN
+    SELECT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END AS grantee,
+           string_agg(a.privilege_type, ', ') AS privs
+      FROM aclexplode(v_acl) a
+     WHERE a.grantee <> 'postgres'::regrole::oid          -- the owner holds them anyway
+     GROUP BY 1
+  LOOP
+    EXECUTE format('GRANT %s ON public.tournament_escrow_shadow TO %s', r.privs, r.grantee);
+  END LOOP;
+
+  -- ------------------------------------------------------------------
+  -- IT CAME BACK THE SAME, or this migration does not commit.
+  -- ------------------------------------------------------------------
+  SELECT pg_get_viewdef('public.tournament_escrow_shadow'::regclass, true) INTO v_back;
+  IF v_back IS DISTINCT FROM v_def THEN
+    RAISE EXCEPTION 'VERIFY FAILED: the escrow shadow came back DIFFERENT from how it went away';
+  END IF;
+
+  IF COALESCE((SELECT array_to_string(reloptions, ', ') FROM pg_class
+                WHERE oid = 'public.tournament_escrow_shadow'::regclass), '')
+     IS DISTINCT FROM COALESCE(v_opts, '') THEN
+    RAISE EXCEPTION 'VERIFY FAILED: the escrow shadow lost its options (security_invoker)';
+  END IF;
+
+  IF NOT has_table_privilege('service_role', 'public.tournament_escrow_shadow', 'SELECT') THEN
+    RAISE EXCEPTION 'VERIFY FAILED: the engine can no longer read the escrow shadow';
+  END IF;
+END $pools$;
 
 DO $verify$
 DECLARE v_notscaled int; v_bad int;
@@ -89,7 +199,7 @@ BEGIN
     RAISE EXCEPTION 'VERIFY FAILED: % of the ten formerly-unconstrained columns is/are not scale 2', v_notscaled;
   END IF;
 
-  RAISE NOTICE 'CHIP_SCALE_TWO_COMPLETE all ten formerly-unconstrained money columns carry scale 2';
+  RAISE NOTICE 'CHIP_SCALE_TWO_COMPLETE all ten formerly-unconstrained money columns carry scale 2, and the escrow shadow is back as it was';
 END $verify$;
 
 COMMIT;

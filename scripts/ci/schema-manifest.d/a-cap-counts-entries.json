@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/a-cap-counts-entries-not-the-seats-filled-right-now",
+  "_comment": "The capacity guard counts entries on a seat-first board (20260906233722), and every payout row carries an idempotency key (20260906233733).",
+  "tables": [],
+  "functions": ["fn_tournament_entry_cap_reached", "zz_a_payout_row_carries_its_key"],
+  "columns": {}
+}

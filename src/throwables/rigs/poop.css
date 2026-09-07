@@ -1,0 +1,131 @@
+/**
+ * POOP - keyframes. Every delay is from LANDING (launch + 333 ms); the
+ * comment on each stop gives the catalogue's ms from launch. Every duration
+ * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 2's target
+ * avatar was ~40 px wide, so measured pixel offsets are scaled by 100/40.
+ *
+ * THREE THREADS, each on its own clock from the moment it appears:
+ *   the swirl     333 -> 400   intact, settles onto the face, fades out
+ *   the splat     400 -> cut   the splash ring + the residue glyph, one pop
+ *   the droplets  400/433 -> 867  each flies out and freezes, all at once
+ *
+ * THE IDIOM: an element that APPEARS at a beat carries `opacity: 0` in its
+ * own rule, runs `forwards` (NOT `both`), and its 0% frame is the VISIBLE
+ * opening frame. The swirl is on screen FROM LANDING (the Payload's own
+ * mount, delay 0), so it is the one element here that uses `both` with a
+ * visible 0% - the splat and the droplets are born mid-throw and use the
+ * born-and-dies idiom.
+ */
+
+/* == THE SWIRL: lands intact at the bottom of the avatar (333), settles
+   centred on the face by 367 (+34: CONTACT), then hands off to the splat in
+   the same frame it appears (400, +67). ==================================== */
+.thr-poop__swirl {
+  transform-box: fill-box;
+  transform-origin: 50% 80%;
+  animation: thr-poop-swirl calc(0.067s * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes thr-poop-swirl {
+  0% {
+    /* 333: at the bottom of the avatar, intact */
+    opacity: 1;
+    transform: translateY(18px);
+  }
+  50.75% {
+    /* 367: CONTACT - centred on the face */
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    /* 400: gone; the splat takes over on this exact frame */
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+/* == THE SPLAT: the splash ring and the residue swirl pop in together at 400
+   (+67), already near full size, a quick overshoot settling by 500 (+167),
+   then static to the cut. ================================================= */
+.thr-poop__splat {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-poop-splat calc(0.1s * var(--animation-speed, 1)) ease-out
+    calc(0.067s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-poop-splat {
+  0% {
+    /* 400: SPLAT - already visible, a hair small */
+    opacity: 1;
+    transform: scale(0.85);
+  }
+  60% {
+    /* 460: the overshoot */
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    /* 500: settled at 0.85 u; static from here to the cut */
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* == THE DROPLETS: each thrown from the splash centre and FROZEN by 867
+   (+534) - the straight-up droplet starts with the splat itself (400), the
+   other three follow at 433, and every one of the four reaches its own
+   --dx / --dy at the same absolute moment regardless of when it started, so
+   the whole splash "hangs" together exactly as the reference does. This
+   class's own default timing (100 ms delay, 434 ms duration) is what the
+   three later droplets use; the first overrides both inline (see poop.tsx),
+   ending at the same 867 ms mark. ========================================== */
+.thr-poop__droplet {
+  opacity: 0;
+  animation: thr-poop-droplet calc(0.434s * var(--animation-speed, 1))
+    cubic-bezier(0.1, 0.7, 0.3, 1) calc(0.1s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-poop-droplet {
+  0% {
+    /* 433: on its way, ON SCREEN */
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.4), calc(var(--dy) * 0.4));
+  }
+  40% {
+    /* ~607: decelerating */
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.8), calc(var(--dy) * 0.8));
+  }
+  100% {
+    /* 867: frozen; stays for the residue */
+    opacity: 1;
+    transform: translate(var(--dx), var(--dy));
+  }
+}
+
+/* == REDUCED MOTION: the scene, arrived - the splash ring with the swirl at
+   its centre, every droplet at its final resting place; the intact swirl and
+   its brief settle are gone. Every beat's MEANING survives; none of the
+   motion does. ============================================================= */
+@media (prefers-reduced-motion: reduce) {
+  .thr-poop__swirl {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-poop__splat {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+
+  .thr-poop__droplet {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translate(var(--dx), var(--dy)) !important;
+  }
+}

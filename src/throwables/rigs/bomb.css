@@ -1,0 +1,246 @@
+/**
+ * BOMB - keyframes. Every delay is from LANDING (launch + 267 ms); the
+ * comment on each stop gives the catalogue's ms from launch. Every duration
+ * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 2's target
+ * avatar was ~40 px wide, so measured pixel offsets are scaled by 100/40.
+ *
+ * SIX THREADS. Four share one life, 267 -> 1467 (the whole fuse phase, born
+ * with the payload and gone in the same frame the burst appears): the body,
+ * the fuse, the spark. The crackglow is a fifth, born inside that same
+ * window at the pre-flash beat. The burst and the smoke are the last two,
+ * handing off to each other after the fuse phase ends.
+ *
+ * THE IDIOM: an element that APPEARS at a beat carries `opacity: 0` in its
+ * own rule, runs `forwards` (NOT `both`), and its 0% frame is the VISIBLE
+ * opening frame. The body, the fuse and the spark are on screen FROM LANDING
+ * (the Payload's own mount, delay 0), so they are the ones here that use
+ * `both` with a visible 0% - the crackglow, the burst and the smoke are born
+ * mid-throw and use the born-and-dies idiom.
+ */
+
+/* == THE BODY: lands and settles (267-367, +0..+34), then sits until the
+   explosion takes over in the same frame it appears (1467, +1200). ======== */
+.thr-bomb__body {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-bomb-body calc(1.2s * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes thr-bomb-body {
+  0% {
+    /* 267: just landed, a hair large */
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  8.33% {
+    /* 367: settled */
+    opacity: 1;
+    transform: scale(1);
+  }
+  /* THE DARKROOM CAUGHT THIS. Without this stop the opacity ramped 1 -> 0
+     across the WHOLE fuse phase, so the bomb was about 3% opaque by the
+     pre-flash and the 1433 frame photographed as a bare avatar with a spark
+     floating over it. The reference is explicit that the sphere is STATIC for
+     the full 1.2 s and only leaves when the burst replaces it - which is what
+     the fuse and the spark beside it already did. */
+  97.17% {
+    /* 1433: the pre-flash. Still solid black; the cracks glow INSIDE it. */
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    /* 1467: gone in one frame; the burst takes over */
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* == THE FUSE: shortens toward the sphere (its own base, 0% 100% of its own
+   box) across the whole fuse phase, then vanishes with the body. ========== */
+.thr-bomb__fuse {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+  animation: thr-bomb-fuse calc(1.2s * var(--animation-speed, 1)) linear both;
+}
+
+@keyframes thr-bomb-fuse {
+  0% {
+    /* 267: full length */
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  97.17% {
+    /* 1433: shortened, the pre-flash frame */
+    opacity: 1;
+    transform: scaleX(0.72);
+  }
+  100% {
+    /* 1467: gone; the burst takes over */
+    opacity: 0;
+    transform: scaleX(0.7);
+  }
+}
+
+/* == THE SPARK: FLICKERS - a fixed sequence of sizes and tilts, snapped
+   (steps(1, end), no interpolation) rather than smoothly tweened, which is
+   what "changes size/shape every frame" actually looks like. Ten stops,
+   never random, gone the instant the body is. ============================ */
+.thr-bomb__spark {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-bomb-spark calc(1.2s * var(--animation-speed, 1)) steps(1, end) both;
+}
+
+@keyframes thr-bomb-spark {
+  0% {
+    /* 267 */
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+  12% {
+    /* 411 */
+    opacity: 1;
+    transform: scale(0.65) rotate(20deg);
+  }
+  25% {
+    /* 567 */
+    opacity: 1;
+    transform: scale(1.35) rotate(-15deg);
+  }
+  37% {
+    /* 711 */
+    opacity: 1;
+    transform: scale(0.6) rotate(25deg);
+  }
+  50% {
+    /* 867 */
+    opacity: 1;
+    transform: scale(1.3) rotate(-20deg);
+  }
+  62% {
+    /* 1011 */
+    opacity: 1;
+    transform: scale(0.7) rotate(15deg);
+  }
+  75% {
+    /* 1167 */
+    opacity: 1;
+    transform: scale(1.4) rotate(-25deg);
+  }
+  87% {
+    /* 1311 */
+    opacity: 1;
+    transform: scale(0.65) rotate(10deg);
+  }
+  97% {
+    /* 1431 */
+    opacity: 1;
+    transform: scale(1.15) rotate(-10deg);
+  }
+  100% {
+    /* 1467: gone with the body; the burst takes over */
+    opacity: 0;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* == THE CRACKGLOW: born at the pre-flash beat (1433, +1166), bright by the
+   time the body disappears (1467, +1200) - one 34 ms hold-and-brighten. === */
+.thr-bomb__crackglow {
+  opacity: 0;
+  animation: thr-bomb-crackglow calc(0.034s * var(--animation-speed, 1)) steps(1, end)
+    calc(1.166s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-bomb-crackglow {
+  0% {
+    /* 1433: dim, already visible */
+    opacity: 0.55;
+  }
+  100% {
+    /* 1467: bright; the burst takes over in the same frame */
+    opacity: 1;
+  }
+}
+
+/* == THE BURST: pops in already large at 1467 (+1200), full size by 1500
+   (+1233, the `full` beat and the boom), fades out as the smoke takes over
+   by 1600 (+1333). ========================================================= */
+.thr-bomb__burst {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-bomb-burst calc(0.133s * var(--animation-speed, 1)) ease-out
+    calc(1.2s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-bomb-burst {
+  0% {
+    /* 1467: EXPLOSION - already visible, a hair small */
+    opacity: 1;
+    transform: scale(0.9);
+  }
+  25% {
+    /* 1500: full size; the boom lands here */
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    /* 1600: gone; the smoke takes over */
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* == THE SMOKE: born at 1600 (+1333) as the burst fades, drifts up-left and
+   thins to nothing by 1833 (+1566) - seat CLEAN, no residue. ============== */
+.thr-bomb__smoke {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-bomb-smoke calc(0.233s * var(--animation-speed, 1)) ease-out
+    calc(1.333s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-bomb-smoke {
+  0% {
+    /* 1600: the puff, already visible, avatar showing through it */
+    opacity: 0.5;
+    transform: translate(0, 0) scale(0.95);
+  }
+  43% {
+    /* 1700: thinning, drifting up-left */
+    opacity: 0.4;
+    transform: translate(-2px, -2px) scale(1);
+  }
+  100% {
+    /* 1833: faded; seat CLEAN */
+    opacity: 0;
+    transform: translate(-6px, -5px) scale(1.05);
+  }
+}
+
+/* == REDUCED MOTION: the one frame this item is "about" - the burst, full
+   size, static - stands in for the whole explosion. Everything before it
+   (the sitting bomb, the fuse, the spark, the crackglow) and after it (the
+   smoke) is pure motion and goes; there is no residue to keep, so unlike
+   every other rig here the arrived state is not the last thing drawn, it is
+   the loudest. ============================================================= */
+@media (prefers-reduced-motion: reduce) {
+  .thr-bomb__body,
+  .thr-bomb__fuse,
+  .thr-bomb__spark,
+  .thr-bomb__crackglow,
+  .thr-bomb__smoke {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-bomb__burst {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+}

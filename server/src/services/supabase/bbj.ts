@@ -805,3 +805,80 @@ async function attemptBBJPayoutOnce(
     },
   };
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE MINI JACKPOT PAYOUT (BBJ build plan phase 6 of 6, Dan 2026-09-07)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A flat amount per stakes tier, out of `backup_balance` - the reserve that
+ * until now nothing spent - for a hand that came close to the main bar and did
+ * not meet it. `fn_bbj_mini_payout` does all of the money work in one
+ * transaction: it honours the same kill switch, shares the main's idempotency
+ * key so one hand can pay once, holds the reserve above its floor, and credits
+ * every recipient through `bbj_credit_one_recipient` - the same path, so a mini
+ * inherits phase 2.3's parked-share behaviour for free.
+ *
+ * DELIBERATELY THINNER THAN `processBBJPayout`. The main payout carries a
+ * write-ahead claim and a queue because it is the platform's largest single
+ * payment and losing one is unacceptable. A mini is a few hundred chips that
+ * recurs several times a day; a failed one is reported and dropped rather than
+ * queued, because a retry queue for it would be a repair job by another name
+ * (CLAUDE.md 10.12) and the reserve it comes from is not going anywhere.
+ */
+export async function processMiniBBJPayout(params: {
+  tableId: string;
+  clubId: string;
+  handNumber: number;
+  tierId: string;
+  loserUserId: string;
+  winnerUserId: string;
+  dealtInPlayerIds: string[];
+  seatedUserIds: string[];
+  metadata?: Record<string, unknown>;
+}): Promise<
+  | { status: 'paid'; total: number; loser: number; winner: number; perPlayer: number }
+  | { status: 'skipped'; reason: string }
+> {
+  const { data: club, error: clubErr } = await supabase
+    .from('clubs')
+    .select('union_id')
+    .eq('id', params.clubId)
+    .maybeSingle();
+  if (clubErr) return { status: 'skipped', reason: `clubs read failed: ${clubErr.message}` };
+  if (!club) return { status: 'skipped', reason: 'club_not_found' };
+
+  let poolQuery = supabase.from('bbj_pools').select('id').eq('status', 'active');
+  poolQuery = club.union_id
+    ? poolQuery.eq('union_id', club.union_id)
+    : poolQuery.eq('club_id', params.clubId);
+  const { data: pool, error: poolErr } = await poolQuery.maybeSingle();
+  if (poolErr) return { status: 'skipped', reason: `bbj_pools read failed: ${poolErr.message}` };
+  if (!pool) return { status: 'skipped', reason: 'no_active_pool' };
+
+  const { data: rows, error: rpcErr } = await supabase.rpc('fn_bbj_mini_payout', {
+    p_pool_id: pool.id,
+    p_table_id: params.tableId,
+    p_hand_number: params.handNumber,
+    p_tier_id: params.tierId,
+    p_loser_user_id: params.loserUserId,
+    p_winner_user_id: params.winnerUserId,
+    p_dealt_in_ids: params.dealtInPlayerIds,
+    p_seated_ids: params.seatedUserIds,
+    p_metadata: params.metadata ?? {},
+  });
+  if (rpcErr) return { status: 'skipped', reason: rpcErr.message };
+
+  const row = Array.isArray(rows) ? rows[0] : rows;
+  if (!row) return { status: 'skipped', reason: 'rpc_returned_nothing' };
+  if (row.already_paid) return { status: 'skipped', reason: 'already_paid' };
+  if (!row.applied) return { status: 'skipped', reason: row.refused || 'refused' };
+
+  return {
+    status: 'paid',
+    total: Number(row.total_payout),
+    loser: Number(row.loser_share),
+    winner: Number(row.winner_share),
+    perPlayer: Number(row.per_player_share),
+  };
+}

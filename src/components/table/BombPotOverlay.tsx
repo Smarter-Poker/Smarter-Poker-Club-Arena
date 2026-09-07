@@ -310,12 +310,20 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
             })}
           </div>
           {/* Spec §6.1 step 5: the badge names the board count before the
-              first board is shown — TRIPLE BOARD / DOUBLE BOARD / single —
-              and, on a variant-override bomb (spec §10.1), the game it will
-              be played as: "PLO4 DOUBLE BOARD". */}
+              first board is shown, and on a variant-override bomb (spec
+              §10.1) the game it will be played as.
+
+              IT NO LONGER SAYS DOUBLE BOARD (Dan 2026-09-07, item 7D:
+              "because all bomb pots are double board, it doesn't need to say
+              double board"). Two boards is the house default, so naming it
+              here spent the one line the player reads in the second before
+              the cards land on a fact that is true every single time. Three
+              boards is a real departure and still announces itself, and the
+              variant override still leads, so a PLO4 bomb still reads
+              "PLO4 ALL PLAYERS IN" rather than losing its game name. */}
           <div className="bpo-subtitle">
             {`${variantLabel ? `${variantLabel} ` : ''}${
-              boardCount >= 3 ? 'TRIPLE BOARD' : doubleBoard ? 'DOUBLE BOARD' : 'ALL PLAYERS IN'
+              boardCount >= 3 ? 'TRIPLE BOARD' : 'ALL PLAYERS IN'
             }`}
           </div>
           {anteAmount > 0 && (

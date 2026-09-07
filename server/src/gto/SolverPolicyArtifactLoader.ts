@@ -67,6 +67,10 @@ let chartState: LoadState = {
 let refreshTimer: NodeJS.Timeout | null = null;
 
 const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
+const CHART_DEPTHS = new Set([
+  2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25,
+]);
+const CHART_OPEN_POSITIONS = new Set(['UTG', 'MP', 'CO', 'BTN', 'SB']);
 
 export function allHoldemHandClasses(): string[] {
   const hands: string[] = [];
@@ -78,6 +82,70 @@ export function allHoldemHandClasses(): string[] {
     }
   }
   return hands;
+}
+
+const CHART_HAND_CLASSES = new Set(allHoldemHandClasses());
+
+function plainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/**
+ * Validate identity and every present sparse cell before a missing/malformed
+ * value can be interpreted as a fold in a CHART_AUDITED policy.
+ */
+export function assertValidChartPolicyRow(row: ChartPolicyRow): ChartPolicyRow {
+  if (
+    !plainRecord(row) ||
+    !['Cash', 'Tournament'].includes(row.game_type) ||
+    !CHART_DEPTHS.has(row.stack_depth) ||
+    !['fold_to_hero', 'sb_push'].includes(row.villain_action) ||
+    !plainRecord(row.hand_matrix) ||
+    Object.keys(row.hand_matrix).length === 0
+  ) {
+    throw new Error('invalid_chart_policy_row');
+  }
+  const expectedAction = row.villain_action === 'sb_push' ? 'call' : 'push';
+  const expectedPosition =
+    row.villain_action === 'sb_push'
+      ? row.hero_position === 'BB'
+      : CHART_OPEN_POSITIONS.has(row.hero_position);
+  if (!expectedPosition) throw new Error('invalid_chart_policy_identity');
+
+  for (const [hand, rawCell] of Object.entries(row.hand_matrix)) {
+    if (!CHART_HAND_CLASSES.has(hand) || !plainRecord(rawCell)) {
+      throw new Error(`invalid_chart_policy_cell:${hand}`);
+    }
+    const keys = Object.keys(rawCell);
+    if (keys.length === 0 || keys.some((key) => key !== expectedAction && key !== 'fold')) {
+      throw new Error(`invalid_chart_policy_actions:${hand}`);
+    }
+    const values = keys.map((key) => rawCell[key]);
+    if (
+      values.some(
+        (value) =>
+          value !== null &&
+          (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1)
+      )
+    ) {
+      throw new Error(`invalid_chart_policy_frequency:${hand}`);
+    }
+    const actionFrequency = rawCell[expectedAction];
+    const foldFrequency = rawCell.fold;
+    if (!Number.isFinite(actionFrequency) && !Number.isFinite(foldFrequency)) {
+      throw new Error(`missing_chart_policy_frequency:${hand}`);
+    }
+    if (
+      Number.isFinite(actionFrequency) &&
+      Number.isFinite(foldFrequency) &&
+      Math.abs((actionFrequency as number) + (foldFrequency as number) - 1) > 1e-6
+    ) {
+      throw new Error(`invalid_chart_policy_mix:${hand}`);
+    }
+  }
+  return row;
 }
 
 function chartLookupKey(
@@ -192,18 +260,7 @@ function finiteChartFrequency(value: unknown): number | null {
 }
 
 export function createChartSolverPolicy(row: ChartPolicyRow): SolverPolicyAnswer {
-  if (
-    !row ||
-    !Number.isFinite(row.stack_depth) ||
-    !(row.stack_depth > 0) ||
-    !row.hero_position ||
-    !row.villain_action ||
-    !row.hand_matrix ||
-    typeof row.hand_matrix !== 'object' ||
-    !['Cash', 'Tournament'].includes(row.game_type)
-  ) {
-    throw new Error('invalid_chart_policy_row');
-  }
+  assertValidChartPolicyRow(row);
   const facing = row.villain_action.toLowerCase() === 'sb_push';
   const yesId = facing ? 'call' : 'all_in';
   const yesSource = facing ? 'call' : 'push';
@@ -213,7 +270,7 @@ export function createChartSolverPolicy(row: ChartPolicyRow): SolverPolicyAnswer
   const hands = allHoldemHandClasses();
   for (const hand of hands) {
     const cell = row.hand_matrix[hand];
-    const rawYes = finiteChartFrequency(cell?.[facing ? 'call' : 'push'] ?? cell?.shove);
+    const rawYes = finiteChartFrequency(cell?.[facing ? 'call' : 'push']);
     const rawFold = finiteChartFrequency(cell?.fold);
     const hasYes = rawYes !== null;
     const hasFold = rawFold !== null;
@@ -371,8 +428,11 @@ export function replaceSolverPolicyArtifact(value: unknown): number {
 /** Build every chart policy before swapping, so a bad refresh keeps the last good set. */
 export function hydrateChartPolicyArtifact(rows: ChartPolicyRow[]): number {
   try {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw new Error('empty_chart_policy_refresh');
+    }
     const next = new Map<string, SolverPolicyAnswer>();
-    for (const row of rows || []) {
+    for (const row of rows) {
       const policy = createChartSolverPolicy(row);
       const key = chartLookupKey(
         row.game_type,
@@ -530,6 +590,14 @@ export function solverPolicyArtifactStatus() {
     external: { ...externalState },
     charts: { ...chartState },
     totalPolicies: solverPolicyArtifactCount(),
+  };
+}
+
+/** Surface corpus/query failures that happen before artifact hydration. */
+export function recordChartPolicyRefreshError(error: unknown): void {
+  chartState = {
+    ...chartState,
+    lastError: error instanceof Error ? error.message : String(error),
   };
 }
 

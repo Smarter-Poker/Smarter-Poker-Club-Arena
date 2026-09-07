@@ -196,6 +196,29 @@ export const equityGovernorScale: Gauge = alwaysOnRegistry.gauge(
   'poker_equity_governor_scale',
   'Horse Monte Carlo iteration scale the governor is applying (1 = full precision, 0.2 = floor). Below 1 means the core is shedding load.'
 );
+/**
+ * HOW LATE THE GOVERNOR'S OWN ONE-SECOND TICK RAN (2026-09-07).
+ *
+ * The three gauges above all come from `monitorEventLoopDelay`, and on
+ * 2026-09-07 that went blind exactly when it mattered: the histogram is only
+ * written when the loop TURNS, so a loop pegged by one long synchronous run
+ * records FEWER samples the more saturated it is, and an empty histogram
+ * reports 0.000511 ms - which read as enormous headroom. `/health` served
+ * `scale: 1, p50Ms: 0.000511` through a twenty-minute outage.
+ *
+ * This one cannot go blind, because it is not a sample of the loop - it is the
+ * loop refusing to run us. A one-second interval that fires at 1,800 ms has
+ * measured 800 ms of saturation, and the worse of the two readings is what the
+ * scale is now decided on.
+ *
+ * Read it beside `poker_event_loop_delay_p50_ms`: the two agreeing is a
+ * healthy measurement, this one alone rising is the histogram being starved,
+ * and both flat while hands stop is the case to escalate.
+ */
+export const equityGovernorSamplerLateMs: Gauge = alwaysOnRegistry.gauge(
+  'poker_equity_governor_sampler_late_ms',
+  "How late the governor's own one-second sampler last ran (ms). Event-loop saturation measured directly, and the reading that survives when the delay histogram is starved."
+);
 
 /**
  * WHAT IS ACTUALLY ON THE CORE (2026-09-07).

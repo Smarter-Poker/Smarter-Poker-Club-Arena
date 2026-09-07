@@ -531,11 +531,82 @@ export class EngineTelemetry {
    *   - uptime takes the MAX — engines are created as tables are adopted, so
    *     the oldest is the one that measures the process.
    */
+  /**
+   * ── A COUNTER SUMMED OVER A LIVE SET IS NOT A COUNTER (2026-09-07) ────────
+   *
+   * `renderFleetMetrics` sums each engine's lifetime totals. Engines are
+   * created and destroyed constantly as tables open and close, so the SUM
+   * drops every time one is retired — and Prometheus reads any drop in a
+   * counter as a process restart, adding the whole post-drop value back.
+   *
+   * MEASURED on production the same day the fleet aggregation shipped, at
+   * 15-second resolution over 15 minutes:
+   *
+   *     61 samples, 11 DROPS
+   *       5667 -> 5610   (lost 57)
+   *       5689 -> 5624   (lost 65)
+   *       5962 -> 5911   (lost 51)
+   *
+   *     increase(poker_hands_dealt_total[5m])  reported  22,663
+   *     hand_history over the same 5 minutes      true     1,260
+   *
+   * An EIGHTEEN-fold over-count. `EngineHandsStopped` survived it, because it
+   * only asks whether the increase is zero and an inflated number is still not
+   * zero — but `EngineFleetThroughputCollapsed`, added to catch the 04:05
+   * class, divides by table count and compares against 1.0 hands per table per
+   * minute. With an 18x numerator it could never fire. The alarm written to
+   * close the gap was itself unable to close it.
+   *
+   * THE FIX IS TO BANK DELTAS, not to sum a shifting set. Each scrape, every
+   * engine's own lifetime count is compared with what it last reported; only
+   * the INCREASE is added to a process-wide total. An engine that disappears
+   * simply stops contributing — everything it dealt is already banked — so the
+   * fleet total is monotonic for the life of the process by construction, and
+   * needs no hook at any of the seven `tableEngines.delete()` sites.
+   *
+   * `activeTables`, `activePlayers` and the averages are GAUGES and are left
+   * summed: they are supposed to fall when a table closes.
+   */
+  private static readonly fleetCounters = {
+    hands: 0,
+    processingViolations: 0,
+    broadcastViolations: 0,
+    /** Per-engine last-seen values, so only increases are banked. */
+    seen: new WeakMap<EngineTelemetry, { hands: number; proc: number; bcast: number }>(),
+  };
+
+  /**
+   * Bank one engine's increase into the process-wide monotonic totals.
+   *
+   * Guarded with `> prev` rather than assuming growth: an engine's own count
+   * cannot fall today, but a counter that silently absorbs a negative delta is
+   * exactly the class of bug this whole note is about.
+   */
+  private static bankEngineCounters(
+    e: EngineTelemetry,
+    hands: number,
+    proc: number,
+    bcast: number
+  ): void {
+    const f = EngineTelemetry.fleetCounters;
+    const prev = f.seen.get(e) ?? { hands: 0, proc: 0, bcast: 0 };
+    if (hands > prev.hands) f.hands += hands - prev.hands;
+    if (proc > prev.proc) f.processingViolations += proc - prev.proc;
+    if (bcast > prev.bcast) f.broadcastViolations += bcast - prev.bcast;
+    f.seen.set(e, { hands, proc, bcast });
+  }
+
+  /** Test seam: reset the process-wide banked totals. */
+  static __resetFleetCountersForTest(): void {
+    EngineTelemetry.fleetCounters.hands = 0;
+    EngineTelemetry.fleetCounters.processingViolations = 0;
+    EngineTelemetry.fleetCounters.broadcastViolations = 0;
+    EngineTelemetry.fleetCounters.seen = new WeakMap();
+  }
+
   static renderFleetMetrics(engines: Iterable<EngineTelemetry>): string {
     let activeTables = 0;
     let activePlayers = 0;
-    let totalHandsDealt = 0;
-    let uptimeMs = 0;
     let handsPerHourWeighted = 0;
     let handDurationWeighted = 0;
     let cacheHits = 0;
@@ -545,8 +616,6 @@ export class EngineTelemetry {
     let actionCount = 0;
     let p95Processing = 0;
     let p95Broadcast = 0;
-    let processingViolations = 0;
-    let broadcastViolations = 0;
     const tableLines: string[] = [];
 
     for (const e of engines) {
@@ -554,8 +623,14 @@ export class EngineTelemetry {
       const p = e.getPerformanceSummary();
       activeTables += s.global.activeTables;
       activePlayers += s.global.activePlayers;
-      totalHandsDealt += s.global.totalHandsDealt;
-      uptimeMs = Math.max(uptimeMs, s.global.uptime);
+      // Counters are BANKED, never summed over the live set — see the note on
+      // `fleetCounters`. Summing them made increase() over-report 18x.
+      EngineTelemetry.bankEngineCounters(
+        e,
+        s.global.totalHandsDealt,
+        p.processingViolations,
+        p.broadcastViolations
+      );
       handsPerHourWeighted += s.global.avgHandsPerHour * s.global.activeTables;
       handDurationWeighted += s.global.avgHandDurationMs * s.global.activeTables;
       cacheHits += e.cacheHits;
@@ -565,10 +640,13 @@ export class EngineTelemetry {
       actionCount += p.actionCount;
       p95Processing = Math.max(p95Processing, p.p95ProcessingMs);
       p95Broadcast = Math.max(p95Broadcast, p.p95BroadcastMs);
-      processingViolations += p.processingViolations;
-      broadcastViolations += p.broadcastViolations;
       tableLines.push(...e.getPrometheusTableLines());
     }
+
+    // Read the BANKED totals, not a sum over whoever happens to be alive.
+    const totalHandsDealt = EngineTelemetry.fleetCounters.hands;
+    const processingViolations = EngineTelemetry.fleetCounters.processingViolations;
+    const broadcastViolations = EngineTelemetry.fleetCounters.broadcastViolations;
 
     const cacheTotal = cacheHits + cacheMisses;
     const g = (name: string, help: string, type: string, value: number): string[] => [
@@ -616,9 +694,21 @@ export class EngineTelemetry {
       ),
       ...g(
         'poker_uptime_seconds',
-        'Engine uptime in seconds',
+        'Engine process uptime in seconds',
         'gauge',
-        Math.round(uptimeMs / 1000)
+        /**
+         * THE PROCESS, not the oldest surviving table engine (2026-09-07).
+         *
+         * `EngineRestartLoop` in engine-freeze-rules.yml alerts on
+         * `resets(poker_uptime_seconds[30m]) > 3`, so this value falling means
+         * "the engine restarted". `Math.max` over per-engine ages says that
+         * whenever the OLDEST engine is retired — a table closing, not a
+         * restart. It holds today only because the first engine happens to
+         * outlive the others (measured: 0 resets in 30 minutes), which is luck,
+         * not a property. `process.uptime()` is the thing the metric claims to
+         * be and cannot fall without an actual restart.
+         */
+        Math.round(process.uptime())
       ),
       ...g(
         'poker_action_processing_ms',

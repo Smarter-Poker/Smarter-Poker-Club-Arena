@@ -309,6 +309,7 @@ export default function TournamentAutoSeat() {
                 // Open it as a table tab as well as navigating, so the
                 // multi-table layer knows about it — same hop the auto-seat
                 // path uses.
+                warmTable(id);
                 masterBus.emit('TABLE_SEATED', { tableId: id, seat: 0 });
                 navigate(`/table/${id}`);
               }}

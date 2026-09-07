@@ -70,3 +70,33 @@ IDs. TypeScript and targeted lint passed. The earlier full local build passed
 with source-map upload disabled; no approval guard was bypassed. The merge
 hook reformatted tests/shipped-invariants.test.ts without changing assertions.
 Authenticated browser verification and broader network soak checks remain open.
+
+## Release-check follow-up
+
+PR #3573 exposed two concrete integration issues. The lobby variant-menu
+component test mounted the new real preparation effect, starting lazy route
+imports that could still log after Vitest tore down its worker. The filter
+suite now mocks that service boundary; the dedicated warm-up, mux and client
+suites continue to exercise preparation and recovery. The other failed shard
+was canceled, not an assertion failure.
+
+The startup module gate measured three newly eager modules: authToken,
+tableWarmup and ChunkPreloader, about 4 KB gzip above its prior baseline.
+This is an intentional reviewed cost: global observer and tournament seating
+entry points must start preparation synchronously before dispatching entry,
+including a first click before the lobby chunk has loaded. Deferring the helper
+until that click would restore a request waterfall. The measured initial
+bundle remains below its existing size gate; only the reviewed module list is
+updated, with no threshold increases or checks removed.
+
+The blinding-off reminder's Take My Seat action now prepares its actual table
+before the same seating event, covering the other entry branch in that component.
+
+Live verification reached a signed-in Terms of Service screen. Automatic review
+blocked accepting that agreement without explicit user authorization. No
+authenticated table-entry timing has been claimed from that blocked session.
+
+Final local follow-up: 147 tests across six files passed, full build and
+targeted ESLint passed. The reviewed module-list gate passes; the unchanged
+bundle-size gate measures initial 310 KB / 320 KB gzip and total
+2448 KB / 2600 KB gzip. CI must still verify this updated commit.

@@ -44,8 +44,13 @@ describe('Daily Missions directed actions', () => {
 });
 
 describe('Daily Missions accessibility contract', () => {
-  it('sets the browser title when the route mounts', () => {
-    expect(PAGE).toContain("document.title = 'Daily Challenges | Smarter Poker'");
+  it('sets the browser title from the active direct-route cycle', () => {
+    expect(PAGE).toContain(
+      'document.title = `${TIER_PRESENTATION[activeTier].title} | Smarter Poker`'
+    );
+    expect(PAGE).toContain("title: 'Daily Challenges'");
+    expect(PAGE).toContain("title: 'Weekly Challenges'");
+    expect(PAGE).toContain("title: 'Monthly Challenges'");
   });
 
   it('uses the shell main landmark instead of nesting a second main', () => {
@@ -110,7 +115,9 @@ describe('Daily Missions accessibility contract', () => {
   it('does not let a closing card steal focus from a newly opened reroll confirmation', () => {
     expect(PAGE).toContain('rerollConfirmationOpen={confirmingRerollId !== null}');
     expect(PAGE).toContain('rerollFocusRestorePendingRef.current = !rerollConfirmationOpen');
-    expect(PAGE).toContain('disabled={rerolling || economyBusy || rerollConfirmationOpen}');
+    expect(PAGE).toMatch(
+      /disabled=\{\s*rerolling \|\| economyBusy \|\| rerollConfirmationOpen \|\| !canAffordReroll\s*\}/
+    );
   });
 
   it('exposes progress, tabs, sync state, and reroll confirmation semantically', () => {

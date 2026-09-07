@@ -148,6 +148,7 @@
 }
 
 .heroCopy h1 {
+  width: 100%;
   max-width: 600px;
   margin: 14px 0 12px;
   color: var(--mission-white);
@@ -157,6 +158,7 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   text-shadow: 0 5px 30px #000;
+  overflow-wrap: anywhere;
 }
 
 .heroCopy > p {
@@ -403,7 +405,10 @@
   border: 1px solid #71818c;
   background: #0b1013;
   color: #ecf3f6;
-  font: 700 0.68rem/1 inherit;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
@@ -425,6 +430,33 @@
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+.streakFireVisual {
+  display: inline-grid;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  place-items: center;
+  border: 1px solid rgba(211, 168, 85, 0.42);
+  background:
+    radial-gradient(circle, rgba(85, 232, 255, 0.08), transparent 64%),
+    linear-gradient(145deg, #1c2423, #040706 70%);
+  clip-path: polygon(
+    10px 0,
+    100% 0,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    0 100%,
+    0 10px
+  );
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.12),
+    0 0 18px rgba(211, 168, 85, 0.08);
+}
+
+.streakFireVisual > [data-casino-control-icon] {
+  --control-size: 44px;
 }
 
 .streakInfo {
@@ -524,35 +556,6 @@
   box-shadow: inset 0 0 16px rgba(85, 232, 255, 0.05);
 }
 
-.freezeReceiptSeal {
-  position: relative;
-  display: block;
-  width: 18px;
-  height: 18px;
-  flex: none;
-  border: 1px solid #79edf9;
-  border-radius: 50%;
-  box-shadow:
-    inset 0 0 0 3px #071518,
-    0 0 10px rgba(85, 232, 255, 0.28);
-}
-
-.freezeReceiptSeal::before,
-.freezeReceiptSeal::after {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 9px;
-  height: 1px;
-  background: #c7faff;
-  content: '';
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-
-.freezeReceiptSeal::after {
-  transform: translate(-50%, -50%) rotate(-45deg);
-}
-
 .freezeReceipt > div {
   display: grid;
   gap: 2px;
@@ -589,7 +592,7 @@
   text-align: right;
 }
 
-.buyFreezeBtn span,
+.buyFreezeBtn .buttonPrice,
 .diamond {
   color: var(--mission-blue);
 }
@@ -634,11 +637,11 @@
   padding: 18px 20px;
 }
 
-.summaryTile:nth-child(odd) {
+.summaryTile:nth-of-type(odd) {
   border-right: 1px solid rgba(174, 190, 201, 0.14);
 }
 
-.summaryTile:nth-child(-n + 2) {
+.summaryTile:nth-of-type(-n + 2) {
   border-bottom: 1px solid rgba(174, 190, 201, 0.14);
 }
 
@@ -733,6 +736,12 @@
   transform: rotate(45deg);
 }
 
+.alertControlIcon {
+  --control-size: 36px;
+
+  transform: rotate(-45deg);
+}
+
 .alertCopy {
   min-width: 0;
 }
@@ -792,7 +801,10 @@
   border: 1px solid rgba(85, 232, 255, 0.68);
   background: linear-gradient(180deg, #142027, #070b0e);
   color: #f3f8fa;
-  font: 700 0.7rem/1 inherit;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
   letter-spacing: 0.11em;
   text-transform: uppercase;
   cursor: pointer;
@@ -810,7 +822,10 @@
   border: 1px solid rgba(174, 190, 201, 0.32);
   background: transparent;
   color: #aebac2;
-  font: 700 0.62rem/1.25 inherit;
+  font-family: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.25;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
@@ -1202,7 +1217,10 @@
   border: 1px solid #64737e;
   background: #070a0c;
   color: #a6b0b7;
-  font: 700 0.68rem/1 inherit;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   cursor: pointer;
@@ -1215,7 +1233,7 @@
   box-shadow: 0 0 14px color-mix(in srgb, var(--card-tier-color) 12%, transparent);
 }
 
-.rerollButton span {
+.rerollButton .buttonPrice {
   margin-left: 5px;
   color: var(--mission-blue);
 }
@@ -1267,6 +1285,11 @@
 .emptyState {
   grid-column: 1 / -1;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 220px;
   place-items: center;
   align-content: center;
@@ -1274,6 +1297,12 @@
   border: 1px dashed #3b464e;
   color: #7d8991;
   text-align: center;
+}
+
+.emptyState > :not(.bevelFrame) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .emptyState h2,
@@ -1305,11 +1334,15 @@
 
 .celebrateOverlay {
   position: fixed;
-  z-index: 9999;
+  /* Dialogs must paint above the global toast rail. The app root becomes
+     inert while this portal is open, so a toast above it would look clickable
+     while its controls were intentionally unavailable. */
+  z-index: 10020;
   inset: 0;
   display: grid;
   place-items: center;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
     max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: rgba(1, 3, 4, 0.92);
@@ -1397,6 +1430,11 @@
   color: var(--mission-blue);
 }
 
+.celebrateMilestonePayout .celebratePayoutValue {
+  color: var(--mission-gold);
+  text-shadow: 0 0 12px rgba(211, 168, 85, 0.2);
+}
+
 .celebratePayoutLabel {
   color: #aab6bd;
   font-size: 0.72rem;
@@ -1406,10 +1444,25 @@
 }
 
 .celebrateBalance {
-  margin: 14px 0 0;
+  margin: 4px 0 0;
   color: #7b8790;
   font-family: Inter, system-ui, sans-serif;
   font-size: 0.76rem;
+}
+
+.celebrateBalanceLedger {
+  display: grid;
+  gap: 2px;
+  margin-top: 14px;
+}
+
+.celebrateTotal {
+  margin: 0;
+  color: #d7faff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .celebrateReceipt {
@@ -1428,7 +1481,10 @@
   border: 1px solid var(--mission-blue);
   background: #0c1216;
   color: #fff;
-  font: 700 0.76rem/1 inherit;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   cursor: pointer;
@@ -2752,7 +2808,7 @@
 
   .heroCopy h1 {
     margin-block: 9px 7px;
-    font-size: clamp(2.65rem, 14vw, 3.75rem);
+    font-size: min(12vw, 3.75rem);
   }
 
   .heroCopy > p {
@@ -2865,6 +2921,18 @@
     padding: 18px 15px;
   }
 
+  .cardTopline {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .cardState {
+    max-width: 100%;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
   .rewardReadout {
     display: flex;
     grid-template-columns: none;
@@ -2890,6 +2958,33 @@
     padding-inline: 20px;
   }
 
+  .celebrateTitle {
+    max-width: 100%;
+    font-size: clamp(1.45rem, 9vw, 2rem);
+    line-height: 1.08;
+    overflow-wrap: anywhere;
+  }
+
+  .celebratePayouts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .celebratePayouts > div {
+    min-width: 0;
+  }
+
+  .celebratePayouts > div + div {
+    border-top: 1px solid rgba(180, 194, 204, 0.2);
+    border-left: 0;
+  }
+
+  .celebratePayoutValue,
+  .celebratePayoutLabel,
+  .freezeDialogDescription {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
   .celebrateArtwork {
     width: min(86%, 290px);
     height: 190px;
@@ -2910,6 +3005,40 @@
   }
 }
 
+@media (max-width: 380px) {
+  .tabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tab {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    justify-content: stretch;
+    gap: 2px 10px;
+    padding: 8px 14px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(184, 196, 201, 0.19);
+    text-align: left;
+  }
+
+  .tab:last-child {
+    border-bottom: 0;
+  }
+
+  .tab > [data-casino-control-icon] {
+    grid-row: 1 / -1;
+    align-self: center;
+  }
+
+  .tabLabel,
+  .tabCount {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
 @media (max-width: 420px) {
   .hero {
     min-height: 560px;
@@ -2917,6 +3046,96 @@
 
   .heroCopy {
     min-height: 560px;
+  }
+
+  .heroActions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .heroActions .backButton,
+  .heroActions .playButton {
+    min-height: 48px;
+    overflow-wrap: anywhere;
+  }
+
+  .streakCore {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .summaryGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summaryTile:nth-of-type(n) {
+    border-right: 0;
+    border-bottom: 1px solid rgba(174, 190, 201, 0.14);
+  }
+
+  .summaryTile:last-of-type {
+    border-bottom: 0;
+  }
+
+  .summaryValue {
+    overflow-wrap: anywhere;
+  }
+
+  .unclaimedBar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .vaultArtwork {
+    justify-self: center;
+    width: min(100%, 170px);
+    height: 122px;
+    margin: 0;
+  }
+
+  .vaultCopy {
+    min-width: 0;
+    padding: 0;
+    text-align: center;
+  }
+
+  .vaultCopy strong,
+  .vaultCopy small {
+    overflow-wrap: anywhere;
+  }
+
+  .claimAllButton {
+    grid-column: auto;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .alertConsole {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .alertIcon {
+    justify-self: start;
+  }
+
+  .footer,
+  .footer > div,
+  .commandDeck,
+  .streakConsole,
+  .summaryGrid,
+  .summaryTile,
+  .unclaimedBar {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .footer h2,
+  .footer p,
+  .streakCount,
+  .streakDesc {
+    overflow-wrap: anywhere;
   }
 
   .cardActions {
@@ -3143,6 +3362,10 @@
 .celebrateButton {
   --control-frame-color: rgba(184, 196, 201, 0.62);
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .backButton::after,
@@ -3338,6 +3561,15 @@
   transform: translateX(-58%) rotate(8deg);
   animation: missionFacetSweep 4.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
   animation-delay: var(--icon-phase);
+}
+
+/* Mission instruments are non-text artwork. Keep their physical dial inside
+   the fixed 44px machined housing when browser text is enlarged. */
+.iconBox > [data-mission-instrument] {
+  --mission-size: 36px;
+
+  max-width: 36px;
+  max-height: 36px;
 }
 
 .iconGlyph {
@@ -3562,5 +3794,404 @@
 
   .iconScanner {
     opacity: 0.72;
+  }
+}
+
+/* ========================================================================== */
+/* PHASE 10 CASINO COMMAND SYSTEM                                             */
+/* ========================================================================== */
+
+.page {
+  --mission-cycle-color: var(--mission-blue);
+  --mission-cycle-glow: rgba(85, 232, 255, 0.22);
+}
+
+.page[data-mission-cycle='weekly'] {
+  --mission-cycle-color: #c8d5da;
+  --mission-cycle-glow: rgba(200, 213, 218, 0.2);
+}
+
+.page[data-mission-cycle='monthly'] {
+  --mission-cycle-color: var(--mission-gold);
+  --mission-cycle-glow: rgba(211, 168, 85, 0.24);
+}
+
+.hero > .bevelFrame {
+  --bevel-frame-color: color-mix(in srgb, var(--mission-cycle-color) 66%, var(--mission-chrome));
+  filter: drop-shadow(0 0 7px var(--mission-cycle-glow));
+}
+
+.heroPicture picture {
+  position: absolute;
+  inset: 0;
+}
+
+.heroCycleAtmosphere {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background:
+    radial-gradient(circle at 73% 42%, var(--mission-cycle-glow), transparent 21rem),
+    linear-gradient(
+      120deg,
+      transparent 54%,
+      color-mix(in srgb, var(--mission-cycle-color) 8%, transparent)
+    );
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.heroPicture[data-hero-cycle='weekly'] .heroArtwork {
+  filter: contrast(1.08) saturate(0.64) brightness(0.94) hue-rotate(154deg);
+}
+
+.heroPicture[data-hero-cycle='monthly'] .heroArtwork {
+  filter: contrast(1.08) saturate(1.02) brightness(0.92) sepia(0.13);
+}
+
+.heroCycleInstrument {
+  position: absolute;
+  z-index: 2;
+  top: 30px;
+  right: 34px;
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--mission-cycle-color) 72%, #79868a);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--mission-cycle-color) 11%, #07100e),
+    #030504 68%
+  );
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  color: var(--mission-cycle-color);
+  filter: drop-shadow(0 0 8px var(--mission-cycle-glow));
+}
+
+.heroCycleInstrument::before,
+.heroCycleInstrument::after {
+  position: absolute;
+  inset: 7px;
+  border: 1px solid color-mix(in srgb, var(--mission-cycle-color) 34%, transparent);
+  content: '';
+  clip-path: inherit;
+}
+
+.heroCycleInstrument::after {
+  inset: 14px;
+  border-color: color-mix(in srgb, var(--mission-cycle-color) 18%, transparent);
+}
+
+.heroCycleInstrument i {
+  position: absolute;
+  z-index: 1;
+  width: 72%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--mission-cycle-color), transparent);
+  box-shadow: 0 0 7px var(--mission-cycle-color);
+  animation: missionCycleDial 5.8s linear infinite;
+}
+
+.heroCycleInstrument b {
+  position: relative;
+  z-index: 2;
+  color: #f7fbfb;
+  font-size: 1rem;
+  font-weight: 700;
+  text-shadow: 0 0 8px var(--mission-cycle-color);
+}
+
+@keyframes missionCycleDial {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loadingBoard,
+.streakConsole,
+.summaryGrid,
+.unclaimedBar,
+.alertConsole,
+.syncNotice,
+.missionBoard,
+.tabs,
+.footer {
+  position: relative;
+}
+
+.loadingBoard > .bevelFrame,
+.streakConsole > .bevelFrame,
+.summaryGrid > .bevelFrame,
+.alertConsole > .bevelFrame,
+.syncNotice > .bevelFrame,
+.missionBoard > .bevelFrame,
+.tabs > .bevelFrame,
+.footer > .bevelFrame {
+  --bevel-size: 8px;
+  --bevel-frame-color: rgba(184, 196, 201, 0.42);
+}
+
+.unclaimedBar > .bevelFrame {
+  --bevel-size: 8px;
+  --bevel-frame-color: rgba(211, 168, 85, 0.64);
+}
+
+.missionBoard > .bevelFrame,
+.tabs > .bevelFrame {
+  z-index: 5;
+  --bevel-frame-color: color-mix(in srgb, var(--mission-cycle-color) 46%, var(--mission-chrome));
+}
+
+.rerollConfirm {
+  display: grid;
+  width: min(100%, 430px);
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.rerollConfirm > .rerollPrompt {
+  max-width: none;
+  padding-right: 6px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.celebrateOverlay .confirmButton:not(:disabled) {
+  background:
+    linear-gradient(180deg, #2f3938, #0a100e 55%, #030504), var(--mission-gunmetal) !important;
+  background-image: linear-gradient(180deg, #2f3938, #0a100e 55%, #030504) !important;
+  border-color: color-mix(in srgb, var(--mission-gold) 76%, var(--mission-chrome)) !important;
+  color: #f7fbf9 !important;
+}
+
+.freezeVaultGraphic {
+  position: relative;
+  display: grid;
+  width: min(82%, 320px);
+  height: 218px;
+  place-items: center;
+  overflow: hidden;
+  margin: -4px auto 2px;
+  background:
+    radial-gradient(circle, rgba(85, 232, 255, 0.15), transparent 48%),
+    linear-gradient(180deg, transparent 76%, rgba(211, 168, 85, 0.08));
+}
+
+.freezeVaultHalo {
+  position: absolute;
+  width: 142px;
+  height: 142px;
+  border: 1px solid rgba(184, 196, 201, 0.3);
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 10px rgba(85, 232, 255, 0.018),
+    0 0 34px rgba(85, 232, 255, 0.12);
+}
+
+.freezeVaultHalo::before,
+.freezeVaultHalo::after {
+  position: absolute;
+  inset: 12px;
+  border: 1px dashed rgba(85, 232, 255, 0.36);
+  border-radius: 50%;
+  content: '';
+  animation: missionFreezeDial 11s linear infinite;
+}
+
+.freezeVaultHalo::after {
+  inset: 25px;
+  border-style: solid;
+  border-color: rgba(211, 168, 85, 0.18);
+  animation-direction: reverse;
+  animation-duration: 8s;
+}
+
+.freezeVaultArtwork {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 208px;
+  height: 208px;
+  object-fit: contain;
+  filter: drop-shadow(0 16px 17px rgba(0, 0, 0, 0.72))
+    drop-shadow(0 0 11px rgba(85, 232, 255, 0.28));
+}
+
+.freezeVaultScan {
+  position: absolute;
+  z-index: 3;
+  top: 12%;
+  width: 58%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #d7fcff, transparent);
+  box-shadow: 0 0 8px #55e8ff;
+  animation: missionFreezeScan 3.8s ease-in-out infinite;
+}
+
+@keyframes missionFreezeDial {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes missionFreezeScan {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  20%,
+  80% {
+    opacity: 0.84;
+  }
+  50% {
+    transform: translateY(138px);
+  }
+}
+
+@media (min-width: 981px) {
+  .list > :last-child:nth-child(odd) {
+    width: calc((100% - 16px) / 2);
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+}
+
+@media (max-width: 680px) {
+  .heroCopy h1 {
+    font-size: clamp(2rem, calc(8vw + 0.75rem), 3.75rem);
+  }
+
+  .heroCycleInstrument {
+    top: 82px;
+    right: 18px;
+    width: 46px;
+    height: 46px;
+  }
+
+  .rerollConfirm {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rerollConfirm > .rerollPrompt {
+    grid-column: 1 / -1;
+    padding-right: 0;
+  }
+
+  .rerollConfirm .cancelButton,
+  .rerollConfirm .confirmButton {
+    width: 100%;
+  }
+
+  .streakConsole {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .streakCore,
+  .milestoneTracker,
+  .freezeLine,
+  .freezeInfo,
+  .freezeAction,
+  .freezeReceipt,
+  .freezeReceipt > div {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .freezeAction {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .buyFreezeBtn {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .freezeInfo,
+  .freezeReceipt > div,
+  .milestoneLabels {
+    overflow-wrap: anywhere;
+  }
+
+  .milestoneLabels {
+    flex-wrap: wrap;
+  }
+
+  .freezeVaultGraphic {
+    height: 174px;
+  }
+
+  .freezeVaultArtwork {
+    width: 168px;
+    height: 168px;
+  }
+}
+
+@media (max-width: 420px) {
+  .cardHeader {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .cardTitles,
+  .cardName,
+  .cardDesc {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .cardName {
+    line-height: 1.08;
+  }
+
+  .rewardReadout {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    align-items: flex-start;
+    padding: 12px 0 0;
+    border-top: 1px solid rgba(211, 168, 85, 0.22);
+    border-left: 0;
+    text-align: left;
+  }
+
+  .rerollConfirm {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rerollConfirm > .rerollPrompt {
+    grid-column: auto;
+  }
+
+  .rerollConfirm .cancelButton,
+  .rerollConfirm .confirmButton {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroCycleInstrument i {
+    animation: none;
+    transform: rotate(36deg);
+  }
+
+  .freezeVaultHalo::before,
+  .freezeVaultHalo::after,
+  .freezeVaultScan {
+    animation: none;
+  }
+
+  .freezeVaultScan {
+    top: 50%;
+    opacity: 0.5;
   }
 }

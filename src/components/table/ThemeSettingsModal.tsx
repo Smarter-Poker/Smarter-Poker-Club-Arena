@@ -68,6 +68,10 @@ import {
 } from '../../lib/tableStudioCheckoutResume';
 import { recordCustomizationOperation } from '../../services/CustomizationOperationsTelemetry';
 import { retryFetch } from '../../utils/retryFetch';
+import {
+  clearSessionPurchaseRequestId,
+  readOrCreateSessionPurchaseRequestId,
+} from '../../utils/sessionPurchaseRequest';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -107,6 +111,7 @@ interface ThemeAsset {
 }
 
 interface PendingAssetPurchase {
+  userId: string;
   id: string;
   name: string;
   price: number;
@@ -614,13 +619,17 @@ export function ThemeSettingsModal({
   const [assetPrices, setAssetPrices] = useState<Record<string, number>>({});
   const [pricingState, setPricingState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [pricingRevision, setPricingRevision] = useState(0);
-  const [pendingAssetPurchase, setPendingAssetPurchase] = useState<PendingAssetPurchase | null>(
-    null
-  );
-  const [purchaseBusy, setPurchaseBusy] = useState(false);
-  const [diamondStoreOpen, setDiamondStoreOpen] = useState(false);
+  const [pendingAssetPurchaseState, setPendingAssetPurchase] =
+    useState<PendingAssetPurchase | null>(null);
+  const pendingAssetPurchase =
+    pendingAssetPurchaseState?.userId === userId ? pendingAssetPurchaseState : null;
+  const [purchaseBusyUserId, setPurchaseBusyUserId] = useState<string | null>(null);
+  const purchaseBusy = purchaseBusyUserId === userId;
+  const [diamondStoreUserId, setDiamondStoreUserId] = useState<string | null>(null);
+  const diamondStoreOpen = diamondStoreUserId === userId && Boolean(userId);
   const [pendingLoadoutClear, setPendingLoadoutClear] = useState<number | null>(null);
   const purchaseBusyRef = useRef(false);
+  const assetPurchaseGenerationRef = useRef(0);
   const [themeLoadState, setThemeLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     'idle'
   );
@@ -636,7 +645,8 @@ export function ThemeSettingsModal({
   const [checkoutReturn, setCheckoutReturn] = useState<TableStudioCheckoutResult | null>(
     checkoutReturnResult
   );
-  const [checkoutBalanceSyncing, setCheckoutBalanceSyncing] = useState(false);
+  const [checkoutBalanceSyncUserId, setCheckoutBalanceSyncUserId] = useState<string | null>(null);
+  const checkoutBalanceSyncing = checkoutBalanceSyncUserId === userId && Boolean(userId);
   const checkoutPollTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const [modeSaving, setModeSaving] = useState(false);
   const uiMode = useSettingsStore((state) => state.theme);
@@ -653,6 +663,12 @@ export function ThemeSettingsModal({
   gameTypeRef.current = gameType;
   const userIdRef = useRef(userId);
   userIdRef.current = userId;
+  const assetPurchaseUserRef = useRef(userId);
+  if (assetPurchaseUserRef.current !== userId) {
+    assetPurchaseUserRef.current = userId;
+    assetPurchaseGenerationRef.current += 1;
+    purchaseBusyRef.current = false;
+  }
   const ownershipScopeRef = useRef<string | null>(null);
   const ownershipRequestRef = useRef(0);
   const themeLoadScopeRef = useRef<string | null>(null);
@@ -667,8 +683,16 @@ export function ThemeSettingsModal({
   const stopCheckoutBalancePolling = useCallback(() => {
     checkoutPollTimersRef.current.forEach(clearTimeout);
     checkoutPollTimersRef.current = [];
-    setCheckoutBalanceSyncing(false);
+    setCheckoutBalanceSyncUserId(null);
   }, []);
+
+  useEffect(() => {
+    stopCheckoutBalancePolling();
+    setPendingAssetPurchase(null);
+    setDiamondStoreUserId(null);
+    setPurchaseBusyUserId(null);
+    purchaseBusyRef.current = false;
+  }, [stopCheckoutBalancePolling, userId]);
 
   useEffect(() => stopCheckoutBalancePolling, [stopCheckoutBalancePolling]);
 
@@ -742,7 +766,8 @@ export function ThemeSettingsModal({
     focusable()[0]?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (pendingAssetPurchase && !purchaseBusyRef.current) setPendingAssetPurchase(null);
+        if (purchaseBusyRef.current) return;
+        if (pendingAssetPurchase) setPendingAssetPurchase(null);
         else onClose();
         return;
       }
@@ -769,7 +794,7 @@ export function ThemeSettingsModal({
 
   useEffect(() => {
     if (isOpen) return;
-    setDiamondStoreOpen(false);
+    setDiamondStoreUserId(null);
     setPendingAssetPurchase(null);
     setPendingLoadoutClear(null);
   }, [isOpen]);
@@ -1127,6 +1152,7 @@ export function ThemeSettingsModal({
     }
 
     setPendingAssetPurchase({
+      userId,
       id: intent.assetId,
       name: asset.name,
       price,
@@ -1142,14 +1168,16 @@ export function ThemeSettingsModal({
       return;
     }
 
-    setCheckoutBalanceSyncing(true);
+    setCheckoutBalanceSyncUserId(userId);
     toast.success(`Payment Received. Restoring ${asset.name}.`);
     const refresh = () => void loadDiamonds(userId, { force: true });
     refresh();
     checkoutPollTimersRef.current = [1_500, 5_000, 12_000].map((delay, index) =>
       setTimeout(() => {
         void loadDiamonds(userId, { force: true }).finally(() => {
-          if (index === 2) setCheckoutBalanceSyncing(false);
+          if (index === 2) {
+            setCheckoutBalanceSyncUserId((current) => (current === userId ? null : current));
+          }
         });
       }, delay)
     );
@@ -1472,6 +1500,7 @@ export function ThemeSettingsModal({
         const card = tab === 'cards' ? cardBackDesign(assetId) : null;
         const asset = THEME_ASSETS[tab].find((item) => item.id === assetId);
         setPendingAssetPurchase({
+          userId,
           id: card?.id || assetId,
           name: card?.name || asset?.name || 'Premium Design',
           price,
@@ -1492,6 +1521,7 @@ export function ThemeSettingsModal({
       pricingState,
       themeLoadState,
       toast,
+      userId,
     ]
   );
 
@@ -1502,7 +1532,7 @@ export function ThemeSettingsModal({
       tab: pendingAssetPurchase.tab,
       assetId: pendingAssetPurchase.id,
     });
-    setDiamondStoreOpen(true);
+    setDiamondStoreUserId(userId);
   }, [pendingAssetPurchase, userId]);
 
   const cancelPendingAssetPurchase = useCallback(() => {
@@ -1514,21 +1544,34 @@ export function ThemeSettingsModal({
   const handleAssetPurchase = useCallback(async () => {
     const pending = pendingAssetPurchase;
     if (!pending || !userId || purchaseBusyRef.current) return;
+    const requestedUserId = userId;
+    const purchaseGeneration = ++assetPurchaseGenerationRef.current;
+    const isCurrentPurchase = () =>
+      userIdRef.current === requestedUserId &&
+      assetPurchaseGenerationRef.current === purchaseGeneration;
     const purchaseStartedAt = globalThis.performance?.now?.() ?? Date.now();
     purchaseBusyRef.current = true;
-    setPurchaseBusy(true);
+    setPurchaseBusyUserId(requestedUserId);
     try {
-      const { data, error } = await supabase.rpc('fn_purchase_feature', {
-        p_user_id: userId,
+      const requestScope = `table-studio:${requestedUserId}:${pending.feature}`;
+      const requestId = readOrCreateSessionPurchaseRequestId(requestScope);
+      const { data, error } = await supabase.rpc('fn_purchase_feature_v2', {
+        p_user_id: requestedUserId,
         p_feature: pending.feature,
+        p_request_id: requestId,
       });
+      if (!isCurrentPurchase()) return;
       if (error) throw error;
+      // Any structured response is authoritative. Transport failures keep this
+      // key so a retry proves whether Postgres committed the first request.
+      clearSessionPurchaseRequestId(requestScope);
 
       const alreadyOwned = data?.error === 'already_owned' || data?.already_owned === true;
+      const reconciledPurchase = alreadyOwned || data?.idempotent === true;
       if (!data?.success && !alreadyOwned) {
         const reason = String(data?.error || 'Purchase failed');
         recordCustomizationOperation({
-          userId,
+          userId: requestedUserId,
           event: 'purchase_failed',
           surface: 'table-studio',
           category: pending.tab,
@@ -1539,13 +1582,13 @@ export function ThemeSettingsModal({
         });
         if (reason.toLowerCase().includes('insufficient')) {
           toast.info('Add Diamonds To Finish Unlocking This Design.');
-          void loadDiamonds(userId, { force: true });
+          void loadDiamonds(requestedUserId, { force: true });
           rememberTableStudioCheckoutIntent({
-            userId,
+            userId: requestedUserId,
             tab: pending.tab,
             assetId: pending.id,
           });
-          setDiamondStoreOpen(true);
+          setDiamondStoreUserId(requestedUserId);
         } else {
           toast.error('Design Purchase Failed. Please Try Again.');
           reportError(new Error(reason), 'ThemeSettingsModal.Asset_purchase_refused');
@@ -1575,12 +1618,12 @@ export function ThemeSettingsModal({
       stopCheckoutBalancePolling();
       setPendingAssetPurchase(null);
       masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
-        userId,
+        userId: requestedUserId,
         category,
         assetId: pending.id,
-        source: alreadyOwned ? 'ownership-reconciled' : 'diamond-purchase',
+        source: reconciledPurchase ? 'ownership-reconciled' : 'diamond-purchase',
       });
-      if (!alreadyOwned) {
+      if (!reconciledPurchase && data?.granted !== false) {
         masterBus.emit('DIAMOND_SPENT', {
           amount: Number(data.cost) || pending.price,
           item: pending.id,
@@ -1588,18 +1631,20 @@ export function ThemeSettingsModal({
         });
       }
       recordCustomizationOperation({
-        userId,
+        userId: requestedUserId,
         event: 'purchase_succeeded',
         surface: 'table-studio',
         category: pending.tab,
         durationMs: (globalThis.performance?.now?.() ?? Date.now()) - purchaseStartedAt,
-        reasonCode: alreadyOwned ? 'ownership_reconciled' : 'diamond_purchase',
+        reasonCode: reconciledPurchase ? 'ownership_reconciled' : 'diamond_purchase',
       });
       // The purchase completes the user's original selection. Do not make them
       // tap the same card a second time after checkout.
+      if (!isCurrentPurchase()) return;
       const applied = await applyAccessibleAsset(pending.tab, pending.id);
+      if (!isCurrentPurchase()) return;
       toast.success(
-        alreadyOwned
+        reconciledPurchase
           ? applied
             ? 'Design Restored And Applied'
             : 'Design Restored'
@@ -1608,8 +1653,9 @@ export function ThemeSettingsModal({
             : `${pending.name} Purchased`
       );
     } catch (error) {
+      if (!isCurrentPurchase()) return;
       recordCustomizationOperation({
-        userId,
+        userId: requestedUserId,
         event: 'purchase_failed',
         surface: 'table-studio',
         category: pending.tab,
@@ -1619,8 +1665,10 @@ export function ThemeSettingsModal({
       toast.error('Design Purchase Failed. Please Try Again.');
       reportError(error, 'ThemeSettingsModal.Asset_purchase_failed');
     } finally {
-      purchaseBusyRef.current = false;
-      setPurchaseBusy(false);
+      if (isCurrentPurchase()) {
+        purchaseBusyRef.current = false;
+        setPurchaseBusyUserId(null);
+      }
     }
   }, [
     applyAccessibleAsset,
@@ -1823,7 +1871,12 @@ export function ThemeSettingsModal({
   };
 
   return (
-    <div className="theme-modal-overlay" onClick={onClose}>
+    <div
+      className="theme-modal-overlay"
+      onClick={() => {
+        if (!purchaseBusyRef.current) onClose();
+      }}
+    >
       <div
         ref={modalRef}
         className="theme-modal"
@@ -1840,7 +1893,14 @@ export function ThemeSettingsModal({
               Make The Table Yours
             </h3>
           </div>
-          <button className="theme-modal__close" onClick={onClose} aria-label="Close Table Studio">
+          <button
+            className="theme-modal__close"
+            onClick={() => {
+              if (!purchaseBusyRef.current) onClose();
+            }}
+            disabled={purchaseBusy}
+            aria-label="Close Table Studio"
+          >
             ×
           </button>
         </div>
@@ -2414,7 +2474,7 @@ export function ThemeSettingsModal({
               <button
                 className="theme-modal__btn theme-modal__btn--reset"
                 onClick={handleReset}
-                disabled={themeLoadState !== 'ready'}
+                disabled={themeLoadState !== 'ready' || purchaseBusy}
               >
                 Restore Defaults
               </button>
@@ -2423,8 +2483,10 @@ export function ThemeSettingsModal({
                 /* Every tile auto-saves through the ordered writer. Done closes
                the studio; it must not launch a redundant full-row write that
                can race the final tap the player just made. */
-                onClick={onClose}
-                disabled={saving || modeSaving}
+                onClick={() => {
+                  if (!purchaseBusyRef.current) onClose();
+                }}
+                disabled={saving || modeSaving || purchaseBusy}
               >
                 {saving || modeSaving ? 'Saving...' : 'Done'}
               </button>
@@ -2499,7 +2561,7 @@ export function ThemeSettingsModal({
           isOpen={diamondStoreOpen}
           returnParams={TABLE_STUDIO_CHECKOUT_RETURN_PARAMS}
           onClose={() => {
-            setDiamondStoreOpen(false);
+            setDiamondStoreUserId(null);
             clearTableStudioCheckoutIntent();
             if (userId) void loadDiamonds(userId, { force: true });
           }}

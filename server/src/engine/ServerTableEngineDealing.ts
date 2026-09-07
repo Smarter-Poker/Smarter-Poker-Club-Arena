@@ -2452,7 +2452,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
       // Only initialize time bank if player is NEW (don't reset existing pool per session)
       if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
-        const tbTotal = this.timeBankBaseSeconds + (tbExtras.get(p.user_id) ?? 0);
+        const allowance = tbExtras.get(p.user_id);
+        const tbTotal = this.timeBankBaseSeconds + (allowance?.extraSeconds ?? 0);
         // ── REVERTED 2026-08-25, same day it shipped. Read this before trying
         //    the restart-fidelity time-bank restore again. ──
         //
@@ -2482,11 +2483,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
           remainingSeconds: tbTotal,
           usesRemaining: Math.ceil(tbTotal / 20),
+          unlimitedActivations: allowance?.unlimitedActivations === true,
         });
         this.timeBankMeta.set(p.user_id, {
           initialSeconds: tbTotal,
           baseSeconds: this.timeBankBaseSeconds,
           dbConsumedSeconds: 0,
+          ...(allowance?.unlimitedActivations === true ? { unlimitedActivations: true } : {}),
         });
       }
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);

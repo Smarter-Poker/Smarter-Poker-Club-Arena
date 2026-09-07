@@ -16,12 +16,13 @@ import {
   isPurchasable,
   loadFeaturePricing,
 } from '../../services/VIPService';
-import { useVIPStatus } from '../../hooks/useVIP';
+import type { VipStatus } from '../../utils/vipStatus';
 import './VIPCardsModal.css';
 
 interface VIPInfoModalProps {
   isOpen: boolean;
   onClose: () => void;
+  vipStatus: VipStatus;
 }
 
 /**
@@ -39,31 +40,57 @@ interface VIPInfoModalProps {
 const FEATURES = [
   {
     key: 'rabbit_hunt',
-    label: 'Rabbit Hunting',
-    vipValue: `${VIP_MONTHLY_ALLOWANCES.rabbitHunts} / mo`,
+    label: 'Rabbit Hunts',
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.rabbitHunts} / Mo`,
+    lifetimeValue: 'Unlimited',
   },
-  { key: 'show_stack_bb', label: 'Show Stack In BBs', vipFree: true },
-  { key: 'offline_protection', label: 'Offline Protection', vipFree: true },
-  { key: 'auto_time_bank', label: 'Auto Time Bank', vipFree: true },
+  {
+    key: 'show_stack_bb',
+    label: 'Show Stack In BBs',
+    vipFree: true,
+    lifetimeValue: 'Included',
+  },
+  {
+    key: 'offline_protection',
+    label: 'Offline Protection',
+    vipFree: true,
+    lifetimeValue: 'Included',
+  },
+  {
+    key: 'auto_time_bank',
+    label: 'Auto Time Bank',
+    vipFree: true,
+    lifetimeValue: 'Included',
+  },
   {
     key: 'time_bank_seconds',
     label: 'Free Time Bank',
-    vipValue: `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s / mo`,
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s / Mo`,
+    lifetimeValue: 'Unlimited Standard 20-Second Activations',
   },
   {
     key: 'emoji_pack',
     label: 'Free Emojis',
-    vipValue: `${VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()} / mo`,
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()} / Mo`,
+    lifetimeValue: 'All Digital Packs',
   },
   {
     key: 'tag_pack',
     label: 'Player Tags',
-    vipValue: `${VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()} / mo`,
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()} / Mo`,
+    lifetimeValue: 'All Digital Packs',
+  },
+  {
+    key: 'throwable',
+    label: 'Throwables',
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.throwables.toLocaleString()} / Mo`,
+    lifetimeValue: 'Unlimited',
   },
 ] as const;
 
-export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
-  const { isVIP, isLoading } = useVIPStatus();
+export function VIPCardsModal({ isOpen, onClose, vipStatus }: VIPInfoModalProps) {
+  const isVIP = vipStatus !== 'none';
+  const isLifetime = vipStatus === 'lifetime';
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   /**
@@ -111,21 +138,28 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
       <div className="vip-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="vip-modal__header">
-          <h2>VIP</h2>
-          <button className="vip-modal__close" onClick={onClose}>
+          <h2>{isLifetime ? 'Lifetime VIP' : 'VIP'}</h2>
+          <button
+            type="button"
+            className="vip-modal__close"
+            onClick={onClose}
+            aria-label="Close VIP Benefits"
+          >
             ×
           </button>
         </div>
 
         {/* Status */}
         <div className="vip-modal__status-section">
-          {isLoading ? (
-            <p>Checking Status...</p>
-          ) : isVIP ? (
+          {isVIP ? (
             <div className="vip-status-active">
               <span className="vip-crown"></span>
-              <span>Membership Active</span>
-              <span className="vip-sub">Included With Club Arena Membership</span>
+              <span>{isLifetime ? 'Lifetime Membership Active' : 'Membership Active'}</span>
+              <span className="vip-sub">
+                {isLifetime
+                  ? 'Unlimited Digital Club Arena Benefits Active'
+                  : 'Included With Club Arena Membership'}
+              </span>
             </div>
           ) : (
             <div className="vip-status-inactive">
@@ -150,6 +184,7 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
                 const pricing = FEATURE_PRICING[feature.key as keyof typeof FEATURE_PRICING];
                 const vipFree = 'vipFree' in feature && feature.vipFree;
                 const vipValue = 'vipValue' in feature ? feature.vipValue : null;
+                const lifetimeValue = feature.lifetimeValue;
                 /**
                  * A price is a promise. Print one only for something the server
                  * has a price row for; otherwise say so. `auto_time_bank` was
@@ -168,13 +203,18 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
                     }}
                   >
                     <td className="feature-name">{feature.label}</td>
-                    <td className="feature-vip">{vipFree ? ' Free' : vipValue || ''}</td>
+                    <td className="feature-vip">
+                      {isLifetime ? lifetimeValue : vipFree ? 'Free' : vipValue || ''}
+                    </td>
                     <td className="feature-cost" data-pricing-revision={pricingRevision}>
                       {!pricing
                         ? '-'
                         : !sellable
                           ? 'Not For Sale'
-                          : `${pricing.cost.toLocaleString()}/${pricing.usageType.replace('per_', '').replace('_', ' ')}`}
+                          : `${pricing.cost.toLocaleString()} / ${pricing.usageType
+                              .split('_')
+                              .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                              .join(' ')}`}
                     </td>
                   </tr>
                 );
@@ -183,15 +223,19 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
           </table>
         </div>
 
+        {isLifetime && (
+          <section className="vip-modal__status-section" aria-label="Lifetime Digital Collection">
+            <strong>Lifetime Digital Collection</strong>
+            <span>All Cataloged Table Skins And Backgrounds</span>
+            <span>All Cataloged Card Backs And Dealer Buttons</span>
+            <span>All VIP Avatars, Frames, And Auras</span>
+          </section>
+        )}
+
         {/* CTA */}
         {!isVIP && (
           <div className="vip-modal__cta">
-            <a
-              href="https://smarter.poker/subscribe"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="vip-upgrade-btn"
-            >
+            <a href="/hub/vip-membership" className="vip-upgrade-btn">
               Join Club Arena For A Membership
             </a>
           </div>

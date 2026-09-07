@@ -96,6 +96,31 @@ import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
 
+interface TimeBankAllowance {
+  extraSeconds: number;
+  /** Undefined means the legacy v1 RPC did not report this entitlement. */
+  unlimitedActivations?: boolean;
+}
+
+async function awaitTimeBankRpc<T>(operation: PromiseLike<T>, timeoutMs?: number): Promise<T> {
+  if (!timeoutMs || timeoutMs <= 0) return Promise.resolve(operation);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(operation),
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Time Bank Entitlement Revalidation Timed Out')),
+          timeoutMs
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export abstract class ServerTableEngineBase {
   protected tableId: string;
   protected running: boolean = false;
@@ -701,22 +726,102 @@ export abstract class ServerTableEngineBase {
       for (const [seat, at] of [...this.pineappleDiscardDeadlines]) {
         if (at > now) continue; // this seat bought itself more time
         this.pineappleDiscardDeadlines.delete(seat);
-        try {
-          // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
-          // auto-discard the last card - a random discard the player never
-          // chose, which then kept playing for them.
-          this.handController.foldForMissedDiscard(seat);
-        } catch (err) {
-          reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
-            seat,
-          });
-          // Keep going — one bad seat must not strand the whole table.
-        }
+        /* An early press ARMS a bank; it does not spend it. The ordinary turn
+           clock redeems that intent at expiry through onPrimaryTimerExpired,
+           and the simultaneous discard round must do the same. Removing the
+           deadline before the bounded Lifetime revalidation also lets a real
+           discard land while the read is in flight; the resolver re-checks the
+           HandController before it can extend or fold anything. */
+        void this.resolvePineappleDiscardExpiry(seat, at, controllerRef).catch((err: unknown) => {
+          reportError(
+            err,
+            'ServerTableEngine.' + this.tableId + '.pineapple_discard_expiry_resolution',
+            { seat }
+          );
+        });
       }
       this.markProgress();
       // Seats with an extended deadline are still owed their round.
       this.armPineappleDiscardSweep(controllerRef);
     }, wait);
+  }
+
+  /**
+   * Resolve one expired discard clock. An armed Time Bank gets the same exact
+   * 20-second activation used on an ordinary turn; otherwise the missed
+   * discard folds. Lifetime is revalidated before another unlimited use is
+   * manufactured, and every identity/stage check is repeated after that await.
+   */
+  private async resolvePineappleDiscardExpiry(
+    seat: number,
+    expiredAt: number,
+    controllerRef: unknown
+  ): Promise<void> {
+    const controller = this.handController;
+    if (!controller || controller !== controllerRef) return;
+    if (controller.getState().stage !== 'pineapple_discard') return;
+    if (!controller.owesPineappleDiscard(seat)) return;
+
+    const player = this.seatedPlayers.find((candidate) => candidate.seat_number === seat);
+    const userId = player?.user_id;
+    if (userId && this.timeBankEngine.isArmed(this.tableId, userId)) {
+      if (this.timeBankEngine.isUnlimited(this.tableId, userId)) {
+        try {
+          await this.revalidateUnlimitedTimeBank(userId);
+        } catch (err) {
+          // A failed entitlement read cannot leave the round suspended behind
+          // a cached Lifetime flag. Fall back to the player's real finite pool.
+          this.timeBankEngine.setUnlimitedActivations(this.tableId, userId, false);
+          reportError(
+            err,
+            'ServerTableEngine.' + this.tableId + '.pineapple_timebank_revalidation_failed',
+            { seat }
+          );
+        }
+      }
+
+      const currentController = this.handController;
+      if (!currentController || currentController !== controllerRef) return;
+      if (currentController.getState().stage !== 'pineapple_discard') return;
+      if (!currentController.owesPineappleDiscard(seat)) return;
+      // A replacement round/extension may have installed a newer deadline
+      // while Lifetime was being revalidated. Never overwrite it.
+      const replacementDeadline = this.pineappleDiscardDeadlines.get(seat);
+      if (replacementDeadline !== undefined && replacementDeadline !== expiredAt) return;
+
+      const activated = this.timeBankEngine.onPrimaryTimerExpired(this.tableId, userId, () => {});
+      if (activated) {
+        const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+        const seconds = Math.max(0, bank?.currentUseSeconds ?? 0);
+        if (seconds > 0) {
+          const extended = Date.now() + seconds * 1000;
+          this.pineappleDiscardDeadlines.set(seat, extended);
+          this.markProgress();
+          this.armPineappleDiscardSweep(controllerRef);
+          this.broadcastCurrentState();
+          return;
+        }
+      }
+    }
+
+    const currentController = this.handController;
+    if (!currentController || currentController !== controllerRef) return;
+    if (currentController.getState().stage !== 'pineapple_discard') return;
+    if (!currentController.owesPineappleDiscard(seat)) return;
+    try {
+      // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
+      // auto-discard the last card - a random discard the player never chose,
+      // which then kept playing for them.
+      currentController.foldForMissedDiscard(seat);
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
+        seat,
+      });
+      // One bad seat must not strand the whole table.
+    }
+    this.markProgress();
+    this.armPineappleDiscardSweep(controllerRef);
+    this.broadcastCurrentState();
   }
 
   /**
@@ -795,7 +900,12 @@ export abstract class ServerTableEngineBase {
       0,
       before - this.timeBankEngine.getRemainingSeconds(this.tableId, userId)
     );
-    const seconds = granted > 0 ? granted : before;
+    const activeBank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+    const seconds = activeBank?.unlimitedActivations
+      ? activeBank.currentUseSeconds
+      : granted > 0
+        ? granted
+        : before;
     const extended = Date.now() + seconds * 1000;
     this.pineappleDiscardDeadlines.set(seat, extended);
     this.armPineappleDiscardSweep(this.handController);
@@ -1031,7 +1141,9 @@ export abstract class ServerTableEngineBase {
    *
    * `eligible` is who was dealt into that hand: a spectator cannot buy a look
    * at a hand they were never part of, and `revealed` makes a paid reveal
-   * repeatable for the buyer without charging them twice.
+   * repeatable for the buyer without charging them twice. `purchaseRequestIds`
+   * keeps the database purchase identity stable across a committed response
+   * whose transport failed before the engine could mark that reveal complete.
    */
   protected rabbitHuntOffers: Map<
     number,
@@ -1040,6 +1152,7 @@ export abstract class ServerTableEngineBase {
       boardLength: number;
       eligible: Set<string>;
       revealed: Set<string>;
+      purchaseRequestIds: Map<string, string>;
       offeredAt: number;
     }
   > = new Map();
@@ -1329,7 +1442,12 @@ export abstract class ServerTableEngineBase {
    */
   protected timeBankMeta: Map<
     string,
-    { initialSeconds: number; baseSeconds: number; dbConsumedSeconds: number }
+    {
+      initialSeconds: number;
+      baseSeconds: number;
+      dbConsumedSeconds: number;
+      unlimitedActivations?: boolean;
+    }
   > = new Map();
   /**
    * Free time-bank seconds every player starts a session with, before any VIP
@@ -2613,6 +2731,7 @@ export abstract class ServerTableEngineBase {
             initialSeconds: meta?.initialSeconds ?? bank.remainingSeconds,
             baseSeconds: meta?.baseSeconds ?? this.timeBankBaseSeconds,
             dbConsumedSeconds: meta?.dbConsumedSeconds ?? 0,
+            unlimitedActivations: bank.unlimitedActivations || meta?.unlimitedActivations === true,
           }
         : null,
     });
@@ -2648,11 +2767,13 @@ export abstract class ServerTableEngineBase {
         this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
           remainingSeconds: carried.timeBank.remainingSeconds,
           usesRemaining: carried.timeBank.usesRemaining,
+          unlimitedActivations: carried.timeBank.unlimitedActivations,
         });
         this.timeBankMeta.set(p.user_id, {
           initialSeconds: carried.timeBank.initialSeconds,
           baseSeconds: carried.timeBank.baseSeconds,
           dbConsumedSeconds: carried.timeBank.dbConsumedSeconds,
+          ...(carried.timeBank.unlimitedActivations ? { unlimitedActivations: true } : {}),
         });
       }
       console.log(
@@ -3549,16 +3670,62 @@ export abstract class ServerTableEngineBase {
    * session base. Fail-open to base-only: an allowance outage must never
    * block dealing.
    */
-  protected async fetchTimeBankExtras(userIds: string[]): Promise<Map<string, number>> {
-    const extras = new Map<string, number>();
+  protected async fetchTimeBankExtras(
+    userIds: string[],
+    timeoutMs?: number
+  ): Promise<Map<string, TimeBankAllowance>> {
+    const extras = new Map<string, TimeBankAllowance>();
     if (userIds.length === 0) return extras;
+    const deadline = timeoutMs && timeoutMs > 0 ? Date.now() + timeoutMs : undefined;
+    const remainingTimeout = () =>
+      deadline === undefined ? undefined : Math.max(1, deadline - Date.now());
     try {
-      const { data, error } = await supabase.rpc('fn_time_bank_allowance', {
-        p_user_ids: userIds,
-      });
-      if (error) throw new Error(error.message);
-      for (const row of (data as Array<{ user_id: string; extra_seconds: number }>) ?? []) {
-        extras.set(row.user_id, Math.max(0, Number(row.extra_seconds) || 0));
+      const { data, error } = await awaitTimeBankRpc(
+        supabase.rpc('fn_time_bank_allowance_v2', {
+          p_user_ids: userIds,
+        }),
+        remainingTimeout()
+      );
+      if (!error) {
+        for (const row of (data as Array<{
+          user_id: string;
+          is_lifetime?: boolean;
+          unlimited_activations?: boolean;
+          extra_seconds: number;
+        }>) ?? []) {
+          extras.set(row.user_id, {
+            extraSeconds: Math.max(0, Number(row.extra_seconds) || 0),
+            unlimitedActivations: row.is_lifetime === true && row.unlimited_activations === true,
+          });
+        }
+        return extras;
+      }
+
+      const code = String((error as { code?: string }).code ?? '');
+      const message = String(error.message ?? '');
+      const v2Unavailable =
+        code === 'PGRST202' ||
+        code === '42883' ||
+        /fn_time_bank_allowance_v2[\s\S]*(not found|does not exist|schema cache)/i.test(message) ||
+        /(not found|does not exist|schema cache)[\s\S]*fn_time_bank_allowance_v2/i.test(message);
+      if (!v2Unavailable) {
+        throw Object.assign(new Error(message || 'Time Bank Allowance V2 Failed'), { code });
+      }
+
+      // Rolling deployment compatibility. V1 has no Lifetime entitlement, so
+      // it supplies only the finite allowance until V2 is present.
+      const legacy = await awaitTimeBankRpc(
+        supabase.rpc('fn_time_bank_allowance', {
+          p_user_ids: userIds,
+        }),
+        remainingTimeout()
+      );
+      if (legacy.error) throw new Error(legacy.error.message);
+      for (const row of (legacy.data as Array<{ user_id: string; extra_seconds: number }>) ?? []) {
+        extras.set(row.user_id, {
+          extraSeconds: Math.max(0, Number(row.extra_seconds) || 0),
+          unlimitedActivations: undefined,
+        });
       }
     } catch (err) {
       reportError(err, 'TimeBank.allowance_fetch_failed');
@@ -3582,28 +3749,40 @@ export abstract class ServerTableEngineBase {
     }
     try {
       const meta = this.timeBankMeta.get(event.playerId);
+      const unlimited =
+        event.unlimitedActivations === true ||
+        meta?.unlimitedActivations === true ||
+        this.timeBankEngine.isUnlimited(this.tableId, event.playerId);
+      if (unlimited) {
+        const secondsUsed = Math.max(0, Number(event.secondsUsed) || 0);
+        if (secondsUsed > 0) this.consumeTimeBankSeconds(event.playerId, secondsUsed);
+        return;
+      }
       if (!meta) return;
       const remaining = this.timeBankEngine.getRemainingSeconds(this.tableId, event.playerId);
       const usedTotal = Math.max(0, meta.initialSeconds - remaining);
       const owed = Math.max(0, usedTotal - meta.baseSeconds) - meta.dbConsumedSeconds;
       if (owed <= 0) return;
       meta.dbConsumedSeconds += owed;
-      // Promise.resolve() so this is a real Promise with a .catch(), not the
-      // PromiseLike the query builder returns. The enclosing try/catch below
-      // covers only the SYNCHRONOUS part of this statement — see the note on
-      // recordRecoveryEvent() for why the rejection path matters.
-      void Promise.resolve(
-        supabase.rpc('fn_consume_time_bank', { p_user_id: event.playerId, p_seconds: owed })
-      )
-        .then(({ error }) => {
-          if (error) console.warn('[TimeBank] consume failed:', error.message);
-        })
-        .catch((err: unknown) => {
-          console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
-        });
+      this.consumeTimeBankSeconds(event.playerId, owed);
     } catch {
       /* accounting must never break gameplay */
     }
+  }
+
+  /** Best-effort ledger/audit write. Gameplay never waits for this call. */
+  private consumeTimeBankSeconds(userId: string, seconds: number): void {
+    // Promise.resolve() converts the Supabase PromiseLike into a real Promise
+    // so transport rejections cannot become unhandled rejections.
+    void Promise.resolve(
+      supabase.rpc('fn_consume_time_bank', { p_user_id: userId, p_seconds: seconds })
+    )
+      .then(({ error }) => {
+        if (error) console.warn('[TimeBank] consume failed:', error.message);
+      })
+      .catch((err: unknown) => {
+        console.warn('[TimeBank] consume threw:', (err as Error)?.message ?? err);
+      });
   }
 
   /**
@@ -3612,22 +3791,52 @@ export abstract class ServerTableEngineBase {
    * in-memory bank to base-residue + fresh DB extras so the purchase is
    * usable without re-seating. Returns false if nothing could be refreshed.
    */
-  protected async refreshTimeBankFromDb(userId: string): Promise<boolean> {
+  protected async refreshTimeBankFromDb(
+    userId: string,
+    options?: { timeoutMs?: number; requireExplicitUnlimitedState?: boolean }
+  ): Promise<boolean> {
     const meta = this.timeBankMeta.get(userId);
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
     if (!meta || !bank || bank.isActive) return false;
-    const extras = await this.fetchTimeBankExtras([userId]);
+    const extras = await this.fetchTimeBankExtras([userId], options?.timeoutMs);
     if (!extras.has(userId)) return false;
     const usedTotal = Math.max(0, meta.initialSeconds - bank.remainingSeconds);
     const baseLeft = Math.max(0, meta.baseSeconds - Math.min(usedTotal, meta.baseSeconds));
-    const newRemaining = baseLeft + (extras.get(userId) ?? 0);
-    if (!this.timeBankEngine.rebase(this.tableId, userId, newRemaining)) return false;
+    const allowance = extras.get(userId);
+    if (!allowance) return false;
+    const newRemaining = baseLeft + allowance.extraSeconds;
+    const unlimitedActivations = options?.requireExplicitUnlimitedState
+      ? allowance.unlimitedActivations === true
+      : allowance.unlimitedActivations;
+    if (!this.timeBankEngine.rebase(this.tableId, userId, newRemaining, unlimitedActivations)) {
+      return false;
+    }
     this.timeBankMeta.set(userId, {
       initialSeconds: newRemaining,
       baseSeconds: baseLeft,
       dbConsumedSeconds: 0,
+      ...(unlimitedActivations === true ? { unlimitedActivations: true } : {}),
     });
     return true;
+  }
+
+  /**
+   * Lifetime is revalidated before every cached unlimited activation. A failed
+   * or timed-out read removes only the unlimited flag; any real finite base or
+   * purchased balance remains available under the ordinary rules.
+   */
+  protected async revalidateUnlimitedTimeBank(userId: string): Promise<void> {
+    if (!this.timeBankEngine.isUnlimited(this.tableId, userId)) return;
+
+    const refreshed = await this.refreshTimeBankFromDb(userId, {
+      timeoutMs: 1_500,
+      requireExplicitUnlimitedState: true,
+    });
+    if (refreshed) return;
+
+    this.timeBankEngine.setUnlimitedActivations(this.tableId, userId, false);
+    const meta = this.timeBankMeta.get(userId);
+    if (meta) delete meta.unlimitedActivations;
   }
 
   /**

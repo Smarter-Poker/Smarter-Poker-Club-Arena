@@ -16,7 +16,8 @@
  * with: eight tiles, six of which painted a fallback and selected nothing.
  *
  * Five tabs: React · Throw · Sports · Cheer · VIP
- * VIP: 500 free throws/month, then 1 Diamond each; Non-VIP: 1 Diamond per throw.
+ * VIP: 500 free throws/month, then 1 Diamond each. Lifetime VIP: unlimited.
+ * Non-VIP: 1 Diamond per throw.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -33,6 +34,10 @@ import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import './ThrowableSelector.css';
 import { haptic } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
+import {
+  clearSessionPurchaseRequestId,
+  readOrCreateSessionPurchaseRequestId,
+} from '../../utils/sessionPurchaseRequest';
 
 interface ThrowableSelectorProps {
   userId: string;
@@ -65,28 +70,60 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
   });
   const [activeCategory, setActiveCategory] = useState<ThrowableCategory>('premium');
   const [allowance, setAllowance] = useState<ThrowAllowance | null>(null);
+  const [allowanceUserId, setAllowanceUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
   const navigate = useNavigate();
+  const allowanceRequestRef = useRef(0);
+  const activeUserRef = useRef(userId);
+  const sendRequestRef = useRef(0);
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
+
+  // Keep the identity check synchronous with render. Effects run after commit,
+  // so an old request can otherwise resolve in the narrow window between an
+  // account prop changing and its cleanup invalidating the previous request.
+  activeUserRef.current = userId;
 
   useEffect(() => {
+    const request = ++allowanceRequestRef.current;
+    sendRequestRef.current += 1;
+    sendingRef.current = false;
+    setAllowance(null);
+    setAllowanceUserId(null);
+    setLoading(true);
+    setSending(false);
+
     // Warm the render cache the moment the panel opens
     preloadThrowableImages();
 
     async function load() {
       const data = throwableService.getThrowablesByCategory();
       const allowanceData = await throwableService.getThrowAllowance(userId);
+      if (request !== allowanceRequestRef.current || activeUserRef.current !== userId) return;
       setThrowables(data);
       setAllowance(allowanceData);
+      setAllowanceUserId(userId);
       setLoading(false);
     }
-    load();
+    void load();
+    return () => {
+      if (allowanceRequestRef.current === request) allowanceRequestRef.current += 1;
+      sendRequestRef.current += 1;
+      sendingRef.current = false;
+    };
   }, [userId]);
 
   useEffect(() => {
     return masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
       if (event.payload.userId !== userId || event.payload.category !== 'throwable') return;
-      void throwableService.getThrowAllowance(userId).then(setAllowance);
+      const request = ++allowanceRequestRef.current;
+      void throwableService.getThrowAllowance(userId).then((nextAllowance) => {
+        if (request === allowanceRequestRef.current && activeUserRef.current === userId) {
+          setAllowance(nextAllowance);
+          setAllowanceUserId(userId);
+        }
+      });
     });
   }, [userId]);
 
@@ -95,48 +132,72 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
    *
    * The panel stayed open and tappable for the whole round trip (onClose is
    * two awaits away), the grid buttons were never disabled, and
-   * fn_use_throwable carries no idempotency key — its advisory lock stops a
-   * concurrent double-spend of the last FREE throw but cannot deduplicate two
-   * legitimate sequential charges. A ref, not state, because two taps inside
-   * one commit both read stale state.
+   * fn_use_throwable_v2 carries the same browser UUID across a response-lost
+   * retry. A ref still closes a normal double-tap inside one React commit; the
+   * durable database receipt closes the network ambiguity after that.
    */
-  const sendingRef = useRef(false);
-  const [sending, setSending] = useState(false);
-
   const handleSelect = async (throwable: Throwable) => {
     if (sendingRef.current) return;
+    const requestedUserId = userId;
+    const sendRequest = ++sendRequestRef.current;
+    const isCurrent = () =>
+      sendRequest === sendRequestRef.current && activeUserRef.current === requestedUserId;
+    const requestScope = `throwable:${requestedUserId}:${throwable.id}`;
+    const throwableRequestId = readOrCreateSessionPurchaseRequestId(requestScope);
     sendingRef.current = true;
     setSending(true);
     try {
-      await sendThrowable(throwable);
+      await sendThrowable(throwable, requestedUserId, sendRequest, throwableRequestId);
     } finally {
-      sendingRef.current = false;
-      setSending(false);
+      if (isCurrent()) {
+        sendingRef.current = false;
+        setSending(false);
+      }
     }
   };
 
-  const sendThrowable = async (throwable: Throwable) => {
+  const sendThrowable = async (
+    throwable: Throwable,
+    requestedUserId: string,
+    sendRequest: number,
+    throwableRequestId: string
+  ) => {
+    const isCurrent = () =>
+      sendRequest === sendRequestRef.current && activeUserRef.current === requestedUserId;
+    const requestScope = `throwable:${requestedUserId}:${throwable.id}`;
     // Use the throwable (deducts from allowance or charges diamonds)
-    const result = await throwableService.useThrowable(userId, throwable.id);
+    const result = await throwableService.useThrowable(
+      requestedUserId,
+      throwable.id,
+      throwableRequestId
+    );
+    if (!isCurrent()) return;
     if (!result.success) {
-      if (result.error?.includes('diamond') || result.error?.includes('insufficient')) {
+      if (result.retrySameRequest !== true) {
+        clearSessionPurchaseRequestId(requestScope);
+      }
+      const failure = String(result.error ?? '').toLowerCase();
+      if (failure.includes('diamond') || failure.includes('insufficient')) {
         showDiamondTopUp(toast, navigate, {
           feature: 'Throwable',
           cost: allowance?.diamondCost || 1,
         });
       } else {
-        toast.error(result.error || 'Could not send reaction');
+        toast.error(result.error || 'Could Not Send Reaction');
       }
       return;
     }
     // Refresh allowance
-    const newAllowance = await throwableService.getThrowAllowance(userId);
+    const request = ++allowanceRequestRef.current;
+    const newAllowance = await throwableService.getThrowAllowance(requestedUserId);
+    if (request !== allowanceRequestRef.current || !isCurrent()) return;
     setAllowance(newAllowance);
     onSelect(throwable);
+    clearSessionPurchaseRequestId(requestScope);
     onClose();
   };
 
-  if (loading) {
+  if (loading || allowanceUserId !== userId) {
     return (
       <div className="throwable-selector throwable-selector--loading">
         <div className="throwable-selector__spinner" />
@@ -150,7 +211,9 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
         <h3 className="throwable-selector__title">Send Reaction</h3>
         {allowance && (
           <span className="throwable-selector__allowance">
-            {allowance.isVip && allowance.freeThrowsRemaining > 0 ? (
+            {allowance.unlimited ? (
+              <span className="throwable-selector__free"> Lifetime VIP // Unlimited</span>
+            ) : allowance.isVip && allowance.freeThrowsRemaining > 0 ? (
               <span className="throwable-selector__free">
                 {' '}
                 {allowance.freeThrowsRemaining} Free
@@ -165,7 +228,14 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
             )}
           </span>
         )}
-        <button className="throwable-selector__close" onClick={onClose}>
+        <button
+          className="throwable-selector__close"
+          onClick={() => {
+            if (!sendingRef.current) onClose();
+          }}
+          disabled={sending}
+          aria-label="Close Throwable Selector"
+        >
           ×
         </button>
       </div>
@@ -213,22 +283,26 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
       {/* Dan 2026-08-21: a way to buy more without leaving the table blind.
           Deep-links straight to the Diamonds tab rather than the store root,
           so the next tap is the purchase and not another menu. */}
-      <button
-        className="throwable-selector__buy"
-        onClick={() => {
-          haptic.light();
-          onClose();
-          navigate('/marketplace?tab=diamonds');
-        }}
-      >
-        <span className="throwable-selector__buy-icon" aria-hidden>
-          ◆
-        </span>
-        <span className="throwable-selector__buy-label">Get More Throwables</span>
-        <span className="throwable-selector__buy-chevron" aria-hidden>
-          ›
-        </span>
-      </button>
+      {!allowance?.unlimited && (
+        <button
+          className="throwable-selector__buy"
+          disabled={sending}
+          onClick={() => {
+            if (sendingRef.current) return;
+            haptic.light();
+            onClose();
+            navigate('/marketplace?tab=diamonds');
+          }}
+        >
+          <span className="throwable-selector__buy-icon" aria-hidden>
+            ◆
+          </span>
+          <span className="throwable-selector__buy-label">Get More Throwables</span>
+          <span className="throwable-selector__buy-chevron" aria-hidden>
+            ›
+          </span>
+        </button>
+      )}
     </div>
   );
 }

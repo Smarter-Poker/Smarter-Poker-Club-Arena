@@ -44,6 +44,7 @@ import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
+import { randomUUID } from 'node:crypto';
 
 /**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
@@ -176,16 +177,30 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     }
     this.rabbitHuntInFlight.add(userId);
 
+    // One purchase identity per player and offer. Keep it after every transport
+    // failure: Postgres may have committed the allowance/pack/Diamond mutation
+    // before its response was lost, and only this exact UUID can recover the
+    // stored receipt without consuming the same reveal twice.
+    let purchaseRequestId = offer.purchaseRequestIds.get(userId);
+    if (!purchaseRequestId) {
+      purchaseRequestId = randomUUID();
+      offer.purchaseRequestIds.set(userId, purchaseRequestId);
+    }
+
     // VIP monthly pool -> purchased packs -> 5 diamonds. Engine-only RPC: a
     // player's own JWT cannot execute it, which is what stops a client from
     // simply not calling it.
     let charge: Record<string, unknown> | null = null;
     try {
-      const { data, error } = await supabase.rpc('fn_consume_rabbit_hunt', {
+      const { data, error } = await supabase.rpc('fn_consume_rabbit_hunt_v2', {
         p_user_id: userId,
+        p_request_id: purchaseRequestId,
       });
       if (error) throw error;
       charge = (data ?? null) as Record<string, unknown> | null;
+      // A returned payload is authoritative, including a refusal. Only an
+      // ambiguous transport failure retains this purchase identity.
+      offer.purchaseRequestIds.delete(userId);
     } catch (err) {
       reportError(err, 'ServerTableEngine.rabbit_hunt_charge_error');
       return { success: false, error: 'Could Not Complete Purchase' };
@@ -438,6 +453,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               .filter((id): id is string => !!id)
           ),
           revealed: new Set<string>(),
+          purchaseRequestIds: new Map<string, string>(),
           offeredAt: Date.now(),
         });
         // Keep the two most recent offers, by INSERTION ORDER. Trimming on

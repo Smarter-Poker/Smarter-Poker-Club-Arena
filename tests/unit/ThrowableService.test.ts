@@ -8,10 +8,15 @@
  * completeness — plus a floor on the catalog size, so the catalog can GROW
  * without touching this file but can never silently shrink or corrupt.
  */
-import { describe, it, expect } from 'vitest';
-import { throwableService } from '../../src/services/ThrowableService';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { normalizeThrowableError, throwableService } from '../../src/services/ThrowableService';
+import { supabase } from '../../src/lib/supabase';
 
 const CATEGORIES = ['reactions', 'throws', 'sports', 'cheers', 'premium'] as const;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('ThrowableService catalog', () => {
   const all = throwableService.getThrowables();
@@ -52,5 +57,80 @@ describe('ThrowableService catalog', () => {
       expect(t.impact, t.id).toBeTruthy();
       expect(t.color?.length, t.id).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('ThrowableService Lifetime VIP allowance', () => {
+  it('resolves exact Lifetime VIP without displaying or consuming stored packs', async () => {
+    const profileQuery: any = {};
+    profileQuery.select = vi.fn(() => profileQuery);
+    profileQuery.eq = vi.fn(() => profileQuery);
+    profileQuery.maybeSingle = vi.fn().mockResolvedValue({
+      data: {
+        is_vip: true,
+        vip_tier: 'lifetime',
+        // Lifetime ignores a stale expiry by contract.
+        vip_expires_at: '2020-01-01T00:00:00.000Z',
+      },
+      error: null,
+    });
+    const packQuery: any = {};
+    packQuery.select = vi.fn(() => packQuery);
+    packQuery.eq = vi.fn(() => packQuery);
+    packQuery.then = (resolve: (result: unknown) => void) =>
+      resolve({
+        data: [{ uses_remaining: 25, expires_at: null }],
+        error: null,
+      });
+    const fromSpy = vi.spyOn(supabase, 'from').mockImplementation(((table: string) => {
+      if (table === 'profiles') return profileQuery;
+      if (table === 'feature_purchases') return packQuery;
+      throw new Error(`Unexpected Table: ${table}`);
+    }) as typeof supabase.from);
+
+    await expect(
+      throwableService.getThrowAllowance('11111111-2222-4333-8444-555555555555')
+    ).resolves.toEqual({
+      isVip: true,
+      unlimited: true,
+      freeThrowsRemaining: 0,
+      packThrowsRemaining: 0,
+      diamondCost: 0,
+    });
+    expect(fromSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ThrowableService refusal copy', () => {
+  it('maps server codes to safe Title Case messages', () => {
+    expect(normalizeThrowableError('authentication required')).toBe('Authentication Required');
+    expect(normalizeThrowableError('Insufficient diamonds')).toBe('Insufficient Diamonds');
+    expect(normalizeThrowableError('RATE_LIMITED')).toBe(
+      'Please Wait Before Sending Another Throwable'
+    );
+    expect(normalizeThrowableError('private lower-level failure')).toBe('Could Not Send Reaction');
+  });
+
+  it('never forwards a database refusal verbatim', async () => {
+    vi.spyOn(supabase, 'rpc').mockResolvedValueOnce({
+      data: { success: false, error: 'authentication required' },
+      error: null,
+    } as never);
+
+    await expect(
+      throwableService.useThrowable(
+        '11111111-2222-4333-8444-555555555555',
+        'tomato',
+        'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+      )
+    ).resolves.toEqual({
+      success: false,
+      error: 'Authentication Required',
+      retrySameRequest: false,
+    });
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_use_throwable_v2', {
+      p_throwable_id: 'tomato',
+      p_request_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    });
   });
 });

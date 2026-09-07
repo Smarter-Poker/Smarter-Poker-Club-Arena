@@ -5,10 +5,11 @@
  */
 
 import React, { useState } from 'react';
-import { vipService, VIP_MONTHLY_ALLOWANCES, FEATURE_PRICING } from '../../services/VIPService';
+import { vipService, FEATURE_PRICING } from '../../services/VIPService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
+import { reportError } from '../../utils/errorReporter';
 import './EmojiPicker.css';
 
 interface EmojiPickerProps {
@@ -71,25 +72,73 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
   const { user } = useAuthUser();
   const toast = useToast();
   const [isVIP, setIsVIP] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [accessUserId, setAccessUserId] = useState<string | undefined>(user?.id);
+  const [purchasing, setPurchasing] = useState(false);
+  const [purchasingUserId, setPurchasingUserId] = useState<string | null>(null);
+  const [purchasingRequestId, setPurchasingRequestId] = useState<number | null>(null);
+  const busyRef = React.useRef(false);
+  const accessRequestRef = React.useRef(0);
+  const purchaseRequestRef = React.useRef(0);
+  const activeUserIdRef = React.useRef(user?.id);
+  const openStateRef = React.useRef(isOpen);
+  const mountedRef = React.useRef(true);
+
+  // In-flight entitlement and purchase continuations belong to the account
+  // that started them. Invalidate them synchronously during render so the
+  // replacement account never inherits access, callbacks, toasts, or a lock.
+  if (activeUserIdRef.current !== user?.id) {
+    activeUserIdRef.current = user?.id;
+    accessRequestRef.current += 1;
+    purchaseRequestRef.current += 1;
+    busyRef.current = false;
+  }
+  if (openStateRef.current !== isOpen) {
+    openStateRef.current = isOpen;
+    purchaseRequestRef.current += 1;
+    busyRef.current = false;
+  }
+
+  const hasVIPAccess = accessUserId === user?.id && isVIP;
+  const purchasingForActiveUser =
+    purchasing &&
+    purchasingUserId === user?.id &&
+    purchasingRequestId === purchaseRequestRef.current;
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      purchaseRequestRef.current += 1;
+      busyRef.current = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     // 2026-08-28: no `mounted` guard here meant both setStates could land
     // after the picker closed and unmounted.
     let mounted = true;
     const check = async () => {
-      if (!user?.id) {
-        if (mounted) setLoading(false);
+      const requestedUserId = user?.id;
+      const requestId = ++accessRequestRef.current;
+      if (!requestedUserId) {
+        if (mounted) {
+          setAccessUserId(undefined);
+          setIsVIP(false);
+        }
         return;
       }
       try {
-        const access = await vipService.checkFeatureAccess(user.id, 'emoji_pack');
-        if (!mounted) return;
+        const access = await vipService.checkFeatureAccess(requestedUserId, 'emoji_pack');
+        if (
+          !mounted ||
+          activeUserIdRef.current !== requestedUserId ||
+          accessRequestRef.current !== requestId
+        )
+          return;
+        setAccessUserId(requestedUserId);
         setIsVIP(access.hasAccess);
       } catch {
         /* Keep the last known access on a transient read failure. */
-      } finally {
-        if (mounted) setLoading(false);
       }
     };
     if (isOpen) check();
@@ -100,10 +149,18 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
 
   React.useEffect(() => {
     if (!isOpen || !user?.id) return undefined;
+    const requestedUserId = user.id;
     return masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
-      if (event.payload.userId !== user.id || event.payload.category !== 'emote_pack') return;
-      void vipService.checkFeatureAccess(user.id, 'emoji_pack').then(
-        (access) => setIsVIP(access.hasAccess),
+      if (event.payload.userId !== requestedUserId || event.payload.category !== 'emote_pack')
+        return;
+      const requestId = ++accessRequestRef.current;
+      void vipService.checkFeatureAccess(requestedUserId, 'emoji_pack').then(
+        (access) => {
+          if (activeUserIdRef.current !== requestedUserId || accessRequestRef.current !== requestId)
+            return;
+          setAccessUserId(requestedUserId);
+          setIsVIP(access.hasAccess);
+        },
         () => {
           /* Keep the last known access on a transient read failure. */
         }
@@ -127,21 +184,32 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
    *    fn_purchase_feature calls. `busyRef` is a REF, not state: two taps
    *    inside one commit both read stale state, but both see the ref.
    */
-  const busyRef = React.useRef(false);
-  const [purchasing, setPurchasing] = useState(false);
-
   const handleSelect = async (emoji: string, isPremium: boolean) => {
     if (!user?.id) return;
+    // Lock every picker action, not just premium buttons, while a paid request
+    // is unresolved. This ref closes the same-render gap before React applies
+    // the disabled state and prevents a free emoji from racing the purchase.
+    if (busyRef.current) return;
+    const requestedUserId = user.id;
 
-    if (isPremium && !isVIP) {
-      if (busyRef.current) return;
+    if (isPremium && !hasVIPAccess) {
       busyRef.current = true;
+      const requestId = ++purchaseRequestRef.current;
+      accessRequestRef.current += 1;
+      const isCurrentRequest = () =>
+        mountedRef.current &&
+        openStateRef.current &&
+        activeUserIdRef.current === requestedUserId &&
+        purchaseRequestRef.current === requestId;
+      setPurchasingUserId(requestedUserId);
+      setPurchasingRequestId(requestId);
       setPurchasing(true);
       try {
-        const result = await vipService.purchaseFeature(user.id, 'emoji_pack');
+        const result = await vipService.purchaseFeature(requestedUserId, 'emoji_pack');
+        if (!isCurrentRequest()) return;
         if (!result.success && !result.alreadyOwned) {
           toast.error(
-            result.error === 'Insufficient diamonds'
+            result.error === 'Insufficient Diamonds'
               ? 'Not Enough Diamonds For The Emoji Pack.'
               : 'Could Not Buy The Emoji Pack. Please Try Again.'
           );
@@ -152,16 +220,25 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
         if (result.charged > 0) {
           toast.info(`${result.charged} Diamonds Charged For The Emoji Pack.`);
         }
+        setAccessUserId(requestedUserId);
         setIsVIP(true);
         masterBus.emit('ENTITLEMENTS_CHANGED', {
-          userId: user.id,
+          userId: requestedUserId,
           category: 'emote_pack',
           quantity: 1,
           source: 'diamond-purchase',
         });
+      } catch (error) {
+        if (!isCurrentRequest()) return;
+        reportError(error, 'EmojiPicker.PurchaseFeature');
+        toast.error('Could Not Buy The Emoji Pack. Please Try Again.');
+        return;
       } finally {
-        busyRef.current = false;
-        setPurchasing(false);
+        if (isCurrentRequest()) {
+          busyRef.current = false;
+          setPurchasing(false);
+          setPurchasingRequestId(null);
+        }
       }
     }
 
@@ -174,13 +251,23 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
   const style = position ? { left: position.x, top: position.y } : {};
 
   return (
-    <div className="emoji-picker-overlay" onClick={onClose}>
+    <div
+      className="emoji-picker-overlay"
+      onClick={() => {
+        if (!busyRef.current) onClose();
+      }}
+    >
       <div className="emoji-picker" style={style} onClick={(e) => e.stopPropagation()}>
         <div className="emoji-picker__section">
           <span className="emoji-picker__label">Free</span>
           <div className="emoji-picker__grid">
-            {FREE_EMOJIS.map((emoji) => (
-              <button key={emoji} onClick={() => handleSelect(emoji, false)}>
+            {FREE_EMOJIS.map((emoji, index) => (
+              <button
+                key={`free-${index}-${emoji}`}
+                onClick={() => handleSelect(emoji, false)}
+                disabled={purchasingForActiveUser}
+                aria-busy={purchasingForActiveUser}
+              >
                 {emoji}
               </button>
             ))}
@@ -189,16 +276,16 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
 
         <div className="emoji-picker__section">
           <span className="emoji-picker__label">
-            {isVIP ? ' VIP' : `Premium (${FEATURE_PRICING.emoji_pack.cost})`}
+            {hasVIPAccess ? ' VIP' : `Premium (${FEATURE_PRICING.emoji_pack.cost})`}
           </span>
           <div className="emoji-picker__grid vip">
-            {VIP_EMOJIS.map((emoji) => (
+            {VIP_EMOJIS.map((emoji, index) => (
               <button
-                key={emoji}
+                key={`vip-${index}-${emoji}`}
                 onClick={() => handleSelect(emoji, true)}
-                disabled={purchasing}
-                aria-busy={purchasing}
-                className={!isVIP ? 'premium' : ''}
+                disabled={purchasingForActiveUser}
+                aria-busy={purchasingForActiveUser}
+                className={!hasVIPAccess ? 'premium' : ''}
               >
                 {emoji}
               </button>

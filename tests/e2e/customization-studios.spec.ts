@@ -55,7 +55,7 @@ async function mockStudioBackend(
     const path = new URL(request.url()).pathname;
     const body = request.postDataJSON?.() as Record<string, any> | null;
 
-    if (path.endsWith('/rpc/fn_purchase_feature')) {
+    if (path.endsWith('/rpc/fn_purchase_feature_v2')) {
       const feature = String(body?.p_feature || '');
       server.purchases.push(feature);
       await fulfillJson(route, { success: true, cost: 350 });

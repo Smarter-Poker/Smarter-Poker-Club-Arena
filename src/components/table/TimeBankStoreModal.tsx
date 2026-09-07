@@ -8,7 +8,7 @@
  *  1-10-25-100-500."
  *
  * Presets are exactly those five. The price shown is whatever the caller passes
- * from `feature_pricing` — the same row `fn_purchase_time_banks` charges from —
+ * from `feature_pricing` — the same row `fn_purchase_time_banks_v2` charges from —
  * so the sheet can never advertise a number the server will not honour, and the
  * quantity is the only thing the client gets to choose.
  *

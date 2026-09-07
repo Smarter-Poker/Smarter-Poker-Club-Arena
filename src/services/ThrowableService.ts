@@ -10,8 +10,9 @@
  * - Every item carries its own PHYSICS profile (flight path), IMPACT profile
  *   (what happens on landing), SOUND key (procedural Web Audio recipe in
  *   ThrowableSoundService), weight (screen shake), spin, and splat color.
- * - VIP: 500 free throws per month, then 1 Diamond each (server-authoritative
- *   via fn_use_throwable — advisory-locked, pack-credit aware).
+ * - VIP: 500 free throws per month, then 1 Diamond each.
+ * - Lifetime VIP: unlimited throws with no pack credit or Diamond spend.
+ *   Both paths are server-authoritative through fn_use_throwable.
  *
  * Wire format is unchanged: `[THROW:<id>:<seat>]` broadcast over the engine
  * WebSocket chat channel. IDs match the storage filenames exactly
@@ -20,6 +21,7 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { resolveVipStatus } from '../utils/vipStatus';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -95,10 +97,29 @@ export interface ThrowEvent {
 
 export interface ThrowAllowance {
   isVip: boolean;
+  /** Exact Lifetime VIP members never consume a monthly pool, pack, or Diamond. */
+  unlimited: boolean;
   freeThrowsRemaining: number;
   /** Club-shop pack credits consumed before a diamond is charged. */
   packThrowsRemaining: number;
   diamondCost: number; // 0 if free throws available, otherwise 1
+}
+
+/** Turn database refusal codes into safe player-facing copy. */
+export function normalizeThrowableError(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  const normalized = raw.toLowerCase().replace(/[_-]+/g, ' ');
+  if (normalized.includes('insufficient') && normalized.includes('diamond')) {
+    return 'Insufficient Diamonds';
+  }
+  if (normalized.includes('authentication')) return 'Authentication Required';
+  if (normalized.includes('invalid throwable') || normalized.includes('not found')) {
+    return 'Throwable Not Found';
+  }
+  if (normalized.includes('wait') || normalized.includes('rate limit')) {
+    return 'Please Wait Before Sending Another Throwable';
+  }
+  return 'Could Not Send Reaction';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -869,13 +890,15 @@ class ThrowableServiceClass {
     };
   }
 
-  /**
-   * Check user's throw allowance (VIP gets 500 free/month)
-   */
+  /** Check the current server-backed throw entitlement. */
   async getThrowAllowance(userId: string): Promise<ThrowAllowance> {
     try {
       const [profileResult, packResult] = await Promise.all([
-        supabase.from('profiles').select('is_vip').eq('id', userId).maybeSingle(),
+        supabase
+          .from('profiles')
+          .select('is_vip, vip_tier, vip_expires_at')
+          .eq('id', userId)
+          .maybeSingle(),
         supabase
           .from('feature_purchases')
           .select('uses_remaining, expires_at')
@@ -883,6 +906,20 @@ class ThrowableServiceClass {
           .eq('feature', 'throwable'),
       ]);
       if (profileResult.error) throw profileResult.error;
+
+      const vipStatus = resolveVipStatus(profileResult.data);
+      if (vipStatus === 'lifetime') {
+        return {
+          isVip: true,
+          unlimited: true,
+          freeThrowsRemaining: 0,
+          packThrowsRemaining: 0,
+          diamondCost: 0,
+        };
+      }
+
+      // Lifetime exits above so its stored packs stay untouched. Every other
+      // player can still consume an unexpired Club Shop pack before Diamonds.
       if (packResult.error) throw packResult.error;
 
       const now = Date.now();
@@ -890,11 +927,12 @@ class ThrowableServiceClass {
         .filter((row) => !row.expires_at || Date.parse(row.expires_at) > now)
         .reduce((sum, row) => sum + Math.max(0, Number(row.uses_remaining) || 0), 0);
 
-      const isVip = profileResult.data?.is_vip || false;
+      const isVip = vipStatus === 'vip';
 
       if (!isVip) {
         return {
           isVip: false,
+          unlimited: false,
           freeThrowsRemaining: 0,
           packThrowsRemaining,
           diamondCost: packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
@@ -902,9 +940,10 @@ class ThrowableServiceClass {
       }
 
       // Get this month's usage for VIP
-      const monthStart = new Date();
-      monthStart.setDate(1);
-      monthStart.setHours(0, 0, 0, 0);
+      const currentDate = new Date();
+      const monthStart = new Date(
+        Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), 1)
+      );
 
       const { count } = await supabase
         .from('throw_usage')
@@ -917,6 +956,7 @@ class ThrowableServiceClass {
 
       return {
         isVip: true,
+        unlimited: false,
         freeThrowsRemaining: remaining,
         packThrowsRemaining,
         diamondCost: remaining > 0 || packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
@@ -925,6 +965,7 @@ class ThrowableServiceClass {
       reportError(err, 'ThrowableService.Error');
       return {
         isVip: false,
+        unlimited: false,
         freeThrowsRemaining: 0,
         packThrowsRemaining: 0,
         diamondCost: DIAMOND_COST_PER_THROW,
@@ -937,39 +978,55 @@ class ThrowableServiceClass {
    */
   async useThrowable(
     userId: string,
-    throwableId: string
-  ): Promise<{ success: boolean; error?: string }> {
+    throwableId: string,
+    requestId: string
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    idempotent?: boolean;
+    retrySameRequest?: boolean;
+  }> {
+    if (!userId) {
+      return { success: false, error: 'Authentication Required', retrySameRequest: false };
+    }
     const throwable = THROWABLE_MAP.get(throwableId);
     if (!throwable) {
-      return { success: false, error: 'Throwable not found' };
+      return { success: false, error: 'Throwable Not Found' };
     }
 
     try {
       // ── Atomic server path (2026-08-17) ──────────────────────────────────
-      // fn_use_throwable serialises the free-allowance check per user
-      // (advisory xact lock) and does charge+record in ONE transaction,
+      // fn_use_throwable_v2 serialises the free-allowance check per user,
+      // receipts one browser request UUID, and does charge+record in ONE transaction,
       // closing two defects of the old client flow: a two-tab race that
       // could double-spend the last free throw, and a paid path where a
       // failure between deduct_diamonds and the usage insert charged a
       // diamond and recorded nothing. Allowance and price are
       // server-authoritative there.
-      const { data: atomic, error: atomicErr } = await supabase.rpc('fn_use_throwable', {
+      const { data: atomic, error: atomicErr } = await supabase.rpc('fn_use_throwable_v2', {
         p_throwable_id: throwableId,
+        p_request_id: requestId,
       });
       if (!atomicErr && atomic) {
-        if ((atomic as any).success === true) return { success: true };
-        return { success: false, error: (atomic as any).error || 'Throw failed' };
+        if ((atomic as any).success === true) {
+          return { success: true, idempotent: (atomic as any).idempotent === true };
+        }
+        return {
+          success: false,
+          error: normalizeThrowableError((atomic as any).error),
+          retrySameRequest: false,
+        };
       }
       // The legacy client-side fallback that used to live here is GONE.
       // (See 2026-08-17 session notes: fn_use_throwable is SECURITY DEFINER,
       // derives the user from auth.uid(), and is the only sanctioned path.)
       if (atomicErr) {
-        reportError(atomicErr, 'ThrowableService.fn_use_throwable_failed');
+        reportError(atomicErr, 'ThrowableService.fn_use_throwable_v2_failed');
       }
-      return { success: false, error: 'Throw unavailable, please try again' };
+      return { success: false, error: 'Could Not Send Reaction', retrySameRequest: true };
     } catch (err) {
       reportError(err, 'ThrowableService.Error');
-      return { success: false, error: 'Unexpected error' };
+      return { success: false, error: 'Could Not Send Reaction', retrySameRequest: true };
     }
   }
 

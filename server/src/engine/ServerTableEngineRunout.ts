@@ -468,6 +468,20 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       return { success: false, error: 'Discard rejected' };
     }
 
+    /* A decision ends its bank. This clears an unspent early-arm intent and,
+       when the 20-second extension was already running, applies the existing
+       use-it-or-lose-it accounting and cancels its precise timer. Without this
+       call the bank survived a successful discard and could expire later into
+       the next decision. Gameplay has already committed, so accounting stays
+       best-effort rather than turning a valid discard into an HTTP failure. */
+    try {
+      this.timeBankEngine.playerActed(this.tableId, userId);
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_timebank_release', {
+        seat: player.seat_number,
+      });
+    }
+
     // If all discards are complete, the HandController will advance the game
     // and emit events that trigger broadcasting. Clear the discard timer.
     //

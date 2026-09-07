@@ -467,9 +467,10 @@ describe('ThemeSettingsModal hardening', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
     await waitFor(() =>
-      expect(mocks.rpc).toHaveBeenCalledWith('fn_purchase_feature', {
+      expect(mocks.rpc).toHaveBeenCalledWith('fn_purchase_feature_v2', {
         p_user_id: 'user-1',
         p_feature: 'studio:table_id:neon_city',
+        p_request_id: expect.any(String),
       })
     );
     await waitFor(() =>
@@ -479,6 +480,94 @@ describe('ThemeSettingsModal hardening', () => {
       )
     );
     expect(mocks.toast.success).toHaveBeenCalledWith('Neon City Purchased And Applied');
+  });
+
+  it('reconciles an idempotent purchase receipt without reporting another Diamond spend', async () => {
+    vi.mocked(masterBus.emit).mockClear();
+    mocks.rpc.mockResolvedValue({
+      data: { success: true, cost: 350, idempotent: true, granted: false },
+      error: null,
+    });
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
+
+    await waitFor(() =>
+      expect(mocks.toast.success).toHaveBeenCalledWith('Design Restored And Applied')
+    );
+    expect(vi.mocked(masterBus.emit)).not.toHaveBeenCalledWith('DIAMOND_SPENT', expect.anything());
+  });
+
+  it('keeps a late purchase response owned by the account that started it', async () => {
+    const accountAPurchase = deferred<{
+      data: { success: true; cost: number };
+      error: null;
+    }>();
+    const accountBPurchase = deferred<{
+      data: { success: true; cost: number };
+      error: null;
+    }>();
+    mocks.rpc
+      .mockImplementationOnce(() => accountAPurchase.promise)
+      .mockImplementationOnce(() => accountBPurchase.promise);
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <ThemeSettingsModal isOpen onClose={onClose} userId="account-a" isVip={false} />
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(1));
+
+    rerender(<ThemeSettingsModal isOpen onClose={onClose} userId="account-b" isVip={false} />);
+    expect(screen.queryByRole('dialog', { name: 'Unlock Neon City' })).not.toBeInTheDocument();
+    const accountBNeon = await screen.findByRole('button', {
+      name: 'Neon City, Purchase Or VIP Required',
+    });
+    await waitFor(() => expect(accountBNeon).toBeEnabled());
+    fireEvent.click(accountBNeon);
+    const accountBBuy = await screen.findByRole('button', { name: /Buy For 350/ });
+    fireEvent.click(accountBBuy);
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(2));
+    expect(accountBBuy).toBeDisabled();
+
+    await act(async () => {
+      accountAPurchase.resolve({ data: { success: true, cost: 350 }, error: null });
+      await accountAPurchase.promise;
+    });
+
+    expect(mocks.applyAppearance).not.toHaveBeenCalled();
+    expect(mocks.toast.success).not.toHaveBeenCalled();
+    expect(accountBBuy).toBeDisabled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => {
+      accountBPurchase.resolve({ data: { success: true, cost: 350 }, error: null });
+      await accountBPurchase.promise;
+    });
+
+    await waitFor(() =>
+      expect(mocks.applyAppearance).toHaveBeenCalledWith(
+        { table_id: 'neon_city' },
+        expect.objectContaining({ userId: 'account-b', gameType: 'ALL' })
+      )
+    );
+    expect(mocks.applyAppearance).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.success).toHaveBeenCalledWith('Neon City Purchased And Applied');
+    expect(mocks.rpc.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ p_user_id: 'account-a', p_request_id: expect.any(String) })
+    );
+    expect(mocks.rpc.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({ p_user_id: 'account-b', p_request_id: expect.any(String) })
+    );
   });
 
   it('turns a short diamond balance into a working store continuation', async () => {

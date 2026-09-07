@@ -559,6 +559,25 @@ export default function ClubDataPage() {
   // keep it up.
   const spinnerVersion = useRef(0);
   const backgroundLedgerInFlight = useRef(false);
+  /* The players ledger has its own everything, and had the same two faults.
+     `playersLoading` was cleared only by the newest read of any kind, and
+     `loadMorePlayers` refuses to run while it is true - so once a background
+     refresh stranded it, clicking Load More Players did nothing at all and the
+     label sat on "Load More Players - 100 Of 571" (Post-Deploy E2E
+     club-data-deep.spec.ts:185, the failure left standing after the games
+     ledger was fixed). Same rule, same shape. */
+  const playersSpinnerVersion = useRef(0);
+  const backgroundPlayersInFlight = useRef(false);
+  /* AND A REFRESH IS NOT A NEW QUESTION.
+     Both Load More paths captured the read version and threw their page away
+     if anything bumped it while the request was out - including the 60s poll
+     and every realtime row, which are refreshes of the SAME query. The check
+     is right for a sort or filter change, where the page genuinely belongs to
+     a ledger nobody is looking at any more; it is wrong for a refresh, where
+     the operator asked for the next page of exactly what is on screen. These
+     move only when the QUESTION changes. */
+  const gamesQueryEpoch = useRef(0);
+  const playersQueryEpoch = useRef(0);
   const playersVersion = useRef(0);
   const invoicesVersion = useRef(0);
   const resolveVersion = useRef(0);
@@ -647,7 +666,11 @@ export default function ClubDataPage() {
     // incoming club's skeleton away when it lands.
     spinnerVersion.current = loadVersion.current;
     backgroundLedgerInFlight.current = false;
+    gamesQueryEpoch.current += 1;
+    playersQueryEpoch.current += 1;
     playersVersion.current += 1;
+    playersSpinnerVersion.current = playersVersion.current;
+    backgroundPlayersInFlight.current = false;
     invoicesVersion.current += 1;
     resolveVersion.current += 1;
     clubNameVersion.current += 1;
@@ -776,6 +799,7 @@ export default function ClubDataPage() {
         gamesMoreRef.current = false;
         setGamesLoadingMore(false);
       }
+      if (!preserveOnError) gamesQueryEpoch.current += 1;
       if (showSpinner) {
         spinnerVersion.current = myVersion;
         setLoading(true);
@@ -1055,6 +1079,10 @@ export default function ClubDataPage() {
       // Pagination owns the cursor while it is in flight. A heartbeat is a
       // recovery mechanism, not a reason to invalidate that user action.
       if (preserveOnError && playersMoreRef.current) return true;
+      // A second background read cannot make the ledger fresher than the one
+      // already out; it can only take the ordering away from it.
+      if (preserveOnError && backgroundPlayersInFlight.current) return true;
+      if (!preserveOnError) playersQueryEpoch.current += 1;
       const myVersion = ++playersVersion.current;
       const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
       // Player sort changes establish a new cursor and supersede pagination.
@@ -1067,7 +1095,13 @@ export default function ClubDataPage() {
       // Silent recovery must not make the operator's manual recovery control
       // unavailable. When verified rows already exist, keep them interactive
       // while the newest background request owns the reconciliation.
-      setPlayersLoading(!preserveOnError || !playersRef.current);
+      const showSpinner = !preserveOnError || !playersRef.current;
+      if (showSpinner) {
+        playersSpinnerVersion.current = myVersion;
+        setPlayersLoading(true);
+      } else {
+        backgroundPlayersInFlight.current = true;
+      }
       setPlayersError(null);
       setPlayersPageError(null);
       try {
@@ -1154,7 +1188,13 @@ export default function ClubDataPage() {
         if (!preserveOnError) setPlayers(null);
         return false;
       } finally {
-        if (!stale()) setPlayersLoading(false);
+        if (!showSpinner) backgroundPlayersInFlight.current = false;
+        // The skeleton comes down when the request that RAISED it settles, or
+        // when a newer foreground load has taken it over. Never on the
+        // ordering of background polls. See `spinnerVersion`.
+        if (!cancelledRef.current && showSpinner && playersSpinnerVersion.current === myVersion) {
+          setPlayersLoading(false);
+        }
       }
     },
     [clubUuid, startDate, endDate, playerSort, isHydrating, userId, playerCacheKey]
@@ -1198,16 +1238,17 @@ export default function ClubDataPage() {
       gamesMoreRef.current = true;
       setGamesLoadingMore(true);
       setGamesPageError(null);
-      const myVersion = loadVersion.current;
+      const myEpoch = gamesQueryEpoch.current;
       try {
         prefetched = await pendingPrefetch.promise;
-        if (cancelledRef.current || loadVersion.current !== myVersion) return;
+        if (cancelledRef.current || gamesQueryEpoch.current !== myEpoch) return;
         if (prefetched) prefetchedGamePageRef.current = prefetched;
       } finally {
         gamesMoreRef.current = false;
-        if (!cancelledRef.current && loadVersion.current === myVersion) {
-          setGamesLoadingMore(false);
-        }
+        // We raised this spinner; we put it down, whatever happened to the
+        // page. Leaving it up on a superseded read is how "Loading More Games"
+        // used to lock for ever.
+        if (!cancelledRef.current) setGamesLoadingMore(false);
       }
     }
     const current = snapshotRef.current;
@@ -1237,8 +1278,8 @@ export default function ClubDataPage() {
     gamesMoreRef.current = true;
     setGamesLoadingMore(true);
     setGamesPageError(null);
-    const myVersion = loadVersion.current;
-    const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
+    const myEpoch = gamesQueryEpoch.current;
+    const stale = () => cancelledRef.current || gamesQueryEpoch.current !== myEpoch;
     try {
       // Recent ordering is the one PostgreSQL is most likely to cancel on a
       // cold cache. The first screen is already visible, so two safe read-only
@@ -1299,7 +1340,7 @@ export default function ClubDataPage() {
       setGamesPageError('Could Not Load More Games.');
     } finally {
       gamesMoreRef.current = false;
-      if (!stale()) setGamesLoadingMore(false);
+      if (!cancelledRef.current) setGamesLoadingMore(false);
     }
   }, [
     clubUuid,
@@ -1331,8 +1372,8 @@ export default function ClubDataPage() {
     playersMoreRef.current = true;
     setPlayersLoadingMore(true);
     setPlayersPageError(null);
-    const myVersion = playersVersion.current;
-    const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
+    const myEpoch = playersQueryEpoch.current;
+    const stale = () => cancelledRef.current || playersQueryEpoch.current !== myEpoch;
     try {
       const { data, error: pageError } = await withTimeout(
         supabase.rpc('ca_club_player_page', {
@@ -1383,7 +1424,7 @@ export default function ClubDataPage() {
       setPlayersPageError('Could Not Load More Players.');
     } finally {
       playersMoreRef.current = false;
-      if (!stale()) setPlayersLoadingMore(false);
+      if (!cancelledRef.current) setPlayersLoadingMore(false);
     }
   }, [
     clubUuid,

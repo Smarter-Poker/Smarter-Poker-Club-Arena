@@ -6092,6 +6092,8 @@ export default function TablePage({
   // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
   const [showBBJCelebration, setShowBBJCelebration] = useState(false);
   const bbjHitDataRef = useRef<{
+    /** BBJ phase 6: which jackpot this hit was. Absent means the main one. */
+    kind?: 'main' | 'mini';
     loserUserId: string;
     loserHandName: string;
     winnerUserId: string;
@@ -6107,6 +6109,8 @@ export default function TablePage({
     tablePlayerCount: number;
     qualifyingLabel: string;
     heroShare: number;
+    /** BBJ phase 6: 'mini' is the flat second tier out of the backup reserve. */
+    kind: 'main' | 'mini';
   } | null>(null);
   // BBJ-FLOAT 2026-08-18: per-seat gold "BBJ +$X" floats, keyed by userId.
   // Set alongside the celebration, cleared 4.5s later.
@@ -10633,6 +10637,10 @@ export default function TablePage({
           winnerUserId: winnerData?.userId || '',
           winnerHandName: winnerData?.hand?.name || 'Unknown',
           qualifyingHandLabel: (handState.qualifyingHandLabel as string) || '',
+          /* BBJ phase 6. The engine stamps the mini's events with kind:'mini';
+             an event without one is the main jackpot, which is what every
+             event before today was. */
+          kind: (handState.kind as 'main' | 'mini') || 'main',
         };
         // Don't show toast or HUD hit yet — wait for payout_complete after showdown finishes
         return;
@@ -10821,6 +10829,13 @@ export default function TablePage({
                   : userId && tablePlayerIds.includes(userId)
                     ? perPlayer
                     : 0,
+            /* BBJ phase 6. Prefer the kind on THIS event; fall back to the
+               one bbj_hit carried, and to 'main' for any event emitted before
+               the mini existed. */
+            kind:
+              ((handState.kind as 'main' | 'mini') || hitData?.kind || 'main') === 'mini'
+                ? 'mini'
+                : 'main',
           });
 
           // NOW trigger the HUD hit animation + full celebration overlay

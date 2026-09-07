@@ -16,7 +16,13 @@ import { StraddleEngine } from './StraddleEngine.js';
 import { integrityFeed } from '../integrity/IntegrityFeed.js';
 import type { HandHistoryRow } from '../integrity/HandEventAdapter.js';
 import { computeSevenDeuceBounties } from './SevenDeuceBounty.js';
-import { getFullRakeConfig, detectBBJHit, detectBBJNearMiss } from '../config/RakeConfig.js';
+import {
+  getFullRakeConfig,
+  detectBBJHit,
+  detectBBJNearMiss,
+  detectMiniBBJHit,
+  getTierIdForBB,
+} from '../config/RakeConfig.js';
 import type { BBJDetectionResult } from '../config/RakeConfig.js';
 import { maybeArmed } from '../services/supabase/bbjDrillRegistry.js';
 import {
@@ -32,6 +38,7 @@ import {
   logInsuranceSettlement,
   logHandHistory,
   processBBJPayout,
+  processMiniBBJPayout,
   resolveJackpotSiblingClubIds,
   completeHandSnapshot,
   supabase,
@@ -1096,6 +1103,63 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         this.currentHandBBJHit = bbjResult;
         this.currentHandBBJPayoutConfig = rakeConfig;
       } else {
+        /* ── THE MINI JACKPOT (BBJ phase 6 of 6, Dan 2026-09-07) ────────────
+           The main bar was not met. Dan's second tier catches the hand that
+           came close, at a rule that differs by game because the games do:
+           hold'em ACES FULL OR BETTER losing, PLO ANY QUADS losing. Measured
+           over seven days that is 3.4 a day and 0.6 a day - one rule for both
+           would have been a lottery in one game and a shrug in the other.
+
+           IT CANNOT OVERRULE THE MAIN. It is reached only from this else
+           branch, so `detectBBJHit` has already said no; and the payout RPC
+           shares the main's idempotency key (pool, table, hand), so one hand
+           can produce one payout of either kind and never both. The money is a
+           flat amount per stakes tier out of `backup_balance` - a reserve that
+           until now nothing spent - never out of the jackpot itself. */
+        const miniResult = detectMiniBBJHit(
+          this.currentHandShowdownResults,
+          this.currentHandWinnerIds,
+          variant,
+          this.currentHandPotSize,
+          this.tableInfo.big_blind,
+          dealtInPlayerIds.length,
+          dealtInPlayerIds,
+          { doubleBoard: this.currentHandCommunityCards2.length > 0 }
+        );
+
+        if (miniResult.hit) {
+          const miniTierId = getTierIdForBB(this.tableInfo.big_blind);
+          console.log(
+            `[ServerTableEngine:${this.tableId}] *** MINI BBJ HIT (${miniResult.miniRule}) *** ` +
+              `tier ${miniTierId}, loser ${miniResult.loserUserId} (${miniResult.loserHand?.name}), ` +
+              `winner ${miniResult.winnerUserId} (${miniResult.winnerHand?.name})`
+          );
+          this.currentHandMiniBBJHit = miniResult;
+          this.currentHandMiniBBJTierId = miniTierId;
+
+          /* The same event the main jackpot emits, carrying `kind: 'mini'` so
+             a client can show a smaller celebration - and so an older client,
+             which reads no `kind`, still shows something rather than nothing.
+             Same freshness stamp and same retention window as phase 1 built
+             for the main, because a mini reaches a reconnecting socket the
+             same way. */
+          this.hub?.emitEvent(this.tableId, {
+            type: 'bbj_hit',
+            kind: 'mini',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            emitted_at: Date.now(),
+            replay_until: Date.now() + 60_000,
+            loser: { userId: miniResult.loserUserId, hand: miniResult.loserHand },
+            winner: { userId: miniResult.winnerUserId, hand: miniResult.winnerHand },
+            tableShare: { playerIds: dealtInPlayerIds },
+            variant,
+            miniTierId,
+            miniRule: miniResult.miniRule,
+            qualifyingHandLabel: miniResult.qualifyingHandLabel,
+          });
+        }
+
         // NEAR-MISS 2026-08-18: no hit — but did someone make a qualifying
         // losing hand and miss on exactly one condition? Teaching the rules
         // in the moment beats a rules page nobody opens. Display only: this
@@ -1310,6 +1374,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       returnedUncalled: new Map(this.currentHandReturnedUncalled),
       bbjHit: this.currentHandBBJHit,
       bbjPayoutConfig: this.currentHandBBJPayoutConfig,
+      miniBbjHit: this.currentHandMiniBBJHit,
+      miniBbjTierId: this.currentHandMiniBBJTierId,
       dealtStacks: new Map(this.currentHandDealtStacks),
     };
     // ═══════════════════════════════════════════════════════════════════════
@@ -2067,6 +2133,96 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           });
         }
       }
+    });
+
+    /* 3b2. THE MINI JACKPOT (BBJ phase 6 of 6). Runs BEFORE the main payout
+       step so the ordering in the code reads the way the money does: a hand
+       reaches at most one of them, because settlement only detects a mini when
+       detectBBJHit already refused, and fn_bbj_mini_payout shares the main's
+       (pool, table, hand) idempotency key on top of that. Money-critical, so a
+       throw here raises a durable CRITICAL alert like every other money step -
+       but a REFUSAL (reserve at its floor, tier disabled) is data, not a
+       failure, and is logged rather than alarmed. */
+    await runStep('bbj_mini_payout', true, async () => {
+      if (
+        this.isTournamentTable() ||
+        !this.tableInfo?.club_id ||
+        !snap.miniBbjHit?.hit ||
+        !snap.miniBbjTierId
+      ) {
+        return;
+      }
+      const mini = snap.miniBbjHit;
+      const outcome = await processMiniBBJPayout({
+        tableId: this.tableId,
+        clubId: this.tableInfo.club_id,
+        handNumber: snap.handNumber,
+        tierId: snap.miniBbjTierId,
+        loserUserId: mini.loserUserId!,
+        winnerUserId: mini.winnerUserId!,
+        dealtInPlayerIds: mini.dealtInPlayerIds || [],
+        seatedUserIds: players.map((p) => p.user_id),
+        metadata: {
+          rule: (mini as { miniRule?: string }).miniRule,
+          variant: mini.variant,
+          loser_hand: mini.loserHand?.name,
+          winner_hand: mini.winnerHand?.name,
+        },
+      });
+
+      if (outcome.status !== 'paid') {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] mini jackpot not paid for hand #${snap.handNumber}: ${outcome.reason}`
+        );
+        return;
+      }
+
+      console.log(
+        `[ServerTableEngine:${this.tableId}] mini jackpot paid ${outcome.total} ` +
+          `(loser ${outcome.loser}, winner ${outcome.winner}, ${outcome.perPlayer} each at the table)`
+      );
+
+      /* The seats are credited by the RPC in the same transaction that debited
+         the reserve, so engine memory has to catch up or the next state push
+         would overwrite a real credit with a stale stack. Same pattern the
+         main payout uses. */
+      const bump = (userId: string | undefined, amount: number): void => {
+        if (!userId || amount <= 0) return;
+        const seat = players.find((pl) => pl.user_id === userId);
+        if (seat) seat.stack = Number(seat.stack || 0) + amount;
+      };
+      bump(mini.loserUserId, outcome.loser);
+      bump(mini.winnerUserId, outcome.winner);
+      for (const uid of mini.dealtInPlayerIds || []) {
+        if (uid !== mini.loserUserId && uid !== mini.winnerUserId) bump(uid, outcome.perPlayer);
+      }
+
+      const tableOnlyMini = (mini.dealtInPlayerIds || []).filter(
+        (id) => id !== mini.loserUserId && id !== mini.winnerUserId
+      );
+      this.hub?.emitEvent(this.tableId, {
+        type: 'bbj_payout_complete',
+        kind: 'mini',
+        table_id: this.tableId,
+        hand_number: snap.handNumber,
+        emitted_at: Date.now(),
+        replay_until: Date.now() + 60_000,
+        /* THE MAIN JACKPOT'S FIELD NAMES, EXACTLY. The first cut of this used
+           `total` / `amount` / `perPlayer` and the celebration would have read
+           `totalPayout`, `share` and `perPlayerShare` off it - every number
+           zero, on the one screen the whole feature exists to produce. One
+           event shape, one reader; `kind` is the only thing that differs, and
+           an older client that reads no `kind` still shows a celebration
+           rather than nothing. */
+        totalPayout: outcome.total,
+        loser: { userId: mini.loserUserId, share: outcome.loser },
+        winner: { userId: mini.winnerUserId, share: outcome.winner },
+        tableShare:
+          Math.round((outcome.perPlayer * tableOnlyMini.length + Number.EPSILON) * 100) / 100,
+        perPlayerShare: outcome.perPlayer,
+        tablePlayerIds: tableOnlyMini,
+        updatedStacks: players.map((pl) => ({ userId: pl.user_id, stack: pl.stack })),
+      });
     });
 
     // 3c. BBJ Payout — if a BBJ hit was detected in HAND_COMPLETE, process the actual payout

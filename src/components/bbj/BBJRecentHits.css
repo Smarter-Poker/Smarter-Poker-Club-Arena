@@ -357,3 +357,22 @@
   outline: 2px solid #f0b90b;
   outline-offset: 2px;
 }
+
+/* THE MINI BADGE (BBJ phase 6, 2026-09-07). A mini pays a flat few hundred
+   chips out of the backup reserve; a main pays a share of the pool. They share
+   this list, so the row has to say which one it was - a 700-chip row with no
+   label reads as a main jackpot that paid almost nothing. Quieter than the YOU
+   badge beside it: this is a fact about the hit, not about the reader. */
+.bbj-hits__mini {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+  white-space: nowrap;
+}

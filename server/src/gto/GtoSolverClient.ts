@@ -3,11 +3,9 @@
  *  GTO SOLVER CLIENT: interface, test stub, and local artifact adapter
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * FOUNDATION MODULE. The REAL solver output lives in the World Hub pipeline
- * (Smarter-Poker-World-Hub: solverRanges.js → SolverScenarioGenerator →
- * ScenarioDatabase, per GTO-WIZARD-CLONE-PLAN.md). This module defines the
- * CONTRACT the PostSessionAnalyzer consumes. Production policy lookup uses the
- * versioned artifact loader and never performs network I/O on an action clock.
+ * Production policy lookup uses the versioned local artifact loader and never
+ * performs network I/O on an action clock. World Hub owns artifact production;
+ * this module adapts those canonical policies for PostSessionAnalyzer.
  *
  * The analyzer looks up strategies by `scenario_hash`. `computeScenarioHash`
  * produces a stable hash from a normalized Scenario so the same decision maps to
@@ -92,7 +90,7 @@ export function computeScenarioHash(s: Scenario): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stub client (in-memory; used by tests + local dev)
+// In-memory test/local-development client
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class StubGtoSolverClient implements GtoSolverClient {
@@ -178,9 +176,9 @@ export class ArtifactGtoSolverClient implements GtoSolverClient {
  *     return data ? { scenarioHash: data.scenario_hash, actions: data.actions, meta: data.meta } : null;
  *   };
  *
- * NEEDS INFRA: the `solver_strategies` (or equivalent) table + a read path from
- * the game server to the World Hub project must exist and be populated by the
- * offline solve pipeline. Until then, use StubGtoSolverClient.
+ * This adapter is only for explicit off-clock workflows. Production action
+ * decisions and post-session analysis use ArtifactGtoSolverClient so a remote
+ * fetch can never leak into HorseLogic.decide().
  */
 export type SolverFetcher = (scenarioHash: string) => Promise<SolverStrategy | null>;
 

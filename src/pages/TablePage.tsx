@@ -155,6 +155,7 @@ import {
   leaveAvailableLabel,
 } from '../lib/chipContinuity';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
+import { createSeatIdentityOverrides } from '../lib/seatIdentityOverrides';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 import {
   isPreActionHonorable,
@@ -910,6 +911,8 @@ if (!_win.__pokerLocks) {
  * that is about to succeed — which is what the old 3s threshold did.
  */
 const ENGINE_LOSS_TOAST_DELAY_MS = 15_000;
+/** Stable empty roster for the profile sync at an anonymous table (2026-09-07). */
+const NO_SEATED_IDS: readonly (string | undefined)[] = [];
 
 // Props for embedded multi-table mode
 interface TablePageProps {
@@ -1925,6 +1928,24 @@ export default function TablePage({
   const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>(
     () => hydrateIdentity(cachedAuthUserId()).avatarUrl || ''
   );
+  /* AN AVATAR CHANGE STAYS CHANGED (Dan 2026-09-07). The engine republishes
+     the identity it read at the top of the hand on every broadcast; the live
+     profile sync delivers the database's newer value the moment it changes.
+     Both used to land on the same `players[i].avatar`, last writer wins, so a
+     changed face flipped old/new on every action until the next deal. This
+     holds each database-sourced identity until the engine proves it has
+     re-read the row. See src/lib/seatIdentityOverrides.ts for the rule. */
+  const seatIdentityOverridesRef = useRef(createSeatIdentityOverrides());
+  /* Published by the engine (2026-09-07). At an anonymous table the engine
+     scrubs every seat's identity and the profile sync must stay off, or it
+     paints the real face straight over the scrub. */
+  const [tableIsAnonymous, setTableIsAnonymous] = useState(false);
+  const tableIsAnonymousRef = useRef(false);
+  tableIsAnonymousRef.current = tableIsAnonymous;
+  useEffect(() => {
+    const overrides = seatIdentityOverridesRef.current;
+    return () => overrides.clear();
+  }, [tableId]);
   // ANIMATION AUDIT 2026-08-19: boardStageKey is GONE. It re-keyed (and so
   // unmounted + remounted) the whole .community-area on every stage change —
   // one frame after CommunityCards had marked the new cards as newly dealt.
@@ -2331,6 +2352,15 @@ export default function TablePage({
     if (!USE_ENGINE_WS) return;
     if (!engineSnapshot) return;
     const mapped = mapEngineSnapshot(engineSnapshot, userId, tableState.maxPlayers);
+    setTableIsAnonymous(mapped.isAnonymous);
+    /* Identity resolution BEFORE the card/status merge below: the engine owns
+       the hand, the database owns the face, and a face the database has
+       already changed is not repainted with the copy the engine took at deal
+       time. Bypassed entirely at an anonymous table (the scrub is the engine's
+       and must stand). */
+    const rosterPlayers = mapped.isAnonymous
+      ? mapped.players
+      : seatIdentityOverridesRef.current.apply(mapped.players);
     // Phase 1.2 PR-F: stash disconnect map for the top-level toast
     setDisconnectStates(mapped.disconnectStates);
     setHeroLeave(mapped.heroLeave);
@@ -2358,7 +2388,7 @@ export default function TablePage({
       const cardHoldPrevHand = prev.handNumber ?? 0;
       const cardHoldSameHand =
         cardHoldNextHand <= 0 || cardHoldPrevHand <= 0 || cardHoldNextHand === cardHoldPrevHand;
-      const nextPlayers: (SeatPlayer | null)[] = mapped.players.map((p, i) => {
+      const nextPlayers: (SeatPlayer | null)[] = rosterPlayers.map((p, i) => {
         if (!p) return null;
         const sp = p as unknown as SeatPlayer;
         if (sp.isHero && (!sp.holeCards || sp.holeCards.length === 0)) {
@@ -13936,44 +13966,69 @@ export default function TablePage({
   // The engine remains authoritative — this only ever refreshes the three
   // identity fields, never stack, status, cards or seat. See the hook for why
   // postgres_changes and not the engine socket or the legacy broadcast channel.
-  const seatedUserIds = useMemo(() => tableState.players.map((p) => p?.id), [tableState.players]);
+  // At an anonymous table the engine scrubs every identity; subscribing here
+  // would paint the real face over the scrub. A stable empty array keeps the
+  // hook's id-set memo from churning.
+  const seatedUserIds = useMemo(
+    () => (tableIsAnonymous ? NO_SEATED_IDS : tableState.players.map((p) => p?.id)),
+    [tableState.players, tableIsAnonymous]
+  );
 
-  const handleSeatedProfileChange = useCallback((change: SeatedProfileChange) => {
-    setTableState((prev) => {
-      const idx = prev.players.findIndex((p) => p?.id === change.userId);
-      if (idx === -1) return prev;
-      const existing = prev.players[idx];
-      if (!existing) return prev;
+  const handleSeatedProfileChange = useCallback(
+    (change: SeatedProfileChange) => {
+      // The subscription is already off at an anonymous table; this covers a
+      // delivery that raced the first snapshot (reconcile fires on subscribe).
+      if (tableIsAnonymousRef.current) return;
+      setTableState((prev) => {
+        const idx = prev.players.findIndex((p) => p?.id === change.userId);
+        if (idx === -1) return prev;
+        const existing = prev.players[idx];
+        if (!existing) return prev;
 
-      const nextAvatar = change.avatar ?? existing.avatar;
-      // Undefined means the event did not touch that field; null means the
-      // player explicitly removed it. The old `?? undefined` collapsed both
-      // meanings and an avatar-only optimistic event could strip cosmetics.
-      const nextFrame = change.frame === undefined ? existing.frame : (change.frame ?? undefined);
-      const nextAura = change.aura === undefined ? existing.aura : (change.aura ?? undefined);
+        /* Undefined means the event did not touch that field; null means the
+           player explicitly removed it - mergeSeatIdentity inside `record`
+           keeps both meanings apart. The override is what stops the next
+           engine broadcast repainting the copy it took at deal time over this
+           (Dan 2026-09-07: the old/new bounce). */
+        const next = seatIdentityOverridesRef.current.record(change, {
+          avatar: existing.avatar,
+          frame: existing.frame,
+          aura: existing.aura,
+        });
 
-      /* No-op guard. Realtime echoes the hero's own write back to them, and a
-         `profiles` UPDATE fires for any column — a chip balance, a last-seen
-         stamp — so most deliveries here change nothing. Returning `prev`
-         unchanged is what stops each one re-rendering nine seats. */
-      if (
-        existing.avatar === nextAvatar &&
-        existing.frame === nextFrame &&
-        existing.aura === nextAura
-      ) {
-        return prev;
+        /* No-op guard. Realtime echoes the hero's own write back to them, and a
+           `profiles` UPDATE fires for any column — a chip balance, a last-seen
+           stamp — so most deliveries here change nothing. Returning `prev`
+           unchanged is what stops each one re-rendering nine seats. */
+        if (
+          existing.avatar === next.avatar &&
+          existing.frame === next.frame &&
+          existing.aura === next.aura
+        ) {
+          return prev;
+        }
+
+        const updatedPlayers = [...prev.players];
+        updatedPlayers[idx] = {
+          ...existing,
+          avatar: next.avatar,
+          frame: next.frame,
+          aura: next.aura,
+        };
+        return { ...prev, players: updatedPlayers };
+      });
+      /* REGARDLESS OF DEVICE. The same change made on the player's OTHER
+         device reaches this one through the same database row, so the hero's
+         own surfaces (buy-in modal, hero hub, the pre-deal placeholder seat)
+         follow it here too, and the first-paint cache is refreshed with what
+         the database just said - never the other way round. */
+      if (change.userId && change.userId === userId && change.avatar) {
+        setHeroAvatarUrl(change.avatar);
+        persistIdentity(userId, { avatarUrl: change.avatar });
       }
-
-      const updatedPlayers = [...prev.players];
-      updatedPlayers[idx] = {
-        ...existing,
-        avatar: nextAvatar,
-        frame: nextFrame,
-        aura: nextAura,
-      };
-      return { ...prev, players: updatedPlayers };
-    });
-  }, []);
+    },
+    [userId]
+  );
 
   const seatedProfileSync = useSeatedProfileSync(tableId, seatedUserIds, handleSeatedProfileChange);
 
@@ -20052,8 +20107,19 @@ export default function TablePage({
       if (buyingTimeBankRef.current) return false; // no double-charge on a double-tap
       buyingTimeBankRef.current = true;
       try {
-        const { data, error } = await supabase.rpc('fn_purchase_time_banks', {
+        /* One request id per attempt (review D15, 2026-09-07): the server dedupes on it through
+           digital_purchase_receipts, so a retried or double-delivered call cannot charge twice.
+           The one-argument overload minted a fresh key per call and defeated that. */
+        const requestId =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                const r = Math.floor(Math.random() * 16);
+                return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+              });
+        const { data, error } = await supabase.rpc('fn_purchase_time_banks_v2', {
           p_quantity: quantity,
+          p_request_id: requestId,
         });
         if (error) throw error;
         const result = (data ?? {}) as {

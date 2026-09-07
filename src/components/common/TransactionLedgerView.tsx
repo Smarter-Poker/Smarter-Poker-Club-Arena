@@ -142,7 +142,13 @@ export default function TransactionLedgerView({
 
       if (unionId) query = query.eq('union_id', unionId);
       if (clubId) query = query.eq('club_id', clubId);
-      if (userId) query = query.or(`performed_by.eq.${userId},to_entity_id.eq.${userId}`);
+      // Both sides. Until 2026-09-07 (phase 7, 9.5) this asked only for
+      // performed_by and to_entity_id, so every chip that LEFT the player -
+      // a buy-in, an entry, a rebuy - was missing from their own history.
+      if (userId)
+        query = query.or(
+          `performed_by.eq.${userId},to_entity_id.eq.${userId},from_entity_id.eq.${userId}`
+        );
 
       const { data, error: readError } = await query;
       // A discarded error read as "no transactions", which on a ledger is the

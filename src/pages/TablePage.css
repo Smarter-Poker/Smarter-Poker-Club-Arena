@@ -3728,13 +3728,40 @@
 
    The other selectors are left alone deliberately: their animations have not
    been studied here, and removing a hint on an unmeasured element is a guess
-   in the other direction. */
+   in the other direction.
+
+   2026-09-07: `.seat__cards--hero .seat__card` IS NO LONGER IN THIS LIST EITHER.
+   Dan, from an iPad: "THERE IS A BUG ON MOBILE THAT IS MAKING THE CARDS
+   'BLURRY' OR 'NOT CLEAR' EVERY SO OFTEN." The hero's hole cards - and only
+   the hero's, and only on a coarse-pointer viewport - rendered as a soft,
+   washed-out upscale some hands and pin-sharp on others, while the board
+   cards drawn from the SAME 360x504 WebP files beside them were always crisp.
+
+   This rule was the difference. It kept every hero card on its own compositor
+   layer for the whole hand, on every phone and tablet, from the moment the
+   card mounted - which is also the moment `heroCardDeal` starts it at
+   scale(0.94) and opacity 0. WebKit rasterises a promoted layer's backing
+   store once, at the scale it sees when the layer is created, and a layer
+   that stays promoted is never repainted just because its animation ended:
+   whether the card came out sharp depended on which frame of the deal the
+   layer was committed in. That is the "every so often". CardImage.css already
+   records the same mechanism from 2026-08-21 - forcing a card image onto its
+   own layer "resamples and softens the very edges" - and that fix removed
+   translateZ(0) from the image while leaving this hint on its parent.
+
+   The hero card animates for 0.26s per hand (the deal) and 0.38s when it
+   folds; the compositor promotes it for exactly those windows on its own,
+   the way it does for every accelerated animation, and hands it back to the
+   seat's backing store - painted at full device resolution - when they end.
+   A permanent hint bought nothing those windows do not already get, and cost
+   the resting card its resolution. `transform-style: preserve-3d` on the
+   same rule in SeatSlot.css was the other half of the promotion and went
+   with it. Pinned by tests/hero-cards-are-crisp-at-rest.law.test.ts. */
 @media (max-width: 768px) and (pointer: coarse) {
   .pot-display,
   .pot-display__chip-stack,
   .dealer-button,
-  .action-panel,
-  .seat__cards--hero .seat__card {
+  .action-panel {
     will-change: transform;
   }
 }

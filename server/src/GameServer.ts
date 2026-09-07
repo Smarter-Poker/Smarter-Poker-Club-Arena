@@ -9,6 +9,7 @@
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
+import { EngineTelemetry } from './engine/EngineTelemetry.js';
 import {
   supabase,
   startHandHistoryRetry,
@@ -1489,24 +1490,22 @@ export class GameServer {
    * Returns Prometheus text exposition format for /metrics endpoint.
    */
   getPrometheusMetrics(): string {
-    // Aggregate from all engines — each produces per-table lines
-    const allLines: string[] = [];
-    let isFirst = true;
-    for (const [, engine] of this.tableEngines) {
-      const metrics = engine.getPrometheusMetrics();
-      if (isFirst) {
-        // Include headers from first engine
-        allLines.push(metrics);
-        isFirst = false;
-      } else {
-        // Skip comment lines (# HELP, # TYPE) for subsequent engines — only data lines
-        for (const line of metrics.split('\n')) {
-          if (line && !line.startsWith('#')) {
-            allLines.push(line);
-          }
-        }
-      }
-    }
+    // ── ONE SERIES PER NAME (2026-09-07) ────────────────────────────────────
+    // This used to call `engine.getPrometheusMetrics()` on every table engine
+    // and concatenate, stripping only the `#` comments. Each engine's block
+    // carries fourteen UNLABELLED global gauges, so a 272-table fleet emitted
+    // 272 samples of `poker_active_tables` in a single scrape and Prometheus
+    // kept exactly one of them: it answered 1 while 272 tables were dealing.
+    // Every fleet-level alert rule was reading one arbitrary table. The full
+    // measurement and the two alarms it broke are in the long note on
+    // `EngineTelemetry.getPrometheusTableLines`.
+    const allLines: string[] = [
+      EngineTelemetry.renderFleetMetrics(
+        (function* (engines) {
+          for (const [, engine] of engines) yield engine.telemetry;
+        })(this.tableEngines)
+      ),
+    ];
     // ── FREEZE OBSERVABILITY (2026-08-15) ────────────────────────────────
     // Before this, /metrics carried throughput (hands dealt, hands/hour) but
     // NOTHING that distinguishes a dealing table from a frozen one — and the

@@ -1,0 +1,33 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+--  A SPIN PRIZE COMES FROM THE RESERVE, NOT FROM THAT SPIN'S BUY-INS
+--  SUPERSEDED THE SAME HOUR BY 20260907163416. READ THAT ONE.
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- WHAT THIS DID, AND WHY IT IS RECORDED RATHER THAN DELETED. It was applied to
+-- production at 16:22 UTC on 2026-09-07, so it is history and history is not
+-- edited (10.9). It folded a Spin's reserve draw into `prize_in` inside
+-- `fn_ca_tournament_escrow`, so that a Spin whose prize is larger than its own
+-- buy-ins stopped reading as a prize bank overdrawn by exactly its rake -
+-- 21,991 completed Spins in seven days, 365,167.84 chips of deficit that was
+-- never real.
+--
+-- The reading it produced was right. The place it produced it was wrong, and
+-- I found that within the hour by reading `fn_ca_escrow_apply`, which opens an
+-- escrow row at FIRST SIGHT and derives
+--
+--     gross_in := e.prize_in + e.bounty_in + (e.fee_in - satellite_fee)
+--
+-- from this very function. With the draw folded into `prize_in`, a Spin whose
+-- escrow row opened AFTER its draw would have recorded `gross_in` 64.80 for a
+-- 60.00 event, and then added the reserve legs a second time from chip_ledger.
+-- That is a worse defect than the one it fixed, and it is reachable: an event
+-- with no escrow row yet opens one on whatever touches it next.
+--
+-- 20260907163416 restores this function to its previous definition and puts
+-- the correction where the reserve movement already belongs -
+-- `tournament_escrow.reserve_out` / `reserve_in` - reading it from
+-- `spin_reserve_ledger`, the record the pool balance itself moved by.
+--
+-- NOTHING TO ROLL BACK: the superseding migration restores this function's
+-- previous body in full.
+SELECT 1;

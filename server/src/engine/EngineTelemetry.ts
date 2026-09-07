@@ -82,6 +82,10 @@ export class EngineTelemetry {
   private startedAt: number = Date.now();
   // Per-table hand durations (keep last 100 per table)
   private tableTimings: Map<string, HandTiming[]> = new Map();
+  // Monotonic hand counts. NOT derived from tableTimings, which is a capped
+  // ring buffer — see the note in recordHandTiming().
+  private handsRecorded: number = 0;
+  private handsRecordedByTable: Map<string, number> = new Map();
   // Per-table player counts
   private tablePlayers: Map<string, number> = new Map();
   // Per-table expired vs acted timer counts
@@ -127,6 +131,19 @@ export class EngineTelemetry {
     if (timings.length > 100) {
       timings.splice(0, timings.length - 100);
     }
+
+    // A COUNTER MUST NOT BE A RING BUFFER'S LENGTH (2026-09-07).
+    // `poker_hands_dealt_total` is declared `# TYPE counter` and was computed
+    // from `timings.length` above, which is capped at 100. Every table on the
+    // fleet reaches 100 within a couple of minutes of dealing and then never
+    // moves again, so `increase(poker_hands_dealt_total[5m])` is 0 FOREVER on
+    // a perfectly healthy engine — and `EngineNoHandsDealt` /
+    // `EngineHandsStopped` are written on exactly that expression. Measured
+    // 2026-09-07: `EngineHandsStopped` had been firing continuously for over
+    // three hours while the fleet dealt ~27,000 hands an hour.
+    // This is the real monotonic count, and it is what the counter reads now.
+    this.handsRecorded++;
+    this.handsRecordedByTable.set(tableId, (this.handsRecordedByTable.get(tableId) || 0) + 1);
   }
 
   /**
@@ -268,6 +285,7 @@ export class EngineTelemetry {
     this.tablePlayers.delete(tableId);
     this.timerExpired.delete(tableId);
     this.timerActed.delete(tableId);
+    this.handsRecordedByTable.delete(tableId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -286,18 +304,23 @@ export class EngineTelemetry {
     for (const [tableId, timings] of this.tableTimings) {
       if (timings.length === 0) continue;
 
-      const handsDealt = timings.length;
+      // `sampled` is the ring-buffer length — the right denominator for an
+      // AVERAGE and for a RATE. `handsDealt` is the monotonic lifetime count —
+      // the right value for a COUNTER. Conflating the two is what pinned
+      // poker_hands_dealt_total at 100; keep them apart.
+      const sampled = timings.length;
+      const handsDealt = this.handsRecordedByTable.get(tableId) ?? sampled;
       totalHands += handsDealt;
 
       // Avg timings
-      const avgDealMs = timings.reduce((s, t) => s + t.dealMs, 0) / handsDealt;
-      const avgEvalMs = timings.reduce((s, t) => s + t.evalMs, 0) / handsDealt;
-      const avgTotal = timings.reduce((s, t) => s + t.totalMs, 0) / handsDealt;
+      const avgDealMs = timings.reduce((s, t) => s + t.dealMs, 0) / sampled;
+      const avgEvalMs = timings.reduce((s, t) => s + t.evalMs, 0) / sampled;
+      const avgTotal = timings.reduce((s, t) => s + t.totalMs, 0) / sampled;
       totalDuration += avgTotal;
 
-      // Hands per hour (based on first and last timing)
+      // Hands per hour (based on first and last timing in the sampled window)
       const span = timings[timings.length - 1].timestamp - timings[0].timestamp;
-      const handsPerHour = span > 0 ? Math.round((handsDealt / span) * 3_600_000) : 0;
+      const handsPerHour = span > 0 ? Math.round((sampled / span) * 3_600_000) : 0;
 
       // Timer utilization
       const expired = this.timerExpired.get(tableId) || 0;
@@ -326,7 +349,10 @@ export class EngineTelemetry {
     const global: GlobalMetrics = {
       activeTables,
       activePlayers: totalPlayers,
-      totalHandsDealt: totalHands,
+      // Monotonic and independent of the ring buffer, so a table whose window
+      // has aged out cannot make a counter go backwards. `totalHands` (the sum
+      // over currently-tracked tables) is kept only as the floor.
+      totalHandsDealt: Math.max(this.handsRecorded, totalHands),
       avgHandsPerHour:
         activeTables > 0
           ? Math.round(tables.reduce((s, t) => s + t.handsPerHour, 0) / activeTables)
@@ -435,21 +461,201 @@ export class EngineTelemetry {
     // Per-table metrics
     lines.push('# HELP poker_table_hands_dealt Hands dealt per table');
     lines.push('# TYPE poker_table_hands_dealt counter');
-    for (const t of snapshot.tables) {
-      lines.push(`poker_table_hands_dealt{table_id="${t.tableId}"} ${t.handsDealt}`);
-    }
-
     lines.push('# HELP poker_table_hands_per_hour Hands per hour per table');
     lines.push('# TYPE poker_table_hands_per_hour gauge');
-    for (const t of snapshot.tables) {
-      lines.push(`poker_table_hands_per_hour{table_id="${t.tableId}"} ${t.handsPerHour}`);
-    }
-
     lines.push('# HELP poker_table_timer_utilization Timer expiry rate per table');
     lines.push('# TYPE poker_table_timer_utilization gauge');
+    lines.push(...this.getPrometheusTableLines());
+
+    return lines.join('\n') + '\n';
+  }
+
+  /**
+   * ONLY the per-table sample lines — every one carrying a `table_id` label,
+   * none of them a global. This is what the fleet renderer concatenates.
+   *
+   * WHY THIS EXISTS (2026-09-07). `GameServer.getPrometheusMetrics()` used to
+   * call `getPrometheusMetrics()` on EVERY table engine and concatenate the
+   * results, stripping only the `#` comment lines. Each engine's exposition
+   * carries fourteen GLOBAL gauges with no distinguishing label, so a fleet of
+   * 272 engines emitted `poker_active_tables`, `poker_hands_dealt_total`,
+   * `poker_active_players`, `poker_uptime_seconds` and the rest 272 times
+   * each, as 272 samples of the SAME timeseries in one scrape.
+   *
+   * Prometheus keeps the last of those and drops the other 271. Measured on
+   * production 2026-09-07, with 272 tables dealing and the fleet at ~27,000
+   * hands an hour, `/api/v1/query` answered:
+   *
+   *     poker_active_tables      1      (the truth was 272)
+   *     poker_active_players     6      (one table's seats)
+   *     poker_hands_dealt_total  100    (one table's ring buffer, saturated)
+   *
+   * Every fleet-level rule written on those names was therefore reading one
+   * arbitrary table and calling it the platform:
+   *
+   *   - `EngineNoHandsDealt` / `EngineHandsStopped` — `increase(...[5m]) == 0`
+   *     on a value pinned at 100, so the clause is true forever. It had been
+   *     firing continuously for over three hours on a healthy engine.
+   *   - `EngineFleetShrank` — `poker_active_tables < 0.5 * avg_over_time(...)`
+   *     compares 1 with 1 and can never fire. It is the alarm that should have
+   *     caught the 2026-09-07 04:05 UTC collapse, when the fleet lost ~80% of
+   *     its throughput for two hours and paged nobody.
+   *
+   * That is CLAUDE.md 10.83 in its purest form: a check nobody can see is not
+   * a check, and an alarm that is always on is an alarm that gets muted.
+   * Globals are now aggregated ONCE across the fleet by `renderFleetMetrics`.
+   */
+  getPrometheusTableLines(): string[] {
+    const snapshot = this.getSnapshot();
+    const out: string[] = [];
     for (const t of snapshot.tables) {
-      lines.push(`poker_table_timer_utilization{table_id="${t.tableId}"} ${t.timerUtilization}`);
+      out.push(`poker_table_hands_dealt{table_id="${t.tableId}"} ${t.handsDealt}`);
+      out.push(`poker_table_hands_per_hour{table_id="${t.tableId}"} ${t.handsPerHour}`);
+      out.push(`poker_table_timer_utilization{table_id="${t.tableId}"} ${t.timerUtilization}`);
     }
+    return out;
+  }
+
+  /**
+   * Render the WHOLE fleet's exposition: every global emitted exactly once
+   * from an aggregate over all engines, then every per-table line.
+   *
+   * The aggregation rules are chosen so each name still means what its own
+   * HELP text says, fleet-wide:
+   *   - counts and totals SUM (tables, players, hands, violations);
+   *   - averages are weighted by the tables they average over, so one quiet
+   *     table cannot outvote three hundred busy ones;
+   *   - p95s take the MAX, because an SLO is breached if ANY table breaches it
+   *     (`slo-rules.yml` already wraps these in `max()`, which is a no-op on a
+   *     single series and only becomes correct once the series is real);
+   *   - uptime takes the MAX — engines are created as tables are adopted, so
+   *     the oldest is the one that measures the process.
+   */
+  static renderFleetMetrics(engines: Iterable<EngineTelemetry>): string {
+    let activeTables = 0;
+    let activePlayers = 0;
+    let totalHandsDealt = 0;
+    let uptimeMs = 0;
+    let handsPerHourWeighted = 0;
+    let handDurationWeighted = 0;
+    let cacheHits = 0;
+    let cacheMisses = 0;
+    let processingWeighted = 0;
+    let broadcastWeighted = 0;
+    let actionCount = 0;
+    let p95Processing = 0;
+    let p95Broadcast = 0;
+    let processingViolations = 0;
+    let broadcastViolations = 0;
+    const tableLines: string[] = [];
+
+    for (const e of engines) {
+      const s = e.getSnapshot();
+      const p = e.getPerformanceSummary();
+      activeTables += s.global.activeTables;
+      activePlayers += s.global.activePlayers;
+      totalHandsDealt += s.global.totalHandsDealt;
+      uptimeMs = Math.max(uptimeMs, s.global.uptime);
+      handsPerHourWeighted += s.global.avgHandsPerHour * s.global.activeTables;
+      handDurationWeighted += s.global.avgHandDurationMs * s.global.activeTables;
+      cacheHits += e.cacheHits;
+      cacheMisses += e.cacheMisses;
+      processingWeighted += p.avgProcessingMs * p.actionCount;
+      broadcastWeighted += p.avgBroadcastMs * p.actionCount;
+      actionCount += p.actionCount;
+      p95Processing = Math.max(p95Processing, p.p95ProcessingMs);
+      p95Broadcast = Math.max(p95Broadcast, p.p95BroadcastMs);
+      processingViolations += p.processingViolations;
+      broadcastViolations += p.broadcastViolations;
+      tableLines.push(...e.getPrometheusTableLines());
+    }
+
+    const cacheTotal = cacheHits + cacheMisses;
+    const g = (name: string, help: string, type: string, value: number): string[] => [
+      `# HELP ${name} ${help}`,
+      `# TYPE ${name} ${type}`,
+      `${name} ${value}`,
+    ];
+
+    const lines: string[] = [
+      ...g(
+        'poker_active_tables',
+        'Number of active tables across the fleet',
+        'gauge',
+        activeTables
+      ),
+      ...g(
+        'poker_active_players',
+        'Number of active players across the fleet',
+        'gauge',
+        activePlayers
+      ),
+      ...g(
+        'poker_hands_dealt_total',
+        'Total hands dealt across the fleet since engine start',
+        'counter',
+        totalHandsDealt
+      ),
+      ...g(
+        'poker_avg_hands_per_hour',
+        'Hands per hour, averaged over active tables',
+        'gauge',
+        activeTables > 0 ? Math.round(handsPerHourWeighted / activeTables) : 0
+      ),
+      ...g(
+        'poker_avg_hand_duration_ms',
+        'Hand duration in ms, averaged over active tables',
+        'gauge',
+        activeTables > 0 ? Math.round(handDurationWeighted / activeTables) : 0
+      ),
+      ...g(
+        'poker_cache_hit_ratio',
+        'Evaluator cache hit ratio percentage across the fleet',
+        'gauge',
+        cacheTotal > 0 ? Math.round((cacheHits / cacheTotal) * 100) : 0
+      ),
+      ...g(
+        'poker_uptime_seconds',
+        'Engine uptime in seconds',
+        'gauge',
+        Math.round(uptimeMs / 1000)
+      ),
+      ...g(
+        'poker_action_processing_ms',
+        'Average action processing time across the fleet',
+        'gauge',
+        actionCount > 0 ? Math.round(processingWeighted / actionCount) : 0
+      ),
+      ...g(
+        'poker_action_processing_p95_ms',
+        'Worst per-table P95 action processing time',
+        'gauge',
+        p95Processing
+      ),
+      ...g(
+        'poker_broadcast_latency_ms',
+        'Average broadcast latency across the fleet',
+        'gauge',
+        actionCount > 0 ? Math.round(broadcastWeighted / actionCount) : 0
+      ),
+      ...g(
+        'poker_broadcast_latency_p95_ms',
+        'Worst per-table P95 broadcast latency',
+        'gauge',
+        p95Broadcast
+      ),
+      '# HELP poker_threshold_violations_total SLA threshold violations',
+      '# TYPE poker_threshold_violations_total counter',
+      `poker_threshold_violations_total{type="action_processing"} ${processingViolations}`,
+      `poker_threshold_violations_total{type="broadcast_latency"} ${broadcastViolations}`,
+      '# HELP poker_table_hands_dealt Hands dealt per table',
+      '# TYPE poker_table_hands_dealt counter',
+      '# HELP poker_table_hands_per_hour Hands per hour per table',
+      '# TYPE poker_table_hands_per_hour gauge',
+      '# HELP poker_table_timer_utilization Timer expiry rate per table',
+      '# TYPE poker_table_timer_utilization gauge',
+      ...tableLines,
+    ];
 
     return lines.join('\n') + '\n';
   }

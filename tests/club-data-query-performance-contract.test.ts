@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { sliceBetween, sliceCall } from './helpers/sourceWindow';
 
 const migration = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260830235959_club_data_query_path_bounded.sql'),
@@ -87,6 +88,13 @@ const defaultSnapshotFastPath = readFileSync(
 );
 const exportStatementBudget = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260831181000_club_data_export_statement_budget.sql'),
+  'utf8'
+);
+const narrowRank = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260907042418_the_ranked_club_data_page_ranks_a_narrow_key_set.sql'
+  ),
   'utf8'
 );
 
@@ -283,6 +291,112 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(cursorPages).toMatch(
       /GRANT EXECUTE ON FUNCTION public\.ca_club_player_page[\s\S]*TO authenticated,service_role;/
     );
+  });
+
+  /**
+   * 2026-09-07. `ca_club_game_page` returns 100 rows and was carrying every
+   * presentation column through three MATERIALIZED copies of the whole window
+   * and a full sort to find them. On Shark Club that is 90,649 rows a
+   * fortnight: 42 MB materialised three times, 5,862 temp blocks per read, and
+   * a cold call measured at 15,493 ms against a 12,000 ms client attempt
+   * budget - so the read timed out and each retry started another full-window
+   * scan beside the one still running.
+   *
+   * Paired production measurement, alternating calls in one session:
+   * cold 4,064 -> 842 ms, warm 1,151 -> 688 ms, buffers 317,658 -> 125,851,
+   * temp blocks 5,862 -> 861. Live after the migration: 709-874 ms on all four
+   * sorts.
+   */
+  it('ranks a narrow key set and joins presentation only for the visible page', () => {
+    expect(narrowRank).toContain('keys AS MATERIALIZED');
+    expect(narrowRank).toContain('detail AS (');
+    // The ranking set must not carry a presentation column. If one comes back,
+    // the whole window pays for it again.
+    const rankingSet = sliceBetween(
+      narrowRank,
+      '), keys AS MATERIALIZED (',
+      '), filtered AS MATERIALIZED ('
+    );
+    expect(rankingSet.length).toBeGreaterThan(0);
+    for (const presentation of [
+      'rake_percent',
+      'avatar_url',
+      'small_blind',
+      "game_variant,'nlh'",
+      'tr.variant,tr.game_type',
+      'c.players',
+      'tp.players',
+    ]) {
+      expect(rankingSet).not.toContain(presentation);
+    }
+    // tournament_players is a 90k row count(DISTINCT). It is joined for the
+    // visible page, never merged into every row of the window.
+    const visibleJoin = sliceBetween(narrowRank, '), detail AS (', 'SELECT jsonb_build_object(');
+    expect(visibleJoin).toContain('LEFT JOIN tournament_players tp');
+    expect(visibleJoin).toContain('FROM visible v');
+    // Same contract as before it was made cheaper.
+    expect(narrowRank).toContain('ca_can_view_club_finances(p_club_id)');
+    expect(narrowRank).toContain('STABLE SECURITY DEFINER');
+    expect(narrowRank).toContain("v_sort NOT IN ('recent','fee','winnings','hands')");
+    expect(narrowRank).toContain('ROW(s.sort_value,s.sort_time,s.kind,s.id) < ROW(');
+    expect(narrowRank).toContain("'filtered_count',(SELECT count(*) FROM filtered)");
+    // CREATE OR REPLACE keeps the grants a live function has, so restating
+    // them protects the next database this file is replayed into, where a bare
+    // CREATE would hand EXECUTE to PUBLIC.
+    expect(narrowRank).toMatch(
+      /REVOKE ALL ON FUNCTION public\.ca_club_game_page\([^)]*\) FROM PUBLIC,anon;/
+    );
+    expect(narrowRank).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.ca_club_game_page\([^)]*\) TO authenticated,service_role;/
+    );
+  });
+
+  /**
+   * THE SKELETON BELONGS TO A FOREGROUND REQUEST.
+   *
+   * `loading` used to be cleared only by whichever request was newest when it
+   * settled - background polls included. On Shark Club a realtime row lands on
+   * one of four watched tables almost continuously, so every read was
+   * superseded before it finished and `setLoading(false)` was never reached by
+   * anybody. The page stayed in `loading` for its whole life, which disables
+   * Load More while it still reads "Load More Games - 100 Of 90,372". Five
+   * consecutive Post-Deploy E2E runs died on that button
+   * (club-data-deep.spec.ts:147, locator.click, 180s).
+   */
+  it('lets only a foreground request raise and clear the ledger skeleton', () => {
+    const load = sliceCall(page, 'const load = useCallback(');
+    expect(load.length).toBeGreaterThan(0);
+    expect(load).toContain('spinnerVersion.current = myVersion;');
+    expect(load).toContain(
+      'if (!cancelledRef.current && showSpinner && spinnerVersion.current === myVersion)'
+    );
+    // A background read must never be the one holding the skeleton up, and a
+    // second background read may not stack another full-window scan beside the
+    // first.
+    expect(load).toContain('if (!showSpinner && backgroundLedgerInFlight.current) return true;');
+    expect(load).toContain('if (!showSpinner) backgroundLedgerInFlight.current = false;');
+    // One clearer, and the assertion above says what guards it. Two would mean
+    // some other path can put the skeleton away again.
+    expect(load.match(/setLoading\(false\)/g)).toHaveLength(1);
+  });
+
+  /**
+   * A debounce that restarts on every event is a promise, not a schedule.
+   * Shark Club never went quiet for 750ms, so the queued refresh was cleared
+   * and re-armed for ever and the ledger only updated when the 60s recovery
+   * poll happened to land.
+   */
+  it('bounds how long a burst of realtime rows may defer a queued refresh', () => {
+    expect(page).toContain('const EVENT_REFRESH_DEBOUNCE_MS = 750;');
+    expect(page).toMatch(/const EVENT_REFRESH_MAX_WAIT_MS = [\d_]+;/);
+    const queue = sliceCall(page, 'const queueEventRefresh = useCallback(');
+    expect(queue.length).toBeGreaterThan(0);
+    expect(queue).toContain('eventRefreshDeadlineRef.current = now + EVENT_REFRESH_MAX_WAIT_MS;');
+    expect(queue).toContain(
+      'Math.min(EVENT_REFRESH_DEBOUNCE_MS, eventRefreshDeadlineRef.current - now)'
+    );
+    expect(queue).toContain('}, delay);');
+    expect(queue).not.toContain('}, 750);');
   });
 
   it('keeps complete browsing server-sorted and DOM-windowed', () => {

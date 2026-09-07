@@ -132,6 +132,28 @@ export const DEFAULT_HOURS = 2;
  * to silence a run - the run is the point.
  */
 export const DEFAULT_THRESHOLD = 30;
+/**
+ * How old the newest `ca_ddl_events` row may be before this check refuses to
+ * answer at all.
+ *
+ * ═══ MY OWN 10.86 RULE 1, FOUND IN THE VERIFICATION PASS ═══════════════════
+ *
+ * Without this, "no storm in the window" and "the thing that records DDL has
+ * stopped" are the SAME OBSERVATION. `ca_ddl_events` is written by two event
+ * triggers, `ca_ddl_watchdog_log` and `ca_ddl_watchdog_drop_log`, and event
+ * triggers on this database are created, replaced and dropped by agents all
+ * day - I edited both of them myself the same afternoon I wrote this check.
+ * Disable either one and this file reports a clean bill of health for ever,
+ * which is exactly the failure it was written to stop somebody else making.
+ *
+ * TWENTY-FOUR HOURS, derived rather than guessed. Over seven days
+ * `ca_ddl_events` took 14,223 rows; the gap between consecutive rows was
+ * 5 minutes at p95, 6 minutes at p99, and **8.93 hours at its worst** - a
+ * genuinely quiet night. 24h is 2.7x that worst observed quiet period, so it
+ * cannot cry wolf on one; and if nothing at all has run DDL on this database
+ * for a full day, that is worth being told regardless of why.
+ */
+export const STALE_HOURS = 24;
 /** Below this, printed as context; at or above the threshold, it fails. */
 export const CONTEXT_FLOOR = 15;
 
@@ -176,6 +198,39 @@ export function stormsByMinute(rows, threshold = DEFAULT_THRESHOLD) {
     .sort((a, b) => b.distinct - a.distinct);
 }
 
+/**
+ * How old is the newest row in `ca_ddl_events`, in hours?
+ *
+ * `null` when the table holds no rows at all - which is not "quiet", it is
+ * "the logger has never written or somebody emptied it", and the caller must
+ * treat it the same way it treats a stale one.
+ */
+export function loggerAgeHours(newestIso, now = Date.now()) {
+  if (!newestIso) return null;
+  const t = Date.parse(newestIso);
+  if (!Number.isFinite(t)) return null;
+  return (now - t) / 3600_000;
+}
+
+/** True when the DDL logger looks dead and no verdict may be given. */
+export function loggerIsStale(ageHours, staleHours = STALE_HOURS) {
+  return ageHours === null || ageHours > staleHours;
+}
+
+async function readNewestEventAge() {
+  const url =
+    `${URL_BASE}/rest/v1/ca_ddl_events` +
+    `?select=occurred_at&order=occurred_at.desc&limit=1`;
+  const res = await fetch(url, { headers: supabaseServerHeaders(KEY) });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`ca_ddl_events liveness read returned ${res.status}. ${text.slice(0, 300)}`);
+  }
+  const rows = await res.json();
+  if (!Array.isArray(rows)) throw new Error('ca_ddl_events liveness read did not return an array');
+  return loggerAgeHours(rows[0]?.occurred_at ?? null);
+}
+
 async function readWindow(hours) {
   const since = new Date(Date.now() - hours * 3600_000).toISOString();
   const rows = [];
@@ -210,6 +265,37 @@ async function main() {
 
   const hours = arg('hours', DEFAULT_HOURS);
   const threshold = arg('threshold', DEFAULT_THRESHOLD);
+
+  // The source has to be alive before its silence can mean anything.
+  let age;
+  try {
+    age = await readNewestEventAge();
+  } catch (err) {
+    console.error(`check-ddl-reload-storms: COULD NOT TELL - ${err.message}`);
+    process.exit(2);
+  }
+  if (loggerIsStale(age)) {
+    console.error('');
+    console.error('check-ddl-reload-storms: COULD NOT TELL - the DDL logger looks dead.');
+    console.error('');
+    console.error(
+      age === null
+        ? '  ca_ddl_events holds no rows at all.'
+        : `  The newest ca_ddl_events row is ${age.toFixed(1)}h old; anything past ` +
+          `${STALE_HOURS}h is stale (the worst quiet period measured over seven days was 8.93h).`
+    );
+    console.error('');
+    console.error('  Without a live source, "no storm" and "nothing is recording DDL" are the');
+    console.error('  same observation, so this refuses to report either. Check the two event');
+    console.error('  triggers that fill the table:');
+    console.error('');
+    console.error("    select evtname, evtenabled from pg_event_trigger");
+    console.error("     where evtname in ('ca_ddl_watchdog_log', 'ca_ddl_watchdog_drop_log');");
+    console.error('');
+    console.error("  evtenabled 'O' is enabled; 'D' is disabled. A missing row means dropped.");
+    console.error('');
+    process.exit(2);
+  }
 
   let read;
   try {

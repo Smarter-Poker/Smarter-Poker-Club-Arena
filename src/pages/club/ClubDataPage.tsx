@@ -232,6 +232,14 @@ const GAME_PAGE_SIZE = 100;
 const DATA_ROW_HEIGHT = 92;
 const DATA_VIEWPORT_HEIGHT = 736;
 const COLD_READ_ATTEMPT_TIMEOUT_MS = 12_000;
+/** The quiet window a burst of realtime rows has to settle into one refresh. */
+const EVENT_REFRESH_DEBOUNCE_MS = 750;
+/**
+ * And the longest that window may push a queued refresh out. Without a ceiling
+ * the debounce is reset by the next row and a club with continuous traffic
+ * never refreshes from its own events at all.
+ */
+const EVENT_REFRESH_MAX_WAIT_MS = 5_000;
 const COLD_READ_RETRY_DELAY_MS = 350;
 const CLUB_DATA_BUS_EVENTS: BusEventType[] = [
   'CLUB_UPDATED',
@@ -526,6 +534,31 @@ export default function ClubDataPage() {
   // payload last, leaving the chips saying one thing and the money another.
   // A version per request fixes the ordering; the ref still handles unmount.
   const loadVersion = useRef(0);
+  // THE SKELETON BELONGS TO A FOREGROUND REQUEST, AND ONLY TO A FOREGROUND ONE.
+  // `loadVersion` orders every request, background polls included, and the
+  // clause that clears `loading` used to be gated on it: only the NEWEST
+  // request could put the skeleton away. On a quiet club that is the same
+  // thing. On Shark Club it is not, and on 2026-09-06 it locked the page.
+  //
+  // Measured that day: a ranked sort over that club's 14-day window is ~1.7s
+  // warm and 15.5s cold, and `queueEventRefresh` starts a background read on
+  // any realtime row touching tables, tournaments, invoices or members - which
+  // on a club running 90k tournaments a fortnight is a near-continuous stream.
+  // So every read was superseded before it could finish, every `finally` saw
+  // itself as stale, and `setLoading(false)` was never reached by anybody.
+  // `loading` stayed true for the life of the page. Nothing looked broken:
+  // rows rendered, the sort chips answered, and "Load More Games - 100 Of
+  // 90,372" sat there reading exactly as it does when it works, disabled,
+  // for 180 seconds (Post-Deploy E2E club-data-deep.spec.ts:147, red on five
+  // consecutive runs of `main`).
+  //
+  // A background poll must not be able to strand a flag it is not allowed to
+  // raise. This version is written only by requests that asked for the
+  // spinner, so a newer FOREGROUND load still wins the ordering the comment in
+  // the `finally` describes, and a heartbeat can neither raise the skeleton nor
+  // keep it up.
+  const spinnerVersion = useRef(0);
+  const backgroundLedgerInFlight = useRef(false);
   const playersVersion = useRef(0);
   const invoicesVersion = useRef(0);
   const resolveVersion = useRef(0);
@@ -544,6 +577,7 @@ export default function ClubDataPage() {
   const restoredPlayerKeyRef = useRef<string | null>(null);
   const restoredInvoiceKeyRef = useRef<string | null>(null);
   const eventRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const eventRefreshDeadlineRef = useRef<number | null>(null);
   const pendingEventRefreshRef = useRef({ ledger: false, invoices: false });
   const cancelledRef = useRef(false);
   const manualRefreshingRef = useRef(false);
@@ -555,6 +589,7 @@ export default function ClubDataPage() {
       cancelledRef.current = true;
       exportControllerRef.current?.abort();
       if (eventRefreshTimerRef.current) clearTimeout(eventRefreshTimerRef.current);
+      eventRefreshDeadlineRef.current = null;
     };
   }, []);
   useEffect(() => {
@@ -608,6 +643,10 @@ export default function ClubDataPage() {
   // one club slug to another showed the first club's money under the new URL.
   useLayoutEffect(() => {
     loadVersion.current += 1;
+    // A load still in flight for the OUTGOING club must not be able to put the
+    // incoming club's skeleton away when it lands.
+    spinnerVersion.current = loadVersion.current;
+    backgroundLedgerInFlight.current = false;
     playersVersion.current += 1;
     invoicesVersion.current += 1;
     resolveVersion.current += 1;
@@ -721,6 +760,11 @@ export default function ClubDataPage() {
       // Pagination owns its cursor while it is in flight. A heartbeat is a
       // recovery mechanism, not a reason to supersede that operator action.
       if (preserveOnError && gamesMoreRef.current) return true;
+      // A second background read while the first is still out cannot make the
+      // ledger any fresher - it can only add another full-window scan beside
+      // the one already running, and take the ordering away from it. The
+      // recovery poll and the realtime drain both come back within a minute.
+      if (!showSpinner && backgroundLedgerInFlight.current) return true;
       const requestStartedAt = performance.now();
       const myVersion = ++loadVersion.current;
       const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
@@ -732,7 +776,12 @@ export default function ClubDataPage() {
         gamesMoreRef.current = false;
         setGamesLoadingMore(false);
       }
-      if (showSpinner) setLoading(true);
+      if (showSpinner) {
+        spinnerVersion.current = myVersion;
+        setLoading(true);
+      } else {
+        backgroundLedgerInFlight.current = true;
+      }
       setGamesPageError(null);
       try {
         // The snapshot already owns the optimized recent-row query. Running a
@@ -930,11 +979,19 @@ export default function ClubDataPage() {
         }
         return false;
       } finally {
-        // Only the newest request may clear the skeleton. A background poll that
-        // finished first used to pull it out from under a load the user had just
-        // started, leaving stale rows looking settled.
+        if (!showSpinner) backgroundLedgerInFlight.current = false;
+        // Only the newest request may report the latency it measured. A
+        // background poll that finished first used to pull the skeleton out
+        // from under a load the user had just started, leaving stale rows
+        // looking settled.
         if (!stale()) {
           setLastRequestMs(Math.max(0, Math.round(performance.now() - requestStartedAt)));
+        }
+        // The skeleton comes down when the request that RAISED it settles, or
+        // when a newer foreground load has taken it over - never on the
+        // ordering of background polls, which is what left it up for ever.
+        // See the note beside `spinnerVersion`.
+        if (!cancelledRef.current && showSpinner && spinnerVersion.current === myVersion) {
           setLoading(false);
         }
       }
@@ -1601,9 +1658,24 @@ export default function ClubDataPage() {
       removeClubDataCaches(userId, clubUuid);
       if (scope === 'ledger' || scope === 'all') pendingEventRefreshRef.current.ledger = true;
       if (scope === 'invoices' || scope === 'all') pendingEventRefreshRef.current.invoices = true;
+      // A debounce that restarts on every event is a promise, not a schedule.
+      // Shark Club writes to these four tables continuously, so the 750ms timer
+      // was cleared and re-armed before it could ever fire and the ledger only
+      // refreshed when the 60s recovery poll happened to land. Keep the 750ms
+      // quiet window, but never defer a queued refresh past EVENT_REFRESH_MAX_WAIT_MS
+      // from the moment it was first asked for.
+      const now = Date.now();
+      if (eventRefreshDeadlineRef.current === null) {
+        eventRefreshDeadlineRef.current = now + EVENT_REFRESH_MAX_WAIT_MS;
+      }
+      const delay = Math.max(
+        0,
+        Math.min(EVENT_REFRESH_DEBOUNCE_MS, eventRefreshDeadlineRef.current - now)
+      );
       if (eventRefreshTimerRef.current) clearTimeout(eventRefreshTimerRef.current);
       eventRefreshTimerRef.current = setTimeout(() => {
         eventRefreshTimerRef.current = null;
+        eventRefreshDeadlineRef.current = null;
         // refreshAll already requests every authoritative source. Leave these
         // flags queued and drain them once that bounded foreground cycle ends,
         // instead of superseding it and extending the disabled state by a
@@ -1616,7 +1688,7 @@ export default function ClubDataPage() {
           if (tabRef.current === 'players') void loadPlayers(true);
         }
         if (pending.invoices) void loadInvoices();
-      }, 750);
+      }, delay);
     },
     [clubUuid, isHydrating, userId, load, loadPlayers, loadInvoices]
   );

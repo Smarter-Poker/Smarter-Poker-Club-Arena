@@ -12,7 +12,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // @sentry/node at import time; mock it before importing the server class.
 vi.mock('../services/supabase.js', () => ({
   supabase: {
-    auth: { getUser: vi.fn(async () => ({ data: { user: null }, error: null })) },
+    auth: {
+      getUser: vi.fn(async () => ({ data: { user: null }, error: null })),
+    },
     from: vi.fn(() => ({ insert: vi.fn(async () => ({ error: null })) })),
   },
 }));
@@ -62,7 +64,11 @@ function makeServer(overrides: Partial<Record<string, unknown>> = {}) {
     hub: hub as never,
     tableExists: (id: string) => id === T1 || id === T2,
     verifyToken: async () => ({ userId: 'user-1' }),
-    authorizeViewer: async () => ({ allowed: true, reason: 'club_member', clubId: 'club-1' }),
+    authorizeViewer: async () => ({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'club-1',
+    }),
     ...overrides,
   } as never);
   // Per-table async gates: default to "not banned / no conflict" so tests
@@ -106,13 +112,115 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(hub.resync).toHaveBeenCalledTimes(1);
   });
 
+  it('a cancelled access check cannot reject a replacement subscription', async () => {
+    let denyOld!: (value: unknown) => void;
+    const oldCheck = new Promise((resolve) => {
+      denyOld = resolve;
+    });
+    const authorizeViewer = vi.fn().mockReturnValueOnce(oldCheck).mockResolvedValue({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'club-1',
+    });
+    const { server: s, hub: h } = makeServer({ authorizeViewer });
+    const socket = makeFakeWs();
+    (s as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', '1.2.3.4');
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    socket.emitMessage({ type: 'UNSUBSCRIBE', tableId: T1 });
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(h.subscribe).toHaveBeenCalledOnce();
+    denyOld({ allowed: false, reason: 'check_failed', clubId: null });
+    await flush();
+    expect(socket.sent.map((raw) => JSON.parse(raw)).filter((msg) => msg.type === 'ERROR')).toEqual(
+      []
+    );
+    socket.emitMessage({ type: 'RESYNC', tableId: T1 });
+    expect(h.resync).toHaveBeenCalledOnce();
+    socket.emitMessage({ type: 'UNSUBSCRIBE', tableId: T1 });
+    expect(h.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('a cancelled successful check cannot authorize the next pending attempt', async () => {
+    let allowOld!: (value: unknown) => void;
+    let denyCurrent!: (value: unknown) => void;
+    const authorizeViewer = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          allowOld = resolve;
+        })
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          denyCurrent = resolve;
+        })
+      );
+    const { server: s, hub: h } = makeServer({ authorizeViewer });
+    const socket = makeFakeWs();
+    (s as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', '1.2.3.4');
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    socket.emitMessage({ type: 'UNSUBSCRIBE', tableId: T1 });
+    socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    allowOld({ allowed: true, reason: 'club_member', clubId: 'club-1' });
+    await flush();
+    expect(h.subscribe).not.toHaveBeenCalled();
+    denyCurrent({ allowed: false, reason: 'not_member', clubId: 'club-1' });
+    await flush();
+    expect(h.subscribe).not.toHaveBeenCalled();
+    expect(
+      socket.sent.map((raw) => JSON.parse(raw)).filter((msg) => msg.type === 'ERROR')
+    ).toHaveLength(1);
+  });
+
   it('rejects an unknown table with TABLE_NOT_FOUND and no hub call', async () => {
-    ws.emitMessage({ type: 'SUBSCRIBE', tableId: '33333333-3333-4333-8333-333333333333' });
+    ws.emitMessage({
+      type: 'SUBSCRIBE',
+      tableId: '33333333-3333-4333-8333-333333333333',
+    });
     await flush();
     expect(hub.subscribe).not.toHaveBeenCalled();
     const errs = ws.sent.map((s) => JSON.parse(s));
     expect(errs.some((m) => m.type === 'ERROR' && m.code === 'TABLE_NOT_FOUND')).toBe(true);
   });
+
+  it.each(['missing', 'throws'])(
+    'a cancelled table wake that %s cannot remove the new subscription',
+    async (outcome) => {
+      let finishOld!: (ready: boolean) => void;
+      let rejectOld!: (error: Error) => void;
+      const ensureTable = vi
+        .fn()
+        .mockReturnValueOnce(
+          new Promise<boolean>((resolve, reject) => {
+            finishOld = resolve;
+            rejectOld = reject;
+          })
+        )
+        .mockResolvedValue(true);
+      const { server: s, hub: h } = makeServer({
+        tableExists: () => false,
+        ensureTable,
+      });
+      const socket = makeFakeWs();
+      (s as unknown as { onUpgradedMux: Handler }).onUpgradedMux(socket, 'user-1', '1.2.3.4');
+      socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+      await flush();
+      expect(ensureTable).toHaveBeenCalledOnce();
+      socket.emitMessage({ type: 'UNSUBSCRIBE', tableId: T1 });
+      socket.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+      await flush();
+      expect(h.subscribe).toHaveBeenCalledOnce();
+      if (outcome === 'throws') rejectOld(new Error('old wake failed'));
+      else finishOld(false);
+      await flush();
+      expect(
+        socket.sent.map((raw) => JSON.parse(raw)).filter((msg) => msg.type === 'ERROR')
+      ).toEqual([]);
+      socket.emitMessage({ type: 'RESYNC', tableId: T1 });
+      expect(h.resync).toHaveBeenCalledOnce();
+    }
+  );
 
   it('wakes an authorized new empty table before subscribing', async () => {
     let running = false;
@@ -248,7 +356,11 @@ describe('EngineWebSocketServer /ws/multi', () => {
 
   it('a viewer who fails access is refused with the access reason even when also banned', async () => {
     ({ server, hub } = makeServer({
-      authorizeViewer: async () => ({ allowed: false, reason: 'membership_required', clubId: 'c' }),
+      authorizeViewer: async () => ({
+        allowed: false,
+        reason: 'membership_required',
+        clubId: 'c',
+      }),
     }));
     (server as unknown as { isBannedFromTable: unknown }).isBannedFromTable = vi
       .fn()
@@ -349,7 +461,9 @@ describe('EngineWebSocketServer /ws/multi', () => {
       '66666666-6666-4666-8666-666666666666',
       '77777777-7777-4777-8777-777777777777',
     ];
-    const { server: burstServer, hub: burstHub } = makeServer({ tableExists: () => true });
+    const { server: burstServer, hub: burstHub } = makeServer({
+      tableExists: () => true,
+    });
     const burstWs = makeFakeWs();
     (burstServer as unknown as { onUpgradedMux: Handler }).onUpgradedMux(burstWs, 'user-1', null);
     // No flush between sends - every gate is still in flight when the later
@@ -366,7 +480,12 @@ describe('EngineWebSocketServer /ws/multi', () => {
     ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
     await flush();
     const before = ws.sent.length;
-    ws.emitMessage({ type: 'ACTION', tableId: T1, action: 'raise', amount: 999999 });
+    ws.emitMessage({
+      type: 'ACTION',
+      tableId: T1,
+      action: 'raise',
+      amount: 999999,
+    });
     await flush();
     expect(ws.sent.length).toBe(before);
     expect(hub.subscribe).toHaveBeenCalledTimes(1);

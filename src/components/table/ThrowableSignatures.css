@@ -623,7 +623,7 @@
   display: block;
   width: 30px;
   height: 16px;
-  color: #ffd93d;
+  color: var(--sp-text-bright);
   font:
     800 13px/16px system-ui,
     sans-serif;
@@ -2035,7 +2035,7 @@
   display: block;
   width: 44px;
   height: 16px;
-  color: #ffb300;
+  color: var(--sp-warn);
   font:
     italic 800 12px/16px system-ui,
     sans-serif;

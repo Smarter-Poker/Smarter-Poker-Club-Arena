@@ -24,21 +24,48 @@
  * rendered to static markup with react-dom/server - the same components the
  * table mounts, not a hand-copied lookalike that can drift.
  *
- *   node scripts/dev/preview-throwable.mjs [outDir] [--only beer,tomato]
+ *   node scripts/dev/preview-throwable.mjs [outDir] [--only beer,tomato | --items=beer,tomato] [--shots | --html-only]
  */
 
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..', '..');
-const args = process.argv.slice(2);
-const OUT = resolve(args.find((a) => !a.startsWith('--')) || join(repo, '.throwable-darkroom'));
-const onlyArg = args.find((a) => a.startsWith('--only'));
-const only = onlyArg ? (onlyArg.split('=')[1] || args[args.indexOf(onlyArg) + 1] || '').split(',').filter(Boolean) : null;
+const { values, positionals } = parseArgs({
+  options: {
+    only: { type: 'string' },
+    items: { type: 'string' },
+    shots: { type: 'boolean', default: false },
+    'html-only': { type: 'boolean', default: false },
+    'executable-path': { type: 'string' },
+  },
+  allowPositionals: true,
+});
+if (
+  positionals.length > 1 ||
+  (values.only && values.items) ||
+  (values.shots && values['html-only'])
+) {
+  throw new Error('Use [outDir] [--only=a,b | --items=a,b] [--shots | --html-only]');
+}
+const OUT = resolve(positionals[0] || join(repo, '.throwable-darkroom'));
+const selection = values.only ?? values.items;
+const only =
+  selection === undefined
+    ? null
+    : [
+        ...new Set(
+          selection
+            .split(',')
+            .map((id) => id.trim())
+            .filter(Boolean)
+        ),
+      ];
+if (only && !only.length) throw new Error('The item list must not be empty');
 
 mkdirSync(OUT, { recursive: true });
 
@@ -46,12 +73,11 @@ mkdirSync(OUT, { recursive: true });
    The bundle lives INSIDE the repo, not in outDir: node resolves `react` and
    `react-dom/server` from the importing file's directory, so a bundle written
    to /tmp cannot find them however the externals are declared. */
-const tmp = join(repo, 'node_modules', '.throwable-darkroom');
-mkdirSync(tmp, { recursive: true });
+const tmp = mkdtempSync(join(repo, 'node_modules', '.throwable-darkroom-'));
 const entry = join(tmp, 'entry.mjs');
 writeFileSync(
   entry,
-  `export { RIGGED_IDS, riggedThrowable } from ${JSON.stringify(join(repo, 'src/throwables/registry.ts'))};\n`
+  `export { RIGGED_IDS, riggedThrowable } from ${JSON.stringify(join(repo, 'src/throwables/registry.ts'))};\nexport { THROWABLE_GRAMMAR } from ${JSON.stringify(join(repo, 'src/throwables/spec.ts'))};\n`
 );
 const bundle = join(tmp, 'rigs.mjs');
 const esbuild = await import(pathToFileURL(join(repo, 'node_modules/esbuild/lib/main.js')).href);
@@ -73,7 +99,10 @@ await esbuild.build({
         // The rigs import their own .css for Vite; node cannot. The files are
         // read directly further down and inlined into the page.
         build.onResolve({ filter: /\.css$/ }, (a) => ({ path: a.path, namespace: 'stub-empty' }));
-        build.onLoad({ filter: /.*/, namespace: 'stub-empty' }, () => ({ contents: '', loader: 'js' }));
+        build.onLoad({ filter: /.*/, namespace: 'stub-empty' }, () => ({
+          contents: '',
+          loader: 'js',
+        }));
         // The cue preloader reaches the AudioContext and `fetch` at module
         // scope. The darkroom is about pixels; sound is verified by its own
         // manifest test.
@@ -82,7 +111,8 @@ await esbuild.build({
           namespace: 'stub-cues',
         }));
         build.onLoad({ filter: /.*/, namespace: 'stub-cues' }, () => ({
-          contents: 'export function preloadThrowableCues() {}\nexport function cueUrl(){return ""}\nexport function isPlaceholderCue(){return true}\nexport function placeholderRecipe(){return undefined}\n',
+          contents:
+            'export function preloadThrowableCues() {}\nexport function cueUrl(){return ""}\nexport function isPlaceholderCue(){return true}\nexport function placeholderRecipe(){return undefined}\n',
           loader: 'js',
         }));
       },
@@ -90,11 +120,14 @@ await esbuild.build({
   ],
 });
 
-const { RIGGED_IDS, riggedThrowable } = await import(pathToFileURL(bundle).href);
+const { RIGGED_IDS, riggedThrowable, THROWABLE_GRAMMAR } = await import(pathToFileURL(bundle).href);
+rmSync(tmp, { recursive: true, force: true });
 const { renderToStaticMarkup } = await import('react-dom/server');
 const React = (await import('react')).default;
 
-const ids = (only && only.length ? only : RIGGED_IDS).filter((id) => riggedThrowable(id));
+const unknown = (only ?? []).filter((id) => !RIGGED_IDS.includes(id));
+if (unknown.length) throw new Error(`Unknown rig(s): ${unknown.join(', ')}`);
+const ids = only ?? RIGGED_IDS;
 if (!ids.length) {
   console.error('preview-throwable: no rigs to render');
   process.exit(1);
@@ -107,16 +140,29 @@ for (const id of ids) {
   if (existsSync(p)) css.push(readFileSync(p, 'utf8'));
 }
 
-/* ── 3. Render every rig once; the harness re-uses the markup per beat ────── */
-const rendered = ids.map((id) => {
-  const { spec, rig } = riggedThrowable(id);
-  return {
-    id,
-    spec,
-    projectile: renderToStaticMarkup(React.createElement(rig.Projectile, { uid: `dk${id}p` })),
-    payload: renderToStaticMarkup(React.createElement(rig.Payload, { uid: `dk${id}q` })),
-  };
-});
+/* Each tile renders independently: SVG gradient/filter IDs must be unique. */
+const rendered = ids.map((id) => ({ id, ...riggedThrowable(id) }));
+let tileId = 0;
+function layer(r, at, unit) {
+  const landing = r.spec.flight.mode === 'none' ? 0 : r.spec.flight.ms;
+  const end = landing + Math.max(r.spec.payload.ms, r.spec.residue?.ms ?? 0);
+  if (at >= end) return '';
+  const payload = at >= landing;
+  const uid = `dk${tileId++}`;
+  const markup = renderToStaticMarkup(
+    React.createElement(payload ? r.rig.Payload : r.rig.Projectile, { uid })
+  );
+  const phase = at >= landing + r.spec.payload.ms ? 'residue' : 'payload';
+  const cls = payload
+    ? `thr__payload thr__payload--${r.spec.arrival} thr__payload--${phase}${r.spec.residue?.fade === 'fade' ? ' thr__payload--fades' : ''}`
+    : 'thr__proj';
+  const x = r.spec.payload.anchor === 'left' ? -0.6 : r.spec.payload.anchor === 'right' ? 0.6 : 0;
+  const y = r.spec.payload.anchor === 'above' ? -0.9 : 0;
+  const anchor = payload ? `left:calc(50% + ${x * unit}px);top:calc(50% + ${y * unit}px);` : '';
+  const arrival =
+    r.spec.arrival === 'land' ? THROWABLE_GRAMMAR.landMs : THROWABLE_GRAMMAR.arrivalMs;
+  return `<div class="beat-layer" style="--thr-u:${unit}px;--thr-arrival-ms:${arrival}ms;--thr-payload-ms:${r.spec.payload.ms}ms;--thr-residue-ms:${r.spec.residue?.ms ?? r.spec.payload.ms}ms;"><div class="${cls}" style="${anchor}">${markup}</div></div>`;
+}
 
 /* ── 4. The mock seat, at SeatSlot.css's real proportions ─────────────────── */
 const seatMarkup = `
@@ -190,9 +236,7 @@ ${rendered
       <div class="cell" style="--u:84px; width:260px; height:260px;" data-at="${b.at}" data-landing="${landing}" data-id="${r.id}">
         <div class="cap">${b.at}ms <em>${b.marker}</em></div>
         ${seatMarkup}
-        <div class="beat-layer" style="--thr-u:84px;">
-          ${b.at < landing ? `<div class="thr__proj">${r.projectile}</div>` : `<div class="thr__payload thr__payload--${r.spec.arrival}">${r.payload}</div>`}
-        </div>
+        ${layer(r, b.at, 84)}
       </div>`
       )
       .join('');
@@ -202,13 +246,13 @@ ${rendered
            data-at="${beats[Math.floor(beats.length / 2)].at}" data-landing="${landing}" data-id="${r.id}">
         <div class="cap">${u}px</div>
         ${seatMarkup}
-        <div class="beat-layer" style="--thr-u:${u}px;">
-          <div class="thr__payload thr__payload--${r.spec.arrival}">${r.payload}</div>
-        </div>
+        ${layer(r, beats[Math.floor(beats.length / 2)].at, u)}
       </div>`
     ).join('');
     return `<h2>${r.spec.name} &mdash; ${r.id} &middot; spawn ${r.spec.spawnMs} &middot; flight ${r.spec.flight.ms} &middot; payload ${r.spec.payload.ms}${
-      r.spec.reference ? ` &middot; ref video ${r.spec.reference.video} ${r.spec.reference.throw} launch f${r.spec.reference.launchFrame}` : ''
+      r.spec.reference
+        ? ` &middot; ref video ${r.spec.reference.video} ${r.spec.reference.throw} launch f${r.spec.reference.launchFrame}`
+        : ''
     }</h2>
     <div class="row">${tiles}</div>
     <h2 style="opacity:.7">${r.id}: the four seat rungs</h2>
@@ -241,28 +285,35 @@ ${rendered
 
 const harness = join(OUT, 'harness.html');
 writeFileSync(harness, page);
-rmSync(tmp, { recursive: true, force: true });
 console.log(`harness: ${harness}`);
 console.log(`rigs:    ${ids.join(', ')}`);
 
 /* ── 5. Screenshots, if Playwright is here. Never required. ───────────────── */
-try {
-  const { chromium } = await import('playwright');
-  const browser = await chromium.launch();
-  const pageCtx = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
-  await pageCtx.goto(pathToFileURL(harness).href);
-  await pageCtx.waitForFunction(() => document.documentElement.dataset.frozen === '1', { timeout: 5000 });
-  const shots = join(OUT, 'shots');
-  mkdirSync(shots, { recursive: true });
-  const cells = await pageCtx.$$('.cell[data-at]');
-  let i = 0;
-  for (const cell of cells) {
-    const id = await cell.getAttribute('data-id');
-    const at = await cell.getAttribute('data-at');
-    await cell.screenshot({ path: join(shots, `${String(i++).padStart(2, '0')}-${id}-${at}ms.png`) });
+let browser;
+if (!values['html-only'])
+  try {
+    const { chromium } = await import('playwright');
+    browser = await chromium.launch({ executablePath: values['executable-path'] });
+    const pageCtx = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+    await pageCtx.goto(pathToFileURL(harness).href);
+    await pageCtx.waitForFunction(() => document.documentElement.dataset.frozen === '1', {
+      timeout: 5000,
+    });
+    const shots = join(OUT, 'shots');
+    mkdirSync(shots, { recursive: true });
+    const cells = await pageCtx.$$('.cell[data-at]');
+    let i = 0;
+    for (const cell of cells) {
+      const id = await cell.getAttribute('data-id');
+      const at = await cell.getAttribute('data-at');
+      await cell.screenshot({
+        path: join(shots, `${String(i++).padStart(2, '0')}-${id}-${at}ms.png`),
+      });
+    }
+    console.log(`shots:   ${shots} (${cells.length})`);
+  } catch (err) {
+    console.error(`Screenshot capture failed: ${String(err).split('\n')[0]}. Harness: ${harness}`);
+    if (values.shots) process.exitCode = 1;
+  } finally {
+    await browser?.close();
   }
-  await browser.close();
-  console.log(`shots:   ${shots} (${cells.length})`);
-} catch (err) {
-  console.log(`playwright unavailable (${String(err).split('\n')[0]}) - harness.html is written and is the deliverable`);
-}

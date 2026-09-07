@@ -140,11 +140,11 @@ export class MuxTableSocket {
   ) {}
 
   send(data: string): void {
-    this.mux.sendFor(this.tableId, data);
+    this.mux.sendFor(this, data);
   }
 
   close(code?: number, reason?: string): void {
-    this.mux.release(this.tableId, code, reason);
+    this.mux.release(this, code, reason);
   }
 
   /** @internal 2026-08-22: SUBSCRIBE->SUBSCRIBED watchdog handle. */
@@ -206,10 +206,27 @@ class EngineSocketMuxImpl {
     // same table was mounted twice (StrictMode, rapid switches). 4901 tells
     // the old owner "a newer client owns this table now; stand down".
     const prior = this.facades.get(tableId);
+    /* ADOPT THE WARM SUBSCRIPTION INSTEAD OF PAYING FOR IT TWICE (Dan
+       2026-09-07: "TABLES ... SHOULD BE RUNNING AT ALL TIMES, AND PRE LOADED").
+       The lobby warm-up (services/tableWarmup) exists to get SUBSCRIBE out
+       early so the felt mounts against a live subscription. It was doing that
+       and then throwing the result away: the real join arrives here, the warm
+       facade is superseded, a fresh facade starts at readyState 0, and the
+       client sits in 'connecting' for a SECOND SUBSCRIBE->SUBSCRIBED
+       round-trip that had already completed. The warm-up shortened the window
+       it was supposed to remove.
+       If the prior facade is genuinely OPEN, the server-side subscription for
+       this table is established on a physical socket that is still up, so the
+       new facade is already live the moment it is wired in — recorded here and
+       acted on below, after the facade exists. */
+    const adoptWarmSubscription =
+      !!prior &&
+      prior.readyState === 1 &&
+      !!this.ws &&
+      this.ws.readyState === WebSocket.OPEN &&
+      Date.now() - this.lastInboundAt <= STALE_HARD_MS;
     if (prior) prior._close(CLOSE_MUX_SUPERSEDED, 'superseded by newer acquire');
 
-    const facade = new MuxTableSocket(this, tableId);
-    this.facades.set(tableId, facade);
     this.baseUrl = baseUrl;
     this.token = token;
 
@@ -226,10 +243,31 @@ class EngineSocketMuxImpl {
       this.teardownPhysical(4001, 'stale physical socket at acquire');
     }
 
+    // Register only after retiring the old transport. Otherwise failAll()
+    // closes this new facade before its caller can attach onclose, leaving
+    // the table stranded on a CLOSED facade with no reconnect scheduled.
+    const facade = new MuxTableSocket(this, tableId);
+    this.facades.set(tableId, facade);
     this.ensureSocket();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.subscribe(tableId);
     }
+
+    /* The adopted case: open on the next microtask rather than waiting for a
+       SUBSCRIBED that the server has already sent for this table. Not
+       synchronous — the caller has not had a chance to attach onopen yet, and
+       `new WebSocket()` never fires onopen inside its own constructor either.
+       The SUBSCRIBE above still goes out and is idempotent server-side, so a
+       subscription that turns out to be gone is re-established anyway and the
+       normal ERROR/close path still applies. No watchdog is armed here: there
+       is nothing to wait for. */
+    if (adoptWarmSubscription) {
+      queueMicrotask(() => {
+        if (this.facades.get(tableId) === facade && facade.readyState === 0) facade._open();
+      });
+      return facade;
+    }
+
     // SUBSCRIBE->SUBSCRIBED watchdog: no ack within the timeout fails THIS
     // facade (the owning client's backoff handles retry), and marks the
     // physical socket suspect if it has also gone silent.
@@ -319,7 +357,9 @@ class EngineSocketMuxImpl {
   }
 
   /** @internal facade → server, rewriting per-table RESYNC. */
-  sendFor(tableId: string, data: string): void {
+  sendFor(facade: MuxTableSocket, data: string): void {
+    const { tableId } = facade;
+    if (this.facades.get(tableId) !== facade || facade.readyState === 3) return;
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     let out = data;
     try {
@@ -339,9 +379,11 @@ class EngineSocketMuxImpl {
   }
 
   /** @internal facade close → unsubscribe; last one out lingers then closes. */
-  release(tableId: string, code?: number, reason?: string): void {
-    const facade = this.facades.get(tableId);
-    if (!facade) return;
+  release(facade: MuxTableSocket, code?: number, reason?: string): void {
+    const { tableId } = facade;
+    // Cleanup belongs to the acquiring instance, not merely the table ID.
+    // A superseded client's delayed disconnect must not evict its successor.
+    if (this.facades.get(tableId) !== facade) return;
     this.facades.delete(tableId);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
@@ -390,7 +432,14 @@ class EngineSocketMuxImpl {
     } catch {
       // Constructor failure = immediate close for every waiting facade; each
       // EngineStateClient schedules its own reconnect and re-acquires.
-      this.failAll(4500, 'mux socket construction failed');
+      // Match native asynchronous socket events: acquire() must return before
+      // onclose fires. Capture this generation now so a later acquire cannot
+      // be closed by the failed attempt's queued notification.
+      const failed = [...this.facades.values()];
+      this.facades.clear();
+      void Promise.resolve().then(() => {
+        for (const facade of failed) facade._close(4500, 'mux socket construction failed');
+      });
       return;
     }
     this.ws = ws;

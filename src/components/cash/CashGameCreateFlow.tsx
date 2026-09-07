@@ -478,26 +478,33 @@ export default function CashGameCreateFlow({
               </div>
             </div>
 
-            <Slider
-              label="VPIP Floor"
-              value={overrides.vpip_floor}
-              onChange={(v) => setOverride('vpip_floor', v)}
-              min={0}
-              max={100}
-              step={5}
-              format={(v) => (v === 0 ? 'Off' : `${v}%`)}
-              tooltip="Players Under This Voluntarily Put In Pot Rate Over The Window Are Cashed Out After The Hand."
-            />
-            {overrides.vpip_floor > 0 && (
-              <Slider
-                label="VPIP Window"
-                value={overrides.vpip_window}
-                onChange={(v) => setOverride('vpip_window', v)}
-                min={10}
-                max={200}
-                step={10}
-                suffix=" Hands"
-              />
+            {/* ═══ THE VPIP FLOOR IS THE TEMPLATE'S, NOT THE HOST'S ═══════════
+                Dan 2026-09-07: "vpip for action is supposed to be 30% and vpip
+                for madness is 50%."
+
+                Two sliders stood here, 0-100 in steps of 5 and 10-200 hands.
+                They are gone because the server no longer honours them: a
+                BEFORE trigger on cash_games normalises both fields to
+                fn_cash_template_defaults on every write, so whatever a host
+                dragged to would have been silently replaced the instant it
+                landed. A control that appears to set something and does not is
+                worse than no control - the host would have believed their 65%
+                table was a 65% table.
+
+                It is read-only copy now: the rule the template carries, stated
+                where the host used to set it. Classic runs no floor and prints
+                nothing. */}
+            {(snapshot?.vpip_floor ?? 0) > 0 && (
+              <div className="cash-create__rule-readout">
+                <span className="cash-create__rule-readout__label">VPIP Floor</span>
+                <span className="cash-create__rule-readout__value">
+                  {snapshot?.vpip_floor}% Over {snapshot?.vpip_window} Hands
+                </span>
+                <span className="cash-create__rule-readout__note">
+                  Set By The {template === 'action' ? 'Action' : 'Madness'} Template. Players Under
+                  This Voluntarily Put In Pot Rate Are Cashed Out After The Hand.
+                </span>
+              </div>
             )}
 
             <Toggle

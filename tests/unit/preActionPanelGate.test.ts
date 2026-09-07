@@ -17,6 +17,7 @@ import path from 'node:path';
 import {
   isPreActionHonorable,
   PRE_ACTION_EXEC_GRACE_MS,
+  PRE_ACTION_GAP_BRIDGE_MS,
   PRE_ACTION_GRACE_RTT_MARGIN_MS,
 } from '../../src/lib/preActionPanelGate';
 
@@ -86,6 +87,87 @@ describe('THE TIMING CONTRACT with the engine (2026-08-29 hardening)', () => {
       `grace (${PRE_ACTION_EXEC_GRACE_MS}ms) must exceed the engine beat (${beatMs}ms) ` +
         `by at least ${PRE_ACTION_GRACE_RTT_MARGIN_MS}ms of round-trip margin`
     ).toBeGreaterThanOrEqual(beatMs + PRE_ACTION_GRACE_RTT_MARGIN_MS);
+  });
+});
+
+describe('THE BAR DOES NOT BLINK BETWEEN ACTORS (Dan 2026-09-07)', () => {
+  /* Dan, verbatim: "THE ACTION TAB CONSTANTLY DISAPPEARS AND REAPPEARS ON THE
+     BOTTOM, WHEN ACTION MOVES, EVEN IF THE ACTION HAS NOT CHANGED ... PRE
+     ACTION SELECTOR SHOULD STAY ON THE BOTTOM."
+
+     The cause was one clause. Every action at the table blanks
+     `currentPlayerSeat` to 0 before the next actor is known, so the live value
+     is `seat N -> 0 -> seat M` on every action by every player; a
+     `currentPlayerSeat > 0` clause in the PreActionBar's gate therefore
+     unmounted the bar in that gap and remounted it a moment later, replaying
+     its entrance animation for a change that had not happened. */
+  const PAGE = readFileSync(path.resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
+
+  it('the PreActionBar gate asks whether a turn is still to COME', () => {
+    /* CORRECTED THE SAME DAY, and the correction is the interesting part.
+       The first fix simply deleted the `currentPlayerSeat > 0` clause, which
+       stopped the blink and started something worse: `0 !== heroSeat` is also
+       true after the hand stops taking action, and `isHandInProgress` does not
+       separate the two (it is `boardStage !== 'waiting'`, so it stays true
+       through showdown and the whole 2.1-3.5s HAND_COMPLETE hold). The bar sat
+       over every winner presentation and every all-in runout.
+
+       `handStillTakingAction` is the honest question, and it is answered by an
+       EXACT flag off HAND_COMPLETE plus a BOUNDED bridge for the one silence
+       that has no event. */
+    const at = PAGE.indexOf('<PreActionBar');
+    expect(at).toBeGreaterThan(-1);
+    const gate = PAGE.slice(PAGE.lastIndexOf('{handStillTakingAction &&', at), at);
+    expect(gate).toContain('handStillTakingAction');
+    expect(gate).toContain('tableState.currentPlayerSeat !== tableState.heroSeat');
+    expect(
+      gate,
+      'a `currentPlayerSeat > 0` clause here unmounts the bar between every actor'
+    ).not.toContain('tableState.currentPlayerSeat > 0');
+  });
+
+  it('the settling flag is driven by EVENTS, not by a clock', () => {
+    /* The end of a hand and the start of one are both things the engine
+       announces. A duration would only be a guess at them, and the guess would
+       be wrong on any table whose hold length changed - which it did, twice,
+       in this same batch of work. */
+    expect(PAGE).toMatch(/setHandSettling\(true\)/);
+    expect(PAGE).toMatch(/setHandSettling\(false\)/);
+    const settle = PAGE.indexOf('setHandSettling(true)');
+    const complete = PAGE.lastIndexOf("case 'HAND_COMPLETE'", settle);
+    const started = PAGE.lastIndexOf("case 'HAND_STARTED'", PAGE.indexOf('setHandSettling(false)'));
+    expect(complete, 'the true-set belongs to HAND_COMPLETE').toBeGreaterThan(-1);
+    expect(started, 'the false-set belongs to HAND_STARTED').toBeGreaterThan(-1);
+  });
+
+  it('the bridge is short - it covers a round trip, never a whole hand', () => {
+    /* A timer is the fallback for the ONE silence with no event: the gap
+       between two actors. It must give up quickly, or an all-in runout or a
+       stalled engine keeps claiming a turn is coming. */
+    expect(PRE_ACTION_GAP_BRIDGE_MS).toBeGreaterThanOrEqual(600);
+    expect(PRE_ACTION_GAP_BRIDGE_MS).toBeLessThanOrEqual(2000);
+  });
+
+  it('the ActionPanel KEEPS its > 0 guards - a `===` test can read 0 === 0', () => {
+    /* The two gates are not symmetrical and must not be "tidied" into each
+       other. `currentPlayerSeat === heroSeat` is true for a microsecond on
+       every snapshot churn when both are 0, which is the 2026-04-14 flicker
+       burst; `!==` cannot have that failure, because both being 0 requires
+       heroSeat 0 and the gate asserts heroSeat > 0. */
+    const at = PAGE.indexOf('heroActionRenderedRef.current = true');
+    expect(at).toBeGreaterThan(-1);
+    const gate = PAGE.slice(PAGE.lastIndexOf('{tableState.heroSeat > 0 &&', at), at);
+    expect(gate).toContain('tableState.currentPlayerSeat > 0');
+    expect(gate).toContain('tableState.currentPlayerSeat === tableState.heroSeat');
+  });
+
+  it('both bars still collapse when the hand is not in progress', () => {
+    // The between-hands case the removed clause was credited with covering is
+    // covered here, and covered honestly.
+    const at = PAGE.indexOf('<PreActionBar');
+    const gate = PAGE.slice(PAGE.lastIndexOf('{tableState.isHandInProgress &&', at), at);
+    expect(gate).toContain('tableState.isHandInProgress');
+    expect(gate).toContain('tableState.heroSeat > 0');
   });
 });
 

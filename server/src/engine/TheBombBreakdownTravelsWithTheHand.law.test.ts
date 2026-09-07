@@ -166,7 +166,14 @@ describe('the bomb breakdown travels with the hand', () => {
   it('wroteAwardUnits means WE wrote them, not that a row exists', () => {
     // the duplicate-recovery path returns an existing hand id after its RPC
     // rolled back; reporting true there skips the fallback and loses the units
-    expect(hist).toContain('return { id: existing, wroteUnits: false };');
+    //
+    // 2026-09-07: the id expression gained `?? minted` when settlement started
+    // minting the hand's uuid before any write (see
+    // aHandNamesItselfBeforeItBanksItsRake.law.test.ts - a null hand id cost
+    // 173 cash hands a day their entire per-player attribution). What THIS law
+    // pins is untouched and is the second half of the line: `wroteUnits: false`
+    // on the recovery path, so the caller's award-unit fallback still runs.
+    expect(hist).toContain('return { id: existing ?? minted, wroteUnits: false };');
     expect(hist).toContain('wroteAwardUnits: wroteUnitsAtomically');
     expect(hist).toContain('wroteUnits: true');
   });

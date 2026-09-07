@@ -473,6 +473,13 @@ describe('shipped functionality is still here', () => {
     expect(sql.includes('FROM PUBLIC, anon, authenticated')).toBe(true);
   });
 
+  it('Mini jackpots use the original durable payout operation', () => {
+    expect(has('server/src/services/supabase/bbj.ts', "kind: 'mini'")).toBe(true);
+    expect(has('server/src/services/supabase/bbj.ts', 'await processBBJPayout({')).toBe(true);
+    expect(has('server/src/services/FeeReconciler.ts', 'tierId: p.tierId')).toBe(true);
+    expect(has('server/src/engine/ServerTableEngineSettlement.ts', "type: 'bbj_payout_pending', kind: 'mini'")).toBe(true);
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.
@@ -484,5 +491,6 @@ describe('shipped functionality is still here', () => {
     }
   });
 });
+
 
 

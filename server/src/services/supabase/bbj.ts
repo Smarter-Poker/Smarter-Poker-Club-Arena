@@ -66,7 +66,7 @@ export async function resolveJackpotSiblingClubIds(clubId: string): Promise<stri
  * so retrying is free, and NOT retrying is how a detected jackpot goes unpaid.
  */
 const BBJ_PAYOUT_RETRYABLE =
-  /timeout|timed out|fetch failed|socket hang up|ECONNRESET|ECONNREFUSED|EAI_AGAIN|network|502|503|504|57014|too many connections|schema cache|PGRST002|PGRST001|PLATFORM_FROZEN|deadlock|could not serialize|40001|40P01/i;
+  /timeout|timed out|fetch failed|socket hang up|ECONNRESET|ECONNREFUSED|EAI_AGAIN|network|502|503|504|57014|too many connections|schema cache|PGRST002|PGRST001|PLATFORM_FROZEN|payout_frozen|P0404|deadlock|could not serialize|40001|40P01/i;
 const BBJ_PAYOUT_ATTEMPTS = 4;
 /** 400ms, 1.2s, 3.6s - long enough to outlive a schema-cache reload retry loop, short enough to keep the felt moving. */
 const BBJ_PAYOUT_BACKOFF_MS = (attempt: number): number => 400 * 3 ** (attempt - 1);
@@ -331,6 +331,9 @@ export async function logBBJCollection(
  * survive the next hand, let alone a restart.
  */
 export interface BBJPayoutParams {
+  kind?: 'main' | 'mini';
+  tierId?: string;
+  metadata?: Record<string, unknown>;
   tableId: string;
   clubId: string;
   handNumber: number;
@@ -526,11 +529,11 @@ export async function processBBJPayout(
     `[BBJ] Jackpot payout FAILED for table ${params.tableId} hand #${params.handNumber} ` +
     `(club ${params.clubId}, bad beat ${params.loserUserId} with ${params.loserHandName} ` +
     `beaten by ${params.winnerUserId} with ${params.winnerHandName}, ${params.dealtInPlayerIds.length} dealt in, ` +
-    `${params.payoutTotalPercent}% of main): ${lastError}. ` +
+    `${params.kind === 'mini' ? `Mini tier ${params.tierId}` : `${params.payoutTotalPercent}% of main`}): ${lastError}. ` +
     (options.fromQueue
       ? 'Re-drive from the queue failed again; the row stays open.'
       : 'Queued in pending_fee_distributions (kind bbj_payout) for the reconciler to re-drive; ') +
-    `bbj_atomic_payout_v2 is idempotent on (pool, table, hand), so re-driving it by hand is safe.`;
+    `The jackpot RPC is idempotent on (pool, table, hand).`;
   reportError(new Error(detail), 'processBBJPayout.exhausted');
 
   if (owned) {
@@ -583,7 +586,7 @@ async function attemptBBJPayoutOnce(
   const { data: pool, error: poolErr } = await poolQuery.maybeSingle();
   if (poolErr) throw new Error(`bbj_pools read failed: ${poolErr.message}`);
 
-  if (!pool || pool.main_balance <= 0) {
+  if (!pool) {
     throw new BBJPayoutFinal(
       `No BBJ pool or zero balance for club ${params.clubId}`,
       'no_pool_or_empty'
@@ -596,11 +599,14 @@ async function attemptBBJPayoutOnce(
   // decrementing, and records bbj_payouts — all in one transaction. Replaces
   // the previous non-atomic read-modify-write that could double-pay on
   // simultaneous hits or a task retry.
-  const { data: rpcRows, error: rpcErr } = await supabase.rpc('bbj_atomic_payout_v2', {
+  const rpcName = params.kind === 'mini' ? 'fn_bbj_mini_payout' : 'bbj_atomic_payout_v2';
+  const { data: rpcRows, error: rpcErr } = await supabase.rpc(rpcName, {
     p_pool_id: pool.id,
     p_table_id: params.tableId,
     p_hand_number: params.handNumber,
-    p_payout_total_percent: params.payoutTotalPercent,
+    ...(params.kind === 'mini'
+      ? { p_tier_id: params.tierId }
+      : { p_payout_total_percent: params.payoutTotalPercent }),
     p_loser_user_id: params.loserUserId, // BBJ "winner" (bad-beat holder, 50%)
     p_winner_user_id: params.winnerUserId, // BBJ "loser" (hand winner, 25%)
     // FIX P0-2 (2026-07-24): v2 credits recipients INSIDE the payout txn —
@@ -613,6 +619,7 @@ async function attemptBBJPayoutOnce(
     p_metadata: {
       winner_hand_name: params.loserHandName,
       loser_hand_name: params.winnerHandName,
+      ...params.metadata,
       status: 'completed',
     },
   });
@@ -624,11 +631,12 @@ async function attemptBBJPayoutOnce(
     if (/out of range|service only|42501/i.test(rpcErr.message || '')) {
       throw new BBJPayoutFinal(rpcErr.message, 'rpc_refused');
     }
-    throw new Error(`bbj_atomic_payout_v2 failed: ${rpcErr.message}`);
+    throw new Error(`${rpcName} failed: ${rpcErr.message}`);
   }
 
   const rpc = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
-  if (!rpc || !rpc.applied) {
+  if (!rpc) throw new Error(`${rpcName} returned no settlement result`);
+  if (!rpc.applied) {
     // already_paid (retry / concurrent / restart) or empty/zero pool. v2 has
     // already RE-DRIVEN any missing recipient credit inside the RPC (money is
     // durably placed — seats + wallets), so there is nothing left for the
@@ -640,6 +648,11 @@ async function attemptBBJPayoutOnce(
           (rpc?.recovered ? ' (re-drove a missing recipient credit)' : '')
       );
       return { status: 'already_paid' };
+    }
+    if (params.kind === 'mini') {
+      const finalReasons = ['reserve_at_floor', 'mini_disabled_for_tier', 'no_mini_amount_for_tier', 'pool_not_found'];
+      if (finalReasons.includes(rpc.refused)) throw new BBJPayoutFinal(rpc.refused, rpc.refused);
+      throw new Error(`${rpcName} returned an unrecognized refusal: ${rpc.refused}`);
     }
     /* Not applied and not a replay: the pool row read as empty between the
        lookup above and the locked read inside the RPC. Nothing is owed. */
@@ -819,12 +832,9 @@ async function attemptBBJPayoutOnce(
  * every recipient through `bbj_credit_one_recipient` - the same path, so a mini
  * inherits phase 2.3's parked-share behaviour for free.
  *
- * DELIBERATELY THINNER THAN `processBBJPayout`. The main payout carries a
- * write-ahead claim and a queue because it is the platform's largest single
- * payment and losing one is unacceptable. A mini is a few hundred chips that
- * recurs several times a day; a failed one is reported and dropped rather than
- * queued, because a retry queue for it would be a repair job by another name
- * (CLAUDE.md 10.12) and the reserve it comes from is not going anywhere.
+ * Mini and Main use the same original write-ahead settlement operation.
+ * A transport failure cannot become a business-rule refusal or disappear
+ * when the hand advances. The stored kind and tier survive engine restart.
  */
 export async function processMiniBBJPayout(params: {
   tableId: string;
@@ -839,47 +849,23 @@ export async function processMiniBBJPayout(params: {
 }): Promise<
   | { status: 'paid'; total: number; loser: number; winner: number; perPlayer: number }
   | { status: 'skipped'; reason: string }
+  | { status: 'queued'; reason: string }
 > {
-  const { data: club, error: clubErr } = await supabase
-    .from('clubs')
-    .select('union_id')
-    .eq('id', params.clubId)
-    .maybeSingle();
-  if (clubErr) return { status: 'skipped', reason: `clubs read failed: ${clubErr.message}` };
-  if (!club) return { status: 'skipped', reason: 'club_not_found' };
-
-  let poolQuery = supabase.from('bbj_pools').select('id').eq('status', 'active');
-  poolQuery = club.union_id
-    ? poolQuery.eq('union_id', club.union_id)
-    : poolQuery.eq('club_id', params.clubId);
-  const { data: pool, error: poolErr } = await poolQuery.maybeSingle();
-  if (poolErr) return { status: 'skipped', reason: `bbj_pools read failed: ${poolErr.message}` };
-  if (!pool) return { status: 'skipped', reason: 'no_active_pool' };
-
-  const { data: rows, error: rpcErr } = await supabase.rpc('fn_bbj_mini_payout', {
-    p_pool_id: pool.id,
-    p_table_id: params.tableId,
-    p_hand_number: params.handNumber,
-    p_tier_id: params.tierId,
-    p_loser_user_id: params.loserUserId,
-    p_winner_user_id: params.winnerUserId,
-    p_dealt_in_ids: params.dealtInPlayerIds,
-    p_seated_ids: params.seatedUserIds,
-    p_metadata: params.metadata ?? {},
+  const outcome = await processBBJPayout({
+    ...params,
+    kind: 'mini',
+    loserHandName: String(params.metadata?.loser_hand ?? 'Unknown'),
+    winnerHandName: String(params.metadata?.winner_hand ?? 'Unknown'),
+    payoutTotalPercent: 0, // Main-only field; the Mini RPC receives its tier instead.
   });
-  if (rpcErr) return { status: 'skipped', reason: rpcErr.message };
-
-  const row = Array.isArray(rows) ? rows[0] : rows;
-  if (!row) return { status: 'skipped', reason: 'rpc_returned_nothing' };
-  if (row.already_paid) return { status: 'skipped', reason: 'already_paid' };
-  if (!row.applied) return { status: 'skipped', reason: row.refused || 'refused' };
-
+  if (outcome.status === 'queued') return { status: 'queued', reason: outcome.lastError };
+  if (outcome.status !== 'paid') return {
+    status: 'skipped',
+    reason: outcome.status === 'already_paid' ? 'already_paid' : outcome.reason,
+  };
   return {
-    status: 'paid',
-    total: Number(row.total_payout),
-    loser: Number(row.loser_share),
-    winner: Number(row.winner_share),
-    perPlayer: Number(row.per_player_share),
+    status: 'paid', total: outcome.result.totalPayout, loser: outcome.result.loserShare,
+    winner: outcome.result.winnerShare, perPlayer: outcome.result.perPlayerShare,
   };
 }
 
@@ -944,3 +930,4 @@ export async function recordBBJNearMiss(params: {
     });
   }
 }
+

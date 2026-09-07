@@ -165,3 +165,14 @@ describe('a queued bbj_payout row', () => {
     expect((patches[0] as { last_error: string }).last_error).toContain('missing its parameters');
   });
 });
+
+
+it('preserves the Mini kind, tier and metadata when reconstructing a stored operation', async () => {
+  const original = from.getMockImplementation()!;
+  from.mockImplementation((name: string) => name === 'pending_fee_distributions'
+    ? table({data:[{...QUEUED_ROW,contributions:{...PARAMS,kind:'mini',tierId:'low',metadata:{rule:'near_miss'}}}],error:null}, (p) => patches.push(p))
+    : original(name));
+  processBBJPayout.mockResolvedValue({status:'already_paid'});
+  await reconcilePendingFees();
+  expect(processBBJPayout.mock.calls[0][0]).toMatchObject({kind:'mini',tierId:'low',metadata:{rule:'near_miss'}});
+});

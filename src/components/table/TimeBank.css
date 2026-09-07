@@ -58,7 +58,7 @@
 .time-bank__count {
   font-size: 0.625rem;
   font-weight: 700;
-  color: #ffb800;
+  color: var(--sp-warn);
   margin-left: 2px;
 }
 
@@ -114,7 +114,7 @@
   font-size: 0.75rem;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
-  color: #ffb800;
+  color: var(--sp-warn);
   text-shadow: 0 0 8px rgba(255, 184, 0, 0.3);
   min-width: 24px;
   text-align: right;

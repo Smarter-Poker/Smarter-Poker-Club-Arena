@@ -98,6 +98,8 @@ import { isWithinLobbyWindow, lobbyQueryHorizonIso } from '../utils/tournamentSc
 import {
   loadViewPrefs,
   saveViewPrefs,
+  fetchRemoteViewPrefs,
+  pushRemoteViewPrefs,
   sortForTab,
   EMPTY_VIEW_PREFS,
   type LobbyViewPrefs,
@@ -1646,12 +1648,49 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
     const saved = loadViewPrefs(resolvedClubId);
     setViewPrefs(saved);
-    if (viewPrefsTouched.current) return;
 
-    const tab = saved.tab ?? 'ALL';
-    setGameType(tab);
-    setSortKey(sortForTab(saved, tab));
-    setFavoritesOnly(saved.favoritesOnly);
+    const applyView = (p: LobbyViewPrefs) => {
+      const tab = p.tab ?? 'ALL';
+      setGameType(tab);
+      setSortKey(sortForTab(p, tab));
+      setFavoritesOnly(p.favoritesOnly);
+    };
+
+    if (!viewPrefsTouched.current) applyView(saved);
+
+    /* ── THEN THE DATABASE CORRECTS IT (Dan 2026-09-07, item 5) ─────────────
+       "THEY SHOULD BE SAVED REGARDLESS OF WHICH DEVICE YOU LOG INTO."
+
+       The local read above is the first paint and stays synchronous, so the
+       lobby still opens on the right tab with no flash. This is the second
+       half: the row is the truth, and it arrives a moment later to correct a
+       browser whose cache is behind another device.
+
+       THREE THINGS IT REFUSES TO DO, each of which would be a worse bug than
+       the one being fixed:
+         - it does not apply to a club the player has since navigated away
+           from (`viewPrefsOwner`), the same ordering hazard the writer below
+           documents at length;
+         - it does not overwrite a choice made during the round trip
+           (`viewPrefsTouched`) - a tapped tab must never be undone by a
+           network reply;
+         - it does not touch anything on a null result. Signed out, no row, or
+           a failed read are indistinguishable on purpose, and all three mean
+           "keep what the cache gave you" rather than "reset". */
+    let cancelled = false;
+    void fetchRemoteViewPrefs(resolvedClubId).then((remote) => {
+      if (cancelled || !remote) return;
+      if (viewPrefsOwner.current !== resolvedClubId) return;
+      if (viewPrefsTouched.current) return;
+      setViewPrefs(remote);
+      applyView(remote);
+      // Bring this browser's cache forward so the next cold open is already
+      // right, instead of flashing the stale tab on every visit.
+      saveViewPrefs(resolvedClubId, remote);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [resolvedClubId]);
 
   /**
@@ -1698,6 +1737,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     if (viewPrefsOwner.current !== resolvedClubId) return;
     if (!viewPrefsTouched.current) return;
     saveViewPrefs(resolvedClubId, viewPrefs);
+    /* And to the row, so the next device starts where this one finished.
+       Fire and forget by design (see lobbyViewPrefs): the local write above
+       has already made the choice real on this screen, and a preference must
+       never wait on, or be undone by, the network. Both writes are guarded by
+       the same two conditions, so the remote can no more receive club A's tab
+       under club B's id than the local one can. */
+    pushRemoteViewPrefs(resolvedClubId, viewPrefs);
   }, [resolvedClubId, viewPrefs]);
 
   /** Pick a tab: remember it, and restore that tab's own last sort. */

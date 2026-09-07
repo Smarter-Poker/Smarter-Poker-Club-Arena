@@ -72,8 +72,22 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    *
    * Instance field, not a static, so tests can drive turn ORDER without
    * spending its real-world seconds.
+   *
+   * ── DAN 2026-09-07, REVERSING THE 2026-08-20 DECISION ──────────────────────
+   * "THERE IS A FEW SECOND DELAY AFTER EACH PLAYER MAKES A DECISION ON EVERY
+   * STREET, IT DOESN'T SNAP GO TO THE NEXT PLAYER."
+   *
+   * The 2026-08-20 reasoning above is sound about the ANIMATION and wrong about
+   * the CLOCK. cpSlideIn is a client-side transition: it keeps running whether
+   * or not the engine has already put the next player on the clock. Blocking
+   * the engine for its duration does not make the chip more visible, it just
+   * means nobody can act while it moves. Fast sites overlap the two, and that
+   * overlap is the whole difference between "snappy" and "laggy".
+   *
+   * So the settle beat is gone. The chip still slides, the action label still
+   * paints; the next seat is simply live while it happens.
    */
-  protected actionSettleMs = 650;
+  protected actionSettleMs = 0;
 
   /**
    * Dan 2026-08-20: the beat a freshly dealt board gets before the first
@@ -84,8 +98,15 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * Sized for the worst case, the flop: it lands (ccFlopLand 300ms) and only
    * then fans open (ccFlopFanOpen 420ms, starting ~520ms in) — ~940ms of
    * animation — plus a beat to actually read the board.
+   *
+   * Dan 2026-09-07: same correction as actionSettleMs. The board reveal is a
+   * client animation and does not need the engine to stand still for it; the
+   * first postflop actor almost never acts inside the first half second
+   * anyway. Kept non-zero — unlike an action, a street genuinely does need to
+   * START appearing before someone can act on it — but cut to the landing beat
+   * (300ms) plus a little, not the full fan-open-and-read.
    */
-  protected streetSettleMs = 1400;
+  protected streetSettleMs = 500;
 
   /**
    * Dan 2026-08-20: the beat between hands turning face up at showdown and the
@@ -102,8 +123,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * in config/handCompletionSpec.ts are the same beat seen from two sides: this
    * one delays the ship, that one makes the engine hold the table long enough
    * for the ship to finish. They must move together.
+   *
+   * Dan 2026-09-07 ("GAMES ARE FREEZING UP AFTER EACH AND EVERY HAND"): 3000ms
+   * of enforced staring, on top of a 4500ms completion hold, is most of why
+   * the table reads as frozen between hands. Cut to 1400 in lockstep with
+   * HAND_COMPLETION.SHOWDOWN_READ_BASE_MS, per the paragraph above — the two
+   * are the same beat seen from two sides and a test pins them equal.
    */
-  protected showdownSettleMs = 3000;
+  protected showdownSettleMs = HAND_COMPLETION.SHOWDOWN_READ_BASE_MS;
 
   /** Wall-clock stamp of the last street dealt — see streetSettleMs. */
   protected lastStreetDealtAtMs = 0;
@@ -114,8 +141,13 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * cards on an 80ms stagger with a 320ms flight (~1.2s) — and the blinds fly
    * for another 400ms after it. Both used to still be in the air when the
    * first action began.
+   *
+   * Dan 2026-09-07: cut to 400. UTG has a full turn clock to act in; the deal
+   * and the blinds finish inside the first second of it either way. Waiting
+   * for the animation before STARTING the clock only adds dead air to the top
+   * of every hand.
    */
-  protected handStartSettleMs = 1500;
+  protected handStartSettleMs = 400;
 
   /** Wall-clock stamp of the blinds landing — see handStartSettleMs. */
   protected lastHandStartAtMs = 0;

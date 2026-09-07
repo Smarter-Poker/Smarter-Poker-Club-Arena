@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/cowork-bbj-audit/phase-5-close-the-books - BBJ phase 5 (close the books). fn_bbj_table_share_farming is new; the three bbj_conservation_baseline columns remember the closed historical figures that explain the lifetime gap, so the check reports what it does not know instead of reporting the whole 70,795.11 drift as a deficit",
+  "functions": ["fn_bbj_table_share_farming"],
+  "columns": {
+    "bbj_conservation_baseline": ["lifetime_residue", "pre_ledger_payouts", "opening_seeds"]
+  }
+}

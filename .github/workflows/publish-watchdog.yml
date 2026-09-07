@@ -399,6 +399,14 @@ jobs:
           set -e
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo "check-main-is-green exited ${code}"
+          # 3 is COULD NOT TELL and is neither of the other two. It must not
+          # reach the "close it when main is green again" step below: this
+          # check used to exit 0 on an unreadable answer, so one HTTP 502
+          # closed a standing issue with "Every workflow's latest run on main
+          # is green again." (10.86 rule 1)
+          if [ "$code" = "3" ]; then
+            echo "::warning title=Main is green?::COULD NOT TELL - see the log. No issue was raised and none was closed."
+          fi
 
       - name: Raise the alarm for a silently red main
         if: always() && steps.main-green.outputs.code == '1'

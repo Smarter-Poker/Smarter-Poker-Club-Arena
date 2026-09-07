@@ -275,17 +275,21 @@ function Payload({ uid }: RigProps) {
       {/* 1867 (+1667): four clovers grow from the label's corners - the two
           upper ones first, then the two lower ones ~100 ms later. */}
       {CLOVERS.map(([dx, dy, step], i) => (
-        <g
-          key={i}
-          className="thr-horseshoe__clover"
-          transform={`translate(${dx} ${dy})`}
-          style={
-            {
-              animationDelay: `calc((1.667s + ${(step / 1000).toFixed(2)}s) * var(--animation-speed, 1))`,
-            } as React.CSSProperties
-          }
-        >
-          <Clover />
+        // The corner offset lives on a PLAIN WRAPPER. `thr-horseshoe__clover`
+        // animates `transform: scale()`, and a CSS transform REPLACES an SVG
+        // transform attribute on the same element - so with both here, all
+        // four clovers collapsed onto the origin and stacked.
+        <g key={i} transform={`translate(${dx} ${dy})`}>
+          <g
+            className="thr-horseshoe__clover"
+            style={
+              {
+                animationDelay: `calc((1.667s + ${(step / 1000).toFixed(2)}s) * var(--animation-speed, 1))`,
+              } as React.CSSProperties
+            }
+          >
+            <Clover />
+          </g>
         </g>
       ))}
     </svg>

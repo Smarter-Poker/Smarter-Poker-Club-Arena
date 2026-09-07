@@ -820,6 +820,31 @@ jobs:
             exit 1
           fi
 
+      # NO BAND-AIDS (CLAUDE.md 10.12, Dan 2026-09-07). 10.11 had already said a
+      # detector is not a fix, in writing, and the day after the platform still
+      # paid 558 payouts / 48,146.94 chips in seven days through repair
+      # machinery instead of through the engine - median six hours late, worst
+      # 84 days. Bomb pots alone carry three separate band-aids. A rule with no
+      # reader gets re-derived one incident at a time.
+      - name: Supabase Invariants - No New Band-Aids
+        run: |
+          set -o pipefail
+          echo "## No New Band-Aids (10.12)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-no-new-band-aids.mjs 2>&1 | tee /tmp/bandaids.log; then
+            echo "OK - no migration declares a repair, back-pay, re-drive, catch-up, backfill or heal path." >> $GITHUB_STEP_SUMMARY
+          else
+            code=$?
+            if [ "$code" = "2" ]; then
+              echo "COULD NOT TELL - the diff was unreadable. Not reported as clean." >> $GITHUB_STEP_SUMMARY
+            else
+              echo "This migration ships a band-aid. Fix the line that produced the wrong" >> $GITHUB_STEP_SUMMARY
+              echo "outcome, settle the damage through the platform's own idempotent path," >> $GITHUB_STEP_SUMMARY
+              echo "and pin the cause with a test. See docs/BAND-AIDS-REGISTER.md." >> $GITHUB_STEP_SUMMARY
+            fi
+            exit "$code"
+          fi
+
       - name: Nothing here may deploy to Vercel
         run: |
           # CLAUDE.md 1.3 has said this since March, and until 2026-08-22 two

@@ -1,16 +1,94 @@
-# Operation Table Stakes - current state and next actions (2026-09-06 18:32 CDT)
+# Operation Table Stakes - current state and next actions (2026-09-07 18:15 UTC)
 
 Read this before touching `fn_cash_cluster_tick`, `fn_cash_clusters_tick_all`,
+`fn_cash_seat_move_execute`, `fn_cash_seat_change_plan`,
 `fn_concurrent_game_load`, `get_club_home`, `fn_cash_game_lobby`,
 `server/src/cluster/**`, `HorseFleetManager.ts`, `HorseSessionRotator.ts`,
 `HorseGameLoad.ts`, `HorseTournamentCommitment.ts`, `EquityLoadGovernor.ts`,
 `StableHand.ts`, `tournamentRecovery.ts` or the stale sweep in `GameServer.ts`.
 The plan is `docs/OPORD-1.4-AMENDMENT.md` (section 18 is the lifecycle).
 
-Every number was READ from production between 16:00 and 18:32 CDT on
-2026-09-06. The 10:45 CDT version of this file is superseded in full.
+Every number was READ from production on 2026-09-07 between 16:00 and 18:15
+UTC. The 2026-09-06 18:32 CDT version of this file is superseded in full.
 
 **Do not trust this document. Run section 0 and report what disagrees.**
+
+## THE STATE OF THE FEEDER, IN ONE PLACE (2026-09-07)
+
+Gate 7 holds: **182 live cash tables, all 182 in a cluster, zero orphans.**
+79 games live, 71 dormant. 572 seats occupied, 297 horses at cash.
+
+Nine invariants over every live cluster table are clean: no table over
+capacity, no player holding two chairs in one cluster, no roster row without a
+chair, no chair without a roster row, no duplicate `main_index`, no gap in the
+main sequence, no allowance stamped without a request, no pending move past its
+own window, no unaccounted seat exit. 151 cluster law tests pass.
+
+### Four defects found and fixed today, all applied to production
+
+1. **`20260907164541` a seat change nobody got comes back.**
+   `fn_cash_seat_change_plan` cancelled a request with note `left_table` when
+   the player was no longer in the chair they asked from, and never returned
+   `seat_change_used_at`. `fn_cash_seat_change_cancel` had done exactly that
+   for the player's own cancel since day one ("-- The button comes back."). The
+   usual reason the player is out of that chair is that the CLUSTER moved them.
+   Two players were sitting in a game with the allowance spent and no move
+   delivered; both restored.
+
+2. **`20260907171507` an expired move says what it was waiting for.**
+   Expiry was the only terminal state carrying no reason. It now says which of
+   three things happened. **This is what found defect 3 within four minutes.**
+
+3. **`20260907171945` a move waits as long as the table takes.**
+   `cash_seat_moves.expires_at` defaulted to a flat `now() + 3 minutes`, and a
+   hand was taking **226.7 seconds**. The deadline was shorter than the average
+   hand, so every planned promotion expired and was re-planned and expired
+   again - the whole explanation for feeders holding players while mains had
+   open seats. The window is now four hand-lengths of the table's own cadence,
+   floored at 3 and capped at 15 minutes; the column default is dropped so one
+   authority owns it.
+
+4. **`20260907173251` a disabled game still tells the truth about itself.**
+   Section 7 gated the state write on `g.enabled`, and the selector then admits
+   a game only if it is enabled OR holds a table - so a game disabled while
+   live could never be corrected, and once its last table closed it stopped
+   being ticked at all. Three games sat at `live` with no tables for 38 hours.
+
+Plus `20260907171656`: a bare `WHEN OTHERS` in `fn_cash_seat_move_execute`
+cancelled the player's move for `40P01`/`55P03`/`40001`, all of which mean "try
+again", and the planner's 60-second back-off then charged the player for a
+database hiccup. Those three now leave the move pending.
+
+### What the fixes actually bought, measured honestly
+
+|               | before                 | after                 |
+| ------------- | ---------------------- | --------------------- |
+| moves expired | 80 of 761 = **10.51%** | 63 of 963 = **6.54%** |
+| moves done    | 671 in the hour        | 892 since 17:19 UTC   |
+
+**An earlier reading of "0.00% expired" was wrong** and is corrected here: it
+was taken twenty minutes after the change, before any post-fix move had reached
+its now-longer deadline. The real improvement is a 38% cut, not an elimination.
+
+**61 of the 63 remaining expiries still say `engine_did_not_execute_before_expiry`.**
+
+## THE ONE THING LEFT, AND IT IS NOT A CLUSTER BUG
+
+A hand takes **145 seconds** across live cluster tables (down from 226.7 earlier
+today as other engine work landed; a healthy online table deals one every
+40-60). The `EquityLoadGovernor` is pinned at its **0.2 floor** with event-loop
+p50 of 350-900 ms and `throttledForS` in the hundreds. It is shedding as hard
+as it can and the core is still out of headroom.
+
+That is why 6.5% of moves still miss their boundary, and it is capacity, not
+wiring. The wiring was checked: `governedIterations` is applied at the one choke
+point, the banded-Omaha floor that used to outrank the governor was fixed today,
+the run-out path already uses `EquityWorkerPool`, and the only ungoverned
+`monteCarloEquity` call is a last-resort fallback inside two nested catches.
+
+**The remedy is architectural** - move horse Monte Carlo off the main thread, or
+run fewer tables per process - and it is the next real piece of work. Do not
+look for another wiring bug here; there isn't one.
 
 ## 0. The audit board
 

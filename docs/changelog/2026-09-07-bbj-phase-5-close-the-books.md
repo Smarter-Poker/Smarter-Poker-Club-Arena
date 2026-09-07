@@ -300,3 +300,97 @@ check read it for one hour and stopped.
 - **PR #3404** (the phase-3 threshold panel) still unmerged on `CSS Beat E2E`.
 - **Phase 6 of 6** — the Mini BBJ funded by the backup reserve, with a formula
   that differs between hold'em and PLO. Reserved for last at Dan's instruction.
+
+---
+
+## Deep dive, same day — what the verification pass found
+
+Dan asked for a full verification of phase 5 before phase 6. Everything below
+was read from production, not assumed.
+
+### Verified sound
+
+- **PR #3469 merged** (`5e0b028a`), and all ten phase-5 files confirmed present
+  on `origin/main` by name — the files, not the tick (10.82).
+- **Every migration file reproduces production byte-for-byte.** The body of each
+  function I wrote was hashed from the file and from `pg_proc.prosrc` with
+  identical whitespace normalisation:
+
+  | function                     | file        | production  |
+  | ---------------------------- | ----------- | ----------- |
+  | `fn_bbj_conservation_check`  | `d2abad1b…` | `d2abad1b…` |
+  | `fn_bbj_promo_bank_check`    | `54e93753…` | `54e93753…` |
+  | `fn_bbj_table_share_farming` | `af578657…` | `af578657…` |
+  | `fn_rake_bbj_invariants`     | `f980303d…` | `f980303d…` |
+
+- **The revokes broke no caller.** No application code in Club Arena `src/`,
+  Club Arena `server/`, or the World Hub calls any of the five closed
+  functions; every in-database caller and all four cron jobs run as `postgres`,
+  which owns them. The two RPCs the browser genuinely needs are untouched and
+  still open to `authenticated`: `fn_bbj_pool_for_club` and
+  `fn_bbj_recent_hits`.
+- **The new cadence is live**: `rake-repair-unbanked-hourly` ran at 17:02 and
+  17:17, both succeeded, on `2,17,32,47`. It also vacated `:52`, which
+  `ca-conservation-sweep-hourly` had been sharing.
+- **The grace derivation is live and exact**: I5 and I7 both report
+  `grace_source: cron`, with `grace_until` equal to each healer's real last
+  completion minus ten minutes. `fn_rake_bbj_audit` has raised nothing since.
+- **Every number re-read ~90 minutes later still holds**: gap 73,367.70,
+  baseline 2,572.59, drift 70,795.11, `pre_ledger_payouts` 71,749.31,
+  `paid_without_a_payout_row_since` 0, `unexplained` 45.80 with
+  `moved_since_resolution` 0, `lifetime_healthy` and `healthy` both true; the
+  epoch is nine snapshots further on and still 0.84. Inflow, outflow and
+  balances all moved and the gap did not, which is the identity holding in real
+  time.
+- The new **10.12 band-aid reader passes** on all eight phase-5 migrations.
+
+### One correction to a number in this file
+
+`observed_promo_rate` and `pre_triple_bank_promo_at_observed_rate` are computed
+live and drift as rows arrive: 25.4667% / 10,465.96 when written, 25.4946% /
+10,477.41 ninety minutes later. Quoting them above as fixed figures was wrong;
+they are a running average. The conclusion is unaffected and moves in the safe
+direction — headroom over the 6,705.21 gap grew from 3,760.75 to 3,772.20.
+
+### One real defect, mine, found and fixed
+
+`20260907173449_a_zero_that_only_means_the_healer_got_there_first.sql`
+
+Making `I7_raked_hand_never_banked` wait for its healer ended the false alarms
+and **also blinded the only continuous measurement of how often the live path
+fails.** Measured immediately after:
+
+```
+I7_raked_hand_never_banked        0
+hands a healer actually rescued  27, worth 58.77 chips   (last 2 hours)
+```
+
+A reader of I7 alone would conclude the engine is healthy. It is dropping a
+hand's entire post-hand tail every few minutes. That is the exact shape 10.86
+forbids, built into the check I had just rescued from the same fault — and
+`docs/BAND-AIDS-REGISTER.md` TIER 1 #5 uses I7 returning zero as the criterion
+for deleting `fn_rake_repair_unbanked`.
+
+Fixed by counting the rescue beside the loss, with its own name:
+`I8_rake_banked_late_by_a_healer`, carrying `violations = 0` deliberately so it
+can never restore the hourly alert this phase removed — and the migration
+asserts that zero, because a non-zero there is the same trap one level up.
+
+### Where phase 5 leaves the unbanked rake
+
+Law **10.12** landed fourteen minutes after phase 5 merged and it changes the
+standing of one thing I did: speeding `rake-repair-unbanked` from hourly to
+quarter-hourly is tuning a plaster, not fixing a wound. It is permitted only
+because that job is already registered debt (TIER 1 #5), and the register
+already names the root fix another agent wrote down — _bank the fee in the same
+statement that removes it from the pot_. That is a better answer than either of
+the two options offered above, and it supersedes them.
+
+I did not build it, and 10.12's own last line is why: the cause is not yet
+named. The engine writes `hand_history` and then reaches neither
+`atomic_distribute_rake` nor `logBBJCollection` — no thrown error, no returned
+error, no `pending_fee_distributions` claim, and zero
+`postHandTasks.*_failed` alerts in seven days. Something ends the post-hand
+sequence silently, and I cannot yet say what. Saying so and stopping is what
+the law asks for; I8 is there so the cost of stopping is counted every hour
+until somebody finishes it.

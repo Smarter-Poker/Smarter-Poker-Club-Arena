@@ -76,3 +76,50 @@ the notifications in one pass.
 The other precondition is a drill club: every existing pool is either the union
 pool (refused by rule 3) or above the ceiling (rule 4), which is the guard
 working rather than a gap.
+
+## The deep dive before phase 5, and the defect it found in this phase
+
+### An unindexed foreign key, and it blocked the whole repo
+
+`bbj_drill_arms.club_id` shipped with a foreign key into `public.clubs` and no
+plain index on it. The club-deletability guard refused `TypeScript Check` on
+**every open pull request in the repo** - including a docs-only one of mine and
+other agents' work - because that guard reads the LIVE schema rather than the
+diff, and the table was already on production.
+
+The guard is right, and its own text says why: an unindexed foreign key into
+`clubs` makes `DELETE FROM clubs` a sequential scan, the retirement RPC runs
+inside a PostgREST request cancelled after a few seconds, and when it is
+cancelled a certification fixture and its 100,000 chips stay in Club Arena.
+That has already happened once.
+
+**It is the second time I have done it.** `bbj_threshold_crossings` (phase 3.4)
+did the same thing hours earlier and another agent fixed it in
+`20260907001323`; another agent unblocked this one in `20260907052937`. Twice
+is a pattern and the pattern is mine: I add indexes for the queries I can
+picture and forget the one the DATABASE runs on my behalf - the reverse lookup
+a DELETE on the parent must do before it can remove a row.
+
+`20260907053124` closes the two the guard cannot see, both also mine:
+
+```
+bbj_drill_arms.table_id        -> tables        (phase 4.1)
+bbj_unclaimed_shares.payout_id -> bbj_payouts   (phase 2.3)
+```
+
+The guard only polices foreign keys into `clubs`, so those two would have sat
+there indefinitely. `bbj_drill_arms` already had a UNIQUE index on `table_id`,
+but it is PARTIAL (`WHERE fired_at IS NULL`) and a foreign-key check must find
+the rows the predicate hides.
+
+And rather than fix two columns, the migration **asserts the general rule** for
+all four tables this programme created, so a third one cannot ship without
+failing there first. All six BBJ foreign keys are now followable backwards.
+
+### What else was checked
+
+- Server suite 443 files / 6,346 tests green; the drill law mutation-checked.
+- Production: the drill functions are `service_role`-only, `bbj_drill_arms` is
+  unreachable from a browser, nothing is armed, and no drill has ever fired.
+- The three open pull requests were `mergeable=true` and `blocked` - the block
+  was this guard, on all of them, from one missing index.

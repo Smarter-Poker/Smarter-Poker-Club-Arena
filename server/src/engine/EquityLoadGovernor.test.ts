@@ -9,7 +9,12 @@ import {
   GOVERNOR_FLOOR_ITERATIONS,
   equityGovernor,
 } from './EquityLoadGovernor.js';
-import { simulateEquity, variantInfo, seedFastRandom } from './HorseEval.js';
+import {
+  simulateEquity,
+  variantInfo,
+  seedFastRandom,
+  equitySampleSizeOfLastCall,
+} from './HorseEval.js';
 import type { Card } from '../types.js';
 
 const c = (rank: string, suit: string): Card => ({ rank, suit }) as Card;
@@ -56,24 +61,51 @@ describe('simulateEquity under the governor', () => {
     expect(Math.abs(full - throttled)).toBeLessThan(0.08);
   });
 
-  it('is measurably cheaper when throttled (the whole point)', () => {
+  /**
+   * THIS USED TO BE A STOPWATCH, AND THE STOPWATCH WAS THE BUG.
+   *
+   * It timed 20 full-precision samples against 20 throttled ones and required
+   * the second under 60% of the first. On 2026-09-07 the measured ratio on a
+   * 16-core runner shared by twelve jobs was 0.69, and it failed the entire
+   * `Server Engine` suite on a branch that had not touched the governor.
+   *
+   * Best-of-three and a warm-up pass had ALREADY been added and did not save
+   * it - 10.86 rule 4, the fix that leaves the same trap one level up. Per-call
+   * fixed cost (deck construction, allocation, the return path) dominates a
+   * 90-iteration sample, so the achievable ratio sits just under the threshold
+   * and moves with whoever else is on the box.
+   *
+   * The quantity this test is about was never milliseconds. It is whether the
+   * one function that spends the core still asks the governor how much it may
+   * spend, and `equitySampleSizeOfLastCall()` answers that exactly, in
+   * integers, at any load. A governor that stops being consulted makes both
+   * numbers 450 and fails this instantly; the old test needed a quiet runner
+   * to notice.
+   */
+  it('spends the sample the governor allows, not the one it was asked for', () => {
     const vi = variantInfo('plo');
     const hero = [c('A', 's'), c('K', 's'), c('Q', 'h'), c('J', 'h')];
-    const time = (scale: number) => {
+    const sampleAt = (scale: number) => {
       equityGovernor.__setScaleForTest(scale);
-      const t0 = performance.now();
-      for (let i = 0; i < 20; i++) simulateEquity(hero, [], 3, vi, 450);
-      return performance.now() - t0;
+      simulateEquity(hero, [], 3, vi, 450);
+      return equitySampleSizeOfLastCall();
     };
-    // Compare the fastest of three samples. A single wall-clock sample can
-    // include an unrelated scheduler pause, especially while several engine
-    // suites share a runner. The fastest sample still measures the actual
-    // work performed and keeps the assertion sensitive to a lost governor.
-    const fastest = (scale: number) => Math.min(time(scale), time(scale), time(scale));
-    time(1); // warm the evaluator before either measured sample set
-    const full = fastest(1);
-    const throttled = fastest(0.2);
-    expect(throttled).toBeLessThan(full * 0.6);
+
+    expect(sampleAt(1)).toBe(450);
+    expect(sampleAt(0.6)).toBe(270);
+    // 450 * 0.2 = 90, above the 60-iteration floor, so the floor does not bind
+    // here - which is the point: this is the scale being obeyed, not clamped.
+    expect(sampleAt(0.2)).toBe(90);
+    expect(sampleAt(0.2)).toBeLessThan(sampleAt(1) * 0.25);
+  });
+
+  it('never spends below the floor, however hard the loop is being hit', () => {
+    const vi = variantInfo('nlh');
+    const hero = [c('A', 's'), c('A', 'h')];
+    equityGovernor.__setScaleForTest(0.2);
+    simulateEquity(hero, [], 1, vi, 220);
+    // 220 * 0.2 = 44. A horse that samples 44 hands is not playing poker.
+    expect(equitySampleSizeOfLastCall()).toBe(GOVERNOR_FLOOR_ITERATIONS);
   });
 
   it('reports itself for /health', () => {

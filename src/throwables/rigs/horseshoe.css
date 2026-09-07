@@ -22,13 +22,6 @@
  * born-and-dies idiom.
  */
 
-.thr-horseshoe {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
 /* == THE BOB: a position-only wrapper around the horseshoe artwork, 400-1000
    (+200..+800). Rises 12 px (40 units) then settles back to where it landed. */
 .thr-horseshoe__bob {

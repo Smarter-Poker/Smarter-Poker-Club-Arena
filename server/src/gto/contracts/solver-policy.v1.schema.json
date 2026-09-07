@@ -163,7 +163,7 @@
               },
               "auditedAt": {
                 "type": "string",
-                "minLength": 1
+                "format": "date-time"
               },
               "provenanceComplete": {
                 "const": true
@@ -190,18 +190,59 @@
               "completeKey": {
                 "const": true
               },
+              "exactMatchDimensions": {
+                "const": [
+                  "all"
+                ]
+              },
               "approximatedDimensions": {
+                "type": "array",
+                "maxItems": 0
+              },
+              "exclusions": {
                 "type": "array",
                 "maxItems": 0
               }
             },
             "required": [
               "completeKey",
-              "approximatedDimensions"
+              "exactMatchDimensions",
+              "approximatedDimensions",
+              "exclusions"
+            ]
+          },
+          "node": {
+            "properties": {
+              "semantics": {
+                "enum": [
+                  "check_or_bet",
+                  "facing_wager",
+                  "preflop_unopened",
+                  "preflop_facing_wager"
+                ]
+              },
+              "potBb": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "facingBetBb": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "semantics",
+              "potBb",
+              "facingBetBb"
             ]
           },
           "fallbackReason": {
             "const": null
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/$defs/exactAction"
+            }
           }
         }
       }
@@ -537,6 +578,17 @@
         "null"
       ]
     },
+    "nonNegativeNullableNumber": {
+      "oneOf": [
+        {
+          "type": "number",
+          "minimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "policyKind": {
       "enum": [
         "exact",
@@ -611,13 +663,14 @@
           "type": "string"
         },
         "stackChips": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "stackBb": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "committedChips": {
-          "type": "number"
+          "type": "number",
+          "minimum": 0
         },
         "active": {
           "type": "boolean"
@@ -640,16 +693,18 @@
       ],
       "properties": {
         "smallBlind": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "bigBlind": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "ante": {
-          "type": "number"
+          "type": "number",
+          "minimum": 0
         },
         "bigBlindAnte": {
-          "type": "number"
+          "type": "number",
+          "minimum": 0
         },
         "straddles": {
           "type": "array",
@@ -665,7 +720,7 @@
                 "minimum": 0
               },
               "amount": {
-                "$ref": "#/$defs/nullableNumber"
+                "$ref": "#/$defs/nonNegativeNullableNumber"
               }
             },
             "additionalProperties": false
@@ -688,13 +743,13 @@
       ],
       "properties": {
         "percent": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "capChips": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "capBb": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "noFlopNoDrop": {
           "type": "boolean"
@@ -726,10 +781,10 @@
           ]
         },
         "playersRemaining": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "entrants": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "handForHand": {
           "type": "boolean"
@@ -753,7 +808,7 @@
           "minimum": 1
         },
         "amount": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "type": {
           "type": "string"
@@ -792,10 +847,10 @@
           "type": "string"
         },
         "amountChips": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "amountBb": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "allIn": {
           "type": "boolean"
@@ -836,13 +891,13 @@
           "type": "string"
         },
         "minChips": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "maxChips": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "exactChips": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "allIn": {
           "type": "boolean"
@@ -863,7 +918,7 @@
           "type": "string"
         },
         "amountChips": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "eligibleSeats": {
           "type": "array",
@@ -1032,10 +1087,10 @@
           "type": "string"
         },
         "potBb": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "facingBetBb": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         }
       },
       "additionalProperties": false
@@ -1061,13 +1116,13 @@
           ]
         },
         "chips": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "bigBlinds": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "potFraction": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "exact": {
           "type": "boolean"
@@ -1126,6 +1181,180 @@
         }
       },
       "additionalProperties": false
+    },
+    "exactAction": {
+      "allOf": [
+        {
+          "properties": {
+            "legal": {
+              "const": true
+            }
+          },
+          "required": [
+            "legal"
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "family": {
+                  "enum": [
+                    "fold",
+                    "check",
+                    "call"
+                  ]
+                },
+                "size": {
+                  "properties": {
+                    "unit": {
+                      "const": "none"
+                    },
+                    "chips": {
+                      "const": null
+                    },
+                    "bigBlinds": {
+                      "const": null
+                    },
+                    "potFraction": {
+                      "const": null
+                    },
+                    "exact": {
+                      "const": false
+                    }
+                  },
+                  "required": [
+                    "unit",
+                    "chips",
+                    "bigBlinds",
+                    "potFraction",
+                    "exact"
+                  ]
+                }
+              },
+              "required": [
+                "family",
+                "size"
+              ]
+            },
+            {
+              "properties": {
+                "family": {
+                  "enum": [
+                    "bet",
+                    "raise"
+                  ]
+                },
+                "size": {
+                  "properties": {
+                    "exact": {
+                      "const": true
+                    },
+                    "chips": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "bigBlinds": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "potFraction": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "unit",
+                    "chips",
+                    "bigBlinds",
+                    "potFraction",
+                    "exact"
+                  ],
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "unit": {
+                          "const": "chips"
+                        },
+                        "chips": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "unit": {
+                          "const": "big_blinds"
+                        },
+                        "bigBlinds": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "unit": {
+                          "const": "pot_fraction"
+                        },
+                        "potFraction": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "family",
+                "size"
+              ]
+            },
+            {
+              "properties": {
+                "family": {
+                  "const": "all_in"
+                },
+                "size": {
+                  "properties": {
+                    "unit": {
+                      "const": "all_in"
+                    },
+                    "chips": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "bigBlinds": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "potFraction": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "exact": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "unit",
+                    "chips",
+                    "bigBlinds",
+                    "potFraction",
+                    "exact"
+                  ]
+                }
+              },
+              "required": [
+                "family",
+                "size"
+              ]
+            }
+          ]
+        }
+      ]
     },
     "evEnvelope": {
       "type": "object",
@@ -1427,13 +1656,13 @@
           ]
         },
         "chips": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "bigBlinds": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "potFraction": {
-          "$ref": "#/$defs/nullableNumber"
+          "$ref": "#/$defs/nonNegativeNullableNumber"
         },
         "exact": {
           "type": "boolean"

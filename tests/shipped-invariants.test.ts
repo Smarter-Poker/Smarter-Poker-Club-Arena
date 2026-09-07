@@ -482,6 +482,16 @@ describe('shipped functionality is still here', () => {
     expect(sql.includes('SET main_balance = v_keep_main, backup_balance = v_keep_backup')).toBe(true);
   });
 
+  it('union completion and conservation require verified complete results', () => {
+    const sql = read('supabase/migrations/20260907205211_union_completion_requires_every_stage_and_exact_conservation.sql');
+    expect(sql.includes("r.round_no=4")).toBe(true);
+    expect(sql.includes("r.detail->>'success'='true'")).toBe(true);
+    expect(sql.includes("jsonb_build_object('latest_attempt',EXCLUDED.detail)")).toBe(true);
+    expect(sql.includes('v_rake <> v_paid+v_retained')).toBe(true);
+    expect(sql.includes('CONSERVATION_UNVERIFIED')).toBe(true);
+    expect(sql.includes("c.state='final'")).toBe(true);
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.
@@ -493,6 +503,7 @@ describe('shipped functionality is still here', () => {
     }
   });
 });
+
 
 
 

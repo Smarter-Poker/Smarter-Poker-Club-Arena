@@ -142,12 +142,7 @@ function Mug({ uid, k }: { uid: string; k: string }) {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-beer thr-beer--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <Mug uid={uid} k="p" />
     </svg>
   );
@@ -170,12 +165,7 @@ const DROPLETS: ReadonlyArray<readonly [number, number, number, number]> = [
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-beer thr-beer--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* MUG 1: the one that flew. Lands right of centre, slides right, swings
           in for the clink, eases back to the right. */}
       <g className="thr-beer__m1">

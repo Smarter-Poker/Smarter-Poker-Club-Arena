@@ -417,3 +417,70 @@ rake, or "unattributed stays with the union" is doing far more work than anyone
 intended. That decides what member clubs are owed, so it is not an agent's call.
 
 Nothing here was changed. It is measured, recorded, and handed over.
+
+---
+
+# Measured against how real club unions do this
+
+Migration `20260907054009_the_stop_loss_is_enforced_not_just_reported`.
+
+Researched against the published mechanics of PPPoker, PokerBros, ClubGG and
+Upoker unions, then compared line by line with what is built here.
+
+## What already matches, and matches well
+
+| industry practice                                         | here                                                                                                                                                      |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| weekly settlement cycle, clubs settle once a week         | `fn_union_settlement_cascade_due`, weekly period                                                                                                          |
+| union keeps a fee out of rake, rest paid back to the club | `union_fee_kept` / `rakeback_due`, `club_commission_rate` default 0.90                                                                                    |
+| agent and sub-agent commission tiers                      | `agents`, `sub_agents`, `agent_commissions`, round 2                                                                                                      |
+| bad-beat contribution from pots, paid from a pool         | `bbj_*`, `fn_union_fund_bbj_pool`, `fn_union_bbj_pool_payout`                                                                                             |
+| presettlement during the week, offsetting the balance     | `union_presettlements`, offsets exposure 1:1                                                                                                              |
+| **"settle by end of Wednesday in the union's time zone"** | `due_at = period_end + 3 days` = **midnight Pacific Wednesday night**. Exact match, and it only became an exact match once the boundary moved to Pacific. |
+| security deposit sets the loss limit                      | `union_club_terms.security_deposit`, `stop_loss_limit`                                                                                                    |
+| stop loss / stop win thresholds per club                  | `stop_loss_limit`, `stakes_cap_bb`                                                                                                                        |
+| presettlement raises the loss limit 1:1                   | `exposure = GREATEST(0, -settle_net - presettled)`                                                                                                        |
+
+The domain model is genuinely there. This is not a system missing the concepts.
+
+## What did not match
+
+**1. A breached stop loss did nothing.** `fn_union_club_exposure` computed
+`headroom` and `breached` correctly, and `union_club_terms` has `status`,
+`suspended_at` and `suspended_reason` ready for it - but **nothing in the
+database ever wrote them**. In a real union a club that passes its loss limit is
+suspended until it settles. `fn_union_enforce_stop_loss` now does that, and
+restores the club once exposure is back inside, because a suspension with no
+path back is the same trap as a lock with no release. It only lifts a suspension
+it applied itself; a manual or `closed` one is left alone. It runs from the
+existing hourly `union-integrity-sweep` rather than a new schedule, because
+World Hub CLAUDE.md 11.3 forbids new pg_cron for application logic.
+
+**2. The same presettlement window bug, in a second place.**
+`fn_union_club_exposure` filtered unapplied presettlements on
+`received_at >= v_start`, exactly as `fn_union_club_invoice` did. Fixing one and
+not the other was my miss earlier tonight. Both now close out on
+`applied_settlement_id` only.
+
+## The gap that is not code
+
+**`union_club_terms` has ZERO rows.** Neither Club JAQK nor SHARK CLUB has a
+security deposit or a stop-loss limit, so `stop_loss_limit IS NULL`, `breached`
+is hardcoded `false`, and **the union is extending unlimited credit to both
+clubs**. That is the single largest divergence from how these unions operate,
+and it is not a bug - it is a commercial decision nobody has made. Under
+CLAUDE.md 10.9 the numbers are Dan's, so the machinery is wired and armed and
+does nothing until he sets them:
+
+    INSERT INTO union_club_terms (union_id, club_id, security_deposit, stop_loss_limit)
+    VALUES ('fade0000-0000-0000-0000-000000000001', '<club_id>', <deposit>, <limit>);
+
+## Open question for Dan: chip value
+
+Every one of those platforms gives a club a **chip value** (CV) - 1.00, 0.90 -
+and settlement happens in currency at that rate. There is **no chip-value or
+currency column anywhere** in this schema: `settlement_invoices`, `union_wallets`
+and `union_club_terms` are all pure chips. If clubs settle in chips only, nothing
+is missing. If any club settles in fiat at a CV, then every invoice is quoting a
+number in the wrong unit and the conversion is being done off-platform by hand.
+Not guessed at, not invented - asked.

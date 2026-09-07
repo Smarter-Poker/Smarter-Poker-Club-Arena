@@ -55,3 +55,11 @@ First apply attempt of fix 1 failed cleanly on `cannot remove parameter defaults
 ## 6. World Hub
 
 `fix/diamond-review-refund-path` (pushed 23:12 UTC): `applyDiamondRefund` calls `fn_diamond_purchase_refund` and falls back to the old name only on PGRST202 / 42883; both correlators test the session type inside the predicate; `p_evidence_due_by` travels with the dispute. `node --check` clean.
+
+## 7. After the rulings migration (22:27 UTC)
+
+`fn_ca_diamond_trial_balance(now() - 70 min)`: player_diamonds delta 0, register 0, difference 0; fixture_accounts 234,480, difference 0; register identity 0; suspense 0. Budgets 2026-09: daily_challenges 0 of 100,000; catalog_v2 1,150 of 50,000; daily_missions 2,805 of 30,000; signup 500 of 15,000 (a data correction restated signup from 674,000: the first restatement had attributed the seed rows of already-deleted fixture accounts to players, because a deleted account cannot be recognised as a fixture; recorded here, a counter and not a balance). The pending purchase `beb4725e` is `expired`.
+
+DR12 is doing its job: seven `claim_daily_challenges_serialized_body` rows (another agent's Daily Missions writer) were classified by the trigger as `promotional / promo_budget:daily_challenges` and the writer named. That writer should set the two columns itself (DR3); the classifier is the net, not the fix.
+
+Known residue: the register carries the certification harness's direct writes as fixture movement (info), and a fixture account that is zeroed by the harness and then deleted leaves its register +500 against a balance of 0 until the deletion burn (the 09-05 body burns the greater of balance and register attribution, which covers it); the register row of the trial balance is the check.

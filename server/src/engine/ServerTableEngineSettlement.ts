@@ -17,6 +17,8 @@ import { integrityFeed } from '../integrity/IntegrityFeed.js';
 import type { HandHistoryRow } from '../integrity/HandEventAdapter.js';
 import { computeSevenDeuceBounties } from './SevenDeuceBounty.js';
 import { getFullRakeConfig, detectBBJHit, detectBBJNearMiss } from '../config/RakeConfig.js';
+import type { BBJDetectionResult } from '../config/RakeConfig.js';
+import { maybeArmed } from '../services/supabase/bbjDrillRegistry.js';
 import {
   loadTable,
   syncStacks,
@@ -279,6 +281,86 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    * so the worst case is a stale label on a long-running table, never a
    * mischarge.
    */
+  /**
+   * Claim a single armed Bad Beat Jackpot drill for this hand, and turn it
+   * into a detection result built from the REAL showdown (BBJ phase 4.1).
+   *
+   * Returns null unless an operator armed this exact table and the arm has not
+   * already fired. The claim is one atomic UPDATE in the database, so a
+   * forgotten arm fires once and two engines racing the same hand cannot both
+   * win it.
+   *
+   * NOTHING HERE CHOOSES A CARD. The loser and the winner are whoever actually
+   * sat down and actually showed down, the board is the board that was dealt,
+   * and the pot is the pot that was played for. Only the verdict is injected.
+   */
+  private async claimBBJDrill(
+    dealtInPlayerIds: string[],
+    variant: string,
+    handNumber: number
+  ): Promise<BBJDetectionResult | null> {
+    /* Refuse before claiming, never after. An arm burned on a hand that cannot
+       produce a payout is an operator arming again and wondering why. */
+    if (this.currentHandShowdownResults.length < 2) return null;
+    if (this.currentHandWinnerIds.length < 1) return null;
+
+    /* ASK THE CHEAP QUESTION FIRST. Without this the claim RPC ran on every
+       contested showdown - 137,923 round trips in twenty-four hours, measured
+       on production, every one of them answering "no" - on an engine that is
+       one core. The registry is one query a minute per process; this is a Set
+       lookup. It can only ever DELAY a drill, never cause one: the atomic
+       claim below is still the only thing that fires one. */
+    if (!(await maybeArmed(this.tableId))) return null;
+
+    const winnerId = this.currentHandWinnerIds[0];
+    const winner = this.currentHandShowdownResults.find((r) => r.userId === winnerId);
+    const loser = this.currentHandShowdownResults.find((r) => r.userId !== winnerId);
+    if (!winner || !loser) return null;
+
+    try {
+      const { data, error } = await supabase.rpc('fn_bbj_claim_drill', {
+        p_table_id: this.tableId,
+        p_hand_number: handNumber,
+      });
+      if (error) {
+        /* A drill is never worth failing a hand over. If the database cannot
+           be asked, the hand settles exactly as it would have. */
+        reportError(error, 'ServerTableEngine.bbj_drill_claim_failed', { tableId: this.tableId });
+        return null;
+      }
+      const claim = (Array.isArray(data) ? data[0] : data) as { claimed?: boolean } | null;
+      if (!claim?.claimed) return null;
+
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] *** BBJ DRILL FIRED *** hand #${handNumber}. ` +
+          `This is a drill, not a real bad beat. The chips are real.`
+      );
+      EngineMetrics.bbjDrillsFiredTotal.inc(1, { table_id: this.tableId });
+
+      return {
+        hit: true,
+        loserUserId: loser.userId,
+        loserHand: {
+          ranking: loser.handRanking,
+          name: loser.handName,
+          kickers: loser.kickers ?? [],
+        },
+        winnerUserId: winner.userId,
+        winnerHand: {
+          ranking: winner.handRanking,
+          name: winner.handName,
+          kickers: winner.kickers ?? [],
+        },
+        dealtInPlayerIds,
+        variant,
+        qualifyingHandLabel: 'Drill',
+      };
+    } catch (e) {
+      reportError(e, 'ServerTableEngine.bbj_drill_claim_threw', { tableId: this.tableId });
+      return null;
+    }
+  }
+
   protected async getRabbitHuntCost(): Promise<number> {
     if (this.rabbitHuntCostCache != null) return this.rabbitHuntCostCache;
     try {
@@ -927,7 +1009,38 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
       );
 
-      if (bbjResult.hit) {
+      /* ── THE DRILL: ARM A TABLE, NEVER A DECK (BBJ phase 4.1) ─────────────
+         A jackpot fires about once a fortnight - the last real one was
+         2026-08-19 - so everything downstream of this line has never been
+         watched end to end on live infrastructure. The drill lets an operator
+         see it in minutes.
+
+         WHAT IT INJECTS IS THIS RESULT, NOT THE CARDS. The plan called for a
+         rigged deck and it should not exist: `detectBBJHit` is a pure function
+         with 32 tests over every qualifying rule, every variant and every
+         rejection reason, so dealing one lucky hand would prove a single case
+         those already prove - in exchange for putting code in a real-money
+         engine that can choose a player's hole cards. The deck stays
+         crypto-shuffled, unseeded and uninjectable.
+
+         So the showdown below is REAL: real players, real board, real pot. The
+         only synthetic thing is the verdict. Everything after it - the payout
+         RPC, the recipients, the notifications, the hub events, the ledger -
+         then runs for real, because it IS real. A drill produces a genuine
+         jackpot at a drill club, so nothing in the history is fabricated.
+
+         THE ENGINE NEVER DECIDES. The arm lives in the database and is claimed
+         atomically, so there is no flag a deploy can turn on and none it can
+         leave on. `fn_bbj_arm_drill` refuses a union pool outright (that is
+         where the production jackpot lives) and any pool over 1,000.00. */
+      let drillResult: typeof bbjResult | null = null;
+      if (!bbjResult.hit) {
+        drillResult = await this.claimBBJDrill(dealtInPlayerIds, variant, this.handCount);
+      }
+      const effectiveBbjResult = drillResult ?? bbjResult;
+
+      if (effectiveBbjResult.hit) {
+        const bbjResult = effectiveBbjResult;
         console.log(
           `[ServerTableEngine:${this.tableId}] *** BBJ HIT! *** ` +
             `Loser: ${bbjResult.loserUserId} (${bbjResult.loserHand?.name}), ` +

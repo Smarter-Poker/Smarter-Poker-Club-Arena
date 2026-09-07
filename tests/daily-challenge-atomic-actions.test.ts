@@ -55,13 +55,15 @@ describe('Daily Missions atomic action receipts', () => {
     expect(migration).toContain("v_stack ~ 'function (public\\.)?claim_daily_challenges\\('");
   });
 
-  it('wires both single and bulk claims to one RPC and removes success reloads', () => {
+  it('wires both single and bulk claims to one RPC and installs only revision-fenced projections', () => {
     expect(service).toContain("supabase.rpc('claim_daily_challenges'");
     expect(service).toContain('p_request_id: requestId');
     expect(service).toMatch(/this\.mapServerChallenge\(\s*result\.challenge,\s*userId/);
     expect(page).toContain('dailyChallengeService.claimChallenges(userId, [challenge.id])');
     expect(page).toContain('dailyChallengeService.claimChallenges(userId, readyIds)');
-    expect(page).toContain('setRewardVault(paid.vault)');
+    expect(page).toContain('installDashboardProjection(paid.dashboard)');
+    expect(page).not.toContain('setRewardVault(paid.vault)');
+    expect(page).not.toContain('setDiamondBalance(paid.diamondBalance)');
     expect(page).not.toContain('for (const c of ready)');
     expect(page).not.toContain('await loadChallenges(userId, false);');
   });
@@ -81,9 +83,8 @@ describe('Daily Missions atomic action receipts', () => {
     const freezeSuccessEnd = page.indexOf('} else {', freezeSuccessStart);
     const freezeSuccess = page.slice(freezeSuccessStart, freezeSuccessEnd);
     expect(freezeSuccess).toContain('mutationEpochRef.current += 1');
-    expect(freezeSuccess.indexOf('mutationEpochRef.current += 1')).toBeLessThan(
-      freezeSuccess.indexOf('setDiamondBalance(res.diamondBalance)')
-    );
+    expect(freezeSuccess).toContain("await loadChallenges(userId, 'silent')");
+    expect(freezeSuccess).not.toContain('setDiamondBalance(res.diamondBalance)');
 
     const rerollSuccess = page.indexOf(
       'setConfirmingRerollId(null)',
@@ -116,6 +117,22 @@ describe('Daily Missions atomic action receipts', () => {
       'if (!confirmingChallenge || confirmingChallenge.completed || confirmingChallenge.claimed)'
     );
     expect(page).toContain('setConfirmingRerollId(null)');
-    expect(page).toContain('nextFreezeIn: freezesAvailable >= 3 ? null : prev.nextFreezeIn');
+    expect(page).toContain("await loadChallenges(userId, 'silent')");
+    expect(page).toContain('dashboard.revision < dashboardRevisionRef.current');
+    expect(page).not.toContain('nextFreezeIn: freezesAvailable >= 3 ? null : prev.nextFreezeIn');
+  });
+
+  it('disables unaffordable rerolls while retaining the transaction-time balance guard', () => {
+    expect(page).toContain('canAffordReroll={diamondBalance >= DAILY_MISSION_REROLL_COST}');
+    expect(page).toContain('rerollConfirmationOpen || !canAffordReroll');
+    expect(page).toContain('disabled={rerolling || economyBusy || !canAffordReroll}');
+    expect(page).toContain('`Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`');
+    expect(page).toContain('if (diamondBalance < DAILY_MISSION_REROLL_COST)');
+    const insufficientGuard = page.slice(
+      page.indexOf('if (diamondBalance < DAILY_MISSION_REROLL_COST)'),
+      page.indexOf('economyGuardRef.current = true', page.indexOf('handleReroll'))
+    );
+    expect(insufficientGuard).toContain('setConfirmingRerollId(null)');
+    expect(insufficientGuard).toContain('Not Enough Diamonds');
   });
 });

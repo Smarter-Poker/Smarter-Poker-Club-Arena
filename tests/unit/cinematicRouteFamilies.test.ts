@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import sharp from 'sharp';
 
 const REWARD_PAGES = [
   'src/pages/PlayerWalletPage.tsx',
@@ -50,15 +51,33 @@ describe('cinematic retained route families', () => {
     const source = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
     expect(source).toContain('data-arena-surface="missions"');
     expect(source).toContain('className={styles.hero}');
-    expect(source).toContain('Club Arena / Private Challenge Vault');
+    expect(source).toContain('Club Arena / Daily Challenge Vault');
+    expect(source).toContain('Club Arena / Weekly Challenge Circuit');
+    expect(source).toContain('Club Arena / Monthly High-Roller Ledger');
     expect(source).toContain("'images/challenges/daily-missions-casino-v2.webp'");
     expect(source).toContain("'images/challenges/daily-missions-casino-v2-mobile.webp'");
     expect(source).toContain("'images/challenges/daily-missions-reward-pedestal-v1.webp'");
+    expect(source).toContain("'images/challenges/daily-missions-streak-freeze-v1.webp'");
+    expect(source).toContain("'images/challenges/daily-missions-diamond-96-v1.webp'");
     expect(existsSync('public/images/challenges/daily-missions-casino-v2.webp')).toBe(true);
     expect(existsSync('public/images/challenges/daily-missions-casino-v2-mobile.webp')).toBe(true);
     expect(existsSync('public/images/challenges/daily-missions-reward-pedestal-v1.webp')).toBe(
       true
     );
+    expect(existsSync('public/images/challenges/daily-missions-streak-freeze-v1.webp')).toBe(true);
+    expect(existsSync('public/images/challenges/daily-missions-diamond-96-v1.webp')).toBe(true);
+  });
+
+  it('ships the transparent Daily Missions instrument artwork at its certified dimensions', async () => {
+    const diamond = await sharp(
+      'public/images/challenges/daily-missions-diamond-96-v1.webp'
+    ).metadata();
+    const freeze = await sharp(
+      'public/images/challenges/daily-missions-streak-freeze-v1.webp'
+    ).metadata();
+
+    expect(diamond).toMatchObject({ width: 96, height: 96, hasAlpha: true });
+    expect(freeze).toMatchObject({ width: 720, height: 720, hasAlpha: true });
   });
 
   it.each(UNION_PAGES)('%s uses the Union Network visual anchor', (path) => {
@@ -84,6 +103,8 @@ describe('cinematic retained route families', () => {
       'public/images/challenges/daily-missions-casino-v2.webp',
       'public/images/challenges/daily-missions-casino-v2-mobile.webp',
       'public/images/challenges/daily-missions-reward-pedestal-v1.webp',
+      'public/images/challenges/daily-missions-streak-freeze-v1.webp',
+      'public/images/challenges/daily-missions-diamond-96-v1.webp',
       'public/images/bg-vault.jpg',
     ]) {
       expect(existsSync(path), `${path} must ship with the build`).toBe(true);

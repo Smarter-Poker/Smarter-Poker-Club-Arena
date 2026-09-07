@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * ♠ STREAK FIRE — Styles (Phase 4: Engagement Engine)
+ * ♠ STREAK FIRE: Styles (Phase 4: Engagement Engine)
  * 5-tier animated fire with progressive intensity
  * ═══════════════════════════════════════════════════════════════════════════════
  */
@@ -275,4 +275,14 @@
 .streak-supernova .streak-count {
   color: #f48fb1;
   text-shadow: 0 0 8px rgba(233, 30, 99, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streak-fire,
+  .streak-fire *,
+  .streak-fire *::before,
+  .streak-fire *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

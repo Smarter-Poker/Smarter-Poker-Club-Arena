@@ -2,7 +2,8 @@
 
 2026-09-07, 21:20 - 22:15 UTC. Branch `fix/one-source-of-truth-for-rake`.
 Three migrations applied and byte-matched to production
-(`20260907214446`, `20260907215753`, `20260907220528`), one engine change,
+(`20260907214446`, `20260907215753`, `20260907220528`, plus `20260907221210`
+restating two grants for the branch gate), one engine change,
 two law tests. Every figure below was read from production at the time
 stated; nothing is rounded for narrative.
 

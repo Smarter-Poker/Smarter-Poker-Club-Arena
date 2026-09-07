@@ -257,3 +257,67 @@ was already wrong, and nothing would have said so.
 
 **The lesson worth keeping:** a subscriber count taken from one repo is not a
 subscriber count. The estate has seven.
+
+## The deep dive before phase 4, and what it found in this phase
+
+### 1. A club setting no club could set
+
+Phase 3.4 shipped the whole sending half - the table, the five-minute sender,
+the crossing ledger that makes it say a thing once, all of it probed on
+production - and **nothing in `src/` or `server/src/` referenced either new
+table**. There was no way for an operator to set a number. The sender ran every
+five minutes over an empty list and reported success, which is exactly the
+shape of a green check that has earned nothing.
+
+The argument against shipping it that way is already written on the page it
+belongs to. The BBJ Rake switch that used to sit in the same section wrote a
+column NOTHING read, so an owner could turn it off and every table went on
+taking the rake; it was removed on 2026-09-05 with the note that "showing it
+did the one thing worse than not offering the control, which is to say it had
+been used." **A control with no reader and a reader with no control are the
+same defect.** `src/components/bbj/BBJThresholdPanel.tsx` closes it.
+
+Deliberately NOT inside the `{!inUnion && ...}` block the rake settings live
+in: a union banks one jackpot for all of its clubs, but each club notifies its
+OWN members, so a union club still has a real decision here. It shows the live
+jackpot beside the input, from the same shared feed as every other surface,
+because picking a threshold without seeing where the jackpot is makes the
+number a guess.
+
+### 2. The grants did not match their own migration header
+
+`20260906234056` says "THE GRANTS ARE NAMED, not inherited" and named four for
+`authenticated`. Read back on production, `authenticated` also held REFERENCES
+and TRIGGER - because the REVOKE named `PUBLIC, anon` and not the role it was
+about to grant to, and Supabase's default privileges had already granted it
+ALL.
+
+Not exploitable (both extras additionally need CREATE on the schema, which
+`authenticated` does not have) and closed anyway in `20260907040315`. Worth
+naming as a pattern rather than an accident: **this is the second time in two
+phases** - phase 2 shipped the same thing on `bbj_unclaimed_shares`. On this
+database a migration that wants a narrow ACL must REVOKE from every role it
+then grants to, not only from the ones it is shutting out.
+
+### 3. Copy that had not been through the Title Case rule
+
+`check-title-case` refused the new panel's prose (CLAUDE.md 5.7). Fixed with
+the script's own `--fix`, and the test pins moved with it.
+
+### What was checked and found sound
+
+- `BBJHitAnnouncer` is mounted by `PersistentTableLayer`, which sits beside
+  `<Routes>` in `App.tsx` and is therefore live on **every** page including the
+  lobby - so the phase 3.1 path (lobby subscribes -> `bbj_winners` INSERT ->
+  `BBJ_HIT_GLOBAL` -> the card) is wired end to end, not only at a table.
+- Server suite 442 files / 6,346 tests green; client suite 1,110 files green.
+- `origin/main` carries zero `table: 'bbj_pools'` bindings in either repo.
+- The five-minute sender's last production run: `succeeded`.
+
+### Recorded for phase 5, not fixed here
+
+`bbj_pools.pool_amount` still has one writer (`fn_union_promo_send`) and no
+reader worth having. It is the column that made the World Hub say the jackpot
+was empty. Deciding whether to drop it or stop the writer belongs with the
+admin-money audit, which is where that function is reviewed anyway - plan item
+5.6.

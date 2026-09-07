@@ -90,6 +90,65 @@ interface ToastItemProps {
   onRemove: () => void;
 }
 
+function ToastInstrumentIcon({ type }: { type: ToastType }) {
+  const mark = (() => {
+    switch (type) {
+      case 'success':
+        return <path className="toast__instrument-signal" d="m13.2 20.6 4.3 4.3 9.6-10" />;
+      case 'error':
+        return (
+          <path
+            className="toast__instrument-signal toast__instrument-cut"
+            d="m14.2 14.2 11.6 11.6M25.8 14.2 14.2 25.8"
+          />
+        );
+      case 'warning':
+        return (
+          <>
+            <path className="toast__instrument-signal" d="m20 11.7 9 16.1H11Z" />
+            <path className="toast__instrument-signal" d="M20 17v5.4" />
+            <circle className="toast__instrument-lamp" cx="20" cy="25" r="1.1" />
+          </>
+        );
+      case 'clock':
+        return (
+          <>
+            <circle className="toast__instrument-signal" cx="20" cy="20" r="8" />
+            <path className="toast__instrument-signal" d="M20 15.2v5.2l3.7 2.2" />
+          </>
+        );
+      case 'info':
+        return (
+          <>
+            <circle className="toast__instrument-signal" cx="20" cy="20" r="8" />
+            <path className="toast__instrument-signal" d="M20 18.8v6" />
+            <circle className="toast__instrument-lamp" cx="20" cy="15.3" r="1.1" />
+          </>
+        );
+    }
+  })();
+
+  return (
+    <span className="toast__icon" data-toast-icon={type} aria-hidden="true">
+      <svg className="toast__instrument" viewBox="0 0 40 40" focusable="false">
+        <path
+          className="toast__instrument-frame"
+          d="m20 2.5 12.4 5.1 5.1 12.4-5.1 12.4L20 37.5 7.6 32.4 2.5 20 7.6 7.6Z"
+        />
+        <circle className="toast__instrument-rotor" cx="20" cy="20" r="13.1" />
+        <path className="toast__instrument-scan" d="M9.8 27.2 27.2 9.8" />
+        <g className="toast__instrument-mark">{mark}</g>
+        <circle
+          className="toast__instrument-lamp toast__instrument-status"
+          cx="31.2"
+          cy="20"
+          r="1.25"
+        />
+      </svg>
+    </span>
+  );
+}
+
 function ToastItem({ toast, onRemove }: ToastItemProps) {
   const [isExiting, setIsExiting] = useState(false);
 
@@ -104,18 +163,10 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
     };
   }, [toast.duration, onRemove]);
 
-  const icons: Record<ToastType, string> = {
-    success: '✓',
-    error: '✕',
-    warning: '⚠',
-    info: 'ℹ',
-    clock: '⏱',
-  };
-
   return (
     <div
       className={`toast toast--${toast.type} ${isExiting ? 'toast--exiting' : ''}${toast.onClick ? ' toast--clickable' : ''}`}
-      onClick={(e) => {
+      onClick={() => {
         if (toast.onClick) {
           toast.onClick();
           setIsExiting(true);
@@ -124,16 +175,21 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
       }}
       style={{ cursor: toast.onClick ? 'pointer' : 'default' }}
     >
-      <span className="toast__icon">{icons[toast.type]}</span>
+      <ToastInstrumentIcon type={toast.type} />
       <span className="toast__message">{toast.message}</span>
       <button
+        type="button"
         className="toast__close"
-        onClick={() => {
+        aria-label="Dismiss Notification"
+        onClick={(event) => {
+          event.stopPropagation();
           setIsExiting(true);
           setTimeout(onRemove, 300);
         }}
       >
-        ✕
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="m7 7 10 10M17 7 7 17" />
+        </svg>
       </button>
     </div>
   );
@@ -194,7 +250,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const showToast = useCallback(
     (message: string, type: ToastType = 'info', duration = 4000, onClick?: () => void) => {
       // Dan's house rule (2026-08-20), enforced at the ONLY door every toast
-      // walks through: Title Case every word, no em dashes. See popupStyle.ts —
+      // walks through: Title Case every word, no em dashes. See popupStyle.ts.
       // a rule in the render path cannot drift, a rule in a doc does.
       //
       // SAME DOOR, SECOND LOCK (Dan, 2026-08-20): "stop allowing server error
@@ -260,12 +316,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       const id = `toast-${++toastIdRef.current}`;
       setToasts((prev) => {
         // DEDUPE (Dan, same session: "connection lost pop ups need to stop").
-        // An identical message already on screen does not stack a twin — the
+        // An identical message already on screen does not stack a twin. The
         // heartbeat loop and its friends retry on intervals, and a column of
         // five matching warnings reads as five separate emergencies.
         if (prev.some((t) => t.message === styled && t.type === type)) return prev;
         const next = [...prev, { id, type, message: styled, duration, onClick }];
-        // Cap at 5 visible toasts — dismiss oldest if overflow
+        // Cap at 5 visible toasts; dismiss oldest if overflow
         return next.length > 5 ? next.slice(-5) : next;
       });
     },
@@ -302,7 +358,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   // render, so every consumer with `toast` in a dependency array re-ran its
   // effect on every toast add/remove. TablePage's 5s heartbeat effect was the
   // casualty: each toast tore the interval down, fired an extra immediate
-  // heartbeat, and RESET the consecutive-miss counter — during an outage
+  // heartbeat, and RESET the consecutive-miss counter. During an outage
   // (when toasts fire most) the "connection lost" warning could never
   // accumulate its three misses. All members are useCallback/state, so this
   // only changes identity stability, not behaviour.

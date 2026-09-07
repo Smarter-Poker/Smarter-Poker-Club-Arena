@@ -12,13 +12,15 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
       'daily-missions-casino-v2.webp',
       'daily-missions-casino-v2-mobile.webp',
       'daily-missions-reward-pedestal-v1.webp',
+      'daily-missions-streak-freeze-v1.webp',
     ]) {
       const path = resolve(__dirname, `../public/images/challenges/${asset}`);
       expect(statSync(path).size).toBeGreaterThan(10_000);
       expect(statSync(path).size).toBeLessThan(200_000);
       expect(page).toContain(asset);
     }
-    expect(page).toContain('<picture className={styles.heroPicture}');
+    expect(page).toContain('className={styles.heroPicture} data-hero-cycle={tier}');
+    expect(page).toContain('<picture>');
   });
 
   it('uses the shared realism vocabulary instead of the retired matrix skin', () => {
@@ -64,7 +66,7 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(page).toContain('if (loadError && lastSyncedAt === null)');
     expect(page).toContain('<MissionUnavailableState');
     expect(page).toContain('Streak Freeze Applied');
-    expect(page).toContain('streak.usedFreeze && streak.frozenDate');
+    expect(page).toContain('streak.usedFreeze && streak.lastFrozenDate');
     expect(page).toContain('<span className={styles.srOnly}>Diamonds</span>');
     expect(page).toContain('{DAILY_MISSION_REROLL_COST} Diamond? Current Progress Will Be');
     expect(page).toContain('Replaced.');
@@ -100,6 +102,8 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(page).toContain("'--mission-progress': `${pct}%`");
     expect(page).toContain('data-mission-icon={c.type}');
     expect(page).toContain('data-icon-state=');
+    expect(page).toContain('<MissionInstrumentGlyph');
+    expect(page).toContain('<CasinoControlIcon');
     expect(css).toContain('conic-gradient(');
     expect(css).toContain('@keyframes missionScannerOrbit');
     expect(css).toContain(".iconAssembly[data-mission-icon='friends_added']");
@@ -113,5 +117,6 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     expect(page).toContain('Added To Your Club Arena Diamond Balance');
     expect(css).toContain('.freezePurchaseLedger');
     expect(css).toContain('.celebrateArtwork');
+    expect(css).toContain('.freezeVaultArtwork');
   });
 });

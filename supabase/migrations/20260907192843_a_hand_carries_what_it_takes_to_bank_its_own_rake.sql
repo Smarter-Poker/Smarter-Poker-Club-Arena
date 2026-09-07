@@ -1,9 +1,19 @@
+-- SUPERSEDED BY 20260907195116
+--
 -- A HAND CARRIES WHAT IT TAKES TO BANK ITS OWN RAKE
 --
 -- 2026-09-07. Applied to production at 19:28:43 UTC.
 --
--- SUPERSEDED THE SAME DAY by 20260907195116, and the file is here because it
--- ran, not because it stands. Read that one too before changing either.
+-- Superseded the same day, and the file is here because it ran, not because it
+-- stands. Read 20260907195116 too before changing either.
+--
+-- The marker on the first line is read by scripts/ci/check-migrations-applied.mjs.
+-- That gate asks "does what this migration declares exist in the live schema
+-- NOW", which is the right question for new work and the wrong one for a
+-- migration that was correctly undone hours later: the three columns below are
+-- deliberately gone. The marker must NAME the superseding migration and that
+-- file must exist in this directory, or the exemption does not apply - "it was
+-- superseded" is the easiest lie to tell about a migration that never ran.
 --
 -- What this was for: ~49 cash hands a day recorded rake in `hand_history` and
 -- were banked with `rake_records.hand_id => NULL`, so `rake_attributions` -

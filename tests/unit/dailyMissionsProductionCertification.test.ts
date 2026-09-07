@@ -67,6 +67,9 @@ describe('Daily Missions production certification', () => {
     );
     expect(operationGate).not.toContain("'dashboard_loaded'");
     expect(operationGate).toContain("'reroll_succeeded'");
+    expect(spec).toContain('descendantOffenders: Array.from');
+    expect(spec).toContain('if (nodeBounds.width === 0 && nodeBounds.height === 0) return false;');
+    expect(spec).toContain('descendantOffenders: []');
   });
 
   it('certifies authentic seven-day settlement, legacy multiplier history, and two-tab calm', () => {

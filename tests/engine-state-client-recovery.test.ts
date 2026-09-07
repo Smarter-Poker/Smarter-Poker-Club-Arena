@@ -603,3 +603,26 @@ it('sends only the latest offline presence after its club join', async () => {
   ]);
   c.disconnect();
 });
+
+it('paints warmed engine state on entry before a second server snapshot', async () => {
+  const { engineSocketMux } = await import('../src/services/EngineSocketMux');
+  engineSocketMux.acquireWarm('https://engine.example', TABLE, 'tok');
+  const ws = live();
+  ws._open();
+  ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+  ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 10, state: { pot: 20 } });
+  ws._frame({
+    type: 'DELTA',
+    tableId: TABLE,
+    prev: 10,
+    seq: 11,
+    patch: [{ op: 'replace', path: '/pot', value: 30 }],
+  });
+  const paint = vi.fn();
+  const { c } = client({ onSnapshot: paint });
+  await c.connect();
+  await flush();
+  expect(paint).toHaveBeenLastCalledWith({ pot: 30 }, 11);
+  expect(FakeWebSocket.instances).toHaveLength(1);
+  c.disconnect();
+});

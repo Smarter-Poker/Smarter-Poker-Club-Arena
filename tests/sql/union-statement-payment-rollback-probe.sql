@@ -13,7 +13,7 @@ BEGIN
  SELECT pg_get_functiondef('public.ca_union_set_statement_paid(uuid,boolean,numeric,text)'::regprocedure) INTO src;
  src:=replace(replace(replace(replace(src,'public.','pg_temp.'),'''public''','''pg_temp'''),'auth.uid()','pg_temp.probe_uid()'),'NOT ca_can_oversee_union(','NOT pg_temp.ca_can_oversee_union('); EXECUTE src;
  INSERT INTO pg_temp.union_clubs VALUES(c,u);
- INSERT INTO pg_temp.settlement_invoices VALUES(i,c,'union_weekly_squareup','generated',100,'{}',now());
+ INSERT INTO pg_temp.settlement_invoices VALUES(i,c,'union_weekly_squareup','generated',100,jsonb_build_object('union_id',u),now());
  j:=pg_temp.ca_union_set_statement_paid(i,true,99.99,'first payment');
  IF j->>'status'='paid' OR (j->>'paid_total')::numeric<>99.99 THEN RAISE EXCEPTION 'FAIL one cent short marked paid: %',j; END IF;
  j:=pg_temp.ca_union_set_statement_paid(i,true,0.01,'last cent');

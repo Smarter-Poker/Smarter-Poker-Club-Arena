@@ -228,13 +228,20 @@ describe('LAW: a rig names nothing it does not draw', () => {
       for (const el of tsx.matchAll(/<(\w+)([^>]*)>/g)) {
         const attrs = el[2];
         const cls = /className="([^"{}]+)"/.exec(attrs);
-        const xf = /\btransform="([^"]*)"/.exec(attrs);
-        if (!cls || !xf) continue;
+        // BOTH SPELLINGS. The first version of this check read only the
+        // literal `transform="..."`, and horseshoe's four clovers - which
+        // build their corner offsets with a template literal, transform={...}
+        // - walked straight through it and stacked on the origin anyway. A
+        // guard that knows one of the two ways to write the same attribute
+        // reports "clean" on the very case it was written for. CLAUDE.md
+        // 10.86: a fix that leaves the same trap one level up has not landed.
+        const literal = /\btransform="([^"]*)"/.exec(attrs);
+        const expression = /\btransform=\{/.test(attrs);
+        if (!cls || !(literal || expression)) continue;
+        const shown = literal ? `transform="${literal[1]}"` : 'transform={...}';
         for (const name of cls[1].split(/\s+/).filter(Boolean)) {
           if (moves.has(name)) {
-            offenders.push(
-              `${id}.tsx: ${name} carries transform="${xf[1]}", which its own keyframes discard`
-            );
+            offenders.push(`${id}.tsx: ${name} carries ${shown}, which its own keyframes discard`);
           }
         }
       }
@@ -243,6 +250,132 @@ describe('LAW: a rig names nothing it does not draw', () => {
       offenders,
       'put the measured position on a wrapper <g> and the animation on the child'
     ).toEqual([]);
+  });
+
+  it('a keyframe stop lands on the millisecond its own comment names', () => {
+    // THE CHECK THAT WAS MISSING, and the one that would have caught the two
+    // worst timing bugs in this programme on the day they were written.
+    //
+    // A rig's stops are percentages. The millisecond each one MEANS is written
+    // beside it in a comment, and nothing ever compared the two. Recomputing
+    // them found the same mistake twice, in two different rigs, made by
+    // subtracting the wrong zero:
+    //
+    //   beer `thr-beer-m2`  - percentages were (ms - delay) / duration, with
+    //     the LANDING left out, so mug 2 reached the clink pose 333 ms (one
+    //     whole flight) after mug 1 was already there and after
+    //     `glass_clink_rattle` had played.
+    //   water_gun - the four long rules start at landing + 67 = 367, but their
+    //     percentages were computed against 267. The squirt appeared 100 ms
+    //     after its own `squirt_start` cue, and the gun's scale-out finished
+    //     100 ms after the payload had unmounted, so it never played.
+    //
+    // Both are invisible to every other check here: the specs are right, the
+    // classes resolve, the delays scale, nothing is hidden on its own beat.
+    // Only the arithmetic inside the keyframe block is wrong, and the comment
+    // beside it says so.
+    //
+    // The tolerance is one frame at 30 fps (34 ms), because the reference is a
+    // 30 fps capture and a stop written to the nearest frame is not a defect.
+    const FRAME_MS = 34;
+    const offenders: string[] = [];
+    for (const id of ids) {
+      const tsx = fs.readFileSync(path.join(rigDir, `${id}.tsx`), 'utf8');
+      const flight = Number(/flight:\s*\{\s*ms:\s*(\d+)/.exec(tsx)?.[1] ?? NaN);
+      if (!Number.isFinite(flight)) continue;
+      const raw = fs.readFileSync(path.join(rigDir, `${id}.css`), 'utf8');
+      // reduced motion sets no timings worth checking, and its `animation:
+      // none` would be read as a rule
+      const css = raw.replace(/@media[^{]*\{(?:[^{}]|\{[^{}]*\})*\}/gs, '');
+
+      // animation name -> its duration and delay, in ms. BOTH the shorthand
+      // and the longhand: water_gun writes `animation-delay` on its own line,
+      // and a reader that only parses the shorthand reports a 67 ms delay as
+      // zero - which is exactly the mistake this check exists to catch, made
+      // by the checker instead of the rig.
+      const timing = new Map<string, { dur: number; delay: number }>();
+      for (const rule of css.matchAll(/\{([^{}]*)\}/g)) {
+        const body = rule[1];
+        const short = /animation:\s*([^;]+);/.exec(body);
+        const name = short
+          ? /^\s*([a-zA-Z][\w-]*)/.exec(short[1])?.[1]
+          : /animation-name:\s*([\w-]+)/.exec(body)?.[1];
+        if (!name || name === 'none') continue;
+        const secs = (src: string | undefined) =>
+          src ? [...src.matchAll(/calc\(\s*([\d.]+)s/g)].map((m) => Number(m[1]) * 1000) : [];
+        const inline = secs(short?.[1]);
+        const dur = secs(/animation-duration:\s*([^;]+);/.exec(body)?.[1])[0] ?? inline[0];
+        const delay = secs(/animation-delay:\s*([^;]+);/.exec(body)?.[1])[0] ?? inline[1] ?? 0;
+        if (dur === undefined) continue;
+        if (!timing.has(name)) timing.set(name, { dur, delay });
+      }
+
+      for (const [name, { dur, delay }] of timing) {
+        const block = new RegExp(`@keyframes\\s+${name}\\s*\\{((?:[^{}]|\\{[^{}]*\\})*)\\}`, 's');
+        const body = block.exec(css)?.[1];
+        if (!body) continue;
+        // a stop (or the last of a comma-separated group) whose block opens
+        // with a comment naming a millisecond
+        for (const stop of body.matchAll(
+          /([\d.]+)%\s*(?:,\s*[\d.]+%\s*)?\{\s*\/\*\s*~?(\d{2,4})\b/g
+        )) {
+          const pct = Number(stop[1]);
+          const says = Number(stop[2]);
+          const at = flight + delay + (pct / 100) * dur;
+          if (Math.abs(at - says) > FRAME_MS) {
+            offenders.push(
+              `${id}.css ${name} ${pct}% says ${says}ms but plays at ${Math.round(at)}ms ` +
+                `(landing ${flight} + delay ${delay} + ${pct}% of ${dur})`
+            );
+          }
+        }
+      }
+    }
+    expect(
+      offenders,
+      'a stop and the millisecond written beside it must be the same moment'
+    ).toEqual([]);
+  });
+
+  it('no animation outlives the payload it is drawn on', () => {
+    // An element removed mid-animation never plays its own ending. Two rigs
+    // were doing it: snowman's plume and nose ran 167 ms past the unmount (a
+    // stretch left behind when this phase LOWERED the `payloadMs` floor from
+    // 1800 to 1600 - the bound was fixed and the thing it had distorted was
+    // not), and water_gun's four long rules ran 103 ms past it, so the gun's
+    // scripted scale-out never rendered at all. In both the tail is the part
+    // that vanishes, which is why nobody noticed: the animation looks right
+    // until the exact moment it is supposed to finish.
+    const offenders: string[] = [];
+    for (const id of ids) {
+      const tsx = fs.readFileSync(path.join(rigDir, `${id}.tsx`), 'utf8');
+      const payload = Number(/payload:\s*\{[^}]*\bms:\s*(\d+)/.exec(tsx)?.[1] ?? NaN);
+      if (!Number.isFinite(payload)) continue;
+      const css = fs
+        .readFileSync(path.join(rigDir, `${id}.css`), 'utf8')
+        .replace(/@media[^{]*\{(?:[^{}]|\{[^{}]*\})*\}/gs, '');
+      for (const rule of css.matchAll(/\.([a-zA-Z0-9_-]+)\s*\{([^{}]*)\}/g)) {
+        const body = rule[2];
+        const short = /animation:\s*([^;]+);/.exec(body)?.[1];
+        if (short && /\bnone\b/.test(short)) continue;
+        // a repeating animation ends when the payload does, by construction
+        if (/infinite/.test(body)) continue;
+        const secs = (src: string | undefined) =>
+          src ? [...src.matchAll(/calc\(\s*([\d.]+)s/g)].map((m) => Number(m[1]) * 1000) : [];
+        const inline = secs(short);
+        const dur = secs(/animation-duration:\s*([^;]+);/.exec(body)?.[1])[0] ?? inline[0];
+        const delay = secs(/animation-delay:\s*([^;]+);/.exec(body)?.[1])[0] ?? inline[1] ?? 0;
+        if (dur === undefined) continue;
+        const iterations = Number(/animation-iteration-count:\s*(\d+)/.exec(body)?.[1] ?? 1);
+        const end = delay + dur * iterations;
+        if (end > payload + 1) {
+          offenders.push(
+            `${id}.css .${rule[1]} runs to ${Math.round(end)}ms but the payload unmounts at ${payload}ms`
+          );
+        }
+      }
+    }
+    expect(offenders, 'an animation cut off mid-play never shows its own ending').toEqual([]);
   });
 
   it('the beat called `land` IS the landing, to the millisecond', () => {

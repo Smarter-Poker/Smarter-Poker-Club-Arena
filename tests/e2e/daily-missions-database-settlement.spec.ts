@@ -78,6 +78,7 @@ type ChallengeStreakState = {
   current_streak_started_on: string | null;
   current_streak_ended_on: string | null;
   current_streak_length: number | null;
+  updated_at: string;
 };
 
 type ClaimReceipt = JsonObject & {
@@ -706,7 +707,7 @@ test.describe('Daily Missions Database Settlement Certification', () => {
         environment,
         'challenge_streak_state',
         query(
-          'freezes_available,freezes_used,freezes_earned,frozen_dates,current_streak_run_id,current_streak_started_on,current_streak_ended_on,current_streak_length',
+          'freezes_available,freezes_used,freezes_earned,frozen_dates,current_streak_run_id,current_streak_started_on,current_streak_ended_on,current_streak_length,updated_at',
           { user_id: `eq.${account.id}` }
         )
       );
@@ -775,12 +776,13 @@ test.describe('Daily Missions Database Settlement Certification', () => {
         environment,
         'challenge_streak_state',
         query(
-          'freezes_available,freezes_used,freezes_earned,frozen_dates,current_streak_run_id,current_streak_started_on,current_streak_ended_on,current_streak_length',
+          'freezes_available,freezes_used,freezes_earned,frozen_dates,current_streak_run_id,current_streak_started_on,current_streak_ended_on,current_streak_length,updated_at',
           { user_id: `eq.${account.id}` }
         )
       );
       expect(finalState).toHaveLength(1);
       expect(finalState[0]).toEqual(stateAfterConsumption[0]);
+      expect(finalState[0].updated_at).toBe(stateAfterConsumption[0].updated_at);
       expect(finalState[0].frozen_dates).toEqual([missedDate]);
       expect(finalState[0].frozen_dates.filter((date) => date === missedDate)).toHaveLength(1);
     } finally {

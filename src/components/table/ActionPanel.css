@@ -354,6 +354,86 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
+/* ── THE FULL-TABLE CALL TO ACTION (Dan 2026-09-07, item 9) ────────────────
+   "THERE CURRENTLY ISN'T A SEAT OPEN IN THIS GAME, SO IT SHOULD SAY JOIN THE
+   WAITING LIST."
+
+   When the footer has nothing to invite a tap ON, it stops being a caption and
+   becomes the one control that helps: the waiting list. It has to LOOK
+   tappable to earn that, so it carries a border and full-strength type where
+   the spectating sentence beside it is deliberately quiet.
+
+   `pointer-events: auto` is load-bearing: the wrapper above sets
+   `pointer-events: none` for a hero-less table so an invisible fixed bar
+   cannot swallow taps meant for the felt. This is the exception - the one
+   thing in that bar that IS there to be touched. */
+.table-page[data-hero='false'] .spectator-footer-bar[data-state='no-seats-here'],
+.table-page[data-hero='false'] .spectator-footer-bar__cta {
+  pointer-events: auto;
+}
+
+.spectator-footer-bar__cta {
+  appearance: none;
+  border: 1px solid rgba(214, 226, 244, 0.28);
+  border-radius: 999px;
+  background: rgba(18, 24, 34, 0.72);
+  color: rgba(236, 242, 252, 0.94);
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  /* 32px, over the 24px this bar would otherwise be — a tap target on a phone
+     is worth the 8px of felt. Still far under --sp-hero-clear. */
+  min-height: 32px;
+  padding: 5px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+/* NO :hover, ever (tests/no-hover-effects.law.test.ts, and club-engine.css's
+   house rules): this bar lives on a phone, where the press IS the feedback and
+   a hover state only ever means "a desktop mouse is resting here". :active
+   fires on touch; :focus-visible keeps the keyboard path honest. */
+.spectator-footer-bar__cta:active,
+.spectator-footer-bar__cta:focus-visible {
+  background: rgba(28, 36, 50, 0.9);
+  border-color: rgba(214, 226, 244, 0.5);
+}
+
+/* The bar sizes to the sentence by default; the button needs the room back. */
+.table-page[data-hero='false'] .spectator-footer-bar[data-state='no-seats-here'] {
+  padding: 4px 12px 6px;
+}
+
+/* A FULL TABLE READS AS A DIFFERENT STATE, NOT JUST DIFFERENT WORDS.
+   `data-state` was being set to 'open-here' / 'no-seats-here' and styled by
+   nothing, so the attribute was inert - a hook that looked wired and was not.
+   The two states mean opposite things to somebody deciding whether to wait, so
+   the bar carries a quiet ground on the one where there is nothing to tap and
+   the only move is the queue. Deliberately restrained: this sits under a live
+   felt and is not competing with it. */
+.table-page[data-hero='false'] .spectator-footer-bar[data-state='no-seats-here'] {
+  background: linear-gradient(180deg, rgb(12 15 20 / 0%) 0%, rgb(12 15 20 / 55%) 100%);
+}
+
+.table-page[data-hero='false'] .spectator-footer-bar[data-state='open-here'] {
+  /* Nothing to add: an open table is the ordinary case and the sentence is
+     already an invitation. Declared so the pair is visible as a pair, and so
+     the next reader does not go looking for a rule that is missing. */
+  background: none;
+}
+
+.table-page[data-hero='false']
+  .spectator-footer-bar[data-state='no-seats-here']
+  .spectator-footer-bar__label {
+  /* The label is a wrapper around the button here, not text of its own: let
+     the button own its colour and size instead of inheriting the quiet ones. */
+  color: inherit;
+  overflow: visible;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    BASE PANEL
    ═══════════════════════════════════════════════════════════════ */

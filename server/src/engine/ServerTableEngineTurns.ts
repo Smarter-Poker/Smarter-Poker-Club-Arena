@@ -113,8 +113,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    *
    * Instance field, not a static, so a test can drive pre-action ORDER without
    * spending its real-world seconds.
+   *
+   * Dan 2026-09-07: still never zero — the reasoning above still holds, a seat
+   * that never visibly takes its turn looks skipped — but 900ms was buying far
+   * more than "readable". 250ms is a beat: the spotlight lands, the eye
+   * registers it, the action follows. Everything above 250 was dead air, and
+   * with several pre-actions queued it compounded across a whole street.
    */
-  protected preActionVisibleMs = 900;
+  protected preActionVisibleMs = 250;
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // TURN TIMER MANAGEMENT

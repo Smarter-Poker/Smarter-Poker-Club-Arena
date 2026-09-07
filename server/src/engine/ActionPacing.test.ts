@@ -6,13 +6,32 @@
  * Dan 2026-08-20: "every player's action MUST GO IN TURN. Every single active
  * player must make a move — check, bet, fold, raise or all in — their action
  * MUST BE DISPLAYED, an animation MUST PLAY after every decision. NO action for
- * any horse or player can EVER be skipped or rushed. THE GAME SPEED NEEDS TO
- * SLOW DOWN TO FEEL MORE REAL."
+ * any horse or player can EVER be skipped or rushed."
  *
  * These are the constants that make that true. They are asserted here because
  * they are the kind of number a future "performance" change quietly halves, and
  * the damage (a street resolving in milliseconds) is invisible to every other
  * test in the suite — the chips still end up in the right place.
+ *
+ * ── AMENDED 2026-09-07, AND THE AMENDMENT IS THE POINT ─────────────────────
+ * The instruction above also ended "THE GAME SPEED NEEDS TO SLOW DOWN TO FEEL
+ * MORE REAL", and these floors were built to enforce it. Dan 2026-09-07, on
+ * the shipped result: "THERE IS A FEW SECOND DELAY AFTER EACH PLAYER MAKES A
+ * DECISION ON EVERY STREET, IT DOESN'T SNAP GO TO THE NEXT PLAYER."
+ *
+ * So the floors move, and WHAT THEY PROTECT changes with them. The original
+ * floors conflated two things:
+ *
+ *   1. Every action is DISPLAYED and animated.  — still absolutely law.
+ *   2. The engine BLOCKS for the display's full duration. — this was the
+ *      mistake. A CSS animation runs on the client whether or not the engine
+ *      is standing still for it. Blocking bought no extra visibility; it only
+ *      stopped anyone from acting while the pixels moved.
+ *
+ * Every ordering assertion below is unchanged and still load-bearing: actions
+ * still go in turn, state still commits before any visual settle, no hand is
+ * ever superseded in its own tick. What is no longer asserted is that the
+ * engine sits on its hands for the length of an animation.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -37,11 +56,17 @@ describe('every action gets a settle beat before the turn moves on', () => {
     expect(events).toContain('this.actionSettleMs');
   });
 
-  it('the settle beat outlives the 500ms chip slide (cpSlideIn)', () => {
+  it('the settle beat still EXISTS as the one pacing lever, at any value', () => {
+    /* 2026-09-07: this used to demand actionSettleMs > 500 so the beat
+       outlived the 500ms cpSlideIn chip slide. The slide is client-side and
+       plays regardless; blocking the engine for it was pure dead air, and it
+       is now 0. What must survive is the LEVER — one field, on the one path
+       every action funnels through — so pacing stays adjustable from a single
+       place instead of being scattered back into call sites. */
     const m = runout.match(/actionSettleMs\s*=\s*(\d+)/);
     expect(m, 'actionSettleMs must be defined').toBeTruthy();
-    const ms = Number(m![1]);
-    expect(ms).toBeGreaterThan(500);
+    expect(Number(m![1])).toBeGreaterThanOrEqual(0);
+    expect(events).toContain('this.actionSettleMs');
   });
 
   it('the settle re-checks the hand after sleeping (no action into a dead hand)', () => {
@@ -58,9 +83,14 @@ describe('a queued pre-action is still a visible turn', () => {
   });
 
   it('the beat is never zero', () => {
+    /* Still the real law, and the reason this one did NOT go to 0 with
+       actionSettleMs: a pre-action fires the instant the turn arrives, so
+       with no beat the seat never visibly takes its turn and several queued
+       pre-actions resolve a whole street in one frame — players read that as
+       having been skipped. 900 -> 250 (2026-09-07): a beat, not a pause. */
     const m = turns.match(/preActionVisibleMs\s*=\s*(\d+)/);
     expect(m).toBeTruthy();
-    expect(Number(m![1])).toBeGreaterThanOrEqual(500);
+    expect(Number(m![1])).toBeGreaterThanOrEqual(200);
   });
 
   it('re-validates the seat is still to act after the beat', () => {
@@ -145,8 +175,14 @@ describe('the SAME bug class, everywhere it occurs - nothing is superseded in it
     // call, so without this the reveal, the winner highlight and the pot ship
     // all landed on one frame.
     expect(events).toContain('await this.sleep(this.showdownSettleMs)');
-    // Must cover cardShowdownFlip (350ms) + its 120ms second-card stagger.
-    expect(num(runout, 'showdownSettleMs')).toBeGreaterThan(470);
+    /* 2026-09-07: showdownSettleMs is no longer a literal — it IS
+       HAND_COMPLETION.SHOWDOWN_READ_BASE_MS, which is what the comment beside
+       it always claimed and what a drift bug kept breaking. Assert the
+       binding, then assert the shared number still covers cardShowdownFlip
+       (350ms) + its 120ms second-card stagger. */
+    expect(runout).toContain('showdownSettleMs = HAND_COMPLETION.SHOWDOWN_READ_BASE_MS');
+    const spec = readFileSync(join(process.cwd(), 'src/config/handCompletionSpec.ts'), 'utf8');
+    expect(Number(spec.match(/SHOWDOWN_READ_BASE_MS:\s*(\d+)/)![1])).toBeGreaterThan(470);
   });
 
   it('only pauses for a REAL showdown (a fold win keeps its pace)', () => {
@@ -158,14 +194,21 @@ describe('the SAME bug class, everywhere it occurs - nothing is superseded in it
 
   it('a freshly dealt BOARD is revealed before the next player is on the clock', () => {
     expect(events).toContain('this.lastStreetDealtAtMs = Date.now()');
-    // The flop lands (300ms) then fans open (420ms starting ~520ms in) = ~940ms.
-    expect(num(runout, 'streetSettleMs')).toBeGreaterThan(940);
+    /* 2026-09-07: 1400 -> 500, floor 940 -> 300. A street is the one place a
+       settle is genuinely required — you cannot act on a board that has not
+       begun to appear — but the requirement is that it has LANDED
+       (ccFlopLand, 300ms), not that it has finished fanning open and been
+       read. The fan completes while the first actor is already on the clock. */
+    expect(num(runout, 'streetSettleMs')).toBeGreaterThanOrEqual(300);
   });
 
   it('the DEAL finishes before the first action of the hand', () => {
     expect(events).toContain('this.lastHandStartAtMs = Date.now()');
-    // 12 cards on an 80ms stagger + a 320ms flight = ~1.2s, plus 400ms blinds.
-    expect(num(runout, 'handStartSettleMs')).toBeGreaterThan(1200);
+    /* 2026-09-07: 1500 -> 400, floor 1200 -> 300. The deal is ~1.2s of
+       animation and the blinds another 400ms, but UTG has a full turn clock
+       to act inside — both finish long before any human decides. Waiting for
+       them before STARTING the clock only added dead air to every hand. */
+    expect(num(runout, 'handStartSettleMs')).toBeGreaterThanOrEqual(300);
   });
 
   it('every settle re-checks the hand after sleeping', () => {
@@ -234,8 +277,12 @@ describe('the end of a hand is not rushed either', () => {
     const sweep = Number(spec.match(/BETS_SWEEP_MS:\s*(\d+)/)![1]);
     const push = Number(spec.match(/POT_PUSH_MS:\s*(\d+)/)![1]);
     const muck = Number(spec.match(/MUCK_MS:\s*(\d+)/)![1]);
-    // sweep + the pot travelling with its total + the muck.
-    expect(sweep + push + muck).toBeGreaterThanOrEqual(2000);
+    /* sweep + the pot travelling with its total + the muck. 2026-09-07: the
+       whole cadence was halved (4500 -> ~2100 on a fold), so the floor moves
+       with it — 2900 -> 1500. The guarantee this protects is unchanged: the
+       hold must still outlast the pot-win float, which is now 1.1s and is
+       pinned to POT_PUSH_MS by handCompletionLaw. */
+    expect(sweep + push + muck).toBeGreaterThanOrEqual(1500);
   });
 
   it('an all-in runout is paced street by street, never dealt in one tick', () => {

@@ -229,6 +229,7 @@
   }
   100% {
     /* 3133: closed, seated again; held to the cut */
+    opacity: 1;
     transform: rotate(0deg) translate(0, 0);
   }
 }
@@ -245,7 +246,7 @@
 
 @keyframes thr-trash_can-flies-in {
   0% {
-    opacity: 0;
+    opacity: 1;
   }
   100% {
     /* 3500: visible; individual flies carry their own jitter */

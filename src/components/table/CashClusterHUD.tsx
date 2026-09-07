@@ -103,9 +103,26 @@ export function CashClusterHUD({
   const seatChangeAvailable = Boolean(me?.seated && me.seat_change.available);
   const listed = me?.seat_change.request ?? null;
   const onWaitlist = Boolean(me && !me.seated && me.waitlist?.on_list);
-  const chairOpen = (lobby?.tables ?? []).some(
+  /**
+   * ── "TAKE A SEAT" HAS TO MEAN A SEAT HE CAN SEE (Dan 2026-09-07, item 9) ──
+   *
+   * "THERE CURRENTLY ISN'T A SEAT OPEN IN THIS GAME, SO IT SHOULD SAY JOIN THE
+   *  WAITING LIST"
+   *
+   * He was looking at a full table being told to take a chair. This was true
+   * at the CLUSTER level and false at the table in front of him: `.some()`
+   * over every table in the game means one empty seat two tables away lit the
+   * button on all of them.
+   *
+   * The cluster reading is still the right one for the ACTION — takeChair()
+   * seats you wherever the door sends you, which is the point of a cluster —
+   * so it is kept, under a name that says what it is. What changes is the
+   * COPY: an offer that will move a player to another table now says so.
+   */
+  const openTables = (lobby?.tables ?? []).filter(
     (t) => Number(t.open_seats ?? 0) > 0 && (t.lifecycle === 'live' || t.lifecycle === 'opening')
   );
+  const chairOpenInCluster = openTables.length > 0;
 
   const takeChair = async () => {
     if (joining) return;
@@ -177,13 +194,21 @@ export function CashClusterHUD({
       {onWaitlist && (
         <button
           type="button"
-          className={`cch-seat-change${chairOpen ? '' : ' cch-seat-change--listed'}`}
+          className={`cch-seat-change${chairOpenInCluster ? '' : ' cch-seat-change--listed'}`}
           disabled={joining}
-          onClick={() => (chairOpen ? void takeChair() : onOpenLobby())}
-          aria-label={chairOpen ? 'A Chair Is Open - Take It' : 'Your Place On The Waitlist'}
+          onClick={() => (chairOpenInCluster ? void takeChair() : onOpenLobby())}
+          aria-label={
+            chairOpenInCluster
+              ? 'A Chair Is Open In This Game - Take It'
+              : 'Your Place On The Waitlist'
+          }
         >
-          {chairOpen
-            ? 'Chair Open: Take A Seat'
+          {/* "In This Game", not "here". The seat may be at another table in
+              the cluster and takeChair() will move you to it - which is a fine
+              offer, but it must not read as an invitation to sit at the full
+              table you are watching. */}
+          {chairOpenInCluster
+            ? 'Chair Open In This Game: Take A Seat'
             : `Waitlist: #${me?.waitlist?.position ?? '-'} Of ${me?.waitlist?.waiting ?? '-'}`}
         </button>
       )}

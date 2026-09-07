@@ -82,6 +82,31 @@ interface Props {
    * ENGINE cannot verify it, which the ladder underneath is still retrying.
    */
   authRefused?: boolean;
+  /**
+   * TRUE ONCE THE FELT IS ACTUALLY SHOWING A HAND (Dan 2026-09-07).
+   *
+   * "ALL TABLES STILL SAY CONNECTING TO THE TABLE, INSTEAD OF BEING RUNNING AT
+   * ALL TIMES, AND PRE LOADED."
+   *
+   * He is right, and the banner was telling the truth about the wrong thing.
+   * `status` describes the SOCKET, and the socket legitimately passes through
+   * 'connecting' on every entry — `EngineStateClient.openOnceInner` announces
+   * it at the top of every fresh open, and the mux handshake plus
+   * SUBSCRIBE/SUBSCRIBED routinely takes longer than GRACE_MS. Meanwhile the
+   * warm-up roster has already painted seats, stacks and a live hand. So the
+   * player is looking at a running table that is announcing it is not there.
+   *
+   * The banner exists for the case in the header: a felt that has STOPPED
+   * receiving state and is indistinguishable from a quiet one. A first connect
+   * behind an already-painted table is the opposite situation and needs no
+   * announcement at all — nothing is missing, and saying so is what makes
+   * every table look broken on entry.
+   *
+   * Deliberately narrow: this suppresses 'connecting' ONLY. A painted table
+   * that drops to 'reconnecting' or 'failed' is exactly the original bug and
+   * still says so, because there the pixels really are stale.
+   */
+  hasLiveState?: boolean;
 }
 
 /**
@@ -132,9 +157,18 @@ export function TableConnectionBanner({
   status,
   isActive = true,
   authRefused = false,
+  hasLiveState = false,
 }: Props): React.ReactElement | null {
   const label = labelFor(status, authRefused);
-  const wantsBanner = label !== null && isActive;
+  /* THE SUPPRESSION IS HERE, NOT IN labelFor (law, tests/a-reload-cannot-fix-
+     a-sign-in): that function maps a status to WHAT IT IS CALLED and must stay
+     a pure translation - it is read by the popup-copy laws, and a branch that
+     returns null for a status that has a name would make those laws unable to
+     see the name. This is a rendering decision on top of it: the label for
+     'connecting' still exists and is still correct; a table already showing a
+     dealt hand simply has no reason to display it. See `hasLiveState`. */
+  const suppressed = status === 'connecting' && hasLiveState;
+  const wantsBanner = label !== null && isActive && !suppressed;
 
   const [visible, setVisible] = useState(false);
   const shownAtRef = useRef<number>(0);

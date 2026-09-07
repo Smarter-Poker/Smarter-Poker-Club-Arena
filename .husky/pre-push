@@ -353,6 +353,17 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     fi
   fi
 
+  # NO BAND-AIDS (10.12). A repair, back-pay, re-drive, catch-up, backfill or
+  # heal path is not a fix; it is the defect happening for ever with paperwork.
+  if [ -f scripts/ci/check-no-new-band-aids.mjs ]; then
+    BA_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "HEAD~1")
+    if ! node scripts/ci/check-no-new-band-aids.mjs "$BA_BASE"; then
+      echo "[club-arena pre-push] BLOCKED: this migration ships a band-aid (10.12)."
+      echo "                      Fix the line that produced it. See above."
+      FAIL=1
+    fi
+  fi
+
   # 0b. TYPE CHECK — added 2026-08-27, re-justified 2026-08-28.
   #
   #    THIS IS FAST FEEDBACK, NOT ENFORCEMENT. Be clear about that, because the

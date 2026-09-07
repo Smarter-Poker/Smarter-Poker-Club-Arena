@@ -61,9 +61,31 @@ const BRANCH = process.env.MAIN_RED_BRANCH || 'main';
 /** Runs to scan. Enough to see several ticks of every workflow. */
 const PAGES = 3;
 
+/**
+ * ── THREE OUTCOMES, BECAUSE TWO CLOSED A REAL ALARM (2026-09-07) ────────────
+ *
+ * This file used to exit 0 on every unreadable answer - no token, an API
+ * error, an empty run list - with the reasoning that "a watchdog that cannot
+ * ask is not a failure". That reasoning is sound about PAGING and wrong about
+ * everything else, because exit 0 is not silence here. The workflow reads it:
+ *
+ *     - name: Close it when main is green again
+ *       if: always() && steps.main-green.outputs.code == '0'
+ *
+ * So one HTTP 502 from `/actions/runs` CLOSED the open issue about a workflow
+ * that was still red, with the comment "Every workflow's latest run on main is
+ * green again." A watchdog that cannot look is not entitled to say the coast
+ * is clear.
+ *
+ * 10.86 rule 1: "I could not tell" is a distinct outcome and must have its own
+ * name. Exit 3 - never 0, never 1. The workflow reports it and touches no
+ * issue either way.
+ */
+const UNKNOWN = 3;
+
 if (!TOKEN) {
-  console.log('No GITHUB_TOKEN; skipping (a watchdog that cannot ask is not a failure).');
-  process.exit(0);
+  console.error('COULD NOT TELL: no GITHUB_TOKEN, so no run on main was read.');
+  process.exit(UNKNOWN);
 }
 
 const api = async (path) => {
@@ -89,15 +111,17 @@ try {
     if (batch.length < 100) break;
   }
 } catch (err) {
-  // Fail OPEN. A watchdog that reports an outage because it could not reach the
-  // API teaches people to ignore it.
-  console.log(`Could not read workflow runs (${err.message}); skipping.`);
-  process.exit(0);
+  // NOT fail-open. It does not page (the workflow treats 3 as a warning), and
+  // it does not close a standing alarm either, which exit 0 used to do.
+  console.error(`COULD NOT TELL: could not read workflow runs (${err.message}).`);
+  process.exit(UNKNOWN);
 }
 
 if (runs.length === 0) {
-  console.log(`No completed runs found on ${BRANCH}.`);
-  process.exit(0);
+  // A repository with no completed run on main in three pages is not a green
+  // repository; it is a question this cannot answer.
+  console.error(`COULD NOT TELL: no completed runs found on ${BRANCH}.`);
+  process.exit(UNKNOWN);
 }
 
 // Newest first, then group by workflow.

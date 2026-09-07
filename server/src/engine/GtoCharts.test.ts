@@ -22,6 +22,16 @@ import {
 } from './GtoCharts.js';
 import { HorseLogic } from './HorseLogic.js';
 import type { Card, SeatPlayer } from '../types.js';
+import {
+  _clearSolverPolicyArtifactsForTests,
+  createChartSolverPolicy,
+  replaceSolverPolicyArtifact,
+} from '../gto/SolverPolicyArtifactLoader.js';
+import {
+  SOLVER_POLICY_CONTRACT_VERSION,
+  SOLVER_POLICY_SCHEMA_SHA256,
+  SOLVER_POLICY_VERSION,
+} from '../gto/SolverPolicyContract.js';
 
 const c = (rank: string, suit: string): Card => ({ rank, suit }) as Card;
 
@@ -41,7 +51,10 @@ function chart(
   };
 }
 
-beforeEach(() => _clearGtoCharts());
+beforeEach(() => {
+  _clearGtoCharts();
+  _clearSolverPolicyArtifactsForTests();
+});
 
 describe('handClass - hole cards to the 169-class label the charts key on', () => {
   it('pairs, suited, offsuit - higher rank always first', () => {
@@ -179,6 +192,26 @@ describe('the wiring - the brain actually plays the chart', () => {
     for (let i = 0; i < 20; i++) {
       const d = HorseLogic.decide(mkPlayer(), mkGs() as never, 'balanced');
       expect(d.action).toBe('all_in');
+    }
+  });
+
+  it('a validated offline chart artifact reaches the real horse action path', () => {
+    const policy = createChartSolverPolicy(
+      chart('Cash', 'BTN', 10, 'fold_to_hero', { AA: { push: 1, fold: 0 } })
+    );
+    replaceSolverPolicyArtifact({
+      contractVersion: SOLVER_POLICY_CONTRACT_VERSION,
+      schemaSha256: SOLVER_POLICY_SCHEMA_SHA256,
+      policyVersion: SOLVER_POLICY_VERSION,
+      generatedAt: new Date().toISOString(),
+      sourceArtifact: 'gto-chart-action-path-test',
+      policies: [policy],
+    });
+    expect(gtoChartCount()).toBe(0);
+
+    for (let i = 0; i < 20; i++) {
+      const decision = HorseLogic.decide(mkPlayer(), mkGs() as never, 'balanced');
+      expect(decision.action).toBe('all_in');
     }
   });
 

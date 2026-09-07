@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/the-jackpot-says-when-it-crosses-a-number - BBJ phase 3.4: a club sets a jackpot threshold, every one of its members is told once when the pool crosses it, and the threshold re-arms when the jackpot is next hit",
+  "tables": ["bbj_notify_thresholds", "bbj_threshold_crossings"],
+  "functions": ["fn_bbj_notify_thresholds"]
+}

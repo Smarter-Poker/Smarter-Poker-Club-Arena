@@ -18,6 +18,7 @@ import type { HandHistoryRow } from '../integrity/HandEventAdapter.js';
 import { computeSevenDeuceBounties } from './SevenDeuceBounty.js';
 import { getFullRakeConfig, detectBBJHit, detectBBJNearMiss } from '../config/RakeConfig.js';
 import type { BBJDetectionResult } from '../config/RakeConfig.js';
+import { maybeArmed } from '../services/supabase/bbjDrillRegistry.js';
 import {
   loadTable,
   syncStacks,
@@ -287,6 +288,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        produce a payout is an operator arming again and wondering why. */
     if (this.currentHandShowdownResults.length < 2) return null;
     if (this.currentHandWinnerIds.length < 1) return null;
+
+    /* ASK THE CHEAP QUESTION FIRST. Without this the claim RPC ran on every
+       contested showdown - 137,923 round trips in twenty-four hours, measured
+       on production, every one of them answering "no" - on an engine that is
+       one core. The registry is one query a minute per process; this is a Set
+       lookup. It can only ever DELAY a drill, never cause one: the atomic
+       claim below is still the only thing that fires one. */
+    if (!(await maybeArmed(this.tableId))) return null;
 
     const winnerId = this.currentHandWinnerIds[0];
     const winner = this.currentHandShowdownResults.find((r) => r.userId === winnerId);

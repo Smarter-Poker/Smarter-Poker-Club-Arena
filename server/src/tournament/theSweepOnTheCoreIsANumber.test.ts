@@ -30,6 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 import {
   eliminationSweepMs,
   eliminationSweepsInflight,
@@ -95,18 +96,26 @@ describe('the gauge cannot drift', () => {
     // A forced sweep never reaches its own `finally` - its generation is
     // superseded - so without this the gauge climbs for ever on exactly the
     // process that is in trouble.
-    const forced = SWEEP.indexOf("outcome: 'forced'");
-    const window = SWEEP.slice(forced, forced + 900);
-    expect(window).toContain('eliminationSweepsInflight.dec()');
+    //
+    // Bounded by the BLOCK that forces the lock, never by a byte count. A
+    // fixed window drifts off the end of what it guards the moment somebody
+    // adds a comment, which cost this estate a 39-minute publish outage on
+    // 2026-08-28 - and `noFixedSizeSourceWindows` caught the first draft of
+    // this very file doing it.
+    // levels = 2: the anchor sits inside the `{ outcome: 'forced' }` object
+    // literal, so one climb reaches the call's argument and two reaches the
+    // `if (verdict === 'force')` block this is actually about.
+    expect(sliceEnclosingBlock(SWEEP, "outcome: 'forced'", 0, 2)).toContain(
+      'eliminationSweepsInflight.dec()'
+    );
   });
 
   it('only the current holder decrements in the finally, so it cannot go negative', () => {
     // Decrementing twice for one sweep would walk the gauge below zero, and a
     // metric that lies about the DIRECTION of load is worse than none.
-    const guard = SWEEP.indexOf('if (sweepGeneration === this.eliminationSweepGeneration) {');
-    expect(guard).toBeGreaterThan(0);
-    const block = SWEEP.slice(guard, guard + 700);
-    expect(block).toContain('eliminationSweepsInflight.dec()');
+    expect(
+      sliceEnclosingBlock(SWEEP, 'sweepGeneration === this.eliminationSweepGeneration')
+    ).toContain('eliminationSweepsInflight.dec()');
   });
 
   it('takes its start time inside the tick, not from the shared lock field', () => {

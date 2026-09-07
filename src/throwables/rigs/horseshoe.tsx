@@ -97,8 +97,8 @@ const LABEL_STROKE = '#ffcf3d';
  *  measured 20x19 px on a 30 px avatar, 0.65 u). Shared by the shaded and the
  *  flat glow renders so both are exactly the same shape. */
 const HORSESHOE_PATH =
-  'M -33 -33 C -33 -8, -20 14, 0 22 C 20 14, 33 -8, 33 -33 ' +
-  'L 19 -33 C 19 -12, 10 4, 0 9 C -10 4, -19 -12, -19 -33 Z';
+  'M -33 -33 L -33 -6 C -33 13 -19 26 0 26 C 19 26 33 13 33 -6 ' +
+  'L 33 -33 L 19 -33 L 19 -6 C 19 5 11 12 0 12 C -11 12 -19 5 -19 -6 L -19 -33 Z';
 
 /** Six nail holes along the heels, fixed positions. */
 const NAIL_HOLES: ReadonlyArray<readonly [number, number]> = [
@@ -138,12 +138,24 @@ function Horseshoe({ uid, k }: { uid: string; k: string }) {
   return (
     <g>
       <defs>
-        <linearGradient id={g('gold')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={GOLD_LIGHT} />
-          <stop offset="55%" stopColor={GOLD_MID} />
+        <linearGradient id={g('gold')} x1="0" y1="0" x2="0.75" y2="1">
+          <stop offset="0%" stopColor="#8e561b" />
+          <stop offset="18%" stopColor={GOLD_LIGHT} />
+          <stop offset="32%" stopColor="#fff4bc" />
+          <stop offset="45%" stopColor={GOLD_MID} />
+          <stop offset="63%" stopColor="#a96b20" />
+          <stop offset="78%" stopColor="#f6cf64" />
           <stop offset="100%" stopColor={GOLD_DARK} />
         </linearGradient>
       </defs>
+      <path
+        d={HORSESHOE_PATH}
+        transform="translate(1.5 3)"
+        fill="#55340f"
+        stroke="#38260c"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
       <path
         d={HORSESHOE_PATH}
         fill={`url(#${g('gold')})`}
@@ -151,8 +163,31 @@ function Horseshoe({ uid, k }: { uid: string; k: string }) {
         strokeWidth="1.4"
         strokeLinejoin="round"
       />
+      <path
+        d="M -31 -31 L -31 -6 C -31 12 -18 24 0 24 C 18 24 31 12 31 -6 L 31 -31 M -20 -31 L -20 -6 C -20 6 -11 14 0 14 C 11 14 20 6 20 -6 L 20 -31"
+        fill="none"
+        stroke="#fff1a2"
+        strokeWidth="0.9"
+        opacity="0.8"
+      />
+      <path
+        d="M -26 -27 L -26 -6 C -26 9 -15 19 0 19 C 15 19 26 9 26 -6 L 26 -27"
+        fill="none"
+        stroke="#84521a"
+        strokeWidth="1.2"
+        opacity="0.55"
+      />
       {NAIL_HOLES.map(([x, y], i) => (
-        <ellipse key={i} cx={x} cy={y} rx="2.2" ry="3" fill={NAIL_DARK} opacity="0.75" />
+        <g key={i}>
+          <ellipse cx={x} cy={y + 0.8} rx="2.5" ry="3.3" fill="#f9d975" />
+          <ellipse cx={x} cy={y} rx="2.2" ry="3" fill={NAIL_DARK} />
+          <path
+            d={`M ${x - 1} ${y - 1.5} l 1.5 -0.3`}
+            stroke="#190f05"
+            strokeWidth="1"
+            strokeLinecap="round"
+          />
+        </g>
       ))}
       <path
         d="M -27 -30 C -25 -22, -24 -14, -25 -4"
@@ -186,13 +221,34 @@ function GlowHorseshoe({ uid }: { uid: string }) {
 }
 
 /** A four-leaf clover, drawn around (0,0): four rounded lobes and a stem. */
-function Clover() {
+function Clover({ uid }: { uid: string }) {
+  const leaf = `thr-horseshoe-leaf-${uid}`;
   return (
     <g>
-      <path d="M 0 -1 C 0 -9, -8 -9, -8 -1 C -8 3, -4 4, 0 -1 Z" fill={CLOVER_GREEN} />
-      <path d="M 0 -1 C 0 -9, 8 -9, 8 -1 C 8 3, 4 4, 0 -1 Z" fill={CLOVER_GREEN} />
-      <path d="M 0 1 C -8 1, -8 9, 0 9 C 4 9, 4 5, 0 1 Z" fill={CLOVER_GREEN} />
-      <path d="M 0 1 C 8 1, 8 9, 0 9 C -4 9, -4 5, 0 1 Z" fill={CLOVER_GREEN} />
+      <defs>
+        <radialGradient id={leaf} cx="0.3" cy="0.2" r="0.9">
+          <stop offset="0%" stopColor="#c0ed89" />
+          <stop offset="38%" stopColor={CLOVER_GREEN} />
+          <stop offset="100%" stopColor="#185832" />
+        </radialGradient>
+      </defs>
+      {[0, 90, 180, 270].map((angle) => (
+        <g key={angle} transform={`rotate(${angle})`}>
+          <path
+            d="M 0 0 C -3 -2 -10 -5 -7 -9 Q -4 -12 0 -8 Q 4 -12 7 -9 C 10 -5 3 -2 0 0 Z"
+            fill={`url(#${leaf})`}
+            stroke={CLOVER_EDGE}
+            strokeWidth="0.35"
+          />
+          <path
+            d="M 0 -1 L 0 -7 M 0 -4 L -3 -6 M 0 -5 L 3 -7"
+            fill="none"
+            stroke="#c8e697"
+            strokeWidth="0.5"
+            opacity="0.75"
+          />
+        </g>
+      ))}
       <path
         d="M 0 0 C -0.3 3, -0.3 8, 0.4 12"
         fill="none"
@@ -288,7 +344,7 @@ function Payload({ uid }: RigProps) {
               } as React.CSSProperties
             }
           >
-            <Clover />
+            <Clover uid={`${uid}-${i}`} />
           </g>
         </g>
       ))}

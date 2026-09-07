@@ -56,6 +56,7 @@ import { WalletIcon, type WalletIconName } from '../icons/LobbyIcons';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
+import { watchBbjPool } from '../../lib/bbjPoolFeed';
 import { resolveClubUUID, resolveClubUUIDSync } from '../../utils/clubIdResolver';
 import {
   walletCacheKey,
@@ -923,6 +924,19 @@ export default function DynamicWallet({
     }
   }, [userId, resolvedId, variant, cacheKey]);
 
+  /* THE JACKPOT FIGURE, FROM THE ONE SHARED SOURCE (BBJ phase 3.2).
+     Replaces this widget's own bbj_pools subscription; see the note where that
+     binding used to be. One poll per club serves every jackpot surface. */
+  useEffect(() => {
+    if (!resolvedId) return;
+    return watchBbjPool(resolvedId, (snap) => {
+      if (!isMounted.current) return;
+      setData((prev) =>
+        prev.bbjPool === snap.mainBalance ? prev : { ...prev, bbjPool: snap.mainBalance }
+      );
+    });
+  }, [resolvedId]);
+
   useEffect(() => {
     if (!resolvedId) return;
     // FRESH WINDOW: the panel just painted from data written seconds ago
@@ -1087,47 +1101,20 @@ export default function DynamicWallet({
       // payload locally, once by the debounced bus refetch. Only the duplicate
       // subscription is removed; the authoritative refresh path is untouched.
       //
-      // The bbj_pools listener below STAYS - it is genuinely specific to this
-      // widget (it watches the pool the widget actually reads) and has no
-      // equivalent in the global channel.
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'bbj_pools',
-          // WATCH THE ROW WE READ, BY ITS ID.
-          //
-          // "The pool the widget actually READS" was the right idea and the
-          // wrong implementation: it re-derived the scope from currentUnionId
-          // instead of using the id fn_club_money_panel already hands back,
-          // and that derivation is wrong on a path nobody had walked. A
-          // NON-MEMBER standing in a union club's lobby gets `not_a_member`,
-          // which carries the jackpot (so the banner is correct at mount) but
-          // no `union_id` - so this filter fell through to
-          // `club_id=eq.<club>`, i.e. that club's RETIRED pool row, which will
-          // never emit again. The number was right and frozen, which is worse
-          // than either being right or being absent.
-          //
-          // `bbj.pool_id` is the row the balance on screen came from, on every
-          // path, for every viewer. Bind to it. The club_id fallback only
-          // applies before the first fetch resolves.
-          filter: bbjPoolId
-            ? `id=eq.${bbjPoolId}`
-            : currentUnionId
-              ? `union_id=eq.${currentUnionId}`
-              : `club_id=eq.${resolvedId}`,
-        },
-        (p) => {
-          if (isMounted.current) {
-            setData((prev) => ({
-              ...prev,
-              bbjPool: Number(p.new?.main_balance) || 0,
-              backupBBJ: Number(p.new?.backup_balance) || 0,
-            }));
-          }
-        }
-      )
+      /* THE bbj_pools LISTENER IS GONE (BBJ phase 3.2, 2026-09-06).
+         It was genuinely specific to this widget, and it was also one of six
+         subscriptions to a row that updates on every raked hand - 40,219 times
+         in twenty-four hours, measured on production - so that a wallet figure
+         could be exact to the second. The shared ten-second poll below feeds
+         every jackpot surface from one request per club and costs nothing
+         while the tab is hidden (lib/bbjPoolFeed).
+
+         BACKUP BANK: the poll carries the MAIN balance, which is the number
+         this widget shows and the only one that moves on its own. The backup
+         bank moves only when an operator funds the pool or moves chips between
+         banks, and it refreshes here through the same fetchData() path that
+         paints it at mount and on every WALLET_BUS_EVENTS refresh. It is no
+         longer live to the second, and that is the deliberate trade. */
       .on(
         'postgres_changes',
         {

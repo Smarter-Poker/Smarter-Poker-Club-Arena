@@ -81,9 +81,27 @@ done after the merge is live; it is run and recorded there.
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 3.1 | Lobby pop-up: ClubHomePage subscribes to the `bbj_winners` INSERT (readable since #3045) and emits `BBJ_HIT_GLOBAL`. The same subscription replaces TablePage's hit_count-baseline detection.                                                |
 | 3.2 | `bbj_pools` leaves the Realtime publication (63k updates/day decoded for every subscriber through a stream a minute behind at peak); the balance rides the engine snapshot and a 10 s poll of `fn_bbj_pool_for_club` for non-table surfaces. |
-| 3.3 | "Playing for $X" on the felt masthead.                                                                                                                                                                                                       |
-| 3.4 | Push notification when the jackpot crosses a threshold (club setting).                                                                                                                                                                       |
-| 3.5 | World Hub jackpot tile (separate repo, its own PR, last in the phase).                                                                                                                                                                       |
+
+> **3.2 is in two halves and the second one is GATED. Read this before you drop
+> the table from the publication.** The client half is done and live in both
+> repos: Club Arena PR #3385 (six subscriptions replaced by one shared
+> ten-second poll, `src/lib/bbjPoolFeed.ts`) and World Hub PR #1516 (three
+> more, all of which were ALSO reading the dead `pool_amount` column and so
+> reporting the jackpot as $0.00 while the union pool held 107,092.27).
+>
+> There were **nine** subscribers, not the six the audit found - the World Hub
+> was never searched until 2026-09-06. Dropping `bbj_pools` from the
+> publication before BOTH bundles are live in players' browsers freezes the
+> figure on every stale tab with nothing to say why.
+>
+> So the migration lands only when: Club Arena's bundle carries #3385 (done -
+> `ca_sha b0a646b8bc`, published 23:45 UTC) AND the World Hub's Vercel deploy
+> carries #1516 (pending). Verify both, then drop it, then confirm with
+> `select 1 from pg_publication_tables where pubname='supabase_realtime' and
+tablename='bbj_pools'` returning nothing.
+> | 3.3 | "Playing for $X" on the felt masthead. |
+> | 3.4 | Push notification when the jackpot crosses a threshold (club setting). |
+> | 3.5 | World Hub jackpot tile (separate repo, its own PR, last in the phase). |
 
 ## Phase 4 of 6 - Prove it live
 
@@ -95,12 +113,13 @@ done after the merge is live; it is run and recorded there.
 
 ## Phase 5 of 6 - Close the books
 
-| #   | Item                                                                                                                                                                                                                             |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 5.1 | Audit the admin money controls the way the hit path was audited: `fn_union_fund_bbj_pool`, `fn_bbj_move_between_banks`, promo rain, the owner's `bbj_percent` switch, `BBJAdminAnalytics`, `fn_resolve_bbj_pool`, `record_rake`. |
-| 5.2 | Convert the three SECURITY INVOKER writers (`record_rake`, `fn_resolve_bbj_pool`, `fn_union_fund_bbj_pool`) so INSERT/UPDATE/DELETE can be revoked from `anon` and `authenticated` on every `bbj_*` table.                       |
-| 5.3 | Resolve the promo-bank drift (`fn_bbj_promo_bank_check`, 6,705 chips) and the lifetime conservation gap (70,795 above baseline) with a fix or a written resolution on the alert row.                                             |
-| 5.4 | Table-share farming check in the multi-account detector.                                                                                                                                                                         |
+| #   | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5.1 | Audit the admin money controls the way the hit path was audited: `fn_union_fund_bbj_pool`, `fn_bbj_move_between_banks`, promo rain, the owner's `bbj_percent` switch, `BBJAdminAnalytics`, `fn_resolve_bbj_pool`, `record_rake`.                                                                                                                                                                                                                                                                           |
+| 5.2 | Convert the three SECURITY INVOKER writers (`record_rake`, `fn_resolve_bbj_pool`, `fn_union_fund_bbj_pool`) so INSERT/UPDATE/DELETE can be revoked from `anon` and `authenticated` on every `bbj_*` table.                                                                                                                                                                                                                                                                                                 |
+| 5.3 | Resolve the promo-bank drift (`fn_bbj_promo_bank_check`, 6,705 chips) and the lifetime conservation gap (70,795 above baseline) with a fix or a written resolution on the alert row.                                                                                                                                                                                                                                                                                                                       |
+| 5.4 | Table-share farming check in the multi-account detector.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 5.5 | `I7_raked_hand_never_banked`: rake is not banked inline and `rake-repair-unbanked-hourly` catches it every hour, which by CLAUDE.md 10.11 means the cause is not fixed. Measured 2026-09-06: 0 of 51,733 raked hands (62,498.69 chips) unbanked NOW, so no money is missing - but `fn_rake_bbj_audit` raised CRITICAL on 5 hands at 07:38 and 3 at 06:38 that the repair then fixed. Fix the cause; then give the audit a grace that outlasts the repair, so a CRITICAL stops firing on correct behaviour. |
 
 ## Phase 6 of 6 - Mini BBJ, funded by the backup reserve (last, per Dan)
 

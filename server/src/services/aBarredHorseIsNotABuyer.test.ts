@@ -197,8 +197,15 @@ describe('a buyer is counted once', () => {
      reservation added - an OPENING feeder asks for the two 18.3 promotes it
      at, ahead of every other table. */
   it('a FULL table asks for two - the open rule threshold - and a table with room asks for its open seats', () => {
+    // 2026-09-06: a SEATING table claims what it will seat this cycle
+    // (seatsNeeded), never the whole table - see
+    // theFeederFillsFromTheCountItOpenedOn.test.ts.
+    // 2026-09-06: a SEATING table claims seatsNeeded (what it will actually
+    // fill), and a countOnly table claims the probe only when it is FULL.
+    expect(SEED).toMatch(/seatsWanted: openingFeeder/);
+    expect(SEED).toMatch(/emptySeats\.length === 0\s*\?\s*FULL_TABLE_BUYER_PROBE\s*:\s*0/);
     expect(SEED).toMatch(
-      /seatsWanted: openingFeeder\s*\?\s*feederClaim\s*:\s*countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE\s*:\s*Math\.max\(0, Number\(table\.max_players\) - currentCount\)/
+      /Math\.max\(0, Math\.min\(seatsNeeded, Number\(table\.max_players\) - currentCount\)\)/
     );
     expect(SEED).toContain('Math.max(0, FEEDER_BUYERS_TO_GO_LIVE - currentCount)');
   });
@@ -213,8 +220,10 @@ describe('a buyer is counted once', () => {
   });
 
   it('eligibleHorseCount keeps its shape; the ClusterController is untouched', () => {
+    // 2026-09-06: the census ages out (a stale one answers 0) and then reads
+    // the same map with the same shape.
     expect(SRC).toMatch(
-      /eligibleHorseCount\(tableId: string\): number \{\s*return this\.lastEligibleByTable\.get\(tableId\) \?\? 0;/
+      /eligibleHorseCount\(tableId: string\): number \{\s*if \(this\.censusIsStale\(\)\) return 0;\s*return this\.lastEligibleByTable\.get\(tableId\) \?\? 0;/
     );
   });
 });

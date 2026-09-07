@@ -43,7 +43,11 @@ import { startHorseDailyAudit } from './services/HorseDailyAudit.js';
 import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import { startHorseDataLedgerSync } from './services/HorseDataLedgerSync.js';
 import { startHorseLaneLoader } from './services/HorseLaneLoader.js';
-import { startGtoChartLoader } from './services/GtoChartLoader.js';
+import { startGtoChartLoader, stopGtoChartLoader } from './services/GtoChartLoader.js';
+import {
+  startSolverPolicyArtifactLoader,
+  stopSolverPolicyArtifactLoader,
+} from './gto/SolverPolicyArtifactLoader.js';
 import { startGtoPostflopLoader } from './services/GtoPostflopLoader.js';
 import { startGtoPostflopV31Loader } from './services/GtoPostflopV31Loader.js';
 import { startGtoAggregationDriver } from './services/GtoAggregationDriver.js';
@@ -169,6 +173,10 @@ httpServer.listen(PORT, () => {
   // Game lanes (Dan 2026-08-27): the exact 33/33/34 split lives in the
   // database; this hydrates it and re-balances when the fleet grows.
   startHorseLaneLoader();
+  // Phase 2 canonical solver contract: load any deployment artifact before
+  // chart hydration. Both paths publish immutable in-memory maps, so horse
+  // decisions never wait on a remote solver or database query.
+  startSolverPolicyArtifactLoader();
   // V27 solver charts (Dan 2026-08-29): the PioSolver push/fold charts,
   // hydrated so the synchronous decision reads them at zero I/O. Without
   // this call the layer is inert and heuristics decide — which is the
@@ -224,6 +232,8 @@ const shutdown = async () => {
   // cannot finish inside Docker's default 10s grace — bound it so we exit
   // cleanly on our own terms instead of being SIGKILLed mid-flush.
   httpServer.close();
+  stopGtoChartLoader();
+  stopSolverPolicyArtifactLoader();
   await Promise.race([
     (async () => {
       // FINISH THE HANDS FIRST (2026-08-27). Stopping an engine mid-hand voids

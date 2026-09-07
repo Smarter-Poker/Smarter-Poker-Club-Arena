@@ -1,0 +1,3 @@
+# tests/two-writers-of-the-same-money-take-their-locks-in-one-order.law.test.ts
+
+875 deadlocks and 2,916 statement timeouts in one day were five lock-order inversions. The reporting rollup triggers take the SHARED advisory lock (only the rebuilds hold it exclusively); `fn_sync_tournament_chips` locks in user_id order; `fn_settle_tournament_rake` locks club_wallets before the union/treasury credit like `atomic_distribute_rake`; `atomic_seat_cashout_locked` locks the game before the seat; `fn_seat_horse_in_seat_first_game` takes the Daily Missions lock before the game row (`20260906152215` .. `20260906152850`). Dan, 2026-09-06: fixed at the root, not reconciled.

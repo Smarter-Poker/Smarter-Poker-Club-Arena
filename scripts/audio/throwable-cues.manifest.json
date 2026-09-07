@@ -31,6 +31,66 @@
       "url": "https://kenney.nl/assets/interface-sounds",
       "dir": "interface-sounds/Audio"
     },
+    "oga-water-splash-slime": {
+      "kind": "opengameart",
+      "slug": "water-splash-slime-sfx",
+      "title": "OpenGameArt - 40 CC0 water / splash / slime SFX (rubberduck)",
+      "author": "rubberduck (opengameart.org/users/rubberduck)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/40-cc0-water-splash-slime-sfx",
+      "zip": "https://opengameart.org/sites/default/files/water-splash-slime-sfx.zip",
+      "dir": "water-splash-slime-sfx"
+    },
+    "oga-mud": {
+      "kind": "opengameart",
+      "slug": "25-CC0-mud-sfx",
+      "title": "OpenGameArt - 25 CC0 mud SFX (rubberduck)",
+      "author": "rubberduck (opengameart.org/users/rubberduck)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/25-cc0-mud-sfx",
+      "zip": "https://opengameart.org/sites/default/files/25-CC0-mud-sfx.zip",
+      "dir": "25-CC0-mud-sfx"
+    },
+    "oga-wood-metal": {
+      "kind": "opengameart",
+      "slug": "100-CC0-wood-metal-SFX",
+      "title": "OpenGameArt - 100 CC0 metal and wood SFX (rubberduck)",
+      "author": "rubberduck (opengameart.org/users/rubberduck)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/100-cc0-metal-and-wood-sfx",
+      "zip": "https://opengameart.org/sites/default/files/100-CC0-wood-metal-SFX.zip",
+      "dir": "100-CC0-wood-metal-SFX"
+    },
+    "oga-sfx-loops": {
+      "kind": "opengameart",
+      "slug": "sfx_loops",
+      "title": "OpenGameArt - 30 CC0 SFX loops (rubberduck)",
+      "author": "rubberduck (opengameart.org/users/rubberduck)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/30-cc0-sfx-loops",
+      "zip": "https://opengameart.org/sites/default/files/sfx_loops.zip",
+      "dir": "sfx_loops"
+    },
+    "oga-sci-fi": {
+      "kind": "opengameart",
+      "slug": "sci-fi-sfx",
+      "title": "OpenGameArt - 50 CC0 Sci-Fi SFX (rubberduck)",
+      "author": "rubberduck (opengameart.org/users/rubberduck)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/50-cc0-sci-fi-sfx",
+      "zip": "https://opengameart.org/sites/default/files/sci-fi-sfx.zip",
+      "dir": "sci-fi-sfx"
+    },
+    "oga-rpg": {
+      "kind": "opengameart",
+      "slug": "80-CC0-RPG-SFX_0",
+      "title": "OpenGameArt - 80 CC0 RPG SFX (rubberduck)",
+      "author": "rubberduck (opengameart.org/users/rubberduck)",
+      "license": "CC0-1.0",
+      "url": "https://opengameart.org/content/80-cc0-rpg-sfx",
+      "zip": "https://opengameart.org/sites/default/files/80-CC0-RPG-SFX_0.zip",
+      "dir": "80-CC0-RPG-SFX_0"
+    },
     "own-synthesis": {
       "kind": "synth",
       "title": "Smarter.Poker - synthesised cues",
@@ -42,12 +102,14 @@
   "cues": {
     "pop_soft": {
       "$comment": "beer: mug 2 pops in (reference: a soft pop, centroid ~1.9 kHz).",
+      "levelDb": -6,
       "source": "kenney-interface-sounds",
       "layers": [{ "file": "drop_001.ogg", "at": 0, "gain": 1 }],
       "trimEnd": 0.35
     },
     "glass_clink_rattle": {
       "$comment": "beer + champagne: the reference chime has six rattles at 0 / 133 / 380 / 466 / 600 / 733 ms and a 1.3 s ring-down. Built from five glass impacts layered at those offsets with decaying gain, plus the interface 'glass' tone underneath for the ring.",
+      "levelDb": -2,
       "source": "kenney-impact-sounds",
       "layers": [
         { "file": "impactGlass_light_000.ogg", "at": 0, "gain": 1 },
@@ -61,39 +123,62 @@
     },
     "drip_tick": {
       "$comment": "cracked_egg: the faint tick as the white drips.",
+      "levelDb": -14,
       "source": "kenney-interface-sounds",
       "layers": [{ "file": "tick_002.ogg", "at": 0, "gain": 0.5 }],
       "trimEnd": 0.25
     },
     "squirt_start": {
-      "$comment": "water_gun: the first squirt. Needs a Freesound CC0 water-pistol take (phase 6).",
-      "placeholder": true,
-      "fallback": "squirt"
+      "$comment": "water_gun 933: the first squirt. A short splash for the burst of water leaving the barrel, with a slime layer under it for the thickness the reference has. Was a placeholder through phase 1 and the phase 2 first landing; OpenGameArt's CC0 water pack retires it.",
+      "source": "oga-water-splash-slime",
+      "levelDb": -2,
+      "layers": [
+        { "file": "splash_09.ogg", "at": 0, "gain": 1 },
+        { "file": "slime_01.ogg", "at": 0.02, "gain": 0.45 }
+      ],
+      "trimEnd": 0.45
     },
     "squirt_loop": {
-      "$comment": "water_gun: 2.5 s pump + hiss loop. Needs a Freesound CC0 take (phase 6).",
-      "placeholder": true,
-      "fallback": "squirt"
+      "$comment": "water_gun 933-3433: the 2.5 s pump-and-hiss bed under the squirt. A continuous water loop with a pump under it, which is exactly the two things the reference has running.",
+      "source": "oga-water-splash-slime",
+      "levelDb": -9,
+      "layers": [
+        { "file": "loop_water_01.ogg", "at": 0, "gain": 1 },
+        { "source": "oga-sfx-loops", "file": "pump_01.ogg", "at": 0, "gain": 0.5 }
+      ],
+      "trimEnd": 2.5
     },
     "drip": {
       "$comment": "water_gun: the splat cutting off.",
+      "levelDb": -12,
       "source": "kenney-interface-sounds",
       "layers": [{ "file": "drop_003.ogg", "at": 0, "gain": 0.6 }],
       "trimEnd": 0.3
     },
     "splat_wet": {
-      "$comment": "tomato + poop: one wet splat 33 ms after the visual burst. Needs a Freesound CC0 take (phase 6).",
-      "placeholder": true,
-      "fallback": "splat_wet"
+      "$comment": "tomato + poop: one wet splat 33 ms after the visual burst. Mud is the right texture - the reference splat is thick and low, not a water splash.",
+      "source": "oga-mud",
+      "levelDb": -1,
+      "layers": [
+        { "file": "mud_05.ogg", "at": 0, "gain": 1 },
+        { "file": "mud_12.ogg", "at": 0.03, "gain": 0.5 }
+      ],
+      "trimEnd": 0.6
     },
     "egg_crack": {
-      "$comment": "cracked_egg: the crack. Needs a Freesound CC0 take (phase 6).",
-      "placeholder": true,
-      "fallback": "egg_crack"
+      "$comment": "cracked_egg 400: the crack, in ONE frame. A short wood crack is the closest CC0 match for a shell giving way; a wet mud layer under it is the contents.",
+      "source": "oga-wood-metal",
+      "levelDb": -4,
+      "layers": [
+        { "file": "wood_cracking_01.ogg", "at": 0, "gain": 1 },
+        { "source": "oga-mud", "file": "mud_01.ogg", "at": 0.02, "gain": 0.4 }
+      ],
+      "trimEnd": 0.5
     },
 
     "cork_pop": {
       "$comment": "champagne 800: the loudest cue in the library. A wood impact for the thock plus an interface drop for the airy 'pop' tail; the reference's cork is a short resonant burst with almost no ring.",
+      "levelDb": 0,
       "source": "kenney-impact-sounds",
       "layers": [
         { "file": "impactWood_medium_000.ogg", "at": 0, "gain": 1 },
@@ -103,6 +188,7 @@
     },
     "fizz_loop": {
       "$comment": "champagne 1000-3200: the foam bed under the jet. Band-limited white noise, which is what a fizz is; no sample pack here has one and the expression is reproducible.",
+      "levelDb": -8,
       "source": "own-synthesis",
       "layers": [
         {
@@ -115,6 +201,7 @@
     },
     "flute_clink": {
       "$comment": "champagne 3167: two flutes meeting. Brighter and shorter than the beer mugs' six-rattle chime - a flute rings once and cleanly.",
+      "levelDb": -3,
       "source": "kenney-impact-sounds",
       "layers": [
         { "file": "impactGlass_light_000.ogg", "at": 0, "gain": 1 },
@@ -125,6 +212,7 @@
     },
     "flute_clink_soft": {
       "$comment": "champagne 3900 / 4100: the two late soft clinks the capture records with the table hidden.",
+      "levelDb": -12,
       "source": "kenney-impact-sounds",
       "layers": [{ "file": "impactGlass_light_004.ogg", "at": 0, "gain": 0.7 }],
       "trimEnd": 0.7
@@ -132,6 +220,7 @@
 
     "fw_whistle": {
       "$comment": "fireworks 0-830: the rising whistle, measured centroid 5.3-5.6 kHz, swelling from the first spark and peaking as burst 1 opens. A quadratic chirp 900 Hz -> ~5.4 kHz with a breath of air noise under it. Synthesised: no CC0 pack here has a firework whistle.",
+      "levelDb": -4,
       "source": "own-synthesis",
       "layers": [
         {
@@ -150,6 +239,7 @@
     },
     "fw_crackle": {
       "$comment": "fireworks: the bang cluster around bursts 2 and 3 - the reference lands one bang every 130-170 ms. Six plate and metal impacts at exactly those spacings, decaying.",
+      "levelDb": -3,
       "source": "kenney-impact-sounds",
       "layers": [
         { "file": "impactPlate_heavy_000.ogg", "at": 0, "gain": 1 },
@@ -163,6 +253,7 @@
     },
     "fw_rumble": {
       "$comment": "fireworks 1767-2033: the tail that bridges the gap and wave 2's trails, 25-60x the median with NO picture on screen. Brown noise under 220 Hz. Synthesised for the same reason as the whistle.",
+      "levelDb": -6,
       "source": "own-synthesis",
       "layers": [
         {
@@ -175,6 +266,7 @@
     },
     "fw_barrage": {
       "$comment": "fireworks 2333: wave 2, the loudest hit of the throw (RMS 0.406, second loudest in the whole video). Eight impacts, densest at the front, with the rumble layered under the opening.",
+      "levelDb": 0,
       "source": "kenney-impact-sounds",
       "layers": [
         { "file": "impactPlate_heavy_000.ogg", "at": 0, "gain": 1 },
@@ -198,6 +290,7 @@
 
     "harp_sparkle": {
       "$comment": "rose 767: one soft sparkle running 1.6 s under the butterfly. Six plucks up a pentatonic run, decaying - the reference's cue is a rising shimmer, not a chord.",
+      "levelDb": -5,
       "source": "kenney-interface-sounds",
       "layers": [
         { "file": "pluck_001.ogg", "at": 0, "gain": 0.9 },

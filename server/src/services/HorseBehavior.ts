@@ -27,11 +27,33 @@ export function horseHash(id: string): number {
 /**
  * Buy-in in big blinds for this horse THIS sitting: profile from the id hash,
  * jittered per sitting. Caller clamps to the table's real min/max buy-in.
+ *
+ * ═══ THE JITTER IS SEEDED BY THE SITTING, NOT BY THE CALL (2026-09-06) ═══
+ *
+ * This used to draw `Math.random()` on every call. The seeding cycle asks the
+ * sit verdict twice for the same horse at the same table - once to COUNT it
+ * as a buyer for the ClusterController, once for the CHAIR - and the verdict
+ * sizes the buy-in each time and feeds it to the aggregate-exposure ceiling
+ * (`canOpenAnotherTable`: liveExposure + nextBuyIn <= roll x share x 3). A
+ * standard horse rolls anywhere from 80 to 120 big blinds, a deep one 140 to
+ * 200, so the count could pass on an 82bb roll and the chair refuse on a
+ * 118bb one. HorseSitVerdict's header promised "a horse judged once for the
+ * count and once for the chair is counted once"; with a die inside it that
+ * was not true, and the opening-feeder diagnostics showed the result:
+ * `selected 2, seated 0, skipped {aggregate_exposure=5}` - a feeder opened on
+ * two buyers the chair then refused.
+ *
+ * `sitting` is whatever identifies THIS sitting to the caller (the fleet
+ * passes the table id and the cycle's start time). Two calls with the same
+ * sitting return the same number; a different cycle rolls again, which is
+ * the per-sitting jitter this function was written for. No sitting = the old
+ * behaviour, for callers that only want a plausible one-off number.
  */
-export function buyInBBFor(horseId: string): number {
+export function buyInBBFor(horseId: string, sitting?: string): number {
   const h = horseHash(horseId);
   const bucket = h % 100;
-  const r = Math.random();
+  const r =
+    sitting === undefined ? Math.random() : (horseHash(`${horseId}|${sitting}`) % 10_000) / 10_000;
   if (bucket < 15) return 40 + r * 20; // short-stacker: 40-60bb
   if (bucket < 75) return 80 + r * 40; // standard: 80-120bb
   return 140 + r * 60; // deep: 140-200bb

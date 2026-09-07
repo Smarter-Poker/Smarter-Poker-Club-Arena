@@ -105,7 +105,7 @@ const HUB_ORIGIN = 'https://smarter.poker';
 /**
  * Get an avatar URL with SVG fallback.
  *
- * `/avatars/free|vip/*.png` paths ARE real assets — the 75-avatar library the
+ * `/avatars/free|vip/*.(png|webp)` paths ARE real assets — the avatar library the
  * World Hub ships under its public/ dir. Horses and players who equip a
  * library avatar store exactly these paths in profiles.avatar_url. They are
  * mapped to the table-optimized bust art (`/avatars/table/{tier}_{name}.png`).
@@ -173,7 +173,7 @@ export function getAvatarWithFallback(
     // /avatars/table/* value. Both the bust-art detector in SeatSlot and the
     // baked-nameplate clip in SeatSlot.css key off the DIRECTORY, not the
     // extension, so neither notices the swap.
-    const lib = /^\/avatars\/(free|vip)\/([\w-]+)\.png$/.exec(avatarUrl);
+    const lib = /^\/avatars\/(free|vip)\/([\w-]+)\.(?:png|webp)$/.exec(avatarUrl);
     if (lib) return `${HUB_ORIGIN}/avatars/table/${lib[1]}_${lib[2]}.webp`;
     // Any other Hub-relative avatar path (e.g. already table-optimized)
     if (avatarUrl.startsWith('/avatars/')) return `${HUB_ORIGIN}${avatarUrl}`;

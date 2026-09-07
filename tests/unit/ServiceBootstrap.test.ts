@@ -7,6 +7,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
@@ -54,6 +56,17 @@ describe('ServiceBootstrap', () => {
   });
 
   describe('bootServices', () => {
+    it('does not open the game-engine socket on every authenticated route', () => {
+      const source = readFileSync(
+        resolve(__dirname, '../../src/services/ServiceBootstrap.ts'),
+        'utf8'
+      );
+      expect(source).toContain("import('../lib/authToken')");
+      expect(source).toContain('initAuthTokenCache();');
+      expect(source).not.toContain('engineSocketMux.prewarm(');
+      expect(source).not.toContain("engineSocketUrl(this.baseUrl, '/ws/multi')");
+    });
+
     it('should return BootResult with timestamp', async () => {
       const result = await bootServices();
       expect(result.timestamp).toBeTruthy();

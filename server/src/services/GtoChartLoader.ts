@@ -20,6 +20,11 @@
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import { setGtoCharts, gtoChartCount, type GtoChartRow } from '../engine/GtoCharts.js';
+import {
+  recordChartPolicyRefreshError,
+  solverPolicyArtifactStatus,
+} from '../gto/SolverPolicyArtifactLoader.js';
+import { assertCompleteGtoChartCorpus } from '../gto/GtoChartCorpus.js';
 
 const REFRESH_MS = 60 * 60_000;
 const BOOT_DELAY_MS = 15_000;
@@ -31,15 +36,21 @@ export async function loadGtoCharts(): Promise<number> {
   try {
     const { data, error } = await supabase
       .from('memory_charts_gold')
-      .select('game_type, stack_depth, hero_position, villain_action, hand_matrix');
+      .select(
+        'chart_id, game_type, stack_depth, hero_position, villain_action, hand_matrix, created_at'
+      );
     if (error) throw new Error(error.message);
 
-    const applied = setGtoCharts((data ?? []) as GtoChartRow[]);
+    const rows = (data ?? []) as GtoChartRow[];
+    assertCompleteGtoChartCorpus(rows);
+    const applied = setGtoCharts(rows);
     console.log(
-      `[GtoChartLoader] ${applied} solver charts loaded (${gtoChartCount()} in the store)`
+      `[GtoChartLoader] ${applied} solver charts loaded (${gtoChartCount()} rows, ` +
+        `${solverPolicyArtifactStatus().charts.count} canonical policies)`
     );
     return applied;
   } catch (err) {
+    recordChartPolicyRefreshError(err);
     reportError(err, 'GtoChartLoader.load');
     console.warn(
       `[GtoChartLoader] chart load FAILED - the brain falls back to heuristics (${gtoChartCount()} cached)`

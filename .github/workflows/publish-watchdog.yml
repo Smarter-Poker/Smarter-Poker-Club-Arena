@@ -326,3 +326,59 @@ jobs:
           if [ -n "$EXISTING" ]; then
             gh issue close "$EXISTING" --comment "Every workflow's latest run on main is green again." || true
           fi
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # IS SOMEBODY STOPPING EVERY TABLE ON THE FELT WITH A SCHEMA CHANGE?
+  #
+  # On 2026-09-06 the fleet went from ~450 hands a minute to 6 between 16:04
+  # and 16:08. The engine was alive, leader and dealing; the database was idle
+  # with no lock waits; the engine log held 970 lines of
+  # `deal_step_timeout: load_seats exceeded 20s`. Nothing was broken.
+  #
+  # `ca_ddl_events` had the answer: 133 reload-triggering DDL statements in the
+  # single minute 16:14, applied through the pooler as one long script. ONE
+  # PostgREST schema-cache reload takes ~28 seconds on this database, and
+  # Postgres coalesces the reload NOTIFYs inside ONE transaction and not across
+  # many - which is exactly why CLAUDE.md section 2 rule 1 says a change goes in
+  # as one transaction.
+  #
+  # THE RULE WAS ALREADY WRITTEN. Nothing measured it, so nobody knew it was
+  # being broken and the agent running the script could not see what it was
+  # doing to the felt. This job is the reader that was missing (10.86 rule 3).
+  #
+  # It REPORTS and never gates: these statements do not go through a pull
+  # request at all, so there is nothing to block. A red run here is picked up by
+  # `check-main-is-green` in this same workflow.
+  #
+  # ubuntu-latest for the same reason as the jobs above - the alarm must not
+  # share a failure domain with the boxes it watches.
+  ddl_reload_storms:
+    name: No schema-reload storm is stalling the fleet
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Exit 2 is "COULD NOT TELL" and must not read as either outcome: a
+      # missing key or an unreadable answer is reported, never coerced into
+      # "no storm" (10.86 rules 1 and 2).
+      - name: Distinct reload-triggering DDL per minute, against a derived threshold
+        env:
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set +e
+          node scripts/ci/check-ddl-reload-storms.mjs 2>&1 | tee /tmp/ddl-storms.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "check-ddl-reload-storms exited ${code}"
+          if [ "$code" = "2" ]; then
+            echo "::warning title=DDL reload storms::COULD NOT TELL - see the log. Not reported as clean."
+          fi
+          exit "$code"

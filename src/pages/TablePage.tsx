@@ -162,6 +162,8 @@ import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSea
 
 import { gameCode } from '../utils/gameCode';
 import { masterBus } from '../core/MasterBus';
+import { watchBbjPool } from '../lib/bbjPoolFeed';
+import { watchBbjHits } from '../lib/bbjHitFeed';
 import {
   useMasterBusSubscription,
   useMasterBusSubscriptions,
@@ -1334,8 +1336,6 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
   };
 }
 
-// Module-level guards to prevent multiple TablePage instances from cascading BBJ_HIT_GLOBAL
-const _LAST_BBJ_HIT_COUNT: Record<string, number> = {};
 /* `_LAST_BBJ_TOAST_TIME` was deleted here 2026-08-26. It was a 5-second
    module-level window, which de-duplicated four mounted tables shouting at
    once and NOTHING else: a module variable is reinitialised by the page load,
@@ -7156,227 +7156,62 @@ export default function TablePage({
      POST /withdrawchips are gone. Chips leave the table only when the player
      does. */
 
-  // Load BBJ pool data — union-aware + LIVE (2026-08-18).
-  // Two fixes over the old one-shot load:
-  //  1. Union clubs bank the jackpot in the UNION pool (server checks union
-  //     first) — the old clubId-only lookup showed those tables a permanent $0.
-  //  2. The banner now subscribes to the pool row, so every hand's contribution
-  //     ticks the jackpot up live at the table, and it resets after a hit
-  //     without a page reload.
+  /* ── THE FIGURE AND THE HIT NOW COME FROM DIFFERENT PLACES ────────────────
+     BBJ build plan phase 3.1 + 3.2, 2026-09-06.
+
+     This effect used to do both jobs through one Realtime subscription on the
+     pool row, and it was the wrong instrument for either.
+
+     THE FIGURE. `bbj_pools` updates on every raked hand - 40,219 times in
+     twenty-four hours, measured on production - and six surfaces each held
+     their own subscription to it. It is now one poll of fn_bbj_pool_for_club
+     per CLUB, shared by every surface and paused while the tab is hidden
+     (lib/bbjPoolFeed).
+
+     THE HIT. It was inferred from `hit_count` going up, which could not be
+     done reliably: `payload.old` carries only the primary key, so the previous
+     count was always 0, and the real gate was a module variable that reset on
+     every page load - which is why Dan saw the same old jackpot announced at
+     every login. It now comes from the `bbj_winners` INSERT, one row per
+     jackpot, written inside the payout transaction (lib/bbjHitFeed).
+
+     The engine's socket fan-out (`bbj_hit_global`) is still the fast path for
+     a table this process hosts; this is the fallback for everyone else, and
+     the two de-duplicate on the hit's own identity. */
   useEffect(() => {
     if (!tableId) return;
     let cancelled = false;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let stopPool: (() => void) | null = null;
+    let stopHits: (() => void) | null = null;
+    let watchedPoolId: string | null = null;
 
-    const loadBBJPool = async () => {
-      try {
-        // ROUND 9 (2026-08-29): the three BBJ reads below all discarded their
-        // resolved errors (the catch only sees THROWN ones), so a failed load
-        // was indistinguishable from "no jackpot here" and the banner stayed
-        // blank with no trace. Display fallbacks unchanged; failures reported.
-        const { data: tableData, error: bbjTableErr } = await supabase
-          .from('tables')
-          .select('club_id')
-          .eq('id', tableId)
-          .maybeSingle();
-        if (bbjTableErr) reportError(bbjTableErr, 'TablePage.bbj_table_read_failed', { tableId });
-        const actualClubId = tableData?.club_id;
-        if (!actualClubId || cancelled) return;
+    const start = async () => {
+      const { data: tableData, error: bbjTableErr } = await supabase
+        .from('tables')
+        .select('club_id')
+        .eq('id', tableId)
+        .maybeSingle();
+      if (bbjTableErr) reportError(bbjTableErr, 'TablePage.bbj_table_read_failed', { tableId });
+      const actualClubId = tableData?.club_id;
+      if (!actualClubId || cancelled) return;
 
-        // OPTIMISED 2026-08-18: one RPC instead of clubs + bbj_pools round
-        // trips, and the union rule lives server-side in fn_bbj_pool_for_club
-        // rather than being re-implemented here (it was re-implemented in four
-        // surfaces and wrong in three).
-        const { data: poolRows, error: bbjPoolErr } = await supabase.rpc('fn_bbj_pool_for_club', {
-          p_club_id: actualClubId,
-        });
-        if (bbjPoolErr) reportError(bbjPoolErr, 'TablePage.bbj_pool_read_failed', { tableId });
-        const pool = Array.isArray(poolRows) ? poolRows[0] : poolRows;
-        if (!pool || cancelled || !isMounted.current) return;
-
-        setBbjAmount(Number(pool.main_balance) || 0);
-        setBbjPoolId(pool.pool_id);
-
-        /* ── SEED THE HIT-COUNT BASELINE (Dan 2026-08-28) ──────────────────
-           "This old bad beat jackpot comes up every single time you log in,
-           and it's the same one."
-
-           WHY IT REPLAYED. The guard below announces when the pool row's
-           hit_count exceeds what this page has seen — but `_LAST_BBJ_HIT_
-           COUNT` is a module variable that restarts at 0 on every page load,
-           and `payload.old` carries ONLY the primary key (bbj_pools has
-           default replica identity), so `prevHitCount` is ALWAYS 0 too. The
-           pool row updates constantly (every raked hand contributes), so the
-           FIRST update after login always read as "hit_count went from 0 to
-           N" and re-announced the most recent HISTORICAL hit as though it
-           had just happened. Freshness could not save it either:
-           fn_bbj_recent_hits has no `hit_at` column (the code read one), so
-           the event went out unstamped.
-
-           The fix: before subscribing, read the pool's CURRENT hit_count and
-           make it the baseline. Only an increment that happens while this
-           page is live — an actual jackpot, landing right now — can exceed
-           it. If the read fails the baseline stays unseeded and the
-           freshness stamp below (now the ledger's real `awarded_at`) is the
-           second, independent gate. */
-        try {
-          const { data: poolRow, error: hitBaselineErr } = await supabase
-            .from('bbj_pools')
-            .select('hit_count')
-            .eq('id', pool.pool_id)
-            .maybeSingle();
-          if (hitBaselineErr) {
-            reportError(hitBaselineErr, 'TablePage.bbj_hit_baseline_read_failed', { tableId });
-          }
-          const liveHitCount = Number(poolRow?.hit_count);
-          if (
-            Number.isFinite(liveHitCount) &&
-            liveHitCount > (_LAST_BBJ_HIT_COUNT[pool.pool_id] || 0)
-          ) {
-            _LAST_BBJ_HIT_COUNT[pool.pool_id] = liveHitCount;
-          }
-        } catch {
-          /* Baseline stays unseeded — the awarded_at freshness gate still
-             stops a stale replay from announcing. */
-        }
+      stopPool = watchBbjPool(actualClubId, (snap) => {
         if (cancelled || !isMounted.current) return;
-
-        channel = supabase
-          .channel(`bbj-pool-${pool.pool_id}-${tableId}`)
-          .on(
-            'postgres_changes',
-            {
-              event: 'UPDATE',
-              schema: 'public',
-              table: 'bbj_pools',
-              filter: `id=eq.${pool.pool_id}`,
-            },
-            async (payload) => {
-              const prevHitCount = (payload.old as any)?.hit_count || 0;
-              const nextHitCount = (payload.new as any)?.hit_count || 0;
-
-              if (
-                nextHitCount > prevHitCount &&
-                nextHitCount > (_LAST_BBJ_HIT_COUNT[pool.pool_id] || 0) &&
-                isMounted.current
-              ) {
-                _LAST_BBJ_HIT_COUNT[pool.pool_id] = nextHitCount;
-                /* ── A JACKPOT THAT PAID ALWAYS ANNOUNCES (2026-08-26) ─────
-                   `hit_count` went up, so the Bad Beat Jackpot has ALREADY
-                   been awarded and the money has ALREADY moved. Everything
-                   below is only about naming the winner and the amount.
-
-                   The old code wrapped it in `catch { console.error(...) }`,
-                   and the line directly above marks this hit as seen BEFORE
-                   the try — so a single failed detail fetch meant the biggest
-                   event on the platform passed in complete silence, for
-                   everyone at the table, permanently. There is no second
-                   chance: the hit count never increments again for that hit.
-
-                   One retry, then announce anyway with what the row itself
-                   proves. A jackpot celebration missing the winner's name is
-                   a small disappointment; a jackpot that nobody saw is the
-                   feature not existing. */
-                let announced = false;
-                try {
-                  let data: any[] | null = null;
-                  for (let attempt = 1; attempt <= 2 && !data?.length; attempt++) {
-                    const res = await supabase.rpc('fn_bbj_recent_hits', {
-                      p_pool_id: pool.pool_id,
-                      p_limit: 1,
-                    });
-                    data = res.data;
-                    if (!data?.length && attempt === 1) {
-                      // The award and the ledger row are written in separate
-                      // statements; a 300ms wait covers reading between them.
-                      await new Promise((r) => setTimeout(r, 300));
-                    }
-                  }
-                  if (data && data.length > 0) {
-                    announced = true;
-                    const hit = data[0];
-                    let tName = hit.table_name;
-                    if (!tName && hit.table_id) {
-                      const tRes = await supabase
-                        .from('tables')
-                        .select('name')
-                        .eq('id', hit.table_id)
-                        .maybeSingle();
-                      if (tRes.data) tName = tRes.data.name;
-                    }
-                    masterBus.emit('BBJ_HIT_GLOBAL', {
-                      tableId: hit.table_id || '',
-                      tableName: tName || 'a table',
-                      gameVariant: hit.game_variant || 'Poker',
-                      bigBlind: hit.big_blind || 0,
-                      winnerName: hit.bad_beat_name || 'A player',
-                      amount: hit.bad_beat_amount || hit.total_payout || 0,
-                      /* Carried so the receiver can de-duplicate on the hit's
-                         own identity rather than on arrival time.
-
-                         Dan 2026-08-28: this used to read `hit.hit_at`, a
-                         column fn_bbj_recent_hits HAS NEVER RETURNED — so
-                         every event this path emitted was unstamped and the
-                         freshness gate never applied. The ledger's real
-                         timestamp is `awarded_at` (verified against the live
-                         function signature). With the stamp in place, a
-                         stale hit re-read at login is rejected by
-                         shouldAnnounceBbjHit's 90s window even if every
-                         other guard misfires. */
-                      handNumber: hit.hand_number ?? 0,
-                      emittedAt: hit.awarded_at ? new Date(hit.awarded_at).getTime() : undefined,
-                    });
-                  }
-                } catch (err) {
-                  reportError(err, 'TablePage.bbj_hit_details_failed', {
-                    poolId: pool.pool_id,
-                    tableId,
-                    note: 'announced the hit without winner details',
-                  });
-                }
-
-                if (!announced) {
-                  /* The detail lookup failed or came back empty. The hit is
-                     real — hit_count incremented — so it is announced with
-                     the one number the pool row itself carries: how far the
-                     balance fell. `main_balance` is post-reset, `old` is
-                     pre-hit, and the difference is what left the pool. If
-                     even that is unreadable, 0 renders as a nameless
-                     celebration, which still beats silence. */
-                  const before = Number((payload.old as any)?.main_balance);
-                  const after = Number((payload.new as any)?.main_balance);
-                  const drop =
-                    Number.isFinite(before) && Number.isFinite(after) && before > after
-                      ? before - after
-                      : 0;
-                  masterBus.emit('BBJ_HIT_GLOBAL', {
-                    tableId: '',
-                    tableName: 'a table',
-                    gameVariant: 'Poker',
-                    bigBlind: 0,
-                    winnerName: 'A player',
-                    amount: drop,
-                    handNumber: 0,
-                    emittedAt: Date.now(),
-                  });
-                }
-              }
-
-              const next = (payload.new as { main_balance?: number | string })?.main_balance;
-              const parsed = Number(next);
-              if (Number.isFinite(parsed) && isMounted.current) setBbjAmount(parsed);
-            }
-          )
-          .subscribe();
-      } catch (error) {
-        console.debug('Error loading BBJ pool:', error);
-      }
+        setBbjAmount(snap.mainBalance);
+        setBbjPoolId(snap.poolId);
+        if (snap.poolId && snap.poolId !== watchedPoolId) {
+          watchedPoolId = snap.poolId;
+          if (stopHits) stopHits();
+          stopHits = watchBbjHits(snap.poolId);
+        }
+      });
     };
 
-    loadBBJPool();
+    start().catch((e) => reportError(e, 'TablePage.bbj_feed_start_failed', { tableId }));
     return () => {
       cancelled = true;
-      if (channel) supabase.removeChannel(channel);
+      if (stopPool) stopPool();
+      if (stopHits) stopHits();
     };
   }, [tableId]);
 
@@ -10815,6 +10650,11 @@ export default function TablePage({
             tableId: (handState.table_id as string) || tableId,
             handNumber: handState.hand_number as number,
             emittedAt: handState.emitted_at as number,
+            /* Its OWN identity. Sharing table+hand with the celebration and
+               with `paid` meant whichever arrived first silenced the rest -
+               so a queued jackpot promised the money and never said it had
+               landed. See lib/bbjHitOnce `kind`. */
+            kind: 'pending',
           })
         ) {
           return;
@@ -10833,6 +10673,7 @@ export default function TablePage({
             tableId: (handState.table_id as string) || tableId,
             handNumber: handState.hand_number as number,
             emittedAt: handState.emitted_at as number,
+            kind: 'paid',
           })
         ) {
           return;
@@ -21804,6 +21645,25 @@ export default function TablePage({
                                     : ''}
                                 </span>
                               )}
+                            </span>
+                          )}
+                          {/* WHAT THIS TABLE IS PLAYING FOR (BBJ phase 3.3).
+                              A card room prints the jackpot on the placard,
+                              and until now the only way to see it here was to
+                              open the jackpot widget. It is the reason the
+                              drop comes off every raked pot, so it belongs
+                              beside the stakes that produce it.
+
+                              Only when there IS one: a club with no jackpot,
+                              or a figure not yet loaded, prints nothing rather
+                              than "Playing For $0.00", which would read as a
+                              promise of nothing on a table that is quietly
+                              taking a drop. */}
+                          {bbjAmount > 0 && (
+                            <span className="table-brand__line table-brand__line--jackpot">
+                              <span className="table-brand__jackpot">
+                                Playing For ${money(bbjAmount)}
+                              </span>
                             </span>
                           )}
                           {(tableState.handNumber ?? 0) > 0 && (

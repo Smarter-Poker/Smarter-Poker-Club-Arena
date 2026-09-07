@@ -82,6 +82,47 @@ describe('the cue manifest', () => {
     }
   });
 
+  it('states every cue LEVEL, and refuses to ship one nobody can hear', () => {
+    // THE DEFECT THIS PINS: `flute_clink_soft` shipped at a -36 dBFS peak while
+    // every other cue sat between -1.8 and -19.2. Its source peaks at -0.8, so
+    // the sample was fine - `loudnorm` was the wrong tool. EBU R128 integrated
+    // loudness needs SECONDS of programme and every cue here is a one-shot
+    // under three, so with nothing to measure loudnorm ran in dynamic mode and
+    // ducked a short transient by 30 dB. Nothing caught it: every check there
+    // was asked whether the FILE exists and is over 256 bytes, which a silent
+    // file also is.
+    //
+    // The fix is in the builder, not a detector: measure the assembled mix,
+    // apply ONE static gain to the peak target offset by the cue's own
+    // `levelDb`, and refuse to write a cue below the floor. This test holds
+    // both halves in place.
+    const builder = fs.readFileSync(
+      path.join(repo, 'scripts/audio/build-throwable-cues.mjs'),
+      'utf8'
+    );
+    expect(builder, 'the level gate is gone').toMatch(/QUIET_FLOOR_DB/);
+    expect(builder, 'a cue below the floor must FAIL the build').toMatch(
+      /peak < QUIET_FLOOR_DB[\s\S]{0,400}?fail\(/
+    );
+    expect(builder, 'an unmeasurable output is not the same as a fine one').toMatch(
+      /peak === null[\s\S]{0,200}?fail\(/
+    );
+    expect(builder, 'loudnorm cannot measure a one-shot; it must not be back').not.toMatch(
+      /loudnorm=/
+    );
+    expect(builder, 'alimiter must be a ceiling, never a gain').toMatch(/level=disabled/);
+
+    for (const [name, cue] of Object.entries<any>(manifest.cues)) {
+      if (cue.placeholder) continue;
+      expect(
+        typeof cue.levelDb,
+        `cue '${name}' does not state a levelDb, so its loudness is an accident`
+      ).toBe('number');
+      expect(cue.levelDb, `cue '${name}' levelDb is out of range`).toBeLessThanOrEqual(0);
+      expect(cue.levelDb, `cue '${name}' would be inaudible`).toBeGreaterThanOrEqual(-24);
+    }
+  });
+
   it('is generated, not hand-written', () => {
     const generated = fs.readFileSync(
       path.join(repo, 'src/throwables/cueManifest.generated.ts'),
@@ -138,11 +179,18 @@ describe('the cue manifest', () => {
   });
 
   it('records how many cues are still placeholders, so the number can only fall', () => {
-    // Phase 1 ships four real cues from Kenney CC0 and four placeholders that
-    // need a Freesound CC0 take (phase 6). This number is a ratchet: raising
-    // it means a rig started depending on a sound nobody has sourced.
+    // Phase 1 shipped four real cues and four placeholders waiting on a source
+    // nobody had. 2026-09-06: OpenGameArt's CC0 packs (rubberduck's water,
+    // splash, slime, mud and wood sets) retired all four - `squirt_start`,
+    // `squirt_loop`, `splat_wet` and `egg_crack` are real files now, so THE
+    // NUMBER IS ZERO and no cue in the library falls back to a procedural
+    // recipe any more.
+    //
+    // It stays a ratchet, at 0: a new rig may not start depending on a sound
+    // nobody has sourced. If you genuinely need a placeholder again, that is a
+    // conversation, not a number you raise.
     const placeholders = Object.values(THROWABLE_CUE_MANIFEST).filter((e) => e.placeholder).length;
-    expect(placeholders, 'more placeholder cues than phase 1 shipped').toBeLessThanOrEqual(4);
+    expect(placeholders, 'a cue went back to being a placeholder').toBe(0);
   });
 
   it('no spec asks for a cue that is neither built nor declared', () => {

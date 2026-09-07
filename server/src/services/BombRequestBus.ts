@@ -59,8 +59,48 @@ type Handler = () => void;
 /** tableId -> the engine callback that marks a manual bomb as pushed. */
 const handlers = new Map<string, Handler>();
 
-/** The single shared channel, or null when nobody is listening. */
-let channel: { unsubscribe: () => void } | null = null;
+/**
+ * The single shared channel, or null when nobody is listening.
+ *
+ * Typed as the object `supabase.channel()` returns rather than as
+ * `{ unsubscribe }`, because releasing it goes through
+ * `supabase.removeChannel(ch)` and that needs the channel itself. See
+ * `releaseChannel`.
+ */
+let channel: ReturnType<typeof supabase.channel> | null = null;
+
+/**
+ * Drop the shared channel from the client's registry and forget it.
+ *
+ * ═══ UNSUBSCRIBE IS NOT REMOVE (2026-09-06) ════════════════════════════════
+ *
+ * This used to call `channel.unsubscribe()`. That leaves the socket, but it
+ * leaves the channel OBJECT in `supabase.getChannels()` - and
+ * `supabase.channel(topic)` does not de-duplicate by topic, it appends. So
+ * every open/close cycle of this bus stranded one dead entry under
+ * `engine:bomb-requests`, and the next `ensureChannel()` created a SECOND
+ * live channel on a topic that already had one.
+ *
+ * On a platform where bomb-pot tables open and close all day that accumulates
+ * for the life of the process, against a socket whose hard cap of 100
+ * channels is the exact thing this file was written to stop hitting - the
+ * same leak in a smaller shape. `TournamentManagerBase.cleanupBroadcastChannel`
+ * already went through `removeChannel` for this reason; this is the other half
+ * of it.
+ *
+ * `removeChannel` unsubscribes as part of its own work, so nothing is skipped
+ * by not calling `unsubscribe()` first.
+ */
+function releaseChannel(ch: ReturnType<typeof supabase.channel>): void {
+  if (channel === ch) channel = null;
+  try {
+    void Promise.resolve(supabase.removeChannel(ch)).catch(() => {
+      /* a channel that will not release cannot hold up a table shutdown */
+    });
+  } catch {
+    /* nor can one that throws on the way out */
+  }
+}
 
 /**
  * Open the shared channel if it is not already open.
@@ -68,6 +108,14 @@ let channel: { unsubscribe: () => void } | null = null;
  * A failure to subscribe is survivable and deliberately not retried here: the
  * throttled column read is the backstop, and a retry loop against a Realtime
  * service that is refusing joins is precisely the behaviour this file removes.
+ *
+ * A TERMINAL status does release the handle, though, so the NEXT table to ask
+ * opens a fresh one. That is recovery without a loop: `ensureChannel` is only
+ * ever reached from `subscribeBombRequests`, which a table calls when it
+ * starts and on its throttled config refresh. Without this, one
+ * `CHANNEL_ERROR` left `channel` non-null for the life of the process and the
+ * fast path was gone until the next deploy, silently - the shape 10.86 is
+ * about: a handle that reads as open because nothing said otherwise.
  */
 function ensureChannel(): void {
   if (channel) return;
@@ -84,8 +132,18 @@ function ensureChannel(): void {
           /* a malformed broadcast must never reach a dealing loop */
         }
       });
-    void ch.subscribe();
-    channel = ch as unknown as { unsubscribe: () => void };
+    channel = ch;
+    void ch.subscribe((status: string) => {
+      // CLOSED is also what a deliberate release reports, and by then
+      // `channel` is already null or another object, so releaseChannel's
+      // identity check makes this a no-op rather than a double removal.
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (channel === ch) {
+          console.warn(`[BombPot] shared bomb-request channel ${status}; releasing the handle`);
+          releaseChannel(ch);
+        }
+      }
+    });
   } catch (err) {
     console.warn('[BombPot] shared bomb-request channel failed to open:', err);
     channel = null;
@@ -111,12 +169,7 @@ export function subscribeBombRequests(tableId: string, onRequested: Handler): vo
 export function unsubscribeBombRequests(tableId: string): void {
   handlers.delete(tableId);
   if (handlers.size > 0 || !channel) return;
-  try {
-    channel.unsubscribe();
-  } catch {
-    /* a channel that will not close cannot hold up a table shutdown */
-  }
-  channel = null;
+  releaseChannel(channel);
 }
 
 /** Test seam: how many tables are currently listening. */

@@ -39,6 +39,8 @@ const settlement = read('./ServerTableEngineSettlement.ts');
 const payout = read('../services/supabase/bbj.ts');
 const reconciler = read('../services/FeeReconciler.ts');
 const instruments = read('../observability/engineInstruments.ts');
+const hub = read('../transport/TableStateHub.ts');
+const hitOnce = read('../../../src/lib/bbjHitOnce.ts');
 
 /**
  * The bbj_payout settlement step, bounded by the step that follows it rather
@@ -115,6 +117,42 @@ describe('2.2 the table is told, whether the money is now or later', () => {
       );
     }
   });
+
+  it('each announcement de-duplicates on its OWN identity, or the second is swallowed', () => {
+    /* THE BUG THIS PINS. The gate's identity was table + hand and nothing
+       else, so `bbj_payout_pending` marked the hit seen and `bbj_payout_paid`
+       for the SAME hand was refused as a replay: the player was told the money
+       was coming and never told it had landed. Both halves of 2.2 were
+       emitted, handled - and swallowed one layer further in. The behaviour
+       itself is exercised in tests/unit/bbjHitOnce.test.ts; what is pinned
+       here is that both callers still pass a kind of their own. */
+    expect(hitOnce).toMatch(/kind\?: string;/);
+    const page = read('../../../src/pages/TablePage.tsx');
+    for (const [t, kind] of [
+      ['bbj_payout_pending', 'pending'],
+      ['bbj_payout_paid', 'paid'],
+    ] as const) {
+      expect(sliceEnclosingBlock(page, `eventType === '${t}'`), t).toMatch(
+        new RegExp(`kind: '${kind}'`)
+      );
+    }
+  });
+
+  it('the hub can retain every beat one jackpot produces, the oldest included', () => {
+    /* `bbj_hit` carries the hand names the celebration is built from, and it
+       is the OLDEST jackpot beat - so it is the first thing the per-table
+       splice throws away. Phase 2 took a cash table from three retained beats
+       to five and did not revisit a cap of four. COUNTED from the source, not
+       written down, so the next retained event has to move this itself. */
+    const retained =
+      (settlement.match(/replay_until:/g) || []).length +
+      (reconciler.match(/replay_until:/g) || []).length;
+    const cap = Number(/HUB_MAX_RETAINED_EVENTS_PER_TABLE = (\d+)/.exec(hub)?.[1] ?? '0');
+    expect(retained, 'jackpot beats a cash table asks the hub to retain').toBeGreaterThanOrEqual(5);
+    expect(cap, `the cap (${cap}) must hold all ${retained} retained beats`).toBeGreaterThanOrEqual(
+      retained
+    );
+  });
 });
 
 describe('2.3 one unpayable share does not cost everyone else theirs', () => {
@@ -131,6 +169,18 @@ describe('2.3 one unpayable share does not cost everyone else theirs', () => {
 });
 
 describe('2.4 the whole path is counted', () => {
+  it('every declared counter is written to somewhere - a declared-only metric reads as zero for ever', () => {
+    /* This pin exists because `poker_bbj_shares_parked_total` shipped declared
+       and incremented NOWHERE. A counter nothing writes to is worse than no
+       counter: it renders a flat zero that is indistinguishable from "this
+       never happened", which is the same trap CLAUDE.md 10.84 names about an
+       empty alert group reading as coverage. */
+    const parkBranch = sliceEnclosingBlock(payout, 'processBBJPayout.share_parked', 0, 2);
+    expect(parkBranch, 'parked is counted where the park is detected').toMatch(
+      /bbjSharesParkedTotal\.inc\(/
+    );
+  });
+
   it('declares detected, paid, queued and parked', () => {
     for (const m of [
       'poker_bbj_hits_detected_total',

@@ -264,8 +264,14 @@
   }
 }
 
+/* Flute 2 starts 400 ms after flute 1 and must still be GONE at the same
+   instant, because that instant is when the player unmounts the payload
+   (landing 200 + payload.ms 4500 = 4700). It used to carry flute 1's 2.4 s
+   duration on a 2.5 s delay, so its timeline ran to 5100 and the darkroom
+   photographed the 4700 cut with a flute still standing at full opacity - the
+   seat was supposed to be clean. 2.0 s ends it exactly on the cut. */
 .thr-champagne__f2 {
-  animation: thr-champagne-f2 calc(2.4s * var(--animation-speed, 1)) linear
+  animation: thr-champagne-f2 calc(2s * var(--animation-speed, 1)) linear
     calc(2.5s * var(--animation-speed, 1)) forwards;
 }
 
@@ -275,26 +281,28 @@
     opacity: 0.4;
     transform: translateX(-55px) scale(0.9);
   }
-  11% {
+  13.4% {
     /* 2967: full */
     opacity: 1;
     transform: translateX(-55px) scale(1);
   }
-  24% {
+  28.4% {
+    /* 3267: the ease apart begins */
     opacity: 1;
     transform: translateX(-55px) scale(1);
   }
-  33% {
+  40% {
     /* 3500: out to the left flank at -0.47 u */
     opacity: 1;
     transform: translateX(-47px) scale(1);
   }
-  35% {
+  41.7% {
+    /* 3533: the fade starts, in step with flute 1 */
     opacity: 1;
     transform: translateX(-47px) scale(1);
   }
   100% {
-    /* 4700: clean */
+    /* 4700: clean, on the same frame the player cuts */
     opacity: 0;
     transform: translateX(-47px) scale(1);
   }

@@ -94,6 +94,90 @@ visual record: fireworks opens as a dot and fills to a cloud, the champagne
 bottle dissolves into two flutes that meet at the rim, the rose puts a bud
 behind the ear and walks a kiss down to the chin.
 
+## The verification pass, and the fourth source
+
+Dan, before phase 3: "verify that everything you've built in the previous phase
+is 100% fully built, coded, wired in and tested ... GO AHEAD AND FIND A 4TH
+OPEN SOURCE OR FREE LICENSE TO FINISH UP THE SOUND EFFECTS."
+
+**It was pushed and it was NOT published, and the reason is the one CLAUDE.md
+10.82 is about.** Phase 2 was branched off the phase-1 BRANCH rather than off
+`main`, because phase 1 had not merged yet. Phase 1 then landed as a SQUASH,
+which is a new commit that is not an ancestor of anything phase 2 knows about,
+so every phase-1 file came back as an add/add conflict: PR #3381 sat at
+`mergeable_state: dirty` for four hours, CI never started, and autopilot could
+not touch it. Resolved by merging `origin/main` in and taking ours on all ten
+conflicts - proven safe first, by diffing each file both ways and confirming
+that every line unique to `main` was the OLD version of a line this branch had
+deliberately replaced. **Stacking on an unmerged branch buys nothing and costs
+a merge conflict per file; the next landing branches off `main`.**
+
+### Three defects in the audio, one of them shipped silent
+
+1. **`flute_clink_soft` peaked at -36 dBFS** while every other cue sat between
+   -1.8 and -19.2. Its source peaks at -0.8, so nothing was wrong with the
+   sample: **`loudnorm` was the wrong tool for this whole library.** EBU R128
+   integrated loudness is defined over 400 ms blocks with gating and needs
+   SECONDS of programme; every cue here is a one-shot under three. With nothing
+   to measure it runs in dynamic mode, rides the level as it goes, and ducked a
+   short transient surrounded by silence by thirty decibels.
+
+   Fixed at the root rather than nudged: the builder now measures the assembled
+   mix and applies ONE static gain to the true-peak target, offset by the cue's
+   own `levelDb`. The dynamics between cues are something the manifest STATES -
+   the cork pop is the loudest thing in the library at 0, the drips sit 12-14 dB
+   down - instead of whatever a gate happened to do.
+
+2. **Nothing would have caught it.** Every check there was asked whether the
+   FILE exists and is over 256 bytes, and a silent file is both. The builder now
+   refuses to write a cue peaking below -30 dBFS, and refuses one whose level it
+   cannot measure at all - "I could not tell" is not "fine" (10.86 rule 1). The
+   floor is derived, not guessed: the good cues clear it by 11 dB and the defect
+   missed it by 6.
+
+3. **`alimiter` auto-levels to its own ceiling by default**, which dragged every
+   cue back up and undid the offsets. It is `level=disabled` now: a ceiling,
+   never a gain.
+
+### The fourth source: OpenGameArt, and why it needs no fourth licence
+
+Six CC0 packs by **rubberduck** on OpenGameArt, each verified on its own
+submission page before anything was downloaded - water/splash/slime, mud,
+wood+metal, SFX loops, sci-fi and RPG. Every page carries exactly one CC0 link
+and zero CC-BY links.
+
+**No new licence string was needed, and adding one would have been ceremony.**
+OpenGameArt is a fourth SOURCE, not a fourth licence: these packs are CC0-1.0,
+which the allowlist has permitted since phase 1. The one thing OGA does that
+Kenney does not is host several licences side by side, so the fetcher re-reads
+the submission page every time and **refuses to download a pack whose page has
+stopped saying CC0 or has started also saying CC-BY** - an attribution
+obligation is not something to take on by accident.
+
+The immediate win: **the placeholder count is now ZERO.** `squirt_start`,
+`squirt_loop`, `splat_wet` and `egg_crack` had been falling back to the legacy
+procedural recipes since phase 1; they are real licensed files now, and the
+ratchet in the test is lowered to 0 in the same commit, as its own rule
+requires. Nothing in the library is a stand-in any more.
+
+### And one more from the darkroom
+
+**At the 4700 cut, champagne's second flute was still standing at full
+opacity.** It had been given flute 1's 2.4 s duration on its own later 2.5 s
+delay, so its timeline ran to 5100 while the player unmounts the payload at 4700. Its duration is 2.0 s now and both flutes are gone on the same frame. The
+seat is clean at the cut, which is what the reference does.
+
+### What the pass confirmed rather than changed
+
+- All 17 cues contain real audio - every one measured, peaks -0.7 to -16.5 dBFS,
+  none silent.
+- All 17 ship both containers; no spec names a cue that does not exist.
+- The three new rig ids resolve on the wire, and each has exactly one registry
+  entry.
+- No TODO, FIXME, `@ts-ignore` or `as any` anywhere in the phase-2 tree.
+- Every new stylesheet carries its reduced-motion block.
+- `tsc` exits 0 and the FULL suite is **1110 files, 0 failed**.
+
 ## Honest gaps
 
 1. **Eleven of the fourteen are not built yet**: horseshoe (with the GOOD LUCK

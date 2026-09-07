@@ -225,6 +225,59 @@ describe('it never takes the table down', () => {
   });
 });
 
+describe('one jackpot, three things to say (BBJ phase 2.2)', () => {
+  /* THE BUG THIS PINS. A queued jackpot emits `bbj_payout_pending` and then,
+     when the reconciler lands it, `bbj_payout_paid`. Both went through this
+     gate with the identity table+hand and NOTHING else, so the first marked
+     the hit seen and the second was refused as a replay: the player was told
+     the money was coming and never told it had arrived. Phase 2.2 was coded,
+     emitted, handled - and silently swallowed one layer further in. */
+
+  it('pending and paid are each announced, for the same hand', () => {
+    const at = { tableId: 't9', handNumber: 7, emittedAt: NOW - 1000, now: NOW };
+    expect(shouldAnnounceBbjHit({ ...at, kind: 'pending' })).toBe(true);
+    expect(shouldAnnounceBbjHit({ ...at, kind: 'paid' })).toBe(true);
+  });
+
+  it('and neither repeats itself', () => {
+    const at = { tableId: 't9', handNumber: 7, emittedAt: NOW - 1000, now: NOW };
+    expect(shouldAnnounceBbjHit({ ...at, kind: 'pending' })).toBe(true);
+    expect(shouldAnnounceBbjHit({ ...at, kind: 'pending' })).toBe(false);
+    expect(shouldAnnounceBbjHit({ ...at, kind: 'paid' })).toBe(true);
+    expect(shouldAnnounceBbjHit({ ...at, kind: 'paid' })).toBe(false);
+  });
+
+  it('the celebration keeps the key it has always had, and still shares it with the club-wide card', () => {
+    /* Those two are one announcement seen from two places - the card already
+       refuses the table you are looking at - so they must NOT be split. */
+    expect(bbjHitKey('t9', 7)).toBe('t9:7');
+    expect(bbjHitKey('t9', 7, '')).toBe('t9:7');
+    const at = { tableId: 't9', handNumber: 7, emittedAt: NOW - 1000, now: NOW };
+    expect(shouldAnnounceBbjHit(at)).toBe(true);
+    expect(shouldAnnounceBbjHit(at)).toBe(false);
+  });
+
+  it('a kind does not leak across tables or hands', () => {
+    const base = { emittedAt: NOW - 1000, now: NOW, kind: 'paid' };
+    expect(shouldAnnounceBbjHit({ ...base, tableId: 'a', handNumber: 1 })).toBe(true);
+    expect(shouldAnnounceBbjHit({ ...base, tableId: 'b', handNumber: 1 })).toBe(true);
+    expect(shouldAnnounceBbjHit({ ...base, tableId: 'a', handNumber: 2 })).toBe(true);
+    expect(shouldAnnounceBbjHit({ ...base, tableId: 'a', handNumber: 1 })).toBe(false);
+  });
+
+  it('a stale pending is still refused - a kind is an identity, never a bypass of freshness', () => {
+    expect(
+      shouldAnnounceBbjHit({
+        tableId: 't9',
+        handNumber: 7,
+        emittedAt: NOW - BBJ_FRESH_MS - 1,
+        now: NOW,
+        kind: 'pending',
+      })
+    ).toBe(false);
+  });
+});
+
 /**
  * A page reload, as far as this module can tell: the in-memory Set is gone,
  * sessionStorage survives. Re-importing the module under vitest would give a

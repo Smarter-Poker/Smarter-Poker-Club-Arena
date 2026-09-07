@@ -168,13 +168,23 @@ describe('a disabled or paused fleet seats nobody and removes nobody', () => {
     /* Moved 2026-09-05 for Gate 7. This used to pin `this.spawnOverflowTables(`
        and `this.retireSurplusTables(` as the passes a withheld cycle still
        runs. Both writers are deleted (OPORD 1.4 s2.11: a cash table is opened
-       and closed only by the cluster controller). The passes that survive a
-       withhold are now the Stable Hand's GAME order and the lifecycle pass,
-       and the fleet must still not have grown a table writer of its own. */
+       and closed only by the cluster controller). The pass that survives a
+       withhold is the Stable Hand's GAME order, and the fleet must still not
+       have grown a table writer of its own.
+
+       2026-09-06: `this.runTableLifecyclePass(` was pinned here too and is now
+       DELETED, for the third time in the same list and the same reason. OPORD
+       s18.2 names it with the other two; it acted on zero rows (no table on the
+       platform carries auto_restart or auto_create_table); and its AUTO CREATE
+       arm cloned `cluster_id`, `role` and `main_index`, so cloning a full Main
+       1 minted a second Main 1 - the 3,000-tables-on-one-game shape. The fleet
+       owns no lifecycle at all now. */
     expect(AFTER_WITHHOLD).toContain('this.openPlannedTables(');
-    expect(AFTER_WITHHOLD).toContain('this.runTableLifecyclePass(');
+    expect(AFTER_WITHHOLD).not.toContain('this.runTableLifecyclePass(');
     expect(AFTER_WITHHOLD).not.toContain('this.spawnOverflowTables(');
     expect(AFTER_WITHHOLD).not.toContain('this.retireSurplusTables(');
+    // And nowhere else in the file either - not a helper, not a comment-out.
+    expect(SRC).not.toContain('fn_table_lifecycle_pass');
     expect(AFTER_WITHHOLD).toContain('this.publishFleetState(');
   });
 

@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { watchBbjPool } from '../lib/bbjPoolFeed';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import './BadBeatJackpotPage.css';
@@ -151,6 +152,7 @@ export default function BadBeatJackpotPage() {
     }
     {
       let isMounted = true;
+      let stopPool: (() => void) | null = null;
       loadJackpotData(() => isMounted);
 
       const channelKey = 'jackpot-live';
@@ -173,34 +175,30 @@ export default function BadBeatJackpotPage() {
           : poolIdQuery.eq('club_id', resolvedId);
         const { data: poolRow } = await poolIdQuery.maybeSingle();
         if (!isMounted) return;
-        const poolFilter = poolRow?.id ? `id=eq.${poolRow.id}` : `club_id=eq.${resolvedId}`;
         const winnersFilter = poolRow?.id ? `pool_id=eq.${poolRow.id}` : `club_id=eq.${resolvedId}`;
+
+        /* THE FIGURE IS POLLED (BBJ phase 3.2, 2026-09-06). `bbj_pools`
+           updated 40,219 times in twenty-four hours on production, and this
+           page held one of six subscriptions to it. The shared ten-second
+           poll below drives both the number and the flash; the `bbj_winners`
+           INSERT binding stays, because that is one row per jackpot and it is
+           what this page is for. */
+        stopPool = watchBbjPool(resolvedId, (snap) => {
+          if (!isMounted) return;
+          if (snap.mainBalance > prevAmountRef.current) {
+            setJustUpdated(true);
+            if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+            flashTimerRef.current = setTimeout(() => {
+              setJustUpdated(false);
+              flashTimerRef.current = null;
+            }, 2000);
+          }
+          prevAmountRef.current = snap.mainBalance;
+          setJackpot((prev) => (prev ? { ...prev, main_balance: snap.mainBalance } : prev));
+        });
 
         const channel = masterBus.getOrCreateChannel(channelKey);
         channel
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'bbj_pools',
-              filter: poolFilter,
-            },
-            (payload) => {
-              if (!isMounted) return;
-              const newData = payload.new as JackpotInfo;
-              if ((newData.main_balance || 0) > prevAmountRef.current) {
-                setJustUpdated(true);
-                if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-                flashTimerRef.current = setTimeout(() => {
-                  setJustUpdated(false);
-                  flashTimerRef.current = null;
-                }, 2000);
-              }
-              prevAmountRef.current = newData.main_balance || 0;
-              setJackpot(newData);
-            }
-          )
           .on(
             'postgres_changes',
             {
@@ -230,6 +228,7 @@ export default function BadBeatJackpotPage() {
 
       return () => {
         isMounted = false;
+        if (stopPool) stopPool();
         masterBus.removeRegisteredChannel(channelKey);
         if (flashTimerRef.current) {
           clearTimeout(flashTimerRef.current);

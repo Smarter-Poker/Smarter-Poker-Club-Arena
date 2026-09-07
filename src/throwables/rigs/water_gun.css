@@ -20,7 +20,7 @@
    stay in step by construction. ──────────────────────────────────────────── */
 .thr-water_gun__track {
   animation: thr-water_gun-track calc(3.17s * var(--animation-speed, 1)) ease-in-out both;
-  animation-delay: calc(0.1s * var(--animation-speed, 1));
+  animation-delay: calc(0.067s * var(--animation-speed, 1));
 }
 
 @keyframes thr-water_gun-track {
@@ -56,7 +56,7 @@
   transform-box: fill-box;
   transform-origin: 50% 50%;
   animation: thr-water_gun-aim calc(3.17s * var(--animation-speed, 1)) ease-in-out both;
-  animation-delay: calc(0.1s * var(--animation-speed, 1));
+  animation-delay: calc(0.067s * var(--animation-speed, 1));
 }
 
 @keyframes thr-water_gun-aim {
@@ -86,7 +86,7 @@
   animation-name: thr-water_gun-jitter;
   animation-duration: calc(0.278s * var(--animation-speed, 1));
   animation-timing-function: ease-out;
-  animation-delay: calc(0.633s * var(--animation-speed, 1));
+  animation-delay: calc(0.6s * var(--animation-speed, 1));
   animation-iteration-count: 9;
   animation-fill-mode: both;
 }
@@ -111,7 +111,7 @@
 .thr-water_gun__live {
   opacity: 0;
   animation: thr-water_gun-live calc(3.17s * var(--animation-speed, 1)) linear both;
-  animation-delay: calc(0.1s * var(--animation-speed, 1));
+  animation-delay: calc(0.067s * var(--animation-speed, 1));
 }
 
 @keyframes thr-water_gun-live {
@@ -137,7 +137,7 @@
   animation-name: thr-water_gun-flow;
   animation-duration: calc(0.18s * var(--animation-speed, 1));
   animation-timing-function: linear;
-  animation-delay: calc(0.633s * var(--animation-speed, 1));
+  animation-delay: calc(0.6s * var(--animation-speed, 1));
   animation-iteration-count: 14;
   animation-fill-mode: both;
 }
@@ -158,7 +158,7 @@
   transform-origin: 50% 50%;
   opacity: 0;
   animation: thr-water_gun-splat calc(3.17s * var(--animation-speed, 1)) ease-out both;
-  animation-delay: calc(0.1s * var(--animation-speed, 1));
+  animation-delay: calc(0.067s * var(--animation-speed, 1));
 }
 
 @keyframes thr-water_gun-splat {
@@ -198,7 +198,7 @@
   animation-name: thr-water_gun-pulse;
   animation-duration: calc(0.278s * var(--animation-speed, 1));
   animation-timing-function: ease-in-out;
-  animation-delay: calc(0.633s * var(--animation-speed, 1));
+  animation-delay: calc(0.6s * var(--animation-speed, 1));
   animation-iteration-count: 9;
   animation-fill-mode: both;
 }
@@ -225,7 +225,7 @@
   animation-name: thr-water_gun-drop;
   animation-duration: calc(0.278s * var(--animation-speed, 1));
   animation-timing-function: cubic-bezier(0.15, 0.75, 0.35, 1);
-  animation-delay: calc(0.633s * var(--animation-speed, 1));
+  animation-delay: calc(0.6s * var(--animation-speed, 1));
   animation-iteration-count: 9;
   animation-fill-mode: both;
 }

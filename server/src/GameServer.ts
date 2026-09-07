@@ -39,6 +39,7 @@ import {
 import {
   alwaysOnPrometheusLines,
   equityGovernorScale,
+  equityGovernorSamplerLateMs,
   eventLoopDelayP50,
   eventLoopDelayP99,
 } from './observability/engineInstruments.js';
@@ -1696,6 +1697,10 @@ export class GameServer {
         eventLoopDelayP50.set(Number.isFinite(g.p50Ms) ? g.p50Ms : 0);
         eventLoopDelayP99.set(Number.isFinite(g.p99Ms) ? g.p99Ms : 0);
         equityGovernorScale.set(Number.isFinite(g.scale) ? g.scale : 1);
+        // The reading that cannot be starved by the load it measures - see
+        // the gauge's own comment. Published even when it is zero, because a
+        // flat zero here beside a rising p50 is itself the diagnosis.
+        equityGovernorSamplerLateMs.set(Number.isFinite(g.timerLateMs) ? g.timerLateMs : 0);
         return [];
       })(),
       ...alwaysOnPrometheusLines(),

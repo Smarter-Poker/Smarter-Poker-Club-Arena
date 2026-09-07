@@ -19,13 +19,6 @@
  * rose's `__landed` and tomato's `__squash`.
  */
 
-.thr-trash_can {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
 /* == THE LANDED CAN: whole, at 333, gone in one frame at 533 (+200). ===== */
 .thr-trash_can__landed {
   animation: thr-trash_can-landed calc(0.2s * var(--animation-speed, 1)) steps(1, end) both;

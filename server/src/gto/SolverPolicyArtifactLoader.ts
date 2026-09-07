@@ -102,6 +102,14 @@ export function assertValidChartPolicyRow(row: ChartPolicyRow): ChartPolicyRow {
     !['Cash', 'Tournament'].includes(row.game_type) ||
     !CHART_DEPTHS.has(row.stack_depth) ||
     !['fold_to_hero', 'sb_push'].includes(row.villain_action) ||
+    (row.chart_id !== null &&
+      row.chart_id !== undefined &&
+      (typeof row.chart_id !== 'string' || row.chart_id.trim().length === 0)) ||
+    (row.created_at !== null &&
+      row.created_at !== undefined &&
+      (typeof row.created_at !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}T/.test(row.created_at) ||
+        !Number.isFinite(Date.parse(row.created_at)))) ||
     !plainRecord(row.hand_matrix) ||
     Object.keys(row.hand_matrix).length === 0
   ) {

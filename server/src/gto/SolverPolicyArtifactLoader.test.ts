@@ -466,6 +466,12 @@ describe('atomic artifact hydration', () => {
     expect(() => createChartSolverPolicy({ ...chartRow, hero_position: 'BB' })).toThrow(
       /invalid_chart_policy_identity/
     );
+    expect(() => createChartSolverPolicy({ ...chartRow, chart_id: 42 } as never)).toThrow(
+      /invalid_chart_policy_row/
+    );
+    expect(() => createChartSolverPolicy({ ...chartRow, created_at: 'not-an-instant' })).toThrow(
+      /invalid_chart_policy_row/
+    );
   });
 
   it('serves every chart lookup from immutable memory with explicit liveness', () => {

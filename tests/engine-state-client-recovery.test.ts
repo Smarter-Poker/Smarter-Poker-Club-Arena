@@ -227,6 +227,20 @@ describe('EngineStateClient — heartbeats cannot acknowledge missing game state
       c.disconnect();
     }
   });
+
+  it('cannot postpone a missing snapshot forever by repeatedly returning to the tab', async () => {
+    const { c, ws, statuses } = await openTable();
+    try {
+      await heartbeats(ws, 35);
+      for (let i = 0; i < 7; i++) {
+        document.dispatchEvent(new Event('visibilitychange'));
+        await heartbeats(ws, 5);
+      }
+      expect(statuses).toContain('reconnecting');
+    } finally {
+      c.disconnect();
+    }
+  });
 });
 
 describe('EngineStateClient — a socket that never finishes connecting', () => {

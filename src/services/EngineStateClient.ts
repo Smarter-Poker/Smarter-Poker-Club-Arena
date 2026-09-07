@@ -328,6 +328,8 @@ export class EngineStateClient {
   private lastInboundAt = 0;
   /** Heartbeats prove transport liveness, not delivery of a requested snapshot. */
   private pendingSnapshotSince: number | null = null;
+  /** Wake grace must not forgive resyncs that still have no snapshot reply. */
+  private unansweredSnapshotResyncs = 0;
   private watchdogTimer: number | null = null;
   /**
    * 2026-08-22: consecutive watchdog RESYNCs sent with NO inbound frame in
@@ -898,6 +900,7 @@ export class EngineStateClient {
       this.snapshot = msg.state;
       this.seq = msg.seq;
       this.pendingSnapshotSince = null;
+      this.unansweredSnapshotResyncs = 0;
       this.opts.onSnapshot(this.snapshot, this.seq);
       return;
     }
@@ -966,6 +969,7 @@ export class EngineStateClient {
     this.seq = 0;
     this.snapshot = null;
     this.pendingSnapshotSince = null;
+    this.unansweredSnapshotResyncs = 0;
   }
 
   private requestResync(): void {
@@ -1002,6 +1006,7 @@ export class EngineStateClient {
         this.pendingSnapshotSince === null ? 0 : Date.now() - this.pendingSnapshotSince;
 
       if (
+        this.unansweredSnapshotResyncs >= EngineStateClient.MAX_UNANSWERED_RESYNCS ||
         snapshotWait >= EngineStateClient.STALE_HARD_MS ||
         silentFor >= EngineStateClient.STALE_HARD_MS ||
         // 2026-08-22: escalate on unanswered RESYNCs too. Tab switching used
@@ -1014,11 +1019,12 @@ export class EngineStateClient {
         // Recover both a silent transport and a live transport that cannot
         // deliver game state. PINGs cannot acknowledge a snapshot request.
         this.opts.onError({
-          reason: `engine silent for ${Math.round(silentFor / 1000)}s, snapshot pending ${Math.round(snapshotWait / 1000)}s (${this.unansweredResyncs} unanswered resyncs) - forcing reconnect`,
+          reason: `engine silent for ${Math.round(silentFor / 1000)}s, snapshot pending ${Math.round(snapshotWait / 1000)}s (${this.unansweredResyncs} unanswered transport resyncs, ${this.unansweredSnapshotResyncs} unanswered snapshot resyncs) - forcing reconnect`,
         });
         beacon('stale');
         this.lastInboundAt = Date.now(); // don't re-fire while the close lands
         this.unansweredResyncs = 0;
+        this.unansweredSnapshotResyncs = 0;
         // 2026-08-22: announce the truth. This path used to leave status at
         // 'connected' (green dot on a dead table), and when close() left the
         // socket in CLOSING with onclose never firing, NO reconnect was ever
@@ -1044,6 +1050,7 @@ export class EngineStateClient {
         // Might just be dropped frames on a live socket — ask for a full
         // snapshot. A reply refreshes lastInboundAt and clears the condition.
         this.unansweredResyncs++;
+        if (snapshotWait >= EngineStateClient.STALE_SOFT_MS) this.unansweredSnapshotResyncs++;
         this.requestResync();
       }
     }, EngineStateClient.WATCHDOG_TICK_MS);

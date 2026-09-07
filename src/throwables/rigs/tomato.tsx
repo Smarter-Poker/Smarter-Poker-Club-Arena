@@ -164,12 +164,7 @@ function Tomato({ uid, k }: { uid: string; k: string }) {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-tomato thr-tomato--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <Tomato uid={uid} k="p" />
     </svg>
   );
@@ -222,12 +217,7 @@ const DRIPS: ReadonlyArray<readonly [string, string, string]> = [
 function Payload({ uid }: RigProps) {
   const g = (n: string) => `thr-tomato-${n}-${uid}`;
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-tomato thr-tomato--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <defs>
         <radialGradient id={g('splat')} cx="0.5" cy="0.5" r="0.55">
           <stop offset="0%" stopColor="#e8524b" />

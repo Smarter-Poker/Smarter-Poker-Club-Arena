@@ -178,6 +178,19 @@ export async function insertServiceRows<T>(
   });
 }
 
+export async function updateServiceRows<T>(
+  environment: CustomizationCertificationEnvironment,
+  table: string,
+  query: URLSearchParams,
+  values: JsonObject
+): Promise<T[]> {
+  return serviceRequest<T[]>(environment, `/rest/v1/${table}?${query.toString()}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(values),
+  });
+}
+
 export async function deleteServiceRows(
   environment: CustomizationCertificationEnvironment,
   table: string,

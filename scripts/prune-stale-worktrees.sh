@@ -32,6 +32,24 @@ DRY_RUN=0
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$REPO_ROOT" ]; then
+  # 2026-09-07. This refusal was correct and useless: it named the ONE cause it
+  # was not, and stayed silent about the one it was. `core.bare` had been set
+  # true on the canonical clone, so every work-tree git command there failed,
+  # this script refused on every run, and 224 worktrees accumulated until the
+  # disk hit 100%. Say which of the two it is.
+  if [ "$(git config --local --get core.bare 2>/dev/null)" = "true" ] \
+     && [ -e "$(git rev-parse --git-dir 2>/dev/null)/../package.json" ]; then
+    cat >&2 <<'BARE'
+This clone has core.bare=true but a working tree on disk beside it, so every
+git command that needs files refuses here - including this script, which is
+why nothing has been pruned. Nothing is damaged; the flag is simply wrong:
+
+    git -C "$(pwd)" config --local core.bare false
+
+Then run this script again.
+BARE
+    exit 1
+  fi
   echo "Run from inside the canonical clone (e.g. ~/Documents/club-arena)." >&2
   exit 1
 fi

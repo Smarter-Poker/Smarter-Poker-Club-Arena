@@ -543,3 +543,11 @@ it('tournament payment completion uses durable outstanding debt rather than RPC 
   expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain("this.broadcast('bubble_protection_pending'");
   expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain('FAIL stale smaller replay hides debt');
 });
+
+
+it('Spin cancellation covers both active aggregate fee writers', () => {
+ const sql = read('supabase/migrations/20260907223616_spin_cancellation_covers_both_aggregate_fee_writers.sql');
+ expect(sql).toContain("r.source IN ('fn_spin_book_entry','fn_spin_settle_game')");
+ expect(sql).toContain("'original_source',v_fee_row.source");
+ expect(has('scripts/ci/probes/spin-cancel-both-fee-writers.sql','FAIL alternate Spin fee writer was not reversed')).toBe(true);
+});

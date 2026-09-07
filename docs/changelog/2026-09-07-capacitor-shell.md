@@ -128,3 +128,13 @@ Phase 2 is next, on a fresh branch off main.
   refuses (`Unsupported class file major version 69`); Android Studio's
   bundled JDK works.
 - Icons and splash: `npm run cap:assets` from a 1024x1024 source (phase 6).
+
+## Entry chunk (CI's "Entry Chunk Is A Reviewed List" gate)
+
+`src/lib/appBase.ts` enters the entry chunk, by design: it is the router
+basename, which `main.tsx` needs before the first render, and the whole module
+is ~1 kB with no imports. The gate saw +1 kB gz and one module against the
+baseline (which also drops two modules that left the entry independently);
+the baseline is updated in the same commit, as the gate asks. Nothing else
+moved into first paint: `nativeShell` and every Capacitor plugin are behind a
+dynamic import that the web build eliminates.

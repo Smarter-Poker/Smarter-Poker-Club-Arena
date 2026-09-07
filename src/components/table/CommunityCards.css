@@ -80,6 +80,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* How much space an UNDEALT slot holds. 0 = the row centres on the cards
+     that are out and drifts left as each new one lands (Dan 2026-09-07, item
+     11); var(--cc-card-w) = the fixed five-wide board of 2026-09-04, with the
+     flop in the left three. See .community-cards__slot-reserve below. */
+  --cc-slide-reserve: 0px;
 }
 
 .community-cards__container {
@@ -392,17 +397,29 @@
 }
 
 /* =================================================================================
-   RESERVED SLOTS — the board is always five positions wide (spec 11)
+   RESERVED SLOTS — and why they now reserve nothing (Dan 2026-09-07, item 11)
    =================================================================================
-   An undealt slot keeps its geometry and draws NOTHING: visibility hidden,
-   no outline, no dashed box - Dan removed the ghost outlines on 2026-08-26
-   and they stay removed. With no reserve at all the centred row slid left by
-   half a card when the turn landed and again on the river, the stage
-   separators (60% / 80% of the row) only lined up once five were out, and
-   the community area's own height changed street to street. The reference
-   holds the flop in the left three of five fixed positions; so does this. */
+   An undealt slot draws NOTHING: visibility hidden, no outline, no dashed box.
+   Dan removed the ghost outlines on 2026-08-26 and they stay removed.
+
+   Until 2026-09-07 it also held a card's WIDTH, so the board was always five
+   positions wide and a flop occupied the left three of them. That is the
+   layout he is objecting to: "THEY USED TO START OFF CENTER ON THE FLOP, AND
+   SHIFT LEFT AS THE TURN AND RIVER CAME OUT, NOW THEY ARE JUST STARTING ALL TO
+   THE LEFT." A three-card board in a five-wide row sits a full card left of the
+   felt's centreline — which reads as misplaced, not as incomplete.
+
+   So the width is now a variable, defaulting to zero: the row centres on the
+   cards that are actually out and drifts left as each new one is appended,
+   which is the movement he remembers. Set `--cc-slide-reserve` to
+   `var(--cc-card-w)` on `.community-cards` to restore the fixed five-wide
+   board without touching the component.
+
+   The height is kept unconditionally. It costs nothing when the width is zero
+   (a zero-width flex item adds no track) and it keeps the row's own height
+   constant on a board with no cards at all. */
 .community-cards__slot-reserve {
-  width: var(--cc-card-w);
+  width: var(--cc-slide-reserve, 0px);
   height: var(--cc-card-h);
   visibility: hidden;
   pointer-events: none;
@@ -675,7 +692,7 @@
   );
   /* Fallback for the description/low children; the name itself is painted
      by the gradient on .community-cards__hand-name-text. */
-  color: #f5c343;
+  color: var(--sp-text-bright);
   animation: ccBannerCut 0.09s ease-out;
 }
 

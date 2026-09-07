@@ -129,8 +129,12 @@ function CanBody({ uid, k }: { uid: string; k: string }) {
     <g>
       <defs>
         <linearGradient id={g('body')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={CAN_LIGHT} />
+          <stop offset="0%" stopColor={CAN_DARK} />
+          <stop offset="18%" stopColor={CAN_LIGHT} />
+          <stop offset="30%" stopColor="#e5eaef" />
           <stop offset="45%" stopColor={CAN_MID} />
+          <stop offset="77%" stopColor="#737d8c" />
+          <stop offset="90%" stopColor="#b9c4ce" />
           <stop offset="100%" stopColor={CAN_DARK} />
         </linearGradient>
       </defs>
@@ -142,6 +146,26 @@ function CanBody({ uid, k }: { uid: string; k: string }) {
         strokeLinejoin="round"
       />
       {/* three vertical ribs */}
+      <path
+        d="M -32 -30 L -27 39 Q 0 46 27 39 L 32 -30"
+        fill="none"
+        stroke="#eaf2f7"
+        strokeWidth="0.8"
+        opacity="0.8"
+      />
+      <path d="M -29 43 Q 0 50 29 43" fill="none" stroke="#303a49" strokeWidth="1.6" />
+      <path
+        d="M -15 -34 L -13 38 M 1 -35 L 1 40 M 17 -34 L 15 38"
+        stroke="#e5edf2"
+        strokeWidth="0.9"
+        opacity="0.75"
+      />
+      <path
+        d="M -33 -27 l 2 0 M 30 -27 l 2 0 M -28 35 l 2 0 M 26 35 l 2 0"
+        stroke="#46505e"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
       <path d="M -16 -36 L -14 40" stroke={CAN_DARK} strokeWidth="1.4" opacity="0.35" />
       <path d="M 0 -37 L 0 43" stroke={CAN_DARK} strokeWidth="1.4" opacity="0.35" />
       <path d="M 16 -36 L 14 40" stroke={CAN_DARK} strokeWidth="1.4" opacity="0.35" />
@@ -150,6 +174,7 @@ function CanBody({ uid, k }: { uid: string; k: string }) {
       </g>
       {/* the open rim, dark, so a missing lid reads immediately */}
       <ellipse cx="0" cy="-40" rx="36" ry="7" fill="#2c2f34" />
+      <ellipse cx="0" cy="-40" rx="35" ry="6" fill="none" stroke="#d2dce5" strokeWidth="1.2" />
     </g>
   );
 }
@@ -157,26 +182,10 @@ function CanBody({ uid, k }: { uid: string; k: string }) {
 /** The can, whole, lid on: used for the projectile and for the one landed
  *  frame that vanishes whole (it never opens). */
 function CanClosed({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-trash_can-${n}-${uid}-${k}`;
   return (
     <g>
       <CanBody uid={uid} k={k} />
-      <defs>
-        <linearGradient id={g('lid')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={LID_MID} />
-          <stop offset="100%" stopColor={CAN_MID} />
-        </linearGradient>
-      </defs>
-      <ellipse
-        cx="0"
-        cy="-40"
-        rx="38"
-        ry="8"
-        fill={`url(#${g('lid')})`}
-        stroke={CAN_DARK}
-        strokeWidth="1.6"
-      />
-      <ellipse cx="0" cy="-49" rx="8" ry="3" fill={CAN_DARK} />
+      <Lid uid={uid} k={k} />
     </g>
   );
 }
@@ -190,7 +199,9 @@ function Lid({ uid, k }: { uid: string; k: string }) {
     <g>
       <defs>
         <linearGradient id={g('lid2')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={LID_MID} />
+          <stop offset="0%" stopColor={CAN_DARK} />
+          <stop offset="25%" stopColor="#e4ebf0" />
+          <stop offset="60%" stopColor={LID_MID} />
           <stop offset="100%" stopColor={CAN_MID} />
         </linearGradient>
       </defs>
@@ -203,7 +214,15 @@ function Lid({ uid, k }: { uid: string; k: string }) {
         stroke={CAN_DARK}
         strokeWidth="1.6"
       />
-      <ellipse cx="0" cy="-49" rx="8" ry="3" fill={CAN_DARK} />
+      <ellipse cx="0" cy="-40" rx="32" ry="5.5" fill="none" stroke="#e1e9ee" strokeWidth="0.8" />
+      <path
+        d="M -7 -43 L -7 -48 Q 0 -54 7 -48 L 7 -43"
+        fill="none"
+        stroke="#404956"
+        strokeWidth="3.5"
+        strokeLinecap="round"
+      />
+      <path d="M -6 -48 Q 0 -52 6 -48" fill="none" stroke="#dae3eb" strokeWidth="1.1" />
     </g>
   );
 }
@@ -410,11 +429,10 @@ function Payload({ uid }: RigProps) {
       <g transform="translate(-23 10)">
         <g className="thr-trash_can__can-return">
           <CanBody uid={uid} k="ret" />
-        </g>
-        {/* 2200 (+1867): the lid opens, flies up-left, hovers, then closes
-            at 3000 (+2667) and seats. Same local origin as the body's rim. */}
-        <g className="thr-trash_can__lid">
-          <Lid uid={uid} k="ret" />
+          {/* The lid rides the same rise/scale as the body before opening. */}
+          <g className="thr-trash_can__lid">
+            <Lid uid={uid} k="ret" />
+          </g>
         </g>
       </g>
 

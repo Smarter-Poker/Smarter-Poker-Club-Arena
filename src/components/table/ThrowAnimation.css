@@ -57,7 +57,7 @@
 .throwable-img--fallback {
   display: inline-block;
   text-align: center;
-  color: #ffd93d;
+  color: var(--sp-text-bright);
   mix-blend-mode: normal;
   filter: none;
 }

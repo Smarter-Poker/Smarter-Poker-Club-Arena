@@ -86,6 +86,8 @@ export interface ThrowEvent {
 
 export interface ThrowAllowance {
   isVip: boolean;
+  unlimited?: boolean;
+  unavailable?: boolean;
   freeThrowsRemaining: number;
   /** Club-shop pack credits consumed before a diamond is charged. */
   packThrowsRemaining: number;
@@ -866,7 +868,11 @@ class ThrowableServiceClass {
   async getThrowAllowance(userId: string): Promise<ThrowAllowance> {
     try {
       const [profileResult, packResult] = await Promise.all([
-        supabase.from('profiles').select('is_vip').eq('id', userId).maybeSingle(),
+        supabase
+          .from('profiles')
+          .select('is_vip, vip_tier, vip_expires_at')
+          .eq('id', userId)
+          .maybeSingle(),
         supabase
           .from('feature_purchases')
           .select('uses_remaining, expires_at')
@@ -881,7 +887,21 @@ class ThrowableServiceClass {
         .filter((row) => !row.expires_at || Date.parse(row.expires_at) > now)
         .reduce((sum, row) => sum + Math.max(0, Number(row.uses_remaining) || 0), 0);
 
-      const isVip = profileResult.data?.is_vip || false;
+      const profile = profileResult.data;
+      const isVip =
+        !!profile?.is_vip &&
+        (profile.vip_tier === 'lifetime' ||
+          !profile.vip_expires_at ||
+          Date.parse(profile.vip_expires_at) > now);
+      if (isVip && profile?.vip_tier === 'lifetime') {
+        return {
+          isVip: true,
+          unlimited: true,
+          freeThrowsRemaining: 0,
+          packThrowsRemaining,
+          diamondCost: 0,
+        };
+      }
 
       if (!isVip) {
         return {
@@ -894,16 +914,17 @@ class ThrowableServiceClass {
 
       // Get this month's usage for VIP
       const monthStart = new Date();
-      monthStart.setDate(1);
-      monthStart.setHours(0, 0, 0, 0);
+      monthStart.setUTCDate(1);
+      monthStart.setUTCHours(0, 0, 0, 0);
 
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from('throw_usage')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', userId)
         .gte('created_at', monthStart.toISOString());
 
-      const used = count || 0;
+      if (error || count === null) throw error || new Error('Allowance count unavailable');
+      const used = count;
       const remaining = Math.max(0, VIP_FREE_THROWS_PER_MONTH - used);
 
       return {
@@ -914,6 +935,7 @@ class ThrowableServiceClass {
       };
     } catch {
       return {
+        unavailable: true,
         isVip: false,
         freeThrowsRemaining: 0,
         packThrowsRemaining: 0,

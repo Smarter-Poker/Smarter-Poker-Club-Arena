@@ -103,6 +103,14 @@ function Calyx() {
         strokeLinejoin="round"
       />
       <circle cx="0" cy="0.4" r="1.6" fill={LEAF_EDGE} />
+      <path
+        d="M -2 0 L -15 1 M -7 0 L -10 -2 M 2 0 L 14 -3 M 7 -1 L 9 -4"
+        fill="none"
+        stroke="#a0cf65"
+        strokeWidth="0.65"
+        strokeLinecap="round"
+      />
+      <path d="M -1 -1 L -5 -8" stroke="#90b959" strokeWidth="0.6" />
     </g>
   );
 }
@@ -126,7 +134,19 @@ function Tomato({ uid, k }: { uid: string; k: string }) {
           <stop offset="100%" stopColor="#7d0b0c" />
         </radialGradient>
       </defs>
-      <ellipse cx="0" cy="0.5" rx="20" ry="18.5" fill={`url(#${g('body')})`} />
+      <path
+        d="M 0 -16 C 8 -21 19 -12 20 -2 C 23 9 11 20 1 19 C -10 21 -22 10 -20 -1 C -20 -12 -9 -21 0 -16 Z"
+        fill={`url(#${g('body')})`}
+      />
+      <path
+        d="M -17 -2 C -19 6 -13 13 -7 15"
+        fill="none"
+        stroke="#ff8974"
+        strokeWidth="0.75"
+        opacity="0.8"
+        strokeLinecap="round"
+      />
+      <path d="M 16 3 Q 14 13 6 16" fill="none" stroke="#4a0d13" strokeWidth="0.9" opacity="0.55" />
       {/* two shallow lobe creases */}
       <path
         d="M -6 -16 q -3 9 -1 17"
@@ -222,7 +242,8 @@ function Payload({ uid }: RigProps) {
         <radialGradient id={g('splat')} cx="0.5" cy="0.5" r="0.55">
           <stop offset="0%" stopColor="#e8524b" />
           <stop offset="45%" stopColor="#d13530" />
-          <stop offset="100%" stopColor={SPLAT_RED} />
+          <stop offset="78%" stopColor={SPLAT_RED} />
+          <stop offset="100%" stopColor="#8f111f" />
         </radialGradient>
       </defs>
       {/* THE SQUASH: the intact fruit at contact (233), drawn flat and
@@ -241,6 +262,22 @@ function Payload({ uid }: RigProps) {
           opacity="0.98"
         />
         {/* pulp: darker pools and a few pale seeds, static */}
+        <path
+          d="M -24 -36 Q -16 -43 -9 -37 M -18 -20 Q -10 -25 -6 -21 M 8 -12 Q 14 -15 19 -10 M 4 -34 Q 11 -40 17 -36"
+          fill="none"
+          stroke="#ffb08b"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+          opacity="0.7"
+        />
+        <path
+          d="M -12 -30 C -18 -23 -12 -17 -6 -21 M 8 -38 Q 16 -33 11 -28"
+          fill="none"
+          stroke="#79151b"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          opacity="0.4"
+        />
         <circle cx="-9" cy="-31" r="5.5" fill="#8c1014" opacity="0.2" />
         <circle cx="13" cy="-9" r="4.5" fill="#8c1014" opacity="0.18" />
         <circle cx="4" cy="-38" r="3" fill="#8c1014" opacity="0.14" />

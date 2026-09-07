@@ -295,10 +295,10 @@ describe('the box in the corner', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('fn_cash_game_lobby', { p_game_id: GAME });
   });
 
-  it('puts LOBBY in the action pill row, right of the 4-square button, on cluster tables only', () => {
+  it('puts LOBBY in the action pill row, hamburger-sized, on cluster tables only', () => {
     const page = read('src/pages/MultiTablePage.tsx');
-    /* The button exists, says the one word, and asks THIS table for its
-       lobby over the bus - the strip cannot reach the felt's own state. */
+    /* The button exists and asks THIS table for its lobby over the bus - the
+       strip cannot reach the felt's own state. */
     expect(page).toMatch(/className="mtp-lobby-btn"/);
     expect(page).toMatch(/masterBus\.emit\('OPEN_MUST_MOVE_LOBBY', \{ tableId: activeTableId \}\)/);
     /* Only a table that belongs to a must-move game has a lobby to open - and
@@ -307,28 +307,54 @@ describe('the box in the corner', () => {
        a button in this un-scaled strip opened a half-size modal inside one tile
        that could not be scrolled, clicked or closed. */
     expect(page).toMatch(/\{activeClusterId && !isTileView && \(\s*<button/);
-    expect(page).toMatch(/activeClusterId && !isTileView \? ' tile-toggle-btn--shifted' : ''/);
-    /* 4-square first in the markup, LOBBY after it: source order IS the
-       left-to-right order Dan asked for. */
-    expect(page.indexOf('tile-toggle-btn--shifted')).toBeLessThan(
-      page.indexOf('className="mtp-lobby-btn"')
-    );
+
+    /* ── IT IS DAN'S ARTWORK NOW, NOT THE WORD (2026-09-07, item 2) ────────
+       "I'VE ALSO DESIGNED THE LOBBY BUTTON, REPLACE THE GENERIC ONE WITH THE
+       EXACT ONE I'VE ATTACHED." The plate, the bevel and the word LOBBY are
+       all inside the image, so the button draws no chrome of its own - a CSS
+       border here would be a second frame around a picture of a frame. */
+    expect(page).toMatch(/className="mtp-lobby-btn__img"/);
+    expect(page).toMatch(/lobby-button\.webp/);
+
     const css = read('src/pages/MultiTablePage.css');
-    /* Both sit in the same fixed band; LOBBY takes the outer position and the
-       4-square steps left of it by exactly its width plus the gap. */
-    /* The pair's geometry is three custom properties now, declared once
-       (2026-09-06): the button's width used to be a `min-width` while the shift
-       was a literal `62px`, so the real gap was 0-4px and closed to an overlap
-       under a reader's font scale. */
-    expect(css).toMatch(/--mtp-lobby-w: \d+px;/);
+    /* ── SAME SIZE AND SHAPE AS THE HAMBURGER (2026-09-07, item 2) ─────────
+       "THE LOBBY BUTTON NEEDS TO BE THE SAME SIZE AND SHAPE AS THE HAMBURGER
+       MENU ON THE LEFT, ITS IMPARATIVE THAT THERE IS ENOUGH ROOM TO HAVE 4
+       ACTION TABS OPEN IN BETWEEN THE HAMBURGER MENU AND THE LOBBY BUTTON."
+
+       Square, and the same square at every width: TableMenu.css paints the
+       trigger 40px and TableTabBar.css shrinks it to 34px at <=480px, so this
+       does both or "the same size" is only true on a desktop nobody plays on. */
+    expect(css).toMatch(/--mtp-lobby-w: 40px;/);
+    expect(css).toMatch(/--mtp-lobby-w: 34px;/);
     expect(css).toMatch(/\.mtp-lobby-btn \{[\s\S]*?width: var\(--mtp-lobby-w\)/);
-    expect(css).toMatch(
-      /\.tile-toggle-btn--shifted \{\s*right: calc\(var\(--mtp-edge\) \+ var\(--mtp-lobby-w\) \+ var\(--mtp-edge\)\)/
-    );
+    expect(css).toMatch(/\.mtp-lobby-btn \{[\s\S]*?height: var\(--mtp-lobby-w\)/);
+
+    /* ── THE 4-SQUARE BUTTON IS GONE FROM THE HEADER (item 1) ──────────────
+       "THE 4 SQUARE OPTION NEEDS TO LIVE INSIDE THE HAMBURGER MENU, NOT ON
+       THE SCREEN IN THE ACTION HEADER, CHANGE THAT GLOBALLY." Its rules and
+       its shift went with it; the pair this test used to describe is now one
+       button, and the freed 46px is what makes four pills fit. */
+    expect(css).not.toMatch(/^\.tile-toggle-btn/m);
+    expect(page).not.toMatch(/className=\{`tile-toggle-btn/);
     /* And the felt does not draw it any more. */
     expect(read('src/components/table/CashClusterHUD.tsx')).not.toMatch(
       /className="cash-cluster-hud-bar"/
     );
+  });
+
+  it('the tile toggle survives as a hamburger item, wired to the same state', () => {
+    const page = read('src/pages/MultiTablePage.tsx');
+    const bar = read('src/components/table/TableTabBar.tsx');
+    // Same single effect it always had, handed to the menu instead of drawn.
+    expect(page).toMatch(/onToggleTileView=\{\(\) => \{/);
+    expect(page).toMatch(/canToggleTileView=\{tables\.length > 1\}/);
+    expect(bar).toMatch(/id: 'tile-view'/);
+    expect(bar).toMatch(/icon: <TileViewIcon \/>/);
+    // Outside the lobby-tab gate: tile view is about how many tables you are
+    // looking at, not about a seat, so it must not vanish on a lobby tab.
+    expect(bar.indexOf('const viewSection')).toBeLessThan(bar.indexOf('const tableSections'));
+    expect(bar).toMatch(/\[\.\.\.viewSection, \.\.\.tableSections\]/);
   });
 
   it('opens this table lobby and no other when the strip asks for it', () => {

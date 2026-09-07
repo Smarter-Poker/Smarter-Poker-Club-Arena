@@ -137,7 +137,7 @@
   font-family: 'JetBrains Mono', monospace;
   background: rgba(255, 184, 0, 0.2);
   border-radius: 8px;
-  color: #ffb800;
+  color: var(--sp-warn);
   backdrop-filter: blur(8px) saturate(1.2);
   -webkit-backdrop-filter: blur(8px) saturate(1.2);
   box-shadow:
@@ -329,7 +329,7 @@
 }
 
 .insurance-modal__player-row--hero .insurance-modal__player-name {
-  color: #ffb800;
+  color: var(--sp-warn);
 }
 
 .insurance-modal__player-equity {
@@ -373,7 +373,7 @@
 }
 
 .insurance-modal__readout-value--fee {
-  color: #ffb800;
+  color: var(--sp-warn);
 }
 
 .insurance-modal__readout-value--insured {

@@ -159,7 +159,7 @@ What the reset gives Phase 5: exact opening figures, so the escrow floor of zero
 
 8.2 C3: the bust rebuy goes through the pending ledger.
 8.3 The PITR drill.
-8.4 `chip_ledger` partitioning, before December, blocked on the `ca_mint_ledger.chip_ledger_id` foreign key (a partitioned parent's unique key must carry the partition column).
+8.4 `chip_ledger` partitioning. **SUPERSEDED 2026-09-07 - read `docs/THE-JOURNAL-PARTITION-CUT.md` before writing any migration.** The blocker named here does not exist: there is no foreign key into `chip_ledger` at all (the `ca_mint_ledger.chip_ledger_id` column survives with 361 live references and nothing constraining them). The real blockers are the two UNIQUE indexes carrying the journal's integrity - `ux_chip_ledger_idempotency_key` and `chip_ledger_chain_seq_key` - which a partitioned table would force to include `created_at`, accepting the same idempotency key twice in different months. Dan ruled on 2026-09-07 that every leg is kept for ever and partitioning is for cheap reads and archiving, never for dropping, which also settles 9.4.
 8.5 The engine settles a hand in one transaction, so the felt stops disagreeing with its own journal by the size of the in-flight population (engine lane).
 
 ### Phase 7 - further optimisation (after the above)
@@ -285,11 +285,13 @@ next agent should be reading a rule, not repeating my judgement.
 
 ### 9.4 THE JOURNAL HAS NO RETENTION OR ARCHIVE POLICY
 
-232k rows a day, 1.68M rows and 1.3 GB today. 8.4 partitions it, which is a
-storage answer, not a policy: nobody has written down how long a leg is kept,
-what happens to a partition when it ages out, or where it goes. A journal that
-can be silently dropped is not a journal. This has to be settled in the same
-work as 8.4, not after it.
+**SETTLED 2026-09-07 by Dan: every leg is kept for ever.** Partitioning by month
+is for making old months cheap to read and archivable, never for dropping them,
+so no partition ages out and nothing goes anywhere. The plan is
+`docs/THE-JOURNAL-PARTITION-CUT.md`. The measurements that produced the ruling:
+2,002,532 legs in 1,666 MB with no retention of any kind, and a rate that went
+from 34k to 528k legs a day in the week the chip standard made every path
+declare itself.
 
 ### 9.5 A PLAYER CAN ALREADY AUDIT THEIR OWN CHIPS, AND HAS NOWHERE TO DO IT
 

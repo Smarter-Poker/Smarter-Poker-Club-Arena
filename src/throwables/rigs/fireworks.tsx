@@ -229,7 +229,7 @@ function Trail({ uid, k, colors }: { uid: string; k: string; colors: readonly st
  *  the payload phase for a 'none' flight); it exists because a rig is a pair. */
 function Projectile(_props: RigProps) {
   return (
-    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false" className="thr-fireworks">
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* deliberately empty: `spawn: 'none'`, verified against z_t3_hero.jpg */}
     </svg>
   );
@@ -237,12 +237,7 @@ function Projectile(_props: RigProps) {
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-fireworks thr-fireworks--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* ── WAVE 1 ─────────────────────────────────────────────────────────
           Three rockets one after another: trail, then a round burst. */}
       <g transform="translate(53 0)">

@@ -30,32 +30,42 @@ test.use({ ...devices['iPhone 13'] });
 async function loadLiveCss(page: Page) {
   await page.goto(`${ARENA}/index.html`, { waitUntil: 'domcontentloaded' });
   await page.evaluate(async (base: string) => {
-    const html = await fetch(base + 'index.html').then((r) => r.text());
+    // A LOADED RUNNER DROPS FETCHES (2026-09-07). In one CI run every test in
+    // this file failed on its first attempt with the squeeze keyframes absent
+    // and three of the four passed on the playwright retry: the stylesheet
+    // was there, the fetch of it (or of the entry chunk that names it) was
+    // not, and the old loader swallowed that as "a chunk that 404s is not
+    // this test's problem". So: read every response's status, retry a failed
+    // fetch, and when a chunk still cannot be read, say WHICH one - a run that
+    // fails by name is diagnosable, a run that fails on an undefined duration
+    // is a coin flip.
+    const read = async (url: string, attempts = 3): Promise<string> => {
+      let last = '';
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const r = await fetch(url, { cache: 'no-store' });
+          if (r.ok) return await r.text();
+          last = `HTTP ${r.status}`;
+        } catch (e) {
+          last = String(e);
+        }
+        await new Promise((res) => setTimeout(res, 250 * (i + 1)));
+      }
+      throw new Error(`could not read ${url}: ${last}`);
+    };
+    const html = await read(base + 'index.html');
     const entry = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/)?.[0];
-    const js = entry ? await fetch(base + entry).then((r) => r.text()) : '';
+    if (!entry) throw new Error('index.html names no entry chunk');
+    const js = await read(base + entry);
     const names = new Set<string>();
     for (const m of js.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
     for (const m of html.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
     document.body.innerHTML = '';
-    const styles = await Promise.all(
-      [...names].map(async (n) => {
-        try {
-          return await fetch(base + n).then((r) => {
-            if (!r.ok) throw new Error(String(r.status));
-            return r.text();
-          });
-        } catch {
-          /* a chunk that 404s is not this test's problem */
-          return '';
-        }
-      })
-    );
+    const styles = await Promise.all([...names].map((n) => read(base + n)));
     for (const css of styles) {
-      if (css) {
-        const s = document.createElement('style');
-        s.textContent = css;
-        document.head.appendChild(s);
-      }
+      const s = document.createElement('style');
+      s.textContent = css;
+      document.head.appendChild(s);
     }
     document.documentElement.style.setProperty('--animation-speed', '1');
   }, `${ARENA}/`);

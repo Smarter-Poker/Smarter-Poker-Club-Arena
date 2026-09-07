@@ -4,9 +4,11 @@ import {
   test,
   type BrowserContext,
   type Locator,
+  type Page,
   type Request,
   type Response,
 } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { randomUUID } from 'node:crypto';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
@@ -25,6 +27,12 @@ import {
 const CERTIFICATION_ENABLED = process.env.DAILY_MISSIONS_CERTIFICATION === '1';
 const LOAD_BUDGET_MS = 12_000;
 const DASHBOARD_RPC_BUDGET_MS = 8_000;
+const TTFB_BUDGET_MS = 2_500;
+const FCP_BUDGET_MS = 3_500;
+const LCP_BUDGET_MS = 4_000;
+const CLS_BUDGET = 0.1;
+const INITIAL_MISSION_ART_BUDGET_BYTES = 180_000;
+const WARM_NAVIGATION_BUDGET_MS = 3_000;
 
 type JsonObject = Record<string, unknown>;
 
@@ -42,6 +50,26 @@ type RuntimeCopyEntry = {
   source: string;
   value: string;
 };
+
+async function expectNoAxeViolations(
+  page: Page,
+  selector: string,
+  surfaceName: string
+): Promise<void> {
+  const results = await new AxeBuilder({ page })
+    .include(selector)
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  expect(
+    results.violations.map((violation) => ({
+      id: violation.id,
+      impact: violation.impact,
+      help: violation.help,
+      targets: violation.nodes.flatMap((node) => node.target.map(String)),
+    })),
+    `${surfaceName} has WCAG A or AA violations`
+  ).toEqual([]);
+}
 
 function lowercaseWordStarts(value: string): string[] {
   const offenders = new Set<string>();
@@ -312,6 +340,33 @@ test.describe('production Daily Missions certification', () => {
       const { page } = missions;
 
       await test.step('one-request cold load stays inside the production budget', async () => {
+        await page.addInitScript(() => {
+          const metrics = { lcp: 0, cls: 0 };
+          Object.defineProperty(window, '__dailyMissionVitals', {
+            configurable: true,
+            value: metrics,
+          });
+          try {
+            new PerformanceObserver((list) => {
+              for (const entry of list.getEntries()) metrics.lcp = entry.startTime;
+            }).observe({ type: 'largest-contentful-paint', buffered: true });
+          } catch {
+            // The assertions below fail closed when this browser cannot report LCP.
+          }
+          try {
+            new PerformanceObserver((list) => {
+              for (const entry of list.getEntries()) {
+                const shift = entry as PerformanceEntry & {
+                  value: number;
+                  hadRecentInput: boolean;
+                };
+                if (!shift.hadRecentInput) metrics.cls += shift.value;
+              }
+            }).observe({ type: 'layout-shift', buffered: true });
+          } catch {
+            // The assertions below fail closed when this browser cannot report CLS.
+          }
+        });
         const consoleErrors: string[] = [];
         const pageErrors: string[] = [];
         const dashboardRequests: Request[] = [];
@@ -388,6 +443,77 @@ test.describe('production Daily Missions certification', () => {
         expect(pageErrors).toEqual([]);
         await expect(page.locator('main')).toHaveCount(1);
         await expect(page.locator('[id^="mission-card-"]')).not.toHaveCount(0);
+
+        await page.waitForTimeout(750);
+        const vitals = await page.evaluate(() => {
+          const navigation = performance.getEntriesByType(
+            'navigation'
+          )[0] as PerformanceNavigationTiming;
+          const paint = performance.getEntriesByName('first-contentful-paint')[0];
+          const observed = (
+            window as typeof window & {
+              __dailyMissionVitals?: { lcp: number; cls: number };
+            }
+          ).__dailyMissionVitals;
+          const missionArt = performance
+            .getEntriesByType('resource')
+            .filter((entry) =>
+              /\/images\/challenges\/daily-missions-(?:casino|diamond)/.test(entry.name)
+            )
+            .map((entry) => {
+              const resource = entry as PerformanceResourceTiming;
+              return {
+                name: new URL(resource.name).pathname.split('/').pop() || resource.name,
+                bytes: resource.encodedBodySize,
+              };
+            });
+          return {
+            ttfb: navigation.responseStart - navigation.requestStart,
+            fcp: paint?.startTime ?? 0,
+            lcp: observed?.lcp ?? 0,
+            cls: observed?.cls ?? Number.POSITIVE_INFINITY,
+            missionArt,
+            missionArtBytes: missionArt.reduce((total, asset) => total + asset.bytes, 0),
+          };
+        });
+        report.webVitals = vitals;
+        expect(vitals.ttfb).toBeGreaterThan(0);
+        expect(vitals.ttfb).toBeLessThan(TTFB_BUDGET_MS);
+        expect(vitals.fcp).toBeGreaterThan(0);
+        expect(vitals.fcp).toBeLessThan(FCP_BUDGET_MS);
+        expect(vitals.lcp).toBeGreaterThan(0);
+        expect(vitals.lcp).toBeLessThan(LCP_BUDGET_MS);
+        expect(vitals.cls).toBeLessThanOrEqual(CLS_BUDGET);
+        expect(vitals.missionArt.map((asset) => asset.name)).toEqual(
+          expect.arrayContaining([
+            'daily-missions-casino-v2.webp',
+            'daily-missions-diamond-96-v1.webp',
+          ])
+        );
+        expect(vitals.missionArtBytes).toBeGreaterThan(0);
+        expect(vitals.missionArtBytes).toBeLessThan(INITIAL_MISSION_ART_BUDGET_BYTES);
+      });
+
+      await test.step('warm in-app return restores the ledger inside its route budget', async () => {
+        await missions.navigateWithinArena('notifications');
+        await expect(page.getByRole('heading', { name: 'Daily Challenges', level: 1 })).toHaveCount(
+          0
+        );
+
+        const dashboard = missions.dashboardResponses();
+        const startedAt = Date.now();
+        await missions.navigateWithinArena('challenges');
+        const response = await dashboard;
+        await expect(page.getByRole('heading', { name: 'Daily Challenges', level: 1 })).toBeVisible(
+          {
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          }
+        );
+        await expect(page.locator('#daily-missions')).toHaveAttribute('aria-busy', 'false');
+        const warmNavigationMs = Date.now() - startedAt;
+        expect(response.ok()).toBe(true);
+        expect(warmNavigationMs).toBeLessThan(WARM_NAVIGATION_BUDGET_MS);
+        report.warmNavigationMs = warmNavigationMs;
       });
 
       await test.step('every mission card has a continuous frame and a live icon instrument', async () => {
@@ -483,9 +609,11 @@ test.describe('production Daily Missions certification', () => {
 
       await test.step('every challenge cycle is a durable direct subpage with certified copy', async () => {
         const waitForCycle = async (cycle: 'daily' | 'weekly' | 'monthly') => {
-          await expect(
-            page.getByRole('heading', { name: 'Daily Challenges', level: 1 })
-          ).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+          const title = `${cycle[0].toUpperCase()}${cycle.slice(1)} Challenges`;
+          await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible({
+            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+          });
+          await expect(page).toHaveTitle(`${title} | Smarter Poker`);
           const surface = page.locator('#daily-missions');
           await expect(surface).toHaveAttribute('aria-busy', 'false', {
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
@@ -635,6 +763,37 @@ test.describe('production Daily Missions certification', () => {
       await test.step('reroll confirmation charges one Diamond exactly once', async () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
         const reroll = await missions.firstRerollButton();
+        const desktopViewport = page.viewportSize();
+        if (!desktopViewport) throw new Error('Daily Missions certification requires a viewport.');
+
+        await page.setViewportSize({ width: 320, height: 568 });
+        await page.evaluate(() => document.documentElement.style.setProperty('font-size', '200%'));
+        await missions.placeControlInSafeViewport(reroll);
+        await reroll.click();
+        const zoomedConfirmation = page.getByRole('group', { name: /^Confirm Reroll For / });
+        await expect(zoomedConfirmation).toBeVisible();
+        const zoomedGeometry = await zoomedConfirmation.evaluate((group) => {
+          const bounds = group.getBoundingClientRect();
+          return {
+            documentOverflow:
+              document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            groupInsideViewport: bounds.left >= -1 && bounds.right <= innerWidth + 1,
+            descendantsFit: Array.from(group.querySelectorAll<HTMLElement>('*')).every((node) => {
+              const nodeBounds = node.getBoundingClientRect();
+              return nodeBounds.left >= bounds.left - 1 && nodeBounds.right <= bounds.right + 1;
+            }),
+          };
+        });
+        expect(zoomedGeometry).toEqual({
+          documentOverflow: 0,
+          groupInsideViewport: true,
+          descendantsFit: true,
+        });
+        await zoomedConfirmation.getByRole('button', { name: 'Keep It' }).click();
+        await expect(zoomedConfirmation).toHaveCount(0);
+        await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+        await page.setViewportSize(desktopViewport);
+
         await missions.placeControlInSafeViewport(reroll);
         await reroll.click();
         const confirmation = page.getByRole('group', { name: /^Confirm Reroll For / });
@@ -1156,11 +1315,23 @@ test.describe('production Daily Missions certification', () => {
         ).toBeVisible();
         await expect(page.locator('#daily-missions')).toHaveAttribute('inert', '');
         await expectCertifiedDailyChallengeCopy(confirmation, 'Streak Freeze Confirmation');
+        await expectNoAxeViolations(
+          page,
+          '[aria-labelledby="freeze-purchase-title"]',
+          'Streak Freeze Confirmation'
+        );
 
         const heading = confirmation.getByRole('heading', { name: 'Secure A Streak Freeze?' });
         const keepDiamonds = confirmation.getByRole('button', { name: 'Keep My Diamonds' });
         const confirmPurchase = confirmation.getByRole('button', { name: 'Buy Streak Freeze' });
         await expect(heading).toBeFocused();
+
+        const backgroundScrollPosition = await page.evaluate(() => window.scrollY);
+        await page.mouse.move(4, 4);
+        await page.mouse.wheel(0, 900);
+        await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(backgroundScrollPosition);
+        await page.mouse.wheel(0, -900);
+        await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(backgroundScrollPosition);
 
         const readDialogGeometry = () =>
           confirmation.evaluate((dialog) => {
@@ -1380,6 +1551,58 @@ test.describe('production Daily Missions certification', () => {
         report.blockedRevisionFrames = blockedRevisionFrames;
       });
 
+      await test.step('individual claim settles its exact receipt once through the card control', async () => {
+        const walletBefore = await playerWalletBalance(environment, account!.id);
+        const diamondsBefore = await diamondBalance(environment, account!.id);
+        const claim = page.getByRole('button', { name: /^Claim Reward For / }).first();
+        await missions.placeControlInSafeViewport(claim);
+        await expect(claim).toBeVisible();
+
+        let claimCalls = 0;
+        const onRequest = (request: Request) => {
+          if (request.url().includes('/rest/v1/rpc/claim_daily_challenges')) claimCalls += 1;
+        };
+        page.on('request', onRequest);
+        const rpc = page.waitForResponse(
+          (response) => response.url().includes('/rest/v1/rpc/claim_daily_challenges'),
+          { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+        );
+        await claim.dblclick();
+        const response = await rpc;
+        expect(response.ok()).toBe(true);
+        const requestBody = response.request().postDataJSON() as {
+          p_challenge_row_ids: string[];
+        };
+        expect(requestBody.p_challenge_row_ids).toHaveLength(1);
+
+        const receipt = (await response.json()) as JsonObject;
+        const challengeDiamonds = Number(receipt.challengeDiamonds || 0);
+        const milestoneDiamonds = Number(receipt.milestoneDiamonds || 0);
+        const diamondsCredited = Number(receipt.diamondsCredited || 0);
+        expect(challengeDiamonds).toBeGreaterThan(0);
+        expect(diamondsCredited).toBe(challengeDiamonds + milestoneDiamonds);
+
+        const reward = page.getByRole('dialog', { name: 'Reward Settled' });
+        await expect(reward).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        await expect(
+          reward.getByText(`Total Credited: +${diamondsCredited.toLocaleString()} Diamonds`)
+        ).toBeVisible();
+        await expectCertifiedDailyChallengeCopy(reward, 'Individual Reward Settlement Dialog');
+        await expectNoAxeViolations(
+          page,
+          '[aria-labelledby="challenge-reward-title"]',
+          'Individual Reward Settlement Dialog'
+        );
+        await reward.getByRole('button', { name: 'Continue' }).click();
+
+        await expect.poll(() => playerWalletBalance(environment, account!.id)).toBe(walletBefore);
+        await expect
+          .poll(() => diamondBalance(environment, account!.id))
+          .toBe(diamondsBefore + diamondsCredited);
+        page.off('request', onRequest);
+        expect(claimCalls).toBe(1);
+      });
+
       await test.step('claim-all settles diamonds once, never mints chips, and replays its receipt', async () => {
         const payable = await serviceRows<{
           chip_reward_snapshot: number;
@@ -1425,12 +1648,17 @@ test.describe('production Daily Missions certification', () => {
           p_challenge_row_ids: string[];
           p_request_id: string;
         };
-        expect(requestBody.p_challenge_row_ids.length).toBeGreaterThanOrEqual(10);
+        expect(requestBody.p_challenge_row_ids).toHaveLength(due.length);
 
         const reward = page.getByRole('dialog', { name: 'Reward Settled' });
         await expect(reward).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
         await expect(reward.getByText('Added To Your Club Arena Diamond Balance')).toBeVisible();
         await expectCertifiedDailyChallengeCopy(reward, 'Reward Settlement Dialog');
+        await expectNoAxeViolations(
+          page,
+          '[aria-labelledby="challenge-reward-title"]',
+          'Claim All Reward Settlement Dialog'
+        );
         await reward.getByRole('button', { name: 'Continue' }).click();
         await expect.poll(() => playerWalletBalance(environment, account!.id)).toBe(walletBefore);
         await expect
@@ -1617,9 +1845,7 @@ test.describe('production Daily Missions certification', () => {
         await expect(page.getByRole('alert')).toHaveCount(0, {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
-        await expect(
-          page.getByRole('heading', { name: 'Choose Your Challenge Cycle' })
-        ).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Daily Challenge Ledger' })).toBeVisible();
       });
 
       await test.step('mobile layout has no overflow, usable controls, and keyboard-correct tabs', async () => {
@@ -1656,6 +1882,7 @@ test.describe('production Daily Missions certification', () => {
       const requiredOperationEvents = [
         'reroll_succeeded',
         'freeze_succeeded',
+        'claim_succeeded',
         'claim_all_succeeded',
       ];
       let operations: Array<{ event: string }> = [];

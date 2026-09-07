@@ -53,13 +53,13 @@
   transform-origin: 50% 50%;
   opacity: 0;
   animation: thr-tomato-splat calc(0.133s * var(--animation-speed, 1))
-    cubic-bezier(0.2, 0.9, 0.3, 1) calc(0.067s * var(--animation-speed, 1)) both;
+    cubic-bezier(0.2, 0.9, 0.3, 1) calc(0.067s * var(--animation-speed, 1)) forwards;
 }
 
 @keyframes thr-tomato-splat {
   0% {
-    /* 300: the burst, small */
-    opacity: 0;
+    /* 300: the burst, small and ON SCREEN */
+    opacity: 1;
     transform: scale(0.6);
   }
   3% {
@@ -84,13 +84,13 @@
   transform-origin: 50% 50%;
   opacity: 0;
   animation: thr-tomato-stem calc(0.133s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.9, 0.3, 1)
-    calc(0.067s * var(--animation-speed, 1)) both;
+    calc(0.067s * var(--animation-speed, 1)) forwards;
 }
 
 @keyframes thr-tomato-stem {
   0% {
     /* 300 */
-    opacity: 0;
+    opacity: 1;
     transform: scale(0.5);
   }
   3% {
@@ -117,13 +117,13 @@
   transform-origin: 50% 0%;
   opacity: 0;
   animation: thr-tomato-drip calc(0.266s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.7, 1)
-    calc(0.234s * var(--animation-speed, 1)) both;
+    calc(0.234s * var(--animation-speed, 1)) forwards;
 }
 
 @keyframes thr-tomato-drip {
   0% {
-    /* 467: nothing below the rim yet */
-    opacity: 0;
+    /* 467: the drip starts at zero LENGTH, not zero opacity */
+    opacity: 1;
     transform: scaleY(0);
   }
   2% {
@@ -143,13 +143,13 @@
 .thr-tomato__chunk {
   opacity: 0;
   animation: thr-tomato-chunk calc(0.133s * var(--animation-speed, 1))
-    cubic-bezier(0.1, 0.7, 0.3, 1) calc(0.067s * var(--animation-speed, 1)) both;
+    cubic-bezier(0.1, 0.7, 0.3, 1) calc(0.067s * var(--animation-speed, 1)) forwards;
 }
 
 @keyframes thr-tomato-chunk {
   0% {
-    /* 300: on the splat's rim */
-    opacity: 0;
+    /* 300: on the splat's rim, ON SCREEN */
+    opacity: 1;
     transform: translate(calc(var(--dx) * 0.62), calc(var(--dy) * 0.62));
   }
   4% {
@@ -184,3 +184,13 @@
     transform: translate(var(--dx), var(--dy)) !important;
   }
 }
+
+/* THE DARKROOM CAUGHT THIS, 2026-09-07. These rules used `both` with a HIDDEN
+   0% frame, which is the idiom phase 1 shipped and the newer rigs no longer
+   use. `animation-fill-mode: both` fills the DELAY with the 0% frame, so the
+   element is invisible on the very frame its beat names - the tomato's burst
+   photographed as an empty seat at 300. In playback it is four milliseconds
+   late and nobody sees it; in the darkroom, which freezes exactly on the beat,
+   it is a black frame at a documented moment, and that is the instrument this
+   programme verifies itself with. `forwards` plus a VISIBLE 0% frame leaves the
+   element on its own `opacity: 0` while it waits and opens on the beat. */

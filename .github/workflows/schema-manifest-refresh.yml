@@ -356,6 +356,109 @@ jobs:
             --body "One line per attested day, appended from ca_ledger_day_manifests. See docs/attestation/README.md." \
             || echo "::notice::agent-open-pr.yml will open the pull request for $BRANCH on the push event."
 
+  second-writer:
+    name: The second writer agrees with the register
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    # PHASE 7 OF THE CHIP-ACCOUNTING PROGRAMME, roadmap 9.6 (2026-09-07).
+    #
+    # The database registers every money door (ca_money_rpc_registry). The
+    # World Hub, in ANOTHER repository, carries its own money routes under
+    # pages/api/club-arena/ and calls those doors by name over PostgREST -
+    # and until today nothing had ever compared the two. The first comparison
+    # found two routes calling doors the register had CLOSED four days
+    # earlier, and three RPC calls whose parameter NAMES matched no live
+    # signature, so each had answered PGRST202 on every call and whatever the
+    # route did next was the only thing that had ever run.
+    #
+    # A door is only closed if both repos agree it is closed. So this job
+    # checks the World Hub out beside this repository, scans its routes, and
+    # asks production (fn_ca_second_writer_check) whether every call still
+    # agrees. It rides the schedules this workflow already has (hourly at :40
+    # and daily at 05:20 - no new trigger, CLAUDE.md 10.85), and it lives here
+    # rather than in the World Hub because this workflow already holds the
+    # service-role key and the estate's App token.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The App token can read every repository in the estate; GITHUB_TOKEN
+      # can read only this one. Same App as agent-open-pr.yml.
+      - name: Mint a GitHub App installation token for the World Hub
+        id: app-token
+        if: vars.AUTOPILOT_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: Smarter-Poker-World-Hub
+
+      - name: Check out the World Hub's routes
+        uses: actions/checkout@v4
+        with:
+          repository: Smarter-Poker/Smarter-Poker-World-Hub
+          ref: main
+          token: ${{ steps.app-token.outputs.token || secrets.GH_PAT }}
+          path: world-hub
+          sparse-checkout: |
+            pages/api/club-arena
+          sparse-checkout-cone-mode: true
+
+      - name: Ask the register about every call the World Hub makes
+        id: audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          node scripts/ci/audit-second-writer.mjs --routes world-hub/pages/api/club-arena 2>&1 | tee /tmp/second-writer.log
+
+      # A red job in a scheduled workflow is a tree nobody hears fall
+      # (CLAUDE.md 10.86 rule 3). The reader is this issue.
+      - name: Raise the alarm
+        if: failure() && steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Second writer: a World Hub route disagrees with the money-door register"
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          BODY=$(printf '%s\n' \
+            "\`scripts/ci/audit-second-writer.mjs\` compared every \`.rpc()\` call and every direct money-table write under the World Hub's \`pages/api/club-arena/\` with \`pg_proc\` and \`ca_money_rpc_registry\` (via \`fn_ca_second_writer_check\`), and at least one disagrees: a door that is missing, closed, not executable by the service role, called with parameter names no overload accepts, or a balance column written directly." \
+            "" \
+            "Such a route has been failing on every call, or moving chips outside the register, since the day the two sides diverged. Fix the ROUTE (in the World Hub) or the REGISTER (here) - never the check." \
+            "" \
+            '\`\`\`' \
+            "$(sed -e 's/\x1b\[[0-9;]*m//g' /tmp/second-writer.log | head -80)" \
+            '\`\`\`' \
+            "" \
+            "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          if [ -n "${N:-}" ]; then
+            gh issue comment "$N" --repo "$REPO" --body "$BODY" || echo "::error::could not comment on #$N"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" || echo "::error::could not open the issue"
+          fi
+
+      - name: Close the alarm when both repos agree again
+        if: success() && steps.audit.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Second writer: a World Hub route disagrees with the money-door register"
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          [ -n "${N:-}" ] || exit 0
+          gh issue comment "$N" --repo "$REPO" --body "Recovered. Every call the World Hub makes agrees with the register. Closing." || true
+          gh issue close "$N" --repo "$REPO" || true
+
   definer-exposure:
     name: No unaccounted DEFINER writer is reachable from a browser
     runs-on: ubuntu-latest

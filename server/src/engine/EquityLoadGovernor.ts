@@ -75,9 +75,102 @@
  * GameServer status payload". It is on `/metrics` now, on the always-on
  * registry, beside the scale it produces.
  */
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE HISTOGRAM GOES BLIND EXACTLY WHEN THE LOOP IS PEGGED (2026-09-07)
+ *
+ * On 2026-09-07 at 04:05 the fleet fell from ~480 hands a minute to 6. The
+ * container sat at 100.8% CPU - one core, pegged - while two of the box's
+ * three cores idled and Postgres answered the query the engine was "timing
+ * out" on in 133 ms. Through all of it `/health` said:
+ *
+ *     "equityGovernor": { "scale": 1, "p50Ms": 0.000511, "p99Ms": 0.000511 }
+ *
+ * p50 EQUAL to p99, to six decimal places, and IDENTICAL across two separate
+ * engine processes twenty minutes apart. That is not a measurement. Proved on
+ * Node directly:
+ *
+ *     h.reset();
+ *     h.percentile(50)/1e6 -> 0.000511   h.percentile(99)/1e6 -> 0.000511
+ *     h.count -> 0
+ *
+ * **0.000511 is what an EMPTY histogram returns.** And `sample()` fed it
+ * straight to `scaleForLoopDelay`, which reads 0.0005 ms as enormous headroom
+ * and returns scale 1.
+ *
+ * Now the part that makes it a trap rather than a rounding error:
+ * `monitorEventLoopDelay` only records when the loop TURNS. A loop pegged by
+ * one long synchronous run does not turn, so it collects FEWER samples the
+ * more saturated it is - and at the limit, none. So the emptier the histogram,
+ * the more load there is, and the governor was reading empty as idle. **It
+ * stood down precisely when it was needed**, which is why nothing shed load
+ * through a twenty-minute outage.
+ *
+ * TWO CHANGES, both about refusing to guess:
+ *
+ * 1. An empty histogram is UNKNOWN, never fast. `count === 0` no longer
+ *    produces a reading at all; the previous scale is held rather than snapped
+ *    back to 1, and the snapshot says `stale: true` so /health and /metrics
+ *    cannot show a confident number nobody measured. (CLAUDE.md 10.86 rule 1.)
+ *
+ * 2. The sampler measures its own lateness, which cannot go blind. A
+ *    one-second interval that fires 800 ms late has measured 800 ms of loop
+ *    saturation directly, with no dependence on the loop turning often enough
+ *    to be sampled. The scale is decided on the WORSE of the two readings, so
+ *    the histogram still wins when it is working and lateness carries it when
+ *    the histogram has nothing.
+ *
+ * Neither touches the scale table or the floor: this changes what the governor
+ * can SEE, not what it decides once it can see it.
+ */
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 
 export const GOVERNOR_FLOOR_ITERATIONS = 60;
+
+/**
+ * What `IntervalHistogram.percentile()` returns when nothing has been
+ * recorded. Node reports 0.000511 ms (511 ns) rather than 0 or NaN, which is
+ * why an empty histogram read as "the loop is idle" instead of "I have no
+ * reading". Verified on the engine's own Node build.
+ */
+export const EMPTY_HISTOGRAM_MS = 0.000511;
+
+/**
+ * Is this pair of percentile readings a measurement, or an empty histogram?
+ *
+ * `count` is the authority and is checked first. The p50/p99 equality test is
+ * the belt for a runtime whose sentinel differs: two percentiles identical to
+ * the nanosecond, at a value far below the histogram's own resolution, is not
+ * something a real loop produces.
+ */
+export function isEmptyReading(count: number, p50Ms: number, p99Ms: number): boolean {
+  if (Number.isFinite(count) && count > 0) return false;
+  if (!Number.isFinite(p50Ms) || !Number.isFinite(p99Ms)) return true;
+  return p50Ms === p99Ms && p50Ms < 1;
+}
+
+/**
+ * The delay the scale is decided on: the worse of what the histogram saw and
+ * how late our own sampler was.
+ *
+ * Lateness is the reading that cannot disappear under load - a timer scheduled
+ * for 1,000 ms that runs at 1,800 ms has measured 800 ms of saturation whether
+ * or not the loop turned often enough to be sampled.
+ */
+export function effectiveDelayMs(
+  histogramP50Ms: number | null,
+  timerLateMs: number | null
+): number | null {
+  const a = Number.isFinite(histogramP50Ms as number) ? (histogramP50Ms as number) : null;
+  const b =
+    Number.isFinite(timerLateMs as number) && (timerLateMs as number) >= 0
+      ? (timerLateMs as number)
+      : null;
+  if (a === null && b === null) return null;
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.max(a, b);
+}
 
 /** Pure mapping from p50 event-loop delay (ms) to an iteration scale. */
 export function scaleForLoopDelay(p50Ms: number): number {
@@ -102,6 +195,15 @@ export interface GovernorSnapshot {
   sampledAt: number;
   /** Seconds the scale has been below 1 in the current episode. */
   throttledForS: number;
+  /**
+   * The last reading told us nothing - an empty histogram with no timer
+   * lateness to fall back on - so `p50Ms`/`p99Ms` are the previous values and
+   * `scale` is being HELD, not re-derived. Never omit this: a held number that
+   * looks live is the whole reason this field exists.
+   */
+  stale: boolean;
+  /** How late the one-second sampler last ran, in ms. Loop saturation, directly. */
+  timerLateMs: number;
 }
 
 const SAMPLE_EVERY_MS = 1000;
@@ -118,6 +220,10 @@ class EquityLoadGovernor {
   private lastLogAt = 0;
   private override: number | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** How late the last sampler tick ran. Loop saturation that cannot go blind. */
+  private timerLateMs: number | null = null;
+  private expectedTickAt = 0;
+  private stale = false;
 
   constructor() {
     this.enabled = (process.env.EQUITY_GOVERNOR || 'on').toLowerCase() !== 'off';
@@ -141,10 +247,37 @@ class EquityLoadGovernor {
     if (!this.enabled || !this.histogram) return 1;
     this.sampledAt = now;
     // percentile() is in nanoseconds.
-    this.p50Ms = this.histogram.percentile(50) / 1e6;
-    this.p99Ms = this.histogram.percentile(99) / 1e6;
+    const p50 = this.histogram.percentile(50) / 1e6;
+    const p99 = this.histogram.percentile(99) / 1e6;
+    const count = Number(this.histogram.count ?? 0);
     this.histogram.reset();
-    const next = scaleForLoopDelay(this.p50Ms);
+
+    // An empty histogram is not a fast loop. It is most often a PEGGED one:
+    // the loop has to turn to be sampled, so the fewer turns, the fewer
+    // samples. Reading 0.000511 ms as headroom is how the governor stood down
+    // through the 2026-09-07 04:05 outage.
+    const empty = isEmptyReading(count, p50, p99);
+    const histogramReading = empty ? null : p50;
+    const delay = effectiveDelayMs(histogramReading, this.timerLateMs);
+
+    if (delay === null) {
+      // Nothing measurable this tick. HOLD the previous scale and say so;
+      // never snap back to full precision on an absence of evidence.
+      this.stale = true;
+      return this.scale;
+    }
+    this.stale = false;
+    if (!empty) {
+      this.p50Ms = p50;
+      this.p99Ms = p99;
+    } else {
+      // Lateness carried the reading; report it where the p50 is read so a
+      // chart of `poker_equity_governor_loop_p50_ms` cannot flatline through
+      // the one condition it exists to show.
+      this.p50Ms = delay;
+      this.p99Ms = Math.max(this.p99Ms, delay);
+    }
+    const next = scaleForLoopDelay(delay);
     if (next < 1 && this.scale >= 1) this.throttledSince = now;
     if (next >= 1 && this.scale < 1) {
       console.log(
@@ -177,9 +310,18 @@ class EquityLoadGovernor {
    */
   startSampling(): void {
     if (this.timer || !this.enabled || !this.histogram) return;
+    this.expectedTickAt = Date.now() + SAMPLE_EVERY_MS;
     this.timer = setInterval(() => {
       try {
-        this.sample(Date.now());
+        const now = Date.now();
+        // How late did OUR OWN tick run? A one-second interval that fires at
+        // 1,800 ms has measured 800 ms of event-loop saturation directly, and
+        // unlike the histogram it cannot be starved into silence by the very
+        // load it is meant to report. Clamped at 0: an early tick is not
+        // negative headroom, it is no news.
+        this.timerLateMs = Math.max(0, now - this.expectedTickAt);
+        this.expectedTickAt = now + SAMPLE_EVERY_MS;
+        this.sample(now);
       } catch {
         /* a reading we could not take is not a reason to stop taking them */
       }
@@ -190,6 +332,15 @@ class EquityLoadGovernor {
   stopSampling(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    // Lateness belongs to a running timer. Leaving the last value behind would
+    // let a stopped sampler keep voting on the scale for ever.
+    this.timerLateMs = null;
+    this.expectedTickAt = 0;
+  }
+
+  /** Test hook: feed a sampler lateness without waiting on a real timer. */
+  __setTimerLateForTest(ms: number | null): void {
+    this.timerLateMs = ms;
   }
 
   snapshot(now: number = Date.now()): GovernorSnapshot {
@@ -200,6 +351,8 @@ class EquityLoadGovernor {
       p99Ms: this.p99Ms,
       sampledAt: this.sampledAt,
       throttledForS: this.throttledSince ? Math.round((now - this.throttledSince) / 1000) : 0,
+      stale: this.stale,
+      timerLateMs: this.timerLateMs ?? 0,
     };
   }
 

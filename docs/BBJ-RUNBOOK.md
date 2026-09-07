@@ -199,3 +199,49 @@ genuine bad beats this platform has ruled. Both the arming and the firing leave
 a `financial_alerts` row, and `bbj_drill_arms` records who armed it, when, and
 which hand consumed it. A drill is a real jackpot at a drill club - the history
 is true - and these are how anyone reading it later knows why it happened.
+
+## Why no drill has been run yet, measured 2026-09-07
+
+Two blockers, both real, both Dan's to clear. Probed against production inside a
+transaction that was rolled back, so this is read rather than assumed.
+
+**1. Arming is admin-only and cannot be done from an agent's connection.**
+`fn_bbj_arm_drill` was called for every active pool over a service connection
+and returned, for each one:
+
+```
+{"ok": false, "reason": "not_platform_admin"}
+```
+
+That is the function working exactly as designed - `auth.uid()` is null on a
+service connection, so there is no admin to be. It also means an agent cannot
+arm a drill on Dan's behalf, and must not try: CLAUDE.md 10.84 forbids an agent
+signing in as anybody. **A drill is armed by Dan, signed in, from the admin
+surface.** Nothing else can do it.
+
+**2. There is no pool that is both armable and payable.** The arm refuses a
+union pool outright and any pool over the 1,000.00 ceiling; the payout refuses a
+pool whose main balance is zero. Measured the same day:
+
+| pool                                          | main       | arm               | payout                       |
+| --------------------------------------------- | ---------- | ----------------- | ---------------------------- |
+| `9b73034b` Midway Union, 104 cash tables      | 0.00       | under the ceiling | refused, `main_balance <= 0` |
+| `a7a65cfc` Deep Stack Society, 76 cash tables | 25,853.88  | over the ceiling  | fine                         |
+| `f9806a7f` the union pool                     | 108,963.08 | refused, union    | fine                         |
+
+So a drill armed today would prove the detection and the event path and then
+correctly refuse to pay, which reads like a failure and proves half of what the
+drill exists for.
+
+**What unblocks it**, and both are Dan's because both set what a pool holds:
+
+- fund `9b73034b` with a small amount - a few hundred is enough, and its 104
+  cash tables mean a qualifying hand arrives quickly - via
+  `fn_union_fund_bbj_pool`; or
+- raise the 1,000.00 ceiling in `fn_bbj_arm_drill` so an existing club pool
+  qualifies, accepting that a drill there pays a real percentage of a real
+  jackpot to real players.
+
+An agent may not do either: moving chips into a pool to make a test possible is
+spending money on a test, not correcting a defect, so 10.9's grant does not
+cover it.

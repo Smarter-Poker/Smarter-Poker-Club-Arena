@@ -866,7 +866,27 @@ export async function auditBBJDrift(
       `[A5] ${unlinkableChips} chips of BBJ contribution over the last ${windowDays}d sit on ` +
         `${unlinkableRows} rake_records row(s) with NO hand_id, so they can be reconciled ` +
         `against the jackpot pool by neither this audit nor fn_bbj_repair_unbanked. ` +
-        `Rising numbers here mean logHandHistory is failing and returning a null id.`,
+        /* THIS SENTENCE USED TO NAME ONE CAUSE AND IT WAS THE WRONG ONE
+           (BBJ programme close-out, 2026-09-07). It read "rising numbers here
+           mean logHandHistory is failing and returning a null id", which sends
+           the reader hunting for jackpot chips that never left. Measured on all
+           71 orphan rows of the preceding two days: every one had a properly
+           linked SIBLING row for the same hand carrying the same contribution,
+           and bbj_contributions held 0.99 rows per hand with ZERO hands banked
+           twice. The drop reached the pool exactly once. The orphan is a
+           DUPLICATE audit row - the tracked chip_standard.duplicate_rake_
+           attribution incident (4,452 rows, 2026-04-16..09-05) - not a lost
+           contribution.
+           Both causes are real and they need different people, so the alert now
+           says how to tell them apart instead of choosing for the reader
+           (CLAUDE.md 10.86). */
+        `THIS IS NOT PROOF OF MISSING CHIPS. Check first whether each orphan has a ` +
+        `sibling rake_records row for the same (table_id, metadata->>'hand_number') that ` +
+        `DOES carry a hand_id: if it does, the drop was banked once and the orphan is a ` +
+        `duplicate audit row (chip_standard.duplicate_rake_attribution owns that). Only if ` +
+        `there is no such sibling is logHandHistory returning a null id and a contribution ` +
+        `genuinely unreconcilable. fn_bbj_conservation_check and FeeReconciler.bbj_drift are ` +
+        `what say whether chips are actually short.`,
       { windowDays, unlinkableRows, unlinkableChips }
     );
 

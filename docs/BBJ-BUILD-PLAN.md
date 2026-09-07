@@ -122,16 +122,53 @@ tablename='bbj_pools'` returning nothing.
 | 5.6 | `bbj_pools.pool_amount` is a legacy column with ONE remaining writer (`fn_union_promo_send`, `20260905034557` line 217) and, since phase 3.5, no readers left that matter. It disagreed with `main_balance` by 107,092.27 on the union pool and by 22,142.58 on a club pool, and the World Hub read it on every BBJ surface - that was the phase 3.5 defect. Decide it in the admin-money audit: either drop the column, or make the one writer stop. A half-maintained duplicate of a money figure is a trap for the next reader, and it has already caught one. (Also: `Smarter-Poker-World-Hub/pages/api/club-arena/union-wallet.js:846` still SELECTs it and never uses the value.) |
 | 5.5 | `I7_raked_hand_never_banked`: rake is not banked inline and `rake-repair-unbanked-hourly` catches it every hour, which by CLAUDE.md 10.11 means the cause is not fixed. Measured 2026-09-06: 0 of 51,733 raked hands (62,498.69 chips) unbanked NOW, so no money is missing - but `fn_rake_bbj_audit` raised CRITICAL on 5 hands at 07:38 and 3 at 06:38 that the repair then fixed. Fix the cause; then give the audit a grace that outlasts the repair, so a CRITICAL stops firing on correct behaviour.                                                                                                                                                                              |
 
-## Phase 6 of 6 - Mini BBJ, funded by the backup reserve (last, per Dan)
+## Phase 6 of 6 - Mini BBJ, funded by the backup reserve **[SHIPPED 2026-09-07]**
 
-Design first, for Dan's sign-off, because it sets future payouts (CLAUDE.md
-10.9: what the next event owes is his): a flat amount per stakes tier, a custom
-formula, and separate qualifying hands for hold'em and PLO. Then the mini bank
-per tier fed from `backup_balance`, the second detection tier in `detectBBJHit`,
-the payout RPC, the celebration variant, the ticker and the page.
+Designed by Dan on 2026-09-07 with the measurement in front of him, then built:
+`docs/changelog/2026-09-07-bbj-phase-6-the-mini-jackpot.md`.
 
-## Open decision (Dan's)
+|                 |                                                                          |
+| --------------- | ------------------------------------------------------------------------ |
+| qualifying hand | per game: hold'em **aces full or better** loses, PLO **any quads** loses |
+| payout          | a **flat amount per stakes tier**, in `bbj_mini_tiers`                   |
+| split           | the main jackpot's - 50 loser / 25 winner / 25 table                     |
 
-Whether the main jackpot rules stay this strict (Ace in hand, both cards play
-for both players, quads-or-better winner). At current volume that is roughly
-one hit every few weeks against a $104k pool.
+Measured over seven days at that bar: 4.29 hits a day (nano 1.14, micro 1.29,
+small 1.43, mid 0.43, none yet at high or nosebleeds), against 4,522.54 a day of
+`backup_balance` growth. Amounts 250 / 425 / 700 / 950 / 1,200 / 1,500 spend
+2,242.75 a day - 49.6% - so the reserve still grows and the 48,917 banked is
+never touched.
+
+Shipped: `bbj_mini_tiers` (config, Dan's to change with one UPDATE),
+`fn_bbj_mini_payout` (same kill switch, same idempotency key, same crediting
+path as the main, plus `mini_reserve_floor`), `detectMiniBBJHit`, the settlement
+wiring, `kind` on `bbj_payouts` / `bbj_winners` / `fn_bbj_recent_hits`, the
+celebration variant, the ticker marker and the Previous Winners badge -
+and `theMiniNeverOverrulesTheMain.law.test.ts`.
+
+**A mini does not take over every screen** (#3484, World Hub #1550). The main
+jackpot fires about once a fortnight and pays six figures; a mini fires about
+four times a day. The platform-wide announcement, and the World Hub's three
+haptics and audio fanfare, are for the main only. A mini celebrates at its own
+table and appears everywhere else badged.
+
+## Still open
+
+**Dan's decision: whether the main jackpot rules stay this strict** (Ace in
+hand, both cards play for both players, quads-or-better winner). At current
+volume that is roughly one hit every few weeks against a $109k pool. The mini
+now catches the near-misses, which is the cheaper half of the same question.
+
+**Phase 4.2/4.3, the live drill.** Blocked, and the blocker is written down and
+measured in `docs/BBJ-RUNBOOK.md`: `fn_bbj_arm_drill` answers
+`not_platform_admin` on every pool from a service connection (by design - an
+agent may not sign in as anybody, 10.84), and no pool today is both armable and
+payable. Dan arms it, and either funds `9b73034b` with a few hundred chips or
+raises the 1,000.00 ceiling first.
+
+**The unbanked rake.** ~49 hands a day have their whole post-hand tail dropped
+by the engine and are repaired later with `p_contributions => NULL`, so that
+rake basis earns nobody VIP points, agent commission or rakeback. Counted every
+hour by `I8_rake_banked_late_by_a_healer`; root fix and delete-when in
+`docs/BAND-AIDS-REGISTER.md` TIER 1 #5. Not a BBJ defect, but it is the largest
+thing this programme found and did not close.

@@ -284,6 +284,16 @@ against a journal with thirty-five. See
 `docs/changelog/2026-09-07-the-attestation-covers-the-journal.md`. The words
 above stay because they are still the reason the file exists.
 
+**Phase 6 status, 2026-09-07 evening (deep dive done, phase closed).** Three
+pull requests: #3456, #3463, and the deep dive
+(`docs/changelog/2026-09-07-the-attestation-restates-itself.md`). A sanctioned
+change to an attested day now restates the manifest in its own transaction;
+the manifest tables cannot be hand-edited; the verifier re-reads on a budgeted
+rotation over `idx_chip_ledger_created_at` and reports how stale its oldest
+re-read is; a day is a UTC day; and the anchor's append step can actually
+reach `main`. The restatement half of 9.3 is therefore built - the policy
+still needs writing down as a policy in phase 9.
+
 ### 9.3 THERE IS NO RESTATEMENT POLICY, AND IT WAS NEEDED TODAY
 
 The 2026-09-06 clearance found 16,426.46 chips of rake attributed to clubs by

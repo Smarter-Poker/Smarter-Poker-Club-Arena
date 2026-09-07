@@ -534,3 +534,12 @@ it('union financial overview uses complete recorded statements and explicit paym
   expect(read('src/pages/UnionDetailPage.tsx')).toContain('status: cb.status');
   expect(read('supabase/migrations/20260907212347_union_statement_reports_identify_missing_accounting_snapshots.sql')).toContain('AS snapshot_complete');
 });
+
+
+it('tournament payment completion uses durable outstanding debt rather than RPC success', () => {
+  const sql = read('supabase/migrations/20260907215613_tournament_settlement_reports_remaining_debt.sql');
+  expect(sql).toContain("'remaining', GREATEST(0, v_ob.amount_owed - v_ob.amount_paid - v_pay)");
+  expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain('if (bp.fully_settled === true)');
+  expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain("this.broadcast('bubble_protection_pending'");
+  expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain('FAIL stale smaller replay hides debt');
+});

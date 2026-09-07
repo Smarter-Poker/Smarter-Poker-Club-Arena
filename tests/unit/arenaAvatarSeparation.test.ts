@@ -130,8 +130,15 @@ describe('Club Arena never touches the social media photo column', () => {
   it('still reads the engine seat avatar from the Arena column', () => {
     // The single highest-leverage read in the app: it feeds every seat at every
     // table. If this one regresses, the felt shows photographs again.
+    // 2026-09-07: the projection moved into the engine mirror of the shared
+    // rule (server/src/services/supabase/tableAvatar.ts) so this read and the
+    // client's live profile sync name the same column by construction.
+    // tests/the-felt-reads-one-avatar-column.law.test.ts imports both copies.
     const engine = readFileSync(join(ROOT, 'server/src/services/supabase/tables.ts'), 'utf8');
-    expect(engine).toMatch(/avatar_url\s*:\s*arena_avatar_url/);
+    expect(engine).toMatch(/\.select\(SEATED_PROFILE_SELECT\)/);
+    const mirror = readFileSync(join(ROOT, 'server/src/services/supabase/tableAvatar.ts'), 'utf8');
+    expect(mirror).toMatch(/avatar_url\s*:\s*\$\{TABLE_AVATAR_COLUMN\}/);
+    expect(mirror).toMatch(/TABLE_AVATAR_COLUMN = 'arena_avatar_url'/);
   });
 
   /**

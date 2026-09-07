@@ -559,3 +559,16 @@ it('union periods require verified zero recipient shortfalls before settlement',
  expect(sql).toContain("OR jsonb_typeof(v_r3->'shortfalls') IS DISTINCT FROM 'number'");
  expect(has('scripts/ci/probes/union-recipient-shortfalls.sql','FAIL unpaid recipient marked period settled')).toBe(true);
 });
+
+it('final guarantee funding follows recorded tournament scope', () => {
+ const sql = read('supabase/migrations/20260907221633_guarantee_funding_follows_tournament_ownership.sql');
+ expect(sql).toContain('v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END');
+ expect(sql).not.toContain('select c.union_id into v_union from public.clubs');
+ expect(has('scripts/ci/probes/guarantee-funding-scope.sql','FAIL guarantee follows current club union instead of event union')).toBe(true);
+});
+
+it('guarantee overlays require a real bank debit before pool finalization', () => {
+  const sql = read('supabase/migrations/20260907230617_guarantee_overlay_requires_an_actual_funding_bank.sql');
+  expect(sql).toContain('guarantee_funding_bank_missing:');
+  expect(sql.indexOf('if v_balance_after is null then', sql.indexOf('A missing bank'))).toBeLessThan(sql.indexOf('set treasury_after = v_balance_after'));
+});

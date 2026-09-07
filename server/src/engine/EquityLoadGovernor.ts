@@ -318,9 +318,18 @@ class EquityLoadGovernor {
     // Not yet a window's worth of loop. Reading here would reset the histogram
     // and publish the emptiness as a measurement.
     if (this.sampledAt !== 0 && now - this.sampledAt < SAMPLE_EVERY_MS) return this.scale;
-    // Belt and braces, and the assertion that the published number IS a
-    // measurement: no samples means no reading, whatever the clock says.
-    if (this.histogram.count === 0) return this.scale;
+    // ── THIS EARLY RETURN MADE THE LATENESS PATH UNREACHABLE (2026-09-07) ───
+    // It read `count === 0` and bailed — which is EXACTLY the case the
+    // machinery below was written for. `isEmptyReading` returns false whenever
+    // `count > 0`, so with this guard in place `empty` could never be true,
+    // the `timerLateMs` fallback never ran, and `snapshot().stale` was a
+    // constant `false`. The one condition the fix exists to cover was the one
+    // condition it returned before reaching.
+    //
+    // An empty histogram now falls through to `effectiveDelayMs`, which reads
+    // the sampler's own lateness instead. If BOTH are absent it still holds
+    // the previous scale and sets `stale` — the assertion that a published
+    // number is a measurement is kept, it just lives where it can be reached.
     this.sampledAt = now;
     // percentile() is in nanoseconds.
     const p50 = this.histogram.percentile(50) / 1e6;
@@ -343,16 +352,25 @@ class EquityLoadGovernor {
       return this.scale;
     }
     this.stale = false;
-    if (!empty) {
-      this.p50Ms = p50;
-      this.p99Ms = p99;
-    } else {
-      // Lateness carried the reading; report it where the p50 is read so a
-      // chart of `poker_equity_governor_loop_p50_ms` cannot flatline through
-      // the one condition it exists to show.
-      this.p50Ms = delay;
-      this.p99Ms = Math.max(this.p99Ms, delay);
-    }
+    // ── PUBLISH THE NUMBER THE SCALE WAS DECIDED ON (2026-09-07) ───────────
+    //
+    // This assigned the raw histogram p50 whenever the histogram had ANY
+    // samples, while the scale was decided on `max(p50, timerLateMs)`. Under
+    // real saturation those diverge hard: measured on main with the sampler
+    // 1,999 ms late, the histogram's own p50 was 21 ms — so the governor
+    // dropped to its deepest tier (0.08) while `poker_event_loop_delay_p50_ms`
+    // served 21.
+    //
+    // `EngineCoreOutOfHeadroom` (>40), `EngineCoreSaturated` (>300) and
+    // `EngineSheddingPrecisionForHours` all read that metric. All three would
+    // have stayed silent through a core pegged badly enough to shed 92% of its
+    // horse arithmetic — and those are the alarms that DID catch the 04:05
+    // outage. Publishing anything other than the decision input re-opens it.
+    //
+    // p99 keeps the histogram's own value where there is one, floored at the
+    // delay so it can never report less than the p50 beside it.
+    this.p50Ms = delay;
+    this.p99Ms = empty ? Math.max(this.p99Ms, delay) : Math.max(p99, delay);
     const next = scaleForLoopDelay(delay);
     if (next < 1 && this.scale >= 1) this.throttledSince = now;
     if (next >= 1 && this.scale < 1) {

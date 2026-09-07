@@ -20052,8 +20052,19 @@ export default function TablePage({
       if (buyingTimeBankRef.current) return false; // no double-charge on a double-tap
       buyingTimeBankRef.current = true;
       try {
-        const { data, error } = await supabase.rpc('fn_purchase_time_banks', {
+        /* One request id per attempt (review D15, 2026-09-07): the server dedupes on it through
+           digital_purchase_receipts, so a retried or double-delivered call cannot charge twice.
+           The one-argument overload minted a fresh key per call and defeated that. */
+        const requestId =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                const r = Math.floor(Math.random() * 16);
+                return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+              });
+        const { data, error } = await supabase.rpc('fn_purchase_time_banks_v2', {
           p_quantity: quantity,
+          p_request_id: requestId,
         });
         if (error) throw error;
         const result = (data ?? {}) as {

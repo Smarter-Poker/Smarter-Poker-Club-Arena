@@ -313,6 +313,16 @@ describe('a final-table deal pays every share or none', () => {
 
   it('freezes the deal lines and refuses a legacy or incomplete terminal transition', () => {
     expect(executableSql).toMatch(
+      /REVOKE ALL ON public\.tournament_obligations FROM service_role[\s\S]*?GRANT SELECT ON public\.tournament_obligations TO service_role/
+    );
+    for (const privilege of ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
+      expect(executableSql).toMatch(
+        new RegExp(
+          `has_table_privilege\\('service_role',[\\s\\S]*?'public\\.tournament_obligations', '${privilege}'\\)`
+        )
+      );
+    }
+    expect(executableSql).toMatch(
       /CREATE TRIGGER zzzzz_freeze_atomic_final_table_deal_obligation\s+BEFORE INSERT OR UPDATE OR DELETE ON public\.tournament_obligations/
     );
     expect(FREEZE).toMatch(/OLD\.kind IN \('place', 'final_table_deal', 'bubble_protection'\)/);

@@ -192,6 +192,16 @@ describe('a tournament pays every place or none', () => {
 
   it('freezes every place and Bubble obligation mutation after the batch exists', () => {
     expect(executableSql).toMatch(
+      /REVOKE ALL ON public\.tournament_obligations FROM service_role[\s\S]*?GRANT SELECT ON public\.tournament_obligations TO service_role/
+    );
+    for (const privilege of ['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
+      expect(executableSql).toMatch(
+        new RegExp(
+          `has_table_privilege\\('service_role',[\\s\\S]*?'public\\.tournament_obligations', '${privilege}'\\)`
+        )
+      );
+    }
+    expect(executableSql).toMatch(
       /CREATE TRIGGER zzzz_freeze_batched_tournament_place\s+BEFORE INSERT OR UPDATE OR DELETE ON public\.tournament_obligations\s+FOR EACH ROW\s+EXECUTE FUNCTION public\.trg_freeze_batched_tournament_place\(\)/
     );
     expect(FREEZE).toMatch(/TG_OP IN \('UPDATE', 'DELETE'\)[\s\S]*?OLD\.tournament_id/);

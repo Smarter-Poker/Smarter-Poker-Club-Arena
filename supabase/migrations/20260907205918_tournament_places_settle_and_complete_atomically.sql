@@ -76,6 +76,13 @@ REVOKE ALL ON public.tournament_place_settlement_batches FROM PUBLIC, anon, auth
 REVOKE ALL ON public.tournament_place_settlement_batches FROM service_role;
 GRANT SELECT ON public.tournament_place_settlement_batches TO service_role;
 
+/* `set_config` is not an authorization boundary: a direct service-role session
+   can set any custom GUC. Keep the obligation ledger SELECT-only to that role;
+   every legitimate write runs as the owner inside an audited SECURITY DEFINER
+   settlement function. */
+REVOKE ALL ON public.tournament_obligations FROM service_role;
+GRANT SELECT ON public.tournament_obligations TO service_role;
+
 COMMENT ON TABLE public.tournament_place_settlement_batches IS
   'Immutable completeness header for one normal tournament place plan and its exact finalized-field Bubble Protection obligation when applicable. The fingerprint covers the ordered place, player and exact-cent entitlement stored in tournament_obligations.';
 
@@ -4443,6 +4450,16 @@ BEGIN
      OR has_table_privilege('service_role',
                             'public.tournament_place_settlement_batches', 'TRUNCATE') THEN
     RAISE EXCEPTION 'service_role can forge an atomic settlement batch';
+  END IF;
+  IF has_table_privilege('service_role',
+                         'public.tournament_obligations', 'INSERT')
+     OR has_table_privilege('service_role',
+                            'public.tournament_obligations', 'UPDATE')
+     OR has_table_privilege('service_role',
+                            'public.tournament_obligations', 'DELETE')
+     OR has_table_privilege('service_role',
+                            'public.tournament_obligations', 'TRUNCATE') THEN
+    RAISE EXCEPTION 'service_role can forge a tournament obligation';
   END IF;
   IF EXISTS (
     SELECT 1 FROM information_schema.role_routine_grants

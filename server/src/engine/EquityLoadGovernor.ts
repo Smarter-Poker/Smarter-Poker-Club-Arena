@@ -238,13 +238,40 @@ class EquityLoadGovernor {
   }
 
   /**
-   * Take a reading now, whatever the caller. The one-second timer calls this;
-   * so does `current()` when no timer is running. Cheap: two percentile reads
-   * and a reset on a histogram perf_hooks is already maintaining.
+   * Take a reading, if there is one to take.
+   *
+   * ONE AUTHORITY DECIDES WHEN A READING EXISTS, AND IT IS THIS METHOD.
+   *
+   * Until 2026-09-07 the elapsed-time check lived in `current()` and this
+   * method reset the histogram for anybody who asked. There are two callers on
+   * the same one-second cadence - the timer started at boot, and the horse
+   * equity path, thousands of times a second through `current()` - so they
+   * drift into phase and land inside the same 20ms window. Whichever ran
+   * second read a histogram the first had just emptied.
+   *
+   * AND AN EMPTY NODE HISTOGRAM DOES NOT SAY IT IS EMPTY. `percentile(50)` and
+   * `percentile(99)` both answer 511 (nanoseconds) with `count` at zero, which
+   * divides to 0.000511 ms - a number that looks like a perfectly idle loop and
+   * is in fact the absence of a measurement. Production published exactly that,
+   * frozen, on every read: `poker_event_loop_delay_p50_ms 0.000511`.
+   *
+   * It is not a cosmetic fault. `scaleForLoopDelay(0.000511)` is 1, so the
+   * governor could never shed load on the one core horse Monte Carlo saturates,
+   * and `EngineCoreOutOfHeadroom` (>40ms) and `EngineCoreSaturated` (>300ms)
+   * could never fire. The metric reaching zero meant the opposite of success.
+   *
+   * Cheap: two percentile reads and a reset on a histogram perf_hooks is
+   * already maintaining.
    */
   sample(now: number = Date.now()): number {
     if (this.override !== null) return this.override;
     if (!this.enabled || !this.histogram) return 1;
+    // Not yet a window's worth of loop. Reading here would reset the histogram
+    // and publish the emptiness as a measurement.
+    if (this.sampledAt !== 0 && now - this.sampledAt < SAMPLE_EVERY_MS) return this.scale;
+    // Belt and braces, and the assertion that the published number IS a
+    // measurement: no samples means no reading, whatever the clock says.
+    if (this.histogram.count === 0) return this.scale;
     this.sampledAt = now;
     // percentile() is in nanoseconds.
     const p50 = this.histogram.percentile(50) / 1e6;
@@ -295,11 +322,8 @@ class EquityLoadGovernor {
     return this.scale;
   }
 
-  /** Current scale; re-samples the loop delay at most once a second. */
+  /** Current scale; `sample` re-reads the loop delay at most once a second. */
   current(now: number = Date.now()): number {
-    if (this.override !== null) return this.override;
-    if (!this.enabled || !this.histogram) return 1;
-    if (now - this.sampledAt < SAMPLE_EVERY_MS) return this.scale;
     return this.sample(now);
   }
 

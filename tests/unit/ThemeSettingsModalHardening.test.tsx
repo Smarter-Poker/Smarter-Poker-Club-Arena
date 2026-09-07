@@ -537,7 +537,7 @@ describe('ThemeSettingsModal hardening', () => {
     const accountBBuy = await screen.findByRole('button', { name: /Buy For 350/ });
     fireEvent.click(accountBBuy);
     await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(2));
-    expect(accountBBuy).toBeDisabled();
+    await waitFor(() => expect(accountBBuy).toBeDisabled());
 
     await act(async () => {
       accountAPurchase.resolve({ data: { success: true, cost: 350 }, error: null });
@@ -546,7 +546,7 @@ describe('ThemeSettingsModal hardening', () => {
 
     expect(mocks.applyAppearance).not.toHaveBeenCalled();
     expect(mocks.toast.success).not.toHaveBeenCalled();
-    expect(accountBBuy).toBeDisabled();
+    await waitFor(() => expect(accountBBuy).toBeDisabled());
     expect(onClose).not.toHaveBeenCalled();
 
     await act(async () => {

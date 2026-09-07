@@ -29,8 +29,8 @@ release adds no club commission or revenue share.
 - A request ID reused for different payload data is rejected.
 - Browser request IDs survive reloads and ambiguous responses, while account
   switches cannot apply a late result to another signed-in member.
-- Receipt tables are private, deny browser access, and expose only the minimum
-  append-only service-role operations.
+- Receipt rows are inaccessible to browsers, with restrictive RLS policies and
+  only the minimum append-only service-role operations.
 - Legacy RPC signatures remain temporary compatibility bridges so the database
   can be deployed safely before the new clients.
 

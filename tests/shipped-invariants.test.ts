@@ -543,3 +543,11 @@ it('tournament payment completion uses durable outstanding debt rather than RPC 
   expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain("this.broadcast('bubble_protection_pending'");
   expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain('FAIL stale smaller replay hides debt');
 });
+
+
+it('Spin cancellation reverses aggregate rake with its original attribution identity', () => {
+ const sql = read('supabase/migrations/20260907223105_spin_cancellation_reverses_original_aggregate_rake_rows.sql');
+ expect(sql).toContain("'original_rake_record_id',v_fee_row.id");
+ expect(sql).toContain("'atomic_cancel_tournament',v_fee_row.player_contributions");
+ expect(has('scripts/ci/probes/spin-cancel-aggregate-fee.sql','FAIL fee reversal failure committed refunds or cancellation')).toBe(true);
+});

@@ -1,6 +1,6 @@
 {
   "contractVersion": "smarter-poker.solver-policy.v1",
-  "policyVersion": "solver-policy-service.1.0.0",
+  "policyVersion": "solver-policy-service.1.0.1",
   "key": {
     "contractVersion": "smarter-poker.solver-policy.v1",
     "variant": "nlh",
@@ -173,6 +173,7 @@
     "completeKey": false,
     "missingKeyDimensions": [
       "tableSize",
+      "positions.table",
       "stackVector",
       "blinds",
       "rake",

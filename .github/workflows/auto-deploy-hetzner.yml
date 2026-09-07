@@ -940,6 +940,11 @@ jobs:
           # note 6. If this step fails, every recovery path still recreates the
           # last verified build rather than this one.
           ~/hssh "IMAGE=$IMAGE_REPO:$SHA CONTAINER=$CONTAINER ENV_FILE=$REPO_DIR/server/.env $REPO_DIR/server/scripts/engine-up.sh"
+          # The outgoing engine's log was saved by engine-up.sh before the old
+          # container was removed (2026-09-07). Name the file in the run log so
+          # the next investigation knows where to look without ssh-ing blind.
+          echo "outgoing engine logs on the host (newest first):"
+          ~/hssh "ls -1t /var/log/club-arena-engine/engine-*.log.gz 2>/dev/null | head -3" || true
 
       - name: Verify — liveness AND that the running build is the one we shipped
         id: health

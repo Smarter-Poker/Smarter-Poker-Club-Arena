@@ -174,9 +174,9 @@ PRE_RUNNING="$(systemctl list-units --type=service --state=running --no-legend -
 log "services running before this change: $(echo "$PRE_RUNNING" | wc -l | tr -d ' ')"
 
 # --- Named neighbours that must not be disturbed. -----------------------------
-# The product owner's instruction is explicit: pepnationrx is not ours and is
-# not to be touched. club-arena-engine is ours and is mid-hand at any moment.
-for neighbour in pepnationrx.service caddy.service docker.service; do
+# Preserve the live poker infrastructure. PRE_RUNNING also captures every
+# other active service, and stage 6 verifies that all remain running.
+for neighbour in caddy.service docker.service; do
   if systemctl is-active --quiet "$neighbour" 2>/dev/null; then
     log "  neighbour up, will be left alone: $neighbour"
   fi

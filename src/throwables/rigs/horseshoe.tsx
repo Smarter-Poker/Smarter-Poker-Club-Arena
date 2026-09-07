@@ -207,12 +207,7 @@ function Clover() {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-horseshoe thr-horseshoe--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <Horseshoe uid={uid} k="p" />
     </svg>
   );
@@ -220,60 +215,61 @@ function Projectile({ uid }: RigProps) {
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-horseshoe thr-horseshoe--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* 200 (+0): the shaded horseshoe lands, and 400-1000 (+200..+800) it
           bobs once - 12 px up and back - before settling. */}
-      <g className="thr-horseshoe__bob" transform="translate(0 -10)">
-        <g className="thr-horseshoe__shaded">
-          <Horseshoe uid={uid} k="a" />
-        </g>
-        {/* 1167 (+967): the glow bloom crossfades in over the settled shaded
-            horseshoe and blooms to 1.4x, then fades as the label takes over. */}
-        <g className="thr-horseshoe__glow">
-          <GlowHorseshoe uid={uid} />
+      <g transform="translate(0 -10)">
+        <g className="thr-horseshoe__bob">
+          <g className="thr-horseshoe__shaded">
+            <Horseshoe uid={uid} k="a" />
+          </g>
+          {/* 1167 (+967): the glow bloom crossfades in over the settled shaded
+              horseshoe and blooms to 1.4x, then fades as the label takes over. */}
+          <g className="thr-horseshoe__glow">
+            <GlowHorseshoe uid={uid} />
+          </g>
         </g>
       </g>
 
       {/* 1467 (+1267): the ray burst, behind the label, fading by 1667 (+1467). */}
-      <g className="thr-horseshoe__rays" transform="translate(0 -8)">
-        {RAYS.map(([angle, len], i) => (
-          <path
-            key={i}
-            d={`M -2.5 -6 L 2.5 -6 L 0 ${-6 - len} Z`}
-            fill={GLOW_YELLOW}
-            opacity="0.85"
-            transform={`rotate(${angle})`}
-          />
-        ))}
+      <g transform="translate(0 -8)">
+        <g className="thr-horseshoe__rays">
+          {RAYS.map(([angle, len], i) => (
+            <path
+              key={i}
+              d={`M -2.5 -6 L 2.5 -6 L 0 ${-6 - len} Z`}
+              fill={GLOW_YELLOW}
+              opacity="0.85"
+              transform={`rotate(${angle})`}
+            />
+          ))}
+        </g>
       </g>
 
       {/* 1467 (+1267): "GOOD LUCK" grows out of the glow, pops on settle at
           ~1767 (+1567), and holds to the cut. Title Case, drawn - never a DOM
           text node over the felt (contract, caption). */}
-      <g className="thr-horseshoe__label" transform="translate(0 -8)">
-        <text
-          textAnchor="middle"
-          fontFamily="Arial, Helvetica, sans-serif"
-          fontWeight="700"
-          fontStyle="italic"
-          fontSize="30"
-          fill={LABEL_FILL}
-          stroke={LABEL_STROKE}
-          strokeWidth="1.6"
-          strokeLinejoin="round"
-        >
-          <tspan x="0" y="-6">
-            Good
-          </tspan>
-          <tspan x="0" y="24">
-            Luck
-          </tspan>
-        </text>
+      <g transform="translate(0 -8)">
+        <g className="thr-horseshoe__label">
+          <text
+            textAnchor="middle"
+            fontFamily="Arial, Helvetica, sans-serif"
+            fontWeight="700"
+            fontStyle="italic"
+            fontSize="30"
+            fill={LABEL_FILL}
+            stroke={LABEL_STROKE}
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+          >
+            <tspan x="0" y="-6">
+              Good
+            </tspan>
+            <tspan x="0" y="24">
+              Luck
+            </tspan>
+          </text>
+        </g>
       </g>
 
       {/* 1867 (+1667): four clovers grow from the label's corners - the two

@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * DAILY CHALLENGE SERVICE — Rotating Challenge Engine
+ * DAILY CHALLENGE SERVICE: Rotating Challenge Engine
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Provides rotating daily challenges that refresh each day.
@@ -171,7 +171,11 @@ export interface DailyChallenge {
 export interface ClaimResult {
   claimed: boolean;
   alreadyClaimed: boolean;
+  /** @deprecated Compatibility alias for challengeDiamonds. */
   diamonds: number;
+  challengeDiamonds: number;
+  milestoneDiamonds: number;
+  diamondsCredited: number;
   diamondBalance: number;
 }
 
@@ -181,10 +185,26 @@ export interface ClaimBatchResult {
   replayed: boolean;
   claimedIds: string[];
   alreadyClaimedIds: string[];
+  /** @deprecated Compatibility alias for challengeDiamonds. */
   diamonds: number;
+  /** Diamonds earned by the mission contracts in this claim. */
+  challengeDiamonds: number;
+  /** Streak-circuit Diamonds unlocked by this same atomic claim. */
+  milestoneDiamonds: number;
+  /** Exact wallet delta: challengeDiamonds + milestoneDiamonds. */
+  diamondsCredited: number;
+  /** Wallet balance immediately after this settlement committed. */
+  settlementDiamondBalance: number;
+  /** Current wallet projection from the post-settlement dashboard when available. */
   diamondBalance: number;
   stats: Pick<DailyChallengeStats, 'totalClaimed' | 'totalDiamondsEarned'>;
   vault: DailyChallengeRewardVault;
+  /**
+   * Authoritative revision-bearing page projection read after settlement.
+   * Null means settlement succeeded but reconciliation must be retried; callers
+   * must never install the unfenced point-in-time fields from the claim RPC.
+   */
+  dashboard: DailyChallengeDashboard | null;
 }
 
 /** What the atomic reroll RPC actually changed and charged. */
@@ -202,6 +222,8 @@ export interface RerollResult {
 export interface FreezePurchaseResult {
   success: boolean;
   alreadyPurchased: boolean;
+  /** Exact receipt value. Zero when this is a durable replay. */
+  diamondsSpent?: number;
   freezesAvailable?: number;
   diamondBalance?: number;
   error?: string;
@@ -241,8 +263,18 @@ export interface DailyChallengeStats {
 export interface ChallengeStreak {
   streak: number;
   freezesAvailable: number;
+  /** Whether the active streak contains at least one protected date. */
   usedFreeze: boolean;
+  /** Compatibility alias for lastFrozenDate. */
   frozenDate: string | null;
+  /** Most recent protected date in the active streak; stable across reloads. */
+  lastFrozenDate: string | null;
+  /** Number of protected dates participating in the active streak. */
+  honoredFrozenDates: number;
+  /** Whether this dashboard calculation consumed one freeze from inventory. */
+  consumedFreeze: boolean;
+  /** Protected date created by this calculation, or null on a read-only replay. */
+  consumedFrozenDate: string | null;
   nextFreezeIn: number | null;
 }
 
@@ -1137,12 +1169,69 @@ class DailyChallengeServiceClass {
     );
     const usedFreeze = readReceiptBoolean(streak.usedFreeze, context, 'freeze usage state');
     const frozenDate = streak.frozenDate;
-    if (freezesAvailable > 3 || (frozenDate !== null && typeof frozenDate !== 'string')) {
+    const freezeReceiptVersion =
+      streak.freezeReceiptVersion === undefined
+        ? 1
+        : readReceiptInteger(streak.freezeReceiptVersion, context, 'freeze receipt version', 1);
+    if (freezeReceiptVersion !== 1 && freezeReceiptVersion !== 2) {
+      return invalidDailyMissionReceipt(context, 'freeze receipt version');
+    }
+    if (
+      freezeReceiptVersion === 2 &&
+      [
+        streak.lastFrozenDate,
+        streak.honoredFrozenDates,
+        streak.consumedFreeze,
+        streak.consumedFrozenDate,
+      ].some((field) => field === undefined)
+    ) {
+      return invalidDailyMissionReceipt(context, 'freeze receipt contract');
+    }
+    const lastFrozenDate = streak.lastFrozenDate === undefined ? frozenDate : streak.lastFrozenDate;
+    const consumedFreeze =
+      streak.consumedFreeze === undefined
+        ? usedFreeze
+        : readReceiptBoolean(streak.consumedFreeze, context, 'freeze consumption state');
+    const consumedFrozenDate =
+      streak.consumedFrozenDate === undefined
+        ? consumedFreeze
+          ? frozenDate
+          : null
+        : streak.consumedFrozenDate;
+    const reportedHonoredFrozenDates =
+      streak.honoredFrozenDates === undefined
+        ? usedFreeze
+          ? 1
+          : 0
+        : readReceiptInteger(streak.honoredFrozenDates, context, 'honored frozen date total');
+    // Rolling-deploy compatibility: the v1 calculator marked the newly spent
+    // gap through usedFreeze/frozenDate but reported honoredFrozenDates before
+    // adding that gap, so the one consumption response carried a stale zero.
+    // v2 persists history first and remains subject to the strict equality
+    // checks below.
+    const honoredFrozenDates =
+      freezeReceiptVersion === 1 && usedFreeze
+        ? Math.max(1, reportedHonoredFrozenDates)
+        : reportedHonoredFrozenDates;
+    if (
+      freezesAvailable > 3 ||
+      (frozenDate !== null && typeof frozenDate !== 'string') ||
+      (lastFrozenDate !== null && typeof lastFrozenDate !== 'string') ||
+      (consumedFrozenDate !== null && typeof consumedFrozenDate !== 'string')
+    ) {
       return invalidDailyMissionReceipt(context, 'freeze inventory');
     }
     if (
       (typeof frozenDate === 'string' && parseUtcDateKey(frozenDate) === null) ||
-      usedFreeze !== (frozenDate !== null)
+      (typeof lastFrozenDate === 'string' && parseUtcDateKey(lastFrozenDate) === null) ||
+      (typeof consumedFrozenDate === 'string' && parseUtcDateKey(consumedFrozenDate) === null) ||
+      usedFreeze !== (frozenDate !== null) ||
+      usedFreeze !== (lastFrozenDate !== null) ||
+      frozenDate !== lastFrozenDate ||
+      consumedFreeze !== (consumedFrozenDate !== null) ||
+      (consumedFreeze && (!usedFreeze || honoredFrozenDates < 1)) ||
+      (freezeReceiptVersion === 2 && usedFreeze !== honoredFrozenDates > 0) ||
+      honoredFrozenDates > streakCount
     ) {
       return invalidDailyMissionReceipt(context, 'frozen date');
     }
@@ -1194,6 +1283,10 @@ class DailyChallengeServiceClass {
         freezesAvailable,
         usedFreeze,
         frozenDate: frozenDate as string | null,
+        lastFrozenDate: lastFrozenDate as string | null,
+        honoredFrozenDates,
+        consumedFreeze,
+        consumedFrozenDate: consumedFrozenDate as string | null,
         nextFreezeIn,
       },
       diamondBalance: readReceiptInteger(payload.diamondBalance, context, 'diamond balance'),
@@ -1235,7 +1328,7 @@ class DailyChallengeServiceClass {
    *
    * The RPC did not exist in the database, and the catch block RECOGNISED that
    * by name and returned success anyway "for UX testing". So a player pressed
-   * Buy, was told it worked, was charged nothing and received nothing — and
+   * Buy, was told it worked, was charged nothing and received nothing, and
    * their streak then broke on the next missed day exactly as if they had never
    * bought protection. No error surfaced and no row was written, so nothing
    * anywhere went red.
@@ -1323,12 +1416,13 @@ class DailyChallengeServiceClass {
       );
       masterBus.emit('DIAMOND_BALANCE_CHANGED', {
         newBalance: diamondBalance,
-        delta: alreadyPurchased ? 0 : -5000,
+        delta: diamondsSpent === 0 ? 0 : -diamondsSpent,
         source: 'streak_freeze_purchase',
       });
       return {
         success: true,
         alreadyPurchased,
+        diamondsSpent,
         freezesAvailable,
         diamondBalance,
       };
@@ -1535,32 +1629,105 @@ class DailyChallengeServiceClass {
     }
     const replayed = readReceiptBoolean(paid.replayed, context, 'claim replay state');
     const diamonds = readReceiptInteger(paid.diamonds, context, 'claimed diamond total');
-    const diamondBalance = readReceiptInteger(paid.diamondBalance, context, 'diamond balance');
-    const totalClaimed = readReceiptInteger(
+    const settlementVersion =
+      paid.settlementVersion === undefined
+        ? 1
+        : readReceiptInteger(paid.settlementVersion, context, 'claim settlement version', 1);
+    if (settlementVersion !== 1 && settlementVersion !== 2) {
+      return invalidDailyMissionReceipt(context, 'claim settlement version');
+    }
+    if (
+      settlementVersion === 2 &&
+      [
+        paid.challengeDiamonds,
+        paid.milestoneDiamonds,
+        paid.diamondsCredited,
+        paid.settlementDiamondBalance,
+      ].some((field) => field === undefined)
+    ) {
+      return invalidDailyMissionReceipt(context, 'claim settlement contract');
+    }
+    // `diamonds` is the pre-v2 compatibility field and means mission-contract
+    // Diamonds only. During a rolling deploy, accept an old receipt by deriving
+    // the three explicit values from it; once the v2 migration is present the
+    // equality checks below make every component and the total tamper-evident.
+    const challengeDiamonds =
+      paid.challengeDiamonds === undefined
+        ? diamonds
+        : readReceiptInteger(paid.challengeDiamonds, context, 'claimed challenge diamond total');
+    const milestoneDiamonds =
+      paid.milestoneDiamonds === undefined
+        ? 0
+        : readReceiptInteger(paid.milestoneDiamonds, context, 'claimed milestone diamond total');
+    const diamondsCredited =
+      paid.diamondsCredited === undefined
+        ? diamonds
+        : readReceiptInteger(paid.diamondsCredited, context, 'credited diamond total');
+    const receiptDiamondBalance = readReceiptInteger(
+      paid.diamondBalance,
+      context,
+      'diamond balance'
+    );
+    const settlementDiamondBalance =
+      paid.settlementDiamondBalance === undefined
+        ? receiptDiamondBalance
+        : readReceiptInteger(paid.settlementDiamondBalance, context, 'settlement diamond balance');
+    const receiptTotalClaimed = readReceiptInteger(
       paid.stats.totalClaimed,
       context,
       'claimed challenge total'
     );
-    const totalDiamondsEarned = readReceiptInteger(
+    const receiptTotalDiamondsEarned = readReceiptInteger(
       paid.stats.totalDiamondsEarned,
       context,
       'earned diamond total'
     );
-    const vault = this.mapRewardVault(paid.vault, userId, context);
+    const receiptVault = this.mapRewardVault(paid.vault, userId, context);
     if (
-      (claimedIds.length === 0 && diamonds !== 0) ||
-      totalClaimed < settledIds.size ||
-      totalDiamondsEarned < diamonds
+      diamonds !== challengeDiamonds ||
+      diamondsCredited !== challengeDiamonds + milestoneDiamonds ||
+      (claimedIds.length === 0 && diamondsCredited !== 0) ||
+      settlementDiamondBalance < diamondsCredited ||
+      receiptTotalClaimed < settledIds.size ||
+      receiptTotalDiamondsEarned < diamondsCredited
     ) {
       return invalidDailyMissionReceipt(context, 'claim settlement totals');
     }
 
+    // A claim receipt is an immutable settlement record, not a safe page
+    // projection. Another tab can complete a newer mutation while this RPC is
+    // returning, which makes its embedded stats/vault stale even on a fresh
+    // claim. Read one revision-bearing dashboard after settlement and let the
+    // page apply it behind a monotonic revision fence. A temporary dashboard
+    // outage must not erase a proven settlement, so return null and require a
+    // background reconciliation instead of publishing unfenced fields.
+    let dashboard: DailyChallengeDashboard | null = null;
+    try {
+      const candidate = await this.getDashboard(userId);
+      if (
+        candidate.stats.totalClaimed < settledIds.size ||
+        candidate.stats.totalDiamondsEarned < diamondsCredited ||
+        candidate.stats.totalClaimed < receiptTotalClaimed ||
+        candidate.stats.totalDiamondsEarned < receiptTotalDiamondsEarned ||
+        candidate.vault.items.some((item) => settledIds.has(item.id))
+      ) {
+        return invalidDailyMissionReceipt(context, 'post-settlement dashboard projection');
+      }
+      dashboard = candidate;
+    } catch {
+      dashboard = null;
+    }
+    const diamondBalance = dashboard?.diamondBalance ?? receiptDiamondBalance;
+    const totalClaimed = dashboard?.stats.totalClaimed ?? receiptTotalClaimed;
+    const totalDiamondsEarned = dashboard?.stats.totalDiamondsEarned ?? receiptTotalDiamondsEarned;
+    const vault = dashboard?.vault ?? receiptVault;
+
     if (claimedIds.length > 0) {
       masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId });
-      if (diamonds > 0) {
+      if (diamondsCredited > 0) {
         masterBus.emit('DIAMOND_BALANCE_CHANGED', {
           newBalance: diamondBalance,
-          delta: diamonds,
+          delta: diamondsCredited,
           source: 'daily_challenge_claim',
         });
       }
@@ -1572,12 +1739,17 @@ class DailyChallengeServiceClass {
       claimedIds,
       alreadyClaimedIds,
       diamonds,
+      challengeDiamonds,
+      milestoneDiamonds,
+      diamondsCredited,
+      settlementDiamondBalance,
       diamondBalance,
       stats: {
         totalClaimed,
         totalDiamondsEarned,
       },
       vault,
+      dashboard,
     };
   }
 }

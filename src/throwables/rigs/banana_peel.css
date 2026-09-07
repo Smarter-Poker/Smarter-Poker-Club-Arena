@@ -1,0 +1,107 @@
+/**
+ * BANANA PEEL - keyframes. Every delay is from LANDING (launch + 133 ms, the
+ * flight duration); the comment on each stop gives the catalogue's ms from
+ * launch too. Every duration and delay multiplies by --animation-speed
+ * (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 2's target
+ * avatar was ~40 px wide, so measured pixels are scaled by 100/40 = 2.5.
+ *
+ * The whole performance is TWO frames: the flash (133-200, 67 ms) and the
+ * peel it hands off to (200 onward, static to the cut at 3500). The banana
+ * itself never moves - it is on screen, whole, under the flash, then gone.
+ *
+ * THE IDIOM: an element that appears at a beat carries `opacity: 0` in its
+ * own rule, `forwards` (never `both`), and a VISIBLE 0% frame. The banana
+ * and the flash are both on screen the instant the payload mounts (delay 0),
+ * so `both` with a visible 0% is correct for them, exactly as tomato's
+ * squash and cracked_egg's egg. The peel has a real, nonzero delay (67 ms)
+ * and gets `forwards` with a visible 0%.
+ */
+
+/* == THE BANANA: whole, under the flash, from 133. Gone in one frame at 200
+   (+67), handed to the peel. ============================================== */
+.thr-banana_peel__banana {
+  animation: thr-banana_peel-banana-hide calc(0.067s * var(--animation-speed, 1)) steps(1, end) both;
+}
+
+@keyframes thr-banana_peel-banana-hide {
+  0% {
+    /* 133: still whole, inside the flash */
+    opacity: 1;
+  }
+  100% {
+    /* 200: gone; the peel takes over */
+    opacity: 0;
+  }
+}
+
+/* == THE FLASH: opens at 133 (small, ~20 px), peaks at 167 (~28 px, 5-6
+   rays), gone by 200. Delay 0, so it is on screen the instant the payload
+   mounts. ================================================================= */
+.thr-banana_peel__flash {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-banana_peel-flash calc(0.067s * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes thr-banana_peel-flash {
+  0% {
+    /* 133: small, ON SCREEN */
+    opacity: 1;
+    transform: scale(0.7);
+  }
+  51% {
+    /* 167: peak, ~28 px */
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    /* 200: gone */
+    opacity: 0;
+    transform: scale(1.08);
+  }
+}
+
+/* == THE PEEL: appears at 200 (+67) with a small pop-in overshoot, then
+   STATIC (held by `forwards`) to the cut at 3500. ========================= */
+.thr-banana_peel__peel {
+  transform-box: fill-box;
+  transform-origin: 50% 20%;
+  opacity: 0;
+  animation: thr-banana_peel-peel calc(0.1s * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.9, 0.3, 1) calc(0.067s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-banana_peel-peel {
+  0% {
+    /* 200: the peel is there, ON SCREEN, a hair small */
+    opacity: 1;
+    transform: scale(0.75);
+  }
+  55% {
+    /* ~245: overshoot */
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    /* 300: settled; static from here to the cut */
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* == REDUCED MOTION: the peel, settled, is simply there. The banana and the
+   flash are pure motion and go. ========================================== */
+@media (prefers-reduced-motion: reduce) {
+  .thr-banana_peel__banana,
+  .thr-banana_peel__flash {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .thr-banana_peel__peel {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+}

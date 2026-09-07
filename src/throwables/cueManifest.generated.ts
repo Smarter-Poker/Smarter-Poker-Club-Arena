@@ -34,6 +34,17 @@ export const THROWABLE_CUE_MANIFEST: Record<string, CueManifestEntry> = {
   flies_buzz: { placeholder: false, license: 'Own-Synthesis' },
   dice_rattle: { placeholder: false, license: 'CC0-1.0' },
   poof_soft: { placeholder: false, license: 'Own-Synthesis' },
+  swell_low: { placeholder: false, license: 'Own-Synthesis' },
+  chime_shimmer: { placeholder: false, license: 'CC0-1.0' },
+  fanfare_short: { placeholder: false, license: 'CC0-1.0' },
+  sparkle_bed: { placeholder: false, license: 'CC0-1.0' },
+  whoosh_low: { placeholder: false, license: 'Own-Synthesis' },
+  splat_heavy: { placeholder: false, license: 'CC0-1.0' },
+  splat_wet_small: { placeholder: false, license: 'CC0-1.0' },
+  boing_splat: { placeholder: false, license: 'CC0-1.0' },
+  thump_soft: { placeholder: false, license: 'CC0-1.0' },
+  tick_settle: { placeholder: false, license: 'CC0-1.0' },
+  cash_register_cascade: { placeholder: false, license: 'CC0-1.0' },
 };
 
 export const THROWABLE_CUE_ALLOWED_LICENSES: readonly string[] = [

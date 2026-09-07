@@ -112,12 +112,30 @@ function Swirl({ uid, k }: { uid: string; k: string }) {
           <stop offset="100%" stopColor={SWIRL_BROWN_DARK} />
         </linearGradient>
       </defs>
+      <ellipse cx="1" cy="22" rx="18" ry="4.5" fill="#27190f" opacity="0.38" />
       {/* bottom lobe, widest - sits on the face */}
-      <ellipse cx="0" cy="15" rx="18" ry="11" fill={`url(#${g('body')})`} />
+      <path
+        d="M -16 9 C -20 12 -19 21 -11 24 C -2 28 14 25 18 19 C 22 11 13 7 5 7 C -3 5 -11 5 -16 9 Z"
+        fill={`url(#${g('body')})`}
+      />
       {/* mid lobe, offset right */}
-      <ellipse cx="2" cy="-1" rx="13" ry="9.5" fill={`url(#${g('body')})`} />
+      <path
+        d="M -10 -5 C -15 -1 -12 7 -5 9 C 4 12 16 6 15 -1 C 15 -7 8 -10 2 -9 C -4 -10 -8 -8 -10 -5 Z"
+        fill={`url(#${g('body')})`}
+      />
       {/* top lobe, offset left, tapering */}
-      <ellipse cx="-1" cy="-14" rx="8.5" ry="7.5" fill={`url(#${g('body')})`} />
+      <path
+        d="M -7 -18 C -12 -12 -8 -6 -2 -6 C 5 -5 10 -10 7 -16 C 5 -21 -3 -22 -7 -18 Z"
+        fill={`url(#${g('body')})`}
+      />
+      <path
+        d="M -14 11 C -7 6 6 13 13 7 M -8 -1 Q -2 3 8 -1 M -5 -15 Q 0 -12 4 -15"
+        fill="none"
+        stroke="#c0936e"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+        opacity="0.75"
+      />
       {/* the curled tip */}
       <path
         d="M -1 -20 C 2 -24.5, 7.5 -23, 6 -18.7 C 5 -16, 1 -16.8, -1 -20 Z"
@@ -221,6 +239,14 @@ function Payload({ uid }: RigProps) {
           strokeLinejoin="round"
         />
         {/* pooled shading and a couple of pale flecks, static */}
+        <path
+          d="M -25 -7 Q -21 -17 -12 -18 M 12 -20 Q 22 -16 25 -10 M -28 12 Q -22 17 -18 15 M 17 22 Q 25 19 27 15"
+          fill="none"
+          stroke="#cba06a"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+          opacity="0.65"
+        />
         <circle cx="-8" cy="-8" r="6" fill={SPLASH_BROWN_DARK} opacity="0.18" />
         <circle cx="12" cy="10" r="5" fill={SPLASH_BROWN_DARK} opacity="0.16" />
         <ellipse

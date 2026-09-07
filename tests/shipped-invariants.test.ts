@@ -473,6 +473,25 @@ describe('shipped functionality is still here', () => {
     expect(sql.includes('FROM PUBLIC, anon, authenticated')).toBe(true);
   });
 
+  it('jackpot bank spending preserves stored unpaid recipient obligations', () => {
+    const sql = read('supabase/migrations/20260907203446_bbj_preserves_parked_funding_and_replays_stored_obligations.sql');
+    expect(sql.includes('CREATE OR REPLACE FUNCTION public.fn_bbj_parked_reserve')).toBe(true);
+    expect(sql.includes('v_main := v_main-v_reserved')).toBe(true);
+    expect(sql.includes("v_backup - public.fn_bbj_parked_reserve(p_pool_id,'backup') - v_amount")).toBe(true);
+    expect(sql.includes('u.payout_id=v_existing AND u.paid_at IS NULL')).toBe(true);
+    expect(sql.includes('SET main_balance = v_keep_main, backup_balance = v_keep_backup')).toBe(true);
+  });
+
+  it('union completion and conservation require verified complete results', () => {
+    const sql = read('supabase/migrations/20260907205211_union_completion_requires_every_stage_and_exact_conservation.sql');
+    expect(sql.includes("r.round_no=4")).toBe(true);
+    expect(sql.includes("r.detail->>'success'='true'")).toBe(true);
+    expect(sql.includes("jsonb_build_object('latest_attempt',EXCLUDED.detail)")).toBe(true);
+    expect(sql.includes('v_rake <> v_paid+v_retained')).toBe(true);
+    expect(sql.includes('CONSERVATION_UNVERIFIED')).toBe(true);
+    expect(sql.includes("c.state='final'")).toBe(true);
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.
@@ -486,3 +505,23 @@ describe('shipped functionality is still here', () => {
 });
 
 
+
+
+
+
+it('union money reporting enforces scope without global diagnostic side effects', () => {
+  const sql = read('supabase/migrations/20260907210849_union_money_report_enforces_scope_and_stays_read_only.sql');
+  expect(sql).toContain('public.fn_union_report_caller_ok(v_union_id)');
+  expect(sql).toContain("context->>'union_id' = v_union_id::text");
+  expect(sql).not.toContain('fn_union_treasury_selftest()');
+  expect(has('tests/sql/union-money-report-scope-rollback-probe.sql', 'FAIL unrelated signed-in user')).toBe(true);
+});
+
+
+it('historical union statements and payment authority follow the invoice issuer', () => {
+  const sql = read('supabase/migrations/20260907211431_union_statements_remain_with_the_issuing_union.sql');
+  expect(sql).toContain("s.breakdown->>'union_id' = p_union_id::text");
+  expect(sql).toContain("v_union := NULLIF(v_inv.breakdown->>'union_id','')::uuid");
+  expect(sql).toContain("MIN((i.breakdown->>'period_start')::date) FROM period_invoices");
+  expect(has('tests/sql/union-statement-issuer-rollback-probe.sql', 'FAIL new union can mark old invoice paid')).toBe(true);
+});

@@ -8,6 +8,7 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import { randomUUID } from 'node:crypto';
 import { HandController } from './HandController.js';
 import { TimeBankEngine } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
@@ -1511,6 +1512,37 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // Round 43: club_wallet_transactions.related_id (rake_in audit row) also
     // needs the hand UUID to link the audit ledger to the source hand. So
     // logHandHistory must precede logRakeCollection / logBBJCollection.
+    /* ─── THE HAND'S IDENTITY IS DECIDED HERE, NOT BY THE INSERT (2026-09-07) ──
+       `v_handHistoryId` below still means what it always meant: the row is IN
+       the database. It is null while the hand is only in the retry queue, and
+       the three things that need the row to exist - the `hand_history_saved`
+       broadcast, the award-unit ledger, the integrity feed - keep reading it.
+
+       `v_handId` is a different question: WHICH hand is this. The money path
+       needs that answer before the row exists, and until today it did not have
+       one. `atomic_distribute_rake` was called with `p_hand_id => NULL` on
+       every hand whose insert had not come back yet, and a null there costs
+       three separate things (measured on production 2026-09-07, 24 hours):
+
+         - 173 cash hands banked their rake with ZERO `rake_attributions`
+           rows, because that ledger keys on hand_id. Nobody at those tables
+           earned anything from the hand - no VIP points, no agent or
+           super-agent commission, no rakeback basis, horse or human alike
+           (CLAUDE.md 10.5);
+         - `uq_rake_records_hand_id` is UNIQUE ... WHERE hand_id IS NOT NULL,
+           so it deduped nothing and an in-line retry could book the club
+           twice (36 hands carried two or three copies in seven days);
+         - the 15-minute re-drive and the hourly repair both ask "does any
+           rake_records row name this hand?", were told no, and banked it
+           again. 384 hands between 2026-09-02 and 2026-09-07: 719.49 chips of
+           rake and 93.14 of BBJ drop that no pot ever paid.
+
+       Minting the uuid here removes the null instead of compensating for it
+       (CLAUDE.md 10.12). `hand_history.id` has no incoming foreign key from
+       `rake_records`, `rake_attributions` or `bbj_contributions`, so the
+       booking may name the hand before the row lands - and the row, whenever
+       it lands, lands under exactly this id. */
+    const v_handId = randomUUID();
     let v_handHistoryId: string | null = null;
     await runStep('hand_history', true, async () => {
       if (this.tableInfo) {
@@ -1782,6 +1814,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           dailyMissionEvents,
           buttonSeat: snap.dealerSeat,
           showdownReveal,
+          // The id minted above. The row lands under it in line, or from the
+          // retry queue minutes later, or (if the queue exhausts) not at all -
+          // but the rake booked below names the same hand in all three cases.
+          handId: v_handId,
         });
         v_handHistoryId = result.handId;
 
@@ -1970,7 +2006,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
             p_table_id: this.tableId,
             p_club_id: this.tableInfo.club_id,
-            p_hand_id: v_handHistoryId,
+            // NEVER v_handHistoryId, and never null: see the note where
+            // v_handId is minted. A booking that cannot name its hand is a
+            // booking nobody earns from and everybody books again.
+            p_hand_id: v_handId,
             p_hand_number: snap.handNumber,
             p_rake: snap.rake,
             p_bbj: snap.bbjFee,
@@ -1998,7 +2037,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             await queueUnbankedFee('rake', {
               tableId: this.tableId,
               clubId: this.tableInfo?.club_id,
-              handId: v_handHistoryId,
+              handId: v_handId,
               handNumber: snap.handNumber,
               rake: snap.rake,
               bbj: snap.bbjFee,
@@ -2019,8 +2058,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     });
 
     // SETTLEMENT STEP 8c: Log BBJ contribution
-    // Round 44: pass v_handHistoryId so bbj_contributions.hand_id links to
+    // Round 44: pass the hand id so bbj_contributions.hand_id links to
     // hand_history (consistent with rake_records and club_wallet_transactions).
+    //
+    // 2026-09-07: that id is now v_handId, minted at settlement, rather than
+    // v_handHistoryId, which is null until the row comes back. THIS IS THE
+    // ROOT OF `FeeReconciler.bbj_unlinkable`. A drop banked while the hand
+    // was still in the retry queue wrote `hand_id => NULL`, and the alert that
+    // then fired said a contribution could not be tied to a hand - which was
+    // true, and was never the contribution's fault. Same hand, same id,
+    // whenever its row arrives.
     await runStep('bbj_contribution', true, async () => {
       if (!this.isTournamentTable() && snap.bbjFee > 0 && this.tableInfo?.club_id) {
         // A5 FIX (2026-08-08): this return value used to be discarded, and
@@ -2040,13 +2087,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           snap.handNumber,
           snap.bbjFee,
           this.tableInfo.big_blind,
-          v_handHistoryId
+          v_handId
         );
         if (!bbjBanked) {
           await queueUnbankedFee('bbj_contribution', {
             tableId: this.tableId,
             clubId: this.tableInfo.club_id,
-            handId: v_handHistoryId,
+            handId: v_handId,
             handNumber: snap.handNumber,
             rake: snap.rake,
             bbj: snap.bbjFee,

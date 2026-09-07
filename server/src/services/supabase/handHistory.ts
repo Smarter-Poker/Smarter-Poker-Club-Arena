@@ -142,6 +142,36 @@ export async function logHandHistory(params: {
     amount: number;
     hand_name?: string | null;
   }[];
+  /**
+   * THE HAND'S OWN ID, MINTED BY THE ENGINE BEFORE ANYTHING IS WRITTEN.
+   *
+   * `hand_history.id` defaults to `gen_random_uuid()`, so for its whole life
+   * this row's identity was decided by the INSERT - and settlement needs that
+   * identity BEFORE the insert, because `atomic_distribute_rake` takes it as
+   * `p_hand_id` and everything downstream keys on it. When the insert failed
+   * or was slow and the hand went to the retry queue, the rake was banked with
+   * `p_hand_id => NULL`, and a null there is not a small gap:
+   *
+   *   - `rake_attributions` keys on hand_id, so NOBODY at that table earned
+   *     anything from the hand - no VIP points, no agent or super-agent
+   *     commission, no rakeback basis. Measured 2026-09-07: 173 cash hands in
+   *     24 hours, every one of them with zero attribution rows. Horses and
+   *     humans alike (CLAUDE.md 10.5);
+   *   - `uq_rake_records_hand_id` is `UNIQUE (hand_id) WHERE hand_id IS NOT
+   *     NULL`, so it dedupes nothing when the id is null and an in-line retry
+   *     books the club a second time;
+   *   - every later reader - the 15-minute re-drive, the hourly repair - asks
+   *     "does a rake_records row name this hand?", is told no, and banks it
+   *     AGAIN. 384 hands between 2026-09-02 and 2026-09-07 were booked twice,
+   *     719.49 chips of rake and 93.14 of BBJ drop that no pot ever paid.
+   *
+   * Passing the id in removes the null rather than compensating for it
+   * (CLAUDE.md 10.12): the hand carries one identity from settlement onward,
+   * whether its row lands in line, from the queue five minutes later, or not
+   * at all. The unique index then does its job, the attribution is written
+   * once, and no repair can see the hand as unbanked.
+   */
+  handId?: string;
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
   actions: {
     seat: number;
@@ -250,6 +280,10 @@ export async function logHandHistory(params: {
   const boardPayload = params.communityCards?.length ? params.communityCards : null;
 
   const row = {
+    // See `handId` on the params above. Omitted entirely when the caller did
+    // not mint one, so the column keeps its gen_random_uuid() default and
+    // every other caller of this function is byte-identical to before.
+    ...(params.handId ? { id: params.handId } : {}),
     table_id: params.tableId,
     tournament_id: params.tournamentId || null,
     hand_number: params.handNumber,
@@ -535,18 +569,28 @@ async function insertHandHistoryRow(
      together or writes neither. Still exactly ONE request, so the amplification
      this function's header warns about is unchanged. Non-bomb hands - which is
      nearly all of them - take the plain insert and are untouched. */
+  /* THE ID WE ASKED FOR, WHEN WE ASKED FOR ONE (2026-09-07). Settlement now
+     mints the hand's uuid before any write (see `handId` on logHandHistory's
+     params), so a successful insert whose RESPONSE we could not read is still
+     a hand whose identity we know. Without this the id came only from the
+     response body, and "the write landed but the answer did not" was
+     indistinguishable from "the write failed" - which is how a hand ended up
+     banking its rake against a null id. Null for every caller that mints
+     nothing, exactly as before. */
+  const minted = typeof row.id === 'string' ? row.id : null;
+
   if (bombAwardUnits.length > 0) {
     const { data, error } = await supabase.rpc('fn_ca_insert_hand_with_awards', {
       p_row: row,
       p_units: bombAwardUnits,
     });
-    if (!error) return { id: (data as string | null) ?? null, wroteUnits: true };
+    if (!error) return { id: (data as string | null) ?? minted, wroteUnits: true };
     if (error.code === '23505') {
       /* An earlier attempt landed and its response was lost. Its units went in
          with it - but THIS call's did not, because the RPC rolled back whole,
          so wroteUnits stays false and the caller's fallback still runs. */
       const existing = await findExistingHandId(row);
-      if (existing) return { id: existing, wroteUnits: false };
+      if (existing || minted) return { id: existing ?? minted, wroteUnits: false };
     }
     if (origin === 'settlement') {
       reportError(
@@ -567,13 +611,15 @@ async function insertHandHistoryRow(
     .select('id')
     .maybeSingle();
 
-  if (!error) return { id: data?.id ?? null, wroteUnits: false };
+  if (!error) return { id: data?.id ?? minted, wroteUnits: false };
 
   // A duplicate means an earlier attempt landed after all (its response was
   // lost). PostgREST returns the Postgres SQLSTATE verbatim in the body.
+  // With a minted id it can also be OUR OWN row's primary key, which is the
+  // same good news said a different way.
   if (error.code === '23505') {
     const existing = await findExistingHandId(row);
-    if (existing) return { id: existing, wroteUnits: false };
+    if (existing || minted) return { id: existing ?? minted, wroteUnits: false };
   }
 
   if (origin === 'settlement') {

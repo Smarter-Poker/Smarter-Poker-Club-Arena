@@ -32,6 +32,23 @@ describe('throwable darkroom commands', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('rigs:    rocket');
   });
+  it('keeps the cash bundle visible before its fade and holds bills until the burst', () => {
+    const result = run(out, '--items=cash_stack', '--html-only');
+    expect(result.status, result.stderr).toBe(0);
+    const html = readFileSync(join(out, 'harness.html'), 'utf8');
+    const fadeRule = html.match(/\.thr-cash_stack__bundle-fade\s*\{([^}]+)\}/)?.[1];
+    expect(fadeRule).toMatch(/opacity:\s*1\s*;/);
+    const delays = [
+      ...html.matchAll(
+        /class="thr-cash_stack__bill" style="animation-delay:calc\((\d+(?:\.\d+)?)s/g
+      ),
+    ].map((m) => Number(m[1]) * 1000);
+    expect(delays.length).toBeGreaterThan(0);
+    // Landing is 333 ms, burst is 700 ms from launch. A bill before
+    // +367 ms steals the settle beat and used to mask the invisible bundle.
+    expect(Math.min(...delays)).toBe(367);
+    expect(Math.max(...delays)).toBeLessThan(2700);
+  });
   it('rejects mixed known and unknown IDs', () => {
     const result = run(out, '--items=beer,does_not_exist', '--html-only');
     expect(result.status).not.toBe(0);

@@ -431,13 +431,12 @@ describe('EngineChannelClient — resubscribe on reconnect (2026-08-24)', () => 
     c.disconnect();
   });
 
-  it('does NOT replay on the FIRST connect (the original JOINs are queued already)', async () => {
+  it('sends each desired JOIN once on the first connect', async () => {
     const c = new EngineChannelClient({
       baseUrl: 'https://engine.example',
       getToken: async () => 'tok',
     });
-    // Queued while offline — flushed on open. A replay on first connect would
-    // send each JOIN twice.
+    // Offline state is replayed once, without a duplicate queued JOIN.
     c.send({ type: 'JOIN_LOBBY' });
     await flush();
     const ws = live();
@@ -532,4 +531,75 @@ describe('EngineChannelClient — waking a backgrounded tab', () => {
     expect(debt).toBeGreaterThan(0);
     (c as { disconnect: () => void }).disconnect();
   });
+});
+
+describe('EngineChannelClient subscription coalescing', () => {
+  it('collapses repeated offline joins instead of flooding the server on open', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    for (let i = 0; i < 100; i++) c.send({ type: 'JOIN_LOBBY' });
+    await flush();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    const ws = live();
+    ws._open();
+    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([{ type: 'JOIN_LOBBY' }]);
+    c.disconnect();
+  });
+
+  it('does not subscribe to rooms left before the first connection opened', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    c.send({ type: 'JOIN_CLUB', clubId: 'gone' });
+    c.send({ type: 'LEAVE_CLUB', clubId: 'gone' });
+    c.send({ type: 'REQUEST_HAND_REPLAY', handId: 'hand-1' });
+    await flush();
+    const ws = live();
+    ws._open();
+    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
+      { type: 'REQUEST_HAND_REPLAY', handId: 'hand-1' },
+    ]);
+    c.disconnect();
+  });
+
+  it('replays each desired join once after offline changes during a reconnect', async () => {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    await c.connect();
+    live()._open();
+    live()._serverClose(1001);
+    for (let i = 0; i < 40; i++) c.send({ type: 'JOIN_TOURNAMENT', tournamentId: 't1' });
+    c.send({ type: 'REQUEST_HAND_REPLAY', handId: 'hand-2' });
+    await flush();
+    const ws = live();
+    ws._open();
+    expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
+      { type: 'JOIN_TOURNAMENT', tournamentId: 't1' },
+      { type: 'REQUEST_HAND_REPLAY', handId: 'hand-2' },
+    ]);
+    c.disconnect();
+  });
+});
+
+it('sends only the latest offline presence after its club join', async () => {
+  const c = new EngineChannelClient({
+    baseUrl: 'https://engine.example',
+    getToken: async () => 'tok',
+  });
+  c.send({ type: 'UPDATE_PRESENCE', clubId: 'c1', status: 'online' });
+  c.send({ type: 'UPDATE_PRESENCE', clubId: 'c1', status: 'away' });
+  c.send({ type: 'UPDATE_PRESENCE', clubId: 'c1', status: 'at_table', currentTableId: TABLE });
+  await flush();
+  const ws = live();
+  ws._open();
+  expect(ws.sent.map((s) => JSON.parse(s))).toEqual([
+    { type: 'JOIN_CLUB', clubId: 'c1' },
+    { type: 'UPDATE_PRESENCE', clubId: 'c1', status: 'at_table', currentTableId: TABLE },
+  ]);
+  c.disconnect();
 });

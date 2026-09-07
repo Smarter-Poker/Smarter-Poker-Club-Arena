@@ -79,6 +79,11 @@
 
 /* ── MUG 2: pops in on the LEFT at 900, then mirrors mug 1 ──────────────── */
 .thr-beer__m2 {
+  /* fill-box, or the scale(0.1 -> 1.12) pop pivots on the SVG VIEWPORT corner
+     rather than on the mug, and mug 2 swims in from the centre of the felt
+     instead of growing where it stands. Its siblings already declare it. */
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
   opacity: 0;
   animation: thr-beer-m2 calc(3.633s * var(--animation-speed, 1)) linear
     calc(0.567s * var(--animation-speed, 1)) forwards;
@@ -99,22 +104,28 @@
     opacity: 1;
     transform: translate(-57px, 10px) scale(1);
   }
-  22.93% {
+  /* The four stops below were 22.93 / 27.52 / 49.55 / 67.88, which is
+     (ms - delay) / duration - the landing left out. The delay is measured FROM
+     LANDING, so the elapsed time at a beat is (ms - landing - delay), and
+     every one of them ran 333 ms (exactly flight.ms) late: mug 2 reached the
+     clink pose a third of a second after mug 1 was already there and after
+     `glass_clink_rattle` had played. Percentages are (ms - 900) / 3633. */
+  13.76% {
     /* 1400: the swing begins */
     opacity: 1;
     transform: translate(-57px, 10px) scale(1);
   }
-  27.52% {
+  18.36% {
     /* 1567: the rims meet */
     opacity: 1;
     transform: translate(-21px, -20px) scale(1);
   }
-  49.55% {
-    /* 2367 */
+  40.38% {
+    /* 2367: ease apart */
     opacity: 1;
     transform: translate(-21px, -20px) scale(1);
   }
-  67.88% {
+  58.71% {
     /* 3033: rest */
     opacity: 1;
     transform: translate(-43px, 5px) scale(1);
@@ -132,17 +143,23 @@
     calc(0.567s * var(--animation-speed, 1)) both;
 }
 
+/* The same correction as thr-beer-m2 above, and it has to be the same: this
+   tilt and that translate ride the same two mugs, so a percentage that drifts
+   in one and not the other tilts a glass that has not arrived yet. */
 @keyframes thr-beer-m2-tilt {
   0%,
-  22.93% {
+  13.76% {
+    /* to 1400 */
     transform: rotate(10deg);
   }
-  27.52%,
-  49.55% {
+  18.36%,
+  40.38% {
+    /* 1567-2367: the V */
     transform: rotate(15deg);
   }
-  67.88%,
+  58.71%,
   100% {
+    /* 3033: rest */
     transform: rotate(6deg);
   }
 }
@@ -181,6 +198,10 @@
 /* The droplets fly on a small arc from the meeting point and burn out. Each
    carries its own end point in --dx / --dy and its own delay inline. */
 .thr-beer__drop {
+  /* fill-box: these scale, and without it the pivot is the SVG viewport
+     corner rather than the particle. */
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
   opacity: 0;
   animation: thr-beer-drop calc(0.38s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.6, 0.4, 1)
     calc(1.234s * var(--animation-speed, 1)) forwards;
@@ -220,6 +241,14 @@
   .thr-beer__m2 {
     opacity: 1;
     transform: translate(-43px, 5px);
+  }
+  /* the rest POSE includes the rest TILT: without these the mugs stand bolt
+     upright, which is not the pose the animation ends in. */
+  .thr-beer__m1-tilt {
+    transform: rotate(-6deg);
+  }
+  .thr-beer__m2-tilt {
+    transform: rotate(6deg);
   }
   .thr-beer__plume,
   .thr-beer__drop {

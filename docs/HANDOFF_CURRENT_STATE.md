@@ -80,8 +80,7 @@ complete:false or THAW FAILED.
 
 WHAT IS BEING BUILT. Club Arena (repo Smarter-Poker/Smarter-Poker-Club-Arena)
 is an online poker club platform (unions, clubs, agents, cash games,
-tournaments, spins) with chip-based accounting, run by Dan
-(daniel@pepnationrx.com). It has a Node/TypeScript game ENGINE running in a
+tournaments, spins) with chip-based accounting, run by Dan. It has a Node/TypeScript game ENGINE running in a
 Docker container on a Hetzner host (engine.smarter.poker), a Supabase Postgres
 database (project kuklfnapbkmacvwxktbh), and a web client. A fleet of ~1000
 "horses" (AI players; profiles.is_horse=true - horses ARE players, never
@@ -195,8 +194,8 @@ Database: Supabase Postgres, project kuklfnapbkmacvwxktbh
 (a.k.a. "PokerIQ-Production"). NEVER touch
 ydsaqnnuwyvtyxgvrnys. CONFIRMED
 Engine host: engine.smarter.poker = Hetzner 5.161.252.33,
-hostname "pepnationrx", SHARED with PepNationLab,
-Grafana, Prometheus, sp-autoheal. Container name
+hostname "club-arena-engine" (verified 2026-09-07), also running
+Grafana, Prometheus, sp-autoheal. The retired tenant is absent. Container name
 club-arena-engine. CONFIRMED
 Hosting (web): Vercel (World Hub / smarter.poker) CONFIRMED (from prior handoffs)
 CI: GitHub Actions, 8 self-hosted runners on one 4-vCPU

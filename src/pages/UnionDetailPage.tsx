@@ -58,19 +58,21 @@ import { describeSchedule } from '../components/tournament/WeeklyScheduleEditor'
 
 interface SettlementRecord {
   id: string;
-  periodStart: string;
-  periodEnd: string;
+  periodStart: string | null;
+  periodEnd: string | null;
   clubId: string;
   clubName: string;
-  rakeGenerated: number;
-  unionShare: number;
-  status: 'pending' | 'paid' | 'overdue';
+  rakeGenerated: number | null;
+  unionShare: number | null;
+  status: 'missing' | 'cancelled' | 'pending' | 'paid' | 'overdue' | 'disputed';
   paidAt?: string;
 }
 
 interface FinancialSummary {
-  totalRakeThisPeriod: number;
-  unionRevenue: number;
+  totalRakeThisPeriod: number | null;
+  unionRevenue: number | null;
+  periodLabel: string;
+  coverageLabel: string;
   pendingSettlements: number;
   overdueAmount: number;
 }
@@ -78,6 +80,10 @@ interface FinancialSummary {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
+
+function statementMoney(value: number | null): string {
+  return value === null ? 'Unavailable' : value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 export default function UnionDetailPage() {
   /* /unions/<slug> in the URL, a UUID in every query (useUnionRouteId). */
@@ -130,6 +136,8 @@ export default function UnionDetailPage() {
   // Financial state - starts empty, no demo data
   const [settlements, setSettlements] = useState<SettlementRecord[]>([]);
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
+
+  const [financialError, setFinancialError] = useState<string | null>(null);
 
   const [ownedClubs, setOwnedClubs] = useState<Club[]>([]);
   const [showClubSelector, setShowClubSelector] = useState(false);
@@ -252,6 +260,9 @@ export default function UnionDetailPage() {
       loadingRef.current = true;
       if (isMounted) {
         setLoading(true);
+        setFinancialSummary(null);
+        setFinancialError(null);
+        setSettlements([]);
         setLoadError(null);
       }
       try {
@@ -339,44 +350,33 @@ export default function UnionDetailPage() {
           const settlementReport = await unionService.getSettlementReport(unionId);
 
           if (!isMounted) return;
-          const overdueAmount =
-            Math.trunc(
-              settlementReport.clubBreakdowns
-                .filter((c) => c.wireDirection === 'PAY_TO_UNION')
-                .reduce((sum, c) => sum + Math.abs(c.unionTaxPaid), 0) * 100
-            ) / 100;
-
+          setFinancialError(null);
           setFinancialSummary({
             totalRakeThisPeriod: settlementReport.totalRakeCollected,
             unionRevenue: settlementReport.netUnionRevenue,
-            pendingSettlements: settlementReport.clubBreakdowns.filter(
-              (c) => c.wireDirection === 'PAY_TO_UNION'
-            ).length,
-            overdueAmount,
+            pendingSettlements: settlementReport.pendingSettlements,
+            overdueAmount: settlementReport.overdueAmount,
+            periodLabel: settlementReport.periodStart && settlementReport.periodEnd
+              ? `${settlementReport.periodStart} To ${settlementReport.periodEnd}` : 'No Issued Statement Period',
+            coverageLabel: `${settlementReport.issuedClubs} Of ${settlementReport.totalClubs} Clubs Have Active Statements. Totals Cover Issued Statements Only.`,
           });
+          setSettlements(settlementReport.clubBreakdowns.map(cb => ({
+            id: cb.invoiceId ?? `missing-${cb.clubId}`,
+            periodStart: settlementReport.periodStart,
+            periodEnd: settlementReport.periodEnd,
+            clubId: cb.clubId,
+            clubName: cb.clubName,
+            rakeGenerated: cb.rakeCollected,
+            unionShare: cb.unionShare,
+            status: cb.status,
+          })));
 
-          setSettlements(
-            settlementReport.clubBreakdowns.map((cb, idx) => ({
-              id: `settlement-${idx}`,
-              periodStart: settlementReport.periodStart,
-              periodEnd: settlementReport.periodEnd,
-              clubId: cb.clubId,
-              clubName: cb.clubName,
-              rakeGenerated: cb.rakeCollected,
-              unionShare: cb.unionTaxPaid,
-              status:
-                cb.wireDirection === 'PAY_TO_UNION' ? ('pending' as const) : ('paid' as const),
-            }))
-          );
         } catch (e) {
           reportError(e, 'UnionDetailPage.map');
           if (isMounted) {
-            setFinancialSummary({
-              totalRakeThisPeriod: 0,
-              unionRevenue: 0,
-              pendingSettlements: 0,
-              overdueAmount: 0,
-            });
+            setFinancialSummary(null);
+            setSettlements([]);
+            setFinancialError('Statement Data Is Unavailable. Open Weekly Statements To Check Access Or Try Again.');
           }
         }
       } catch (err) {
@@ -847,9 +847,9 @@ export default function UnionDetailPage() {
               {financialSummary && (
                 <div className={styles.statCard}>
                   <span className={styles.statValue}>
-                    {financialSummary.unionRevenue.toLocaleString()}
+                    {statementMoney(financialSummary.unionRevenue)}
                   </span>
-                  <span className={styles.statLabel}>This Period</span>
+                  <span className={styles.statLabel}>Latest Statement Share</span>
                 </div>
               )}
             </div>
@@ -1109,16 +1109,18 @@ export default function UnionDetailPage() {
 
             {financialSummary && (
               <div className={styles.card}>
-                <h3> Quick Financials</h3>
+                <h3> Latest Issued Statements</h3>
+                <p>{financialSummary.periodLabel}</p>
+                <p>{financialSummary.coverageLabel}</p>
                 <div className={styles.financialQuick}>
                   <div>
-                    <span>Total Rake</span>
-                    <strong>{financialSummary.totalRakeThisPeriod.toLocaleString()}</strong>
+                    <span>Recorded Rake</span>
+                    <strong>{statementMoney(financialSummary.totalRakeThisPeriod)}</strong>
                   </div>
                   <div>
-                    <span>Union Revenue</span>
+                    <span>Recorded Union Share</span>
                     <strong className={styles.positive}>
-                      {financialSummary.unionRevenue.toLocaleString()}
+                      {statementMoney(financialSummary.unionRevenue)}
                     </strong>
                   </div>
                   <div>
@@ -1454,7 +1456,7 @@ export default function UnionDetailPage() {
         )}
 
         {/* Financials Tab */}
-        {activeTab === 'financials' && financialSummary && (
+        {activeTab === 'financials' && (
           <div className={styles.financialsContainer}>
             {/*
               The weekly square-up board. It lives on its own page because it
@@ -1486,25 +1488,29 @@ export default function UnionDetailPage() {
               Union Rake And Production Data
             </button>
 
+            {financialError && <p role="alert">{financialError}</p>}
+            {financialSummary && <>
+            <p>{financialSummary.periodLabel}</p>
+            <p>{financialSummary.coverageLabel}</p>
             {/* Summary Cards */}
             <div className={styles.financialCards}>
               <div className={styles.financialCard}>
                 <span className={styles.financialIcon}>%</span>
                 <div>
                   <span className={styles.financialValue}>
-                    {financialSummary.totalRakeThisPeriod.toLocaleString()}
+                    {statementMoney(financialSummary.totalRakeThisPeriod)}
                   </span>
-                  <span className={styles.financialLabel}>Total Rake This Period</span>
+                  <span className={styles.financialLabel}>Recorded Statement Rake</span>
                 </div>
               </div>
               <div className={styles.financialCard}>
                 <span className={styles.financialIcon}>◉</span>
                 <div>
                   <span className={`${styles.financialValue} ${styles.positive}`}>
-                    {financialSummary.unionRevenue.toLocaleString()}
+                    {statementMoney(financialSummary.unionRevenue)}
                   </span>
                   <span className={styles.financialLabel}>
-                    Union Revenue ({union?.settings?.revenueSharePercent ?? 10}%)
+                    Recorded Union Share
                   </span>
                 </div>
               </div>
@@ -1532,7 +1538,7 @@ export default function UnionDetailPage() {
 
             {/* Settlement History */}
             <div className={styles.settlementSection}>
-              <h3> Settlement History</h3>
+              <h3> Statements For Selected Period</h3>
               {/* 2026-08-19: /union-dashboard had NO link anywhere in the app —
                   it was reachable only by typing the URL. That is where the
                   union wallet, the treasury and the weekly player win/loss
@@ -1562,12 +1568,11 @@ export default function UnionDetailPage() {
                   {settlements.map((s) => (
                     <tr key={s.id}>
                       <td>
-                        {new Date(s.periodStart).toLocaleDateString()} -{' '}
-                        {new Date(s.periodEnd).toLocaleDateString()}
+                        {s.periodStart && s.periodEnd ? `${s.periodStart} To ${s.periodEnd}` : 'No Issued Period'}
                       </td>
                       <td>{s.clubName}</td>
-                      <td>{s.rakeGenerated.toLocaleString()}</td>
-                      <td className={styles.positive}>{s.unionShare.toLocaleString()}</td>
+                      <td>{statementMoney(s.rakeGenerated)}</td>
+                      <td className={styles.positive}>{statementMoney(s.unionShare)}</td>
                       <td>
                         <span className={`${styles.statusBadge} ${styles[s.status]}`}>
                           {s.status}
@@ -1578,6 +1583,7 @@ export default function UnionDetailPage() {
                 </tbody>
               </table>
             </div>
+            </>}
           </div>
         )}
 

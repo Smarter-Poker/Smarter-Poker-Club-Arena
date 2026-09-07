@@ -234,7 +234,10 @@ function Missile({ uid }: { uid: string }) {
       <defs>
         <linearGradient id={g('missilebody')} x1="0" y1="0" x2="1" y2="0">
           <stop offset="0%" stopColor={MISSILE_RED_DARK} />
-          <stop offset="45%" stopColor={MISSILE_RED} />
+          <stop offset="24%" stopColor={MISSILE_RED} />
+          <stop offset="38%" stopColor="#ffaba6" />
+          <stop offset="49%" stopColor={MISSILE_RED} />
+          <stop offset="80%" stopColor="#a91022" />
           <stop offset="100%" stopColor={MISSILE_RED_DARK} />
         </linearGradient>
         <linearGradient id={g('exhaust')} x1="0" y1="1" x2="0" y2="0">
@@ -262,6 +265,9 @@ function Missile({ uid }: { uid: string }) {
       <path d="M 5 -24 L 10.5 -30 L 5 -27.5 Z" fill={MISSILE_FIN} />
       {/* the dark nose cone, tip at the local origin */}
       <path d="M -5 -11 L 0 0 L 5 -11 Z" fill={MISSILE_NOSE} />
+      <path d="M -3.7 -10 L 0 -1.8 L -1.1 -10 Z" fill="#7d8894" opacity="0.7" />
+      <path d="M -4.5 -23.5 L 4.5 -23.5 M -4.5 -13 L 4.5 -13" stroke="#700f1b" strokeWidth="0.7" />
+      <path d="M -5.5 -25 L -9.2 -29 M 5.5 -25 L 9.2 -29" stroke="#a6afb7" strokeWidth="0.7" />
     </g>
   );
 }
@@ -329,9 +335,8 @@ function Payload({ uid }: RigProps) {
         </g>
       </g>
 
-      {/* 2733-2900 (+2400..+2567): the FULL FIREBALL - a solid gradient core
-          under seven flame tongues fanned toward the top, "the wavy spiky
-          top" over "avatar completely covered". */}
+      {/* 2733-2900 (+2400..+2567): a continuous, asymmetric flame crown
+          surrounds the solid core and completely covers the avatar. */}
       <g className="thr-rocket__fireball">
         <defs>
           <radialGradient id={g('fireball')} cx="0.5" cy="0.4" r="0.65">
@@ -340,28 +345,15 @@ function Payload({ uid }: RigProps) {
             <stop offset="100%" stopColor={GOLD_DEEP} />
           </radialGradient>
         </defs>
-        <ellipse cx="0" cy="12" rx="60" ry="55" fill={`url(#${g('fireball')})`} />
-        <g transform="translate(0 -38) scale(1.9)">
-          <path d={FLAME_TONGUE_PATH} fill={PURE_YELLOW} />
-        </g>
-        <g transform="translate(-30 -30) rotate(-24) scale(1.5)">
-          <path d={FLAME_TONGUE_PATH} fill={PURE_YELLOW} />
-        </g>
-        <g transform="translate(28 -32) rotate(22) scale(1.55)">
-          <path d={FLAME_TONGUE_PATH} fill={PURE_YELLOW} />
-        </g>
-        <g transform="translate(-54 -4) rotate(-58) scale(1.1)">
-          <path d={FLAME_TONGUE_PATH} fill={PURE_YELLOW} />
-        </g>
-        <g transform="translate(52 -6) rotate(58) scale(1.15)">
-          <path d={FLAME_TONGUE_PATH} fill={PURE_YELLOW} />
-        </g>
-        <g transform="translate(-36 24) rotate(-100) scale(0.8)">
-          <path d={FLAME_TONGUE_PATH} fill={PURE_YELLOW} />
-        </g>
-        <g transform="translate(38 26) rotate(100) scale(0.85)">
-          <path d={FLAME_TONGUE_PATH} fill={PURE_YELLOW} />
-        </g>
+        <path
+          d="M -47 52 C -67 36 -61 19 -69 4 C -58 11 -55 5 -58 -11 C -64 -31 -57 -40 -62 -51 C -46 -43 -47 -27 -35 -26 C -43 -52 -27 -65 -33 -79 C -17 -70 -26 -48 -12 -42 C -13 -64 4 -75 0 -96 C 22 -80 7 -65 22 -50 C 31 -43 32 -63 39 -70 C 35 -42 54 -43 46 -19 C 53 -24 57 -35 59 -39 C 65 -23 53 -9 61 3 C 66 11 71 6 75 3 C 66 20 68 33 55 43 C 43 62 24 65 2 67 C -17 66 -34 66 -47 52 Z"
+          fill={`url(#${g('fireball')})`}
+        />
+        <path
+          d="M -32 40 C -48 17 -24 3 -31 -16 C -19 -11 -21 3 -11 8 C -20 -16 1 -25 -4 -43 C 15 -25 4 -13 19 -1 C 24 -14 33 -17 34 -27 C 44 -5 28 5 38 19 C 44 36 24 52 4 53 C -12 55 -24 50 -32 40 Z"
+          fill={FIREBALL_CORE}
+          opacity="0.8"
+        />
       </g>
 
       {/* 2867-3033 (+2534..+2700): the orange/ember stage - a darker gradient
@@ -388,9 +380,16 @@ function Payload({ uid }: RigProps) {
           one frame at 3700 and the seat is clean by 3733. */}
       <g className="thr-rocket__smoke">
         <defs>
-          <radialGradient id={g('smoke')} cx="0.4" cy="0.35" r="0.75">
-            <stop offset="0%" stopColor={SMOKE_KHAKI_LIGHT} />
-            <stop offset="100%" stopColor={SMOKE_KHAKI} />
+          <radialGradient id={g('smoke')} cx="0.36" cy="0.25" r="0.8">
+            <stop offset="0%" stopColor="#b39a77" />
+            <stop offset="32%" stopColor={SMOKE_KHAKI_LIGHT} />
+            <stop offset="68%" stopColor={SMOKE_KHAKI} />
+            <stop offset="100%" stopColor="#392d25" />
+          </radialGradient>
+          <radialGradient id={g('smoke-lit')} cx="0.5" cy="0.9" r="0.9">
+            <stop offset="0%" stopColor="#c58b47" />
+            <stop offset="38%" stopColor={SMOKE_KHAKI} />
+            <stop offset="100%" stopColor="#43352b" />
           </radialGradient>
         </defs>
         {/* the stem, over the avatar */}
@@ -404,6 +403,24 @@ function Payload({ uid }: RigProps) {
         <circle cx="-18" cy="-52" r="26" fill={`url(#${g('smoke')})`} />
         <circle cx="20" cy="-52" r="26" fill={`url(#${g('smoke')})`} />
         <circle cx="0" cy="-58" r="24" fill={`url(#${g('smoke')})`} />
+        {/* Overlapping billows and a lit underside give the cloud volume;
+            all follow the measured parent swell and hard cut. */}
+        <path
+          d="M -51 -8 C -40 -19 -29 -9 -23 -14 C -12 -24 0 -9 8 -16 C 20 -24 33 -11 46 -12 C 34 6 18 11 2 5 C -13 13 -37 6 -51 -8 Z"
+          fill={`url(#${g('smoke-lit')})`}
+        />
+        <path
+          d="M -17 53 C -28 32 -17 14 -10 4 C -7 -4 5 -5 9 4 C 24 23 11 37 18 53 C 7 62 -6 63 -17 53 Z"
+          fill={`url(#${g('smoke')})`}
+        />
+        <path
+          d="M -57 -28 C -56 -41 -42 -46 -34 -41 M -30 -58 C -24 -70 -12 -72 -4 -65 M 17 -67 C 29 -72 40 -61 39 -51 M 47 -40 C 60 -37 63 -26 57 -18"
+          fill="none"
+          stroke="#c2ad8d"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          opacity="0.45"
+        />
       </g>
     </svg>
   );

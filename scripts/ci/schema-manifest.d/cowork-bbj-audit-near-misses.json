@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/a-jackpot-that-did-not-fire-says-which-gate-refused - bbj_near_misses records the hands that reached the jackpot decision and were refused, with the gate that refused them. It exists because the main jackpot paid nothing between 2026-08-21 and 2026-09-07 on record contribution volume and nothing in this database could distinguish 'no qualifying hand occurred' from 'one occurred and was refused' (CLAUDE.md 10.86)",
+  "tables": ["bbj_near_misses"]
+}

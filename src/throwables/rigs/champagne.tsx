@@ -141,11 +141,48 @@ function Bottle({ uid, k }: { uid: string; k: string }) {
       <path d="M -6.6 -53 L 6.6 -53 L 6.6 -26 L -6.6 -26 Z" fill={`url(#${g('foil')})`} />
       <rect x="-7.2" y="-30.6" width="14.4" height="3.4" fill="#8a5f12" opacity="0.85" />
       <rect x="-7" y="-45" width="14" height="2.2" fill="#f6dd8c" opacity="0.7" />
+      <path
+        d="M -5 -49 l 3 5 l -2 5 l 3 6 M 4 -51 l -2 8 l 3 6 l -2 6"
+        fill="none"
+        stroke="#8d611f"
+        strokeWidth="0.55"
+      />
+      <path
+        d="M -6 -27 Q 0 -24 6 -27 M -5 -52 Q 0 -50 5 -52"
+        fill="none"
+        stroke="#fff0bb"
+        strokeWidth="0.9"
+      />
       {/* the label */}
       <rect x="-14" y="12" width="28" height="26" rx="1.5" fill={`url(#${g('label')})`} />
       <rect x="-14" y="16.5" width="28" height="2" fill={FOIL_GOLD} opacity="0.9" />
       <rect x="-14" y="33" width="28" height="1.6" fill={FOIL_GOLD} opacity="0.9" />
       <ellipse cx="0" cy="25" rx="5.4" ry="4.4" fill={FOIL_GOLD} opacity="0.85" />
+      <ellipse cx="0" cy="25" rx="4.3" ry="3.4" fill="none" stroke="#775524" strokeWidth="0.5" />
+      <path
+        d="M 0 22 C -1 23 -3 24 -2 25 Q -1 26 0 25 Q 1 26 2 25 C 3 24 1 23 0 22 Z M 0 25 L -1 27 L 1 27 Z"
+        fill="#5b481f"
+      />
+      <path
+        d="M -10 19 h 6 M 4 19 h 6 M -9 30 h 18 M -7 31.5 h 14"
+        fill="none"
+        stroke="#8a713e"
+        strokeWidth="0.55"
+      />
+      <path
+        d="M 11 -2 Q 14 5 14 10 M 14 40 L 14 45 Q 12 49 8 49"
+        fill="none"
+        stroke="#5fac68"
+        strokeWidth="0.8"
+        opacity="0.7"
+      />
+      <path
+        d="M -8 -17 Q -8 -6 -14 3"
+        fill="none"
+        stroke="#d0ffd1"
+        strokeWidth="0.75"
+        opacity="0.5"
+      />
       {/* the highlight down the left of the glass */}
       <path
         d="M -11 -14 C -12 -4, -12.5 14, -12 44"
@@ -193,6 +230,13 @@ function Cork({ uid, k }: { uid: string; k: string }) {
         strokeLinejoin="round"
       />
       <rect x="-5.5" y="3.6" width="11" height="2.6" rx="1.3" fill="#8a6029" opacity="0.75" />
+      <ellipse cx="0" cy="-5.5" rx="5" ry="2.3" fill="#edd0a0" stroke="#c69961" strokeWidth="0.5" />
+      <path
+        d="M -3 -4 h 1 M 1 -6 h 1.5 M -4 0 h 2 M 1 -1 h 1 M 2 2 h 2 M -2 3 h 1"
+        stroke="#94632e"
+        strokeWidth="0.6"
+        strokeLinecap="round"
+      />
     </g>
   );
 }
@@ -224,6 +268,15 @@ function Flute({ uid, k }: { uid: string; k: string }) {
         d="M -11.2 -25 L 11.2 -25 L 7 -11 Q 3.6 -4.5 0 -4.5 Q -3.6 -4.5 -7 -11 Z"
         fill={`url(#${g('wine')})`}
       />
+      <ellipse
+        cx="0"
+        cy="-25"
+        rx="11.2"
+        ry="2.2"
+        fill="#fff2bb"
+        stroke="#c89c34"
+        strokeWidth="0.6"
+      />
       <circle cx="-3.5" cy="-15" r="1.3" fill="#fff6d4" opacity="0.9" />
       <circle cx="2.5" cy="-19" r="1" fill="#fff6d4" opacity="0.85" />
       <circle cx="0.5" cy="-9" r="0.9" fill="#fff6d4" opacity="0.8" />
@@ -235,8 +288,19 @@ function Flute({ uid, k }: { uid: string; k: string }) {
         strokeWidth="1.4"
         strokeLinejoin="round"
       />
+      <ellipse cx="0" cy="-33" rx="13" ry="2" fill="none" stroke="#eaf9ff" strokeWidth="0.8" />
+      <path
+        d="M -10 -30 L -6 -12 Q -4 -8 -2 -7"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        opacity="0.85"
+      />
+      <path d="M 10 -28 L 6 -13" fill="none" stroke="#91b0b7" strokeWidth="0.7" opacity="0.8" />
       {/* stem and foot */}
       <rect x="-1.6" y="-5" width="3.2" height="27" fill="#e9f2f6" opacity="0.85" />
+      <path d="M -0.8 -2 L -0.8 20" stroke="#fff" strokeWidth="0.65" />
       <ellipse cx="0" cy="23.5" rx="9" ry="2.8" fill="#e9f2f6" opacity="0.9" />
       <ellipse cx="0" cy="22.6" rx="6.5" ry="1.6" fill="#ffffff" opacity="0.5" />
     </g>

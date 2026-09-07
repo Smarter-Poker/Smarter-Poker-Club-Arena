@@ -278,7 +278,7 @@
 .rules-modal__custom-value {
   font-size: 0.8125rem;
   font-weight: 700;
-  color: #ffb800;
+  color: var(--sp-warn);
 }
 
 .rules-modal__custom-desc {
@@ -491,7 +491,7 @@
   border-radius: 10px;
   border: 1px solid rgba(255, 158, 44, 0.5);
   background: linear-gradient(180deg, rgba(60, 32, 8, 0.9), rgba(38, 20, 6, 0.9));
-  color: #ffcf7d;
+  color: var(--sp-text-bright);
   font-weight: 800;
   letter-spacing: 0.04em;
   cursor: pointer;

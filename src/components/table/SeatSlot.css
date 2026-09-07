@@ -620,7 +620,7 @@
 .seat__disconnect-timer {
   font-size: 0.75rem;
   font-weight: 700;
-  color: #fbbf24;
+  color: var(--sp-text-bright);
   font-family: 'JetBrains Mono', monospace;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
@@ -1372,7 +1372,7 @@
   /* Measured off the reference +6.95 frames: stroke core rgb(255,255,119),
      body mean rgb(229,209,84) — a brighter, purer yellow than the banner
      gold. */
-  color: #ffe94a;
+  color: var(--sp-text-bright);
   text-shadow:
     0 1px 0 rgba(0, 0, 0, 0.65),
     0 0 12px rgba(255, 233, 74, 0.55);
@@ -2502,7 +2502,7 @@
 }
 
 .seat--winner .seat__stack {
-  color: #ffd700;
+  color: var(--sp-text-bright);
   text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
   font-weight: var(--weight-extrabold);
   animation: winnerStackPulse 1.5s ease-in-out infinite;
@@ -2605,7 +2605,7 @@
 
 /* SB — gold tint */
 .seat__position-badge--sb {
-  color: #fbbf24;
+  color: var(--sp-text-bright);
   border-color: rgba(251, 191, 36, 0.3);
 }
 
@@ -3604,7 +3604,7 @@
   border-radius: 12px;
   font-size: 1rem;
   font-weight: 900;
-  color: #ffd700;
+  color: var(--sp-text-bright);
   background: rgba(20, 12, 0, 0.72);
   border: 1px solid rgba(255, 215, 0, 0.65);
   text-shadow:

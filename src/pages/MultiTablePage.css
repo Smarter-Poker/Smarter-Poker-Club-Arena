@@ -242,10 +242,17 @@
 
 .multi-table-page__tab-bar-wrapper {
   display: flex;
-  /* Reserve the right-edge band the fixed 4-square button occupies (40px +
-     6px inset + breathing room), so the tab strip and the profit chip can
-     never slide underneath it. */
-  padding-right: 50px;
+  /* NOTHING IS RESERVED BY DEFAULT, because by default nothing is there.
+     This carried `padding-right: 50px` for the fixed four-square button. That
+     button is a hamburger item now (Dan 2026-09-07, item 1) and the only thing
+     still fixed on the right edge is the LOBBY button - which renders ONLY on
+     a must-move cluster table, and never in tile view. So an unconditional
+     reserve here surrendered 50px of strip on every ordinary table to a
+     control that was not on screen, which is the opposite of item 2's "enough
+     room to have 4 action tabs open". The reserve moved to the `--with-lobby`
+     modifier below, which is applied under exactly the condition that draws
+     the button. */
+  padding-right: 0;
   /* Dan 2026-08-28: "the profit tracker and the 4 screen box need to be
      lowered down so the 4 screen box is touching the top of where the table
      meets." `center` floated both chips in the middle of the bar's full
@@ -420,74 +427,48 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    TILE TOGGLE BUTTON
    ───────────────────────────────────────────────────────────────────────────── */
 
-/* Dan 2026-08-30: the 4-square button is FIXED on the right edge - the mirror
-   of the hamburger trigger on the left - and the same 40px square that
-   .table-menu__trigger paints (TableMenu.css), wearing the brushed-metal
-   four-screen artwork. Vertically it sits in the tab-bar band, below the
-   action ticker when one is up (--mtt-ticker-h, 0px otherwise). With fewer
-   than 2 tables it stays put but is inert and dimmed - the position is a
-   fixture, the function needs a second table. */
-.tile-toggle-btn {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 5px);
-  right: 6px;
-  z-index: 210;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  border: none;
-  background: transparent;
-  padding: 0;
-  color: rgba(255, 255, 255, 0.6);
-  cursor: pointer;
-  transition: opacity 0.15s;
-  flex-shrink: 0;
-}
-
-.tile-toggle-btn--inert {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.tile-toggle-btn__img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  pointer-events: none;
-}
+/* THE 4-SQUARE BUTTON'S RULES ARE GONE (Dan 2026-09-07, item 1). It is a
+   hamburger menu item now - see the note where its JSX used to be in
+   MultiTablePage.tsx, and TableMenuIcons.TileViewIcon. `.tile-toggle-btn`,
+   `--inert`, `__img` and `--shifted` had no other consumer. */
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   LOBBY BUTTON (Dan 2026-09-05)
-   "THE LOBBY RECTANGLE, NEEDS TO MOVE TO ... WHERE THE '4 SQUARE' BOX IS IN
-   THE ACTION PILL AREA. AND SAY 'LOBBY' ON IT. (4 SQUARE BUTTON SHOULD BE TO
-   THE LEFT OF IT)."
+   LOBBY BUTTON
+   ─────────────────────────────────────────────────────────────────────────────
+   Dan 2026-09-05: "THE LOBBY RECTANGLE, NEEDS TO MOVE TO ... WHERE THE '4
+   SQUARE' BOX IS IN THE ACTION PILL AREA. AND SAY 'LOBBY' ON IT."
 
-   Same fixed band as the 4-square button, same 40px height, same vertical
-   expression - the two are one pair on the right edge and must never drift
-   apart, so neither may be given a top of its own. LOBBY takes the outer
-   position and the 4-square steps left of it, which is only ever needed on a
-   must-move table; on every other table the 4-square keeps the corner it has
-   had since 2026-08-30 and nothing moves.
+   Dan 2026-09-07, item 2: "THE LOBBY BUTTON NEEDS TO BE THE SAME SIZE AND
+   SHAPE AS THE HAMBURGER MENU ON THE LEFT, ITS IMPARATIVE THAT THERE IS ENOUGH
+   ROOM TO HAVE 4 ACTION TABS OPEN IN BETWEEN THE HAMBURGER MENU AND THE LOBBY
+   BUTTON INSIDE THE ACTION BAR."
+
+   So it is now a SQUARE that tracks `.table-menu__trigger` exactly (TableMenu
+   .css: 40px, radius 10; TableTabBar.css shrinks the trigger to 34px / radius 8
+   at <=480px, and the media block at the foot of this file does the same here).
+   It is one image and no chrome: Dan's own artwork carries its frame, its
+   bevel and the word LOBBY, so a CSS border and a blue tint would be a second
+   frame drawn around a picture of a frame. The old 76px pill with a text label
+   is gone with them.
+
+   THE BUDGET, at 375px, which is what item 2 is really about. TableTabBar.css
+   itemises the header's width; this pair of edits changes two of its lines:
+
+       was:  - 46  tile-view toggle      - 76  LOBBY pill (+ its own insets)
+       now:  -  0  (in the hamburger)    - 34  LOBBY square, hamburger-sized
+
+   That returns 88px to the strip, and four game pills at their 55.25px cap
+   need 227px of the 231 the old budget left. Four tabs now fit between the
+   hamburger and LOBBY with room over, which is the thing he asked for.
    ───────────────────────────────────────────────────────────────────────────── */
-/* ONE NUMBER, DECLARED ONCE (2026-09-06). The shift below used to be written
-   as a literal `62px` while the button itself only had `min-width: 62px` plus
-   12px of padding either side - so its REAL width was ~68px and the gap between
-   the two buttons was 0-4px, closing to an overlap as soon as a reader's font
-   scale grew the label. A width the layout depends on cannot be a floor: it is
-   a fixed width now, stated once, and both the shift and the strip's reserved
-   band are computed from it. */
+
+/* ONE NUMBER, DECLARED ONCE (2026-09-06, still the rule). Everything that
+   reserves space for this button computes it from `--mtp-lobby-w`; nothing
+   restates a literal. It is square, so the same value is its height. */
 .multi-table-page__tab-bar-wrapper,
-.tile-toggle-btn,
 .mtp-lobby-btn {
   --mtp-edge: 6px;
-  --mtp-lobby-w: 76px;
-  --mtp-tile-w: 40px;
+  --mtp-lobby-w: 40px;
 }
 
 .mtp-lobby-btn {
@@ -498,34 +479,31 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 40px;
-  min-height: 40px;
   width: var(--mtp-lobby-w);
-  padding: 0 6px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  height: var(--mtp-lobby-w);
+  min-width: var(--mtp-lobby-w);
+  min-height: var(--mtp-lobby-w);
+  padding: 0;
+  border: none;
   border-radius: 10px;
-  background: rgba(24, 119, 242, 0.16);
-  color: #cfe0ff;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  background: transparent;
   cursor: pointer;
   flex-shrink: 0;
 }
 
-/* The inset, the LOBBY button's real width, and the gap between the two. */
-.tile-toggle-btn--shifted {
-  right: calc(var(--mtp-edge) + var(--mtp-lobby-w) + var(--mtp-edge));
+.mtp-lobby-btn__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
 }
 
-/* The strip and the P&L chip must not slide under the pair. The base wrapper
-   rule reserves 50px for the 4-square alone; this reserves the pair. */
+/* The strip and the P&L chip must not slide under it - applied under exactly
+   the condition that renders it (`activeClusterId && !isTileView`), so an
+   ordinary table keeps the whole width for its tabs. */
 .multi-table-page__tab-bar-wrapper--with-lobby {
-  padding-right: calc(
-    var(--mtp-edge) + var(--mtp-lobby-w) + var(--mtp-edge) + var(--mtp-tile-w) + var(--mtp-edge)
-  );
+  padding-right: calc(var(--mtp-edge) + var(--mtp-lobby-w) + var(--mtp-edge));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -579,9 +557,17 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
     min-height: 44px;
   }
 
-  .tile-toggle-btn {
-    /* The 40px square matches the hamburger; touch-action stays for taps.
-       (It is fixed-positioned now, so it no longer eats tab-strip budget.) */
+  /* TRACK THE HAMBURGER DOWN TO 34px (Dan 2026-09-07, item 2). TableTabBar.css
+     shrinks `.table-menu__trigger` to 34px / radius 8 at this exact breakpoint;
+     "the same size and shape" has to mean the same size at every width, not
+     just the one a desktop shows. */
+  .multi-table-page__tab-bar-wrapper,
+  .mtp-lobby-btn {
+    --mtp-lobby-w: 34px;
+  }
+
+  .mtp-lobby-btn {
+    border-radius: 8px;
     touch-action: manipulation;
   }
 

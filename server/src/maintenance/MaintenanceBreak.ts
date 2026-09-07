@@ -239,6 +239,23 @@ export class MaintenanceBreak {
   static readonly LAST_HAND_LEAD_MS = 2 * 60 * 1000;
 
   /**
+   * How old a persisted break row may be and still be adopted by a booting
+   * engine (2026-09-07).
+   *
+   * The whole legitimate span is the announcement lead plus the break itself —
+   * an engine that boots at :58 is adopting a row announced at :53, five
+   * minutes earlier. A minute of slack covers a slow boot and a clock skew.
+   * Anything older belongs to an hour that has already finished, and adopting
+   * it parks the entire fleet for a break nobody announced. Before this
+   * existed, `restoreFromStore` computed a full five minutes for any
+   * `last_hand` row regardless of age, so its staleness check could never
+   * fire and an orphaned row was a fleet-wide freeze waiting for the next
+   * boot.
+   */
+  static readonly ADOPTABLE_ROW_MAX_AGE_MS =
+    MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS + 60_000;
+
+  /**
    * How long a table is allowed to stay parked before `awaitPauseGate`'s
    * safety timeout resumes it anyway.
    *
@@ -436,10 +453,54 @@ export class MaintenanceBreak {
     }
     if (!saved) return;
 
-    const remaining =
-      saved.phase === 'counting_down' && saved.breakEndsAt
-        ? saved.breakEndsAt - this.now()
-        : MaintenanceBreak.BREAK_DURATION_MS;
+    // ── AN ADOPTED BREAK ENDS ON THE HOUR, NOT ON A BOOT INSTANT ───────────
+    // (2026-09-07, from the 18:00 break that "did not pass")
+    //
+    // A `last_hand` row carries no `breakEndsAt`, so `remaining` fell through
+    // to a FULL five minutes and the end was computed as `now() + 5min` —
+    // `now()` being the adopting process's boot instant, which has nothing to
+    // do with the clock the players are watching. On 2026-09-06 a manual
+    // `workflow_dispatch` deploy restarted the engine at 18:53:48, across the
+    // :53 announcement instead of inside the :55 countdown, and the break ran
+    // 18:53:48 -> 18:58:49: it ended SEVENTY-ONE SECONDS BEFORE THE HOUR the
+    // countdown on every screen was pointing at. 366 hands were dealt in the
+    // single minute 18:59, which the scorecard then reported as "it dealt 366
+    // hands inside the break". The break dealt zero. It simply stopped early.
+    //
+    // Every other timer in this file is wall-clock anchored — see
+    // `msUntilNextAnnouncement`, which is scrupulous about it. This was the
+    // one path that was not. The end is now clamped to the next :00, so an
+    // adopted break can be SHORTER than five minutes (it stops when the break
+    // was always going to stop) but can never resume early.
+    const hourEnd = this.nextHourBoundary();
+    const isAdoptedLastHand = !(saved.phase === 'counting_down' && saved.breakEndsAt);
+    // A `counting_down` row carries the wall-clock end the PREVIOUS engine
+    // computed, and that is the instant the countdown on every screen is
+    // pointing at, so it is taken as it stands — including the few seconds it
+    // usually sits past the hour. Only the `last_hand` path, which has no end
+    // of its own and used to invent one out of `now()`, is anchored here.
+    const endsAt = isAdoptedLastHand ? hourEnd : (saved.breakEndsAt as number);
+    const remaining = endsAt - this.now();
+
+    // ── AND A STALE ROW CANNOT FREEZE THE PLATFORM HOURS LATER ─────────────
+    // For a `last_hand` row `remaining` used to be the constant
+    // BREAK_DURATION_MS, so the staleness check below could NEVER fire: an
+    // orphaned announcement from any earlier hour would be adopted by any
+    // engine booting at any later time and would park the entire fleet for
+    // five minutes from that boot. Bounding by the row's own age closes it,
+    // and the clamp above already refuses to run past the hour.
+    const rowAgeMs = saved.announcedAt ? this.now() - saved.announcedAt : 0;
+    if (rowAgeMs > MaintenanceBreak.ADOPTABLE_ROW_MAX_AGE_MS) {
+      console.warn(
+        `[MaintenanceBreak] ignoring a persisted break announced ${Math.round(
+          rowAgeMs / 1000
+        )}s ago - older than the ${Math.round(
+          MaintenanceBreak.ADOPTABLE_ROW_MAX_AGE_MS / 1000
+        )}s adoption window, so it belongs to an hour that has already passed.`
+      );
+      await this.safeClear();
+      return;
+    }
 
     if (remaining <= 1000) {
       // Expired while we were down. Clear it so no browser keeps counting.
@@ -453,7 +514,7 @@ export class MaintenanceBreak {
     // The previous engine's start instant, so the thaw measures the WHOLE
     // freeze, not just the slice this process lived through.
     this.breakStartedAt = saved.breakStartedAt ?? this.now();
-    this.breakEndsAt = this.now() + Math.min(remaining, MaintenanceBreak.BREAK_DURATION_MS);
+    this.breakEndsAt = endsAt;
     setMaintenanceFrozen(true);
 
     console.log(
@@ -548,6 +609,25 @@ export class MaintenanceBreak {
     // re-arming a moment after firing): take the next hour's.
     if (t <= now) t += 60 * 60 * 1000;
     return t - now;
+  }
+
+  /**
+   * The next :00, on the same wall clock `msUntilNextAnnouncement` uses.
+   *
+   * A break that started at :55 is over at :00 — that is the instant every
+   * player's countdown is pointing at, and it is the only correct end for an
+   * ADOPTED break, whose own start instant is a boot time that means nothing
+   * to anybody watching. Exactly on the hour counts as this hour's boundary
+   * having passed, so a break adopted at :00:00.000 does not win itself a
+   * whole extra hour.
+   */
+  private nextHourBoundary(): number {
+    const now = this.now();
+    const next = new Date(now);
+    next.setMinutes(0, 0, 0);
+    let t = next.getTime();
+    if (t <= now) t += 60 * 60 * 1000;
+    return t;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

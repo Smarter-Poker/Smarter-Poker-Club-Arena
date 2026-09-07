@@ -543,3 +543,11 @@ it('tournament payment completion uses durable outstanding debt rather than RPC 
   expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain("this.broadcast('bubble_protection_pending'");
   expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain('FAIL stale smaller replay hides debt');
 });
+
+
+it('final guarantee funding follows recorded tournament scope', () => {
+ const sql = read('supabase/migrations/20260907221633_guarantee_funding_follows_tournament_ownership.sql');
+ expect(sql).toContain('v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END');
+ expect(sql).not.toContain('select c.union_id into v_union from public.clubs');
+ expect(has('scripts/ci/probes/guarantee-funding-scope.sql','FAIL guarantee follows current club union instead of event union')).toBe(true);
+});

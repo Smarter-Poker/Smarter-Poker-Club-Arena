@@ -117,6 +117,132 @@ function client(over: Partial<Record<string, unknown>> = {}) {
 
 const live = () => FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
 
+describe('EngineStateClient — heartbeats cannot acknowledge missing game state', () => {
+  async function openTable() {
+    const snapshots = vi.fn();
+    const result = client({ onSnapshot: snapshots });
+    result.c.connect();
+    await flush();
+    const ws = live();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    await flush();
+    return { ...result, ws, snapshots };
+  }
+
+  async function heartbeats(ws: FakeWebSocket, seconds: number) {
+    for (let elapsed = 0; elapsed < seconds; elapsed += 5) {
+      ws._frame({ type: 'PING', ts: Date.now() });
+      await vi.advanceTimersByTimeAsync(5_000);
+    }
+  }
+
+  const resyncs = (ws: FakeWebSocket) =>
+    ws.sent.map((s) => JSON.parse(s)).filter((m) => m.type === 'RESYNC');
+
+  it('requests the missing first snapshot and reconnects despite continuing pings', async () => {
+    const { c, ws, statuses } = await openTable();
+    try {
+      await heartbeats(ws, 40);
+      expect(resyncs(ws).length).toBeGreaterThan(0);
+      await heartbeats(ws, 25);
+      expect(statuses).toContain('reconnecting');
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('bounds a resync after a sequence gap even when more unusable deltas arrive', async () => {
+    const { c, ws, statuses } = await openTable();
+    try {
+      ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 1, state: { pot: 10 } });
+      for (let i = 0; i < 13; i++) {
+        ws._frame({ type: 'DELTA', tableId: TABLE, prev: 99, seq: 100, patch: [] });
+        await heartbeats(ws, 5);
+      }
+      expect(resyncs(ws).length).toBeGreaterThan(0);
+      expect(statuses).toContain('reconnecting');
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('accepts a resync snapshot at the same sequence and keeps an idle table connected', async () => {
+    const { c, ws, statuses, snapshots } = await openTable();
+    try {
+      ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 1, state: { pot: 10 } });
+      ws._frame({ type: 'DELTA', tableId: TABLE, prev: 99, seq: 100, patch: [] });
+      await heartbeats(ws, 40);
+      ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 1, state: { pot: 10 } });
+      await heartbeats(ws, 90);
+      expect(snapshots).toHaveBeenCalledTimes(2);
+      expect(statuses).not.toContain('reconnecting');
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('does not let rejected stale snapshots acknowledge a resync', async () => {
+    const { c, ws, statuses } = await openTable();
+    try {
+      ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 10, state: { pot: 10 } });
+      ws._frame({ type: 'DELTA', tableId: TABLE, prev: 99, seq: 100, patch: [] });
+      for (let i = 0; i < 13; i++) {
+        ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 9, state: { pot: 0 } });
+        await heartbeats(ws, 5);
+      }
+      expect(statuses).toContain('reconnecting');
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('waits for a replacement snapshot after an engine rebuild on the same socket', async () => {
+    const { c, ws, statuses } = await openTable();
+    try {
+      ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 10, state: { pot: 10 } });
+      ws._frame({ type: 'EVENT', tableId: TABLE, payload: { type: 'engine_restarting' } });
+      await heartbeats(ws, 65);
+      expect(statuses).toContain('reconnecting');
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('gives a backgrounded table time to answer its wake resync', async () => {
+    const { c, ws, statuses } = await openTable();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    try {
+      visibility.mockReturnValue('hidden');
+      await heartbeats(ws, 120);
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await heartbeats(ws, 5);
+      expect(statuses).not.toContain('reconnecting');
+      ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 1, state: { pot: 0 } });
+      await heartbeats(ws, 90);
+      expect(statuses).not.toContain('reconnecting');
+    } finally {
+      visibility.mockRestore();
+      c.disconnect();
+    }
+  });
+
+  it('cannot postpone a missing snapshot forever by repeatedly returning to the tab', async () => {
+    const { c, ws, statuses } = await openTable();
+    try {
+      await heartbeats(ws, 35);
+      for (let i = 0; i < 7; i++) {
+        document.dispatchEvent(new Event('visibilitychange'));
+        await heartbeats(ws, 5);
+      }
+      expect(statuses).toContain('reconnecting');
+    } finally {
+      c.disconnect();
+    }
+  });
+});
+
 describe('EngineStateClient — a socket that never finishes connecting', () => {
   it('tears down a handshake stuck in CONNECTING instead of waiting forever', async () => {
     const { c } = client();

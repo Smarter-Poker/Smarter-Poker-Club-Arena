@@ -3,110 +3,57 @@
    only. Anchored at the hero seat's own point and pushed left of the seat by
    half the hero pod's width (tableGeometry SEAT_SIZE_RUNGS: 79 / 88 / 101 /
    128 wide) plus a gap, so it rides with the seat at every breakpoint and
-   never overlaps the avatar. Mobile first; press feedback is not needed on a
-   readout, and there is no pointer state of any kind.
+   never overlaps the avatar.
+
+   ── THIS FILE IS NOW POSITION ONLY (Dan 2026-09-07, item 3) ────────────────
+   "VPIP NEEDS TO BE A SIMPLE SQUARE WITH THE MINIMUM GAME REQUIREMENT AND THE
+   USERS CURRENT VPIP INSIDE A SQUARE BOX NEXT TO THE HERO, NOT A LARGE GENERIC
+   RECTANGLE."
+
+   Everything that DREW the old rectangle - its plate, border, gradient,
+   shadow, three font sizes and five standing colours - is gone. The badge is
+   drawn by VpipRequirementBadge from Dan's own specification, and that spec
+   locks its appearance (section 27) and forbids colouring it by pass/fail
+   (section 25), so a second stylesheet reaching into it would be exactly the
+   drift the lock exists to prevent.
+
+   What is left here is the one thing the badge cannot know: where the hero's
+   seat is. This element places the square and sets its ONE size input.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* SMALLER, AND NEARER THE HERO (Dan 2026-09-05): "VPIP NEXT TO THE HERO NEEDS
-   TO BE SUBSTANTIALLY SMALLER, AND CLOSER TO THE HERO." It was a 62px-wide
-   card with a 16px figure standing 10px clear of the pod - on a 375px screen
-   that is a second seat sitting next to the hero, and it read as one. Every
-   dimension below is roughly a third down from what it was, and the gap is
-   3px: a readout attached to the pod rather than a panel beside it. It is a
-   glance-at number, not something to be read. */
 .hero-vpip {
+  /* Half the hero pod's width, per breakpoint - the offset that keeps the
+     badge clear of the avatar. Unchanged from the rectangle it replaces. */
   --sp-hero-half: 64px;
+  /* Spec 28: ONE size variable, and the badge is square, so this is both its
+     width and its height. 58px against a 128px hero pod reads as a plaque
+     beside the seat rather than a second seat next to it - the proportion Dan
+     asked for on 2026-09-05 and kept in the redesign. */
+  --vpip-badge-size: 58px;
+
   position: absolute;
   z-index: 6;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
-  box-sizing: border-box;
-  min-width: 40px;
-  padding: 2px 5px 3px;
-  border: 1px solid rgb(255 255 255 / 14%);
-  border-radius: 6px;
-  background: linear-gradient(180deg, rgb(12 15 20 / 92%) 0%, rgb(0 0 0 / 88%) 100%);
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 60%),
-    0 2px 8px rgb(0 0 0 / 55%);
-  color: #d5dbe4;
-  font-family: var(--font-primary, 'Inter', sans-serif);
-  line-height: 1.05;
-  text-align: center;
-  white-space: nowrap;
   pointer-events: none;
   transform: translate(calc(-100% - var(--sp-hero-half) - 3px), -50%);
-}
-
-.hero-vpip__eyebrow {
-  font-size: 0.38rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  color: #8b95a3;
-}
-
-.hero-vpip__figure {
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums;
-}
-
-.hero-vpip__detail {
-  font-size: 0.36rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: #9aa4b2;
-}
-
-/* Standing against the floor, in the figure's colour: nothing to judge
-   (plain), still sampling (blue), safe (green), within five points (amber),
-   under after the window (red, and the box says so). */
-.hero-vpip--sample .hero-vpip__figure {
-  color: #8fd4ff;
-}
-
-.hero-vpip--safe .hero-vpip__figure {
-  color: #3fb950;
-}
-
-.hero-vpip--edge .hero-vpip__figure {
-  color: #ffc857;
-}
-
-.hero-vpip--under {
-  border-color: rgb(255 92 92 / 65%);
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 60%),
-    0 0 10px rgb(255 92 92 / 45%);
-}
-
-.hero-vpip--under .hero-vpip__figure {
-  color: #ff5c5c;
 }
 
 @media (max-width: 640px) {
   .hero-vpip {
     --sp-hero-half: 51px;
+    --vpip-badge-size: 50px;
   }
 }
 
 @media (max-width: 480px) {
   .hero-vpip {
     --sp-hero-half: 44px;
-    min-width: 36px;
-    padding: 2px 4px;
-  }
-
-  .hero-vpip__figure {
-    font-size: 0.6rem;
+    --vpip-badge-size: 44px;
   }
 }
 
 @media (max-width: 380px) {
   .hero-vpip {
     --sp-hero-half: 40px;
+    --vpip-badge-size: 40px;
   }
 }

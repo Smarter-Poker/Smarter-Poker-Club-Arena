@@ -237,8 +237,15 @@ describe('the action tab starts below the ticker, never above it', () => {
     /* The banner was pinned to a literal 52% while `[data-boards]` moved the
        masthead to 72% / 84%. On a run-it-twice or bomb-pot table it floated a
        third of the felt above the mark it sits on, into the board stack. */
-    expect(TABLE_PAGE_CSS).toMatch(/--sp-brand-top:\s*58%/);
-    expect(TABLE_PAGE_CSS).toMatch(/top:\s*var\(--sp-brand-top,\s*58%\)/);
+    /* 58% -> 62% (Dan 2026-09-07, item 11: the board was overlapping the
+       wordmark and he asked for "THE SMARTER.POKER FONTS LOWERED"). Raising
+       the BOARD instead was tried and reverted — it runs straight into the
+       seat rings' band. What this test is actually about is unchanged: ONE
+       anchor, so the connection banner moves with the wordmark instead of
+       being left behind in a multi-board stack. The fallback in the var() must
+       track the declaration, which is the other half of the same bug. */
+    expect(TABLE_PAGE_CSS).toMatch(/--sp-brand-top:\s*62%/);
+    expect(TABLE_PAGE_CSS).toMatch(/top:\s*var\(--sp-brand-top,\s*62%\)/);
     // The overrides move the SHARED property, not the wordmark's own top.
     expect(TABLE_PAGE_CSS).toMatch(
       /\.table-page\[data-boards='2'\] \.table-surface \{\s*--sp-brand-top:\s*72%/

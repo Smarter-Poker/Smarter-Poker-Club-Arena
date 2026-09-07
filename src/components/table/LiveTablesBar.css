@@ -65,14 +65,14 @@
 }
 
 .live-tables-bar__dot--urgent {
-  color: #fbbf24;
+  color: var(--sp-text-bright);
   animation-duration: 0.8s;
 }
 
 .live-tables-bar__timer {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #fbbf24;
+  color: var(--sp-text-bright);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

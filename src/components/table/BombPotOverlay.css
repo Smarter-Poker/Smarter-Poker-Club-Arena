@@ -404,7 +404,7 @@
   font-size: 46px;
   font-weight: 900;
   letter-spacing: 3px;
-  color: #ffb020;
+  color: var(--sp-warn);
   background: linear-gradient(180deg, #fff2b8 0%, #ffb020 52%, #e06500 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -436,7 +436,7 @@
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 4px;
-  color: #f59e0b;
+  color: var(--sp-warn);
   animation: bpoFadeUp calc(0.4s * var(--bpo-s)) ease-out calc(0.45s * var(--bpo-s)) both;
 }
 

@@ -144,7 +144,51 @@ function Bundle({ uid, k }: { uid: string; k: string }) {
         />
       </g>
       <g transform="rotate(10)">
-        <rect x="-19" y="-10" width="38" height="20" rx="2" fill={BUNDLE_LIGHT} opacity="0.6" />
+        <path d="M -19 -10 L 19 -10 L 20 8 L 18 12 L -19 12 Z" fill={BUNDLE_DARK} />
+        <path d="M -18 9 L 18 9 M -18 10.5 L 18 10.5" stroke={BUNDLE_LIGHT} strokeWidth="0.6" />
+        <rect
+          x="-19"
+          y="-10"
+          width="38"
+          height="20"
+          rx="1.5"
+          fill={BUNDLE_LIGHT}
+          stroke="#f3f1de"
+          strokeWidth="0.7"
+        />
+        <rect
+          x="-16.5"
+          y="-7.5"
+          width="33"
+          height="15"
+          rx="1"
+          fill="none"
+          stroke={BUNDLE_DARK}
+          strokeWidth="0.65"
+        />
+        <ellipse
+          cx="0"
+          cy="0"
+          rx="6"
+          ry="7"
+          fill={BUNDLE_MID}
+          stroke={BUNDLE_DARK}
+          strokeWidth="0.7"
+        />
+        <path d="M -3 4 Q -4 1 -1 0 Q -4 -4 0 -5 Q 4 -4 2 0 Q 5 1 4 4 Z" fill={BUNDLE_DARK} />
+        <path
+          d="M -14 -4 h 5 M -14 -2 h 4 M -14 3 h 5 M 9 -4 h 5 M 10 -2 h 4 M 9 3 h 5"
+          fill="none"
+          stroke={BUNDLE_DARK}
+          strokeWidth="0.6"
+        />
+        <path
+          d="M 5 -10 L 10 -10 L 10 10 L 5 10 Z"
+          fill="#ead7ad"
+          stroke="#a88756"
+          strokeWidth="0.6"
+        />
+        <path d="M 6 -9 L 6 9" stroke="#fff1cf" strokeWidth="0.8" />
       </g>
     </g>
   );
@@ -162,18 +206,25 @@ function Bill({ uid }: { uid: string }) {
       {/* the wings, grouped so `.thr-cash_stack__wing` flaps both together */}
       <g className="thr-cash_stack__wing">
         <path
-          d="M -17 -2 C -24 -6, -29 -3, -26 3 C -23 8, -18 6, -15 1 Z"
+          d="M -16 3 C -21 3 -24 -1 -29 -6 Q -31 -9 -28 -8 L -21 -3 L -25 -9 Q -26 -12 -23 -10 L -18 -5 L -20 -11 Q -20 -14 -18 -11 Q -14 -4 -16 3 Z"
           fill={WING_WHITE}
           stroke={WING_EDGE}
           strokeWidth="0.5"
         />
         <path
-          d="M 17 -2 C 24 -6, 29 -3, 26 3 C 23 8, 18 6, 15 1 Z"
+          d="M 16 3 C 21 3 24 -1 29 -6 Q 31 -9 28 -8 L 21 -3 L 25 -9 Q 26 -12 23 -10 L 18 -5 L 20 -11 Q 20 -14 18 -11 Q 14 -4 16 3 Z"
           fill={WING_WHITE}
           stroke={WING_EDGE}
           strokeWidth="0.5"
         />
+        <path
+          d="M -17 1 Q -21 -1 -25 -5 M -17 -1 L -22 -7 M 17 1 Q 21 -1 25 -5 M 17 -1 L 22 -7"
+          fill="none"
+          stroke="#a7c4b6"
+          strokeWidth="0.6"
+        />
       </g>
+      <path d="M -17 6 L 18 6 L 17 12 L -16 11 Z" fill="#24573a" />
       <rect
         x="-17.5"
         y="-10"
@@ -184,6 +235,16 @@ function Bill({ uid }: { uid: string }) {
         stroke={BILL_DARK}
         strokeWidth="0.8"
       />
+      <rect
+        x="-15"
+        y="-7.5"
+        width="30"
+        height="15"
+        rx="1"
+        fill="none"
+        stroke="#d1efd1"
+        strokeWidth="0.65"
+      />
       <ellipse
         cx="0"
         cy="0"
@@ -193,6 +254,18 @@ function Bill({ uid }: { uid: string }) {
         stroke={BILL_DARK}
         strokeWidth="0.4"
       />
+      <path
+        d="M -2.8 4 Q -3.5 1 -0.8 0 Q -3 -3.5 0 -4.5 Q 3.5 -3.5 1.8 0 Q 4 1.5 3 4 Z"
+        fill={BILL_DARK}
+        opacity="0.8"
+      />
+      <path
+        d="M -13 -2 h 5 M -13 0 h 4 M -13 2 h 5 M 8 -2 h 5 M 9 0 h 4 M 8 2 h 5"
+        stroke={BILL_DARK}
+        strokeWidth="0.5"
+        opacity="0.8"
+      />
+      <path d="M -16 -9 L 15 -9" stroke="#d9ffe1" strokeWidth="0.8" />
       <path
         d="M -14 -6 L -10 -6 M -14 6 L -10 6 M 14 -6 L 10 -6 M 14 6 L 10 6"
         stroke={BILL_LIGHT}
@@ -207,20 +280,21 @@ function Bill({ uid }: { uid: string }) {
  *  driftPhaseMs]. Fixed, never random, so the darkroom photographs the same
  *  cloud twice. Positions spread across the measured 1.75 u cloud (chin to
  *  well above the head); delays spread across the burst-into-cloud window
- *  (367-2233 ms from launch), all well clear of the 2700 ms thinning beat. */
+ *  (367-2233 ms from landing, or 700-2566 from launch), all well clear
+ *  of the +2700 ms thinning beat. */
 const BILLS: ReadonlyArray<readonly [number, number, number, number, number, number]> = [
-  [-8, 10, -15, 0.85, 34, 0],
-  [14, -6, 20, 0.95, 100, 60],
-  [-26, -22, -28, 1.05, 200, 120],
-  [28, 8, 12, 0.9, 300, 180],
-  [-44, -38, -8, 1.1, 400, 240],
-  [38, -52, 24, 0.8, 550, 300],
-  [-58, -12, -18, 1.0, 700, 360],
-  [50, -74, 14, 0.95, 900, 20],
-  [-30, -96, -26, 1.05, 1150, 80],
-  [62, 2, 6, 0.85, 1400, 140],
-  [-68, -56, -16, 1.1, 1650, 200],
-  [10, -114, 10, 0.9, 1900, 260],
+  [-8, 10, -15, 0.85, 367, 0],
+  [14, -6, 20, 0.95, 433, 60],
+  [-26, -22, -28, 1.05, 533, 120],
+  [28, 8, 12, 0.9, 633, 180],
+  [-44, -38, -8, 1.1, 733, 240],
+  [38, -52, 24, 0.8, 883, 300],
+  [-58, -12, -18, 1.0, 1033, 360],
+  [50, -74, 14, 0.95, 1233, 20],
+  [-30, -96, -26, 1.05, 1483, 80],
+  [62, 2, 6, 0.85, 1733, 140],
+  [-68, -56, -16, 1.1, 1983, 200],
+  [10, -114, 10, 0.9, 2233, 260],
 ];
 
 function Projectile({ uid }: RigProps) {

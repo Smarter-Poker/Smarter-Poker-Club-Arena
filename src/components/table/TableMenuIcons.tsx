@@ -15,6 +15,31 @@ const iconStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+/**
+ * Tile View — the four-pane grid, moved off the action header on 2026-09-07
+ * (Dan item 1: "THE 4 SQUARE OPTION NEEDS TO LIVE INSIDE THE HAMBURGER MENU").
+ *
+ * NAMED `TileViewIcon`, AND THE NAME MATTERS. Three other names for a
+ * four-pane grid glyph are banned across the whole of src/ by
+ * tests/approvedHamburgerGearGuard.law.test.ts, which lists them; they belong
+ * to the two pull requests that mistook "forbid em bars" for a rule about
+ * horizontal lines and took the hamburger off every page (CLAUDE.md 10.7).
+ * They are not repeated here, because that law is a literal substring sweep
+ * and quoting a banned name to explain it trips the sweep - which is exactly
+ * what the first draft of this comment did.
+ *
+ * This is a MENU ITEM's icon. It is never a menu TRIGGER, and must never be
+ * turned into one.
+ */
+export const TileViewIcon = () => (
+  <svg style={iconStyle} viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="2.5" y="2.5" width="5.5" height="5.5" rx="1.3" fill="currentColor" opacity="0.85" />
+    <rect x="10" y="2.5" width="5.5" height="5.5" rx="1.3" fill="currentColor" opacity="0.85" />
+    <rect x="2.5" y="10" width="5.5" height="5.5" rx="1.3" fill="currentColor" opacity="0.85" />
+    <rect x="10" y="10" width="5.5" height="5.5" rx="1.3" fill="currentColor" opacity="0.85" />
+  </svg>
+);
+
 /** ⏸ Sit Out — pause icon */
 export const SitOutIcon = () => (
   <svg style={iconStyle} viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">

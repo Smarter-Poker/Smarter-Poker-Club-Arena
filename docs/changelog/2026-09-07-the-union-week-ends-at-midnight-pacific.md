@@ -331,3 +331,89 @@ or a DB-backed check rather than a source grep. Writing a weak one that greps
 migrations would fail on the historical migrations that legitimately contain
 `date_trunc('week', now())`, and a red law blocks every publish. Designed and
 left for a change that can be tested properly.
+
+---
+
+# The statement and the money were on different bases
+
+Migration `20260907053223_a_statement_is_not_sent_on_a_basis_the_money_does_not_use`.
+
+Verifying round 3 before calling this finished turned up the largest defect of
+the night, and it is not a boundary problem.
+
+## Round 3 will pay nobody, and the guard for that is blind
+
+`fn_rakeback_recompute_all_clubs` runs clean in 2.5 s, 2 clubs, 0 failures, and
+writes **0 rows**. It derives player rakeback from `rake_records` joined to
+`union_clubs`. For the closing week `rake_records` are booked to:
+
+| club                                      | rows    | rake       | union member |
+| ----------------------------------------- | ------- | ---------- | ------------ |
+| Midway Union (the union's own house club) | 301,871 | 642,979.30 | **no**       |
+| Deep Stack Society                        | 275,109 | 484,134.90 | **no**       |
+| Club JAQK                                 | 0       | 0          | yes          |
+| SHARK CLUB                                | 0       | 0          | yes          |
+
+The function has a `critical` alert for exactly this case, but its `EXISTS`
+check joins through `union_clubs` too, so it is blind for the same reason. A
+silent zero.
+
+`rakeback_periods` shows the shape: member clubs were paid through **2026-08-17**
+(SHARK 73,503.18, JAQK 24,623.12) and have accrued nothing since. What has
+accrued since is **282,375.65 pending on the house club and 90,759.13 on Deep
+Stack Society**, neither of which round 3 can pay, plus **75,802.74** of older
+member-club backlog outside tonight's window.
+
+## Three different answers to "how much rake did this club generate"
+
+| club       | round 1 basis `ca_union_rake_attribution` | seat basis `fn_union_rake_basis_by_club` | invoice basis `fn_union_rake_paid_readonly` |
+| ---------- | ----------------------------------------- | ---------------------------------------- | ------------------------------------------- |
+| Club JAQK  | 144,229.35                                | 31,722.58                                | 14,870.75                                   |
+| SHARK CLUB | 155,299.61                                | 611,195.40                               | 628,047.23                                  |
+| **total**  | **299,528.96**                            | 642,917.98                               | 642,917.98                                  |
+
+Round 1 pays on the first. The invoice quotes the third, which attributes a
+player's rake to the club they **joined first**:
+
+    SELECT DISTINCT ON (cm.user_id) cm.user_id, cm.club_id
+      FROM club_members cm ... ORDER BY cm.user_id, cm.joined_at ASC
+
+Round 1's header records Dan's ruling of 2026-09-03 that the basis is
+`ca_union_rake_attribution`, "the seat the player sat through". The invoice
+basis has no rule behind it. Per CLAUDE.md 10.8, deployed code is not a law:
+one side is written down and the other is not, so the invoice is the defect.
+
+And it is not only the informational lines. `outstanding = eco_amount +
+presettled`, `eco_amount = -rate * (rake_earned - cash_players_won)`, and
+`rake_earned` comes from the same wrong basis. **The amount billed is on it too.**
+
+## Why the statement is held rather than corrected
+
+Correcting it means changing which source feeds `fn_union_eco_adjustment`,
+which changes what every club is billed. That is a change to money, it has to
+be reconciled against round 1's actual output, and it was not going to be
+written forty minutes before the run.
+
+It also cannot be corrected afterwards. `20260907044041` made a delivered
+invoice immutable, precisely so a delivered statement cannot be silently
+restated - so a wrong statement sent tonight would be **frozen wrong**. That
+interaction is what settled it.
+
+So round 4 is gated on a union setting, held for Midway Union only, defaulting
+to enabled everywhere else. Rounds 1, 2 and 3 are untouched and run on the
+sanctioned basis. Round 4 records that it was held, and why. A `critical`
+`financial_alerts` row carries the numbers. One statement re-enables it:
+
+    UPDATE unions SET settings = settings - 'weekly_invoices_enabled'
+     WHERE id = 'fade0000-0000-0000-0000-000000000001';
+
+## The bigger question underneath, for Dan
+
+The treasury **received 639,624.14** of rake this week. Round 1 will distribute
+on **299,528.96**. Round 1's design does leave unattributed rake with the union,
+but that is 53% unattributed, and `fn_ca_attribute_union_rake(3)` runs hourly on
+a three-hour lookback. Either the attribution job is dropping more than half the
+rake, or "unattributed stays with the union" is doing far more work than anyone
+intended. That decides what member clubs are owed, so it is not an agent's call.
+
+Nothing here was changed. It is measured, recorded, and handed over.

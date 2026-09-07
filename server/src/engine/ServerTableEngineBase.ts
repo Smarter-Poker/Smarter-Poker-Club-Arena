@@ -1119,6 +1119,15 @@ export abstract class ServerTableEngineBase {
   protected currentHandBBJHit: BBJDetectionResult | null = null;
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
   /**
+   * The MINI jackpot (BBJ phase 6): a flat amount out of the backup reserve
+   * for a hand that came close to the main bar. Held separately from
+   * currentHandBBJHit on purpose - the two pay from different banks through
+   * different RPCs, and merging them into one field is how a mini would come
+   * to be paid at main-jackpot size.
+   */
+  protected currentHandMiniBBJHit: BBJDetectionResult | null = null;
+  protected currentHandMiniBBJTierId: string | null = null;
+  /**
    * Rabbit hunt purchases currently mid-flight, by userId. Two taps that race
    * the RPC both pass the `revealed` check (that set is written only after the
    * charge returns), so without this they would both succeed and bill twice.

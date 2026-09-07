@@ -103,161 +103,175 @@
     }
   },
   "cues": {
-    "pop_soft": {
-      "$comment": "beer: mug 2 pops in (reference: a soft pop, centroid ~1.9 kHz).",
-      "levelDb": -6,
-      "source": "kenney-interface-sounds",
-      "layers": [
-        {
-          "file": "drop_001.ogg",
-          "at": 0,
-          "gain": 1
-        }
-      ],
-      "trimEnd": 0.35
-    },
-    "glass_clink_rattle": {
-      "$comment": "beer + champagne: the reference chime has six rattles at 0 / 133 / 380 / 466 / 600 / 733 ms and a 1.3 s ring-down. Built from five glass impacts layered at those offsets with decaying gain, plus the interface 'glass' tone underneath for the ring.",
-      "levelDb": -2,
-      "source": "kenney-impact-sounds",
-      "layers": [
-        {
-          "file": "impactGlass_light_000.ogg",
-          "at": 0,
-          "gain": 1
-        },
-        {
-          "file": "impactGlass_light_001.ogg",
-          "at": 0.133,
-          "gain": 0.85
-        },
-        {
-          "file": "impactGlass_light_002.ogg",
-          "at": 0.38,
-          "gain": 0.6
-        },
-        {
-          "file": "impactGlass_light_003.ogg",
-          "at": 0.466,
-          "gain": 0.7
-        },
-        {
-          "file": "impactGlass_light_004.ogg",
-          "at": 0.6,
-          "gain": 0.5
-        },
-        {
-          "file": "impactGlass_light_001.ogg",
-          "at": 0.733,
-          "gain": 0.4
-        },
-        {
-          "source": "kenney-interface-sounds",
-          "file": "glass_002.ogg",
-          "at": 0.02,
-          "gain": 0.35
-        }
-      ]
-    },
-    "drip_tick": {
-      "$comment": "cracked_egg: the faint tick as the white drips.",
-      "levelDb": -14,
-      "source": "kenney-interface-sounds",
-      "layers": [
-        {
-          "file": "tick_002.ogg",
-          "at": 0,
-          "gain": 0.5
-        }
-      ],
-      "trimEnd": 0.25
-    },
-    "squirt_start": {
-      "$comment": "water_gun 933: the first squirt. A short splash for the burst of water leaving the barrel, with a slime layer under it for the thickness the reference has. Was a placeholder through phase 1 and the phase 2 first landing; OpenGameArt's CC0 water pack retires it.",
-      "source": "oga-water-splash-slime",
-      "levelDb": -2,
-      "layers": [
-        {
-          "file": "splash_09.ogg",
-          "at": 0,
-          "gain": 1
-        },
-        {
-          "file": "slime_01.ogg",
-          "at": 0.02,
-          "gain": 0.45
-        }
-      ],
-      "trimEnd": 0.45
-    },
-    "squirt_loop": {
-      "$comment": "water_gun 933-3433: the 2.5 s pump-and-hiss bed under the squirt. A continuous water loop with a pump under it, which is exactly the two things the reference has running.",
-      "source": "oga-water-splash-slime",
-      "levelDb": -9,
-      "layers": [
-        {
-          "file": "loop_water_01.ogg",
-          "at": 0,
-          "gain": 1
-        },
-        {
-          "source": "oga-sfx-loops",
-          "file": "pump_01.ogg",
-          "at": 0,
-          "gain": 0.5
-        }
-      ],
-      "trimEnd": 2.5
-    },
-    "drip": {
-      "$comment": "water_gun: the splat cutting off.",
-      "levelDb": -12,
-      "source": "kenney-interface-sounds",
-      "layers": [
-        {
-          "file": "drop_003.ogg",
-          "at": 0,
-          "gain": 0.6
-        }
-      ],
-      "trimEnd": 0.3
-    },
-    "splat_wet": {
-      "$comment": "tomato + poop: one wet splat 33 ms after the visual burst. Mud is the right texture - the reference splat is thick and low, not a water splash.",
-      "source": "oga-mud",
-      "levelDb": -1,
-      "layers": [
-        {
-          "file": "mud_05.ogg",
-          "at": 0,
-          "gain": 1
-        },
-        {
-          "file": "mud_12.ogg",
-          "at": 0.03,
-          "gain": 0.5
-        }
-      ],
-      "trimEnd": 0.6
-    },
-    "egg_crack": {
-      "$comment": "cracked_egg 400: the crack, in ONE frame. A short wood crack is the closest CC0 match for a shell giving way; a wet mud layer under it is the contents.",
+    "boing_splat": {
+      "$comment": "banana_peel: a seven-frame boing/splat starting 70 ms BEFORE the flash. A metal spring for the boing with a short mud hit under its tail - the reference is comic first, wet second.",
+      "levelDb": -3,
       "source": "oga-wood-metal",
-      "levelDb": -4,
       "layers": [
         {
-          "file": "wood_cracking_01.ogg",
+          "file": "metal_spring_01.ogg",
           "at": 0,
           "gain": 1
         },
         {
           "source": "oga-mud",
-          "file": "mud_01.ogg",
-          "at": 0.02,
-          "gain": 0.4
+          "file": "mud_08.ogg",
+          "at": 0.13,
+          "gain": 0.6
         }
       ],
-      "trimEnd": 0.5
+      "trimEnd": 0.8
+    },
+    "boom": {
+      "$comment": "bomb 1500: rms 0.174 (rel 38%), centroid 2.4 kHz, one frame after the visual burst, decaying to silence by f2401 - about 230 ms, far shorter and tighter than the airstrike's. One heavy impact and a short low tail; no long rumble, because the reference has none.",
+      "levelDb": -3,
+      "source": "kenney-impact-sounds",
+      "layers": [
+        {
+          "file": "impactPlate_heavy_001.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "impactMetal_heavy_000.ogg",
+          "at": 0.02,
+          "gain": 0.6
+        },
+        {
+          "source": "own-synthesis",
+          "lavfi": "anoisesrc=d=0.45:c=brown:a=0.85:r=48000",
+          "filter": "lowpass=f=320,afade=t=in:st=0:d=0.01,afade=t=out:st=0.08:d=0.35,volume=1.3",
+          "at": 0,
+          "gain": 0.8
+        }
+      ]
+    },
+    "bubble_tick": {
+      "$comment": "trash_can 1267: the grawlix bubble popping in. A short pluck, not a splat - the bubble is a speech balloon, not a liquid.",
+      "levelDb": -8,
+      "source": "kenney-interface-sounds",
+      "layers": [
+        {
+          "file": "pluck_002.ogg",
+          "at": 0,
+          "gain": 0.8
+        }
+      ],
+      "trimEnd": 0.35
+    },
+    "can_rattle_rise": {
+      "$comment": "trash_can 1967-2100: the can coming back up from below. Sheet metal moving, twice, for the rattle the reference has under the rise.",
+      "levelDb": -6,
+      "source": "oga-wood-metal",
+      "layers": [
+        {
+          "file": "metal_sheet_02.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "metal_sheet_05.ogg",
+          "at": 0.07,
+          "gain": 0.7
+        }
+      ],
+      "trimEnd": 0.9
+    },
+    "card_slap": {
+      "$comment": "trash_can 900 and 1050: the 2 and the 7 landing. A card placed on felt, which is what the casino pack records.",
+      "levelDb": -5,
+      "source": "kenney-casino-audio",
+      "layers": [
+        {
+          "file": "card-place-2.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 0.4
+    },
+    "cash_register_cascade": {
+      "$comment": "cash_stack 700-4000: the register/coin cascade under the money cloud, peaking on the burst. Chips handled, stacked and colliding across three seconds - the longest cue in the library.",
+      "levelDb": -5,
+      "source": "kenney-casino-audio",
+      "layers": [
+        {
+          "file": "chips-handle-1.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "chips-collide-2.ogg",
+          "at": 0.16,
+          "gain": 0.9
+        },
+        {
+          "file": "chips-stack-3.ogg",
+          "at": 0.44,
+          "gain": 0.8
+        },
+        {
+          "file": "chips-handle-4.ogg",
+          "at": 0.79,
+          "gain": 0.75
+        },
+        {
+          "file": "chips-collide-1.ogg",
+          "at": 1.18,
+          "gain": 0.7
+        },
+        {
+          "file": "chips-stack-5.ogg",
+          "at": 1.6,
+          "gain": 0.62
+        },
+        {
+          "file": "chips-handle-2.ogg",
+          "at": 2.02,
+          "gain": 0.55
+        },
+        {
+          "file": "chips-collide-4.ogg",
+          "at": 2.44,
+          "gain": 0.45
+        },
+        {
+          "source": "oga-rpg",
+          "file": "item_coins_01.ogg",
+          "at": 0.05,
+          "gain": 0.5
+        }
+      ],
+      "trimEnd": 3.3
+    },
+    "chime_shimmer": {
+      "$comment": "trophy 1267: the beam at full height. Three bells up an interval with a gem tail - bright, and it must ring past the fanfare that follows it.",
+      "levelDb": -4,
+      "source": "kenney-impact-sounds",
+      "layers": [
+        {
+          "file": "impactBell_heavy_000.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "impactBell_heavy_002.ogg",
+          "at": 0.09,
+          "gain": 0.8
+        },
+        {
+          "file": "impactBell_heavy_004.ogg",
+          "at": 0.19,
+          "gain": 0.62
+        },
+        {
+          "source": "oga-rpg",
+          "file": "item_gem_02.ogg",
+          "at": 0.05,
+          "gain": 0.5
+        }
+      ],
+      "trimEnd": 1.6
     },
     "cork_pop": {
       "$comment": "champagne 800: the loudest cue in the library. A wood impact for the thock plus an interface drop for the airy 'pop' tail; the reference's cork is a short resonant burst with almost no ring.",
@@ -278,6 +292,137 @@
       ],
       "trimEnd": 0.45
     },
+    "dice_rattle": {
+      "$comment": "dice: bursts of 4-6 clicks, ONLY while the hand visibly shakes. Two shakes layered so the burst is dense rather than one rattle.",
+      "levelDb": -4,
+      "source": "kenney-casino-audio",
+      "layers": [
+        {
+          "file": "dice-shake-1.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "dice-shake-3.ogg",
+          "at": 0.12,
+          "gain": 0.7
+        }
+      ],
+      "trimEnd": 0.75
+    },
+    "drip": {
+      "$comment": "water_gun: the splat cutting off.",
+      "levelDb": -12,
+      "source": "kenney-interface-sounds",
+      "layers": [
+        {
+          "file": "drop_003.ogg",
+          "at": 0,
+          "gain": 0.6
+        }
+      ],
+      "trimEnd": 0.3
+    },
+    "drip_tick": {
+      "$comment": "cracked_egg: the faint tick as the white drips.",
+      "levelDb": -14,
+      "source": "kenney-interface-sounds",
+      "layers": [
+        {
+          "file": "tick_002.ogg",
+          "at": 0,
+          "gain": 0.5
+        }
+      ],
+      "trimEnd": 0.25
+    },
+    "egg_crack": {
+      "$comment": "cracked_egg 400: the crack, in ONE frame. A short wood crack is the closest CC0 match for a shell giving way; a wet mud layer under it is the contents.",
+      "source": "oga-wood-metal",
+      "levelDb": -4,
+      "layers": [
+        {
+          "file": "wood_cracking_01.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "source": "oga-mud",
+          "file": "mud_01.ogg",
+          "at": 0.02,
+          "gain": 0.4
+        }
+      ],
+      "trimEnd": 0.5
+    },
+    "explosion_boom": {
+      "$comment": "missile 2933-3733: the loudest cue in the set (rel 57%, the reference's own peak at f541), centroid 2.4 kHz falling to 1.0 kHz - a deep boom with a rumble that decays to nothing by f566. Two Kenney impacts for the transient, brown noise for the tail that outlives the fireball and covers the smoke.",
+      "levelDb": 0,
+      "source": "kenney-impact-sounds",
+      "layers": [
+        {
+          "file": "impactPlate_heavy_000.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "impactMetal_heavy_002.ogg",
+          "at": 0.03,
+          "gain": 0.7
+        },
+        {
+          "file": "impactPlate_heavy_002.ogg",
+          "at": 0.11,
+          "gain": 0.55
+        },
+        {
+          "source": "own-synthesis",
+          "lavfi": "anoisesrc=d=1.6:c=brown:a=0.9:r=48000",
+          "filter": "lowpass=f=260,afade=t=in:st=0:d=0.02,afade=t=out:st=0.35:d=1.2,volume=1.4",
+          "at": 0,
+          "gain": 0.95
+        }
+      ]
+    },
+    "fanfare_short": {
+      "$comment": "trophy 1600: the statuette lands on the shoulder. Five bells on a rising figure with coins under the last two - a fanfare shape built from what CC0 actually has, since no pack here holds brass.",
+      "levelDb": -3,
+      "source": "kenney-impact-sounds",
+      "layers": [
+        {
+          "file": "impactBell_heavy_001.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "impactBell_heavy_002.ogg",
+          "at": 0.11,
+          "gain": 0.95
+        },
+        {
+          "file": "impactBell_heavy_003.ogg",
+          "at": 0.22,
+          "gain": 0.9
+        },
+        {
+          "file": "impactBell_heavy_000.ogg",
+          "at": 0.36,
+          "gain": 1
+        },
+        {
+          "file": "impactBell_heavy_004.ogg",
+          "at": 0.36,
+          "gain": 0.7
+        },
+        {
+          "source": "oga-rpg",
+          "file": "item_coins_02.ogg",
+          "at": 0.38,
+          "gain": 0.45
+        }
+      ],
+      "trimEnd": 1.8
+    },
     "fizz_loop": {
       "$comment": "champagne 1000-3200: the foam bed under the jet. Band-limited white noise, which is what a fizz is; no sample pack here has one and the expression is reproducible.",
       "levelDb": -8,
@@ -286,6 +431,19 @@
         {
           "lavfi": "anoisesrc=d=2.4:c=white:a=0.30:r=48000",
           "filter": "highpass=f=2600,lowpass=f=9500,tremolo=f=11:d=0.25,afade=t=in:st=0:d=0.12,afade=t=out:st=2.2:d=0.2",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "flies_buzz": {
+      "$comment": "trash_can 3500-4467: flies at the lid. A buzz is an amplitude-modulated tone and no CC0 pack here has one clean enough to loop, so it is synthesised: a low saw around 162 Hz with a 22 Hz wing flutter on it.",
+      "levelDb": -14,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='0.5*sin(2*PI*162*t)+0.3*sin(2*PI*324*t)+0.15*sin(2*PI*487*t)':d=1.1:s=48000",
+          "filter": "tremolo=f=22:d=0.7,lowpass=f=2200,afade=t=in:st=0:d=0.15,afade=t=out:st=0.9:d=0.2",
           "at": 0,
           "gain": 1
         }
@@ -328,71 +486,27 @@
       ],
       "trimEnd": 0.7
     },
-    "fw_whistle": {
-      "$comment": "fireworks 0-830: the rising whistle, measured centroid 5.3-5.6 kHz, swelling from the first spark and peaking as burst 1 opens. A quadratic chirp 900 Hz -> ~5.4 kHz with a breath of air noise under it. Synthesised: no CC0 pack here has a firework whistle.",
-      "levelDb": -4,
+    "fuse_ignite": {
+      "$comment": "bomb 433: the ignition fizz, measured 5 frames after the bomb lands - peak 0.051 (rel 11%), centroid 5.5 kHz. A short bright noise burst, nothing tonal in it.",
+      "levelDb": -13,
       "source": "own-synthesis",
       "layers": [
         {
-          "lavfi": "aevalsrc='0.55*sin(2*PI*(900+2900*t*t)*t)':d=0.85:s=48000",
-          "filter": "afade=t=in:st=0:d=0.06,afade=t=out:st=0.62:d=0.23,volume=1.6",
+          "lavfi": "anoisesrc=d=0.16:c=white:a=0.8:r=48000",
+          "filter": "highpass=f=3200,lowpass=f=11000,afade=t=in:st=0:d=0.006,afade=t=out:st=0.03:d=0.12",
           "at": 0,
           "gain": 1
-        },
-        {
-          "lavfi": "anoisesrc=d=0.85:c=white:a=0.10:r=48000",
-          "filter": "highpass=f=3500,afade=t=in:st=0:d=0.1,afade=t=out:st=0.55:d=0.3",
-          "at": 0,
-          "gain": 0.5
         }
       ]
     },
-    "fw_crackle": {
-      "$comment": "fireworks: the bang cluster around bursts 2 and 3 - the reference lands one bang every 130-170 ms. Six plate and metal impacts at exactly those spacings, decaying.",
-      "levelDb": -3,
-      "source": "kenney-impact-sounds",
-      "layers": [
-        {
-          "file": "impactPlate_heavy_000.ogg",
-          "at": 0,
-          "gain": 1
-        },
-        {
-          "file": "impactMetal_heavy_001.ogg",
-          "at": 0.15,
-          "gain": 0.8
-        },
-        {
-          "file": "impactPlate_heavy_002.ogg",
-          "at": 0.29,
-          "gain": 0.85
-        },
-        {
-          "file": "impactMetal_heavy_003.ogg",
-          "at": 0.45,
-          "gain": 0.65
-        },
-        {
-          "file": "impactPlate_heavy_001.ogg",
-          "at": 0.6,
-          "gain": 0.6
-        },
-        {
-          "file": "impactMetal_heavy_000.ogg",
-          "at": 0.74,
-          "gain": 0.45
-        }
-      ],
-      "trimEnd": 1.3
-    },
-    "fw_rumble": {
-      "$comment": "fireworks 1767-2033: the tail that bridges the gap and wave 2's trails, 25-60x the median with NO picture on screen. Brown noise under 220 Hz. Synthesised for the same reason as the whistle.",
-      "levelDb": -6,
+    "fuse_sizzle": {
+      "$comment": "bomb 700-1433: the fuse burning. The reference is faint (0.017) in the middle and CRESCENDOS to 0.033 at 6.5 kHz on the pre-flash frame, so the envelope rises rather than holding - the sizzle is what tells the player the bomb is about to go. 0.75 s, scheduled as a loop to the pre-flash.",
+      "levelDb": -17,
       "source": "own-synthesis",
       "layers": [
         {
-          "lavfi": "anoisesrc=d=1.5:c=brown:a=0.85:r=48000",
-          "filter": "lowpass=f=220,afade=t=in:st=0:d=0.25,afade=t=out:st=0.8:d=0.7",
+          "lavfi": "anoisesrc=d=0.75:c=white:a=0.55:r=48000",
+          "filter": "highpass=f=4200,lowpass=f=12000,tremolo=f=17:d=0.4,afade=t=in:st=0:d=0.08,volume=1.0",
           "at": 0,
           "gain": 1
         }
@@ -453,6 +567,119 @@
       ],
       "trimEnd": 1.7
     },
+    "fw_crackle": {
+      "$comment": "fireworks: the bang cluster around bursts 2 and 3 - the reference lands one bang every 130-170 ms. Six plate and metal impacts at exactly those spacings, decaying.",
+      "levelDb": -3,
+      "source": "kenney-impact-sounds",
+      "layers": [
+        {
+          "file": "impactPlate_heavy_000.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "impactMetal_heavy_001.ogg",
+          "at": 0.15,
+          "gain": 0.8
+        },
+        {
+          "file": "impactPlate_heavy_002.ogg",
+          "at": 0.29,
+          "gain": 0.85
+        },
+        {
+          "file": "impactMetal_heavy_003.ogg",
+          "at": 0.45,
+          "gain": 0.65
+        },
+        {
+          "file": "impactPlate_heavy_001.ogg",
+          "at": 0.6,
+          "gain": 0.6
+        },
+        {
+          "file": "impactMetal_heavy_000.ogg",
+          "at": 0.74,
+          "gain": 0.45
+        }
+      ],
+      "trimEnd": 1.3
+    },
+    "fw_rumble": {
+      "$comment": "fireworks 1767-2033: the tail that bridges the gap and wave 2's trails, 25-60x the median with NO picture on screen. Brown noise under 220 Hz. Synthesised for the same reason as the whistle.",
+      "levelDb": -6,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "anoisesrc=d=1.5:c=brown:a=0.85:r=48000",
+          "filter": "lowpass=f=220,afade=t=in:st=0:d=0.25,afade=t=out:st=0.8:d=0.7",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "fw_whistle": {
+      "$comment": "fireworks 0-830: the rising whistle, measured centroid 5.3-5.6 kHz, swelling from the first spark and peaking as burst 1 opens. A quadratic chirp 900 Hz -> ~5.4 kHz with a breath of air noise under it. Synthesised: no CC0 pack here has a firework whistle.",
+      "levelDb": -4,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='0.55*sin(2*PI*(900+2900*t*t)*t)':d=0.85:s=48000",
+          "filter": "afade=t=in:st=0:d=0.06,afade=t=out:st=0.62:d=0.23,volume=1.6",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "lavfi": "anoisesrc=d=0.85:c=white:a=0.10:r=48000",
+          "filter": "highpass=f=3500,afade=t=in:st=0:d=0.1,afade=t=out:st=0.55:d=0.3",
+          "at": 0,
+          "gain": 0.5
+        }
+      ]
+    },
+    "glass_clink_rattle": {
+      "$comment": "beer + champagne: the reference chime has six rattles at 0 / 133 / 380 / 466 / 600 / 733 ms and a 1.3 s ring-down. Built from five glass impacts layered at those offsets with decaying gain, plus the interface 'glass' tone underneath for the ring.",
+      "levelDb": -2,
+      "source": "kenney-impact-sounds",
+      "layers": [
+        {
+          "file": "impactGlass_light_000.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "impactGlass_light_001.ogg",
+          "at": 0.133,
+          "gain": 0.85
+        },
+        {
+          "file": "impactGlass_light_002.ogg",
+          "at": 0.38,
+          "gain": 0.6
+        },
+        {
+          "file": "impactGlass_light_003.ogg",
+          "at": 0.466,
+          "gain": 0.7
+        },
+        {
+          "file": "impactGlass_light_004.ogg",
+          "at": 0.6,
+          "gain": 0.5
+        },
+        {
+          "file": "impactGlass_light_001.ogg",
+          "at": 0.733,
+          "gain": 0.4
+        },
+        {
+          "source": "kenney-interface-sounds",
+          "file": "glass_002.ogg",
+          "at": 0.02,
+          "gain": 0.35
+        }
+      ]
+    },
     "harp_sparkle": {
       "$comment": "rose 767: one soft sparkle running 1.6 s under the butterfly. Six plucks up a pentatonic run, decaying - the reference's cue is a rising shimmer, not a chord.",
       "levelDb": -5,
@@ -491,19 +718,6 @@
       ],
       "trimEnd": 1.6
     },
-    "tick_land": {
-      "$comment": "horseshoe 350: the light tick as it settles on the avatar. The reference's only landing sound in this batch, and it is faint.",
-      "levelDb": -13,
-      "source": "kenney-interface-sounds",
-      "layers": [
-        {
-          "file": "tick_001.ogg",
-          "at": 0,
-          "gain": 0.6
-        }
-      ],
-      "trimEnd": 0.25
-    },
     "horseshoe_clank": {
       "$comment": "horseshoe 800: the bottom of the bob. Iron on iron - a metal hit with a second, quieter one a frame later for the two-tone ring a horseshoe has.",
       "levelDb": -4,
@@ -522,50 +736,6 @@
       ],
       "trimEnd": 1.0
     },
-    "card_slap": {
-      "$comment": "trash_can 900 and 1050: the 2 and the 7 landing. A card placed on felt, which is what the casino pack records.",
-      "levelDb": -5,
-      "source": "kenney-casino-audio",
-      "layers": [
-        {
-          "file": "card-place-2.ogg",
-          "at": 0,
-          "gain": 1
-        }
-      ],
-      "trimEnd": 0.4
-    },
-    "bubble_tick": {
-      "$comment": "trash_can 1267: the grawlix bubble popping in. A short pluck, not a splat - the bubble is a speech balloon, not a liquid.",
-      "levelDb": -8,
-      "source": "kenney-interface-sounds",
-      "layers": [
-        {
-          "file": "pluck_002.ogg",
-          "at": 0,
-          "gain": 0.8
-        }
-      ],
-      "trimEnd": 0.35
-    },
-    "can_rattle_rise": {
-      "$comment": "trash_can 1967-2100: the can coming back up from below. Sheet metal moving, twice, for the rattle the reference has under the rise.",
-      "levelDb": -6,
-      "source": "oga-wood-metal",
-      "layers": [
-        {
-          "file": "metal_sheet_02.ogg",
-          "at": 0,
-          "gain": 1
-        },
-        {
-          "file": "metal_sheet_05.ogg",
-          "at": 0.07,
-          "gain": 0.7
-        }
-      ],
-      "trimEnd": 0.9
-    },
     "lid_clank": {
       "$comment": "trash_can 3000: the lid closing. One flat metal close, no ring - a bin lid is damped.",
       "levelDb": -3,
@@ -579,36 +749,50 @@
       ],
       "trimEnd": 0.7
     },
-    "flies_buzz": {
-      "$comment": "trash_can 3500-4467: flies at the lid. A buzz is an amplitude-modulated tone and no CC0 pack here has one clean enough to loop, so it is synthesised: a low saw around 162 Hz with a 22 Hz wing flutter on it.",
-      "levelDb": -14,
+    "lock_beep": {
+      "$comment": "missile 567/1100/1633: the lock-on beeps. The reference measures four identical short bright beeps, centroid ~5.9 kHz, ~5 frames each, rel 14%, spaced exactly 16 frames (533 ms). One cue fired three times by the spec, the way dice fires dice_rattle. Synthesised: a targeting beep is a tone, and no CC0 pack here carries one at this centroid.",
+      "levelDb": -11,
       "source": "own-synthesis",
       "layers": [
         {
-          "lavfi": "aevalsrc='0.5*sin(2*PI*162*t)+0.3*sin(2*PI*324*t)+0.15*sin(2*PI*487*t)':d=1.1:s=48000",
-          "filter": "tremolo=f=22:d=0.7,lowpass=f=2200,afade=t=in:st=0:d=0.15,afade=t=out:st=0.9:d=0.2",
+          "lavfi": "aevalsrc='0.6*sin(2*PI*2400*t)+0.25*sin(2*PI*4800*t)':d=0.17:s=48000",
+          "filter": "afade=t=in:st=0:d=0.006,afade=t=out:st=0.09:d=0.08,highpass=f=900",
           "at": 0,
           "gain": 1
         }
       ]
     },
-    "dice_rattle": {
-      "$comment": "dice: bursts of 4-6 clicks, ONLY while the hand visibly shakes. Two shakes layered so the burst is dense rather than one rattle.",
-      "levelDb": -4,
-      "source": "kenney-casino-audio",
+    "lock_confirm": {
+      "$comment": "missile 1700 and 1867: the doubled pair that coincides with the reticle scaling up and fading - the 'locked' confirmation. Measured at f497 (0.061) and f502 (0.066), 5 frames apart, so the spec fires this ONE cue twice rather than baking the pair into a single file: the gap is a beat, and a beat belongs in the spec.",
+      "levelDb": -10,
+      "source": "own-synthesis",
       "layers": [
         {
-          "file": "dice-shake-1.ogg",
+          "lavfi": "aevalsrc='0.6*sin(2*PI*3100*t)+0.3*sin(2*PI*6200*t)':d=0.2:s=48000",
+          "filter": "afade=t=in:st=0:d=0.005,afade=t=out:st=0.1:d=0.1,highpass=f=1100",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "missile_whistle": {
+      "$comment": "missile 2100-2930: continuous for 25 frames (0.83 s), rel 30-38%, centroid FALLING 3.5 kHz -> 2.6 kHz. It starts 5 frames before the missile is visible, which is the whole point of it. A descending chirp with an air-roar under it - the mirror of fw_whistle, which rises.",
+      "levelDb": -4,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='0.55*sin(2*PI*(3500-1900*t/0.83)*t)':d=0.83:s=48000",
+          "filter": "afade=t=in:st=0:d=0.07,afade=t=out:st=0.6:d=0.23,volume=1.5",
           "at": 0,
           "gain": 1
         },
         {
-          "file": "dice-shake-3.ogg",
-          "at": 0.12,
-          "gain": 0.7
+          "lavfi": "anoisesrc=d=0.83:c=white:a=0.16:r=48000",
+          "filter": "highpass=f=1200,lowpass=f=6000,afade=t=in:st=0:d=0.12,afade=t=out:st=0.5:d=0.33",
+          "at": 0,
+          "gain": 0.55
         }
-      ],
-      "trimEnd": 0.75
+      ]
     },
     "poof_soft": {
       "$comment": "snowman 800: the powder plume. A soft noise burst with a fast attack and a long tail - the reference's is airy, with no impact in it at all.",
@@ -623,86 +807,18 @@
         }
       ]
     },
-    "swell_low": {
-      "$comment": "trophy 400-800: the grey wisp rising before the beam. A low swell with nothing percussive in it; synthesised because every low pad in the CC0 packs is a machine loop, not a rise.",
-      "levelDb": -10,
-      "source": "own-synthesis",
+    "pop_soft": {
+      "$comment": "beer: mug 2 pops in (reference: a soft pop, centroid ~1.9 kHz).",
+      "levelDb": -6,
+      "source": "kenney-interface-sounds",
       "layers": [
         {
-          "lavfi": "aevalsrc='0.5*sin(2*PI*(70+38*t)*t)+0.28*sin(2*PI*(140+76*t)*t)':d=0.85:s=48000",
-          "filter": "lowpass=f=900,afade=t=in:st=0:d=0.35,afade=t=out:st=0.55:d=0.3",
+          "file": "drop_001.ogg",
           "at": 0,
           "gain": 1
-        }
-      ]
-    },
-    "chime_shimmer": {
-      "$comment": "trophy 1267: the beam at full height. Three bells up an interval with a gem tail - bright, and it must ring past the fanfare that follows it.",
-      "levelDb": -4,
-      "source": "kenney-impact-sounds",
-      "layers": [
-        {
-          "file": "impactBell_heavy_000.ogg",
-          "at": 0,
-          "gain": 1
-        },
-        {
-          "file": "impactBell_heavy_002.ogg",
-          "at": 0.09,
-          "gain": 0.8
-        },
-        {
-          "file": "impactBell_heavy_004.ogg",
-          "at": 0.19,
-          "gain": 0.62
-        },
-        {
-          "source": "oga-rpg",
-          "file": "item_gem_02.ogg",
-          "at": 0.05,
-          "gain": 0.5
         }
       ],
-      "trimEnd": 1.6
-    },
-    "fanfare_short": {
-      "$comment": "trophy 1600: the statuette lands on the shoulder. Five bells on a rising figure with coins under the last two - a fanfare shape built from what CC0 actually has, since no pack here holds brass.",
-      "levelDb": -3,
-      "source": "kenney-impact-sounds",
-      "layers": [
-        {
-          "file": "impactBell_heavy_001.ogg",
-          "at": 0,
-          "gain": 1
-        },
-        {
-          "file": "impactBell_heavy_002.ogg",
-          "at": 0.11,
-          "gain": 0.95
-        },
-        {
-          "file": "impactBell_heavy_003.ogg",
-          "at": 0.22,
-          "gain": 0.9
-        },
-        {
-          "file": "impactBell_heavy_000.ogg",
-          "at": 0.36,
-          "gain": 1
-        },
-        {
-          "file": "impactBell_heavy_004.ogg",
-          "at": 0.36,
-          "gain": 0.7
-        },
-        {
-          "source": "oga-rpg",
-          "file": "item_coins_02.ogg",
-          "at": 0.38,
-          "gain": 0.45
-        }
-      ],
-      "trimEnd": 1.8
+      "trimEnd": 0.35
     },
     "sparkle_bed": {
       "$comment": "trophy 2000-4500: the white sparkle glints on the statuette. Six gem tings spread thin across two and a half seconds - a bed, never a foreground cue.",
@@ -742,19 +858,6 @@
       ],
       "trimEnd": 2.6
     },
-    "whoosh_low": {
-      "$comment": "cake: the low rumble on approach, before the squash. A downward noise sweep - the reference's is air, not impact.",
-      "levelDb": -11,
-      "source": "own-synthesis",
-      "layers": [
-        {
-          "lavfi": "anoisesrc=d=0.4:c=brown:a=0.8:r=48000",
-          "filter": "lowpass=f=700,afade=t=in:st=0:d=0.1,afade=t=out:st=0.2:d=0.2",
-          "at": 0,
-          "gain": 1
-        }
-      ]
-    },
     "splat_heavy": {
       "$comment": "cake: the MAIN splat, exactly on the squash frame - the reference's loudest sample of that throw (0.83 peak). Three mud hits stacked tight so it reads as mass rather than a slap.",
       "levelDb": -1,
@@ -778,6 +881,24 @@
       ],
       "trimEnd": 0.9
     },
+    "splat_wet": {
+      "$comment": "tomato + poop: one wet splat 33 ms after the visual burst. Mud is the right texture - the reference splat is thick and low, not a water splash.",
+      "source": "oga-mud",
+      "levelDb": -1,
+      "layers": [
+        {
+          "file": "mud_05.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "mud_12.ogg",
+          "at": 0.03,
+          "gain": 0.5
+        }
+      ],
+      "trimEnd": 0.6
+    },
     "splat_wet_small": {
       "$comment": "cake: the smaller wet hit as the plate starts sliding down the face.",
       "levelDb": -8,
@@ -791,24 +912,55 @@
       ],
       "trimEnd": 0.35
     },
-    "boing_splat": {
-      "$comment": "banana_peel: a seven-frame boing/splat starting 70 ms BEFORE the flash. A metal spring for the boing with a short mud hit under its tail - the reference is comic first, wet second.",
-      "levelDb": -3,
-      "source": "oga-wood-metal",
+    "squirt_loop": {
+      "$comment": "water_gun 933-3433: the 2.5 s pump-and-hiss bed under the squirt. A continuous water loop with a pump under it, which is exactly the two things the reference has running.",
+      "source": "oga-water-splash-slime",
+      "levelDb": -9,
       "layers": [
         {
-          "file": "metal_spring_01.ogg",
+          "file": "loop_water_01.ogg",
           "at": 0,
           "gain": 1
         },
         {
-          "source": "oga-mud",
-          "file": "mud_08.ogg",
-          "at": 0.13,
-          "gain": 0.6
+          "source": "oga-sfx-loops",
+          "file": "pump_01.ogg",
+          "at": 0,
+          "gain": 0.5
         }
       ],
-      "trimEnd": 0.8
+      "trimEnd": 2.5
+    },
+    "squirt_start": {
+      "$comment": "water_gun 933: the first squirt. A short splash for the burst of water leaving the barrel, with a slime layer under it for the thickness the reference has. Was a placeholder through phase 1 and the phase 2 first landing; OpenGameArt's CC0 water pack retires it.",
+      "source": "oga-water-splash-slime",
+      "levelDb": -2,
+      "layers": [
+        {
+          "file": "splash_09.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "slime_01.ogg",
+          "at": 0.02,
+          "gain": 0.45
+        }
+      ],
+      "trimEnd": 0.45
+    },
+    "swell_low": {
+      "$comment": "trophy 400-800: the grey wisp rising before the beam. A low swell with nothing percussive in it; synthesised because every low pad in the CC0 packs is a machine loop, not a rise.",
+      "levelDb": -10,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='0.5*sin(2*PI*(70+38*t)*t)+0.28*sin(2*PI*(140+76*t)*t)':d=0.85:s=48000",
+          "filter": "lowpass=f=900,afade=t=in:st=0:d=0.35,afade=t=out:st=0.55:d=0.3",
+          "at": 0,
+          "gain": 1
+        }
+      ]
     },
     "thump_soft": {
       "$comment": "cash_stack 333: the bundle hitting the head. Soft and low - paper, not a board.",
@@ -823,6 +975,19 @@
       ],
       "trimEnd": 0.45
     },
+    "tick_land": {
+      "$comment": "horseshoe 350: the light tick as it settles on the avatar. The reference's only landing sound in this batch, and it is faint.",
+      "levelDb": -13,
+      "source": "kenney-interface-sounds",
+      "layers": [
+        {
+          "file": "tick_001.ogg",
+          "at": 0,
+          "gain": 0.6
+        }
+      ],
+      "trimEnd": 0.25
+    },
     "tick_settle": {
       "$comment": "cash_stack: the three ticks on the settle, one cue fired three times by the spec.",
       "levelDb": -14,
@@ -836,59 +1001,18 @@
       ],
       "trimEnd": 0.2
     },
-    "cash_register_cascade": {
-      "$comment": "cash_stack 700-4000: the register/coin cascade under the money cloud, peaking on the burst. Chips handled, stacked and colliding across three seconds - the longest cue in the library.",
-      "levelDb": -5,
-      "source": "kenney-casino-audio",
+    "whoosh_low": {
+      "$comment": "cake: the low rumble on approach, before the squash. A downward noise sweep - the reference's is air, not impact.",
+      "levelDb": -11,
+      "source": "own-synthesis",
       "layers": [
         {
-          "file": "chips-handle-1.ogg",
+          "lavfi": "anoisesrc=d=0.4:c=brown:a=0.8:r=48000",
+          "filter": "lowpass=f=700,afade=t=in:st=0:d=0.1,afade=t=out:st=0.2:d=0.2",
           "at": 0,
           "gain": 1
-        },
-        {
-          "file": "chips-collide-2.ogg",
-          "at": 0.16,
-          "gain": 0.9
-        },
-        {
-          "file": "chips-stack-3.ogg",
-          "at": 0.44,
-          "gain": 0.8
-        },
-        {
-          "file": "chips-handle-4.ogg",
-          "at": 0.79,
-          "gain": 0.75
-        },
-        {
-          "file": "chips-collide-1.ogg",
-          "at": 1.18,
-          "gain": 0.7
-        },
-        {
-          "file": "chips-stack-5.ogg",
-          "at": 1.6,
-          "gain": 0.62
-        },
-        {
-          "file": "chips-handle-2.ogg",
-          "at": 2.02,
-          "gain": 0.55
-        },
-        {
-          "file": "chips-collide-4.ogg",
-          "at": 2.44,
-          "gain": 0.45
-        },
-        {
-          "source": "oga-rpg",
-          "file": "item_coins_01.ogg",
-          "at": 0.05,
-          "gain": 0.5
         }
-      ],
-      "trimEnd": 3.3
+      ]
     }
   }
 }

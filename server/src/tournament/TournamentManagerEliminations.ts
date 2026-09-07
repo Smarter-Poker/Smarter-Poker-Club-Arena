@@ -24,6 +24,11 @@ import { buildPrizeLadder, prizeRankOf, isMysteryCollectMode } from './mysteryPr
 import { attributeKnockout } from './knockoutAttribution.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import {
+  eliminationSweepMs,
+  eliminationSweepsInflight,
+  eliminationSweepOverrunsTotal,
+} from '../observability/engineInstruments.js';
+import {
   COMPLETED_FLIP_ATTEMPTS,
   COMPLETED_FLIP_BACKOFF_MS,
   isTransientFlipError,
@@ -219,9 +224,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             ),
             'Tournament.elimination_sweep_lock_forced'
           );
+          eliminationSweepOverrunsTotal.inc(1, { outcome: 'forced' });
           this.isProcessingEliminations = false;
           this.eliminationSweepStartedAt = 0;
           this.eliminationSweepStuckReportedAt = 0;
+          // The abandoned sweep will never reach its own `finally` (its
+          // generation is superseded), so its inflight count is released here
+          // or the gauge climbs for ever on a process that forces locks.
+          eliminationSweepsInflight.dec();
           // Fall through and start a fresh sweep on this same tick: the field
           // has already waited five minutes.
         } else {
@@ -231,6 +241,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             this.eliminationSweepStuckReportedAt < this.eliminationSweepStartedAt
           ) {
             this.eliminationSweepStuckReportedAt = Date.now();
+            // The 780-in-fifteen-minutes number, as a series rather than a
+            // grep of the container log. See engineInstruments.
+            eliminationSweepOverrunsTotal.inc(1, { outcome: 'warned' });
             reportError(
               new Error(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] elimination sweep still running after ${Math.round(
@@ -247,6 +260,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       this.isProcessingEliminations = true;
       this.eliminationSweepStartedAt = Date.now();
       const sweepGeneration = ++this.eliminationSweepGeneration;
+      // How many of these the single JS thread is carrying at once, and how
+      // long one takes. Both are measurement only - see engineInstruments.
+      const sweepStartedAt = Date.now();
+      eliminationSweepsInflight.inc();
 
       try {
         // ── SYNC STACKS: table_seats → tournament_players ──
@@ -1220,7 +1237,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.isProcessingEliminations = false;
           this.eliminationSweepStartedAt = 0;
           this.eliminationSweepStuckReportedAt = 0;
+          // Only the current holder decrements. A superseded sweep was already
+          // released where its lock was forced, and decrementing twice would
+          // walk the gauge negative - a metric that lies about the direction
+          // of the load is worse than no metric.
+          eliminationSweepsInflight.dec();
         }
+        eliminationSweepMs.observe(Date.now() - sweepStartedAt);
       }
     }, TournamentManagerBase.ELIMINATION_SWEEP_MS);
   }

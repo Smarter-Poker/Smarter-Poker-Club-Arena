@@ -183,6 +183,50 @@ export const equityGovernorScale: Gauge = alwaysOnRegistry.gauge(
   'Horse Monte Carlo iteration scale the governor is applying (1 = full precision, 0.2 = floor). Below 1 means the core is shedding load.'
 );
 
+/**
+ * WHAT IS ACTUALLY ON THE CORE (2026-09-07).
+ *
+ * The gauges above say the thread is saturated. They do not say by what, and
+ * on 2026-09-07 that cost hours. The answer was the elimination sweep, and the
+ * only way to see it was to SSH to the box and run
+ * `docker logs | grep -c "elimination sweep still running"` - 780 in fifteen
+ * minutes, from a warning that fires once per stuck episode. A number you can
+ * only get by grepping a container is a number nobody watches.
+ *
+ * `startEliminationChecker` opens a `setInterval` PER TOURNAMENT at
+ * `ELIMINATION_SWEEP_MS` (5,000). At the 120-199 RUNNING tournaments measured
+ * that night that is 24-40 sweeps a second on ONE JavaScript thread - and a
+ * sweep that overruns stops its tournament completing, so the RUNNING set
+ * grows and the next second carries more sweeps than the last. Cash tables are
+ * collateral: they starve on an ordinary `load_seats` read while Postgres
+ * answers it in 133 ms.
+ *
+ * Three series make that loop visible before it closes:
+ *
+ *   _ms          how long ONE sweep takes, as a distribution
+ *   _inflight    how many run at once - the concurrency the single thread is
+ *                actually carrying
+ *   _overruns    the 780, as a series instead of a grep
+ *
+ * They measure; they change nothing. The cause is P0/P1 in
+ * `docs/HANDOFF_CURRENT_STATE.md` section 16, and the fix needs this data
+ * first: whether ONE sweep is slow or THIRTY cheap ones are simply too many is
+ * the question that decides between optimising the sweep and re-scheduling it,
+ * and nothing on this platform could answer it.
+ */
+export const eliminationSweepMs: Histogram = alwaysOnRegistry.histogram(
+  'poker_tournament_elimination_sweep_ms',
+  'Wall time of one tournament elimination sweep (ms). One sweep per tournament every 5s, all on a single thread.'
+);
+export const eliminationSweepsInflight: Gauge = alwaysOnRegistry.gauge(
+  'poker_tournament_elimination_sweeps_inflight',
+  'Elimination sweeps running concurrently in this process. The single JS thread carries all of them; this is the number that outran it on 2026-09-07.'
+);
+export const eliminationSweepOverrunsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_tournament_elimination_sweep_overruns_total',
+  'Sweeps whose lock was still held past the warning threshold (outcome=warned) or taken back by force (outcome=forced). A tournament can neither eliminate nor finish while its sweep is held.'
+);
+
 /** Actions processed, 2 series. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
   'poker_actions_fleet_total',

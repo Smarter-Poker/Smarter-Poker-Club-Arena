@@ -1,6 +1,5 @@
 {
   "_owner": "fix/union-week-ends-midnight-pacific",
-  "_why": "The union week moved to midnight America/Los_Angeles (Dan: the week cannot end until the West Coast hits 11:59:59). These three functions are new in migrations 20260907044041, 20260907045901 and 20260907054009.",
   "functions": [
     "fn_union_prev_week_start",
     "fn_union_settlement_cascade_due",

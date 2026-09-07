@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/diamond-g-controls (Lane G, 2026-09-03). Applied to production as migrations 20260903003128_diamond_g_controls and 20260903003714_diamond_g_the_audit_names_the_writer. ca_diamond_dead_store_writes is a VIEW (the base manifest lists views under tables).",
+  "tables": ["ca_diamond_dead_store_writes"],
+  "functions": ["fn_ca_diamond_trial_balance", "fn_ca_diamond_trial_balance_watch"],
+  "columns": {
+    "ca_manual_adjustments": ["asset"],
+    "ca_diamond_balance_audit": ["writer", "money_path"]
+  }
+}

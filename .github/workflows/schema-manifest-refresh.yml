@@ -215,10 +215,71 @@ jobs:
           node-version: 22
 
       - name: Anchor every day the database has attested
+        id: anchor
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/ci/anchor-ledger-days.mjs
+        run: |
+          set -o pipefail
+          node scripts/ci/anchor-ledger-days.mjs 2>&1 | tee /tmp/anchor-ledger-days.log
+
+      # A RED JOB IN A SCHEDULED WORKFLOW IS A TREE NOBODY HEARS FALL.
+      #
+      # Added 2026-09-07 by the deep dive over the phase 6 work this job shipped
+      # in. Without these two steps the strongest signal in the whole ledger
+      # attestation - "a day already anchored now hashes differently and nothing
+      # explains it" - reached a person only as `check-main-is-green` reporting
+      # "Schema Manifest Refresh has been red for six hours", indistinguishable
+      # from a manifest-refresh hiccup, and MASKED ENTIRELY whenever any open
+      # issue already named this workflow (that detector matches on the workflow
+      # name, so it is per-workflow, not per-job). The definer-exposure job below
+      # already solved this in this same file; the anchor did not copy it.
+      #
+      # CLAUDE.md 10.86 rule 3: a guard must have a reader, and you must name
+      # them. The reader is this issue.
+      - name: Raise the alarm
+        if: failure() && steps.anchor.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Ledger attestation: an anchored day now hashes differently"
+          # The plain list endpoint, never --search: the search index is
+          # eventually consistent and duplicate issues have been filed that way.
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          BODY=$(printf '%s\n' \
+            "\`scripts/ci/anchor-ledger-days.mjs\` refused to append. A day already carried by \`docs/attestation/chip-ledger-days.tsv\` now hashes differently in the database, and no row in \`ca_ledger_day_manifest_restatements\` explains it." \
+            "" \
+            "That means the journal for a day already attested changed, and either it changed outside the sanctioned maintenance path or the change was never recorded. Both are incidents." \
+            "" \
+            '\`\`\`' \
+            "$(sed -e 's/\x1b\[[0-9;]*m//g' /tmp/anchor-ledger-days.log | head -60)" \
+            '\`\`\`' \
+            "" \
+            "Do NOT edit the anchor file to make this pass. Read \`ca_ledger_mutation_log\` for that day first - every sanctioned change keeps the old row." \
+            "" \
+            "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}")
+          if [ -n "${N:-}" ]; then
+            gh issue comment "$N" --repo "$REPO" --body "$BODY" || echo "::error::could not comment on #$N"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" || echo "::error::could not open the issue"
+          fi
+
+      - name: Close the alarm when the anchor agrees again
+        if: success() && steps.anchor.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          TITLE="Ledger attestation: an anchored day now hashes differently"
+          N=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,title \
+                --jq "[.[] | select(.title == \"$TITLE\")] | .[0].number // empty" 2>/dev/null)
+          [ -n "${N:-}" ] || exit 0
+          gh issue comment "$N" --repo "$REPO" --body "Recovered. Every day the database attests now matches the line git already carries, or is explained by a restatement. Closing." || true
+          gh issue close "$N" --repo "$REPO" || true
 
       - name: Commit the new lines
         env:

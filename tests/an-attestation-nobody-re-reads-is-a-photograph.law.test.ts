@@ -115,3 +115,124 @@ describe('an attestation nobody re-reads is a photograph, not a guard', () => {
     }
   });
 });
+
+/**
+ * AND THE ATTESTATION COVERS THE JOURNAL, NOT THE LAST EIGHT DAYS.
+ *
+ * The deep dive over the work above, the same day. Both halves of the guard
+ * answered confidently about a scope nobody had stated:
+ *
+ *   1. `verify_all` iterated the MANIFESTS, so a day of real money movement
+ *      with no manifest was not an unchecked day to it - it was not a day at
+ *      all. Measured: 35 days of legs before today, 8 attested, and the
+ *      remaining 27 (2026-03-19..2026-08-29, 176,140 legs, 8.8% of the
+ *      journal) outside every guard on this platform, while the function
+ *      returned {"checked": 8, "drifted": 0}.
+ *   2. It opened one sequential scan per day - 9,463 ms for eight days,
+ *      1.18 s each - so its cost was O(days x journal) against a journal Dan
+ *      ruled is kept for ever. That does not fail loudly. It gets slower until
+ *      something kills it, and a verification that stops running looks exactly
+ *      like one that finds nothing.
+ *   3. The anchor's failure - "a day already anchored now hashes differently
+ *      and nothing explains it", the strongest signal in the whole system -
+ *      had no reader of its own. It reached a person only via
+ *      `check-main-is-green` as "Schema Manifest Refresh red", which matches on
+ *      the WORKFLOW name, so any open issue naming that workflow masked it
+ *      entirely. The definer-exposure job in the same file already did this
+ *      correctly.
+ *
+ * What this pins: coverage follows the journal, the recompute is one pass, the
+ * answer carries what it could not check, and the alarm has a named reader.
+ */
+describe('the attestation covers the journal, not the last eight days', () => {
+  const cover = readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .find((f) => f.includes('the_attestation_covers_the_journal'));
+  const csql = cover ? readFileSync(join(MIGRATIONS, cover), 'utf8') : '';
+  const wf = readFileSync(workflow, 'utf8');
+
+  it('the migration exists', () => {
+    expect(cover, 'the coverage migration must not be deleted').toBeTruthy();
+  });
+
+  it('coverage follows the journal, not the date the cron started', () => {
+    expect(csql).toContain('CREATE OR REPLACE FUNCTION public.fn_ca_ledger_day_manifest_backfill');
+    // Finished days only: a partial day attested today disagrees with itself at midnight.
+    expect(csql).toMatch(/WHERE created_at < CURRENT_DATE/);
+    expect(csql).toMatch(
+      /VERIFY FAILED: % finished day\(s\) still carry no manifest after the backfill/
+    );
+  });
+
+  it('the backfill adds no third copy of the hash expression', () => {
+    // It calls the writer. Two places know how to hash a day, and the
+    // migration re-proves from the catalogue that those two still agree.
+    expect(csql).toMatch(/v_res\s*:=\s*public\.fn_ca_ledger_day_manifest\(r\.day\)/);
+    expect(csql).toMatch(
+      /VERIFY FAILED: the writer and the verifier no longer hash the same thing/
+    );
+  });
+
+  it('the recompute is one pass, so its cost stops multiplying by the days retained', () => {
+    const body = csql.slice(
+      csql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_ledger_day_manifest_verify_all')
+    );
+    expect(body).toMatch(/WITH actual AS \(/);
+    expect(body).toMatch(/GROUP BY 1/);
+    // Both directions are failures: a day whose rows changed, and a manifest
+    // whose day has lost all its rows.
+    expect(body).toMatch(/FULL JOIN public\.ca_ledger_day_manifests/);
+    // The old shape - one scan per manifest row - must not come back.
+    expect(body).not.toMatch(
+      /FOR r IN SELECT day, row_count, sha256 FROM public\.ca_ledger_day_manifests/
+    );
+  });
+
+  it('the answer carries what it could NOT check', () => {
+    expect(csql).toMatch(/'unattested', v_unattested/);
+    expect(csql).toMatch(/'unattested_days', v_missing/);
+    expect(csql).toContain('manifest-unattested-days');
+    expect(csql).toMatch(/VERIFY FAILED: the verifier answer carries no coverage/);
+  });
+
+  it('the daily job backfills as well as writing and verifying, on the schedule it already had', () => {
+    expect(csql).toContain('cron.alter_job');
+    expect(csql).not.toMatch(/cron\.schedule\s*\(/);
+    expect(csql).toMatch(/VERIFY FAILED: the daily job does not call the backfill/);
+    expect(csql).toMatch(
+      /VERIFY FAILED: extending the job dropped the verification it already did/
+    );
+    expect(csql).toMatch(
+      /VERIFY FAILED: extending the job dropped the manifest write it already did/
+    );
+  });
+
+  it('neither function is reachable from a browser', () => {
+    expect(csql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_ledger_day_manifest_backfill\(date\) FROM PUBLIC, anon, authenticated/
+    );
+    expect(csql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_ledger_day_manifest_verify_all\(\) FROM PUBLIC, anon, authenticated/
+    );
+    expect(csql).toMatch(/VERIFY FAILED: a manifest function is executable by a browser role/);
+  });
+
+  it('the anchor alarm has a reader of its own, not a red job in a scheduled workflow', () => {
+    // CLAUDE.md 10.86 rule 3. The step must key off the anchor step itself, so
+    // a failure in the commit step afterwards cannot open a tampering issue.
+    expect(wf).toMatch(/id: anchor/);
+    expect(wf).toMatch(/Ledger attestation: an anchored day now hashes differently/);
+    expect(wf).toMatch(/if: failure\(\) && steps\.anchor\.outcome == 'failure'/);
+    expect(wf).toMatch(/gh issue create --repo "\$REPO" --title "\$TITLE"/);
+    // and it closes itself, or the next person learns to ignore a stale alarm
+    expect(wf).toMatch(/Close the alarm when the anchor agrees again/);
+    // the log has to reach the reader; an issue with no evidence is a rumour
+    expect(wf).toMatch(/tee \/tmp\/anchor-ledger-days\.log/);
+  });
+
+  it('the anchor still rides schedules that already existed', () => {
+    const crons = [...wf.matchAll(/- cron:/g)].length;
+    expect(crons, 'no new scheduled trigger (CLAUDE.md 10.85)').toBeLessThanOrEqual(2);
+  });
+});

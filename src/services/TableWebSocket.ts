@@ -120,7 +120,20 @@ export class TableWebSocket {
   // CONNECTION MANAGEMENT
   // ─────────────────────────────────────────────────────────────────────────────
 
-  async connect(): Promise<boolean> {
+  private connectInFlight: Promise<boolean> | null = null;
+  private cancelPendingConnect: (() => void) | null = null;
+
+  connect(): Promise<boolean> {
+    if (this.destroyed) return Promise.resolve(false);
+    if (this.connectInFlight) return this.connectInFlight;
+    if (this.isConnected && this.channel) return Promise.resolve(true);
+    this.connectInFlight = this.connectOnce().finally(() => {
+      this.connectInFlight = null;
+    });
+    return this.connectInFlight;
+  }
+
+  private async connectOnce(): Promise<boolean> {
     if (!this.supabase) {
       reportError('Supabase not configured, running in offline mode', 'TableWS.connect.noSupabase');
       return false;
@@ -217,31 +230,43 @@ export class TableWebSocket {
         );
 
       // Subscribe to channel - returns the channel, callback receives status
-      await new Promise<void>((resolve, reject) => {
-        this.channel!.subscribe(async (status) => {
-          // Prevent zombie subscriptions if disconnect() was called during subscribe
-          if (!this.channel) {
-            resolve();
+      const subscribedChannel = this.channel;
+      await new Promise<void>((resolve) => {
+        const settle = () => {
+          if (this.cancelPendingConnect === settle) this.cancelPendingConnect = null;
+          resolve();
+        };
+        this.cancelPendingConnect = settle;
+        subscribedChannel.subscribe(async (status) => {
+          if (this.destroyed || this.channel !== subscribedChannel) {
+            settle();
             return;
           }
-
           if (status === 'SUBSCRIBED') {
             this.isConnected = true;
             this.reconnectAttempt = 0;
+            if (this.reconnectTimer) {
+              clearTimeout(this.reconnectTimer);
+              this.reconnectTimer = null;
+            }
             this.notifyConnection(true);
-
-            // Track presence
-            await this.channel?.track({
-              userId: this.userId,
-              username: this.username,
-              status: 'watching',
-              joinedAt: Date.now(),
-            } as PlayerPresence);
-
-            resolve();
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            console.debug(`[TableWS] Channel ${status}, will retry...`);
-            resolve(); // Don't reject — let reconnect handle it gracefully
+            try {
+              await subscribedChannel.track({
+                userId: this.userId,
+                username: this.username,
+                status: 'watching',
+                joinedAt: Date.now(),
+              } as PlayerPresence);
+            } catch (error) {
+              reportError(error, 'TableWS.presence.track_failed');
+            } finally {
+              settle();
+            }
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            this.isConnected = false;
+            this.notifyConnection(false);
+            this.scheduleReconnect();
+            settle();
           }
         });
       });
@@ -264,10 +289,18 @@ export class TableWebSocket {
       this.reconnectTimer = null;
     }
 
-    if (this.channel) {
-      // Use removeChannel instead of unsubscribe to prevent zombie channels if disconnected while connecting
-      await this.supabase.removeChannel(this.channel);
-      this.channel = null;
+    // Revoke ownership before awaiting network removal. Late channel callbacks
+    // must not resurrect presence or report a successful connection.
+    const channel = this.channel;
+    this.channel = null;
+    this.isConnected = false;
+    this.cancelPendingConnect?.();
+    if (channel) {
+      try {
+        await this.supabase.removeChannel(channel);
+      } catch (error) {
+        reportError(error, 'TableWS.disconnect.remove_failed');
+      }
     }
 
     // Clear pending events queue to prevent data bleed into subsequent game connections

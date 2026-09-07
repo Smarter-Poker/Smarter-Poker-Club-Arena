@@ -31,7 +31,11 @@ const CLAUDE_MD = resolve(ROOT, 'CLAUDE.md');
 let isBandAidName: (n: string) => boolean;
 let declaredFunctions: (sql: string) => string[];
 let scheduledJobs: (sql: string) => { added: string[]; removed: string[] };
-let offenders: (sql: string, allowed?: Set<string>) => Array<{ kind: string; name: string }>;
+let offenders: (
+  sql: string,
+  allowed?: Set<string>,
+  droppedElsewhere?: Set<string>
+) => Array<{ kind: string; name: string }>;
 
 beforeAll(async () => {
   const href = pathToFileURL(resolve(ROOT, 'scripts/ci/check-no-new-band-aids.mjs')).href;
@@ -109,6 +113,24 @@ describe('the guard knows a band-aid when it sees one', () => {
       RETURNS void LANGUAGE sql AS $$ SELECT 1 $$;
     `;
     expect(offenders(prose)).toHaveLength(0);
+  });
+
+  it('lets a declaration through when a later migration in the same branch drops the name', () => {
+    // 2026-09-07: the mirror of an applied migration declared reconcile_diamond_purchase_refund
+    // (the live Stripe refund handler, badly named); the rename migration in the same branch
+    // creates fn_diamond_purchase_refund and drops the old name. Declared here, dropped there,
+    // is the rule being obeyed at branch scope.
+    const mirror =
+      'create or replace function public.reconcile_diamond_purchase_refund(uuid) returns jsonb language sql as $$ select 1 $$;';
+    const rename =
+      'create or replace function public.fn_diamond_purchase_refund(uuid) returns jsonb language sql as $$ select 1 $$; drop function if exists public.reconcile_diamond_purchase_refund(uuid);';
+    expect(offenders(mirror)).toHaveLength(1);
+    expect(
+      offenders(mirror, new Set(), new Set(['reconcile_diamond_purchase_refund']))
+    ).toHaveLength(0);
+    expect(offenders(rename)).toHaveLength(0);
+    // A name dropped elsewhere does not excuse a DIFFERENT band-aid in this file.
+    expect(offenders(mirror, new Set(), new Set(['fn_something_else_repair']))).toHaveLength(1);
   });
 
   it('respects the allowlist, because a migration that FIXES one must land', () => {

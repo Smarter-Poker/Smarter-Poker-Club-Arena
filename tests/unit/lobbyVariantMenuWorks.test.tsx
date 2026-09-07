@@ -21,6 +21,13 @@ import { FILTER_SPECS } from '../../src/components/lobby/advancedFilterSpec';
  * two ways it closes - as a thumb would.
  */
 
+// This suite exercises filters. Keep transport/route preparation at its
+// boundary; the warm-up suites exercise those real lifecycles separately.
+vi.mock('../../src/services/tableWarmup', () => ({
+  warmTable: vi.fn(),
+  observeLobbyTableWarmups: vi.fn(() => () => undefined),
+}));
+
 vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
   useSpinTierAvailability: () => ({ can_draw_100x: false }),
 }));

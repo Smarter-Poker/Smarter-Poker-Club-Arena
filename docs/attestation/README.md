@@ -47,3 +47,45 @@ examines `CURRENT_DATE - 1`. Zero manifest-mismatch incidents had ever been
 raised.
 
 The journal was fine. The attestation of it was not, and nothing was looking.
+
+## What an anchored line proves, and what it does not
+
+This matters more now that the file covers days going back to March, which were
+anchored months after they happened.
+
+A line proves **nothing about what that day held at the time**. Hashing
+2026-03-24 on 2026-09-07 records what the journal says today, not what it said
+in March.
+
+What it proves is that **from the moment it is anchored, that day cannot change
+without the change being visible** - inside the database by
+`fn_ca_ledger_day_manifest_verify_all`, and outside it by this file, which git
+owns and Supabase cannot reach. That is the entire claim, and it is the claim
+worth having: every leg is kept for ever (Dan's ruling, 2026-09-07), so what
+needs guarding is the history not being rewritten later.
+
+## The file is in the order lines were ANCHORED, not in date order
+
+2026-03-19 sits below 2026-09-06, because the older days were anchored on
+2026-09-07 when the coverage gap was closed. **Do not sort it.** Append-only is
+the property that makes the file evidence; re-ordering it rewrites lines that
+were supposed to be untouchable, and the next reader cannot tell a tidy-up from
+a cover-up.
+
+## Coverage follows the journal, not the day the cron started
+
+Until 2026-09-07 this file, and the manifests behind it, held **eight** days.
+The journal held thirty-five. `fn_ca_ledger_day_manifest` only ever examines
+`CURRENT_DATE - 1`, so the twenty-seven older days - 2026-03-19 through
+2026-08-29, 176,140 legs, 8.8% of the journal - were attested by nothing, and
+the verifier reported `{"checked": 8, "drifted": 0}` without a word about them,
+because it walked the manifests and a day without one did not exist to it.
+
+`fn_ca_ledger_day_manifest_backfill()` now attests every finished day the
+journal has, the daily job calls it before verifying, and the verifier counts
+the days it could NOT check and returns that count beside the drift count. A
+day with rows and no manifest raises a critical incident now instead of being
+invisible.
+
+If you are reading this because `unattested` came back non-zero: the backfill
+did not run or could not write. Start with the 04:25 job's last run.

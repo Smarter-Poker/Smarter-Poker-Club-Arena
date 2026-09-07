@@ -5916,7 +5916,58 @@ export class HorseLogic {
     // a 400ms reflex. Nothing that faces a bet may act inside FACING_FLOOR_MS.
     const FACING_FLOOR_MS = 1250;
     const FREE_FLOOR_MS = 350;
-    return Math.round(Math.max(facingBet ? FACING_FLOOR_MS : FREE_FLOOR_MS, think));
+
+    // ═══ V35 SOFT FLOOR (2026-09-02) — A CLAMP IS A FINGERPRINT ═══════════
+    //
+    // This was `Math.max(floor, think)`, and that one call was the loudest
+    // remaining tell on the platform. MEASURED against the shipped generator,
+    // 3,000 samples per spot:
+    //
+    //   facing a bet, preflop:  14.3% of ALL actions landed on EXACTLY 1250ms
+    //   facing a bet, flop:      5.7% on exactly 1250ms
+    //   no bet, flop:            6.2% on exactly 350ms
+    //
+    // The next most common value in each set appeared 0.2% of the time. So one
+    // millisecond was ~70x more likely than any other, because a clamp does
+    // not slow a fast draw down - it moves every fast draw onto the SAME
+    // NUMBER. Nothing else in the model is remotely that visible: a human's
+    // reaction time never repeats to the millisecond, so a spike at 1.250s
+    // recurring hundreds of times an evening identifies the seat by itself,
+    // and it survives every mixture weight and tempo multiplier above.
+    //
+    // The floors themselves are right and stay exactly where Dan set them
+    // (V24, after eight snap folds into pot-sized raises). What changes is
+    // what happens to a draw that lands beneath one: instead of being pinned
+    // to the floor, it is redistributed just ABOVE it with a short exponential
+    // tail. Same guarantee - nothing acts faster than the floor - without the
+    // pile-up. The exponential is the maximum-entropy choice for "a bit more
+    // than X", which is exactly the claim being made, and its mean is scaled
+    // to the floor so the shape holds for both.
+    const floor = facingBet ? FACING_FLOOR_MS : FREE_FLOOR_MS;
+    if (think >= floor) return Math.round(think);
+
+    // THE JITTER IS DERIVED, NOT DRAWN. An obvious implementation calls
+    // `fastRandom()` here — and that would make computeThinkTime consume a
+    // DIFFERENT NUMBER of PRNG values depending on which branch it takes.
+    // Every seeded ablation test that compares two decisions back to back
+    // (GtoPostflop.test.ts's "an empty store changes nothing" is exactly that
+    // shape) would then see a shifted stream on the second call and fail for a
+    // reason that has nothing to do with what it is testing. Found the hard
+    // way: that test went red on the first cut of this fix.
+    //
+    // `think` is already the product of several fastRandom draws, so its low
+    // bits are effectively random. Hashing them yields a well-spread uniform
+    // at zero cost to the stream, and keeps the whole function deterministic
+    // for a given seed — which is what the league and the self-tuner rely on.
+    let jh = (2166136261 ^ Math.floor(think * 1000)) >>> 0;
+    jh = Math.imul(jh ^ (jh >>> 15), 2246822507) >>> 0;
+    jh = Math.imul(jh ^ (jh >>> 13), 3266489909) >>> 0;
+    const u = Math.max(1e-6, 1 - (jh >>> 8) / 16777216);
+
+    // -ln(U) is Exp(1). The 0.18 factor puts the median a little over 12%
+    // above the floor and the tail inside roughly +3x that, so a "quick"
+    // action still reads as quick.
+    return Math.round(floor + -Math.log(u) * floor * 0.18);
   }
 
   // ─────────────────────────────────────────────────────────────────────

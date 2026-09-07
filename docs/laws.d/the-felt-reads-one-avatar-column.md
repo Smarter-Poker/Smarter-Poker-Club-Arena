@@ -1,0 +1,3 @@
+# tests/the-felt-reads-one-avatar-column.law.test.ts
+
+The avatar a seat shows is `profiles.arena_avatar_url` and nothing else: the engine roster load (`server/src/services/supabase/tableAvatar.ts`, imported by `loadSeatedPlayers`) and the client's live profile sync (`src/lib/tableAvatar.ts`) must export identical constants and read through them, the page must resolve a database-delivered identity through `seatIdentityOverrides` before the engine's deal-time copy can repaint it, and the engine must publish `is_anonymous` so no real face is painted over a scrubbed seat. Dan 2026-09-07: an avatar change "bounces back and forth from their old avatar to the new one" (`docs/changelog/2026-09-07-an-avatar-change-stays-changed.md`).

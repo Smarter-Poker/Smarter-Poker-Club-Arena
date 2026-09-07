@@ -550,9 +550,14 @@ class TableService {
       // Update player count for TOURNAMENT leaves only
       // (atomic_table_cashout already updates current_players for cash game leaves)
       if (tableData?.tournament_id) {
+        /* `id`, not `*`: a count needs one column, and `*` asks PostgREST to
+           expand every column the row has - which will include one a player
+           has no grant on once table_seats moves to column-level grants (the
+           horse_id read in docs/laws.d/horse-identity-is-not-readable.md).
+           A count that names a column keeps working across that change. */
         const { count, error: countErr } = await supabase
           .from('table_seats')
-          .select('*', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
           .eq('table_id', tableId)
           .is('left_at', null);
 
@@ -774,7 +779,7 @@ class TableService {
     // state, and a stale count is a cosmetic problem, not a money one.
     const { count, error: countErr } = await supabase
       .from('table_seats')
-      .select('*', { count: 'exact', head: true })
+      .select('id', { count: 'exact', head: true })
       .eq('table_id', tableId)
       .is('left_at', null);
 

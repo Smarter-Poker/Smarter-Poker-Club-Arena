@@ -18,6 +18,7 @@ import {
   buildHorseLoadMap,
   horseAtCapacity,
   HORSE_MAX_CONCURRENT_TABLES,
+  REGISTRATION_LOAD_HORIZON_MS,
 } from './TournamentRecurringService.js';
 
 describe('horse concurrency ceiling', () => {
@@ -155,6 +156,33 @@ describe('the double-count rule, which is the one that fails silently', () => {
     const body = src.slice(start, src.indexOf('private static atCapacity'));
     expect(body).toContain("'ANNOUNCED', 'REGISTERING'");
     expect(body).not.toContain("'ANNOUNCED', 'REGISTERING', 'RUNNING'");
+  });
+
+  /**
+   * A REGISTRATION DAYS AWAY IS NOT A GAME TODAY (2026-09-07). Without a
+   * horizon, 2,092 bookings for events hours to days out held 615 of 1,000
+   * horses out of every open seat-first board (measured: 160 boards open, 36
+   * of 367 seats paid, "0 of 3 claimable"). The query bounds start_time so a
+   * booking counts only when its event is about to seat its field; a null
+   * start_time (a seat-first game that starts when full) is still counted and
+   * deduped against its own seat.
+   */
+  it('the registration query counts a booking only inside the start horizon', () => {
+    const src = fs.readFileSync(
+      path.join(process.cwd(), 'src/services/TournamentRecurringService.ts'),
+      'utf8'
+    ) as string;
+    const start = src.indexOf('private async horseLoadMap');
+    const body = src.slice(start, src.indexOf('private static atCapacity'));
+    expect(body).toContain('tournaments!inner(status, start_time)');
+    expect(body).toMatch(
+      /\.or\(`start_time\.is\.null,start_time\.lte\.\$\{horizonIso\}`, \{ referencedTable: 'tournaments' \}\)/
+    );
+    expect(body).toContain('REGISTRATION_LOAD_HORIZON_MS');
+  });
+
+  it('the horizon is thirty minutes: longer than any seat-first game, shorter than any ramp', () => {
+    expect(REGISTRATION_LOAD_HORIZON_MS).toBe(30 * 60_000);
   });
 
   it('a horse seated in a running event is counted once, not twice', () => {

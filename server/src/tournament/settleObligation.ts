@@ -101,6 +101,13 @@ export interface SettleTournamentObligationInput {
 
 export interface SettleTournamentObligationResult {
   ok: boolean;
+  /** True only when the database confirms the entire recorded obligation is paid. */
+  fully_settled?: boolean;
+  /** Authoritative outstanding debt; null when no complete status was returned. */
+  remaining?: number | null;
+  /** Authoritative cumulative obligation totals, not only this request. */
+  amount_owed?: number | null;
+  amount_paid?: number | null;
   /** Chips moved by THIS call. 0 on a replay. */
   paid: number;
   /** Chips this obligation had already paid before this call. */
@@ -144,7 +151,28 @@ function parseResult(data: unknown): Partial<SettleTournamentObligationResult> {
   }
   if (!raw || typeof raw !== 'object') return {};
   const r = raw as Record<string, unknown>;
+  // A successful partial credit is still money owed. Do not derive completion
+  // from the requested amount: a replay may name an older, smaller total.
+  const money = (value: unknown): number | null => {
+    if ((typeof value !== 'number' && typeof value !== 'string') || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 && Number.isSafeInteger(Math.round(n * 100)) &&
+      Math.round(n * 100) / 100 === n ? n : null;
+  };
+  const owed = money(r.amount_owed);
+  const totalPaid = money(r.amount_paid);
+  const remaining = money(r.remaining);
+  const moved = money(r.paid);
+  const prior = money(r.already_paid);
+  const totalsAgree = owed !== null && totalPaid !== null && remaining !== null &&
+    moved !== null && prior !== null &&
+    Math.round(totalPaid * 100) === Math.round(moved * 100) + Math.round(prior * 100) &&
+    Math.round(remaining * 100) === Math.max(0, Math.round(owed * 100) - Math.round(totalPaid * 100));
   return {
+    fully_settled: r.ok === true && r.fully_settled === true && totalsAgree && remaining === 0,
+    remaining: totalsAgree ? remaining : null,
+    amount_owed: totalsAgree ? owed : null,
+    amount_paid: totalsAgree ? totalPaid : null,
     ok: r.ok === true,
     paid: Number(r.paid ?? 0) || 0,
     already_paid: Number(r.already_paid ?? 0) || 0,
@@ -181,6 +209,10 @@ export async function settleTournamentObligation(
 
   const base: SettleTournamentObligationResult = {
     ok: false,
+    fully_settled: false,
+    remaining: null,
+    amount_owed: null,
+    amount_paid: null,
     paid: 0,
     already_paid: 0,
     refused_reason: null,
@@ -222,7 +254,7 @@ export async function settleTournamentObligation(
       if (result.ok) return result;
 
       // The database answered and said NO. Never retried: the answer will not
-      // change, and a second ask is exactly the shape that double-paid.
+      // change within this retry loop. A later recovery uses the same obligation.
       result.refused_reason = result.refused_reason ?? 'unknown';
       await raiseRefusalAlert(input, place, amount, result);
       return result;

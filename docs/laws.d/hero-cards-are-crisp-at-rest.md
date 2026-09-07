@@ -1,0 +1,3 @@
+# tests/hero-cards-are-crisp-at-rest.law.test.ts
+
+No stylesheet may keep the hero's resting hole card on its own compositor layer (`will-change`, `transform-style: preserve-3d`, `translateZ`, `backface-visibility` on a selector that matches the card outside a `--dealing` / `--folding` / `--showdown` / squeeze window). A promoted layer is rasterised at the scale WebKit sees when it is created - the first frame of the deal, at scale(0.94) - and never repainted when the animation ends, which is why the hero's cards were blurry "every so often" on an iPad while the board cards from the same files were sharp (Dan 2026-09-07).

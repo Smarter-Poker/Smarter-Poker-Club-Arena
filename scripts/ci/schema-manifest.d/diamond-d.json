@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/diamond-d-purchase (Lane D of the Diamond Accounting Standard swarm, 2026-09-03). Applied to production as 20260903003327_diamond_d_purchase_clearing (purchase clearing, the lots and debts sub-ledgers, the dispute handler, the price oracle) and 20260903003403_diamond_d_the_balance_cannot_go_negative (CHECK (diamonds >= 0) on profiles, ADDed and VALIDATEd). The two are separate because the single-migration version deadlocked (40P01) holding diamond_purchases and asking for ACCESS EXCLUSIVE on profiles; nothing was applied and the whole transaction rolled back. The order is load-bearing and enforced by a pre-flight check in the second file: the refund function must stop writing negatives before the constraint that would refuse them exists.. diamond_purchase_lots.consumed is created and stays 0. FIFO consumption attribution lives inside deduct_diamonds, which Lane C owns; it is roadmap work, not a gap in this manifest. None of the three new tables carries a foreign key: diamond_purchases cascades on profile deletion, so a CASCADE would erase a paying customer's lot and a RESTRICT would make live account deletion raise.",
+  "tables": [
+    "diamond_packages",
+    "diamond_purchase_lots",
+    "diamond_debts",
+    "diamond_purchase_disputes"
+  ],
+  "functions": ["fn_diamond_purchase_dispute"],
+  "columns": {}
+}

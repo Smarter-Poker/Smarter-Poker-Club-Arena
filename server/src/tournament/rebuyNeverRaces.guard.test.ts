@@ -20,39 +20,63 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS = path.join(HERE, '..', '..', '..', 'supabase', 'migrations');
 const ELIM = fs.readFileSync(path.join(HERE, 'TournamentManagerEliminations.ts'), 'utf8');
 const DEALING = fs.readFileSync(
   path.join(HERE, '..', 'engine', 'ServerTableEngineDealing.ts'),
   'utf8'
 );
+const ENGINE_BASE = fs.readFileSync(
+  path.join(HERE, '..', 'engine', 'ServerTableEngineBase.ts'),
+  'utf8'
+);
+const REJECT_HANDLER = fs.readFileSync(
+  path.join(HERE, '..', 'handlers', 'reject_rebuy.ts'),
+  'utf8'
+);
 
 describe('the elimination CAS re-checks the chips, not just the status', () => {
   it('eliminatePlayer refuses a row whose chips came back above zero', () => {
-    // A rebuy leaves status 'playing', so the status CAS alone cannot catch
-    // the race; the chips guard is what makes the landed rebuy win.
-    const window = sliceBetween(
-      ELIM,
-      'A LANDED REBUY OUTRANKS A STALE BUST SNAPSHOT',
-      'if (updateErr)'
+    const sql = fs.readFileSync(
+      path.join(
+        MIGRATIONS,
+        '20260907180000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
+      ),
+      'utf8'
     );
-    expect(window).toMatch(/\.lte\('chips', 0\)/);
+    const window = sliceBetween(sql, 'fn_eliminate_tournament_player_atomic(', '$function$;');
+    expect(window).toMatch(/COALESCE\(v_p\.chips,0\) > 0/);
+    expect(window).toMatch(/status='playing' AND COALESCE\(chips,0\)<=0/);
   });
 });
 
 describe('a busted player holds an open decision window, and the felt rolls on', () => {
   it('the sweep defers eliminating anyone whose rebuy offer is still open', () => {
-    expect(ELIM).toMatch(/REBUY_DECISION_GRACE_MS/);
-    expect(ELIM).toMatch(/rebuyDecisionGraceUntil/);
-    // The window closes with the rebuy period: no window, no deferral.
+    expect(ELIM).not.toMatch(/REBUY_DECISION_GRACE_MS/);
+    expect(ELIM).not.toMatch(/rebuyDecisionGraceUntil/);
     const block = sliceBetween(ELIM, 'THE REBUY DECISION WINDOW', 'bustedOrdered');
-    expect(block).toMatch(/windowOpen/);
-    expect(block).toMatch(/prize_pool_finalized/);
+    expect(block).toMatch(/fn_open_tournament_rebuy_decisions/);
+    expect(block).toMatch(/decision_open/);
   });
 
   it('a horse that answered this pass is not deferred - its decision is final', () => {
     // Horses decide inside tryTournamentRebuys (their input device); the
     // window is identical for everyone, a horse simply replies immediately.
     expect(ELIM).toMatch(/answered\.has\(b\.user_id\)/);
+  });
+
+  it('re-drives an unresolved bust every five seconds until acceptance or expiry', () => {
+    const wakeAt = ELIM.indexOf('TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS');
+    const emptyReturnAt = ELIM.indexOf('if (busted.length === 0) return', wakeAt);
+    expect(wakeAt).toBeGreaterThan(-1);
+    expect(emptyReturnAt).toBeGreaterThan(wakeAt);
+  });
+
+  it('never invents or clears a human deadline in process memory', () => {
+    const block = sliceBetween(ELIM, 'THE REBUY DECISION WINDOW', 'bustedOrdered');
+    expect(block).not.toMatch(/Date\.now\(\)\s*\+\s*30_?000/);
+    expect(block).not.toMatch(/rebuyDecisionGraceUntil/);
+    expect(block).toContain('if (!decisions.has(b.user_id)) return false;');
   });
 
   it('tournament tables never pause the felt for a rebuy', () => {
@@ -65,10 +89,22 @@ describe('a busted player holds an open decision window, and the felt rolls on',
     // The CASH pause survives untouched — section 10.5 still applies there.
     expect(DEALING).toMatch(/setLoopPhase\('rebuy_pause'\)/);
   });
+
+  it('persists a tournament decline before acknowledging the HTTP request', () => {
+    const engineBlock = sliceBetween(
+      ENGINE_BASE,
+      'public async rejectRebuy',
+      'protected async waitForRebuyDecisions'
+    );
+    expect(engineBlock).toMatch(/fn_decline_tournament_rebuy/);
+    expect(engineBlock.indexOf('await supabase.rpc')).toBeLessThan(
+      engineBlock.indexOf('this.rejectedRebuys.add')
+    );
+    expect(REJECT_HANDLER).toMatch(/await engine\.rejectRebuy\(user\.userId\)/);
+  });
 });
 
 describe('the SQL side matches: a rebuy needs no seat', () => {
-  const MIGRATIONS = path.join(HERE, '..', '..', '..', 'supabase', 'migrations');
   it('the latest process_tournament_rebuy only demands a live seat for add-ons', () => {
     const owning = fs
       .readdirSync(MIGRATIONS)
@@ -81,7 +117,33 @@ describe('the SQL side matches: a rebuy needs no seat', () => {
       );
     expect(owning.length).toBeGreaterThan(0);
     const sql = fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8');
-    expect(sql).toMatch(/Only an ADD-ON demands a live seat/);
-    expect(sql).toMatch(/a rebuy cannot resurrect a settled result/i);
+    const predecessor = fs.readFileSync(
+      path.join(MIGRATIONS, '20260830212857_tournament_rebuy_needs_no_seat.sql'),
+      'utf8'
+    );
+    expect(predecessor).toMatch(/Only an ADD-ON demands a live seat/);
+    expect(sql).toMatch(/process_tournament_rebuy_before_bounty_guard_20260907/);
+    expect(sql).toMatch(/Bubble Protection Already Paid - This Result Cannot Be Resurrected/);
+  });
+
+  it('opens each prompt once under row locks and reports database-time state', () => {
+    const sql = fs.readFileSync(
+      path.join(
+        MIGRATIONS,
+        '20260907203000_an_accepted_hand_is_one_commit_and_stats_leave_the_hot_path.sql'
+      ),
+      'utf8'
+    );
+    const block = sliceBetween(sql, 'fn_open_tournament_rebuy_decisions(', '$function$;');
+    expect(block).toMatch(/FROM public\.tournaments t[\s\S]*FOR UPDATE/);
+    expect(block).toMatch(/FROM public\.tournament_players tp[\s\S]*FOR UPDATE/);
+    expect(block).toMatch(/tp\.rebuy_prompt_until IS NULL/);
+    expect(block).toMatch(/decision_open boolean/);
+    expect(sql).toMatch(/fn_decline_tournament_rebuy[\s\S]*fn_emit_tournament_manager_wake/);
+    const decline = sliceBetween(sql, 'fn_decline_tournament_rebuy(', '$function$;');
+    expect(decline).toContain('v_jwt_role text := auth.role()');
+    expect(decline).toContain("v_jwt_role IS DISTINCT FROM 'service_role'");
+    expect(decline).toMatch(/v_auth IS NULL OR v_auth<>p_user_id/);
+    expect(decline).not.toMatch(/\bIF\s+current_user/);
   });
 });

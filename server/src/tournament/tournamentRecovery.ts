@@ -16,6 +16,7 @@ import { chipsCannotRank, noHandWasEverDealt } from './recoveryRankEvidence.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { settleTournamentObligation } from './settleObligation.js';
+import { certifyTournamentFinish, claimTournamentFinish } from './tournamentFinishContract.js';
 
 /**
  * TOURNEY-AUDIT 2026-07-24: Recover tournaments stuck in COMPLETING by PAYING
@@ -285,6 +286,39 @@ export async function refundAndCloseCancelledTournament(
   }
 }
 
+/** Drain only obligations already committed by the atomic knockout path. */
+async function drainTournamentBountyObligations(
+  tournamentId: string
+): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  const { data, error } = await supabase.rpc('fn_sweep_pending_tournament_bounties', {
+    p_tournament_id: tournamentId,
+    p_limit: 100,
+  });
+  const swept = (data ?? {}) as {
+    ok?: boolean;
+    pending?: number;
+    failed?: number;
+    reason?: string;
+  };
+  if (
+    error ||
+    swept.ok !== true ||
+    Number(swept.failed ?? 0) > 0 ||
+    Number(swept.pending ?? 0) > 0
+  ) {
+    return {
+      ok: false,
+      error:
+        error ??
+        new Error(
+          swept.reason ??
+            `${Number(swept.pending ?? 0)} pending and ${Number(swept.failed ?? 0)} failed knockout obligations remain`
+        ),
+    };
+  }
+  return { ok: true };
+}
+
 export async function recoverStuckCompletingTournaments(
   reason: string,
   onlyTournamentId?: string
@@ -301,7 +335,7 @@ export async function recoverStuckCompletingTournaments(
       // the event is before it trusts an empty hand_history - see
       // recoveryRankEvidence.ts on the 7-day horse-only prune.
       .select(
-        'id, name, prize_pool, payout_structure, variant, tournament_type, spin_multiplier, started_at'
+        'id, name, prize_pool, payout_structure, variant, tournament_type, spin_multiplier, started_at, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage'
       )
       .eq('status', 'COMPLETING');
     if (onlyTournamentId) q = q.eq('id', onlyTournamentId);
@@ -436,7 +470,7 @@ export async function recoverStuckCompletingTournaments(
            * and the seat leg dedupes on the target's unique registration, so
            * a satellite that already paid pays nobody twice.
            */
-          const [{ count: recordCount }, { count: seatCount }] = await Promise.all([
+          const [payoutEvidence, seatEvidence] = await Promise.all([
             supabase
               .from('tournament_payouts')
               .select('id', { count: 'exact', head: true })
@@ -446,19 +480,71 @@ export async function recoverStuckCompletingTournaments(
               .select('id', { count: 'exact', head: true })
               .eq('source_satellite_id', t.id),
           ]);
+          if (payoutEvidence.error || seatEvidence.error) {
+            reportError(
+              payoutEvidence.error ?? seatEvidence.error ?? new Error('award evidence unreadable'),
+              'GameServer.recoverStuckCompleting_satellite_evidence_unreadable'
+            );
+            continue;
+          }
+          const recordCount = payoutEvidence.count;
+          const seatCount = seatEvidence.count;
           const alreadyAwarded = (recordCount ?? 0) > 0 || (seatCount ?? 0) > 0;
 
           if (alreadyAwarded) {
-            const { error: closeErr } = await supabase
-              .from('tournaments')
-              .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
-              .eq('id', t.id)
-              .eq('status', 'COMPLETING');
-            reportError(
-              new Error(
-                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite that ALREADY AWARDED (${recordCount ?? 0} payout record(s), ${seatCount ?? 0} seat(s)) - ${closeErr ? `close failed: ${closeErr.message}` : 'closed COMPLETING -> COMPLETED'}`
-              ),
-              'GameServer.recoverStuckCompleting_satellite_closed'
+            const { data: canonicalWinner, error: winnerErr } = await supabase
+              .from('tournament_players')
+              .select('user_id')
+              .eq('tournament_id', t.id)
+              .eq('status', 'winner')
+              .eq('position', 1)
+              .maybeSingle();
+            if (winnerErr || !canonicalWinner?.user_id) {
+              reportError(
+                winnerErr ?? new Error('awarded satellite has no canonical winner'),
+                'GameServer.recoverStuckCompleting_satellite_winner_unproved'
+              );
+              continue;
+            }
+            const satClaim = await claimTournamentFinish(
+              supabase,
+              t.id,
+              canonicalWinner.user_id,
+              'engine.recoverStuckCompletingSatellite'
+            );
+            if (!satClaim.ok) {
+              reportError(
+                new Error(`satellite finish claim refused: ${satClaim.reason}`),
+                'GameServer.recoverStuckCompleting_satellite_claim_failed'
+              );
+              continue;
+            }
+            const { data: rake, error: rakeErr } = await supabase.rpc('fn_settle_tournament_rake', {
+              p_tournament_id: t.id,
+              p_source: 'recovery_satellite',
+            });
+            if (rakeErr || rake?.ok !== true) {
+              reportError(
+                rakeErr ?? new Error(rake?.reason ?? 'satellite rake settlement refused'),
+                'GameServer.recoverStuckCompleting_satellite_rake_failed'
+              );
+              continue;
+            }
+            const satCompletion = await certifyTournamentFinish(
+              supabase,
+              t.id,
+              canonicalWinner.user_id,
+              'engine.recoverStuckCompletingSatellite'
+            );
+            if (!satCompletion.ok || !satCompletion.certified) {
+              reportError(
+                new Error(`satellite financial completion refused: ${satCompletion.reason}`),
+                'GameServer.recoverStuckCompleting_satellite_completion_failed'
+              );
+              continue;
+            }
+            console.log(
+              `[GameServer] Certified recovered satellite ${t.id.slice(0, 8)} (${recordCount ?? 0} payout record(s), ${seatCount ?? 0} seat(s))`
             );
             continue;
           }
@@ -513,10 +599,9 @@ export async function recoverStuckCompletingTournaments(
          */
         const { data: dealRows, error: dealErr } = await supabase
           .from('tournament_payouts')
-          .select('id')
+          .select('id, user_id, amount')
           .eq('tournament_id', t.id)
-          .eq('source', 'final_table_deal')
-          .limit(1);
+          .eq('source', 'final_table_deal');
 
         if (dealErr) {
           // Unreadable is UNKNOWN. Paying structure cash over a deal that may
@@ -531,11 +616,185 @@ export async function recoverStuckCompletingTournaments(
         }
 
         if ((dealRows?.length ?? 0) > 0) {
-          reportError(
-            new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} settled by a final-table deal - structure prizes would be new money on top of it. Skipped.`
-            ),
-            'GameServer.recoverStuckCompleting_chopped_skipped'
+          // Resume the durable chop instead of applying the payout structure.
+          // The receipt is written atomically with RUNNING -> COMPLETING and
+          // retains every participant even after loser/winner status stamps.
+          const { data: dealReceipt, error: receiptErr } = await supabase
+            .from('tournament_final_table_deal_receipts')
+            .select('payouts, chip_leader, expected_amount, settled_amount')
+            .eq('tournament_id', t.id)
+            .maybeSingle();
+          if (receiptErr || !dealReceipt || !Array.isArray(dealReceipt.payouts)) {
+            reportError(
+              receiptErr ?? new Error('durable final-table-deal receipt is missing'),
+              'GameServer.recoverStuckCompleting_chop_receipt_missing'
+            );
+            continue;
+          }
+          const receiptShares = dealReceipt.payouts as Array<{
+            user_id?: unknown;
+            amount?: unknown;
+            settled?: unknown;
+          }>;
+          const participantIds = receiptShares
+            .map((row) => String(row.user_id ?? ''))
+            .filter(Boolean);
+          const leaderId = String(dealReceipt.chip_leader ?? '');
+          const expectedShares = receiptShares
+            .map((row) => ({ userId: String(row.user_id ?? ''), amount: Number(row.amount) }))
+            .filter((row) => row.userId && Number.isFinite(row.amount) && row.amount > 0);
+          const payoutByUser = new Map(
+            (dealRows ?? []).map((row) => [String(row.user_id), Number(row.amount)])
+          );
+          const receiptTotal = expectedShares.reduce((sum, row) => sum + row.amount, 0);
+          const rowsTotal = Array.from(payoutByUser.values()).reduce(
+            (sum, amount) => sum + (Number.isFinite(amount) ? amount : 0),
+            0
+          );
+          const receiptIsComplete =
+            participantIds.length >= 2 &&
+            new Set(participantIds).size === participantIds.length &&
+            !!leaderId &&
+            participantIds.includes(leaderId) &&
+            expectedShares.every(
+              (share) =>
+                Math.round((payoutByUser.get(share.userId) ?? -1) * 100) ===
+                Math.round(share.amount * 100)
+            ) &&
+            Array.from(payoutByUser.keys()).every((userId) => participantIds.includes(userId)) &&
+            Math.round(receiptTotal * 100) ===
+              Math.round(Number(dealReceipt.expected_amount) * 100) &&
+            Math.round(rowsTotal * 100) === Math.round(Number(dealReceipt.settled_amount) * 100) &&
+            Math.round(Number(dealReceipt.expected_amount) * 100) ===
+              Math.round(Number(dealReceipt.settled_amount) * 100);
+          if (!receiptIsComplete) {
+            reportError(
+              new Error(
+                'durable final-table-deal receipt/payout rows are incomplete or do not conserve the deal'
+              ),
+              'GameServer.recoverStuckCompleting_chop_receipt_invalid'
+            );
+            continue;
+          }
+
+          const chopClaim = await claimTournamentFinish(
+            supabase,
+            t.id,
+            leaderId,
+            'engine.recoverStuckCompletingDeal'
+          );
+          if (!chopClaim.ok || chopClaim.winnerUserId !== leaderId) {
+            reportError(
+              new Error(`final-table deal finish claim refused: ${chopClaim.reason}`),
+              'GameServer.recoverStuckCompleting_chop_claim_failed'
+            );
+            continue;
+          }
+
+          let chopFailed = false;
+          for (const payout of expectedShares) {
+            const paid = await settleTournamentObligation(supabase, {
+              tournamentId: t.id,
+              kind: 'final_table_deal',
+              userId: payout.userId,
+              amount: payout.amount,
+              source: 'engine.recoverStuckCompletingDeal',
+              memo: 'Final table deal (recovery)',
+            });
+            if (!paid.ok) {
+              reportError(
+                new Error(
+                  `final-table deal share refused for ${payout.userId}: ${paid.refused_reason}`
+                ),
+                'GameServer.recoverStuckCompleting_chop_share_failed'
+              );
+              chopFailed = true;
+              break;
+            }
+          }
+          if (chopFailed) continue;
+
+          const orderedIds = [leaderId, ...participantIds.filter((id) => id !== leaderId)];
+          for (let index = 0; index < orderedIds.length; index++) {
+            const { error: stampErr } = await supabase
+              .from('tournament_players')
+              .update({
+                status: index === 0 ? 'winner' : 'eliminated',
+                position: index + 1,
+                eliminated_at: index === 0 ? null : new Date().toISOString(),
+              })
+              .eq('tournament_id', t.id)
+              .eq('user_id', orderedIds[index]);
+            if (stampErr) {
+              reportError(stampErr, 'GameServer.recoverStuckCompleting_chop_stamp_failed');
+              chopFailed = true;
+              break;
+            }
+          }
+          if (chopFailed) continue;
+
+          if (t.is_bounty || t.is_pko || t.is_mystery_bounty) {
+            const swept = await drainTournamentBountyObligations(t.id);
+            if (!swept.ok) {
+              reportError(swept.error, 'GameServer.recoverStuckCompleting_chop_bounty_pending');
+              continue;
+            }
+            if (t.is_mystery_bounty && t.mystery_bounty_stage !== 'pending') {
+              const { data: mystery, error: mysteryErr } = await supabase.rpc(
+                'fn_mystery_bounty_settle',
+                { p_tournament_id: t.id, p_winner_user_id: leaderId }
+              );
+              if (mysteryErr || mystery?.ok !== true || mystery?.balanced === false) {
+                reportError(
+                  mysteryErr ?? new Error(mystery?.reason ?? 'mystery settlement refused'),
+                  'GameServer.recoverStuckCompleting_chop_mystery_failed'
+                );
+                continue;
+              }
+            }
+            const { data: bountyFinal, error: bountyFinalErr } = await supabase.rpc(
+              'fn_finalize_bounty_pool',
+              { p_tournament_id: t.id, p_winner_user_id: leaderId }
+            );
+            if (bountyFinalErr || bountyFinal?.ok !== true) {
+              reportError(
+                bountyFinalErr ?? new Error(bountyFinal?.reason ?? 'bounty finalizer refused'),
+                'GameServer.recoverStuckCompleting_chop_bounty_finalize_failed'
+              );
+              continue;
+            }
+          }
+
+          const { data: chopRake, error: chopRakeErr } = await supabase.rpc(
+            'fn_settle_tournament_rake',
+            {
+              p_tournament_id: t.id,
+              p_source: 'recovery_final_table_deal',
+            }
+          );
+          if (chopRakeErr || chopRake?.ok !== true) {
+            reportError(
+              chopRakeErr ?? new Error(chopRake?.reason ?? 'deal rake settlement refused'),
+              'GameServer.recoverStuckCompleting_chop_rake_failed'
+            );
+            continue;
+          }
+          const chopCompletion = await certifyTournamentFinish(
+            supabase,
+            t.id,
+            leaderId,
+            'engine.recoverStuckCompletingDeal'
+          );
+          if (!chopCompletion.ok || !chopCompletion.certified) {
+            reportError(
+              new Error(`final-table deal financial completion refused: ${chopCompletion.reason}`),
+              'GameServer.recoverStuckCompleting_chop_complete_failed'
+            );
+            continue;
+          }
+          await supabase.from('tables').update({ status: 'closed' }).eq('tournament_id', t.id);
+          console.log(
+            `[GameServer] Recovered durable final-table deal ${t.id.slice(0, 8)} (${reason})`
           );
           continue;
         }
@@ -991,13 +1250,81 @@ export async function recoverStuckCompletingTournaments(
           }
         }
 
+        // The winner is the immutable identity on the completion receipt. Do
+        // not infer it from array order, and do not let a duplicate/missing
+        // position-one row cross the money boundary.
+        const { data: canonicalWinner, error: canonicalWinnerErr } = await supabase
+          .from('tournament_players')
+          .select('user_id')
+          .eq('tournament_id', t.id)
+          .eq('status', 'winner')
+          .eq('position', 1)
+          .maybeSingle();
+        if (canonicalWinnerErr || !canonicalWinner?.user_id) {
+          reportError(
+            canonicalWinnerErr ?? new Error('recovery cannot prove exactly one champion'),
+            'GameServer.recoverStuckCompleting_winner_missing'
+          );
+          continue;
+        }
+        const finishClaim = await claimTournamentFinish(
+          supabase,
+          t.id,
+          canonicalWinner.user_id,
+          'engine.recoverStuckCompleting'
+        );
+        if (!finishClaim.ok || finishClaim.winnerUserId !== canonicalWinner.user_id) {
+          reportError(
+            new Error(`recovery finish claim refused: ${finishClaim.reason}`),
+            'GameServer.recoverStuckCompleting_claim_failed'
+          );
+          continue;
+        }
+
+        // 3.4 A bounty event is not complete until every knockout obligation,
+        // mystery chest and champion residual has a durable database receipt.
+        // This is also the process-restart resume lane for a manager that died
+        // after claiming RUNNING -> COMPLETING.
+        if (t.is_bounty || t.is_pko || t.is_mystery_bounty) {
+          const swept = await drainTournamentBountyObligations(t.id);
+          if (!swept.ok) {
+            reportError(swept.error, 'GameServer.recoverStuckCompleting_bounty_pending');
+            continue;
+          }
+          if (t.is_mystery_bounty && t.mystery_bounty_stage !== 'pending') {
+            const { data: mystery, error: mysteryErr } = await supabase.rpc(
+              'fn_mystery_bounty_settle',
+              { p_tournament_id: t.id, p_winner_user_id: canonicalWinner.user_id }
+            );
+            if (mysteryErr || mystery?.ok !== true || mystery?.balanced === false) {
+              reportError(
+                mysteryErr ?? new Error(mystery?.reason ?? 'mystery settlement refused'),
+                'GameServer.recoverStuckCompleting_mystery_failed'
+              );
+              continue;
+            }
+          }
+          const { data: bountyFinal, error: bountyFinalErr } = await supabase.rpc(
+            'fn_finalize_bounty_pool',
+            { p_tournament_id: t.id, p_winner_user_id: canonicalWinner.user_id }
+          );
+          if (bountyFinalErr || bountyFinal?.ok !== true) {
+            reportError(
+              bountyFinalErr ?? new Error(bountyFinal?.reason ?? 'bounty finalizer refused'),
+              'GameServer.recoverStuckCompleting_bounty_finalize_failed'
+            );
+            continue;
+          }
+        }
+
         // 3.5 Settle the fee ledger. SETTLEMENT INTEGRITY 2026-08-26: this
         // path finishes tournaments whose engine died mid-finish — which is
         // exactly the population whose rake never landed (settleTournamentRake
         // only ran on the happy path). fn_settle_tournament_rake is
         // PK-claimed and idempotent, so calling it here can never double-pay
         // against a finish that already settled; it only closes the hole
-        // where nobody did. Non-fatal: the sweep re-drives any failure.
+        // where nobody did. A refusal is fatal to THIS completion attempt: the
+        // financial certificate requires the fee bank to be zero.
         try {
           const { data: rakeRes, error: rakeErr } = await supabase.rpc(
             'fn_settle_tournament_rake',
@@ -1010,6 +1337,7 @@ export async function recoverStuckCompletingTournaments(
               ),
               'GameServer.recoverStuckCompleting_rake_settle_failed'
             );
+            continue;
           } else if (!rakeRes.already_settled && Number(rakeRes.amount) > 0) {
             console.log(
               `[GameServer] recoverStuckCompleting: rake settled for ${t.id.slice(0, 8)}: ${rakeRes.amount} -> ${rakeRes.destination}`
@@ -1017,20 +1345,20 @@ export async function recoverStuckCompletingTournaments(
           }
         } catch (rakeEx) {
           reportError(rakeEx, 'GameServer.recoverStuckCompleting_rake_settle_threw');
+          continue;
         }
 
-        // 4. Complete (CAS-guarded)
-        // PAYOUT-INTEGRITY 2026-08-25: the completion is the claim that
-        // everything above landed. A discarded error printed "Recovered ..."
-        // over a tournament still sitting in COMPLETING, so the log said the
-        // watchdog had done its job on every single pass while it had not.
-        const { error: completeErr } = await supabase
-          .from('tournaments')
-          .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
-          .eq('id', t.id)
-          .eq('status', 'COMPLETING');
-        if (completeErr) {
-          throw new Error(`could not mark COMPLETED: ${completeErr.message}`);
+        // 4. One database call proves every obligation and changes exactly one
+        // COMPLETING row. Zero rows are success only as an exact replay of the
+        // already-persisted matching certificate.
+        const completion = await certifyTournamentFinish(
+          supabase,
+          t.id,
+          canonicalWinner.user_id,
+          'engine.recoverStuckCompleting'
+        );
+        if (!completion.ok || !completion.certified) {
+          throw new Error(`financial completion refused: ${completion.reason}`);
         }
         const { error: closeErr } = await supabase
           .from('tables')

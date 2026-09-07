@@ -32,8 +32,9 @@ const CODE = executable(RECOVERY);
 
 describe('every decided satellite takes one of three exits', () => {
   it('an already-awarded satellite is CLOSED, not left spinning', () => {
-    expect(CODE).toMatch(/recoverStuckCompleting_satellite_closed/);
-    expect(CODE).toMatch(/status:\s*'COMPLETED'/);
+    expect(CODE).toMatch(/Certified recovered satellite/);
+    expect(CODE).toMatch(/certifyTournamentFinish\(/);
+    expect(CODE).toMatch(/satellite_completion_failed/);
   });
 
   it('it decides "already awarded" from the payout record AND from a seat', () => {

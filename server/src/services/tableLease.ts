@@ -22,7 +22,7 @@
  *      on one table means two decks, two dealers and two settlements against
  *      the same seats — a correctness failure far worse than an outage.
  *
- * ── FAIL-OPEN, DELIBERATELY ─────────────────────────────────────────────────
+ * ── OWNERSHIP MUST BE PROVEN WHEN ENFORCEMENT IS ON ─────────────────────────
  *
  * A lease check sits directly in front of "may I deal this table", so a bug
  * here could freeze the entire platform — the exact outcome it exists to
@@ -33,10 +33,14 @@
  *     answers true and `heartbeatTables()` still reports nothing lost. We get
  *     the evidence before we get the behaviour.
  *
- *   - Every RPC failure resolves to "carry on". A database blip must never be
- *     the reason a table stops dealing. We decline to START a table only on a
- *     definite `granted: false` from the database, and we STOP dealing one only
- *     on a definite report that someone else took it.
+ *   - With enforcement on, a claim RPC failure is `retryable_failure`, never a
+ *     grant. Starting a second dealer because ownership could not be checked is
+ *     a split-brain correctness failure, not a liveness recovery.
+ *
+ *   - The explicit enforcement-off escape hatch retains its historical
+ *     fail-open behaviour. Its grants are marked `verified: false`, so callers
+ *     and diagnostics never confuse an operator override with a database-
+ *     confirmed lease.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -79,9 +83,10 @@ export const LEASE_STALE_SECONDS = 30;
  *
  * The teardown path this switch arms (GameServer's discovery loop: stop the
  * engine, drop the hub) has been live and inert for four days; every claim
- * and heartbeat has been logging cleanly. Fail-open behaviour on RPC ERRORS
- * is unchanged — a database blip still never stops a table. What changes is
- * only the split-brain case, where continuing to deal was never safe.
+ * and heartbeat has been logging cleanly. A heartbeat error still never stops
+ * an already-running table, but a new claim must now be verified while
+ * enforcement is on. A database blip is retried instead of creating an
+ * unleased second dealer.
  */
 export const LEASE_ENFORCED: boolean = process.env.ENGINE_LEASE_ENFORCE !== 'off';
 
@@ -91,6 +96,14 @@ export interface LeaseConflict {
   holderAgeSeconds: number | null;
   at: number;
 }
+
+export type TableLeaseClaimResult =
+  | { status: 'granted'; verified: boolean }
+  | { status: 'owned_elsewhere'; conflict: LeaseConflict }
+  | {
+      status: 'retryable_failure';
+      reason: 'rpc_error' | 'rpc_threw' | 'malformed_response';
+    };
 
 /**
  * Conflicts seen since boot. Surfaced on /health so a split-brain is visible
@@ -127,15 +140,34 @@ export function _resetLeaseState(): void {
   reclaimableHeartbeats = 0;
 }
 
+function unverifiedClaimResult(
+  tableId: string,
+  reason: 'rpc_error' | 'rpc_threw' | 'malformed_response',
+  detail: string
+): TableLeaseClaimResult {
+  claimErrors++;
+  if (claimErrors <= 3) {
+    console.warn(
+      `[lease] claim_table_lease ${reason} for ${tableId} (${detail}) - ` +
+        (LEASE_ENFORCED
+          ? 'refusing to deal until ownership can be proven'
+          : 'proceeding without a verified lease because enforcement is off')
+    );
+  }
+  return LEASE_ENFORCED
+    ? { status: 'retryable_failure', reason }
+    : { status: 'granted', verified: false };
+}
+
 /**
- * Try to take (or renew) the lease on one table.
+ * Try to take (or renew) one table lease without erasing why admission failed.
  *
- * @returns true when this instance may deal the table. A transport/RPC error
- *          also returns true — see the fail-open note. Only an explicit
- *          `granted: false` from the database, WITH enforcement switched on,
- *          returns false.
+ * A verified grant is the only success while enforcement is on. Transport/RPC
+ * failures and malformed payloads are retryable: silence is not proof that no
+ * other dealer owns the table. Enforcement off remains an explicit operator
+ * escape hatch and returns an unverified grant while retaining diagnostics.
  */
-export async function claimTable(tableId: string): Promise<boolean> {
+export async function claimTableLease(tableId: string): Promise<TableLeaseClaimResult> {
   try {
     const { data, error } = await supabase.rpc('claim_table_lease', {
       p_table_id: tableId,
@@ -145,29 +177,37 @@ export async function claimTable(tableId: string): Promise<boolean> {
     });
 
     if (error) {
-      claimErrors++;
-      // Log once per table rather than every 5s tick — a missing function or a
-      // permissions problem would otherwise bury the log at 12 lines/minute
-      // per table.
-      if (claimErrors <= 3) {
-        console.warn(
-          `[lease] claim_table_lease failed for ${tableId} (${error.message}) - proceeding without a lease`
-        );
-      }
-      return true;
+      return unverifiedClaimResult(tableId, 'rpc_error', String(error.message || 'unknown error'));
     }
 
     // The RPC RETURNS TABLE, so PostgREST hands back an array of one row.
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row || row.granted !== false) return true;
+    const row = Array.isArray(data) ? (data.length === 1 ? data[0] : null) : data;
+    if (
+      !row ||
+      typeof row !== 'object' ||
+      typeof (row as { granted?: unknown }).granted !== 'boolean'
+    ) {
+      return unverifiedClaimResult(
+        tableId,
+        'malformed_response',
+        'response did not contain one boolean granted discriminator'
+      );
+    }
+
+    const leaseRow = row as {
+      granted: boolean;
+      holder?: unknown;
+      holder_age_seconds?: unknown;
+    };
+    if (leaseRow.granted) return { status: 'granted', verified: true };
+
+    const rawAge = leaseRow.holder_age_seconds;
+    const numericAge = rawAge === null || rawAge === undefined ? null : Number(rawAge);
 
     const conflict: LeaseConflict = {
       tableId,
-      holder: row.holder ?? null,
-      holderAgeSeconds:
-        row.holder_age_seconds === null || row.holder_age_seconds === undefined
-          ? null
-          : Number(row.holder_age_seconds),
+      holder: typeof leaseRow.holder === 'string' ? leaseRow.holder : null,
+      holderAgeSeconds: numericAge !== null && Number.isFinite(numericAge) ? numericAge : null,
       at: Date.now(),
     };
     conflicts.set(tableId, conflict);
@@ -178,16 +218,22 @@ export async function claimTable(tableId: string): Promise<boolean> {
           ? 'Refusing to deal it.'
           : 'ENGINE_LEASE_ENFORCE is off, so dealing anyway - set it to "on" once these logs look right.')
     );
-    return !LEASE_ENFORCED;
+    return LEASE_ENFORCED
+      ? { status: 'owned_elsewhere', conflict }
+      : { status: 'granted', verified: false };
   } catch (err) {
-    claimErrors++;
-    if (claimErrors <= 3) {
-      console.warn(
-        `[lease] claim threw for ${tableId} (${(err as Error)?.message}) - proceeding without a lease`
-      );
-    }
-    return true;
+    const detail = err instanceof Error ? err.message : String(err);
+    return unverifiedClaimResult(tableId, 'rpc_threw', detail);
   }
+}
+
+/**
+ * Boolean compatibility adapter for the existing discovery call sites. New
+ * admission code must use claimTableLease() so a transient ownership failure
+ * remains retryable instead of being conflated with a foreign live owner.
+ */
+export async function claimTable(tableId: string): Promise<boolean> {
+  return (await claimTableLease(tableId)).status === 'granted';
 }
 
 /** What the database says is true of one id we asked to renew. */
@@ -210,9 +256,10 @@ let reclaimableHeartbeats = 0;
  * takeover — the other two are "there is no row for this table" and "the row's
  * holder has gone quiet", both of which we may simply re-claim.
  *
- * (missing) is not hypothetical: claimTable is deliberately fail-open and
- * starts dealing WITHOUT writing a row when the claim RPC errors or times out,
- * and the engine logged 596 supabase_timeouts in the hour this was written.
+ * (missing) is not hypothetical: an operator can explicitly disable
+ * enforcement, a legacy process may have started fail-open, or a row can be
+ * removed after admission. The engine logged 596 supabase_timeouts in the hour
+ * this distinction was introduced.
  *
  * The cost of the old guess was measured, not theorised: 204 teardowns in one
  * hour, "another engine instance has taken it over. Stopping it here." — while
@@ -322,20 +369,17 @@ export async function releaseTables(tableIds?: string[]): Promise<void> {
  * still held a fresh lease when the incoming one asked, and released it
  * moments later. Asking again a few seconds on simply succeeds.
  *
- * Grant is detected by side effect: claimTable() rewrites the conflicts entry
- * (new `at`) when it is refused again, and leaves it untouched when granted.
- * An RPC error also leaves it untouched, so a hard DB outage can retire a
- * conflict record early; it reappears on the next genuine refusal, and
- * `claimErrors` already counts that case separately.
+ * A conflict is retired only by a VERIFIED grant. RPC errors, malformed
+ * responses, and enforcement-off fail-open admissions are not proof that the
+ * foreign owner is gone, so they retain the diagnostic row.
  *
  * @returns how many tables were reclaimed on this pass.
  */
 export async function retryRefusedClaims(): Promise<number> {
   let reclaimed = 0;
-  for (const [tableId, before] of [...conflicts.entries()]) {
-    await claimTable(tableId);
-    const after = conflicts.get(tableId);
-    if (after && after.at === before.at) {
+  for (const tableId of [...conflicts.keys()]) {
+    const result = await claimTableLease(tableId);
+    if (result.status === 'granted' && result.verified) {
       conflicts.delete(tableId);
       reclaimed++;
     }

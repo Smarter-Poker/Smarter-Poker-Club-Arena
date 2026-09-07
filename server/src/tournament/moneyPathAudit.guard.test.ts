@@ -27,6 +27,14 @@ const BASE = code(read('src/tournament/TournamentManagerBase.ts'));
 const RECOVERY = code(read('src/tournament/tournamentRecovery.ts'));
 const MANAGER = code(read('src/tournament/TournamentManager.ts'));
 const ELIM = code(read('src/tournament/TournamentManagerEliminations.ts'));
+const LATE_REG = sql(
+  read('../supabase/migrations/20260907204500_late_registration_can_build_its_first_table.sql')
+);
+const ATOMIC_SATELLITE = sql(
+  read(
+    '../supabase/migrations/20260907205500_a_satellite_finish_pays_one_frozen_entitlement_plan.sql'
+  )
+);
 
 describe('a column that is read is a column that is selected', () => {
   it('mystery_bounty_top_percent is in the query that reads it', () => {
@@ -186,11 +194,12 @@ describe('the recovery watchdog cannot pay money it has no right to', () => {
   });
 
   it('refuses to pay over a final-table deal', () => {
-    // settleFinalTableDeal pays under `tourney:{id}:ftd:{user}`, a namespace
-    // recovery never writes, so nothing dedupes and its top-ups would be new
-    // money on top of a deal the players negotiated.
+    // Recovery recognizes the durable deal receipt and re-drives only those
+    // exact idempotent deal obligations. It never falls through to structure
+    // cash, which would pay new money over the negotiated shares.
     expect(RECOVERY).toMatch(/final_table_deal/);
-    expect(RECOVERY).toMatch(/recoverStuckCompleting_chopped_skipped/);
+    expect(RECOVERY).toMatch(/recoverStuckCompleting_chop_complete_failed/);
+    expect(RECOVERY).toMatch(/engine\.recoverStuckCompletingDeal/);
   });
 });
 
@@ -202,27 +211,44 @@ describe('satellites decide on reads that succeeded', () => {
      * one player instead of awarding N seats. The event then completes, so
      * there is nothing left to retry.
      */
-    expect(MANAGER).toMatch(/satellite_target_unreadable/);
+    expect(ATOMIC_SATELLITE).toContain("'frozen_target_missing'");
+    expect(ATOMIC_SATELLITE).toMatch(
+      /SELECT \* INTO v_target[\s\S]*?IF NOT FOUND THEN[\s\S]*?frozen_target_missing/
+    );
   });
 
   it('an unreadable finisher list does not become an empty field', () => {
-    // An empty list returns early and leaves the entire pool undistributed.
-    expect(MANAGER).toMatch(/satellite_finishers_unreadable/);
+    // The atomic finalizer locks and proves a complete contiguous terminal
+    // standings set before it is allowed to pay or flip COMPLETED.
+    expect(ATOMIC_SATELLITE).toContain("'satellite_standings_not_terminal'");
+    expect(ATOMIC_SATELLITE).toMatch(/v_terminal_count<>v_player_count/);
+    expect(ATOMIC_SATELLITE).toMatch(/v_ranked_count<>v_player_count/);
   });
 });
 
 describe('the prize pool and the structure it is priced by', () => {
-  it('repricing happens even when the guarantee could not be funded', () => {
+  it('entry close cannot finalize without funding and cannot lose its reprice', () => {
     /**
-     * `prizePoolFinalized` is set before funding is attempted, and it is what
-     * `finalFieldSize()` gates on -- so from that moment the structure is
-     * trimmed to the field and the residual holder MOVES. Skipping the reprice
-     * on a funding failure leaves places priced before and after that line
-     * against different structures, with nothing reconciling them.
+     * The database now fits the final field and funds the guarantee inside the
+     * same row-locked transaction; a funding refusal rolls the close back.
+     * Its durable receipt remains pending across response loss or process
+     * death until the exact eliminated-player reprice is database-proven.
      */
-    const base = code(read('src/tournament/TournamentManagerBase.ts'));
-    expect(base).toMatch(/poolToPriceBy/);
-    expect(base).toMatch(/recalculateEliminatedPrizes\(poolToPriceBy\)/);
+    const finalize = LATE_REG.slice(
+      LATE_REG.indexOf('FUNCTION public.fn_finalize_tournament_entry_pool_locked'),
+      LATE_REG.indexOf('FUNCTION public.fn_close_tournament_entry_window')
+    );
+    expect(finalize).toMatch(/fn_ca_payout_structure/);
+    expect(finalize).toMatch(/fn_apply_prize_guarantee/);
+    expect(finalize).toMatch(/INSERT INTO public\.tournament_entry_close_receipts/);
+    expect(finalize.indexOf('fn_ca_payout_structure')).toBeLessThan(
+      finalize.indexOf('fn_apply_prize_guarantee')
+    );
+    expect(finalize.indexOf('fn_apply_prize_guarantee')).toBeLessThan(
+      finalize.indexOf('INSERT INTO public.tournament_entry_close_receipts')
+    );
+    expect(BASE).toMatch(/recalculateEliminatedPrizes\(finalPool\)/);
+    expect(BASE).toMatch(/fn_complete_tournament_entry_reprice/);
   });
 
   it('nothing rewrites the stored payout structure at start', () => {

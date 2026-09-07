@@ -322,7 +322,6 @@ still means a live write is wrong.
 | --------------------------------------------------- | ------------------------------------ | --------- | ----------------------------------------------- | ------------------------------------------------------------------ |
 | `reconcile-tournament-denormals`                    | `fn_reconcile_tournament_denormals`  | **1 min** | denormalised tournament counters                | derive them, or write them in the same transaction as their source |
 | `ca-auto-reconcile-tick`                            | `fn_ca_auto_reconcile_tick`          | **1 min** | ledger drift                                    | the writes that drift are the defect                               |
-| `sweep-seatless-late-registrants`                   | `fn_sweep_seatless_late_registrants` | **1 min** | late registrants who got no seat                | registration and seating in one transaction                        |
 | `union-seat-provenance-heal`                        | `fn_heal_seat_provenance`            | 5 min     | seat rows with no provenance                    | provenance written with the seat, `NOT NULL`                       |
 | `ca-quick-reconcile-5m`                             | `fn_ca_quick_reconcile`              | 5 min     | ledger imbalance (55 write-failure drifts/7d)   | fix the failing ledger write                                       |
 | `ca-escrow-ttl-sweep-10m`                           | `fn_ca_escrow_ttl_sweep`             | 10 min    | escrow rows left open                           | close the escrow in the settle transaction                         |
@@ -339,6 +338,13 @@ still means a live write is wrong.
 | `ca-escalate-reconcile-criticals-hourly`            | `fn_ca_escalate_reconcile_criticals` | hourly    | criticals nobody actioned                       | Tier 3: a check that clears itself needs no escalator              |
 | `flag-garbage-tournaments`                          | `fn_flag_garbage_tournaments`        | nightly   | tournaments that should never have been created | refuse to create them                                              |
 | `ca-pgrst-reload-if-stale`, `pgrst-reload-watchdog` | —                                    | 5/15 min  | PostgREST schema cache not reloading            | the DDL policy in CLAUDE.md §2 — one transaction per change        |
+
+Retired 2026-09-07: `sweep-seatless-late-registrants`. The registration RPC
+now creates capacity, debits the entrant, writes the roster and claims the seat
+inside one tournament-row-locked transaction. The release migration removes
+every cron row named for, or directly invoking, the former repair function and
+then drops the callable repair function itself. It asserts that neither the
+schedule nor the second correctness door remains.
 
 ---
 

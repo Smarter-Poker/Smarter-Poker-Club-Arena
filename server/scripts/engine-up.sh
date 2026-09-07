@@ -50,6 +50,19 @@ IMAGE="${IMAGE:-club-arena-engine:current}"
 ENV_FILE="${ENV_FILE:-/opt/club-arena/server/.env}"
 PORT="${PORT:-8080}"
 
+# HEALTHCHECK is also an availability control: sp-autoheal restarts the whole
+# engine when Docker marks it unhealthy. Under a saturated event loop the
+# health handler has taken longer than the old five-second deadline even while
+# tables were still making progress. Three false negatives then disconnected
+# every table. Give the lightweight semantic probe enough time to be scheduled,
+# and give a restarted engine the same five-minute cold-boot grace as the host
+# supervisor. After that grace, three failures at 20-second intervals still
+# recover a genuinely wedged engine in about one minute.
+HEALTH_INTERVAL="${HEALTH_INTERVAL:-20s}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-15s}"
+HEALTH_START_PERIOD="${HEALTH_START_PERIOD:-300s}"
+HEALTH_RETRIES="${HEALTH_RETRIES:-3}"
+
 log() { echo "[engine-up] $*"; }
 
 # Fail BEFORE touching the running container. A missing env file or image used
@@ -95,8 +108,11 @@ fi
 docker run -d \
   --name "$CONTAINER" \
   --restart always \
-  --health-start-period=90s \
-  --health-cmd="node -e \"fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>process.exit(j.liveness==='dead'?1:0)).catch(()=>process.exit(1))\"" \
+  --health-interval="$HEALTH_INTERVAL" \
+  --health-timeout="$HEALTH_TIMEOUT" \
+  --health-start-period="$HEALTH_START_PERIOD" \
+  --health-retries="$HEALTH_RETRIES" \
+  --health-cmd="node -e \"const fs=require('fs');const s=fs.readFileSync('/proc/1/stat','utf8');const f=s.slice(s.lastIndexOf(')')+2).trim().split(' ').filter(Boolean);const u=Number(fs.readFileSync('/proc/uptime','utf8').split(' ')[0]);const a=u-Number(f[19])/100;if(a<300)process.exit(0);fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>{const l=j.liveness;process.exit(j.running===true&&(l==='ok'||l==='standby')?0:1)}).catch(()=>process.exit(1))\"" \
   --label autoheal=true \
   --label sp.role=engine \
   --log-driver json-file \

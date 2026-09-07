@@ -48,16 +48,17 @@ describe('INSTANCE_ID', () => {
 });
 
 describe('claimTable', () => {
-  it('grants when the database grants', async () => {
-    const { claimTable } = await loadLease(true);
+  it('returns a verified classified grant when the database grants', async () => {
+    const { claimTable, claimTableLease } = await loadLease(true);
     rpc.mockResolvedValue({
       data: [{ granted: true, holder: 'me', holder_age_seconds: 0 }],
       error: null,
     });
+    await expect(claimTableLease(TABLE)).resolves.toEqual({ status: 'granted', verified: true });
     await expect(claimTable(TABLE)).resolves.toBe(true);
   });
 
-  it('refuses a table another live instance holds - but only with enforcement on', async () => {
+  it('classifies a live foreign owner and refuses it when enforcement is on', async () => {
     const denied = {
       data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }],
       error: null,
@@ -65,10 +66,28 @@ describe('claimTable', () => {
 
     const enforced = await loadLease(true);
     rpc.mockResolvedValue(denied);
+    await expect(enforced.claimTableLease(TABLE)).resolves.toEqual({
+      status: 'owned_elsewhere',
+      conflict: expect.objectContaining({
+        tableId: TABLE,
+        holder: 'other-1',
+        holderAgeSeconds: 2.5,
+      }),
+    });
     await expect(enforced.claimTable(TABLE)).resolves.toBe(false);
+  });
 
+  it('preserves the explicit enforcement-off escape hatch but marks its grant unverified', async () => {
+    const denied = {
+      data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }],
+      error: null,
+    };
     const observing = await loadLease(false);
     rpc.mockResolvedValue(denied);
+    await expect(observing.claimTableLease(TABLE)).resolves.toEqual({
+      status: 'granted',
+      verified: false,
+    });
     await expect(observing.claimTable(TABLE)).resolves.toBe(true);
   });
 
@@ -84,23 +103,89 @@ describe('claimTable', () => {
     ]);
   });
 
-  it('FAILS OPEN on an RPC error - a database blip must not stop a table starting', async () => {
-    const { claimTable, leaseDiagnostics } = await loadLease(true);
+  it('classifies an RPC error as retryable and fails closed while enforcement is on', async () => {
+    const { claimTable, claimTableLease, leaseDiagnostics } = await loadLease(true);
     rpc.mockResolvedValue({ data: null, error: { message: 'function does not exist' } });
-    await expect(claimTable(TABLE)).resolves.toBe(true);
-    expect(leaseDiagnostics().claimErrors).toBe(1);
+    await expect(claimTableLease(TABLE)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_error',
+    });
+    await expect(claimTable(TABLE)).resolves.toBe(false);
+    expect(leaseDiagnostics().claimErrors).toBe(2);
   });
 
-  it('FAILS OPEN when the RPC throws outright', async () => {
-    const { claimTable } = await loadLease(true);
+  it('classifies a thrown transport failure as retryable and fails closed when enforced', async () => {
+    const { claimTable, claimTableLease } = await loadLease(true);
     rpc.mockRejectedValue(new Error('ECONNRESET'));
-    await expect(claimTable(TABLE)).resolves.toBe(true);
+    await expect(claimTableLease(TABLE)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_threw',
+    });
+    await expect(claimTable(TABLE)).resolves.toBe(false);
   });
 
-  it('FAILS OPEN on an unrecognised payload rather than guessing', async () => {
-    const { claimTable } = await loadLease(true);
-    rpc.mockResolvedValue({ data: [], error: null });
-    await expect(claimTable(TABLE)).resolves.toBe(true);
+  it.each([
+    ['empty result', []],
+    ['multiple rows', [{ granted: true }, { granted: false }]],
+    ['missing discriminator', [{ holder: 'me' }]],
+    ['non-boolean discriminator', [{ granted: 'true' }]],
+  ])(
+    'classifies a malformed %s as retryable rather than guessing ownership',
+    async (_name, data) => {
+      const { claimTable, claimTableLease } = await loadLease(true);
+      rpc.mockResolvedValue({ data, error: null });
+      await expect(claimTableLease(TABLE)).resolves.toEqual({
+        status: 'retryable_failure',
+        reason: 'malformed_response',
+      });
+      await expect(claimTable(TABLE)).resolves.toBe(false);
+    }
+  );
+
+  it('keeps the enforcement-off escape hatch for transport and malformed responses', async () => {
+    const { claimTableLease } = await loadLease(false);
+
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'timeout' } });
+    await expect(claimTableLease(TABLE)).resolves.toEqual({
+      status: 'granted',
+      verified: false,
+    });
+
+    rpc.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(claimTableLease(TABLE)).resolves.toEqual({
+      status: 'granted',
+      verified: false,
+    });
+
+    rpc.mockResolvedValueOnce({ data: [], error: null });
+    await expect(claimTableLease(TABLE)).resolves.toEqual({
+      status: 'granted',
+      verified: false,
+    });
+  });
+});
+
+describe('retryRefusedClaims', () => {
+  it('retires a conflict only after a verified grant, never after an unreadable claim', async () => {
+    const { claimTableLease, recentLeaseConflicts, retryRefusedClaims } = await loadLease(true);
+
+    rpc.mockResolvedValueOnce({
+      data: [{ granted: false, holder: 'other-1', holder_age_seconds: 2.5 }],
+      error: null,
+    });
+    await claimTableLease(TABLE);
+    expect(recentLeaseConflicts()).toHaveLength(1);
+
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'timeout' } });
+    await expect(retryRefusedClaims()).resolves.toBe(0);
+    expect(recentLeaseConflicts()).toHaveLength(1);
+
+    rpc.mockResolvedValueOnce({
+      data: [{ granted: true, holder: 'me', holder_age_seconds: 0 }],
+      error: null,
+    });
+    await expect(retryRefusedClaims()).resolves.toBe(1);
+    expect(recentLeaseConflicts()).toEqual([]);
   });
 });
 
@@ -128,10 +213,10 @@ describe('heartbeatTables', () => {
    * over. Stopping it here." — while eight of those table ids were held in the
    * database by THAT VERY INSTANCE with a 2.8-second-old heartbeat.
    *
-   * A missing row means claimTable's fail-open path started the table without
-   * writing one (596 supabase_timeouts in that same hour). A stale row means
-   * the holder went quiet. Neither is a takeover, and tearing a live table
-   * down for one is the false alarm, not the safety measure.
+   * A missing row can come from an explicit enforcement-off admission, a
+   * legacy process, or deletion after a verified start. A stale row means the
+   * holder went quiet. Neither is a takeover, and tearing a live table down for
+   * one is the false alarm, not the safety measure.
    */
   it('does NOT stop a table whose lease is merely missing or stale - nobody took it', async () => {
     const { heartbeatTables, recentLeaseConflicts, reclaimableLeaseCount } = await loadLease(true);

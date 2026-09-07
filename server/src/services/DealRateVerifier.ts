@@ -141,6 +141,17 @@ export interface DealRateSnapshot {
 
 export class DealRateVerifier {
   private timer: ReturnType<typeof setInterval> | null = null;
+  private isRunning = false;
+  /**
+   * A verifier pass is mostly reads, but its verdict posts a durable alert.
+   * Clearing the clock cannot let an old leader's read or alert delivery race
+   * the replacement leader after ownership moves.
+   */
+  private readonly lifecycleJobs = new Set<Promise<unknown>>();
+  private lifecycleGeneration = 0;
+  private stopOperation: Promise<void> | null = null;
+  /** Direct check() probes are valid before start, but not after stop. */
+  private acceptingChecks = true;
   /** When this process started watching — see STARTUP_GRACE_MS. */
   private readonly startedAt = Date.now();
   private silentChecks = 0;
@@ -157,17 +168,77 @@ export class DealRateVerifier {
    */
   constructor(private readonly dealingTableIds: () => string[]) {}
 
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.isRunning && this.lifecycleGeneration === generation;
+  }
+
+  private lifecycleEnded(generation: number | null): boolean {
+    return generation !== null && !this.lifecycleIsCurrent(generation);
+  }
+
+  private trackLifecycleJob<T>(job: Promise<T>): Promise<T> {
+    const tracked = job.finally(() => this.lifecycleJobs.delete(tracked));
+    this.lifecycleJobs.add(tracked);
+    return tracked;
+  }
+
+  private openLifecycleScope(): () => void {
+    let release!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    void this.trackLifecycleJob(completion);
+    return release;
+  }
+
+  private launchAlert(job: Promise<unknown>, context: string): void {
+    void this.trackLifecycleJob(job).catch((error) => reportError(error, context));
+  }
+
+  private launchCheck(generation: number): void {
+    if (!this.lifecycleIsCurrent(generation)) return;
+    void this.trackLifecycleJob(this.check()).catch((error) =>
+      reportError(error, 'DealRateVerifier.detached_check')
+    );
+  }
+
+  private async drainLifecycleJobs(): Promise<void> {
+    while (this.lifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.lifecycleJobs]);
+    }
+  }
+
   start(): void {
+    if (this.stopOperation) {
+      console.warn('[DealRateVerifier] Start refused while the prior generation is stopping');
+      return;
+    }
     if (this.timer) return;
-    this.timer = setInterval(() => void this.check(), CHECK_INTERVAL_MS);
+    this.isRunning = true;
+    this.acceptingChecks = true;
+    const generation = ++this.lifecycleGeneration;
+    this.timer = setInterval(() => this.launchCheck(generation), CHECK_INTERVAL_MS);
     (this.timer as { unref?: () => void }).unref?.();
     console.log('[DealRateVerifier] watching the fleet from the database');
   }
 
-  stop(): void {
-    if (!this.timer) return;
-    clearInterval(this.timer);
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
+
+    // Synchronous admission fence; the promise below only joins work which
+    // crossed the boundary before leadership was revoked.
+    this.isRunning = false;
+    this.acceptingChecks = false;
+    this.lifecycleGeneration++;
+    if (this.timer) clearInterval(this.timer);
     this.timer = null;
+
+    const drain = this.drainLifecycleJobs();
+    const trackedStop = drain.finally(() => {
+      if (this.stopOperation === trackedStop) this.stopOperation = null;
+    });
+    this.stopOperation = trackedStop;
+    return trackedStop;
   }
 
   snapshot(): DealRateSnapshot {
@@ -188,13 +259,14 @@ export class DealRateVerifier {
    * over six hours went entirely unreported, and it deserves to be noticed in
    * minutes rather than found by somebody reading the database later.
    */
-  private async checkKillRate(): Promise<void> {
+  private async checkKillRate(generation: number | null): Promise<void> {
     const since = new Date(Date.now() - KILL_WINDOW_MS).toISOString();
     try {
       const { count, error } = await supabase
         .from('engine_recovery_events')
         .select('id', { count: 'exact', head: true })
         .gt('created_at', since);
+      if (this.lifecycleEnded(generation)) return;
       if (error) {
         this.killsInWindow = null;
         return;
@@ -202,29 +274,36 @@ export class DealRateVerifier {
       const kills = count ?? 0;
       this.killsInWindow = kills;
       if (kills >= KILL_STORM_THRESHOLD) {
-        void raiseEngineAlert({
-          alertname: 'ClubArenaEngineKillStorm',
-          severity: 'critical',
-          component: COMPONENT,
-          summary:
-            kills +
-            ' engine kills in ' +
-            Math.round(KILL_WINDOW_MS / 60_000) +
-            'min - tables are being destroyed and rebuilt in a loop',
-          description:
-            'Healthy is under one an hour. Read engine_recovery_events.detail: it names ' +
-            'the phase or stage each kill happened in.',
-          labels: { kills: String(kills) },
-        });
+        this.launchAlert(
+          raiseEngineAlert({
+            alertname: 'ClubArenaEngineKillStorm',
+            severity: 'critical',
+            component: COMPONENT,
+            summary:
+              kills +
+              ' engine kills in ' +
+              Math.round(KILL_WINDOW_MS / 60_000) +
+              'min - tables are being destroyed and rebuilt in a loop',
+            description:
+              'Healthy is under one an hour. Read engine_recovery_events.detail: it names ' +
+              'the phase or stage each kill happened in.',
+            labels: { kills: String(kills) },
+          }),
+          'DealRateVerifier.kill_storm_alert_failed'
+        );
       } else {
-        void resolveEngineAlert(
-          'ClubArenaEngineKillStorm',
-          COMPONENT,
-          'Kill rate back to normal (' + kills + ' in window)'
+        this.launchAlert(
+          resolveEngineAlert(
+            'ClubArenaEngineKillStorm',
+            COMPONENT,
+            'Kill rate back to normal (' + kills + ' in window)'
+          ),
+          'DealRateVerifier.kill_storm_resolve_failed'
         );
       }
     } catch {
       // Same rule as everywhere else here: could-not-ask is not evidence.
+      if (this.lifecycleEnded(generation)) return;
       this.killsInWindow = null;
     }
   }
@@ -258,101 +337,113 @@ export class DealRateVerifier {
 
   /** Exposed for tests; the timer calls this. */
   async check(): Promise<void> {
-    /**
-     * A PLATFORM-WIDE FREEZE IS NOT A FLEET COLLAPSE (Dan 2026-09-01).
-     *
-     * During the :55 maintenance break every table is parked on purpose, so
-     * both of this class's questions - "is the fleet above the floor?" and
-     * "are dealing tables producing hands?" - have a denominator of zero for
-     * five legitimate minutes. The first attempt at handling this fed the
-     * verifier an empty table list from GameServer, which was WORSE than
-     * nothing: an empty list IS the below-floor condition, so it primed
-     * `ClubArenaFleetFloorLost` (critical) to fire on the third tick of
-     * every single break, hourly, forever.
-     *
-     * The check is skipped outright instead, and the counters are reset so a
-     * pre-break streak cannot resume where it left off and fire one tick
-     * after the thaw on evidence gathered before the freeze.
-     */
-    if (isMaintenanceFrozen()) {
-      this.belowFloorChecks = 0;
-      this.silentChecks = 0;
-      this.handsInWindow = null;
-      this.lastCheckedAt = Date.now();
-      return;
-    }
-
-    const tableIds = this.dealingTableIds();
-    this.tablesExpectedDealing = tableIds.length;
-
-    // Guard 2: too small a fleet to conclude anything about the DEAL RATE
-    // from. But standing down silently is the canary hole — a failure that also
-    // empties the fleet would switch this detector off exactly when it matters.
-    // So the floor is watched separately, and losing it is its own alarm.
-    if (tableIds.length < FLEET_FLOOR_TABLES) {
-      /**
-       * ── A RESTART LOOP NEVER OUTLIVES THE STARTUP GRACE (2026-08-30) ─────
-       *
-       * The grace is right: a cold start genuinely has no dealable tables for
-       * minutes, and crying wolf during a slow boot is worse than not alarming
-       * at all. But `startedAt` is THIS PROCESS's clock, and it resets on every
-       * restart — so the grace silences the alarm completely in the one
-       * scenario it exists for.
-       *
-       * Observed on 2026-08-30: Supabase went into RESIZING, the engine could
-       * not win its leadership claim, and it restarted roughly every two
-       * minutes for over forty minutes. Every one of those processes died well
-       * inside the five-minute grace, so `belowFloorChecks` was never even
-       * INCREMENTED, let alone reached three. The entire fleet was dark, the
-       * detector written for exactly that was structurally unable to fire, and
-       * nobody was told. It was found by a person looking at a lobby.
-       *
-       * So the grace now has to justify itself against something that survives
-       * a restart. The database remembers when the fleet last dealt a hand; a
-       * booting engine and a dead one look identical from inside the process
-       * and completely different from there.
-       */
-      if (Date.now() - this.startedAt < STARTUP_GRACE_MS) {
-        const darkAcrossRestarts = await this.fleetDarkAcrossRestarts();
-        if (!darkAcrossRestarts) {
-          // Genuinely still booting — hands are being dealt somewhere, or the
-          // database could not be asked, and neither is evidence of collapse.
-          this.silentChecks = 0;
-          this.handsInWindow = null;
-          this.lastCheckedAt = Date.now();
-          return;
-        }
-        // Not booting: nothing has dealt anywhere for the whole grace window.
-        // Fall through and judge the floor on this process's first check.
-      }
-      this.belowFloorChecks++;
-      this.silentChecks = 0;
-      this.handsInWindow = null;
-      this.lastCheckedAt = Date.now();
-      if (this.belowFloorChecks >= CONSECUTIVE_BELOW_FLOOR) {
-        void raiseEngineAlert({
-          alertname: 'ClubArenaFleetFloorLost',
-          severity: 'critical',
-          component: COMPONENT,
-          summary:
-            'Only ' + tableIds.length + ' table(s) should be dealing - the fleet has collapsed',
-          description:
-            'The horse fleet normally keeps dozens of tables dealing around the clock. ' +
-            'Below ' +
-            FLEET_FLOOR_TABLES +
-            ' the deal-rate check cannot judge anything, so ' +
-            'this is the alarm that covers it. Check HorseFleetManager and table discovery.',
-          labels: { tables: String(tableIds.length) },
-        });
-      }
-      return;
-    }
-    this.belowFloorChecks = 0;
-    void resolveEngineAlert('ClubArenaFleetFloorLost', COMPONENT, 'Fleet is back above the floor');
-
-    const since = new Date(Date.now() - LOOKBACK_MS).toISOString();
+    if (!this.acceptingChecks) return;
+    const releaseLifecycle = this.openLifecycleScope();
+    const generation = this.isRunning ? this.lifecycleGeneration : null;
     try {
-      /* THE ID LIST IS CHUNKED, AND A FAILURE IS SAID OUT LOUD (2026-09-03).
+      if (this.lifecycleEnded(generation)) return;
+      /**
+       * A PLATFORM-WIDE FREEZE IS NOT A FLEET COLLAPSE (Dan 2026-09-01).
+       *
+       * During the :55 maintenance break every table is parked on purpose, so
+       * both of this class's questions - "is the fleet above the floor?" and
+       * "are dealing tables producing hands?" - have a denominator of zero for
+       * five legitimate minutes. The first attempt at handling this fed the
+       * verifier an empty table list from GameServer, which was WORSE than
+       * nothing: an empty list IS the below-floor condition, so it primed
+       * `ClubArenaFleetFloorLost` (critical) to fire on the third tick of
+       * every single break, hourly, forever.
+       *
+       * The check is skipped outright instead, and the counters are reset so a
+       * pre-break streak cannot resume where it left off and fire one tick
+       * after the thaw on evidence gathered before the freeze.
+       */
+      if (isMaintenanceFrozen()) {
+        this.belowFloorChecks = 0;
+        this.silentChecks = 0;
+        this.handsInWindow = null;
+        this.lastCheckedAt = Date.now();
+        return;
+      }
+
+      const tableIds = this.dealingTableIds();
+      this.tablesExpectedDealing = tableIds.length;
+
+      // Guard 2: too small a fleet to conclude anything about the DEAL RATE
+      // from. But standing down silently is the canary hole — a failure that also
+      // empties the fleet would switch this detector off exactly when it matters.
+      // So the floor is watched separately, and losing it is its own alarm.
+      if (tableIds.length < FLEET_FLOOR_TABLES) {
+        /**
+         * ── A RESTART LOOP NEVER OUTLIVES THE STARTUP GRACE (2026-08-30) ─────
+         *
+         * The grace is right: a cold start genuinely has no dealable tables for
+         * minutes, and crying wolf during a slow boot is worse than not alarming
+         * at all. But `startedAt` is THIS PROCESS's clock, and it resets on every
+         * restart — so the grace silences the alarm completely in the one
+         * scenario it exists for.
+         *
+         * Observed on 2026-08-30: Supabase went into RESIZING, the engine could
+         * not win its leadership claim, and it restarted roughly every two
+         * minutes for over forty minutes. Every one of those processes died well
+         * inside the five-minute grace, so `belowFloorChecks` was never even
+         * INCREMENTED, let alone reached three. The entire fleet was dark, the
+         * detector written for exactly that was structurally unable to fire, and
+         * nobody was told. It was found by a person looking at a lobby.
+         *
+         * So the grace now has to justify itself against something that survives
+         * a restart. The database remembers when the fleet last dealt a hand; a
+         * booting engine and a dead one look identical from inside the process
+         * and completely different from there.
+         */
+        if (Date.now() - this.startedAt < STARTUP_GRACE_MS) {
+          const darkAcrossRestarts = await this.fleetDarkAcrossRestarts();
+          if (this.lifecycleEnded(generation)) return;
+          if (!darkAcrossRestarts) {
+            // Genuinely still booting — hands are being dealt somewhere, or the
+            // database could not be asked, and neither is evidence of collapse.
+            this.silentChecks = 0;
+            this.handsInWindow = null;
+            this.lastCheckedAt = Date.now();
+            return;
+          }
+          // Not booting: nothing has dealt anywhere for the whole grace window.
+          // Fall through and judge the floor on this process's first check.
+        }
+        this.belowFloorChecks++;
+        this.silentChecks = 0;
+        this.handsInWindow = null;
+        this.lastCheckedAt = Date.now();
+        if (this.belowFloorChecks >= CONSECUTIVE_BELOW_FLOOR) {
+          this.launchAlert(
+            raiseEngineAlert({
+              alertname: 'ClubArenaFleetFloorLost',
+              severity: 'critical',
+              component: COMPONENT,
+              summary:
+                'Only ' + tableIds.length + ' table(s) should be dealing - the fleet has collapsed',
+              description:
+                'The horse fleet normally keeps dozens of tables dealing around the clock. ' +
+                'Below ' +
+                FLEET_FLOOR_TABLES +
+                ' the deal-rate check cannot judge anything, so ' +
+                'this is the alarm that covers it. Check HorseFleetManager and table discovery.',
+              labels: { tables: String(tableIds.length) },
+            }),
+            'DealRateVerifier.fleet_floor_alert_failed'
+          );
+        }
+        return;
+      }
+      this.belowFloorChecks = 0;
+      this.launchAlert(
+        resolveEngineAlert('ClubArenaFleetFloorLost', COMPONENT, 'Fleet is back above the floor'),
+        'DealRateVerifier.fleet_floor_resolve_failed'
+      );
+
+      const since = new Date(Date.now() - LOOKBACK_MS).toISOString();
+      try {
+        /* THE ID LIST IS CHUNKED, AND A FAILURE IS SAID OUT LOUD (2026-09-03).
          `tableIds` is every table this process is dealing - 1,131 on the floor
          the day this was written - and one `.in()` that long is a ~40 KB URL
          that PostgREST answers with HTTP 400 (the ceiling is about 675 ids).
@@ -361,88 +452,100 @@ export class DealRateVerifier {
          only job is noticing the fleet stopped dealing had silently switched
          itself off, and precisely at the scale where a fleet outage matters.
          It also said nothing, so nothing else could notice either. */
-      let count = 0;
-      let error: { message: string } | null = null;
-      for (let i = 0; i < tableIds.length; i += IN_LIST_CHUNK) {
-        const { count: c, error: e } = await supabase
-          .from('hand_history')
-          .select('id', { count: 'exact', head: true })
-          .in('table_id', tableIds.slice(i, i + IN_LIST_CHUNK))
-          .gt('created_at', since);
-        if (e) {
-          error = e;
-          reportError(
-            new Error(
-              `[DealRateVerifier] hand count failed on the chunk at ${i} of ${tableIds.length}: ${e.message}`
-            ),
-            'DealRateVerifier.hand_count_chunk_failed'
-          );
-          break;
+        let count = 0;
+        let error: { message: string } | null = null;
+        for (let i = 0; i < tableIds.length; i += IN_LIST_CHUNK) {
+          const { count: c, error: e } = await supabase
+            .from('hand_history')
+            .select('id', { count: 'exact', head: true })
+            .in('table_id', tableIds.slice(i, i + IN_LIST_CHUNK))
+            .gt('created_at', since);
+          if (this.lifecycleEnded(generation)) return;
+          if (e) {
+            error = e;
+            reportError(
+              new Error(
+                `[DealRateVerifier] hand count failed on the chunk at ${i} of ${tableIds.length}: ${e.message}`
+              ),
+              'DealRateVerifier.hand_count_chunk_failed'
+            );
+            break;
+          }
+          count += c ?? 0;
         }
-        count += c ?? 0;
-      }
 
-      // Guard 1: an error is NOT evidence of silence.
-      if (error) {
+        // Guard 1: an error is NOT evidence of silence.
+        if (error) {
+          this.silentChecks = 0;
+          this.handsInWindow = null;
+          this.lastCheckedAt = Date.now();
+          return;
+        }
+
+        const hands = count ?? 0;
+        this.handsInWindow = hands;
+        this.lastCheckedAt = Date.now();
+
+        await this.checkKillRate(generation);
+        if (this.lifecycleEnded(generation)) return;
+
+        if (hands > 0) {
+          // Guard 4: a single hand anywhere clears the alarm.
+          this.silentChecks = 0;
+          this.launchAlert(
+            resolveEngineAlert('ClubArenaFleetSilent', COMPONENT, 'Hands are being dealt again'),
+            'DealRateVerifier.fleet_silent_resolve_failed'
+          );
+          return;
+        }
+
+        this.silentChecks++;
+        if (this.silentChecks >= CONSECUTIVE_TO_DECLARE_DEAD) {
+          this.launchAlert(
+            raiseEngineAlert({
+              alertname: 'ClubArenaFleetSilent',
+              severity: 'critical',
+              component: COMPONENT,
+              summary:
+                'ZERO hands in ' +
+                Math.round(LOOKBACK_MS / 60_000) +
+                'min across ' +
+                tableIds.length +
+                ' tables that should be dealing',
+              description:
+                'The database confirms no hands were recorded while this process believes ' +
+                'these tables are dealing. /health is reporting liveness "dead"; Docker will ' +
+                'restart the container. If this repeats, the restart is not fixing the cause.',
+              labels: { tables: String(tableIds.length) },
+            }),
+            'DealRateVerifier.fleet_silent_alert_failed'
+          );
+        }
+        reportError(
+          new Error(
+            'Database confirms ZERO hands in ' +
+              Math.round(LOOKBACK_MS / 60_000) +
+              'min across ' +
+              tableIds.length +
+              ' tables this process says should be dealing (' +
+              this.silentChecks +
+              '/' +
+              CONSECUTIVE_TO_DECLARE_DEAD +
+              ')'
+          ),
+          'DealRateVerifier.fleet_silent',
+          { tables: tableIds.length, silentChecks: this.silentChecks }
+        );
+      } catch (err) {
+        // Guard 1 again, for a throw rather than a returned error.
+        if (this.lifecycleEnded(generation)) return;
         this.silentChecks = 0;
         this.handsInWindow = null;
         this.lastCheckedAt = Date.now();
-        return;
+        reportError(err, 'DealRateVerifier.check_threw');
       }
-
-      const hands = count ?? 0;
-      this.handsInWindow = hands;
-      this.lastCheckedAt = Date.now();
-
-      await this.checkKillRate();
-
-      if (hands > 0) {
-        // Guard 4: a single hand anywhere clears the alarm.
-        this.silentChecks = 0;
-        void resolveEngineAlert('ClubArenaFleetSilent', COMPONENT, 'Hands are being dealt again');
-        return;
-      }
-
-      this.silentChecks++;
-      if (this.silentChecks >= CONSECUTIVE_TO_DECLARE_DEAD) {
-        void raiseEngineAlert({
-          alertname: 'ClubArenaFleetSilent',
-          severity: 'critical',
-          component: COMPONENT,
-          summary:
-            'ZERO hands in ' +
-            Math.round(LOOKBACK_MS / 60_000) +
-            'min across ' +
-            tableIds.length +
-            ' tables that should be dealing',
-          description:
-            'The database confirms no hands were recorded while this process believes ' +
-            'these tables are dealing. /health is reporting liveness "dead"; Docker will ' +
-            'restart the container. If this repeats, the restart is not fixing the cause.',
-          labels: { tables: String(tableIds.length) },
-        });
-      }
-      reportError(
-        new Error(
-          'Database confirms ZERO hands in ' +
-            Math.round(LOOKBACK_MS / 60_000) +
-            'min across ' +
-            tableIds.length +
-            ' tables this process says should be dealing (' +
-            this.silentChecks +
-            '/' +
-            CONSECUTIVE_TO_DECLARE_DEAD +
-            ')'
-        ),
-        'DealRateVerifier.fleet_silent',
-        { tables: tableIds.length, silentChecks: this.silentChecks }
-      );
-    } catch (err) {
-      // Guard 1 again, for a throw rather than a returned error.
-      this.silentChecks = 0;
-      this.handsInWindow = null;
-      this.lastCheckedAt = Date.now();
-      reportError(err, 'DealRateVerifier.check_threw');
+    } finally {
+      releaseLifecycle();
     }
   }
 }

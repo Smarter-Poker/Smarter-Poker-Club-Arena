@@ -29,6 +29,8 @@ let insertResults: { data: unknown; error: unknown }[] = [];
 let existingByHandNumber: Record<number, string> = {};
 /** What fn_relink_rake_record_to_hand returns (rows linked). */
 let rpcResult = 1;
+/** Ordered replies for the accepted-hand transaction. */
+let atomicRpcResults: Array<{ data: unknown; error: unknown }> = [];
 
 function builder(table: string) {
   const call: Call = { table, op: 'select', filters: {} };
@@ -74,9 +76,27 @@ vi.mock('./client.js', () => ({
     from: (table: string) => builder(table),
     rpc: async (fn: string, args: Record<string, unknown>) => {
       rpcCalls.push({ fn, args });
+      if (fn === 'fn_ca_commit_hand_settlement') {
+        return (
+          atomicRpcResults.shift() ?? {
+            data: { success: false, reason: 'missing_test_reply' },
+            error: null,
+          }
+        );
+      }
       return { data: rpcResult, error: null };
     },
   },
+}));
+
+const mockWakeHandProjection = vi.fn(async () => ({
+  projected: 0,
+  alreadyCompleted: 0,
+  deferred: 0,
+  failed: 0,
+}));
+vi.mock('./handProjection.js', () => ({
+  wakeHandProjection: () => mockWakeHandProjection(),
 }));
 
 const mockReportError = vi.fn();
@@ -131,7 +151,139 @@ beforeEach(async () => {
   insertResults = [];
   existingByHandNumber = {};
   rpcResult = 1;
+  atomicRpcResults = [];
   mockReportError.mockReset();
+  mockWakeHandProjection.mockClear();
+});
+
+describe('logHandHistory - accepted-hand transaction', () => {
+  const historyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const atomicParams = (handNumber = GLOBAL_HAND + 500) => ({
+    ...params(handNumber),
+    atomicCommit: {
+      stacks: [
+        { user_id: 'u1', stack: 118, stack_before: 100 },
+        { user_id: 'u2', stack: 80, stack_before: 100 },
+      ],
+      rake: 2,
+      bbj: 0,
+      ref: `hand:${handNumber}`,
+      inflow: 0,
+    },
+  });
+
+  it('uses the one authoritative RPC and wakes projection only after its receipt is proved', async () => {
+    atomicRpcResults = [
+      {
+        data: {
+          success: true,
+          atomic_hand_commit: true,
+          history_id: historyId,
+          replay: false,
+        },
+        error: null,
+      },
+    ];
+
+    const input = atomicParams();
+    const result = await logHandHistory(input);
+
+    expect(result).toMatchObject({
+      handId: historyId,
+      settlementCommitted: true,
+      wroteAwardUnits: false,
+    });
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0]).toMatchObject({
+      fn: 'fn_ca_commit_hand_settlement',
+      args: {
+        p_table_id: input.tableId,
+        p_hand_number: input.handNumber,
+        p_stacks: input.atomicCommit.stacks,
+        p_rake: 2,
+        p_bbj: 0,
+        p_ref: `hand:${input.handNumber}`,
+        p_inflow: 0,
+      },
+    });
+    expect(rpcCalls[0].args.p_hand_row).toMatchObject({
+      table_id: input.tableId,
+      hand_number: input.handNumber,
+    });
+    expect(inserts()).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+    expect(handHistoryQueueDepth()).toBe(0);
+    expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed on a semantic refusal without retry, history lookup, queue, or projection wake', async () => {
+    const input = atomicParams(GLOBAL_HAND + 501);
+    existingByHandNumber[input.handNumber] = historyId;
+    atomicRpcResults = [
+      {
+        data: {
+          success: false,
+          reason: 'payload_mismatch',
+          error: 'the accepted payload is immutable',
+        },
+        error: null,
+      },
+    ];
+
+    await expect(logHandHistory(input)).rejects.toThrow(
+      /atomic hand commit refused \(payload_mismatch\)/
+    );
+
+    expect(rpcCalls).toHaveLength(1);
+    expect(calls).toHaveLength(0);
+    expect(handHistoryQueueDepth()).toBe(0);
+    expect(mockWakeHandProjection).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed success response as a semantic refusal and never projects it', async () => {
+    atomicRpcResults = [
+      {
+        data: {
+          success: true,
+          atomic_hand_commit: true,
+          history_id: 'not-a-durable-receipt',
+        },
+        error: null,
+      },
+    ];
+
+    await expect(logHandHistory(atomicParams(GLOBAL_HAND + 502))).rejects.toThrow(
+      /atomic hand commit refused \(invalid_receipt\)/
+    );
+    expect(rpcCalls).toHaveLength(1);
+    expect(mockWakeHandProjection).not.toHaveBeenCalled();
+    expect(handHistoryQueueDepth()).toBe(0);
+  });
+
+  it('retries only an ambiguous transport response with the identical payload', async () => {
+    atomicRpcResults = [
+      { data: null, error: { message: 'connection reset after commit' } },
+      {
+        data: {
+          success: true,
+          atomic_hand_commit: true,
+          history_id: historyId,
+          replay: true,
+        },
+        error: null,
+      },
+    ];
+    const input = atomicParams(GLOBAL_HAND + 503);
+
+    const result = await logHandHistory(input);
+
+    expect(result.settlementCommitted).toBe(true);
+    expect(result.handId).toBe(historyId);
+    expect(rpcCalls).toHaveLength(2);
+    expect(rpcCalls[0].args).toEqual(rpcCalls[1].args);
+    expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
+    expect(handHistoryQueueDepth()).toBe(0);
+  });
 });
 
 describe('logHandHistory - the hot path', () => {

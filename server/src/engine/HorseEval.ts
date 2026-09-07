@@ -208,7 +208,15 @@ export function straightTop(mask: number, shortDeck: boolean): number {
  * Score any 5-8 card holdem-style hand (best 5 of N). Bigger = better.
  * Encoding: category * 2^20 + 20-bit tiebreak.
  */
-export function scoreHoldem(cards: Card[], count: number, shortDeck: boolean): number {
+/**
+ * The allocation-free reference evaluator. Keep this separate from the
+ * five-card lookup below: the lookup is generated FROM this implementation at
+ * module start, so it cannot silently acquire a different hand ordering.
+ *
+ * Exported only so the exhaustive equivalence test can compare every legal
+ * five-card deal. Production callers should use scoreHoldem.
+ */
+export function scoreHoldemReference(cards: Card[], count: number, shortDeck: boolean): number {
   evRankCount.fill(0);
   evSuitCount.fill(0);
   evSuitMask.fill(0);
@@ -335,6 +343,109 @@ export function scoreHoldem(cards: Card[], count: number, shortDeck: boolean): n
     }
   }
   return 1 * 0x100000 + tb;
+}
+
+/**
+ * FIVE CARDS ARE THE HOT PATH (2026-09-07).
+ *
+ * A production CPU profile put scoreHoldem at 34-54% of the engine's one
+ * JavaScript core. Omaha is the reason: every high evaluation enumerates
+ * exactly two hole cards and three board cards, so it calls this evaluator
+ * tens of thousands of times for ONE horse decision. The generic evaluator
+ * above clears three scratch arrays and walks all thirteen ranks on every
+ * call even though a five-card rank multiset has only 6,175 legal shapes.
+ *
+ * The product of one distinct prime per rank uniquely identifies that
+ * multiset. Build both rule tables from the reference evaluator once at
+ * process start, then a five-card score is five small multiplications, one
+ * flush comparison and one bounded Map lookup. Flushes use their own table
+ * because suits change the category; normal and Short Deck stay separate
+ * because their category order and wheel are different.
+ *
+ * This changes no poker rule and guesses no score. HorseEval.fiveCardLookup
+ * exhaustively compares every 2,598,960 standard-deck five-card deal and every
+ * 376,992 Short Deck deal to scoreHoldemReference. Any collision, missing
+ * shape, flush-order difference or wheel error fails before publish.
+ */
+const RANK_PRIME_BY_VALUE = new Int32Array(15);
+{
+  const primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41];
+  for (let rank = 2; rank <= 14; rank++) RANK_PRIME_BY_VALUE[rank] = primes[rank - 2];
+}
+
+const fiveCardNormal = new Map<number, number>();
+const fiveCardShort = new Map<number, number>();
+const fiveCardFlushNormal = new Map<number, number>();
+const fiveCardFlushShort = new Map<number, number>();
+
+/** Unique prime-product key for exactly five cards. */
+function fiveCardRankKey(cards: Card[]): number {
+  return (
+    RANK_PRIME_BY_VALUE[RANK_VALUES[cards[0].rank]] *
+    RANK_PRIME_BY_VALUE[RANK_VALUES[cards[1].rank]] *
+    RANK_PRIME_BY_VALUE[RANK_VALUES[cards[2].rank]] *
+    RANK_PRIME_BY_VALUE[RANK_VALUES[cards[3].rank]] *
+    RANK_PRIME_BY_VALUE[RANK_VALUES[cards[4].rank]]
+  );
+}
+
+{
+  const ranks = RANKS;
+  const suits = SUITS;
+  const cards: Card[] = new Array(5);
+
+  // Nondecreasing ranks enumerate every multiset once. Five cards of one rank
+  // are impossible; every other shape has a legal non-flush suit assignment.
+  for (let a = 0; a < ranks.length; a++) {
+    for (let b = a; b < ranks.length; b++) {
+      for (let c = b; c < ranks.length; c++) {
+        for (let d = c; d < ranks.length; d++) {
+          for (let e = d; e < ranks.length; e++) {
+            if (a === e) continue;
+            const ix = [a, b, c, d, e];
+            for (let i = 0; i < 5; i++) {
+              cards[i] = { rank: ranks[ix[i]], suit: suits[i % suits.length] } as Card;
+            }
+            const key = fiveCardRankKey(cards);
+            fiveCardNormal.set(key, scoreHoldemReference(cards, 5, false));
+            fiveCardShort.set(key, scoreHoldemReference(cards, 5, true));
+
+            // A five-card flush cannot repeat a rank.
+            if (a < b && b < c && c < d && d < e) {
+              for (let i = 0; i < 5; i++) {
+                cards[i] = { rank: ranks[ix[i]], suit: 'spades' } as Card;
+              }
+              fiveCardFlushNormal.set(key, scoreHoldemReference(cards, 5, false));
+              fiveCardFlushShort.set(key, scoreHoldemReference(cards, 5, true));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Score any 5-8 card holdem-style hand (best 5 of N). Bigger = better.
+ * Encoding: category * 2^20 + 20-bit tiebreak.
+ */
+export function scoreHoldem(cards: Card[], count: number, shortDeck: boolean): number {
+  if (count !== 5 || cards.length < 5) return scoreHoldemReference(cards, count, shortDeck);
+
+  const key = fiveCardRankKey(cards);
+  const flush =
+    cards[0].suit === cards[1].suit &&
+    cards[0].suit === cards[2].suit &&
+    cards[0].suit === cards[3].suit &&
+    cards[0].suit === cards[4].suit;
+  const score = flush
+    ? (shortDeck ? fiveCardFlushShort : fiveCardFlushNormal).get(key)
+    : (shortDeck ? fiveCardShort : fiveCardNormal).get(key);
+
+  // Defensive only: legal five-card poker deals are all in the generated
+  // tables. Preserve the old behavior for malformed/custom test cards rather
+  // than manufacturing a score.
+  return score ?? scoreHoldemReference(cards, count, shortDeck);
 }
 
 // Precomputed index combinations for Omaha evaluation.

@@ -38,6 +38,11 @@ const SETTLER = read('src/services/RakebackSettlerService.ts');
 const PAYOUT_MATH = read('src/tournament/payoutMath.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const MANAGER = read('src/tournament/TournamentManager.ts');
+const FINISH_MIGRATION_NAME = fs
+  .readdirSync(path.join(process.cwd(), '..', 'supabase', 'migrations'))
+  .find((name) => name.includes('completed_means_financially_certified'));
+if (!FINISH_MIGRATION_NAME) throw new Error('financial completion migration is missing');
+const FINISH_MIGRATION = read(`../supabase/migrations/${FINISH_MIGRATION_NAME}`);
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -142,13 +147,14 @@ describe('one rounding rule, shared by every payout site', () => {
 
 describe('every tournament settles against its own prize pool', () => {
   it('the COMPLETED transition reconciles payouts', () => {
-    expect(code(ELIM)).toMatch(/fn_tournament_payout_reconcile/);
+    expect(code(ELIM)).toMatch(/certifyTournamentFinish/);
+    expect(code(FINISH_MIGRATION)).toMatch(/fn_tournament_payout_reconcile/);
   });
 
   it('and clears the break flags on the way out', () => {
     // Defect: endBreak() never runs if the event finishes DURING a break, so
     // COMPLETED tournaments sat flagged on_break=true forever.
-    expect(code(ELIM)).toMatch(/on_break:\s*false/);
+    expect(code(FINISH_MIGRATION)).toMatch(/on_break\s*=\s*false/);
   });
 });
 
@@ -261,7 +267,7 @@ describe('add-ons must always award their chips to the stack', () => {
     expect(src).toMatch(/tryTournamentAddOns\(\)/);
   });
 
-  it('throttles the repeat offer so the 5s sweep does not hammer it', () => {
+  it('throttles the repeat offer so clustered event wakes do not hammer it', () => {
     expect(code(ELIM)).toMatch(/lastAddOnOfferAt\s*>=\s*20_000|20_000\s*<=/);
   });
 
@@ -466,7 +472,7 @@ describe('seating a tournament twice must not build a second set of tables', () 
      *
      * Lowest-free is still the rule. It is now bounded by the table's own
      * capacity, and a player for whom no in-capacity seat exists is left
-     * unseated for the 5-second sweep rather than given an illegal seat.
+     * unseated for the bounded recovery lane rather than given an illegal seat.
      */
     expect(fn).not.toMatch(/while\s*\(taken\.has\(seatNumber\)\)\s*seatNumber\+\+/);
     expect(fn).toMatch(/capacityOf/);
@@ -563,7 +569,7 @@ describe('the database agrees with the engine about which table is the game', ()
   it('ships the late-registration sweep that the client comments promise', () => {
     // fn_seat_late_registrant had NO caller anywhere outside
     // fn_register_for_tournament, yet useTournamentRegistration.ts and
-    // TablePage.tsx both tell the reader "the engine's 5s sweep seats him".
+    // TablePage.tsx both promise that the engine recovery lane seats him.
     // A paid, seatless player waited forever.
     expect(OCCUPIED_MIGRATION).toContain(
       'CREATE OR REPLACE FUNCTION public.fn_sweep_seatless_late_registrants'

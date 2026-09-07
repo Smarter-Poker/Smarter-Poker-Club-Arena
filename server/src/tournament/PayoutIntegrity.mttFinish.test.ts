@@ -33,6 +33,9 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 
 const ELIM = read('src/tournament/TournamentManagerEliminations.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
+const ATOMIC_ELIMINATION = read(
+  '../supabase/migrations/20260907180000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
+);
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -165,8 +168,12 @@ describe('every payout site shares the one rounding rule', () => {
     // STRONGER 2026-08-27: and it must resolve with the FIELD SIZE, like every
     // other payout site, or the top-up would price a short field by a
     // structure that still contains the place nobody reached.
+    // The count may be awaited first so an unreadable final field can fail
+    // closed before payout resolution; pin the data flow, not one expression
+    // shape.
+    expect(code(ELIM)).toMatch(/const\s+finalField\s*=\s*await\s+this\.finalFieldSize\(\)/);
     expect(code(ELIM)).toMatch(
-      /resolvePayoutStructure\(\s*this\.tournamentCache[\s\S]{0,90}?finalFieldSize\(\)/
+      /resolvePayoutStructure\(\s*this\.tournamentCache(?:\s+as\s+any)?\s*,\s*finalField\s*\)/
     );
   });
 
@@ -352,10 +359,14 @@ describe('the finishing ladder cannot drift, and cannot strand a busted player',
 
 describe('a write that decides a payout is checked', () => {
   it('the elimination status write asks for a row count, so its CAS can actually fire', () => {
-    // Defect: PostgREST only returns a count when asked. `updateCount` was
-    // always null, so the `updateCount === 0` half of the guard was dead code.
-    expect(code(ELIM)).toMatch(/\{\s*count:\s*'exact'\s*\}\s*\)\s*\n?\s*\.eq\('tournament_id'/);
-    expect(code(ELIM)).toMatch(/elimination_write_failed/);
+    // The status, prize, payment and seat release now share one database
+    // transaction. Its exact row-count CAS raises, so every earlier write in
+    // that same RPC rolls back on a race.
+    expect(code(ELIM)).toContain("'fn_eliminate_tournament_player_atomic'");
+    expect(ATOMIC_ELIMINATION).toMatch(
+      /UPDATE public\.tournament_players[\s\S]*?GET DIAGNOSTICS v_changed=ROW_COUNT;[\s\S]*?IF v_changed <> 1 THEN[\s\S]*?RAISE EXCEPTION/
+    );
+    expect(code(ELIM)).toMatch(/atomic elimination FAILED/);
   });
 
   it('the winner row stamp is checked on both finish paths', () => {
@@ -364,14 +375,15 @@ describe('a write that decides a payout is checked', () => {
   });
 
   it('a settled final-table deal that stays COMPLETING is reported, not swallowed', () => {
-    // A dealt event left in COMPLETING is picked up by the recovery watchdog,
-    // which pays from the PAYOUT STRUCTURE — the one thing a deal must never
-    // be re-paid from.
-    expect(code(ELIM)).toMatch(/final_table_deal_completed_transition_failed/);
+    // The database certificate refuses the transition until every deal share,
+    // bounty and rake obligation is proven. The event remains COMPLETING and
+    // the durable deal-receipt recovery path can re-drive it.
+    expect(code(ELIM)).toMatch(/final_table_deal_financial_completion_failed/);
   });
 
   it('the rescue only claims to have recovered a tournament it actually completed', () => {
-    expect(code(RECOVERY)).toMatch(/could not mark COMPLETED/);
+    expect(code(RECOVERY)).toMatch(/if \(!completion\.ok \|\| !completion\.certified\)/);
+    expect(code(RECOVERY)).toMatch(/financial completion refused/);
   });
 });
 
@@ -386,9 +398,9 @@ describe('one player, one stack', () => {
     // ARBITRARY row, so fn_sync_tournament_chips could overwrite a live stack
     // with a dead one — and a dead seat's stack is usually 0, which is exactly
     // what the bust sweep eliminates players for.
-    expect(code(ELIM)).not.toMatch(/chipUpdates\.push\(\{\s*user_id:\s*seat\.user_id/);
-    expect(code(ELIM)).toMatch(/bestSeat/);
-    expect(code(ELIM)).toMatch(/joined_at/);
+    expect(code(ELIM)).toContain("'fn_sync_tournament_live_seat_chips'");
+    expect(ATOMIC_ELIMINATION).toMatch(/latest AS \([\s\S]*?GROUP BY user_id/);
+    expect(ATOMIC_ELIMINATION).toMatch(/latest_joined_at IS NOT NULL AND latest_count=1/);
   });
 
   it('two live seats with no usable joined_at is UNKNOWN, not a guess', () => {
@@ -407,7 +419,7 @@ describe('one player, one stack', () => {
     // loop early and hand the sweep a SHORT chip picture, which is the exact
     // failure this test exists to prevent, wearing a different hat.
     expect(code(ELIM)).toMatch(
-      /if\s*\(\s*seatsErr\s*\|\|\s*!chunk\s*\)\s*\{[\s\S]{0,600}?seat_read_failed[\s\S]*?return;/
+      /if\s*\(liveSeatSnapshotErr \|\| liveSeatSnapshot\.ok !== true\)\s*\{[\s\S]{0,600}?live_seat_chip_snapshot_failed[\s\S]*?return;/
     );
   });
 
@@ -423,15 +435,20 @@ describe('one player, one stack', () => {
    * come fastest.
    */
   it('reads seats once for the tournament, not once per table', () => {
-    expect(code(ELIM)).not.toMatch(/for\s*\(const\s*\[tableId\]\s*of\s*this\.tableEngines\)/);
-    expect(code(ELIM)).toMatch(/\.eq\('tables\.tournament_id', this\.tournamentId\)/);
+    expect(ATOMIC_ELIMINATION).toMatch(
+      /FROM public\.tables t\s+JOIN public\.table_seats s[\s\S]*?WHERE t\.tournament_id=p_tournament_id/
+    );
   });
 
-  it('pages that read, so a big field cannot silently truncate it', () => {
-    // A ceiling here understates the chip picture, and an understated stack is
-    // what the bust sweep below eliminates people for.
-    expect(code(ELIM)).toMatch(/SEAT_PAGE/);
-    expect(code(ELIM)).toMatch(/seat_paging_runaway/);
+  it('does the complete seat reduction inside Postgres, with no client page ceiling', () => {
+    const syncStart = ATOMIC_ELIMINATION.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_sync_tournament_live_seat_chips'
+    );
+    const syncEnd = ATOMIC_ELIMINATION.indexOf('$function$;', syncStart);
+    const sync = ATOMIC_ELIMINATION.slice(syncStart, syncEnd);
+    expect(syncStart).toBeGreaterThan(-1);
+    expect(sync).toContain('WITH live AS');
+    expect(sync).not.toMatch(/LIMIT|OFFSET/);
   });
 
   it('covers tables this process holds no engine for', () => {
@@ -439,7 +456,7 @@ describe('one player, one stack', () => {
     // balancer between hydrations, or orphaned by a restart was invisible: its
     // players' chips never synced, so they could never appear in the bust list,
     // so they could never be eliminated, so their seats sat there permanently.
-    expect(code(ELIM)).toMatch(/tables!inner\(tournament_id\)/);
+    expect(ATOMIC_ELIMINATION).toContain('WHERE t.tournament_id=p_tournament_id');
   });
 });
 

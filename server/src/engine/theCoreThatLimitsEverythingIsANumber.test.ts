@@ -215,10 +215,9 @@ describe('the alert thresholds are the governor own numbers', () => {
   });
 
   it('every one of them is guarded against the scheduled :55 break (CLAUDE.md 13 rule 6)', () => {
-    const group = RULES.slice(
-      RULES.indexOf('- name: engine-core'),
-      RULES.indexOf('- name: cluster')
-    );
+    const start = RULES.indexOf('- name: engine-core');
+    const nextGroup = RULES.indexOf('\n  - name:', start + 1);
+    const group = RULES.slice(start, nextGroup);
     const alerts = group.match(/- alert: /g) ?? [];
     const guards =
       group.match(/unless on\(\) max_over_time\(poker_maintenance_break_active\[6m\]\) == 1/g) ??

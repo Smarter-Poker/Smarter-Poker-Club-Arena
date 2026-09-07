@@ -230,13 +230,11 @@ export const equityGovernorSamplerLateMs: Gauge = alwaysOnRegistry.gauge(
  * minutes, from a warning that fires once per stuck episode. A number you can
  * only get by grepping a container is a number nobody watches.
  *
- * `startEliminationChecker` opens a `setInterval` PER TOURNAMENT at
- * `ELIMINATION_SWEEP_MS` (5,000). At the 120-199 RUNNING tournaments measured
- * that night that is 24-40 sweeps a second on ONE JavaScript thread - and a
- * sweep that overruns stops its tournament completing, so the RUNNING set
- * grows and the next second carries more sweeps than the last. Cash tables are
- * collateral: they starve on an ordinary `load_seats` read while Postgres
- * answers it in 133 ms.
+ * The incident implementation opened a five-second `setInterval` PER
+ * TOURNAMENT. At the 120-199 RUNNING tournaments measured that night that was
+ * 24-40 sweeps a second on ONE JavaScript thread. It is now one process-wide,
+ * bounded scheduler; these original measurements remain so a release can
+ * prove the inflight fan-out fell rather than merely moved.
  *
  * Three series make that loop visible before it closes:
  *
@@ -253,16 +251,54 @@ export const equityGovernorSamplerLateMs: Gauge = alwaysOnRegistry.gauge(
  */
 export const eliminationSweepMs: Histogram = alwaysOnRegistry.histogram(
   'poker_tournament_elimination_sweep_ms',
-  'Wall time of one tournament elimination sweep (ms). One sweep per tournament every 5s, all on a single thread.'
+  'Wall time of one admitted tournament elimination sweep (ms). Admission is process-wide and concurrency-bounded.'
 );
 export const eliminationSweepsInflight: Gauge = alwaysOnRegistry.gauge(
   'poker_tournament_elimination_sweeps_inflight',
-  'Elimination sweeps running concurrently in this process. The single JS thread carries all of them; this is the number that outran it on 2026-09-07.'
+  'Tournament generations currently holding their logical elimination lock. Use elimination_scheduler_slots_inflight for underlying promises physically admitted by the process-wide cap.'
 );
 export const eliminationSweepOverrunsTotal: Counter = alwaysOnRegistry.counter(
   'poker_tournament_elimination_sweep_overruns_total',
-  'Sweeps whose lock was still held past the warning threshold (outcome=warned) or taken back by force (outcome=forced). A tournament can neither eliminate nor finish while its sweep is held.'
+  'Admitted sweep promises still unresolved past the warning budget (outcome=warned). The old forced outcome is retired: a live promise keeps its physical scheduler slot until it settles.'
 );
+
+/**
+ * One event-driven bounty-outbox drain also serves COMPLETING tournaments
+ * that have no live manager after a crash. It is deliberately separate from
+ * the elimination scheduler: paying an already-durable obligation must not
+ * fan out once per registered manager or poll from tournament discovery.
+ */
+export const bountyRecoverySweepMs: Histogram = alwaysOnRegistry.histogram(
+  'poker_tournament_bounty_recovery_sweep_ms',
+  'Wall time of one event-driven pending tournament-bounty outbox drain (ms).'
+);
+export const bountyRecoverySweepInflight: Gauge = alwaysOnRegistry.gauge(
+  'poker_tournament_bounty_recovery_sweep_inflight',
+  'Whether the event-driven bounty-outbox recovery drain is running (0 or 1).'
+);
+export const bountyRecoveryPending: Gauge = alwaysOnRegistry.gauge(
+  'poker_tournament_bounty_recovery_pending',
+  'Pending durable bounty obligations after the latest successful global recovery sweep.'
+);
+export const bountyRecoveryRealtimeConnected: Gauge = alwaysOnRegistry.gauge(
+  'poker_tournament_bounty_realtime_connected',
+  'Whether the process-wide tournament bounty obligation Realtime channel is subscribed (0 or 1).'
+);
+export const tournamentManagerWakeRealtimeConnected: Gauge = alwaysOnRegistry.gauge(
+  'poker_tournament_manager_wake_realtime_connected',
+  'Whether the process-wide durable tournament-manager wake Realtime channel is subscribed (0 or 1).'
+);
+export const bountyRecoverySweepRunsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_tournament_bounty_recovery_sweep_runs_total',
+  'Event-driven bounty recovery pages (outcome=completed|partial|frozen|error|coalesced).'
+);
+bountyRecoverySweepInflight.set(0);
+bountyRecoveryPending.set(0);
+bountyRecoveryRealtimeConnected.set(0);
+tournamentManagerWakeRealtimeConnected.set(0);
+for (const outcome of ['completed', 'partial', 'frozen', 'error', 'coalesced']) {
+  bountyRecoverySweepRunsTotal.inc(0, { outcome });
+}
 
 /** Actions processed, 2 series. */
 export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(

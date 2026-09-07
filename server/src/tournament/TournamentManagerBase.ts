@@ -60,12 +60,7 @@ import {
   lastPlayableIndex,
 } from './blindEscalation.js';
 import { observedStepRatio } from './blindLadder.js';
-import {
-  isSpinTournament,
-  paidPlacesForField,
-  parsePayoutStructure,
-  payoutStructureForField,
-} from './payoutStructure.js';
+import { isSpinTournament } from './payoutStructure.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import {
   DEFAULT_TOP_BOUNTY_PERCENT,
@@ -83,11 +78,12 @@ import { mayTakeSeat } from './seatClaim.js';
 import { selectSeatsToFund, tournamentChipSupply } from './seatStackCredit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import type { GameServer } from '../GameServer.js';
+import { tournamentEliminationScheduler } from './TournamentEliminationScheduler.js';
 import {
-  ELIMINATION_SWEEP_STUCK_MS,
-  ELIMINATION_SWEEP_FORCE_RELEASE_MS,
-  eliminationLockVerdict,
-} from './eliminationLock.js';
+  TournamentLifecycleAbortedError,
+  TournamentLifecycleEpoch,
+  type TournamentLifecycleToken,
+} from './TournamentLifecycleEpoch.js';
 
 /** How many places this payout structure pays, whichever shape it arrived in. */
 function countPaidPlaces(structure: unknown): number {
@@ -103,16 +99,67 @@ function countPaidPlaces(structure: unknown): number {
   return 0;
 }
 
+interface TournamentEntryWindowResult {
+  ok?: boolean;
+  reason?: string;
+  entry_closed?: boolean;
+  window_mode?: 'levels' | 'minutes' | 'immediate';
+  close_mode?: 'levels' | 'minutes' | 'immediate' | 'addon';
+  retry_after_ms?: number | string | null;
+  finalized?: boolean;
+  finalization_deferred?: boolean;
+  prize_pool?: number | string;
+  payout_structure?: unknown;
+  reprice_pending?: boolean;
+}
+
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
   protected gameServer: GameServer;
-  /** Guard so two revival sweeps never overlap. */
-  private revivingTables: boolean = false;
-  /** Drives reviveDeadTableEngines — the tournament-side freeze recovery. */
-  protected tableLivenessInterval: NodeJS.Timeout | null = null;
   protected running: boolean = false;
+  /**
+   * Exact ownership of asynchronous manager work.
+   *
+   * A boolean cannot distinguish a stopped generation from a replacement that
+   * has since set the same boolean true. Every start/resume and every delayed
+   * callback is bound to one token; stop aborts it synchronously before any
+   * teardown await can yield.
+   */
+  private readonly lifecycleEpoch = new TournamentLifecycleEpoch();
+  private lifecycleOperation: Promise<void> | null = null;
+  private teardownPromise: Promise<void> | null = null;
+  /** The synchronous half of stop may be applied before the graceful table drain. */
+  private stopFenceApplied = false;
+  private readonly lifecycleTimeouts = new Set<ReturnType<typeof setTimeout>>();
+  private readonly lifecycleIntervals = new Set<ReturnType<typeof setInterval>>();
+  /** Async work launched by lifecycle timers or table-engine starts. */
+  private readonly lifecycleJobs = new Set<Promise<unknown>>();
+  /** Starts must settle before start/resume may advertise admission complete. */
+  private readonly tableEngineStartJobs = new Set<Promise<void>>();
+  /** Full start loops may wait for players; stop engines before draining these. */
+  private readonly tableEngineRunJobs = new Set<Promise<void>>();
+  /** One live teardown/replacement operation per exact dealer generation. */
+  private readonly tableEngineRecoveries = new WeakMap<ServerTableEngine, Promise<void>>();
+  /** One causally-triggered retry per durable table; healthy tables arm none. */
+  private readonly tableEngineRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly tableEngineRecoveryAttempts = new Map<string, number>();
+  /** Scheduler runs are separate because a finish can initiate stop from inside one. */
+  private readonly eliminationSchedulerJobs = new Set<Promise<void>>();
   protected blindTimer: NodeJS.Timeout | null = null;
-  protected eliminationTimer: NodeJS.Timeout | null = null;
+  /** Removes this manager from the one process-wide elimination scheduler. */
+  protected eliminationSchedulerUnregister: (() => void) | null = null;
+  /** Current admitted sweep signal, visible to long mutating helper loops. */
+  protected eliminationSweepSignal: AbortSignal | null = null;
+  /** Cooperative wall-clock deadline for one admitted unit of sweep work. */
+  protected eliminationSweepDeadlineAt = 0;
+  /** A durable unanimous-vote event bypasses the defensive 10s vote throttle. */
+  protected forceFinalTableDealCheck = false;
+  /**
+   * Exact durable browser-action rows admitted but not yet fully executed.
+   * PostgreSQL identity allocation is not commit ordered, so a scalar high
+   * water mark can acknowledge an older id that committed after the snapshot.
+   */
+  protected readonly pendingManagerWakes = new Map<number, string>();
   protected tableEngines: Map<string, ServerTableEngine> = new Map();
   protected currentLevel: number = 0;
   // Add-on period
@@ -123,10 +170,35 @@ export abstract class TournamentManagerBase {
    * opened still gets theirs -- see tryTournamentAddOns.
    */
   protected lastAddOnOfferAt: number = 0;
+  /** Preserve the pre-scheduler add-on retry cadence without per-manager timers. */
+  static readonly ADD_ON_RETRY_MS = 20_000;
+  /** Poll an enabled deal only after this manager has confirmed one final table. */
+  static readonly FINAL_TABLE_DEAL_POLL_MS = 10_000;
+  /** A full table promotes a registrant before expansion; re-drive that handoff promptly. */
+  static readonly LATE_REG_REDRIVE_MS = 5_000;
+  /** Preserve fast recovery while a known zero-stack player is unresolved. */
+  static readonly UNRESOLVED_BUST_RETRY_MS = 5_000;
+  /** Re-check only a tournament whose balancer proved work remains. */
+  static readonly BALANCE_REDRIVE_MS = 5_000;
+  /**
+   * One admitted scheduler job may finish at most this many per-player/table
+   * mutations before yielding its physical slot and urgently requeueing the
+   * continuation. This is a work budget, not a timeout: the live promise is
+   * never released while it is still mutating.
+   */
+  static readonly SWEEP_MUTATION_BATCH_SIZE = 20;
+  /** Yield before one tournament can monopolize a physical scheduler slot. */
+  static readonly SWEEP_WORK_BUDGET_MS = 5_000;
+  /** Horses already offered the current add-on window in this process. */
+  protected addOnAttemptedHorseIds = new Set<string>();
+  /** Round-robin cursor keeps one transient refusal from starving the field. */
+  protected addOnBatchCursor = 0;
   protected pendingAddOnPeriod: boolean = false;
   // Hand-for-hand bubble
   protected handForHandActive: boolean = false;
   protected handForHandAnnounced: boolean = false;
+  /** Stable table membership for the active barrier, including a recovering id. */
+  private readonly handForHandTableIds = new Set<string>();
   /**
    * Latch so an unusable payout_structure is reported once per tournament
    * rather than on every elimination sweep. The condition is a stored column,
@@ -178,10 +250,19 @@ export abstract class TournamentManagerBase {
    */
   protected breakCountdownStarted: boolean = false;
   // Hand-for-hand sync
-  protected handForHandSyncInterval: NodeJS.Timeout | null = null;
   protected handForHandRePauseTimer: NodeJS.Timeout | null = null;
   // Late reg finalization
   protected prizePoolFinalized: boolean = false;
+  /** Database-authoritative entry-window state; never inferred from host time. */
+  protected tournamentEntryWindowClosed: boolean = false;
+  /** One exact deadline timer for a minutes-only window in this lifecycle. */
+  private tournamentEntryCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Serialize timer, level-change, wake and resume attempts inside one manager. */
+  private tournamentEntryCloseOperation: Promise<boolean> | null = null;
+  /** A reconnect may replay the durable close receipt; announce the edge once. */
+  private tournamentEntryCloseAnnounced: boolean = false;
+  /** Local hint; the database receipt remains the crash-safe authority. */
+  protected tournamentEntryRepricePending: boolean = false;
   /**
    * ═════════════════════════════════════════════════════════════════════════
    *  NOBODY BUSTS BEFORE THE CHIPS ARRIVE (2026-08-23)
@@ -193,7 +274,8 @@ export abstract class TournamentManagerBase {
    * A Spin seats its field as RESERVATIONS at zero chips and defers the credit
    * until the wheel stops — `spinRevealToDealMs()` later, about eighteen
    * seconds. The elimination checker, however, starts immediately and fires
-   * every five. So at t+5s it synced `table_seats.stack` (still 0) into
+   * used to run every five seconds. So at t+5s it synced
+   * `table_seats.stack` (still 0) into
    * `tournament_players.chips`, saw the ENTIRE field at `chips <= 0`, busted
    * everyone but an arbitrary "top" stack, and paid that player first prize —
    * before a single card had been dealt.
@@ -224,11 +306,8 @@ export abstract class TournamentManagerBase {
    * event started late.
    */
   protected preStartLeadMs: number = 0;
-  /**
-   * How often the elimination sweep runs. Named because `bustingArmedAt` is
-   * sized in terms of it — a literal in two files is how the two drift apart.
-   */
-  static readonly ELIMINATION_SWEEP_MS = 5000;
+  /** Extra time after deferred Spin chips land before any bust may be ruled. */
+  static readonly POST_CREDIT_BUST_SLACK_MS = 5000;
   /**
    * ═════════════════════════════════════════════════════════════════════════
    *  THE SPIN REVEAL IS ANCHORED TO THE THIRD PAYMENT (2026-08-27)
@@ -290,6 +369,553 @@ export abstract class TournamentManagerBase {
   constructor(tournamentId: string, gameServer: GameServer) {
     this.tournamentId = tournamentId;
     this.gameServer = gameServer;
+  }
+
+  protected lifecycleIsCurrent(token = this.lifecycleEpoch.current()): boolean {
+    return this.running && this.lifecycleEpoch.isCurrent(token);
+  }
+
+  protected captureLifecycleToken(): TournamentLifecycleToken | null {
+    return this.lifecycleEpoch.current();
+  }
+
+  protected assertLifecycleCurrent(token: TournamentLifecycleToken): void {
+    this.lifecycleEpoch.assertCurrent(token);
+    if (!this.running) throw new TournamentLifecycleAbortedError(token.generation);
+  }
+
+  private trackLifecycleJob<T>(operation: Promise<T>): Promise<T> {
+    let tracked!: Promise<T>;
+    tracked = operation.finally(() => this.lifecycleJobs.delete(tracked));
+    this.lifecycleJobs.add(tracked);
+    return tracked;
+  }
+
+  /** Drain to a fixed point: a tracked callback may launch another tracked job. */
+  private async drainLifecycleJobs(): Promise<void> {
+    while (this.lifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.lifecycleJobs]);
+    }
+  }
+
+  private async drainTableEngineStartJobs(): Promise<void> {
+    while (this.tableEngineStartJobs.size > 0) {
+      await Promise.allSettled([...this.tableEngineStartJobs]);
+    }
+  }
+
+  private async drainTableEngineRunJobs(): Promise<void> {
+    while (this.tableEngineRunJobs.size > 0) {
+      await Promise.allSettled([...this.tableEngineRunJobs]);
+    }
+  }
+
+  private async drainEliminationSchedulerJobs(): Promise<void> {
+    while (this.eliminationSchedulerJobs.size > 0) {
+      await Promise.allSettled([...this.eliminationSchedulerJobs]);
+    }
+  }
+
+  private dispatchLifecycleCallback(
+    callback: () => void | Promise<unknown>,
+    errorContext: string
+  ): void {
+    try {
+      const result = callback();
+      if (result && typeof result.then === 'function') {
+        void this.trackLifecycleJob(result).catch((error) => reportError(error, errorContext));
+      }
+    } catch (error) {
+      reportError(error, errorContext);
+    }
+  }
+
+  /**
+   * Install one dealer without ever overwriting another manager's generation.
+   * A collision is an ownership loss, not a cue to stop the incumbent: fence
+   * this manager synchronously and let its shared teardown promise drain the
+   * candidate and every engine it had already admitted.
+   */
+  protected admitManagedTableEngine(tableId: string, engine: ServerTableEngine): void {
+    if (this.gameServer.registerTableEngine(tableId, engine)) return;
+
+    const error = new Error(
+      `Tournament ${this.tournamentId} cannot claim table ${tableId}: another engine generation owns it`
+    );
+    const teardown = this.stop();
+    void teardown.catch((teardownError) =>
+      reportError(teardownError, 'Tournament.table_engine_admission_cleanup_failed', { tableId })
+    );
+    throw error;
+  }
+
+  private tableIdForManagedEngine(engine: ServerTableEngine): string | null {
+    for (const [tableId, candidate] of this.tableEngines) {
+      if (candidate === engine) return tableId;
+    }
+    return null;
+  }
+
+  private clearManagedTableEngineRecovery(tableId: string, resetAttempts = true): void {
+    const timer = this.tableEngineRecoveryTimers.get(tableId);
+    if (timer) this.clearLifecycleTimeout(timer);
+    this.tableEngineRecoveryTimers.delete(tableId);
+    if (resetAttempts) this.tableEngineRecoveryAttempts.delete(tableId);
+  }
+
+  private clearManagedTableEngineRecoveries(): void {
+    for (const timer of this.tableEngineRecoveryTimers.values()) {
+      this.clearLifecycleTimeout(timer);
+    }
+    this.tableEngineRecoveryTimers.clear();
+    this.tableEngineRecoveryAttempts.clear();
+  }
+
+  /** A replacement inherits every pause authority before it can deal. */
+  private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
+    if (this.onBreak) {
+      engine.pauseAfterHand(TournamentManagerBase.MAX_HEALTHY_PAUSE_MS, {
+        beforeNextHand: true,
+      });
+      return;
+    }
+    if (this.handForHandActive) engine.pauseAfterHand();
+  }
+
+  /**
+   * Retain one failed causal operation, not a fleet scanner. The timer names
+   * both the durable table and (when present) the exact dead generation. A
+   * healthy table has no timer and a superseded generation cannot touch its
+   * successor.
+   */
+  private scheduleManagedTableEngineRecovery(
+    tableId: string,
+    expected: ServerTableEngine | null,
+    lifecycle: TournamentLifecycleToken,
+    reason: string
+  ): void {
+    if (!this.lifecycleIsCurrent(lifecycle)) {
+      this.clearManagedTableEngineRecovery(tableId);
+      return;
+    }
+    if (this.tableEngineRecoveryTimers.has(tableId)) return;
+
+    // A table whose dealer generation is being replaced is still a member of
+    // the tournament.  Keep its durable id in an active hand-for-hand barrier
+    // even when the dead engine has already left tableEngines.  Otherwise a
+    // recovery that began just before the bubble was armed disappeared from
+    // the expected roster and the remaining tables could deal an extra hand.
+    if (this.handForHandActive) this.handForHandTableIds.add(tableId);
+
+    const attempt = (this.tableEngineRecoveryAttempts.get(tableId) ?? 0) + 1;
+    this.tableEngineRecoveryAttempts.set(tableId, attempt);
+    const delayMs = Math.min(250 * 2 ** Math.min(attempt - 1, 6), 15_000);
+    let timer!: ReturnType<typeof setTimeout>;
+    timer = this.setLifecycleTimeout(async () => {
+      if (this.tableEngineRecoveryTimers.get(tableId) !== timer) return;
+      this.tableEngineRecoveryTimers.delete(tableId);
+      if (!this.lifecycleIsCurrent(lifecycle)) {
+        this.tableEngineRecoveryAttempts.delete(tableId);
+        return;
+      }
+
+      try {
+        if (expected) {
+          if (this.tableEngines.get(tableId) !== expected) {
+            this.tableEngineRecoveryAttempts.delete(tableId);
+            return;
+          }
+          await this.recoverManagedTableEngine(
+            tableId,
+            expected,
+            lifecycle,
+            `${reason}:retry`,
+            false
+          );
+          return;
+        }
+
+        if (this.tableEngines.has(tableId)) {
+          this.tableEngineRecoveryAttempts.delete(tableId);
+          return;
+        }
+        await this.admitMissingManagedTableEngine(tableId, lifecycle, `${reason}:retry`);
+      } catch (error) {
+        reportError(error, 'Tournament.table_engine_causal_retry_failed', {
+          tournamentId: this.tournamentId,
+          tableId,
+          reason,
+          attempt,
+        });
+        if (!this.lifecycleIsCurrent(lifecycle)) return;
+        const incumbent = this.tableEngines.get(tableId);
+        if (expected && incumbent !== expected) return;
+        this.scheduleManagedTableEngineRecovery(tableId, incumbent ?? null, lifecycle, reason);
+      }
+    }, delayMs);
+    this.tableEngineRecoveryTimers.set(tableId, timer);
+  }
+
+  /** Admit a table retired after a failed start, after proving it is still live. */
+  private async admitMissingManagedTableEngine(
+    tableId: string,
+    lifecycle: TournamentLifecycleToken,
+    reason: string
+  ): Promise<void> {
+    if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.has(tableId)) return;
+
+    const { data: table, error } = await supabase
+      .from('tables')
+      .select('id, tournament_id, status, is_deleted')
+      .eq('id', tableId)
+      .maybeSingle();
+    this.assertLifecycleCurrent(lifecycle);
+    if (error) throw new Error(`Tournament table recovery lookup failed: ${error.message}`);
+
+    const wakeable =
+      table &&
+      table.tournament_id === this.tournamentId &&
+      table.is_deleted !== true &&
+      ['running', 'waiting', 'active'].includes(String(table.status ?? '').toLowerCase());
+    if (!wakeable) {
+      this.clearManagedTableEngineRecovery(tableId);
+      this.retireManagedTableFromHandForHand(tableId);
+      return;
+    }
+
+    const fresh = new ServerTableEngine(tableId);
+    fresh.setHub(tableStateHub);
+    this.prepareManagedTableEngineForPlay(fresh);
+    this.wireEliminationWake(fresh);
+    try {
+      this.admitManagedTableEngine(tableId, fresh);
+      this.tableEngines.set(tableId, fresh);
+      this.startManagedTableEngine(fresh, 'Tournament.table_engine_readmission_failed', {
+        tableId,
+        reason,
+      });
+    } catch (admissionError) {
+      await fresh.stop().catch(() => undefined);
+      this.gameServer.unregisterTournamentTableEngine(tableId, fresh);
+      throw admissionError;
+    }
+  }
+
+  private async recoverManagedTableEngine(
+    tableId: string,
+    engine: ServerTableEngine,
+    lifecycle: TournamentLifecycleToken,
+    reason: string,
+    deferReadmission: boolean
+  ): Promise<void> {
+    const existing = this.tableEngineRecoveries.get(engine);
+    if (existing) return existing;
+
+    const operation = this.performManagedTableEngineRecovery(
+      tableId,
+      engine,
+      lifecycle,
+      reason,
+      deferReadmission
+    ).catch((error) => {
+      if (this.lifecycleIsCurrent(lifecycle)) {
+        const incumbent = this.tableEngines.get(tableId);
+        if (incumbent === engine || !incumbent) {
+          this.scheduleManagedTableEngineRecovery(tableId, incumbent ?? null, lifecycle, reason);
+        }
+      }
+      throw error;
+    });
+    let tracked!: Promise<void>;
+    tracked = operation.finally(() => {
+      if (this.tableEngineRecoveries.get(engine) === tracked) {
+        this.tableEngineRecoveries.delete(engine);
+      }
+    });
+    this.tableEngineRecoveries.set(engine, tracked);
+    return tracked;
+  }
+
+  private async performManagedTableEngineRecovery(
+    tableId: string,
+    engine: ServerTableEngine,
+    lifecycle: TournamentLifecycleToken,
+    reason: string,
+    deferReadmission: boolean
+  ): Promise<void> {
+    if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
+
+    if (deferReadmission) {
+      try {
+        await engine.stop();
+      } catch (error) {
+        // performStop releases process scheduler ownership before reporting an
+        // aggregate cleanup failure. Keeping the dead object addressable would
+        // turn that diagnostic into a permanent table outage.
+        reportError(error, 'Tournament.table_engine_failed_start_teardown_error', {
+          tableId,
+          reason,
+        });
+      }
+      if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
+      if (!this.gameServer.unregisterTournamentTableEngine(tableId, engine)) {
+        const ownershipError = new Error(
+          `Tournament ${this.tournamentId} lost table ${tableId} while retiring a failed engine start`
+        );
+        void this.stop().catch((error) =>
+          reportError(error, 'Tournament.table_engine_ownership_loss_cleanup_failed', { tableId })
+        );
+        throw ownershipError;
+      }
+      this.tableEngines.delete(tableId);
+      this.scheduleManagedTableEngineRecovery(tableId, null, lifecycle, reason);
+      return;
+    }
+
+    const fresh = new ServerTableEngine(tableId);
+    fresh.setHub(tableStateHub);
+    this.prepareManagedTableEngineForPlay(fresh);
+    this.wireEliminationWake(fresh);
+    let replaced = false;
+    try {
+      replaced = await this.gameServer.replaceTableEngine(tableId, engine, fresh);
+    } catch (error) {
+      await fresh.stop().catch(() => undefined);
+      throw error;
+    }
+    if (!replaced) {
+      await fresh.stop().catch(() => undefined);
+      if (this.lifecycleIsCurrent(lifecycle) && this.tableEngines.get(tableId) === engine) {
+        const ownershipError = new Error(
+          `Tournament ${this.tournamentId} lost table ${tableId} during generation replacement`
+        );
+        void this.stop().catch((error) =>
+          reportError(error, 'Tournament.table_engine_ownership_loss_cleanup_failed', { tableId })
+        );
+        throw ownershipError;
+      }
+      return;
+    }
+
+    if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) {
+      await fresh.stop().catch(() => undefined);
+      this.gameServer.unregisterTournamentTableEngine(tableId, fresh);
+      return;
+    }
+    this.tableEngines.set(tableId, fresh);
+    this.startManagedTableEngine(fresh, 'Tournament.table_engine_restart_failed', {
+      tableId,
+      reason,
+    });
+  }
+
+  /** A manager is not torn down until every table start it launched has settled. */
+  protected startManagedTableEngine(
+    engine: ServerTableEngine,
+    errorContext: string,
+    metadata?: Record<string, unknown>
+  ): void {
+    const lifecycle = this.lifecycleEpoch.current();
+    const tableId = this.tableIdForManagedEngine(engine);
+    const operation = engine.start().catch(async (error) => {
+      reportError(error, errorContext, metadata);
+      if (!lifecycle || !tableId || !this.lifecycleIsCurrent(lifecycle)) return;
+      await this.recoverManagedTableEngine(tableId, engine, lifecycle, 'engine_start_failed', true);
+    });
+    let runJob!: Promise<void>;
+    runJob = operation.finally(() => this.tableEngineRunJobs.delete(runJob));
+    this.tableEngineRunJobs.add(runJob);
+    void runJob.catch((error) =>
+      reportError(error, 'Tournament.table_engine_start_recovery_failed', {
+        ...metadata,
+        tableId,
+      })
+    );
+
+    // start() may intentionally wait for a second player for minutes. Manager
+    // admission needs the earlier authoritative-ready edge: configuration and
+    // the first waiting snapshot are loaded, so the table is connectable even
+    // though it is not yet dealable.
+    const readiness = engine.ready.then((ready) => {
+      if (!ready) throw new Error(`Tournament table ${tableId ?? 'unknown'} was never ready`);
+      if (tableId && this.tableEngines.get(tableId) === engine) {
+        this.clearManagedTableEngineRecovery(tableId);
+      }
+    });
+    let tableStart!: Promise<void>;
+    tableStart = readiness.finally(() => this.tableEngineStartJobs.delete(tableStart));
+    this.tableEngineStartJobs.add(tableStart);
+    void tableStart.catch((error) =>
+      reportError(error, 'Tournament.table_engine_never_ready', {
+        ...metadata,
+        tableId,
+      })
+    );
+  }
+
+  /** Bind a delayed manager mutation to the exact lifecycle that scheduled it. */
+  protected setLifecycleTimeout(
+    callback: () => void | Promise<unknown>,
+    delayMs: number
+  ): ReturnType<typeof setTimeout> {
+    const token = this.lifecycleEpoch.current();
+    const timer = setTimeout(() => {
+      this.lifecycleTimeouts.delete(timer);
+      if (!this.lifecycleIsCurrent(token)) return;
+      this.dispatchLifecycleCallback(callback, 'TournamentManagerBase.lifecycle_timeout_failed');
+    }, delayMs);
+    this.lifecycleTimeouts.add(timer);
+    timer.unref?.();
+    return timer;
+  }
+
+  /** Bind repeated manager work to the exact lifecycle that armed it. */
+  protected setLifecycleInterval(
+    callback: () => void | Promise<unknown>,
+    delayMs: number
+  ): ReturnType<typeof setInterval> {
+    const token = this.lifecycleEpoch.current();
+    const timer = setInterval(() => {
+      if (!this.lifecycleIsCurrent(token)) {
+        clearInterval(timer);
+        this.lifecycleIntervals.delete(timer);
+        return;
+      }
+      this.dispatchLifecycleCallback(callback, 'TournamentManagerBase.lifecycle_interval_failed');
+    }, delayMs);
+    this.lifecycleIntervals.add(timer);
+    timer.unref?.();
+    return timer;
+  }
+
+  protected clearLifecycleTimeout(timer: ReturnType<typeof setTimeout>): void {
+    clearTimeout(timer);
+    this.lifecycleTimeouts.delete(timer);
+  }
+
+  protected clearLifecycleInterval(timer: ReturnType<typeof setInterval>): void {
+    clearInterval(timer);
+    this.lifecycleIntervals.delete(timer);
+  }
+
+  private clearLifecycleTimers(): void {
+    for (const timer of this.lifecycleTimeouts) clearTimeout(timer);
+    for (const timer of this.lifecycleIntervals) clearInterval(timer);
+    this.lifecycleTimeouts.clear();
+    this.lifecycleIntervals.clear();
+  }
+
+  /** Install the process-wide sweep runner once for this manager. */
+  protected registerEliminationScheduler(run: (signal: AbortSignal) => Promise<void>): void {
+    if (this.eliminationSchedulerUnregister) return;
+    const lifecycle = this.lifecycleEpoch.current();
+    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    this.eliminationSchedulerUnregister = tournamentEliminationScheduler.register({
+      tournamentId: this.tournamentId,
+      run: (signal) => {
+        // Defer entry by one microtask so the promise is registered as active
+        // before user code can reach its first await (or initiate stop).
+        const operation = Promise.resolve().then(async () => {
+          if (!this.lifecycleIsCurrent(lifecycle)) return;
+          await run(signal);
+        });
+        let tracked!: Promise<void>;
+        tracked = operation.finally(() => this.eliminationSchedulerJobs.delete(tracked));
+        this.eliminationSchedulerJobs.add(tracked);
+        return tracked;
+      },
+      isActive: () => this.lifecycleIsCurrent(lifecycle),
+    });
+  }
+
+  /** Remove only this manager's scheduler entry; safe from lifecycle catches. */
+  protected unregisterEliminationScheduler(): void {
+    if (!this.eliminationSchedulerUnregister) return;
+    this.eliminationSchedulerUnregister();
+    this.eliminationSchedulerUnregister = null;
+  }
+
+  /**
+   * Cooperative lifecycle fence for helpers entered by the shared scheduler.
+   * A helper may also run during initial setup, when no sweep signal exists;
+   * in both cases manager stop is authoritative.
+   */
+  protected eliminationMutationAllowed(): boolean {
+    return (
+      this.running &&
+      !this.eliminationSweepSignal?.aborted &&
+      (this.eliminationSweepDeadlineAt === 0 || Date.now() < this.eliminationSweepDeadlineAt)
+    );
+  }
+
+  protected eliminationWorkBudgetExpired(): boolean {
+    return this.eliminationSweepDeadlineAt > 0 && Date.now() >= this.eliminationSweepDeadlineAt;
+  }
+
+  /** Wake this manager without exposing the process scheduler to GameServer. */
+  requestEliminationSweep(reason?: string, durableWakeId?: number): boolean {
+    if (reason === 'deal_vote') this.forceFinalTableDealCheck = true;
+    const accepted = tournamentEliminationScheduler.wake(this.tournamentId);
+    if (accepted && Number.isSafeInteger(durableWakeId) && Number(durableWakeId) > 0) {
+      this.pendingManagerWakes.set(Number(durableWakeId), String(reason ?? ''));
+    }
+    return accepted;
+  }
+
+  /**
+   * Re-drive one manager through the scheduler's shared timer. This preserves
+   * narrow feature cadences without recreating one timer per tournament.
+   */
+  requestEliminationSweepAfter(delayMs: number): void {
+    tournamentEliminationScheduler.wakeAfter(this.tournamentId, delayMs);
+  }
+
+  /** A delayed correctness retry that outranks the routine safety backlog. */
+  protected requestUrgentEliminationSweepAfter(delayMs: number): void {
+    tournamentEliminationScheduler.wakeUrgentAfter(this.tournamentId, delayMs);
+  }
+
+  /** Keep one add-on retry due while its persisted offer window is open. */
+  protected scheduleAddOnRetry(): void {
+    if (!this.addOnPeriodTriggered || this.prizePoolFinalized) return;
+    const dueIn = Math.max(
+      0,
+      this.lastAddOnOfferAt + TournamentManagerBase.ADD_ON_RETRY_MS - Date.now()
+    );
+    this.requestUrgentEliminationSweepAfter(dueIn);
+  }
+
+  /**
+   * A zero final stack is the event that can create an elimination. The engine
+   * invokes this callback as a scheduling hint after its persistence attempts.
+   * A failed mirror/history write must still wake because Dealing can durably
+   * vacate the zero later and that player will not appear in another hand. The
+   * sweep is the authority and fails closed until exact evidence is visible.
+   * Wake only for the zero shape; waking on every ordinary hand would rebuild
+   * the fan-out this scheduler removes. Registration, rebuy, add-on, bounty,
+   * deal-vote and window transitions each carry their own durable wake or
+   * exact deadline.
+   */
+  protected wireEliminationWake(engine: ServerTableEngine): void {
+    engine.onHandComplete((_tableId, finalStacks) => {
+      if (finalStacks.some((player) => Number(player.stack) <= 0)) {
+        this.requestEliminationSweep();
+      }
+    });
+    engine.onPauseReady(() => this.advanceHandForHandBarrier());
+    engine.onRestartRequired((reason) => {
+      const lifecycle = this.captureLifecycleToken();
+      const tableId = this.tableIdForManagedEngine(engine);
+      if (!lifecycle || !tableId || !this.lifecycleIsCurrent(lifecycle)) return;
+      const recovery = this.recoverManagedTableEngine(tableId, engine, lifecycle, reason, false);
+      void this.trackLifecycleJob(recovery).catch((error) =>
+        reportError(error, 'Tournament.table_engine_runtime_recovery_failed', {
+          tournamentId: this.tournamentId,
+          tableId,
+          reason,
+        })
+      );
+    });
   }
 
   isRunning(): boolean {
@@ -454,7 +1080,7 @@ export abstract class TournamentManagerBase {
     const pausedLevelTotalMs = pausedLevelData ? this.levelDurationMs(pausedLevelData) : 0;
     if (this.blindTimer) {
       const elapsed = Date.now() - this.blindTimerStartedAt;
-      clearTimeout(this.blindTimer);
+      this.clearLifecycleTimeout(this.blindTimer);
       this.blindTimer = null;
       this.savedBlindTimerRemaining =
         pausedLevelTotalMs > 0 ? Math.max(pausedLevelTotalMs - elapsed, 1000) : 0;
@@ -468,7 +1094,8 @@ export abstract class TournamentManagerBase {
 
   /** Synchronized break: pause blind timer and broadcast break event */
   async pauseForBreak(breakDurationMs: number): Promise<void> {
-    if (!this.running || this.onBreak) return;
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || this.onBreak) return;
     /**
      * ═════════════════════════════════════════════════════════════════════
      *  A SPIN NEVER BREAKS — AND THE GATE LIVES HERE (2026-08-27)
@@ -489,7 +1116,11 @@ export abstract class TournamentManagerBase {
      * in between `this.running = true` at the top of start() and the row
      * landing a query later.
      */
-    if (!(await this.breakApplies())) {
+    const applies = await this.breakApplies();
+    // breakApplies may be waiting on the tournament row while shutdown fences
+    // this manager. Never let that retired continuation begin a new break.
+    if (!this.lifecycleIsCurrent(lifecycle)) return;
+    if (!applies) {
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] Break refused - this format does not take the :55 break`
       );
@@ -550,6 +1181,10 @@ export abstract class TournamentManagerBase {
     } catch (err) {
       reportError(err, 'TournamentManagerBase.pauseForBreak_persist');
     }
+    // Persistence was admitted by this generation, but its response may return
+    // after the generation was fenced. The retired manager must not publish or
+    // pause table engines behind shutdown's final ownership snapshot.
+    if (!this.lifecycleIsCurrent(lifecycle)) return;
 
     const blindStructure = this.tournamentCache?.blind_structure || [];
     // Derived past the end of the structure. The clamped index used to show the
@@ -587,6 +1222,7 @@ export abstract class TournamentManagerBase {
           }
         : null,
     });
+    if (!this.lifecycleIsCurrent(lifecycle)) return;
 
     // 2026-08-18: the break screen is a full-screen opaque overlay
     // (TournamentBreakScreen.css: position fixed, inset 0, z-index 700), and
@@ -643,7 +1279,8 @@ export abstract class TournamentManagerBase {
    * when the break ACTUALLY started, not when the last hand was announced.
    */
   async beginBreakCountdown(breakDurationMs: number): Promise<void> {
-    if (!this.onBreak) return;
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle) || !this.onBreak) return;
     /**
      * ONCE STARTED, A COUNTDOWN IS NOT RESTARTED (2026-08-25).
      *
@@ -668,6 +1305,10 @@ export abstract class TournamentManagerBase {
     } catch (err) {
       reportError(err, 'TournamentManagerBase.beginBreakCountdown_persist');
     }
+    // The database write began while this manager owned the generation. If its
+    // response crosses the stop fence, do not announce a countdown from a
+    // manager that no longer owns the tournament.
+    if (!this.lifecycleIsCurrent(lifecycle)) return;
     await this.broadcast('tournament_break_started', {
       level: this.currentLevel,
       phase: 'counting_down',
@@ -677,6 +1318,7 @@ export abstract class TournamentManagerBase {
       breakEndsAt: endsAt,
       synchronized: true,
     });
+    if (!this.lifecycleIsCurrent(lifecycle)) return;
   }
 
   /**
@@ -867,15 +1509,178 @@ export abstract class TournamentManagerBase {
     return new Set(seats.map((s: { table_id: string }) => s.table_id)).size;
   }
 
-  /**
-   * Late registration is closed once the level cap has been reached (or the
-   * prize pool finalized, which start() does immediately for tournaments with
-   * no late-reg window at all). Shared by the accelerated-MTT level halving.
-   */
+  /** Late registration state is owned by fn_close_tournament_entry_window. */
   protected isLateRegClosed(): boolean {
-    if (this.prizePoolFinalized) return true;
-    const cap = this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 0;
-    return cap > 0 && this.currentLevel >= cap;
+    return this.prizePoolFinalized || this.tournamentEntryWindowClosed;
+  }
+
+  private clearTournamentEntryCloseTimer(): void {
+    if (!this.tournamentEntryCloseTimer) return;
+    this.clearLifecycleTimeout(this.tournamentEntryCloseTimer);
+    this.tournamentEntryCloseTimer = null;
+  }
+
+  /**
+   * Arm exactly one lifecycle-owned check from a DATABASE-RELATIVE delay.
+   * No database timestamp is compared with Date.now(): clocks on different
+   * hosts never decide whether a paid entry is still legal.
+   */
+  private armTournamentEntryCloseTimer(retryAfterMs: number): void {
+    this.clearTournamentEntryCloseTimer();
+    const delayMs = Math.min(Math.max(0, Math.ceil(retryAfterMs)), 2_147_483_647);
+    this.tournamentEntryCloseTimer = this.setLifecycleTimeout(() => {
+      this.tournamentEntryCloseTimer = null;
+      return this.reconcileTournamentEntryWindow('engine.entry_window_deadline');
+    }, delayMs);
+  }
+
+  /**
+   * Start, resume, blind transitions, the exact minutes timer and the durable
+   * manager wake all enter this one serialized operation. A committed close
+   * leaves a database receipt plus wake; that wake cannot be acknowledged by
+   * the elimination loop until this method proves the reprice complete.
+   */
+  protected async reconcileTournamentEntryWindow(source: string): Promise<boolean> {
+    if (this.tournamentEntryCloseOperation) return this.tournamentEntryCloseOperation;
+    let operation!: Promise<boolean>;
+    operation = this.reconcileTournamentEntryWindowOnce(source).finally(() => {
+      if (this.tournamentEntryCloseOperation === operation) {
+        this.tournamentEntryCloseOperation = null;
+      }
+    });
+    this.tournamentEntryCloseOperation = operation;
+    return operation;
+  }
+
+  private async reconcileTournamentEntryWindowOnce(source: string): Promise<boolean> {
+    const lifecycle = this.captureLifecycleToken();
+    if (!lifecycle || !this.lifecycleIsCurrent(lifecycle)) return false;
+
+    let data: unknown;
+    let error: { message?: string } | null = null;
+    try {
+      const response = await supabase.rpc('fn_close_tournament_entry_window', {
+        p_tournament_id: this.tournamentId,
+        p_source: source,
+      });
+      data = response.data;
+      error = response.error;
+    } catch (err) {
+      error = { message: err instanceof Error ? err.message : String(err) };
+    }
+    if (!this.lifecycleIsCurrent(lifecycle)) return false;
+
+    const result = (data ?? {}) as TournamentEntryWindowResult;
+    if (error || result.ok !== true || typeof result.entry_closed !== 'boolean') {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] entry-window authority refused ${source}: ${error?.message ?? result.reason ?? 'invalid contract'}`
+        ),
+        'Tournament.entry_window_close_refused'
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return false;
+    }
+
+    if (!result.entry_closed) {
+      this.tournamentEntryWindowClosed = false;
+      this.tournamentEntryRepricePending = false;
+      const retryAfterMs = Number(result.retry_after_ms);
+      if (result.window_mode === 'minutes' && Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
+        this.armTournamentEntryCloseTimer(retryAfterMs);
+      } else {
+        this.clearTournamentEntryCloseTimer();
+      }
+      return true;
+    }
+
+    this.clearTournamentEntryCloseTimer();
+    this.tournamentEntryWindowClosed = true;
+
+    if (!this.tournamentEntryCloseAnnounced) {
+      this.tournamentEntryCloseAnnounced = true;
+      try {
+        await this.broadcast('late_reg_closed', {
+          prizePool: Number(result.prize_pool ?? this.tournamentCache?.prize_pool) || 0,
+        });
+      } catch (err) {
+        reportError(err, 'Tournament.entry_window_close_broadcast_failed');
+      }
+      if (!this.lifecycleIsCurrent(lifecycle)) return false;
+    }
+
+    // The entry boundary and add-on boundary are distinct. Entry closes now;
+    // add-on chips keep the pool mutable until the persisted add-on deadline.
+    if (result.finalization_deferred === true && result.reason === 'addon_required') {
+      this.tournamentEntryRepricePending = false;
+      if (this.tournamentCache?.add_on_available && !this.addOnPeriodTriggered) {
+        if (this.onBreak) {
+          this.pendingAddOnPeriod = true;
+        } else {
+          await this.triggerAddOnPeriod();
+          if (!this.lifecycleIsCurrent(lifecycle)) return false;
+        }
+      }
+      return true;
+    }
+
+    if (result.finalized !== true) {
+      reportError(
+        new Error('entry-window authority closed entry without finalizing or deferring the pool'),
+        'Tournament.entry_window_close_contract_invalid'
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return false;
+    }
+
+    const finalPool = Number(result.prize_pool);
+    if (!Number.isFinite(finalPool) || !Array.isArray(result.payout_structure)) {
+      reportError(
+        new Error('entry-window authority returned an unreadable final pool or payout structure'),
+        'Tournament.entry_window_close_result_unreadable'
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return false;
+    }
+    this.prizePoolFinalized = true;
+    if (this.tournamentCache) {
+      this.tournamentCache.prize_pool = finalPool;
+      this.tournamentCache.prize_pool_finalized = true;
+      this.tournamentCache.payout_structure = result.payout_structure;
+    }
+
+    this.tournamentEntryRepricePending = result.reprice_pending === true;
+    if (!this.tournamentEntryRepricePending) return true;
+
+    const repriced = await this.recalculateEliminatedPrizes(finalPool);
+    if (!this.lifecycleIsCurrent(lifecycle)) return false;
+    if (!repriced) {
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return false;
+    }
+
+    const { data: completeData, error: completeError } = await supabase.rpc(
+      'fn_complete_tournament_entry_reprice',
+      { p_tournament_id: this.tournamentId }
+    );
+    if (!this.lifecycleIsCurrent(lifecycle)) return false;
+    const completion = (completeData ?? {}) as {
+      ok?: boolean;
+      reason?: string;
+      mismatches?: number;
+    };
+    if (completeError || completion.ok !== true) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] final-field reprice proof refused: ${completeError?.message ?? completion.reason ?? 'invalid contract'} (${Number(completion.mismatches) || 0} mismatches)`
+        ),
+        'Tournament.entry_window_reprice_unproven'
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return false;
+    }
+    this.tournamentEntryRepricePending = false;
+    return true;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1127,64 +1932,91 @@ export abstract class TournamentManagerBase {
     return this.synchronizedBreaksEnabled();
   }
 
-  /** Start hand-for-hand sync: check every 500ms if all tables finished their hand */
-  protected startHandForHandSync(): void {
-    if (this.handForHandSyncInterval) return;
+  /**
+   * Advance hand-for-hand from the final table's actual between-hands edge.
+   * Every engine publishes that edge only after its wait resolver and escape
+   * deadline exist, so the synchronous resume below cannot be lost.
+   */
+  private advanceHandForHandBarrier(): void {
+    if (!this.handForHandActive || !this.running) return;
+    const expectedIds = [...this.handForHandTableIds];
+    if (expectedIds.length === 0) return;
+    const engines = expectedIds.map((tableId) => this.tableEngines.get(tableId));
+    if (
+      engines.some((engine) => !engine) ||
+      !engines.every((engine) => engine!.isWaitingForHandForHand())
+    ) {
+      return;
+    }
 
-    this.handForHandSyncInterval = setInterval(() => {
-      if (!this.handForHandActive || !this.running) {
-        this.stopHandForHandSync();
-        return;
-      }
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Hand-for-hand: all ${engines.length} tables done - resuming for next hand`
+    );
+    for (const engine of engines) engine!.resumeDealing();
 
-      // Check if ALL table engines are waiting for hand-for-hand resume
-      const engines = Array.from(this.tableEngines.values());
-      if (engines.length === 0) return;
-
-      const allWaiting = engines.every((e) => e.isWaitingForHandForHand());
-      if (allWaiting) {
-        console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Hand-for-hand: all ${engines.length} tables done - resuming for next hand`
-        );
-        // Resume all engines together for the next hand, then immediately re-pause
-        for (const engine of engines) {
-          engine.resumeDealing();
-        }
-        // Re-pause for next hand-for-hand cycle (if still active)
-        if (this.handForHandActive) {
-          if (this.handForHandRePauseTimer) clearTimeout(this.handForHandRePauseTimer);
-          this.handForHandRePauseTimer = setTimeout(() => {
-            // Guard: tournament ended, or the bubble already burst (hand-for-hand
-            // no longer active) — do NOT re-pause engines that were resumed for
-            // normal post-bubble play, or the tournament freezes.
-            if (!this.running || !this.handForHandActive) return;
-            this.handForHandRePauseTimer = null;
-            for (const engine of this.tableEngines.values()) {
-              engine.pauseAfterHand();
-            }
-          }, 500); // Small delay to let dealing start
-        }
-      }
+    if (this.handForHandRePauseTimer) {
+      this.clearLifecycleTimeout(this.handForHandRePauseTimer);
+    }
+    this.handForHandRePauseTimer = this.setLifecycleTimeout(() => {
+      this.handForHandRePauseTimer = null;
+      // Bubble burst and manager stop are terminal for this exact re-pause.
+      if (!this.running || !this.handForHandActive) return;
+      for (const engine of this.tableEngines.values()) engine.pauseAfterHand();
     }, 500);
   }
 
-  /** Stop hand-for-hand sync check */
-  protected stopHandForHandSync(): void {
-    if (this.handForHandSyncInterval) {
-      clearInterval(this.handForHandSyncInterval);
-      this.handForHandSyncInterval = null;
+  /**
+   * Retire only a table whose durable closure has been confirmed.  A missing
+   * or temporarily failed dealer remains in the barrier through recovery; a
+   * successfully broken/closed table must not hold every survivor forever.
+   */
+  protected retireManagedTableFromHandForHand(tableId: string): void {
+    if (!this.handForHandTableIds.delete(tableId)) return;
+    this.advanceHandForHandBarrier();
+  }
+
+  /** Arm the edge-driven barrier and cover an engine already parked. */
+  protected startHandForHandSync(): void {
+    if (this.handForHandTableIds.size === 0) {
+      for (const tableId of this.tableEngines.keys()) this.handForHandTableIds.add(tableId);
+      // Recovery attempts outlive their timer while the replacement lookup or
+      // start is in flight.  Their keys therefore form the stable roster for
+      // tables retired before hand-for-hand activation.
+      for (const tableId of this.tableEngineRecoveryAttempts.keys()) {
+        this.handForHandTableIds.add(tableId);
+      }
     }
-    // Also cancel any pending re-pause. Bubble burst calls this and then resumes
+    this.advanceHandForHandBarrier();
+  }
+
+  /** Stop hand-for-hand and cancel the one causal next-hand re-pause. */
+  protected stopHandForHandSync(): void {
+    this.handForHandTableIds.clear();
+    // Bubble burst calls this and then resumes
     // engines permanently; a surviving re-pause timer would immediately freeze
     // them again for a hand-for-hand cycle that is over.
     if (this.handForHandRePauseTimer) {
-      clearTimeout(this.handForHandRePauseTimer);
+      this.clearLifecycleTimeout(this.handForHandRePauseTimer);
       this.handForHandRePauseTimer = null;
     }
   }
 
   async start(): Promise<void> {
+    if (this.teardownPromise) await this.teardownPromise;
+    if (this.lifecycleOperation) return this.lifecycleOperation;
+    this.stopFenceApplied = false;
+    const lifecycle = this.lifecycleEpoch.begin();
     this.running = true;
+    const operation = this.startLifecycle(lifecycle);
+    this.lifecycleOperation = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.lifecycleOperation === operation) this.lifecycleOperation = null;
+    }
+  }
+
+  private async startLifecycle(lifecycle: TournamentLifecycleToken): Promise<void> {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Starting...`);
 
     try {
@@ -1193,6 +2025,7 @@ export abstract class TournamentManagerBase {
         .select('*')
         .eq('id', this.tournamentId)
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
+      this.assertLifecycleCurrent(lifecycle);
 
       if (!tournament) throw new Error('Tournament not found');
 
@@ -1217,8 +2050,12 @@ export abstract class TournamentManagerBase {
          level-based path finds the work already done. */
       if (tournament.addon_from_start && tournament.add_on_available) {
         await this.triggerAddOnPeriod();
+        this.assertLifecycleCurrent(lifecycle);
       }
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
+      this.tournamentEntryWindowClosed = this.prizePoolFinalized;
+      this.tournamentEntryCloseAnnounced = false;
+      this.tournamentEntryRepricePending = false;
       // Adopt whatever the row says the mystery phase is. A redeploy
       // mid-tournament must not re-seed an inventory that already exists.
       this.mysteryBountyStage =
@@ -1307,6 +2144,7 @@ export abstract class TournamentManagerBase {
           .select('user_id, table_id')
           .eq('tournament_id', this.tournamentId)
           .in('status', ['registered', 'playing']);
+        this.assertLifecycleCurrent(lifecycle);
         if (rosterErr) {
           reportError(
             new Error(
@@ -1325,6 +2163,7 @@ export abstract class TournamentManagerBase {
           .select('*', { count: 'exact', head: true })
           .eq('tournament_id', this.tournamentId)
           .in('status', ['registered', 'playing']);
+        this.assertLifecycleCurrent(lifecycle);
         regCount = count ?? 0;
       }
 
@@ -1413,6 +2252,7 @@ export abstract class TournamentManagerBase {
             .eq('category', 'tournament_buyin')
             .eq('type', 'debit')
             .in('user_id', regIds.length > 0 ? regIds : ['00000000-0000-0000-0000-000000000000']);
+          this.assertLifecycleCurrent(lifecycle);
 
           if (debitErr) {
             // Evidence unreadable ≠ evidence of non-payment. Stand down and
@@ -1447,6 +2287,7 @@ export abstract class TournamentManagerBase {
               .delete()
               .eq('tournament_id', this.tournamentId)
               .in('user_id', unpaid);
+            this.assertLifecycleCurrent(lifecycle);
             /**
              * RELEASE THEIR SEATS TOO, OR THIS GAME NEVER RUNS AGAIN
              * (2026-08-28).
@@ -1481,6 +2322,7 @@ export abstract class TournamentManagerBase {
                   await supabase.from('tables').select('id').eq('tournament_id', this.tournamentId)
                 ).data?.map((r: { id: string }) => r.id) ?? []
               );
+            this.assertLifecycleCurrent(lifecycle);
             if (seatReleaseErr) {
               reportError(
                 new Error(
@@ -1494,6 +2336,7 @@ export abstract class TournamentManagerBase {
             await supabase.rpc('fn_sync_seat_first_player_count', {
               p_tournament_id: this.tournamentId,
             });
+            this.assertLifecycleCurrent(lifecycle);
             this.running = false;
             return; // discovery refills with PAYING horses and restarts
           }
@@ -1572,6 +2415,7 @@ export abstract class TournamentManagerBase {
             .eq('tournament_id', this.tournamentId)
             .eq('kind', 'jackpot_draw')
             .limit(1);
+          this.assertLifecycleCurrent(lifecycle);
           if (bookedErr) {
             reportError(
               new Error(
@@ -1654,6 +2498,7 @@ export abstract class TournamentManagerBase {
                    SPIN_SEATS is forced at creation and is the honest number. */
                 p_seats: SPEC_SPIN_SEATS,
               });
+              this.assertLifecycleCurrent(lifecycle);
               // The error is READ now. It was the whole defect.
               if (drawErr) throw new Error(drawErr.message || 'draw_rpc_error');
               const drawn = Number(draw?.multiplier);
@@ -1678,13 +2523,18 @@ export abstract class TournamentManagerBase {
                   .filter((l: { multiplier: number }) => Number.isFinite(l.multiplier));
               }
             } catch (err: any) {
+              if (err instanceof TournamentLifecycleAbortedError) throw err;
               drawFailure = err?.message ? String(err.message) : String(err);
               // Same short backoff the settlement and row-write loops below
               // use; lock contention on a busy club's reserve pool is the
               // expected cause and it clears in well under a second.
-              if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
+              if (attempt < 3) {
+                await new Promise((r) => setTimeout(r, 250 * attempt));
+                this.assertLifecycleCurrent(lifecycle);
+              }
             }
           }
+          this.assertLifecycleCurrent(lifecycle);
           if (!spinMultiplier || spinMultiplier <= 0) {
             reportError(
               new Error(
@@ -1804,6 +2654,7 @@ export abstract class TournamentManagerBase {
               p_multiplier: spinMultiplier,
               p_rake_rate: spinRakeRate(buyIn),
             });
+            this.assertLifecycleCurrent(lifecycle);
             if (settleErr || !settle?.ok) {
               throw new Error(settleErr?.message || settle?.reason || 'settle_failed');
             }
@@ -1842,6 +2693,7 @@ export abstract class TournamentManagerBase {
               `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x - pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
             );
           } catch (settleErr: any) {
+            if (settleErr instanceof TournamentLifecycleAbortedError) throw settleErr;
             if (attempt === 3) {
               // The game still runs and players are still paid; what is lost is
               // the ledger row, so it is reported loudly rather than swallowed.
@@ -1854,9 +2706,11 @@ export abstract class TournamentManagerBase {
               );
             } else {
               await new Promise((r) => setTimeout(r, 250 * attempt));
+              this.assertLifecycleCurrent(lifecycle);
             }
           }
         }
+        this.assertLifecycleCurrent(lifecycle);
 
         // BLINDS scale with the drawn tier. THE STACK DOES NOT, and has not
         // since 2026-09-01: it is a property of the BOARD (Turbo 300, Deep
@@ -1957,6 +2811,7 @@ export abstract class TournamentManagerBase {
             .from('tournaments')
             .update(spinRowPatch)
             .eq('id', this.tournamentId);
+          this.assertLifecycleCurrent(lifecycle);
           if (!spinRowErr) {
             spinRowWritten = true;
             break;
@@ -1975,6 +2830,7 @@ export abstract class TournamentManagerBase {
             );
           } else {
             await new Promise((r) => setTimeout(r, 250 * attempt));
+            this.assertLifecycleCurrent(lifecycle);
           }
         }
         if (!spinRowWritten) {
@@ -2028,6 +2884,7 @@ export abstract class TournamentManagerBase {
           .select('user_id, chips')
           .eq('tournament_id', this.tournamentId)
           .eq('status', 'registered');
+        this.assertLifecycleCurrent(lifecycle);
         await Promise.allSettled(
           (regRows ?? []).map((row: { user_id: string; chips: number | null }) => {
             const bonus = Math.max(0, Math.floor(Number(row.chips) || 0));
@@ -2039,6 +2896,7 @@ export abstract class TournamentManagerBase {
               .eq('status', 'registered');
           })
         );
+        this.assertLifecycleCurrent(lifecycle);
       }
 
       /**
@@ -2060,12 +2918,15 @@ export abstract class TournamentManagerBase {
        * after the reveal instead; everything else is credited now.
        */
       if (!(await this.deferStacksForSpinReveal(tournament))) {
+        this.assertLifecycleCurrent(lifecycle);
         await this.creditSeatStacks(tournament);
+        this.assertLifecycleCurrent(lifecycle);
       } else {
+        this.assertLifecycleCurrent(lifecycle);
         /**
          * The credit is now in the future, so the bust sweep must be too.
          * Armed to the same instant the engine is allowed to deal, plus one
-         * sweep interval of slack, so the first sweep that can ever bust
+         * explicit post-credit slack, so the first sweep that can ever bust
          * anybody runs against stacks that exist. Without this the sweep at
          * t+5s reads the reservation zeroes and ends the game.
          */
@@ -2076,11 +2937,12 @@ export abstract class TournamentManagerBase {
         // chips land. Falls back to the old arithmetic when no anchor exists.
         this.bustingArmedAt =
           (this.spinHoldUntil > 0 ? this.spinHoldUntil : Date.now() + spinRevealToDealMs()) +
-          TournamentManagerBase.ELIMINATION_SWEEP_MS;
+          TournamentManagerBase.POST_CREDIT_BUST_SLACK_MS;
       }
 
       // Create tables and seat players
       await this.createTablesAndSeatPlayers(tournament);
+      this.assertLifecycleCurrent(lifecycle);
 
       /**
        * ═══════════════════════════════════════════════════════════════════════
@@ -2264,36 +3126,6 @@ export abstract class TournamentManagerBase {
         );
       }
 
-      // ── GUARANTEE, no-late-reg case (2026-08-23) ──
-      // An event with no late registration takes its last entry before this
-      // line, so the pool it holds now is the pool it dies with — apply the
-      // advertised guarantee here and finalize. Events WITH late reg are
-      // bumped at finalization instead, where the pool truly stops moving.
-      // Scheduler-spawned events accrue per-entry through the register RPCs
-      // and nothing else ever applied guaranteed_prize (the old recurring
-      // service pre-applied it at creation, which is why this was never seen
-      // before the 2026-08-22 data-driven schedules).
-      {
-        const lateRegCap = Number(tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0);
-        const gtd = Number(tournament.guaranteed_prize) || 0;
-        if (lateRegCap <= 0 && gtd > 0 && !this.prizePoolFinalized) {
-          // OVERLAY FUNDING 2026-08-27: a guarantee becomes real money ONLY
-          // through fn_apply_prize_guarantee, which funds the overlay from
-          // the host club's chip_treasury and records it in
-          // tournament_guarantee_overlays (PK-claimed, so a replayed start
-          // cannot fund twice). Writing max(pool, gtd) from here is how
-          // 265,209 chips were minted in 30 days with no funding source.
-          // The call itself lives in applyPrizeGuarantee — one implementation
-          // for all three closing sites, so a later site cannot quietly grow
-          // its own local fallback pool again.
-          const applied = await this.applyPrizeGuarantee('start_no_late_reg');
-          if (applied !== null) {
-            tournament.prize_pool = applied;
-            this.prizePoolFinalized = true;
-          }
-        }
-      }
-
       // Set tournament to RUNNING
       // Guard: only transition REGISTERING → RUNNING (prevents re-starting)
       //
@@ -2373,11 +3205,13 @@ export abstract class TournamentManagerBase {
           .update({ status: 'RUNNING', started_at: startedAtIso })
           .eq('id', this.tournamentId)
           .eq('status', 'REGISTERING');
+        this.assertLifecycleCurrent(lifecycle);
         const { data: confirmRow } = await supabase
           .from('tournaments')
           .select('status, started_at')
           .eq('id', this.tournamentId)
           .maybeSingle(); // FIX 168
+        this.assertLifecycleCurrent(lifecycle);
         const confirmed = String(confirmRow?.status ?? '');
         if (!flipErr && confirmed !== 'REGISTERING' && confirmed !== '') {
           if (!confirmRow?.started_at) {
@@ -2395,6 +3229,7 @@ export abstract class TournamentManagerBase {
                 .update({ started_at: startedAtIso })
                 .eq('id', this.tournamentId)
                 .is('started_at', null);
+              this.assertLifecycleCurrent(lifecycle);
               reportError(
                 new Error(
                   `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip matched no row (already ${confirmed}) and started_at was empty - stamped it here${stampErr ? ` (STAMP FAILED: ${stampErr.message})` : ''}`
@@ -2413,7 +3248,10 @@ export abstract class TournamentManagerBase {
           runningFlipped = true;
           break;
         }
-        if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 250 * attempt));
+          this.assertLifecycleCurrent(lifecycle);
+        }
       }
       if (!runningFlipped) {
         // Loud, because the game is about to deal against a row that does not
@@ -2429,7 +3267,7 @@ export abstract class TournamentManagerBase {
 
       // LIVE E2E FIX 2026-08-15: tournamentCache was captured while status was
       // still REGISTERING and never refreshed after this transition — so
-      // ensureLateRegSeated's `status !== 'RUNNING'` guard made the every-5s
+      // ensureLateRegSeated's `status !== 'RUNNING'` guard made the former
       // seat self-heal a permanent no-op for every tournament started (not
       // resumed) by this process. Live evidence: 3 RUNNING tournaments frozen
       // for hours with 'playing' players holding chips but no active seat.
@@ -2497,15 +3335,13 @@ export abstract class TournamentManagerBase {
       }
 
       // Start table engines
+      this.assertLifecycleCurrent(lifecycle);
       for (const [tableId, engine] of this.tableEngines) {
-        this.gameServer.registerTableEngine(tableId, engine);
-        engine
-          .start()
-          .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Table_engine_error'));
+        this.admitManagedTableEngine(tableId, engine);
+        this.startManagedTableEngine(engine, 'TournamentthistournamentIdslic.Table_engine_error');
       }
-      // Tournament tables are invisible to the cash-side zombie reaper — this
-      // sweep is their only freeze recovery.
-      this.startTableLivenessSweep();
+      await this.drainTableEngineStartJobs();
+      this.assertLifecycleCurrent(lifecycle);
 
       /**
        * Start blind timer — AT THE ADVERTISED START, not at seating.
@@ -2523,49 +3359,56 @@ export abstract class TournamentManagerBase {
        */
       if (this.preStartLeadMs > 0) {
         const structure = tournament.blind_structure || [];
-        setTimeout(() => {
-          if (!this.running) return;
+        this.setLifecycleTimeout(() => {
           this.startBlindTimer(structure);
         }, this.preStartLeadMs);
       } else {
         this.startBlindTimer(tournament.blind_structure || []);
       }
 
-      // TOURNEY-AUDIT 2026-07-24 (sweep 4): with NO late-reg/rebuy window
-      // configured (cap <= 0), the prize pool is final from the first hand —
-      // but the finalization gate only fired when cap > 0, so prizePoolFinalized
-      // stayed false forever and eliminated-prize top-ups never ran for these
-      // tournaments (under-payment when the pool later moved, e.g. guarantees).
-      {
-        const lateRegCap = tournament.late_reg_levels ?? tournament.rebuy_levels ?? 8;
-        if (!lateRegCap || lateRegCap <= 0) {
-          this.prizePoolFinalized = true;
-          const { error: fpErr } = await supabase
-            .from('tournaments')
-            .update({ prize_pool_finalized: true })
-            .eq('id', this.tournamentId);
-          if (fpErr && !/column|schema/i.test(fpErr.message || '')) {
-            console.warn(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] prize_pool_finalized persist failed: ${fpErr.message}`
-            );
-          }
-        }
-      }
-
       // Start elimination checker
       this.startEliminationChecker();
+      await this.reconcileTournamentEntryWindow('engine.start');
+      this.assertLifecycleCurrent(lifecycle);
+      if (this.addOnPeriodTriggered && !this.prizePoolFinalized) {
+        // triggerAddOnPeriod can open before scheduler registration. Upgrade
+        // the initial safety work to urgent so a large resume/start fleet
+        // cannot consume the whole offer window before its first retry.
+        this.requestEliminationSweep();
+      }
 
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING - ${this.tableEngines.size} tables`
       );
     } catch (err) {
+      if (
+        err instanceof TournamentLifecycleAbortedError ||
+        !this.lifecycleEpoch.isCurrent(lifecycle)
+      ) {
+        return;
+      }
       reportError(err, 'TournamentthistournamentIdslic.Start_failed');
       this.running = false;
+      this.unregisterEliminationScheduler();
     }
   }
 
   async resume(): Promise<void> {
+    if (this.teardownPromise) await this.teardownPromise;
+    if (this.lifecycleOperation) return this.lifecycleOperation;
+    this.stopFenceApplied = false;
+    const lifecycle = this.lifecycleEpoch.begin();
     this.running = true;
+    const operation = this.resumeLifecycle(lifecycle);
+    this.lifecycleOperation = operation;
+    try {
+      await operation;
+    } finally {
+      if (this.lifecycleOperation === operation) this.lifecycleOperation = null;
+    }
+  }
+
+  private async resumeLifecycle(lifecycle: TournamentLifecycleToken): Promise<void> {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Resuming...`);
 
     try {
@@ -2574,6 +3417,7 @@ export abstract class TournamentManagerBase {
         .select('*')
         .eq('id', this.tournamentId)
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
+      this.assertLifecycleCurrent(lifecycle);
 
       if (!tournament) throw new Error('Tournament not found');
 
@@ -2590,6 +3434,9 @@ export abstract class TournamentManagerBase {
 
       this.tournamentCache = tournament;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
+      this.tournamentEntryWindowClosed = this.prizePoolFinalized;
+      this.tournamentEntryCloseAnnounced = false;
+      this.tournamentEntryRepricePending = false;
       // Adopt whatever the row says the mystery phase is. A redeploy
       // mid-tournament must not re-seed an inventory that already exists.
       this.mysteryBountyStage =
@@ -2603,6 +3450,7 @@ export abstract class TournamentManagerBase {
         .select('id, first_button_seat')
         .eq('tournament_id', this.tournamentId)
         .in('status', ['running', 'waiting']);
+      this.assertLifecycleCurrent(lifecycle);
 
       /**
        * Dan 2026-08-19: TOURNAMENTS RUN. THEY DO NOT CANCEL.
@@ -2619,6 +3467,7 @@ export abstract class TournamentManagerBase {
           .select('id', { count: 'exact', head: true })
           .eq('tournament_id', this.tournamentId)
           .in('status', ['registered', 'playing']);
+        this.assertLifecycleCurrent(lifecycle);
 
         if ((liveEntrants || 0) > 0) {
           console.warn(
@@ -2636,12 +3485,26 @@ export abstract class TournamentManagerBase {
            * ticking above it, and no path back.
            *
            * The rebuild is best-effort now: it is reported and the rest of
-           * resume() proceeds, so the every-5s sweeps get their chance to seat
-           * the field and finish the event.
+           * resume() proceeds, so bounded scheduler passes get their chance to
+           * seat the field and finish the event.
            */
           try {
             await this.createTablesAndSeatPlayers(tournament);
+            this.assertLifecycleCurrent(lifecycle);
+            // createTablesAndSeatPlayers starts adopted tables immediately but
+            // leaves newly-created ones for start()'s normal launch loop. The
+            // resume rebuild path has no such later loop, so explicitly launch
+            // every new engine before this generation is admitted.
+            for (const [tableId, engine] of this.tableEngines) {
+              if (engine.isRunning()) continue;
+              this.admitManagedTableEngine(tableId, engine);
+              this.startManagedTableEngine(
+                engine,
+                'TournamentthistournamentIdslic.Resume_rebuilt_table_error'
+              );
+            }
           } catch (rebuildErr) {
+            if (rebuildErr instanceof TournamentLifecycleAbortedError) throw rebuildErr;
             reportError(rebuildErr, 'Tournament.resume_table_rebuild_failed');
           }
         }
@@ -2649,11 +3512,10 @@ export abstract class TournamentManagerBase {
         for (const table of tables) {
           const engine = new ServerTableEngine(table.id);
           engine.setHub(tableStateHub); // Phase 1.1 PR-2
+          this.wireEliminationWake(engine);
           this.tableEngines.set(table.id, engine);
-          this.gameServer.registerTableEngine(table.id, engine);
-          engine
-            .start()
-            .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Resume_table_error'));
+          this.admitManagedTableEngine(table.id, engine);
+          this.startManagedTableEngine(engine, 'TournamentthistournamentIdslic.Resume_table_error');
         }
         // Re-apply a button that was DRAWN but never dealt. Awaited before the
         // first hand can plausibly land, and a no-op for every table that has
@@ -2661,6 +3523,7 @@ export abstract class TournamentManagerBase {
         await this.restoreDrawnFirstButtons(
           tables as Array<{ id: string; first_button_seat?: number | null }>
         );
+        this.assertLifecycleCurrent(lifecycle);
       }
 
       /**
@@ -2677,6 +3540,12 @@ export abstract class TournamentManagerBase {
        * costs one query on a healthy resume and rescues the stranded case.
        */
       await this.creditSeatStacks(tournament);
+      this.assertLifecycleCurrent(lifecycle);
+
+      // A resumed manager is not admitted until every table start it launched
+      // (including rebuild/adoption starts) has reached a settled state.
+      await this.drainTableEngineStartJobs();
+      this.assertLifecycleCurrent(lifecycle);
 
       // Restore blind level
       this.currentLevel = tournament.current_level || 0;
@@ -2724,10 +3593,13 @@ export abstract class TournamentManagerBase {
         this.startBlindTimer(tournament.blind_structure || [], remainingMs);
       }
       this.startEliminationChecker();
-      // Same contract on the resume path as on the start path: a resumed
-      // tournament's tables must be rebuildable when their engine dies.
-      this.startTableLivenessSweep();
-
+      await this.reconcileTournamentEntryWindow('engine.resume');
+      this.assertLifecycleCurrent(lifecycle);
+      if (this.addOnPeriodTriggered && !this.prizePoolFinalized) {
+        // The persisted window may have less than a minute left. Do not leave
+        // its first retry behind the full initial safety queue.
+        this.requestEliminationSweep();
+      }
       /**
        * Dan 2026-08-19: A RESTART MID-BREAK MUST NOT RESUME PLAY.
        *
@@ -2809,8 +3681,8 @@ export abstract class TournamentManagerBase {
               reportError(err, 'TournamentManagerBase.resume_rebreak_pause');
             }
           }
-          const rebreakTimer = setTimeout(() => {
-            void this.resumeFromBreak();
+          const rebreakTimer = this.setLifecycleTimeout(() => {
+            return this.resumeFromBreak();
           }, remainingMs);
           // Never hold the process open for the tail of a break, the same rule
           // every other timer in this file follows.
@@ -2824,6 +3696,7 @@ export abstract class TournamentManagerBase {
           this.onBreak = false;
           this.breakCountdownStarted = false;
           await this.clearPersistedBreak();
+          this.assertLifecycleCurrent(lifecycle);
         }
       }
 
@@ -2831,43 +3704,131 @@ export abstract class TournamentManagerBase {
         `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed - ${this.tableEngines.size} tables, level ${this.currentLevel}`
       );
     } catch (err) {
+      if (
+        err instanceof TournamentLifecycleAbortedError ||
+        !this.lifecycleEpoch.isCurrent(lifecycle)
+      ) {
+        return;
+      }
       reportError(err, 'TournamentthistournamentIdslic.Resume_failed');
       this.running = false;
+      this.unregisterEliminationScheduler();
     }
   }
 
-  stop(): void {
-    // Clear intervals FIRST to prevent them firing during teardown
+  /**
+   * Revoke this manager's mutation authority synchronously without stopping a
+   * hand in progress. GameServer uses this before its bounded between-hands
+   * drain so discovery cannot replace a manager whose dealers are being
+   * parked. The later stop() call performs the physical teardown.
+   */
+  fenceForServerShutdown(): void {
+    if (this.teardownPromise) return;
+    this.applyStopFence();
+  }
+
+  private applyStopFence(): Promise<void> | null {
+    const lifecycleOperation = this.lifecycleOperation;
+    if (this.stopFenceApplied) return lifecycleOperation;
+    this.stopFenceApplied = true;
+    // The synchronous half is the ownership fence. No asynchronous boundary
+    // may occur before the generation is invalidated and every delayed
+    // callback is cancelled.
+    this.running = false;
+    this.lifecycleEpoch.abort();
+    this.clearManagedTableEngineRecoveries();
+    this.clearLifecycleTimers();
     if (this.blindTimer) {
-      clearTimeout(this.blindTimer);
+      this.clearLifecycleTimeout(this.blindTimer);
       this.blindTimer = null;
     }
-    if (this.eliminationTimer) {
-      clearInterval(this.eliminationTimer);
-      this.eliminationTimer = null;
-    }
-    this.running = false;
-    this.stopTableLivenessSweep();
-    for (const engine of this.tableEngines.values()) {
-      engine.stop();
-    }
-    this.tableEngines.clear();
+    this.unregisterEliminationScheduler();
     // Cleanup hand-for-hand sync
     this.stopHandForHandSync();
     if (this.handForHandRePauseTimer) {
-      clearTimeout(this.handForHandRePauseTimer);
+      this.clearLifecycleTimeout(this.handForHandRePauseTimer);
       this.handForHandRePauseTimer = null;
     }
-    // Best-effort cleanup of broadcast channel (non-async in sync stop)
-    if (this.broadcastChannel) {
-      try {
-        this.broadcastChannel.unsubscribe();
-      } catch {
-        /* ignore */
+    return lifecycleOperation;
+  }
+
+  stop(): Promise<void> {
+    if (this.teardownPromise) return this.teardownPromise;
+
+    const lifecycleOperation = this.applyStopFence();
+    const teardown = (async () => {
+      // Initiate every current engine stop before awaiting lifecycle startup.
+      // A start may be waiting indefinitely for players (or still loading its
+      // first row); stop synchronously settles ready=false and releases that
+      // wait. Awaiting lifecycleOperation first formed a dependency cycle in
+      // which neither side could ever complete.
+      const enginesAtFence = [...this.tableEngines.values()];
+      const initialEngineStops = enginesAtFence.map((engine) => engine.stop());
+
+      // Unregister aborts the scheduler signal synchronously. Keep this manager
+      // quarantined until the physical promise actually unwinds; otherwise a
+      // replacement can mutate the same tournament while an old Supabase await
+      // is still returning. Finishing code initiates stop without awaiting it
+      // when it is itself inside this set, avoiding a self-deadlock.
+      await this.drainEliminationSchedulerJobs();
+
+      // The engine-ready edge above lets an in-flight start/resume observe the
+      // aborted token and unwind. No late engine can survive the final snapshot
+      // below: every lifecycle-owned continuation is drained first.
+      if (lifecycleOperation) await lifecycleOperation.catch(() => undefined);
+
+      // Timer callbacks and recovery operations already in flight are part of
+      // this generation too. Drain them to a fixed point, then stop the final
+      // engine snapshot (which also covers a candidate created before a stale
+      // continuation observed the abort).
+      await this.drainLifecycleJobs();
+      this.clearLifecycleTimers();
+
+      const engines = [...this.tableEngines.entries()];
+      const stopResults = await Promise.allSettled(engines.map(([, engine]) => engine.stop()));
+      await Promise.allSettled(initialEngineStops);
+      await this.drainTableEngineRunJobs();
+      const stopFailures: unknown[] = [];
+      for (let i = 0; i < engines.length; i++) {
+        const [tableId, engine] = engines[i];
+        const result = stopResults[i];
+        if (result.status === 'rejected') {
+          if (!engine.hasReleasedProcessOwnership()) {
+            stopFailures.push(result.reason);
+            continue;
+          }
+          reportError(result.reason, 'Tournament.table_engine_stop_cleanup_failed', { tableId });
+        }
+
+        // Release both registries only for the exact engine that completed
+        // teardown. GameServer performs its own identity CAS, so a successor
+        // registered while this await was pending survives untouched.
+        this.gameServer.unregisterTournamentTableEngine(tableId, engine);
+        if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
       }
-      this.broadcastChannel = null;
-      this.broadcastReady = false;
-    }
+      if (stopFailures.length > 0) {
+        throw new AggregateError(
+          stopFailures,
+          `Tournament ${this.tournamentId} failed to stop ${stopFailures.length} table engine(s)`
+        );
+      }
+
+      if (this.broadcastChannel) {
+        const channel = this.broadcastChannel;
+        this.broadcastChannel = null;
+        this.broadcastReady = false;
+        try {
+          await Promise.resolve(channel.unsubscribe());
+        } catch {
+          /* a failed channel release cannot resurrect a stopped manager */
+        }
+      }
+    })();
+    const trackedTeardown = teardown.finally(() => {
+      if (this.teardownPromise === trackedTeardown) this.teardownPromise = null;
+    });
+    this.teardownPromise = trackedTeardown;
+    return trackedTeardown;
   }
 
   /**
@@ -3126,8 +4087,8 @@ export abstract class TournamentManagerBase {
     let pass = 0;
 
     const soon = (fn: () => Promise<void>) => {
-      const timer = setTimeout(() => {
-        void fn().catch((err) => reportError(err, 'Tournament.' + tag + '.spin_row_repair'));
+      const timer = this.setLifecycleTimeout(() => {
+        return fn().catch((err) => reportError(err, 'Tournament.' + tag + '.spin_row_repair'));
       }, INTERVAL_MS);
       // Never hold the process open for a repair.
       if (typeof (timer as any)?.unref === 'function') (timer as any).unref();
@@ -3415,9 +4376,9 @@ export abstract class TournamentManagerBase {
 
     const later = (whenMs: number, fn: () => Promise<void>) => {
       const delay = Math.max(0, whenMs - Date.now());
-      const timer = setTimeout(() => {
+      const timer = this.setLifecycleTimeout(() => {
         if (!stillLive()) return;
-        void fn().catch((err) =>
+        return fn().catch((err) =>
           reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_post_reveal')
         );
       }, delay);
@@ -3491,22 +4452,24 @@ export abstract class TournamentManagerBase {
            * resume() reads this back and re-applies it, but ONLY while the
            * table has never settled a hand — see restoreDrawnFirstButtons.
            */
-          void Promise.resolve(
-            supabase.from('tables').update({ first_button_seat: seat }).eq('id', tableId)
-          )
-            .then(({ error }: { error: { message?: string } | null }) => {
-              if (error) {
+          void this.trackLifecycleJob(
+            Promise.resolve(
+              supabase.from('tables').update({ first_button_seat: seat }).eq('id', tableId)
+            )
+              .then(({ error }: { error: { message?: string } | null }) => {
+                if (error) {
+                  console.warn(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] Drawn button seat ${seat} not persisted for table ${tableId.slice(0, 8)} (${error.message}) - a restart before the first hand would revert it to the lowest seat`
+                  );
+                }
+              })
+              .catch((err: unknown) => {
+                // Detached from the reveal beat, but owned by its lifecycle.
                 console.warn(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Drawn button seat ${seat} not persisted for table ${tableId.slice(0, 8)} (${error.message}) - a restart before the first hand would revert it to the lowest seat`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Drawn button persist threw: ${(err as Error)?.message ?? err}`
                 );
-              }
-            })
-            .catch((err: unknown) => {
-              // Fire-and-forget, so the rejection has nowhere else to go.
-              console.warn(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Drawn button persist threw: ${(err as Error)?.message ?? err}`
-              );
-            });
+              })
+          );
           tableStateHub.emitEvent(tableId, {
             type: 'spin_button',
             table_id: tableId,
@@ -3577,13 +4540,13 @@ export abstract class TournamentManagerBase {
       if (this.tableEngines.has(t.id)) continue;
       const engine = new ServerTableEngine(t.id);
       engine.setHub(tableStateHub);
+      this.wireEliminationWake(engine);
       this.tableEngines.set(t.id, engine);
-      this.gameServer.registerTableEngine(t.id, engine);
-      engine
-        .start()
-        .catch((err) =>
-          reportError(err, 'TournamentthistournamentIdslic.Adopted_table_engine_error')
-        );
+      this.admitManagedTableEngine(t.id, engine);
+      this.startManagedTableEngine(
+        engine,
+        'TournamentthistournamentIdslic.Adopted_table_engine_error'
+      );
     }
     if ((existingTables ?? []).length > 0) {
       console.log(
@@ -3748,6 +4711,7 @@ export abstract class TournamentManagerBase {
 
       const engine = new ServerTableEngine(table.id);
       engine.setHub(tableStateHub); // Phase 1.1 PR-2
+      this.wireEliminationWake(engine);
       this.tableEngines.set(table.id, engine);
     }
 
@@ -3839,8 +4803,9 @@ export abstract class TournamentManagerBase {
          * (see the `continue` in the creation loop). LEAVING THE PLAYER
          * UNSEATED IS DELIBERATE: the alternative is the seat past the table's
          * ceiling that this whole block exists to stop. ensureLateRegSeated
-         * runs every five seconds and seats them the moment a seat exists, and
-         * checkDynamicTableExpansion builds one; both respect the ceiling.
+         * is re-driven by the process-wide late-registration lane and seats
+         * them the moment a seat exists; checkDynamicTableExpansion builds
+         * one. Both paths respect the ceiling.
          */
         reportError(
           new Error(
@@ -3928,218 +4893,6 @@ export abstract class TournamentManagerBase {
    * every crash/restart granted a brand-new full level at the current blinds —
    * restart-heavy windows nearly froze blind escalation.
    */
-  /**
-   * 2026-08-15 CRITICAL FIX — tournament tables had NO freeze recovery.
-   *
-   * GameServer.discoverCashTables is the only thing that rebuilds a dead engine,
-   * and its readiness RPC (`cash_tables_with_players`) filters on
-   * `tournament_id IS NULL`. So when a tournament table's engine died — its own
-   * watchdog escalating to killForRestart, or a crashed dealing loop — the
-   * reaper deleted it from the map and NOTHING recreated it. `getTableEngine`
-   * then returned undefined, so POST /action answered 404 and reconnecting
-   * clients were refused at the WS upgrade gate. Every seated player was frozen
-   * permanently, with a RUNNING tournament above them.
-   *
-   * This sweep gives tournament tables the same liveness contract the cash side
-   * has. It runs on the hand-for-hand interval that already ticks every cycle.
-   */
-  /** Start the tournament-side table liveness sweep (idempotent). */
-  protected startTableLivenessSweep(): void {
-    if (this.tableLivenessInterval) return;
-    this.tableLivenessInterval = setInterval(() => {
-      if (!this.running) {
-        this.stopTableLivenessSweep();
-        return;
-      }
-      void this.reviveDeadTableEngines();
-    }, 20_000);
-  }
-
-  protected stopTableLivenessSweep(): void {
-    if (this.tableLivenessInterval) {
-      clearInterval(this.tableLivenessInterval);
-      this.tableLivenessInterval = null;
-    }
-  }
-
-  protected async reviveDeadTableEngines(): Promise<void> {
-    if (this.revivingTables) return;
-    /**
-     * Dan 2026-08-19: NEVER revive during a synchronized break.
-     *
-     * A break is five minutes of deliberate silence, but this sweep rebuilt any
-     * engine idle for more than 180 SECONDS. So three minutes into every break
-     * it declared every paused table "dead", tore it down and replaced it with
-     * a FRESH engine — and a fresh engine is not paused, so it started dealing
-     * again. The sweep was fighting the break and winning.
-     *
-     * Paused is not dead. Skip the sweep entirely while on break; it resumes
-     * its normal duty the moment play does.
-     */
-    if (this.onBreak) return;
-    this.revivingTables = true;
-    try {
-      // A table missing from the map is invisible to every loop below, so it
-      // has to be put back before any of them run. See adoptEnginelessTables.
-      await this.adoptEnginelessTables();
-      for (const [tableId, engine] of this.tableEngines) {
-        // Belt and braces alongside the onBreak guard above: a table parked on
-        // purpose (break OR hand-for-hand) is healthy — but only for as long as
-        // a legitimate pause lasts. Past that ceiling it is wedged, and must be
-        // rebuilt rather than left frozen forever.
-        const parkedOnPurpose =
-          engine.isPausedByDesign() &&
-          engine.msPaused() <= TournamentManagerBase.MAX_HEALTHY_PAUSE_MS;
-        const dead =
-          !engine.isRunning() || (!parkedOnPurpose && engine.msSinceProgress() > 180_000);
-        if (!dead) continue;
-        reportError(
-          new Error(
-            'Tournament table engine dead for ' +
-              Math.round(engine.msSinceProgress() / 1000) +
-              's (running=' +
-              engine.isRunning() +
-              ') - rebuilding'
-          ),
-          'Tournament.' + this.tournamentId.slice(0, 8) + '.table_engine_rebuilt',
-          { tableId }
-        );
-        try {
-          // Await the stop: its tail cancels scheduler entries keyed by
-          // (tableId, eventId), which the replacement engine reuses. Letting it
-          // run late would cancel the NEW engine's heartbeat and turn timer.
-          await engine.stop();
-        } catch {
-          /* already dead */
-        }
-        const fresh = new ServerTableEngine(tableId);
-        fresh.setHub(tableStateHub);
-        this.tableEngines.set(tableId, fresh);
-        this.gameServer.registerTableEngine(tableId, fresh);
-        fresh
-          .start()
-          .catch((err) => reportError(err, 'Tournament.table_engine_restart_failed', { tableId }));
-      }
-    } catch (err) {
-      reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.revive_sweep_threw');
-    } finally {
-      this.revivingTables = false;
-    }
-  }
-
-  /**
-   * ════════════════════════════════════════════════════════════════════════
-   *  A TABLE THIS PROCESS FORGOT IS A TABLE NOBODY DEALS (2026-09-02)
-   * ════════════════════════════════════════════════════════════════════════
-   *
-   * The sweep above was written on 2026-08-15 for precisely the failure its
-   * own comment names: "the reaper deleted it from the map and NOTHING
-   * recreated it". It does not cover that. It iterates `this.tableEngines`,
-   * so the one state it was built for -- the map entry GONE -- is the single
-   * state it cannot see.
-   *
-   * Measured live 2026-09-02, "$100 Freeroll 6:00 AM" (3e8e2afa):
-   *
-   *   table 10   status 'waiting'   6 live seats   63 hands, then silence
-   *   table 22   status 'running'   1 live seat    loopPhase start_wait_for_players
-   *
-   * /health listed table 22 and did not list table 10 at all. Six players and
-   * their stacks sat frozen for three hours and eleven minutes under a RUNNING
-   * tournament while every guard on the platform reported healthy, because
-   * every one of them walks the engine map:
-   *
-   *   reviveDeadTableEngines  iterates tableEngines - no entry, no revive
-   *   checkTableBalance       iterates tableEngines - saw ONE table, so its
-   *                                                   `size <= 1` early return
-   *                                                   fired and the field was
-   *                                                   never consolidated
-   *   absorbOrphanedSeats     skips OPEN tables     - 'waiting' is open, so
-   *                                                   the six were left alone
-   *   reopen sweep            only reopens 'closed' - declined
-   *   stalledTableCount       counts engines        - reported 0
-   *
-   * A table that is open in the database and absent from the map is invisible
-   * to all five, and nothing on the platform can end that state. The repair is
-   * the one the balancer would have made had it been able to see the felt:
-   * give the table its dealer back and let the existing consolidation run on
-   * the next cycle.
-   *
-   * Deliberately narrow, because an engine is not free:
-   *   - only tables of THIS tournament, which this process already leads;
-   *   - only rows that are open and not deleted;
-   *   - only rows that still hold a LIVE SEAT. A forgotten empty row deals to
-   *     nobody, so adopting one buys an engine for no player;
-   *   - at most ADOPT_BUDGET a pass, on the 20-second liveness cadence.
-   *
-   * Every read fails CLOSED: an unreadable board adopts nothing, never
-   * "adopt everything". The map slot is written before `start()` resolves, so
-   * the next pass twenty seconds later cannot build a second dealer for the
-   * same felt -- the duplicate-dealer failure `registerTableEngine` documents.
-   */
-  protected async adoptEnginelessTables(): Promise<void> {
-    const ADOPT_BUDGET = 4;
-
-    const { data: rows, error } = await supabase
-      .from('tables')
-      .select('id, status, is_deleted')
-      .eq('tournament_id', this.tournamentId)
-      .in('status', ['running', 'waiting', 'active']);
-    if (error) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] engineless-table scan failed: ${error.message} - adopting nothing this pass`
-        ),
-        'Tournament.adopt_scan_failed'
-      );
-      return;
-    }
-
-    const candidates = (rows ?? [])
-      .filter((r: any) => r?.is_deleted !== true)
-      .map((r: any) => String(r?.id ?? ''))
-      .filter((id: string) => id.length > 0 && !this.tableEngines.has(id));
-    if (candidates.length === 0) return;
-
-    const { data: seatRows, error: seatErr } = await supabase
-      .from('table_seats')
-      .select('table_id')
-      .in('table_id', candidates)
-      .is('left_at', null);
-    if (seatErr) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] engineless-table seat read failed: ${seatErr.message} - adopting nothing this pass`
-        ),
-        'Tournament.adopt_seat_read_failed'
-      );
-      return;
-    }
-
-    const occupied = new Set((seatRows ?? []).map((s: any) => String(s?.table_id ?? '')));
-    // Sorted so two passes, or two processes, pick the same tables in the same
-    // order rather than each adopting a different slice of the same backlog.
-    const adoptable = candidates.filter((id: string) => occupied.has(id)).sort();
-    if (adoptable.length === 0) return;
-
-    for (const tableId of adoptable.slice(0, ADOPT_BUDGET)) {
-      if (this.tableEngines.has(tableId)) continue;
-      const engine = new ServerTableEngine(tableId);
-      engine.setHub(tableStateHub);
-      this.tableEngines.set(tableId, engine);
-      this.gameServer.registerTableEngine(tableId, engine);
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] adopted engineless table ${tableId.slice(0, 8)} - it held live seats, had no dealer, and no sweep could see it`
-        ),
-        'Tournament.adopted_engineless_table',
-        { tableId }
-      );
-      engine
-        .start()
-        .catch((err) => reportError(err, 'Tournament.adopted_table_start_failed', { tableId }));
-    }
-  }
-
   /**
    * SPIN LEVELS 2026-08-21: level length in ms, format-normalized. Blind
    * structures carry their length as `durationMinutes` (MTT/SNG configs),
@@ -4318,69 +5071,6 @@ export abstract class TournamentManagerBase {
   protected blindCapReported = false;
 
   /**
-   * Replace the stored payout structure with one whose DEPTH matches the final
-   * field that actually turned up. Called exactly once, after entry closes.
-   *
-   * FAIL-CLOSED IN EVERY DIRECTION. It returns without writing when:
-   *   - the entrant count cannot be read (never guess a field size — too small
-   *     a guess promotes an earlier place to residual holder and overpays it);
-   *   - the event is a Spin (its structure is derived from the multiplier and
-   *     is not a ladder at all);
-   *   - the write fails, in which case the old structure stands and the reprice
-   *     below simply runs against it, exactly as it did before this existed.
-   */
-  protected async fitPayoutStructureToField(): Promise<void> {
-    try {
-      const t = this.tournamentCache as Record<string, unknown> | null;
-      if (isSpinTournament(t as never)) return;
-
-      const { count: field, error: fieldErr } = await supabase
-        .from('tournament_players')
-        .select('*', { count: 'exact', head: true })
-        .eq('tournament_id', this.tournamentId);
-      if (fieldErr || typeof field !== 'number' || field < 1) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen skipped - entrant count unreadable (${fieldErr?.message ?? 'null count'}); the advertised structure stands`
-          ),
-          'Tournament.payout_widen_field_unreadable'
-        );
-        return;
-      }
-
-      const wanted = paidPlacesForField(field);
-      const current = parsePayoutStructure(t?.payout_structure) ?? [];
-      if (current.length === wanted) return;
-
-      const widened = payoutStructureForField(field);
-      const { error: writeErr } = await supabase
-        .from('tournaments')
-        .update({ payout_structure: JSON.stringify(widened) })
-        .eq('id', this.tournamentId);
-
-      if (writeErr) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen write failed (${writeErr.message}) - the advertised ${current.length}-place structure stands`
-          ),
-          'Tournament.payout_widen_write_failed'
-        );
-        return;
-      }
-
-      if (this.tournamentCache) {
-        (this.tournamentCache as Record<string, unknown>).payout_structure =
-          JSON.stringify(widened);
-      }
-      console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Payout structure fitted ${current.length} -> ${widened.length} places for a final field of ${field}`
-      );
-    } catch (err) {
-      reportError(err, 'Tournament.payout_widen_threw');
-    }
-  }
-
-  /**
    * Total chips the tournament has ever issued, or null when it cannot be
    * known. Never guessed: a null caps nothing.
    */
@@ -4422,7 +5112,7 @@ export abstract class TournamentManagerBase {
     // for the rest of the tournament and is invisible until the blinds run
     // away, so it is worth one clearTimeout to make it impossible.
     if (this.blindTimer) {
-      clearTimeout(this.blindTimer);
+      this.clearLifecycleTimeout(this.blindTimer);
       this.blindTimer = null;
     }
     // Past the end of the structure this synthesizes the level rather than
@@ -4436,37 +5126,39 @@ export abstract class TournamentManagerBase {
         : durationMs;
     // Back-date the in-memory start so break pause/resume math stays correct
     this.blindTimerStartedAt = Date.now() - (durationMs - armMs);
-    this.blindTimer = setTimeout(() => {
+    this.blindTimer = this.setLifecycleTimeout(() => {
       // Without the catch, a throw inside advanceBlindLevel becomes an
       // unhandled rejection AND the level silently fails to advance with no
       // trace of why.
-      void this.advanceBlindLevel(blindStructure).catch((err: unknown) => {
+      return this.advanceBlindLevel(blindStructure).catch((err: unknown) => {
         console.warn(
           `[Tournament:${this.tournamentId.slice(0, 8)}] advanceBlindLevel threw: ${(err as Error)?.message ?? err}`
         );
       });
     }, armMs);
     // Persist the level clock (wall-clock start of THIS level's remaining
-    // window) so a restart resumes the level mid-flight. Fire-and-forget; the
-    // column is added by migration 20260724c (graceful if absent).
-    void Promise.resolve(
-      supabase
-        .from('tournaments')
-        .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
-        .eq('id', this.tournamentId)
-    )
-      .then(({ error }: { error: { message?: string } | null }) => {
-        if (error && !/column|schema/i.test(error.message || '')) {
+    // window) so a restart resumes the level mid-flight. Detached from the
+    // caller, but still drained by this exact lifecycle before replacement.
+    void this.trackLifecycleJob(
+      Promise.resolve(
+        supabase
+          .from('tournaments')
+          .update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })
+          .eq('id', this.tournamentId)
+      )
+        .then(({ error }: { error: { message?: string } | null }) => {
+          if (error && !/column|schema/i.test(error.message || '')) {
+            console.warn(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist failed: ${error.message}`
+            );
+          }
+        })
+        .catch((err: unknown) => {
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist failed: ${error.message}`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist threw: ${(err as Error)?.message ?? err}`
           );
-        }
-      })
-      .catch((err: unknown) => {
-        console.warn(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] level_started_at persist threw: ${(err as Error)?.message ?? err}`
-        );
-      });
+        })
+    );
   }
 
   /**
@@ -4478,9 +5170,10 @@ export abstract class TournamentManagerBase {
    * escalation could freeze entirely.
    */
   protected async advanceBlindLevel(blindStructure: any[]): Promise<void> {
+    const lifecycle = this.lifecycleEpoch.current();
     {
       {
-        if (!this.running) return;
+        if (!this.lifecycleIsCurrent(lifecycle)) return;
 
         /**
          * ═══════════════════════════════════════════════════════════════════
@@ -4617,6 +5310,7 @@ export abstract class TournamentManagerBase {
               stakes: `${safeSmallBlind}/${safeBigBlind}`,
             })
             .eq('id', tableId);
+          if (!this.lifecycleIsCurrent(lifecycle)) return;
           if (blindErr) {
             const blindMsg = blindErr.message?.includes('<!DOCTYPE html>')
               ? 'Cloudflare/Supabase HTML Error (502/504)'
@@ -4656,6 +5350,7 @@ export abstract class TournamentManagerBase {
           .from('tournaments')
           .update({ current_level: this.currentLevel })
           .eq('id', this.tournamentId);
+        if (!this.lifecycleIsCurrent(lifecycle)) return;
         if (levelErr)
           reportError(
             new Error(
@@ -4689,6 +5384,7 @@ export abstract class TournamentManagerBase {
                 .select('user_id, stack')
                 .eq('table_id', tableId)
                 .is('left_at', null);
+              if (!this.lifecycleIsCurrent(lifecycle)) return;
               for (const seat of seats || []) {
                 if (seat.stack > 0) playerStacks.set(seat.user_id, seat.stack);
               }
@@ -4710,12 +5406,14 @@ export abstract class TournamentManagerBase {
                   .update({ stack: newStack })
                   .eq('user_id', userId)
                   .is('left_at', null);
+                if (!this.lifecycleIsCurrent(lifecycle)) return;
               }
               await this.broadcast('chip_race', {
                 removedDenomination: prevSmallBlind,
                 newSmallestDenomination: level.smallBlind,
                 playersAffected: result.players.filter((p) => p.chipsAwarded > 0).length,
               });
+              if (!this.lifecycleIsCurrent(lifecycle)) return;
             }
           } catch (crErr) {
             reportError(crErr, 'TournamentthistournamentIdslic.Chip_race_error');
@@ -4730,157 +5428,14 @@ export abstract class TournamentManagerBase {
           bigBlind: level.bigBlind,
           ante: level.ante || 0,
         });
+        if (!this.lifecycleIsCurrent(lifecycle)) return;
 
-        // ── LATE REG / REBUY PERIOD FINALIZATION (level-based) ──
-        // Late reg and rebuy share the same cutoff level
-        const lateRegLevelCap =
-          this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 0;
-        if (
-          !this.prizePoolFinalized &&
-          lateRegLevelCap > 0 &&
-          this.currentLevel >= lateRegLevelCap
-        ) {
-          // Check if add-on is available — if so, defer finalization until add-on period ends
-          if (!this.tournamentCache?.add_on_available) {
-            this.prizePoolFinalized = true;
-            // GUARANTEE (2026-08-27): the pool stops moving here, so this is
-            // where the advertised guarantee becomes real money — and money is
-            // MOVED, not declared. applyPrizeGuarantee carries the full note.
-            const finalPool = await this.applyPrizeGuarantee('late_reg_close');
-            if (finalPool !== null) {
-              console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} - prize pool finalized: ${finalPool}`
-              );
-            }
-            // The close is still announced when funding failed — late
-            // registration really is shut, and a client that never hears it
-            // keeps offering a seat nobody can take. What is NOT announced is
-            // a made-up pool: on failure the last known accrued pool is sent,
-            // never a zero and never a locally computed max(pool, gtd).
-            await this.broadcast('late_reg_closed', {
-              prizePool: finalPool ?? (Number(this.tournamentCache?.prize_pool) || 0),
-            });
-            /**
-             * ═══════════════════════════════════════════════════════════════
-             *  THE REPRICE MUST HAPPEN EVEN WHEN THE GUARANTEE COULD NOT BE
-             *  FUNDED (2026-08-29)
-             * ═══════════════════════════════════════════════════════════════
-             *
-             * `prizePoolFinalized` was set at the top of this block, three
-             * statements before funding was even attempted, and this reprice
-             * only ran when funding SUCCEEDED. So a funding failure left the
-             * flag true and the prices untouched — which is not a no-op, it is
-             * a silent change of structure.
-             *
-             * `finalFieldSize()` gates on exactly this flag
-             * (TournamentManagerEliminations), and once it returns a number
-             * the payout structure is TRIMMED to the size of the field so the
-             * residual lands on a place somebody reached. Places paid before
-             * this line were priced against the untrimmed structure; places
-             * paid after are priced against the trimmed one; the residual
-             * holder moves between them and nothing reconciles the two.
-             *
-             * That is the short-field residual defect the trimming was
-             * introduced to fix, reachable again through the funding-failure
-             * branch.
-             *
-             * The pool has genuinely stopped moving whether or not the
-             * guarantee landed, so the reprice is owed either way. On failure
-             * it runs against the last known accrued pool — the same number
-             * the broadcast above sends, and never an invented one.
-             */
-            const poolToPriceBy = finalPool ?? (Number(this.tournamentCache?.prize_pool) || 0);
-            /**
-             * WIDEN THE LADDER TO THE FIELD, BEFORE THE REPRICE (2026-08-31).
-             *
-             * This is the one moment where it is safe: entry is closed, so the
-             * entrant count can no longer grow, and the reprice immediately
-             * below re-values everyone who already busted against whatever
-             * structure is stored. Doing it here means both halves of the field
-             * — those already out and those still playing — are priced by the
-             * same ladder, which is exactly the invariant the reprice exists to
-             * hold.
-             *
-             * Ordering is load-bearing: widen, THEN reprice. Reversed, the
-             * players who busted during late registration would keep prices
-             * from the nine-place structure while everyone after them was paid
-             * from the wide one.
-             */
-            await this.fitPayoutStructureToField();
-            if (poolToPriceBy > 0) {
-              await this.recalculateEliminatedPrizes(poolToPriceBy);
-            } else {
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] late reg closed but no pool to price by (guarantee funding returned ${finalPool}, cached pool ${this.tournamentCache?.prize_pool}) - eliminated prizes NOT repriced against the now-trimmed structure`
-                ),
-                'Tournament.late_reg_close_no_pool_to_reprice'
-              );
-            }
-          }
-        }
-
-        // ── ADD-ON PERIOD TRIGGER (level-based) ──
-        // When blind level passes the late reg/rebuy cutoff and add-on is available
-        if (this.tournamentCache?.add_on_available && !this.addOnPeriodTriggered) {
-          const rebuyLevelCap =
-            this.tournamentCache.late_reg_levels ?? this.tournamentCache.rebuy_levels ?? 8;
-          /**
-           * LEVEL-BASED, NOT EDGE-BASED (2026-08-23). This was
-           * `prevLevel < cap && this.currentLevel >= cap` — an edge, and an
-           * edge is a single instant that is easy to miss and impossible to
-           * recover:
-           *
-           *   - resume() restores currentLevel straight from the database. A
-           *     redeploy while the tournament was already past the cutoff put
-           *     prevLevel past it too, so the edge never came again and the
-           *     add-on window never opened for the life of the tournament.
-           *   - the old isBreak early-return skipped this check entirely, so a
-           *     break row on the cutoff level consumed the only crossing.
-           *
-           * The late-reg finalization block directly above has always been
-           * level-based (`>= cap`) for the same reason. Idempotency does not
-           * depend on the edge: addOnPeriodTriggered guards the outer `if`,
-           * and triggerAddOnPeriod re-checks and persists it.
-           */
-          /* A Free Buy opens its add-on window immediately - see
-             triggerAddOnPeriod. Waiting for the level cap would mean a player
-             who sat down at the start could not add on for an hour, which is
-             the opposite of what was asked. */
-          const addonFromStart = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
-            ?.addon_from_start;
-          if (addonFromStart) {
-            await this.triggerAddOnPeriod();
-          } else if (this.currentLevel >= rebuyLevelCap) {
-            // Broadcast late_reg_closed first
-            await this.broadcast('late_reg_closed', {});
-            // If currently on break, defer the add-on trigger until break resumes
-            if (this.onBreak) {
-              this.pendingAddOnPeriod = true;
-            } else {
-              await this.triggerAddOnPeriod();
-            }
-          }
-        }
-
-        // ── ADD-ON PERIOD END (level-based) ──
-        // Add-on window closes after addon_levels levels past the rebuy cutoff
-        if (this.addOnPeriodTriggered && !this.prizePoolFinalized) {
-          /* A Free Buy's window is measured in MINUTES, not levels, and its
-             blinds are TURBO - so the level cap arrives long before the hour
-             is up. Closing on levels here would shut the add-on window while
-             late registration was still open, and every horse that had not
-             yet taken its add-on would silently lose it. scheduleAddOnPeriodEnd
-             already holds the timer for these; let it do the closing. */
-          const addonFromStart2 = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
-            ?.addon_from_start;
-          const rebuyLevelCap2 =
-            this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 8;
-          const addonWindow = this.tournamentCache?.addon_levels ?? 1;
-          if (!addonFromStart2 && this.currentLevel >= rebuyLevelCap2 + addonWindow) {
-            await this.finalizeAfterAddOn();
-          }
-        }
+        // Entry closure is one database decision for level and minute windows.
+        // On a level event this call observes the current_level write above;
+        // on a minutes-only event it simply confirms the still-open window and
+        // leaves the one DB-relative lifecycle timer armed.
+        await this.reconcileTournamentEntryWindow('engine.level_change');
+        if (!this.lifecycleIsCurrent(lifecycle)) return;
 
         // Schedule the next level (waits the new level's duration, then
         // advances) — unless a break began while this transition was in flight,
@@ -4922,26 +5477,50 @@ export abstract class TournamentManagerBase {
    * disappears again the deploy fails rather than the feature silently dying.
    */
   protected async tryTournamentAddOns(): Promise<void> {
-    if (!this.tournamentCache?.add_on_available) return;
+    if (!this.tournamentCache?.add_on_available || !this.eliminationMutationAllowed()) return;
     try {
       const { data: rows, error: rowsErr } = await supabase
         .from('tournament_players')
         .select('user_id, add_on')
         .eq('tournament_id', this.tournamentId)
         .eq('status', 'playing');
-      if (rowsErr || !rows || rows.length === 0) return;
+      if (!this.eliminationMutationAllowed()) return;
+      if (rowsErr || !rows || rows.length === 0) {
+        if (rowsErr) this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
+        return;
+      }
 
       const withoutAddOn = rows
         .filter((r: { add_on?: boolean | null }) => !r.add_on)
         .map((r: { user_id: string }) => r.user_id);
       if (withoutAddOn.length === 0) return;
 
-      const { data: seatRows } = await supabase
-        .from('table_seats')
-        .select('user_id, tables!inner(tournament_id)')
-        .is('left_at', null)
-        .eq('tables.tournament_id', this.tournamentId);
-      const seated = new Set((seatRows ?? []).map((r: { user_id: string }) => r.user_id));
+      const { data: tableRows, error: tableRowsErr } = await supabase
+        .from('tables')
+        .select('id')
+        .eq('tournament_id', this.tournamentId)
+        .in('status', ['waiting', 'running', 'RUNNING', 'active']);
+      if (!this.eliminationMutationAllowed()) return;
+      if (tableRowsErr || !tableRows) {
+        reportError(
+          tableRowsErr ?? new Error('add-on table snapshot returned no rows'),
+          'Tournament.addon_tables_unreadable'
+        );
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
+        return;
+      }
+      const seatRead = await selectInChunks<{ user_id: string }>(
+        tableRows.map((row: { id: string }) => row.id),
+        (batch) =>
+          supabase.from('table_seats').select('user_id').in('table_id', batch).is('left_at', null),
+        `Tournament.addOnSeats(${this.tournamentId.slice(0, 8)})`
+      );
+      if (!this.eliminationMutationAllowed()) return;
+      if (!seatRead.complete) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
+        return;
+      }
+      const seated = new Set(seatRead.rows.map((r) => r.user_id));
       const candidates = withoutAddOn.filter((id) => seated.has(id));
       if (candidates.length === 0) return;
 
@@ -4958,13 +5537,28 @@ export abstract class TournamentManagerBase {
         (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
         `Tournament.addOnHorses(${this.tournamentId.slice(0, 8)})`
       );
-      if (!horseRead.complete) return;
-      const horseRows = horseRead.rows;
+      if (!this.eliminationMutationAllowed()) return;
+      if (!horseRead.complete) {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
+        return;
+      }
+      const pendingHorseRows = horseRead.rows
+        .filter((horse) => !this.addOnAttemptedHorseIds.has(horse.id))
+        .sort((a, b) => a.id.localeCompare(b.id));
+      const start = Math.min(this.addOnBatchCursor, Math.max(0, pendingHorseRows.length - 1));
+      const horseRows = pendingHorseRows.slice(
+        start,
+        start + TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE
+      );
       if (horseRows.length === 0) return;
+      this.addOnBatchCursor =
+        start + horseRows.length >= pendingHorseRows.length ? 0 : start + horseRows.length;
+      if (pendingHorseRows.length > horseRows.length) this.requestEliminationSweep();
 
       let taken = 0;
       const declined = new Map<string, number>();
       for (const h of horseRows) {
+        if (!this.eliminationMutationAllowed()) return;
         const { data, error } = await supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: this.tournamentId,
           p_user_id: h.id,
@@ -4974,10 +5568,18 @@ export abstract class TournamentManagerBase {
           p_chips: null,
           p_current_level: this.currentLevel,
         });
+        if (!this.eliminationMutationAllowed()) return;
         if (error) {
           declined.set(error.message, (declined.get(error.message) || 0) + 1);
+          // Ambiguous transport failure can follow a committed idempotent
+          // purchase. Keep it retryable inside this same offer window; the
+          // canonical RPC safely answers already-taken on replay.
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
           continue;
         }
+        // A clean grant or semantic refusal has made a final decision for this
+        // window, so later bounded batches can reach the rest of the field.
+        this.addOnAttemptedHorseIds.add(h.id);
         if ((data as { success?: boolean } | null)?.success === true) taken++;
       }
 
@@ -4999,6 +5601,8 @@ export abstract class TournamentManagerBase {
   protected async triggerAddOnPeriod(): Promise<void> {
     if (this.addOnPeriodTriggered) return;
     this.addOnPeriodTriggered = true;
+    this.addOnAttemptedHorseIds.clear();
+    this.addOnBatchCursor = 0;
 
     // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
     // restores it (resume() reads addon_period_triggered) instead of
@@ -5024,28 +5628,30 @@ export abstract class TournamentManagerBase {
       this.tournamentCache.addon_period_started_at = addonPeriodStartedAt;
       this.tournamentCache.addon_period_ends_at = addonPeriodEndsAt;
     }
-    void Promise.resolve(
-      supabase
-        .from('tournaments')
-        .update({
-          addon_period_triggered: true,
-          addon_period_started_at: addonPeriodStartedAt,
-          addon_period_ends_at: addonPeriodEndsAt,
+    void this.trackLifecycleJob(
+      Promise.resolve(
+        supabase
+          .from('tournaments')
+          .update({
+            addon_period_triggered: true,
+            addon_period_started_at: addonPeriodStartedAt,
+            addon_period_ends_at: addonPeriodEndsAt,
+          })
+          .eq('id', this.tournamentId)
+      )
+        .then(({ error }: { error: { message?: string } | null }) => {
+          if (error && !/column|schema/i.test(error.message || '')) {
+            console.warn(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] addon_period_triggered persist failed: ${error.message}`
+            );
+          }
         })
-        .eq('id', this.tournamentId)
-    )
-      .then(({ error }: { error: { message?: string } | null }) => {
-        if (error && !/column|schema/i.test(error.message || '')) {
+        .catch((err: unknown) => {
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] addon_period_triggered persist failed: ${error.message}`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] addon_period_triggered persist threw: ${(err as Error)?.message ?? err}`
           );
-        }
-      })
-      .catch((err: unknown) => {
-        console.warn(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] addon_period_triggered persist threw: ${(err as Error)?.message ?? err}`
-        );
-      });
+        })
+    );
 
     const addonCost = this.tournamentCache?.addon_cost || this.tournamentCache?.buy_in_amount || 0;
     const addonChips =
@@ -5090,7 +5696,7 @@ export abstract class TournamentManagerBase {
         breakDurationMinutes: addonBreakMinutes,
         breakEndsAt: new Date(Date.now() + breakMs).toISOString(),
       });
-      const resumeTimer = setTimeout(() => {
+      const resumeTimer = this.setLifecycleTimeout(() => {
         // A synchronized break or the bubble sync may have taken over the
         // pause state during the add-on break — leave the pause to them.
         if (!this.running || this.onBreak || this.handForHandActive) return;
@@ -5105,8 +5711,12 @@ export abstract class TournamentManagerBase {
       if (typeof (resumeTimer as any)?.unref === 'function') (resumeTimer as any).unref();
     }
 
-    // Offer the add-on to the field now that the window is open.
-    await this.tryTournamentAddOns();
+    // Queue the initial offer through the same bounded process scheduler as
+    // every retry. A blind-level timer must never run a field-sized database
+    // loop outside the global concurrency/work budget.
+    this.lastAddOnOfferAt = Date.now() - TournamentManagerBase.ADD_ON_RETRY_MS;
+    this.requestEliminationSweep();
+    this.scheduleAddOnRetry();
 
     this.scheduleAddOnPeriodEnd(addonPeriodEndsAt);
   }
@@ -5117,9 +5727,9 @@ export abstract class TournamentManagerBase {
   protected scheduleAddOnPeriodEnd(endsAt: string | null | undefined): void {
     const parsed = Date.parse(String(endsAt || ''));
     const delay = Number.isFinite(parsed) ? Math.max(0, parsed - Date.now()) : 0;
-    const timer = setTimeout(() => {
+    const timer = this.setLifecycleTimeout(() => {
       if (!this.running || this.prizePoolFinalized) return;
-      void this.finalizeAfterAddOn().catch((err) =>
+      return this.finalizeAfterAddOn().catch((err) =>
         reportError(err, 'TournamentManagerBase.addon_period_finalize')
       );
     }, delay);
@@ -5220,79 +5830,80 @@ export abstract class TournamentManagerBase {
     }
   }
 
-  protected async finalizeAfterAddOn(): Promise<void> {
-    if (this.prizePoolFinalized) return;
+  protected async finalizeAfterAddOn(): Promise<boolean> {
+    if (this.prizePoolFinalized) return true;
 
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD ENDED at level ${this.currentLevel} - finalizing prize pool`
     );
 
+    const { data, error } = await supabase.rpc('fn_close_tournament_addon_period', {
+      p_tournament_id: this.tournamentId,
+      p_source: 'engine.addon_period_end',
+    });
+    const result = (data ?? {}) as {
+      ok?: boolean;
+      reason?: string;
+      prize_pool?: number | string;
+      ends_at?: string;
+    };
+    if (error || result.ok !== true) {
+      this.prizePoolFinalized = false;
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic add-on close refused: ${error?.message ?? result.reason ?? 'unknown'}`
+        ),
+        'Tournament.addon_period_close_refused'
+      );
+      // An early timer is re-armed at the authoritative database deadline;
+      // a transient failure is admitted urgently through the bounded manager
+      // scheduler rather than silently finalizing or losing the guarantee.
+      if (result.reason === 'addon_period_open' && result.ends_at) {
+        this.scheduleAddOnPeriodEnd(result.ends_at);
+      } else {
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
+      }
+      return false;
+    }
+
+    const finalPool = Number(result.prize_pool);
+    if (!Number.isFinite(finalPool)) {
+      this.prizePoolFinalized = false;
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Atomic add-on close returned no readable prize pool`
+        ),
+        'Tournament.addon_period_close_unreadable_pool'
+      );
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.ADD_ON_RETRY_MS);
+      return false;
+    }
     this.prizePoolFinalized = true;
-    await supabase
-      .from('tournaments')
-      .update({ prize_pool_finalized: true })
-      .eq('id', this.tournamentId);
-    // GUARANTEE (2026-08-27): same rule as the late-reg-close site — the pool
-    // is final now, so the advertised guarantee is FUNDED here (not declared).
-    const finalPool = await this.applyPrizeGuarantee('addon_period_end');
-    if (finalPool !== null) {
-      await this.recalculateEliminatedPrizes(finalPool);
+    if (this.tournamentCache) {
+      this.tournamentCache.prize_pool = finalPool;
+      this.tournamentCache.prize_pool_finalized = true;
+      if (Array.isArray((result as TournamentEntryWindowResult).payout_structure)) {
+        this.tournamentCache.payout_structure = (
+          result as TournamentEntryWindowResult
+        ).payout_structure;
+      }
+    }
+
+    // The add-on RPC wrote the same durable close receipt as the ordinary
+    // entry-window close. Re-enter the one receipt consumer so a lost add-on
+    // response or a crash during early-finisher top-ups is replayable.
+    if (!(await this.reconcileTournamentEntryWindow('engine.addon_period_reprice'))) {
+      return false;
     }
 
     await this.broadcast('ADDON_PERIOD_END', {});
+    return true;
   }
 
-  /**
-   * ═════════════════════════════════════════════════════════════════════════
-   *  THE SWEEP LOCK HAD NO WAY OUT (2026-08-29)
-   * ═════════════════════════════════════════════════════════════════════════
-   *
-   * `isProcessingEliminations` is a re-entrancy lock, and it was taken with
-   * no bound on how long it could be held. The `finally` that releases it is
-   * not the safety net it looks like: `finally` runs when the try block
-   * SETTLES, and an await that never settles never settles. One PostgREST
-   * request that hangs rather than erroring — a dead socket the runtime has
-   * not noticed, a gateway holding the connection open — therefore takes this
-   * lock permanently.
-   *
-   * What that costs: every subsequent tick returns at the first line, so
-   * nothing is eliminated, `remainingCount` never falls to 1, finishTournament
-   * is unreachable, and the whole field's prize money is stranded. Exactly the
-   * deadlock of 2026-08-28 (Union PKO Afternoon 4f42d847) arrived at by a
-   * different road. There was no timeout and no alert: the failure was
-   * SILENT, which is the part that makes it expensive — 4f42d847 sat for over
-   * an hour and was found by a player, not by us.
-   *
-   * Three fields make the lock recoverable, and they are all read in
-   * startEliminationChecker:
-   *
-   *   `eliminationSweepStartedAt`  when the current holder took it (0 = free)
-   *   `eliminationSweepGeneration` bumped every time it is taken
-   *   `eliminationSweepStuckReportedAt` rate-limits the alert to one per
-   *                                     episode instead of one per 5s tick
-   *
-   * The generation is what makes forcing the lock safe. A sweep declared dead
-   * and then resurrected must not write a finishing place that the sweep which
-   * replaced it has already handed to somebody else — the ladder takes places
-   * from the set that is FREE at the moment it reads, so two live sweeps are a
-   * collision generator. So each sweep carries the generation it was born with
-   * and stands down the moment it is superseded, before it writes anything.
-   */
+  /** Local belt; process-wide admission guarantees no concurrent generation. */
   protected isProcessingEliminations = false;
-  protected eliminationSweepStartedAt = 0;
-  protected eliminationSweepGeneration = 0;
-  protected eliminationSweepStuckReportedAt = 0;
-
-  /**
-   * Thresholds and the verdict itself live in the import-free
-   * `eliminationLock` module so they can be unit-tested directly. They are
-   * re-exposed here because every caller already holds a manager.
-   */
-  static readonly ELIMINATION_SWEEP_STUCK_MS = ELIMINATION_SWEEP_STUCK_MS;
-  static readonly ELIMINATION_SWEEP_FORCE_RELEASE_MS = ELIMINATION_SWEEP_FORCE_RELEASE_MS;
-  static readonly eliminationLockVerdict = eliminationLockVerdict;
 
   // ── Implemented by TournamentManagerEliminations (layer 2/3) ──
   protected abstract startEliminationChecker(): void;
-  protected abstract recalculateEliminatedPrizes(finalPrizePool: number): Promise<void>;
+  protected abstract recalculateEliminatedPrizes(finalPrizePool: number): Promise<boolean>;
 }

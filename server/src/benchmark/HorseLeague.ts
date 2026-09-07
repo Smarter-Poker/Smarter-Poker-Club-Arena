@@ -540,7 +540,8 @@ export function playHand(
 export async function runMatchup(
   matchup: LeagueMatchup,
   pairs: number,
-  runSeed: number
+  runSeed: number,
+  shouldContinue: () => boolean = () => true
 ): Promise<LeagueResult> {
   const SEATS = matchup.seats ?? DEFAULT_SEATS;
   const t0 = Date.now();
@@ -560,6 +561,7 @@ export async function runMatchup(
   const sb2 = HorseMind.createSandbox();
 
   for (let p = 0; p < pairs; p++) {
+    if (!shouldContinue()) break;
     // V12.3: YIELD THE EVENT LOOP. This loop used to run all 1500 pairs (3000
     // hands, measured at 7-10 seconds) without a single yield, inside the
     // process serving live poker. DeadlineScheduler ticks every 100ms and its
@@ -918,8 +920,16 @@ export function msLeftInRunWindow(now: Date = new Date()): number {
 }
 
 let leagueTimer: NodeJS.Timeout | null = null;
+let leagueBootTimer: NodeJS.Timeout | null = null;
 let lastLeagueDate: string | null = null;
 let leagueRunning = false;
+let lifecycleGeneration = 0;
+let lifecycleActive = false;
+let stopOperation: Promise<void> | null = null;
+const inFlightRuns = new Set<Promise<void>>();
+
+const lifecycleIsCurrent = (generation: number): boolean =>
+  lifecycleActive && lifecycleGeneration === generation;
 
 /**
  * V13.1 — WHY THIS CHECKS AT BOOT, NOT ONLY ON A TIMER.
@@ -1225,7 +1235,8 @@ async function alreadyRanToday(date: string): Promise<boolean> {
 
 let lastLeaguePmDate: string | null = null;
 
-async function maybeRunLeague(): Promise<void> {
+async function maybeRunLeague(generation: number): Promise<void> {
+  if (!lifecycleIsCurrent(generation)) return;
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const hour = now.getUTCHours();
@@ -1234,7 +1245,9 @@ async function maybeRunLeague(): Promise<void> {
   if (leagueRunning) return;
 
   if (inWindow && lastLeagueDate !== today) {
-    if (await alreadyRanToday(today)) {
+    const alreadyRan = await alreadyRanToday(today);
+    if (!lifecycleIsCurrent(generation)) return;
+    if (alreadyRan) {
       lastLeagueDate = today; // remember for the rest of this process's life
       return;
     }
@@ -1244,7 +1257,9 @@ async function maybeRunLeague(): Promise<void> {
 
     // V13.1: leader/standby means TWO containers boot the full engine path and
     // both reach this line within seconds. Claim the night before working it.
-    if (!(await claimNightlyJob('league', today))) {
+    const claimed = await claimNightlyJob('league', today);
+    if (!lifecycleIsCurrent(generation)) return;
+    if (!claimed) {
       /*
        * DO NOT LATCH lastLeagueDate HERE (2026-09-01, measured).
        *
@@ -1287,8 +1302,11 @@ async function maybeRunLeague(): Promise<void> {
      * resume it. With a partial card now resumable, latching here would undo
      * the entire fix above.
      */
-    await runLeague(today);
-    if (await alreadyRanToday(today)) lastLeagueDate = today;
+    await runLeague(today, () => lifecycleIsCurrent(generation));
+    if (!lifecycleIsCurrent(generation)) return;
+    const completed = await alreadyRanToday(today);
+    if (!lifecycleIsCurrent(generation)) return;
+    if (completed) lastLeagueDate = today;
     return;
   }
 
@@ -1297,7 +1315,9 @@ async function maybeRunLeague(): Promise<void> {
   // the staleness-first card ordering serves the matchups the night window
   // left unmeasured.
   if (inPmWindow && lastLeaguePmDate !== today) {
-    if (!(await claimNightlyJob('league_pm', today))) {
+    const claimed = await claimNightlyJob('league_pm', today);
+    if (!lifecycleIsCurrent(generation)) return;
+    if (!claimed) {
       // Same reasoning as the AM window above: standing down is not settling
       // the day, so the flag stays unset and the next tick re-checks.
       console.log(
@@ -1315,28 +1335,59 @@ async function maybeRunLeague(): Promise<void> {
      * runLeague returned rather than dying mid-card, and rows mean it did
      * real work; a run that produced nothing leaves the day open to retry.
      */
-    const pmResults = await runLeague(today);
+    const pmResults = await runLeague(today, () => lifecycleIsCurrent(generation));
+    if (!lifecycleIsCurrent(generation)) return;
     if (pmResults.length > 0) lastLeaguePmDate = today;
   }
 }
 
-export function startHorseLeague(): void {
-  if (leagueTimer) return;
-  leagueTimer = setInterval(() => void maybeRunLeague(), LEAGUE_CHECK_MS);
-  leagueTimer.unref?.();
-  // Boot check, after a short settle so it never competes with table startup.
-  const boot = setTimeout(() => void maybeRunLeague(), LEAGUE_BOOT_DELAY_MS);
-  boot.unref?.();
+function launchMaybeRunLeague(): void {
+  const generation = lifecycleGeneration;
+  if (!lifecycleIsCurrent(generation) || inFlightRuns.size > 0) return;
+  let tracked!: Promise<void>;
+  tracked = maybeRunLeague(generation)
+    .catch((err) => reportError(err, 'HorseLeague.tick'))
+    .finally(() => inFlightRuns.delete(tracked));
+  inFlightRuns.add(tracked);
 }
 
-export function stopHorseLeague(): void {
+async function drainRuns(): Promise<void> {
+  while (inFlightRuns.size > 0) await Promise.allSettled([...inFlightRuns]);
+}
+
+export function startHorseLeague(): void {
+  if (leagueTimer) return;
+  lifecycleActive = true;
+  lifecycleGeneration += 1;
+  stopOperation = null;
+  leagueTimer = setInterval(launchMaybeRunLeague, LEAGUE_CHECK_MS);
+  leagueTimer.unref?.();
+  // Boot check, after a short settle so it never competes with table startup.
+  leagueBootTimer = setTimeout(() => {
+    leagueBootTimer = null;
+    launchMaybeRunLeague();
+  }, LEAGUE_BOOT_DELAY_MS);
+  leagueBootTimer.unref?.();
+}
+
+export function stopHorseLeague(): Promise<void> {
+  if (stopOperation) return stopOperation;
+  lifecycleActive = false;
+  lifecycleGeneration += 1;
   if (leagueTimer) {
     clearInterval(leagueTimer);
     leagueTimer = null;
   }
+  if (leagueBootTimer) clearTimeout(leagueBootTimer);
+  leagueBootTimer = null;
+  stopOperation = drainRuns();
+  return stopOperation;
 }
 
-export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
+export async function runLeague(
+  runDate?: string,
+  shouldContinue: () => boolean = () => true
+): Promise<LeagueResult[]> {
   if (leagueRunning) return [];
   leagueRunning = true;
   const date = runDate ?? new Date().toISOString().slice(0, 10);
@@ -1394,6 +1445,7 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       `rotation offset ${rotateBy} -> first up ${card[0]?.name}`
   );
   try {
+    if (!shouldContinue()) return results;
     // ═══ V47 SOLVER AGREEMENT (2026-09-05) ═══════════════════════════════
     // The matchups below measure a DIFFERENCE between two configs. This is
     // the absolute score, against the only reference in the building: the
@@ -1426,6 +1478,7 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
             },
           ],
         });
+        if (!shouldContinue()) return results;
         if (error) throw new Error(error.message);
         console.log(
           `[HorseLeague] solver agreement ${round4(agreement.agreement)} over ${agreement.spots} ` +
@@ -1440,6 +1493,7 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
 
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
     for (const m of card) {
+      if (!shouldContinue()) break;
       // V13: a wall-clock budget. The league shares the event loop with live
       // tables by design, so its duration depends on how busy the fleet is,
       // not on its own CPU cost — an unbounded run could still be going when
@@ -1456,7 +1510,13 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
         );
         break;
       }
-      const r = await runMatchup(m, m.pairs ?? PAIRS_PER_MATCHUP, runSeed ^ hash32(m.name));
+      const r = await runMatchup(
+        m,
+        m.pairs ?? PAIRS_PER_MATCHUP,
+        runSeed ^ hash32(m.name),
+        shouldContinue
+      );
+      if (!shouldContinue()) break;
       results.push(r);
       try {
         const { error } = await supabase.from('horse_league_results').upsert(
@@ -1473,6 +1533,7 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
           },
           { onConflict: 'run_date,matchup' }
         );
+        if (!shouldContinue()) break;
         if (error) throw new Error(error.message);
       } catch (err) {
         reportError(err, 'HorseLeague.write');

@@ -99,6 +99,13 @@ let finished = false;
 let stalledTicks = 0;
 let skipTicks = 0;
 let announcedWaiting = false;
+let lifecycleGeneration = 0;
+let lifecycleActive = false;
+let stopOperation: Promise<void> | null = null;
+const inFlightTicks = new Set<Promise<void>>();
+
+const lifecycleIsCurrent = (generation?: number): boolean =>
+  generation === undefined || (lifecycleActive && lifecycleGeneration === generation);
 
 /**
  * Test seam — no production caller by design, mirroring V30's. The tick
@@ -139,7 +146,8 @@ export async function v30IsComplete(): Promise<boolean> {
  * One tick: fold as many batches as fit the budget. Returns rows processed
  * (test seam).
  */
-export async function gtoV31AggregationTick(): Promise<number> {
+export async function gtoV31AggregationTick(generation?: number): Promise<number> {
+  if (!lifecycleIsCurrent(generation)) return 0;
   if (finished || running) return 0;
   if (skipTicks > 0) {
     skipTicks--;
@@ -147,7 +155,9 @@ export async function gtoV31AggregationTick(): Promise<number> {
   }
   running = true;
   try {
-    if (!(await v30IsComplete())) {
+    const v30Complete = await v30IsComplete();
+    if (!lifecycleIsCurrent(generation)) return 0;
+    if (!v30Complete) {
       if (!announcedWaiting) {
         announcedWaiting = true;
         console.log('[GtoAggregationDriverV31] waiting for the V30 aggregation to finish');
@@ -162,6 +172,7 @@ export async function gtoV31AggregationTick(): Promise<number> {
       const { data, error } = await supabase.rpc('fn_aggregate_gto_v31_next', {
         p_batch: BATCH,
       });
+      if (!lifecycleIsCurrent(generation)) return rows;
       if (error) {
         if (isTimeout(error)) {
           if (rows === 0) {
@@ -196,17 +207,39 @@ export async function gtoV31AggregationTick(): Promise<number> {
   }
 }
 
+function launchTick(): void {
+  const generation = lifecycleGeneration;
+  if (!lifecycleIsCurrent(generation) || inFlightTicks.size > 0) return;
+  let tracked!: Promise<void>;
+  tracked = gtoV31AggregationTick(generation)
+    .then(() => undefined)
+    .finally(() => inFlightTicks.delete(tracked));
+  inFlightTicks.add(tracked);
+}
+
+async function drainTicks(): Promise<void> {
+  while (inFlightTicks.size > 0) await Promise.allSettled([...inFlightTicks]);
+}
+
 export function startGtoAggregationDriverV31(): void {
-  if (timer || finished) return;
+  if (timer || bootTimer || lifecycleActive || finished) return;
+  lifecycleActive = true;
+  lifecycleGeneration += 1;
+  stopOperation = null;
   bootTimer = setTimeout(() => {
-    timer = setInterval(() => void gtoV31AggregationTick(), TICK_MS);
+    bootTimer = null;
+    if (!lifecycleActive) return;
+    timer = setInterval(launchTick, TICK_MS);
     timer.unref?.();
-    void gtoV31AggregationTick();
+    launchTick();
   }, BOOT_DELAY_MS);
   bootTimer.unref?.();
 }
 
-export function stopGtoAggregationDriverV31(): void {
+export function stopGtoAggregationDriverV31(): Promise<void> {
+  if (stopOperation) return stopOperation;
+  lifecycleActive = false;
+  lifecycleGeneration += 1;
   if (timer) {
     clearInterval(timer);
     timer = null;
@@ -215,11 +248,13 @@ export function stopGtoAggregationDriverV31(): void {
     clearTimeout(bootTimer);
     bootTimer = null;
   }
+  stopOperation = drainTicks();
+  return stopOperation;
 }
 
 /** Test seam. */
 export function _resetGtoAggregationDriverV31(): void {
-  stopGtoAggregationDriverV31();
+  void stopGtoAggregationDriverV31();
   running = false;
   finished = false;
   stalledTicks = 0;

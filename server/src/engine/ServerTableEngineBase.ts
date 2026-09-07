@@ -99,6 +99,19 @@ import type { TableStatus } from '../types.js';
 export abstract class ServerTableEngineBase {
   protected tableId: string;
   protected running: boolean = false;
+  /** A table-engine object is one lifecycle generation and is never restarted. */
+  private terminal: boolean = false;
+  /**
+   * The one durable teardown result for this generation. Kept after both
+   * fulfillment and rejection so a late caller cannot mistake `running ===
+   * false` for a teardown that never happened (or hide a teardown failure).
+   */
+  private teardownPromise: Promise<void> | null = null;
+  /** True only after this object has owned the process-global table resources. */
+  private claimedProcessOwnership: boolean = false;
+  /** One causal hand-off from an asynchronously failed dealer to its owner. */
+  private restartRequiredCallback: ((reason: string) => void) | null = null;
+  private restartRequiredSignalled: boolean = false;
   /**
    * ═══ READY IS NOT DEALING (2026-09-05) ═══
    *
@@ -179,7 +192,20 @@ export abstract class ServerTableEngineBase {
    */
   private rebuyPauseWake: (() => void) | null = null;
 
-  public rejectRebuy(userId: string): void {
+  public async rejectRebuy(userId: string): Promise<void> {
+    const tournamentId = this.tableInfo?.tournament_id;
+    if (tournamentId) {
+      const { data, error } = await supabase.rpc('fn_decline_tournament_rebuy', {
+        p_tournament_id: tournamentId,
+        p_user_id: userId,
+      });
+      const result = (data ?? {}) as { ok?: boolean };
+      if (error || result.ok !== true) {
+        throw new Error(
+          `Tournament rebuy decline was not persisted: ${error?.message ?? 'database refused the decision'}`
+        );
+      }
+    }
     this.rejectedRebuys.add(userId);
     // Snap-continue: wake the pause loop now rather than at the next poll tick.
     this.rebuyPauseWake?.();
@@ -594,6 +620,13 @@ export abstract class ServerTableEngineBase {
    */
   private static liveEngines = new Map<string, ServerTableEngineBase>();
 
+  private static claimCurrentEngine(tableId: string, engine: ServerTableEngineBase): boolean {
+    const incumbent = ServerTableEngineBase.liveEngines.get(tableId);
+    if (incumbent && incumbent !== engine) return false;
+    ServerTableEngineBase.liveEngines.set(tableId, engine);
+    return true;
+  }
+
   protected static isCurrentEngineFor(tableId: string, engine: ServerTableEngineBase): boolean {
     return ServerTableEngineBase.liveEngines.get(tableId) === engine;
   }
@@ -607,6 +640,18 @@ export abstract class ServerTableEngineBase {
   /** Is this instance still the authoritative engine for its table? */
   protected isCurrentEngine(): boolean {
     return ServerTableEngineBase.isCurrentEngineFor(this.tableId, this);
+  }
+
+  /** Claim shared scheduler identity without ever evicting a live generation. */
+  private claimProcessOwnership(): boolean {
+    const claimed = ServerTableEngineBase.claimCurrentEngine(this.tableId, this);
+    if (claimed) this.claimedProcessOwnership = true;
+    return claimed;
+  }
+
+  /** Re-check generation identity after every start-up await. */
+  private lifecycleCanMutate(): boolean {
+    return this.running && !this.terminal && this.isCurrentEngine();
   }
 
   /**
@@ -1130,10 +1175,19 @@ export abstract class ServerTableEngineBase {
     timestamp: number;
     delivered: boolean;
   }> = [];
-  // Hand complete callback for tournament chip sync
+  // Post-hand scheduling callback. Settlement invokes it synchronously for a
+  // zero final stack even if a persistence mirror failed; consumers must stay
+  // fire-and-forget and independently verify durable authority.
   protected handCompleteCallback:
     | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
     | null = null;
+  /**
+   * Exact hand-for-hand barrier signal. The tournament coordinator used to
+   * rediscover this state by polling every table twice a second. Emitting at
+   * the transition that creates the wait makes the engine state itself the
+   * authority and removes that periodic correctness dependency.
+   */
+  private pauseReadyCallback: ((tableId: string) => void) | null = null;
   // Hand-for-hand pause: set by tournament manager, checked between hands
   protected handForHandPaused: boolean = false;
   /** Wall-clock when the current by-design pause began; 0 when not paused. */
@@ -1141,6 +1195,8 @@ export abstract class ServerTableEngineBase {
   /** Last time the paused-too-long alarm fired, so it reports once per window. */
   protected lastPauseAlarmAtMs: number = 0;
   protected handForHandResolve: (() => void) | null = null;
+  /** Escape deadline for the current pause wait; cleared on every real release. */
+  private pauseGateTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Safety-timeout budget for the current pause, in ms. null = the default
    * hand-for-hand budget. Set by pauseAfterHand() so a synchronized break can
@@ -1209,6 +1265,16 @@ export abstract class ServerTableEngineBase {
   // 2026-09-06: the drain's view of the same fact, cleared by the promise
   // rather than by the next hand. See trackSettlementInFlight().
   protected settlementInFlight: Promise<void> | null = null;
+
+  /**
+   * The one dealing-loop generation owned by this engine instance.
+   *
+   * This promise is deliberately retained until stop() has joined it.  A
+   * detached loop can still finish a hand and create its settlement after the
+   * terminal fence is published; releasing process ownership before that
+   * continuation exits lets a replacement engine write beside it.
+   */
+  private dealingLoopPromise: Promise<void> | null = null;
 
   // FIX 147: Bible V8 §6.3 — Periodic heartbeat check to detect disconnects mid-hand
   // Without this, disconnects are only detected between hands in dealingLoop().
@@ -1376,10 +1442,10 @@ export abstract class ServerTableEngineBase {
     this.ready = new Promise<boolean>((resolve) => {
       this.settleReady = resolve;
     });
-    // CROSS-INSTANCE OWNERSHIP: the newest instance for a tableId is the
-    // authoritative one. Any older instance still mid-stop() sees itself
-    // superseded and keeps its hands off the shared scheduler.
-    ServerTableEngineBase.liveEngines.set(tableId, this);
+    // Construction does not confer table ownership. GameServer first admits
+    // this exact generation into its table map; start() then claims the shared
+    // scheduler slot with compare-and-swap semantics. A merely constructed
+    // contender therefore cannot supersede the dealer it is racing.
 
     this.chipContinuity = new ChipContinuityTracker({
       tableId,
@@ -1887,7 +1953,13 @@ export abstract class ServerTableEngineBase {
   }
 
   async start(): Promise<void> {
+    if (this.terminal || this.teardownPromise) {
+      throw new Error(`Table engine ${this.tableId} is terminal and cannot be restarted`);
+    }
     if (this.running) return;
+    if (!this.claimProcessOwnership()) {
+      throw new Error(`Table engine ${this.tableId} already has another process-local generation`);
+    }
     this.running = true;
     console.log(`[ServerTableEngine:${this.tableId}] Starting...`);
 
@@ -1934,6 +2006,7 @@ export abstract class ServerTableEngineBase {
           await this.sleep(backoff);
         }
       }
+      if (!this.lifecycleCanMutate()) return;
       this.tableInfo = tableData as TableInfo;
 
       // V22 (2026-08-27, Phase 2): pre-warm the tournament ICM context the
@@ -2020,13 +2093,16 @@ export abstract class ServerTableEngineBase {
       // snapshot still wins — recovery resumes an in-flight hand and must be
       // able to reuse that hand's exact number.
       await this.seedHandCountFromHistory();
+      if (!this.lifecycleCanMutate()) return;
 
       // Dan 2026-08-25, BINDING: "IN THE EVENT OF AN ENGINE RESTART, WHILE PLAY
       // IS RUNNING, IT MUST ALWAYS RESTART IN THE SAME POSITION."
       await this.restoreButtonFromHistory();
+      if (!this.lifecycleCanMutate()) return;
 
       // FIX 137: Bible V8 §7.17 — Check for interrupted hand from a server crash
       const recovered = await this.checkCrashRecovery();
+      if (!this.lifecycleCanMutate()) return;
       if (recovered) {
         console.log(
           `[ServerTableEngine:${this.tableId}] Crash recovery complete - resuming from hand #${this.handCount}`
@@ -2046,6 +2122,7 @@ export abstract class ServerTableEngineBase {
       if (!recovered) {
         try {
           const parked = await loadPresenceFromPark(this.tableId);
+          if (!this.lifecycleCanMutate()) return;
           if (parked && Object.keys(parked).length > 0) {
             const restored = this.disconnectEngine.restoreFsmStates(this.tableId, parked);
             console.log(
@@ -2106,6 +2183,7 @@ export abstract class ServerTableEngineBase {
         }
         try {
           this.seatedPlayers = await loadSeatedPlayers(this.tableId);
+          if (!this.lifecycleCanMutate()) return;
         } catch (err) {
           // This is a POLL. It already runs every 5s, so a failed sweep costs
           // one sweep — while letting it escape aborted start() entirely and
@@ -2136,6 +2214,7 @@ export abstract class ServerTableEngineBase {
         await this.evictExpiredSitOuts({ countOrbit: false }).catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_sitout_evict')
         );
+        if (!this.lifecycleCanMutate()) return;
         // MUST-MOVE (2026-09-05). The same shape, the same reason: a lone
         // player on a feeder waits HERE, and the move the controller planned
         // for them was executed only from the dealing loop, which this table
@@ -2146,10 +2225,11 @@ export abstract class ServerTableEngineBase {
         await this.executePendingSeatMoves().catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_seat_moves')
         );
+        if (!this.lifecycleCanMutate()) return;
         await this.stopIfClusterTableClosed().catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_cluster_closed')
         );
-        if (!this.running) break;
+        if (!this.lifecycleCanMutate()) return;
         // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
         // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
         // 'waiting' stage) instead of an eternal spinner. The hub drops
@@ -2166,6 +2246,8 @@ export abstract class ServerTableEngineBase {
         );
         await this.sleep(5000);
       }
+
+      if (!this.lifecycleCanMutate()) return;
 
       // Bible V8 §3.1: Table FSM — waiting → seating → running (players seated, ready to deal)
       this.tableFSM.transition('seating');
@@ -2185,6 +2267,7 @@ export abstract class ServerTableEngineBase {
       // here as well as in postHandTasks matters for a table that goes idle:
       // otherwise an orphaned row would wait for a next hand that never comes.
       await this.resolveOrphanedAddOns();
+      if (!this.lifecycleCanMutate()) return;
 
       // Start dealing loop.
       //
@@ -2197,10 +2280,17 @@ export abstract class ServerTableEngineBase {
       // discovery never replaces it. Result: a table that is permanently dead
       // with funded seats. Attaching a catch that marks the engine dead turns
       // that permanent freeze into a <5s automatic rebuild.
-      this.dealingLoop().catch((err) => {
+      const dealingLoop = this.dealingLoop().catch((err) => {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.dealingLoop_died');
         this.killForRestart('dealing_loop_threw');
+        throw err;
       });
+      this.dealingLoopPromise = dealingLoop;
+      // Observe immediately so a loop failure can never become an unhandled
+      // rejection while its owner is arranging the terminal teardown.  The
+      // rejected promise itself remains retained for performStop() to include
+      // in the ownership-failure certificate.
+      void dealingLoop.catch(() => undefined);
     } catch (err) {
       this.settleReady(false);
       reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
@@ -2211,18 +2301,47 @@ export abstract class ServerTableEngineBase {
       // Name the stage, exactly as the dealing-loop kills now do. A kill
       // reason that is the same string for every possible cause is how 1,603
       // dealing_loop_dead rows produced no diagnosis at all.
-      this.killForRestart('start_failed:' + this.loopPhase);
+      this.killForRestart('start_failed:' + this.loopPhase, false);
+      // The owner installed this generation in its map before awaiting start.
+      // Resolving here made every GameServer cleanup handler unreachable: the
+      // dead generation stayed addressable until a later discovery scan found
+      // running=false, and an on-demand reconnect could therefore be admitted
+      // to an engine that had already failed. Reject the same causal attempt so
+      // its owner tears down, releases the map/lease, and may retry immediately.
+      throw err;
     }
   }
 
   /**
    * Stop the engine
    */
-  async stop(): Promise<void> {
-    if (!this.running) return;
+  stop(): Promise<void> {
+    if (this.teardownPromise) return this.teardownPromise;
+
+    // Capture the exact writers BEFORE changing `running`. The dealing loop
+    // reacts to that fence and may return in the same microtask turn; neither
+    // it nor its current settlement may disappear from the ownership proof.
+    const dealingLoopAtFence = this.dealingLoopPromise;
+    const settlementAtFence = this.settlementInFlight ?? this.postHandTasksPromise;
+
+    // Publish the terminal fence synchronously. Any start/restart attempt in
+    // the same turn observes it before teardown reaches its first await.
+    this.terminal = true;
     this.running = false;
+    this.releasePendingPauseWait();
     // A stop before `waiting` is a "never got there"; after it, a no-op.
     this.settleReady(false);
+
+    const teardown = this.performStop(dealingLoopAtFence, settlementAtFence);
+    this.teardownPromise = teardown;
+    return teardown;
+  }
+
+  private async performStop(
+    dealingLoopAtFence: Promise<void> | null = this.dealingLoopPromise,
+    settlementAtFence: Promise<void> | null = this.settlementInFlight ?? this.postHandTasksPromise
+  ): Promise<void> {
+    const failures: unknown[] = [];
 
     // FIX 147 + Phase 1.2 PR-G-real: set the flag first so any heartbeat
     // callback already mid-flight bails before re-arming.
@@ -2230,6 +2349,34 @@ export abstract class ServerTableEngineBase {
 
     // Bible V8 §3.1: Table FSM — running/waiting → closing → closed
     this.tableFSM.transition('closing');
+
+    // OWNERSHIP BARRIER: `running = false` prevents new work, but it does not
+    // cancel a hand or a transaction that was already accepted. Join the exact
+    // dealing-loop generation captured at the fence, then drain settlement to
+    // a fixed point. A hand that was in the air at the fence can install its
+    // settlement while the loop unwinds, which is why a one-time field read is
+    // insufficient. No timeout is allowed here: elapsed wall time cannot make
+    // it safe for a replacement engine to acquire this table while the prior
+    // owner is still writing money/history.
+    const joined = new Set<Promise<void>>();
+    const joinOwnedWriter = async (writer: Promise<void> | null): Promise<void> => {
+      if (!writer || joined.has(writer)) return;
+      joined.add(writer);
+      const result = await Promise.allSettled([writer]);
+      if (result[0].status === 'rejected') failures.push(result[0].reason);
+    };
+
+    if (dealingLoopAtFence) await joinOwnedWriter(dealingLoopAtFence);
+    if (settlementAtFence) await joinOwnedWriter(settlementAtFence);
+    while (this.settlementInFlight || this.postHandTasksPromise) {
+      const settlement = this.settlementInFlight;
+      const postHandTasks = this.postHandTasksPromise;
+      await joinOwnedWriter(settlement);
+      await joinOwnedWriter(postHandTasks);
+      if (this.settlementInFlight === settlement) this.settlementInFlight = null;
+      if (this.postHandTasksPromise === postHandTasks) this.postHandTasksPromise = null;
+    }
+    if (this.dealingLoopPromise === dealingLoopAtFence) this.dealingLoopPromise = null;
 
     // CROSS-INSTANCE GUARD (2026-08-22): if a replacement engine for this
     // tableId has already been constructed, every shared resource (scheduler
@@ -2245,12 +2392,19 @@ export abstract class ServerTableEngineBase {
     // channel belongs to one instance and closing ours cannot disturb the
     // successor's, which is the trap the guard below exists for.
     this.unsubscribeManualBomb();
-    if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
+    if (
+      !this.claimedProcessOwnership ||
+      ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)
+    ) {
       this.clearTurnTimer();
       // C15: flush any coalesced snapshot BEFORE dropping the controller — after
       // handController is null saveSnapshot() early-returns, so a pending write
       // would be silently lost on every shutdown.
-      await this.flushSnapshot();
+      try {
+        await this.flushSnapshot();
+      } catch (error) {
+        failures.push(error);
+      }
     }
     if (this.snapshotTimer) {
       clearTimeout(this.snapshotTimer);
@@ -2260,33 +2414,45 @@ export abstract class ServerTableEngineBase {
 
     // TOCTOU FIX (2026-08-22 review): ownership MUST be re-read AFTER the
     // flushSnapshot await. That Supabase write can take up to 15s on a
-    // degraded DB — exactly when engines get reaped — and the discovery sweep
-    // rebuilds a replacement within 5s. A pre-await ownership snapshot would
+    // degraded DB — exactly when engines get reaped — and the owner now
+    // rebuilds a replacement directly from the terminal-generation signal. A
+    // pre-await ownership snapshot would
     // resume `true` here and cancel the NEW engine's heartbeat/turn deadlines
     // on the shared scheduler, silently recreating the permanent-freeze bug
     // this guard exists to prevent.
-    if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
+    if (
+      !this.claimedProcessOwnership ||
+      ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)
+    ) {
       // FIX 147 + Phase 1.2 PR-G-real: tear down heartbeat scheduler entry.
       deadlineScheduler.cancel(this.tableId, ServerTableEngineBase.HEARTBEAT_EVENT_ID);
 
       // Step 4: Dispose ported core modules
-      this.preciseTimer.dispose();
-      this.actionValidator.dispose();
-      this.stateVerifier.dispose();
+      for (const dispose of [
+        () => this.preciseTimer.dispose(),
+        () => this.actionValidator.dispose(),
+        () => this.stateVerifier.dispose(),
 
-      // Step 5: Dispose supporting modules
-      this.timeBankEngine.disposeAll();
-      this.disconnectEngine.disposeAll();
-      this.preActionEngine.disposeAll();
-      this.atomicStackService.dispose();
+        // Step 5: Dispose supporting modules
+        () => this.timeBankEngine.disposeAll(),
+        () => this.disconnectEngine.disposeAll(),
+        () => this.preActionEngine.disposeAll(),
+        () => this.atomicStackService.dispose(),
 
-      // Step 6: Dispose advanced modules
-      this.straddleEngine.disposeAll();
-      this.runItTwiceEngine.disposeAll();
-      this.insuranceEngine.disposeAll();
+        // Step 6: Dispose advanced modules
+        () => this.straddleEngine.disposeAll(),
+        () => this.runItTwiceEngine.disposeAll(),
+        () => this.insuranceEngine.disposeAll(),
 
-      // Step 7: Dispose tournament & extras modules
-      this.engineTelemetry.dispose();
+        // Step 7: Dispose tournament & extras modules
+        () => this.engineTelemetry.dispose(),
+      ]) {
+        try {
+          dispose();
+        } catch (error) {
+          failures.push(error);
+        }
+      }
 
       ServerTableEngineBase.releaseCurrentEngine(this.tableId, this);
     }
@@ -2301,6 +2467,12 @@ export abstract class ServerTableEngineBase {
     console.log(
       `[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handsDealtThisSession} hands.`
     );
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        `Table engine ${this.tableId} teardown failed in ${failures.length} operation(s)`
+      );
+    }
   }
 
   /**
@@ -2930,19 +3102,22 @@ export abstract class ServerTableEngineBase {
   protected runTableWatchdog(): void {}
 
   /**
-   * Mark the engine dead so GameServer's reaper deletes it and discovery
-   * rebuilds a fresh one on the next 5s cycle (crash recovery rehydrates from
-   * hand_state_snapshots). Leaving `running` true is what turned every
-   * transient stall into a permanent one.
+   * Mark the engine dead and signal its exact map owner to tear it down and
+   * install a fresh generation (crash recovery rehydrates from
+   * hand_state_snapshots). The slower liveness scanners remain diagnostic
+   * defense; they are no longer the primary recovery mechanism. Leaving
+   * `running` true is what turned every transient stall into a permanent one.
    */
-  protected killForRestart(reason: string): void {
+  protected killForRestart(reason: string, notifyOwner = true): void {
     reportError(
       new Error('Engine self-terminating for restart: ' + reason),
       'ServerTableEngine.' + this.tableId + '.watchdog_kill',
       { handCount: this.handsDealtThisSession, currentHandNumber: this.handCount }
     );
     this.recordRecoveryEvent('watchdog_kill_rebuild', reason);
+    this.terminal = true;
     this.running = false;
+    this.releasePendingPauseWait();
     this.settleReady(false);
     this.heartbeatActive = false;
     this.clearHandSafetyTimer();
@@ -2956,13 +3131,62 @@ export abstract class ServerTableEngineBase {
       // and table_break:* live on the same shared scheduler under this tableId and
       // would otherwise fire callbacks bound to this dead engine instance forever.
       deadlineScheduler.cancelAll(this.tableId);
-      ServerTableEngineBase.releaseCurrentEngine(this.tableId, this);
+      // Keep process ownership until stop() completes. The map and this
+      // registry now agree that a killed generation is quarantined, so a
+      // replacement cannot claim the shared scheduler while module teardown
+      // is still pending.
     }
     this.handController = null;
+    if (notifyOwner) this.signalRestartRequired(reason);
+  }
+
+  /**
+   * Subscribe the exact map owner to this generation's terminal signal.
+   * Runtime dealing/watchdog failures are detached from start(), so rejection
+   * cannot reach the owner. This one-shot callback is their causal replacement
+   * for waiting on a later discovery scan. Start failures still reject start()
+   * directly and deliberately do not emit a second cleanup signal.
+   */
+  onRestartRequired(callback: (reason: string) => void): () => void {
+    this.restartRequiredCallback = callback;
+    return () => {
+      if (this.restartRequiredCallback === callback) this.restartRequiredCallback = null;
+    };
+  }
+
+  private signalRestartRequired(reason: string): void {
+    if (this.restartRequiredSignalled) return;
+    this.restartRequiredSignalled = true;
+    const callback = this.restartRequiredCallback;
+    if (!callback) return;
+    queueMicrotask(() => {
+      if (this.restartRequiredCallback !== callback) return;
+      try {
+        callback(reason);
+      } catch (error) {
+        reportError(error, 'ServerTableEngine.restart_required_callback_failed', {
+          tableId: this.tableId,
+          reason,
+        });
+      }
+    });
   }
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * Whether this generation can no longer own any process-global deadline or
+   * timer slot. performStop deliberately completes that release before it
+   * reports aggregated cleanup diagnostics; owners use this narrow proof to
+   * distinguish "teardown failed before the fence" from "teardown completed
+   * but a non-ownership cleanup also failed".
+   */
+  hasReleasedProcessOwnership(): boolean {
+    return (
+      !this.claimedProcessOwnership || !ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)
+    );
   }
 
   /**
@@ -3164,6 +3388,14 @@ export abstract class ServerTableEngineBase {
     this.handCompleteCallback = callback;
   }
 
+  /** Subscribe this exact engine generation to its between-hands pause edge. */
+  onPauseReady(callback: (tableId: string) => void): () => void {
+    this.pauseReadyCallback = callback;
+    return () => {
+      if (this.pauseReadyCallback === callback) this.pauseReadyCallback = null;
+    };
+  }
+
   /**
    * Pause dealing after the current hand finishes.
    *
@@ -3328,10 +3560,19 @@ export abstract class ServerTableEngineBase {
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');
     }
-    if (this.handForHandResolve) {
-      this.handForHandResolve();
-      this.handForHandResolve = null;
+    this.releasePendingPauseWait();
+  }
+
+  /** Resolve one parked dealing loop and retire its now-obsolete timeout. */
+  private releasePendingPauseWait(): void {
+    if (this.pauseGateTimer) {
+      clearTimeout(this.pauseGateTimer);
+      this.pauseGateTimer = null;
     }
+    if (!this.handForHandResolve) return;
+    const resolve = this.handForHandResolve;
+    this.handForHandResolve = null;
+    resolve();
   }
 
   /** Resume dealing (all tables finished their hand-for-hand hand) */
@@ -3426,20 +3667,33 @@ export abstract class ServerTableEngineBase {
        * hand-for-hand.
        */
       const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
-      const timer = setTimeout(() => {
+      this.pauseGateTimer = setTimeout(() => {
         if (this.handForHandResolve === resolve) {
           console.warn(
             `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(
               maxWaitMs / 1000
             )}s - resuming to avoid a wedged table`
           );
+          this.pauseGateTimer = null;
           this.handForHandResolve = null;
           resolve();
         }
       }, maxWaitMs);
       // The break is minutes long and this timer is the only thing keeping a
       // reference; unref so a shutdown inside a break is not held open by it.
-      (timer as { unref?: () => void }).unref?.();
+      (this.pauseGateTimer as { unref?: () => void }).unref?.();
+
+      // Notify only after the wait authority and its escape deadline exist.
+      // The manager may synchronously release the barrier when this is the
+      // final table to park, so publishing before either line above would
+      // create a lost-resume race.
+      try {
+        this.pauseReadyCallback?.(this.tableId);
+      } catch (error) {
+        reportError(error, 'ServerTableEngine.pause_ready_callback_failed', {
+          tableId: this.tableId,
+        });
+      }
     });
   }
 
@@ -3457,7 +3711,11 @@ export abstract class ServerTableEngineBase {
    * drain must not mistake "not started yet" for "finished cleanly".
    */
   isDrained(): boolean {
-    return !this.running || this.isWaitingForHandForHand();
+    return (
+      !this.hasSettlementInFlight() &&
+      this.postHandTasksPromise === null &&
+      (!this.running || this.isWaitingForHandForHand())
+    );
   }
 
   /**

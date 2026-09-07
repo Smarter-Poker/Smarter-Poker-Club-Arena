@@ -20,6 +20,12 @@ CONTAINER="${CONTAINER:-club-arena-engine}"
 IMAGE_REPO="${IMAGE_REPO:-club-arena-engine}"
 PORT="${PORT:-8080}"
 METRIC_FILE="${METRIC_FILE:-/var/lib/node-exporter-textfile/club_arena_supervisor.prom}"
+HEALTH_TIMEOUT_SEC="${HEALTH_TIMEOUT_SEC:-15}"
+# Docker reports health timing fields as integer nanoseconds. These floors are
+# the production safety contract, not cosmetic preferences: a shorter timeout
+# or cold-boot grace can turn load into a platform-wide restart.
+MIN_HEALTH_TIMEOUT_NS="${MIN_HEALTH_TIMEOUT_NS:-15000000000}"
+MIN_HEALTH_START_PERIOD_NS="${MIN_HEALTH_START_PERIOD_NS:-300000000000}"
 
 PASS=0; FAIL=0
 ok()   { printf '  PASS  %s\n' "$1"; PASS=$((PASS+1)); }
@@ -39,6 +45,33 @@ POLICY=$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONT
 HC=$(docker container inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || echo none)
 [ "$HC" != "none" ] && ok "HEALTHCHECK is defined (status: $HC)" \
   || bad "no HEALTHCHECK — a wedged-but-running process would be invisible"
+
+# `docker inspect -f '{{.Config.Healthcheck.Timeout}}'` renders `15s`, which is
+# not safe shell arithmetic. The json template function serialises the same
+# Go duration as its integer nanoseconds value.
+HC_TIMEOUT_NS=$(docker container inspect -f '{{if .Config.Healthcheck}}{{json .Config.Healthcheck.Timeout}}{{else}}0{{end}}' "$CONTAINER" 2>/dev/null || echo 0)
+case "$HC_TIMEOUT_NS" in ''|*[!0-9]*) HC_TIMEOUT_NS=0 ;; esac
+[ "$HC_TIMEOUT_NS" -ge "$MIN_HEALTH_TIMEOUT_NS" ] 2>/dev/null \
+  && ok "HEALTHCHECK timeout is at least 15s (event-loop saturation tolerance)" \
+  || bad "HEALTHCHECK timeout is ${HC_TIMEOUT_NS}ns — below the 15s safety floor; load can trigger false restarts"
+
+HC_START_NS=$(docker container inspect -f '{{if .Config.Healthcheck}}{{json .Config.Healthcheck.StartPeriod}}{{else}}0{{end}}' "$CONTAINER" 2>/dev/null || echo 0)
+case "$HC_START_NS" in ''|*[!0-9]*) HC_START_NS=0 ;; esac
+[ "$HC_START_NS" -ge "$MIN_HEALTH_START_PERIOD_NS" ] 2>/dev/null \
+  && ok "HEALTHCHECK start period is at least 300s (cold-boot grace)" \
+  || bad "HEALTHCHECK start period is ${HC_START_NS}ns — below the 300s cold-boot safety floor"
+
+# Docker considers the start period complete after the first successful probe.
+# The command therefore has to enforce the same grace from PID 1's age, or a
+# quick early success followed by load-ramp timeouts can still trigger autoheal.
+HC_TEST=$(docker container inspect -f '{{if .Config.Healthcheck}}{{join .Config.Healthcheck.Test " "}}{{end}}' "$CONTAINER" 2>/dev/null || echo "")
+if echo "$HC_TEST" | grep -Fq '/proc/1/stat' \
+  && echo "$HC_TEST" | grep -Fq 'if(a<300)' \
+  && echo "$HC_TEST" | grep -Fq "l==='ok'||l==='standby'"; then
+  ok "HEALTHCHECK enforces PID 1 grace and explicit ok/standby liveness"
+else
+  bad "HEALTHCHECK is missing PID 1 grace or explicit ok/standby liveness"
+fi
 
 head_ "Layer 2 — autoheal (the thing that acts on the healthcheck)"
 # Docker's HEALTHCHECK only sets a status field. Plain Docker restarts nothing.
@@ -91,7 +124,7 @@ else
 fi
 
 head_ "Layer 5 — the engine is genuinely serving, and can say what it is"
-BODY=$(curl -sf --max-time 5 "http://127.0.0.1:${PORT}/health" 2>/dev/null || echo "")
+BODY=$(curl -sf --max-time "$HEALTH_TIMEOUT_SEC" "http://127.0.0.1:${PORT}/health" 2>/dev/null || echo "")
 if echo "$BODY" | grep -q '"running":true'; then
   ok "/health reports running:true"
 else

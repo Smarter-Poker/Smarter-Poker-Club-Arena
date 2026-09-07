@@ -21,8 +21,7 @@ import type { BBJDetectionResult } from '../config/RakeConfig.js';
 import { maybeArmed } from '../services/supabase/bbjDrillRegistry.js';
 import {
   loadTable,
-  syncStacks,
-  syncTournamentChips,
+  persistTimeBanks,
   updateTableStatus,
   autoRebuyHorse,
   markSeatAsLeft,
@@ -1396,49 +1395,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     }
 
-    await runStep('sync_stacks', true, async () => {
-      // SETTLEMENT STEP 8: Persist results to database (atomic transaction)
-      if (!tournamentHandConserved) return;
-      await syncStacks(
-        this.tableId,
-        players.map((p) => ({
-          user_id: p.user_id,
-          stack: p.stack,
-          // Chip standard 2026-09-04: the stack this seat was dealt from, so
-          // the database applies the hand's DIFFERENCE to the row instead of
-          // overwriting whatever landed on it meanwhile. A seat not in the
-          // dealt map was not in this hand: delta 0.
-          stack_before: snap.dealtStacks.get(p.user_id) ?? p.stack,
-          // VIP time banks 2026-08-18: HandController players never carried
-          // time_bank_uses_remaining (always undefined), so this column sat
-          // at its insert default (4) on every one of 22,805 seat rows -
-          // the persist had NEVER once written. Ask the engine, the actual
-          // source of truth.
-          time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
-          time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
-        })),
-        // ZERO-DRIFT phase 5: identify the hand so the write is atomic and
-        // idempotent (fn_ca_settle_hand_stacks_absolute). The BBJ re-sync
-        // later in this file deliberately does NOT pass a hand number - it is
-        // a correction pass over the same hand and must not be swallowed by
-        // the idempotency replay.
-        // Read from the snapshot, never the live field (stale-continuation
-        // law): dealHand reassigns handCount while a stalled settlement is
-        // still writing.
-        snap.handNumber,
-        // Chip standard 2026-09-04: rake and BBJ drop are DECLARED, so the
-        // database asserts sum(delta) = -rake - bbj on every cash hand. A
-        // tournament hand declares 0 and 0 and the same identity holds.
-        {
-          rake: this.isTournamentTable() ? 0 : snap.rake,
-          bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
-          // Insurance payouts and premiums moved chips between the bank and
-          // these seats before this write; declared, or the identity refuses
-          // every insured hand.
-          inflow: snap.insuranceNet,
-        }
-      );
-    });
+    // A conservation refusal is an authoritative settlement fault.  Keep the
+    // table connected but parked; no history, rake, BBJ, add-on, elimination
+    // wake or unlock may run for a hand whose accepted stacks do not exist.
+    if (!tournamentHandConserved) {
+      this.setLoopPhase('settlement_fault_conservation');
+      while (this.running) await this.sleep(1_000);
+      return;
+    }
 
     // ─── ROUND 38 + 43 FIX: REORDERED — hand_history FIRST, then rake/BBJ ───
     // Round 38: rake_records.hand_id needed the v_handHistoryId.
@@ -1446,8 +1410,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // needs the hand UUID to link the audit ledger to the source hand. So
     // logHandHistory must precede logRakeCollection / logBBJCollection.
     let v_handHistoryId: string | null = null;
+    let authoritativeCommitSucceeded = false;
     await runStep('hand_history', true, async () => {
       if (this.tableInfo) {
+        const tableInfo = this.tableInfo;
         // ── SECURITY 2026-08-17: apply the auto-muck gate to the WRITE ──
         //
         // `currentHandShowdownResults` is built in ServerTableEngineHandEvents
@@ -1611,113 +1577,195 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 }))
               : undefined;
 
-        const result = await logHandHistory({
-          tableId: this.tableId,
-          bombAwardUnits,
-          nitGame: this.tableInfo.nit_game === true,
-          // THE FLOOR TRAVELS WITH THE HAND (2026-09-06). A horse at a
-          // floored table is REQUIRED to play above it (10.5, vpipFloorMul),
-          // so its VPIP there cannot be judged against the winning-player
-          // band - see HorsePlayStats and fn_horse_frequency_leaks.
-          vpipFloor: this.vpipFloor(),
-          tournamentId: this.tableInfo.tournament_id || undefined,
-          handNumber: snap.handNumber,
-          // VARIANT OVERRIDE 2026-08-28 (spec §10.1/§20): the variant this
-          // hand was DEALT as — plo4 on a PLO4 bomb hand at an NLH table.
-          // Falling back to the table label only when the capture is absent.
-          gameVariant: snap.variant || this.tableInfo.game_variant || 'nlh',
-          smallBlind: this.tableInfo.small_blind,
-          bigBlind: this.tableInfo.big_blind,
-          potSize: snap.potSize,
-          rakeAmount: snap.rake,
-          bbjAmount: snap.bbjFee,
-          communityCards: snap.communityCards,
-          communityCards2: snap.communityCards2,
-          // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + the frozen bomb facts
-          // (trigger reason, ante, board count — spec §20).
-          communityCards3: snap.communityCards3,
-          bombPot: snap.bombPot,
-          // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
-          // rit_board_N pseudo-actions in `actions` stay for old readers.
-          ritBoards: snap.ritExtraBoards,
-          startedAt: snap.startedAt || Date.now(),
-          endedAt: Date.now(),
-          winners: snap.winners,
-          // Per-board winners for any multi-board hand; NULL otherwise (see
-          // handHistory.ts). This is the record that says which run went to
-          // whom, with what - `winners` is only the paid totals.
-          winnersByBoard: snap.winnersByBoard,
-          // POT-LEVEL SETTLEMENT (Dan section 29). Captured at WINNERS, when
-          // the breakdown still exists. `winners` already carry `potIndex`;
-          // this is the other half of that pair, and without it the number is
-          // an index into an array nobody stored. Together they let the
-          // elimination sweep credit a knockout to the winner(s) of the pot
-          // that held the busted player's last chips.
-          pots: snap.pots,
-          /* THE ROSTER IS THE RLS KEY (2026-09-04). hand_history is readable by
+        const commitAuthoritativeHand = () =>
+          logHandHistory({
+            tableId: this.tableId,
+            bombAwardUnits,
+            nitGame: tableInfo.nit_game === true,
+            // THE FLOOR TRAVELS WITH THE HAND (2026-09-06). A horse at a
+            // floored table is REQUIRED to play above it (10.5, vpipFloorMul),
+            // so its VPIP there cannot be judged against the winning-player
+            // band - see HorsePlayStats and fn_horse_frequency_leaks.
+            vpipFloor: this.vpipFloor(),
+            tournamentId: tableInfo.tournament_id || undefined,
+            handNumber: snap.handNumber,
+            // VARIANT OVERRIDE 2026-08-28 (spec §10.1/§20): the variant this
+            // hand was DEALT as — plo4 on a PLO4 bomb hand at an NLH table.
+            // Falling back to the table label only when the capture is absent.
+            gameVariant: snap.variant || tableInfo.game_variant || 'nlh',
+            smallBlind: tableInfo.small_blind,
+            bigBlind: tableInfo.big_blind,
+            potSize: snap.potSize,
+            rakeAmount: snap.rake,
+            bbjAmount: snap.bbjFee,
+            communityCards: snap.communityCards,
+            communityCards2: snap.communityCards2,
+            // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + the frozen bomb facts
+            // (trigger reason, ante, board count — spec §20).
+            communityCards3: snap.communityCards3,
+            bombPot: snap.bombPot,
+            // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
+            // rit_board_N pseudo-actions in `actions` stay for old readers.
+            ritBoards: snap.ritExtraBoards,
+            startedAt: snap.startedAt || Date.now(),
+            endedAt: Date.now(),
+            winners: snap.winners,
+            // Per-board winners for any multi-board hand; NULL otherwise (see
+            // handHistory.ts). This is the record that says which run went to
+            // whom, with what - `winners` is only the paid totals.
+            winnersByBoard: snap.winnersByBoard,
+            // POT-LEVEL SETTLEMENT (Dan section 29). Captured at WINNERS, when
+            // the breakdown still exists. `winners` already carry `potIndex`;
+            // this is the other half of that pair, and without it the number is
+            // an index into an array nobody stored. Together they let the
+            // elimination sweep credit a knockout to the winner(s) of the pot
+            // that held the busted player's last chips.
+            pots: snap.pots,
+            /* THE ROSTER IS THE RLS KEY (2026-09-04). hand_history is readable by
              `players @> [{userId}]`, so a hand whose roster is missing a
              participant is a hand that participant can never open, and one
              with an empty roster is invisible to everyone in it. The roster
              here is the dealing loop's array; if it disagrees with who was
              dealt cards or who was paid, the hand was still played - write
              the union, and say so loudly, rather than lose it. */
-          players: (() => {
-            const roster = players.map((p) => ({
-              userId: p.user_id,
-              username: p.username,
-              seat: p.seat_number,
-              stack: p.stack,
-              cards: [] as string[],
-            }));
-            const seen = new Set(roster.map((r) => r.userId));
-            const seatOf = (uid: string): number => {
-              const sd = snap.showdownResults.find((r) => r.userId === uid);
-              if (sd && typeof sd.seat === 'number') return sd.seat;
-              const act = snap.actions.find((a) => a.userId === uid && typeof a.seat === 'number');
-              return act ? act.seat : 0;
-            };
-            const missing = [...snap.holeCards.keys(), ...snap.winners.map((w) => w.userId)].filter(
-              (uid, i, arr) => uid && !seen.has(uid) && arr.indexOf(uid) === i
-            );
-            for (const uid of missing) {
-              seen.add(uid);
-              roster.push({
-                userId: uid,
-                username: 'Player',
-                seat: seatOf(uid),
-                stack: 0,
-                cards: [],
-              });
+            players: (() => {
+              const roster = players.map((p) => ({
+                userId: p.user_id,
+                username: p.username,
+                seat: p.seat_number,
+                stack: p.stack,
+                cards: [] as string[],
+              }));
+              const seen = new Set(roster.map((r) => r.userId));
+              const seatOf = (uid: string): number => {
+                const sd = snap.showdownResults.find((r) => r.userId === uid);
+                if (sd && typeof sd.seat === 'number') return sd.seat;
+                const act = snap.actions.find(
+                  (a) => a.userId === uid && typeof a.seat === 'number'
+                );
+                return act ? act.seat : 0;
+              };
+              const missing = [
+                ...snap.holeCards.keys(),
+                ...snap.winners.map((w) => w.userId),
+              ].filter((uid, i, arr) => uid && !seen.has(uid) && arr.indexOf(uid) === i);
+              for (const uid of missing) {
+                seen.add(uid);
+                roster.push({
+                  userId: uid,
+                  username: 'Player',
+                  seat: seatOf(uid),
+                  stack: 0,
+                  cards: [],
+                });
+              }
+              if (missing.length > 0 || roster.length === 0) {
+                console.error(
+                  `[hand_history] roster disagreed with the hand: hand=${snap.handNumber} table=${this.tableId} rosterLen=${players.length} added=${missing.length}`
+                );
+              }
+              return roster;
+            })(),
+            actions: snap.actions,
+            // STATS FACT LAYER 2026-08-21: engine-memory values the write used to
+            // discard. Rationale in services/supabase/handFacts.ts.
+            clubId: tableInfo.club_id,
+            contributions: snap.contributions,
+            holeCardsAll: snap.holeCards,
+            roster: players.map((p) => ({ userId: p.user_id, isHorse: p.is_horse })),
+            // ASSISTANT FIX 2026-08-16: both of these were already computed on
+            // the engine for this hand and then thrown away at the write.
+            //
+            // showdownResults carries the revealed holdings (captured in
+            // ServerTableEngineHandEvents on SHOWDOWN, used until now only for
+            // bad-beat-jackpot detection). buttonSeat is currentHandDealerSeat.
+            // Without the first, the personal assistant can show a leak but not
+            // the hand that proves it; without the second, it cannot compute a
+            // positional leak at all.
+            showdownResults: revealedShowdownResults,
+            dailyMissionEvents,
+            buttonSeat: snap.dealerSeat,
+            showdownReveal,
+            atomicCommit: {
+              stacks: players.map((p) => ({
+                user_id: p.user_id,
+                stack: p.stack,
+                stack_before: snap.dealtStacks.get(p.user_id) ?? p.stack,
+              })),
+              rake: this.isTournamentTable() ? 0 : snap.rake,
+              bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
+              inflow: snap.insuranceNet,
+            },
+          });
+        let result: Awaited<ReturnType<typeof commitAuthoritativeHand>>;
+        let transportFailures = 0;
+        for (;;) {
+          try {
+            result = await commitAuthoritativeHand();
+            if (!result.settlementCommitted || !result.handId) {
+              throw new Error('atomic hand commit refused (missing_commit_receipt)');
             }
-            if (missing.length > 0 || roster.length === 0) {
-              console.error(
-                `[hand_history] roster disagreed with the hand: hand=${snap.handNumber} table=${this.tableId} rosterLen=${players.length} added=${missing.length}`
+            break;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const semantic = message.includes('atomic hand commit refused');
+            reportError(
+              err,
+              semantic
+                ? 'ServerTableEngine.authoritative_hand_semantic_refusal'
+                : 'ServerTableEngine.authoritative_hand_transport_failure',
+              {
+                tableId: this.tableId,
+                handNumber: snap.handNumber,
+                transportFailures,
+              }
+            );
+
+            if (semantic) {
+              await raiseFinancialAlert(
+                'critical',
+                'ServerTableEngine.authoritative_hand_semantic_refusal',
+                `Table ${this.tableId} hand #${snap.handNumber} was refused by the atomic settlement contract; the table is quarantined before every downstream money step`,
+                { table_id: this.tableId, hand_number: snap.handNumber, error: message }
+              );
+              this.setLoopPhase('settlement_fault_semantic');
+              while (this.running) await this.sleep(1_000);
+              throw err;
+            }
+
+            transportFailures++;
+            if (transportFailures === 1 || transportFailures % 10 === 0) {
+              await raiseFinancialAlert(
+                'critical',
+                'ServerTableEngine.authoritative_hand_unreachable',
+                `Table ${this.tableId} hand #${snap.handNumber} cannot reach its atomic settlement; the same payload remains behind the dealing barrier`,
+                {
+                  table_id: this.tableId,
+                  hand_number: snap.handNumber,
+                  attempts: transportFailures,
+                  error: message,
+                }
               );
             }
-            return roster;
-          })(),
-          actions: snap.actions,
-          // STATS FACT LAYER 2026-08-21: engine-memory values the write used to
-          // discard. Rationale in services/supabase/handFacts.ts.
-          clubId: this.tableInfo.club_id,
-          contributions: snap.contributions,
-          holeCardsAll: snap.holeCards,
-          roster: players.map((p) => ({ userId: p.user_id, isHorse: p.is_horse })),
-          // ASSISTANT FIX 2026-08-16: both of these were already computed on
-          // the engine for this hand and then thrown away at the write.
-          //
-          // showdownResults carries the revealed holdings (captured in
-          // ServerTableEngineHandEvents on SHOWDOWN, used until now only for
-          // bad-beat-jackpot detection). buttonSeat is currentHandDealerSeat.
-          // Without the first, the personal assistant can show a leak but not
-          // the hand that proves it; without the second, it cannot compute a
-          // positional leak at all.
-          showdownResults: revealedShowdownResults,
-          dailyMissionEvents,
-          buttonSeat: snap.dealerSeat,
-          showdownReveal,
-        });
+            if (!this.running) throw err;
+            this.setLoopPhase('settlement_retry_transport');
+            await this.sleep(Math.min(1_000 * 2 ** Math.min(transportFailures - 1, 5), 30_000));
+          }
+        }
         v_handHistoryId = result.handId;
+        authoritativeCommitSucceeded = true;
+
+        // Time-bank counters are non-money seat metadata.  They intentionally
+        // remain outside the accepted-hand transaction, but are written only
+        // after that transaction has proved success.
+        await persistTimeBanks(
+          this.tableId,
+          players.map((p) => ({
+            user_id: p.user_id,
+            time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
+            time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
+          }))
+        );
 
         // ── AWARD-UNIT LEDGER (2026-08-28, spec §16.2/§17) ──────────────────
         // One row per (pot layer, board, hi/lo side, winner) for every
@@ -1873,6 +1921,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
       }
     });
+
+    // runStep reports the failure, but it must not turn a failed authoritative
+    // commit into permission to run later money mutations or unlock the table.
+    if (!authoritativeCommitSucceeded) return;
 
     // SETTLEMENT STEP 8b: Distribute rake — ATOMIC + IDEMPOTENT + RECOVERABLE.
     // RAKE-AUDIT 2026-07-24 [money]: replaced the separate, non-atomic
@@ -2266,16 +2318,32 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     });
 
-    // SETTLEMENT STEP 8d: Tournament chip sync
-    await runStep('tournament_chip_sync', true, async () => {
-      // Lane F: a hand that did not conserve persisted nothing above, and
-      // mirroring table_seats into tournament_players is a no-op then. Kept
-      // explicit so the refusal cannot be undone by a later step.
-      if (!tournamentHandConserved) return;
-      if (this.isTournamentTable() && this.tableInfo?.tournament_id) {
-        await syncTournamentChips(this.tableId, this.tableInfo.tournament_id);
+    // Tournament chip mirroring is part of fn_ca_commit_hand_settlement.  A
+    // separate post-commit mirror would reopen the split-brain window this
+    // transaction removes.
+
+    // TOURNAMENT ELIMINATION WAKE (2026-09-07): this is a scheduling hint,
+    // never payout authority.  A zero in the final in-memory stack must wake
+    // the owning manager even when one persistence mirror or the queued hand
+    // write failed: Dealing may still durably vacate/zero that player, and no
+    // later hand will contain them to provide another event.  The sweep itself
+    // remains fail-closed on its exact accepted settlement/history/outbox
+    // evidence and re-drives unresolved work.  Keep the callback synchronous
+    // and fire-and-forget so tournament maintenance never extends settlement.
+    const finalStacks = players.map((p) => ({
+      user_id: p.user_id,
+      stack: p.stack,
+    }));
+    if (this.handCompleteCallback && finalStacks.some((player) => Number(player.stack) <= 0)) {
+      try {
+        this.handCompleteCallback(this.tableId, finalStacks);
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.handCompleteCallback_error', {
+          tableId: this.tableId,
+          handNumber: snap.handNumber,
+        });
       }
-    });
+    }
 
     // SETTLEMENT STEP 8e: Process pending add-ons (queued during the hand).
     // Must run AFTER pot distribution + BBJ payouts so we know each player's

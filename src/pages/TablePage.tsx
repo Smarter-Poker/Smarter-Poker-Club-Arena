@@ -91,6 +91,7 @@ import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
+import { shouldRecoverMissedHandStartPresentation } from '../services/EngineStateClient';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
 import type { CardPresentationMode } from '../presentation/cardPresentation';
@@ -3595,8 +3596,6 @@ export default function TablePage({
      actually opens: an auth refusal followed by nine 1006s is still an auth
      outage, and reading only the most recent close would forget that. */
   const [engineRefusedAuth, setEngineRefusedAuth] = useState(false);
-  const engineRefusedAuthRef = useRef(false);
-  engineRefusedAuthRef.current = engineRefusedAuth;
   useEffect(() => {
     if (!engineLastError) return;
     // Same predicate as lib/sessionRevoked.isEngineAuthClose. Inlined rather
@@ -3676,74 +3675,15 @@ export default function TablePage({
     }
   }, [engineWsStatus, tableId]);
 
-  useEffect(() => {
-    if (engineWsStatus !== 'failed') return;
-    const t = window.setTimeout(() => {
-      if (document.visibilityState !== 'visible') return;
-      if (!isActive) return; // Do not forcefully reload the app for a backgrounded table
-      // A repeatedly-404ing table is closed, not wedged — a reload cannot
-      // help and used to loop the browser every 2 minutes indefinitely.
-      if (notFoundCountRef.current >= 3) return;
-      // A pre-start seat-first table has no engine WS to restore. Reloading
-      // it every ~30s yanked the page out from under players choosing a seat
-      // (observed live 2026-08-28). The socket connects when the game starts.
-      if (seatFirstOpenRef.current) return;
-      /* DO NO HARM (Realtime Phase 3, 2026-09-05). The socket died for auth,
-         so a fresh page would present the same token to the same refusal and
-         land here again in twenty seconds - having discarded the felt, the
-         overlays and any armed pre-action on the way. Whichever of the two
-         auth cases this is, the reload is the wrong move: a dead session is
-         already being prompted and redirected by lib/sessionRevoked, and a
-         live session refused by the engine is recovered by the reconnect
-         ladder that is still running underneath.
-
-         Not silent, on either side. The player has the banner, which says
-         this is a sign-in problem rather than a lost connection, and the
-         platform gets `reload_suppressed` - the series that tells an on-call
-         engineer "these players cannot authenticate to a table", which is
-         the sentence nobody could say for twenty-two hours on 2026-09-03. */
-      if (engineRefusedAuthRef.current) {
-        void import('../services/clientConnectionBeacon')
-          .then((m) => m.reportConnectionEvent('reload_suppressed'))
-          .catch(() => {
-            /* telemetry never disturbs the table */
-          });
-        return;
-      }
-      /* THE SCHEDULED BREAK IS NOT A WEDGED SOCKET (Realtime Phase 4,
-         2026-09-05). The engine is deliberately down for two or three minutes
-         of every hour, and reloading the page under a player who was just
-         promised their seat would survive is the exact opposite of what the
-         break is for - it discards the felt, the overlays and any armed
-         pre-action, then arrives at a box that is still booting.
-
-         EngineStateClient already declines to reach 'failed' while it is
-         inside an announced restart, so this timer usually never fires during
-         a break. This is the case its signal cannot reach: a browser that
-         LOADED during the outage never received the maintenance frame,
-         because there was no socket to receive it on. `useMaintenanceBreak`
-         reads the break from the database for exactly that reader, and this
-         is the one guard that works with no engine at all. */
-      if (maintenanceBreakRef.current.active) return;
-      const KEY = 'ca_ws_autoreload_at';
-      const last = Number(sessionStorage.getItem(KEY) || 0);
-      if (Date.now() - last < 120_000) return;
-      sessionStorage.setItem(KEY, String(Date.now()));
-      reportError(
-        new Error('engine WS failed >20s - auto-refresh failsafe'),
-        'TablePage.wsAutoReload'
-      );
-      // Phase 2 (2026-09-05): this failsafe fired all night on 2026-09-03 and
-      // the platform never knew. Tell the server before the page goes.
-      void import('../services/clientConnectionBeacon')
-        .then((m) => m.reportConnectionEvent('auto_reload'))
-        .catch(() => {
-          /* the page is leaving; telemetry must not hold it up */
-        });
-      window.location.reload();
-    }, 20_000);
-    return () => window.clearTimeout(t);
-  }, [engineWsStatus, isActive]);
+  /* ROOT-CAUSE CONNECTION RECOVERY (2026-09-07). A failed socket is owned by
+     EngineStateClient's bounded reconnect/session/upgrade state machine. The
+     former twenty-second page reload was not recovery: it discarded the live
+     felt and pre-actions, then presented the same browser, token and network
+     to the same failure. It also turned a sustained engine stall into a reload
+     loop. There is deliberately no generic `window.location.reload()` here.
+     The sole reload that remains is `reloadForNewBundle()` in
+     EngineStateClient, reached only when the server explicitly closes with
+     CLOSE_UPGRADE_REQUIRED because the bytes really are incompatible. */
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   // Guards the entry-post overlay against a double tap billing two big blinds.
@@ -6432,6 +6372,77 @@ export default function TablePage({
   );
   // CA-19 BUG FIX: seatDealTimerRef tracks the 700ms setIsSeatDealing(false) timer.
   const seatDealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Last hand whose button-then-deal presentation was armed. */
+  const lastDealPresentationHandRef = useRef(0);
+  /**
+   * A transport continuity boundary arms snapshot-based recovery. It is never
+   * armed by ordinary snapshot hydration, so joining a running hand stays
+   * visually still as before.
+   */
+  const pendingHandStartRecoveryRef = useRef<{
+    reason: 'reconnect' | 'event_sequence_gap';
+    reportedAt: number;
+  } | null>(null);
+  /**
+   * A hand transition that arrived without its deal presentation. Kept only
+   * briefly so a following EVENT-sequence notice can repair server frame order
+   * (snapshot first, gap discovered on the next event) without dealing midway
+   * through a hand.
+   */
+  const unpresentedHandTransitionRef = useRef<{
+    previousHandNumber: number;
+    handNumber: number;
+    observedAt: number;
+    engineStage: string;
+    communityCards: readonly Card[];
+    communityCards2: readonly Card[];
+    communityCards3: readonly Card[];
+    lastActions: readonly LastAction[];
+  } | null>(null);
+  const dealSoundsAllowedRef = useRef(ambientSoundsAllowed);
+  dealSoundsAllowedRef.current = ambientSoundsAllowed;
+
+  /**
+   * One implementation of the mandated button beat and card deal. Both the
+   * normal HAND_STARTED event and a proven transport-gap recovery pass through
+   * here, so recovery cannot invent a shorter animation law.
+   */
+  const scheduleDealPresentation = useCallback(
+    (handNumber: number): boolean => {
+      if (handNumber > 0 && lastDealPresentationHandRef.current === handNumber) return false;
+      if (handNumber > 0) {
+        lastDealPresentationHandRef.current = handNumber;
+        if (unpresentedHandTransitionRef.current?.handNumber === handNumber) {
+          unpresentedHandTransitionRef.current = null;
+        }
+      }
+
+      // Hold the action panel from this instant — the button beat is part of
+      // the deal, and a player must not act into it.
+      beginDealHold();
+      if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
+      const heardHere = dealSoundsAllowedRef.current;
+      dealStartTimerRef.current = setTimeout(
+        () => {
+          dealStartTimerRef.current = null;
+          setDealAnimationKey((k) => k + 1);
+          setIsSeatDealing(true);
+          if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
+          seatDealTimerRef.current = setTimeout(() => {
+            seatDealTimerRef.current = null;
+            setIsSeatDealing(false);
+          }, 700 * getAnimationSpeed());
+          if (soundService.isEnabled() && heardHere) {
+            soundService.playShuffle();
+            setTimeout(() => soundService.playNewHand(), 260);
+          }
+        },
+        Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed())
+      );
+      return true;
+    },
+    [beginDealHold]
+  );
   // CA-20 BUG FIX: handRevealTimerRef tracks the 6s setShowHandRevealModal(false) timer.
   const handRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // AUDIT FIX 2026-07-19: hand-aware hero hole-card fetch. heroHandRef tracks the
@@ -14160,6 +14171,39 @@ export default function TablePage({
     void engineLastEvent;
 
     switch (evt.type) {
+      case 'ENGINE_EVENT_GAP': {
+        const reason = String((evt.data as { reason?: unknown }).reason || '');
+        if (reason !== 'reconnect' && reason !== 'event_sequence_gap') break;
+        pendingHandStartRecoveryRef.current = {
+          reason,
+          reportedAt: Number((evt.data as { timestamp?: unknown }).timestamp) || Date.now(),
+        };
+
+        // A full snapshot may have arrived immediately before the NEXT event
+        // exposed its sequence gap. Repair that just-observed hand transition
+        // now; older transitions are intentionally left alone so reconnecting
+        // mid-hand can never launch a late deal animation.
+        const unpresented = unpresentedHandTransitionRef.current;
+        if (
+          unpresented &&
+          shouldRecoverMissedHandStartPresentation({
+            previousHandNumber: unpresented.previousHandNumber,
+            handNumber: unpresented.handNumber,
+            continuityReportedAt: pendingHandStartRecoveryRef.current.reportedAt,
+            transitionObservedAt: unpresented.observedAt,
+            now: Date.now(),
+            engineStage: unpresented.engineStage,
+            communityCards: unpresented.communityCards,
+            communityCards2: unpresented.communityCards2,
+            communityCards3: unpresented.communityCards3,
+            lastActions: unpresented.lastActions,
+          })
+        ) {
+          scheduleDealPresentation(unpresented.handNumber);
+          pendingHandStartRecoveryRef.current = null;
+        }
+        break;
+      }
       /**
        * THE SHARED SPIN REVEAL (Dan 2026-08-21).
        *
@@ -14714,10 +14758,12 @@ export default function TablePage({
         // AUDIT FIX 2026-07-19: track the new hand number and CLEAR hero hole
         // cards so a dropped card-insert can't leave the previous hand's cards
         // showing; then re-arm the hand-aware fetch to recover the new cards.
-        {
-          const hn = Number((evt.data as any)?.hand_number) || 0;
-          if (hn > 0) heroHandRef.current = hn;
-        }
+        const startedHandNumber = Number((evt.data as any)?.hand_number) || 0;
+        if (startedHandNumber > 0) heroHandRef.current = startedHandNumber;
+        // The authoritative discrete event arrived, so any transport-gap arm
+        // has done its job. The shared scheduler below records this hand and
+        // prevents a following resync snapshot from double-dealing it.
+        pendingHandStartRecoveryRef.current = null;
         // BOMB POT 2026-08-20: the previous hand's bomb-pot state ends with
         // the hand. If THIS hand is a bomb pot, its own BOMB_POT_TRIGGERED
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
@@ -14980,51 +15026,9 @@ export default function TablePage({
         setIsAllInMode(false);
         setAllInEquities([]);
         handHadAllInRef.current = false;
-        // Hold the action panel from this instant — the button beat below is
-        // part of the deal, and a player must not act into it.
-        beginDealHold();
-        // THE BUTTON BEAT (Dan 2026-08-27, see dealStartTimerRef): the puck's
-        // CSS glide to its new seat (0.6s x speed) plays FIRST, alone. Only
-        // then do the cards fly. The snapshot that carries the new dealerSeat
-        // landed in this same frame, so the glide is already running.
-        if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
-        const heardHere = ambientSoundsAllowed;
-        dealStartTimerRef.current = setTimeout(
-          () => {
-            dealStartTimerRef.current = null;
-            // Trigger deal animation (legacy DealAnimation already wired to
-            // dealAnimationKey; bump it so the cards fly from the dealer).
-            setDealAnimationKey((k) => k + 1);
-            // Bible V8 §10.1: per-seat card slide-in animation
-            setIsSeatDealing(true);
-            // CA-19: track so unmount can cancel — prevents setIsSeatDealing on dead page
-            if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
-            seatDealTimerRef.current = setTimeout(
-              () => {
-                seatDealTimerRef.current = null;
-                setIsSeatDealing(false);
-              },
-              // IMPROVEMENT PASS 2026-08-19: scales with --animation-speed like
-              // the cardDealIn keyframe it gates.
-              700 * getAnimationSpeed()
-            );
-            // Bible V8 §5.3: new hand indicator + card dealing sound
-            // #175 gated for multi-table: only play on the active tab
-            if (soundService.isEnabled() && heardHere) {
-              // COMPETITOR-PARITY 2026-08-19: shuffle riffle before the deal —
-              // every major room marks the fresh hand with a shuffle.
-              soundService.playShuffle();
-              setTimeout(() => soundService.playNewHand(), 260);
-              // DealAnimation owns the per-card deal sounds (staggered with its
-              // visuals). Only when the card-slide animation is disabled does the
-              // page play a single deal slide as the audio fallback.
-              /* The single-deal audio fallback for `card_slide: false` is gone with
-                 the branch that could disable the animation: DealAnimation always
-                 runs now and owns the per-card deal sounds. */
-            }
-          },
-          Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed())
-        );
+        // THE BUTTON BEAT (Dan 2026-08-27): the puck glides first, then cards
+        // fly. Gap recovery uses this exact same timing law.
+        scheduleDealPresentation(startedHandNumber);
         break;
       }
       case 'BOMB_POT_TRIGGERED': {
@@ -17323,7 +17327,7 @@ export default function TablePage({
     }
     // ingestMaintenanceEvent is a stable useCallback; listed so the exhaustive
     // deps rule does not have to be suppressed for it.
-  }, [engineLastEvent, ingestMaintenanceEvent]);
+  }, [engineLastEvent, ingestMaintenanceEvent, scheduleDealPresentation]);
 
   // Supabase Realtime fallback: process lastEvent if engine WS is not connected.
   // When engine WS IS connected, it handles all events above; this block is
@@ -17423,16 +17427,17 @@ export default function TablePage({
   // Detect hand number change → capture previous hand result
   useEffect(() => {
     const handNum = tableState.handNumber ?? 0;
+    const previousHandNumber = prevHandNumberRef.current;
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
     const heroStack = heroPlayer?.stack || 0;
 
-    if (handNum > 0 && handNum !== prevHandNumberRef.current) {
+    if (handNum > 0 && handNum !== previousHandNumber) {
       // Hand number changed — the previous hand just completed
-      if (prevHandNumberRef.current > 0 && heroPlayer) {
+      if (previousHandNumber > 0 && heroPlayer) {
         const stackChange = heroStack - prevHandStackRef.current;
         const heroDidWin = stackChange > 0;
         setPrevHandResult({
-          handNumber: prevHandNumberRef.current,
+          handNumber: previousHandNumber,
           result: stackChange,
           didWin: heroDidWin,
           didFold: heroFoldedInCurrentHandRef.current,
@@ -17456,6 +17461,53 @@ export default function TablePage({
             heroPfrThisHandRef.current
           );
         }
+      }
+      if (previousHandNumber > 0 && lastDealPresentationHandRef.current !== handNum) {
+        // This is a real in-session hand transition, never first-load
+        // hydration. Normally HAND_STARTED presents it. If the transport has
+        // already declared a continuity gap, recover now; otherwise retain a
+        // brief marker because the next EVENT may be the frame that reveals
+        // the sequence jump.
+        const transitionObservedAt = Date.now();
+        const unpresented = {
+          previousHandNumber,
+          handNumber: handNum,
+          observedAt: transitionObservedAt,
+          engineStage: tableState.engineStage,
+          communityCards: tableState.communityCards,
+          communityCards2: tableState.communityCards2,
+          communityCards3: tableState.communityCards3,
+          lastActions: tableState.lastActions,
+        };
+        unpresentedHandTransitionRef.current = unpresented;
+        const pendingRecovery = pendingHandStartRecoveryRef.current;
+        if (
+          pendingRecovery &&
+          shouldRecoverMissedHandStartPresentation({
+            previousHandNumber,
+            handNumber: handNum,
+            continuityReportedAt: pendingRecovery.reportedAt,
+            transitionObservedAt,
+            now: transitionObservedAt,
+            engineStage: unpresented.engineStage,
+            communityCards: unpresented.communityCards,
+            communityCards2: unpresented.communityCards2,
+            communityCards3: unpresented.communityCards3,
+            lastActions: unpresented.lastActions,
+          })
+        ) {
+          scheduleDealPresentation(handNum);
+          pendingHandStartRecoveryRef.current = null;
+        } else if (pendingRecovery) {
+          // A continuity boundary is evidence about the resync immediately
+          // around it, not permission to animate an unrelated hand minutes
+          // later. Expire a boundary that never exposed a hand transition.
+          pendingHandStartRecoveryRef.current = null;
+        }
+      } else if (previousHandNumber === 0) {
+        // Joining or refreshing into a running hand establishes a baseline;
+        // it is intentionally not a deal-animation trigger.
+        unpresentedHandTransitionRef.current = null;
       }
       // Reset per-hand voluntary-action flags for the hand just starting.
       heroVpipThisHandRef.current = false;
@@ -17481,13 +17533,21 @@ export default function TablePage({
         clearTimeout(rabbitRevealClearTimerRef.current);
         rabbitRevealClearTimerRef.current = null;
       }
-      // NOTE: the deal animation is triggered by the discrete HAND_STARTED
-      // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
-      // used to live here was removed — now that handNumber advances via the
-      // snapshot merge, this effect fires per hand too, and a second bump here
-      // double-triggered the deal animation.
+      // No unconditional animation lives here. A snapshot transition can only
+      // reach the shared deal scheduler while a reconnect/event-sequence gap
+      // is armed; ordinary hydration and healthy snapshots remain inert.
     }
-  }, [tableState.handNumber, tableState.heroSeat, tableState.players]);
+  }, [
+    tableState.handNumber,
+    tableState.heroSeat,
+    tableState.players,
+    tableState.engineStage,
+    tableState.communityCards,
+    tableState.communityCards2,
+    tableState.communityCards3,
+    tableState.lastActions,
+    scheduleDealPresentation,
+  ]);
 
   // Update players from presence state
   // 2026-08-22: GHOST-SEAT GUARD. Once the engine snapshot has arrived, the

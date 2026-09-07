@@ -98,9 +98,9 @@ groups:
           severity: warning
           component: cron
         annotations:
-          summary: "{{ $value }} Open Claw job(s) past their staleness threshold"
-          description: "SELECT * FROM v_openclaw_job_staleness WHERE is_stale. A job that stops being dispatched produces no errors at all - it simply stops appearing."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: '{{ $value }} Open Claw job(s) past their staleness threshold'
+          description: 'SELECT * FROM v_openclaw_job_staleness WHERE is_stale. A job that stops being dispatched produces no errors at all - it simply stops appearing.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       - alert: OpenClawFleetLongSilence
         expr: |
@@ -111,9 +111,9 @@ groups:
           page: sms
           component: cron
         annotations:
-          summary: "An Open Claw job has been silent for {{ $value | humanizeDuration }}"
-          description: "More than a day with no successful run. The worst case observed before this alert existed was 18.3 days."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'An Open Claw job has been silent for {{ $value | humanizeDuration }}'
+          description: 'More than a day with no successful run. The worst case observed before this alert existed was 18.3 days.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       # Twelve at once on 2026-09-04, all 'job startup timeout', including the
       # snapshot prune and the daily-missions outbox drain.
@@ -126,9 +126,9 @@ groups:
           severity: warning
           component: cron
         annotations:
-          summary: "{{ $value }} pg_cron failures in the last hour"
+          summary: '{{ $value }} pg_cron failures in the last hour'
           description: "SELECT jobname, status, return_message FROM cron.job_run_details JOIN cron.job USING (jobid) WHERE status <> 'succeeded' ORDER BY start_time DESC."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       # 856 runs an hour is normal. A collapse means the scheduler itself has
       # stopped, which no per-job alert can see.
@@ -142,9 +142,9 @@ groups:
           severity: critical
           component: cron
         annotations:
-          summary: "Only {{ $value }} pg_cron runs in the last hour"
-          description: "The fleet normally runs ~856 an hour. The collector is fresh, so this is the scheduler, not the gauge."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'Only {{ $value }} pg_cron runs in the last hour'
+          description: 'The fleet normally runs ~856 an hour. The collector is fresh, so this is the scheduler, not the gauge.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       - alert: CronMetricsBlind
         expr: |
@@ -155,8 +155,8 @@ groups:
           severity: warning
           component: cron
         annotations:
-          summary: "Cron fleet gauges are stale ({{ $value }}s)"
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'Cron fleet gauges are stale ({{ $value }}s)'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
   # ── POSTGRES ──────────────────────────────────────────────────────────
   # Also empty until 2026-09-04, and pointedly so: the realtime replication
@@ -168,7 +168,6 @@ groups:
   #
   # Slot flush-lag rules live in the `replication` group below; these are the
   # ones that group does not cover.
-
 
   # ═══════════════════════════════════════════════════════════════════
   # RECOVERED FROM engine-01, 2026-09-06 (Realtime Programme phase 7).
@@ -196,9 +195,9 @@ groups:
           severity: critical
           component: database
         annotations:
-          summary: "Slot {{ $labels.slot }} is pinning {{ $value | humanize1024 }}B of WAL on disk"
+          summary: 'Slot {{ $labels.slot }} is pinning {{ $value | humanize1024 }}B of WAL on disk'
           description: "Postgres cannot recycle WAL behind a slot's restart_lsn. This is the number that fills the volume, and it runs well ahead of the flush lag."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       # The engine and the database disagreeing about the time silently breaks
       # every deadline, timer and retention window on the platform.
@@ -210,9 +209,9 @@ groups:
           severity: warning
           component: database
         annotations:
-          summary: "Engine and database clocks differ by {{ $value }}ms"
-          description: "Turn timers, maintenance-break windows and every retention cutoff are computed against one clock or the other."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'Engine and database clocks differ by {{ $value }}ms'
+          description: 'Turn timers, maintenance-break windows and every retention cutoff are computed against one clock or the other.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       - alert: DatabaseRpcErrorsElevated
         expr: |
@@ -223,9 +222,9 @@ groups:
           severity: warning
           component: database
         annotations:
-          summary: "Engine RPC errors at {{ $value }}/s"
-          description: "The engine reaches Postgres only through PostgREST. A sustained error rate here is seats, hands and settlements failing to write."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'Engine RPC errors at {{ $value }}/s'
+          description: 'The engine reaches Postgres only through PostgREST. A sustained error rate here is seats, hands and settlements failing to write.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
   # ── vercel-health: DELETED 2026-09-04, deliberately ───────────────────
   # This group existed with no rules in it. Filling it honestly is not
@@ -247,7 +246,6 @@ groups:
   # add a vercel_health blackbox job to prometheus.yml, then re-enable
   # slo-rules.yml and slo-alerts.yml and restore this group in the same PR.
 
-
   # ── vercel-health: DELETED 2026-09-06, deliberately ───────────────────
   # This group existed here as a heading with NO RULES IN IT, which reads as
   # coverage and is not. Filling it honestly is not possible from this stack:
@@ -265,7 +263,6 @@ groups:
   # a vercel_health blackbox job to prometheus.yml, then restore this group in
   # the same pull request. The same note on the box has said so since
   # 2026-09-04; this repo is now saying it too.
-
 
   - name: host-health
     interval: 30s
@@ -699,9 +696,9 @@ groups:
             engine going quiet, handshake_timeout at the edge.
           runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
 
-      # One player having a bad night is a warning. The auto-reload failsafe
-      # firing at all is a different thing: it means a table sat dead for
-      # twenty seconds and the page reloaded itself under someone.
+      # The current bundle never reloads a live table to repair a socket. Keep
+      # this series through the rollout as a regression/old-bundle detector:
+      # any new sample means obsolete code is still discarding a player's felt.
       - alert: TablesAreReloadingThemselves
         expr: |
           increase(poker_ws_client_reconnects_total{reason="auto_reload"}[30m]) >= 3
@@ -711,36 +708,31 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: 'The table auto-reload failsafe fired {{ $value }} times in 30 minutes'
+          summary: 'A table used the retired auto-reload path {{ $value }} times in 30 minutes'
           description: |
-            TablePage reloads itself after the socket has been dead for twenty
-            seconds. It is a last resort, and it fired all night on 2026-09-03
-            without the platform knowing. Repeated firing means players are
-            being thrown out of tables, not recovering in them.
+            Current TablePage code has no generic socket-failure reload. This
+            counter can rise only from a cached old bundle or a regression.
+            A page reload discards live table state; find and remove the caller
+            instead of raising the timeout or adding another reload guard.
           runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
 
-      # Phase 3 (2026-09-05). The failsafe above NOT firing, because the socket
-      # died for auth and a reload cannot fix that. This is the series that
-      # says, in one line, the sentence nobody could say for twenty-two hours:
-      # these players cannot authenticate to a table. Distinct from
-      # EngineRefusingSessions below - that counts what the ENGINE refused,
-      # this counts browsers that gave up on reloading themselves over it, so
-      # it also fires when the refusal happens somewhere the engine never sees
-      # (an edge, a proxy, a token the socket never carried).
+      # The browser reports auth_failed at the close frame itself. This remains
+      # distinct from EngineRefusingSessions below: that counts what the engine
+      # rejected, while this also sees a refusal generated by the edge/proxy.
       - alert: PlayersCannotAuthenticateToTables
         expr: |
-          increase(poker_ws_client_reconnects_total{reason="reload_suppressed"}[30m]) >= 3
+          increase(poker_ws_client_reconnects_total{reason="auth_failed"}[30m]) >= 3
           unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
         labels:
           severity: critical
           component: engine
         annotations:
-          summary: 'Table reloads suppressed {{ $value }} times in 30 minutes: sign-in is being refused'
+          summary: 'Browsers reported {{ $value }} table sign-in refusals in 30 minutes'
           description: |
             A player's table socket was refused for auth (4401, or an `auth:`
-            close reason), so the client held back its twenty-second reload -
-            a fresh page would present the same token to the same refusal.
+            close reason). The reconnect/session state machine remains active;
+            there is deliberately no page-reload workaround.
             Cross-check poker_ws_auth_refused_total: if that is flat while
             this climbs, the refusal is happening in front of the engine.
           runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
@@ -791,7 +783,7 @@ groups:
           severity: warning
           component: engine
         annotations:
-          summary: "Engine refused {{ $value }} sockets as invalid sessions in 15 min"
+          summary: 'Engine refused {{ $value }} sockets as invalid sessions in 15 min'
           description: |
             GoTrue is rejecting sessions the client believes are live. If
             these are real players, something is revoking sessions behind
@@ -799,7 +791,7 @@ groups:
             user_agent "node" (a cron or script calling a global signOut),
             a signing-key rotation, or a password change. The 2026-09-03
             outage looked exactly like this and ran for 22 hours unseen.
-          runbook: "docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md"
+          runbook: 'docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md'
 
       # BACKSTOP. The rule above needs the client beacon to be working; this
       # one needs nothing but the engine's own counter. 60 in fifteen minutes
@@ -815,13 +807,13 @@ groups:
           severity: warning
           component: engine
         annotations:
-          summary: "Engine refused {{ $value }} sockets as invalid sessions in 15 min"
+          summary: 'Engine refused {{ $value }} sockets as invalid sessions in 15 min'
           description: |
             Far above the ordinary rate of expiring tokens. Either something is
             revoking sessions behind live players, or the client beacon that
             EngineRefusingSessions depends on has stopped reporting - check
             poker_ws_clients_reconnecting_badly is still being written.
-          runbook: "docs/runbooks/tables-say-reconnecting.md"
+          runbook: 'docs/runbooks/tables-say-reconnecting.md'
 
       # `unavailable` = the engine could not ASK GoTrue. Nobody is refused
       # as invalid on this path (they get a 503 and keep retrying), but
@@ -834,13 +826,13 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "Engine cannot verify sessions with Supabase Auth"
+          summary: 'Engine cannot verify sessions with Supabase Auth'
           description: |
             auth.getUser() is failing with a network error, 429 or 5xx from
             the engine. Every new table socket is being answered 503 and
             retried; no player can join until GoTrue answers again. Check
             Supabase status and the engine's outbound connectivity.
-          runbook: "docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md"
+          runbook: 'docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md'
 
   # ═══════════════════════════════════════════════════════════════════════════
   # THE CLUSTER CONTROLLER (must-move cash games, OPORD 1.4 section 18) -
@@ -867,9 +859,10 @@ groups:
   # and none of them could be correlated with the thing they share.
   #
   # THRESHOLDS ARE THE GOVERNOR'S OWN, not guesses. EquityLoadGovernor's table
-  # is: p50 < 40 ms -> full precision; < 120 ms -> 0.6; < 300 ms -> 0.35;
-  # otherwise the 0.2 floor. So 40 ms is the number the platform itself calls
-  # "out of headroom", and 300 ms is the number it calls "shed everything".
+  # is: effective delay < 40 ms -> full precision; < 120 ms -> 0.6; < 300 ms
+  # -> 0.35; < 1,000 ms -> 0.2; otherwise -> 0.08 with a 30-iteration deep
+  # floor. So 40 ms is where the platform starts shedding, 300 ms is critical
+  # saturation, and 1,000 ms is where the final safety tier must engage.
   # Measured on engine-01 2026-09-06 while writing this: cluster pass p50
   # 0.86 s at steady state against 26.8 s in the minutes after a restart, so
   # `for:` is long enough that the hourly cutover cannot raise either of these.
@@ -878,14 +871,17 @@ groups:
     rules:
       - alert: EngineCoreOutOfHeadroom
         expr: |
-          poker_event_loop_delay_p50_ms > 40
+          (
+            poker_event_loop_delay_p50_ms > 40
+            or poker_equity_governor_sampler_late_ms > 40
+          )
           unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning
           component: engine
         annotations:
-          summary: "Engine event loop p50 {{ $value | printf \"%.0f\" }} ms - the core is out of headroom"
+          summary: 'Engine event loop delay {{ $value | printf "%.0f" }} ms - the core is out of headroom'
           description: |
             The engine's event loop has been delayed past the point where
             EquityLoadGovernor starts shedding horse Monte Carlo precision,
@@ -894,23 +890,33 @@ groups:
             cluster controller's pass and the discovery sweep. Check
             poker_equity_governor_scale beside this - if it is still 1 the
             governor is not reacting, which is its own defect.
-          runbook: "docs/changelog/2026-09-06-the-core-that-limits-everything-is-a-number.md"
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
 
+      # Both gauges have the same scrape-target labels and no intrinsic
+      # labels. A bare `or` therefore yields one alert per engine and lets
+      # sampler lateness survive when the filtered p50 sample is absent.
       - alert: EngineCoreSaturated
         expr: |
-          poker_event_loop_delay_p50_ms > 300
+          (
+            poker_event_loop_delay_p50_ms > 300
+            or poker_equity_governor_sampler_late_ms > 300
+          )
           unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
         labels:
           severity: critical
           component: engine
         annotations:
-          summary: "Engine event loop p50 {{ $value | printf \"%.0f\" }} ms - the core is saturated"
+          summary: 'Engine event loop delay {{ $value | printf "%.0f" }} ms - the core is saturated'
           description: |
-            Past the governor's floor: horse Monte Carlo is already at 20% of
-            full precision and the loop is still this late. Tables are laggy
-            for every seat, human included. This is the one-core ceiling, and
-            the answer is less work on this process, not a bigger timeout.
+            Critical one-core saturation: the governor should be at its 0.2
+            tier or lower, yet tables are still laggy for every seat, human
+            included. At an effective delay of 1,000 ms or more it must reach
+            the 0.08 scale and 30-iteration deep floor. Inspect the scale; if
+            it disagrees, the governor is itself unhealthy. Reduce work on the
+            process rather than raising timeouts. Direct sampler lateness is
+            included because a synchronous turn can starve the histogram.
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
 
       # The governor throttling is not itself a fault - it is the mechanism
       # working. Sustained throttling IS a capacity signal, and it is the only
@@ -924,13 +930,150 @@ groups:
           severity: warning
           component: engine
         annotations:
-          summary: "Horse decision precision has been scaled to {{ $value }} for two hours"
+          summary: 'Horse decision precision has been scaled to {{ $value }} for two hours'
           description: |
             EquityLoadGovernor has been shedding Monte Carlo iterations
             continuously for two hours. Horses are reading a noisier equity
             than the platform intends (CLAUDE.md 10.5 is not broken - every
             seat gets the same engine - but the room is playing worse than it
             was built to). Capacity, not a bug.
+
+  # ── BOUNDED TOURNAMENT WORK LANES (2026-09-07) ────────────────────────
+  # The old design opened one five-second elimination timer per tournament.
+  # The replacement has four physical work slots and one process-wide queue.
+  # Queue depth alone is intentionally NOT an alert: causal bursts can enqueue
+  # several tournaments together and a short backlog is normal. It becomes a
+  # fault only when every physical slot stays occupied while the oldest event
+  # or exact-deadline wake exceeds the two-minute queue SLO.
+  - name: tournament-work-scheduler
+    interval: 15s
+    rules:
+      - alert: TournamentEliminationSchedulerSaturated
+        expr: |
+          poker_tournament_elimination_scheduler_slots_inflight >= 4
+          and on(instance, job)
+            poker_tournament_elimination_scheduler_oldest_wait_ms > 120000
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: tournament-scheduler
+        annotations:
+          summary: 'All four elimination slots are occupied while causal work waits beyond two minutes'
+          description: |
+            The process-wide scheduler has used all four physical slots while
+            at least one tournament's event or deadline has waited beyond the
+            queue SLO. Do not release a slot whose promise is still live: that
+            recreates unbounded database concurrency behind a smaller gauge.
+            Inspect failed/timed-out dispatches, PostgREST latency and engine
+            event-loop delay using the runbook.
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
+
+      # Queue age cannot see a different failure mode: every physical promise
+      # can be over budget while the logical queue is temporarily empty. Keep
+      # this separate from liveness -- it diagnoses wedged tournament work but
+      # does not, by itself, authorize an engine restart.
+      - alert: TournamentEliminationSchedulerAllSlotsStalled
+        expr: |
+          poker_tournament_elimination_scheduler_slots_inflight >= 4
+          and on(instance, job)
+            poker_tournament_elimination_scheduler_stalled_slots >= 4
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: tournament-scheduler
+        annotations:
+          summary: 'All four elimination promises have remained unresolved beyond their warning budget'
+          description: |
+            Every physical scheduler slot is held by a promise that has
+            exceeded the sweep warning budget. This alert remains effective
+            even when no logical work is queued. Do not release an unresolved
+            promise or restart solely from this signal; inspect PostgREST,
+            error outcomes, event-loop delay and the shared liveness verdict.
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
+
+      # Bounty settlement is write-ahead now: a process crash may leave an
+      # obligation pending, but it may never make that obligation invisible.
+      # Repeated drain errors mean neither a live manager nor the event-driven
+      # managerless recovery path can finish those durable claims.
+      - alert: TournamentBountyRecoveryLaneFailing
+        expr: |
+          sum(increase(poker_tournament_bounty_recovery_sweep_runs_total{outcome=~"error|partial"}[10m])) >= 5
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: bounty-settlement
+        annotations:
+          summary: 'Tournament bounty recovery failed {{ $value }} times in ten minutes'
+          description: |
+            The Realtime/startup-driven recovery drain is repeatedly failing
+            to settle durable bounty obligations. Inspect the recovery
+            refusal/error, exact outbox state and its ledger or mystery-award
+            evidence. Do not bypass the outbox or mark an obligation settled
+            by hand.
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
+
+      # Realtime is the low-latency delivery path, while startup/error drains
+      # and the durable outbox preserve correctness. A sustained zero means
+      # settlements remain safe but managers may not resume immediately.
+      - alert: TournamentBountyRealtimeDisconnected
+        expr: |
+          poker_tournament_bounty_realtime_connected == 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: bounty-settlement
+        annotations:
+          summary: 'Tournament bounty Realtime delivery is disconnected'
+          description: |
+            The process-wide obligation channel has not been subscribed for
+            two minutes. Inspect transport errors and reconnect status. The
+            durable outbox must remain authoritative; do not bypass it or add
+            a polling reconciliation loop.
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
+
+      # Durable manager wakes carry late registration, rebuy and final-table
+      # deal progress. Startup/error drains preserve the rows, but a sustained
+      # disconnect removes their low-latency delivery guarantee.
+      - alert: TournamentManagerWakeRealtimeDisconnected
+        expr: |
+          poker_tournament_manager_wake_realtime_connected == 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: tournament-lifecycle
+        annotations:
+          summary: 'Tournament manager wake Realtime delivery is disconnected'
+          description: |
+            The durable manager-wake channel has not been subscribed for two
+            minutes. Inspect channel errors and the generation-safe reconnect.
+            Do not replace durable wake receipts with polling or acknowledge a
+            row before its exact tournament sweep completes.
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
+
+      # A short non-zero value is ordinary crash/response-loss recovery. Ten
+      # minutes is not: the durable obligation exists specifically so payout
+      # work survives the manager or process that first attempted it.
+      - alert: TournamentBountyOutboxBacklogStuck
+        expr: |
+          poker_tournament_bounty_recovery_pending > 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: bounty-settlement
+        annotations:
+          summary: '{{ $value }} tournament bounty obligation(s) remain unsettled'
+          description: |
+            A successful global recovery pass still reports pending bounty
+            obligations after ten minutes. Inspect each obligation's exact
+            generation, canonical claimants and durable settlement markers.
+            Tournament completion must remain blocked until this reaches zero.
+          runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
 
   - name: cluster
     interval: 15s
@@ -952,7 +1095,7 @@ groups:
           severity: critical
           component: cluster
         annotations:
-          summary: "Cluster controller has not completed a pass for {{ $value | humanizeDuration }}"
+          summary: 'Cluster controller has not completed a pass for {{ $value | humanizeDuration }}'
           description: |
             The must-move controller ticks every 5 s on the leader and stamps
             this gauge at the end of every pass. It has gone quiet while the
@@ -962,7 +1105,7 @@ groups:
             CLUSTER_TICK_STALL_MS (120 s) and the release is counted below.
             Read /health -> cluster.lastPassAt and the engine log for
             '[ClusterController]'.
-          runbook: "docs/changelog/2026-09-05-cluster-metrics-that-page-and-a-deploy-that-proves-itself.md"
+          runbook: 'docs/changelog/2026-09-05-cluster-metrics-that-page-and-a-deploy-that-proves-itself.md'
 
       # The latch DID stick and the controller released it itself. Not an
       # outage - the next pass ran - but every one is a wake or an RPC that
@@ -976,7 +1119,7 @@ groups:
           severity: warning
           component: cluster
         annotations:
-          summary: "Cluster controller released a stuck pass latch ({{ $value }} in 30 min)"
+          summary: 'Cluster controller released a stuck pass latch ({{ $value }} in 30 min)'
           description: |
             A pass was still open after CLUSTER_TICK_STALL_MS and was reported
             as ClusterController.tick_stalled. Sentry has the stack. Every
@@ -995,7 +1138,7 @@ groups:
           severity: warning
           component: cluster
         annotations:
-          summary: "{{ $value }} cluster tick errors in 15 min"
+          summary: '{{ $value }} cluster tick errors in 15 min'
           description: |
             fn_cash_clusters_to_tick or fn_cash_cluster_tick is failing.
             Sentry: ClusterController.worklist_failed / tick_rpc_failed /
@@ -1014,7 +1157,7 @@ groups:
           severity: critical
           component: cluster
         annotations:
-          summary: "Cluster controller ticked 0 of {{ $value }} games for 3 minutes"
+          summary: 'Cluster controller ticked 0 of {{ $value }} games for 3 minutes'
           description: |
             The worklist is non-empty and no game's tick succeeded in any
             pass for three minutes. Every must-move game is unmanaged: seats
@@ -1038,7 +1181,7 @@ groups:
           severity: warning
           component: cluster
         annotations:
-          summary: "{{ $value }} feeders abandoned in 30 min and none went live"
+          summary: '{{ $value }} feeders abandoned in 30 min and none went live'
           description: |
             Feeders are opening on counted demand and closing unfilled. The
             horse census (eligibleHorseCount) says buyers exist; the seeder
@@ -1061,7 +1204,7 @@ groups:
           severity: warning
           component: cluster
         annotations:
-          summary: "{{ $value }} planned must-moves expired unexecuted in 30 min"
+          summary: '{{ $value }} planned must-moves expired unexecuted in 30 min'
           description: |
             fn_cash_cluster_tick planned moves (kind=moves_planned) that the
             engine did not carry out before their deadline. Compare
@@ -1089,7 +1232,7 @@ groups:
           severity: warning
           component: cluster
         annotations:
-          summary: "Cluster pass p95 is {{ $value | humanizeDuration }} (limit 20s, norm ~10s)"
+          summary: 'Cluster pass p95 is {{ $value | humanizeDuration }} (limit 20s, norm ~10s)'
           description: |
             The controller is spending longer than its own cadence on every
             pass. Each game's tick is ~0.85 s round trip from Hetzner; the
@@ -1125,7 +1268,7 @@ groups:
           severity: canary
           component: monitoring
         annotations:
-          summary: "Monitoring is alive. This alert always fires; its absence is the fault."
+          summary: 'Monitoring is alive. This alert always fires; its absence is the fault.'
           description: |
             If this is NOT in Alertmanager, the stack is not evaluating rules -
             every other alert in this file is silent for the same reason, and
@@ -1133,4 +1276,4 @@ groups:
             prometheus is up, that it loaded alert-rules.yml
             (curl localhost:9090/api/v1/rules), and that alertmanager is
             reachable from it.
-          runbook: "docs/runbooks/tables-say-reconnecting.md"
+          runbook: 'docs/runbooks/tables-say-reconnecting.md'

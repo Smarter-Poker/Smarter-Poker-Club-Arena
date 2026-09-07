@@ -351,6 +351,12 @@ export class MaintenanceBreak {
   private announceTimer: NodeJS.Timeout | null = null;
   private countdownTimer: NodeJS.Timeout | null = null;
   private endTimer: NodeJS.Timeout | null = null;
+  private resumeWaveTimers = new Set<NodeJS.Timeout>();
+  private lifecycleJobs = new Set<Promise<void>>();
+  private lifecycleGeneration = 0;
+  private acceptingLifecycleWork = true;
+  private startOperation: Promise<void> | null = null;
+  private stopOperation: Promise<void> | null = null;
   private started = false;
 
   private readonly now: () => number;
@@ -373,21 +379,70 @@ export class MaintenanceBreak {
    * engine is that it is booting *because* of the restart this break was
    * declared for, and it must not deal a single hand before it knows that.
    */
-  async start(): Promise<void> {
-    if (this.started) return;
+  start(): Promise<void> {
+    if (this.stopOperation) {
+      return Promise.reject(new Error('A stopped MaintenanceBreak instance cannot be restarted'));
+    }
+    if (this.startOperation) return this.startOperation;
     this.started = true;
-    await this.restoreFromStore();
+    this.acceptingLifecycleWork = true;
+    const generation = ++this.lifecycleGeneration;
+    this.startOperation = this.performStart(generation);
+    return this.startOperation;
+  }
+
+  private async performStart(generation: number): Promise<void> {
+    await this.restoreFromStore(generation);
+    if (!this.lifecycleIsCurrent(generation)) return;
     this.scheduleNextAnnouncement();
   }
 
-  stop(): void {
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
     this.started = false;
+    this.acceptingLifecycleWork = false;
+    this.lifecycleGeneration += 1;
+    this.resumeToken += 1;
     for (const t of [this.announceTimer, this.countdownTimer, this.endTimer]) {
       if (t) this.clearTimer(t);
     }
+    for (const timer of this.resumeWaveTimers) this.clearTimer(timer);
+    this.resumeWaveTimers.clear();
     this.announceTimer = null;
     this.countdownTimer = null;
     this.endTimer = null;
+    this.stopOperation = this.performStop();
+    return this.stopOperation;
+  }
+
+  private async performStop(): Promise<void> {
+    if (this.startOperation) await this.startOperation.catch(() => undefined);
+    // A starter that crossed its final await before seeing the generation
+    // fence may have armed a timer. Clear the sources once more after join.
+    for (const t of [this.announceTimer, this.countdownTimer, this.endTimer]) {
+      if (t) this.clearTimer(t);
+    }
+    for (const timer of this.resumeWaveTimers) this.clearTimer(timer);
+    this.resumeWaveTimers.clear();
+    this.announceTimer = null;
+    this.countdownTimer = null;
+    this.endTimer = null;
+    while (this.lifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.lifecycleJobs]);
+    }
+  }
+
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.acceptingLifecycleWork && this.lifecycleGeneration === generation;
+  }
+
+  private launchLifecycleJob(operation: Promise<unknown>, context: string): void {
+    let tracked!: Promise<void>;
+    tracked = operation
+      .then(() => undefined)
+      .catch((error) => console.error(`[MaintenanceBreak] ${context}`, error))
+      .finally(() => this.lifecycleJobs.delete(tracked));
+    this.lifecycleJobs.add(tracked);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -420,13 +475,14 @@ export class MaintenanceBreak {
   static readonly RESTORE_ATTEMPTS = 3;
   static readonly RESTORE_RETRY_MS = 1500;
 
-  private async restoreFromStore(): Promise<void> {
+  private async restoreFromStore(generation: number): Promise<void> {
     let saved: PersistedMaintenanceBreak | null = null;
     let lastErr: unknown = null;
     let loaded = false;
     for (let attempt = 1; attempt <= MaintenanceBreak.RESTORE_ATTEMPTS && !loaded; attempt++) {
       try {
         saved = await this.deps.store.load();
+        if (!this.lifecycleIsCurrent(generation)) return;
         loaded = true;
       } catch (err) {
         lastErr = err;
@@ -437,6 +493,7 @@ export class MaintenanceBreak {
             }), retrying: ${(err as Error)?.message ?? err}`
           );
           await new Promise<void>((r) => this.setTimer(r, MaintenanceBreak.RESTORE_RETRY_MS));
+          if (!this.lifecycleIsCurrent(generation)) return;
         }
       }
     }
@@ -452,6 +509,7 @@ export class MaintenanceBreak {
       return;
     }
     if (!saved) return;
+    if (!this.lifecycleIsCurrent(generation)) return;
 
     // ── AN ADOPTED BREAK ENDS ON THE HOUR, NOT ON A BOOT INSTANT ───────────
     // (2026-09-07, from the 18:00 break that "did not pass")
@@ -526,6 +584,7 @@ export class MaintenanceBreak {
     this.parkEveryEngine();
     this.broadcast('counting_down');
     await this.persist();
+    if (!this.lifecycleIsCurrent(generation)) return;
     this.armEndTimer();
   }
 
@@ -538,7 +597,7 @@ export class MaintenanceBreak {
    * platform dealing, which is both wrong and the loudest possible tell.
    */
   adopt(tableId: string, engine: PausableTableEngine): void {
-    if (!this.isActive()) return;
+    if (!this.acceptingLifecycleWork || !this.isActive()) return;
     engine.pauseForMaintenance(this.remainingParkBudgetMs());
     this.deps.emit(tableId, this.eventPayload(tableId, this.phase as MaintenanceBreakPhase));
   }
@@ -568,16 +627,19 @@ export class MaintenanceBreak {
       )} minute(s); the break runs :55 to :00 and carries the engine restart.`
     );
 
+    const generation = this.lifecycleGeneration;
     this.announceTimer = this.setTimer(() => {
-      void (async () => {
-        try {
+      this.announceTimer = null;
+      if (!this.lifecycleIsCurrent(generation)) return;
+      this.launchLifecycleJob(
+        (async () => {
           await this.announceLastHand();
-        } catch (err) {
-          console.error('[MaintenanceBreak] announcement failed', err);
-        }
-        // Re-arm from the wall clock, never from this moment.
-        this.scheduleNextAnnouncement();
-      })();
+          if (!this.lifecycleIsCurrent(generation)) return;
+          // Re-arm from the wall clock, never from this moment.
+          this.scheduleNextAnnouncement();
+        })(),
+        'announcement failed'
+      );
     }, msUntil);
   }
 
@@ -645,7 +707,8 @@ export class MaintenanceBreak {
    * the loop cannot come back around until dealHand() resolves.
    */
   async announceLastHand(): Promise<void> {
-    if (!this.deps.isRunning()) return;
+    const generation = this.lifecycleGeneration;
+    if (!this.lifecycleIsCurrent(generation) || !this.deps.isRunning()) return;
     if (this.isActive()) return; // already in one
 
     this.phase = 'last_hand';
@@ -668,12 +731,13 @@ export class MaintenanceBreak {
 
     this.broadcast('last_hand');
     await this.persist();
+    if (!this.lifecycleIsCurrent(generation)) return;
 
     if (this.countdownTimer) this.clearTimer(this.countdownTimer);
     this.countdownTimer = this.setTimer(() => {
-      void this.beginCountdown().catch((err) =>
-        console.error('[MaintenanceBreak] countdown failed to start', err)
-      );
+      this.countdownTimer = null;
+      if (!this.lifecycleIsCurrent(generation)) return;
+      this.launchLifecycleJob(this.beginCountdown(), 'countdown failed to start');
     }, MaintenanceBreak.LAST_HAND_LEAD_MS);
   }
 
@@ -691,7 +755,8 @@ export class MaintenanceBreak {
    * under a table that has not finished its hand.
    */
   async beginCountdown(): Promise<void> {
-    if (this.phase !== 'last_hand') return;
+    const generation = this.lifecycleGeneration;
+    if (!this.lifecycleIsCurrent(generation) || this.phase !== 'last_hand') return;
 
     // Anything created during the last-hand wait, and anything that somehow
     // slipped the first pass, is parked now. Cheap, and it makes "every table
@@ -727,14 +792,18 @@ export class MaintenanceBreak {
 
     this.broadcast('counting_down');
     await this.persist();
+    if (!this.lifecycleIsCurrent(generation)) return;
     this.armEndTimer();
   }
 
   private armEndTimer(): void {
     if (this.endTimer) this.clearTimer(this.endTimer);
     const remaining = Math.max(0, this.breakEndsAt - this.now());
+    const generation = this.lifecycleGeneration;
     this.endTimer = this.setTimer(() => {
-      void this.end().catch((err) => console.error('[MaintenanceBreak] resume failed', err));
+      this.endTimer = null;
+      if (!this.lifecycleIsCurrent(generation)) return;
+      this.launchLifecycleJob(this.end(), 'resume failed');
     }, remaining);
   }
 
@@ -764,7 +833,8 @@ export class MaintenanceBreak {
   private ending = false;
 
   async end(): Promise<void> {
-    if (this.phase === 'idle' || this.ending) return;
+    const generation = this.lifecycleGeneration;
+    if (!this.lifecycleIsCurrent(generation) || this.phase === 'idle' || this.ending) return;
     this.ending = true;
 
     /**
@@ -781,6 +851,10 @@ export class MaintenanceBreak {
       const frozenSeconds = Math.max(1, Math.round((this.now() - this.breakStartedAt) / 1000));
       try {
         await this.deps.thaw(this.breakStartedAt, frozenSeconds);
+        if (!this.lifecycleIsCurrent(generation)) {
+          this.ending = false;
+          return;
+        }
         thawOk = true;
         console.log(`[MaintenanceBreak] Thawed the platform clocks (+${frozenSeconds}s).`);
       } catch (err) {
@@ -790,6 +864,10 @@ export class MaintenanceBreak {
           err
         );
       }
+    }
+    if (!this.lifecycleIsCurrent(generation)) {
+      this.ending = false;
+      return;
     }
     const outcome: MaintenanceBreakOutcome = {
       breakStartedAtMs: this.breakStartedAt,
@@ -833,6 +911,7 @@ export class MaintenanceBreak {
     if (this.deps.recordOutcome) {
       try {
         await this.deps.recordOutcome(outcome);
+        if (!this.lifecycleIsCurrent(generation)) return;
       } catch (err) {
         console.warn('[MaintenanceBreak] could not record the break outcome', err);
       }
@@ -946,7 +1025,9 @@ export class MaintenanceBreak {
     // background. A wave from a superseded break (resumeToken changed) is
     // dropped rather than waking a table the next break is holding.
     for (let w = 1; w < waves.length; w++) {
-      this.setTimer(() => {
+      let timer!: NodeJS.Timeout;
+      timer = this.setTimer(() => {
+        this.resumeWaveTimers.delete(timer);
         // Drop a stale wave: a newer break has superseded this rollout
         // (resumeToken bumped), or a break is once again active and holding
         // these tables (phase left idle). Waking them now would deal a table
@@ -954,6 +1035,7 @@ export class MaintenanceBreak {
         if (this.resumeToken !== token || this.phase !== 'idle') return;
         fireWave(w);
       }, w * MaintenanceBreak.RESUME_WAVE_GAP_MS);
+      this.resumeWaveTimers.add(timer);
     }
 
     if (waves.length > 1) {

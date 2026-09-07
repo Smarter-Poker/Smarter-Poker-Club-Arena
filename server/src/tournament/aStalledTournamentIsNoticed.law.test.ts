@@ -125,7 +125,7 @@ describe('a stalled tournament is noticed', () => {
     // Only felt that still holds a player, and only through the one
     // registration path -- a second dealer on one table is its own outage.
     expect(method).toContain(".is('left_at', null)");
-    expect(method).toContain('this.gameServer.registerTableEngine(tableId, engine)');
+    expect(method).toContain('this.admitManagedTableEngine(tableId, engine)');
     // Reads fail closed: an unreadable board adopts nothing.
     expect(method).toContain('Tournament.adopt_scan_failed');
     expect(method).toContain('Tournament.adopt_seat_read_failed');

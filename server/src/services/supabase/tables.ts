@@ -227,8 +227,8 @@ export async function syncStacks(
   }[],
   handNumber?: number,
   options: StackWriteOptions = {}
-): Promise<void> {
-  if (players.length === 0) return;
+): Promise<boolean> {
+  if (players.length === 0) return true;
   if (handNumber === undefined || handNumber === null) {
     /* Every hand result names its hand (settlement step 8 reads the snapshot).
        A write with no hand number used to take the unchecked per-seat loop -
@@ -239,7 +239,7 @@ export async function syncStacks(
       new Error(`[DB] syncStacks called for table ${tableId} without a hand number - refused`),
       'DB.sync_stacks_without_hand'
     );
-    return;
+    return false;
   }
 
   /* ZERO-DRIFT phase 5 (2026-08-31) + chip standard (2026-09-04): the stack
@@ -324,7 +324,7 @@ export async function syncStacks(
         );
       }
       await persistTimeBanks(tableId, players);
-      return;
+      return true;
     }
 
     /* chip-std Lane F (2026-09-02) + 2026-09-04: a refusal is not a transport
@@ -353,7 +353,7 @@ export async function syncStacks(
           'DB.settle_hand_stacks_declined'
         );
       }
-      return;
+      return false;
     }
 
     lastError = error ? String(error.message ?? error) : `in_flight (${JSON.stringify(data)})`;
@@ -383,9 +383,10 @@ export async function syncStacks(
   } catch (err) {
     reportError(err, 'DB.settle_hand_stacks_unreachable_alert_failed');
   }
+  return false;
 }
 
-async function persistTimeBanks(
+export async function persistTimeBanks(
   tableId: string,
   players: { user_id: string; time_bank_uses_remaining?: number; time_bank_remaining?: number }[]
 ): Promise<void> {
@@ -451,14 +452,28 @@ async function persistTimeBanks(
 /**
  * Sync tournament player chips from table_seats to tournament_players
  */
-export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<void> {
-  const { data: seats } = await supabase
+export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<boolean> {
+  const { data: seats, error: seatsError } = await supabase
     .from('table_seats')
     .select('user_id, stack')
     .eq('table_id', tableId)
     .is('left_at', null);
 
-  if (!seats || seats.length === 0) return;
+  /* This result gates the tournament elimination wake. Unknown input must not
+     be reported as a successful mirror: otherwise a sweep can run while
+     tournament_players still carries the pre-hand positive chip count and
+     miss a bust until the safety pass. */
+  if (seatsError) {
+    reportError(seatsError, 'supabase.syncTournamentChips.seats_read');
+    return false;
+  }
+  if (!seats || seats.length === 0) {
+    reportError(
+      new Error(`[DB] tournament chip sync for ${tournamentId}/${tableId} found no active seats`),
+      'supabase.syncTournamentChips.empty_seats'
+    );
+    return false;
+  }
 
   // ONE bulk statement, not one UPDATE per seat.
   //
@@ -494,7 +509,11 @@ export async function syncTournamentChips(tableId: string, tournamentId: string)
     p_tournament_id: tournamentId,
     p_updates: chipUpdates,
   });
-  if (error) reportError(error, 'supabase.syncTournamentChips');
+  if (error) {
+    reportError(error, 'supabase.syncTournamentChips');
+    return false;
+  }
+  return true;
 }
 
 /**

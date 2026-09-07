@@ -588,9 +588,12 @@ describe('the controller cannot go silent', () => {
      when the table can deal). The pass never ended, the inTick latch held,
      and every tick after it returned early - eleven minutes with no error
      and no log line, found only from cash_games.last_tick_at. */
-  it('the wake is never awaited - the engine map is the proof of the wake', () => {
-    expect(CONTROLLER).toMatch(/void this\.deps\s*\.ensureEngine\(tableId\)/);
+  it('the wake never blocks a pass, but shutdown owns and joins its promise', () => {
+    expect(CONTROLLER).toMatch(
+      /this\.launchLifecycleJob\([\s\S]{0,180}this\.deps\.ensureEngine\(tableId\)\.then/
+    );
     expect(CONTROLLER).not.toMatch(/await this\.deps\.ensureEngine\(/);
+    expect(CONTROLLER).toMatch(/await Promise\.allSettled\(\[\.\.\.this\.lifecycleJobs\]\)/);
   });
 
   it('a stuck pass is reported and the latch released, not honoured forever', () => {
@@ -1056,14 +1059,16 @@ describe('one tick RPC per pass, a rest for dormant games, and a wake on seat ch
     expect(loop).not.toMatch(/await rpc\(/);
   });
 
-  it('the 18.4 dealer wake is unchanged: read from the result, never awaited', () => {
+  it('the 18.4 dealer wake is unchanged: read from the result, detached from the pass', () => {
     expect(CONTROLLER).toMatch(
       /Number\(result\.seated_total \?\? 0\) > 0 &&\s*!this\.deps\.hasEngine\(g\.main1_table_id\)/
     );
     expect(CONTROLLER).toMatch(
       /const seated = await this\.deps\.seatedCount\(g\.main1_table_id\);/
     );
-    expect(CONTROLLER).toMatch(/void this\.deps\s*\.ensureEngine\(tableId\)/);
+    expect(CONTROLLER).toMatch(
+      /this\.launchLifecycleJob\([\s\S]{0,180}this\.deps\.ensureEngine\(tableId\)\.then/
+    );
   });
 
   it('a wake is debounced per game, leader-only, and cannot throw into the engine', () => {

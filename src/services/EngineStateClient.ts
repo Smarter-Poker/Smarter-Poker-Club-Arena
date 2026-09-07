@@ -88,6 +88,77 @@ export type ServerMessage =
   | ServerEventMessage
   | ServerUserEventMessage;
 
+/**
+ * A reconnect / EVENT-sequence gap may prove that HAND_STARTED was lost, but
+ * it does not prove that the opening presentation is still timely. Recovery
+ * is deliberately fail-closed: it is allowed only for an in-session hand
+ * transition, close to the continuity boundary, while the authoritative
+ * snapshot is still preflop with empty boards and no player action recorded.
+ *
+ * This is exported from the transport module because it is the transport-gap
+ * contract, and because keeping the decision pure makes the two frame orders
+ * testable: gap-before-snapshot and snapshot-before-gap.
+ */
+export const HAND_START_GAP_RECOVERY_WINDOW_MS = 10_000;
+
+export interface MissedHandStartPresentationEvidence {
+  previousHandNumber: number;
+  handNumber: number;
+  continuityReportedAt: number | null;
+  transitionObservedAt: number;
+  now: number;
+  engineStage: unknown;
+  communityCards: readonly unknown[] | null | undefined;
+  communityCards2: readonly unknown[] | null | undefined;
+  communityCards3: readonly unknown[] | null | undefined;
+  lastActions: readonly unknown[] | null | undefined;
+}
+
+export function shouldRecoverMissedHandStartPresentation(
+  evidence: MissedHandStartPresentationEvidence
+): boolean {
+  const {
+    previousHandNumber,
+    handNumber,
+    continuityReportedAt,
+    transitionObservedAt,
+    now,
+    engineStage,
+    communityCards,
+    communityCards2,
+    communityCards3,
+    lastActions,
+  } = evidence;
+
+  // Hydrating hand N with no prior in-session hand is never a missed deal.
+  if (!(previousHandNumber > 0) || !(handNumber > 0) || handNumber === previousHandNumber) {
+    return false;
+  }
+  if (typeof continuityReportedAt !== 'number' || !Number.isFinite(continuityReportedAt)) {
+    return false;
+  }
+  const continuityAge = now - continuityReportedAt;
+  const transitionAge = now - transitionObservedAt;
+  if (
+    continuityAge < 0 ||
+    transitionAge < 0 ||
+    continuityAge > HAND_START_GAP_RECOVERY_WINDOW_MS ||
+    transitionAge > HAND_START_GAP_RECOVERY_WINDOW_MS
+  ) {
+    return false;
+  }
+
+  // A late reconnect must never rewind the felt into an opening deal.
+  if (String(engineStage || '').toLowerCase() !== 'preflop') return false;
+  const boards = [communityCards, communityCards2, communityCards3];
+  if (!boards.every((board) => Array.isArray(board) && board.length === 0)) return false;
+
+  // Empty boards alone are not enough: late preflop is already mid-hand.
+  if (!Array.isArray(lastActions) || lastActions.some((action) => action != null)) return false;
+
+  return true;
+}
+
 // WS close codes the server emits (mirrors CLOSE_* constants on server).
 /**
  * Report a client-side connection failure to the engine.
@@ -577,6 +648,12 @@ export class EngineStateClient {
       // Server sends SNAPSHOT on subscribe — no explicit RESYNC needed on
       // first connect. On reconnect after a gap, we explicitly request one.
       if (hadState) {
+        // A reconnect is an event-continuity boundary even when the first full
+        // snapshot makes state look seamless. Tell the presentation layer
+        // BEFORE that snapshot arrives so it can recover a HAND_STARTED that
+        // happened while this socket was away without animating first-load
+        // hydration.
+        this.reportEventGap('reconnect');
         try {
           ws.send(JSON.stringify({ type: 'RESYNC' }));
         } catch {
@@ -742,6 +819,30 @@ export class EngineStateClient {
    * and a fresh socket legitimately re-receives retained reveal events.
    */
   private lastEventSeq = 0;
+  /**
+   * The gapped EVENT is requeued for the next macrotask after the synthetic
+   * continuity notice. Remember its sequence so that second pass dispatches
+   * the real event instead of reporting the same gap forever.
+   */
+  private eventGapReportedForSeq = 0;
+
+  private reportEventGap(
+    reason: 'reconnect' | 'event_sequence_gap',
+    expectedEventSeq?: number,
+    receivedEventSeq?: number
+  ): void {
+    try {
+      this.opts.onEvent({
+        type: 'engine_event_gap',
+        reason,
+        expected_event_seq: expectedEventSeq,
+        received_event_seq: receivedEventSeq,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      console.error('[EngineStateClient] onEvent listener threw', err);
+    }
+  }
 
   private handleMessage(msg: ServerMessage): void {
     /**
@@ -777,6 +878,7 @@ export class EngineStateClient {
     ) {
       this.inbox = [];
       this.lastEventSeq = 0;
+      this.eventGapReportedForSeq = 0;
       this.seq = 0;
       this.snapshot = null;
       // Still surface it: TablePage can show its reconnect chrome rather than
@@ -865,6 +967,23 @@ export class EngineStateClient {
         const seq = (msg as { seq?: number }).seq;
         if (typeof seq === 'number' && seq > 0) {
           if (seq <= this.lastEventSeq) continue;
+          if (
+            this.lastEventSeq > 0 &&
+            seq > this.lastEventSeq + 1 &&
+            this.eventGapReportedForSeq !== seq
+          ) {
+            // EVENTs are transient and are not restored by a state snapshot.
+            // Surface the hole as its own render, request authoritative state,
+            // then deliver the real event on the following macrotask. This
+            // preserves the one-event-per-render contract above.
+            this.eventGapReportedForSeq = seq;
+            this.requestResync();
+            this.inbox.unshift(msg);
+            this.reportEventGap('event_sequence_gap', this.lastEventSeq + 1, seq);
+            this.scheduleDrain();
+            return;
+          }
+          this.eventGapReportedForSeq = 0;
           this.lastEventSeq = seq;
         }
         try {
@@ -930,6 +1049,7 @@ export class EngineStateClient {
   private resetInbox(): void {
     this.inbox = [];
     this.lastEventSeq = 0;
+    this.eventGapReportedForSeq = 0;
     /**
      * EPOCH RESET 2026-08-27 (security/realtime audit): the table froze
      * permanently after ANY engine restart.

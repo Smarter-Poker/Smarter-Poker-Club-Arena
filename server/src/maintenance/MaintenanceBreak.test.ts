@@ -1010,6 +1010,180 @@ describe('the dealing loop parks for the break, not only the wait loop', () => {
   });
 });
 
+describe('the maintenance owner cannot outlive shutdown', () => {
+  const deferred = <T>() => {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  };
+
+  it('joins an in-progress boot and cannot arm its schedule after stop wins', async () => {
+    const loading = deferred<PersistedMaintenanceBreak | null>();
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const engine = new FakeEngine();
+    const mb = new MaintenanceBreak({
+      engines: () => new Map([['t0', engine]]).entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: {
+        load: () => loading.promise,
+        save: async () => {},
+        clear: async () => {},
+      },
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return { fn, ms } as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+
+    const firstStart = mb.start();
+    expect(mb.start()).toBe(firstStart);
+    const firstStop = mb.stop();
+    expect(mb.stop()).toBe(firstStop);
+    let stopped = false;
+    void firstStop.then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped, 'stop returned while the boot read was still alive').toBe(false);
+
+    loading.resolve(null);
+    await Promise.all([firstStart, firstStop]);
+    expect(timers, 'the losing starter armed a post-shutdown announcement').toHaveLength(0);
+
+    mb.adopt('late', engine);
+    expect(engine.paused, 'a stopped owner still adopted a late engine').toBe(false);
+    await expect(mb.start()).rejects.toThrow(/cannot be restarted/i);
+  });
+
+  it('joins an announced break persist and cannot arm the countdown after stop', async () => {
+    const saving = deferred<void>();
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    let saveStarted = false;
+    const mb = new MaintenanceBreak({
+      engines: () => new Map([['t0', new FakeEngine()]]).entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: {
+        load: async () => null,
+        save: () => {
+          saveStarted = true;
+          return saving.promise;
+        },
+        clear: async () => {},
+      },
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return { fn, ms } as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+
+    await mb.start();
+    expect(timers).toHaveLength(1);
+    timers[0].fn();
+    expect(saveStarted).toBe(true);
+
+    const stopping = mb.stop();
+    let stopped = false;
+    void stopping.then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped, 'stop returned while the scheduled save was still alive').toBe(false);
+
+    saving.resolve();
+    await stopping;
+    expect(
+      timers,
+      'the announcement armed either its countdown or the next wall-clock pass after shutdown'
+    ).toHaveLength(1);
+  });
+
+  it('joins a thaw already in flight and never resumes an engine after stop', async () => {
+    const thawing = deferred<void>();
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const engines = new Map<string, FakeEngine>([['t0', new FakeEngine()]]);
+    let thawStarted = false;
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: new FakeStore(),
+      thaw: () => {
+        thawStarted = true;
+        return thawing.promise;
+      },
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return { fn, ms } as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+
+    await mb.announceLastHand();
+    timers.shift()!.fn();
+    await Promise.resolve();
+    await Promise.resolve();
+    const endTimer = timers.find((timer) => timer.ms === MaintenanceBreak.BREAK_DURATION_MS);
+    expect(endTimer).toBeDefined();
+    endTimer!.fn();
+    expect(thawStarted).toBe(true);
+
+    const stopping = mb.stop();
+    thawing.resolve();
+    await stopping;
+    expect(
+      engines.get('t0')!.resumeCount,
+      'shutdown allowed the thaw continuation to wake play'
+    ).toBe(0);
+  });
+
+  it('clears and invalidates every pending resume-wave timer', async () => {
+    type Timer = { fn: () => void; ms: number };
+    const timers: Timer[] = [];
+    const cleared = new Set<Timer>();
+    const engines = new Map<string, FakeEngine>();
+    for (let i = 0; i < 60; i++) engines.set(`t${i}`, new FakeEngine());
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: new FakeStore(),
+      setTimer: ((fn: () => void, ms: number) => {
+        const timer = { fn, ms };
+        timers.push(timer);
+        return timer as unknown as NodeJS.Timeout;
+      }) as any,
+      clearTimer: ((timer: NodeJS.Timeout) => {
+        cleared.add(timer as unknown as Timer);
+      }) as any,
+    });
+
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    await mb.end();
+    const waveTimers = timers.filter(
+      (timer) =>
+        timer.ms > 0 &&
+        timer.ms <= MaintenanceBreak.RESUME_SPREAD_MS &&
+        timer.ms % MaintenanceBreak.RESUME_WAVE_GAP_MS === 0
+    );
+    expect(waveTimers).toHaveLength(2);
+    const resumedBeforeStop = [...engines.values()].reduce(
+      (n, engine) => n + engine.resumeCount,
+      0
+    );
+
+    await mb.stop();
+    expect(waveTimers.every((timer) => cleared.has(timer))).toBe(true);
+    for (const timer of waveTimers) timer.fn();
+    expect([...engines.values()].reduce((n, engine) => n + engine.resumeCount, 0)).toBe(
+      resumedBeforeStop
+    );
+  });
+});
+
 describe('the real engine treats a maintenance pause as paused', () => {
   const TBL = 'aaaaaaaa-1111-2222-3333-444444444444';
 

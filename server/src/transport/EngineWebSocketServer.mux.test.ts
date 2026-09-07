@@ -372,3 +372,62 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(hub.subscribe).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('EngineWebSocketServer heartbeat scheduler debt', () => {
+  it('still closes a silent socket after an on-time timeout sweep', () => {
+    const { server } = makeServer();
+    const ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', null);
+
+    const internal = server as unknown as {
+      connections: Map<unknown, { lastPongAt: number; heartbeatGraceAt: number }>;
+      lastHeartbeatSweepAt: number;
+      heartbeatSweep: () => void;
+    };
+    const now = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+    const conn = internal.connections.get(ws)!;
+    conn.lastPongAt = now - 60_001;
+    internal.lastHeartbeatSweepAt = now - 25_000;
+
+    internal.heartbeatSweep();
+
+    expect(ws.close).toHaveBeenCalledWith(1001, 'heartbeat timeout');
+    nowSpy.mockRestore();
+  });
+
+  it('credits a delayed sweep before judging a queued PONG as timed out', () => {
+    const { server } = makeServer();
+    const ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', null);
+
+    const internal = server as unknown as {
+      connections: Map<unknown, { lastPongAt: number; heartbeatGraceAt: number }>;
+      lastHeartbeatSweepAt: number;
+      heartbeatSweep: () => void;
+    };
+    const now = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+    const conn = internal.connections.get(ws)!;
+    // The last PONG looks stale only because this 25s interval got no CPU for
+    // 50s. The 25s scheduler debt leaves 45s of fair client silence.
+    conn.lastPongAt = now - 70_000;
+    internal.lastHeartbeatSweepAt = now - 50_000;
+
+    internal.heartbeatSweep();
+
+    expect(ws.close).not.toHaveBeenCalled();
+    expect(ws.sent.map((message) => JSON.parse(message))).toContainEqual({
+      type: 'PING',
+      ts: now,
+    });
+
+    // The queued reply lands once the stalled loop returns to I/O. A normal
+    // next sweep must keep this healthy socket open.
+    ws.emitMessage({ type: 'PONG', ts: now });
+    nowSpy.mockReturnValue(now + 25_000);
+    internal.heartbeatSweep();
+    expect(ws.close).not.toHaveBeenCalled();
+    nowSpy.mockRestore();
+  });
+});

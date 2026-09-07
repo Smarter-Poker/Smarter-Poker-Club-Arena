@@ -414,6 +414,7 @@ const PAGE_SIZE = 1000;
 export const FLOORED_TRUSTED_FROM_DAY = '2026-09-06';
 
 let checkTimer: NodeJS.Timeout | null = null;
+let bootTimer: NodeJS.Timeout | null = null;
 let lastRunDate: string | null = null;
 /*
  * ── 2026-09-02: why `lastRunDate = null` in the catch never bought a retry ──
@@ -427,6 +428,13 @@ let lastRunDate: string | null = null;
  */
 let lastStandDownDate: string | null = null;
 let running = false;
+let lifecycleGeneration = 0;
+let lifecycleActive = false;
+let stopOperation: Promise<void> | null = null;
+const inFlightRuns = new Set<Promise<void>>();
+
+const lifecycleIsCurrent = (generation: number): boolean =>
+  lifecycleActive && lifecycleGeneration === generation;
 
 /**
  * V13.1 — the same boot-check the league needed, for the same reason: an
@@ -451,19 +459,24 @@ async function alreadyTunedToday(date: string): Promise<boolean> {
   }
 }
 
-async function maybeRunSelfTune(): Promise<void> {
+async function maybeRunSelfTune(generation: number): Promise<void> {
+  if (!lifecycleIsCurrent(generation)) return;
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const hour = now.getUTCHours();
   const inWindow = hour >= RUN_HOUR_UTC && hour < RUN_HOUR_UTC + TUNER_CATCHUP_HOURS;
   if (!inWindow || running || lastRunDate === today) return;
-  if (await alreadyTunedToday(today)) {
+  const alreadyTuned = await alreadyTunedToday(today);
+  if (!lifecycleIsCurrent(generation)) return;
+  if (alreadyTuned) {
     lastRunDate = today;
     return;
   }
   // V13.1: one claim, one runner — otherwise both instances stream 120,000
   // hand_history rows at the same time.
-  if (!(await claimNightlyJob('self_tuner', today))) {
+  const claimed = await claimNightlyJob('self_tuner', today);
+  if (!lifecycleIsCurrent(generation)) return;
+  if (!claimed) {
     if (lastStandDownDate !== today) {
       lastStandDownDate = today;
       console.log(`[HorseSelfTuner] run ${today} claimed by another instance - standing down`);
@@ -471,22 +484,49 @@ async function maybeRunSelfTune(): Promise<void> {
     return;
   }
   lastRunDate = today;
-  await runSelfTune(today);
+  await runSelfTune(today, () => lifecycleIsCurrent(generation));
+}
+
+function launchMaybeRunSelfTune(): void {
+  const generation = lifecycleGeneration;
+  if (!lifecycleIsCurrent(generation) || inFlightRuns.size > 0) return;
+  let tracked!: Promise<void>;
+  tracked = maybeRunSelfTune(generation)
+    .catch((err) => reportError(err, 'HorseSelfTuner.tick'))
+    .finally(() => inFlightRuns.delete(tracked));
+  inFlightRuns.add(tracked);
+}
+
+async function drainRuns(): Promise<void> {
+  while (inFlightRuns.size > 0) await Promise.allSettled([...inFlightRuns]);
 }
 
 export function startHorseSelfTuner(): void {
   if (checkTimer) return;
-  checkTimer = setInterval(() => void maybeRunSelfTune(), CHECK_INTERVAL_MS);
+  lifecycleActive = true;
+  lifecycleGeneration += 1;
+  stopOperation = null;
+  checkTimer = setInterval(launchMaybeRunSelfTune, CHECK_INTERVAL_MS);
   checkTimer.unref?.();
-  const boot = setTimeout(() => void maybeRunSelfTune(), TUNER_BOOT_DELAY_MS);
-  boot.unref?.();
+  bootTimer = setTimeout(() => {
+    bootTimer = null;
+    launchMaybeRunSelfTune();
+  }, TUNER_BOOT_DELAY_MS);
+  bootTimer.unref?.();
 }
 
-export function stopHorseSelfTuner(): void {
+export function stopHorseSelfTuner(): Promise<void> {
+  if (stopOperation) return stopOperation;
+  lifecycleActive = false;
+  lifecycleGeneration += 1;
   if (checkTimer) {
     clearInterval(checkTimer);
     checkTimer = null;
   }
+  if (bootTimer) clearTimeout(bootTimer);
+  bootTimer = null;
+  stopOperation = drainRuns();
+  return stopOperation;
 }
 
 /**
@@ -544,7 +584,8 @@ export const TUNER_STUDY_FORMAT = 'cash';
 
 async function loadPlayRows(
   into: Map<string, PlayStats>,
-  tracked: Set<string>
+  tracked: Set<string>,
+  shouldContinue: () => boolean = () => true
 ): Promise<Set<string>> {
   const seen = new Set<string>();
   try {
@@ -554,6 +595,7 @@ async function loadPlayRows(
     // The later of the window edge and the day the floor flag became true.
     const sinceDay = windowDay > FLOORED_TRUSTED_FROM_DAY ? windowDay : FLOORED_TRUSTED_FROM_DAY;
     for (let offset = 0; ; offset += 1000) {
+      if (!shouldContinue()) return seen;
       const { data, error } = await supabase
         .from('horse_daily_play')
         .select(
@@ -595,6 +637,7 @@ async function loadPlayRows(
         .order('format', { ascending: true })
         .order('floored', { ascending: true })
         .range(offset, offset + 999);
+      if (!shouldContinue()) return seen;
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;
       for (const r of data as Array<Record<string, number | string>>) {
@@ -627,7 +670,10 @@ async function loadPlayRows(
 }
 
 /** One full nightly study. Exported for tests and for manual runs. */
-export async function runSelfTune(runDate?: string): Promise<{ studied: number; tuned: number }> {
+export async function runSelfTune(
+  runDate?: string,
+  shouldContinue: () => boolean = () => true
+): Promise<{ studied: number; tuned: number }> {
   if (running) return { studied: 0, tuned: 0 };
   running = true;
   const date = runDate ?? new Date().toISOString().slice(0, 10);
@@ -639,6 +685,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
     {
       let cursor: string | null = null;
       for (;;) {
+        if (!shouldContinue()) return { studied: 0, tuned: 0 };
         let q = supabase
           .from('profiles')
           .select('id, horse_profile')
@@ -647,6 +694,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
           .limit(1000);
         if (cursor) q = q.gt('id', cursor);
         const { data, error } = await q;
+        if (!shouldContinue()) return { studied: 0, tuned: 0 };
         if (error) throw new Error(error.message);
         if (!data || data.length === 0) break;
         for (const row of data as Array<{ id: string; horse_profile: unknown }>) {
@@ -701,6 +749,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         .toISOString()
         .slice(0, 10);
       for (let offset = 0; ; offset += 1000) {
+        if (!shouldContinue()) return { studied: 0, tuned: 0 };
         const { data, error } = await supabase
           .from('horse_daily_nets')
           .select('horse_user_id, hands, net_bb, rake_bb, bbj_bb, format')
@@ -736,6 +785,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
           .order('game_variant', { ascending: true })
           .order('format', { ascending: true })
           .range(offset, offset + 999);
+        if (!shouldContinue()) return { studied: 0, tuned: 0 };
         if (error) throw new Error(error.message);
         if (!data || data.length === 0) break;
         for (const row of data as Array<{
@@ -790,6 +840,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         .toISOString()
         .slice(0, 10);
       for (let offset = 0; ; offset += 1000) {
+        if (!shouldContinue()) return { studied: 0, tuned: 0 };
         const { data, error } = await supabase
           .from('horse_review_rollup')
           .select('horse_user_id, game_variant, leak_counts, big_wins, big_losses')
@@ -804,6 +855,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
           .order('day', { ascending: true })
           .order('game_variant', { ascending: true })
           .range(offset, offset + 999);
+        if (!shouldContinue()) return { studied: 0, tuned: 0 };
         if (error) throw new Error(error.message);
         if (!data || data.length === 0) break;
         for (const row of data as Array<{
@@ -850,6 +902,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       const { data, error } = await supabase.rpc('fn_horse_tournament_leaks', {
         p_since: sinceDay,
       });
+      if (!shouldContinue()) return { studied: 0, tuned: 0 };
       if (error) throw new Error(error.message);
       for (const row of (data ?? []) as Array<{
         horse_user_id: string;
@@ -876,7 +929,8 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
     // fallback for a horse with no play rows (the table is young, or the
     // flush was off), so a night can never study fewer horses than before.
     const stats = new Map<string, PlayStats>();
-    const fromPlayRows = await loadPlayRows(stats, tracked);
+    const fromPlayRows = await loadPlayRows(stats, tracked, shouldContinue);
+    if (!shouldContinue()) return { studied: 0, tuned: 0 };
 
     // Stream the study window through the accumulator, newest first.
     const since = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000).toISOString();
@@ -889,6 +943,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
     // fit was skipped and never read. A stable secondary sort plus range()
     // paging cannot drop or repeat a row.
     for (let offset = 0; offset < MAX_HANDS_TO_STUDY; offset += PAGE_SIZE) {
+      if (!shouldContinue()) return { studied: 0, tuned: 0 };
       const { data, error } = await supabase
         .from('hand_history')
         .select('actions, players, winners, big_blind, button_seat, created_at')
@@ -897,6 +952,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
+      if (!shouldContinue()) return { studied: 0, tuned: 0 };
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;
       // The same ruler rule as loadPlayRows: a heads-up hand (two dealt in)
@@ -928,6 +984,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
     // Diagnose + write.
     let tuned = 0;
     for (const [horseId, s] of stats) {
+      if (!shouldContinue()) return { studied: stats.size, tuned };
       if (s.hands < MIN_HANDS_TO_TUNE) continue;
       const prevMods = horses.get(horseId) ?? {};
       const rn = realNets.get(horseId);
@@ -1021,6 +1078,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
             .update({ horse_profile: newProfile })
             .eq('id', horseId)
             .eq('is_horse', true);
+          if (!shouldContinue()) return { studied: stats.size, tuned };
           if (upErr) throw new Error(upErr.message);
           tuned++;
         }
@@ -1060,6 +1118,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
           },
           { onConflict: 'horse_id,run_date' }
         );
+        if (!shouldContinue()) return { studied: stats.size, tuned };
         if (logErr) throw new Error(logErr.message);
       } catch (err) {
         reportError(err, 'HorseSelfTuner.write');

@@ -1,3 +1,16 @@
+{
+    # The engine accepts WebSocket bearer authentication through this protocol
+    # header because browsers cannot set Authorization during the upgrade. Caddy
+    # includes request headers in upstream error logs, so an EOF/502 used to
+    # persist that credential verbatim. Remove the field from every runtime log
+    # encoder without changing the proxy or WebSocket route.
+    log {
+        format filter {
+            request>headers>Sec-Websocket-Protocol delete
+        }
+    }
+}
+
 engine.smarter.poker {
     reverse_proxy localhost:8080
 

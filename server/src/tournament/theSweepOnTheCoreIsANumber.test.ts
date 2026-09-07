@@ -18,9 +18,9 @@
  * only get by grepping a container is a number nobody watches, and it is the
  * reason a twenty-minute outage was diagnosed by hand instead of by a chart.
  *
- * `startEliminationChecker` opens a `setInterval` PER TOURNAMENT at
- * ELIMINATION_SWEEP_MS. At the 120-199 RUNNING tournaments measured that night
- * that is 24-40 sweeps a second on one JavaScript thread.
+ * The fix replaces that fan-out with one process-wide, concurrency-bounded
+ * scheduler. Bust-shaped hand completions are urgent; one slow global safety
+ * pass keeps recovery and non-hand transitions live.
  *
  * These pins keep the three series wired. They measure and change nothing -
  * the fix for the cause is P0/P1 in docs/HANDOFF_CURRENT_STATE.md section 16,
@@ -30,7 +30,13 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
+import {
+  blankNonCode,
+  sliceBlockAfter,
+  sliceEnclosingBlock,
+  sliceMethod,
+  sliceStatement,
+} from '../testHelpers/sourceWindow.js';
 import {
   eliminationSweepMs,
   eliminationSweepsInflight,
@@ -40,6 +46,11 @@ import {
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
 const INSTRUMENTS = read('src/observability/engineInstruments.ts');
 const SWEEP = read('src/tournament/TournamentManagerEliminations.ts');
+const SCHEDULER = read('src/tournament/TournamentEliminationScheduler.ts');
+const BASE = read('src/tournament/TournamentManagerBase.ts');
+const MANAGER = read('src/tournament/TournamentManager.ts');
+const GAME_SERVER = read('src/GameServer.ts');
+const SETTLEMENT = read('src/engine/ServerTableEngineSettlement.ts');
 
 describe('the three series exist and are always on', () => {
   it('names the sweep duration, its concurrency, and its overruns', () => {
@@ -84,38 +95,26 @@ describe('the sweep actually reports itself', () => {
     expect(observeAt).toBeGreaterThan(finallyAt);
   });
 
-  it('counts a warned overrun and a forced one separately', () => {
-    // They are different events: one is late, the other has been abandoned.
-    expect(SWEEP).toContain("eliminationSweepOverrunsTotal.inc(1, { outcome: 'warned' })");
-    expect(SWEEP).toContain("eliminationSweepOverrunsTotal.inc(1, { outcome: 'forced' })");
+  it('counts a warned overrun without inventing a forced release', () => {
+    expect(SCHEDULER).toContain("eliminationSweepOverrunsTotal.inc(1, { outcome: 'warned' })");
+    expect(SCHEDULER).not.toContain("outcome: 'forced'");
   });
 });
 
 describe('the gauge cannot drift', () => {
-  it('releases the inflight count where a superseded sweep is forced off', () => {
-    // A forced sweep never reaches its own `finally` - its generation is
-    // superseded - so without this the gauge climbs for ever on exactly the
-    // process that is in trouble.
-    //
-    // Bounded by the BLOCK that forces the lock, never by a byte count. A
-    // fixed window drifts off the end of what it guards the moment somebody
-    // adds a comment, which cost this estate a 39-minute publish outage on
-    // 2026-08-28 - and `noFixedSizeSourceWindows` caught the first draft of
-    // this very file doing it.
-    // levels = 2: the anchor sits inside the `{ outcome: 'forced' }` object
-    // literal, so one climb reaches the call's argument and two reaches the
-    // `if (verdict === 'force')` block this is actually about.
-    expect(sliceEnclosingBlock(SWEEP, "outcome: 'forced'", 0, 2)).toContain(
-      'eliminationSweepsInflight.dec()'
-    );
+  it('does not release either physical or logical inflight ownership on a warning', () => {
+    const warning = sliceEnclosingBlock(SCHEDULER, 'if (settled) return;', 1);
+    expect(warning).toContain("dispatchTotal.inc(1, { outcome: 'timed_out' })");
+    expect(warning).not.toMatch(/runningCount\s*=|activeEntries\.delete/);
   });
 
-  it('only the current holder decrements in the finally, so it cannot go negative', () => {
-    // Decrementing twice for one sweep would walk the gauge below zero, and a
-    // metric that lies about the DIRECTION of load is worse than none.
-    expect(
-      sliceEnclosingBlock(SWEEP, 'sweepGeneration === this.eliminationSweepGeneration')
-    ).toContain('eliminationSweepsInflight.dec()');
+  it('decrements the logical gauge exactly once in the sweep finally', () => {
+    const sweep = sliceMethod(SWEEP, 'private async runEliminationSweep(');
+    expect(sweep.match(/eliminationSweepsInflight\.inc\(\)/g)).toHaveLength(1);
+    expect(sweep.match(/eliminationSweepsInflight\.dec\(\)/g)).toHaveLength(1);
+    expect(sweep.indexOf('eliminationSweepsInflight.dec()')).toBeGreaterThan(
+      sweep.indexOf('} finally {')
+    );
   });
 
   it('takes its start time inside the tick, not from the shared lock field', () => {
@@ -125,9 +124,195 @@ describe('the gauge cannot drift', () => {
   });
 });
 
-describe('the cadence this is measuring', () => {
-  it('is still one interval per tournament - the thing the data has to justify changing', () => {
-    expect(SWEEP).toContain('TournamentManagerBase.ELIMINATION_SWEEP_MS');
-    expect(SWEEP).toContain('this.eliminationTimer = setInterval(');
+describe('the measured fan-out is replaced, not merely charted', () => {
+  it('has no per-manager interval and admits every sweep through the singleton', () => {
+    expect(SWEEP).not.toContain('setInterval(');
+    expect(SWEEP).toContain('this.registerEliminationScheduler(');
+    expect(BASE).not.toContain('eliminationTimer');
+    expect(SCHEDULER).toContain('export const tournamentEliminationScheduler');
+  });
+
+  it('bounds global concurrency without an all-tournament wall-clock repair pass', () => {
+    expect(SCHEDULER).toContain('DEFAULT_MAX_CONCURRENT_SWEEPS = 4');
+    expect(SCHEDULER).not.toContain('DEFAULT_SAFETY_SWEEP_MS');
+    expect(SCHEDULER).not.toContain('runSafetySweep');
+    expect(SCHEDULER.match(/setInterval\(/g)).toHaveLength(1);
+  });
+
+  it('wakes from a bust-shaped hand completion instead of every ordinary hand', () => {
+    expect(BASE).toContain('engine.onHandComplete(');
+    expect(BASE).toContain('finalStacks.some(');
+    expect(BASE).toContain('this.requestEliminationSweep()');
+  });
+
+  it('fires only after the one accepted-hand receipt includes stacks, history, and tournament chips', () => {
+    const postHandTasks = sliceMethod(SETTLEMENT, 'protected async postHandTasks(');
+    const commitAt = postHandTasks.indexOf('atomicCommit: {');
+    const historyAt = postHandTasks.indexOf('v_handHistoryId = result.handId');
+    const acceptedAt = postHandTasks.indexOf('authoritativeCommitSucceeded = true');
+    const failClosedAt = postHandTasks.indexOf('if (!authoritativeCommitSucceeded) return;');
+    const callbackAt = postHandTasks.indexOf('this.handCompleteCallback(');
+    expect(commitAt).toBeGreaterThan(-1);
+    expect(historyAt).toBeGreaterThan(commitAt);
+    expect(acceptedAt).toBeGreaterThan(historyAt);
+    expect(failClosedAt).toBeGreaterThan(acceptedAt);
+    expect(callbackAt).toBeGreaterThan(failClosedAt);
+    const executable = blankNonCode(postHandTasks);
+    expect(executable).not.toMatch(/\bsyncStacks\s*\(/);
+    expect(executable).not.toMatch(/\bsyncTournamentChips\s*\(/);
+    const callback = sliceEnclosingBlock(postHandTasks, 'this.handCompleteCallback(');
+    expect(callback).not.toContain('await ');
+    expect(callback).not.toContain('async ');
+  });
+
+  it('cannot wake eliminations or unlock the table after an authoritative commit failure', () => {
+    const postHandTasks = sliceMethod(SETTLEMENT, 'protected async postHandTasks(');
+    const gateAt = postHandTasks.indexOf('if (!authoritativeCommitSucceeded) return;');
+    const callbackAt = postHandTasks.indexOf('this.handCompleteCallback(');
+    const unlockAt = postHandTasks.indexOf("type: 'table_unlocked'");
+    expect(gateAt).toBeGreaterThan(-1);
+    expect(callbackAt).toBeGreaterThan(gateAt);
+    expect(unlockAt).toBeGreaterThan(callbackAt);
+
+    const semanticRefusal = sliceEnclosingBlock(postHandTasks, 'if (semantic)');
+    expect(semanticRefusal).toContain("this.setLoopPhase('settlement_fault_semantic')");
+    expect(semanticRefusal).toMatch(/while \(this\.running\)[\s\S]*?throw err;/);
+  });
+
+  it('re-wakes the owning manager only when a queued knockout hand lands', () => {
+    const recoveredAt = GAME_SERVER.indexOf('onHandHistoryRecovered(({ tableId');
+    const teardownAt = GAME_SERVER.indexOf('onHandHistoryRecovered(null)', recoveredAt);
+    const recovered = GAME_SERVER.slice(recoveredAt, teardownAt);
+    expect(recoveredAt).toBeGreaterThan(-1);
+    expect(teardownAt).toBeGreaterThan(recoveredAt);
+    expect(recovered).toContain('manager.getTableIds().includes(tableId)');
+    expect(recovered).toContain('manager.requestEliminationSweep()');
+  });
+
+  it('wires every tournament engine construction and rebuild path', () => {
+    const count = (source: string, needle: string) => source.split(needle).length - 1;
+    expect(count(BASE, 'new ServerTableEngine(')).toBe(5);
+    expect(count(BASE, 'this.wireEliminationWake(')).toBe(5);
+    expect(count(MANAGER, 'new ServerTableEngine(')).toBe(1);
+    expect(count(MANAGER, 'this.wireEliminationWake(')).toBe(1);
+  });
+
+  it('unregisters on manager stop and never awaits the hand-complete wake', () => {
+    expect(BASE).toContain('this.unregisterEliminationScheduler()');
+    expect(BASE.match(/this\.unregisterEliminationScheduler\(\)/g)?.length).toBeGreaterThanOrEqual(
+      3
+    );
+    const callback = sliceEnclosingBlock(BASE, 'engine.onHandComplete(');
+    expect(callback).not.toContain('await ');
+    expect(callback).not.toContain('async ');
+  });
+
+  it('does not poll tournament discovery to repair a partially committed registration', () => {
+    const discovery = sliceMethod(GAME_SERVER, 'private async discoverTournaments(');
+    expect(GAME_SERVER).not.toContain('sweepSeatlessLateRegistrantsAndWakeManagers');
+    expect(GAME_SERVER).not.toContain("supabase.rpc('fn_sweep_seatless_late_registrants')");
+    expect(discovery).not.toContain('lateRegistration');
+  });
+
+  it('exports queue-depth, slot, and oldest-wait incident gauges', () => {
+    expect(SCHEDULER).toContain("'poker_tournament_elimination_scheduler_queue_depth'");
+    expect(SCHEDULER).toContain("'poker_tournament_elimination_scheduler_slots_inflight'");
+    expect(SCHEDULER).toContain("'poker_tournament_elimination_scheduler_oldest_wait_ms'");
+  });
+
+  it('drives bounty crash recovery from Realtime plus one persisted due instant', () => {
+    const subscription = sliceMethod(
+      GAME_SERVER,
+      'private startTournamentBountyObligationSubscription('
+    );
+    const discovery = sliceMethod(GAME_SERVER, 'private async discoverTournaments(');
+    const drain = sliceMethod(GAME_SERVER, 'private async sweepPendingTournamentBounties(');
+    expect(subscription).toContain("table: 'tournament_bounty_obligations'");
+    expect(subscription).toContain("event: 'INSERT'");
+    expect(subscription).toContain("event: 'UPDATE'");
+    expect(subscription).toContain("state === 'pending'");
+    expect(subscription).toContain("state === 'settled'");
+    expect(subscription).toContain("requestEliminationSweep('bounty_settled')");
+    expect(subscription).toContain("status === 'CHANNEL_ERROR'");
+    expect(subscription).toContain("status === 'TIMED_OUT'");
+    expect(subscription).toContain("status === 'CLOSED'");
+    expect(subscription).toContain('this.scheduleTournamentBountySubscriptionReconnect()');
+    expect(subscription).not.toContain('row.next_attempt_at');
+    const subscribedAt = subscription.indexOf("status === 'SUBSCRIBED'");
+    const initialDrainAt = subscription.indexOf(
+      'this.requestPendingTournamentBountyRecovery()',
+      subscribedAt
+    );
+    expect(subscribedAt).toBeGreaterThan(-1);
+    expect(initialDrainAt).toBeGreaterThan(subscribedAt);
+    expect(discovery).not.toContain('sweepPendingTournamentBounties');
+    expect(drain).toContain('answer.retry_after_ms');
+    expect(drain).toContain('answer.processed');
+    expect(drain).not.toContain('answer.backfill_may_have_more');
+    expect(drain).not.toContain('backfillMayHaveMore');
+    expect(drain).toContain('answer.settled_tournament_ids');
+    expect(drain).toContain("requestEliminationSweep('bounty_settled')");
+    expect(drain).toContain('this.armPendingTournamentBountyRecovery(retryAfterMs)');
+    expect(drain).toContain('this.bountyRecoveryContentionBackoffMs * 2');
+    expect(drain).toContain('this.armPendingTournamentBountyRecovery(contentionDelayMs)');
+    expect(drain).toContain("outcome: failed > 0 ? 'partial' : 'completed'");
+    expect(drain).not.toContain('Date.parse');
+    expect(GAME_SERVER).not.toContain('setInterval(() => this.sweepPendingTournamentBounties');
+    expect(INSTRUMENTS).toContain("'poker_tournament_bounty_recovery_sweep_runs_total'");
+    expect(INSTRUMENTS).toContain("'poker_tournament_bounty_realtime_connected'");
+    const fastVerdict = sliceMethod(SWEEP, 'protected async recoverPendingBountyObligations(');
+    expect(fastVerdict).not.toContain('backfill_may_have_more');
+    expect(fastVerdict).not.toContain('bounty_backfill_continue');
+    expect(fastVerdict).toContain('if (hasPending !== false) return false;');
+    const pendingVerdict = sliceStatement(fastVerdict, 'if (hasPending !== false) return false;');
+    expect(pendingVerdict).not.toContain('requestUrgentEliminationSweepAfter');
+  });
+
+  it('preserves narrow feature cadence and re-drives a promoted full-table entrant', () => {
+    expect(SCHEDULER).toContain('wakeAfter(tournamentId: string, delayMs: number)');
+    expect(SWEEP).toContain('TournamentManagerBase.ADD_ON_RETRY_MS');
+    expect(SWEEP).toContain('TournamentManagerBase.FINAL_TABLE_DEAL_POLL_MS');
+    expect(SWEEP).toContain('TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS');
+    expect(MANAGER).toContain('TournamentManagerBase.LATE_REG_REDRIVE_MS');
+    expect(MANAGER).toContain('this.requestUrgentEliminationSweepAfter(0)');
+  });
+
+  it('retains every transient finish, mystery activation, and hand-for-hand failure cause', () => {
+    const handForHandFailure = sliceBlockAfter(
+      SWEEP,
+      'if (playingNowErr || playingNow === null || playingNow === undefined)'
+    );
+    expect(handForHandFailure).toContain('this.requestUrgentEliminationSweepAfter(');
+    expect(handForHandFailure).toMatch(/requestUrgentEliminationSweepAfter\([\s\S]*?\);\s*return;/);
+
+    const mysteryFailure = sliceBlockAfter(SWEEP, 'catch (mbErr)');
+    expect(mysteryFailure).toContain('this.requestUrgentEliminationSweepAfter(');
+    expect(mysteryFailure).toMatch(/requestUrgentEliminationSweepAfter\([\s\S]*?\);\s*return;/);
+
+    const finishFailure = sliceBlockAfter(SWEEP, 'catch (finishErr)');
+    expect(finishFailure).toContain('this.requestUrgentEliminationSweepAfter(');
+    expect(finishFailure).toMatch(/requestUrgentEliminationSweepAfter\([\s\S]*?\);\s*return;/);
+  });
+
+  it('repairs a closed entry payout structure through its atomic durable-wake authority', () => {
+    const invalidStructure = sliceBlockAfter(
+      SWEEP,
+      'if (this.prizePoolFinalized && paidPlaces === null)'
+    );
+    expect(invalidStructure).toMatch(
+      /reconcileTournamentEntryWindow\(\s*'engine\.payout_structure_repair'\s*\)/
+    );
+    expect(invalidStructure).toContain(
+      'parsePayoutStructure(this.tournamentCache.payout_structure)'
+    );
+    expect(invalidStructure).toContain('this.requestUrgentEliminationSweepAfter(');
+  });
+
+  it('upgrades an already-open add-on window after start and resume registration', () => {
+    const urgentAfterRegistration =
+      BASE.match(
+        /this\.startEliminationChecker\(\);[\s\S]*?this\.addOnPeriodTriggered[\s\S]*?this\.requestEliminationSweep\(\);/g
+      ) ?? [];
+    expect(urgentAfterRegistration).toHaveLength(2);
   });
 });

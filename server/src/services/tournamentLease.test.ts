@@ -9,9 +9,11 @@
  * seats" -- and tournaments were the gap that kept the engine a single point of
  * failure.
  *
- * A lease check sits in front of "may I run this tournament", so the tests that
- * matter most are the FAIL-OPEN ones: a database problem must never be the
- * reason every tournament on the platform stops.
+ * A lease check sits in front of "may I run this tournament". Under enforcement
+ * only a verified grant may start a manager: an unreadable answer is retryable,
+ * because guessing "yes" can create two managers and corrupt one prize pool.
+ * The explicit enforcement-off escape hatch keeps its historical behaviour but
+ * is visibly unverified.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -29,63 +31,126 @@ beforeEach(() => {
 
 const load = async () => await import('./tournamentLease.js');
 
-describe('claimTournament - fail open, always', () => {
-  it('runs the tournament when the RPC errors', async () => {
-    rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
-    const { claimTournament } = await load();
-    // A lease problem must never be the reason a tournament fails to start.
-    await expect(claimTournament(T)).resolves.toBe(true);
+describe('enforcement activation contract', () => {
+  it('defaults to enforced in a fresh module when the environment variable is unset', async () => {
+    process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'off';
+    const disabledModule = await load();
+    expect(disabledModule.TOURNAMENT_LEASE_ENFORCED).toBe(false);
+
+    delete process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE;
+    vi.resetModules();
+    const defaultModule = await load();
+    expect(defaultModule.TOURNAMENT_LEASE_ENFORCED).toBe(true);
   });
 
-  it('runs the tournament when the RPC throws', async () => {
-    rpc.mockRejectedValue(new Error('ETIMEDOUT'));
-    const { claimTournament } = await load();
-    await expect(claimTournament(T)).resolves.toBe(true);
+  it('requires the exact value off to disable enforcement', async () => {
+    process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'OFF';
+    const { TOURNAMENT_LEASE_ENFORCED } = await load();
+    expect(TOURNAMENT_LEASE_ENFORCED).toBe(true);
   });
+});
 
-  it('runs it when granted', async () => {
+describe('claimTournamentLease', () => {
+  it('returns a verified classified grant when the database grants', async () => {
     rpc.mockResolvedValue({
       data: [{ granted: true, holder: 'me', holder_age_seconds: 0 }],
       error: null,
     });
-    const { claimTournament } = await load();
-    await expect(claimTournament(T)).resolves.toBe(true);
-  });
-});
-
-describe('claimTournament - with enforcement OFF (today)', () => {
-  it('records the conflict but still runs it', async () => {
-    rpc.mockResolvedValue({
-      data: [{ granted: false, holder: 'other-instance', holder_age_seconds: 4 }],
-      error: null,
+    const { claimTournament, claimTournamentLease } = await load();
+    await expect(claimTournamentLease(T)).resolves.toEqual({
+      status: 'granted',
+      verified: true,
     });
-    const { claimTournament, tournamentLeaseDiagnostics } = await load();
-    // Evidence before behaviour -- exactly how the table lease was rolled out.
     await expect(claimTournament(T)).resolves.toBe(true);
-    const d = tournamentLeaseDiagnostics();
-    expect(d.enforced).toBe(false);
-    expect(d.conflictCount).toBe(1);
-    expect(d.conflicts[0].holder).toBe('other-instance');
   });
-});
 
-describe('claimTournament - with enforcement ON', () => {
-  it('stands down when another instance holds it', async () => {
+  it('classifies a live foreign owner and refuses it when enforcement is on', async () => {
     process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'on';
     rpc.mockResolvedValue({
       data: [{ granted: false, holder: 'other-instance', holder_age_seconds: 4 }],
       error: null,
     });
-    const { claimTournament } = await load();
-    // THE POINT: this is what stops two managers on one tournament.
+    const { claimTournament, claimTournamentLease } = await load();
+    await expect(claimTournamentLease(T)).resolves.toMatchObject({
+      status: 'owned_elsewhere',
+      conflict: { tournamentId: T, holder: 'other-instance', holderAgeSeconds: 4 },
+    });
     await expect(claimTournament(T)).resolves.toBe(false);
   });
 
-  it('still fails open on a database error', async () => {
+  it('preserves enforcement-off conflict admission but marks it unverified', async () => {
+    process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'off';
+    rpc.mockResolvedValue({
+      data: [{ granted: false, holder: 'other-instance', holder_age_seconds: 4 }],
+      error: null,
+    });
+    const { claimTournament, claimTournamentLease, tournamentLeaseDiagnostics } = await load();
+    await expect(claimTournamentLease(T)).resolves.toEqual({
+      status: 'granted',
+      verified: false,
+    });
+    await expect(claimTournament(T)).resolves.toBe(true);
+    expect(tournamentLeaseDiagnostics()).toMatchObject({
+      enforced: false,
+      conflictCount: 1,
+      conflicts: [{ tournamentId: T, holder: 'other-instance', holderAgeSeconds: 4 }],
+    });
+  });
+
+  it('classifies an RPC error as retryable and fails closed while enforced', async () => {
     process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'on';
     rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
-    const { claimTournament } = await load();
-    await expect(claimTournament(T)).resolves.toBe(true);
+    const { claimTournament, claimTournamentLease } = await load();
+    await expect(claimTournamentLease(T)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_error',
+    });
+    await expect(claimTournament(T)).resolves.toBe(false);
+  });
+
+  it('classifies a thrown transport failure as retryable and fails closed while enforced', async () => {
+    process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'on';
+    rpc.mockRejectedValue(new Error('ETIMEDOUT'));
+    const { claimTournament, claimTournamentLease } = await load();
+    await expect(claimTournamentLease(T)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'rpc_threw',
+    });
+    await expect(claimTournament(T)).resolves.toBe(false);
+  });
+
+  it.each([
+    ['empty result', null],
+    [
+      'multiple rows',
+      [
+        { granted: true, holder: 'me', holder_age_seconds: 0 },
+        { granted: false, holder: 'other', holder_age_seconds: 1 },
+      ],
+    ],
+    ['missing discriminator', [{ holder: 'me', holder_age_seconds: 0 }]],
+    ['non-boolean discriminator', [{ granted: 'yes', holder: 'me', holder_age_seconds: 0 }]],
+  ])('classifies a malformed %s as retryable', async (_label, data) => {
+    process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'on';
+    rpc.mockResolvedValue({ data, error: null });
+    const { claimTournamentLease } = await load();
+    await expect(claimTournamentLease(T)).resolves.toEqual({
+      status: 'retryable_failure',
+      reason: 'malformed_response',
+    });
+  });
+
+  it.each([
+    ['RPC error', { data: null, error: { message: 'offline' } }],
+    ['malformed response', { data: [], error: null }],
+  ])('keeps the explicit enforcement-off escape hatch for %s', async (_label, response) => {
+    process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'off';
+    rpc.mockResolvedValue(response);
+    const { claimTournamentLease } = await load();
+    await expect(claimTournamentLease(T)).resolves.toEqual({
+      status: 'granted',
+      verified: false,
+    });
   });
 });
 
@@ -141,6 +206,7 @@ describe('heartbeatTournaments - "could not ask" is not "lost everything"', () =
   });
 
   it('reports nothing lost while enforcement is off', async () => {
+    process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE = 'off';
     rpc.mockResolvedValue({ data: [], error: null });
     const { heartbeatTournaments } = await load();
     await expect(heartbeatTournaments([T])).resolves.toEqual([]);

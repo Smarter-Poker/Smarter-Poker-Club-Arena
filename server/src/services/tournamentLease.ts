@@ -20,23 +20,25 @@
  * outage, because an outage does not corrupt a prize pool.
  *
  * So this is deliberately a MIRROR of tableLease.ts rather than a new idea:
- * same claim / heartbeat / release shape, same 30s staleness, same fail-open
- * rules. One pattern to understand, and the table version is already proven.
+ * same claim / heartbeat / release shape and same 30s staleness. One pattern
+ * to understand, and the table version is already proven.
  *
- * ── FAIL-OPEN, FOR THE SAME REASON ──────────────────────────────────────────
+ * ── OWNERSHIP MUST BE PROVEN WHEN ENFORCEMENT IS ON ─────────────────────────
  *
  * A lease check sits in front of "may I run this tournament", so a bug here
  * could stop every tournament on the platform — the outcome it exists to
  * prevent. Therefore:
  *
- *   - Enforcement is OFF unless ENGINE_TOURNAMENT_LEASE_ENFORCE === 'on'. Until
- *     then this claims, heartbeats and LOGS conflicts while `claimTournament()`
- *     still answers true. Evidence before behaviour — exactly how the table
- *     lease was rolled out, and it is why turning that one on was safe.
- *   - Every RPC failure resolves to "carry on". A database blip must never be
- *     the reason a tournament stops. We decline to START only on a definite
- *     `granted: false`, and we STOP only on a definite report that someone else
- *     took it.
+ *   - Enforcement is ON by default. Only the exact emergency override
+ *     ENGINE_TOURNAMENT_LEASE_ENFORCE === 'off' restores the historical
+ *     fail-open behaviour. An absent or misspelled setting must never silently
+ *     permit two managers to own the same tournament.
+ *   - With enforcement on, an RPC/transport failure is UNKNOWN, never proof
+ *     that this process owns the tournament. A new manager stands down and
+ *     retries the same causal admission rather than risking two managers.
+ *   - The explicit enforcement-off escape hatch retains the historical
+ *     fail-open behaviour, but marks the grant unverified so callers and
+ *     diagnostics cannot confuse it with database-confirmed ownership.
  *
  * WITH ONE INSTANCE RUNNING, THIS CHANGES NOTHING: every claim is granted to
  * the only claimant. Its value is that the day a second instance starts, the
@@ -50,7 +52,7 @@ import { INSTANCE_ID, INSTANCE_VERSION } from './tableLease.js';
 export const TOURNAMENT_LEASE_STALE_SECONDS = 30;
 
 export const TOURNAMENT_LEASE_ENFORCED: boolean =
-  process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE === 'on';
+  process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE !== 'off';
 
 export interface TournamentConflict {
   tournamentId: string;
@@ -59,19 +61,47 @@ export interface TournamentConflict {
   at: number;
 }
 
+/** Ownership answer for one tournament-manager admission attempt. */
+export type TournamentLeaseClaimResult =
+  | { status: 'granted'; verified: boolean }
+  | { status: 'owned_elsewhere'; conflict: TournamentConflict }
+  | {
+      status: 'retryable_failure';
+      reason: 'rpc_error' | 'rpc_threw' | 'malformed_response';
+    };
+
 const conflicts = new Map<string, TournamentConflict>();
 let claimErrors = 0;
 let heartbeatErrors = 0;
 /** Missing/stale heartbeat results — leases nobody took. See heartbeatTournaments. */
 let reclaimableHeartbeats = 0;
 
+function unverifiedClaimResult(
+  tournamentId: string,
+  reason: 'rpc_error' | 'rpc_threw' | 'malformed_response',
+  detail: string
+): TournamentLeaseClaimResult {
+  claimErrors++;
+  if (claimErrors <= 3) {
+    console.warn(
+      `[tournament-lease] claim_tournament_lease ${reason} for ${tournamentId} (${detail}) - ` +
+        (TOURNAMENT_LEASE_ENFORCED
+          ? 'refusing to run a manager until ownership can be proven'
+          : 'proceeding without a verified lease because enforcement is off')
+    );
+  }
+  return TOURNAMENT_LEASE_ENFORCED
+    ? { status: 'retryable_failure', reason }
+    : { status: 'granted', verified: false };
+}
+
 /**
- * May this instance run `tournamentId`?
- *
- * Returns true on any error and whenever enforcement is off — a lease problem
- * must never be the reason a tournament fails to start.
+ * Try to take (or renew) one tournament lease without erasing why admission
+ * failed. A verified database grant is the only success under enforcement.
  */
-export async function claimTournament(tournamentId: string): Promise<boolean> {
+export async function claimTournamentLease(
+  tournamentId: string
+): Promise<TournamentLeaseClaimResult> {
   try {
     const { data, error } = await supabase.rpc('claim_tournament_lease', {
       p_tournament_id: tournamentId,
@@ -80,37 +110,68 @@ export async function claimTournament(tournamentId: string): Promise<boolean> {
       p_stale_seconds: TOURNAMENT_LEASE_STALE_SECONDS,
     });
     if (error) {
-      claimErrors++;
-      if (claimErrors <= 3) {
-        console.warn(`[tournament-lease] claim failed (${error.message}) - starting anyway`);
-      }
-      return true;
+      return unverifiedClaimResult(
+        tournamentId,
+        'rpc_error',
+        String(error.message || 'unknown error')
+      );
     }
-    const row = (
-      data as Array<{ granted: boolean; holder: string | null; holder_age_seconds: number | null }>
-    )?.[0];
-    if (!row || row.granted) {
+
+    // The RPC RETURNS TABLE, so PostgREST normally returns exactly one row.
+    // Accept the equivalent direct-object shape used by test/local adapters,
+    // but never guess ownership from an empty, multi-row or untyped payload.
+    const row = Array.isArray(data) ? (data.length === 1 ? data[0] : null) : data;
+    if (
+      !row ||
+      typeof row !== 'object' ||
+      typeof (row as { granted?: unknown }).granted !== 'boolean'
+    ) {
+      return unverifiedClaimResult(
+        tournamentId,
+        'malformed_response',
+        'response did not contain one boolean granted discriminator'
+      );
+    }
+
+    const leaseRow = row as {
+      granted: boolean;
+      holder?: unknown;
+      holder_age_seconds?: unknown;
+    };
+    if (leaseRow.granted) {
       conflicts.delete(tournamentId);
-      return true;
+      return { status: 'granted', verified: true };
     }
-    conflicts.set(tournamentId, {
+
+    const rawAge = leaseRow.holder_age_seconds;
+    const numericAge = rawAge === null || rawAge === undefined ? null : Number(rawAge);
+    const conflict: TournamentConflict = {
       tournamentId,
-      holder: row.holder,
-      holderAgeSeconds: row.holder_age_seconds,
+      holder: typeof leaseRow.holder === 'string' ? leaseRow.holder : null,
+      holderAgeSeconds: numericAge !== null && Number.isFinite(numericAge) ? numericAge : null,
       at: Date.now(),
-    });
+    };
+    conflicts.set(tournamentId, conflict);
     console.warn(
-      `[tournament-lease] ${tournamentId} is held by ${row.holder}` +
+      `[tournament-lease] ${tournamentId} is held by ${conflict.holder}` +
         (TOURNAMENT_LEASE_ENFORCED ? '. Standing down.' : ' (enforcement off; running it anyway).')
     );
-    return !TOURNAMENT_LEASE_ENFORCED;
+    return TOURNAMENT_LEASE_ENFORCED
+      ? { status: 'owned_elsewhere', conflict }
+      : { status: 'granted', verified: false };
   } catch (err) {
-    claimErrors++;
-    if (claimErrors <= 3) {
-      console.warn(`[tournament-lease] claim threw (${(err as Error)?.message}) - starting anyway`);
-    }
-    return true;
+    const detail = err instanceof Error ? err.message : String(err);
+    return unverifiedClaimResult(tournamentId, 'rpc_threw', detail);
   }
+}
+
+/**
+ * Boolean compatibility adapter for existing discovery. New admission code
+ * should consume claimTournamentLease() so a transient ownership failure can
+ * retain its exact causal retry instead of looking like a foreign owner.
+ */
+export async function claimTournament(tournamentId: string): Promise<boolean> {
+  return (await claimTournamentLease(tournamentId)).status === 'granted';
 }
 
 /**

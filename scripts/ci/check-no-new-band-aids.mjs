@@ -149,9 +149,16 @@ export function scheduledJobs(sql) {
   return { added: [...added], removed: [...removed] };
 }
 
-/** Everything in one file that 10.12 refuses. */
-export function offenders(sql, allowed = new Set()) {
-  const dropped = new Set(droppedFunctions(sql));
+/**
+ * Everything in one file that 10.12 refuses. `droppedElsewhere` is the set of names the OTHER
+ * migrations in the same branch drop: a branch that carries the mirror of an applied migration
+ * declaring a badly-named function AND a later migration renaming and dropping it is the rule
+ * being obeyed at branch scope, exactly as a declare-then-drop is inside one file
+ * (2026-09-07: reconcile_diamond_purchase_refund, the live Stripe refund handler, renamed to
+ * fn_diamond_purchase_refund; its 2026-09-03 mirror could not otherwise ever land on main).
+ */
+export function offenders(sql, allowed = new Set(), droppedElsewhere = new Set()) {
+  const dropped = new Set([...droppedFunctions(sql), ...droppedElsewhere]);
   const found = [];
 
   for (const fn of declaredFunctions(sql)) {
@@ -242,11 +249,20 @@ function main() {
     return 0;
   }
 
+  // Names any changed migration drops count for every changed migration (declare in one file,
+  // rename-and-drop in a later one is still "replaced on the way out").
+  const droppedInBranch = new Set();
+  for (const file of files) {
+    const path = join(REPO, file);
+    if (!existsSync(path)) continue;
+    for (const fn of droppedFunctions(readFileSync(path, 'utf8'))) droppedInBranch.add(fn);
+  }
+
   const hits = [];
   for (const file of files) {
     const path = join(REPO, file);
     if (!existsSync(path)) continue;
-    for (const o of offenders(readFileSync(path, 'utf8'), allowed)) hits.push({ ...o, file });
+    for (const o of offenders(readFileSync(path, 'utf8'), allowed, droppedInBranch)) hits.push({ ...o, file });
   }
 
   if (hits.length === 0) {

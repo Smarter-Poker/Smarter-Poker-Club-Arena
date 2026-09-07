@@ -126,7 +126,10 @@ describe('rulesLineFor speaks the artwork wording from a snapshot', () => {
         vpip_floor: 30,
         bombs: { enabled: true, trigger: 'timed_15m', boards: 2 },
       })
-    ).toBe('6-Max · 30% VPIP · 1 SB Ante · Bombs Every 15 Min · Double Board');
+      // No "Double Board" tail any more (Dan 2026-09-07, item 7D): two boards is
+      // what every bomb pot on this platform runs, so the card does not spend a
+      // segment restating it. A three-board game still ends in Triple Board.
+    ).toBe('6-Max · 30% VPIP · 1 SB Ante · Bombs Every 15 Min');
   });
 
   it('madness omaha', () => {
@@ -139,7 +142,7 @@ describe('rulesLineFor speaks the artwork wording from a snapshot', () => {
         vpip_floor: 70,
         bombs: { enabled: true, trigger: 'every_orbit', boards: 2 },
       })
-    ).toBe('6-Max · 70% VPIP · 1 BB Ante · Bombs Every Orbit · Double Board');
+    ).toBe('6-Max · 70% VPIP · 1 BB Ante · Bombs Every Orbit');
   });
 
   it('never uses an em dash as a separator (CLAUDE.md 10.7)', () => {

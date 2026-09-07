@@ -189,9 +189,15 @@ describe('a seat this device has left is never re-adopted', () => {
 
   it('reads leave_pending everywhere it decides what a seat means', () => {
     // The mount restore and the ten-second poll are the two reads of the row.
-    expect(PAGE).toMatch(
-      /seat_number, user_id, stack, status, horse_id, is_sitting_out, leave_pending/
-    );
+    /* UPDATED 2026-09-07. This pinned the select string verbatim as it stood
+       on 09-03, which happened to include `horse_id`. That column is now
+       withheld from the browser at the database (a horse is indistinguishable
+       from a human - a select naming it 42501s the whole read), so the seat
+       read no longer names it. The subject of THIS test is leave_pending; the
+       pin now asserts that and only that, so the next column to come or go
+       from this read does not make a leave-pending test go red for a reason
+       unrelated to leaving. */
+    expect(PAGE).toMatch(/seat_number, user_id, stack, status, is_sitting_out, leave_pending/);
     expect(PAGE).toMatch(/'user_id, is_sitting_out, sit_out_at, leave_pending'/);
   });
 

@@ -123,15 +123,7 @@ interface Props {
  */
 export const AUTH_REFUSED_LABEL = 'The Table Cannot Verify Your Sign In. Still Trying';
 
-export function labelFor(
-  status: TableConnectionState,
-  authRefused = false,
-  hasLiveState = false
-): string | null {
-  /* A first connect underneath a table that is already showing a hand is not
-     news. See the `hasLiveState` prop doc: 'connecting' describes the socket,
-     not the felt, and on a pre-warmed table the two disagree on every entry. */
-  if (status === 'connecting' && hasLiveState) return null;
+export function labelFor(status: TableConnectionState, authRefused = false): string | null {
   /* An auth refusal outranks the transport words for every state that would
      otherwise blame the connection. 'connecting' and 'idle' are left alone:
      the first is a fresh attempt that may well succeed, and the second is a
@@ -167,8 +159,16 @@ export function TableConnectionBanner({
   authRefused = false,
   hasLiveState = false,
 }: Props): React.ReactElement | null {
-  const label = labelFor(status, authRefused, hasLiveState);
-  const wantsBanner = label !== null && isActive;
+  const label = labelFor(status, authRefused);
+  /* THE SUPPRESSION IS HERE, NOT IN labelFor (law, tests/a-reload-cannot-fix-
+     a-sign-in): that function maps a status to WHAT IT IS CALLED and must stay
+     a pure translation - it is read by the popup-copy laws, and a branch that
+     returns null for a status that has a name would make those laws unable to
+     see the name. This is a rendering decision on top of it: the label for
+     'connecting' still exists and is still correct; a table already showing a
+     dealt hand simply has no reason to display it. See `hasLiveState`. */
+  const suppressed = status === 'connecting' && hasLiveState;
+  const wantsBanner = label !== null && isActive && !suppressed;
 
   const [visible, setVisible] = useState(false);
   const shownAtRef = useRef<number>(0);

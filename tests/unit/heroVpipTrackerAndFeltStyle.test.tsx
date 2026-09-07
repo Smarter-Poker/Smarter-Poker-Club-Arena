@@ -281,18 +281,27 @@ describe('the regular ante reaches the felt', () => {
     expect(identity).toMatch(/text-overflow: clip;/);
     expect(identity).toMatch(/overflow: visible;/);
     expect(identity).toMatch(/white-space: normal;/);
-    // ...and may exceed the wordmark's box, which is what Dan asked for.
-    expect(identity).toMatch(/max-width: 145%;/);
+    /* It stays inside the wordmark's box and wraps. See the keep-out test
+       below for why the wider version was reverted. */
+    expect(identity).toMatch(/max-width: 100%;/);
   });
 
-  it('7A: the dealer button keep-out was widened with the line it protects', () => {
-    // FELT_TEXT_BAND is the puck's model of this printing. A wider, taller
-    // masthead that the geometry still thinks is 62%/2-lines puts the puck on
-    // a club's name - the exact defect item 10 is about.
+  it('7A: the dealer button keep-out grew TALLER with the line it protects, not wider', () => {
+    /* FELT_TEXT_BAND is the puck's model of this printing, so a masthead the
+       geometry still thinks is two lines tall puts the puck on a club's name —
+       the exact defect item 10 is about. Hence lines: 3.
+
+       And the width is pinned at its ORIGINAL value on purpose, because the
+       obvious version of this fix is wrong. Letting the identity row run to
+       145% of the box (Dan: "IT CAN EXCEED THE LENGTH OF SMARTER.POKER") means
+       widening this band, and this band is what the button walks around: at
+       90%/377px the puck reached 0.44 of its seat's run to the middle against
+       chipRail's 0.40 ceiling. Fixing 7A that way breaks 10. The name wraps
+       inside the existing box instead. */
     const geom = read('src/components/table/tableGeometry.ts');
     const band = geom.slice(geom.indexOf('export const FELT_TEXT_BAND = {'));
-    expect(band).toMatch(/widthOfFeltPct: 90,/);
-    expect(band).toMatch(/maxWidthPx: 377,/);
+    expect(band).toMatch(/widthOfFeltPct: 62,/);
+    expect(band).toMatch(/maxWidthPx: 260,/);
     expect(band).toMatch(/lines: 3,/);
   });
 

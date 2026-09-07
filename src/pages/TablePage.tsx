@@ -20516,6 +20516,49 @@ export default function TablePage({
     setShowWaitList(true);
   }, [loadWaitlist]);
 
+  /**
+   * ── IS THERE ACTUALLY A SEAT AT THIS TABLE? (Dan 2026-09-07, item 9) ──────
+   *
+   * The spectator footer told every viewer to "Tap An Open Seat To Join"
+   * whether or not one existed, and CashClusterHUD simultaneously offered a
+   * chair that belonged to a different table in the cluster. Neither consulted
+   * the felt in front of the player.
+   *
+   * `maxPlayers` is the ring size the seat layout is drawn from
+   * (seatLayoutFor), so counting occupied seats against it is the same
+   * arithmetic the felt itself uses — no second source of truth about how big
+   * this table is.
+   *
+   * FAIL TOWARDS "LOOK FOR YOURSELF". A table whose ring size has not resolved
+   * yet reports 0 occupied out of a default, which reads as open, and the
+   * player is invited to tap a seat that will simply do nothing if it is
+   * taken. The opposite failure - telling a player a live table is full and
+   * offering a waiting list they do not need - is the one that loses a seat,
+   * so the "full" branch requires a ring size we actually have.
+   */
+  const spectatorSeatState = useMemo<'open-here' | 'no-seats-here'>(() => {
+    const ring = tableState.maxPlayers ?? 0;
+    if (ring <= 0) return 'open-here';
+    const occupied = tableState.players.filter(Boolean).length;
+    return occupied >= ring ? 'no-seats-here' : 'open-here';
+  }, [tableState.maxPlayers, tableState.players]);
+
+  /** Hero's own place in the queue, or null when they are not on it. */
+  const heroWaitlistPosition = useMemo<number | null>(() => {
+    if (!userId) return null;
+    const mine = waitListPlayers.find((w) => w.playerId === userId);
+    return mine ? mine.position : null;
+  }, [waitListPlayers, userId]);
+
+  /* The footer can offer the list, so it needs to KNOW the list — otherwise a
+     player already queued is invited to join a queue they are in. Loaded once
+     the table reports itself full, and refreshed whenever that changes. */
+  useEffect(() => {
+    if (spectatorSeatState !== 'no-seats-here') return;
+    if (tableState.heroSeat > 0) return;
+    void loadWaitlist();
+  }, [spectatorSeatState, tableState.heroSeat, loadWaitlist]);
+
   // P2-1 FIX: Pre-action auto-execution is server-owned (Bible V8 §4.15). The
   // client's delayed executor was removed: it ran ~100ms after the turn
   // arrived and re-submitted the same action the server had already
@@ -21532,13 +21575,8 @@ export default function TablePage({
                   status={engineWsStatus}
                   isActive={isActive}
                   authRefused={engineRefusedAuth}
-                  /* Dan 2026-09-07: "ALL TABLES STILL SAY CONNECTING TO THE
-                     TABLE, INSTEAD OF BEING RUNNING AT ALL TIMES." A hand
-                     number is the felt's own proof that it is showing real,
-                     dealt state — it only ever arrives from the engine, and
-                     the warm-up roster alone cannot invent one. With that on
-                     screen, a socket still reporting 'connecting' is a fact
-                     about the transport that the player has no use for. */
+                  /* A dealt hand number proves the felt is showing real state,
+                     which silences 'connecting' — see the prop's own doc. */
                   hasLiveState={(tableState.handNumber ?? 0) > 0}
                 />
                 {/* The engine's verdict on THIS seat's presence, on the same
@@ -23206,23 +23244,64 @@ export default function TablePage({
             </span>
           </div>
         ) : !tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (
-          <div className="spectator-footer-bar">
+          /* ── THE FOOTER TELLS THE TRUTH ABOUT *THIS* TABLE (Dan 2026-09-07,
+                item 9) ──────────────────────────────────────────────────────
+             "THE 'CHAIR OPEN, TAKE A SEAT' SHOULD BE ON THE BOTTOM, WHERE
+              'SPECTATING, TAP AN OPEN SEAT TO JOIN' IS, BUT THESE AREN'T TRUE
+              AND THE DISPLAYS NEED TO BE DYNAMIC AND SMART... THERE CURRENTLY
+              ISN'T A SEAT OPEN IN THIS GAME, SO IT SHOULD SAY JOIN THE WAITING
+              LIST"
+
+             Two separate wrongs in his screenshot. CashClusterHUD's floating
+             "Chair Open: Take A Seat" was computing `chairOpen` across every
+             table in the CLUSTER, so a free seat two tables away invited him
+             to sit at a full one — that is fixed at its source in
+             CashClusterHUD. And this line invited a tap on an open seat
+             without ever checking whether one existed.
+
+             Both said their piece at once, in opposite corners, and neither
+             was about the table on screen. So there is one line now, at the
+             bottom, and it counts the seats in front of it. */
+          <div
+            className="spectator-footer-bar"
+            data-state={spectatorSeatState}
+            data-testid="spectator-footer-bar"
+          >
             <span className="spectator-footer-bar__label">
-              {/* An MTT table has no seat a spectator may take — `canSit` is
-                  false for every one of them (see the SeatSlot `canSit` prop
-                  below), so telling them to tap one is an instruction the same
-                  screen refuses. Only a table that actually sells seats gets
-                  the invitation. */}
-              {tableState.isTournament && !seatFirstBuyIn
-                ? 'Spectating'
-                : /* Seat-first: carry the live fill state so a spectator can
-                     see how close the game is to firing without counting
-                     avatars (Dan 2026-08-28 polish pass). The roster
-                     live-sync keeps players[] current pre-start, so this
-                     number moves the moment a seat sells. */
-                  seatFirstBuyIn
-                  ? `Spectating, Tap An Open Seat To Join · ${tableState.players.filter(Boolean).length} Of ${seatFirstBuyIn.seats} Seats Taken`
-                  : 'Spectating, Tap An Open Seat To Join'}
+              {spectatorSeatState === 'no-seats-here' ? (
+                /* A button, not a sentence: "join the waiting list" is an
+                   action he asked for, and the waitlist modal is already
+                   built and wired (handleOpenWaitlist). Telling a player a
+                   table is full and leaving them to find the hamburger menu
+                   is how the old copy ended up lying instead. */
+                <button
+                  type="button"
+                  className="spectator-footer-bar__cta"
+                  onClick={handleOpenWaitlist}
+                >
+                  {heroWaitlistPosition != null
+                    ? `On The Waiting List · #${heroWaitlistPosition} Of ${waitListPlayers.length}`
+                    : 'Table Full · Join The Waiting List'}
+                </button>
+              ) : (
+                <>
+                  {/* An MTT table has no seat a spectator may take — `canSit`
+                      is false for every one of them (see the SeatSlot `canSit`
+                      prop below), so telling them to tap one is an instruction
+                      the same screen refuses. Only a table that actually sells
+                      seats gets the invitation. */}
+                  {tableState.isTournament && !seatFirstBuyIn
+                    ? 'Spectating'
+                    : /* Seat-first: carry the live fill state so a spectator
+                         can see how close the game is to firing without
+                         counting avatars (Dan 2026-08-28 polish pass). The
+                         roster live-sync keeps players[] current pre-start, so
+                         this number moves the moment a seat sells. */
+                      seatFirstBuyIn
+                      ? `Spectating, Tap An Open Seat To Join · ${tableState.players.filter(Boolean).length} Of ${seatFirstBuyIn.seats} Seats Taken`
+                      : 'Spectating, Tap An Open Seat To Join'}
+                </>
+              )}
             </span>
           </div>
         ) : !tableState.players.some((p) => p?.isHero) &&

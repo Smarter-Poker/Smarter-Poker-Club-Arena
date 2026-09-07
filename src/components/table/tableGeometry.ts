@@ -486,22 +486,25 @@ export const BOARD_CHIP_GAP_WIDTH_PCT = 0.2;
  * type rather than a copy of a declaration, which is why the band also carries
  * MARKER_FELT_TEXT_GAP_WIDTH_PCT on top.
  */
-/* WIDENED 2026-09-07 WITH THE MASTHEAD IT DESCRIBES.
+/* TALLER, NOT WIDER (2026-09-07, with the masthead it describes).
    Dan, 7A: the club + union line must never be abbreviated, so
-   `.table-brand__line--identity` in TablePage.css is allowed to reach 145% of
-   the masthead box and to wrap instead of ellipsizing. This band is the dealer
-   button's keep-out for exactly that printing, and the comment above has
-   always said: change one, change both.
+   `.table-brand__line--identity` in TablePage.css wraps instead of
+   ellipsizing. This band is the dealer button's keep-out for exactly that
+   printing, and the comment above has always said: change one, change both.
 
-   `widthOfFeltPct` and `maxWidthPx` therefore carry the same 145% (62 -> 90,
-   260 -> 377), and `lines` goes 2 -> 3: the identity row can now occupy two
-   of them on a long name, and the puck must clear the printing at its
-   TALLEST, not at its usual. Over-reserving costs a puck a few degrees of
-   rotation it already knows how to find; under-reserving parks it on a club's
-   name. */
+   `lines` therefore goes 2 -> 3 — a long club and union name occupies two of
+   them and the puck must clear the block at its TALLEST, not at its usual.
+
+   The WIDTH deliberately does not move. It was tried (62 -> 90%, 260 -> 377px,
+   matching a 145% identity row) and reverted: this band is what the button
+   walks around, so widening it pushed the puck to 0.44 of its seat's run to
+   the middle against the 0.40 ceiling in tests/unit/chipRail — which is Dan's
+   item 10 ("the button is not even close to the player who has the button")
+   made worse by the fix for his item 7A. The name wraps inside the existing
+   box instead, and nothing else on the felt has to move. */
 export const FELT_TEXT_BAND = {
-  widthOfFeltPct: 90,
-  maxWidthPx: 377,
+  widthOfFeltPct: 62,
+  maxWidthPx: 260,
   centerOfFeltYPct: 58,
   logoAspect: 900 / 116,
   logoToMetaGapPx: 6,

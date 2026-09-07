@@ -73,7 +73,7 @@
 }
 
 .hero-vpip--edge .hero-vpip__figure {
-  color: #ffc857;
+  color: var(--sp-text-bright);
 }
 
 .hero-vpip--under {

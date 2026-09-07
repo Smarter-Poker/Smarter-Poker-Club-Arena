@@ -806,7 +806,7 @@
   border-radius: 999px;
   background: rgba(255, 176, 32, 0.14);
   border: 1px solid rgba(255, 176, 32, 0.42);
-  color: #ffc45a;
+  color: var(--sp-text-bright);
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -1111,7 +1111,7 @@
 }
 
 .table-tab-bar__tab--decision .table-tab-bar__tab-name {
-  color: #fbbf24;
+  color: var(--sp-text-bright);
   letter-spacing: 0.04em;
 }
 

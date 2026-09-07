@@ -1,0 +1,392 @@
+# The band-aid register
+
+**Opened 2026-09-07.** The rule that created it is CLAUDE.md **10.12 — no
+band-aids**. Every row here is a piece of machinery that exists because
+something upstream does not work. Each one is DEBT with a named root fix, and
+**deleting the band-aid is part of that fix**.
+
+A real poker room pays the winner when the hand ends. Everything on this page
+is the platform failing to do that and something else tidying up afterwards.
+
+> Nothing here may be closed by making the band-aid better, more frequent, or
+> better instrumented. It closes when the live path cannot produce the wrong
+> outcome and the job is **deleted**.
+
+---
+
+## What this costs today, measured
+
+All figures read from production on 2026-09-07 over the **last 7 days** unless
+stated.
+
+**Money paid by repair machinery instead of by the engine:**
+
+| payout `source`       |    rows |         chips | events | median lateness | worst    |
+| --------------------- | ------: | ------------: | -----: | --------------- | -------- |
+| `reconcile`           |     342 |     32,849.99 |    191 | **6.3 hours**   | 84 days  |
+| `overlay_backpay`     |     173 |     14,596.70 |     40 | **8.4 days**    | 11 days  |
+| `unclassified`        |      32 |        161.30 |     15 | **105 days**    | 117 days |
+| `late_reg_adjustment` |      10 |        532.55 |      6 | 0 min           | 0 min    |
+| `spin_backpay`        |       1 |          6.40 |      1 | 25 min          | 25 min   |
+| **total**             | **558** | **48,146.94** |        |                 |          |
+
+Against the correct path — `structure`, 77,260 rows / 4,515,971.30 chips — that
+is **0.7% of payouts and 1.1% of the money**, and every one of those players
+waited. The median MTT/Spin winner in that set waited **six hours**.
+
+**How often the engine gets it wrong:** 74,544 tournaments completed; **108
+needed the reconciler** — about **1 in 690**. Split by shape:
+
+- **69 events / 27,807.56 chips** — the engine paid SOME places and stopped.
+- **39 events / 3,864.94 chips** — the engine paid **nothing at all**.
+
+**Two hypotheses tested and rejected**, so nobody re-tests them:
+
+- _The :55 maintenance freeze._ 3.7% of reconciled events ended in the
+  :53–:59 window against a 3.2% baseline. No signal.
+- _The escrow refusing._ Only **4 of 191** reconciled events carry an
+  `escrow_short` alert.
+
+**Still owed right now:** 7 open `tournament_obligations`, **432.17 chips** —
+360.00 of which is item #11 below, and it is Dan's decision, not a defect.
+
+**Repair jobs that fired in the last 7 days** (each fire = a player served
+wrongly and something else cleaning up):
+
+| repair                                                 | fires 7d | newest      |
+| ------------------------------------------------------ | -------: | ----------- |
+| `fn_tournament_payout_reconcile` alerts                |      139 | 09-07 00:33 |
+| `FeeReconciler.bbj_unlinkable`                         |      114 | 09-06 03:00 |
+| `FeeReconciler.prize_disbursement`                     |      111 | 09-07 12:05 |
+| `FeeReconciler.satellite_conservation`                 |       52 | 09-07 17:08 |
+| `drift_incident: quick_reconcile ledger_write_failure` |       55 | 09-07 00:05 |
+| `fn_rake_repair_unbanked`                              |       22 | 09-07 08:52 |
+
+**Scheduled surface:** 127 active `cron.job` rows — **29 repair-shaped**, 27
+monitor-shaped, 35 housekeeping, the rest product.
+
+**Function surface: 50 band-aid-shaped functions live in `public` today**, 15 of
+them `backpay`/`backfill`. `node scripts/ci/check-no-new-band-aids.mjs --all`
+lists the 27 that this register does not yet have a row for, among them:
+
+```
+fn_backpay_hu_winner_shortfalls        fn_ca_backpay_guarantee_shortfalls
+fn_backpay_spin_unpaid_winners         fn_ca_overlay_shortfall
+fn_backpay_tournament_rake_attribution fn_ca_repair_write_failure
+fn_repair_seat_first_games             fn_repair_tournament_rake_attribution
+fn_backfill_unranked_survivors         ca_repair_hand_player_stat_money
+fn_backfill_rake_attributions          fn_club_table_daily_catchup
+```
+
+**And the three Dan named himself.** He said _"LIKE THE BOMB POTS NOT PAYING OUT
+OR HAVING ISSUES"_. Bomb pots have **three** separate band-aids:
+
+```
+fn_backfill_bomb_pot_award_units
+fn_backfill_bomb_multi_winner_units
+fn_ca_bomb_pot_catchup
+```
+
+Three plasters on one wound is the whole argument for 10.12. A bomb pot that
+paid correctly the first time would need none of them.
+
+---
+
+## TIER 1 — money band-aids. These die first.
+
+### 1. `fn_tournament_payout_reconcile` + `ca-payout-sweep-hourly`
+
+**What it is.** An hourly sweep that recomputes every completed tournament's
+payout structure and pays whatever the engine did not. It is the single largest
+band-aid on the platform: **342 payouts, 32,849.99 chips, 191 events in 7 days**,
+median 6.3 hours after the player finished.
+
+**Root cause — two, both unfixed.**
+
+- _Partial settle_ (69 events, 27,807.56 chips): the engine pays place 1..N and
+  stops. The settle loop is not atomic — a failure part-way leaves the earlier
+  credits committed and the rest unwritten, and nothing retries **inside** the
+  settle.
+- _No settle at all_ (39 events, 3,864.94 chips): the event reaches COMPLETED
+  with zero payout rows.
+
+**The hard fix.** The settle must be one transaction that either pays every
+place or pays none, and it must be **restartable from its own record** rather
+than from a sweep: an obligation row per place written _before_ any credit,
+then credits driven from those rows, so a crash resumes exactly where it
+stopped on the engine's next tick. `tournament_obligations` already exists and
+already carries `amount_owed` / `amount_paid` — the settle does not drive from
+it.
+
+**Delete when:** `tournament_payouts` records zero rows with
+`source = 'reconcile'` for 30 consecutive days.
+
+---
+
+### 2. `fn_pay_backed_payout_shortfalls` + `ca-pay-backed-payout-shortfalls-hourly`
+
+**What it is.** An hourly job that pays shortfalls the settle path refused.
+
+**It is also broken.** It calls a 59 ms function inside its `WHERE` against
+112,298 COMPLETED tournaments — about 110 minutes of work under a 120-second
+`statement_timeout`. Its `LIMIT` stops early only once 500 rows _pass_, so **it
+succeeds when a lot is owed and times out when little is** — the residual
+shortfalls are exactly the ones it can never reach. Measured failures in 7 days:
+6 of 135 runs, all `canceling statement due to statement timeout`.
+
+**Root cause.** The settle refuses to pay from a bank it believes is short. Two
+of the three known cases so far were the bank being wrong, not short (see #4).
+
+**The hard fix.** #1 above removes the need. Until then the predicate must be an
+indexed column, not a function call.
+
+**Delete when:** #1 lands and `tournament_obligations` has no open row for 30 days.
+
+---
+
+### 3. `fn_backpay_unfinalised_bounty_pools` + `ca-bounty-backpay-hourly`
+
+**What it is.** Pays out bounty pools that were funded and never distributed.
+**9 of 138 runs failed in 7 days**, one with
+`fn_finalize_bounty_pool: residual of 2310.00 ... in tournament 3f19bd70` — so
+the band-aid itself is leaving 2,310.00 chips undelivered.
+
+**Root cause.** A bounty event funds a SECOND pool from the same buy-in, and the
+settle path finalises the prize pool without finalising the bounty pool. 34 of
+38 affected events were completed by the stuck-tournament watchdog, which
+settles rake and never touches bounties.
+
+**The hard fix.** One settle, both pools, one transaction. A tournament is not
+COMPLETED until every pool it funded is distributed — enforced by a constraint,
+not by a job.
+
+**Delete when:** no completed bounty event holds an undistributed bounty pool
+for 30 days.
+
+---
+
+### 4. `overlay_backpay` (guarantee overlays paid late)
+
+**What it is.** 173 payouts / 14,596.70 chips across 40 events, **median 8.4
+days late**. A guarantee overlay is the house topping a pool up to the promised
+guarantee; these are events where that money arrived more than a week after the
+player won it.
+
+**Root cause.** The overlay is not funded into the prize bank at settle time, so
+the structure cannot be paid in full and the remainder waits for a later pass.
+
+**The hard fix.** The overlay is funded **when the guarantee is declared short —
+at the moment the event closes registration**, not after settlement. An event
+whose pool is below its guarantee at close is either topped up then or does not
+start.
+
+**Delete when:** `overlay_backpay` records zero rows for 30 days.
+
+---
+
+### 5. `fn_rake_repair_unbanked` + `fn_redrive_unbanked_rake` (two jobs, 15-minutely and quarter-hourly)
+
+**What it is.** Rake taken from a pot that never reached a bank. The alert says
+it plainly: _"Recovered N unbanked rake hand(s) ... (engine did not survive to
+bank them)"_. **22 fires in 7 days, newest today 08:52.**
+
+**Root cause, named.** The engine takes rake from the pot and banks it in a
+SEPARATE step. Between the two it can die — and with an hourly `:55` restart it
+reliably will.
+
+**The hard fix.** Taking the rake and banking it are one write. The pot cannot
+be reduced by a fee that has not landed; if the bank write fails the pot is not
+raked. This is a two-phase problem with a one-phase answer available: bank the
+fee in the same statement that removes it from the pot.
+
+**Delete when:** `I7_raked_hand_never_banked` returns zero for 30 days with the
+repair job **off**.
+
+---
+
+### 6. `FeeReconciler.prize_disbursement` — 111 fires in 7 days
+
+**What it is.** A daily-ish critical saying _"N completed tournament(s) in the
+last 24h paid out more than their prize pool"_. This is the opposite failure:
+the platform paying out **more** than it collected.
+
+**Root cause: not yet named.** It has not been investigated. It is the highest
+priority unowned item on this page, because over-payment cannot be recovered
+from a player (10.9 rule 3) — every occurrence is a permanent loss.
+
+**The hard fix.** Unknown until read. The likely shape is the same as #1: a
+place paid twice by two paths that do not see each other.
+
+---
+
+### 7. `FeeReconciler.satellite_conservation` — 52 fires in 7 days, newest 17:08 today
+
+**What it is.** Completed satellites whose chips in do not equal chips out.
+
+**Root cause: not yet named.**
+
+**The hard fix.** A satellite seat award and the pool transfer that funds it
+must be one transaction, asserted at commit.
+
+---
+
+### 8. `credit-stalled-seat-first-stacks` — **runs every minute, 10,069 times in 7 days**
+
+**What it is.** A cron that credits a seat's first stack when the seat exists
+and the chips never arrived. Money, every minute, for ever.
+
+**Root cause.** Seating and funding the seat are separate writes.
+
+**The hard fix.** `atomic_table_buyin` already exists. A seat row must not be
+creatable without its stack in the same transaction — a `CHECK`/trigger, not a
+sweep.
+
+**Delete when:** the job reports zero credits for 30 days.
+
+---
+
+### 9. `fn_spin_sweep_unbooked` (5-minutely) and `spin_repair_missing_multiplier` (15-minutely)
+
+**What it is.** Spins whose entry was never booked into the reserve, and spins
+whose multiplier was never written. **2,014 and 671 runs in 7 days.**
+
+**Root cause.** `fn_spin_book_entry` runs when the last seat is paid, in a
+different transaction from the seat payment, and can be lost to a deadlock —
+the code comments record 1–3 deadlocks a day from exactly this.
+
+**The hard fix.** Book the entry in the transaction that fills the last seat.
+
+**Related and already fixed today:** the escrow could not see a Spin's reserve
+draw because the derived `chip_ledger` leg went missing (1 of 18,318). It now
+reads `spin_reserve_ledger` directly — see
+`docs/changelog/2026-09-07-a-spin-prize-comes-from-the-reserve.md`. **That one
+is a root fix, not a band-aid**, and it is the model for this page: the escrow
+stopped depending on a leg that could be absent.
+
+---
+
+### 10. `unclassified` payouts — 32 rows, median 105 days late
+
+**What it is.** Payout rows whose `source` nobody set. A money row with no
+provenance is unauditable by definition.
+
+**The hard fix.** `tournament_payouts.source` becomes `NOT NULL` with a
+`CHECK` against the known list. A path that cannot name itself cannot pay.
+
+---
+
+### 11. Bubble protection is promised out of a pool already promised in full — **Dan's call**
+
+**Not a band-aid. A promise the platform makes twice**, and the reason 360.00
+of the 432.17 currently owed is owed.
+
+Both _Sunday $200 Deep Stack_ events on 2026-09-06/07:
+
+| event      | prize pool |  paid out | of which bubble protection | winner still owed |
+| ---------- | ---------: | --------: | -------------------------: | ----------------: |
+| `a449e853` |  28,640.00 | 28,640.00 |                     180.00 |            180.00 |
+| `f7412940` |  52,920.00 | 52,920.00 |                     180.00 |            180.00 |
+
+The payout structure allocates **100% of the pool**. Bubble protection then pays
+the first player out of the money **one buy-in (180.00) from that same pool**.
+The arithmetic cannot close, and the shortfall always lands on the last place
+paid — which is always **first place**. Two winners, 180.00 each, twice in one
+weekend.
+
+**This is not fixable by a job and no job should try.** It is a pricing
+decision, and 10.9 says pricing is Dan's:
+
+- **(a) the house funds bubble protection.** It is a marketing promise; the
+  house pays for it. Players' 100% stays 100%. Cost: one buy-in per event that
+  reaches the bubble.
+- **(b) the structure is computed on `pool − bubble_protection`.** The pool pays
+  for it and every paid place is fractionally smaller. Costs the house nothing;
+  the advertised structure has to say so.
+
+Either is one line at the source. Until Dan picks one, the two winners stay
+180.00 short and the `fn_settle_tournament_obligation` alerts describing it stay
+open — deliberately, because they are the accurate description.
+
+**A law already anticipates this**: `docs/laws.d/a-bank-that-is-short-pays-what-it-holds.md`
+ends _"Who funds bubble protection — the 180.00 the pool promises twice — is
+Dan's decision under 10.9 and is deliberately not made here."_
+
+---
+
+## TIER 2 — state and denormal repairs
+
+These do not move money directly, so they hide behind the money ones. Every one
+still means a live write is wrong.
+
+| job                                                 | function                             | cadence   | what it repairs                                 | the hard fix                                                       |
+| --------------------------------------------------- | ------------------------------------ | --------- | ----------------------------------------------- | ------------------------------------------------------------------ |
+| `reconcile-tournament-denormals`                    | `fn_reconcile_tournament_denormals`  | **1 min** | denormalised tournament counters                | derive them, or write them in the same transaction as their source |
+| `ca-auto-reconcile-tick`                            | `fn_ca_auto_reconcile_tick`          | **1 min** | ledger drift                                    | the writes that drift are the defect                               |
+| `sweep-seatless-late-registrants`                   | `fn_sweep_seatless_late_registrants` | **1 min** | late registrants who got no seat                | registration and seating in one transaction                        |
+| `union-seat-provenance-heal`                        | `fn_heal_seat_provenance`            | 5 min     | seat rows with no provenance                    | provenance written with the seat, `NOT NULL`                       |
+| `ca-quick-reconcile-5m`                             | `fn_ca_quick_reconcile`              | 5 min     | ledger imbalance (55 write-failure drifts/7d)   | fix the failing ledger write                                       |
+| `ca-escrow-ttl-sweep-10m`                           | `fn_ca_escrow_ttl_sweep`             | 10 min    | escrow rows left open                           | close the escrow in the settle transaction                         |
+| `ca-promo-accrual-retry-10m`                        | `fn_ca_retry_promo_accruals`         | 10 min    | promo accruals that failed                      | accrue in the transaction that earned it                           |
+| `ca-bbj-repair-unbanked-15m`                        | `fn_bbj_repair_unbanked`             | 15 min    | BBJ drops taken and not banked                  | same one-write fix as #5                                           |
+| `spin_repair_missing_multiplier`                    | `fn_spin_repair_missing_multiplier`  | 15 min    | spins whose multiplier was never written        | write it in the transaction that draws the prize                   |
+| `bbj-rollup-catchup`                                | `fn_bbj_rollup_catchup`              | hourly    | rollups that missed rows                        | roll up from an outbox that cannot lose a row                      |
+| `club-rake-rollup-catchup`                          | `fn_club_rake_rollup_catchup`        | hourly    | rollups that missed rows                        | same                                                               |
+| `ca-ledger-day-manifest`                            | `fn_ca_ledger_day_manifest_backfill` | daily     | manifest days never written                     | write the manifest for a day when the day closes                   |
+| `sp_resolve_settled_prize_alerts_15m`               | —                                    | 15 min    | alerts about money that has since settled       | a check that resolves its own alerts (done today for two of them)  |
+| `reconcile-club-table-counts-nightly`               | `fn_reconcile_club_table_counts`     | nightly   | club table counts                               | count from the source, do not store a second copy                  |
+| `reconcile-club-member-daily-profit`                | —                                    | nightly   | member profit                                   | same                                                               |
+| `reconcile-ledger-integrity-6h`                     | `reconcile_ledger_nightly`           | 6 h       | ledger vs stored balances                       | the writes that drift are the defect                               |
+| `ca-escalate-reconcile-criticals-hourly`            | `fn_ca_escalate_reconcile_criticals` | hourly    | criticals nobody actioned                       | Tier 3: a check that clears itself needs no escalator              |
+| `flag-garbage-tournaments`                          | `fn_flag_garbage_tournaments`        | nightly   | tournaments that should never have been created | refuse to create them                                              |
+| `ca-pgrst-reload-if-stale`, `pgrst-reload-watchdog` | —                                    | 5/15 min  | PostgREST schema cache not reloading            | the DDL policy in CLAUDE.md §2 — one transaction per change        |
+
+---
+
+## TIER 3 — monitors that must never be mistaken for a fix
+
+27 scheduled checks exist. They may stay as nets **only where a root fix has
+landed and the net is expected to find nothing** (10.11 rule 5). None of them
+closes an item on this page.
+
+Two were repaired today so they can no longer lie:
+
+- `fn_payout_guarantee_check` — raised a critical alert and **could never close
+  one**. Five of its six open alerts were false; the reconciler acting on one of
+  them tried to pay 23.75 twice. It now requires an undistributed pool and
+  resolves its own alerts. Open `earner_not_paid`: **0**.
+- `fn_rake_bbj_audit` — 24 criticals open since 08-31 while its invariants had
+  returned zero for 21 hours. Now clears itself. Open: **0**.
+
+**The same defect is probably in most of the other 25.** Any check that raises
+into `financial_alerts` and has no resolve path is on this list by default;
+220 alerts are open right now and the two audited today were 100% and 83% stale.
+
+---
+
+## What is NOT a band-aid, so nobody deletes the product
+
+Scheduled work whose schedule **is** the thing: tournament starts and blind
+levels, the `:55` maintenance break, retention pruning
+(`sp_prune_hand_history`, `cron-history-retention-daily`, and the rest),
+snapshots for reporting (`ca-supply-snapshot`, `index-usage-snapshot`),
+digests and reminders, `managed-game-schedules`, `home-*` scheduling,
+leaderboard settlement on its published cadence.
+
+---
+
+## The order to work in
+
+1. **#1 the settle transaction.** It is 68% of the money and it makes #2 and
+   most of #4 unnecessary.
+2. **#6 over-payment.** Unowned, unread, and the only class that cannot be
+   recovered from the player.
+3. **#5 rake banked in one write** — fires daily, cause already named, small.
+4. **#8 seat and stack in one transaction** — a money cron running every minute.
+5. **#3 / #7 / #9** — one transaction each, same shape.
+6. **Tier 2**, in cadence order: anything running every minute first.
+7. **Tier 3**: give every check a resolve path, then delete the ones whose cause
+   is fixed.
+
+Each item is finished when the live path cannot produce the wrong outcome, a
+test pins the cause, the damage is settled through the platform's own idempotent
+path, **and the job is gone from `cron.job`**.

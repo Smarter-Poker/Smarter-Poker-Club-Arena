@@ -16,20 +16,27 @@
  *              projectile in the whole set (spec.flight.tumble, not this
  *              rig: the player's own `thr__proj--tumble` class spins the
  *              box, contract instructions, never hand-rolled here)
- *   333        LAND: the dice arrive lower-left and vanish
- *   367        SWAP: a skin-tone HAND, 1.3 u tall, is already drawn at ~60%
+ *   200        LAND: the dice arrive lower-left and vanish
+ *   267        SWAP: a skin-tone HAND, 1.3 u tall, is already drawn at ~60%
  *              scale, cupping the dice at its base, covering the avatar's
  *              LEFT half
- *   ~400-5600  the hand shakes in a repeating ~1.4 s cycle: upright hold,
+ *   ~300-5500  the hand shakes in a repeating ~1.4 s cycle: upright hold,
  *              dip, turn palm-down and jiggle, low hold, shake, loop. THIS
  *              is the reference's own words for the pattern; the avatar's
  *              right half, "BB" badge, name and stack stay visible the
  *              whole time.
- *   5600       CUT
+ *   5500       CUT
  *
- * Everything in the Payload is `animation-delay` from LANDING, and LANDING
- * IS `flight.ms` (233 = the raw table's land-ms-from-L, 333, minus the
- * 100 ms the dice spend spawning at the thrower - contract rule 1). The
+ * EVERY MS ABOVE IS CORRECTED - the catalogue's raw number minus the 133 ms
+ * this throw's `L` sits before the flight (THROW 8's `L` is the spawn frame;
+ * see the warning above `## Throws` in pokerbros-reference-video-1.md). The
+ * raw table reads 333 / 367 / 5600; this block used to quote those, which put
+ * every line 133 ms later than the frame it names.
+ *
+ * Everything in the Payload is `animation-delay` from LANDING, and LANDING IS
+ * `flight.ms` = 200, the flight's own measured duration. It is NOT 233: that
+ * was this header's earlier arithmetic (raw land 333 minus a 100 ms spawn),
+ * and it counted twelve frames where the capture shows eleven intervals. The
  * player's own arrival CSS (`thr__payload--land`) supplies the hand's own
  * pop-in; this rig only owns the loop.
  *

@@ -63,7 +63,23 @@ export interface ThrowableFlight {
 }
 
 export interface ThrowablePayload {
-  /** Width of the payload's own box in avatar widths. */
+  /**
+   * The MEASURED width of this item's performance on the target, in avatar
+   * widths - the reference's own number, kept for the record and for review.
+   *
+   * IT IS DECLARATIVE. Nothing reads it, and changing it changes nothing on
+   * screen. `ThrowablePlayer.css` gives every payload the same box,
+   * `calc(var(--thr-u) * 3)`, and every rig draws into the same
+   * `-150 -150 300 300` viewBox - so 100 UNITS IS ONE AVATAR WIDTH in every
+   * rig, whatever this says. A rig scales its artwork by writing units, never
+   * by setting this.
+   *
+   * It used to be documented as "width of the payload's own box", which reads
+   * as configuration and is how an author ends up sizing artwork against a
+   * number that does nothing. If you want the box to change, change the CSS -
+   * and expect to re-measure all eighteen rigs, because their geometry is
+   * built on the 100-units-per-avatar-width constant.
+   */
   sizeU: number;
   /** Where the payload's centre sits relative to the target avatar. */
   anchor: 'face' | 'above' | 'left' | 'right';
@@ -131,17 +147,28 @@ export interface ThrowableSpec {
 export const THROWABLE_GRAMMAR = {
   spawnMs: { min: 0, max: 400 },
   flightMs: { min: 133, max: 400 },
-  /** ms from landing. */
   /**
-   * ms from landing. The floor was 1800 until 2026-09-06, and that number was
-   * derived from a sample that did not include the SHORTEST item in the
-   * reference. The clown/snowman gag runs 600 to 2233 from its own launch -
-   * 1633 ms on target - and the plan's own life table lists it at 2.23 s
-   * alongside the glove at 2.07 and the bomb at 2.0. A bound that excludes
-   * three measured items is the bound that is wrong, not the items, so it is
-   * 1600 now. Raising it again would fail those three.
+   * ms from landing, and THAT is the whole story of this bound.
+   *
+   * It has been wrong twice, 1800 then 1600, and both times for the same
+   * reason: it was read off the plan's life table, which measures SPAWN TO
+   * CLEAN, while this bound governs LANDING TO CLEAN. The two differ by
+   * spawn + flight, and for the shortest items that is most of the number.
+   * The bomb is the worked example - the life table says 2.0 s, and its
+   * payload is 1566, because 167 ms of spawn and 267 ms of flight happen
+   * before the payload exists at all. 2000 - 434 = 1566, exactly.
+   *
+   * So the floor is 1566 now, and it is not a judgement: it is the smallest
+   * `payload.ms` in the registry, which is the bomb's. `tests/
+   * throwables-play-the-measured-grammar.law.test.ts` asserts that equality,
+   * so the bound cannot drift away from the data again - a shorter item makes
+   * the test fail and the bound has to be re-derived deliberately rather than
+   * nudged until the new rig fits.
+   *
+   * If you are about to raise this to make a spec pass: the spec is measured
+   * and the bound is not. Move the bound.
    */
-  payloadMs: { min: 1600, max: 5800 },
+  payloadMs: { min: 1566, max: 5800 },
   /** From first pixel to clean, at speed 1. */
   totalMs: { min: 2000, max: 6500 },
   /** Blink-and-pop arrival, from the reference's 2-8 frame settle. */

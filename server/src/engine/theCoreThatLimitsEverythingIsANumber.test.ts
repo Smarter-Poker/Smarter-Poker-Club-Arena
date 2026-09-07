@@ -18,11 +18,12 @@
  * Both are why a 27-second cluster pass read as a database problem for six
  * measurements before the engine was even a suspect.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { equityGovernor, scaleForLoopDelay } from './EquityLoadGovernor.js';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => readFileSync(join(here, p), 'utf8');
@@ -115,6 +116,87 @@ describe('the number leaves the process', () => {
     const stopFn = SERVER.indexOf('async stop(): Promise<void> {');
     expect(start).toBeGreaterThan(0);
     expect(stopFn).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 2026-09-07, found while verifying the metric above was live. It was not.
+ * `/health` and `/metrics` had been publishing
+ *
+ *     equityGovernor: { p50Ms: 0.000511, p99Ms: 0.000511, scale: 1 }
+ *
+ * frozen to the digit across reads seconds apart, on an engine with 137 hands
+ * in flight. 0.000511 ms is 511 nanoseconds, and 511 is what Node answers to
+ * `percentile()` on a histogram holding ZERO samples - proven locally:
+ * `never-enabled p50 511 p99 511 count 0`.
+ *
+ * Both callers ran on the same one-second cadence: the boot timer calling
+ * `sample()` directly, and the horse equity path calling `current()` thousands
+ * of times a second. `current()` held the elapsed-time check; `sample()` held
+ * none. Once the two drifted into phase, whichever ran second read a histogram
+ * the first had emptied a millisecond earlier and published the emptiness.
+ *
+ * `scaleForLoopDelay(0.000511)` is 1, so the governor stopped shedding load on
+ * the one core, and both engine-core alerts became unfireable. A metric
+ * reaching zero meant the opposite of success.
+ */
+describe('a reading that could not be taken is not published as zero', () => {
+  /* The server suite runs with EQUITY_GOVERNOR=off, so the shared singleton
+     holds no histogram and cannot answer any of this. These two want a live
+     one: stub the env, drop the module from the cache, and import a fresh
+     governor that really is watching this process's loop. */
+  const liveGovernor = async () => {
+    vi.stubEnv('EQUITY_GOVERNOR', 'on');
+    vi.resetModules();
+    const mod = await import('./EquityLoadGovernor.js');
+    return mod.equityGovernor;
+  };
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('refuses to read a histogram it has just reset, whatever the caller', async () => {
+    const gov = await liveGovernor();
+    expect(gov.snapshot().enabled).toBe(true);
+    // Let the loop record something worth reading.
+    await new Promise((r) => setTimeout(r, 150));
+    const base = Date.now();
+    gov.sample(base);
+    const first = gov.snapshot(base).p50Ms;
+    expect(first).toBeGreaterThan(0.01);
+
+    // The second sampler, arriving inside the same window - the timer landing
+    // just after the equity path, which is the production shape.
+    gov.sample(base + 5);
+    expect(gov.snapshot(base + 5).p50Ms).toBe(first);
+
+    // And arriving a full window later with nothing recorded in between, which
+    // is the same emptiness wearing a legal clock.
+    gov.sample(base + 5_000);
+    expect(gov.snapshot(base + 5_000).p50Ms).toBe(first);
+  });
+
+  it('never publishes the empty-histogram sentinel as a loop delay', async () => {
+    const gov = await liveGovernor();
+    await new Promise((r) => setTimeout(r, 150));
+    const base = Date.now();
+    for (const at of [base, base + 1, base + 2_000, base + 2_001, base + 4_000]) {
+      gov.sample(at);
+      const snap = gov.snapshot(at);
+      // 511ns / 1e6. If this ever comes back, the governor is reading an empty
+      // histogram again and the engine has silently lost its load shedding.
+      expect(snap.p50Ms).not.toBeCloseTo(0.000511, 6);
+      expect(snap.p99Ms).not.toBeCloseTo(0.000511, 6);
+    }
+  });
+
+  it('keeps one authority for when a reading exists', () => {
+    const sample = sliceMethod(GOV, 'sample(now: number = Date.now()): number {');
+    const current = sliceMethod(GOV, 'current(now: number = Date.now()): number {');
+    // The window check lives in sample(), where the reset is.
+    expect(sample).toContain('now - this.sampledAt < SAMPLE_EVERY_MS');
+    expect(sample).toContain('this.histogram.count === 0');
+    // and current() no longer keeps a second copy of it that a direct caller
+    // of sample() can walk straight past.
+    expect(current).not.toContain('SAMPLE_EVERY_MS');
   });
 });
 

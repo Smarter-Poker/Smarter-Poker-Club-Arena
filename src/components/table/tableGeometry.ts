@@ -486,14 +486,27 @@ export const BOARD_CHIP_GAP_WIDTH_PCT = 0.2;
  * type rather than a copy of a declaration, which is why the band also carries
  * MARKER_FELT_TEXT_GAP_WIDTH_PCT on top.
  */
+/* WIDENED 2026-09-07 WITH THE MASTHEAD IT DESCRIBES.
+   Dan, 7A: the club + union line must never be abbreviated, so
+   `.table-brand__line--identity` in TablePage.css is allowed to reach 145% of
+   the masthead box and to wrap instead of ellipsizing. This band is the dealer
+   button's keep-out for exactly that printing, and the comment above has
+   always said: change one, change both.
+
+   `widthOfFeltPct` and `maxWidthPx` therefore carry the same 145% (62 -> 90,
+   260 -> 377), and `lines` goes 2 -> 3: the identity row can now occupy two
+   of them on a long name, and the puck must clear the printing at its
+   TALLEST, not at its usual. Over-reserving costs a puck a few degrees of
+   rotation it already knows how to find; under-reserving parks it on a club's
+   name. */
 export const FELT_TEXT_BAND = {
-  widthOfFeltPct: 62,
-  maxWidthPx: 260,
+  widthOfFeltPct: 90,
+  maxWidthPx: 377,
   centerOfFeltYPct: 58,
   logoAspect: 900 / 116,
   logoToMetaGapPx: 6,
   lineHeightPx: 11,
-  lines: 2,
+  lines: 3,
   lineGapPx: 1,
 } as const;
 

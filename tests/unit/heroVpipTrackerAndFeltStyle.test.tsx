@@ -224,33 +224,76 @@ describe('the regular ante reaches the felt', () => {
   /* Dan 2026-09-05: "ALL TABLES NEED TO SEE IF THEY ARE CLASSIC, ACTION OR
      MADNESS ON THEM. IF THEY HAVE AN ANTE OR VPIP REQUIREMENT THAT SHOULD ALSO
      BE ON THE TABLE. AND THE GAME NAME AND BLINDS ARE WAY TOO SMALL FONT." */
-  it('the masthead: big game + blinds, then the style, then the rules row (ante · VPIP floor), then the hand', () => {
+  /* RESTRUCTURED 2026-09-07. Dan, items 6 and 7A-7D, on the shipped result of
+     the block above: the style had its own stacked row, the rules row repeated
+     the ante and added a measurement window, a Bad Beat Jackpot figure had
+     appeared between the stakes and the hand number, and the club and union
+     were being ellipsized to fit the wordmark. The rows and their order are
+     now his: identity, game, VPIP, hand, bomb clock. */
+  it('the masthead: full club + union, then style + game + stakes on ONE line, then VPIP, then the hand', () => {
     const page = read('src/pages/TablePage.tsx');
     // The CASH masthead: the tournament branch above it uses the same row class.
     const brand = page.slice(
       page.indexOf('// Cash tables keep the two-line masthead.'),
       page.indexOf('{/* Dan 2026-08-19 item 15: the pot moved OUT of .table-surface.')
     );
-    // Line 2 is the game and the blinds ALONE - nothing else shares the big row.
-    const levelRow = brand.slice(
-      brand.indexOf('table-brand__line--level"'),
-      brand.indexOf('table-brand__line--style')
+
+    // 7B: ONE line carries style, game and stakes - "ACTION PLO4 2/5".
+    expect(brand).toMatch(
+      /\{tableState\.gameStyle \? `\$\{tableState\.gameStyle\} ` : ''\}\s*\n?\s*\{gameShort\} \{tableState\.blinds \|\| '1\/2'\}/
     );
-    expect(levelRow).toMatch(/\{gameShort\} \{tableState\.blinds \|\| '1\/2'\}/);
-    expect(levelRow).not.toContain('table-brand__ante');
-    expect(levelRow).not.toContain('table-brand__hand');
-    expect(brand).toMatch(/tableState\.gameStyle && \(/);
-    expect(brand).toMatch(/className="table-brand__style">\{tableState\.gameStyle\}/);
-    // The rules row carries the ante and the VPIP floor, and is absent with neither.
-    expect(brand).toMatch(/\(tableState\.ante > 0 \|\| tableState\.vpipFloor != null\) && \(/);
-    expect(brand).toMatch(/Ante \{formatChipFigure\(tableState\.ante\)\}/);
+    // ...with the ante appended to the STAKES, not given a row of its own.
+    expect(brand).toMatch(/anteMode === 'big_blind' \? ' \+ BB Ante' : ' \+ Ante'/);
+    expect(brand).not.toContain('table-brand__line--style');
+    expect(brand).not.toContain('table-brand__ante');
+
+    // 7C: the rules row is VPIP and nothing else - no ante, no hands window.
+    expect(brand).toMatch(/\{tableState\.vpipFloor != null && \(/);
     expect(brand).toMatch(/VPIP \{tableState\.vpipFloor\}% Min/);
-    expect(brand).toMatch(/\$\{tableState\.vpipWindow\} Hands/);
-    // Order: level, style, rules, hand.
+    expect(brand).not.toContain('vpipWindow');
+    expect(brand).not.toContain('formatChipFigure(tableState.ante)');
+
+    // Item 6: the jackpot figure is gone from the felt. It is still on screen
+    // once, in the BAD BEAT JACKPOT pill above the table.
+    expect(brand).not.toContain('table-brand__line--jackpot');
+    expect(brand).not.toContain('Playing For $');
+
+    // 7A: line 1 is the identity row, which opts out of the ellipsis.
+    expect(brand).toContain('table-brand__line--identity');
+
+    // 7D: the bomb clock is last, below everything else.
     const at = (s: string) => brand.indexOf(s);
-    expect(at('table-brand__line--level')).toBeLessThan(at('table-brand__line--style'));
-    expect(at('table-brand__line--style')).toBeLessThan(at('table-brand__line--rules'));
+    expect(at('table-brand__line--identity')).toBeLessThan(at('table-brand__line--level'));
+    expect(at('table-brand__line--level')).toBeLessThan(at('table-brand__line--rules'));
     expect(at('table-brand__line--rules')).toBeLessThan(at('table-brand__line--hand'));
+    expect(page.indexOf('table-brand__line--hand')).toBeLessThan(
+      page.indexOf('table-brand__line--bomb')
+    );
+  });
+
+  it('7A: a club or union name is never abbreviated, on any screen', () => {
+    const css = read('src/pages/TablePage.css');
+    const identity = css.slice(
+      css.indexOf('.table-brand__line--identity {'),
+      css.indexOf('}', css.indexOf('.table-brand__line--identity {'))
+    );
+    // The base row ellipsizes; this one must undo all three parts of that.
+    expect(identity).toMatch(/text-overflow: clip;/);
+    expect(identity).toMatch(/overflow: visible;/);
+    expect(identity).toMatch(/white-space: normal;/);
+    // ...and may exceed the wordmark's box, which is what Dan asked for.
+    expect(identity).toMatch(/max-width: 145%;/);
+  });
+
+  it('7A: the dealer button keep-out was widened with the line it protects', () => {
+    // FELT_TEXT_BAND is the puck's model of this printing. A wider, taller
+    // masthead that the geometry still thinks is 62%/2-lines puts the puck on
+    // a club's name - the exact defect item 10 is about.
+    const geom = read('src/components/table/tableGeometry.ts');
+    const band = geom.slice(geom.indexOf('export const FELT_TEXT_BAND = {'));
+    expect(band).toMatch(/widthOfFeltPct: 90,/);
+    expect(band).toMatch(/maxWidthPx: 377,/);
+    expect(band).toMatch(/lines: 3,/);
   });
 
   it('the VPIP floor comes off the same table columns fn_nit_evictions judges by', () => {
@@ -267,7 +310,6 @@ describe('the regular ante reaches the felt', () => {
     expect(css).toMatch(
       /\.table-page:not\(\.table-page--tournament\) \.table-brand__line--level \{[^}]*font-size: clamp\(0\.6rem, 10\.5cqw, 0\.98rem\);/
     );
-    expect(css).toMatch(/\.table-brand__line--style \{[^}]*font-size: 0\.62rem;/);
     expect(css).toMatch(/\.table-brand__line--rules \{[^}]*font-size: 0\.54rem;/);
     // The box is the container the big line is sized against (it ellipsized at 127px).
     expect(css).toMatch(/\.table-brand \{[^}]*container-type: inline-size;/);
@@ -281,7 +323,6 @@ describe('the regular ante reaches the felt', () => {
     expect(block).toMatch(
       /\.table-page:not\(\.table-page--tournament\) \.table-brand__line--level \{\s*font-size: clamp\(0\.6rem, 10\.5cqw, 0\.9rem\);/
     );
-    expect(block).toMatch(/\.table-brand__line--style \{\s*font-size: 0\.57rem;/);
     expect(block).toMatch(/\.table-brand__line--rules \{\s*font-size: 0\.5rem;/);
     expect(block).toMatch(/\.table-brand__line--hand \{\s*font-size: 0\.4rem;/);
     // and every one of them comes AFTER the 0.44rem line, so it wins.

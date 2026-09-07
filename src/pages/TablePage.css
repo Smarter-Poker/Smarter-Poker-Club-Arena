@@ -1360,8 +1360,13 @@
    of its own. Line 2 is the hand number, moved here from the upper-right
    corner. .table-brand__meta is already flex-column + align-items:center, so
    both rows centre under the wordmark with no extra work. */
+/* Dan 2026-09-07, item 8: "WE DON'T USE YELLOW." This was rgba(255,215,0,.5),
+   gold. The club and union line now prints in the masthead's own cool slate at
+   full strength, which separates it from the dimmer rows around it by
+   BRIGHTNESS rather than by hue — the same way the level row earns its
+   emphasis. */
 .table-brand__club {
-  color: rgba(255, 215, 0, 0.5);
+  color: rgba(214, 226, 244, 0.72);
 }
 
 /* Tournament masthead line 2 (Dan 2026-08-20): Level # · blinds · clock.
@@ -1414,31 +1419,41 @@
   white-space: nowrap;
 }
 
-/* THE REGULAR ANTE (Dan 2026-09-04): beside the blinds, same weight. */
-.table-brand__ante {
-  white-space: nowrap;
+/* ── LINE 1 OPTS OUT OF THE ELLIPSIS (Dan 2026-09-07, 7A) ──────────────────
+   "NEVER ABBREVIATE ANY NAME, THEY NEED TO BE FULLY SPELT OUT ON DESK TOP AND
+   MOBILE (NEVER USE ... IT CAN EXCEED THE LENGTH OF SMARTER.POKER)"
+
+   Every other masthead row keeps `.table-brand__line`'s nowrap + ellipsis,
+   and should: a clipped hand number or a clipped stake is still readable as
+   what it is. A clipped NAME is not. "MIDWAY U..." is not a shorter way of
+   writing Midway Union, it is a different word, printed on a felt a club pays
+   to have its name on.
+
+   So this row is allowed to do the two things the box otherwise forbids:
+   exceed the masthead's width (up to 145% of it, which is ~90% of the felt
+   and still inside the rail), and WRAP when even that is not enough. Wrapping
+   is the safety net that makes "never abbreviate" literally true — there is no
+   name long enough to lose a character.
+
+   `width: max-content` keeps a short name on one tight centred line; the
+   max-width is what turns a long one into two lines instead of a truncation.
+   FELT_TEXT_BAND in components/table/tableGeometry.ts carries the same 145%
+   so the dealer button still gives this printing a wide berth. Change one,
+   change both. */
+.table-brand__line--identity {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  width: max-content;
+  max-width: 145%;
+  text-wrap: balance;
+  line-height: 1.3;
 }
 
-/* THE GAME STYLE (Dan 2026-09-04): Classic / Action / Madness under the
-   blinds - the one word that says what kind of game this is. Gold like the
-   club name, spaced wider so it reads as a badge and not a fourth fact. */
-.table-brand__line--style {
-  margin-top: 0;
-  letter-spacing: 0.26em;
-  /* Dan 2026-09-05: "ALL TABLES NEED TO SEE IF THEY ARE CLASSIC, ACTION OR
-     MADNESS ON THEM." A badge, not a footnote: bigger than the club line,
-     under the now-large blinds. */
-  font-size: 0.62rem;
-}
-
-.table-brand__style {
-  color: rgba(255, 215, 0, 0.7);
-  font-weight: 800;
-}
-
-/* THE RULES OF THE GAME (Dan 2026-09-05: "IF THEY HAVE AN ANTE OR VPIP
-   REQUIREMENT THAT SHOULD ALSO BE ON THE TABLE"). One row under the style:
-   "Ante 1 · VPIP 40% Min · 10 Hands". A shade brighter than the club line
+/* THE RULES OF THE GAME. Dan 2026-09-07, 7C: "VPIP 30% (FOR ACTION AND 50%
+   FOR MADNESS) IS ALL THAT SHOULD BE THERE (NO NEED FOR ANYTHING ELSE ABOUT
+   HANDS)". The ante moved up onto the stakes and the measurement window is
+   gone, so this row is one fact now. A shade brighter than the club line
    because it is a rule you are being held to, not a caption. */
 .table-brand__line--rules {
   display: inline-flex;
@@ -1450,30 +1465,7 @@
   font-weight: 700;
 }
 
-.table-brand__vpip,
-.table-brand__rules-sep {
-  white-space: nowrap;
-}
-
-.table-brand__rules-sep {
-  color: rgba(214, 224, 240, 0.35);
-}
-
-/* WHAT THIS TABLE IS PLAYING FOR (BBJ build plan phase 3.3, 2026-09-06).
-   A card room prints the jackpot on the placard beside the stakes, because the
-   drop that funds it comes off every raked pot at THIS table. Gold, like the
-   club name and the game style, so it reads as part of the house's own
-   printing rather than a fourth statistic; one line, never wrapped, and never
-   rendered at all when there is no jackpot to play for. */
-.table-brand__line--jackpot {
-  margin-top: 0;
-  font-size: 0.56rem;
-  letter-spacing: 0.16em;
-}
-
-.table-brand__jackpot {
-  color: rgba(255, 215, 0, 0.78);
-  font-weight: 800;
+.table-brand__vpip {
   white-space: nowrap;
 }
 
@@ -1552,10 +1544,12 @@
   white-space: nowrap;
 }
 
-/* Union name after the club on masthead line 1 — cooler tone than the club's
-   gold so the two read as different things at a glance. */
+/* Union name after the club on masthead line 1. Dan 2026-09-07, item 8: the
+   club half is no longer gold, so this no longer needs to be "the cool one
+   next to the warm one" — it is now a dimmer weight of the SAME slate, which
+   reads as club-then-union rather than as two unrelated labels. */
 .table-brand__union {
-  color: rgba(148, 197, 255, 0.45);
+  color: rgba(214, 226, 244, 0.5);
 }
 
 @media (max-width: 380px) {
@@ -1582,10 +1576,11 @@
     font-size: clamp(0.6rem, 10.5cqw, 0.9rem);
   }
 
-  .table-brand__line--style {
-    font-size: 0.57rem;
-  }
-
+  /* Dan 2026-09-07, 7B: the style badge merged INTO the level row above
+     ("ACTION PLO4 2/5" on one line), so there is no --style row to size any
+     more. Line 1 is the row that gained: it may now wrap rather than
+     ellipsize, and on the narrowest phone a two-line club + union is exactly
+     the case that rule exists for. */
   .table-brand__line--rules {
     font-size: 0.5rem;
   }

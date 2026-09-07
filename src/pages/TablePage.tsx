@@ -289,6 +289,10 @@ import SpinWheel, {
   parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
+import BombPotWheel, {
+  BOMB_WHEEL_MAX_HANDS,
+  BOMB_WHEEL_MIN_HANDS,
+} from '../components/table/BombPotWheel';
 import { spinRevealToDealMs, spinRevealTotalMs } from '../config/spinSpec';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
@@ -6769,14 +6773,53 @@ export default function TablePage({
    * Deciding it twice is how the felt and the masthead would start disagreeing
    * about whether a bomb is coming.
    */
+  /**
+   * ── THE COUNTDOWN BECOMING A HAND COUNT IS AN EVENT (Dan 2026-09-07, 7D) ──
+   *
+   * "WHEN IT CHANGES TO A CERTAIN AMOUNT OF HANDS FROM THE COUNTDOWN CLOCK
+   *  FROM 1-5 HANDS, WE SHOULD HAVE A 'WHEEL SPINNER' ANIMATION ... THAT POPS
+   *  UP AFTER THE HAND IS OVER"
+   *
+   * Two conditions, and the second is the one that is easy to drop: the
+   * transition must be DETECTED whenever the engine reports it, but SHOWN only
+   * at a hand boundary. Firing on detection alone would drop a disc over the
+   * felt mid-street, over live cards, on the hand a player is deciding.
+   *
+   * So the transition is latched here and drained by the HAND_COMPLETE path.
+   * `armedFor` remembers which hand-count the latch is holding, so a re-render,
+   * a resubscribe or a snapshot replay cannot re-arm a reveal that has already
+   * played — the same identity check the pre-action beat needs, for the same
+   * reason.
+   */
+  const [bombWheelHands, setBombWheelHands] = useState<number | null>(null);
+  const bombWheelPendingRef = useRef<number | null>(null);
+  const bombWheelSeenRef = useRef<number | null>(null);
+  useEffect(() => {
+    const n = tableState.bombPotIn;
+    /* Only the 1-5 window Dan named, and only on the way IN. A table that has
+       been sitting at "3 hands" since before this client subscribed has not
+       just resolved anything, and a count that ticks 5 -> 4 -> 3 as hands are
+       played is the clock working, not a new announcement. */
+    if (n == null || n < BOMB_WHEEL_MIN_HANDS || n > BOMB_WHEEL_MAX_HANDS) {
+      bombWheelSeenRef.current = null;
+      return;
+    }
+    if (bombWheelSeenRef.current != null) return; // already inside the window
+    bombWheelSeenRef.current = n;
+    bombWheelPendingRef.current = n;
+  }, [tableState.bombPotIn]);
+
   const bombPotBadge = useMemo<{ text: string; state: 'live' | 'next' | 'eta' } | null>(() => {
+    /* "DOUBLE BOARD" IS NOT NEWS (Dan 2026-09-07, 7D): "BECAUSE ALL BOMB POTS
+       ARE DOUBLE BOARD, IT DOESN'T NEED TO SAY DOUBLE BOARD, JUST BOMB POT IN
+       X HANDS OR NEXT HAND ETC."
+       A prefix that is always the same carries no information and costs the
+       longest row in the masthead most of its width. TRIPLE is kept, because
+       that one IS the exception a player needs to see coming; two boards, the
+       house default, now says nothing. `boardCount` remains the source, so a
+       club that configures three still gets told. */
     const boards = bombPotRules?.boardCount ?? 0;
-    const prefix =
-      boards >= 3
-        ? 'TRIPLE BOARD '
-        : boards === 2 || bombPotRules?.doubleBoard
-          ? 'DOUBLE BOARD '
-          : '';
+    const prefix = boards >= 3 ? 'TRIPLE BOARD ' : '';
     if (bombPotActive) return { text: `${prefix}BOMB POT`, state: 'live' };
     /* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits for
        bomb_pot_min_players, and the engine held it in silence - the pill said
@@ -15820,6 +15863,18 @@ export default function TablePage({
           () => handCompleteResetFnRef.current?.(),
           holdMs
         );
+
+        /* THE BOMB POT REVEAL, DRAINED AT THE HAND BOUNDARY (Dan 2026-09-07,
+           7D: "POPS UP AFTER THE HAND IS OVER"). The latch was armed the
+           moment the engine resolved its countdown into a hand count; this is
+           the first instant it is safe to show, with the cards down and the
+           pot shipped. Scheduled just after the hold so it does not land on
+           top of the pot push it would otherwise cover. */
+        if (bombWheelPendingRef.current != null) {
+          const hands = bombWheelPendingRef.current;
+          bombWheelPendingRef.current = null;
+          window.setTimeout(() => setBombWheelHands(hands), holdMs + 120);
+        }
         break;
       }
 
@@ -20866,6 +20921,16 @@ export default function TablePage({
           A takeover, like the chest: it happens before the cards and it is the
           reason the player opened a Spin. Server-decided, identical on every
           seat. */}
+      {/* Dan 2026-09-07, 7D. Beside the Spins reveal because it is the same
+          kind of moment and shares its drawing and timing primitives; one
+          z-index lower, so a real Spins draw always wins if the two coincide.
+          `contained` for the reason SpinWheel takes it: a fixed overlay in the
+          multi-table grid would dim four felts for one table's bomb. */}
+      <BombPotWheel
+        handsAway={bombWheelHands}
+        contained={isMultiTable}
+        onDone={() => setBombWheelHands(null)}
+      />
       <SpinWheel
         data={spinDraw}
         contained={isMultiTable}
@@ -21598,82 +21663,101 @@ export default function TablePage({
                          .table-brand__hand in TablePage.css). */
                       return (
                         <>
+                          {/* ── LINE 1: WHO THIS TABLE BELONGS TO ────────────
+                              Dan 2026-09-07, 7A: "LINE ONE UNDER SMARTER.POKER
+                              IS THE CLUB NAME AND THE UNION NAME, (NEVER
+                              ABBREVIATE ANY NAME, THEY NEED TO BE FULLY SPELT
+                              OUT ON DESK TOP AND MOBILE (NEVER USE ... IT CAN
+                              EXCEED THE LENGTH OF SMARTER.POKER)"
+
+                              So this row alone opts out of the masthead's
+                              ellipsis and out of its width box - see
+                              .table-brand__line--identity in TablePage.css.
+                              "MIDWAY U..." is not a shorter name, it is a
+                              wrong one, and a club paying to be on this felt
+                              should not be truncated to fit a wordmark. */}
                           {(tableState.clubName || tableState.unionName) && (
-                            <span className="table-brand__line">
+                            <span className="table-brand__line table-brand__line--identity">
                               <span className="table-brand__club">
                                 {tableState.clubName}
                                 {tableState.unionName && (
                                   <span className="table-brand__union">
-                                    {tableState.clubName ? ' - ' : ''}
+                                    {tableState.clubName ? ' · ' : ''}
                                     {tableState.unionName}
                                   </span>
                                 )}
                               </span>
                             </span>
                           )}
-                          {/* Dan 2026-09-05: "THE GAME NAME AND BLINDS ARE WAY
-                              TOO SMALL FONT." Line 2 is now the game and the
-                              blinds alone, twice the size of the club line;
-                              the hand number moves to its own row below so it
-                              still can never be cut off (2026-08-26 item 5). */}
+                          {/* ── LINE 2: THE GAME, ON ONE LINE ────────────────
+                              Dan 2026-09-07, 7B: "LINE TWO SHOULD HAVE THE
+                              GAME TYPE 'CLASSIC, ACTION, MADNESS' AND THEN THE
+                              GAME AND STAKES. (SO 'ACTION PLO4 2/5' ALL ON ONE
+                              LINE, NOT STACKED. IF ITS AN ACTION OR MADNESS
+                              GAME IT SHOULD HAVE '+ SB ANTE OR + BB ANTE'
+                              ADDED TO THE STAKES."
+
+                              This replaces two stacked rows (style on its own
+                              line above the stakes, from 2026-09-04) with one.
+
+                              ON THE ANTE WORDING: the engine models an ante as
+                              per_player or big_blind (ServerTableEngine
+                              .anteSnapshotFields), and there is no small-blind
+                              ante anywhere in the schema. big_blind prints
+                              "+ BB Ante"; per_player is every seat, so calling
+                              it either blind would be a lie and it prints
+                              "+ Ante". If SB antes are a real format here they
+                              need a column before they can be a label. */}
                           <span className="table-brand__line table-brand__line--level">
                             <span className="table-brand__game">
+                              {tableState.gameStyle ? `${tableState.gameStyle} ` : ''}
                               {gameShort} {tableState.blinds || '1/2'}
+                              {tableState.ante > 0 &&
+                                (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
                             </span>
                           </span>
-                          {/* THE GAME STYLE (Dan 2026-09-04): "IF THE GAME IS
-                              CLASSIC, ACTION OR MADNESS, IT MUST SAY IT ON THE
-                              TABLE UNDER THE BLINDS." */}
-                          {tableState.gameStyle && (
-                            <span className="table-brand__line table-brand__line--style">
-                              <span className="table-brand__style">{tableState.gameStyle}</span>
-                            </span>
-                          )}
-                          {/* THE RULES OF THE GAME (Dan 2026-09-04/05: "ANTES
-                              ... ARE NOT DISPLAYING"; "IF THEY HAVE AN ANTE OR
-                              VPIP REQUIREMENT THAT SHOULD ALSO BE ON THE
-                              TABLE"). One row, in chips and percent, the way a
-                              card room's placard prints it. Absent on a table
-                              with neither. */}
-                          {(tableState.ante > 0 || tableState.vpipFloor != null) && (
-                            <span className="table-brand__line table-brand__line--rules">
-                              {tableState.ante > 0 && (
-                                <span className="table-brand__ante">
-                                  Ante {formatChipFigure(tableState.ante)}
-                                </span>
-                              )}
-                              {tableState.ante > 0 && tableState.vpipFloor != null && (
-                                <span className="table-brand__rules-sep">{'\u00B7'}</span>
-                              )}
-                              {tableState.vpipFloor != null && (
-                                <span className="table-brand__vpip">
-                                  VPIP {tableState.vpipFloor}% Min
-                                  {tableState.vpipWindow
-                                    ? ` \u00B7 ${tableState.vpipWindow} Hands`
-                                    : ''}
-                                </span>
-                              )}
-                            </span>
-                          )}
-                          {/* WHAT THIS TABLE IS PLAYING FOR (BBJ phase 3.3).
-                              A card room prints the jackpot on the placard,
-                              and until now the only way to see it here was to
-                              open the jackpot widget. It is the reason the
-                              drop comes off every raked pot, so it belongs
-                              beside the stakes that produce it.
+                          {/* \u2500\u2500 LINE 3: THE ONE HOUSE RULE THAT CHANGES PLAY \u2500
+                              Dan 2026-09-07, 7C: "YOU HAVE WEIRD TEXT WHERE
+                              THE GAME DYNAMICS ARE, VPIP 30% (FOR ACTION AND
+                              50% FOR MADNESS) IS ALL THAT SHOULD BE THERE (NO
+                              NEED FOR ANYTHING ELSE ABOUT HANDS)"
 
-                              Only when there IS one: a club with no jackpot,
-                              or a figure not yet loaded, prints nothing rather
-                              than "Playing For $0.00", which would read as a
-                              promise of nothing on a table that is quietly
-                              taking a drop. */}
-                          {bbjAmount > 0 && (
-                            <span className="table-brand__line table-brand__line--jackpot">
-                              <span className="table-brand__jackpot">
-                                Playing For ${money(bbjAmount)}
+                              Three things left this row. The ante moved up to
+                              the stakes on line 2 where he asked for it, so
+                              printing it twice is out. The measurement window
+                              ("\u00B7 10 Hands") is an implementation detail of how
+                              the floor is enforced, not a rule anyone plays
+                              differently for. And "Min" stays because the
+                              number is a FLOOR, not the table average - a
+                              player who reads it as a stat has misread the
+                              game they just sat in.
+
+                              A Classic table has no VPIP floor and so prints
+                              no row at all, which is what makes the row mean
+                              something on the tables that do. */}
+                          {tableState.vpipFloor != null && (
+                            <span className="table-brand__line table-brand__line--rules">
+                              <span className="table-brand__vpip">
+                                VPIP {tableState.vpipFloor}% Min
                               </span>
                             </span>
                           )}
+                          {/* THE JACKPOT ROW IS GONE (Dan 2026-09-07, item 6).
+                              "YOU'VE ADDED THE BOMBPOT TOTAL TO ALL OF THE
+                              TABLES, THAT SHOULD NEVER BE THERE."
+
+                              He is describing this line. It was the BAD BEAT
+                              JACKPOT, not the bomb pot (BBJ phase 3.3,
+                              2026-09-05) - and the reason it read as a stray
+                              number is that the SAME figure is already on
+                              screen, in the BAD BEAT JACKPOT pill above the
+                              table, four rows higher. The felt was printing
+                              one club's jackpot twice and calling it two
+                              different things.
+                              The pill stays; it is the one that says what the
+                              number is. If the placard idea comes back it
+                              belongs in the jackpot widget, not on the felt
+                              between the stakes and the hand number. */}
                           {(tableState.handNumber ?? 0) > 0 && (
                             <span className="table-brand__line table-brand__line--hand">
                               <span className="table-brand__hand">

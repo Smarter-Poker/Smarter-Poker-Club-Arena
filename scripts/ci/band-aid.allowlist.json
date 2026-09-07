@@ -2,7 +2,6 @@
   "_read_this_first": "CLAUDE.md 10.12 forbids creating anything that repairs, back-pays, re-drives, catches up, backfills or heals what a live path should have written correctly. This file is the EXISTING debt only, so that a migration which FIXES or DELETES one of these is not blocked by the guard. It may only ever get shorter - tests/no-band-aids.law.test.ts asserts that every entry has a row in docs/BAND-AIDS-REGISTER.md naming the root fix that lets it be deleted. Adding a name here to get a new band-aid past the gate is the thing the rule exists to stop.",
   "existing_debt": [
     { "name": "fn_tournament_payout_reconcile", "register": "TIER 1 #1" },
-    { "name": "ca-payout-sweep-hourly", "register": "TIER 1 #1" },
     { "name": "fn_pay_backed_payout_shortfalls", "register": "TIER 1 #2" },
     { "name": "ca-pay-backed-payout-shortfalls-hourly", "register": "TIER 1 #2" },
     { "name": "fn_backpay_unfinalised_bounty_pools", "register": "TIER 1 #3" },

@@ -80,6 +80,7 @@ export interface TournamentEvent {
        eliminatePlayer is never called with place 1 anyway — the bust sweep
        reserves it for the winner. See TournamentManagerEliminations. */
     | 'tournament_winner'
+    | 'final_table_deal'
     | 'level_up'
     | 'final_table'
     | 'heads_up'
@@ -112,8 +113,9 @@ interface SubscriptionRecord {
 
 // ─── Engine HTTP base URL (same origin as WS) ──────────────────────────────────
 
-const ENGINE_BASE_URL = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL
-  ?? 'https://engine.smarter.poker';
+const ENGINE_BASE_URL =
+  (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL ??
+  'https://engine.smarter.poker';
 
 function authHeader(): Record<string, string> {
   try {

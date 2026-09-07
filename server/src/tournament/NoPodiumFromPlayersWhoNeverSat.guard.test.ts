@@ -36,11 +36,10 @@ describe('a recovery may not invent a podium', () => {
     expect(src).toMatch(/if \(alive\.length > 0 && !anyDealtIn\)/);
     expect(src).toContain('GameServer.recoverStuckCompleting_no_dealt_in_survivor');
 
-    // It must sit BEFORE the loop that credits places, or it guards nothing.
-    // (2026-09-02: the place is settled as the obligation (tournament, 'place',
-    // N) through settleTournamentObligation; the marker is that call.)
+    // It must sit before the atomic batch that credits every place, or it
+    // guards nothing.
     const guardAt = src.indexOf('const anyDealtIn');
-    const payAt = src.indexOf("{ kind: 'place', place }");
+    const payAt = src.indexOf('settleTournamentPlacesAtomically(');
     expect(guardAt).toBeGreaterThan(-1);
     expect(payAt).toBeGreaterThan(-1);
     expect(guardAt).toBeLessThan(payAt);

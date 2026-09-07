@@ -323,8 +323,12 @@ export function resolvePayoutStructure(
   fieldSize?: number | null
 ): PayoutPlace[] | null {
   if (isSpinTournament(t)) {
+    /* A Spin's multiplier is the draw. If that draw is not durably persisted
+       or no longer maps to a canonical tier, the creation-time WTA placeholder
+       is not a payout contract. Returning null leaves the event COMPLETING
+       until the already-scheduled row repair restores the exact draw. */
     const tier = spinPayoutStructure(t?.spin_multiplier);
-    if (tier) return trimStructureToField(tier, fieldSize);
+    return tier ? trimStructureToField(tier, fieldSize) : null;
   }
   const stored = parsePayoutStructure(t?.payout_structure);
   if (stored) return trimStructureToField(stored, fieldSize);

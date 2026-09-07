@@ -81,7 +81,17 @@ describe('the SQL side matches: a rebuy needs no seat', () => {
       );
     expect(owning.length).toBeGreaterThan(0);
     const sql = fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8');
-    expect(sql).toMatch(/Only an ADD-ON demands a live seat/);
-    expect(sql).toMatch(/a rebuy cannot resurrect a settled result/i);
+    const wrapper = sliceBetween(
+      sql,
+      'CREATE FUNCTION public.process_tournament_rebuy(',
+      'REVOKE ALL ON FUNCTION public.process_tournament_rebuy('
+    );
+    expect(wrapper).toMatch(/IF p_rebuy_type = 'addon' THEN/);
+    expect(wrapper).toMatch(/ELSIF p_rebuy_type IN \('rebuy', 'reentry'\) THEN/);
+    expect(wrapper).not.toMatch(/table_seats|seat_number|left_at/);
+    expect(wrapper).toMatch(/process_tournament_rebuy_before_one_minute_addon/);
+    expect(wrapper).toMatch(
+      /IF COALESCE\(v_t\.prize_pool_finalized, false\) THEN[\s\S]*?chip purchases are closed/
+    );
   });
 });

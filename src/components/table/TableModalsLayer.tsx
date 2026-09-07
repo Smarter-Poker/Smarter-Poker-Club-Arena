@@ -428,6 +428,7 @@ export interface TableModalsLayerProps {
     addOnFee?: number;
     addOnChips: number;
     walletBalance: number;
+    endsAtMs: number | null;
     timeRemaining: number;
   };
   rebuyProcessing: boolean;
@@ -1240,6 +1241,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           addOnFee={addOnPeriod.addOnFee ?? 0}
           addOnChips={addOnPeriod.addOnChips}
           walletBalance={addOnPeriod.walletBalance}
+          endsAtMs={addOnPeriod.endsAtMs}
           timeRemaining={addOnPeriod.timeRemaining}
           onAccept={onAddOnAccept}
           onDecline={onAddOnDecline}

@@ -3,13 +3,17 @@
  *  ONE SETTLE PATH FOR TOURNAMENT MONEY (chip accounting standard, Lane A2)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Every chip a tournament pays to a player - a place, a refund, a bubble
- * protection, a late-registration top-up, a final-table chop share, a satellite
- * remainder - leaves through THIS module and through ONE database function,
- * `fn_settle_tournament_obligation`. Nothing else in the engine may call
- * `fn_credit_and_log`, `credit_player_wallet` or `fn_credit_player_wallet_once`
- * for a tournament outcome. `OneSettlePathForTournamentMoney.law.test.ts` pins
- * it at the source level.
+ * Every independent tournament obligation - refunds, bounties and satellite
+ * awards - leaves through THIS module and the public classification gate
+ * `fn_settle_tournament_obligation`. Normal structure places, late-registration
+ * adjustments, Bubble Protection and final-table-deal shares are deliberately
+ * refused by that public function: their atomic helpers submit the complete
+ * batch, and only those SECURITY DEFINER batch functions may call the private
+ * obligation core while the whole plan can still roll back. Nothing in the
+ * engine may call `fn_credit_and_log`, `credit_player_wallet` or
+ * `fn_credit_player_wallet_once` for a tournament outcome.
+ * `OneSettlePathForTournamentMoney.law.test.ts` pins the primitive boundary;
+ * the two atomic-settlement laws pin the complete-batch boundary.
  *
  * WHY (docs/CHIP-ACCOUNTING-STANDARD.md, 2.2 and 3.2 step 5). Measured on
  * 2026-09-02: the four MTT variants were overpaid by 5,330 chips in 36 hours
@@ -28,13 +32,14 @@
  *   UNIQUE (tournament_id, kind, place)    WHERE place IS NOT NULL
  *   UNIQUE (tournament_id, kind, user_id)  WHERE place IS NULL
  *
- * `fn_settle_tournament_obligation` upserts the obligation (owed only ever
- * RISES to `max(owed, amount)`), pays `min(amount, owed - paid)` from the
- * tournament's escrow to the player's club wallet, writes `tournament_payouts`
- * and `wallet_transactions` under a key it derives from the obligation row,
- * and stamps `app.money_path` so the R3 trigger lets the credit through.
- * A replay is `ok: true, paid: 0` - never an error. A second payment of the
- * same place is impossible whatever the caller believes.
+ * For an allowed single-obligation class, the private core upserts the
+ * obligation (owed only ever RISES to `max(owed, amount)`), pays
+ * `min(amount, owed - paid)` from the tournament's escrow to the player's club
+ * wallet, writes `tournament_payouts` and `wallet_transactions` under a key it
+ * derives from the obligation row, and stamps `app.money_path` so the R3
+ * trigger lets the credit through. A replay is `ok: true, paid: 0` - never an
+ * error. Normal places and deal shares receive the same primitive only from
+ * their all-or-none database batch.
  *
  * THE CONTRACT THIS MODULE KEEPS WITH ITS CALLERS:
  *
@@ -85,7 +90,7 @@ export interface SettleTournamentObligationInput {
    * top-up passes the NEW correct prize and the database works out the delta.
    */
   amount: number;
-  /** Which engine path is asking, e.g. 'engine.eliminatePlayer'. Recorded on the obligation. */
+  /** Which allowed engine path is asking, e.g. 'engine.processSatelliteAwards'. Recorded on the obligation. */
   source: string;
   /**
    * The `wallet_transactions.description` the player reads, passed through as

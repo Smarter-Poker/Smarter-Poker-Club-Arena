@@ -20,14 +20,9 @@
  * the fix (2026-08-28) was at the key: keyed on the place, the second payment
  * is a no-op regardless of who holds it or which code path pays it.
  *
- * 2026-09-02 (chip accounting standard, Lane A2): the key moved out of the
- * engine and into the database. Every tournament credit now goes through
- * `settleTournamentObligation`, which settles the obligation row
- * (tournament_id, kind, place) — UNIQUE by constraint — and the RPC derives
- * the ledger key from that row. There is no `tourney:` string left for a
- * refactor to get wrong. What these pins now assert is the same property in
- * its new home: every 'place' settle carries a PLACE, and no paying path
- * builds a key of its own.
+ * 2026-09-07: ordinary place prizes moved again, into one fingerprinted atomic
+ * batch shared by finish and recovery. Other tournament money kinds still use
+ * `settleTournamentObligation`; neither path builds a key of its own.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -35,9 +30,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const PAYING_PATHS = [
-  'server/src/tournament/TournamentManagerEliminations.ts',
   'server/src/tournament/tournamentRecovery.ts',
   'server/src/tournament/TournamentManager.ts',
+];
+const ATOMIC_PLACE_PATHS = [
+  'server/src/tournament/TournamentManagerEliminations.ts',
+  'server/src/tournament/tournamentRecovery.ts',
 ];
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
@@ -86,13 +84,23 @@ describe('a place is paid once: the place obligation, not a hand-built key', () 
     });
   }
 
-  it('the finish path and the recovery watchdog settle the SAME obligation for place 1', () => {
-    // They must collide on purpose — that is what makes a retry a no-op.
+  for (const path of ATOMIC_PLACE_PATHS) {
+    it(`${path} sends ordinary places only through the complete atomic batch`, () => {
+      const src = code(read(path));
+      expect(src).toMatch(/settleTournamentPlacesAtomically\(/);
+      if (path.endsWith('TournamentManagerEliminations.ts')) {
+        expect(src).not.toMatch(/settleTournamentObligation\(/);
+      }
+      expect(tourneyKeys(src)).toEqual([]);
+    });
+  }
+
+  it('the finish path and recovery watchdog invoke the SAME atomic place batch', () => {
+    // They must collide on purpose; the frozen batch fingerprint makes a
+    // retry or lost response a no-op.
     const eliminations = read('server/src/tournament/TournamentManagerEliminations.ts');
     const recovery = read('server/src/tournament/tournamentRecovery.ts');
-    expect(
-      settleCalls(eliminations).some((c) => /kind:\s*'place'[\s\S]*place:\s*1\b/.test(c))
-    ).toBe(true);
-    expect(code(recovery)).toMatch(/\{ kind: 'place', place \}/);
+    expect(code(eliminations)).toMatch(/settleTournamentPlacesAtomically\(/);
+    expect(code(recovery)).toMatch(/settleTournamentPlacesAtomically\(/);
   });
 });

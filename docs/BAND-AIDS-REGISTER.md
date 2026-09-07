@@ -94,14 +94,14 @@ paid correctly the first time would need none of them.
 
 ## TIER 1 — money band-aids. These die first.
 
-### 1. `fn_tournament_payout_reconcile` + `ca-payout-sweep-hourly`
+### 1. `fn_tournament_payout_reconcile` (all applying repair doors retired)
 
-**What it is.** An hourly sweep that recomputes every completed tournament's
+**What it was.** An hourly sweep that recomputes every completed tournament's
 payout structure and pays whatever the engine did not. It is the single largest
 band-aid on the platform: **342 payouts, 32,849.99 chips, 191 events in 7 days**,
 median 6.3 hours after the player finished.
 
-**Root cause — two, both unfixed.**
+**Root cause — two forms of the same split transaction.**
 
 - _Partial settle_ (69 events, 27,807.56 chips): the engine pays place 1..N and
   stops. The settle loop is not atomic — a failure part-way leaves the earlier
@@ -110,16 +110,78 @@ median 6.3 hours after the player finished.
 - _No settle at all_ (39 events, 3,864.94 chips): the event reaches COMPLETED
   with zero payout rows.
 
-**The hard fix.** The settle must be one transaction that either pays every
-place or pays none, and it must be **restartable from its own record** rather
-than from a sweep: an obligation row per place written _before_ any credit,
-then credits driven from those rows, so a crash resumes exactly where it
-stopped on the engine's next tick. `tournament_obligations` already exists and
-already carries `amount_owed` / `amount_paid` — the settle does not drive from
-it.
+**Root fix implemented on `fix/tournament-settle-is-atomic`.** Normal elimination
+and late-registration repricing now record entitlement only. Finish and
+stuck-`COMPLETING` recovery first commit the complete structure plan to
+`tournament_obligations` with a count/total/fingerprint header. One database
+exception subtransaction then pays the exact Bubble Protection promise, when
+one exists, and every prepared place; proves the exact escrow consumption and
+ledger evidence; marks the batch settled; changes `COMPLETING` to `COMPLETED`;
+releases every live seat; closes every physical tournament table with zero
+current players; and proves that no nonterminal table or live seat remains. A
+refused or partial child leg, evidence mismatch, closure failure or lost status
+claim raises and rolls the money, batch, terminal status, tables and seats back
+together. A final, alphabetically-last database trigger also refuses any normal
+`COMPLETED` write without the exact fully-paid batch, including legacy direct
+writers. A separate status lock makes every normal `COMPLETED` row terminal,
+prevents a prepared normal batch from leaving `COMPLETING`, and permits only
+the fully settled `COMPLETING` to `COMPLETED` transition. The deal-specific
+lock applies the same rule to its `RUNNING` to `COMPLETED` transition.
+
+The public `fn_settle_tournament_obligation` signature is now a classification
+gate. It preserves the legitimate non-structure and satellite paths, but normal
+`place`, `late_reg_adjustment`, `bubble_protection` and `final_table_deal` calls
+return `atomic_batch_required`. The audited child implementation was renamed to
+the private `fn_settle_tournament_obligation_before_atomic_batch_gate`; all
+application roles, including `service_role`, are denied that core. Only the
+normal-place and final-table-deal batch functions may call it after proving and
+freezing their complete plans.
+
+Finalization is now an irreversible money contract. The public guarantee gate
+atomically proves the exact bank debit, overlay row, explicit journal leg, live
+escrow credit and finalized pool; its debit core is private. A finalized pool
+cannot be reopened, and its pool, guarantee, payout structure and Spin draw
+cannot be changed. Registration, rebuy and add-on doors refuse a finalized
+pool, finalization refuses while a promised entry or add-on window remains
+open, and prepare, settle and completion all refuse a finalized pool below its
+advertised guarantee.
+
+Bubble Protection now keeps truthful, durable provenance. The application no
+longer pays it at elimination. Normal batch preparation derives the exact
+stone-bubble holder only after standings and the finalized field are frozen,
+using `engine.atomicPlaceSettlement`; it also recognizes an exact pre-existing
+`engine.eliminatePlayer` obligation and rejects every other obligation source.
+The payout record remains distinct evidence with source `bubble_protection`, a
+null position and the exact Bubble player. Clearing a display flag cannot hide
+an existing Bubble obligation or payout. The separate final-table-deal batch
+uses its own atomic Bubble source and contract.
+
+Every applying repair entrance is retired. `fn_tournament_payout_reconcile`,
+`fn_pay_backed_payout_shortfalls` and `sp_ca_reconcile_backpaid_events` reject
+`p_apply=true` before scanning. `fn_backpay_hu_winner_shortfalls` is replaced
+by an owner-run observation with no applying mode at all. Every application ACL
+is revoked. The
+engine's five-minute Heads-Up applying loop is removed so it cannot endlessly
+rescan normal place calls refused by the new batch boundary. Application access
+to the older payout-sweep and guarantee-backpay
+functions is also revoked, every matching applying cron command is unscheduled,
+`ca-payout-sweep-hourly` is removed from the legacy expected-job roster when
+that roster exists, and no replacement payer, cron or backfill worker is
+created. The engine daemon's applying sweep is removed as well.
+
+**Existing damage was classified before touching money.** Seven obligations
+remain open for 432.17. The two 180.00 Bubble Protection gaps are Dan's reserved
+pricing/funding decision. The other five rows total 72.17, but every affected
+pool is already fully distributed: 71.25 is stale state from a final-table
+deal, 0.60 is a sticky Spin obligation after a ladder repair, and the remaining
+0.32 is exactly offset by overpaid places in two events. Safely payable backlog:
+**0.00**. Paying any of it would create an over-disbursement, so this change
+makes no compensating wallet write and performs no clawback.
 
 **Delete when:** `tournament_payouts` records zero rows with
-`source = 'reconcile'` for 30 consecutive days.
+`source = 'reconcile'` for 30 consecutive days. The function stays on the debt
+list until that production observation is true; keeping a dormant legacy
+function during its stated deletion proof is not permission to call it.
 
 ---
 

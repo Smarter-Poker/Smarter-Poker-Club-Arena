@@ -28,6 +28,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { computePlacePrize } from './payoutMath.js';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -292,6 +293,17 @@ describe('finishing places must be distinct - in the rescue path too', () => {
     // 12 extra payments.
     expect(code(RECOVERY)).toMatch(/recoverStuckCompleting_position_collision/);
   });
+
+  it('proves there is no position collision before funding the guarantee', () => {
+    const recovery = sliceMethod(
+      code(RECOVERY),
+      'export async function recoverStuckCompletingTournaments('
+    );
+    const collision = recovery.indexOf('if (collisions.length > 0)');
+    const funding = recovery.indexOf("'fn_apply_prize_guarantee'");
+    expect(collision).toBeGreaterThan(-1);
+    expect(funding).toBeGreaterThan(collision);
+  });
 });
 
 /**
@@ -363,15 +375,38 @@ describe('a write that decides a payout is checked', () => {
     expect(code(ELIM)).toMatch(/final_table_deal_winner_stamp_failed/);
   });
 
-  it('a settled final-table deal that stays COMPLETING is reported, not swallowed', () => {
-    // A dealt event left in COMPLETING is picked up by the recovery watchdog,
-    // which pays from the PAYOUT STRUCTURE — the one thing a deal must never
-    // be re-paid from.
-    expect(code(ELIM)).toMatch(/final_table_deal_completed_transition_failed/);
+  it('a final-table deal requires atomic completion proof before its runtime tail', () => {
+    // The former server loop could pay some shares, fail another, and still
+    // write COMPLETED. The database RPC now owns shares + standings + terminal
+    // state, and the server refuses to continue on ok:true without completed.
+    const deal = sliceMethod(code(ELIM), 'protected async checkFinalTableDeal(');
+    const proof = deal.indexOf('if (!deal.ok || !deal.completed)');
+    const tail = deal.indexOf('await this.settleFinalTableDeal(deal)');
+
+    expect(deal).toMatch(/settleFinalTableDealAtomically\(supabase, this\.tournamentId\)/);
+    expect(proof).toBeGreaterThanOrEqual(0);
+    expect(tail).toBeGreaterThan(proof);
   });
 
-  it('the rescue only claims to have recovered a tournament it actually completed', () => {
-    expect(code(RECOVERY)).toMatch(/could not mark COMPLETED/);
+  it('the rescue only claims success after the atomic settlement proves completion', () => {
+    const recovery = sliceMethod(
+      code(RECOVERY),
+      'export async function recoverStuckCompletingTournaments('
+    );
+    const proof = recovery.indexOf('if (!settlement.ok || !settlement.completed)');
+    const success = recovery.indexOf('[GameServer] Recovered stuck COMPLETING tournament');
+
+    expect(recovery).toMatch(/await settleTournamentPlacesAtomically\(/);
+    expect(recovery).toMatch(
+      /if \(!settlement\.ok \|\| !settlement\.completed\) \{[\s\S]*?throw new Error/
+    );
+    expect(
+      proof,
+      'the recovery path must reject a response without completion proof'
+    ).toBeGreaterThanOrEqual(0);
+    expect(success, 'the recovery path must retain an observable success report').toBeGreaterThan(
+      proof
+    );
   });
 });
 

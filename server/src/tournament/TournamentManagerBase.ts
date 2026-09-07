@@ -88,6 +88,8 @@ import {
   ELIMINATION_SWEEP_FORCE_RELEASE_MS,
   eliminationLockVerdict,
 } from './eliminationLock.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { horseAddsOnImmediately } from '../services/FreeBuy.js';
 
 /** How many places this payout structure pays, whichever shape it arrived in. */
 function countPaidPlaces(structure: unknown): number {
@@ -117,6 +119,23 @@ export abstract class TournamentManagerBase {
   protected currentLevel: number = 0;
   // Add-on period
   protected addOnPeriodTriggered: boolean = false;
+  /** Prevent two async level/hand edges from opening the same persisted window. */
+  protected addOnPeriodOpening: boolean = false;
+  /** One close check for the persisted window; re-arming replaces the old one. */
+  private addOnPeriodEndTimer: NodeJS.Timeout | null = null;
+  /** Bounded delivery retry for the shifted deadline after maintenance thaw. */
+  private addOnResumeBroadcastRetryTimer: NodeJS.Timeout | null = null;
+  private addOnResumeBroadcastRetryAttempts = 0;
+  /** Durable add-on break timers are reconstructed from addon_period_ends_at. */
+  private addOnBreakStartTimer: NodeJS.Timeout | null = null;
+  private addOnBreakEndTimer: NodeJS.Timeout | null = null;
+  private addOnBreakActive = false;
+  private addOnBreakOwnsPause = false;
+  /** Bounded, no-money replay of a committed add-on's operational tail. */
+  private addOnFinalTailReplayTimer: NodeJS.Timeout | null = null;
+  private addOnFinalTailReplayAttempts = 0;
+  /** Prevent a level edge and the wall-clock timer from finalizing together. */
+  private addOnPeriodFinalizing: boolean = false;
   /**
    * When the add-on was last offered to the field. The window is offered
    * REPEATEDLY, not once, so a player who was between seats at the moment it
@@ -325,7 +344,7 @@ export abstract class TournamentManagerBase {
    * them.
    */
   isOnBreak(): boolean {
-    return this.onBreak;
+    return this.onBreak || this.addOnBreakActive;
   }
 
   /**
@@ -355,16 +374,20 @@ export abstract class TournamentManagerBase {
    * The client contract is UNCHANGED: clients still subscribe to
    * `t-break-<tournamentId>` and still receive `tournament_event`.
    */
-  protected async broadcast(eventType: string, payload: any): Promise<void> {
+  protected async broadcast(eventType: string, payload: any): Promise<boolean> {
     try {
       if (!this.broadcastChannel) {
         this.broadcastChannel = supabase.channel(`t-break-${this.tournamentId}`);
         this.broadcastReady = true;
       }
-      await this.broadcastChannel.httpSend('tournament_event', {
+      const receipt = await this.broadcastChannel.httpSend('tournament_event', {
         type: eventType,
         payload,
       });
+      if (receipt?.success !== true) {
+        throw new Error(`Realtime REST broadcast returned no success receipt for ${eventType}`);
+      }
+      return true;
     } catch (e) {
       reportError(e, 'TournamentManager.broadcast_failed');
       // Drop the channel object so the next call rebuilds it. Nothing is
@@ -388,6 +411,7 @@ export abstract class TournamentManagerBase {
           /* a channel that will not release cannot fail a broadcast twice */
         }
       }
+      return false;
     }
   }
 
@@ -495,7 +519,13 @@ export abstract class TournamentManagerBase {
       );
       return;
     }
+    // A synchronized break is allowed to overlap the durable add-on break.
+    // If the add-on already suspended the level clock, preserve that exact
+    // remaining time instead of measuring a null timer as a fresh full level;
+    // the synchronized break becomes the pause owner until one of them ends.
+    const addOnBreakAlreadyOwnsPause = this.addOnBreakActive && this.addOnBreakOwnsPause;
     this.onBreak = true;
+    if (this.addOnBreakActive) this.addOnBreakOwnsPause = false;
     // A NEW break: its countdown has not started yet, so beginBreakCountdown
     // is allowed to stamp an end time exactly once. See breakCountdownStarted.
     this.breakCountdownStarted = false;
@@ -522,7 +552,7 @@ export abstract class TournamentManagerBase {
      * Every path now leaves a usable remaining time, and resumeFromBreak arms
      * unconditionally.
      */
-    this.suspendLevelClock();
+    if (!addOnBreakAlreadyOwnsPause) this.suspendLevelClock();
 
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK - ${Math.round(breakDurationMs / 60000)} minutes`
@@ -723,11 +753,15 @@ export abstract class TournamentManagerBase {
 
     await this.broadcast('break_ended', { level: this.currentLevel });
 
-    // Undo the pause taken in pauseForBreak. Hand-for-hand owns the pause state
-    // when it is running (it pauses and resumes every engine in lockstep on the
-    // money bubble), so resuming here would let one table run away from the
-    // others — leave those engines alone and let the bubble sync resume them.
-    if (!this.handForHandActive) {
+    /* Undo the pause taken in pauseForBreak only when no durable add-on break
+       is still holding it. This is the exact Free Buy boundary: the :55
+       synchronized break commonly overlaps the add-on break at start + 60m.
+       Hand pause ownership to that break rather than dealing for the seconds
+       between the two deadlines. Hand-for-hand independently owns its pause
+       when active. */
+    const addOnBreakStillActive = this.addOnBreakActive;
+    if (addOnBreakStillActive) this.addOnBreakOwnsPause = true;
+    if (!this.handForHandActive && !addOnBreakStillActive) {
       for (const engine of this.tableEngines.values()) {
         try {
           engine.resumeDealing();
@@ -762,7 +796,7 @@ export abstract class TournamentManagerBase {
      * (see pauseForBreak); startBlindTimer with no override grants a fresh
      * full level, which is the safe direction to be wrong in.
      */
-    {
+    if (!addOnBreakStillActive) {
       const blindStructure = this.tournamentCache?.blind_structure || [];
       const remaining = this.savedBlindTimerRemaining;
       // Cleared before arming: a stale value from a previous level must never
@@ -829,7 +863,7 @@ export abstract class TournamentManagerBase {
    * asks where those players are SITTING. A 9-max event that falls to nine
    * players spread three-three-three across three felts satisfies both — so
    * every one of them gets the final-table overlay while two thirds of the
-   * field are at other tables, and `fn_final_table_deal` will chop the pool
+   * field are at other tables, and `fn_settle_final_table_deal_atomic` will chop the pool
    * between nine players who never met.
    *
    * The count is a NECESSARY condition, never a sufficient one. The sufficient
@@ -1208,16 +1242,6 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
-
-      /* FREE BUY: open the add-on window NOW. Dan 2026-09-04, "players can add
-         on as soon as they sit down" - so the window cannot wait for the first
-         level transition, which on a TURBO structure is still minutes away and
-         on a stalled table may never arrive at all. triggerAddOnPeriod is
-         latched by addOnPeriodTriggered, so calling it here simply means the
-         level-based path finds the work already done. */
-      if (tournament.addon_from_start && tournament.add_on_available) {
-        await this.triggerAddOnPeriod();
-      }
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       // Adopt whatever the row says the mystery phase is. A redeploy
       // mid-tournament must not re-seed an inventory that already exists.
@@ -2082,6 +2106,17 @@ export abstract class TournamentManagerBase {
       // Create tables and seat players
       await this.createTablesAndSeatPlayers(tournament);
 
+      /* FREE BUY: open only AFTER the field has real live seats. The old call
+         ran near the top of start(), before registration migration, table
+         creation, or seating. Its automatic horse purchases therefore found
+         no eligible seats, and its broadcast offered humans an add-on the
+         database correctly refused. Opening here still satisfies "as soon as
+         they sit down" while making the seat the precondition it has always
+         been at the money boundary. */
+      if (tournament.addon_from_start && tournament.add_on_available) {
+        await this.triggerAddOnPeriod();
+      }
+
       /**
        * ═══════════════════════════════════════════════════════════════════════
        *  THE PRE-SEAT MINUTE (Dan 2026-08-30, binding)
@@ -2275,8 +2310,21 @@ export abstract class TournamentManagerBase {
       // before the 2026-08-22 data-driven schedules).
       {
         const lateRegCap = Number(tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0);
+        const lateRegMinutes = Number(tournament.late_reg_mins ?? 0);
+        const addOnCanStillGrowPool = tournament.add_on_available === true;
+        const uncappedRebuyCanStillGrowPool =
+          (tournament.is_rebuy === true || tournament.is_reentry === true) &&
+          lateRegCap <= 0 &&
+          lateRegMinutes <= 0;
         const gtd = Number(tournament.guaranteed_prize) || 0;
-        if (lateRegCap <= 0 && gtd > 0 && !this.prizePoolFinalized) {
+        if (
+          lateRegCap <= 0 &&
+          lateRegMinutes <= 0 &&
+          !addOnCanStillGrowPool &&
+          !uncappedRebuyCanStillGrowPool &&
+          gtd > 0 &&
+          !this.prizePoolFinalized
+        ) {
           // OVERLAY FUNDING 2026-08-27: a guarantee becomes real money ONLY
           // through fn_apply_prize_guarantee, which funds the overlay from
           // the host club's chip_treasury and records it in
@@ -2303,7 +2351,7 @@ export abstract class TournamentManagerBase {
       // went right on dealing from memory while its row still read
       // REGISTERING. Nothing downstream heals that: the stuck-COMPLETING
       // watchdog only reads COMPLETING, the decided-but-stalled watchdog only
-      // reads RUNNING, and fn_final_table_deal requires RUNNING. Eleven
+      // reads RUNNING, and fn_settle_final_table_deal_atomic requires RUNNING. Eleven
       // tournaments were found in exactly that state, 22-33 hours old, having
       // played to a finish with 570 chips debited and 48 paid out — 522 owed
       // to players who never got a result.
@@ -2537,8 +2585,27 @@ export abstract class TournamentManagerBase {
       // stayed false forever and eliminated-prize top-ups never ran for these
       // tournaments (under-payment when the pool later moved, e.g. guarantees).
       {
-        const lateRegCap = tournament.late_reg_levels ?? tournament.rebuy_levels ?? 8;
-        if (!lateRegCap || lateRegCap <= 0) {
+        const lateRegCap = Number(tournament.late_reg_levels ?? tournament.rebuy_levels ?? 0);
+        const lateRegMinutes = Number(tournament.late_reg_mins ?? 0);
+        const addOnCanStillGrowPool = tournament.add_on_available === true;
+        const uncappedRebuyCanStillGrowPool =
+          (tournament.is_rebuy === true || tournament.is_reentry === true) &&
+          lateRegCap <= 0 &&
+          lateRegMinutes <= 0;
+        const guaranteedPrize = Number(tournament.guaranteed_prize) || 0;
+        /* A positive guarantee may be finalized only by
+           fn_apply_prize_guarantee after its funding debit commits. If the
+           start-time RPC above failed, preserving false is the durable retry
+           record; stamping true here would make the RPC short-circuit forever
+           on an underfunded pool. A zero-guarantee event needs no funding leg,
+           so its no-late-reg pool can still be closed directly. */
+        if (
+          lateRegCap <= 0 &&
+          lateRegMinutes <= 0 &&
+          !addOnCanStillGrowPool &&
+          !uncappedRebuyCanStillGrowPool &&
+          guaranteedPrize <= 0
+        ) {
           this.prizePoolFinalized = true;
           const { error: fpErr } = await supabase
             .from('tournaments')
@@ -2827,6 +2894,43 @@ export abstract class TournamentManagerBase {
         }
       }
 
+      /* Rebuild the add-on's two non-money timers only after table engines and
+         any overlapping synchronized break have been restored. Both phases
+         come from the persisted window, so a deploy cannot move the break or
+         grant another entitlement. A pool finalized just before the old
+         process died receives a bounded, detached tail replay: no funding RPC
+         is reachable from it and resume itself never waits. */
+      if (this.addOnPeriodTriggered) {
+        const addOnStartedMs = Date.parse(String(tournament.addon_period_started_at ?? ''));
+        const addOnEndsMs = Date.parse(String(tournament.addon_period_ends_at ?? ''));
+        const validAddOnDeadline =
+          Number.isFinite(addOnStartedMs) &&
+          Number.isFinite(addOnEndsMs) &&
+          addOnEndsMs > addOnStartedMs;
+        if (
+          !this.prizePoolFinalized &&
+          tournament.add_on_available === true &&
+          validAddOnDeadline
+        ) {
+          this.scheduleAddOnBreak(tournament.addon_period_ends_at);
+        } else if (this.prizePoolFinalized && validAddOnDeadline) {
+          const durablePool =
+            tournament.prize_pool === null || tournament.prize_pool === undefined
+              ? Number.NaN
+              : Number(tournament.prize_pool);
+          if (Number.isFinite(durablePool) && durablePool >= 0) {
+            this.scheduleFinalizedAddOnTailReplay(durablePool);
+          } else {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Restart found a finalized add-on without a readable durable prize_pool`
+              ),
+              'TournamentManagerBase.addon_final_tail_resume_pool_unreadable'
+            );
+          }
+        }
+      }
+
       console.log(
         `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed - ${this.tableEngines.size} tables, level ${this.currentLevel}`
       );
@@ -2846,6 +2950,30 @@ export abstract class TournamentManagerBase {
       clearInterval(this.eliminationTimer);
       this.eliminationTimer = null;
     }
+    if (this.addOnPeriodEndTimer) {
+      clearTimeout(this.addOnPeriodEndTimer);
+      this.addOnPeriodEndTimer = null;
+    }
+    if (this.addOnResumeBroadcastRetryTimer) {
+      clearTimeout(this.addOnResumeBroadcastRetryTimer);
+      this.addOnResumeBroadcastRetryTimer = null;
+    }
+    if (this.addOnBreakStartTimer) {
+      clearTimeout(this.addOnBreakStartTimer);
+      this.addOnBreakStartTimer = null;
+    }
+    if (this.addOnBreakEndTimer) {
+      clearTimeout(this.addOnBreakEndTimer);
+      this.addOnBreakEndTimer = null;
+    }
+    if (this.addOnFinalTailReplayTimer) {
+      clearTimeout(this.addOnFinalTailReplayTimer);
+      this.addOnFinalTailReplayTimer = null;
+    }
+    this.addOnBreakActive = false;
+    this.addOnBreakOwnsPause = false;
+    this.addOnResumeBroadcastRetryAttempts = 0;
+    this.addOnFinalTailReplayAttempts = 0;
     this.running = false;
     this.stopTableLivenessSweep();
     for (const engine of this.tableEngines.values()) {
@@ -3976,12 +4104,31 @@ export abstract class TournamentManagerBase {
      * Paused is not dead. Skip the sweep entirely while on break; it resumes
      * its normal duty the moment play does.
      */
-    if (this.onBreak) return;
+    if (this.isOnBreak()) return;
     this.revivingTables = true;
     try {
+      const { data: durableTournament, error: durableTournamentError } = await supabase
+        .from('tournaments')
+        .select('status')
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (durableTournamentError || !durableTournament) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] table liveness refused an unreadable tournament status: ${durableTournamentError?.message ?? 'row missing'}`
+          ),
+          'Tournament.table_liveness_status_unreadable'
+        );
+        return;
+      }
+      if (durableTournament.status !== 'RUNNING') {
+        this.stop();
+        return;
+      }
       // A table missing from the map is invisible to every loop below, so it
       // has to be put back before any of them run. See adoptEnginelessTables.
       await this.adoptEnginelessTables();
+      if (!this.running) return;
       for (const [tableId, engine] of this.tableEngines) {
         // Belt and braces alongside the onBreak guard above: a table parked on
         // purpose (break OR hand-for-hand) is healthy — but only for as long as
@@ -4012,6 +4159,7 @@ export abstract class TournamentManagerBase {
         } catch {
           /* already dead */
         }
+        if (!this.running) return;
         const fresh = new ServerTableEngine(tableId);
         fresh.setHub(tableStateHub);
         this.tableEngines.set(tableId, fresh);
@@ -4521,7 +4669,7 @@ export abstract class TournamentManagerBase {
          *   the next level's full duration is handed to resumeFromBreak instead
          *   of being armed as a live timer.
          */
-        if (this.onBreak) {
+        if (this.isOnBreak()) {
           this.savedBlindTimerRemaining = 1000;
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break - holding it until play resumes`
@@ -4742,7 +4890,6 @@ export abstract class TournamentManagerBase {
         ) {
           // Check if add-on is available — if so, defer finalization until add-on period ends
           if (!this.tournamentCache?.add_on_available) {
-            this.prizePoolFinalized = true;
             // GUARANTEE (2026-08-27): the pool stops moving here, so this is
             // where the advertised guarantee becomes real money — and money is
             // MOVED, not declared. applyPrizeGuarantee carries the full note.
@@ -4855,7 +5002,7 @@ export abstract class TournamentManagerBase {
             // Broadcast late_reg_closed first
             await this.broadcast('late_reg_closed', {});
             // If currently on break, defer the add-on trigger until break resumes
-            if (this.onBreak) {
+            if (this.isOnBreak()) {
               this.pendingAddOnPeriod = true;
             } else {
               await this.triggerAddOnPeriod();
@@ -4887,13 +5034,185 @@ export abstract class TournamentManagerBase {
         // in which case the clock belongs to resumeFromBreak. Arming a live
         // timer here is what let a level advance during a break; see the guard
         // at the top of this method for the full defect.
-        if (this.onBreak) {
+        if (this.isOnBreak()) {
           this.savedBlindTimerRemaining = this.levelDurationMs(level);
         } else {
           this.startBlindTimer(blindStructure);
         }
       }
     }
+  }
+
+  private addOnBreakDurationMs(): number {
+    const configured = Number(
+      (this.tournamentCache as { addon_break_minutes?: number } | null)?.addon_break_minutes ?? 1
+    );
+    const minutes = Math.min(
+      10,
+      Math.max(1, Number.isFinite(configured) ? Math.floor(configured) : 1)
+    );
+    return minutes * 60_000;
+  }
+
+  /** The persisted window's final segment is its one add-on break. */
+  private addOnBreakStartMs(endsAt: string | null | undefined): number {
+    const endMs = Date.parse(String(endsAt ?? ''));
+    return Number.isFinite(endMs) ? endMs - this.addOnBreakDurationMs() : Number.NaN;
+  }
+
+  private armAddOnBreakEnd(endMs: number): void {
+    if (this.addOnBreakEndTimer) clearTimeout(this.addOnBreakEndTimer);
+    this.addOnBreakEndTimer = setTimeout(
+      () => {
+        this.addOnBreakEndTimer = null;
+        void this.finishAddOnBreak().catch((error) =>
+          reportError(error, 'TournamentManagerBase.addon_break_finish_failed')
+        );
+      },
+      Math.max(0, endMs - Date.now())
+    );
+    if (typeof (this.addOnBreakEndTimer as any)?.unref === 'function') {
+      (this.addOnBreakEndTimer as any).unref();
+    }
+  }
+
+  /**
+   * Reconstruct the add-on break from the durable window. No second flag or
+   * entitlement is needed: breakStart = persisted end - configured break.
+   * Calling this after resume or thaw therefore restores the same phase rather
+   * than granting a new one.
+   */
+  private scheduleAddOnBreak(endsAt: string | null | undefined): void {
+    if (this.addOnBreakStartTimer) {
+      clearTimeout(this.addOnBreakStartTimer);
+      this.addOnBreakStartTimer = null;
+    }
+    if (this.addOnBreakEndTimer) {
+      clearTimeout(this.addOnBreakEndTimer);
+      this.addOnBreakEndTimer = null;
+    }
+
+    const endMs = Date.parse(String(endsAt ?? ''));
+    const breakStartMs = this.addOnBreakStartMs(endsAt);
+    if (!Number.isFinite(endMs) || !Number.isFinite(breakStartMs) || endMs <= breakStartMs) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Cannot schedule add-on break from deadline ${String(endsAt)}`
+        ),
+        'TournamentManagerBase.addon_break_deadline_invalid'
+      );
+      return;
+    }
+
+    if (endMs <= Date.now()) {
+      if (this.addOnBreakActive) {
+        void this.finishAddOnBreak().catch((error) =>
+          reportError(error, 'TournamentManagerBase.addon_break_finish_failed')
+        );
+      }
+      return;
+    }
+    if (breakStartMs <= Date.now()) {
+      void this.beginAddOnBreak(endMs).catch((error) =>
+        reportError(error, 'TournamentManagerBase.addon_break_begin_failed')
+      );
+      return;
+    }
+
+    this.addOnBreakStartTimer = setTimeout(() => {
+      this.addOnBreakStartTimer = null;
+      void this.beginAddOnBreak(endMs).catch((error) =>
+        reportError(error, 'TournamentManagerBase.addon_break_begin_failed')
+      );
+    }, breakStartMs - Date.now());
+    if (typeof (this.addOnBreakStartTimer as any)?.unref === 'function') {
+      (this.addOnBreakStartTimer as any).unref();
+    }
+  }
+
+  private async beginAddOnBreak(endMs: number): Promise<void> {
+    if (!this.running || this.prizePoolFinalized || endMs <= Date.now()) return;
+    if (isMaintenanceFrozen()) {
+      // fn_thaw_platform will move the persisted end. Re-read through the
+      // ordinary deadline path instead of beginning from the pre-thaw clock.
+      this.addOnBreakStartTimer = setTimeout(() => {
+        this.addOnBreakStartTimer = null;
+        void this.drivePersistedAddOnDeadline(false).catch((error) =>
+          reportError(error, 'TournamentManagerBase.addon_break_thaw_read_failed')
+        );
+      }, 1_000);
+      if (typeof (this.addOnBreakStartTimer as any)?.unref === 'function') {
+        (this.addOnBreakStartTimer as any).unref();
+      }
+      return;
+    }
+
+    if (this.addOnBreakActive) {
+      this.armAddOnBreakEnd(endMs);
+      return;
+    }
+    this.addOnBreakActive = true;
+    this.addOnBreakOwnsPause = !this.onBreak && !this.handForHandActive;
+    this.armAddOnBreakEnd(endMs);
+
+    if (this.addOnBreakOwnsPause) {
+      this.suspendLevelClock();
+      const remainingMs = Math.max(1_000, endMs - Date.now());
+      for (const engine of this.tableEngines.values()) {
+        try {
+          engine.pauseAfterHand(remainingMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
+            beforeNextHand: true,
+          });
+        } catch (error) {
+          reportError(error, 'TournamentManagerBase.addon_break_pause');
+        }
+      }
+    }
+
+    await this.broadcast('addon_break', {
+      breakDurationMinutes: Math.max(1, Math.ceil((endMs - Date.now()) / 60_000)),
+      breakEndsAt: new Date(endMs).toISOString(),
+    });
+
+    // The same boolean entitlement is used at opening and at the break. The
+    // query excludes horses who already took it, so this cannot grant a second
+    // add-on; it only gives every still-playing horse its promised timing.
+    this.lastAddOnOfferAt = Date.now();
+    await this.tryTournamentAddOns();
+  }
+
+  private async finishAddOnBreak(): Promise<void> {
+    if (!this.addOnBreakActive) return;
+    if (isMaintenanceFrozen()) {
+      // Keep the pause authority until thaw has shifted and re-read the window;
+      // otherwise MaintenanceBreak would resume these tables from under it.
+      this.armAddOnBreakEnd(Date.now() + 1_000);
+      return;
+    }
+
+    const ownsPause = this.addOnBreakOwnsPause;
+    this.addOnBreakActive = false;
+    this.addOnBreakOwnsPause = false;
+    if (this.addOnBreakEndTimer) {
+      clearTimeout(this.addOnBreakEndTimer);
+      this.addOnBreakEndTimer = null;
+    }
+    if (!this.running || !ownsPause || this.onBreak) return;
+
+    if (!this.handForHandActive) {
+      for (const engine of this.tableEngines.values()) {
+        try {
+          engine.resumeDealing();
+        } catch (error) {
+          reportError(error, 'TournamentManagerBase.addon_break_resume');
+        }
+      }
+    }
+
+    const blindStructure = this.tournamentCache?.blind_structure || [];
+    const remaining = this.savedBlindTimerRemaining;
+    this.savedBlindTimerRemaining = 0;
+    this.startBlindTimer(blindStructure, remaining > 0 ? remaining : undefined);
   }
 
   /**
@@ -4922,6 +5241,12 @@ export abstract class TournamentManagerBase {
    * disappears again the deploy fails rather than the feature silently dying.
    */
   protected async tryTournamentAddOns(): Promise<void> {
+    // The database money freeze deliberately exempts service_role so an
+    // in-flight hand can finish and shutdown state can flush. This automatic
+    // horse purchase uses that role, so its own boundary must stand down for
+    // the whole maintenance window. Re-check inside the loop as well: a large
+    // field can take long enough for :53 to arrive after the board read.
+    if (isMaintenanceFrozen()) return;
     if (!this.tournamentCache?.add_on_available) return;
     try {
       const { data: rows, error: rowsErr } = await supabase
@@ -4959,12 +5284,32 @@ export abstract class TournamentManagerBase {
         `Tournament.addOnHorses(${this.tournamentId.slice(0, 8)})`
       );
       if (!horseRead.complete) return;
-      const horseRows = horseRead.rows;
+      let horseRows = horseRead.rows;
+      if (this.tournamentCache?.addon_from_start === true) {
+        const breakStartMs = this.addOnBreakStartMs(this.tournamentCache?.addon_period_ends_at);
+        if (!Number.isFinite(breakStartMs)) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Free Buy horse add-ons have no durable break deadline`
+            ),
+            'Tournament.free_buy_addon_break_unreadable'
+          );
+          return;
+        }
+        // Dan's split is WHEN, not WHETHER: the deterministic 35% tranche may
+        // buy before the break; every remaining live horse buys once it starts.
+        if (Date.now() < breakStartMs) {
+          horseRows = horseRows.filter((horse) =>
+            horseAddsOnImmediately(horse.id, this.tournamentId)
+          );
+        }
+      }
       if (horseRows.length === 0) return;
 
       let taken = 0;
       const declined = new Map<string, number>();
       for (const h of horseRows) {
+        if (isMaintenanceFrozen()) break;
         const { data, error } = await supabase.rpc('process_tournament_rebuy', {
           p_tournament_id: this.tournamentId,
           p_user_id: h.id,
@@ -4997,133 +5342,486 @@ export abstract class TournamentManagerBase {
   }
 
   protected async triggerAddOnPeriod(): Promise<void> {
-    if (this.addOnPeriodTriggered) return;
-    this.addOnPeriodTriggered = true;
+    if (this.addOnPeriodTriggered || this.addOnPeriodOpening || this.prizePoolFinalized) return;
+    this.addOnPeriodOpening = true;
+    let durableWindowProven = false;
 
-    // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
-    // restores it (resume() reads addon_period_triggered) instead of
-    // re-broadcasting ADDON_PERIOD_START and losing finalizeAfterAddOn.
-    /* FREE BUY (Dan 2026-09-04): "PLAYERS CAN ADD ON AS SOON AS THEY SIT
-       DOWN, AND ALSO AT THE BREAK." Read with "ONE HOUR FOR LATE REG, THEN
-       THE ADD ON PERIOD", that is not two windows - it is ONE window that
-       opens when the event starts and shuts after the break. Two windows
-       would need a second add-on per player, and `tournament_players.add_on`
-       is a boolean: one add-on each, taken whenever the player likes inside
-       the window.
+    try {
+      // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
+      // restores it (resume() reads addon_period_triggered) instead of
+      // re-broadcasting ADDON_PERIOD_START and losing finalizeAfterAddOn.
+      /* FREE BUY (Dan 2026-09-04): "PLAYERS CAN ADD ON AS SOON AS THEY SIT
+         DOWN, AND ALSO AT THE BREAK." Read with "ONE HOUR FOR LATE REG, THEN
+         THE ADD ON PERIOD", that is not two windows - it is ONE window that
+         opens when the event starts and shuts after the break. Two windows
+         would need a second add-on per player, and `tournament_players.add_on`
+         is a boolean: one add-on each, taken whenever the player likes inside
+         the window.
 
-       A normal event keeps the 60-second window it has always had. */
-    const addonPeriodStartedAt = new Date().toISOString();
-    const fromStart = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
-      ?.addon_from_start;
-    const lateRegMs =
-      (((this.tournamentCache as { late_reg_mins?: number } | null)?.late_reg_mins ??
-        60) as number) * 60_000;
-    const addonWindowMs = fromStart ? lateRegMs + 60_000 : 60_000;
-    const addonPeriodEndsAt = new Date(Date.now() + addonWindowMs).toISOString();
-    if (this.tournamentCache) {
-      this.tournamentCache.addon_period_started_at = addonPeriodStartedAt;
-      this.tournamentCache.addon_period_ends_at = addonPeriodEndsAt;
-    }
-    void Promise.resolve(
-      supabase
+         A normal event keeps the 60-second window it has always had. */
+      const requestedStart = new Date().toISOString();
+      const requestedStartMs = Date.parse(requestedStart);
+      const fromStart = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
+        ?.addon_from_start;
+      const lateRegMs =
+        (((this.tournamentCache as { late_reg_mins?: number } | null)?.late_reg_mins ??
+          60) as number) * 60_000;
+      const advertisedStartMs = Date.parse(String(this.tournamentCache?.start_time ?? ''));
+      if (fromStart && !Number.isFinite(advertisedStartMs)) {
+        throw new Error('Free Buy add-on window has no readable advertised tournament start');
+      }
+      const requestedEndMs = fromStart
+        ? advertisedStartMs + lateRegMs + this.addOnBreakDurationMs()
+        : requestedStartMs + 60_000;
+      const requestedEnd = new Date(requestedEndMs).toISOString();
+      const projection =
+        'addon_period_triggered, addon_period_started_at, addon_period_ends_at, add_on_available, prize_pool_finalized, status';
+
+      /* The in-memory latch is deliberately still false. Two database facts
+         must be proven first: this exact row accepted the bounded window, and
+         a fresh read sees it. The false->true match also makes a lost response
+         replayable without extending an already-open offer. */
+      const { data: opened, error: openError } = await supabase
         .from('tournaments')
         .update({
           addon_period_triggered: true,
-          addon_period_started_at: addonPeriodStartedAt,
-          addon_period_ends_at: addonPeriodEndsAt,
+          addon_period_started_at: requestedStart,
+          addon_period_ends_at: requestedEnd,
         })
         .eq('id', this.tournamentId)
-    )
-      .then(({ error }: { error: { message?: string } | null }) => {
-        if (error && !/column|schema/i.test(error.message || '')) {
-          console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] addon_period_triggered persist failed: ${error.message}`
-          );
-        }
-      })
-      .catch((err: unknown) => {
-        console.warn(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] addon_period_triggered persist threw: ${(err as Error)?.message ?? err}`
+        .eq('addon_period_triggered', false)
+        .eq('prize_pool_finalized', false)
+        .eq('add_on_available', true)
+        .in('status', ['REGISTERING', 'RUNNING'])
+        .select(projection)
+        .maybeSingle();
+      // Always read after the write attempt. A timeout can mean "the database
+      // committed but the response was lost"; throwing here would leave the
+      // in-memory latch false even though the durable window is already open.
+      const { data: proven, error: proofError } = await supabase
+        .from('tournaments')
+        .select(projection)
+        .eq('id', this.tournamentId)
+        .maybeSingle();
+      if (proofError || !proven) {
+        throw new Error(
+          `could not prove the persisted add-on window: ${proofError?.message ?? 'row not found'}` +
+            (openError ? `; write response was also lost: ${openError.message}` : '')
         );
-      });
-
-    const addonCost = this.tournamentCache?.addon_cost || this.tournamentCache?.buy_in_amount || 0;
-    const addonChips =
-      this.tournamentCache?.addon_chips || this.tournamentCache?.starting_chips || 0;
-    const rebuyLevelCap =
-      this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 8;
-
-    console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD START - 60 seconds after level ${rebuyLevelCap}, cost: ${addonCost}, chips: ${addonChips}`
-    );
-
-    // The client receives one explicit 60-second offer with the exact price
-    // and chip grant. There is no rake on the purchase.
-    await this.broadcast('ADDON_PERIOD_START', {
-      message: 'The Add-On Period Has Begun',
-      addOnCost: addonCost,
-      addOnChips: addonChips,
-      addOnFee: 0,
-      durationSeconds: 60,
-      endsAt: addonPeriodEndsAt,
-    });
-
-    // ADD-ON BREAK (2026-08-22 parity): the add-on window opens with a short
-    // pause so the field can take its add-on between hands. Length comes from
-    // tournaments.addon_break_minutes (clamped 1-10 at creation), never a
-    // hardcoded value. A synchronized break or hand-for-hand already owns the
-    // pause state when active, so this stands down rather than fighting them.
-    const addonBreakMinutes = 1;
-    if (!this.onBreak && !this.handForHandActive) {
-      const breakMs = addonBreakMinutes * 60 * 1000;
-      for (const engine of this.tableEngines.values()) {
-        try {
-          // An add-on break is a break: nothing new is dealt during it.
-          engine.pauseAfterHand(breakMs + TournamentManagerBase.LAST_HAND_GRACE_MS, {
-            beforeNextHand: true,
-          });
-        } catch (err) {
-          reportError(err, 'TournamentManagerBase.addon_break_pause');
-        }
       }
-      await this.broadcast('addon_break', {
-        breakDurationMinutes: addonBreakMinutes,
-        breakEndsAt: new Date(Date.now() + breakMs).toISOString(),
-      });
-      const resumeTimer = setTimeout(() => {
-        // A synchronized break or the bubble sync may have taken over the
-        // pause state during the add-on break — leave the pause to them.
-        if (!this.running || this.onBreak || this.handForHandActive) return;
-        for (const engine of this.tableEngines.values()) {
-          try {
-            engine.resumeDealing();
-          } catch (err) {
-            reportError(err, 'TournamentManagerBase.addon_break_resume');
-          }
-        }
-      }, breakMs);
-      if (typeof (resumeTimer as any)?.unref === 'function') (resumeTimer as any).unref();
+
+      const startedAt = String(proven.addon_period_started_at ?? '');
+      const endsAt = String(proven.addon_period_ends_at ?? '');
+      const startMs = Date.parse(startedAt);
+      const endMs = Date.parse(endsAt);
+      if (
+        proven.addon_period_triggered !== true ||
+        proven.add_on_available !== true ||
+        proven.prize_pool_finalized === true ||
+        !['REGISTERING', 'RUNNING'].includes(String(proven.status)) ||
+        !Number.isFinite(startMs) ||
+        !Number.isFinite(endMs) ||
+        endMs <= startMs ||
+        (opened &&
+          (Date.parse(String(opened.addon_period_started_at ?? '')) !== startMs ||
+            Date.parse(String(opened.addon_period_ends_at ?? '')) !== endMs))
+      ) {
+        throw new Error('the persisted add-on window failed its exact read-back proof');
+      }
+
+      /* A transport error does not tell us whether the UPDATE committed. If
+         the fresh row contains the exact timestamps this process proposed,
+         this process still owns the one-shot effects. A real compare-and-set
+         loser sees a different persisted window and adopts only its timer. */
+      const openedByThisProcess =
+        !!opened || (!!openError && startMs === requestedStartMs && endMs === requestedEndMs);
+
+      this.addOnPeriodTriggered = true;
+      durableWindowProven = true;
+      if (this.tournamentCache) {
+        this.tournamentCache.addon_period_started_at = startedAt;
+        this.tournamentCache.addon_period_ends_at = endsAt;
+      }
+
+      // Schedule the durable close before any notification or table-side
+      // effect. A Realtime failure must not strand an open offer forever.
+      this.scheduleAddOnPeriodEnd(endsAt);
+      this.scheduleAddOnBreak(endsAt);
+
+      const addonCost =
+        this.tournamentCache?.addon_cost || this.tournamentCache?.buy_in_amount || 0;
+      const addonChips =
+        this.tournamentCache?.addon_chips || this.tournamentCache?.starting_chips || 0;
+      const rebuyLevelCap =
+        this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 8;
+      const durationSeconds = Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
+
+      // A delayed/lost write response can be recovered after the short window
+      // has already elapsed. Adopt its durable state and let the zero-delay
+      // close run; do not announce or offer an expired add-on.
+      if (durationSeconds <= 0) return;
+
+      // Only the process whose compare-and-set returned the changed row, or
+      // whose lost response is proven by its exact proposed timestamps, owns
+      // the one-shot announcement and table pause. A true concurrent loser
+      // adopts the persisted window and close timer without duplicating them.
+      if (!openedByThisProcess) return;
+
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD START - ${durationSeconds} seconds remaining after level ${rebuyLevelCap}, cost: ${addonCost}, chips: ${addonChips}`
+      );
+
+      // The client receives the exact persisted offer, price and chip grant.
+      // There is no rake on the purchase.
+      try {
+        await this.broadcast('ADDON_PERIOD_START', {
+          message: 'The Add-On Period Has Begun',
+          addOnCost: addonCost,
+          addOnChips: addonChips,
+          addOnFee: 0,
+          durationSeconds,
+          endsAt,
+        });
+      } catch (err) {
+        // The offer exists independently of Realtime. Keep driving the
+        // database-backed add-on path and its close timer.
+        reportError(err, 'TournamentManagerBase.addon_period_broadcast');
+      }
+
+      // Offer the add-on to the field now that the durable window is proven.
+      await this.tryTournamentAddOns();
+    } catch (err) {
+      /* Keep the latch false on any unproven write/read. A later level or hand
+         edge can retry; if the write actually committed but its response was
+         lost, the read-back branch adopts that existing window without moving
+         its end time. */
+      if (!durableWindowProven) this.addOnPeriodTriggered = false;
+      reportError(err, 'Tournament.addon_period_open_failed');
+    } finally {
+      this.addOnPeriodOpening = false;
     }
-
-    // Offer the add-on to the field now that the window is open.
-    await this.tryTournamentAddOns();
-
-    this.scheduleAddOnPeriodEnd(addonPeriodEndsAt);
   }
 
-  /** Close the offer and finalize the pool exactly sixty seconds after it
-   * opens. The persisted end time makes a process restart resume the same
+  /** Close the offer at its exact persisted end time. The persisted clock can
+   * be the normal minute or the longer Free Buy window, and makes a restart resume the same
    * clock instead of granting a new window or leaving it open for a level. */
   protected scheduleAddOnPeriodEnd(endsAt: string | null | undefined): void {
     const parsed = Date.parse(String(endsAt || ''));
-    const delay = Number.isFinite(parsed) ? Math.max(0, parsed - Date.now()) : 0;
-    const timer = setTimeout(() => {
-      if (!this.running || this.prizePoolFinalized) return;
-      void this.finalizeAfterAddOn().catch((err) =>
-        reportError(err, 'TournamentManagerBase.addon_period_finalize')
+    if (!Number.isFinite(parsed)) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Cannot schedule an add-on close without a valid persisted deadline`
+        ),
+        'TournamentManagerBase.addon_period_deadline_invalid'
       );
-    }, delay);
-    if (typeof (timer as any)?.unref === 'function') (timer as any).unref();
+      return;
+    }
+    this.armAddOnPeriodEndCheck(Math.max(0, parsed - Date.now()));
+  }
+
+  private armAddOnPeriodEndCheck(delayMs: number): void {
+    if (this.addOnPeriodEndTimer) clearTimeout(this.addOnPeriodEndTimer);
+    this.addOnPeriodEndTimer = setTimeout(
+      () => {
+        this.addOnPeriodEndTimer = null;
+        void this.drivePersistedAddOnDeadline(false).catch((err) =>
+          reportError(err, 'TournamentManagerBase.addon_period_finalize')
+        );
+      },
+      Math.max(0, delayMs)
+    );
+    if (typeof (this.addOnPeriodEndTimer as any)?.unref === 'function') {
+      (this.addOnPeriodEndTimer as any).unref();
+    }
+  }
+
+  private scheduleAddOnResumeBroadcastRetry(): void {
+    if (
+      !this.running ||
+      this.prizePoolFinalized ||
+      this.addOnResumeBroadcastRetryTimer ||
+      this.addOnResumeBroadcastRetryAttempts >= 3
+    ) {
+      return;
+    }
+    const attempt = ++this.addOnResumeBroadcastRetryAttempts;
+    this.addOnResumeBroadcastRetryTimer = setTimeout(() => {
+      this.addOnResumeBroadcastRetryTimer = null;
+      void this.drivePersistedAddOnDeadline(true).catch((error) =>
+        reportError(error, 'TournamentManagerBase.addon_period_thaw_retry_failed')
+      );
+    }, attempt * 1_000);
+    if (typeof (this.addOnResumeBroadcastRetryTimer as any)?.unref === 'function') {
+      (this.addOnResumeBroadcastRetryTimer as any).unref();
+    }
+  }
+
+  /**
+   * A restart can land after fn_apply_prize_guarantee committed but before the
+   * process repriced and announced END. Replay only that idempotent, non-money
+   * tail. It is deliberately detached from resume() and bounded to three local
+   * attempts, so table-engine restoration never waits on presentation work.
+   */
+  private scheduleFinalizedAddOnTailReplay(finalPool: number): void {
+    if (
+      !this.running ||
+      !Number.isFinite(finalPool) ||
+      finalPool < 0 ||
+      this.addOnFinalTailReplayTimer ||
+      this.addOnFinalTailReplayAttempts >= 3
+    ) {
+      return;
+    }
+
+    const attempt = ++this.addOnFinalTailReplayAttempts;
+    this.addOnFinalTailReplayTimer = setTimeout(
+      () => {
+        this.addOnFinalTailReplayTimer = null;
+        void (async () => {
+          if (!this.running) return;
+          if (this.addOnPeriodFinalizing) {
+            this.scheduleFinalizedAddOnTailReplay(finalPool);
+            return;
+          }
+
+          this.addOnPeriodFinalizing = true;
+          let retry = false;
+          try {
+            await this.finishAddOnTail(finalPool);
+            this.addOnFinalTailReplayAttempts = 0;
+          } catch (error) {
+            retry = true;
+            reportError(error, 'TournamentManagerBase.addon_final_tail_replay_failed');
+          } finally {
+            this.addOnPeriodFinalizing = false;
+          }
+          if (retry) this.scheduleFinalizedAddOnTailReplay(finalPool);
+        })();
+      },
+      attempt === 1 ? 0 : attempt * 1_000
+    );
+    if (typeof (this.addOnFinalTailReplayTimer as any)?.unref === 'function') {
+      (this.addOnFinalTailReplayTimer as any).unref();
+    }
+  }
+
+  /**
+   * Finish the non-money work that follows a durably finalized add-on pool.
+   *
+   * The guarantee RPC can commit and lose its HTTP response. In that case the
+   * tournaments row is the receipt, and this tail must be safe to run from the
+   * later read-back as well as from the ordinary success response. Repricing
+   * writes the same deterministic entitlement, END is a state-setting client
+   * event, and clearing an absent timer is harmless, so every step is
+   * idempotent.
+   */
+  private async finishAddOnTail(finalPool: number, alreadyRepriced = false): Promise<void> {
+    if (!Number.isFinite(finalPool) || finalPool < 0) {
+      throw new Error(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Cannot finish the add-on tail without a proven durable prize pool (${String(finalPool)})`
+      );
+    }
+
+    // finalFieldSize(), used by the reprice, deliberately opens only after the
+    // pool is final. The database flag was proven before this helper is called.
+    this.prizePoolFinalized = true;
+    if (this.tournamentCache) {
+      this.tournamentCache.prize_pool = finalPool;
+      this.tournamentCache.prize_pool_finalized = true;
+    }
+
+    if (!alreadyRepriced) await this.recalculateEliminatedPrizes(finalPool);
+    const delivered = await this.broadcast('ADDON_PERIOD_END', {});
+    await this.finishAddOnBreak();
+
+    if (this.addOnPeriodEndTimer) {
+      clearTimeout(this.addOnPeriodEndTimer);
+      this.addOnPeriodEndTimer = null;
+    }
+    if (this.addOnResumeBroadcastRetryTimer) {
+      clearTimeout(this.addOnResumeBroadcastRetryTimer);
+      this.addOnResumeBroadcastRetryTimer = null;
+    }
+    if (this.addOnBreakStartTimer) {
+      clearTimeout(this.addOnBreakStartTimer);
+      this.addOnBreakStartTimer = null;
+    }
+    this.addOnResumeBroadcastRetryAttempts = 0;
+
+    // broadcast() deliberately catches transport failures and reports them as
+    // a false receipt so normal game work can continue. END is presentation
+    // state that a restart must replay, though: surface the failed receipt
+    // only after releasing the break and clearing stale timers, then let the
+    // bounded finalized-tail driver try the same idempotent tail again.
+    if (!delivered) {
+      throw new Error(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ADDON_PERIOD_END was not delivered`
+      );
+    }
+  }
+
+  /**
+   * Re-read the deadline before acting on it. fn_thaw_platform moves an open
+   * add-on window forward by the maintenance duration, so an in-memory timer
+   * armed before :55 is evidence only that it is time to ask the database.
+   * It is never authority to close the shifted offer.
+   */
+  private async drivePersistedAddOnDeadline(rebroadcastAfterThaw: boolean): Promise<void> {
+    if (!this.running) return;
+
+    const { data: state, error } = await supabase
+      .from('tournaments')
+      .select(
+        'addon_period_triggered, addon_period_started_at, addon_period_ends_at, add_on_available, prize_pool, prize_pool_finalized, status'
+      )
+      .eq('id', this.tournamentId)
+      .maybeSingle();
+    if (error || !state) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Could not re-read the persisted add-on deadline (${error?.message ?? 'row not found'})`
+        ),
+        'TournamentManagerBase.addon_period_deadline_read_failed'
+      );
+      // A transient read failure must not discard the only close edge. This
+      // is the same live window checking its own durable record, not a repair
+      // sweep or a second settlement path.
+      if (this.running) this.armAddOnPeriodEndCheck(5_000);
+      // The caller asked us to deliver the shifted thaw deadline. A failed
+      // read must retain that intent rather than converting its retry into an
+      // ordinary close-only check.
+      if (rebroadcastAfterThaw) this.scheduleAddOnResumeBroadcastRetry();
+      return;
+    }
+
+    if (state.prize_pool_finalized === true) {
+      // A successful database transaction can outlive a lost RPC response.
+      // Accept only the row's finalized flag plus its readable pool as the
+      // receipt, then complete the same idempotent tail as the success path.
+      const durablePool =
+        state.prize_pool === null || state.prize_pool === undefined
+          ? Number.NaN
+          : Number(state.prize_pool);
+      if (!Number.isFinite(durablePool) || durablePool < 0) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Add-on pool is finalized but its durable prize_pool is unreadable (${String(state.prize_pool)})`
+          ),
+          'TournamentManagerBase.addon_period_final_pool_unreadable'
+        );
+        if (this.running) this.armAddOnPeriodEndCheck(5_000);
+        if (rebroadcastAfterThaw) this.scheduleAddOnResumeBroadcastRetry();
+        return;
+      }
+      if (this.addOnPeriodFinalizing) return;
+      this.addOnPeriodFinalizing = true;
+      try {
+        await this.finishAddOnTail(durablePool);
+      } catch (tailError) {
+        reportError(tailError, 'TournamentManagerBase.addon_period_final_tail_failed');
+        if (this.running) this.armAddOnPeriodEndCheck(5_000);
+      } finally {
+        this.addOnPeriodFinalizing = false;
+      }
+      return;
+    }
+    if (
+      state.addon_period_triggered !== true ||
+      state.add_on_available !== true ||
+      !['REGISTERING', 'RUNNING'].includes(String(state.status))
+    ) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Persisted add-on window is no longer an active tournament contract`
+        ),
+        'TournamentManagerBase.addon_period_contract_invalid'
+      );
+      return;
+    }
+
+    const endsAt = String(state.addon_period_ends_at ?? '');
+    const endMs = Date.parse(endsAt);
+    const startMs = Date.parse(String(state.addon_period_started_at ?? ''));
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Persisted add-on window has an invalid start/end pair`
+        ),
+        'TournamentManagerBase.addon_period_deadline_invalid'
+      );
+      return;
+    }
+
+    this.addOnPeriodTriggered = true;
+    if (this.tournamentCache) {
+      this.tournamentCache.addon_period_started_at = String(state.addon_period_started_at);
+      this.tournamentCache.addon_period_ends_at = endsAt;
+    }
+    this.scheduleAddOnBreak(endsAt);
+
+    const remainingMs = endMs - Date.now();
+    if (remainingMs > 0) {
+      this.armAddOnPeriodEndCheck(remainingMs);
+      if (rebroadcastAfterThaw) {
+        const addOnCost =
+          this.tournamentCache?.addon_cost || this.tournamentCache?.buy_in_amount || 0;
+        const addOnChips =
+          this.tournamentCache?.addon_chips || this.tournamentCache?.starting_chips || 0;
+        const delivered = await this.broadcast('ADDON_PERIOD_START', {
+          message: 'The Add-On Period Has Resumed',
+          addOnCost,
+          addOnChips,
+          addOnFee: 0,
+          durationSeconds: Math.max(1, Math.ceil(remainingMs / 1000)),
+          endsAt,
+          resumedAfterMaintenance: true,
+        });
+        if (delivered) {
+          if (this.addOnResumeBroadcastRetryTimer) {
+            clearTimeout(this.addOnResumeBroadcastRetryTimer);
+            this.addOnResumeBroadcastRetryTimer = null;
+          }
+          this.addOnResumeBroadcastRetryAttempts = 0;
+        } else {
+          this.scheduleAddOnResumeBroadcastRetry();
+        }
+        // A player who took a seat during the original offer must receive the
+        // same chance after the break. Queue this behind MaintenanceBreak.end:
+        // this callback runs while the global freeze flag is intentionally
+        // still set, and the money RPC must never be asked through that gate.
+        const offerAfterResume = () => {
+          if (!this.running || this.prizePoolFinalized) return;
+          if (isMaintenanceFrozen()) {
+            const retry = setTimeout(offerAfterResume, 1_000);
+            if (typeof (retry as any)?.unref === 'function') (retry as any).unref();
+            return;
+          }
+          void this.tryTournamentAddOns().catch((offerError) =>
+            reportError(offerError, 'TournamentManagerBase.addon_period_thaw_offer_failed')
+          );
+        };
+        const offerTimer = setTimeout(offerAfterResume, 0);
+        if (typeof (offerTimer as any)?.unref === 'function') (offerTimer as any).unref();
+      }
+      return;
+    }
+
+    // The old timer can fire while the platform is parked, before the thaw
+    // transaction has shifted this row. Never close or announce the end from
+    // pre-thaw time; ask the same durable record again after the break.
+    if (isMaintenanceFrozen()) {
+      this.armAddOnPeriodEndCheck(5_000);
+      return;
+    }
+    await this.finalizeAfterAddOn();
+  }
+
+  /** Called by the platform thaw after fn_thaw_platform commits and before
+   * the first table resumes. Active offers re-arm and every subscribed client
+   * receives the new absolute deadline instead of counting down the old one. */
+  public async resyncAddOnPeriodAfterMaintenanceThaw(): Promise<void> {
+    if (!this.running || !this.addOnPeriodTriggered || this.prizePoolFinalized) return;
+    await this.drivePersistedAddOnDeadline(true);
   }
 
   /**
@@ -5160,9 +5858,9 @@ export abstract class TournamentManagerBase {
    *
    * Returns the funded pool, or `null` when the call could not be completed —
    * in which case the caller must NOT invent a pool. A null is reported and
-   * leaves the row un-finalized so a later pass (or
-   * `fn_sweep_unfunded_guarantees`) can re-drive it; the tournament keeps
-   * playing either way, because tournaments run.
+   * leaves the row un-finalized so a later idempotent guarantee attempt can
+   * re-drive it; the tournament keeps playing either way, because tournaments
+   * run.
    */
   protected async applyPrizeGuarantee(source: string): Promise<number | null> {
     try {
@@ -5221,25 +5919,46 @@ export abstract class TournamentManagerBase {
   }
 
   protected async finalizeAfterAddOn(): Promise<void> {
-    if (this.prizePoolFinalized) return;
-
-    console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD ENDED at level ${this.currentLevel} - finalizing prize pool`
-    );
-
-    this.prizePoolFinalized = true;
-    await supabase
-      .from('tournaments')
-      .update({ prize_pool_finalized: true })
-      .eq('id', this.tournamentId);
-    // GUARANTEE (2026-08-27): same rule as the late-reg-close site — the pool
-    // is final now, so the advertised guarantee is FUNDED here (not declared).
-    const finalPool = await this.applyPrizeGuarantee('addon_period_end');
-    if (finalPool !== null) {
-      await this.recalculateEliminatedPrizes(finalPool);
+    if (this.prizePoolFinalized || this.addOnPeriodFinalizing) return;
+    if (isMaintenanceFrozen()) {
+      // This timer is a read edge for the same live durable window, not a
+      // repair worker. Keep it alive until the thaw moves the deadline and the
+      // service-role guarantee call is allowed to move money again.
+      if (this.running) this.armAddOnPeriodEndCheck(5_000);
+      return;
     }
+    this.addOnPeriodFinalizing = true;
 
-    await this.broadcast('ADDON_PERIOD_END', {});
+    try {
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD ENDED at level ${this.currentLevel} - finalizing prize pool`
+      );
+
+      // GUARANTEE (2026-08-27): same rule as the late-reg-close site — the pool
+      // is final now, so the advertised guarantee is FUNDED here (not declared).
+      // Do not pre-stamp prize_pool_finalized: fn_apply_prize_guarantee treats
+      // that flag as proof funding already happened and would return the old,
+      // under-guarantee pool without moving the overlay. The RPC owns the flag
+      // and this in-memory latch changes only after its transaction succeeds.
+      const finalPool = await this.applyPrizeGuarantee('addon_period_end');
+      if (finalPool === null) {
+        // The deadline expired, but the pool is not final until the canonical
+        // funding transaction proves it. A transient refusal must not discard
+        // the only live restart edge and strand this event forever.
+        if (this.running && !this.prizePoolFinalized) this.armAddOnPeriodEndCheck(5_000);
+        return;
+      }
+      await this.recalculateEliminatedPrizes(finalPool);
+      await this.finishAddOnTail(finalPool, true);
+    } catch (tailError) {
+      // The money transaction is idempotent and durable. Keep a read-back edge
+      // alive so a thrown non-money tail is retried from database truth without
+      // ever inventing or funding a second pool.
+      reportError(tailError, 'TournamentManagerBase.addon_period_final_tail_failed');
+      if (this.running) this.armAddOnPeriodEndCheck(5_000);
+    } finally {
+      this.addOnPeriodFinalizing = false;
+    }
   }
 
   /**

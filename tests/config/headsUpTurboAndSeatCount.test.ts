@@ -21,11 +21,10 @@
  *     heads-up rows claimed nine seats and every duel resolved to 'mtt'. The
  *     horses played two-handed poker with ICM and bubble ranges.
  *
- *  3. THE PAYOUT SWEEP COULD NOT REACH ITS BACKLOG. It ran at `p_days: 1`, so
- *     169 underpaid tournaments from May to August were permanently outside the
- *     window — and widening it alone fixes nothing, because
- *     fn_tournament_payout_sweep applies `LIMIT GREATEST(p_limit,1)` to the
- *     SCAN, ordered updated_at DESC, not to the report.
+ *  3. THE PAYOUT SWEEP COULD NOT REACH ITS BACKLOG. That applying repair has
+ *     since been retired by the atomic place-settlement cutover. The root path
+ *     now pays the complete frozen plan or none, so a daemon must never restore
+ *     this second writer.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -42,6 +41,9 @@ const recurringCode = stripComments(recurring);
 const scheduled = stripComments(read('server/src/services/ScheduledTournamentService.ts'));
 const settler = stripComments(read('server/src/services/RakebackSettlerService.ts'));
 const brain = stripComments(read('server/src/services/TournamentBrainContext.ts'));
+const atomicSettlementMigration = stripComments(
+  read('supabase/migrations/20260907205918_tournament_places_settle_and_complete_atomically.sql')
+);
 
 describe('1. the Heads-Up board offers BOTH bands', () => {
   const shapes = recurringCode.slice(
@@ -194,54 +196,25 @@ describe('3. one rate decides the fee, and every writer asks it', () => {
   });
 });
 
-describe('4. the payout sweep can actually reach the events it repairs', () => {
-  it('passes p_limit EXPLICITLY -- omitting it silently caps the scan at 50', () => {
-    expect(settler).toMatch(/p_limit:\s*limit/);
-    expect(settler).not.toMatch(/p_days:\s*1,/);
+describe('4. the applying payout sweep stays retired after the root fix', () => {
+  it('the daemon has no applying tournament-payout path left', () => {
+    expect(settler).not.toContain('fn_tournament_payout_sweep');
+    expect(settler).not.toContain('runTournamentPayoutSweep');
+    expect(settler).not.toContain('payoutSweepPass');
+    expect(settler).not.toContain('PAYOUT_SWEEP_');
   });
 
-  it('looks 30 days back on the deep pass, with a limit that covers the window', () => {
-    // Measured: 48,093 events in a 30-day window; 150,000 restores headroom.
-    expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_DAYS\s*=\s*30/);
-
-    // A FLOOR, NOT A LITERAL. This pinned `= 40000` exactly, the limit was
-    // deliberately raised to 150,000 (about 3x the population, with the
-    // reasoning written beside it in RakebackSettlerService), and the pin went
-    // red on a change that made the sweep strictly better - main published
-    // nothing for anyone until somebody noticed. Re-pinning the new literal
-    // just schedules the same outage for the next improvement.
-    //
-    // The bug this guards is a limit too SMALL to cover its window: a large one
-    // costs seconds, a small one silently shrinks the window back down and is
-    // the original defect in a new coat. Assert the direction that can hurt.
-    const deepLimit = Number(settler.match(/PAYOUT_SWEEP_DEEP_LIMIT\s*=\s*(\d+)/)?.[1] ?? NaN);
-    expect(deepLimit, 'the deep limit must be readable').not.toBeNaN();
-    expect(deepLimit).toBeGreaterThanOrEqual(40000);
+  it('keeps the read-only conservation detectors', () => {
+    expect(settler).toContain('runTournamentSentinel');
+    expect(settler).toContain('runTournamentChipConservation');
   });
 
-  it('does not pay the ~10s scan on all 48 cycles a day', () => {
-    // The narrow pass is what runs every cycle; the deep pass runs on the first
-    // cycle after boot and then about twice a day.
-    expect(settler).toMatch(/PAYOUT_SWEEP_RECENT_DAYS\s*=\s*2/);
-    expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_EVERY\s*=\s*24/);
-  });
-
-  it('every limit EXCEEDS the population of the window it is paired with', () => {
-    // The limit binds the SCAN, so a limit smaller than the window's population
-    // silently shrinks the window back down -- which is the original bug in a
-    // new coat. Measured 2026-08-27: 35,220 COMPLETED events in 30 days,
-    // ~1,174/day, so a 2-day window holds roughly 2,350.
-    const num = (name: string) =>
-      Number(settler.match(new RegExp(`${name}\\s*=\\s*(\\d+)`))?.[1] ?? NaN);
-    const perDay = 1174;
-    expect(num('PAYOUT_SWEEP_RECENT_LIMIT')).toBeGreaterThan(
-      num('PAYOUT_SWEEP_RECENT_DAYS') * perDay
+  it('the cutover removes the applying cron and its expected-roster entry', () => {
+    expect(atomicSettlementMigration).toMatch(
+      /cron\.unschedule\(j\.jobid\)[\s\S]*j\.jobname = 'ca-payout-sweep-hourly'/
     );
-    expect(num('PAYOUT_SWEEP_DEEP_LIMIT')).toBeGreaterThan(num('PAYOUT_SWEEP_DEEP_DAYS') * perDay);
-  });
-
-  it('a failed deep pass does not cost the cycle its routine sweep', () => {
-    expect(settler).toMatch(/if \(deepOk\) return;/);
-    expect(settler).toMatch(/payoutSweepPass\(\s*RakebackSettlerService\.PAYOUT_SWEEP_RECENT_DAYS/);
+    expect(atomicSettlementMigration).toMatch(
+      /DELETE FROM public\.ca_expected_cron_jobs[\s\S]*ca-payout-sweep-hourly/
+    );
   });
 });

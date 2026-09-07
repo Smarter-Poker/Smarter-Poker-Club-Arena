@@ -82,35 +82,57 @@ function finishTournamentBody(): string {
   return engine.slice(start, end);
 }
 
+/** The committed normal-settlement announcement, which is also replay-safe. */
+function committedCleanupBody(): string {
+  const start = engine.indexOf('private async cleanupCommittedTournament()');
+  expect(start, 'cleanupCommittedTournament must exist').toBeGreaterThan(-1);
+  const end = engine.indexOf('private async cleanupCommittedFinalTableDeal()', start);
+  expect(end, 'could not find the end of cleanupCommittedTournament').toBeGreaterThan(start);
+  return engine.slice(start, end);
+}
+
+/** The shared terminal cleanup that owns channel teardown. */
+function committedTableCleanupBody(): string {
+  const start = engine.indexOf('private async cleanupCommittedTablesAndManager()');
+  expect(start, 'cleanupCommittedTablesAndManager must exist').toBeGreaterThan(-1);
+  const end = engine.indexOf('private async cleanupCommittedTournament()', start);
+  expect(end, 'could not find the end of committed table cleanup').toBeGreaterThan(start);
+  return engine.slice(start, end);
+}
+
 describe("The champion's exit", () => {
-  it('finishTournament broadcasts the winner — it used to end in silence', () => {
+  it('a committed finish broadcasts the durable winner — it used to end in silence', () => {
     // THE regression. If this line goes, every champion of every event is
     // stranded again at a table the engine has already closed, and nothing
     // else in the suite notices: the payout still lands, the row is still
     // stamped, the tables still close. Only the player sees the difference.
-    expect(finishTournamentBody()).toMatch(/this\.broadcast\(\s*['"]tournament_winner['"]/);
+    expect(committedCleanupBody()).toMatch(
+      /this\.broadcastCommittedOutcome\(\s*['"]tournament_winner['"]/
+    );
+    expect(finishTournamentBody()).toMatch(/await this\.cleanupCommittedTournament\(\)/);
   });
 
   it('sends it BEFORE the channel is torn down', () => {
-    const body = finishTournamentBody();
-    const sent = body.indexOf("this.broadcast('tournament_winner'");
-    const teardown = body.indexOf('cleanupBroadcastChannel()');
+    const body = committedCleanupBody();
+    const sent = body.indexOf("this.broadcastCommittedOutcome('tournament_winner'");
+    const cleanup = body.indexOf('cleanupCommittedTablesAndManager()');
     expect(sent, 'tournament_winner must be broadcast').toBeGreaterThan(-1);
-    expect(teardown, 'finishTournament must still clean up its channel').toBeGreaterThan(-1);
+    expect(cleanup, 'winner cleanup must reach the shared terminal cleanup').toBeGreaterThan(-1);
     // Broadcasting after unsubscribe silently re-creates the channel and sends
     // into a subscription nobody is listening on — the failure is invisible.
-    expect(sent).toBeLessThan(teardown);
+    expect(sent).toBeLessThan(cleanup);
+    expect(committedTableCleanupBody()).toMatch(/await this\.cleanupBroadcastChannel\(\)/);
   });
 
   it('carries the winner identity and the prize', () => {
-    const body = finishTournamentBody();
-    const at = body.indexOf("this.broadcast('tournament_winner'");
-    const payload = sliceEnclosingBlock(body, "this.broadcast('tournament_winner'");
+    const body = committedCleanupBody();
+    const payload = sliceEnclosingBlock(body, "this.broadcastCommittedOutcome('tournament_winner'");
     // TablePage matches on userId to decide whether this result is the local
     // player's; without it every seat at the table takes the champion's card.
-    expect(payload).toMatch(/userId:\s*winnerId/);
+    expect(body).toMatch(/\.select\('user_id, username, prize'\)/);
+    expect(payload).toMatch(/userId:\s*winner\.user_id/);
     expect(payload).toMatch(/position:\s*1/);
-    expect(payload).toMatch(/prize:\s*winnerPrize/);
+    expect(payload).toMatch(/prize:\s*Number\(winner\.prize/);
   });
 
   it('does NOT announce the champion as eliminated', () => {
@@ -131,6 +153,59 @@ describe("The champion's exit", () => {
     // The celebration overlay, then the same exit every other finisher takes.
     expect(branch).toMatch(/setTournamentWinner\(/);
     expect(branch).toMatch(/goToLobbyWithResult\(1,/);
+  });
+
+  it('recovers the result from durable COMPLETED rows when every broadcast attempt fails', () => {
+    const start = tablePage.indexOf('async function exitFromDurableCompletion()');
+    const end = tablePage.indexOf('const breakChan =', start);
+    expect(start, 'durable completion fallback must exist').toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const fallback = tablePage.slice(start, end);
+    expect(fallback).toMatch(
+      /\.from\('tournament_players'\)[\s\S]*?\.select\('status, position, prize'\)/
+    );
+    expect(fallback).toMatch(/\['winner', 'eliminated'\]\.includes/);
+    expect(fallback).toMatch(/goToLobbyWithResult\(position, prize/);
+    expect(fallback).toMatch(/scheduleDurableCompletionRetry\(\)/);
+    expect(tablePage).toMatch(
+      /table: 'tournaments'[\s\S]*?payload\.new\?\.status === 'COMPLETED'[\s\S]*?exitFromDurableCompletion\(\)/
+    );
+    expect(tablePage).toMatch(
+      /loadedTournamentStatus === 'COMPLETED'[\s\S]*?exitFromDurableCompletion\(\)/
+    );
+    expect(tablePage).toMatch(/status === 'SUBSCRIBED'[\s\S]*?verifyDurableCompletion\(\)/);
+    expect(tablePage).toMatch(
+      /durableCompletionRetryTimer = setTimeout\([\s\S]*?verifyDurableCompletion\(\)/
+    );
+  });
+
+  it('keeps the durable completion poll armed after a successful non-terminal read', () => {
+    const verify = sliceEnclosingBlock(tablePage, 'async function verifyDurableCompletion()');
+    expect(verify).toMatch(
+      /if \(terminal\.status === 'COMPLETED'\) \{[\s\S]*?await exitFromDurableCompletion\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?scheduleDurableCompletionRetry\(\);/
+    );
+  });
+
+  it('bootstraps the durable completion backstop after the realtime channel is wired', () => {
+    expect(tablePage).toMatch(
+      /breakChannelRef\.current = breakChan;\s*void verifyDurableCompletion\(\);/
+    );
+  });
+
+  it('re-arms the durable backstop when realtime errors or times out', () => {
+    const terminalChannelCallback = sliceEnclosingBlock(tablePage, "if (status === 'SUBSCRIBED')");
+    expect(terminalChannelCallback).toMatch(
+      /if \(status === 'CHANNEL_ERROR'\) \{[\s\S]*?scheduleDurableCompletionRetry\(\);[\s\S]*?\}/
+    );
+    expect(terminalChannelCallback).toMatch(
+      /if \(status === 'TIMED_OUT'\) \{[\s\S]*?scheduleDurableCompletionRetry\(\);[\s\S]*?\}/
+    );
+  });
+
+  it('a committed final-table deal drives every viewer through the durable result reader', () => {
+    const branch = sliceEnclosingBlock(tablePage, "data?.type === 'final_table_deal'");
+    expect(branch).toMatch(/exitFromDurableCompletion\(\)/);
+    expect(realtime).toMatch(/'final_table_deal'/);
   });
 
   it('there is exactly ONE lobby-exit implementation', () => {

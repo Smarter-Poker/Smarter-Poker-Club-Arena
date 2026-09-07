@@ -28,14 +28,10 @@
  * attempt — writes neither. These tests pin that no prize, bounty or refund
  * path drifts back to the two-call shape.
  *
- * 2026-09-02 (chip accounting standard, Lane A2): the engine no longer calls
- * `fn_credit_and_log` at all. Every tournament credit goes through
- * `settleTournamentObligation` -> `fn_settle_tournament_obligation`, which
- * settles an obligation row the database keys itself and writes the credit,
- * `tournament_payouts` and `wallet_transactions` in one transaction. The
- * engine-side pins below now guard THAT shape; the database-side pins on the
- * 2026-08-22 migration are unchanged, because `fn_credit_and_log` is still the
- * primitive other (non-tournament) paths rely on.
+ * 2026-09-07: ordinary place prizes are prepared and committed by the same
+ * atomic batch RPC from finish and recovery. Other tournament money kinds
+ * still use `settleTournamentObligation`. The database remains the sole owner
+ * of idempotency keys and ledger writes in both cases.
  *
  * Source-level, like spinEngineWiring: exercising the real thing needs a live
  * Postgres, three seated players and a race.
@@ -58,6 +54,10 @@ const PAYOUT_SOURCES = [
   'server/src/tournament/TournamentManager.ts',
   'server/src/tournament/tournamentRecovery.ts',
 ] as const;
+const SINGLE_OBLIGATION_SOURCES = [
+  'server/src/tournament/TournamentManager.ts',
+  'server/src/tournament/tournamentRecovery.ts',
+] as const;
 
 describe('prize ledger idempotency — the engine side', () => {
   for (const path of PAYOUT_SOURCES) {
@@ -70,19 +70,25 @@ describe('prize ledger idempotency — the engine side', () => {
       expect(code).not.toMatch(/rpc\(\s*'log_wallet_transaction'/);
     });
 
-    it(`${path} pays through the obligation helper, never a credit primitive`, () => {
-      // 2026-09-02: every tournament credit is settleTournamentObligation.
+    it(`${path} pays through a database-owned settlement path, never a credit primitive`, () => {
+      // Normal place money is one atomic batch; remaining money kinds use the
+      // single-obligation helper. Both keep keys and ledger writes in Postgres.
       // The three primitives are banned from the engine (server-side law:
       // server/src/tournament/OneSettlePathForTournamentMoney.law.test.ts).
       expect(code).not.toMatch(/rpc\(\s*'credit_player_wallet'/);
       expect(code).not.toMatch(/rpc\(\s*'fn_credit_and_log'/);
       expect(code).not.toMatch(/rpc\(\s*'fn_credit_player_wallet_once'/);
-      expect(code).toMatch(/settleTournamentObligation\(/);
+      if (path === 'server/src/tournament/TournamentManagerEliminations.ts') {
+        expect(code).toMatch(/settleTournamentPlacesAtomically\(/);
+        expect(code).not.toMatch(/settleTournamentObligation\(/);
+      } else {
+        expect(code).toMatch(/settleTournamentObligation\(/);
+      }
     });
   }
 
   it('every settleTournamentObligation call supplies a kind, a source and a memo', () => {
-    for (const path of PAYOUT_SOURCES) {
+    for (const path of SINGLE_OBLIGATION_SOURCES) {
       const code = tsCode(read(path));
       // Each call site, from the opening brace of its input to the closing `}`.
       const calls =
@@ -102,7 +108,7 @@ describe('prize ledger idempotency — the engine side', () => {
     }
   });
 
-  it('the recovery watchdog and the finish path settle the SAME place obligation', () => {
+  it('the recovery watchdog and finish path invoke the SAME atomic place batch', () => {
     // If these two ever diverge the credit stops deduping and the double
     // PAYMENT of 2026-07-28 comes back — which is worse than the double entry.
     //
@@ -114,9 +120,9 @@ describe('prize ledger idempotency — the engine side', () => {
     // more, so there is no format left to drift.
     const recovery = tsCode(read('server/src/tournament/tournamentRecovery.ts'));
     const eliminations = tsCode(read('server/src/tournament/TournamentManagerEliminations.ts'));
-    expect(recovery).toMatch(/\{ kind: 'place', place \}/);
-    expect(eliminations).toMatch(/kind:\s*'place',\s*place:\s*position,/);
-    expect(eliminations).toMatch(/kind:\s*'place',\s*place:\s*1,/);
+    for (const src of [recovery, eliminations]) {
+      expect(src).toMatch(/settleTournamentPlacesAtomically\(/);
+    }
 
     for (const [name, src] of [
       ['recovery', recovery],

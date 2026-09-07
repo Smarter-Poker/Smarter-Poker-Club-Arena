@@ -12,10 +12,11 @@
  * life was a human typing SQL during the 2026-08-31 audit. These pins are the
  * contract that keeps it watched.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SpinMetrics, LAG_WINDOW_MINUTES, type SpinMetricsSnapshot } from './SpinMetrics.js';
+import { supabase } from './supabase.js';
 
 const read = (p: string) => readFileSync(join(__dirname, p), 'utf8');
 
@@ -140,7 +141,17 @@ describe('the engine exposes spin gauges', () => {
 
   it('a failed refresh keeps the last good snapshot rather than zeroing it', async () => {
     const m = seeded();
-    await m.refresh(); // no database in test: this fails
+    // Force the failure. A developer machine may have a reachable database,
+    // and a law test must never turn into an accidental live metrics read.
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValueOnce({
+      data: null,
+      error: { message: 'forced metrics read failure' },
+    } as never);
+    try {
+      await m.refresh();
+    } finally {
+      rpc.mockRestore();
+    }
     expect(m.get().fairnessDraws).toBe(2489);
     expect(m.get().revealP50Ms).toBe(4767);
     expect(m.get().fairnessRealisedE).toBeCloseTo(2.740056, 6);

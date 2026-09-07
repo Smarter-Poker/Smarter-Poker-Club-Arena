@@ -261,8 +261,6 @@ export default function UnionGamesPage() {
     const refresh = () => loadUnionData(unionId);
     const unsubs = [
       masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', refresh, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_STARTED', refresh, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', refresh, 500),
       masterBus.subscribeDebounced('TABLE_UPDATED', refresh, 500),
     ];
 

@@ -28,7 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { sliceMethod, sliceCall } from '../testHelpers/sourceWindow.js';
+import { sliceMethod, sliceCall, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -141,14 +141,35 @@ describe('one rounding rule, shared by every payout site', () => {
 });
 
 describe('every tournament settles against its own prize pool', () => {
-  it('the COMPLETED transition reconciles payouts', () => {
-    expect(code(ELIM)).toMatch(/fn_tournament_payout_reconcile/);
+  it('normal completion pays every place and completes through one atomic boundary', () => {
+    const finish = sliceMethod(code(ELIM), 'finishTournament(winnerId: string): Promise<void>');
+    const normalSettlement = sliceEnclosingBlock(finish, 'settleTournamentPlacesAtomically(');
+
+    expect(normalSettlement).toMatch(/await settleTournamentPlacesAtomically\(/);
+    expect(normalSettlement).toMatch(/'engine\.finishTournament'/);
+    expect(normalSettlement).toMatch(
+      /if \(!settlement\.ok \|\| !settlement\.completed\) \{[\s\S]*?this\.tournamentFinished = false;[\s\S]*?return;/
+    );
   });
 
-  it('and clears the break flags on the way out', () => {
-    // Defect: endBreak() never runs if the event finishes DURING a break, so
-    // COMPLETED tournaments sat flagged on_break=true forever.
-    expect(code(ELIM)).toMatch(/on_break:\s*false/);
+  it('normal completion has no direct terminal write or post-hoc reconciler', () => {
+    const finish = sliceMethod(code(ELIM), 'finishTournament(winnerId: string): Promise<void>');
+    const normalSettlement = sliceEnclosingBlock(finish, 'settleTournamentPlacesAtomically(');
+    const satelliteBranch = finish.indexOf('if (isSatelliteFinish)');
+    const atomicBranch = finish.indexOf('settleTournamentPlacesAtomically(');
+    const directTerminalWrites = [...finish.matchAll(/status:\s*'COMPLETED'/g)];
+
+    // Satellites retain their separate awarded-seat terminal write. The
+    // structure-prize branch must never recreate that split transaction. Pin
+    // the count and location as well as the atomic branch itself, so a direct
+    // write moved above both branches cannot hide from this guard.
+    expect(directTerminalWrites).toHaveLength(1);
+    expect(directTerminalWrites[0].index).toBeGreaterThan(satelliteBranch);
+    expect(directTerminalWrites[0].index).toBeLessThan(atomicBranch);
+    expect(normalSettlement).not.toMatch(/\.from\('tournaments'\)[\s\S]*?status:\s*'COMPLETED'/);
+    expect(finish).not.toMatch(/settleTournamentObligation\(/);
+    expect(finish).not.toMatch(/fn_settle_tournament_obligation/);
+    expect(finish).not.toMatch(/fn_tournament_payout_reconcile/);
   });
 });
 
@@ -191,7 +212,6 @@ describe('the settler keeps running every sentinel it is meant to', () => {
   const sentinels = [
     'runUnionEcoRecord',
     'runUnionRakeRollupCatchup',
-    'runTournamentPayoutSweep',
     'runTournamentChipConservation',
   ];
   for (const s of sentinels) {
@@ -200,6 +220,12 @@ describe('the settler keeps running every sentinel it is meant to', () => {
       expect(code(SETTLER)).toMatch(new RegExp(`await this\\.${s}\\(`));
     });
   }
+
+  it('never applies the retired tournament payout sweep', () => {
+    const settler = code(SETTLER);
+    expect(settler).not.toMatch(/runTournamentPayoutSweep/);
+    expect(settler).not.toMatch(/fn_tournament_payout_sweep/);
+  });
 });
 
 describe('ESM: every relative import carries its .js extension', () => {

@@ -778,16 +778,33 @@ test.describe('production Daily Missions certification', () => {
             documentOverflow:
               document.documentElement.scrollWidth - document.documentElement.clientWidth,
             groupInsideViewport: bounds.left >= -1 && bounds.right <= innerWidth + 1,
-            descendantsFit: Array.from(group.querySelectorAll<HTMLElement>('*')).every((node) => {
-              const nodeBounds = node.getBoundingClientRect();
-              return nodeBounds.left >= bounds.left - 1 && nodeBounds.right <= bounds.right + 1;
-            }),
+            descendantOffenders: Array.from(group.querySelectorAll<HTMLElement>('*'))
+              .filter((node) => {
+                const nodeBounds = node.getBoundingClientRect();
+                // SVG paint definitions (`defs`, gradients, and stops) have no
+                // rendered box and report a 0x0 rectangle at document origin.
+                // They power the live control icons but cannot overflow the
+                // confirmation. Keep checking every rendered HTML/SVG box.
+                if (nodeBounds.width === 0 && nodeBounds.height === 0) return false;
+                return nodeBounds.left < bounds.left - 1 || nodeBounds.right > bounds.right + 1;
+              })
+              .map((node) => {
+                const nodeBounds = node.getBoundingClientRect();
+                return {
+                  element: node.tagName.toLowerCase(),
+                  label: node.getAttribute('aria-label') || (node.textContent || '').trim(),
+                  left: nodeBounds.left,
+                  right: nodeBounds.right,
+                  groupLeft: bounds.left,
+                  groupRight: bounds.right,
+                };
+              }),
           };
         });
         expect(zoomedGeometry).toEqual({
           documentOverflow: 0,
           groupInsideViewport: true,
-          descendantsFit: true,
+          descendantOffenders: [],
         });
         await zoomedConfirmation.getByRole('button', { name: 'Keep It' }).click();
         await expect(zoomedConfirmation).toHaveCount(0);

@@ -82,6 +82,31 @@ interface Props {
    * ENGINE cannot verify it, which the ladder underneath is still retrying.
    */
   authRefused?: boolean;
+  /**
+   * TRUE ONCE THE FELT IS ACTUALLY SHOWING A HAND (Dan 2026-09-07).
+   *
+   * "ALL TABLES STILL SAY CONNECTING TO THE TABLE, INSTEAD OF BEING RUNNING AT
+   * ALL TIMES, AND PRE LOADED."
+   *
+   * He is right, and the banner was telling the truth about the wrong thing.
+   * `status` describes the SOCKET, and the socket legitimately passes through
+   * 'connecting' on every entry — `EngineStateClient.openOnceInner` announces
+   * it at the top of every fresh open, and the mux handshake plus
+   * SUBSCRIBE/SUBSCRIBED routinely takes longer than GRACE_MS. Meanwhile the
+   * warm-up roster has already painted seats, stacks and a live hand. So the
+   * player is looking at a running table that is announcing it is not there.
+   *
+   * The banner exists for the case in the header: a felt that has STOPPED
+   * receiving state and is indistinguishable from a quiet one. A first connect
+   * behind an already-painted table is the opposite situation and needs no
+   * announcement at all — nothing is missing, and saying so is what makes
+   * every table look broken on entry.
+   *
+   * Deliberately narrow: this suppresses 'connecting' ONLY. A painted table
+   * that drops to 'reconnecting' or 'failed' is exactly the original bug and
+   * still says so, because there the pixels really are stale.
+   */
+  hasLiveState?: boolean;
 }
 
 /**
@@ -98,7 +123,15 @@ interface Props {
  */
 export const AUTH_REFUSED_LABEL = 'The Table Cannot Verify Your Sign In. Still Trying';
 
-export function labelFor(status: TableConnectionState, authRefused = false): string | null {
+export function labelFor(
+  status: TableConnectionState,
+  authRefused = false,
+  hasLiveState = false
+): string | null {
+  /* A first connect underneath a table that is already showing a hand is not
+     news. See the `hasLiveState` prop doc: 'connecting' describes the socket,
+     not the felt, and on a pre-warmed table the two disagree on every entry. */
+  if (status === 'connecting' && hasLiveState) return null;
   /* An auth refusal outranks the transport words for every state that would
      otherwise blame the connection. 'connecting' and 'idle' are left alone:
      the first is a fresh attempt that may well succeed, and the second is a
@@ -132,8 +165,9 @@ export function TableConnectionBanner({
   status,
   isActive = true,
   authRefused = false,
+  hasLiveState = false,
 }: Props): React.ReactElement | null {
-  const label = labelFor(status, authRefused);
+  const label = labelFor(status, authRefused, hasLiveState);
   const wantsBanner = label !== null && isActive;
 
   const [visible, setVisible] = useState(false);

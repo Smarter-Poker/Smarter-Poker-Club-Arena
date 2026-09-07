@@ -48,10 +48,17 @@ describe('every beat is inside the hold', () => {
     );
   });
 
-  it("Dan 2026-08-27: the pause is a FULL second, and the button glide is the client's own beat", () => {
-    // "...PUSH POT ANIMATION PLUS THE +XXX TOTAL ANIMATION, PAUSE 1 SECOND,
-    // MOVE THE BUTTON ANIMATION... START DEALING NEXT HAND."
-    expect(HAND_COMPLETION.POST_PUSH_PAUSE_MS).toBe(1000);
+  it("Dan 2026-09-07: the pause is shorter, and the button glide is still the client's own beat", () => {
+    // 2026-08-27: "...PUSH POT ANIMATION PLUS THE +XXX TOTAL ANIMATION, PAUSE
+    // 1 SECOND, MOVE THE BUTTON ANIMATION... START DEALING NEXT HAND."
+    //
+    // 2026-09-07 supersedes the length, not the shape: "GAMES ARE FREEZING UP
+    // AFTER EACH AND EVERY HAND." Every beat of that sentence still happens in
+    // that order; the rest between the muck and the next hand is 400ms rather
+    // than a full second. Pinned exactly, not as a floor, because the number
+    // is a deliberate product choice both ways — put 1000 back here and in
+    // handCompletionSpec together if the new rhythm reads as rushed.
+    expect(HAND_COMPLETION.POST_PUSH_PAUSE_MS).toBe(400);
     // The button beat exists and covers the 600ms CSS glide with settle. It
     // is NOT in the engine hold (the client cannot know the new button seat
     // until HAND_STARTED arrives) — TablePage delays the deal start by it.
@@ -63,11 +70,18 @@ describe('every beat is inside the hold', () => {
   });
 
   it('THE REGRESSION: the hold outlasts the pot-win float, which starts after the sweep', () => {
-    // 700 + 2200 = 2900. The old hand-written hold was 2600 and cut it off.
+    /* The original defect: a hand-written 2600ms hold truncating a 2900ms
+       float. The invariant is RELATIVE — the hold must cover the float — and
+       it survives the 2026-09-07 halving unchanged. The absolute floor that
+       used to sit here (`> 2600`) did not: it was the old float's length
+       written a second time, and it would now fail for a float that is
+       correctly 1450ms. POT_PUSH_MS is the float's duration by definition
+       (`potWinFloatRide` in TablePage.css is set from it), so assert THAT
+       relationship instead of a stale constant. */
     const floatEndsAt = HAND_COMPLETION.BETS_SWEEP_MS + HAND_COMPLETION.POT_PUSH_MS;
     expect(handCompletionHoldMs({ wentToShowdown: false })).toBeGreaterThanOrEqual(floatEndsAt);
     expect(handCompletionHoldMs({ wentToShowdown: true })).toBeGreaterThanOrEqual(floatEndsAt);
-    expect(floatEndsAt).toBeGreaterThan(2600);
+    expect(floatEndsAt).toBeGreaterThan(HAND_COMPLETION.POT_PUSH_MS);
   });
 
   it('a showdown adds time to read the winning hand, and more hands need more', () => {

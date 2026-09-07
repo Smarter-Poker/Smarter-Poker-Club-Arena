@@ -4224,8 +4224,13 @@ button.post-bb-overlay-button {
 /* ═══════════════════════════════════════════════════════════════════════════
    POT-WIN FLOAT (Dan 2026-08-21, PokerBros reference: the "+1" above the
    winner's avatar). Phase 1 (0-30%): the number rides from the pot to the
-   winner's seat alongside the chip fan (fan flight is ~600ms of the 2.2s
-   total). Phase 2 (30-100%): it holds above the seat, rises, and fades.
+   winner's seat alongside the chip fan. Phase 2 (30-100%): it holds above the
+   seat, rises, and fades.
+
+   Dan 2026-09-07: 2.2s -> 1.1s, in lockstep with HAND_COMPLETION.POT_PUSH_MS,
+   which exists to be exactly this duration. The keyframes are percentages so
+   the ride/hold/fade split is untouched; the whole story just plays twice as
+   fast. Change one of these two numbers and you must change the other.
    ═══════════════════════════════════════════════════════════════════════════ */
 .pot-win-float {
   position: fixed;
@@ -4247,7 +4252,7 @@ button.post-bb-overlay-button {
     0 1px 2px rgba(0, 0, 0, 0.85),
     0 0 10px rgba(255, 233, 74, 0.5);
   transform: translate(calc(var(--pwf-from-x) - 50%), calc(var(--pwf-from-y) - 50%));
-  animation: potWinFloatRide 2.2s cubic-bezier(0.25, 0.6, 0.3, 1) forwards;
+  animation: potWinFloatRide 1.1s cubic-bezier(0.25, 0.6, 0.3, 1) forwards;
 }
 
 @keyframes potWinFloatRide {

@@ -21467,6 +21467,14 @@ export default function TablePage({
                   status={engineWsStatus}
                   isActive={isActive}
                   authRefused={engineRefusedAuth}
+                  /* Dan 2026-09-07: "ALL TABLES STILL SAY CONNECTING TO THE
+                     TABLE, INSTEAD OF BEING RUNNING AT ALL TIMES." A hand
+                     number is the felt's own proof that it is showing real,
+                     dealt state — it only ever arrives from the engine, and
+                     the warm-up roster alone cannot invent one. With that on
+                     screen, a socket still reporting 'connecting' is a fact
+                     about the transport that the player has no use for. */
+                  hasLiveState={(tableState.handNumber ?? 0) > 0}
                 />
                 {/* The engine's verdict on THIS seat's presence, on the same
                     line. Defers to the socket banner whenever the socket is

@@ -80,6 +80,49 @@ afterEach(() => {
 
 const lastSocket = () => FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
 
+describe('the warm subscription is adopted, not paid for twice', () => {
+  /* Dan 2026-09-07: "TABLES ... SHOULD BE RUNNING AT ALL TIMES, AND PRE
+     LOADED." The lobby warm-up gets SUBSCRIBE out while the player reads the
+     buy-in sheet. Before this, the real join superseded that facade and waited
+     out a SECOND SUBSCRIBE->SUBSCRIBED round-trip, so the client sat in
+     'connecting' through a window the warm-up had already paid for. */
+
+  it('a join behind an already-subscribed warm facade opens without a second ack', async () => {
+    const warm = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    expect(warm.readyState).toBe(1);
+
+    const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    expect(live.readyState).toBe(0); // never synchronous, like a real WebSocket
+    await Promise.resolve(); // let the queued microtask run
+    expect(live.readyState).toBe(1);
+    expect(FakeWebSocket.instances.length).toBe(1); // still one physical socket
+  });
+
+  it('adoption does NOT skip the SUBSCRIBE - the server stays authoritative', async () => {
+    engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const before = ws.sent.filter((s) => JSON.parse(s).type === 'SUBSCRIBE').length;
+
+    engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    await Promise.resolve();
+    const after = ws.sent.filter((s) => JSON.parse(s).type === 'SUBSCRIBE').length;
+    // Idempotent server-side, so re-sending costs nothing and a subscription
+    // that has quietly gone away is re-established rather than assumed.
+    expect(after).toBe(before + 1);
+  });
+
+  it('a cold acquire is unaffected and still waits for its own ack', () => {
+    const cold = engineSocketMux.acquire('https://engine.example', T2, 'jwt');
+    lastSocket()._open();
+    expect(cold.readyState).toBe(0);
+  });
+});
+
 describe('EngineSocketMux', () => {
   it('opens ONE physical socket for two tables and subscribes both on open', () => {
     const f1 = engineSocketMux.acquire('https://engine.example', T1, 'jwt');

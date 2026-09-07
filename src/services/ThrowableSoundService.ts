@@ -796,7 +796,7 @@ class ThrowableSoundServiceClass {
   //     counted by reason in memory. Throwable failures do not send telemetry
   //     (Dan's instruction, 2026-09-07).
 
-  private cueBytes = new Map<string, Promise<ArrayBuffer | null>>();
+  private cueBytes = new Map<string, Promise<{ bytes: ArrayBuffer; ext: 'webm' | 'm4a' } | null>>();
   private cueBuffers = new Map<string, Promise<AudioBuffer | null>>();
   private cuePlaceholdersPlayed = 0;
   private cueDrops: Record<CueDropReason, number> = {
@@ -831,7 +831,7 @@ class ThrowableSoundServiceClass {
         for (const ext of ['webm', 'm4a'] as const) {
           try {
             const res = await fetch(urlFor(name, ext));
-            if (res.ok) return await res.arrayBuffer();
+            if (res.ok) return { bytes: await res.arrayBuffer(), ext };
           } catch {
             /* try the other container */
           }
@@ -850,17 +850,36 @@ class ThrowableSoundServiceClass {
     if (cached) return cached;
     if (!this.cueBytes.has(name)) this.preloadCues([name], urlFor);
     const p = (async () => {
-      const bytes = await this.cueBytes.get(name)!;
-      if (!bytes || !this.ctx) return null;
+      const loaded = await this.cueBytes.get(name)!;
+      if (!loaded || !this.ctx) return null;
       try {
-        // decodeAudioData detaches the buffer; hand it a copy so a second
-        // context (a reload of the sound setting) can decode again.
-        return await this.ctx.decodeAudioData(bytes.slice(0));
+        // Decoding detaches its input; retain cached bytes for later use.
+        return await this.ctx.decodeAudioData(loaded.bytes.slice(0));
       } catch {
+        // A successful HTTP response does not imply codec support (Safari).
+        if (loaded.ext === 'webm') {
+          try {
+            const res = await fetch(urlFor(name, 'm4a'));
+            if (res.ok) {
+              const bytes = await res.arrayBuffer();
+              const decoded = await this.ctx.decodeAudioData(bytes.slice(0));
+              this.cueBytes.set(name, Promise.resolve({ bytes, ext: 'm4a' }));
+              return decoded;
+            }
+          } catch {
+            /* Both encodings failed; allow a later throw to retry. */
+          }
+        }
         return null;
       }
     })();
     this.cueBuffers.set(name, p);
+    void p.then((buffer) => {
+      if (!buffer && this.cueBuffers.get(name) === p) {
+        this.cueBuffers.delete(name);
+        this.cueBytes.delete(name);
+      }
+    });
     return p;
   }
 
@@ -892,6 +911,7 @@ class ThrowableSoundServiceClass {
     const ctx = this.ctx;
     const s = Math.min(4, Math.max(0.1, opts.speed || 1));
     const t0 = ctx.currentTime;
+    let cancelled = false;
     const sources: AudioBufferSourceNode[] = [];
     const timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -921,7 +941,7 @@ class ThrowableSoundServiceClass {
       void this.loadCue(cue.sample, opts.urlFor).then((buffer) => {
         // A context swapped underneath us (the sound setting was reloaded) is
         // a cancellation, not a drop: this throw's audio graph is simply gone.
-        if (!this.ctx || this.ctx !== ctx) return;
+        if (cancelled || !this.ctx || this.ctx !== ctx) return;
         if (!buffer) return this.dropCue('no_buffer');
         try {
           this.setVoice(pan);
@@ -953,6 +973,7 @@ class ThrowableSoundServiceClass {
     }
 
     return () => {
+      cancelled = true;
       for (const t of timers) clearTimeout(t);
       for (const src of sources) {
         try {

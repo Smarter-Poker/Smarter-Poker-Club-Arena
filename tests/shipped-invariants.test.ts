@@ -507,3 +507,12 @@ describe('shipped functionality is still here', () => {
 
 
 
+
+
+it('union money reporting enforces scope without global diagnostic side effects', () => {
+  const sql = read('supabase/migrations/20260907210849_union_money_report_enforces_scope_and_stays_read_only.sql');
+  expect(sql).toContain('public.fn_union_report_caller_ok(v_union_id)');
+  expect(sql).toContain("context->>'union_id' = v_union_id::text");
+  expect(sql).not.toContain('fn_union_treasury_selftest()');
+  expect(has('tests/sql/union-money-report-scope-rollback-probe.sql', 'FAIL unrelated signed-in user')).toBe(true);
+});

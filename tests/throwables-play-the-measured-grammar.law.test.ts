@@ -112,10 +112,24 @@ describe('LAW: the payload is measured in AVATAR UNITS, on this table', () => {
 });
 
 describe('LAW: a paid throw is never silent and never invisible', () => {
-  it('reports a throw whose target seat cannot be resolved', () => {
-    // The item was paid for and broadcast. A render that draws nothing must
-    // say so, or the failure is invisible.
-    expect(PLAYER).toMatch(/AnimationLaw\.throw_target_unresolved/);
+  it('keeps throwable failures out of external telemetry, as Dan requested', () => {
+    // Dan explicitly removed throwable Sentry reporting on 2026-09-07.
+    // The completion path and local cue counters are still required below.
+    const paths = [
+      'src/components/table/ThrowablePlayer.tsx',
+      'src/components/table/ThrowAnimation.tsx',
+      'src/services/ThrowableService.ts',
+      'src/services/ThrowableSoundService.ts',
+      'src/services/ThrowableVoice.ts',
+      'src/services/ThrowableCutout.ts',
+      'src/components/table/ThrowableImage.tsx',
+      'src/components/table/ThrowableSelector.tsx',
+    ];
+    for (const file of paths) {
+      expect(code(read(file)), file).not.toMatch(
+        /reportError|captureException|captureMessage|addBreadcrumb|SentryInit|@sentry\//
+      );
+    }
   });
 
   it('completes even when it cannot draw, so the parent never leaks it', () => {
@@ -144,13 +158,11 @@ describe('LAW: a paid throw is never silent and never invisible', () => {
     expect(SOUND).toMatch(/get droppedCues\(\)/);
     for (const reason of ['no_buffer', 'late', 'window_passed']) {
       expect(SOUND, `the '${reason}' path must count, not return silently`).toMatch(
-        new RegExp(`return this\\.dropCue\\(cue\\.sample, '${reason}'\\)`)
+        new RegExp(`return this\\.dropCue\\('${reason}'\\)`)
       );
     }
-    // Once per reason per cue: a table throwing eight items must not report
-    // the same broken URL eight times a second.
-    expect(SOUND).toMatch(/cueDropReported\.has\(key\)/);
-    expect(SOUND).toMatch(/AnimationLaw\.throw_cue_silent/);
+    expect(SOUND).toMatch(/this\.cueDrops\[reason\] \+= 1/);
+    expect(SOUND).not.toMatch(/cueDropReported|AnimationLaw\.throw_cue_silent/);
   });
 });
 

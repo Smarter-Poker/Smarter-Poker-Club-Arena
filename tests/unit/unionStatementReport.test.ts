@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapUnionStatementReport } from './unionStatementReport';
+import { mapUnionStatementReport } from '../../src/utils/unionStatementReport';
 
 const now = Date.parse('2026-09-07T12:00:00Z');
 const row = (patch: Record<string, unknown> = {}) => ({

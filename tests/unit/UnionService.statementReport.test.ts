@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }));
-vi.mock('../../lib/supabase', () => ({ supabase: mocks }));
-vi.mock('../../core/MasterBus', () => ({ masterBus: {} }));
-vi.mock('../UnionApiService', () => ({ unionApi: {} }));
-vi.mock('../../utils/clubIdResolver', () => ({ resolveClubUUID: vi.fn() }));
-vi.mock('../../lib/constants', () => ({ QUERY_LIMITS: {} }));
-vi.mock('../../utils/errorReporter', () => ({ reportError: vi.fn() }));
-import UnionService from '../UnionService';
+vi.mock('../../src/lib/supabase', () => ({ supabase: mocks }));
+vi.mock('../../src/core/MasterBus', () => ({ masterBus: {} }));
+vi.mock('../../src/services/UnionApiService', () => ({ unionApi: {} }));
+vi.mock('../../src/utils/clubIdResolver', () => ({ resolveClubUUID: vi.fn() }));
+vi.mock('../../src/lib/constants', () => ({ QUERY_LIMITS: {} }));
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+import UnionService from '../../src/services/UnionService';
 
 const board = { union_id: 'union-a', period_start: '2026-08-31', period_end: '2026-09-07', clubs: [] };
 beforeEach(() => { vi.clearAllMocks(); mocks.rpc.mockResolvedValue({ data: board, error: null }); });

@@ -168,7 +168,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
         )}
         <button
           className="throwable-selector__close"
-          aria-label="Close throwables"
+          aria-label="Close Throwables"
           onClick={onClose}
         >
           ×

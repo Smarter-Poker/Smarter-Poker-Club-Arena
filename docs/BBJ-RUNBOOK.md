@@ -91,3 +91,111 @@ the pattern used in the audit. Use a real table with real seats, a hand number
 that does not exist (999999999), and read back seat deltas, wallet deltas,
 `bbj_payout_recipients` and the pool debit before rolling back. Never DELETE a
 seat row to clean up.
+
+---
+
+# THE JACKPOT DRILL (BBJ phase 4.1, 2026-09-07)
+
+A Bad Beat Jackpot fires about once a fortnight. The drill lets an operator
+watch the whole path in minutes instead: the celebration on the felt, the
+pop-up at every sibling table, the card in the lobby, the ticker, Previous
+Winners, the notifications, and real chips landing in real stacks.
+
+**It arms a TABLE, never a deck.** The engine cannot choose anybody's cards and
+nothing here changes that. What the drill injects is the VERDICT: the next
+showdown at an armed table is treated as a qualifying hit, using the real
+players, the real board and the real pot. Everything after that runs for real,
+because it is real - which is why the drill pays actual chips and why it is
+fenced the way it is.
+
+## Before the first drill: the drill club
+
+There is deliberately **no armable table on the platform today**, and that is
+the fence working rather than a gap. `fn_bbj_arm_drill` refuses:
+
+| refusal                              | why                                                                                                       |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `union_pool_is_never_a_drill_target` | the union pool holds the real jackpot (107,765.76 as this was written), shared by every club in the union |
+| `pool_above_drill_ceiling`           | over 1,000.00. Deep Stack Society's own pool is 24,281.22                                                 |
+| `pool_is_empty_nothing_to_pay`       | a pool with nothing in it cannot demonstrate a payout                                                     |
+| `already_armed`                      | one live arm per table, enforced by a partial unique index                                                |
+| `not_platform_admin`                 | `fn_is_platform_admin()`                                                                                  |
+
+So a drill needs its own club with its own small pool. That is a one-time
+setup and it is Dan's to approve, because it funds a pool:
+
+1. Create a club (any name - "Drill Room" reads well in an alert), NOT attached
+   to a union. A club in a union banks into the union pool and can never be
+   armed.
+2. Seed its pool with a few hundred chips through the platform's own funding
+   path - never a hand-written balance.
+3. Sit two accounts at one of its cash tables. Horses are fine and are treated
+   identically (CLAUDE.md 10.5); two seats and a showdown is all the drill
+   needs.
+
+At the 1,000.00 ceiling the largest possible drill payout is about 850 - the
+same order as the smallest real jackpot ever paid here (654.14), clearly
+visible against a median member balance of 10,216, and 0.8% of the production
+pool.
+
+## Arming
+
+As a platform admin:
+
+```sql
+select public.fn_bbj_arm_drill('<table uuid>', 'phase 4 drill');
+```
+
+`{"ok": true, ...}` means the next showdown at that table is the drill. Anything
+else is a refusal and says which one. An `info` row lands in `financial_alerts`
+saying in words that a drill is armed and that the chips are real.
+
+Check what is armed at any time:
+
+```sql
+select * from public.fn_bbj_drill_arms();
+```
+
+## What to watch, and what each surface proves
+
+Have four tables open at 375px, at least one of them a SIBLING table in the
+same club, and the lobby in another tab.
+
+| #   | surface                         | expect                                                           | what it proves                                                                                                   |
+| --- | ------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 1   | the drill table                 | the jackpot celebration, after the showdown finishes             | the engine emitted `bbj_hit` and then `bbj_payout_complete`, and the client's replay gate let a live hit through |
+| 2   | a sibling table                 | the club-wide card, once                                         | the engine's socket fan-out reached tables it is not settling (phase 1)                                          |
+| 3   | the lobby tab                   | the same card                                                    | the `bbj_winners` INSERT reached a player with no table socket (phase 3.1) - the half that had never worked      |
+| 4   | the felt masthead               | "Playing For $X" drops to the reset pool                         | the shared ten-second poll is live (phase 3.2)                                                                   |
+| 5   | the ticker                      | the new hit at the top                                           | the `bbj_winners` INSERT binding survived the publication change                                                 |
+| 6   | Previous Winners                | the hand, with arena names                                       | `fn_bbj_recent_hits` and the phase-1 name fix                                                                    |
+| 7   | every recipient's notifications | one row each, saying the amount and where it went                | phase 1.1 - "every recipient is told", including any who had left the table                                      |
+| 8   | wallets and stacks              | seated players' stacks up; a departed recipient's club wallet up | the payout RPC placed chips where each recipient actually is                                                     |
+
+## Afterwards, in one query
+
+```sql
+select a.fired_at, a.fired_hand_number, p.total_amount,
+       (select count(*) from public.bbj_payout_recipients r where r.payout_id = p.id) as recipients,
+       (select count(*) from public.notifications n
+         where n.metadata->>'handNumber' = a.fired_hand_number::text) as notifications,
+       (select count(*) from public.bbj_unclaimed_shares u where u.paid_at is null) as parked
+  from public.bbj_drill_arms a
+  left join public.bbj_payouts p
+    on p.table_id = a.table_id and p.hand_number = a.fired_hand_number
+ order by a.armed_at desc limit 1;
+```
+
+`recipients` should equal everyone dealt in, `notifications` should equal
+`recipients`, and `parked` should be 0. A parked share is not a failure - it
+means a recipient had no club wallet and their share is held for them
+(phase 2.3) - but on a drill club it means the club's membership is wrong.
+
+## Telling a drill from a jackpot, later
+
+`poker_bbj_drills_fired_total` is counted separately from
+`poker_bbj_hits_detected_total`, so **detected minus drills** is the number of
+genuine bad beats this platform has ruled. Both the arming and the firing leave
+a `financial_alerts` row, and `bbj_drill_arms` records who armed it, when, and
+which hand consumed it. A drill is a real jackpot at a drill club - the history
+is true - and these are how anyone reading it later knows why it happened.

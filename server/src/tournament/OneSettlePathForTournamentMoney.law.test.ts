@@ -177,7 +177,7 @@ describe('LAW (b): a refused settle raises the critical alert and does not throw
   it('escrow_short -> critical Tournament.escrow_short, one RPC call, ok:false returned', async () => {
     const c = client([
       { data: { ok: false, paid: 0, already_paid: 0, refused_reason: ESCROW_SHORT } },
-      { data: { ok: true, paid: 120 } }, // must never be reached
+      { data: { ok: true, paid: 120, already_paid: 0 } }, // must never be reached
     ]);
     const res = await settleTournamentObligation(c, INPUT, NO_DELAY);
 
@@ -245,7 +245,7 @@ describe('LAW (b): a refused settle raises the critical alert and does not throw
   });
 
   it('a jsonb answer that arrives as a string is parsed', async () => {
-    const c = client([{ data: JSON.stringify({ ok: true, paid: 120, obligation_id: 'o-1' }) }]);
+    const c = client([{ data: JSON.stringify({ ok: true, paid: 120, already_paid: 0, obligation_id: 'o-1' }) }]);
     const res = await settleTournamentObligation(c, INPUT, NO_DELAY);
     expect(res).toMatchObject({ ok: true, paid: 120, obligation_id: 'o-1' });
   });

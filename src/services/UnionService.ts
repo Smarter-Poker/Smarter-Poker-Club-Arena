@@ -7,6 +7,8 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { mapUnionStatementReport, type UnionSettlement } from '../utils/unionStatementReport';
+export type { UnionSettlement, ClubSettlementBreakdown } from '../utils/unionStatementReport';
 import { masterBus } from '../core/MasterBus';
 import { unionApi } from './UnionApiService';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -74,28 +76,6 @@ export interface UnionClub {
   memberCount: number;
   weeklyRake: number;
   joinedAt: string;
-}
-
-export interface UnionSettlement {
-  unionId: string;
-  periodStart: string;
-  periodEnd: string;
-  totalClubs: number;
-  totalRakeCollected: number;
-  totalUnionTax: number;
-  totalAgentCommissions: number;
-  totalPlayerRakeback: number;
-  netUnionRevenue: number;
-  clubBreakdowns: ClubSettlementBreakdown[];
-}
-
-export interface ClubSettlementBreakdown {
-  clubId: string;
-  clubName: string;
-  rakeCollected: number;
-  unionTaxPaid: number;
-  netToClub: number;
-  wireDirection: 'PAY_TO_UNION' | 'COLLECT_FROM_UNION';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -641,101 +621,34 @@ class UnionServiceClass {
     periodStart?: string,
     periodEnd?: string
   ): Promise<UnionSettlement> {
-    // REAL FINANCIALS 2026-07-21 (was a client-side estimate): numbers now
-    // come from the union's actual money ledger.
-    //   - union_wallet_transactions tx_type='settlement_hold' credits = the
-    //     REAL union tax collected per club in the window (written by the
-    //     settle-period close, conserved against club treasuries).
-    //   - tx_type='rake' credits = engine-held union rake (tournament fees).
-    //   - Per-club rake is derived from its hold and the union_rake_hold rate
-    //     the hold was taken at (union settings; default 10%).
-    // union_wallet_transactions is readable by union admins under RLS.
-    const union = await this.getUnion(unionId);
-    if (!union) throw new Error('Union not found');
-
-    const clubs = await this.getUnionClubs(unionId);
-
-    const start = periodStart || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const end = periodEnd || new Date().toISOString();
-
-    const { data: ledger } = await supabase
-      .from('union_wallet_transactions')
-      .select('tx_type, direction, amount, club_id, created_at')
-      .eq('union_id', unionId)
-      .gte('created_at', start)
-      .lte('created_at', end)
-      .limit(2000);
-
-    const rows = ledger || [];
-    const holdsByClub = new Map<string, number>();
-    let totalHolds = 0;
-    let engineRake = 0;
-    for (const r of rows) {
-      const amt = Number(r.amount) || 0;
-      if (r.tx_type === 'settlement_hold' && r.direction === 'credit') {
-        totalHolds += amt;
-        if (r.club_id) {
-          holdsByClub.set(r.club_id, (holdsByClub.get(r.club_id) || 0) + amt);
-        }
-      } else if (r.tx_type === 'rake' && r.direction === 'credit') {
-        engineRake += amt;
-      }
+    // The statement board owns issuer identity and returns the complete period.
+    // Missing invoices stay missing; current rates and rolling rake are not a
+    // historical source. Payment state is independent of transfer direction.
+    if (!!periodStart !== !!periodEnd) throw new Error('Both statement period dates are required');
+    const start = periodStart ? new Date(periodStart) : null;
+    const end = periodEnd ? new Date(periodEnd) : null;
+    if (start && end && (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start >= end)) {
+      throw new Error('Invalid statement period');
     }
-
-    // The rate the holds were taken at (fraction of club rake).
-    const rawSettings = union.settings as unknown as Record<string, unknown>;
-    const holdRate = Number(rawSettings?.union_rake_hold) || 0.1;
-
-    const round2 = (n: number) => Math.round(n * 100) / 100;
-
-    const clubBreakdowns = clubs.map((c) => {
-      const hold = round2(holdsByClub.get(c.clubId) || 0);
-      if (hold > 0) {
-        // Settled this period: derive the club's rake from its collected hold.
-        const rake = holdRate > 0 ? round2(hold / holdRate) : hold;
-        return {
-          clubId: c.clubId,
-          clubName: c.clubName,
-          rakeCollected: rake,
-          unionTaxPaid: hold,
-          netToClub: round2(rake - hold),
-          wireDirection: 'COLLECT_FROM_UNION' as const, // settled — renders as paid
-        };
-      }
-      // Not yet settled this period: current weekly rake with the projected hold.
-      const projectedHold = round2(c.weeklyRake * holdRate);
-      return {
-        clubId: c.clubId,
-        clubName: c.clubName,
-        rakeCollected: c.weeklyRake,
-        unionTaxPaid: projectedHold,
-        netToClub: round2(c.weeklyRake - projectedHold),
-        wireDirection: 'PAY_TO_UNION' as const, // pending settlement
-      };
+    const { data, error } = await supabase.rpc('ca_union_statement_board', {
+      p_union_id: unionId,
+      p_period_end: end ? end.toISOString().slice(0, 10) : null,
+      p_history: 1,
     });
+    if (error) throw error;
+    const report = mapUnionStatementReport(unionId, data);
+    if (start && report.periodStart && report.periodStart !== start.toISOString().slice(0, 10)) {
+      throw new Error('Requested dates do not match the issued statement period');
+    }
+    return report;
+  }
 
-    const totalRakeCollected = round2(clubBreakdowns.reduce((s, c) => s + c.rakeCollected, 0));
-
-    return {
-      unionId,
-      periodStart: start,
-      periodEnd: end,
-      totalClubs: clubs.length,
-      totalRakeCollected,
-      totalUnionTax: round2(totalHolds),
-      // Agent commissions and player rakeback settle INSIDE each club
-      // (agent_commissions / rake_records are club-scoped, and RLS gives an
-      // agent their own rows and a union overseer only the clubs they oversee)
-      // - they are not union revenue and are reported as 0 here rather than
-      // fabricated.
-      //
-      // 2026-09-01: this named commission_records, a table dropped in phase 7
-      // that never held a row. The reasoning was right; the table was not.
-      totalAgentCommissions: 0,
-      totalPlayerRakeback: 0,
-      netUnionRevenue: round2(totalHolds + engineRake),
-      clubBreakdowns,
-    };
+  async getSettlementReportForPeriod(unionId: string, periodId: string): Promise<UnionSettlement> {
+    const { data, error } = await supabase.from('settlement_periods')
+      .select('start_at, end_at').eq('id', periodId).eq('union_id', unionId).single();
+    if (error) throw error;
+    if (!data?.start_at || !data?.end_at) throw new Error('Union settlement period is unavailable');
+    return this.getSettlementReport(unionId, data.start_at, data.end_at);
   }
 
   // IMPROVE 2026-07-21: getUnionSettings/updateUnionSettings removed — they
@@ -863,3 +776,4 @@ class UnionServiceClass {
 export const unionService = new UnionServiceClass();
 export const UnionService = unionService;
 export default unionService;
+

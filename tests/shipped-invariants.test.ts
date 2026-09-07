@@ -525,3 +525,13 @@ it('historical union statements and payment authority follow the invoice issuer'
   expect(sql).toContain("MIN((i.breakdown->>'period_start')::date) FROM period_invoices");
   expect(has('tests/sql/union-statement-issuer-rollback-probe.sql', 'FAIL new union can mark old invoice paid')).toBe(true);
 });
+
+
+it('union financial overview uses complete recorded statements and explicit payment status', () => {
+  expect(read('src/services/UnionService.ts')).toContain("supabase.rpc('ca_union_statement_board'");
+  expect(read('src/services/UnionService.ts')).not.toContain('holdsByClub');
+  expect(read('src/stores/useUnionStore.ts')).toContain('getSettlementReportForPeriod(unionId, periodId)');
+  expect(read('src/pages/UnionDetailPage.tsx')).toContain('status: cb.status');
+  expect(read('src/utils/unionStatementReport.ts')).toContain('snapshot_complete !== true');
+  expect(read('supabase/migrations/20260907212347_union_statement_reports_identify_missing_accounting_snapshots.sql')).toContain('AS snapshot_complete');
+});

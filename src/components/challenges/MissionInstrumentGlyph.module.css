@@ -1,0 +1,425 @@
+.root {
+  --mission-size: 2rem;
+  --mission-signal: var(--card-tier-color, #55e8ff);
+
+  position: relative;
+  isolation: isolate;
+  display: inline-grid;
+  flex: 0 0 auto;
+  inline-size: var(--mission-size);
+  block-size: var(--mission-size);
+  place-items: center;
+  vertical-align: -0.28em;
+  pointer-events: none;
+  color: var(--mission-signal);
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.18)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.72));
+}
+
+.root[data-size='sm'] {
+  --mission-size: 1.25rem;
+}
+
+.root[data-size='md'] {
+  --mission-size: 2rem;
+}
+
+.root[data-size='lg'] {
+  --mission-size: 2.75rem;
+}
+
+.root[data-state='complete'] {
+  --mission-signal: #8bf3ca;
+}
+
+.root[data-state='claimed'] {
+  --mission-signal: #82989b;
+
+  opacity: 0.68;
+  filter: grayscale(0.35) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
+}
+
+.svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+}
+
+.dialBezel {
+  fill: #18272a;
+  stroke: rgba(229, 244, 245, 0.76);
+  stroke-width: 1.25;
+  filter: drop-shadow(0 1px 0 #000) drop-shadow(0 0 1.2px rgba(198, 237, 240, 0.42));
+}
+
+.dialFace {
+  stroke: rgba(110, 149, 152, 0.54);
+  stroke-width: 0.7;
+}
+
+.progressTrack,
+.progressArc {
+  fill: none;
+  stroke-linecap: butt;
+  stroke-width: 1.35;
+}
+
+.progressTrack {
+  stroke: rgba(184, 208, 210, 0.12);
+}
+
+.progressArc {
+  stroke: currentColor;
+  filter: drop-shadow(0 0 1.8px currentColor);
+  transition: stroke-dasharray 260ms ease-out;
+}
+
+.dialSpecular,
+.chromeLine,
+.signalLine,
+.microLine,
+.tableLine,
+.completionRay {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dialSpecular {
+  stroke: rgba(247, 255, 255, 0.56);
+  stroke-width: 0.75;
+}
+
+.mechanism {
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.96)) drop-shadow(0 0 2px rgba(85, 232, 255, 0.1));
+}
+
+.chromeFill {
+  fill: rgba(185, 205, 207, 0.14);
+  stroke: rgba(226, 241, 242, 0.82);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.darkFill {
+  fill: rgba(5, 13, 14, 0.92);
+  stroke: rgba(182, 207, 209, 0.68);
+  stroke-width: 1.05;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chromeLine {
+  stroke: rgba(221, 239, 240, 0.84);
+  stroke-width: 1.35;
+}
+
+.signalLine {
+  stroke: currentColor;
+  stroke-width: 1.45;
+}
+
+.signalFill {
+  fill: color-mix(in srgb, currentColor 74%, transparent);
+  stroke: currentColor;
+  stroke-width: 0.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.microLine {
+  stroke: color-mix(in srgb, currentColor 64%, #e8f5f5);
+  stroke-width: 0.75;
+}
+
+.tableLine {
+  stroke: rgba(206, 228, 230, 0.52);
+  stroke-width: 1.15;
+}
+
+.sensorLight {
+  fill: rgba(0, 0, 0, 0.72);
+  stroke: currentColor;
+  stroke-width: 0.65;
+}
+
+.completionSignal {
+  pointer-events: none;
+}
+
+.completionRay {
+  stroke: rgba(240, 255, 255, 0.88);
+  stroke-width: 1.25;
+  opacity: 0;
+}
+
+.statusWell {
+  fill: #010405;
+  stroke: rgba(218, 238, 239, 0.45);
+  stroke-width: 0.55;
+}
+
+.statusLamp {
+  fill: currentColor;
+  filter: drop-shadow(0 0 1.8px currentColor);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.cardFan,
+.crown,
+.showdownSpot,
+.hiddenCards,
+.trophy,
+.chipLift,
+.strengthMark,
+.risingStack,
+.networkPulse {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.root[data-state='active'] .statusLamp {
+  animation: missionStatusLive 2.1s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-mission-type='hands_played'] .cardFan {
+  animation: missionCardsDeal 3s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-mission-type='hands_won'] .crown {
+  animation: missionCrownReady 2.6s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-mission-type='showdowns'] .showdownSpot,
+.root[data-state='active'][data-mission-type='showdowns_won'] .showdownSpot {
+  animation: missionShowdownFocus 2.35s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-mission-type='hands_won_no_showdown'] .hiddenCards {
+  animation: missionHiddenPot 2.9s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-mission-type='tournaments_played'] .trophy {
+  animation: missionTrophyGlint 2.8s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-mission-type='big_pots'] .chipLift {
+  animation: missionChipLift 2.45s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-mission-type='strong_hands'] .strengthMark {
+  animation: missionStrengthCharge 2.2s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-mission-type='chips_won'] .risingStack {
+  animation: missionLedgerRise 2.6s ease-in-out infinite;
+}
+
+.root[data-state='active'][data-mission-type='friends_added'] .networkPulse {
+  animation: missionNetworkJoin 2.75s ease-in-out infinite;
+}
+
+.root[data-state='complete'] .completionRay {
+  animation: missionCompleteSweep 0.82s ease-out both;
+}
+
+.root[data-state='complete'] .statusLamp {
+  animation: missionCompleteLock 0.7s ease-out both;
+}
+
+@keyframes missionStatusLive {
+  0%,
+  100% {
+    opacity: 0.52;
+    transform: scale(0.78);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.13);
+  }
+}
+
+@keyframes missionCardsDeal {
+  0%,
+  100% {
+    transform: rotate(-1.2deg);
+  }
+
+  50% {
+    transform: rotate(1.2deg) translateY(-0.5px);
+  }
+}
+
+@keyframes missionCrownReady {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 1px currentColor);
+    transform: translateY(0);
+  }
+
+  50% {
+    filter: drop-shadow(0 0 3px currentColor);
+    transform: translateY(-0.8px);
+  }
+}
+
+@keyframes missionShowdownFocus {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 currentColor);
+    transform: scale(0.98);
+  }
+
+  50% {
+    filter: drop-shadow(0 0 2.8px currentColor);
+    transform: scale(1.025);
+  }
+}
+
+@keyframes missionHiddenPot {
+  0%,
+  100% {
+    transform: translateX(-0.45px);
+  }
+
+  50% {
+    transform: translateX(0.45px);
+  }
+}
+
+@keyframes missionTrophyGlint {
+  0%,
+  100% {
+    filter: brightness(0.9) drop-shadow(0 0 1px currentColor);
+  }
+
+  52% {
+    filter: brightness(1.18) drop-shadow(0 0 3px currentColor);
+  }
+}
+
+@keyframes missionChipLift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-0.9px);
+  }
+}
+
+@keyframes missionStrengthCharge {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 1px currentColor);
+    transform: scale(0.96);
+  }
+
+  50% {
+    filter: drop-shadow(0 0 3.4px currentColor);
+    transform: scale(1.035);
+  }
+}
+
+@keyframes missionLedgerRise {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-0.7px);
+  }
+}
+
+@keyframes missionNetworkJoin {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 currentColor);
+    transform: scale(0.98);
+  }
+
+  50% {
+    filter: drop-shadow(0 0 3px currentColor);
+    transform: scale(1.025);
+  }
+}
+
+@keyframes missionCompleteSweep {
+  0% {
+    opacity: 0;
+    transform: translate(-7px, 7px);
+  }
+
+  48% {
+    opacity: 0.92;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(7px, -7px);
+  }
+}
+
+@keyframes missionCompleteLock {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.72);
+  }
+
+  70% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root,
+  .root *,
+  .progressArc {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .root[data-state='active'] .statusLamp,
+  .root[data-state='complete'] .statusLamp {
+    opacity: 1;
+    transform: none;
+  }
+
+  .root[data-state='complete'] .completionRay {
+    opacity: 0.34;
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .root {
+    --mission-signal: Highlight;
+
+    filter: none;
+  }
+
+  .dialBezel,
+  .dialFace {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+
+  .mechanism,
+  .statusLamp,
+  .progressArc {
+    filter: none;
+  }
+}

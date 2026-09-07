@@ -6,6 +6,10 @@ import { getChallengeMissionAction } from '../src/utils/challengeMissionAction';
 
 const PAGE = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
 const CSS = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.module.css'), 'utf8');
+const APP_LAYOUT = readFileSync(
+  resolve(__dirname, '../src/components/layouts/AppLayout.tsx'),
+  'utf8'
+);
 
 describe('Daily Missions directed actions', () => {
   it('maps every declared challenge type without a silent default destination', () => {
@@ -44,8 +48,21 @@ describe('Daily Missions directed actions', () => {
 });
 
 describe('Daily Missions accessibility contract', () => {
-  it('sets the browser title when the route mounts', () => {
-    expect(PAGE).toContain("document.title = 'Daily Challenges | Smarter Poker'");
+  it('sets the browser title from the active direct-route cycle', () => {
+    expect(PAGE).toContain(
+      'document.title = `${TIER_PRESENTATION[activeTier].title} | Smarter Poker`'
+    );
+    expect(PAGE).toContain("title: 'Daily Challenges'");
+    expect(PAGE).toContain("title: 'Weekly Challenges'");
+    expect(PAGE).toContain("title: 'Monthly Challenges'");
+  });
+
+  it('keeps shell route focus from stealing the challenge tabs roving focus', () => {
+    expect(APP_LAYOUT).toContain(
+      'const focusRouteKey = /^\\/challenges\\/(?:daily|weekly|monthly)$/.test(normalizedPath)'
+    );
+    expect(APP_LAYOUT).toContain("? '/challenges'");
+    expect(APP_LAYOUT).toContain('}, [focusRouteKey]);');
   });
 
   it('uses the shell main landmark instead of nesting a second main', () => {
@@ -110,7 +127,9 @@ describe('Daily Missions accessibility contract', () => {
   it('does not let a closing card steal focus from a newly opened reroll confirmation', () => {
     expect(PAGE).toContain('rerollConfirmationOpen={confirmingRerollId !== null}');
     expect(PAGE).toContain('rerollFocusRestorePendingRef.current = !rerollConfirmationOpen');
-    expect(PAGE).toContain('disabled={rerolling || economyBusy || rerollConfirmationOpen}');
+    expect(PAGE).toMatch(
+      /disabled=\{\s*rerolling \|\| economyBusy \|\| rerollConfirmationOpen \|\| !canAffordReroll\s*\}/
+    );
   });
 
   it('exposes progress, tabs, sync state, and reroll confirmation semantically', () => {
@@ -135,6 +154,8 @@ describe('Daily Missions accessibility contract', () => {
   it('keeps controls touch-sized and protects narrow and forced-color layouts', () => {
     expect(CSS).toContain('min-height: 44px;');
     expect(CSS).toContain('@media (max-width: 420px)');
+    expect(CSS).toContain('grid-template-columns: minmax(0, 1fr);');
+    expect(CSS).toMatch(/\.cardActions > \*,[\s\S]*\.missionActionButton,[\s\S]*\.rerollButton/);
     expect(CSS).toContain('@media (forced-colors: active)');
     expect(CSS).not.toContain('#68747e');
     expect(CSS).not.toContain('#66737d');

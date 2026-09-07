@@ -182,7 +182,15 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
   });
 
   it('emits the JSON the honesty check reads, from every playwright invocation', () => {
-    for (const report of ['cashier.json', 'stats.json', 'club-members.json', 'sweep.json']) {
+    for (const report of [
+      'cashier.json',
+      'stats.json',
+      'club-members.json',
+      'daily-missions.json',
+      'daily-missions-accessibility.json',
+      'daily-missions-settlement.json',
+      'sweep.json',
+    ]) {
       expect(WORKFLOW, `no PLAYWRIGHT_JSON_OUTPUT_NAME for ${report}`).toContain(
         `e2e-report/${report}`
       );
@@ -192,6 +200,23 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(WORKFLOW, 'a line-only reporter leaves the honesty check nothing to read').not.toMatch(
       /--reporter=line\s+--retries/
     );
+  });
+
+  it('refuses a green verdict when the Daily Missions accessibility suite only skipped', () => {
+    const honesty = step(WORKFLOW, 'Did the suite actually verify production?');
+    expect(honesty).toContain('e2e-report/daily-missions-accessibility.json');
+
+    const sweep = step(WORKFLOW, 'Run the specs that need a deployed page');
+    expect(sweep).toContain('daily missions accessibility exit=$daily_missions_accessibility_rc');
+  });
+
+  it('refuses a green verdict when the Daily Missions database settlement suite only skipped', () => {
+    const honesty = step(WORKFLOW, 'Did the suite actually verify production?');
+    expect(honesty).toContain('e2e-report/daily-missions-settlement.json');
+
+    const sweep = step(WORKFLOW, 'Run the specs that need a deployed page');
+    expect(sweep).toContain('tests/e2e/daily-missions-database-settlement.spec.ts');
+    expect(sweep).toContain('daily missions settlement exit=$daily_missions_settlement_rc');
   });
 
   it('demands a real session, so a signed-out fallback cannot pass as a verdict', () => {

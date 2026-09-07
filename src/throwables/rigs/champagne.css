@@ -27,13 +27,6 @@
  * the darkroom photographed here at 800 (no cork, no puff) and 933 (no jet).
  */
 
-.thr-champagne {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
 /* == THE BOTTLE: on screen from the landing, dissolving out over the morph.
    The flute fades IN across the same 167 ms, which is what makes it a
    dissolve rather than a swap. `both` is correct here: the 0% frame is the

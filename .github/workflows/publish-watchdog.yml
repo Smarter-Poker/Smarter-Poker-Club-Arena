@@ -492,3 +492,101 @@ jobs:
             echo "::warning title=DDL reload storms::COULD NOT TELL - see the log. Not reported as clean."
           fi
           exit "$code"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # IS THE SAME CHECK RED ON EVERY BRANCH AT ONCE?
+  #
+  # On 2026-09-07 twelve consecutive `CI - Build & Type Safety` runs failed,
+  # each a different agent on an unrelated branch, for hours. One missing index
+  # on a brand-new table turned `Supabase Invariants - A Club Stays Deletable`
+  # red across the whole estate, and nobody could merge anything.
+  #
+  # Every gate behaved correctly and said so on each pull request. What was
+  # missing is that nothing looks ACROSS pull requests: each agent saw one red
+  # check on their own branch and went hunting in their own diff.
+  #
+  # `main_is_green` above cannot see this - the failure never touched `main`.
+  # It lived in production database state that the pull-request checks read, so
+  # `main` stayed green the whole time nothing could land.
+  #
+  # It REPORTS and never gates: the branches are already blocked, and a
+  # thirteenth red check would help nobody.
+  #
+  # ubuntu-latest for the same reason as the jobs above - the alarm must not
+  # share a failure domain with the boxes it watches.
+  open_prs_are_green:
+    name: No single check is blocking every branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Exit 2 is "COULD NOT TELL" - an unreadable answer or a request budget
+      # spent before the window was fully read. Never folded into "nothing is
+      # estate-wide" (10.86 rules 1 and 2).
+      - name: Failing checks, grouped across every fresh pull request
+        id: open-prs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # PIPESTATUS[0], not the pipeline's code - `tee` always succeeds.
+          set +e
+          node scripts/ci/check-open-prs-are-green.mjs 2>&1 | tee /tmp/open-prs.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "check-open-prs-are-green exited ${code}"
+          if [ "$code" = "2" ]; then
+            echo "::warning title=Open pull requests::COULD NOT TELL - see the log. Not reported as clean."
+          fi
+
+      - name: Raise the alarm when one check is blocking the estate
+        if: always() && steps.open-prs.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TITLE="One check is failing on nearly every open pull request"
+          BODY=$(printf '%s\n' \
+            "A single failing check accounts for most of the open pull requests that are red. That is not a branch problem, and looking for it in any one diff will not find it." \
+            "" \
+            "Read the failing check's own output: these gates name their offender, and the offender is almost never in the branch that was stopped." \
+            '```' \
+            "$(cat /tmp/open-prs.log)" \
+            '```' \
+            "" \
+            "Detector: \`scripts/ci/check-open-prs-are-green.mjs\`. Closes itself once branches are red for their own reasons again.")
+          EXISTING=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number' || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" || true
+          fi
+
+      - name: Close it once branches are red for their own reasons again
+        if: always() && steps.open-prs.outputs.code == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TITLE="One check is failing on nearly every open pull request"
+          EXISTING=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number' || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --comment "No single check accounts for the open pull requests that are red any more." || true
+          fi
+
+      # The exit code is carried here rather than on the check step, so the two
+      # issue steps above always run. A red job is itself read by
+      # `check-main-is-green` in this same workflow.
+      - name: Carry the verdict
+        if: always()
+        run: exit ${{ steps.open-prs.outputs.code }}

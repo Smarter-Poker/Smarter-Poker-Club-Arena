@@ -14,6 +14,10 @@ describe('Daily Missions production certification', () => {
     const workflow = source('.github/workflows/post-deploy-e2e.yml');
     expect(workflow).toContain("DAILY_MISSIONS_CERTIFICATION: '1'");
     expect(workflow).toContain('tests/e2e/production-daily-missions.spec.ts');
+    expect(workflow).toContain('tests/e2e/daily-challenges-accessibility-responsive.spec.ts');
+    expect(workflow).toContain('tests/e2e/daily-missions-database-settlement.spec.ts');
+    expect(workflow).toContain('e2e-report/daily-missions-accessibility.json');
+    expect(workflow).toContain('e2e-report/daily-missions-settlement.json');
     expect(workflow).toContain(
       'SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}'
     );
@@ -63,6 +67,19 @@ describe('Daily Missions production certification', () => {
     );
     expect(operationGate).not.toContain("'dashboard_loaded'");
     expect(operationGate).toContain("'reroll_succeeded'");
+  });
+
+  it('certifies authentic seven-day settlement, legacy multiplier history, and two-tab calm', () => {
+    const spec = source('tests/e2e/daily-missions-database-settlement.spec.ts');
+    expect(spec).toContain("is_active: 'eq.true'");
+    expect(spec).toContain('installHistoricalBoostedMilestone');
+    expect(spec).toContain('HISTORICAL_MILESTONE_ACTUAL_DIAMONDS');
+    expect(spec).toContain('for (const [index, assignedDate]');
+    expect(spec).toContain('milestoneDiamonds: 0');
+    expect(spec).toContain('exact_value: true');
+    expect(spec).toContain('secondTabClient');
+    expect(spec).toContain('settledRevision');
+    expect(spec).toContain('cleanupTemporaryCustomizationAccount(environment, account)');
   });
 
   it('hard-deletes all Daily Missions and reward-ledger fixture residue', () => {
@@ -131,9 +148,8 @@ describe('Daily Missions production certification', () => {
     const page = source('src/pages/DailyChallengesPage.tsx');
     const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
     const certification = source('tests/e2e/production-daily-missions.spec.ts');
-    expect(page).toContain(
-      'aria-label={`Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`}'
-    );
+    expect(page).toContain('? `Reroll ${DAILY_MISSION_REROLL_COST} Diamond For ${c.name}`');
+    expect(page).toContain(': `Need ${DAILY_MISSION_REROLL_COST} Diamond To Reroll ${c.name}`');
     expect(pageObject).toContain('name: /^Reroll 1 Diamond For .+$/');
     expect(certification).toContain('name: /^Confirm Reroll For /');
   });
@@ -155,6 +171,25 @@ describe('Daily Missions production certification', () => {
     const css = source('src/pages/DailyChallengesPage.module.css');
     expect(css).toContain('padding: 24px 18px calc(var(--bottom-nav-clearance, 74px) + 24px)');
     expect(css).toContain('padding: 0 0 max(84px, calc(var(--bottom-nav-clearance, 74px) + 12px))');
+  });
+
+  it('keeps modal dialogs above inert toasts and contains backdrop scrolling', () => {
+    const pageCss = source('src/pages/DailyChallengesPage.module.css');
+    const toastCss = source('src/components/common/Toast.css');
+    const overlay = pageCss.slice(
+      pageCss.indexOf('.celebrateOverlay {'),
+      pageCss.indexOf('.celebrateCard {')
+    );
+    const toastContainer = toastCss.slice(
+      toastCss.indexOf('.toast-container {'),
+      toastCss.indexOf('.toast {')
+    );
+    expect(overlay).toContain('z-index: 10020');
+    expect(overlay).toContain('overscroll-behavior: contain');
+    expect(toastContainer).toContain('z-index: 10000');
+    expect(source('tests/e2e/production-daily-missions.spec.ts')).toContain(
+      'backgroundScrollPosition'
+    );
   });
 
   it('bounds player-scoped wallet receipt cleanup with an online index', () => {

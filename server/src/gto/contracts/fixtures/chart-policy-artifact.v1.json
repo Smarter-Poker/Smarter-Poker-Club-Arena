@@ -1,13 +1,13 @@
 {
   "contractVersion": "smarter-poker.solver-policy.v1",
-  "schemaSha256": "177d6c703115d56fa71c73cdb8c811bd77c3a8092126c0bfe61a3f51ce3de6fc",
-  "policyVersion": "solver-policy-service.1.0.0",
+  "schemaSha256": "e18b456ed15165e2c0c640b606af12a0003c02be4ee8fe9cb15c54a56117aa9c",
+  "policyVersion": "solver-policy-service.1.0.1",
   "generatedAt": "2026-09-06T12:00:00.000Z",
   "sourceArtifact": "world-hub-chart-fixture",
   "policies": [
     {
       "contractVersion": "smarter-poker.solver-policy.v1",
-      "policyVersion": "solver-policy-service.1.0.0",
+      "policyVersion": "solver-policy-service.1.0.1",
       "key": {
         "contractVersion": "smarter-poker.solver-policy.v1",
         "variant": "nlh",
@@ -180,6 +180,7 @@
         "completeKey": false,
         "missingKeyDimensions": [
           "tableSize",
+          "positions.table",
           "stackVector",
           "blinds",
           "rake",

@@ -1960,6 +1960,32 @@ export function currentEquityDepth(): number {
   return equityDepth;
 }
 
+/**
+ * THE SAMPLE THE GOVERNOR ACTUALLY ALLOWED on the last simulateEquity call.
+ *
+ * `equityGovernor.scale` says what the governor DECIDED. This says what the
+ * one function that spends the core actually got, after the scale, the floor
+ * and the banded-Omaha trim - which is the only place the decision becomes
+ * work, and the only number that can prove the governor is still connected to
+ * anything.
+ *
+ * It exists because the test that proved that used to be a stopwatch: it timed
+ * 20 iterations at full precision against 20 at the floor and required the
+ * second to be under 60% of the first. On a 16-core runner shared by twelve
+ * jobs, the measured ratio on 2026-09-07 was 0.69 and it failed the whole
+ * server suite on an unrelated branch. Best-of-three and a warm-up pass had
+ * already been added and did not save it, because per-call fixed cost (deck
+ * construction, allocation) dominates a 90-iteration sample and varies with
+ * whoever else is on the box. The quantity being asserted was never
+ * milliseconds; it was iterations.
+ */
+let lastEquitySampleSize = 0;
+
+/** Iterations granted to the most recent simulateEquity call. */
+export function equitySampleSizeOfLastCall(): number {
+  return lastEquitySampleSize;
+}
+
 export function simulateEquity(
   holeCards: Card[],
   boardCards: Card[],
@@ -2004,6 +2030,9 @@ export function simulateEquity(
     // Softened to a light trim for the widest multiway case only.
     iterations = Math.max(120, Math.floor(iterations * (numOpponents >= 3 ? 0.85 : 1)));
   }
+  // Recorded after every trim, so it is the budget actually spent rather than
+  // the one requested. See equitySampleSizeOfLastCall above.
+  lastEquitySampleSize = iterations;
   const known = new Set<string>();
   for (const c of holeCards) known.add(cardKey(c));
   for (const c of boardCards) known.add(cardKey(c));

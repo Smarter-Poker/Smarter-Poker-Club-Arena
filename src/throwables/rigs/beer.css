@@ -81,13 +81,13 @@
 .thr-beer__m2 {
   opacity: 0;
   animation: thr-beer-m2 calc(3.633s * var(--animation-speed, 1)) linear
-    calc(0.567s * var(--animation-speed, 1)) both;
+    calc(0.567s * var(--animation-speed, 1)) forwards;
 }
 
 @keyframes thr-beer-m2 {
   0% {
-    /* 900: a dot on the left */
-    opacity: 0;
+    /* 900: a dot on the left, ON SCREEN */
+    opacity: 1;
     transform: translate(-57px, 10px) scale(0.1);
   }
   1.84% {
@@ -153,12 +153,12 @@
   transform-origin: 50% 100%;
   opacity: 0;
   animation: thr-beer-plume calc(0.47s * var(--animation-speed, 1)) ease-out
-    calc(1.234s * var(--animation-speed, 1)) both;
+    calc(1.234s * var(--animation-speed, 1)) forwards;
 }
 
 @keyframes thr-beer-plume {
   0% {
-    opacity: 0;
+    opacity: 1;
     transform: translate(0, 10px) scale(0.2);
   }
   15% {
@@ -183,12 +183,12 @@
 .thr-beer__drop {
   opacity: 0;
   animation: thr-beer-drop calc(0.38s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.6, 0.4, 1)
-    calc(1.234s * var(--animation-speed, 1)) both;
+    calc(1.234s * var(--animation-speed, 1)) forwards;
 }
 
 @keyframes thr-beer-drop {
   0% {
-    opacity: 0;
+    opacity: 1;
     transform: translate(0, 0) scale(0.6);
   }
   15% {
@@ -227,3 +227,13 @@
     opacity: 0 !important;
   }
 }
+
+/* THE DARKROOM CAUGHT THIS, 2026-09-07. These rules used `both` with a HIDDEN
+   0% frame, which is the idiom phase 1 shipped and the newer rigs no longer
+   use. `animation-fill-mode: both` fills the DELAY with the 0% frame, so the
+   element is invisible on the very frame its beat names - the tomato's burst
+   photographed as an empty seat at 300. In playback it is four milliseconds
+   late and nobody sees it; in the darkroom, which freezes exactly on the beat,
+   it is a black frame at a documented moment, and that is the instrument this
+   programme verifies itself with. `forwards` plus a VISIBLE 0% frame leaves the
+   element on its own `opacity: 0` while it waits and opens on the beat. */

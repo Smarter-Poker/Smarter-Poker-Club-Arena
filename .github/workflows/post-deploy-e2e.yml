@@ -24,7 +24,7 @@ name: Post-Deploy E2E (production)
 # WHY IT DOES NOT GATE A MERGE, and why that is not a weakness: by the time it
 # runs, the code is already on main and already published. Blocking is not
 # available. What it provides is the thing this estate keeps discovering it
-# lacks — somebody actually looking at production after a deploy. A red run
+# lacks: somebody actually looking at production after a deploy. A red run
 # here is a real defect on the live site, named by route and element.
 #
 # NOT A `schedule:` TRIGGER. `workflow_run` is explicitly not the cron the
@@ -51,12 +51,12 @@ on:
 # exposed the flaw in its first design. It used to WAIT (up to ten minutes) for
 # production to serve its own commit's sha before testing anything. On a repo
 # where merges land every few minutes, every run spent its life in that wait
-# and was cancelled by the next one before reaching a single spec — a job that
+# and was cancelled by the next one before reaching a single spec. A job that
 # always cancels is a job that never runs, which is precisely the "a guard with
 # nowhere to run becomes a comment" failure this workflow was built to end.
 #
 # The fix is to stop pinning to a sha. The question this job answers is "is
-# PRODUCTION healthy right now", not "is commit abc123 healthy" — the specs
+# PRODUCTION healthy right now", not "is commit abc123 healthy". The specs
 # below check routes, layout and touch targets on the live site, and any deploy
 # that reaches production is a fair subject. So it tests whatever is serving
 # when it starts, names that sha in the summary, and finishes in about three
@@ -404,6 +404,12 @@ jobs:
           run_suite daily-missions.json tests/e2e/production-daily-missions.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           daily_missions_rc=$?; [ $daily_missions_rc -ne 0 ] && rc=$daily_missions_rc
 
+          run_suite daily-missions-accessibility.json tests/e2e/daily-challenges-accessibility-responsive.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          daily_missions_accessibility_rc=$?; [ $daily_missions_accessibility_rc -ne 0 ] && rc=$daily_missions_accessibility_rc
+
+          run_suite daily-missions-settlement.json tests/e2e/daily-missions-database-settlement.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          daily_missions_settlement_rc=$?; [ $daily_missions_settlement_rc -ne 0 ] && rc=$daily_missions_settlement_rc
+
           # tests/e2e/routes/ (nine files) is named as a DIRECTORY on purpose.
           # The first sweep that wired the orphans missed it entirely by globbing
           # only tests/e2e/*.spec.ts, so nine route suites stayed invisible one
@@ -427,7 +433,7 @@ jobs:
             --reporter=line,json --workers=2 --retries=0
           sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
 
-          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  sweep exit=$sweep_rc"
+          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  daily missions accessibility exit=$daily_missions_accessibility_rc  daily missions settlement exit=$daily_missions_settlement_rc  sweep exit=$sweep_rc"
           exit $rc
 
       # THE RUN MUST NOT PASS BY NOT RUNNING.
@@ -448,6 +454,8 @@ jobs:
           e2e-report/customization-realtime.json
           e2e-report/customization-commerce.json
           e2e-report/daily-missions.json
+          e2e-report/daily-missions-accessibility.json
+          e2e-report/daily-missions-settlement.json
           e2e-report/sweep.json
 
       - name: Hard-delete the isolated production E2E account

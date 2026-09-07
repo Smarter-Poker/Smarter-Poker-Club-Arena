@@ -128,6 +128,56 @@
   animation: toast-icon-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;
 }
 
+.toast__instrument {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.toast__instrument-frame {
+  fill: rgba(4, 10, 11, 0.92);
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+.toast__instrument-rotor,
+.toast__instrument-signal,
+.toast__instrument-scan,
+.toast__close path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.toast__instrument-rotor {
+  stroke: rgba(219, 237, 238, 0.46);
+  stroke-width: 0.8;
+  stroke-dasharray: 2 2.8;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.toast__instrument-signal {
+  stroke-width: 1.9;
+}
+
+.toast__instrument-cut {
+  stroke: #ff9b87;
+}
+
+.toast__instrument-scan {
+  stroke: rgba(239, 255, 255, 0.72);
+  stroke-width: 1;
+  opacity: 0;
+}
+
+.toast__instrument-lamp {
+  fill: currentColor;
+  filter: drop-shadow(0 0 2px currentColor);
+}
+
 @keyframes toast-icon-pop {
   from {
     transform: scale(0);
@@ -162,6 +212,15 @@
   flex-shrink: 0;
 }
 
+.toast__close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.toast__close path {
+  stroke-width: 1.8;
+}
+
 /* Mobile responsive */
 @media (max-width: 480px) {
   .toast-container {
@@ -183,4 +242,171 @@
 .toast--clock .toast__icon {
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #fff;
+}
+
+/* Daily Missions owns a physical casino settlement surface. Its transient
+   notices use the same machined rails and instrument lights while that route
+   is mounted, without changing toast presentation elsewhere in Club Arena. */
+body[data-toast-theme='daily-missions-casino'] .toast {
+  --toast-casino-accent: #55e8ff;
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.07), transparent 24%),
+    linear-gradient(180deg, #19201f, #070a09 58%, #030504);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  box-shadow:
+    inset 4px 0 var(--toast-casino-accent),
+    inset 0 1px rgba(255, 255, 255, 0.13),
+    0 18px 48px rgba(0, 0, 0, 0.66);
+  color: #f4f7f5;
+  font-family: 'Rajdhani', 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast__message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast-container {
+  bottom: max(24px, calc(var(--bottom-nav-clearance, 0px) + 12px));
+  max-height: calc(
+    100dvh - max(16px, env(safe-area-inset-top)) -
+      max(24px, calc(var(--bottom-nav-clearance, 0px) + 12px))
+  );
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  scrollbar-gutter: stable;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast > * {
+  position: relative;
+  z-index: 5;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast::after {
+  --toast-bevel: 8px;
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  background:
+    linear-gradient(135deg, transparent 42%, var(--toast-casino-accent) 46% 54%, transparent 58%) 0
+      0 / var(--toast-bevel) var(--toast-bevel) no-repeat,
+    linear-gradient(135deg, transparent 42%, var(--toast-casino-accent) 46% 54%, transparent 58%)
+      100% 100% / var(--toast-bevel) var(--toast-bevel) no-repeat,
+    linear-gradient(var(--toast-casino-accent), var(--toast-casino-accent)) var(--toast-bevel) 0 /
+      calc(100% - var(--toast-bevel)) 1px no-repeat,
+    linear-gradient(var(--toast-casino-accent), var(--toast-casino-accent)) 100% 0 / 1px
+      calc(100% - var(--toast-bevel)) no-repeat,
+    linear-gradient(var(--toast-casino-accent), var(--toast-casino-accent)) 0 100% /
+      calc(100% - var(--toast-bevel)) 1px no-repeat,
+    linear-gradient(var(--toast-casino-accent), var(--toast-casino-accent)) 0 var(--toast-bevel) /
+      1px calc(100% - var(--toast-bevel)) no-repeat;
+  content: '';
+  opacity: 0.58;
+  pointer-events: none;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast--success {
+  --toast-casino-accent: #74efc4;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast--error {
+  --toast-casino-accent: #ff8f79;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast--warning {
+  --toast-casino-accent: #d3a855;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast__icon {
+  width: 36px;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--toast-casino-accent) 74%, #b8c4c9);
+  border-radius: 0;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--toast-casino-accent) 18%, #07100e),
+    #030504 72%
+  );
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  color: var(--toast-casino-accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--toast-casino-accent) 28%, transparent);
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast__instrument-rotor {
+  animation: toast-instrument-rotor 5s linear infinite;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast__instrument-status {
+  animation: toast-instrument-lamp 1.35s ease-in-out infinite;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast__instrument-scan {
+  animation: toast-instrument-scan 2.8s ease-in-out infinite;
+}
+
+body[data-toast-theme='daily-missions-casino'] .toast__close {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(184, 196, 201, 0.34);
+  border-radius: 0;
+  background: linear-gradient(180deg, #242b2b, #090c0b);
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+  color: #dce4e2;
+}
+
+@keyframes toast-instrument-rotor {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes toast-instrument-lamp {
+  0%,
+  100% {
+    opacity: 0.38;
+    transform: scale(0.74);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes toast-instrument-scan {
+  0%,
+  24% {
+    opacity: 0;
+    transform: translate(-5px, 5px);
+  }
+
+  52% {
+    opacity: 0.8;
+  }
+
+  80%,
+  100% {
+    opacity: 0;
+    transform: translate(5px, -5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-toast-theme='daily-missions-casino'] .toast,
+  body[data-toast-theme='daily-missions-casino'] .toast__icon,
+  body[data-toast-theme='daily-missions-casino'] .toast__instrument-rotor,
+  body[data-toast-theme='daily-missions-casino'] .toast__instrument-status,
+  body[data-toast-theme='daily-missions-casino'] .toast__instrument-scan {
+    animation: none;
+  }
 }

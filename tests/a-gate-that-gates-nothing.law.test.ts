@@ -69,6 +69,15 @@ describe('LAW: the TOS guard actually asks', () => {
     expect(guard).toMatch(/state === 'not_accepted'/);
   });
 
+  it('sends the idempotency key the endpoint refuses to work without', () => {
+    /* `checkIdempotency` runs first on every World Hub club-arena POST and
+       answers a request with no `X-Idempotency-Key` with a 400 - before auth,
+       before the write. The first landing of this gate sent none, so every
+       Accept & Continue on the site failed and the modal never closed. */
+    const accept = guard.slice(guard.indexOf('const handleAccept'), guard.indexOf('// Sign-in is'));
+    expect(accept).toContain("'X-Idempotency-Key'");
+  });
+
   it('records acceptance through the endpoint, not by writing the column itself', () => {
     // A browser must not be able to grant itself consent.
     expect(guard).toContain('/api/club-arena/accept-tos');

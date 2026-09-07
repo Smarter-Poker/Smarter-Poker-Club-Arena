@@ -1,3 +1,4 @@
+import { warmTable } from '../../../services/tableWarmup';
 import { memo, useEffect, useMemo } from 'react';
 import { readFigures, rememberFigures } from '../../../lib/lobbyFigureCache';
 import type { LobbyEntry } from '../lobbyEntries';
@@ -208,7 +209,19 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
   const actions = useMemo(() => arenaGameCardActionsForEntry(entry, ctx), [entry, ctx]);
 
   return (
-    <div onFocus={() => onSelect?.(entry)}>
+    <div
+      data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
+      onPointerEnter={() => {
+        if (entry.kind === 'cash') warmTable(entry.id);
+      }}
+      onTouchStart={() => {
+        if (entry.kind === 'cash') warmTable(entry.id);
+      }}
+      onFocus={() => {
+        if (entry.kind === 'cash') warmTable(entry.id);
+        onSelect?.(entry);
+      }}
+    >
       <ArenaGameCard data={data.card} actions={actions} presentation="mobile" selected={selected} />
     </div>
   );

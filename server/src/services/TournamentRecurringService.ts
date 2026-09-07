@@ -1279,6 +1279,16 @@ export const MTT_PRESTART_TICK_MS = 45 * 1000;
  */
 export const HORSE_MAX_CONCURRENT_TABLES = 4;
 
+/**
+ * How close to its start an event must be before a horse's REGISTRATION in
+ * it counts as one of its concurrent games. Seat-first games (spins,
+ * heads-up, SNGs) run three to twenty minutes, so a horse booked for an MTT
+ * further out than this can still take one and be back before the field
+ * seats. Measured 2026-09-07: without this bound 2,092 far-future bookings
+ * held 615 of 1,000 horses out of every open board.
+ */
+export const REGISTRATION_LOAD_HORIZON_MS = 30 * 60_000;
+
 export function horseAtCapacity(load: number): boolean {
   return (Number(load) || 0) >= HORSE_MAX_CONCURRENT_TABLES;
 }
@@ -4270,11 +4280,34 @@ export class TournamentRecurringService {
         );
         return null;
       }
+      /* A REGISTRATION DAYS AWAY IS NOT A GAME TODAY (2026-09-07).
+
+         Measured on the live fleet at 22:30 UTC: 615 of 1,000 horses read as
+         "at capacity" (load >= 4) and 2,092 of their load units were
+         REGISTRATIONS in events that had not started - 108 horses booked for
+         "Sunday $200 Deep Stack" six days out, 110 for "Wednesday Feature"
+         three days out, 290 for a freeroll an hour away. Every one of those
+         bookings was holding a chair a horse could have been sitting in NOW,
+         and the seat-first boards showed it: 160 spin / heads-up boards open,
+         36 of 367 seats paid, pickFreeHorses answering "0 of 3 claimable" and
+         "top-up added 0 of 1 needed" two hundred times per half hour, boards
+         taking >10 minutes to start when they started at all - and a human
+         at one of those boards waiting for opponents that existed but were
+         "busy" with next Sunday.
+
+         A registration occupies a chair when its event is about to seat its
+         field, not before. Count it inside REGISTRATION_LOAD_HORIZON_MS of
+         start (or when start_time is unknown - a seat-first game starts when
+         full and is deduped against its own seat below anyway). The pure
+         counting in buildHorseLoadMap is unchanged; this bounds what it is
+         fed. */
+      const horizonIso = new Date(Date.now() + REGISTRATION_LOAD_HORIZON_MS).toISOString();
       const { data: chunk, error: regErr } = await supabase
         .from('tournament_players')
-        .select('user_id, tournament_id, tournaments!inner(status)')
+        .select('user_id, tournament_id, tournaments!inner(status, start_time)')
         .in('status', ['registered', 'playing'])
         .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+        .or(`start_time.is.null,start_time.lte.${horizonIso}`, { referencedTable: 'tournaments' })
         // Same unstable-pagination hazard as the seat read above: a horse is
         // registered for several events at once, so user_id alone does not
         // order these rows deterministically.

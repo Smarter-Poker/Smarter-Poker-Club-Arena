@@ -603,3 +603,77 @@ it('sends only the latest offline presence after its club join', async () => {
   ]);
   c.disconnect();
 });
+
+it('paints warmed engine state on entry before a second server snapshot', async () => {
+  const { engineSocketMux } = await import('../src/services/EngineSocketMux');
+  engineSocketMux.acquireWarm('https://engine.example', TABLE, 'tok');
+  const ws = live();
+  ws._open();
+  ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+  ws._frame({ type: 'SNAPSHOT', tableId: TABLE, seq: 10, state: { pot: 20 } });
+  ws._frame({
+    type: 'DELTA',
+    tableId: TABLE,
+    prev: 10,
+    seq: 11,
+    patch: [{ op: 'replace', path: '/pot', value: 30 }],
+  });
+  const paint = vi.fn();
+  const { c } = client({ onSnapshot: paint });
+  await c.connect();
+  await flush();
+  expect(paint).toHaveBeenLastCalledWith({ pot: 30 }, 11);
+  expect(FakeWebSocket.instances).toHaveLength(1);
+  c.disconnect();
+});
+
+describe('EngineChannelClient handshake recovery', () => {
+  function channel() {
+    return new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+      initialDelay: 100,
+      maxDelay: 100,
+    });
+  }
+
+  it('retries a blackholed handshake even when close never emits an event', async () => {
+    const c = channel();
+    c.send({ type: 'JOIN_LOBBY' });
+    await flush();
+    const stuck = live();
+    // Browsers may defer close indefinitely during a failed network handshake.
+    stuck.close = vi.fn();
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(stuck.close).toHaveBeenCalled();
+    expect(live()).not.toBe(stuck);
+    const replacement = live();
+    replacement._open();
+    stuck.onclose?.({ code: 1006 });
+    expect(c.getStatus()).toBe('connected');
+    expect(replacement.sent.map((raw) => JSON.parse(raw).type)).toEqual(['JOIN_LOBBY']);
+    c.disconnect();
+  });
+
+  it('cancels the handshake deadline after a successful open', async () => {
+    const c = channel();
+    await c.connect();
+    const ws = live();
+    ws._open();
+    await vi.advanceTimersByTimeAsync(16_000);
+    expect(ws.closedWith).toEqual([]);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    c.disconnect();
+  });
+
+  it('does not reopen after disconnecting an unfinished handshake', async () => {
+    const c = channel();
+    await c.connect();
+    const ws = live();
+    c.disconnect();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(ws.closedWith).toHaveLength(1);
+    expect(c.getStatus()).toBe('idle');
+  });
+});

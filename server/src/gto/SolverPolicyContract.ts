@@ -1,9 +1,9 @@
 /** Versioned solver-policy contract consumed by the Club Arena engine. */
 
 export const SOLVER_POLICY_CONTRACT_VERSION = 'smarter-poker.solver-policy.v1' as const;
-export const SOLVER_POLICY_VERSION = 'solver-policy-service.1.0.0' as const;
+export const SOLVER_POLICY_VERSION = 'solver-policy-service.1.0.1' as const;
 export const SOLVER_POLICY_SCHEMA_SHA256 =
-  '177d6c703115d56fa71c73cdb8c811bd77c3a8092126c0bfe61a3f51ce3de6fc' as const;
+  'e18b456ed15165e2c0c640b606af12a0003c02be4ee8fe9cb15c54a56117aa9c' as const;
 
 export type SolverPolicyKind =
   | 'exact'
@@ -243,12 +243,135 @@ function finiteOrNull(value: unknown): boolean {
   return value === null || (typeof value === 'number' && Number.isFinite(value));
 }
 
+function nonNegativeOrNull(value: unknown): boolean {
+  return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+}
+
 function strings(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }
 
 function nullableString(value: unknown): boolean {
   return value === null || typeof value === 'string';
+}
+
+function exactActionSizeIsComplete(action: SolverPolicyAction): boolean {
+  if (!action?.legal || !object(action?.size)) return false;
+  const { family, size } = action;
+  if (family === 'all_in') {
+    if (size.unit !== 'all_in' || size.exact !== true) return false;
+    return [size.chips, size.bigBlinds, size.potFraction].every(
+      (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0
+    );
+  }
+  if (family === 'bet' || family === 'raise') {
+    if (size.exact !== true || !['chips', 'big_blinds', 'pot_fraction'].includes(size.unit)) {
+      return false;
+    }
+    return [size.chips, size.bigBlinds, size.potFraction].every(
+      (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0
+    );
+  }
+  if (!['fold', 'check', 'call'].includes(family)) return false;
+  return (
+    size.unit === 'none' &&
+    size.exact === false &&
+    size.chips === null &&
+    size.bigBlinds === null &&
+    size.potFraction === null
+  );
+}
+
+function nearlyEqual(left: number, right: number): boolean {
+  return Math.abs(left - right) <= 1e-6 * Math.max(1, Math.abs(left), Math.abs(right));
+}
+
+/**
+ * Exact aggressive actions carry all three sizing units so every consumer can
+ * execute the same amount without guessing which stack/pot convention was
+ * used by the producer. Reject internally inconsistent unit conversions.
+ */
+function exactActionUnitsAreConsistent(
+  action: SolverPolicyAction,
+  key: SolverPolicyDecisionKey,
+  node: SolverPolicyAnswer['node']
+): boolean {
+  if (!['bet', 'raise', 'all_in'].includes(action?.family)) return true;
+  if (!exactActionSizeIsComplete(action)) return false;
+  const bigBlindChips = key?.blinds?.bigBlind;
+  const potBb = node?.potBb;
+  if (
+    !(typeof bigBlindChips === 'number' && Number.isFinite(bigBlindChips) && bigBlindChips > 0) ||
+    !(typeof potBb === 'number' && Number.isFinite(potBb) && potBb > 0)
+  ) {
+    return false;
+  }
+  return (
+    nearlyEqual(action.size.chips! / bigBlindChips, action.size.bigBlinds!) &&
+    nearlyEqual(action.size.bigBlinds! / potBb, action.size.potFraction!)
+  );
+}
+
+function exactActionIsLegalForKey(
+  action: SolverPolicyAction,
+  key: SolverPolicyDecisionKey
+): boolean {
+  const candidates = Array.isArray(key?.legalActions)
+    ? key.legalActions.filter(
+        (entry) =>
+          entry?.action === action?.family || (action?.family === 'all_in' && entry?.allIn === true)
+      )
+    : [];
+  if (candidates.length === 0) return false;
+  if (!['bet', 'raise', 'all_in'].includes(action?.family)) return true;
+  if (typeof action?.size?.chips !== 'number') return false;
+  return candidates.some((entry) => {
+    const chips = action.size.chips as number;
+    if (typeof entry.exactChips === 'number') return Math.abs(entry.exactChips - chips) <= 1e-9;
+    if (typeof entry.minChips === 'number' && chips < entry.minChips) return false;
+    if (typeof entry.maxChips === 'number' && chips > entry.maxChips) return false;
+    return true;
+  });
+}
+
+function exactNodeIsConsistent(
+  node: SolverPolicyAnswer['node'],
+  key: SolverPolicyDecisionKey
+): boolean {
+  if (
+    !object(node) ||
+    node.actor !== key?.positions?.hero ||
+    !(typeof node.potBb === 'number' && Number.isFinite(node.potBb) && node.potBb > 0) ||
+    !(
+      typeof node.facingBetBb === 'number' &&
+      Number.isFinite(node.facingBetBb) &&
+      node.facingBetBb >= 0
+    )
+  )
+    return false;
+  const facing = node.facingBetBb > 0;
+  const expected: SolverNodeSemantics =
+    key?.street === 'preflop'
+      ? facing
+        ? 'preflop_facing_wager'
+        : 'preflop_unopened'
+      : facing
+        ? 'facing_wager'
+        : 'check_or_bet';
+  return node.semantics === expected;
+}
+
+function exactDomainIsConsistent(value: SolverPolicyAnswer['validDomain']): boolean {
+  return (
+    object(value) &&
+    Array.isArray(value.exactMatchDimensions) &&
+    value.exactMatchDimensions.length === 1 &&
+    value.exactMatchDimensions[0] === 'all' &&
+    Array.isArray(value.approximatedDimensions) &&
+    value.approximatedDimensions.length === 0 &&
+    Array.isArray(value.exclusions) &&
+    value.exclusions.length === 0
+  );
 }
 
 function exactObjectKeys(value: unknown, keys: string[]): boolean {
@@ -273,12 +396,28 @@ export function stableSolverPolicyJson(value: unknown): string {
 
 export function solverPolicyKeyMissingDimensions(key: SolverPolicyDecisionKey): string[] {
   const missing: string[] = [];
+  const shapeErrors: string[] = [];
+  validateDecisionKey(key, shapeErrors);
+  if (shapeErrors.length > 0) missing.push('keyShape');
   if (key?.contractVersion !== SOLVER_POLICY_CONTRACT_VERSION) missing.push('contractVersion');
   if (!key?.variant || key.variant === 'unknown') missing.push('variant');
   if (!key?.bettingStructure || key.bettingStructure === 'unknown')
     missing.push('bettingStructure');
   if (!Number.isInteger(key?.tableSize) || Number(key.tableSize) < 2) missing.push('tableSize');
   if (!key?.positions?.hero || key.positions.hero === 'UNKNOWN') missing.push('positions.hero');
+  if (
+    !key?.positions?.button ||
+    key.positions.button === 'UNKNOWN' ||
+    !key?.positions?.smallBlind ||
+    key.positions.smallBlind === 'UNKNOWN' ||
+    !key?.positions?.bigBlind ||
+    key.positions.bigBlind === 'UNKNOWN' ||
+    !Array.isArray(key?.positions?.villains) ||
+    key.positions.villains.length === 0 ||
+    key.positions.villains.some((position) => !position || position === 'UNKNOWN')
+  ) {
+    missing.push('positions.table');
+  }
   if (
     !Array.isArray(key?.stackVector) ||
     key.stackVector.length < 2 ||
@@ -318,7 +457,11 @@ export function solverPolicyKeyMissingDimensions(key: SolverPolicyDecisionKey): 
     missing.push('holding');
   const cards = [...(key?.board || []), ...(key?.holding || [])];
   if (new Set(cards).size !== cards.length) missing.push('cardUniqueness');
-  if (key?.publicActionHistory?.complete !== true) missing.push('publicActionHistory');
+  if (
+    key?.publicActionHistory?.complete !== true ||
+    (key?.street !== 'preflop' && key?.publicActionHistory?.actions?.length === 0)
+  )
+    missing.push('publicActionHistory');
   if (!Array.isArray(key?.legalActions) || key.legalActions.length === 0)
     missing.push('legalActions');
   if (key?.sidePotEligibility?.complete !== true) missing.push('sidePotEligibility');
@@ -347,8 +490,104 @@ function exactSourceComplete(source: unknown): boolean {
     /^[0-9a-f]{64}$/i.test(text(source.manifestChecksum)) &&
     /^[0-9a-f]{64}$/i.test(text(source.sourceArtifactChecksum)) &&
     text(source.qualityStatus).toLowerCase() === 'validated' &&
-    Boolean(text(source.auditedAt))
+    Number.isFinite(Date.parse(text(source.auditedAt)))
   );
+}
+
+function decisionKeyRelationshipsAreValid(key: Record<string, any>): boolean {
+  const stack = Array.isArray(key.stackVector) ? key.stackVector : [];
+  const seats = new Set(stack.map((entry: any) => entry?.seat));
+  const positions = new Set(stack.map((entry: any) => entry?.position));
+  const bigBlind = key.blinds?.bigBlind;
+  const unitPairIsValid = (chips: unknown, bigBlinds: unknown): boolean => {
+    if (chips === null || bigBlinds === null) return true;
+    return (
+      typeof chips === 'number' &&
+      Number.isFinite(chips) &&
+      typeof bigBlinds === 'number' &&
+      Number.isFinite(bigBlinds) &&
+      typeof bigBlind === 'number' &&
+      Number.isFinite(bigBlind) &&
+      bigBlind > 0 &&
+      nearlyEqual(chips / bigBlind, bigBlinds)
+    );
+  };
+  if (stack.some((entry: any) => !unitPairIsValid(entry?.stackChips, entry?.stackBb))) return false;
+  if (!unitPairIsValid(key.rake?.capChips, key.rake?.capBb)) return false;
+  if (typeof key.rake?.percent === 'number' && key.rake.percent > 100) return false;
+  if (
+    typeof key.blinds?.smallBlind === 'number' &&
+    typeof bigBlind === 'number' &&
+    key.blinds.smallBlind > bigBlind
+  )
+    return false;
+  if (
+    key.tournamentUtility?.playersRemaining !== null &&
+    !Number.isInteger(key.tournamentUtility?.playersRemaining)
+  )
+    return false;
+  if (
+    key.tournamentUtility?.entrants !== null &&
+    !Number.isInteger(key.tournamentUtility?.entrants)
+  )
+    return false;
+
+  const known = (position: unknown): position is string =>
+    typeof position === 'string' && position !== 'UNKNOWN';
+  if (known(key.positions?.hero) && !positions.has(key.positions.hero)) return false;
+  const villains = Array.isArray(key.positions?.villains) ? key.positions.villains : [];
+  if (villains.some((position: unknown) => known(position) && !positions.has(position)))
+    return false;
+  const uniqueKnownPositions = stack.map((entry: any) => entry?.position).filter(known);
+  if (new Set(uniqueKnownPositions).size !== uniqueKnownPositions.length) return false;
+
+  const straddles = Array.isArray(key.blinds?.straddles) ? key.blinds.straddles : [];
+  if (
+    straddles.some((entry: any) => !seats.has(entry?.seat)) ||
+    new Set(straddles.map((entry: any) => entry?.seat)).size !== straddles.length
+  )
+    return false;
+
+  const streetIndex: Record<string, number> = { preflop: 0, flop: 1, turn: 2, river: 3 };
+  const history = Array.isArray(key.publicActionHistory?.actions)
+    ? key.publicActionHistory.actions
+    : [];
+  let priorStreet = -1;
+  for (const action of history) {
+    const actionStreet = streetIndex[action?.street];
+    if (
+      !Number.isInteger(actionStreet) ||
+      actionStreet < priorStreet ||
+      actionStreet > streetIndex[key.street] ||
+      !unitPairIsValid(action?.amountChips, action?.amountBb)
+    )
+      return false;
+    priorStreet = actionStreet;
+  }
+
+  const pots = Array.isArray(key.sidePotEligibility?.pots) ? key.sidePotEligibility.pots : [];
+  if (new Set(pots.map((pot: any) => pot?.id)).size !== pots.length) return false;
+  const heroSeats = stack
+    .filter((entry: any) => entry?.position === key.positions?.hero)
+    .map((entry: any) => entry.seat);
+  for (const pot of pots) {
+    const eligibleSeats = Array.isArray(pot?.eligibleSeats) ? pot.eligibleSeats : [];
+    if (
+      !Array.isArray(pot?.eligibleSeats) ||
+      new Set(eligibleSeats).size !== eligibleSeats.length ||
+      eligibleSeats.some((seat: unknown) => !seats.has(seat))
+    )
+      return false;
+    if (heroSeats.length === 1 && pot?.heroEligible !== eligibleSeats.includes(heroSeats[0]))
+      return false;
+  }
+  for (const vector of [
+    Array.isArray(key.payouts) ? key.payouts : [],
+    Array.isArray(key.bounties) ? key.bounties : [],
+  ]) {
+    if (new Set(vector.map((entry: any) => entry?.place)).size !== vector.length) return false;
+  }
+  return true;
 }
 
 function validateDecisionKey(value: unknown, errors: string[]): value is SolverPolicyDecisionKey {
@@ -401,10 +640,12 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
       (entry) =>
         !object(entry) ||
         !Number.isInteger(entry.seat) ||
+        entry.seat < 0 ||
         typeof entry.position !== 'string' ||
-        !finiteOrNull(entry.stackChips) ||
-        !finiteOrNull(entry.stackBb) ||
+        !nonNegativeOrNull(entry.stackChips) ||
+        !nonNegativeOrNull(entry.stackBb) ||
         !Number.isFinite(entry.committedChips) ||
+        entry.committedChips < 0 ||
         typeof entry.active !== 'boolean' ||
         typeof entry.allIn !== 'boolean' ||
         !exactObjectKeys(entry, [
@@ -416,21 +657,25 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
           'active',
           'allIn',
         ])
-    )
+    ) ||
+    new Set(value.stackVector.map((entry: any) => entry?.seat)).size !== value.stackVector.length
   )
     errors.push('key.stackVector');
   if (
     !object(value.blinds) ||
-    !finiteOrNull(value.blinds.smallBlind) ||
-    !finiteOrNull(value.blinds.bigBlind) ||
+    !nonNegativeOrNull(value.blinds.smallBlind) ||
+    !nonNegativeOrNull(value.blinds.bigBlind) ||
     !Number.isFinite(value.blinds.ante) ||
+    value.blinds.ante < 0 ||
     !Number.isFinite(value.blinds.bigBlindAnte) ||
+    value.blinds.bigBlindAnte < 0 ||
     !Array.isArray(value.blinds.straddles) ||
     value.blinds.straddles.some(
       (entry: unknown) =>
         !object(entry) ||
         !Number.isInteger(entry.seat) ||
-        !finiteOrNull(entry.amount) ||
+        entry.seat < 0 ||
+        !nonNegativeOrNull(entry.amount) ||
         !exactObjectKeys(entry, ['seat', 'amount'])
     ) ||
     typeof value.blinds.complete !== 'boolean' ||
@@ -446,9 +691,9 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
     errors.push('key.blinds');
   if (
     !object(value.rake) ||
-    !finiteOrNull(value.rake.percent) ||
-    !finiteOrNull(value.rake.capChips) ||
-    !finiteOrNull(value.rake.capBb) ||
+    !nonNegativeOrNull(value.rake.percent) ||
+    !nonNegativeOrNull(value.rake.capChips) ||
+    !nonNegativeOrNull(value.rake.capBb) ||
     typeof value.rake.noFlopNoDrop !== 'boolean' ||
     typeof value.rake.complete !== 'boolean' ||
     !exactObjectKeys(value.rake, ['percent', 'capChips', 'capBb', 'noFlopNoDrop', 'complete'])
@@ -460,8 +705,11 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
     !(
       typeof value.tournamentUtility.model === 'string' || value.tournamentUtility.model === null
     ) ||
-    !finiteOrNull(value.tournamentUtility.playersRemaining) ||
-    !finiteOrNull(value.tournamentUtility.entrants) ||
+    !nonNegativeOrNull(value.tournamentUtility.playersRemaining) ||
+    !nonNegativeOrNull(value.tournamentUtility.entrants) ||
+    (value.tournamentUtility.playersRemaining !== null &&
+      value.tournamentUtility.entrants !== null &&
+      value.tournamentUtility.playersRemaining > value.tournamentUtility.entrants) ||
     typeof value.tournamentUtility.handForHand !== 'boolean' ||
     typeof value.tournamentUtility.complete !== 'boolean' ||
     !exactObjectKeys(value.tournamentUtility, [
@@ -478,7 +726,7 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
     !object(entry) ||
     !Number.isInteger(entry.place) ||
     entry.place < 1 ||
-    !finiteOrNull(entry.amount) ||
+    !nonNegativeOrNull(entry.amount) ||
     typeof entry.type !== 'string' ||
     !exactObjectKeys(entry, ['place', 'amount', 'type']);
   if (
@@ -494,6 +742,12 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
   if (!Array.isArray(value.holding) || value.holding.some((card) => !CARD_RE.test(card)))
     errors.push('key.holding');
   if (
+    Array.isArray(value.board) &&
+    Array.isArray(value.holding) &&
+    new Set([...value.board, ...value.holding]).size !== value.board.length + value.holding.length
+  )
+    errors.push('key.cardUniqueness');
+  if (
     !object(value.publicActionHistory) ||
     typeof value.publicActionHistory.complete !== 'boolean' ||
     !Array.isArray(value.publicActionHistory.actions) ||
@@ -505,8 +759,8 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
         !STREETS.has(entry.street) ||
         typeof entry.actor !== 'string' ||
         typeof entry.action !== 'string' ||
-        !finiteOrNull(entry.amountChips) ||
-        !finiteOrNull(entry.amountBb) ||
+        !nonNegativeOrNull(entry.amountChips) ||
+        !nonNegativeOrNull(entry.amountBb) ||
         typeof entry.allIn !== 'boolean' ||
         !exactObjectKeys(entry, [
           'sequence',
@@ -518,22 +772,35 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
           'allIn',
         ])
     ) ||
+    value.publicActionHistory.actions.some(
+      (entry: any, index: number, actions: any[]) =>
+        index > 0 && entry?.sequence <= actions[index - 1]?.sequence
+    ) ||
     !exactObjectKeys(value.publicActionHistory, ['complete', 'actions'])
   ) {
     errors.push('key.publicActionHistory');
   }
   if (
     !Array.isArray(value.legalActions) ||
-    value.legalActions.some(
-      (entry: unknown) =>
+    value.legalActions.some((entry: unknown) => {
+      if (
         !object(entry) ||
         typeof entry.action !== 'string' ||
-        !finiteOrNull(entry.minChips) ||
-        !finiteOrNull(entry.maxChips) ||
-        !finiteOrNull(entry.exactChips) ||
+        !nonNegativeOrNull(entry.minChips) ||
+        !nonNegativeOrNull(entry.maxChips) ||
+        !nonNegativeOrNull(entry.exactChips) ||
         typeof entry.allIn !== 'boolean' ||
         !exactObjectKeys(entry, ['action', 'minChips', 'maxChips', 'exactChips', 'allIn'])
-    )
+      )
+        return true;
+      if (entry.minChips !== null && entry.maxChips !== null && entry.minChips > entry.maxChips)
+        return true;
+      return Boolean(
+        entry.exactChips !== null &&
+        ((entry.minChips !== null && entry.exactChips < entry.minChips) ||
+          (entry.maxChips !== null && entry.exactChips > entry.maxChips))
+      );
+    })
   ) {
     errors.push('key.legalActions');
   }
@@ -545,7 +812,7 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
       (entry: unknown) =>
         !object(entry) ||
         typeof entry.id !== 'string' ||
-        !finiteOrNull(entry.amountChips) ||
+        !nonNegativeOrNull(entry.amountChips) ||
         !Array.isArray(entry.eligibleSeats) ||
         entry.eligibleSeats.some((seat: unknown) => !Number.isInteger(seat) || Number(seat) < 0) ||
         typeof entry.heroEligible !== 'boolean' ||
@@ -555,6 +822,7 @@ function validateDecisionKey(value: unknown, errors: string[]): value is SolverP
   ) {
     errors.push('key.sidePotEligibility');
   }
+  if (!decisionKeyRelationshipsAreValid(value)) errors.push('key.relationships');
   return errors.length === 0;
 }
 
@@ -593,9 +861,9 @@ function validateAction(
   if (
     !object(value.size) ||
     !SIZE_UNITS.has(value.size.unit) ||
-    !finiteOrNull(value.size.chips) ||
-    !finiteOrNull(value.size.bigBlinds) ||
-    !finiteOrNull(value.size.potFraction) ||
+    !nonNegativeOrNull(value.size.chips) ||
+    !nonNegativeOrNull(value.size.bigBlinds) ||
+    !nonNegativeOrNull(value.size.potFraction) ||
     typeof value.size.exact !== 'boolean' ||
     !exactObjectKeys(value.size, ['unit', 'chips', 'bigBlinds', 'potFraction', 'exact'])
   ) {
@@ -639,8 +907,8 @@ export function validateSolverPolicyAnswer(value: unknown): { valid: boolean; er
     !NODE_SEMANTICS.has(value.node.semantics) ||
     !(typeof value.node.sourceNode === 'string' || value.node.sourceNode === null) ||
     typeof value.node.actor !== 'string' ||
-    !finiteOrNull(value.node.potBb) ||
-    !finiteOrNull(value.node.facingBetBb) ||
+    !nonNegativeOrNull(value.node.potBb) ||
+    !nonNegativeOrNull(value.node.facingBetBb) ||
     !exactObjectKeys(value.node, ['semantics', 'sourceNode', 'actor', 'potBb', 'facingBetBb'])
   ) {
     errors.push('node');
@@ -689,9 +957,9 @@ export function validateSolverPolicyAnswer(value: unknown): { valid: boolean; er
         !object(entry) ||
         !actionIds.has(entry.actionId) ||
         !SIZE_UNITS.has(entry.unit) ||
-        !finiteOrNull(entry.chips) ||
-        !finiteOrNull(entry.bigBlinds) ||
-        !finiteOrNull(entry.potFraction) ||
+        !nonNegativeOrNull(entry.chips) ||
+        !nonNegativeOrNull(entry.bigBlinds) ||
+        !nonNegativeOrNull(entry.potFraction) ||
         typeof entry.exact !== 'boolean' ||
         !exactObjectKeys(entry, ['actionId', 'unit', 'chips', 'bigBlinds', 'potFraction', 'exact'])
     )
@@ -876,6 +1144,42 @@ export function validateSolverPolicyAnswer(value: unknown): { valid: boolean; er
     if (/v1(?!\d)/i.test(String(value.sourceArtifact?.system || ''))) errors.push('exact.legacyV1');
     if (value.validDomain?.approximatedDimensions?.length > 0) errors.push('exact.approximation');
     if (value.fallbackReason) errors.push('exact.fallback');
+    const exactActions = Array.isArray(value.actions)
+      ? (value.actions as SolverPolicyAction[])
+      : [];
+    if (!exactActions.every(exactActionSizeIsComplete)) errors.push('exact.actionSizes');
+    if (
+      !object(value.key) ||
+      !object(value.node) ||
+      !exactActions.every((action) =>
+        exactActionUnitsAreConsistent(
+          action,
+          value.key as SolverPolicyDecisionKey,
+          value.node as SolverPolicyAnswer['node']
+        )
+      )
+    ) {
+      errors.push('exact.actionUnits');
+    }
+    if (
+      !object(value.key) ||
+      !exactActions.every((action) =>
+        exactActionIsLegalForKey(action, value.key as SolverPolicyDecisionKey)
+      )
+    ) {
+      errors.push('exact.legalActions');
+    }
+    if (
+      !object(value.node) ||
+      !object(value.key) ||
+      !exactNodeIsConsistent(
+        value.node as SolverPolicyAnswer['node'],
+        value.key as SolverPolicyDecisionKey
+      )
+    )
+      errors.push('exact.node');
+    if (!exactDomainIsConsistent(value.validDomain as SolverPolicyAnswer['validDomain']))
+      errors.push('exact.domain');
   }
   return { valid: errors.length === 0, errors: [...new Set(errors)] };
 }

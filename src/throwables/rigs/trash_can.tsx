@@ -370,12 +370,7 @@ function Fly({ jitterStep }: { jitterStep: number }) {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-trash_can thr-trash_can--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <CanClosed uid={uid} k="p" />
     </svg>
   );
@@ -383,12 +378,7 @@ function Projectile({ uid }: RigProps) {
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-trash_can thr-trash_can--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* 333 (+0): the can, whole, where the flight left it. Visible one
           frame, then gone entirely at 533 (+200). */}
       <g className="thr-trash_can__landed">

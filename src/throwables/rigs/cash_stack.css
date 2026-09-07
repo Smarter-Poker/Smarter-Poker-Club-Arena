@@ -1,0 +1,176 @@
+/**
+ * CASH STACK - keyframes. Every delay is from LANDING (launch + 333 ms, the
+ * flight duration); the comment on each stop gives the catalogue's ms from
+ * launch too. Every duration and delay multiplies by --animation-speed
+ * (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 2's target
+ * avatar was ~40 px wide, so measured pixels are scaled by 100/40 = 2.5.
+ *
+ * TWO THREADS: the bundle (333 -> 867: overshoots, falls back, settles,
+ * bursts and fades) and the money cloud (900 -> 3533: twelve bills, each on
+ * its own appear delay, each drifting/flapping forever, the whole set fading
+ * together as it thins toward the cut).
+ *
+ * THE IDIOM: an element that appears at a beat carries `opacity: 0` in its
+ * own rule, `forwards` (never `both`), and a VISIBLE 0% frame. The bundle is
+ * on screen the instant the payload mounts (delay 0), so `both` with a
+ * visible 0% is correct for it, exactly as tomato's squash. Everything else
+ * here has a real, nonzero delay and gets `forwards` with a visible 0%.
+ */
+
+/* == THE BUNDLE: lands at 333, overshoots at 367 (+34), falls back and
+   settles (slightly larger) by 667 (+334). Delay 0 - on screen the instant
+   the payload mounts. ====================================================== */
+.thr-cash_stack__bundle {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-cash_stack-bundle calc(0.334s * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes thr-cash_stack-bundle {
+  0% {
+    /* 333: at the top of the head, ON SCREEN */
+    opacity: 1;
+    transform: translate(-10px, -48px) scale(1);
+  }
+  10% {
+    /* 367: the overshoot, partly off the avatar */
+    transform: translate(-38px, -130px) scale(1);
+  }
+  100% {
+    /* 667: settled, centred, a hair larger */
+    transform: translate(0, 0) scale(1.22);
+  }
+}
+
+/* == THE BUNDLE FADES: it has been used up by the burst, 700-867 (+367..
+   +534). Nested inside `.thr-cash_stack__bundle` so the fade rides on top of
+   the settle rather than fighting it for the same `transform`. =========== */
+.thr-cash_stack__bundle-fade {
+  opacity: 0;
+  animation: thr-cash_stack-bundle-fade calc(0.167s * var(--animation-speed, 1)) linear
+    calc(0.367s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-cash_stack-bundle-fade {
+  0% {
+    /* 700: still whole, ON SCREEN, the burst begins */
+    opacity: 1;
+  }
+  100% {
+    /* 867: gone; only flying bills remain */
+    opacity: 0;
+  }
+}
+
+/* == ONE BILL: pops in at its own delay (set inline per instance), a small
+   scale-up, then holds (via `forwards`) until the whole cloud fades. ====== */
+.thr-cash_stack__bill {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-cash_stack-bill-appear calc(0.167s * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.85, 0.3, 1) calc(0.034s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-cash_stack-bill-appear {
+  0% {
+    /* the bill is there, ON SCREEN, a hair small */
+    opacity: 1;
+    transform: scale(0.5);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* == THE DRIFT: a continuous gentle bob under every bill, phase-staggered
+   per instance (inline delay) so the cloud does not bounce in lockstep. == */
+.thr-cash_stack__drift {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-cash_stack-drift calc(0.4s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+@keyframes thr-cash_stack-drift {
+  0%,
+  100% {
+    transform: translateY(6px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* == THE WINGS: flap open/closed every 2 frames (67 ms), a 134 ms cycle,
+   `steps(2)` so each pose holds instead of blending - the same technique as
+   rose's butterfly. All bills share the class and so flap in step. ======= */
+.thr-cash_stack__wing {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-cash_stack-wing calc(0.134s * var(--animation-speed, 1)) steps(2, jump-none)
+    infinite;
+}
+
+@keyframes thr-cash_stack-wing {
+  0% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0.3);
+  }
+}
+
+/* == THE CLOUD FADES TOGETHER: thins from 3033 (+2700), the last bills exit
+   by 3267 (+2934), gone by the cut at 3533 (+3200). Wraps every bill so the
+   whole set dies as one, rather than each bill vanishing on an unmeasured
+   cue of its own. ========================================================= */
+.thr-cash_stack__cloud-fade {
+  animation: thr-cash_stack-cloud-fade calc(0.5s * var(--animation-speed, 1)) ease-in
+    calc(2.7s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-cash_stack-cloud-fade {
+  0% {
+    /* 3033: full cloud, ON SCREEN, the thin begins */
+    opacity: 1;
+  }
+  47% {
+    /* 3267: thinned, the last bills exiting */
+    opacity: 0.4;
+  }
+  100% {
+    /* 3533: clean, no residue */
+    opacity: 0;
+  }
+}
+
+/* == REDUCED MOTION: a settled bundle and a still cloud - the meaning of the
+   throw ("it rained money") without any of the fountain's motion. ========= */
+@media (prefers-reduced-motion: reduce) {
+  .thr-cash_stack__bundle {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translate(0, 0) scale(1.22) !important;
+  }
+  .thr-cash_stack__bundle-fade {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .thr-cash_stack__bill {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+  .thr-cash_stack__drift,
+  .thr-cash_stack__wing {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-cash_stack__cloud-fade {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}

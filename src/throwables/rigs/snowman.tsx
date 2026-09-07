@@ -191,12 +191,7 @@ function Plume({ uid }: { uid: string }) {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-snowman thr-snowman--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <Figure uid={uid} k="p" />
     </svg>
   );
@@ -204,12 +199,7 @@ function Projectile({ uid }: RigProps) {
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-snowman thr-snowman--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* 400 (+0, raw capture 600): the whole figure, landed. Gone in one
           frame at 433 (+33, raw 633). */}
       <g className="thr-snowman__figure">
@@ -228,8 +218,10 @@ function Payload({ uid }: RigProps) {
           was, lingers with a slow lobe shift 800-1733 (+400..+1333, raw
           1000-1933), then fades 1767-2200 (+1367..+1800, stretched past the
           reference's own ~2200 raw tail - see the file header). */}
-      <g className="thr-snowman__plume" transform="translate(0 -46)">
-        <Plume uid={uid} />
+      <g transform="translate(0 -46)">
+        <g className="thr-snowman__plume">
+          <Plume uid={uid} />
+        </g>
       </g>
 
       {/* 567 (+167, raw 767): specks spray sideways and upward from the

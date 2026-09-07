@@ -72,12 +72,22 @@ function AppLayoutContent() {
   const isClubLobbyPage = /^\/clubs\/[^/]+(?:\/lobby)?$/.test(normalizedPath);
   const isFlushPage = normalizedPath.endsWith('/notifications') || isClubLobbyPage;
 
+  // Daily, Weekly, and Monthly Challenges are tabs within one accessible
+  // page, even though each cycle has a bookmarkable URL. Their roving-tab
+  // handler owns focus while switching cycles; treating that URL update as a
+  // whole-page navigation schedules a later focus on <main> and steals focus
+  // from the newly selected tab. Collapse only those three known subroutes to
+  // one shell focus key. Entering or leaving Challenges still focuses main.
+  const focusRouteKey = /^\/challenges\/(?:daily|weekly|monthly)$/.test(normalizedPath)
+    ? '/challenges'
+    : normalizedPath;
+
   // SPA navigation does not move browser focus by itself. Put keyboard and
   // screen-reader users at the start of the new page without changing scroll.
   useEffect(() => {
     const frame = requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(frame);
-  }, [location.pathname]);
+  }, [focusRouteKey]);
 
   return (
     <div className={styles.layout} data-profile-gate-status={profileStatus}>

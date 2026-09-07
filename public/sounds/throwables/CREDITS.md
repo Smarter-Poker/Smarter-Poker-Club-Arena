@@ -21,6 +21,7 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | `harp_sparkle`       | `pluck_001.ogg`, `pluck_002.ogg`, `glass_003.ogg`, `glass_005.ogg` |
 | `tick_land`          | `tick_001.ogg`                                                     |
 | `bubble_tick`        | `pluck_002.ogg`                                                    |
+| `tick_settle`        | `tick_004.ogg`                                                     |
 
 ## Kenney - Impact Sounds (1.0)
 
@@ -36,6 +37,9 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | `flute_clink_soft`   | `impactGlass_light_004.ogg`                                                                                                                                                                                                            |
 | `fw_crackle`         | `impactPlate_heavy_000.ogg`, `impactMetal_heavy_001.ogg`, `impactPlate_heavy_002.ogg`, `impactMetal_heavy_003.ogg`, `impactPlate_heavy_001.ogg`, `impactMetal_heavy_000.ogg`                                                           |
 | `fw_barrage`         | `impactPlate_heavy_000.ogg`, `impactMetal_heavy_000.ogg`, `impactPlate_heavy_001.ogg`, `impactMetal_heavy_002.ogg`, `impactPlate_heavy_002.ogg`, `impactMetal_heavy_001.ogg`, `impactPlate_heavy_003.ogg`, `impactMetal_heavy_003.ogg` |
+| `chime_shimmer`      | `impactBell_heavy_000.ogg`, `impactBell_heavy_002.ogg`, `impactBell_heavy_004.ogg`                                                                                                                                                     |
+| `fanfare_short`      | `impactBell_heavy_001.ogg`, `impactBell_heavy_002.ogg`, `impactBell_heavy_003.ogg`, `impactBell_heavy_000.ogg`, `impactBell_heavy_004.ogg`                                                                                             |
+| `thump_soft`         | `impactSoft_medium_001.ogg`                                                                                                                                                                                                            |
 
 ## OpenGameArt - 40 CC0 water / splash / slime SFX (rubberduck)
 
@@ -64,10 +68,13 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 - Licence: CC0-1.0
 - URL: https://opengameart.org/content/25-cc0-mud-sfx
 
-| Cue         | Source file(s)             |
-| ----------- | -------------------------- |
-| `splat_wet` | `mud_05.ogg`, `mud_12.ogg` |
-| `egg_crack` | `mud_01.ogg`               |
+| Cue               | Source file(s)                           |
+| ----------------- | ---------------------------------------- |
+| `splat_wet`       | `mud_05.ogg`, `mud_12.ogg`               |
+| `egg_crack`       | `mud_01.ogg`                             |
+| `splat_heavy`     | `mud_04.ogg`, `mud_03.ogg`, `mud_02.ogg` |
+| `splat_wet_small` | `mud_06.ogg`                             |
+| `boing_splat`     | `mud_08.ogg`                             |
 
 ## OpenGameArt - 100 CC0 metal and wood SFX (rubberduck)
 
@@ -81,6 +88,7 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | `horseshoe_clank` | `metal_hit_02.ogg`, `metal_hit_04.ogg`     |
 | `can_rattle_rise` | `metal_sheet_02.ogg`, `metal_sheet_05.ogg` |
 | `lid_clank`       | `metal_close_01.ogg`                       |
+| `boing_splat`     | `metal_spring_01.ogg`                      |
 
 ## Smarter.Poker - synthesised cues
 
@@ -96,6 +104,8 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | `fw_barrage` | `anoisesrc=d=1.4:c=brown:a=0.9:r=48000`                                                                |
 | `flies_buzz` | `aevalsrc='0.5*sin(2*PI*162*t)+0.3*sin(2*PI*324*t)+0.15*sin(2*PI*487*t)':d=1.1:s=48000`                |
 | `poof_soft`  | `anoisesrc=d=0.75:c=pink:a=0.7:r=48000`                                                                |
+| `swell_low`  | `aevalsrc='0.5*sin(2*PI*(70+38*t)*t)+0.28*sin(2*PI*(140+76*t)*t)':d=0.85:s=48000`                      |
+| `whoosh_low` | `anoisesrc=d=0.4:c=brown:a=0.8:r=48000`                                                                |
 
 ## Kenney - Casino Audio (1.1)
 
@@ -103,7 +113,21 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 - Licence: CC0-1.0
 - URL: https://kenney.nl/assets/casino-audio
 
-| Cue           | Source file(s)                         |
-| ------------- | -------------------------------------- |
-| `card_slap`   | `card-place-2.ogg`                     |
-| `dice_rattle` | `dice-shake-1.ogg`, `dice-shake-3.ogg` |
+| Cue                     | Source file(s)                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `card_slap`             | `card-place-2.ogg`                                                                                                                                                              |
+| `dice_rattle`           | `dice-shake-1.ogg`, `dice-shake-3.ogg`                                                                                                                                          |
+| `cash_register_cascade` | `chips-handle-1.ogg`, `chips-collide-2.ogg`, `chips-stack-3.ogg`, `chips-handle-4.ogg`, `chips-collide-1.ogg`, `chips-stack-5.ogg`, `chips-handle-2.ogg`, `chips-collide-4.ogg` |
+
+## OpenGameArt - 80 CC0 RPG SFX (rubberduck)
+
+- Author: rubberduck (opengameart.org/users/rubberduck)
+- Licence: CC0-1.0
+- URL: https://opengameart.org/content/80-cc0-rpg-sfx
+
+| Cue                     | Source file(s)                                                             |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `chime_shimmer`         | `item_gem_02.ogg`                                                          |
+| `fanfare_short`         | `item_coins_02.ogg`                                                        |
+| `sparkle_bed`           | `item_gem_01.ogg`, `item_gem_03.ogg`, `item_gem_02.ogg`, `item_gem_04.ogg` |
+| `cash_register_cascade` | `item_coins_01.ogg`                                                        |

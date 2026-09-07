@@ -105,17 +105,19 @@ describe('section 1 — only two game rules are sanctioned', () => {
   });
 
   it('IN PRODUCTION it reports once and prints the real number', () => {
-    /* ── THE ONE PLACE THIS SPEC MEETS PRODUCTION AND DISAGREES ─────────────
-       Live tables are configured at 40 TODAY - Dan's own screenshots in the
-       same message read "VPIP 40% MIN", and fn_cash_vpip_status.required
-       returns whatever the club set. So the dev throw above must not reach a
-       player: it would take the felt down on every 40% table in the estate.
+    /* ── THE CASE THIS EXISTS FOR, EVEN THOUGH THE DATA IS NOW CLEAN ────────
+       When this was written, live tables really were running 35 / 40 / 60 /
+       65 / 70 and Dan's own screenshots read "VPIP 40% MIN". Migration
+       20260907190515 backfilled every game to its template's floor and added a
+       BEFORE trigger on cash_games so no writer can store a third answer, so
+       production is 30 / 50 / none today.
 
-       Reporting and printing the configured truth is not "inventing another
-       display state". Rounding 40 up to MIN 50% would be - and it would tell
-       a player they are failing a rule nobody set. Which side moves, the
-       component's contract or the clubs' config, is Dan's call; until then
-       this fails loudly to us and honestly to them. */
+       The branch stays, and this test with it, because the badge reads
+       `fn_cash_vpip_status.required` - a number that arrives over the wire
+       from a database this component cannot police. Reporting and printing the
+       configured truth is not "inventing another display state"; rounding 40
+       up to MIN 50% would be, and it would tell a player they are failing a
+       rule nobody set. */
     vi.stubEnv('DEV', false);
     try {
       render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />);

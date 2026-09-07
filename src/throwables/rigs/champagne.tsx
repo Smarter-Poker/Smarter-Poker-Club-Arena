@@ -245,12 +245,7 @@ function Flute({ uid, k }: { uid: string; k: string }) {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-champagne thr-champagne--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <Bottle uid={uid} k="p" />
       <g transform="translate(0 -58)">
         <Cork uid={uid} k="p" />
@@ -291,12 +286,7 @@ const CLINK_DROPS: ReadonlyArray<readonly [number, number, number, number]> = [
 function Payload({ uid }: RigProps) {
   const g = (n: string) => `thr-champagne-${n}-${uid}`;
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-champagne thr-champagne--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <defs>
         <linearGradient id={g('jet')} x1="0" y1="1" x2="0" y2="0">
           <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />

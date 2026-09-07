@@ -1,0 +1,208 @@
+/**
+ * TROPHY - keyframes. Every delay is from LANDING (launch + 133 ms); the
+ * comment on each rule gives the catalogue's ms from launch. Every duration
+ * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 1's target
+ * avatar was ~30 px wide, so measured pixel offsets are scaled by 100/30.
+ *
+ * FIVE THREADS, each on its own clock from the moment it appears:
+ *   the landed flash   133 -> 167   one frame, then gone
+ *   the wisp            167 -> 367  rises and fades
+ *   the beam             400 -> 1367 grows, holds bright, fades
+ *   the silhouette        400 -> 733  forms inside the beam, then hands off
+ *   the gold statuette         733 -> cut   solid, holds
+ *   the sparkles (x2)                 2433 / 2767 -> cut, each its own flash
+ *
+ * THE IDIOM: an element that APPEARS at a beat carries `opacity: 0` in its
+ * own rule, runs `forwards` (NOT `both`), and its 0% frame is the VISIBLE
+ * opening frame. The landed flash is on screen FROM LANDING (the Payload's
+ * own mount, delay 0), so it is the one element here that uses `both` with a
+ * visible 0% - every other element here is born mid-throw and uses the
+ * born-and-dies idiom.
+ */
+
+/* == THE LANDED FLASH: one frame at 133, gone in one frame at 167. On screen
+   from the Payload's mount (delay 0), so `both` with a visible 0% is right
+   here. steps(1) holds it for the whole 34 ms and then drops it. ========= */
+.thr-trophy__landed {
+  animation: thr-trophy-landed calc(0.034s * var(--animation-speed, 1)) steps(1, end) both;
+}
+
+@keyframes thr-trophy-landed {
+  0% {
+    /* 133: arrived, whole */
+    opacity: 1;
+  }
+  100% {
+    /* 167: gone; the wisp takes over */
+    opacity: 0;
+  }
+}
+
+/* == THE WISP: born at 167 (+34), climbs and fades out by 367 (+234). ==== */
+.thr-trophy__wisp {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-trophy-wisp calc(0.233s * var(--animation-speed, 1)) ease-out
+    calc(0.034s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trophy-wisp {
+  0% {
+    /* 167: a faint wisp, already visible where the statuette was */
+    opacity: 0.6;
+    transform: translateY(0);
+  }
+  70% {
+    opacity: 0.4;
+    transform: translateY(-18px);
+  }
+  100% {
+    /* 367: risen further, gone */
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+}
+
+/* == THE BEAM: born at 400 (+267), grows to full brightness by 733 (+600),
+   holds, then narrows and dims to nothing by 1367 (+1234). One continuous
+   life, because a beam that grows, holds and fades is one animation, not
+   three delays that could drift apart. =================================== */
+.thr-trophy__beam {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-trophy-beam calc(0.967s * var(--animation-speed, 1)) ease-in-out
+    calc(0.267s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trophy-beam {
+  0% {
+    /* 400: thin and dim, already visible */
+    opacity: 0.35;
+    transform: scaleY(0.18);
+  }
+  34% {
+    /* 733: full brightness */
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  69% {
+    /* 1067: still full brightness; about to fade */
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  100% {
+    /* 1367: narrowed and gone */
+    opacity: 0;
+    transform: scaleY(0.4);
+  }
+}
+
+/* == THE SILHOUETTE: forms inside the beam 400-733 (+267..+600), then hands
+   off to the gold statuette in the same frame the beam reaches full
+   brightness. ============================================================ */
+.thr-trophy__silhouette {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-trophy-silhouette calc(0.333s * var(--animation-speed, 1)) ease-out
+    calc(0.267s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trophy-silhouette {
+  0% {
+    /* 400: a faint dark shape, already visible, small */
+    opacity: 0.45;
+    transform: scale(0.5);
+  }
+  70% {
+    opacity: 0.75;
+    transform: scale(0.88);
+  }
+  100% {
+    /* 733: the gold statuette takes over on this exact frame */
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* == THE GOLD STATUETTE: born solid at 733 (+600), a quick settling pop,
+   then held to the cut. ================================================== */
+.thr-trophy__gold {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-trophy-gold calc(0.15s * var(--animation-speed, 1)) ease-out
+    calc(0.6s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trophy-gold {
+  0% {
+    /* 733: solid gold, already visible, mid-pop */
+    opacity: 1;
+    transform: scale(0.85);
+  }
+  100% {
+    /* 883: settled; held to the cut */
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* == THE SPARKLE GLINTS: two measured flashes, 2433 (+2300) and 2767
+   (+2634), each its own one-shot flash-and-settle. The per-instance delay is
+   set inline in trophy.tsx (the tomato chunk pattern), so one class serves
+   both glints. ============================================================ */
+.thr-trophy__sparkle {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-trophy-sparkle calc(0.133s * var(--animation-speed, 1)) ease-out forwards;
+}
+
+@keyframes thr-trophy-sparkle {
+  0% {
+    /* the glint, already visible and dim */
+    opacity: 0.3;
+    transform: scale(0.6);
+  }
+  45% {
+    /* the flash peak */
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    /* settles to a soft glow and holds */
+    opacity: 0.55;
+    transform: scale(1);
+  }
+}
+
+/* == REDUCED MOTION: the scene, arrived - the gold statuette standing on the
+   shoulder with both sparkle glints settled; the transient landed flash,
+   wisp, beam and silhouette are gone. Every beat's MEANING survives; none of
+   the motion does. ======================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .thr-trophy__landed,
+  .thr-trophy__wisp,
+  .thr-trophy__beam,
+  .thr-trophy__silhouette {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-trophy__gold {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+
+  .thr-trophy__sparkle {
+    animation: none !important;
+    opacity: 0.55 !important;
+    transform: scale(1) !important;
+  }
+}

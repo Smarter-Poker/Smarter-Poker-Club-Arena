@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/the-journal-dedupe-survives-a-partition",
+  "_comment": "Phase 5 stage 1: the journal's idempotency guarantee moves outside the partitioned table (20260907054244).",
+  "tables": ["chip_ledger_idem"],
+  "functions": ["zz_chip_ledger_key_is_claimed_once"],
+  "columns": {}
+}

@@ -131,21 +131,76 @@ function Figure({ uid, k }: { uid: string; k: string }) {
       <defs>
         <radialGradient id={g('head')} cx="0.36" cy="0.3" r="0.8">
           <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="65%" stopColor="#eef3f6" />
-          <stop offset="100%" stopColor="#c9d4da" />
+          <stop offset="52%" stopColor="#eef3f6" />
+          <stop offset="82%" stopColor="#afc8d9" />
+          <stop offset="100%" stopColor="#7296ad" />
         </radialGradient>
+        <linearGradient id={g('hat')} x1="0" y1="0" x2="1" y2="0.15">
+          <stop offset="0%" stopColor="#070b12" />
+          <stop offset="28%" stopColor="#4c586b" />
+          <stop offset="43%" stopColor="#2a3344" />
+          <stop offset="85%" stopColor={HAT_BLACK} />
+          <stop offset="100%" stopColor="#080d17" />
+        </linearGradient>
       </defs>
       {/* the top hat, brim first */}
-      <rect x="-24" y="-31" width="48" height="6" rx="2" fill={HAT_BLACK} />
-      <rect x="-16" y="-53" width="32" height="23" rx="2" fill={HAT_BLACK} />
-      <rect x="-16" y="-35" width="32" height="4.5" fill="#7a1f1f" />
+      <ellipse
+        cx="0"
+        cy="-28"
+        rx="25"
+        ry="5"
+        fill={`url(#${g('hat')})`}
+        stroke="#080d17"
+        strokeWidth="1"
+      />
+      <path
+        d="M -16 -52 Q 0 -57 16 -52 L 15 -30 Q 0 -25 -15 -30 Z"
+        fill={`url(#${g('hat')})`}
+        stroke="#111824"
+        strokeWidth="0.8"
+      />
+      <ellipse cx="0" cy="-52" rx="16" ry="3.2" fill="#303d50" stroke="#738298" strokeWidth="0.6" />
+      <path
+        d="M -15.3 -36 Q 0 -31 15.3 -36 L 15 -31 Q 0 -26 -15 -31 Z"
+        fill="#962e3c"
+        stroke="#461721"
+        strokeWidth="0.7"
+      />
+      <path d="M -14 -35 Q -7 -32 -3 -33" fill="none" stroke="#de7271" strokeWidth="0.8" />
       {/* the head */}
       <circle cx="0" cy="0" r="26" fill={`url(#${g('head')})`} stroke="#c2ccd2" strokeWidth="1" />
+      <path
+        d="M -20 -12 Q -16 -22 -5 -23 M -23 1 Q -23 9 -19 14"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path
+        d="M -13 -20 Q 0 -23 13 -20"
+        fill="none"
+        stroke="#879cab"
+        strokeWidth="1.5"
+        opacity="0.5"
+      />
+      <path
+        d="M -18 -5 l 1 -1 M -15 4 l 1 1 M 16 3 l 1 -1 M 12 15 l 1 1 M -8 20 l 1 -1 M 3 -17 l 1 1"
+        fill="none"
+        stroke="#9ebace"
+        strokeWidth="0.7"
+        strokeLinecap="round"
+      />
       {/* coal eyes */}
       <circle cx="-9" cy="-6" r="3.1" fill="#1a1a1a" />
       <circle cx="9" cy="-6" r="3.1" fill="#1a1a1a" />
+      <path
+        d="M -10 -7.5 l 1 -0.5 M 8 -7.5 l 1 -0.5"
+        stroke="#b7c8dc"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
       {/* the red ball nose - this is the piece that survives the splat */}
-      <circle cx="0" cy="2" r="5" fill={NOSE_RED} stroke={NOSE_EDGE} strokeWidth="0.8" />
+      <Nose uid={`${uid}-${k}`} />
       {/* a small coal smile */}
       <circle cx="-6.5" cy="10.5" r="1.4" fill="#1a1a1a" />
       <circle cx="0" cy="12" r="1.4" fill="#1a1a1a" />
@@ -156,8 +211,28 @@ function Figure({ uid, k }: { uid: string; k: string }) {
 
 /** Just the nose, for the standalone element that survives the splat and
  *  falls to the chin - the same circle, same position, as inside Figure. */
-function Nose() {
-  return <circle cx="0" cy="2" r="5" fill={NOSE_RED} stroke={NOSE_EDGE} strokeWidth="0.8" />;
+function Nose({ uid }: { uid: string }) {
+  const nose = `thr-snowman-nose-${uid}`;
+  return (
+    <g>
+      <defs>
+        <radialGradient id={nose} cx="0.3" cy="0.25" r="0.8">
+          <stop offset="0%" stopColor="#ffc6a5" />
+          <stop offset="35%" stopColor={NOSE_RED} />
+          <stop offset="100%" stopColor="#892422" />
+        </radialGradient>
+      </defs>
+      <ellipse cx="0.8" cy="3.5" rx="5.2" ry="4.5" fill="#53768b" opacity="0.35" />
+      <circle cx="0" cy="2" r="5" fill={`url(#${nose})`} stroke={NOSE_EDGE} strokeWidth="0.8" />
+      <path
+        d="M -2 -0.5 Q -1 -1.5 0 -1"
+        fill="none"
+        stroke="#ffe2cc"
+        strokeWidth="0.9"
+        strokeLinecap="round"
+      />
+    </g>
+  );
 }
 
 /**
@@ -176,15 +251,25 @@ function Plume({ uid }: { uid: string }) {
           <stop offset="100%" stopColor="#d7e2e8" />
         </radialGradient>
       </defs>
-      <g fill={`url(#${g('plume')})`}>
-        <ellipse cx="0" cy="10" rx="30" ry="26" />
-        <circle cx="-14" cy="-14" r="20" />
-        <circle cx="15" cy="-18" r="18" />
-        <circle cx="-2" cy="-34" r="16" />
-        <circle cx="-20" cy="14" r="16" />
-        <circle cx="20" cy="18" r="15" />
-        <circle cx="0" cy="-52" r="11" />
+      <g fill={`url(#${g('plume')})`} stroke="#dae8ef" strokeWidth="0.6">
+        <path d="M -25 25 C -39 27 -41 8 -30 1 C -39 -8 -33 -32 -16 -31 C -24 -45 -10 -54 1 -48 C 14 -54 28 -39 23 -29 C 39 -27 41 -9 31 0 C 43 10 33 34 17 32 C 5 44 -17 39 -25 25 Z" />
+        <path d="M -8 -38 C -20 -43 -13 -57 -5 -55 C -5 -67 11 -65 10 -55 C 23 -49 14 -34 4 -36 Z" />
       </g>
+      <path
+        d="M -29 -10 C -29 -24 -16 -28 -9 -20 M 6 -32 C 15 -38 26 -28 25 -20 M -27 16 C -30 4 -17 -2 -10 4 M 8 20 C 17 11 30 14 28 24"
+        fill="none"
+        stroke="#c3d9e5"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        opacity="0.65"
+      />
+      <path
+        d="M -14 -37 Q -10 -44 -4 -42 M -30 6 Q -26 1 -22 2 M 12 -20 Q 20 -25 24 -18"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
     </g>
   );
 }
@@ -211,7 +296,7 @@ function Payload({ uid }: RigProps) {
           800 (+167..+400, raw 767-1000), and stays there through the fade
           and the cut. */}
       <g className="thr-snowman__nose">
-        <Nose />
+        <Nose uid={`${uid}-residue`} />
       </g>
 
       {/* 467 (+67, raw 667): the powder plume grows in ABOVE where the head

@@ -155,10 +155,23 @@ describe('the squeeze is compositor-only and speed-scaled', () => {
 });
 
 describe('the reserved slot (spec 11)', () => {
-  it('keeps geometry and draws nothing - the ghost outlines stay gone', () => {
+  it('draws nothing and reserves nothing - the board centres on the cards that are out', () => {
+    /* Dan 2026-09-07, item 11: "THEY USED TO START OFF CENTER ON THE FLOP, AND
+       SHIFT LEFT AS THE TURN AND RIVER CAME OUT, NOW THEY ARE JUST STARTING
+       ALL TO THE LEFT." The 2026-09-04 reserve held a card's WIDTH so the
+       board was always five positions wide, which puts a flop in the left
+       three of them — a full card left of the felt's centreline.
+
+       The width is a variable now, defaulting to zero, so the row centres on
+       the dealt cards and drifts left as each new one lands. The rest of the
+       rule is unchanged and still load-bearing: the slot must still DRAW
+       nothing (the ghost outlines stay gone) and still hold the row's height,
+       so an empty board does not collapse. */
     const r = rule(boardCode, '.community-cards__slot-reserve');
     expect(r).toContain('visibility: hidden');
-    expect(r).toContain('width: var(--cc-card-w)');
+    expect(r).toContain('width: var(--cc-slide-reserve, 0px)');
+    expect(r).toContain('height: var(--cc-card-h)');
+    expect(rule(boardCode, '.community-cards')).toContain('--cc-slide-reserve: 0px');
     expect(r).not.toMatch(/border|outline|background/);
     expect(boardCode).not.toContain('.community-cards__placeholder');
     expect(tablePageCss).toMatch(

@@ -3,8 +3,10 @@
  * scale table, the iteration floor, and that simulateEquity actually obeys it.
  */
 import { describe, it, expect, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   scaleForLoopDelay,
+  effectiveDelayMs,
   governedIterations,
   floorForScale,
   GOVERNOR_FLOOR_ITERATIONS,
@@ -173,6 +175,40 @@ describe('simulateEquity under the governor', () => {
     expect(sampleAt(0.2)).toBeLessThanOrEqual(GOVERNOR_FLOOR_ITERATIONS);
     // Deep tier: below the ordinary floor, which is the whole point.
     expect(sampleAt(0.08)).toBeLessThanOrEqual(GOVERNOR_DEEP_FLOOR_ITERATIONS);
+  });
+
+  /**
+   * THE PUBLISHED p50 IS THE NUMBER THE SCALE WAS DECIDED ON (2026-09-07).
+   *
+   * `sample()` decided the scale on `max(histogram p50, sampler lateness)` but
+   * published the raw histogram p50. Measured on main with the sampler 1,999 ms
+   * late, the histogram's own p50 was 21 ms: the governor went to its deepest
+   * tier while `poker_event_loop_delay_p50_ms` served 21.
+   *
+   * `EngineCoreOutOfHeadroom` (>40), `EngineCoreSaturated` (>300) and
+   * `EngineSheddingPrecisionForHours` all read that metric, so all three stayed
+   * silent through a core pegged hard enough to shed 92% of its arithmetic -
+   * and those are the alarms that caught the 04:05 outage.
+   */
+  it('publishes the delay it throttled on, not a histogram that disagrees', () => {
+    expect(effectiveDelayMs(21, 1999)).toBe(1999);
+    expect(scaleForLoopDelay(effectiveDelayMs(21, 1999) as number)).toBe(0.08);
+    // The worse of the two, in both directions.
+    expect(effectiveDelayMs(2500, 10)).toBe(2500);
+    // And a missing half never wins.
+    expect(effectiveDelayMs(null, 1999)).toBe(1999);
+    expect(effectiveDelayMs(21, null)).toBe(21);
+    // Nothing measurable at all is "no reading", not "fast".
+    expect(effectiveDelayMs(null, null)).toBeNull();
+
+    // The source must not assign the raw histogram p50 to the published field.
+    const src = readFileSync(new URL('./EquityLoadGovernor.ts', import.meta.url).pathname, 'utf8');
+    expect(
+      /this\.p50Ms\s*=\s*p50\s*;/.test(src),
+      'the published p50 is the raw histogram again, so it can disagree with ' +
+        'the delay the scale was decided on'
+    ).toBe(false);
+    expect(src).toContain('this.p50Ms = delay;');
   });
 
   it('reports itself for /health', () => {

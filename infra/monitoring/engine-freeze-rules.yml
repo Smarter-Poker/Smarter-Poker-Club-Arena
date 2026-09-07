@@ -136,7 +136,12 @@ groups:
         expr: |
           sum(increase(poker_hands_dealt_total[10m])) == 0
           and sum(poker_active_players) > 1
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          # `unless on()`, not a bare `unless`: this expression aggregates its
+          # left side away from {job, instance}, and `unless` matches on the
+          # EXACT label set - so a plain one finds no matching series and
+          # guards nothing. alert-rules.yml's engine-core group already says
+          # this in as many words; these three had it wrong.
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: critical
@@ -193,7 +198,12 @@ groups:
             clamp_min(sum(poker_active_tables), 1)
           ) < 1.0
           and sum(poker_active_tables) > 20
-          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+          # `unless on()`, not a bare `unless`: this expression aggregates its
+          # left side away from {job, instance}, and `unless` matches on the
+          # EXACT label set - so a plain one finds no matching series and
+          # guards nothing. alert-rules.yml's engine-core group already says
+          # this in as many words; these three had it wrong.
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 40m
         labels:
           severity: critical

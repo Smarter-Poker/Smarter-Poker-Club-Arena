@@ -39,17 +39,41 @@
  * app. A test pins the two copies equal.
  */
 
+/* ── DAN 2026-09-07: THE END-OF-HAND CADENCE, HALVED ────────────────────────
+   "GAMES ARE FREEZING UP AFTER EACH AND EVERY HAND."
+
+   Nothing below was broken. Every beat here was asked for, sized against a
+   real animation, and pinned by a law. Added together they were also 4.5s of
+   held felt after a fold and 7.5s after a showdown, every single hand, and at
+   that length a working table is indistinguishable from a hung one.
+
+   This pass keeps the SHAPE of the cadence Dan specified on 2026-08-27 —
+   sweep, push with the riding total, muck, rest, button, deal — and roughly
+   halves each beat, to ~2.1s on a fold and ~3.5s on a showdown. Where a beat
+   was sized to cover a CSS animation, the animation was shortened in the same
+   commit rather than being left to run past its beat.
+
+   Two of these numbers reverse an earlier explicit instruction, deliberately
+   and on the record: POST_PUSH_PAUSE_MS was "PAUSE 1 SECOND" (2026-08-27) and
+   SHOWDOWN_READ_BASE_MS was "3 FULL SECONDS" (2026-08-21). Restoring either is
+   a one-line change here plus its pin in tests/unit/handCompletionLaw.test.ts.
+   ─────────────────────────────────────────────────────────────────────────── */
 export const HAND_COMPLETION = {
   /** Street bets sweep off the felt into the pot before the pot can travel. */
-  BETS_SWEEP_MS: 700,
+  BETS_SWEEP_MS: 350,
   /**
    * The pot travels to the winner carrying its total. Matches the
-   * `.pot-win-float` / `potWinFloatRide` animation (2.2s), which is the
-   * longest element of the push and the one that names the amount won.
+   * `.pot-win-float` / `potWinFloatRide` animation, which is the longest
+   * element of the push and the one that names the amount won.
+   *
+   * Dan 2026-09-07: 2200 -> 1100, and `potWinFloatRide` in TablePage.css was
+   * cut from 2.2s to 1.1s in the same change. Its phases are percentages, so
+   * the ride/hold/fade split is unchanged — it simply plays twice as fast.
+   * These two numbers are one number and must move together.
    */
-  POT_PUSH_MS: 2200,
+  POT_PUSH_MS: 1100,
   /** Cards fly to the muck. */
-  MUCK_MS: 600,
+  MUCK_MS: 250,
   /**
    * Reading a heads-up showdown: cards face-up, winning hand named.
    *
@@ -63,12 +87,18 @@ export const HAND_COMPLETION = {
    * `ServerTableEngineRunout.showdownSettleMs` is the sleep that actually
    * delays the pot ship and MUST match this number, or the engine deals the
    * next hand before the beat it is holding for has finished.
+   *
+   * Dan 2026-09-07: 3000 -> 1400, reversing the 2026-08-21 "3 FULL SECONDS".
+   * The cards are already face up and the winning hand already named before
+   * this window opens — it is reading time on top of a reveal the player has
+   * been watching. 1400ms still clears the 300ms-staggered flip for a heads-up
+   * showdown, which is what the floor was originally for.
    */
-  SHOWDOWN_READ_BASE_MS: 3000,
+  SHOWDOWN_READ_BASE_MS: 1400,
   /** Each additional shown hand needs its own beat to read. */
-  SHOWDOWN_READ_PER_EXTRA_HAND_MS: 700,
+  SHOWDOWN_READ_PER_EXTRA_HAND_MS: 350,
   /** A big multiway showdown must still not stall the table forever. */
-  SHOWDOWN_READ_MAX_MS: 4400,
+  SHOWDOWN_READ_MAX_MS: 2200,
   /**
    * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 3): per-seat stagger on the
    * showdown card flip, in reveal order — the final-street last aggressor
@@ -76,7 +106,11 @@ export const HAND_COMPLETION = {
    * enough that a 4-way showdown finishes flipping well inside the
    * SHOWDOWN_READ window it must never outrun.
    */
-  SHOWDOWN_REVEAL_STAGGER_MS: 300,
+  /* Dan 2026-09-07: 300 -> 200. SHOWDOWN_READ_MAX_MS came down to 2200 in the
+     same pass, and a 9-way showdown's last flip (8 staggers) has to land
+     inside it — at 300 it was 2400 and overran. 200 keeps the hand-in-turn
+     look and finishes in 1600. */
+  SHOWDOWN_REVEAL_STAGGER_MS: 200,
   /**
    * SHOWDOWN SYSTEM follow-up 2026-08-25 (Dan spec sections 16/19/20): when
    * more than one player is paid — different pots, or a chopped pot — each
@@ -92,9 +126,19 @@ export const HAND_COMPLETION = {
    * Nothing about a jackpot is rushed: the table waits for the whole thing.
    */
   BBJ_CELEBRATION_MS: 9000,
-  /** Board/card sweep after the winner is settled. */
-  BOARD_CLEAR_SHOWDOWN_MS: 900,
-  BOARD_CLEAR_FOLD_MS: 500,
+  /**
+   * Board/card sweep after the winner is settled.
+   *
+   * Dan 2026-09-07: 900/500 -> 600/400, NOT halved like its neighbours. These
+   * two are load-bearing for a different feature: the rabbit-hunt button lives
+   * from the hand-free broadcast until the next deal, so its clickable life is
+   * exactly BOARD_CLEAR + RABBIT_HUNT_WINDOW_MS, and that has to stay above
+   * TablePage's RABBIT_MIN_VISIBLE_MS (2000). Halving them put a fold win at
+   * exactly 2000 and made a paid feature unclickable. Pinned by
+   * tests/unit/rabbitHuntHasTimeToClick.ts.
+   */
+  BOARD_CLEAR_SHOWDOWN_MS: 600,
+  BOARD_CLEAR_FOLD_MS: 400,
   /** The next hand's dealing animation (cardDealIn / heroCardDeal). */
   DEAL_MS: 700,
   /**
@@ -107,12 +151,16 @@ export const HAND_COMPLETION = {
    * The first three beats already existed (SHOWDOWN_READ / POT_PUSH with the
    * riding "+N" float). These two complete the sentence:
    *
-   * POST_PUSH_PAUSE_MS — one full second of rest after the pot has landed and
-   * the cards are mucked, BEFORE anything about the next hand happens. The
-   * engine's hold includes it, so the next hand physically cannot start
-   * inside the pause.
+   * POST_PUSH_PAUSE_MS — rest after the pot has landed and the cards are
+   * mucked, BEFORE anything about the next hand happens. The engine's hold
+   * includes it, so the next hand physically cannot start inside the pause.
+   *
+   * Dan 2026-09-07: 1000 -> 400, reversing "PAUSE 1 SECOND" above. The pause
+   * still exists and still separates the hands — it is no longer the single
+   * largest remaining beat in a cadence he is calling frozen. This is the one
+   * value to put back first if the new rhythm reads as rushed.
    */
-  POST_PUSH_PAUSE_MS: 1000,
+  POST_PUSH_PAUSE_MS: 400,
   /**
    * BUTTON_MOVE_MS — the dealer puck's glide to its new seat is its own beat,
    * played by the CLIENT at HAND_STARTED (the button's new seat is only known

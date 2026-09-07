@@ -100,6 +100,21 @@ function Egg({ uid, k }: { uid: string; k: string }) {
         strokeOpacity="0.4"
       />
       {/* speckles */}
+      <path
+        d="M -10 -5 Q -12 1 -10 6 M -8 -14 Q -5 -17 -2 -17"
+        fill="none"
+        stroke="#fff3df"
+        strokeWidth="0.8"
+        strokeLinecap="round"
+      />
+      <path d="M 7 13 Q 13 8 13 1" fill="none" stroke="#6f472d" strokeWidth="0.6" opacity="0.45" />
+      <path
+        d="M 1 -10 h 0.3 M 6 -6 h 0.4 M -8 4 h 0.3 M -1 12 h 0.4 M 3 8 h 0.2 M 9 2 h 0.3 M 0 -1 h 0.2"
+        stroke="#9e714c"
+        strokeWidth="0.65"
+        strokeLinecap="round"
+        opacity="0.6"
+      />
       <ellipse cx="5" cy="4" rx="1.6" ry="1.1" fill="#7a4a24" opacity="0.4" />
       <ellipse cx="-4" cy="10" rx="1.2" ry="0.9" fill="#7a4a24" opacity="0.35" />
       <ellipse cx="8" cy="-4" rx="1" ry="0.8" fill="#7a4a24" opacity="0.3" />
@@ -150,6 +165,20 @@ function ShellCap({ fill, transform }: { fill: string; transform: string }) {
         strokeOpacity="0.6"
         strokeLinecap="round"
       />
+      <path
+        d="M -12 3 L -9 0 L -7 5 L -3.5 1 L 0 6 L 3.5 1 L 7 5 L 9 0 L 12 3"
+        fill="none"
+        stroke="#fff1de"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M -6 -7 l 1 -1 M 3 -9 l 1 0 M 7 -3 l 0.5 1"
+        stroke="#95623d"
+        strokeWidth="0.6"
+        strokeLinecap="round"
+        opacity="0.6"
+      />
     </g>
   );
 }
@@ -157,9 +186,16 @@ function ShellCap({ fill, transform }: { fill: string; transform: string }) {
 function Payload({ uid }: RigProps) {
   const yolk = defId(uid, 'yolk');
   const shell = defId(uid, 'shell-frag');
+  const white = defId(uid, 'albumen');
   return (
     <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <defs>
+        <linearGradient id={white} x1="0" y1="0" x2="1" y2="0.2">
+          <stop offset="0%" stopColor="#b2c4c5" />
+          <stop offset="24%" stopColor="#fffdf3" />
+          <stop offset="58%" stopColor="#fff" />
+          <stop offset="100%" stopColor="#c0c9ba" />
+        </linearGradient>
         <radialGradient id={yolk} cx="0.38" cy="0.32" r="0.72">
           <stop offset="0%" stopColor="#ffe066" />
           <stop offset="40%" stopColor="#ffb92b" />
@@ -190,25 +226,25 @@ function Payload({ uid }: RigProps) {
         <g opacity="0.65">
           <path
             d="M -40 -34 C -41 -42, -30 -46, -20 -44 C -8 -46, 10 -46, 24 -44 C 34 -43, 42 -38, 40 -30 C 38 -22, 28 -19, 16 -19 C 4 -18, -10 -18, -22 -20 C -32 -21, -39 -26, -40 -34 Z"
-            fill="#ffffff"
+            fill={`url(#${white})`}
           />
           {/* drip A: left, to y +30 */}
           <path
             className="thr-cracked_egg__drip thr-cracked_egg__drip--a"
             d="M -23 -24 L -9 -24 C -10 -10, -11 4, -12 18 C -12.5 25, -13 30, -16 30 C -19 30, -19.5 25, -20 18 C -21 4, -22 -10, -23 -24 Z"
-            fill="#ffffff"
+            fill={`url(#${white})`}
           />
           {/* drip B: centre-right, the long one, to y +40 (the chin) */}
           <path
             className="thr-cracked_egg__drip thr-cracked_egg__drip--b"
             d="M -2 -24 L 14 -24 C 13 -8, 11 10, 10 26 C 9.5 34, 9 40, 5 40 C 1 40, 0.5 34, 1 26 C 0.5 10, -1 -8, -2 -24 Z"
-            fill="#ffffff"
+            fill={`url(#${white})`}
           />
           {/* drip C: right, the short one, to y +10 */}
           <path
             className="thr-cracked_egg__drip thr-cracked_egg__drip--c"
             d="M 19 -24 L 29 -24 C 28.5 -15, 27.5 -5, 27 3 C 26.8 8, 25.5 10, 24 10 C 22.5 10, 21.2 8, 21 3 C 20.5 -5, 19.5 -15, 19 -24 Z"
-            fill="#ffffff"
+            fill={`url(#${white})`}
           />
         </g>
         {/* the gloss: a faint bright line down the left of each drip and on

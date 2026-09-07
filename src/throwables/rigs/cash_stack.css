@@ -48,7 +48,8 @@
    +534). Nested inside `.thr-cash_stack__bundle` so the fade rides on top of
    the settle rather than fighting it for the same `transform`. =========== */
 .thr-cash_stack__bundle-fade {
-  opacity: 0;
+  /* The bundle is already visible before its delayed fade starts. */
+  opacity: 1;
   animation: thr-cash_stack-bundle-fade calc(0.167s * var(--animation-speed, 1)) linear
     calc(0.367s * var(--animation-speed, 1)) forwards;
 }
@@ -71,7 +72,7 @@
   transform-origin: 50% 50%;
   opacity: 0;
   animation: thr-cash_stack-bill-appear calc(0.167s * var(--animation-speed, 1))
-    cubic-bezier(0.2, 0.85, 0.3, 1) calc(0.034s * var(--animation-speed, 1)) forwards;
+    cubic-bezier(0.2, 0.85, 0.3, 1) calc(0.367s * var(--animation-speed, 1)) forwards;
 }
 
 @keyframes thr-cash_stack-bill-appear {

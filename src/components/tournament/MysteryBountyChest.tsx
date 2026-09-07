@@ -511,13 +511,16 @@ export default function MysteryBountyChest({
       // amount arrives from `fn_mystery_bounty_reveal` DURING the lid swing,
       // after this timer was armed. The closure's copy would be the pre-reveal
       // zero, so the chest would explode into "0".
-      const target = amountRef.current;
       if (reduced) {
-        setDisplayAmount(target);
+        setDisplayAmount(amountRef.current);
       } else {
         const started = performance.now();
         const durationMs = 1100 * speed;
         const step = (now: number) => {
+          // The reveal can also arrive DURING the climb. The amount effect
+          // defers to this loop while it runs, so each frame must read the
+          // latest prize rather than finish on the pre-reveal zero.
+          const target = amountRef.current;
           const t = Math.min(1, (now - started) / durationMs);
           // Ease-out cubic: fast at first, settling onto the true figure.
           const eased = 1 - Math.pow(1 - t, 3);

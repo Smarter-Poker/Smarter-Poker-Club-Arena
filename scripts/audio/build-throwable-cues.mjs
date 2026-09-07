@@ -33,26 +33,64 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..', '..');
 const manifestPath = join(here, 'throwable-cues.manifest.json');
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 
-const args = process.argv.slice(2);
-const argOf = (flag) => {
-  const i = args.indexOf(flag);
-  return i >= 0 ? args[i + 1] : undefined;
-};
-const sourcesDir = resolve(argOf('--sources') || join(process.env.HOME || '.', 'throwable-sources', 'kenney'));
-const doFetch = args.includes('--fetch');
-const only = argOf('--only')?.split(',').filter(Boolean);
+const { values } = parseArgs({
+  options: {
+    sources: { type: 'string' },
+    fetch: { type: 'boolean', default: false },
+    only: { type: 'string' },
+  },
+});
+const sourcesDir = resolve(
+  values.sources || join(process.env.HOME || '.', 'throwable-sources', 'kenney')
+);
+const doFetch = values.fetch;
+const only =
+  values.only === undefined
+    ? null
+    : [
+        ...new Set(
+          values.only
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        ),
+      ];
 const outDir = join(repo, manifest.outputDir);
 const generatedPath = join(repo, 'src', 'throwables', 'cueManifest.generated.ts');
 
 function fail(msg) {
   console.error(`build-throwable-cues: ${msg}`);
   process.exit(1);
+}
+
+if (only && (!only.length || only.some((name) => !Object.hasOwn(manifest.cues, name)))) {
+  fail('--only must name one or more existing cues');
+}
+
+// Selection limits encoding, never attribution. Gather provenance from the
+// complete manifest before writing anything, including untouched built cues.
+const credits = [];
+for (const [name, cue] of Object.entries(manifest.cues)) {
+  if (cue.placeholder) {
+    if (!cue.fallback) fail(`placeholder cue '${name}' names no legacy fallback recipe`);
+    continue;
+  }
+  if (!cue.layers?.length) fail(`cue '${name}' has no layers`);
+  for (const [i, layer] of cue.layers.entries()) {
+    const srcKey = layer.source || cue.source;
+    const source = manifest.sources[srcKey];
+    if (!source) fail(`cue '${name}' layer ${i} names unknown source '${srcKey}'`);
+    const file = source.kind === 'synth' ? layer.lavfi : layer.file;
+    if (!file) fail(`cue '${name}' layer ${i} has no source expression or file`);
+    credits.push({ cue: name, source, file });
+  }
 }
 
 function hasFfmpeg() {
@@ -71,9 +109,13 @@ const QUIET_FLOOR_DB = -30;
 
 /** Peak level of a built file, in dBFS, or null when it cannot be measured. */
 function peakDbOf(file) {
-  const r = spawnSync('ffmpeg', ['-v', 'info', '-i', file, '-af', 'volumedetect', '-f', 'null', '-'], {
-    encoding: 'utf8',
-  });
+  const r = spawnSync(
+    'ffmpeg',
+    ['-v', 'info', '-i', file, '-af', 'volumedetect', '-f', 'null', '-'],
+    {
+      encoding: 'utf8',
+    }
+  );
   const m = /max_volume:\s*(-?\d+(?:\.\d+)?) dB/.exec(`${r.stderr || ''}${r.stdout || ''}`);
   // "-inf" (pure silence) does not match the number pattern, and neither does a
   // failed run. Both are "I could not tell it is loud enough", which is NOT the
@@ -94,7 +136,9 @@ async function fetchKenney(src) {
   if (existsSync(join(sourcesDir, src.dir))) return;
   console.log(`fetching ${src.title} ...`);
   const page = await (await fetch(src.url)).text();
-  const m = page.match(new RegExp(`https://kenney\\.nl/media/pages/assets/${src.slug}/[^'"]*\\.zip`));
+  const m = page.match(
+    new RegExp(`https://kenney\\.nl/media/pages/assets/${src.slug}/[^'"]*\\.zip`)
+  );
   if (!m) fail(`could not find the zip link on ${src.url}`);
   const zip = Buffer.from(await (await fetch(m[0])).arrayBuffer());
   mkdirSync(dest, { recursive: true });
@@ -113,12 +157,16 @@ async function fetchOpenGameArt(src) {
   if (existsSync(join(sourcesDir, src.dir))) return;
   console.log(`fetching ${src.title} ...`);
   const res = await fetch(src.url);
-  if (!res.ok) fail(`${src.url} answered ${res.status}; cannot confirm the licence, so not fetching`);
+  if (!res.ok)
+    fail(`${src.url} answered ${res.status}; cannot confirm the licence, so not fetching`);
   const page = await res.text();
   const cc0 = (page.match(/publicdomain\/zero\/1\.0/g) || []).length;
   const ccby = (page.match(/licenses\/by(-sa|-nc|-nd)*\//g) || []).length;
   if (!cc0) fail(`${src.url} no longer states CC0; refusing to fetch it`);
-  if (ccby) fail(`${src.url} now also carries a CC-BY style licence; refusing (attribution obligations are not silently taken on)`);
+  if (ccby)
+    fail(
+      `${src.url} now also carries a CC-BY style licence; refusing (attribution obligations are not silently taken on)`
+    );
   if (!page.includes(src.zip)) fail(`${src.url} no longer links ${src.zip}`);
   const zipRes = await fetch(src.zip);
   if (!zipRes.ok) fail(`${src.zip} answered ${zipRes.status}`);
@@ -145,7 +193,6 @@ mkdirSync(outDir, { recursive: true });
 // `integratedLufs` is kept in the manifest for the record and is no longer applied:
 // see the level block below for why EBU R128 does not fit a one-shot library.
 const tp = manifest.loudness?.truePeakDb ?? -1;
-const credits = [];
 let built = 0;
 
 for (const [name, cue] of cues) {
@@ -168,16 +215,15 @@ for (const [name, cue] of cues) {
     // `lavfi` expression, and that expression IS its provenance - the cue is
     // reproducible from this repo alone, with nothing to download and nobody
     // to credit but ourselves. Anything else is a sample from a licensed pack.
-    let creditFile;
     if (src.kind === 'synth') {
-      if (!layer.lavfi) fail(`cue '${name}' layer ${i} uses the synth source but names no lavfi expression`);
+      if (!layer.lavfi)
+        fail(`cue '${name}' layer ${i} uses the synth source but names no lavfi expression`);
       inputs.push('-f', 'lavfi', '-i', layer.lavfi);
-      creditFile = layer.lavfi;
     } else {
       const file = join(sourcesDir, src.dir, layer.file);
-      if (!existsSync(file)) fail(`cue '${name}': missing source file ${file} (run with --fetch, or --sources <dir>)`);
+      if (!existsSync(file))
+        fail(`cue '${name}': missing source file ${file} (run with --fetch, or --sources <dir>)`);
       inputs.push('-i', file);
-      creditFile = layer.file;
     }
 
     const delayMs = Math.round((layer.at || 0) * 1000);
@@ -186,9 +232,10 @@ for (const [name, cue] of cues) {
     // a raw noise or sine source can be band-limited into the cue it is for.
     const shape = layer.filter ? `,${layer.filter}` : '';
     // mono, resample, shape, per-layer delay and gain
-    filters.push(`[${i}:a]aformat=channel_layouts=mono,aresample=48000${shape},adelay=${delayMs}|${delayMs},volume=${gain}[l${i}]`);
+    filters.push(
+      `[${i}:a]aformat=channel_layouts=mono,aresample=48000${shape},adelay=${delayMs}|${delayMs},volume=${gain}[l${i}]`
+    );
     mixInputs.push(`[l${i}]`);
-    credits.push({ cue: name, source: src, file: creditFile });
   });
   const mix =
     layers.length === 1
@@ -216,8 +263,19 @@ for (const [name, cue] of cues) {
   const levelDb = cue.levelDb ?? 0;
   const measure = spawnSync(
     'ffmpeg',
-    ['-hide_banner', '-v', 'info', ...inputs, '-filter_complex', `${head}volumedetect[out]`,
-      '-map', '[out]', '-f', 'null', '-'],
+    [
+      '-hide_banner',
+      '-v',
+      'info',
+      ...inputs,
+      '-filter_complex',
+      `${head}volumedetect[out]`,
+      '-map',
+      '[out]',
+      '-f',
+      'null',
+      '-',
+    ],
     { encoding: 'utf8' }
   );
   const mm = /max_volume:\s*(-?\d+(?:\.\d+)?) dB/.exec(`${measure.stderr || ''}`);
@@ -235,8 +293,29 @@ for (const [name, cue] of cues) {
 
   const webm = join(outDir, `${name}.webm`);
   const m4a = join(outDir, `${name}.m4a`);
-  const common = ['-hide_banner', '-loglevel', 'error', '-y', ...inputs, '-filter_complex', chain, '-map', '[out]', '-ac', '1'];
-  execFileSync('ffmpeg', [...common, '-c:a', 'libopus', '-b:a', '64k', '-application', 'audio', webm]);
+  const common = [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-y',
+    ...inputs,
+    '-filter_complex',
+    chain,
+    '-map',
+    '[out]',
+    '-ac',
+    '1',
+  ];
+  execFileSync('ffmpeg', [
+    ...common,
+    '-c:a',
+    'libopus',
+    '-b:a',
+    '64k',
+    '-application',
+    'audio',
+    webm,
+  ]);
   execFileSync('ffmpeg', [...common, '-c:a', 'aac', '-b:a', '96k', m4a]);
 
   // ── THE LEVEL GATE ───────────────────────────────────────────────────────
@@ -290,27 +369,33 @@ for (const { source, cues: cueMap } of bySource.values()) {
     '',
     `- Author: ${source.author}`,
     `- Licence: ${source.license}`,
-    source.kind === 'synth'
-      ? `- Generated: ${source.recipe}`
-      : `- URL: ${source.url}`,
+    source.kind === 'synth' ? `- Generated: ${source.recipe}` : `- URL: ${source.url}`,
     '',
     source.kind === 'synth' ? '| Cue | ffmpeg source expression |' : '| Cue | Source file(s) |',
     '| --- | --- |'
   );
-  for (const [cue, files] of cueMap) lines.push(`| \`${cue}\` | ${[...files].map((f) => `\`${f}\``).join(', ')} |`);
+  for (const [cue, files] of cueMap)
+    lines.push(`| \`${cue}\` | ${[...files].map((f) => `\`${f}\``).join(', ')} |`);
   lines.push('');
 }
 const placeholders = Object.entries(manifest.cues).filter(([, c]) => c.placeholder);
 if (placeholders.length) {
-  lines.push('## Placeholders (no file yet; the legacy procedural recipe plays instead)', '', '| Cue | Fallback recipe | Needed from |', '| --- | --- | --- |');
-  for (const [name, c] of placeholders) lines.push(`| \`${name}\` | \`${c.fallback}\` | ${(c.$comment || '').replace(/\|/g, '/')} |`);
+  lines.push(
+    '## Placeholders (no file yet; the legacy procedural recipe plays instead)',
+    '',
+    '| Cue | Fallback recipe | Needed from |',
+    '| --- | --- | --- |'
+  );
+  for (const [name, c] of placeholders)
+    lines.push(`| \`${name}\` | \`${c.fallback}\` | ${(c.$comment || '').replace(/\|/g, '/')} |`);
   lines.push('');
 }
 writeFileSync(join(outDir, 'CREDITS.md'), lines.join('\n'));
 
 // ── The client's view ───────────────────────────────────────────────────────
 const entries = Object.entries(manifest.cues).map(([name, c]) => {
-  if (c.placeholder) return `  ${JSON.stringify(name)}: { placeholder: true, fallback: ${JSON.stringify(c.fallback)} },`;
+  if (c.placeholder)
+    return `  ${JSON.stringify(name)}: { placeholder: true, fallback: ${JSON.stringify(c.fallback)} },`;
   const srcKey = c.source;
   return `  ${JSON.stringify(name)}: { placeholder: false, license: ${JSON.stringify(manifest.sources[srcKey].license)} },`;
 });
@@ -331,4 +416,6 @@ export const THROWABLE_CUE_ALLOWED_LICENSES: readonly string[] = ${JSON.stringif
 `;
 writeFileSync(generatedPath, ts);
 
-console.log(`\n${built} cue(s) built, ${placeholders.length} placeholder(s) recorded, credits and manifest written.`);
+console.log(
+  `\n${built} cue(s) built, ${placeholders.length} placeholder(s) recorded, credits and manifest written.`
+);

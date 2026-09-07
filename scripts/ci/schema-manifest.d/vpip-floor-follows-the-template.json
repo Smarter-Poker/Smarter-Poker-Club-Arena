@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/vpip-floor-follows-the-template — migration 20260907190515. Dan 2026-09-07: action is 30, madness is 50. The default was already right; 54 games created the day before still carried the old snapshot and fn_cash_apply_ruleset kept pushing it onto their tables. This trigger normalises the floor and window to the template on every write to cash_games. Probed against a rogue update: wrote 70/200, stored 50/10.",
+  "functions": ["fn_cash_game_floor_from_template"]
+}

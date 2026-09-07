@@ -1,6 +1,6 @@
 /**
- * TABLE WARM-UP - the table starts loading when the card opens, not when
- * the page mounts.
+ * TABLE WARM-UP - visible lobby tables start loading before the card opens;
+ * intent also prepares a chosen table before the page mounts.
  *
  * Dan, 2026-09-03: "every single table when you join now says 'connecting to
  * the table' and then shows generic block letters ... tables must load and be
@@ -30,7 +30,8 @@
  *      TablePage's EngineStateClient acquires the same table it supersedes the
  *      placeholder (EngineSocketMux.acquire, CLOSE_MUX_SUPERSEDED - no
  *      UNSUBSCRIBE is sent), and the server answers its SUBSCRIBE from the
- *      subscription that already exists: an immediate SUBSCRIBED plus a resync
+ *      subscription that already exists. Buffered public state seeds entry,
+ *      followed by an authoritative SUBSCRIBED plus a resync
  *      SNAPSHOT, no gates. That is the difference between the felt animating on
  *      mount and "Connecting To The Table".
  *
@@ -49,6 +50,7 @@
 import { getFreshAccessToken } from '../lib/authToken';
 import { engineSocketMux, isMuxEnabled, type MuxTableSocket } from './EngineSocketMux';
 import { tableService } from './TableService';
+import { preloadRoute } from '../utils/ChunkPreloader';
 
 /** How long an unclaimed warm-up is kept alive (socket + roster). */
 export const WARM_TTL_MS = 25_000;
@@ -66,7 +68,7 @@ interface WarmEntry {
   /** The roster read rejected; TablePage's prefetch makes its own. */
   seatsFailed: boolean;
   facade: MuxTableSocket | null;
-  ttl: ReturnType<typeof setTimeout>;
+  ttl: ReturnType<typeof setTimeout> | null;
 }
 
 const entries = new Map<string, WarmEntry>();
@@ -83,7 +85,7 @@ function engineBaseUrl(): string {
 function dropEntry(tableId: string, entry: WarmEntry, closeFacade: boolean): void {
   if (entries.get(tableId) !== entry) return;
   entries.delete(tableId);
-  clearTimeout(entry.ttl);
+  if (entry.ttl !== null) clearTimeout(entry.ttl);
   if (closeFacade && entry.facade && entry.facade.readyState !== 3) {
     // release() -> UNSUBSCRIBE. A superseded facade is already CLOSED (3) and
     // must not release: the table now belongs to the real client.
@@ -105,11 +107,11 @@ async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
   // The entry may have expired or been claimed while the token resolved.
   if (entries.get(tableId) !== entry) return;
   if (engineSocketMux.isSubscribed(tableId)) return;
-  const facade = engineSocketMux.acquire(engineBaseUrl(), tableId, token);
+  const facade = engineSocketMux.acquireWarm(engineBaseUrl(), tableId, token);
+  if (!facade) return;
   entry.facade = facade;
-  // Frames are not needed here - the resync that follows the real client's
-  // SUBSCRIBE carries the state. Only the close matters: superseded means
-  // claimed, anything else means the warm-up is over for this table.
+  // The facade retains a bounded snapshot/delta stream for the real client.
+  // No historical animations or private events are replayed on entry.
   facade.onmessage = null;
   facade.onclose = () => {
     if (entry.facade === facade) entry.facade = null;
@@ -122,30 +124,28 @@ async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
  */
 export function warmTable(tableId: string | null | undefined): void {
   if (!tableId) return;
+  preloadRoute(`/table/${tableId}`);
   const existing = entries.get(tableId);
-  if (existing) {
-    if (Date.now() - existing.startedAt < SEATS_FRESH_MS) return;
-    // Stale: the player came back to the lobby and reopened the card. The old
-    // placeholder (if it was never superseded) is released and both halves
-    // start over, so the second visit is as warm as the first.
-    dropEntry(tableId, existing, true);
-  }
-  const entry: WarmEntry = {
+  if (existing && Date.now() - existing.startedAt < SEATS_FRESH_MS) return;
+  // Refresh roster data without tearing down a healthy speculative stream.
+  // Otherwise every refresh pays another SUBSCRIBE just as the user enters.
+  const entry: WarmEntry = existing ?? {
     startedAt: Date.now(),
     seats: null,
     seatsAt: 0,
     promise: Promise.resolve([]),
     seatsFailed: false,
     facade: null,
-    ttl: setTimeout(() => {
-      const e = entries.get(tableId);
-      if (e) dropEntry(tableId, e, true);
-    }, WARM_TTL_MS),
+    ttl: null,
   };
-  entry.promise = tableService
+  if (entry.ttl !== null) clearTimeout(entry.ttl);
+  entry.startedAt = Date.now();
+  entry.seatsFailed = false;
+  entry.ttl = setTimeout(() => dropEntry(tableId, entry, true), WARM_TTL_MS);
+  const request = tableService
     .getSeatedPlayers(tableId)
     .then((seats) => {
-      if (entries.get(tableId) === entry) {
+      if (entries.get(tableId) === entry && entry.promise === request) {
         entry.seats = seats;
         entry.seatsAt = Date.now();
       }
@@ -156,9 +156,10 @@ export function warmTable(tableId: string | null | undefined): void {
       // it cannot recover from. Mark the read failed so that prefetch makes its
       // own instead of inheriting a rejected one. The entry stays: its TTL
       // still owns the placeholder socket.
-      entry.seatsFailed = true;
+      if (entry.promise === request) entry.seatsFailed = true;
       throw err;
     });
+  entry.promise = request;
   // Nobody may ever await this promise (the card closes, the player leaves); a
   // rejection must not surface as an unhandled one.
   entry.promise.catch(() => undefined);
@@ -195,4 +196,56 @@ export function warmSeatsPromise(tableId: string | null | undefined): Promise<Wa
 export function __resetTableWarmupForTests(): void {
   for (const [id, entry] of entries) dropEntry(id, entry, false);
   entries.clear();
+}
+
+/** Prepare the shared transport and visible table IDs as a lobby renders. */
+export function observeLobbyTableWarmups(roots: HTMLElement[]): () => void {
+  let disposed = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const visible = new Set<Element>();
+  const recent = new Map<string, number>();
+  preloadRoute('/table/lobby-preview');
+  void getFreshAccessToken()
+    .then((token) => {
+      if (!disposed && token && isMuxEnabled()) engineSocketMux.prewarm(engineBaseUrl(), token);
+    })
+    .catch(() => undefined);
+
+  function warmVisible() {
+    if (disposed || document.visibilityState === 'hidden') return;
+    const ids = [
+      ...new Set([...visible].map((node) => node.getAttribute('data-warm-table')).filter(Boolean)),
+    ] as string[];
+    // The server allows four table subscriptions. Warm a small visible set;
+    // acquireWarm uses spare slots and every actual table has priority.
+    for (const id of ids.slice(0, 3)) {
+      if (Date.now() - (recent.get(id) ?? -Infinity) < SEATS_FRESH_MS) continue;
+      recent.set(id, Date.now());
+      warmTable(id);
+    }
+  }
+  const observer =
+    typeof IntersectionObserver === 'undefined'
+      ? null
+      : new IntersectionObserver((changes) => {
+          for (const change of changes) {
+            if (change.isIntersecting) visible.add(change.target);
+            else visible.delete(change.target);
+          }
+          if (timer === null)
+            timer = setTimeout(() => {
+              timer = null;
+              warmVisible();
+            }, 100);
+        });
+  for (const root of roots) {
+    for (const node of root.querySelectorAll('[data-warm-table]')) observer?.observe(node);
+  }
+  const refresh = setInterval(warmVisible, SEATS_FRESH_MS);
+  return () => {
+    disposed = true;
+    observer?.disconnect();
+    if (timer !== null) clearTimeout(timer);
+    clearInterval(refresh);
+  };
 }

@@ -1773,7 +1773,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           position === paidPlaces + 1 &&
           refund > 0
         ) {
-          this.bubbleProtectionPaid = true;
           // ONE SETTLE PATH (2026-09-02): a user-keyed obligation of kind
           // 'bubble_protection' - UNIQUE on (tournament, kind, user), so the
           // per-user dedupe the old `bubbleprotection:{user}` key gave is now
@@ -1793,7 +1792,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               ),
               'Tournament.bubble_protection_credit_failed'
             );
-          } else {
+          }
+          if (bp.fully_settled === true) {
+            this.bubbleProtectionPaid = true;
             await this.broadcast('bubble_protection_paid', {
               userId,
               position,
@@ -1802,6 +1803,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             console.log(
               `[Tournament:${this.tournamentId.slice(0, 8)}] BUBBLE PROTECTION: ${userId.slice(0, 8)} refunded ${refund} at position ${position}`
             );
+          } else {
+            await this.broadcast('bubble_protection_pending', {
+              userId,
+              position,
+              amount: refund,
+              paid: bp.paid,
+              alreadyPaid: bp.already_paid,
+              remaining: bp.remaining ?? null,
+              obligationId: bp.obligation_id,
+            });
           }
         }
       } catch (bpThrew) {

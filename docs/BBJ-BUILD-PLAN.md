@@ -81,9 +81,27 @@ done after the merge is live; it is run and recorded there.
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 3.1 | Lobby pop-up: ClubHomePage subscribes to the `bbj_winners` INSERT (readable since #3045) and emits `BBJ_HIT_GLOBAL`. The same subscription replaces TablePage's hit_count-baseline detection.                                                |
 | 3.2 | `bbj_pools` leaves the Realtime publication (63k updates/day decoded for every subscriber through a stream a minute behind at peak); the balance rides the engine snapshot and a 10 s poll of `fn_bbj_pool_for_club` for non-table surfaces. |
-| 3.3 | "Playing for $X" on the felt masthead.                                                                                                                                                                                                       |
-| 3.4 | Push notification when the jackpot crosses a threshold (club setting).                                                                                                                                                                       |
-| 3.5 | World Hub jackpot tile (separate repo, its own PR, last in the phase).                                                                                                                                                                       |
+
+> **3.2 is in two halves and the second one is GATED. Read this before you drop
+> the table from the publication.** The client half is done and live in both
+> repos: Club Arena PR #3385 (six subscriptions replaced by one shared
+> ten-second poll, `src/lib/bbjPoolFeed.ts`) and World Hub PR #1516 (three
+> more, all of which were ALSO reading the dead `pool_amount` column and so
+> reporting the jackpot as $0.00 while the union pool held 107,092.27).
+>
+> There were **nine** subscribers, not the six the audit found - the World Hub
+> was never searched until 2026-09-06. Dropping `bbj_pools` from the
+> publication before BOTH bundles are live in players' browsers freezes the
+> figure on every stale tab with nothing to say why.
+>
+> So the migration lands only when: Club Arena's bundle carries #3385 (done -
+> `ca_sha b0a646b8bc`, published 23:45 UTC) AND the World Hub's Vercel deploy
+> carries #1516 (pending). Verify both, then drop it, then confirm with
+> `select 1 from pg_publication_tables where pubname='supabase_realtime' and
+tablename='bbj_pools'` returning nothing.
+> | 3.3 | "Playing for $X" on the felt masthead. |
+> | 3.4 | Push notification when the jackpot crosses a threshold (club setting). |
+> | 3.5 | World Hub jackpot tile (separate repo, its own PR, last in the phase). |
 
 ## Phase 4 of 6 - Prove it live
 

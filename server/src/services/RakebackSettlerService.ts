@@ -248,6 +248,7 @@ function weekEnd(d: Date): string {
 interface RakeRecordRow {
   id?: string;
   is_tournament?: boolean | null;
+  tournament_id?: string | null;
   hand_id: string;
   club_id: string;
   rake_amount: number;
@@ -255,6 +256,30 @@ interface RakeRecordRow {
   /** 'WEIGHTED_CONTRIBUTED' for post-migration cash hands; 'DEALT_EQUAL' legacy. */
   rake_method?: string | null;
   created_at: string;
+}
+
+/**
+ * TOURNAMENT RAKE IS ATTRIBUTED ONCE, AT SETTLEMENT (Phase 6, 2026-09-07).
+ *
+ * A rake_records row with is_tournament (or a tournament_id) is an entry fee,
+ * a rebuy, a satellite seat or a spin book. fn_settle_tournament_rake ->
+ * fn_attribute_tournament_rake credits its VIP, its agent commission and its
+ * player_stats when the tournament settles, by metadata.user_id (or spread
+ * across the field for a userless row). The per-row paths in this service -
+ * agent commission and player_stats - are for CASH hands only. A tournament
+ * row that happens to carry player_contributions (spin books do) must not be
+ * paid a second time here.
+ *
+ * The player RAKEBACK basis (fn_rakeback_recompute_periods) is deliberately
+ * NOT gated by this: whether tournament fees earn player rakeback is a
+ * policy question for Dan (spin books do today, MTT entries do not), and this
+ * function changes neither.
+ */
+export function isTournamentRakeRow(row: {
+  is_tournament?: boolean | null;
+  tournament_id?: string | null;
+}): boolean {
+  return row.is_tournament === true || (row.tournament_id != null && row.tournament_id !== '');
 }
 
 export class RakebackSettlerService {
@@ -1324,9 +1349,7 @@ export class RakebackSettlerService {
           if (error) {
             errors++;
             reportError(
-              new Error(
-                `settle_club_rakeback failed for club ${clubId}: ${JSON.stringify(error)}`
-              ),
+              new Error(`settle_club_rakeback failed for club ${clubId}: ${JSON.stringify(error)}`),
               'RakebackSettler.rakeback_drain'
             );
             break;
@@ -1335,9 +1358,7 @@ export class RakebackSettlerService {
           if (!r || r.success !== true) {
             errors++;
             reportError(
-              new Error(
-                `settle_club_rakeback refused for club ${clubId}: ${JSON.stringify(r)}`
-              ),
+              new Error(`settle_club_rakeback refused for club ${clubId}: ${JSON.stringify(r)}`),
               'RakebackSettler.rakeback_drain_refused'
             );
             break;
@@ -1505,7 +1526,7 @@ export class RakebackSettlerService {
     const base = supabase
       .from('rake_records')
       .select(
-        'id, is_tournament, hand_id, club_id, rake_amount, player_contributions, rake_method, created_at'
+        'id, is_tournament, tournament_id, hand_id, club_id, rake_amount, player_contributions, rake_method, created_at'
       );
     // ── 2026-08-17: the OR keyset predicate WAS the timeout ──
     //
@@ -1716,6 +1737,7 @@ export class RakebackSettlerService {
     let agentCreditsAttempted = 0;
     let agentCreditsFailed = 0;
     let agentCreditsSkippedNoHand = 0;
+    let agentCreditsSkippedTournament = 0;
     const commissionItems: Record<string, unknown>[] = [];
     for (const row of rows as RakeRecordRow[]) {
       if (!row.player_contributions) continue;
@@ -1726,13 +1748,25 @@ export class RakebackSettlerService {
       // is correct: any commission for these legacy rows was already created
       // before the bug surfaced; reprocessing only creates duplicates.
       const handId = (row as { hand_id?: string | null }).hand_id;
-      // RAKE-AUDIT 2026-07-24: tournament/SNG fee rows legitimately have no
-      // hand_id (they are fees, not hands). They now generate agent commission
-      // too — idempotency keys on the rake_records row id instead. Only legacy
-      // NULL-hand CASH rows (pre-R38) are still skipped, as before.
-      const isTournamentFee = (row as { is_tournament?: boolean | null }).is_tournament === true;
-      const sourceId = handId ?? (isTournamentFee ? ((row as { id?: string }).id ?? null) : null);
-      const sourceType = handId ? 'rake_settlement' : 'tournament_fee';
+      // TOURNAMENT RAKE IS ATTRIBUTED ONCE, AT SETTLEMENT (Phase 6, 2026-09-07).
+      // fn_settle_tournament_rake -> fn_attribute_tournament_rake credits the
+      // agent commission for every tournament rake row (entry fees, rebuys,
+      // satellite seats, spin books) by metadata.user_id, keyed
+      // md5('trs:' || tournament || user). The RAKE-AUDIT 2026-07-24 path here
+      // predates that function and paid the same rake AGAIN for every
+      // tournament row that carries player_contributions - spin books since
+      // 2026-09-02: 6,753 spins settled on 2026-09-05 carrying 38,922.72 of
+      // rake earned agents 23,263.81 here ('tournament_fee') and 26,742.03 at
+      // settlement; 90,396.99 of 'tournament_fee' commission in the week of
+      // 2026-08-31. Settlement is the one door; this loop is cash only.
+      if (isTournamentRakeRow(row)) {
+        agentCreditsSkippedTournament++;
+        continue;
+      }
+      // Legacy NULL-hand CASH rows (pre-R38) are still skipped, as before:
+      // they cannot be linked back to a hand for audit and were already paid.
+      const sourceId = handId ?? null;
+      const sourceType = 'rake_settlement';
       if (!sourceId) {
         agentCreditsSkippedNoHand++;
         continue;
@@ -1787,11 +1821,18 @@ export class RakebackSettlerService {
         );
       }
     }
-    if (agentCreditsAttempted > 0 || agentCreditsSkippedNoHand > 0) {
+    if (
+      agentCreditsAttempted > 0 ||
+      agentCreditsSkippedNoHand > 0 ||
+      agentCreditsSkippedTournament > 0
+    ) {
       console.log(
         `[RakebackSettler] Agent-commission credits: ${agentCreditsAttempted - agentCreditsFailed}/${agentCreditsAttempted} OK` +
           (agentCreditsSkippedNoHand > 0
             ? `, ${agentCreditsSkippedNoHand} skipped (no hand_id - pre-R38 legacy rows)`
+            : '') +
+          (agentCreditsSkippedTournament > 0
+            ? `, ${agentCreditsSkippedTournament} tournament rows left to settlement (fn_attribute_tournament_rake)`
             : '') +
           ' (RPC silently skips non-agent players)'
       );
@@ -1813,6 +1854,9 @@ export class RakebackSettlerService {
     const statsItems: Record<string, unknown>[] = [];
     for (const row of rows as RakeRecordRow[]) {
       if (!row.player_contributions) continue;
+      // Phase 6 (2026-09-07): tournament rake reaches player_stats once, at
+      // settlement (fn_attribute_tournament_rake -> apply_rakeback_player_stats).
+      if (isTournamentRakeRow(row)) continue;
       const rrId = (row as { id?: string }).id;
       if (!rrId) continue; // no durable id -> cannot key idempotency; skip (safe)
       // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): method-aware shares.

@@ -38,7 +38,7 @@ describe('MysteryBountyChest authoritative amount delivery', () => {
     currency: '$',
   };
 
-  it.each([
+  it.each<[string, number]>([
     ['during the lid swing', 500],
     ['during the count-up', 1_800],
     ['after the count-up', 3_000],

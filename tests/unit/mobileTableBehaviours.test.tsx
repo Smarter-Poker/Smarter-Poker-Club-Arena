@@ -166,14 +166,16 @@ describe('data-hero-action is published on the table root', () => {
       TABLE_PAGE.indexOf('return (\n    <div')
     );
     expect(memo).toContain("heroStatus !== 'all_in'");
-    // PreActionBar must agree, or the attribute and the render contradict.
-    const preAction = sliceEnclosingBlock(
-      TABLE_PAGE,
-      '{tableState.isHandInProgress &&\n              tableState.heroSeat > 0 &&'
-    );
-    expect(preAction).toContain(
-      "getPlayerAtSeat(tableState.heroSeat)?.status !== 'all_in'"
-    );
+    /* PreActionBar must agree, or the attribute and the render contradict.
+       Anchored on the mount itself rather than on the first line of the gate:
+       that line was `{tableState.isHandInProgress && …` and became
+       `{handStillTakingAction && …` on 2026-09-07, when the gate stopped
+       asking "is a hand on" and started asking "is a turn still to come" (see
+       the block on `handStillTakingAction` in TablePage). An anchor on the
+       COMPONENT survives a change to the condition guarding it; one on the
+       condition does not. */
+    const preAction = sliceEnclosingBlock(TABLE_PAGE, '<PreActionBar');
+    expect(preAction).toContain("getPlayerAtSeat(tableState.heroSeat)?.status !== 'all_in'");
   });
 });
 

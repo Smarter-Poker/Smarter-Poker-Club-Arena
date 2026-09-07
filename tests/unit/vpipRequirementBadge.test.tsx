@@ -80,13 +80,28 @@ describe('section 1 — only two game rules are sanctioned', () => {
     }
   });
 
-  it('IN DEVELOPMENT it fails visibly, exactly as section 1 asks', () => {
+  it('IN DEVELOPMENT it fails visibly - loudly, but without taking the app down', () => {
     /* "fail visibly in development and log an error rather than silently
-       inventing another display state". A developer who points this badge at
-       a game rule the product does not define is told at once. */
-    expect(() => render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />)).toThrow(
-      /Invalid VPIP requirement: 40/
-    );
+       inventing another display state".
+
+       This was a `throw` and that was wrong, for a reason worth writing down:
+       a throw here does not fail the BADGE. The nearest boundary above it is
+       the app-level one in App.tsx - the table tree is rendered by
+       PersistentTableLayer, a sibling of <Routes>, not inside the per-page
+       boundary - so one table configured outside {30, 50} blanked the entire
+       application in dev, and double-reported besides, because the boundary's
+       retry remounts the component. A console error is seen by the person who
+       needs to see it and costs nobody their felt. */
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(() =>
+        render(<VpipRequirementBadge minimumVpip={40} currentVpip={54} />)
+      ).not.toThrow();
+      expect(screen.getByText('MIN 40%')).toBeTruthy();
+      expect(spy.mock.calls.flat().join(' ')).toMatch(/Invalid VPIP requirement: 40/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('IN PRODUCTION it reports once and prints the real number', () => {
@@ -176,6 +191,25 @@ describe('sections 4 + 28 — one square drawing, scaled', () => {
   it('is locked to a 1:1 aspect and driven by a single size variable', () => {
     expect(CSS).toMatch(/aspect-ratio:\s*1;/);
     expect(CSS).toMatch(/--vpip-badge-size/);
+  });
+
+  it('scales in CONTAINER units, never off a sub-pixel font-size root', () => {
+    /* This shipped as `font-size: calc(var(--vpip-badge-size) / 100)` with
+       children in em - a 0.40px root at the narrowest breakpoint. Browsers
+       enforce a minimum font size (an ordinary accessibility setting, plus
+       Chrome's font boosting on Android), and a clamped 0.4px root turns a
+       26em readout into ~312px inside a 40px square. `cqw` resolves against
+       the badge's own width, so a floor can nudge the result but never
+       multiply it. */
+    /* Assert against DECLARATIONS, not prose. The comment above the rule
+       quotes the old expression verbatim to explain why it went, and a naive
+       substring sweep finds it there - the same way quoting a banned icon name
+       tripped the hamburger law earlier in this branch. Strip comments first. */
+    const decls = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(decls).toMatch(/container-type:\s*inline-size/);
+    expect(decls).not.toMatch(/font-size:\s*calc\(var\(--vpip-badge-size[^)]*\)\s*\/\s*100\)/);
+    expect(decls).not.toMatch(/font-size:\s*[\d.]+em\b/);
+    expect(decls).toMatch(/font-size:\s*26cqw/);
   });
 
   it('declares no breakpoint font sizes of its own', () => {

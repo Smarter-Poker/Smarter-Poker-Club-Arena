@@ -22,31 +22,20 @@ vi.mock('../../src/lib/supabase', () => ({
 import HeroVpipTracker, {
   VPIP_BACKSTOP_MS,
   VPIP_REFRESH_DELAY_MS,
-  vpipStanding,
 } from '../../src/components/table/HeroVpipTracker';
 import { mapEngineSnapshot } from '../../src/utils/mapEngineSnapshot';
 
 const ROOT = resolve(__dirname, '../..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 
-describe('vpipStanding', () => {
-  it('has nothing to judge without a floor, a seat, or an answer', () => {
-    expect(vpipStanding(null)).toBe('none');
-    expect(vpipStanding({ ok: false })).toBe('none');
-    expect(vpipStanding({ ok: true, seated: false, required: 60 })).toBe('none');
-    expect(vpipStanding({ ok: true, seated: true, required: 0, hands: 30, vpip: 10 })).toBe('none');
-  });
-
-  it('is sampling until the window, then safe / edge / under against the floor', () => {
-    const base = { ok: true, seated: true, required: 60, window: 10 };
-    expect(vpipStanding({ ...base, hands: 9, vpip: 10 })).toBe('sample');
-    expect(vpipStanding({ ...base, hands: 10, vpip: null })).toBe('sample');
-    expect(vpipStanding({ ...base, hands: 10, vpip: 59.9 })).toBe('under');
-    expect(vpipStanding({ ...base, hands: 10, vpip: 60 })).toBe('edge');
-    expect(vpipStanding({ ...base, hands: 10, vpip: 64.9 })).toBe('edge');
-    expect(vpipStanding({ ...base, hands: 10, vpip: 65 })).toBe('safe');
-  });
-});
+/* THE `vpipStanding` SUITE WAS DELETED WITH THE FUNCTION (2026-09-07).
+   It graded the hero none/sample/safe/edge/under and the tracker emitted the
+   grade as a CSS class. Dan's badge specification section 25 forbids the badge
+   colouring itself by whether the player is passing, so when the rectangle
+   became the badge every one of those five classes lost its styling and the
+   grade was computed and thrown away. Testing a pure function nothing calls is
+   how dead code keeps its air of being wired up. If an eligibility indicator
+   is approved later it arrives with a consumer, and its tests with it. */
 
 describe('the tracker', () => {
   beforeEach(() => {
@@ -98,7 +87,6 @@ describe('the tracker', () => {
     expect(el.textContent).toContain('42%');
     expect(el.textContent).toContain('MIN 30%');
     expect(el.textContent).not.toContain('Hands');
-    expect(el.className).toContain('hero-vpip--sample');
     expect(el.style.left).toBe('50%');
     expect(el.style.top).toBe('100%');
   });
@@ -134,9 +122,11 @@ describe('the tracker', () => {
     });
     expect(rpc.mock.calls.length).toBe(before + 1);
     const el = screen.getByTestId('hero-vpip');
-    expect(el.className).toContain('hero-vpip--under');
-    // The standing still reaches the wrapper (it is how the felt knows), but
-    // the BADGE never colours itself by it - spec section 25.
+    /* No standing modifier: the wrapper is position only now, and the badge is
+       forbidden from colouring itself by pass/fail (spec section 25). 25%
+       against a 30% floor is a FAILING player, and the badge says so with the
+       number alone - which is the whole point of the lock. */
+    expect(el.className).toBe('hero-vpip');
     expect(el.textContent).toContain('MIN 30%');
     expect(el.textContent).toContain('25%');
     // ...and on the backstop, without a hand.

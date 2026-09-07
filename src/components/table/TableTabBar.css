@@ -485,19 +485,39 @@
    smaller so 4 can be shown at once."
 
    Every number in this section is derived from ONE budget, taken at 375px
-   portrait — the narrowest phone this ships to:
+   portrait — the narrowest phone this ships to.
+
+   ── RE-DERIVED 2026-09-07 (Dan item 1 + item 2) ────────────────────────────
+   "THE 4 SQUARE OPTION NEEDS TO LIVE INSIDE THE HAMBURGER MENU" and "ITS
+   IMPARATIVE THAT THERE IS ENOUGH ROOM TO HAVE 4 ACTION TABS OPEN IN BETWEEN
+   THE HAMBURGER MENU AND THE LOBBY BUTTON INSIDE THE ACTION BAR."
+
+   The chrome on the right edge changed and this budget had to change with it.
+   It is written down here in a comment AND spent in `max-width` below, and the
+   two had drifted apart before — CLAUDE.md 1.1.7's warning about a number
+   tuned to a layout outliving the layout, in this file, about this bar.
 
        375   viewport
-       - 46  tile-view toggle   (44px tap target + 2px margin — MultiTablePage.css)
+       -  0  tile-view toggle   (GONE — it is a hamburger item now)
+       - 40  LOBBY button       (--mtp-lobby-w in MultiTablePage.css; it is
+                                 34px at this breakpoint, but the wrapper's
+                                 reserve is computed at the desktop 40 and the
+                                 extra 6px is slack we keep)
        - 52  session P&L chip   (hard-capped at 52px there, so this line is
                                  arithmetic rather than an estimate)
        -  8  this bar's own 4px horizontal padding
        - 34  hamburger trigger  (32px + 2px margin — overrides below)
        -  4  this bar's flex gap before the strip
-       = 231  available to .table-tab-bar__tabs
+       = 237  available to .table-tab-bar__tabs
        -  6  three 2px gaps between four pills
        -  4  slack, so sub-pixel rounding cannot be what starts a scrollbar
-       = 221  for four pills  ->  55.25px each
+       = 227  for four pills  ->  56.75px each
+
+   Four pills got 55.25px before and get 56.75px now: removing a 46px button
+   and shrinking a 76px pill to a 40px square returns 82px to the right edge,
+   and 76 of it is spent reserving the LOBBY button that is still there. The
+   gain is small because the LOBBY button did not exist in the old budget at
+   all — it was drawn over the strip's padding. Counting it is the correction.
 
    Four pills IS the worst case: MAX_TABLES is 4 on a phone (MultiTablePage.tsx)
    and a lobby tab spends one of those four slots, while the "+" only renders
@@ -578,11 +598,16 @@
   }
 
   .table-tab-bar__tab {
-    /* 100vw minus the 144px of chrome itemised above, minus the three 2px
-       gaps, minus 4px of slack, split four ways. 44px floor = the smallest
-       pill still worth tapping with a thumb. */
+    /* 100vw minus the chrome itemised at the head of this section, minus the
+       three 2px gaps, minus 4px of slack, split four ways. 44px floor = the
+       smallest pill still worth tapping with a thumb.
+
+       148 = 40 LOBBY + 52 P&L + 8 padding + 34 hamburger + 4 gap + 6 gaps
+             + 4 slack. It was 154 and that still counted the 46px four-square
+             button, which is now a hamburger item, while counting the LOBBY
+             button not at all. */
     min-width: 44px;
-    max-width: calc((100vw - 154px) / 4);
+    max-width: calc((100vw - 148px) / 4);
     /* 34px, so the pill itself clears the 32px touch floor while the bar as a
        whole is 2px SHORTER than it used to be — the felt below wants every
        pixel of that band back. */
@@ -630,7 +655,7 @@
      legible label.
 
      THE MIN-WIDTH IS PART OF THE RESERVE, not decoration. Below ~330px the
-     pill's `max-width: calc((100vw - 154px) / 4)` falls under the 44px floor,
+     pill's `max-width: calc((100vw - 148px) / 4)` falls under the 44px floor,
      and a 44px pill minus a 26px symmetric reserve leaves 18px — measured at
      320px, "PLO5" clipped to "PL". 55px is 54.13 rounded up, so the code
      always has its own width; the strip is already scrolling at that viewport
@@ -650,15 +675,17 @@
      down this file records it). The padding outlived the thing it was clearing,
      and went on charging the label 26px of a pill only 55.25px wide.
 
-       Pill cap at 375px  = calc((100vw - 154px) / 4) = 55.25px
-       With the reserve   = 55.25 - 26 - 2 (borders)  = 27.25px for text
+       Pill cap at 375px  = calc((100vw - 148px) / 4) = 56.75px
+       With the reserve   = 56.75 - 26 - 2 (borders)  = 28.75px for text
        "Lobby" at 10px/800 Inter                      = ~30px  -> "Lo..."
        At the base 3px padding                        = 47.25px, and it fits.
 
      "PLO5", the widest game code at 26.13px, still fits with room over. Nothing
-     else in the 375px budget moves - min-width, max-width, borders and the gap
-     are untouched - so four pills still sum to 227 of the 231px available, and
-     min-width 55px keeps guaranteeing the code its own width below ~330px.
+     else in the 375px budget moves - min-width, borders and the gap are
+     untouched - so four pills sum to 233 of the 237px available (2026-09-07:
+     was 227 of 231, before the four-square button left the strip and the LOBBY
+     button started being counted), and min-width 55px keeps guaranteeing the
+     code its own width below ~330px.
      Do not reintroduce this padding unless an inline × comes back with it. */
   .table-tab-bar__tab--active:not(.table-tab-bar__tab--cards) {
     min-width: 55px;
@@ -786,9 +813,12 @@
   /* Even shrunk to its dot the offline chip is 18px plus a 4px margin off the
      strip, so while it is on screen the pills give up ~5px each. The last tab
      scrolling out of reach is a worse failure than four slightly tighter
-     pills, and this state is transient by definition. */
+     pills, and this state is transient by definition.
+
+     170 = the 148 above + 22 for the chip. Both moved together on 2026-09-07
+     (148 was 154); they are one budget stated twice and must never disagree. */
   .table-tab-bar__offline ~ .table-tab-bar__tabs .table-tab-bar__tab {
-    max-width: calc((100vw - 176px) / 4);
+    max-width: calc((100vw - 170px) / 4);
   }
 }
 
@@ -816,8 +846,8 @@
 
 /* Same source-order trap as __tab-sub above (2026-08-28). The <=480px block
    earlier in this file shrinks the chip to `3px 5px` + `4px` margin, and the
-   four-tab width reserve is computed from that: `calc((100vw - 176px) / 4)`,
-   where the 176 is 154 + 22 and the comment states the 22 outright — "even
+   four-tab width reserve is computed from that: `calc((100vw - 170px) / 4)`,
+   where the 170 is 148 + 22 and the comment states the 22 outright — "even
    shrunk to its dot the offline chip is 18px plus a 4px margin". The base
    rule was winning at ~28px + 8px, overrunning the reserve by 14px, and the
    same comment names the consequence: the fourth table's tab scrolls out of

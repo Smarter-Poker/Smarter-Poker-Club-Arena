@@ -48,35 +48,38 @@ export const VPIP_REFRESH_DELAY_MS = 1500;
 /** Backstop so a missed hand boundary never leaves the figure stale for long. */
 export const VPIP_BACKSTOP_MS = 45_000;
 
-/**
- * What the tracker says about the hero's standing against the floor.
- *   'none'    the table runs no floor - just the figure
- *   'sample'  fewer hands than the window - the rule cannot judge yet
- *   'safe'    at or above the floor with room to spare
- *   'edge'    at or above the floor, within five points of it
- *   'under'   below the floor after the window - the next boundary stands you up
- */
-export type VpipStanding = 'none' | 'sample' | 'safe' | 'edge' | 'under';
+/* ── `vpipStanding` WAS DELETED HERE (2026-09-07) ───────────────────────────
+   It graded the hero against the floor into none / sample / safe / edge /
+   under, and the tracker emitted the result as a `hero-vpip--<standing>`
+   class. Dan's badge specification section 25 forbids the badge colouring
+   itself by whether the player is passing - "The approved artwork is
+   silver/black/blue ... If product later wants eligibility indicators,
+   implement them separately" - so when the rectangle became the badge, all
+   five classes lost their styling and the grade was computed, stringified into
+   a class name, and discarded. Its 'none' branch had also become unreachable:
+   the component already returns null for every condition that produced it.
 
-export function vpipStanding(s: HeroVpipStatus | null): VpipStanding {
-  if (!s || !s.ok || !s.seated) return 'none';
-  const floor = Number(s.required ?? 0);
-  if (!(floor > 0)) return 'none';
-  const hands = Number(s.hands ?? 0);
-  const window = Math.max(1, Number(s.window ?? 10));
-  const vpip = s.vpip == null ? null : Number(s.vpip);
-  if (hands < window || vpip == null) return 'sample';
-  if (vpip < floor) return 'under';
-  if (vpip < floor + 5) return 'edge';
-  return 'safe';
-}
+   Deleted rather than left in place, because a well-tested pure function that
+   nothing consumes is the most convincing kind of dead code - the next reader
+   assumes the standing reaches the screen. When an eligibility indicator is
+   approved, it comes back deliberately, with a consumer. */
+
+/**
+ * How fresh the figure on screen is (spec section 21).
+ *   'loading'   nothing has arrived yet - the badge prints `--%`
+ *   'connected' the last read succeeded
+ *   'stale'     a read failed while we already had a figure; the LAST KNOWN
+ *               value stays on screen and is dimmed, never blanked
+ */
+export type VpipFreshness = 'loading' | 'connected' | 'stale';
 
 export function useHeroVpipStatus(
   tableId: string | null | undefined,
   enabled: boolean,
   handNumber: number
-): HeroVpipStatus | null {
+): { status: HeroVpipStatus | null; freshness: VpipFreshness } {
   const [status, setStatus] = useState<HeroVpipStatus | null>(null);
+  const [freshness, setFreshness] = useState<VpipFreshness>('loading');
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -90,10 +93,21 @@ export function useHeroVpipStatus(
     try {
       const { data, error } = await supabase.rpc('fn_cash_vpip_status', { p_table_id: tableId });
       if (!alive.current) return;
-      if (error || !data || typeof data !== 'object') return;
+      if (error || !data || typeof data !== 'object') {
+        /* A MISSED READ IS REPORTED, NOT SWALLOWED (spec section 21).
+           The figure itself is left exactly as it was - never blanked, never
+           zeroed, because 0% is a real statistic and a reconnect must not
+           accuse a player of it. What changes is that the badge can now SAY
+           the number is not fresh. Before this the failure was silent and the
+           `[data-status='stale']` rule was unreachable. */
+        setFreshness((prev) => (prev === 'loading' ? 'loading' : 'stale'));
+        return;
+      }
       setStatus(data as HeroVpipStatus);
+      setFreshness('connected');
     } catch {
-      /* the tracker is advisory; a missed read shows the last figure */
+      if (!alive.current) return;
+      setFreshness((prev) => (prev === 'loading' ? 'loading' : 'stale'));
     }
   }, [tableId, enabled]);
 
@@ -101,6 +115,7 @@ export function useHeroVpipStatus(
   useEffect(() => {
     if (!enabled) {
       setStatus(null);
+      setFreshness('loading');
       return;
     }
     void refresh();
@@ -115,7 +130,7 @@ export function useHeroVpipStatus(
     return () => clearTimeout(t);
   }, [enabled, handNumber, refresh]);
 
-  return status;
+  return { status, freshness };
 }
 
 interface Props {
@@ -137,10 +152,9 @@ export default function HeroVpipTracker({
   heroPos,
 }: Props) {
   const enabled = Boolean(tableId) && heroSeated && !isTournament;
-  const status = useHeroVpipStatus(tableId, enabled, handNumber);
+  const { status, freshness } = useHeroVpipStatus(tableId, enabled, handNumber);
   if (!enabled || !status?.ok || !status.seated || !heroPos) return null;
 
-  const standing = vpipStanding(status);
   const vpip = status.vpip == null ? null : Number(status.vpip);
   const floor = Number(status.required ?? 0);
 
@@ -154,14 +168,22 @@ export default function HeroVpipTracker({
 
   return (
     <div
-      className={`hero-vpip hero-vpip--${standing}`}
+      className="hero-vpip"
       style={{ left: `${heroPos.x}%`, top: `${heroPos.y}%` }}
       data-testid="hero-vpip"
     >
       {/* The badge owns its own aria-label and role - see
           VpipRequirementBadge. This wrapper is position only: it places the
-          square beside the hero's seat and does not draw. */}
-      <VpipRequirementBadge minimumVpip={floor} currentVpip={vpip} />
+          square beside the hero's seat and does not draw.
+
+          The `hero-vpip--<standing>` modifier that used to be here is gone
+          with `vpipStanding` itself: the badge is forbidden from colouring
+          itself by whether the player is passing (spec section 25), so the
+          five classes it emitted were styled by nothing and the value was
+          computed and discarded. If an eligibility indicator is approved it
+          gets built deliberately, per that section, rather than left lying
+          around looking wired. */}
+      <VpipRequirementBadge minimumVpip={floor} currentVpip={vpip} status={freshness} />
     </div>
   );
 }

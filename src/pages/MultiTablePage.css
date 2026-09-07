@@ -242,12 +242,17 @@
 
 .multi-table-page__tab-bar-wrapper {
   display: flex;
-  /* Reserve the right-edge band the fixed LOBBY button occupies, so the tab
-     strip and the profit chip can never slide underneath it. Computed from
-     `--mtp-lobby-w` rather than restated as a literal - it was `50px` for the
-     4-square button, which left 10px of dead reserve the moment that button
-     moved into the hamburger (Dan 2026-09-07, item 1). */
-  padding-right: calc(var(--mtp-lobby-w, 40px) + var(--mtp-edge, 6px) + 4px);
+  /* NOTHING IS RESERVED BY DEFAULT, because by default nothing is there.
+     This carried `padding-right: 50px` for the fixed four-square button. That
+     button is a hamburger item now (Dan 2026-09-07, item 1) and the only thing
+     still fixed on the right edge is the LOBBY button - which renders ONLY on
+     a must-move cluster table, and never in tile view. So an unconditional
+     reserve here surrendered 50px of strip on every ordinary table to a
+     control that was not on screen, which is the opposite of item 2's "enough
+     room to have 4 action tabs open". The reserve moved to the `--with-lobby`
+     modifier below, which is applied under exactly the condition that draws
+     the button. */
+  padding-right: 0;
   /* Dan 2026-08-28: "the profit tracker and the 4 screen box need to be
      lowered down so the 4 screen box is touching the top of where the table
      meets." `center` floated both chips in the middle of the bar's full
@@ -494,7 +499,9 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   pointer-events: none;
 }
 
-/* The strip and the P&L chip must not slide under it. */
+/* The strip and the P&L chip must not slide under it - applied under exactly
+   the condition that renders it (`activeClusterId && !isTileView`), so an
+   ordinary table keeps the whole width for its tabs. */
 .multi-table-page__tab-bar-wrapper--with-lobby {
   padding-right: calc(var(--mtp-edge) + var(--mtp-lobby-w) + var(--mtp-edge));
 }

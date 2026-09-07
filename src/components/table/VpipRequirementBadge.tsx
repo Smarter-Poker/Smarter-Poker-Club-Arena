@@ -39,11 +39,12 @@
  * normalises the floor and window to the template on every write.
  *
  * So the guard below is no longer a disagreement with production - it is a
- * second assertion of the same rule, one layer out. It still does exactly what
- * §1 asks: DEV throws, so a mismatch is impossible to miss while building;
- * production reports once and prints the configured number rather than
- * rounding it, because telling a player they are failing a rule nobody set is
- * the one outcome worse than an odd-looking badge.
+ * second assertion of the same rule, one layer out. It still does what §1
+ * asks: development says so loudly, production reports once and prints the
+ * configured number rather than rounding it, because telling a player they are
+ * failing a rule nobody set is the one outcome worse than an odd-looking
+ * badge. See the guard itself for why "loudly" is a console error and not a
+ * throw - a throw there took the whole application down, not the badge.
  */
 import React, { useEffect, useRef } from 'react';
 import { reportError } from '../../utils/errorReporter';
@@ -108,9 +109,24 @@ function VpipRequirementBadgeInner({
       'VpipRequirementBadge.invalidRequirement',
       { minimumVpip }
     );
+    /* ── VISIBLE IN DEVELOPMENT, WITHOUT TAKING THE APP WITH IT ─────────────
+       Section 1 asks for a visible failure while building. This used to be a
+       `throw`, and a throw here does not fail the BADGE - the nearest boundary
+       above it is the app-level ErrorBoundary in App.tsx (the table tree is
+       rendered by PersistentTableLayer, a sibling of <Routes>, not inside the
+       per-page boundary), so one table configured outside {30, 50} blanked the
+       entire application in dev. It also double-reported, because the
+       boundary's retry remounts the component and `reportedRef` is per
+       instance.
+
+       A loud console error is visible to the person who needs to see it and
+       costs nobody their felt. The badge still renders the configured number
+       either way, which is what a player must see. */
     if (import.meta.env.DEV) {
-      throw new Error(
-        `Invalid VPIP requirement: ${minimumVpip}. Only 30 or 50 are supported (spec section 1).`
+      console.error(
+        `[VpipRequirementBadge] Invalid VPIP requirement: ${minimumVpip}. ` +
+          `Only ${ALLOWED_VPIP_REQUIREMENTS.join(' and ')} are sanctioned (spec section 1). ` +
+          `Rendering the configured value; check the game's ruleset_snapshot.`
       );
     }
   }, [minimumVpip]);

@@ -156,7 +156,11 @@ import {
 } from '../lib/chipContinuity';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
-import { isPreActionHonorable, PRE_ACTION_EXEC_GRACE_MS } from '../lib/preActionPanelGate';
+import {
+  isPreActionHonorable,
+  PRE_ACTION_EXEC_GRACE_MS,
+  PRE_ACTION_GAP_BRIDGE_MS,
+} from '../lib/preActionPanelGate';
 import { seatTapTarget } from '../lib/heroSeatTap';
 import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '../lib/heroSeatReconcile';
 
@@ -633,7 +637,13 @@ interface TableState {
    * the hero's tracker shows their own number; this is the rule of the game.
    */
   vpipFloor: number | null;
-  vpipWindow: number | null;
+  /* `vpipWindow` was removed on 2026-09-07. It was written from
+     `maintain_hands` and read by exactly one thing: the masthead's
+     "VPIP 40% Min - 10 Hands" suffix, which Dan removed the same day ("NO NEED
+     FOR ANYTHING ELSE ABOUT HANDS", item 7C). Carrying state nothing reads is
+     how the next reader concludes the window is on screen somewhere. The
+     figure is still in the database and still enforces the rule; it is simply
+     not on the felt. */
   /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
    * as — differs from gameType on a variant-override bomb pot (e.g. a PLO4
@@ -2173,7 +2183,6 @@ export default function TablePage({
       gameStyle: null,
       clusterId: null,
       vpipFloor: null,
-      vpipWindow: null,
       handVariant: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
@@ -6795,23 +6804,66 @@ export default function TablePage({
    * played — the same identity check the pre-action beat needs, for the same
    * reason.
    */
+  /**
+   * True from HAND_COMPLETE until the next HAND_STARTED - the window in which
+   * the hand is being settled rather than played. Declared HERE, well above
+   * `handleHandEvent`, and not beside the `handStillTakingAction` expression
+   * that consumes it: both of the setter's call sites live in that handler,
+   * which is earlier in the file, and reading a `const` above its declaration
+   * is what tests/no-tdz-in-table-route.law.test.ts exists to refuse. Safe at
+   * runtime inside a deferred callback, but the law prefers the declaration
+   * moved over the exception baselined, and it is right to.
+   */
+  const [handSettling, setHandSettling] = useState(false);
+
   const [bombWheelHands, setBombWheelHands] = useState<number | null>(null);
   const bombWheelPendingRef = useRef<number | null>(null);
-  const bombWheelSeenRef = useRef<number | null>(null);
+  const bombWheelTimerRef = useRef<number | null>(null);
+  /**
+   * `null` until this client has seen at least one snapshot, then the last
+   * count it saw. The DISTINCTION between "no snapshot yet" and "a snapshot
+   * that carried no bomb" is the whole point of the extra state - see below.
+   */
+  const bombWheelSeenRef = useRef<number | null | undefined>(undefined);
   useEffect(() => {
     const n = tableState.bombPotIn;
-    /* Only the 1-5 window Dan named, and only on the way IN. A table that has
-       been sitting at "3 hands" since before this client subscribed has not
-       just resolved anything, and a count that ticks 5 -> 4 -> 3 as hands are
-       played is the clock working, not a new announcement. */
-    if (n == null || n < BOMB_WHEEL_MIN_HANDS || n > BOMB_WHEEL_MAX_HANDS) {
-      bombWheelSeenRef.current = null;
+    const inWindow = n != null && n >= BOMB_WHEEL_MIN_HANDS && n <= BOMB_WHEEL_MAX_HANDS;
+    const wasFirstSnapshot = bombWheelSeenRef.current === undefined;
+    const wasInWindow = bombWheelSeenRef.current != null && bombWheelSeenRef.current !== undefined;
+    bombWheelSeenRef.current = inWindow ? (n as number) : null;
+
+    if (!inWindow) {
+      /* THE LATCH IS DROPPED, NOT LEFT ARMED. It used to reset only the
+         "seen" ref here, so a bomb that fired or was cancelled before the
+         next hand boundary left a pending reveal behind - and the drain then
+         announced a bomb that had already happened. Leaving the window is
+         exactly the signal that there is nothing to reveal. */
+      bombWheelPendingRef.current = null;
       return;
     }
-    if (bombWheelSeenRef.current != null) return; // already inside the window
-    bombWheelSeenRef.current = n;
-    bombWheelPendingRef.current = n;
+    if (wasInWindow) return; // already inside; 5 -> 4 -> 3 is the clock ticking
+
+    /* ARRIVING AT A TABLE IS NOT AN ANNOUNCEMENT. On the first snapshot this
+       client has no idea whether the countdown just resolved or has been
+       sitting at "3 hands" since before it subscribed, so it must not claim
+       the former. The reveal belongs to the TRANSITION, and a transition needs
+       a before as well as an after. Without this guard every player opening a
+       table already inside the announce window got the wheel - which the
+       previous version's own comment said it was preventing, while doing the
+       opposite. */
+    if (wasFirstSnapshot) return;
+
+    bombWheelPendingRef.current = n as number;
   }, [tableState.bombPotIn]);
+
+  /* A reveal scheduled at a hand boundary must not fire into an unmounted
+     tree (leave table, tab close, table switch). */
+  useEffect(
+    () => () => {
+      if (bombWheelTimerRef.current) window.clearTimeout(bombWheelTimerRef.current);
+    },
+    []
+  );
 
   const bombPotBadge = useMemo<{ text: string; state: 'live' | 'next' | 'eta' } | null>(() => {
     /* "DOUBLE BOARD" IS NOT NEWS (Dan 2026-09-07, 7D): "BECAUSE ALL BOMB POTS
@@ -11306,10 +11358,6 @@ export default function TablePage({
             table.nit_game === true && Number(table.maintain_percent_min) > 0
               ? Number(table.maintain_percent_min)
               : null,
-          vpipWindow:
-            table.nit_game === true && Number(table.maintain_hands) > 0
-              ? Number(table.maintain_hands)
-              : null,
           players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),
           lastActions: Array(table.max_players || 6).fill(null),
@@ -14769,6 +14817,11 @@ export default function TablePage({
       // change. The four events below were added with this fix; client must
       // act on them directly, never wait for snapshot diff.
       case 'HAND_STARTED': {
+        /* A new hand is taking action again (Dan 2026-09-07, item 5). The
+           partner of the flag set at HAND_COMPLETE: cleared HERE rather than
+           on a timer, because the start of a hand is an event and a duration
+           would only be a guess at one. */
+        setHandSettling(false);
         // AUDIT FIX 2026-07-19: track the new hand number and CLEAR hero hole
         // cards so a dropped card-insert can't leave the previous hand's cards
         // showing; then re-arm the hand-aware fetch to recover the new cards.
@@ -15879,16 +15932,38 @@ export default function TablePage({
           holdMs
         );
 
+        /* THE HAND HAS STOPPED TAKING ACTION (Dan 2026-09-07, item 5).
+           Read from the event rather than inferred: `isHandInProgress` is
+           `boardStage !== 'waiting'` and stays TRUE through this entire hold,
+           so nothing else here distinguishes "the winner is being paid" from
+           "the next actor is being decided". See `handStillTakingAction`. */
+        setHandSettling(true);
+
         /* THE BOMB POT REVEAL, DRAINED AT THE HAND BOUNDARY (Dan 2026-09-07,
            7D: "POPS UP AFTER THE HAND IS OVER"). The latch was armed the
            moment the engine resolved its countdown into a hand count; this is
            the first instant it is safe to show, with the cards down and the
            pot shipped. Scheduled just after the hold so it does not land on
-           top of the pot push it would otherwise cover. */
+           top of the pot push it would otherwise cover.
+
+           RE-READ AT DRAIN TIME, not trusted from arm time: between arming and
+           this boundary the bomb can fire or be cancelled, and revealing "in N
+           hands" for a bomb that has already happened is worse than revealing
+           nothing. `bombPotIn` is re-checked against the live snapshot here.
+
+           The handle is STORED so leaving the table cannot fire this into an
+           unmounted tree - the same discipline as handCompleteTimerRef above,
+           which this originally forgot. */
         if (bombWheelPendingRef.current != null) {
-          const hands = bombWheelPendingRef.current;
           bombWheelPendingRef.current = null;
-          window.setTimeout(() => setBombWheelHands(hands), holdMs + 120);
+          if (bombWheelTimerRef.current) window.clearTimeout(bombWheelTimerRef.current);
+          bombWheelTimerRef.current = window.setTimeout(() => {
+            bombWheelTimerRef.current = null;
+            const live = tableStateRef.current.bombPotIn;
+            if (live != null && live >= BOMB_WHEEL_MIN_HANDS && live <= BOMB_WHEEL_MAX_HANDS) {
+              setBombWheelHands(live);
+            }
+          }, holdMs + 120);
         }
         break;
       }
@@ -19173,6 +19248,53 @@ export default function TablePage({
     isHeroTurnContext &&
     preAction !== null &&
     isPreActionHonorable(preAction, preActionCallDue, preActionCallAmountRef.current);
+  /**
+   * ═══ IS THERE STILL ACTION TO COME? (Dan 2026-09-07, corrected same day) ══
+   *
+   * The pre-action bar exists so a player can ARM a decision for a turn that is
+   * still coming. It must therefore be up whenever one is, and down whenever
+   * one is not - and "is somebody on the clock right now" answers neither
+   * question honestly, because `currentPlayerSeat` is blanked to 0 between
+   * every pair of actors AND left at 0 once the hand stops taking action.
+   *
+   * The first version of this fix dropped the `currentPlayerSeat > 0` clause
+   * outright, which fixed the blink and introduced a worse defect: with
+   * `0 !== heroSeat` always true, the bar rendered through the entire
+   * HAND_COMPLETE hold (2.1-3.5s of pot push and winner presentation) and
+   * through an all-in runout, offering pre-actions that could never be armed.
+   * `isHandInProgress` does not save you - it is `boardStage !== 'waiting'`
+   * (see its assignment), so it stays TRUE through showdown and the whole
+   * hold, and HAND_COMPLETE sets `currentPlayerSeat: 0` without clearing it.
+   *
+   * Two mechanisms, because there are two different silences:
+   *
+   *   `handSettling` is EXACT. Set at HAND_COMPLETE, cleared at HAND_STARTED.
+   *   The end of a hand is an event the engine tells us about, so it is read
+   *   from that event rather than inferred from a clock.
+   *
+   *   `actorGapBridged` is BOUNDED. Between two actors the seat is 0 for one
+   *   engine round trip; there is no event for "the next actor is being
+   *   decided", so this holds the bar for a window that is long enough to
+   *   cover the gap and short enough that any OTHER silence - a runout, a
+   *   stall - gives up quickly instead of lying for the rest of the hand.
+   */
+  const [actorGapBridged, setActorGapBridged] = useState(false);
+  useEffect(() => {
+    if (tableState.currentPlayerSeat > 0 || !tableState.isHandInProgress) {
+      setActorGapBridged(false);
+      return;
+    }
+    setActorGapBridged(true);
+    const t = window.setTimeout(() => setActorGapBridged(false), PRE_ACTION_GAP_BRIDGE_MS);
+    return () => window.clearTimeout(t);
+  }, [tableState.currentPlayerSeat, tableState.isHandInProgress]);
+
+  /** True while a turn is still to be taken by somebody at this table. */
+  const handStillTakingAction =
+    tableState.isHandInProgress &&
+    !handSettling &&
+    (tableState.currentPlayerSeat > 0 || actorGapBridged);
+
   const [preActionOverdue, setPreActionOverdue] = useState(false);
   useEffect(() => {
     if (!awaitingPreActionExec) {
@@ -20554,6 +20676,16 @@ export default function TablePage({
   const spectatorSeatState = useMemo<'open-here' | 'no-seats-here'>(() => {
     const ring = tableState.maxPlayers ?? 0;
     if (ring <= 0) return 'open-here';
+    /* OCCUPIED IS NOT THE SAME QUESTION AS UNAVAILABLE, and the first version
+       of this asked the wrong one. `players.filter(Boolean)` counts a seat
+       held by somebody sitting out, waiting for the big blind, or holding a
+       reserved seat-first chair - all of which are seats a spectator cannot
+       take, so counting them is right - but it ALSO has to agree with what the
+       felt is showing. SeatSlot draws a tappable SIT coin for a null seat and
+       an inert EMPTY coin otherwise, so "a seat the player can see and tap" is
+       exactly a null entry in this array. Counting the same thing the felt
+       counts is what keeps the footer's sentence true of the picture above
+       it. */
     const occupied = tableState.players.filter(Boolean).length;
     return occupied >= ring ? 'no-seats-here' : 'open-here';
   }, [tableState.maxPlayers, tableState.players]);
@@ -20566,13 +20698,24 @@ export default function TablePage({
   }, [waitListPlayers, userId]);
 
   /* The footer can offer the list, so it needs to KNOW the list — otherwise a
-     player already queued is invited to join a queue they are in. Loaded once
-     the table reports itself full, and refreshed whenever that changes. */
+     player already queued is invited to join a queue they are in.
+
+     AND IT HAS TO KEEP KNOWING IT. The first version read the queue once, on
+     the transition into 'no-seats-here', and the footer then printed
+     "#3 Of 7" for as long as the table stayed full — a frozen position and a
+     frozen total on the one screen a queued player is watching precisely
+     because they want to see it move. That is the same defect Dan raised item
+     9 about: a display that is not true.
+
+     A hand boundary is the honest tick. Seats change when hands end, the
+     table already re-renders then, and it costs one read per hand rather than
+     a timer of its own — no polling loop, nothing running while nothing is
+     happening. */
   useEffect(() => {
     if (spectatorSeatState !== 'no-seats-here') return;
     if (tableState.heroSeat > 0) return;
     void loadWaitlist();
-  }, [spectatorSeatState, tableState.heroSeat, loadWaitlist]);
+  }, [spectatorSeatState, tableState.heroSeat, tableState.handNumber, loadWaitlist]);
 
   // P2-1 FIX: Pre-action auto-execution is server-owned (Bible V8 §4.15). The
   // client's delayed executor was removed: it ran ~100ms after the turn
@@ -23848,20 +23991,22 @@ export default function TablePage({
                  entrance. Nothing about the hero's options had changed; the bar
                  was blinking at the reconciler.
 
-                 The honest question is not "is somebody on the clock" but "is
-                 the clock KNOWN to be the hero's". `0 !== heroSeat` answers that
-                 correctly with no timer and no bridged state: while the next
-                 actor is being resolved the hero still cannot act, so the bar
-                 they arm a pre-action with stays exactly where it was.
+                 CORRECTED THE SAME DAY. The first version of this fix simply
+                 deleted the clause, and `0 !== heroSeat` is true in two very
+                 different situations: between two actors (where the bar
+                 belongs) and after the hand has stopped taking action (where
+                 it does not). `isHandInProgress` does not separate them - it
+                 is `boardStage !== 'waiting'`, so it stays true through
+                 showdown and the whole 2.1-3.5s HAND_COMPLETE hold, and
+                 HAND_COMPLETE blanks the seat without clearing it. The bar
+                 sat over every winner presentation and every all-in runout,
+                 offering pre-actions that could never be armed. A blink traded
+                 for a persistent lie is not a fix.
 
-                 The 2026-04-14 note this replaces worried about `0` "between
-                 hands" - that case is already covered, and covered better, by
-                 `isHandInProgress` on the line above. The `0 === 0` flicker it
-                 was really written for belongs to the ActionPanel's `===` test
-                 (which keeps its `> 0` guards, untouched); a `!==` test cannot
-                 have it, because both sides being 0 needs heroSeat 0, and
-                 heroSeat > 0 is asserted here. */}
-            {tableState.isHandInProgress &&
+                 `handStillTakingAction` is the honest question - see it above:
+                 an EXACT settling flag off the engine's own HAND_COMPLETE, and
+                 a BOUNDED bridge for the one silence that has no event. */}
+            {handStillTakingAction &&
               tableState.heroSeat > 0 &&
               tableState.currentPlayerSeat !== tableState.heroSeat &&
               /* Dan 2026-04-17: after hero folds, hide PreActionBar — the

@@ -407,6 +407,24 @@
   padding: 4px 12px 6px;
 }
 
+/* A FULL TABLE READS AS A DIFFERENT STATE, NOT JUST DIFFERENT WORDS.
+   `data-state` was being set to 'open-here' / 'no-seats-here' and styled by
+   nothing, so the attribute was inert - a hook that looked wired and was not.
+   The two states mean opposite things to somebody deciding whether to wait, so
+   the bar carries a quiet ground on the one where there is nothing to tap and
+   the only move is the queue. Deliberately restrained: this sits under a live
+   felt and is not competing with it. */
+.table-page[data-hero='false'] .spectator-footer-bar[data-state='no-seats-here'] {
+  background: linear-gradient(180deg, rgb(12 15 20 / 0%) 0%, rgb(12 15 20 / 55%) 100%);
+}
+
+.table-page[data-hero='false'] .spectator-footer-bar[data-state='open-here'] {
+  /* Nothing to add: an open table is the ordinary case and the sentence is
+     already an invitation. Declared so the pair is visible as a pair, and so
+     the next reader does not go looking for a rule that is missing. */
+  background: none;
+}
+
 .table-page[data-hero='false']
   .spectator-footer-bar[data-state='no-seats-here']
   .spectator-footer-bar__label {

@@ -88,6 +88,33 @@ export function BombPotWheel({
   const timers = useRef<number[]>([]);
   const startedForRef = useRef<number | null>(null);
 
+  /**
+   * ═══ onDone IS READ THROUGH A REF, AND THAT IS LOAD-BEARING ═══════════════
+   *
+   * The reveal froze on the first parent re-render, and this is why. TablePage
+   * mounts this with an inline `onDone={() => setBombWheelHands(null)}`, so the
+   * prop is a NEW FUNCTION on every one of its renders - and it re-renders on
+   * every engine snapshot. With `onDone` in the effect's dependency list, each
+   * of those re-runs the effect: cleanup fires `clearTimers()` and wipes every
+   * pending timer, then the body hits the `startedForRef` guard and returns
+   * WITHOUT rescheduling any of them. The chase stops mid-spin, `phase` stays
+   * 'chasing', `onDone` is never called, and `.bpw__dim` - a full-screen dim at
+   * z-index 99996 - sits over the felt for the rest of the session.
+   *
+   * Measured with the exact TablePage mount shape: no re-render, onDone fires
+   * once; ONE re-render 100ms into the chase, onDone never fires at all.
+   *
+   * SpinWheel, whose geometry and chase timing this component reuses, already
+   * solved this the same way (see its own onDoneRef): the callback is kept in a
+   * ref that a separate effect keeps current, and the scheduling effect depends
+   * only on the DATA. Reusing its maths without its lifetime discipline is what
+   * produced the bug.
+   */
+  const onDoneRef = useRef(onDone);
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
+
   const clearTimers = useCallback(() => {
     timers.current.forEach((t) => window.clearTimeout(t));
     timers.current = [];
@@ -140,11 +167,16 @@ export function BombPotWheel({
       }, BOMB_WHEEL_CHASE_MS)
     );
     timers.current.push(
-      window.setTimeout(() => onDone(), BOMB_WHEEL_CHASE_MS + BOMB_WHEEL_HOLD_MS)
+      window.setTimeout(() => onDoneRef.current(), BOMB_WHEEL_CHASE_MS + BOMB_WHEEL_HOLD_MS)
     );
 
     return clearTimers;
-  }, [handsAway, onDone, clearTimers]);
+    // `onDone` is deliberately NOT a dependency - it is read through
+    // `onDoneRef` above. See the block on that ref: an inline arrow from the
+    // parent made this effect re-run on every snapshot and cancel its own
+    // timers without rescheduling them.
+     
+  }, [handsAway, clearTimers]);
 
   if (phase === 'idle' || handsAway == null) return null;
 

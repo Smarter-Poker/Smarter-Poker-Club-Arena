@@ -7,7 +7,7 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { mapUnionStatementReport, type UnionSettlement } from '../utils/unionStatementReport';
+import type { UnionSettlement } from '../utils/unionStatementReport';
 export type { UnionSettlement, ClubSettlementBreakdown } from '../utils/unionStatementReport';
 import { masterBus } from '../core/MasterBus';
 import { unionApi } from './UnionApiService';
@@ -636,6 +636,7 @@ class UnionServiceClass {
       p_history: 1,
     });
     if (error) throw error;
+    const { mapUnionStatementReport } = await import('../utils/unionStatementReport');
     const report = mapUnionStatementReport(unionId, data);
     if (start && report.periodStart && report.periodStart !== start.toISOString().slice(0, 10)) {
       throw new Error('Requested dates do not match the issued statement period');
@@ -645,7 +646,7 @@ class UnionServiceClass {
 
   async getSettlementReportForPeriod(unionId: string, periodId: string): Promise<UnionSettlement> {
     const { data, error } = await supabase.from('settlement_periods')
-      .select('start_at, end_at').eq('id', periodId).eq('union_id', unionId).single();
+      .select('start_at, end_at').eq('id', periodId).eq('union_id', unionId).maybeSingle();
     if (error) throw error;
     if (!data?.start_at || !data?.end_at) throw new Error('Union settlement period is unavailable');
     return this.getSettlementReport(unionId, data.start_at, data.end_at);
@@ -776,4 +777,3 @@ class UnionServiceClass {
 export const unionService = new UnionServiceClass();
 export const UnionService = unionService;
 export default unionService;
-

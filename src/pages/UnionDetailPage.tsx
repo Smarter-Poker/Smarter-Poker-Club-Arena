@@ -350,8 +350,8 @@ export default function UnionDetailPage() {
             pendingSettlements: settlementReport.pendingSettlements,
             overdueAmount: settlementReport.overdueAmount,
             periodLabel: settlementReport.periodStart && settlementReport.periodEnd
-              ? `${settlementReport.periodStart} to ${settlementReport.periodEnd}` : 'No Issued Statement Period',
-            coverageLabel: `${settlementReport.issuedClubs} of ${settlementReport.totalClubs} clubs have active statements. Totals cover issued statements only.`,
+              ? `${settlementReport.periodStart} To ${settlementReport.periodEnd}` : 'No Issued Statement Period',
+            coverageLabel: `${settlementReport.issuedClubs} Of ${settlementReport.totalClubs} Clubs Have Active Statements. Totals Cover Issued Statements Only.`,
           });
           setSettlements(settlementReport.clubBreakdowns.map(cb => ({
             id: cb.invoiceId ?? `missing-${cb.clubId}`,
@@ -369,7 +369,7 @@ export default function UnionDetailPage() {
           if (isMounted) {
             setFinancialSummary(null);
             setSettlements([]);
-            setFinancialError('Statement data is unavailable. Open Weekly Statements to check access or try again.');
+            setFinancialError('Statement Data Is Unavailable. Open Weekly Statements To Check Access Or Try Again.');
           }
         }
       } catch (err) {
@@ -1561,7 +1561,7 @@ export default function UnionDetailPage() {
                   {settlements.map((s) => (
                     <tr key={s.id}>
                       <td>
-                        {s.periodStart && s.periodEnd ? `${s.periodStart} to ${s.periodEnd}` : 'No Issued Period'}
+                        {s.periodStart && s.periodEnd ? `${s.periodStart} To ${s.periodEnd}` : 'No Issued Period'}
                       </td>
                       <td>{s.clubName}</td>
                       <td>{statementMoney(s.rakeGenerated)}</td>

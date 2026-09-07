@@ -17,7 +17,7 @@ describe('union statement source', () => {
     expect(mocks.from).not.toHaveBeenCalled();
   });
   it('resolves a period id with union scope before requesting its dates', async () => {
-    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), single: vi.fn().mockResolvedValue({ data: { start_at: '2026-08-31', end_at: '2026-09-07' }, error: null }) };
+    const query = { select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), maybeSingle: vi.fn().mockResolvedValue({ data: { start_at: '2026-08-31', end_at: '2026-09-07' }, error: null }) };
     mocks.from.mockReturnValue(query);
     await UnionService.getSettlementReportForPeriod('union-a', 'period-id');
     expect(query.eq).toHaveBeenCalledWith('id', 'period-id');

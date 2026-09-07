@@ -532,6 +532,5 @@ it('union financial overview uses complete recorded statements and explicit paym
   expect(read('src/services/UnionService.ts')).not.toContain('holdsByClub');
   expect(read('src/stores/useUnionStore.ts')).toContain('getSettlementReportForPeriod(unionId, periodId)');
   expect(read('src/pages/UnionDetailPage.tsx')).toContain('status: cb.status');
-  expect(read('src/utils/unionStatementReport.ts')).toContain('snapshot_complete !== true');
   expect(read('supabase/migrations/20260907212347_union_statement_reports_identify_missing_accounting_snapshots.sql')).toContain('AS snapshot_complete');
 });

@@ -128,6 +128,49 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 export const GOVERNOR_FLOOR_ITERATIONS = 60;
 
 /**
+ * ── A SAFETY VALVE WITH NO TRAVEL LEFT IS NOT A SAFETY VALVE (2026-09-07) ──
+ *
+ * The scale table above ended at 0.2 with a hard floor of 60 iterations, and
+ * that was enough for the fleet it was measured against: "~90 tables dealing
+ * 1.5 hands a second". Re-profiled on production 2026-09-07 with 272 engines
+ * adopted, 20 seconds of CPU samples said:
+ *
+ *     34.15%  scoreHoldem          HorseEval
+ *     12.38%  scoreOmahaHi         HorseEval
+ *      5.41%  (garbage collector)
+ *      4.15%  simulateEquity       HorseEval
+ *      4.07%  (idle)
+ *      3.59%  placeOmahaBandCombo
+ *
+ * The governor was pinned at 0.2 and had been for 335 seconds; p50 loop delay
+ * was 1,660 ms. The valve was wide open and the loop was still 1.6 seconds
+ * late, with 62% of the core in horse hand evaluation and 4% idle. Against the
+ * 2026-09-04 profile that built this file (54.4% / 18.1% / 0.3% idle) the
+ * governor is plainly working — it has run out of range, because the load it
+ * governs has grown roughly fivefold and its bottom tier has not moved.
+ *
+ * A p50 above one second is a different regime from a p50 of 400 ms. At 400 ms
+ * the table is sluggish. At 1,600 ms the fifteen-second WebSocket handshake
+ * budget starts failing (`table-socket-probe` logged `handshake_timeout` on 8
+ * of 11 runs in the 04:00 UTC hour), turn timers fire late enough to force FSM
+ * transitions (1,160 `FORCED state: timer_running -> waiting` in one log
+ * window against 299 hands), and hands that should take about 7 seconds took
+ * 25 to 58. Every one of those costs a PLAYER — including the horse, which is
+ * the same player under CLAUDE.md 10.5 — far more than a noisier equity read.
+ *
+ * So there is one more step down, and it carries a lower iteration floor,
+ * because the FLOOR is what actually binds: `governedIterations(220, 0.2)` is
+ * already 60, and returning 60 again at 0.08 would be no change at all.
+ *
+ * Nothing above the deep tier moves. Scales 1, 0.6 and 0.35 are byte for byte
+ * what they were and still use the 60-iteration floor, so an engine that is
+ * merely busy behaves exactly as it did yesterday.
+ */
+export const GOVERNOR_DEEP_FLOOR_ITERATIONS = 30;
+/** Scales at or below this use the deep floor. */
+export const GOVERNOR_DEEP_SCALE = 0.1;
+
+/**
  * What `IntervalHistogram.percentile()` returns when nothing has been
  * recorded. Node reports 0.000511 ms (511 ns) rather than 0 or NaN, which is
  * why an empty histogram read as "the loop is idle" instead of "I have no
@@ -177,14 +220,20 @@ export function scaleForLoopDelay(p50Ms: number): number {
   if (!Number.isFinite(p50Ms) || p50Ms < 40) return 1;
   if (p50Ms < 120) return 0.6;
   if (p50Ms < 300) return 0.35;
-  return 0.2;
+  if (p50Ms < 1000) return 0.2;
+  return 0.08;
+}
+
+/** The iteration floor that applies at a given scale. */
+export function floorForScale(scale: number): number {
+  return scale <= GOVERNOR_DEEP_SCALE ? GOVERNOR_DEEP_FLOOR_ITERATIONS : GOVERNOR_FLOOR_ITERATIONS;
 }
 
 /** Apply a scale to a requested iteration count, never below the floor. */
 export function governedIterations(requested: number, scale: number): number {
   const r = Math.max(1, Math.floor(requested));
   if (scale >= 1) return r;
-  return Math.max(Math.min(GOVERNOR_FLOOR_ITERATIONS, r), Math.floor(r * scale));
+  return Math.max(Math.min(floorForScale(scale), r), Math.floor(r * scale));
 }
 
 export interface GovernorSnapshot {

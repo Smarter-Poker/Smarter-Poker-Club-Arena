@@ -17,12 +17,11 @@ import {
   hydrateChartPolicyArtifact,
   loadConfiguredSolverPolicyArtifact,
   loadSolverPolicyArtifactFile,
+  lookupChartPolicy,
   lookupChartPolicyAdvice,
-  lookupSolverPolicy,
   replaceSolverPolicyArtifact,
   solverPolicyArtifactStatus,
 } from './SolverPolicyArtifactLoader.js';
-import { ArtifactGtoSolverClient } from './GtoSolverClient.js';
 
 const chartRow = {
   chart_id: 'chart-fixture-1',
@@ -61,7 +60,7 @@ describe('cross-repository solver policy contract', () => {
     const checksum = createHash('sha256').update(readFileSync(filename)).digest('hex');
     expect(checksum).toBe(SOLVER_POLICY_SCHEMA_SHA256);
     expect(SOLVER_POLICY_CONTRACT_VERSION).toBe('smarter-poker.solver-policy.v1');
-    expect(SOLVER_POLICY_VERSION).toBe('solver-policy-service.1.0.0');
+    expect(SOLVER_POLICY_VERSION).toBe('solver-policy-service.1.0.1');
   });
 
   it('requires an explicit complete cash utility model before a key can be exact', () => {
@@ -139,6 +138,180 @@ describe('cross-repository solver policy contract', () => {
     const unsealed = structuredClone(exact);
     unsealed.sourceArtifact.manifestChecksum = null;
     expect(validateSolverPolicyAnswer(unsealed).errors).toContain('exact.provenance');
+
+    const missingSize = structuredClone(exact);
+    delete missingSize.actions[0].size;
+    expect(() => validateSolverPolicyAnswer(missingSize)).not.toThrow();
+    expect(validateSolverPolicyAnswer(missingSize).valid).toBe(false);
+
+    const ambiguousSize = structuredClone(exact);
+    ambiguousSize.actions[1].size = {
+      unit: 'unknown',
+      chips: null,
+      bigBlinds: null,
+      potFraction: null,
+      exact: false,
+    };
+    ambiguousSize.legalSizes[0] = {
+      actionId: ambiguousSize.actions[1].id,
+      ...ambiguousSize.actions[1].size,
+    };
+    expect(validateSolverPolicyAnswer(ambiguousSize).errors).toContain('exact.actionSizes');
+
+    const illegalFamily = structuredClone(exact);
+    illegalFamily.actions[1].family = 'raise';
+    expect(validateSolverPolicyAnswer(illegalFamily).errors).toContain('exact.legalActions');
+
+    const negativeSeat = structuredClone(exact);
+    negativeSeat.key.stackVector[0].seat = -1;
+    expect(validateSolverPolicyAnswer(negativeSeat).valid).toBe(false);
+
+    const negativeStraddleSeat = structuredClone(exact);
+    negativeStraddleSeat.key.blinds.straddles = [{ seat: -1, amount: 4 }];
+    expect(validateSolverPolicyAnswer(negativeStraddleSeat).valid).toBe(false);
+
+    const uncheckableUnit = structuredClone(exact);
+    uncheckableUnit.actions[1].size.chips = null;
+    uncheckableUnit.legalSizes[0].chips = null;
+    expect(validateSolverPolicyAnswer(uncheckableUnit).errors).toContain('exact.actionSizes');
+
+    for (const mutate of [
+      (candidate: any) => {
+        candidate.actions[1].size.bigBlinds = 6;
+      },
+      (candidate: any) => {
+        candidate.actions[1].size.potFraction = 1.75;
+      },
+    ]) {
+      const inconsistent = structuredClone(exact);
+      mutate(inconsistent);
+      inconsistent.legalSizes[0] = {
+        actionId: inconsistent.actions[1].id,
+        ...inconsistent.actions[1].size,
+      };
+      expect(validateSolverPolicyAnswer(inconsistent).errors).toContain('exact.actionUnits');
+    }
+
+    const consistentOverbet = structuredClone(exact);
+    consistentOverbet.actions[1].size = {
+      unit: 'pot_fraction',
+      chips: 1225,
+      bigBlinds: 12.25,
+      potFraction: 1.75,
+      exact: true,
+    };
+    consistentOverbet.legalSizes[0] = {
+      actionId: consistentOverbet.actions[1].id,
+      ...consistentOverbet.actions[1].size,
+    };
+    consistentOverbet.key.legalActions[0].exactChips = 1225;
+    expect(validateSolverPolicyAnswer(consistentOverbet)).toEqual({ valid: true, errors: [] });
+
+    const exactAllIn = structuredClone(exact);
+    exactAllIn.actions[1].family = 'all_in';
+    exactAllIn.actions[1].size.unit = 'all_in';
+    exactAllIn.legalSizes[0] = {
+      actionId: exactAllIn.actions[1].id,
+      ...exactAllIn.actions[1].size,
+    };
+    exactAllIn.key.legalActions[0].action = 'all_in';
+    exactAllIn.key.legalActions[0].allIn = true;
+    expect(validateSolverPolicyAnswer(exactAllIn)).toEqual({ valid: true, errors: [] });
+    exactAllIn.actions[1].size.chips = null;
+    exactAllIn.legalSizes[0].chips = null;
+    expect(validateSolverPolicyAnswer(exactAllIn).errors).toContain('exact.actionSizes');
+
+    const unknownFamily = structuredClone(exact);
+    unknownFamily.actions[1].family = 'teleport';
+    unknownFamily.key.legalActions[0].action = 'teleport';
+    expect(validateSolverPolicyAnswer(unknownFamily).errors).toContain('exact.actionSizes');
+
+    const impossibleKeyMutations = [
+      (candidate: any) => {
+        candidate.key.stackVector[0].committedChips = -1;
+      },
+      (candidate: any) => {
+        candidate.key.blinds.ante = -1;
+      },
+      (candidate: any) => {
+        candidate.key.rake.capBb = -1;
+      },
+      (candidate: any) => {
+        candidate.key.publicActionHistory.actions[1].sequence = 0;
+      },
+      (candidate: any) => {
+        candidate.key.legalActions[0].exactChips = -1;
+      },
+      (candidate: any) => {
+        candidate.key.legalActions[0].minChips = 600;
+        candidate.key.legalActions[0].maxChips = 500;
+      },
+      (candidate: any) => {
+        candidate.node.potBb = -1;
+      },
+      (candidate: any) => {
+        candidate.key.publicActionHistory.actions = [];
+      },
+      (candidate: any) => {
+        candidate.key.stackVector[0].position = 'CO';
+      },
+      (candidate: any) => {
+        candidate.key.positions.hero = 'CO';
+      },
+      (candidate: any) => {
+        candidate.key.positions.villains = ['SB'];
+      },
+      (candidate: any) => {
+        candidate.key.blinds.straddles = [{ seat: 2, amount: 200 }];
+      },
+      (candidate: any) => {
+        candidate.key.sidePotEligibility.pots[0].eligibleSeats = [0, 2];
+      },
+      (candidate: any) => {
+        candidate.key.sidePotEligibility.pots[0].eligibleSeats = [0, 0];
+      },
+      (candidate: any) => {
+        candidate.key.sidePotEligibility.pots.push(
+          structuredClone(candidate.key.sidePotEligibility.pots[0])
+        );
+      },
+      (candidate: any) => {
+        candidate.key.publicActionHistory.actions[0].amountBb = 9;
+      },
+      (candidate: any) => {
+        candidate.key.stackVector[0].stackChips = 9_900;
+      },
+      (candidate: any) => {
+        candidate.key.rake.capChips = 300;
+      },
+      (candidate: any) => {
+        candidate.key.publicActionHistory.actions[0].street = 'turn';
+      },
+      (candidate: any) => {
+        candidate.key.publicActionHistory.actions[2].street = 'flop';
+      },
+    ];
+    for (const mutate of impossibleKeyMutations) {
+      const candidate = structuredClone(exact);
+      mutate(candidate);
+      expect(validateSolverPolicyAnswer(candidate).valid).toBe(false);
+    }
+
+    for (const [error, mutate] of [
+      ['exact.node', (candidate: any) => (candidate.node.actor = 'BTN')],
+      ['exact.node', (candidate: any) => (candidate.node.semantics = 'unknown')],
+      ['exact.node', (candidate: any) => (candidate.node.facingBetBb = null)],
+      ['exact.domain', (candidate: any) => (candidate.validDomain.exactMatchDimensions = [])],
+      [
+        'exact.domain',
+        (candidate: any) => (candidate.validDomain.exactMatchDimensions = ['board']),
+      ],
+      ['exact.domain', (candidate: any) => (candidate.validDomain.exclusions = ['unsupported'])],
+    ] as const) {
+      const candidate = structuredClone(exact);
+      mutate(candidate);
+      expect(validateSolverPolicyAnswer(candidate).errors).toContain(error);
+    }
   });
 
   it('rejects dishonest kind, size, confidence, and empty-artifact relationships', () => {
@@ -166,9 +339,14 @@ describe('atomic artifact hydration', () => {
       new URL('./contracts/fixtures/chart-policy-artifact.v1.json', import.meta.url)
     );
     expect(loadSolverPolicyArtifactFile(filename)).toBe(1);
-    expect(lookupSolverPolicy({ scenarioHash: 'chart|Tournament|fold_to_hero|BTN|10' })).toEqual(
-      createChartSolverPolicy(chartRow)
-    );
+    expect(
+      lookupChartPolicy({
+        gameType: 'Tournament',
+        villainAction: 'fold_to_hero',
+        position: 'BTN',
+        depth: 10,
+      })
+    ).toEqual(createChartSolverPolicy(chartRow));
     expect(solverPolicyArtifactStatus().external).toMatchObject({
       count: 1,
       lastError: null,
@@ -179,15 +357,25 @@ describe('atomic artifact hydration', () => {
   it('retains the last good external artifact when a replacement is invalid', () => {
     const policy = createChartSolverPolicy(chartRow);
     expect(replaceSolverPolicyArtifact(bundle(policy))).toBe(1);
-    expect(lookupSolverPolicy({ scenarioHash: policy.sourceArtifact.scenarioHash! })).toEqual(
-      policy
-    );
+    expect(
+      lookupChartPolicy({
+        gameType: 'Tournament',
+        villainAction: 'fold_to_hero',
+        position: 'BTN',
+        depth: 10,
+      })
+    ).toEqual(policy);
 
     const invalid = { ...bundle(policy), schemaSha256: 'wrong' };
     expect(() => replaceSolverPolicyArtifact(invalid)).toThrow(/artifact\.schemaSha256/);
-    expect(lookupSolverPolicy({ scenarioHash: policy.sourceArtifact.scenarioHash! })).toEqual(
-      policy
-    );
+    expect(
+      lookupChartPolicy({
+        gameType: 'Tournament',
+        villainAction: 'fold_to_hero',
+        position: 'BTN',
+        depth: 10,
+      })
+    ).toEqual(policy);
     expect(solverPolicyArtifactStatus().external.count).toBe(1);
     expect(solverPolicyArtifactStatus().external.lastError).toMatch(/artifact\.schemaSha256/);
   });
@@ -199,7 +387,14 @@ describe('atomic artifact hydration', () => {
       const policy = createChartSolverPolicy(chartRow);
       replaceSolverPolicyArtifact(bundle(policy));
       expect(loadConfiguredSolverPolicyArtifact()).toBe(0);
-      expect(lookupSolverPolicy({ scenarioHash: policy.sourceArtifact.scenarioHash! })).toBeNull();
+      expect(
+        lookupChartPolicy({
+          gameType: 'Tournament',
+          villainAction: 'fold_to_hero',
+          position: 'BTN',
+          depth: 10,
+        })
+      ).toBeNull();
       expect(solverPolicyArtifactStatus().external.configured).toBe(false);
     } finally {
       if (prior === undefined) delete process.env.SOLVER_POLICY_ARTIFACT_PATH;
@@ -215,7 +410,12 @@ describe('atomic artifact hydration', () => {
     const duplicate = { ...bundle(policy), policies: [policy, conflicting] };
     expect(() => replaceSolverPolicyArtifact(duplicate)).toThrow(/duplicate_scenario_hash/);
     expect(
-      lookupSolverPolicy({ scenarioHash: policy.sourceArtifact.scenarioHash! })?.confidence.score
+      lookupChartPolicy({
+        gameType: 'Tournament',
+        villainAction: 'fold_to_hero',
+        position: 'BTN',
+        depth: 10,
+      })?.confidence.score
     ).toBe(0.92);
     expect(solverPolicyArtifactStatus().external.count).toBe(1);
   });
@@ -249,6 +449,57 @@ describe('atomic artifact hydration', () => {
     expect(solverPolicyArtifactStatus().charts.lastError).toMatch(/invalid_chart_policy_row/);
   });
 
+  it('retains the last good chart map when a successful refresh is empty', () => {
+    expect(hydrateChartPolicyArtifact([chartRow])).toBe(1);
+    expect(() => hydrateChartPolicyArtifact([])).toThrow(/empty_chart_policy_refresh/);
+    expect(
+      lookupChartPolicyAdvice({
+        gameType: 'Tournament',
+        villainAction: 'fold_to_hero',
+        position: 'BTN',
+        depth: 10,
+        hand: 'AA',
+      })?.action
+    ).toBe('push');
+    expect(solverPolicyArtifactStatus().charts).toMatchObject({
+      count: 1,
+      lastError: 'empty_chart_policy_refresh',
+    });
+  });
+
+  it('rejects malformed chart identities and cells instead of treating corruption as folds', () => {
+    expect(() =>
+      createChartSolverPolicy({
+        ...chartRow,
+        hand_matrix: { AA: { push: 1, fold: 0, call: 0 } },
+      } as never)
+    ).toThrow(/invalid_chart_policy_actions/);
+    expect(() => createChartSolverPolicy({ ...chartRow, hand_matrix: [] } as never)).toThrow(
+      /invalid_chart_policy_row/
+    );
+    expect(() =>
+      createChartSolverPolicy({
+        ...chartRow,
+        hand_matrix: { AA: { push: 1.1, fold: -0.1 } },
+      })
+    ).toThrow(/invalid_chart_policy_frequency/);
+    expect(() =>
+      createChartSolverPolicy({
+        ...chartRow,
+        hand_matrix: { AA: { push: 0.7, fold: 0.4 } },
+      })
+    ).toThrow(/invalid_chart_policy_mix/);
+    expect(() => createChartSolverPolicy({ ...chartRow, hero_position: 'BB' })).toThrow(
+      /invalid_chart_policy_identity/
+    );
+    expect(() => createChartSolverPolicy({ ...chartRow, chart_id: 42 } as never)).toThrow(
+      /invalid_chart_policy_row/
+    );
+    expect(() => createChartSolverPolicy({ ...chartRow, created_at: 'not-an-instant' })).toThrow(
+      /invalid_chart_policy_row/
+    );
+  });
+
   it('serves every chart lookup from immutable memory with explicit liveness', () => {
     hydrateChartPolicyArtifact([chartRow]);
     const absent = lookupChartPolicyAdvice({
@@ -274,7 +525,7 @@ describe('atomic artifact hydration', () => {
     expect(source).not.toMatch(/\bfetch\s*\(|\.from\s*\(|https?:\/\//);
   });
 
-  it('wires boot, health, and the horse action path to the memory artifact', () => {
+  it('wires boot, health, the horse action path, and nightly agreement to the memory artifact', () => {
     const source = (relative: string) =>
       readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
     const index = source('../index.ts');
@@ -288,72 +539,7 @@ describe('atomic artifact hydration', () => {
     expect(source('../engine/GtoCharts.ts')).toContain('lookupChartPolicyAdvice');
     expect(source('../engine/GtoCharts.ts')).toContain('hydrateChartPolicyArtifact');
     expect(source('../benchmark/HorseSolverAgreement.ts')).toContain('lookupChartPolicyAdvice');
-  });
-});
-
-describe('post-session artifact client', () => {
-  it('fails closed when the artifact has no measured per-action EV', async () => {
-    const policy = createChartSolverPolicy(chartRow);
-    replaceSolverPolicyArtifact(bundle(policy));
-    const client = new ArtifactGtoSolverClient();
-    expect(await client.lookup(policy.sourceArtifact.scenarioHash!)).toBeNull();
-  });
-
-  it('adapts a policy only when every per-action EV is measured', async () => {
-    const policy = structuredClone(createChartSolverPolicy(chartRow));
-    policy.sourceArtifact.scenarioHash = 'nlh:flop:measured';
-    policy.chipEv.measuredByAction = true;
-    policy.actions[0].chipEvBb = 1.5;
-    policy.actions[1].chipEvBb = -0.25;
-    policy.chipEv.byAction = { all_in: 1.5, fold: -0.25 };
-    expect(validateSolverPolicyAnswer(policy).valid).toBe(true);
-    replaceSolverPolicyArtifact(bundle(policy));
-    const result = await new ArtifactGtoSolverClient().lookup('nlh:flop:measured');
-    expect(result).toMatchObject({
-      scenarioHash: 'nlh:flop:measured',
-      actions: [
-        { action: 'all_in', frequency: expect.any(Number), ev: 1.5 },
-        { action: 'fold', frequency: expect.any(Number), ev: -0.25 },
-      ],
-      meta: { contractVersion: SOLVER_POLICY_CONTRACT_VERSION },
-    });
-  });
-
-  it('fails closed when sized actions collapse to one analyzer family', async () => {
-    const policy = structuredClone(createChartSolverPolicy(chartRow));
-    policy.sourceArtifact.scenarioHash = 'nlh:flop:ambiguous-sizing';
-    policy.actions = [
-      {
-        ...policy.actions[0],
-        id: 'bet_33pct',
-        sourceCode: 'b231',
-        family: 'bet',
-        frequency: 0.5,
-        chipEvBb: 0.4,
-        size: { unit: 'pot_fraction', chips: 231, bigBlinds: 2.31, potFraction: 0.33, exact: true },
-      },
-      {
-        ...policy.actions[0],
-        id: 'bet_75pct',
-        sourceCode: 'b525',
-        family: 'bet',
-        frequency: 0.5,
-        chipEvBb: 0.8,
-        size: { unit: 'pot_fraction', chips: 525, bigBlinds: 5.25, potFraction: 0.75, exact: true },
-      },
-    ];
-    policy.distribution = { bet_33pct: 0.5, bet_75pct: 0.5 };
-    policy.legalSizes = policy.actions.map((action) => ({ actionId: action.id, ...action.size }));
-    policy.chipEv = {
-      unit: 'big_blinds',
-      policy: 0.8,
-      byAction: { bet_33pct: 0.4, bet_75pct: 0.8 },
-      measuredByAction: true,
-    };
-    policy.tournamentUtilityEv.byAction = { bet_33pct: null, bet_75pct: null };
-    policy.rangeDistribution = null;
-    expect(validateSolverPolicyAnswer(policy)).toEqual({ valid: true, errors: [] });
-    replaceSolverPolicyArtifact(bundle(policy));
-    expect(await new ArtifactGtoSolverClient().lookup('nlh:flop:ambiguous-sizing')).toBeNull();
+    expect(source('../benchmark/HorseLeague.ts')).toContain('scoreSolverAgreement()');
+    expect(index).toContain('stopGtoChartLoader();');
   });
 });

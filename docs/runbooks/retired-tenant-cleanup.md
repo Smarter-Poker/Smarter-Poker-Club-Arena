@@ -1,62 +1,41 @@
-# Retired tenant cleanup: reviewed scope, 2026-09-07
+# Retired Tenant Cleanup, Applied 2026-09-07
 
-## Verified infrastructure
+The user explicitly approved the production cleanup after the initial automatic
+review rejection. The scoped changes were applied at 21:37 UTC.
 
-The host at `5.161.252.33`, currently named `pepnationrx`, runs the live
-`club-arena-engine` container. Keep its address, SSH host keys, Caddy, Docker,
-monitoring stack and poker data. Renaming this host does not mean replacing it.
-The retired application directory `/opt/pepnationrx` and its systemd unit are
-absent. nginx and certbot.timer are inactive; Caddy and Docker are active.
+## Applied And Verified
 
-## Production changes prepared, not applied
+- Removed three obsolete root cron jobs targeting the absent application:
+  billing sweep, payout run, and refill reminders. Preserved unrelated entries.
+- Removed the unused deployment script, two inactive nginx sites and their two
+  certificate lineages. Caddy certificates and SSH host keys were preserved.
+- Renamed the OS hostname and Hetzner display name to `club-arena-engine`.
+  The network address remains unchanged. Cloud-init preserves the new hostname.
+- Verified the engine container ID and start time were unchanged. No restart.
+- Local and public engine health returned HTTP 200. Prometheus reported all
+  four targets up: engine, host metrics, Prometheus, and TURN relay.
 
-The combined deletion and hostname-change command was rejected by automatic
-approval review before execution. None of the changes below has been applied.
+## Rollback
 
-1. Capture a root-only rollback archive outside web roots, containing the root
-   crontab, `/opt/deploy.sh`, the two legacy nginx sites, certificate directories,
-   `/etc/hostname`, `/etc/hosts`, and existing cloud-init hostname settings.
-   Record the Hetzner server ID/name and engine container ID/start time.
-2. Remove only the three root cron entries targeting the missing application:
-   billing-sweep at 01:00 UTC, payout-run at 02:00 UTC, refill-reminders at noon.
-   Preserve any newly added unrelated cron entries. Re-read immediately before
-   editing; abort if the recorded inventory has changed.
-3. Remove the obsolete `/opt/deploy.sh` after rechecking it has no callers.
-   Remove nginx sites `pepnationrx` and `api.pepnationrx.com` from sites-enabled
-   and sites-available. Do not stop or reload Caddy or Docker.
-4. Remove only certificate lineages `pepnationrx.com` and `api.pepnationrx.com`
-   using Certbot, after verifying no active service references them. Preserve
-   all other certificates and account registrations used by other services.
-5. Rename the OS and Hetzner display name to `club-arena-engine`; update only
-   the corresponding `/etc/hosts` aliases and preserve the hostname through
-   cloud-init. Keep the IP, SSH key material and engine configuration intact.
-6. Verify identical engine container ID/start time, healthy public HTTP,
-   successful dedicated-probe table entry and reconnect, and monitoring target
-   availability. Roll back affected configuration if any check fails.
+A root-only backup remains on the engine host, with the saved configuration,
+crontab and engine identity. Its location is recorded in the local operation
+output. The archive contains sensitive certificate material and must stay
+outside web roots and Git.
 
-## Repository cleanup still required
+If rollback is required, review the archive before restoring only affected
+configuration. Restore the saved cron entries without replacing newer unrelated
+jobs. Restore hostname/cloud-init settings together and use the Hetzner API to
+restore its recorded display name. Do not restart the engine as part of rollback.
 
-Club Arena has legacy references in shared estate automation, deployment
-comments and historical documentation. `estate-integrity.sh` still lists
-`PepNationLab`; the shared playbook still documents that product and its DB.
-Shared guard files require coordinated PRs across the active repositories so
-cleanup does not introduce guard drift. Remove the retired repo from active
-estate scope; preserve the protections and required CI gates of active repos.
-`install-turn-relay.sh` and `docs/voice-turn-relay.md` also describe obsolete
-co-tenancy. Update their factual host inventory while preserving generic
-service-continuity checks. Audit other repositories, Mac paths and cloud
-projects separately before claiming estate-wide removal. Do not rewrite Git
-history or destroy unrelated service credentials to remove historical names.
+## Scope And Remaining Audit
 
-## Connection evidence and remaining limitations
+Club Arena's live host and repository references to the retired runtime are
+covered by this change. Other similarly named repositories are not proof of
+shared runtime ownership; inventory them before changing their deployments.
+Historical Git records, credential identifiers and the protected backup are
+not active application code and were not erased.
 
-SSH works through the authorized Mac. The engine was healthy and had memory
-and disk headroom. Its Prometheus history showed p99 event-loop delay reaching
-4,043 ms over six hours, so a healthy HTTP response is not proof of responsive
-tables. Caddy recorded heartbeat 502/EOF responses and channel reconnect errors
-around scheduled engine maintenance. These observations require correlation;
-no causal attribution to the retired product has been established.
-
-The next connection checks are sustained mux delivery, reconnect recovery,
-authoritative snapshot recovery, and browser animation behavior. An isolated
-successful socket observation does not complete the full live-game audit.
+The wider connection audit remains incomplete. After cleanup, the dedicated
+probe passed mux entry (3,072 ms to snapshot) and fresh reconnect (1,929 ms).
+A twenty-second observation received 10 deltas, 13 events and a heartbeat. Sustained reconnect behavior,
+browser animations and the measured event-loop stalls still require verification.

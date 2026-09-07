@@ -516,3 +516,12 @@ it('union money reporting enforces scope without global diagnostic side effects'
   expect(sql).not.toContain('fn_union_treasury_selftest()');
   expect(has('tests/sql/union-money-report-scope-rollback-probe.sql', 'FAIL unrelated signed-in user')).toBe(true);
 });
+
+
+it('historical union statements and payment authority follow the invoice issuer', () => {
+  const sql = read('supabase/migrations/20260907211431_union_statements_remain_with_the_issuing_union.sql');
+  expect(sql).toContain("s.breakdown->>'union_id' = p_union_id::text");
+  expect(sql).toContain("v_union := NULLIF(v_inv.breakdown->>'union_id','')::uuid");
+  expect(sql).toContain("MIN((i.breakdown->>'period_start')::date) FROM period_invoices");
+  expect(has('tests/sql/union-statement-issuer-rollback-probe.sql', 'FAIL new union can mark old invoice paid')).toBe(true);
+});

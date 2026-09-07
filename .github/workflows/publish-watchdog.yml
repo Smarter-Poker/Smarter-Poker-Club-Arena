@@ -262,6 +262,116 @@ jobs:
   # is preinstalled there - a self-hosted runner without `gh` would give this
   # repo a detector whose alarm silently fails, which is the 10.83 bug wearing
   # a fresh coat.
+  # ── A GUARD WITH NO READER IS NOT A GUARD (2026-09-06) ──────────────────
+  # Three checks in scripts/ci/ asked production a question and were wired to
+  # NOTHING - they matched only themselves in a grep of .github, .husky and
+  # package.json:
+  #
+  #   check-realtime-publication      (merged in #3375, this same session)
+  #   check-bbj-functions-match-production   (the BBJ money path vs production)
+  #   check-cosmetic-catalog-drift           (the price list vs the trigger)
+  #
+  # That is CLAUDE.md 10.86 rule 3 - "a guard must have a reader, and you must
+  # name them" - and the first of the three was written by the agent quoting
+  # that rule, which is how easy it is to do.
+  #
+  # They run HERE, not in ci.yml, because each asks the LIVE database: a
+  # pull-request check has no business depending on production being
+  # reachable. ubuntu-latest for the same reason main_is_green uses it - an
+  # alarm must not share a failure domain with the thing it watches - and psql
+  # is preinstalled there.
+  #
+  # Each step records its own exit code and NONE of them fails the job; the
+  # alarm step below files one issue naming whichever drifted. Exit 2 means
+  # "could not ask" and is reported as loudly as a failure, never as a pass.
+  live_drift:
+    name: The repo and production still agree
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Every subscription can actually fire
+        id: realtime
+        env:
+          SUPABASE_DB_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set +e
+          node scripts/ci/check-realtime-publication.mjs 2>&1 | tee /tmp/drift-realtime.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: The BBJ money path in the repo is the one production runs
+        id: bbj
+        env:
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set +e
+          node scripts/ci/check-bbj-functions-match-production.mjs 2>&1 | tee /tmp/drift-bbj.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: The price list in the code and in the database agree
+        id: cosmetics
+        env:
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set +e
+          node scripts/ci/check-cosmetic-catalog-drift.mjs 2>&1 | tee /tmp/drift-cosmetics.log
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Raise the alarm for whatever drifted
+        if: >-
+          always() && (steps.realtime.outputs.code != '0' ||
+          steps.bbj.outputs.code != '0' || steps.cosmetics.outputs.code != '0')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RT: ${{ steps.realtime.outputs.code }}
+          BBJ: ${{ steps.bbj.outputs.code }}
+          COS: ${{ steps.cosmetics.outputs.code }}
+        run: |
+          set -euo pipefail
+          TITLE="The repo and production have drifted"
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "\"$TITLE\" in:title" --json number --jq '.[0].number' || echo '')
+          {
+            echo "One of the live drift checks did not come back clean."
+            echo
+            echo "| check | exit | meaning |"
+            echo "| --- | --- | --- |"
+            echo "| realtime publication | ${RT} | 1 = a subscription that can never fire, 2 = could not ask |"
+            echo "| BBJ money path | ${BBJ} | 1 = the repo and production disagree, 2 = could not ask |"
+            echo "| cosmetic catalog | ${COS} | 1 = the picker and the trigger disagree, 2 = could not ask |"
+            echo
+            echo '**Exit 2 is not a pass.** It means the check could not reach production, and a'
+            echo 'check that cannot ask must never be read as a check that found nothing.'
+            echo
+            for f in /tmp/drift-realtime.log /tmp/drift-bbj.log /tmp/drift-cosmetics.log; do
+              [ -f "$f" ] || continue
+              echo "<details><summary>$(basename "$f")</summary>"
+              echo
+              echo '```'
+              tail -40 "$f"
+              echo '```'
+              echo
+              echo '</details>'
+            done
+          } > /tmp/drift-body.md
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body-file /tmp/drift-body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file /tmp/drift-body.md
+          fi
+
   main_is_green:
     name: Nothing is silently red on main
     runs-on: ubuntu-latest

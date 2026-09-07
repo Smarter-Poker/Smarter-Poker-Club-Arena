@@ -38,7 +38,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { mapEngineSnapshot } from '../src/utils/mapEngineSnapshot';
 
@@ -207,6 +207,19 @@ describe('LAW: the horse machinery is not in the bundle a player downloads', () 
       ).toEqual([]);
     });
   }
+
+  it('the client-side HorseBugReporter stays deleted', () => {
+    /* Once TablePage stopped importing it, the module had no consumer but its
+       own unit test - the exact trap the orphan ratchet names: a file that
+       ships to nobody while a test says it works. It could not have done its
+       stated job either: a horse has no browser, so "horses acting as QA
+       mini-agents during gameplay" ran only in HUMAN players' tabs, patching
+       their console.error and POSTing to horse_bug_reports from their
+       Network tab. The engine's own reporting lives in server/src and does
+       not need a client twin. Deleted 2026-09-07 rather than kept as an
+       orphan; do not restore it to make a test green. */
+    expect(existsSync(join(root, 'src/services/HorseBugReporter.ts'))).toBe(false);
+  });
 });
 
 describe('LAW: staff surfaces keep what 10.5 permits', () => {

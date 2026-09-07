@@ -60,10 +60,6 @@ vi.mock('../../server/src/services/supabase.js', () => {
   };
 });
 
-vi.mock('../../src/services/HorseBugReporter', () => ({
-  horseBugReporter: { report: vi.fn() },
-}));
-
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { TournamentRecurringService } from '../../server/src/services/TournamentRecurringService';

@@ -19,6 +19,8 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | `cork_pop`           | `drop_002.ogg`                                                     |
 | `flute_clink`        | `glass_001.ogg`                                                    |
 | `harp_sparkle`       | `pluck_001.ogg`, `pluck_002.ogg`, `glass_003.ogg`, `glass_005.ogg` |
+| `tick_land`          | `tick_001.ogg`                                                     |
+| `bubble_tick`        | `pluck_002.ogg`                                                    |
 
 ## Kenney - Impact Sounds (1.0)
 
@@ -73,9 +75,12 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 - Licence: CC0-1.0
 - URL: https://opengameart.org/content/100-cc0-metal-and-wood-sfx
 
-| Cue         | Source file(s)         |
-| ----------- | ---------------------- |
-| `egg_crack` | `wood_cracking_01.ogg` |
+| Cue               | Source file(s)                             |
+| ----------------- | ------------------------------------------ |
+| `egg_crack`       | `wood_cracking_01.ogg`                     |
+| `horseshoe_clank` | `metal_hit_02.ogg`, `metal_hit_04.ogg`     |
+| `can_rattle_rise` | `metal_sheet_02.ogg`, `metal_sheet_05.ogg` |
+| `lid_clank`       | `metal_close_01.ogg`                       |
 
 ## Smarter.Poker - synthesised cues
 
@@ -89,3 +94,16 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | `fw_whistle` | `aevalsrc='0.55*sin(2*PI*(900+2900*t*t)*t)':d=0.85:s=48000`, `anoisesrc=d=0.85:c=white:a=0.10:r=48000` |
 | `fw_rumble`  | `anoisesrc=d=1.5:c=brown:a=0.85:r=48000`                                                               |
 | `fw_barrage` | `anoisesrc=d=1.4:c=brown:a=0.9:r=48000`                                                                |
+| `flies_buzz` | `aevalsrc='0.5*sin(2*PI*162*t)+0.3*sin(2*PI*324*t)+0.15*sin(2*PI*487*t)':d=1.1:s=48000`                |
+| `poof_soft`  | `anoisesrc=d=0.75:c=pink:a=0.7:r=48000`                                                                |
+
+## Kenney - Casino Audio (1.1)
+
+- Author: Kenney Vleugels (kenney.nl)
+- Licence: CC0-1.0
+- URL: https://kenney.nl/assets/casino-audio
+
+| Cue           | Source file(s)                         |
+| ------------- | -------------------------------------- |
+| `card_slap`   | `card-place-2.ogg`                     |
+| `dice_rattle` | `dice-shake-1.ogg`, `dice-shake-3.ogg` |

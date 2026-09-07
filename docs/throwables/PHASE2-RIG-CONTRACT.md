@@ -104,7 +104,7 @@ than inventing a name - a spec naming an unknown cue fails
 | item        | cues (in the order the build sheet gives them)                 |
 | ----------- | -------------------------------------------------------------- |
 | fireworks   | fw_whistle, fw_crackle, fw_rumble, fw_barrage                  |
-| horseshoe   | tick_land, horseshoe_clank, voice_good_luck                    |
+| horseshoe   | tick_land, horseshoe_clank (NO voice cue - see below)          |
 | trash_can   | card_slap, bubble_tick, can_rattle_rise, lid_clank, flies_buzz |
 | dice        | dice_rattle                                                    |
 | champagne   | cork_pop, fizz_loop, flute_clink, flute_clink_soft             |
@@ -125,6 +125,15 @@ The rig file is `rocket.tsx`. Getting this wrong means the rig never fires and
 nothing says so.
 
 A cue that runs for a span (a loop, a bed, a sizzle) uses `loopUntil`.
+
+**`voice_good_luck` does not exist and must not be named.** The build sheet
+wants a recorded male "Good luck" about 300 ms after the horseshoe's label
+settles, and it is one of only two spoken lines in the whole set. No CC0 pack
+has that phrase, and the placeholder ratchet is now at ZERO - every cue in the
+library is a real licensed file, and a rig may not put it back to one. So the
+horseshoe ships with `tick_land` and `horseshoe_clank` only; the CAPTION
+carries the meaning until Dan supplies the voice clip (plan 3.3.1, phase 6).
+Do not invent a cue name for it and do not declare a placeholder.
 
 ## Sound timing note from the reference
 

@@ -25,6 +25,15 @@ export const THROWABLE_CUE_MANIFEST: Record<string, CueManifestEntry> = {
   fw_rumble: { placeholder: false, license: 'Own-Synthesis' },
   fw_barrage: { placeholder: false, license: 'CC0-1.0' },
   harp_sparkle: { placeholder: false, license: 'CC0-1.0' },
+  tick_land: { placeholder: false, license: 'CC0-1.0' },
+  horseshoe_clank: { placeholder: false, license: 'CC0-1.0' },
+  card_slap: { placeholder: false, license: 'CC0-1.0' },
+  bubble_tick: { placeholder: false, license: 'CC0-1.0' },
+  can_rattle_rise: { placeholder: false, license: 'CC0-1.0' },
+  lid_clank: { placeholder: false, license: 'CC0-1.0' },
+  flies_buzz: { placeholder: false, license: 'Own-Synthesis' },
+  dice_rattle: { placeholder: false, license: 'CC0-1.0' },
+  poof_soft: { placeholder: false, license: 'Own-Synthesis' },
 };
 
 export const THROWABLE_CUE_ALLOWED_LICENSES: readonly string[] = [

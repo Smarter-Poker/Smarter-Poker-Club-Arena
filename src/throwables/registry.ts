@@ -13,9 +13,13 @@ import type { ThrowableRig } from './rig';
 import { beerSpec, beerRig } from './rigs/beer';
 import { champagneSpec, champagneRig } from './rigs/champagne';
 import { crackedEggSpec, crackedEggRig } from './rigs/cracked_egg';
+import { diceSpec, diceRig } from './rigs/dice';
 import { fireworksSpec, fireworksRig } from './rigs/fireworks';
+import { horseshoeSpec, horseshoeRig } from './rigs/horseshoe';
 import { roseSpec, roseRig } from './rigs/rose';
+import { snowmanSpec, snowmanRig } from './rigs/snowman';
 import { tomatoSpec, tomatoRig } from './rigs/tomato';
+import { trashCanSpec, trashCanRig } from './rigs/trash_can';
 import { waterGunSpec, waterGunRig } from './rigs/water_gun';
 
 export interface RiggedThrowable {
@@ -27,9 +31,13 @@ const RIGGED: Record<string, RiggedThrowable> = {
   beer: { spec: beerSpec, rig: beerRig },
   champagne: { spec: champagneSpec, rig: champagneRig },
   cracked_egg: { spec: crackedEggSpec, rig: crackedEggRig },
+  dice: { spec: diceSpec, rig: diceRig },
   fireworks: { spec: fireworksSpec, rig: fireworksRig },
+  horseshoe: { spec: horseshoeSpec, rig: horseshoeRig },
   rose: { spec: roseSpec, rig: roseRig },
+  snowman: { spec: snowmanSpec, rig: snowmanRig },
   tomato: { spec: tomatoSpec, rig: tomatoRig },
+  trash_can: { spec: trashCanSpec, rig: trashCanRig },
   water_gun: { spec: waterGunSpec, rig: waterGunRig },
 };
 

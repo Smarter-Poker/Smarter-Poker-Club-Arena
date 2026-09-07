@@ -451,6 +451,17 @@ describe('shipped functionality is still here', () => {
     ).toBe(true);
   });
 
+  it('the financial audit corrections retain their canonical RPCs', () => {
+    expect(has(
+      'supabase/migrations/20260907194634_mini_jackpot_allocations_conserve_before_recipient_credit.sql',
+      'CREATE OR REPLACE FUNCTION public.fn_bbj_mini_payout'
+    )).toBe(true);
+    expect(has(
+      'supabase/migrations/20260907195229_union_statements_retain_opening_balance_and_check_finance_access.sql',
+      'CREATE OR REPLACE FUNCTION public.fn_union_club_statement_of_account'
+    )).toBe(true);
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.
@@ -462,3 +473,4 @@ describe('shipped functionality is still here', () => {
     }
   });
 });
+

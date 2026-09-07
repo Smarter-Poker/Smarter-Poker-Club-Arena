@@ -152,6 +152,10 @@
    inline (a fixed table in the .tsx, never random) and it repeats for as long
    as the spray window above keeps the group visible. */
 .thr-champagne__speck {
+  /* fill-box: these scale, and without it the pivot is the SVG viewport
+     corner rather than the particle. */
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
   animation: thr-champagne-speck calc(0.28s * var(--animation-speed, 1)) ease-out infinite;
 }
 
@@ -236,7 +240,7 @@
     transform: translateX(30px) scale(1);
   }
   40% {
-    /* 3067: still in place; the V has been and gone on the inner group */
+    /* 3260: still in place; the V has been and gone on the inner group */
     opacity: 1;
     transform: translateX(30px) scale(1);
   }
@@ -329,11 +333,13 @@
     transform: rotate(-18deg);
   }
   50% {
-    /* 3167: the clink frame, held */
+    /* 3267 (ease-apart): the hold ENDS here. The clink itself (3167) happens
+       inside this hold, which is why the pose is already struck when the
+       droplets jump. */
     transform: rotate(-18deg);
   }
   100% {
-    /* 3500: upright again on the flank */
+    /* 3700: upright again on the flank */
     transform: rotate(0deg);
   }
 }
@@ -374,6 +380,10 @@
 }
 
 .thr-champagne__drop {
+  /* fill-box: these scale, and without it the pivot is the SVG viewport
+     corner rather than the particle. */
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
   animation: thr-champagne-drop calc(0.4s * var(--animation-speed, 1))
     cubic-bezier(0.2, 0.7, 0.4, 1) forwards;
 }

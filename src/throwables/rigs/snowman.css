@@ -1,6 +1,9 @@
 /**
- * SNOWMAN - keyframes. Every delay is from LANDING (launch + 600 ms); the
- * comment on each stop gives the catalogue's ms from launch. Every duration
+ * SNOWMAN - keyframes. Every delay is from LANDING (launch + 367 ms); the
+ * comment on each stop gives the CORRECTED ms from launch - that is the
+ * catalogue's raw number minus the 233 ms spawn, because THROW 10's `L` is the
+ * spawn frame, not the launch (see snowman.tsx). The comments used to quote
+ * the raw numbers and so read 233 ms later than the frames they name. Every duration
  * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
  *
  * Units: 100 px in these keyframes = 1 avatar width, and video 1's target
@@ -14,8 +17,8 @@
  * (the nose, the plume, the specks) and uses the born-and-dies idiom.
  */
 
-/* == THE FIGURE: on screen for one frame at landing (600), gone in one frame
-   at 633. steps(1, end) holds the visible 0% for the whole 33 ms and jumps
+/* == THE FIGURE: on screen for one frame at landing (367), gone in one frame
+   at 400. steps(1, end) holds the visible 0% for the whole 33 ms and jumps
    to hidden at its end, where `both` keeps it. ============================ */
 .thr-snowman__figure {
   animation: thr-snowman-figure-hide calc(0.033s * var(--animation-speed, 1)) steps(1, end) both;
@@ -23,103 +26,123 @@
 
 @keyframes thr-snowman-figure-hide {
   0% {
-    /* 600: landed, whole */
+    /* 367: landed, whole */
     opacity: 1;
   }
   100% {
-    /* 633: gone - only the nose remains */
+    /* 400: gone - only the nose remains */
     opacity: 0;
   }
 }
 
-/* == THE NOSE: born at the splat (633, +33), holds at the head's own nose
-   position, then falls to the chin between 767 and 1000 (+167..+400), and
+/* == THE NOSE: born at the splat (400, +33), holds at the head's own nose
+   position, then falls to the chin between 534 and 767 (+167..+400), and
    stays there through the fade and the cut. ================================ */
 .thr-snowman__nose {
   transform-box: fill-box;
   transform-origin: 50% 50%;
   opacity: 0;
-  animation: thr-snowman-nose calc(1.767s * var(--animation-speed, 1)) linear
+  /* 1.6s, not 1.767s: the nose is HELD to the end, and the payload unmounts at
+     +1633, so a 1767 ms run past a 33 ms delay ended 167 ms after the element
+     was gone. Same leftover as the plume - see its comment. */
+  animation: thr-snowman-nose calc(1.6s * var(--animation-speed, 1)) linear
     calc(0.033s * var(--animation-speed, 1)) forwards;
 }
 
+/* Corrected ms (catalogue raw minus the 233 ms spawn), as in the spec's beats. */
 @keyframes thr-snowman-nose {
   0% {
-    /* 633: the nose is there, already visible, where the head's was */
+    /* 400 (splat): the nose is there, already visible, where the head's was */
     opacity: 1;
     transform: translateY(0);
   }
-  7.58% {
-    /* 767: still holding, about to fall */
+  8.38% {
+    /* 534 (spray): still holding, about to fall */
     opacity: 1;
     transform: translateY(0);
   }
-  20.77% {
-    /* 1000: fallen to the chin */
+  22.94% {
+    /* 767 (linger): fallen to the chin */
     opacity: 1;
     transform: translateY(45px);
   }
   100% {
-    /* held through the fade and the cut */
+    /* 2000: held through the fade, to the cut */
     opacity: 1;
     transform: translateY(45px);
   }
 }
 
-/* == THE PLUME: born at 667 (+67) as a small puff, full size by 767 (+167),
-   lingers with a slow lobe shift 1000-1933 (+400..+1333), then fades. The
-   reference's own tail is 1967-2200 (+1367..+1600); it is stretched here to
-   2400 (+1800) to reach the grammar's payload-length floor without inventing
-   a beat the capture does not show - see the file header. ================ */
+/* == THE PLUME: born at 434 (+67) as a small puff, full size by 534 (+167),
+   lingers with a slow lobe shift 767-1400 (+400..+1033), then fades out by
+   1967 (+1600) - the reference's own tail.
+
+   IT USED TO RUN TO +1800, and that was a leftover. The stretch existed to
+   clear a `payloadMs` FLOOR OF 1800 that no longer exists: this phase lowered
+   the floor to 1600 because the clown/snowman gag is genuinely 1633 ms long,
+   and the payload now unmounts at +1633. So the fade was scheduled to finish
+   167 ms AFTER the element it belongs to had been removed - the plume was
+   still around a third visible when it was yanked, instead of fading to
+   nothing. Lowering the floor fixed the bound and left this behind it; the
+   duration is 1533 now, so the fade ends at +1600 exactly as measured, one
+   frame before the cut. ================================================== */
 .thr-snowman__plume {
   transform-box: fill-box;
   transform-origin: 50% 65%;
   opacity: 0;
-  animation: thr-snowman-plume calc(1.733s * var(--animation-speed, 1)) ease-out
+  animation: thr-snowman-plume calc(1.533s * var(--animation-speed, 1)) ease-out
     calc(0.067s * var(--animation-speed, 1)) forwards;
 }
 
+/* Every ms below is CORRECTED (catalogue raw minus the 233 ms spawn), the same
+   zero the spec's beats use. They used to be the RAW numbers, left over from
+   before the launch-frame correction, so each one read 233 ms later than the
+   frame it actually names. */
 @keyframes thr-snowman-plume {
   0% {
-    /* 667: a small puff appearing above the head */
+    /* 434 (puff): a small puff appearing above the head */
     opacity: 0.4;
     transform: translate(0, 6px) scale(0.3);
   }
-  5.77% {
-    /* 767: full plume, 0.7 x 1.2 u */
+  6.52% {
+    /* 534 (spray): full plume, 0.7 x 1.2 u */
     opacity: 1;
     transform: translate(0, 0) scale(1);
   }
-  19.2% {
-    /* 1000: lingering begins */
+  21.72% {
+    /* 767 (linger): lingering begins */
     opacity: 1;
     transform: translate(0, 0) scale(1);
   }
-  36.5% {
-    /* ~1300: the lobes shift */
+  41.29% {
+    /* ~1067: the lobes shift */
     opacity: 1;
     transform: translate(2px, -3px) scale(1.03);
   }
-  55.7% {
-    /* ~1633: shift the other way */
+  63.01% {
+    /* ~1400: shift the other way */
     opacity: 1;
     transform: translate(-2px, 2px) scale(0.98);
   }
-  74.9% {
-    /* 1967: the fade begins, still near full */
+  84.8% {
+    /* 1734 (fade): the fade begins, still near full */
     opacity: 0.9;
     transform: translate(0, -2px) scale(1);
   }
   100% {
-    /* 2400: gone */
+    /* 1967: gone - the reference's own tail, one frame before the 2000 cut */
     opacity: 0;
     transform: translate(0, -8px) scale(1.08);
   }
 }
 
-/* == THE SPECKS: sprayed from the plume's base at 767 (+167), fading by
-   ~1000 (+400). Each carries its own end point in --dx / --dy. =========== */
+/* == THE SPECKS: sprayed from the plume's base at 534 (+167), fading by
+   ~767 (+400). Each carries its own end point in --dx / --dy. =========== */
 .thr-snowman__speck {
+  /* fill-box: these scale, and without it the pivot is the SVG viewport
+     corner rather than the particle. */
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
   opacity: 0;
   animation: thr-snowman-speck calc(0.233s * var(--animation-speed, 1))
     cubic-bezier(0.2, 0.6, 0.4, 1) calc(0.167s * var(--animation-speed, 1)) forwards;

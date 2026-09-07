@@ -571,7 +571,13 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
       },
       bomb_pot_only: {
         label: 'BOMB POT ONLY',
-        detail: bombBoards >= 3 ? 'TRIPLE BOARD' : bombBoards === 2 ? 'DOUBLE BOARD' : undefined,
+        /* Two boards is what a bomb pot IS here, so saying it tells the player
+           nothing they did not already know (Dan 2026-09-07, item 7D: "because
+           all bomb pots are double board, it doesn't need to say double
+           board"). Three is a real departure from the default, so three still
+           speaks. The tip below still spells the board count out for anyone
+           who wants the number. */
+        detail: bombBoards >= 3 ? 'TRIPLE BOARD' : undefined,
         tip: `Every hand is a bomb pot${boardsTip}`,
       },
     };
@@ -699,13 +705,17 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
     });
   }
 
-  if (on(s, 'double_board', 'doubleBoard')) {
-    rules.push({
-      key: 'double_board',
-      label: 'DOUBLE BOARD',
-      tip: 'Every hand is dealt with two boards',
-    });
-  }
+  /* NO "DOUBLE BOARD" MEDALLION (removed 2026-09-07, Dan item 7D).
+     It was the same default restated a second time: a table with bomb pots
+     already shows a BOMB POTS medallion, and every bomb pot on this platform
+     runs two boards, so this chip spent a slot in a crowded row telling the
+     player something that is true of every bomb pot they will ever sit in.
+     A TRIPLE BOARD table is genuinely different and still says so, from the
+     bomb medallion above.
+
+     The flag itself is untouched and still read everywhere it means something
+     - the board count in the rules modal, the second board on the felt, the
+     filters. This is a copy rule about a badge, not a change to the game. */
 
   /* ── FOUR MEDALLIONS DELIBERATELY NOT HERE ──────────────────────────────
      Dan asked for VPIP and for a minimum-hands rule, and the honest answer is

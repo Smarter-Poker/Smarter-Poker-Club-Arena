@@ -110,6 +110,17 @@ function Cake({ uid, k }: { uid: string; k: string }) {
           <stop offset="0%" stopColor={CAKE_PINK} />
           <stop offset="100%" stopColor={CAKE_PINK_DEEP} />
         </linearGradient>
+        <linearGradient id={g('cream')} x1="0" y1="0" x2="1" y2="0.25">
+          <stop offset="0%" stopColor="#d4ad9c" />
+          <stop offset="28%" stopColor={CAKE_WHITE} />
+          <stop offset="58%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#dcb8b1" />
+        </linearGradient>
+        <radialGradient id={g('berry')} cx="0.3" cy="0.2" r="0.85">
+          <stop offset="0%" stopColor="#ff9b99" />
+          <stop offset="35%" stopColor="#ed3a54" />
+          <stop offset="100%" stopColor="#7e102c" />
+        </radialGradient>
       </defs>
       {/* the plate under the cake */}
       <ellipse
@@ -121,15 +132,36 @@ function Cake({ uid, k }: { uid: string; k: string }) {
         stroke={PLATE_EDGE}
         strokeWidth="1"
       />
+      <ellipse cx="0" cy="20" rx="20.5" ry="4" fill="#b88c9b" opacity="0.5" />
+      <path d="M -22 22 Q 0 29 22 22" fill="none" stroke="#fff" strokeWidth="1.2" />
       {/* bottom tier */}
       <path
-        d="M -20 18 L -20 4 Q -20 0 -16 0 L 16 0 Q 20 0 20 4 L 20 18 Z"
+        d="M -20 17 L -20 3 Q 0 -5 20 3 L 20 17 Q 0 25 -20 17 Z"
         fill={`url(#${g('bottom')})`}
+      />
+      <path
+        d="M -19 11 Q 0 18 19 11 M -19 15 Q 0 22 19 15"
+        fill="none"
+        stroke="#b64a75"
+        strokeWidth="0.7"
+        opacity="0.6"
+      />
+      <path
+        d="M -20 3 Q 0 -5 20 3 L 20 7 Q 17 12 15 7 Q 12 5 11 10 Q 8 15 6 9 Q 3 6 1 10 Q -3 14 -5 8 Q -8 5 -11 9 Q -15 12 -16 7 L -20 6 Z"
+        fill={`url(#${g('cream')})`}
       />
       {/* top tier */}
       <path
-        d="M -13 0 L -13 -14 Q -13 -17 -10 -17 L 10 -17 Q 13 -17 13 -14 L 13 0 Z"
-        fill={CAKE_WHITE}
+        d="M -13 0 L -13 -14 Q 0 -21 13 -14 L 13 0 Q 0 6 -13 0 Z"
+        fill={`url(#${g('cream')})`}
+      />
+      <ellipse cx="0" cy="-14" rx="13" ry="4.5" fill={CAKE_WHITE} stroke="#fff" strokeWidth="0.8" />
+      <path
+        d="M -11 -11 Q 0 -7 11 -11 M -11 -5 Q 0 -1 11 -5"
+        fill="none"
+        stroke="#d59caa"
+        strokeWidth="0.7"
+        opacity="0.7"
       />
       {/* a frosting drip line between the tiers */}
       <path
@@ -141,27 +173,53 @@ function Cake({ uid, k }: { uid: string; k: string }) {
         opacity="0.8"
       />
       {/* three berries on top */}
-      <circle cx="-6" cy="-19" r="3.6" fill={BERRY_RED} />
-      <circle cx="1" cy="-21" r="3.6" fill={BERRY_RED} />
-      <circle cx="7" cy="-18.5" r="3.2" fill={BERRY_RED} />
-      <path d="M -6 -22 L -4.6 -25 L -7.4 -25 Z" fill={BERRY_LEAF} />
+      {[-6, 1, 7].map((x, i) => (
+        <g key={x} transform={`translate(${x} ${i === 1 ? -20 : -18})`}>
+          <path
+            d="M -3 -2 Q 0 -5 3 -2 C 5 1 1 5 0 5 C -2 4 -5 0 -3 -2 Z"
+            fill={`url(#${g('berry')})`}
+          />
+          <path d="M -2 -2 L -4 -4 L -1 -3 L 0 -6 L 1 -3 L 4 -4 L 2 -2 Z" fill={BERRY_LEAF} />
+          <path
+            d="M -1 0 l 0.3 0.7 M 1 2 l 0.3 0.7"
+            stroke="#ffd7a1"
+            strokeWidth="0.6"
+            strokeLinecap="round"
+          />
+        </g>
+      ))}
     </g>
   );
 }
 
 /** The strawberry that stays at the crown once the plate reveals, apart from
  *  the cake sprite so it can persist after the cake and the plate are gone. */
-function Strawberry() {
+function Strawberry({ uid }: { uid: string }) {
+  const berry = `thr-cake-crown-berry-${uid}`;
   return (
     <g>
+      <defs>
+        <radialGradient id={berry} cx="0.3" cy="0.2" r="0.8">
+          <stop offset="0%" stopColor="#ffb09b" />
+          <stop offset="35%" stopColor={BERRY_RED} />
+          <stop offset="100%" stopColor="#730e29" />
+        </radialGradient>
+      </defs>
       <path
         d="M 0 -6 C 6 -6, 8 -1, 5 4 C 3 7, -3 7, -5 4 C -8 -1, -6 -6, 0 -6 Z"
-        fill={BERRY_RED}
+        fill={`url(#${berry})`}
       />
       <circle cx="-2" cy="-2" r="0.7" fill="#7d0f20" opacity="0.6" />
       <circle cx="2" cy="0.5" r="0.7" fill="#7d0f20" opacity="0.6" />
       <circle cx="0" cy="3" r="0.7" fill="#7d0f20" opacity="0.6" />
       <path d="M -3 -6 L -1 -9.5 L 1 -6.5 L 3 -9.5 L 1.5 -6 Z" fill={BERRY_LEAF} />
+      <path
+        d="M -4 -3 Q -5 0 -3 2"
+        fill="none"
+        stroke="#ffcdbe"
+        strokeWidth="0.8"
+        strokeLinecap="round"
+      />
     </g>
   );
 }
@@ -201,6 +259,14 @@ function Payload({ uid }: RigProps) {
           fill={`url(#${g('plate')})`}
           stroke={PLATE_EDGE}
           strokeWidth="1"
+        />
+        <circle cx="0" cy="-5" r="23.5" fill="none" stroke="#c9bfc1" strokeWidth="0.9" />
+        <path
+          d="M -19 -17 A 23 23 0 0 1 17 -20"
+          fill="none"
+          stroke="#fff"
+          strokeWidth="2"
+          strokeLinecap="round"
         />
         {/* pink/white splatter bursting around the plate's top edge */}
         <ellipse
@@ -283,7 +349,7 @@ function Payload({ uid }: RigProps) {
           the translate and put the berry in the middle of the face. */}
       <g transform="translate(2 -46)">
         <g className="thr-cake__berry">
-          <Strawberry />
+          <Strawberry uid={uid} />
         </g>
       </g>
     </svg>

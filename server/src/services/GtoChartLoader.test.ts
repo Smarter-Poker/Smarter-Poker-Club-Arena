@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GtoChartRow } from '../engine/GtoCharts.js';
 import { assertCompleteGtoChartCorpus, expectedGtoChartCorpusKeys } from '../gto/GtoChartCorpus.js';
 import {
@@ -9,6 +9,12 @@ import {
   recordChartPolicyRefreshError,
   solverPolicyArtifactStatus,
 } from '../gto/SolverPolicyArtifactLoader.js';
+import { startGtoChartLoader, stopGtoChartLoader } from './GtoChartLoader.js';
+
+afterEach(() => {
+  stopGtoChartLoader();
+  vi.useRealTimers();
+});
 
 const DEPTHS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25];
 
@@ -76,5 +82,13 @@ describe('GTO chart corpus refresh guard', () => {
     );
     expect(loaderSource).toContain('recordChartPolicyRefreshError(err)');
     _clearSolverPolicyArtifactsForTests();
+  });
+
+  it('cancels both boot and refresh timers during graceful shutdown', () => {
+    vi.useFakeTimers();
+    startGtoChartLoader();
+    expect(vi.getTimerCount()).toBe(2);
+    stopGtoChartLoader();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

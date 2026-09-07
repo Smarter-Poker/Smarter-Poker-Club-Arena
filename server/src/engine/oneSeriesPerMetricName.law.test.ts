@@ -37,8 +37,12 @@
  * `table_id`, and the hands counter is monotonic rather than a buffer length.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { EngineTelemetry } from './EngineTelemetry.js';
+
+// The fleet counters are process-wide and monotonic by design, so each case
+// starts from a clean slate rather than inheriting the previous one's total.
+beforeEach(() => EngineTelemetry.__resetFleetCountersForTest());
 
 /** A telemetry instance that has dealt `hands` hands on one table. */
 function engineWith(tableId: string, hands: number, seats = 6): EngineTelemetry {
@@ -132,6 +136,83 @@ describe('poker_hands_dealt_total', () => {
     const first = t.getSnapshot().global.totalHandsDealt;
     for (let i = 0; i < 30; i++) t.recordHandTiming('x', 5, 2, 7_000);
     expect(t.getSnapshot().global.totalHandsDealt).toBe(first + 30);
+  });
+
+  /**
+   * ── THE SECOND BUG, FOUND IN PRODUCTION HOURS AFTER THE FIRST FIX ────────
+   *
+   * Making the exposition fleet-wide was right, but the counters were SUMMED
+   * over the live engine set — and engines are destroyed constantly as tables
+   * close. Every retirement dropped the sum, Prometheus read each drop as a
+   * process restart, and `increase()` added the whole post-drop value back.
+   *
+   * Measured on production at 15-second resolution over 15 minutes: 61
+   * samples, 11 drops (5667->5610, 5689->5624, 5962->5911). Over the same
+   * window `increase(poker_hands_dealt_total[5m])` reported 22,663 hands
+   * against a true 1,260 in `hand_history` — an 18x over-count that would have
+   * made `EngineFleetThroughputCollapsed` unable to ever fire.
+   */
+  it('does not go backwards when a table closes and its engine is retired', () => {
+    const a = engineWith('a', 100);
+    const b = engineWith('b', 100);
+    const total = (engines: EngineTelemetry[]) =>
+      Number(
+        samples(EngineTelemetry.renderFleetMetrics(engines))
+          .find((l) => nameOf(l) === 'poker_hands_dealt_total' && !l.includes('{'))!
+          .split(' ')[1]
+      );
+
+    expect(total([a, b])).toBe(200);
+
+    // Table b closes. Its engine leaves the map — exactly what happens seven
+    // times over in GameServer. The fleet total must NOT fall to 100.
+    const after = total([a]);
+    expect(
+      after,
+      `the counter fell from 200 to ${after} when an engine was retired. ` +
+        'Prometheus reads any fall in a counter as a restart and adds the whole ' +
+        'value back, which is how increase() came to over-report 18x.'
+    ).toBeGreaterThanOrEqual(200);
+
+    // And it keeps counting the survivor's new hands on top.
+    for (let i = 0; i < 25; i++) a.recordHandTiming('a', 5, 2, 7_000);
+    expect(total([a])).toBe(225);
+
+    // A brand-new table opening later adds to the total, never resets it.
+    const c = engineWith('c', 10);
+    expect(total([a, c])).toBe(235);
+  });
+
+  it('uptime is the PROCESS, so retiring a table cannot look like a restart', () => {
+    // `EngineRestartLoop` alerts on `resets(poker_uptime_seconds[30m]) > 3`.
+    // Taking the max of per-engine ages made that value fall whenever the
+    // OLDEST engine was retired - a table closing, not a restart.
+    const uptime = (engines: EngineTelemetry[]) =>
+      Number(
+        samples(EngineTelemetry.renderFleetMetrics(engines))
+          .find((l) => nameOf(l) === 'poker_uptime_seconds' && !l.includes('{'))!
+          .split(' ')[1]
+      );
+    const withEngines = uptime([engineWith('a', 5), engineWith('b', 5)]);
+    const withNone = uptime([]);
+    expect(withNone).toBeGreaterThanOrEqual(withEngines);
+    // And it is the real process clock, not an engine's age.
+    expect(Math.abs(withNone - Math.round(process.uptime()))).toBeLessThanOrEqual(2);
+  });
+
+  it('the violation counters are banked the same way', () => {
+    const a = new EngineTelemetry();
+    // One violation: processing over the 50ms threshold.
+    a.recordActionProcessingTime('t', 'u', 'bet', 500, null);
+    const read = (engines: EngineTelemetry[], type: string) =>
+      Number(
+        samples(EngineTelemetry.renderFleetMetrics(engines))
+          .find((l) => l.startsWith(`poker_threshold_violations_total{type="${type}"}`))!
+          .split(' ')[1]
+      );
+    expect(read([a], 'action_processing')).toBe(1);
+    // The engine is retired; the violation it recorded must not un-happen.
+    expect(read([], 'action_processing')).toBe(1);
   });
 
   it('still reports a rate from the sampled window, not from the lifetime count', () => {

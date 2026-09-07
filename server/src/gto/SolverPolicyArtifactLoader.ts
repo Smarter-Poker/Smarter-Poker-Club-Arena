@@ -263,6 +263,59 @@ function decisionKeyForChart(row: ChartPolicyRow): SolverPolicyDecisionKey {
   };
 }
 
+function chartArtifactIdentity(policy: SolverPolicyAnswer): {
+  gameType: 'Cash' | 'Tournament';
+  villainAction: 'fold_to_hero' | 'sb_push';
+  position: string;
+  depth: number;
+} | null {
+  const match = /^chart\|(Cash|Tournament)\|(fold_to_hero|sb_push)\|([A-Z]+)\|(\d+)$/u.exec(
+    policy.sourceArtifact.scenarioHash ?? ''
+  );
+  if (!match) return null;
+  const gameType = match[1] as 'Cash' | 'Tournament';
+  const villainAction = match[2] as 'fold_to_hero' | 'sb_push';
+  const position = match[3];
+  const depth = Number(match[4]);
+  if (!CHART_DEPTHS.has(depth)) return null;
+  if (villainAction === 'sb_push' ? position !== 'BB' : !CHART_OPEN_POSITIONS.has(position)) {
+    return null;
+  }
+  return { gameType, villainAction, position, depth };
+}
+
+function assertChartArtifactIdentity(policy: SolverPolicyAnswer): void {
+  if (policy.kind !== 'chart') return;
+  const identity = chartArtifactIdentity(policy);
+  if (!identity) throw new Error('chart_artifact_identity:scenario_hash');
+  const hands = allHoldemHandClasses();
+  const range = policy.rangeDistribution;
+  if (
+    !range ||
+    stableSolverPolicyJson(Object.keys(range).sort()) !== stableSolverPolicyJson([...hands].sort())
+  ) {
+    throw new Error('chart_artifact_identity:range');
+  }
+  const facing = identity.villainAction === 'sb_push';
+  const yesId = facing ? 'call' : 'all_in';
+  const yesSource = facing ? 'call' : 'push';
+  const handMatrix = Object.fromEntries(
+    hands.map((hand) => [hand, { [yesSource]: range[hand][yesId], fold: range[hand].fold }])
+  );
+  const canonical = createChartSolverPolicy({
+    chart_id: policy.sourceArtifact.artifactId,
+    game_type: identity.gameType,
+    villain_action: identity.villainAction,
+    hero_position: identity.position,
+    stack_depth: identity.depth,
+    hand_matrix: handMatrix,
+    created_at: policy.sourceArtifact.auditedAt,
+  });
+  if (stableSolverPolicyJson(policy) !== stableSolverPolicyJson(canonical)) {
+    throw new Error('chart_artifact_identity:canonical_policy');
+  }
+}
+
 function normalizeMix(yes: number, fold: number): [number, number] {
   const safeYes = Number.isFinite(yes) && yes > 0 ? yes : 0;
   const safeFold = Number.isFinite(fold) && fold > 0 ? fold : 0;
@@ -399,6 +452,7 @@ function buildPolicyIndex(bundle: SolverPolicyArtifactBundle): Map<string, Solve
   const byScenario = new Map<string, SolverPolicyAnswer>();
   const decisionKeys = new Set<string>();
   for (const sourcePolicy of bundle.policies) {
+    assertChartArtifactIdentity(sourcePolicy);
     const policy = deepFreezeSolverPolicy(structuredClone(sourcePolicy));
     const scenario = policy.sourceArtifact.scenarioHash;
     const key = stableSolverPolicyJson(policy.key);

@@ -551,3 +551,11 @@ it('Spin cancellation covers both active aggregate fee writers', () => {
  expect(sql).toContain("'original_source',v_fee_row.source");
  expect(has('scripts/ci/probes/spin-cancel-both-fee-writers.sql','FAIL alternate Spin fee writer was not reversed')).toBe(true);
 });
+
+
+it('union periods require verified zero recipient shortfalls before settlement', () => {
+ const sql = read('supabase/migrations/20260907224856_union_periods_settle_only_after_zero_recipient_shortfalls.sql');
+ expect(sql).toContain("'error','recipient_shortfalls_remaining'");
+ expect(sql).toContain("OR jsonb_typeof(v_r3->'shortfalls') IS DISTINCT FROM 'number'");
+ expect(has('scripts/ci/probes/union-recipient-shortfalls.sql','FAIL unpaid recipient marked period settled')).toBe(true);
+});

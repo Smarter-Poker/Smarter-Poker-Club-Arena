@@ -1,0 +1,18 @@
+{
+  "_owner": "fix/diamond-p2-lanes-reland (diamond standard review fixes, 2026-09-07). Applied to production as 20260907220229_diamond_review_the_alarms_measure_the_right_things and 20260907220659_diamond_review_fixtures_are_measured_apart; 20260907230000_diamond_review_the_refund_handler_has_one_name drops the old refund name once the World Hub serves the rename. fn_purchase_time_banks_v2 is Lane D's (live since 20260903003327) and was missing from every fragment.",
+  "functions": [
+    "fn_ca_is_fixture_account",
+    "fn_ca_diamond_journal_classifier",
+    "fn_diamond_purchase_refund",
+    "fn_purchase_time_banks_v2"
+  ],
+  "columns": {
+    "ca_diamond_snapshots": [
+      "register_supply",
+      "house_balance",
+      "fixture_diamonds",
+      "register_fixture"
+    ],
+    "diamond_engine_daily_caps": ["max_per_user_per_day_vip"]
+  }
+}

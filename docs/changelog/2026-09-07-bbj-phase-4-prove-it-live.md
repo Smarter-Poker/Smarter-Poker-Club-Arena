@@ -123,3 +123,34 @@ failing there first. All six BBJ foreign keys are now followable backwards.
   unreachable from a browser, nothing is armed, and no drill has ever fired.
 - The three open pull requests were `mergeable=true` and `blocked` - the block
   was this guard, on all of them, from one missing index.
+
+### And a load defect the deep dive caught before it shipped
+
+The drill claim was written straight onto the settlement path: **every**
+contested showdown with no jackpot asked the database whether a drill was
+armed. Measured on production, that is **137,923 round trips in twenty-four
+hours** - about 1.6 every second, sustained, for ever - and every single one of
+them would have answered "no", because a table is armed only during a drill
+somebody is watching.
+
+The engine is ONE core and horse Monte Carlo is already 90% of it (CLAUDE.md
+section 2). Putting a database round trip on the settlement path of every
+showdown, to support a feature used a handful of times a month, is the wrong
+trade by about five orders of magnitude.
+
+`bbjDrillRegistry` reads the short list of armed tables **once a minute per
+process**; the per-hand cost is now a Set lookup. The claim itself is
+unchanged - the registry only decides whether it is worth making one.
+
+A cache is normally the wrong thing to put near money, so the reason it is safe
+here is worth stating: **it can only ever delay a drill, never cause one.** The
+atomic single-shot claim in the database is still the only thing that fires
+one, so a cache that wrongly believes a table is armed costs one wasted round
+trip and nothing else. And it refuses to guess in the dangerous direction: a
+process that has never read the list treats every table as unarmed, while a
+failed refresh keeps the last known list rather than emptying it - because "I
+could not tell" is neither "armed" nor "not armed" (CLAUDE.md 10.86).
+
+Pinned by `BbjDrillRegistryAsksOnceAMinute` (8 tests, including forty tables
+settling in the same second costing one query) and by a new pin in the drill
+law. Both mutation-checked: deleting the cheap gate turns the law red.

@@ -113,6 +113,20 @@ describe('the drill cannot arm itself', () => {
     expect(returns.length, 'every refusal path returns null').toBeGreaterThanOrEqual(5);
   });
 
+  it('does not ask the database on every showdown', () => {
+    /* THE DEFECT THIS PINS, caught in the phase-4 deep dive before it shipped.
+       The claim RPC sat on the settlement path of every contested showdown:
+       137,923 round trips in twenty-four hours, measured on production, every
+       one answering "no" - on an engine that is ONE core and where horse Monte
+       Carlo is already 90% of it. The registry is one query a minute per
+       process and this is a Set lookup; it can only delay a drill, never cause
+       one, because the atomic claim is still the only thing that fires one. */
+    const gateAt = drill.indexOf('await maybeArmed(this.tableId)');
+    const claimAt = drill.indexOf("supabase.rpc('fn_bbj_claim_drill'");
+    expect(gateAt, 'the cheap question is asked at all').toBeGreaterThan(0);
+    expect(gateAt, 'and it is asked BEFORE the round trip').toBeLessThan(claimAt);
+  });
+
   it('refuses BEFORE it claims, so an arm is never burned on a hand that cannot pay', () => {
     const claimAt = drill.indexOf("supabase.rpc('fn_bbj_claim_drill'");
     const guardAt = drill.indexOf('this.currentHandShowdownResults.length < 2');

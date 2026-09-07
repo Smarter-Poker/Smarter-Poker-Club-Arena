@@ -462,6 +462,17 @@ describe('shipped functionality is still here', () => {
     )).toBe(true);
   });
 
+  it('parked jackpot shares retain single-refund and funded-redemption semantics', () => {
+    const sql = read('supabase/migrations/20260907202012_bbj_parked_shares_refund_and_redeem_exactly_once.sql');
+    expect(sql.includes('CREATE OR REPLACE FUNCTION public.bbj_credit_one_recipient')).toBe(true);
+    expect(sql.includes('IF v_claimed = 1 THEN')).toBe(true);
+    expect(sql.includes("CASE WHEN v_kind='mini' THEN p_amount ELSE 0 END")).toBe(true);
+    expect(sql.includes('parked jackpot amount cannot change on replay')).toBe(true);
+    expect(sql.includes('parked jackpot share lacks its original funding')).toBe(true);
+    expect(sql.includes('SET paid_at=now()')).toBe(true);
+    expect(sql.includes('FROM PUBLIC, anon, authenticated')).toBe(true);
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.
@@ -473,4 +484,5 @@ describe('shipped functionality is still here', () => {
     }
   });
 });
+
 

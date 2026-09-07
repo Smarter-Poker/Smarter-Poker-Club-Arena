@@ -272,6 +272,18 @@ database. Anchor the daily sha somewhere with a different owner - a commit in
 this repo, an object in S3, an email - and the proof becomes worth something.
 One line a day.
 
+**BUILT 2026-09-07 (phase 6).** `docs/attestation/chip-ledger-days.tsv`, one
+line per day, appended by `scripts/ci/anchor-ledger-days.mjs` on the workflow
+schedule that already existed. A day already anchored is never rewritten: the
+script FAILS when the database reports a different sha with no restatement to
+explain it, and that failure raises a named issue of its own. Two things were
+found doing it, both fixed the same day: the manifest for 2026-08-31 had been
+wrong for six days because nothing ever re-read it, and coverage was eight days
+against a journal with thirty-five. See
+`docs/changelog/2026-09-07-an-attestation-nobody-re-reads.md` and
+`docs/changelog/2026-09-07-the-attestation-covers-the-journal.md`. The words
+above stay because they are still the reason the file exists.
+
 ### 9.3 THERE IS NO RESTATEMENT POLICY, AND IT WAS NEEDED TODAY
 
 The 2026-09-06 clearance found 16,426.46 chips of rake attributed to clubs by

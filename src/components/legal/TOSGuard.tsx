@@ -50,6 +50,7 @@ import { useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import { uuid } from '../../utils/uuid';
 /* LAZY on purpose. This guard wraps the entire router, so a static import
    here would put the whole acceptance modal and its stylesheet into the chunk
    every player downloads before first paint - and once a player has accepted,
@@ -123,9 +124,23 @@ export default function TOSGuard({ children }: TOSGuardProps) {
     const token = session?.access_token;
     if (!token) throw new Error('Not authenticated');
 
+    /* THE HEADER IS NOT OPTIONAL. Every World Hub `/api/club-arena/*` POST
+       runs `checkIdempotency` before anything else, and that guard answers a
+       request with no `X-Idempotency-Key` with a 400 - before auth, before the
+       write. The first landing of this gate (#3547) sent no key, so every
+       Accept & Continue on the site came back 400 "X-Idempotency-Key header
+       required", the modal stayed up, and nobody could get past it. The key is
+       what every other mutating call in `services/clubArenaApi.ts` sends; the
+       fetch stays inline here (rather than going through that client) so the
+       literal endpoint and the `response.ok` check below remain what
+       `a-gate-that-gates-nothing.law.test.ts` pins. */
     const response = await fetch('/api/club-arena/accept-tos', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': uuid(),
+      },
       body: '{}',
     });
 

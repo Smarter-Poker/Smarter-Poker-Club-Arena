@@ -268,8 +268,22 @@ class FriendSuggestionServiceClass {
       );
       if (tableIds.length === 0) return [];
 
-      // Other people at those tables. Horses are house AI — suggesting them as
-      // friends would fill the list with opponents who are not people.
+      /* ── HORSES ARE PLAYERS (CLAUDE.md 10.5, BINDING) ────────────────────
+         This carried `.eq('profiles.is_horse', false)` under the comment
+         "Horses are house AI — suggesting them as friends would fill the list
+         with opponents who are not people."
+
+         That is precisely the reasoning the law forbids, and it is the same
+         mistake, in the same words, that cost 39 tournaments their entire
+         rake attribution on 2026-08-27: an agent's own assumption about what
+         horses deserve, written into a filter, presented as a design
+         decision. Dan: "HORSES ARE NEVER EVER DISCLUDED BY DESIGN ON
+         ANYTHING! THEY MUST ALWAYS BE TREATED LIKE REAL LIVE PLAYERS!"
+
+         A horse you sat with is an opponent you sat with. `is_horse` stays in
+         the SELECT — identification is one of the two sanctioned uses, and
+         the caller may badge the row — but it no longer decides who is
+         suggestible. */
       const { data: opponents, error: oErr } = await supabase
         .from('table_seats')
         .select(
@@ -281,7 +295,6 @@ class FriendSuggestionServiceClass {
         .in('table_id', tableIds)
         .neq('user_id', userId)
         .gte('joined_at', sevenDaysAgo)
-        .eq('profiles.is_horse', false)
         .limit(50);
       if (oErr) reportError(oErr, 'FriendSuggestionService.getRecentOpponents_opponents_error');
 

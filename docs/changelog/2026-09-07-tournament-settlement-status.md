@@ -1,0 +1,9 @@
+# Tournament Settlement Reports Remaining Debt
+
+The current settle RPC returns `ok: true` after paying 99.99 of a 100.00 obligation. The bubble caller set `bubbleProtectionPaid` before awaiting the RPC and announced a full refund on any successful operation. A transport failure could set the flag without any durable acknowledgement; partial credit could be announced as full payment.
+
+Migration 20260907215613 adds authoritative cumulative owed, paid, remaining and fully_settled fields to successful replies, including idempotent replay of an older smaller request. It changes no payment amounts, keys, funding banks, historical rows, prices or payout rules. The source wrapper validates the returned status totals; absent or contradictory metadata cannot certify completion. The bubble caller sets its paid flag and sends its paid event only after recorded full settlement, otherwise sending pending with actual returned amounts and obligation identity.
+
+Validation: the original actual SQL body failed the 99.99/100.00 completion assertion. Candidate and installed bodies passed a self-aborting pg_temp probe for partial credit, stale smaller replay, final cent, complete replay and credit refusal. External bank, credit and alert helpers were substituted, so this is not a production wallet-trigger or concurrency test. Local Node tests execute the transformed actual settlement module and the original bubble caller block with external services mocked; they pass full/partial/replay/legacy/malformed/transport cases. Permanent Vitest tests and an installed-function probe accompany the change. Full CI runs through repository automation.
+
+Remaining: bubble protection still requires its own funded-promise correction; this result contract does not supply missing money. Other completion/reporting consumers must be audited separately. No historical payment or customer message was sent by the audit.

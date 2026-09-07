@@ -29,6 +29,7 @@ import {
   styleCountsLine,
 } from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
+import { observeLobbyTableWarmups, warmTable } from '../../services/tableWarmup';
 import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
 import { ArenaLobbyGameCard } from './game-cards';
 import {
@@ -1065,6 +1066,7 @@ const LobbyRow = memo(function LobbyRow({
   return (
     <tr
       data-id={entry.id}
+      data-warm-table={entry.kind === 'cash' ? entry.id : undefined}
       className={`lt-row lt-row--${entry.status}${entry.featured ? ' is-featured' : ''}${selected ? ' is-selected' : ''}${cursor ? ' is-cursor' : ''}${mine ? ' is-mine' : ''}`}
       data-kind={entry.kind}
       role="row"
@@ -1081,6 +1083,14 @@ const LobbyRow = memo(function LobbyRow({
       // idempotent - repeat hovers over the same row are a no-op (see
       // ChunkPreloader.preloadRoute).
       {...prefetchIntent(`/table/${entry.id}`)}
+      onPointerEnter={() => {
+        prefetchIntent(`/table/${entry.id}`).onMouseEnter();
+        if (entry.kind === 'cash') warmTable(entry.id);
+      }}
+      onTouchStart={() => {
+        prefetchIntent(`/table/${entry.id}`).onTouchStart();
+        if (entry.kind === 'cash') warmTable(entry.id);
+      }}
       onClick={() => onSelect(entry)}
       onDoubleClick={() => onActivate(entry)}
     >
@@ -1549,6 +1559,7 @@ export default function LobbyTable({
     () => readSort(clubId, category) ?? defaultSortFor(category)
   );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
+  const mobileCardsRef = useRef<HTMLDivElement>(null);
   /* Which chip of the mobile sort toolbar owns the single tab stop. */
   const sortChipsRef = useRef<HTMLDivElement>(null);
   const [sortFocus, setSortFocus] = useState(0);
@@ -1829,6 +1840,14 @@ export default function LobbyTable({
     }
   };
 
+  const warmLayoutKey = sorted.map((entry) => `${entry.kind}:${entry.id}`).join(',');
+  useEffect(() => {
+    const roots = [bodyRef.current, mobileCardsRef.current].filter(
+      (root): root is HTMLTableSectionElement | HTMLDivElement => root !== null
+    );
+    return observeLobbyTableWarmups(roots);
+  }, [warmLayoutKey]);
+
   return (
     <>
       {/* ═══════════════════════════════════════════════════════════════════
@@ -1981,7 +2000,11 @@ export default function LobbyTable({
           )}
         </div>
       )}
-      <div className="arena-lobby-card-list" aria-label={`Game Cards, ${sorted.length} Games`}>
+      <div
+        ref={mobileCardsRef}
+        className="arena-lobby-card-list"
+        aria-label={`Game Cards, ${sorted.length} Games`}
+      >
         {sorted.map((entry) => (
           <ArenaLobbyGameCard
             key={entry.id}

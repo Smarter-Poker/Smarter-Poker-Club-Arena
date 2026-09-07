@@ -1,3 +1,4 @@
+import { warmTable } from '../../services/tableWarmup';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT AUTO-SEAT — Dan 2026-08-21, BINDING
@@ -233,6 +234,7 @@ export default function TournamentAutoSeat() {
 
         // Hand it to the multi-table layer: it opens a tab when there is room
         // and replies TABLE_CAP_BLOCKED when there is not.
+        warmTable(tableId);
         masterBus.emit('TABLE_SEATED', { tableId, seat: 0 });
       }
     } catch (e) {
@@ -307,6 +309,7 @@ export default function TournamentAutoSeat() {
                 // Open it as a table tab as well as navigating, so the
                 // multi-table layer knows about it — same hop the auto-seat
                 // path uses.
+                warmTable(id);
                 masterBus.emit('TABLE_SEATED', { tableId: id, seat: 0 });
                 navigate(`/table/${id}`);
               }}

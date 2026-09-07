@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/diamond-b-mint",
+  "tables": [],
+  "functions": ["fn_ca_diamond_born_with_balance"],
+  "columns": {}
+}

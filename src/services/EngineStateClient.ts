@@ -1389,6 +1389,8 @@ export class EngineChannelClient {
   private handshakeFailures = 0;
   private reconnectTimer: number | null = null;
   private intentionalClose = false;
+  private handshakeTimer: number | null = null;
+  private static readonly HANDSHAKE_TIMEOUT_MS = 15_000;
 
   private listeners: ChannelListeners = {
     onClubPresence: new Set(),
@@ -1400,7 +1402,7 @@ export class EngineChannelClient {
     onFinancialUpdate: new Set(),
   };
 
-  // Queue of messages to send once connected
+  // Transient requests to send once connected; subscription intent is separate.
   private sendQueue: ChannelClientMessage[] = [];
   /** 2026-08-22: bound the offline queue — an hour offline must not flush a
    *  thousand stale messages into the server's rate limiter on reconnect. */
@@ -1418,44 +1420,42 @@ export class EngineChannelClient {
   // this behaviour was lost in the migration to the engine WS.)
   //
   // send() records the net desired state below; every onopen replays it.
-  // Server JOINs are idempotent (Set adds + alreadyJoined guard), so a replay
-  // that races a queued duplicate is harmless.
+  // Stateful messages live only here while offline. Replaying both this state
+  // and an old message queue duplicates JOINs and can trip the server rate cap.
   private desiredClubs = new Set<string>();
   private desiredTournaments = new Set<string>();
   private desiredLobby = false;
   /** Latest UPDATE_PRESENCE per club, replayed after JOIN_CLUB on reconnect. */
   private lastPresence = new Map<string, ChannelClientMessage>();
-  /** True once any socket has reached OPEN — gates the replay to reconnects. */
-  private hasConnectedBefore = false;
 
   /** @internal Track the net effect of a client → server message. */
-  private recordDesiredState(msg: ChannelClientMessage): void {
+  private recordDesiredState(msg: ChannelClientMessage): boolean {
     switch (msg.type) {
       case 'JOIN_CLUB':
         this.desiredClubs.add(msg.clubId);
-        return;
+        return true;
       case 'LEAVE_CLUB':
         this.desiredClubs.delete(msg.clubId);
         this.lastPresence.delete(msg.clubId);
-        return;
+        return true;
       case 'UPDATE_PRESENCE':
         this.desiredClubs.add(msg.clubId);
         this.lastPresence.set(msg.clubId, msg);
-        return;
+        return true;
       case 'JOIN_TOURNAMENT':
         this.desiredTournaments.add(msg.tournamentId);
-        return;
+        return true;
       case 'LEAVE_TOURNAMENT':
         this.desiredTournaments.delete(msg.tournamentId);
-        return;
+        return true;
       case 'JOIN_LOBBY':
         this.desiredLobby = true;
-        return;
+        return true;
       case 'LEAVE_LOBBY':
         this.desiredLobby = false;
-        return;
+        return true;
       default:
-        return; // PONG / CHANNEL_PONG / REQUEST_HAND_REPLAY carry no state
+        return false; // PONG / CHANNEL_PONG / REQUEST_HAND_REPLAY carry no state
     }
   }
 
@@ -1562,6 +1562,7 @@ export class EngineChannelClient {
   /** Close the channel connection permanently. */
   disconnect(): void {
     this.intentionalClose = true;
+    this.clearHandshakeTimer();
     this.stopWatchdog();
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
@@ -1596,7 +1597,7 @@ export class EngineChannelClient {
   send(msg: ChannelClientMessage): void {
     // 2026-08-24: record the net desired subscription state FIRST, whether or
     // not the socket is currently open — this is what reconnect replays.
-    this.recordDesiredState(msg);
+    const stateful = this.recordDesiredState(msg);
     const data = JSON.stringify(msg);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
@@ -1605,12 +1606,14 @@ export class EngineChannelClient {
         console.warn('[EngineChannelClient] send failed:', err);
       }
     } else {
-      // Queue for when the connection opens (bounded: drop the oldest first —
-      // fresher presence/join state supersedes stale state anyway).
-      if (this.sendQueue.length >= EngineChannelClient.MAX_QUEUE) {
-        this.sendQueue.shift();
+      // Retain transient work in a bounded queue. Stateful messages are already
+      // represented by current intent and must not be flushed a second time.
+      if (!stateful) {
+        if (this.sendQueue.length >= EngineChannelClient.MAX_QUEUE) {
+          this.sendQueue.shift();
+        }
+        this.sendQueue.push(msg);
       }
-      this.sendQueue.push(msg);
       // Auto-connect on first send
       void this.connect();
     }
@@ -1729,20 +1732,29 @@ export class EngineChannelClient {
       return;
     }
     this.ws = ws;
+    // The heartbeat watchdog starts only after OPEN. A stalled handshake
+    // therefore needs its own deadline, even when close emits no event.
+    this.clearHandshakeTimer();
+    this.handshakeTimer = window.setTimeout(() => {
+      this.handshakeTimer = null;
+      if (this.ws !== ws || ws.readyState !== WebSocket.CONNECTING) return;
+      this.ws = null;
+      try {
+        ws.close();
+      } catch {
+        // Recovery cannot depend on a broken socket acknowledging close.
+      }
+      if (!this.intentionalClose) this.scheduleReconnect();
+    }, EngineChannelClient.HANDSHAKE_TIMEOUT_MS);
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
+      this.clearHandshakeTimer();
       this.retryCount = 0;
       this.handshakeFailures = 0;
-      // 2026-08-24: on a RECONNECT, replay the desired subscription state
-      // BEFORE flushing the queue — the fresh connection has no server-side
-      // subscriptions, and the queue only holds messages sent while offline.
-      // (First connect skips this: the original JOINs are in the queue or
-      // will be sent by their callers; replaying would only duplicate them.)
-      if (this.hasConnectedBefore) {
-        this.replayDesiredState(ws);
-      }
-      this.hasConnectedBefore = true;
+      // A fresh socket has no subscriptions, including on the first connect.
+      // Send current desired state once; the queue contains only transient work.
+      this.replayDesiredState(ws);
       // Fresh socket just (re)played its state — start the re-assert clock now.
       this.lastReassertAt = Date.now();
       this.setStatus('connected');
@@ -1773,7 +1785,8 @@ export class EngineChannelClient {
     };
 
     ws.onclose = (e) => {
-      if (this.ws !== null && this.ws !== ws) return;
+      if (this.ws !== ws) return;
+      this.clearHandshakeTimer();
       if (this.intentionalClose) return;
       if (e.code === CLOSE_AUTH_FAILED || closeMeansAuth(e.code, e.reason)) {
         this.setStatus('auth_failed');
@@ -1942,6 +1955,12 @@ export class EngineChannelClient {
         }
         this.scheduleReconnect();
       });
+  }
+
+  private clearHandshakeTimer(): void {
+    if (this.handshakeTimer === null) return;
+    window.clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
   }
 
   private scheduleReconnect(): void {

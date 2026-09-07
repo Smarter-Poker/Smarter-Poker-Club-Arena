@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/one-source-of-truth-for-rake - Phase 6 of the union accounting programme, migrations 20260907214446 / 20260907215753 / 20260907220528. fn_union_club_rake_basis is the one basis round 1, the statement, the ECO adjustment and the reconciliation report all read; fn_money_rounding_policy is the rounding rule as data.",
+  "functions": ["fn_union_club_rake_basis", "fn_money_rounding_policy"]
+}

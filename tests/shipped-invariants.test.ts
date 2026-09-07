@@ -534,3 +534,11 @@ it('union financial overview uses complete recorded statements and explicit paym
   expect(read('src/pages/UnionDetailPage.tsx')).toContain('status: cb.status');
   expect(read('supabase/migrations/20260907212347_union_statement_reports_identify_missing_accounting_snapshots.sql')).toContain('AS snapshot_complete');
 });
+
+
+it('guarantee funding rolls back when the matching journal cannot commit', () => {
+  const sql = read('supabase/migrations/20260907220945_guarantee_overlay_journal_and_bank_debit_are_atomic.sql');
+  expect(sql).toContain('IF v_attempt = 3 THEN RAISE; END IF;');
+  expect(sql).not.toContain('INSERT INTO public.ca_ledger_write_failures');
+  expect(has('scripts/ci/probes/guarantee-overlay-atomicity.sql', 'FAIL journal failure preserved bank debit or pool publication')).toBe(true);
+});

@@ -120,12 +120,7 @@ function Egg({ uid, k }: { uid: string; k: string }) {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-cracked_egg thr-cracked_egg--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <Egg uid={uid} k="p" />
     </svg>
   );
@@ -163,12 +158,7 @@ function Payload({ uid }: RigProps) {
   const yolk = defId(uid, 'yolk');
   const shell = defId(uid, 'shell-frag');
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-cracked_egg thr-cracked_egg--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <defs>
         <radialGradient id={yolk} cx="0.38" cy="0.32" r="0.72">
           <stop offset="0%" stopColor="#ffe066" />

@@ -21,13 +21,6 @@
  * hold, a last shake, back to upright.
  */
 
-.thr-dice {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
 /* == THE SHAKE: infinite from 367 (+134, once the land-pop has settled).
    transform-origin sits at the wrist, low in the group, so the rotation
    reads as a hand turning rather than the whole payload box spinning. ==== */

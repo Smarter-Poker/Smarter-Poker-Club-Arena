@@ -622,6 +622,273 @@
           "gain": 1
         }
       ]
+    },
+    "swell_low": {
+      "$comment": "trophy 400-800: the grey wisp rising before the beam. A low swell with nothing percussive in it; synthesised because every low pad in the CC0 packs is a machine loop, not a rise.",
+      "levelDb": -10,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "aevalsrc='0.5*sin(2*PI*(70+38*t)*t)+0.28*sin(2*PI*(140+76*t)*t)':d=0.85:s=48000",
+          "filter": "lowpass=f=900,afade=t=in:st=0:d=0.35,afade=t=out:st=0.55:d=0.3",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "chime_shimmer": {
+      "$comment": "trophy 1267: the beam at full height. Three bells up an interval with a gem tail - bright, and it must ring past the fanfare that follows it.",
+      "levelDb": -4,
+      "source": "kenney-impact-sounds",
+      "layers": [
+        {
+          "file": "impactBell_heavy_000.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "impactBell_heavy_002.ogg",
+          "at": 0.09,
+          "gain": 0.8
+        },
+        {
+          "file": "impactBell_heavy_004.ogg",
+          "at": 0.19,
+          "gain": 0.62
+        },
+        {
+          "source": "oga-rpg",
+          "file": "item_gem_02.ogg",
+          "at": 0.05,
+          "gain": 0.5
+        }
+      ],
+      "trimEnd": 1.6
+    },
+    "fanfare_short": {
+      "$comment": "trophy 1600: the statuette lands on the shoulder. Five bells on a rising figure with coins under the last two - a fanfare shape built from what CC0 actually has, since no pack here holds brass.",
+      "levelDb": -3,
+      "source": "kenney-impact-sounds",
+      "layers": [
+        {
+          "file": "impactBell_heavy_001.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "impactBell_heavy_002.ogg",
+          "at": 0.11,
+          "gain": 0.95
+        },
+        {
+          "file": "impactBell_heavy_003.ogg",
+          "at": 0.22,
+          "gain": 0.9
+        },
+        {
+          "file": "impactBell_heavy_000.ogg",
+          "at": 0.36,
+          "gain": 1
+        },
+        {
+          "file": "impactBell_heavy_004.ogg",
+          "at": 0.36,
+          "gain": 0.7
+        },
+        {
+          "source": "oga-rpg",
+          "file": "item_coins_02.ogg",
+          "at": 0.38,
+          "gain": 0.45
+        }
+      ],
+      "trimEnd": 1.8
+    },
+    "sparkle_bed": {
+      "$comment": "trophy 2000-4500: the white sparkle glints on the statuette. Six gem tings spread thin across two and a half seconds - a bed, never a foreground cue.",
+      "levelDb": -13,
+      "source": "oga-rpg",
+      "layers": [
+        {
+          "file": "item_gem_01.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "item_gem_03.ogg",
+          "at": 0.42,
+          "gain": 0.85
+        },
+        {
+          "file": "item_gem_02.ogg",
+          "at": 0.91,
+          "gain": 0.75
+        },
+        {
+          "file": "item_gem_04.ogg",
+          "at": 1.36,
+          "gain": 0.8
+        },
+        {
+          "file": "item_gem_01.ogg",
+          "at": 1.83,
+          "gain": 0.65
+        },
+        {
+          "file": "item_gem_03.ogg",
+          "at": 2.24,
+          "gain": 0.6
+        }
+      ],
+      "trimEnd": 2.6
+    },
+    "whoosh_low": {
+      "$comment": "cake: the low rumble on approach, before the squash. A downward noise sweep - the reference's is air, not impact.",
+      "levelDb": -11,
+      "source": "own-synthesis",
+      "layers": [
+        {
+          "lavfi": "anoisesrc=d=0.4:c=brown:a=0.8:r=48000",
+          "filter": "lowpass=f=700,afade=t=in:st=0:d=0.1,afade=t=out:st=0.2:d=0.2",
+          "at": 0,
+          "gain": 1
+        }
+      ]
+    },
+    "splat_heavy": {
+      "$comment": "cake: the MAIN splat, exactly on the squash frame - the reference's loudest sample of that throw (0.83 peak). Three mud hits stacked tight so it reads as mass rather than a slap.",
+      "levelDb": -1,
+      "source": "oga-mud",
+      "layers": [
+        {
+          "file": "mud_04.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "mud_03.ogg",
+          "at": 0.02,
+          "gain": 0.8
+        },
+        {
+          "file": "mud_02.ogg",
+          "at": 0.05,
+          "gain": 0.55
+        }
+      ],
+      "trimEnd": 0.9
+    },
+    "splat_wet_small": {
+      "$comment": "cake: the smaller wet hit as the plate starts sliding down the face.",
+      "levelDb": -8,
+      "source": "oga-mud",
+      "layers": [
+        {
+          "file": "mud_06.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 0.35
+    },
+    "boing_splat": {
+      "$comment": "banana_peel: a seven-frame boing/splat starting 70 ms BEFORE the flash. A metal spring for the boing with a short mud hit under its tail - the reference is comic first, wet second.",
+      "levelDb": -3,
+      "source": "oga-wood-metal",
+      "layers": [
+        {
+          "file": "metal_spring_01.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "source": "oga-mud",
+          "file": "mud_08.ogg",
+          "at": 0.13,
+          "gain": 0.6
+        }
+      ],
+      "trimEnd": 0.8
+    },
+    "thump_soft": {
+      "$comment": "cash_stack 333: the bundle hitting the head. Soft and low - paper, not a board.",
+      "levelDb": -6,
+      "source": "kenney-impact-sounds",
+      "layers": [
+        {
+          "file": "impactSoft_medium_001.ogg",
+          "at": 0,
+          "gain": 1
+        }
+      ],
+      "trimEnd": 0.45
+    },
+    "tick_settle": {
+      "$comment": "cash_stack: the three ticks on the settle, one cue fired three times by the spec.",
+      "levelDb": -14,
+      "source": "kenney-interface-sounds",
+      "layers": [
+        {
+          "file": "tick_004.ogg",
+          "at": 0,
+          "gain": 0.7
+        }
+      ],
+      "trimEnd": 0.2
+    },
+    "cash_register_cascade": {
+      "$comment": "cash_stack 700-4000: the register/coin cascade under the money cloud, peaking on the burst. Chips handled, stacked and colliding across three seconds - the longest cue in the library.",
+      "levelDb": -5,
+      "source": "kenney-casino-audio",
+      "layers": [
+        {
+          "file": "chips-handle-1.ogg",
+          "at": 0,
+          "gain": 1
+        },
+        {
+          "file": "chips-collide-2.ogg",
+          "at": 0.16,
+          "gain": 0.9
+        },
+        {
+          "file": "chips-stack-3.ogg",
+          "at": 0.44,
+          "gain": 0.8
+        },
+        {
+          "file": "chips-handle-4.ogg",
+          "at": 0.79,
+          "gain": 0.75
+        },
+        {
+          "file": "chips-collide-1.ogg",
+          "at": 1.18,
+          "gain": 0.7
+        },
+        {
+          "file": "chips-stack-5.ogg",
+          "at": 1.6,
+          "gain": 0.62
+        },
+        {
+          "file": "chips-handle-2.ogg",
+          "at": 2.02,
+          "gain": 0.55
+        },
+        {
+          "file": "chips-collide-4.ogg",
+          "at": 2.44,
+          "gain": 0.45
+        },
+        {
+          "source": "oga-rpg",
+          "file": "item_coins_01.ogg",
+          "at": 0.05,
+          "gain": 0.5
+        }
+      ],
+      "trimEnd": 3.3
     }
   }
 }

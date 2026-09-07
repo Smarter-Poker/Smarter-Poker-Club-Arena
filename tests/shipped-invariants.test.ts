@@ -543,3 +543,12 @@ it('tournament payment completion uses durable outstanding debt rather than RPC 
   expect(read('server/src/tournament/TournamentManagerEliminations.ts')).toContain("this.broadcast('bubble_protection_pending'");
   expect(read('scripts/ci/probes/tournament-settlement-status.sql')).toContain('FAIL stale smaller replay hides debt');
 });
+
+
+it('cancelled Spin draws return to the recorded reserve with an actual bank update', () => {
+ const sql = read('supabase/migrations/20260907222512_spin_cancellation_returns_the_original_reserve_draw.sql');
+ expect(sql).toContain('WHERE club_id = v_funding.club_id');
+ expect(sql).toContain('GET DIAGNOSTICS v_updated = ROW_COUNT');
+ expect(sql).toContain('IF v_updated <> 1 THEN');
+ expect(has('scripts/ci/probes/spin-cancel-reserve-owner.sql','FAIL return journal failure kept reserve credit')).toBe(true);
+});

@@ -13,15 +13,31 @@
  *
  * Pinned against the REAL handleAllInRunout dispatch.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 import { waitFor } from '../testing/waitBudget.js';
 
-const TABLE = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+let tableSequence = 0;
+let TABLE: string;
+const runoutEngines = new Set<ServerTableEngine>();
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+beforeEach(() => {
+  TABLE = 'eeeeeeee-eeee-eeee-eeee-' + String(++tableSequence).padStart(12, '0');
+});
+
+afterEach(async () => {
+  try {
+    for (const engine of runoutEngines) {
+      await engine.stop();
+      expect(engine.isRunning()).toBe(false);
+    }
+  } finally {
+    runoutEngines.clear();
+    vi.restoreAllMocks();
+  }
+});
 
 /**
  * DE-FLAKE 2026-09-03 (CI run 33807616017, PR #2888) — wait for the CONDITION,
@@ -93,6 +109,11 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
   expect(ev).toBeDefined();
 
   const engine = new ServerTableEngine(TABLE) as any;
+  runoutEngines.add(engine);
+  // This harness tests runout dispatch, not database snapshot persistence.
+  // Stop the real engine after every assertion (including failed assertions),
+  // so pending offers and table-keyed deadlines cannot outlive their test.
+  vi.spyOn(engine, 'flushSnapshot').mockResolvedValue(undefined);
   engine.running = true;
   engine.handCount = 1;
   engine.handController = hc;

@@ -207,12 +207,7 @@ function Clover() {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-horseshoe thr-horseshoe--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <Horseshoe uid={uid} k="p" />
     </svg>
   );
@@ -220,12 +215,7 @@ function Projectile({ uid }: RigProps) {
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-horseshoe thr-horseshoe--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* 200 (+0): the shaded horseshoe lands, and 400-1000 (+200..+800) it
           bobs once - 12 px up and back - before settling. */}
       <g className="thr-horseshoe__bob" transform="translate(0 -10)">

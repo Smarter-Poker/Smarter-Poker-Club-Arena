@@ -254,12 +254,7 @@ function Hand({ uid }: { uid: string }) {
 
 function Projectile() {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-dice thr-dice--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <DicePair />
     </svg>
   );
@@ -267,12 +262,7 @@ function Projectile() {
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-dice thr-dice--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* 367 (+134): the hand, already cupping the dice. The player's own
           `thr__payload--land` class supplies the pop-in; this group owns
           only the repeating shake. */}

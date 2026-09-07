@@ -191,12 +191,7 @@ function Plume({ uid }: { uid: string }) {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-snowman thr-snowman--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <Figure uid={uid} k="p" />
     </svg>
   );
@@ -204,12 +199,7 @@ function Projectile({ uid }: RigProps) {
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-snowman thr-snowman--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* 400 (+0, raw capture 600): the whole figure, landed. Gone in one
           frame at 433 (+33, raw 633). */}
       <g className="thr-snowman__figure">

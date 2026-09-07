@@ -319,12 +319,7 @@ function Kiss() {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-rose thr-rose--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <Rose uid={uid} k="p" />
     </svg>
   );
@@ -332,12 +327,7 @@ function Projectile({ uid }: RigProps) {
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-rose thr-rose--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* 333 (+0): the rose that flew, whole, where the flight left it. It is
           shown for ONE frame and then hidden in one frame at +34, which is the
           reference's four blank frames before the bud. */}

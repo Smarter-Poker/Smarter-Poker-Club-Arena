@@ -154,6 +154,101 @@ describe('LAW: a paid throw is never silent and never invisible', () => {
   });
 });
 
+describe('LAW: a rig names nothing it does not draw', () => {
+  const rigDir = path.join(process.cwd(), 'src/throwables/rigs');
+  const ids = fs
+    .readdirSync(rigDir)
+    .filter((f) => f.endsWith('.tsx'))
+    .map((f) => f.replace(/\.tsx$/, ''));
+
+  it('has a rig to check', () => {
+    expect(ids.length).toBeGreaterThanOrEqual(11);
+  });
+
+  it('every class a rig writes has a rule in that rig stylesheet', () => {
+    // THE HOLE THIS CLOSES. `tests/unit/classNamesResolve.test.ts` only reads
+    // SINGLE-class attributes - its regex is `className="one-name"` - so
+    // `className="thr-beer thr-beer--proj"` was invisible to it. Twenty-one
+    // `--proj` / `--payload` modifiers accumulated across eleven rigs that no
+    // stylesheet defined and nothing selected: the PLAYER puts its own
+    // `thr__proj` / `thr__payload` on the wrapper div, so the rig-level ones
+    // named nothing at all. Phase 1 found eight of these by hand; this is the
+    // check that means nobody has to.
+    const offenders: string[] = [];
+    for (const id of ids) {
+      const tsx = fs.readFileSync(path.join(rigDir, `${id}.tsx`), 'utf8');
+      const css = code(fs.readFileSync(path.join(rigDir, `${id}.css`), 'utf8'));
+      const defined = new Set([...css.matchAll(/\.(thr[a-zA-Z0-9_-]*)/g)].map((m) => m[1]));
+      for (const m of tsx.matchAll(/className="([^"{}]+)"/g)) {
+        for (const name of m[1].split(/\s+/).filter(Boolean)) {
+          if (!defined.has(name)) offenders.push(`${id}.tsx -> ${name}`);
+        }
+      }
+    }
+    expect(offenders, `a class with no rule draws nothing and hides a missing animation`).toEqual(
+      []
+    );
+  });
+
+  it('nothing is invisible on the frame its own beat names', () => {
+    // THE IDIOM, and the bug it replaced. `animation-fill-mode: both` fills the
+    // DELAY with the 0% frame. So a DELAYED animation whose 0% is hidden is
+    // invisible on the very frame it is meant to appear - the element waits,
+    // correctly, and then keeps waiting for one more frame.
+    //
+    // Phase 1 shipped seven of these across beer and tomato, and the darkroom
+    // photographed the tomato's burst as an empty seat at 300. In playback it
+    // is four milliseconds late and nobody sees it; in the DARKROOM, which
+    // freezes exactly on the beat, it is a black frame at a documented moment -
+    // and the darkroom is the instrument this whole programme verifies itself
+    // with. Two real bugs (fireworks rendering nothing, champagne's cork and
+    // jet missing) were nearly lost in that noise.
+    //
+    // So: a delayed animation is `forwards` with a VISIBLE 0% frame. `both` is
+    // for an element that is already on screen when its animation starts.
+    const offenders: string[] = [];
+    for (const id of ids) {
+      const css = code(fs.readFileSync(path.join(rigDir, `${id}.css`), 'utf8'));
+      const opensHidden = new Map<string, boolean>();
+      for (const m of css.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\n\}/g)) {
+        const first = /0%\s*\{([^}]*)\}/.exec(m[2]);
+        opensHidden.set(m[1], first ? /opacity:\s*0(?!\.\d*[1-9])/.test(first[1]) : false);
+      }
+      for (const m of css.matchAll(/\.([\w-]+)\s*\{[^}]*?animation:\s*([^;]+);/g)) {
+        const shorthand = m[2];
+        const name = (shorthand.match(/^\s*([\w-]+)/) || [])[1];
+        const times = [...shorthand.matchAll(/calc\((\d*\.?\d+)s \* var/g)].map((x) => +x[1]);
+        const delayed = times.length > 1 && times[1] > 0;
+        if (delayed && /\bboth\b/.test(shorthand) && opensHidden.get(name)) {
+          offenders.push(`${id}.css .${m[1]} (${name})`);
+        }
+      }
+    }
+    expect(
+      offenders,
+      'a delayed `both` with a hidden 0% is invisible on its own beat: use `forwards` and open visible'
+    ).toEqual([]);
+  });
+
+  it('every rule in a rig stylesheet is worn by something', () => {
+    // The other direction, and the more dangerous one: a rule nobody wears is
+    // an ANIMATION NOBODY PLAYS. A beat can go missing this way without any
+    // test noticing, because the keyframes are all still there and correct.
+    const offenders: string[] = [];
+    for (const id of ids) {
+      const tsx = fs.readFileSync(path.join(rigDir, `${id}.tsx`), 'utf8');
+      const css = code(fs.readFileSync(path.join(rigDir, `${id}.css`), 'utf8'));
+      const worn = new Set<string>();
+      for (const m of tsx.matchAll(/className="([^"{}]+)"/g))
+        for (const n of m[1].split(/\s+/).filter(Boolean)) worn.add(n);
+      for (const m of css.matchAll(/\.(thr[a-zA-Z0-9_-]*)/g)) {
+        if (!worn.has(m[1])) offenders.push(`${id}.css -> .${m[1]}`);
+      }
+    }
+    expect(offenders, `a rule nothing wears is an animation nobody plays`).toEqual([]);
+  });
+});
+
 describe('LAW: the migration seam stays honest', () => {
   it('routes a rigged item to the player and everything else to the legacy engine', () => {
     // One container, two engines, for exactly as long as the rebuild takes.

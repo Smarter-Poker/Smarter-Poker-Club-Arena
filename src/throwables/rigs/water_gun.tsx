@@ -291,12 +291,7 @@ function Blob({ uid }: { uid: string }) {
 
 function Projectile({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-water_gun thr-water_gun--proj"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <g transform="rotate(-35)">
         <Gun uid={uid} k="p" />
       </g>
@@ -325,12 +320,7 @@ const DROPLETS: ReadonlyArray<readonly [number, number, number, number]> = [
 
 function Payload({ uid }: RigProps) {
   return (
-    <svg
-      viewBox={RIG_VIEWBOX}
-      aria-hidden="true"
-      focusable="false"
-      className="thr-water_gun thr-water_gun--payload"
-    >
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* THE STREAM, under everything. It rides the same track and the same
           recoil as the gun so its root stays on the barrel tip; the aim is
           the static -60 deg the gun has reached by the time it exists. */}

@@ -24,6 +24,7 @@ import React, {
 } from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
+import lobbyButtonArt from '../assets/lobby-button.webp';
 import { serverNow } from '../utils/serverClock';
 import { isSitOutUrgent } from '../lib/sitOutDeadline';
 import LiveTablesBar from '../components/table/LiveTablesBar';
@@ -4100,6 +4101,15 @@ export default function MultiTablePage() {
               onBackAll={handleBackAll}
               profitTrackingEnabled={profitTracking}
               onToggleProfitTracking={toggleProfitTracking}
+              /* Dan 2026-09-07, item 1: the four-square tile toggle is a
+                 hamburger item now, not a button on the header. Same single
+                 effect it always had - see the removed `.tile-toggle-btn`
+                 note below - handed to the menu instead of drawn on the strip. */
+              isTileView={isTileView}
+              canToggleTileView={tables.length > 1}
+              onToggleTileView={() => {
+                if (tables.length > 1) setIsTileView((prev) => !prev);
+              }}
             />
             {/* Batch 5: live multi-table P&L chip -> session breakdown */}
             {sessionAgg && sessionAgg.rows.some((r) => r.tracked) && (
@@ -4145,69 +4155,27 @@ export default function MultiTablePage() {
                 {sessionAgg.net.toLocaleString('en-US')}
               </button>
             )}
-            {/* Dan 2026-08-30: the 4-square multi-table button. FIXED on the
-                right edge - the opposite side from the hamburger - the same
-                40px size as the hamburger trigger, wearing Dan's brushed-metal
-                four-screen artwork. Rendered always so the position is stable,
-                but it only ENGAGES with 2+ tables open (4 max); with one
-                table it is inert and dimmed. Positioning lives in
-                MultiTablePage.css (.tile-toggle-btn). */}
-            <button
-              className={`tile-toggle-btn${tables.length > 1 ? '' : ' tile-toggle-btn--inert'}${
-                activeClusterId && !isTileView ? ' tile-toggle-btn--shifted' : ''
-              }`}
-              onClick={() => {
-                if (tables.length > 1) setIsTileView((prev) => !prev);
-              }}
-              aria-disabled={tables.length <= 1}
-              title={
-                tables.length > 1
-                  ? isTileView
-                    ? 'Single View'
-                    : 'Tile View'
-                  : 'Open A Second Table To Use Tile View'
-              }
-              aria-label={isTileView ? 'Single View' : 'Tile View'}
-            >
-              {/* ═══ NO PLATE BEHIND THE GLYPH (Dan 2026-08-31) ══════════════
-                  "Remove the little pill behind the 4 square button."
+            {/* ═══ THE 4-SQUARE BUTTON IS GONE FROM THE HEADER (2026-09-07) ═══
+                Dan, item 1: "THE 4 SQUARE OPTION NEEDS TO LIVE INSIDE THE
+                HAMBURGER MENU, NOT ON THE SCREEN IN THE ACTION HEADER, CHANGE
+                THAT GLOBALLY."
 
-                  It was not CSS - `.tile-toggle-btn` has painted
-                  `background: transparent` all along. The plate is inside the
-                  ARTWORK: the source render (1254x1254, RGB, no alpha channel)
-                  is a dark rounded rectangle with the four screens sitting in
-                  the middle at roughly 46% of its width, so `object-fit:
-                  contain` in the 40px button faithfully painted the plate too.
-                  Its sibling assets (hamburger, add-screen) are transparent
-                  cutouts, which is why this was the only button wearing one.
+                It stood here from 2026-08-30 as a fixed 40px button on the
+                right edge, mirroring the hamburger on the left, its four
+                screens drawn inline because the source raster had a baked dark
+                plate and no alpha channel.
 
-                  Drawn inline instead, so the button is the glyph and nothing
-                  else - the same approach TableTabBar already uses for its "+".
-                  If the artwork is ever re-exported with a transparent
-                  background, this can go back to being an <img> in one line. */}
-              <svg
-                className="tile-toggle-btn__img"
-                viewBox="0 0 48 48"
-                aria-hidden="true"
-                focusable="false"
-              >
-                <defs>
-                  <linearGradient id="tileToggleMetal" x1="0" y1="0" x2="0.9" y2="1">
-                    <stop offset="0%" stopColor="#fdfdfd" />
-                    <stop offset="28%" stopColor="#cdd2d8" />
-                    <stop offset="55%" stopColor="#8d949d" />
-                    <stop offset="78%" stopColor="#b6bcc4" />
-                    <stop offset="100%" stopColor="#6b727b" />
-                  </linearGradient>
-                </defs>
-                <g fill="url(#tileToggleMetal)">
-                  <rect x="5" y="5" width="17" height="17" rx="3.6" />
-                  <rect x="26" y="5" width="17" height="17" rx="3.6" />
-                  <rect x="5" y="26" width="17" height="17" rx="3.6" />
-                  <rect x="26" y="26" width="17" height="17" rx="3.6" />
-                </g>
-              </svg>
-            </button>
+                Its single effect - toggle `isTileView`, only with 2+ tables -
+                now reaches the same state through TableTabBar's
+                `onToggleTileView` prop and appears as a "Tile View" item in the
+                hamburger, glyph and all (TableMenuIcons.TileViewIcon). Nothing
+                else about tile view changed.
+
+                WHAT THIS BUYS, in the currency TableTabBar.css counts in: 46px
+                of the 375px header budget documented there, which is half of
+                what makes four game pills fit beside a hamburger-sized LOBBY
+                button (item 2). The `.tile-toggle-btn` rules in
+                MultiTablePage.css went with it. */}
             {/* LOBBY - the rectangle that used to float over the felt's
                 upper-right corner (CashClusterHUD's bar). Dan 2026-09-05 moved
                 it here, to the right of the 4-square button, and cut it down to
@@ -4224,6 +4192,24 @@ export default function MultiTablePage() {
                 same dead subtree, so it was merely unreachable; this one made
                 it reachable and broken. Pick a table first, as with every other
                 felt control. */}
+            {/* DAN'S OWN ARTWORK, AND NOTHING DRAWN AROUND IT (2026-09-07,
+                item 2): "I'VE ALSO DESIGNED THE LOBBY BUTTON, REPLACE THE
+                GENERIC ONE WITH THE EXACT ONE I'VE ATTACHED AND MAKE SURE
+                YOU'VE REMOVED THE BACKGROUND BEFORE UPLOADING IT."
+
+                The supplied render is 1254x1254 RGB with no alpha - a rounded
+                metal plate on a black field, the same shape the 4-square asset
+                arrived in and was rejected for. Cleared by FLOOD FILL from the
+                border rather than by a brightness threshold: the button's own
+                doorway and face are near-black too, and a global "make dark
+                pixels transparent" would have hollowed the artwork out. Only
+                the black CONNECTED to the edge went. Then squared, trimmed and
+                resampled to 160px (4x the 40px box, crisp at 34px on a 3x
+                phone) - 1.3MB to 6.8KB as webp.
+
+                No border, no background, no text: the plate, the bevel and the
+                word LOBBY are all inside the image. Sizing tracks the
+                hamburger in MultiTablePage.css. */}
             {activeClusterId && !isTileView && (
               <button
                 type="button"
@@ -4232,7 +4218,7 @@ export default function MultiTablePage() {
                 aria-label="Open Must Move Lobby"
                 title="Must Move Lobby"
               >
-                Lobby
+                <img className="mtp-lobby-btn__img" src={lobbyButtonArt} alt="" draggable={false} />
               </button>
             )}
           </div>

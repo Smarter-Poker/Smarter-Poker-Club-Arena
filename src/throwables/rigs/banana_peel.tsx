@@ -116,6 +116,21 @@ function Banana({ uid, k }: { uid: string; k: string }) {
         strokeLinejoin="round"
       />
       {/* the two cut tips, left over from peeling */}
+      <path d="M -24 8 C -11 -3 9 -7 24 -11 C 10 1 -8 11 -24 8 Z" fill="#bda024" opacity="0.55" />
+      <path
+        d="M -24 7 C -10 -8 8 -15 23 -11 M -18 9 C -3 5 11 -3 21 -9"
+        fill="none"
+        stroke="#fff0a1"
+        strokeWidth="0.8"
+        opacity="0.85"
+      />
+      <path
+        d="M -22 8 C -8 -3 7 -8 22 -11"
+        fill="none"
+        stroke="#9c7c21"
+        strokeWidth="0.55"
+        opacity="0.55"
+      />
       <ellipse cx="-26" cy="8" rx="3.4" ry="2.6" transform="rotate(20 -26 8)" fill={BANANA_TIP} />
       <ellipse cx="26" cy="-11" rx="3" ry="2.2" transform="rotate(20 26 -11)" fill={BANANA_TIP} />
       {/* a couple of ripening speckles */}
@@ -174,11 +189,25 @@ function Peel({ uid }: { uid: string }) {
       <defs>
         <linearGradient id={g('peel')} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={PEEL_OUTER} />
+          <stop offset="28%" stopColor="#fff092" />
+          <stop offset="65%" stopColor="#c5a22c" />
           <stop offset="100%" stopColor={PEEL_EDGE} />
+        </linearGradient>
+        <linearGradient id={g('inner')} x1="0" y1="0" x2="1" y2="0.4">
+          <stop offset="0%" stopColor="#c9b98b" />
+          <stop offset="35%" stopColor={PEEL_INNER} />
+          <stop offset="75%" stopColor="#fffbea" />
+          <stop offset="100%" stopColor="#d9bd71" />
         </linearGradient>
       </defs>
       {/* the bunched crown where the three strips meet */}
       <ellipse cx="0" cy="-6" rx="9" ry="6" fill={PEEL_EDGE} />
+      <path
+        d="M -3 -7 L -2 -16 Q 0 -18 3 -15 L 4 -7 Z"
+        fill="#775620"
+        stroke="#d5b83a"
+        strokeWidth="0.8"
+      />
       {/* left strip */}
       <g transform="rotate(-38)">
         <path
@@ -188,6 +217,11 @@ function Peel({ uid }: { uid: string }) {
           strokeWidth="0.8"
           strokeLinejoin="round"
         />
+        <path
+          d="M -5 -2 C -14 3 -17 16 -12 24 Q -6 29 -2 26 C -7 25 -8 16 -7 9 Z"
+          fill={`url(#${g('inner')})`}
+        />
+        <path d="M -6 2 C -11 10 -11 20 -7 25" fill="none" stroke="#e3d9b3" strokeWidth="0.65" />
         <path
           d="M -9 4 C -12 12, -11 20, -7 25"
           fill="none"
@@ -207,6 +241,11 @@ function Peel({ uid }: { uid: string }) {
           strokeLinejoin="round"
         />
         <path
+          d="M -3 -3 C -5 9 -3 21 2 27 Q 6 31 7 26 C 3 24 0 9 2 -4 Z"
+          fill={`url(#${g('inner')})`}
+        />
+        <path d="M -2 1 Q -2 14 3 27" fill="none" stroke="#dacba1" strokeWidth="0.6" />
+        <path
           d="M 0 5 C 0 13, 1 21, 3 27"
           fill="none"
           stroke={PEEL_INNER}
@@ -224,6 +263,11 @@ function Peel({ uid }: { uid: string }) {
           strokeWidth="0.8"
           strokeLinejoin="round"
         />
+        <path
+          d="M -5 -2 C -14 3 -17 16 -12 24 Q -6 29 -2 26 C -7 25 -8 16 -7 9 Z"
+          fill={`url(#${g('inner')})`}
+        />
+        <path d="M -6 1 C -10 8 -12 18 -8 25" fill="none" stroke="#dacba1" strokeWidth="0.65" />
         <path
           d="M -7 4 C -11 12, -12 20, -9 25"
           fill="none"

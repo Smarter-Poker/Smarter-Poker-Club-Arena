@@ -132,32 +132,113 @@ export { overlapsBoard };
  * seat worse than it is today. Measured: it never has to - the widest swing any
  * of the 36 overlapping seat/size pairs needs is 9 degrees.
  */
+/**
+ * ── OWNERSHIP IS A CONSTRAINT, NOT A TIEBREAK (Dan 2026-09-07, item 10) ─────
+ *
+ * "THE BUTTON IS NOT DIRECTLY OR EVEN CLOSE TO THE PLAYER WHO 'HAS THE
+ *  BUTTON'."
+ *
+ * The search below already preferred the candidate nearest its own seat. It
+ * only ever chose between candidates it had ALREADY accepted, though — and it
+ * would accept a swing of up to a quarter turn around the felt. On a crowded
+ * felt (and the masthead keep-out got considerably wider today, item 7A) the
+ * first acceptable angle can be most of the way to the next chair, and the
+ * puck was taken there because it was the best of a bad set rather than
+ * because it was near anybody.
+ *
+ * This is the failure mode `tableGeometry.dealerButtonPosition`'s own comments
+ * measure twice and reject twice — "a button that reads as belonging to the
+ * wrong player" — so it becomes a hard predicate here: a candidate is only
+ * acceptable if the seat it stands nearest to is its OWN. Two changes follow
+ * from making it a constraint:
+ *
+ *   1. RADIAL BEFORE ANGULAR. Pulling the puck in along its own seat's axis
+ *      (toward the middle of the felt) cannot change which chair it is
+ *      nearest; rotating around the felt's centre is precisely the move that
+ *      can. So the retreat is tried first, and on most seats it is enough.
+ *   2. THE SWING IS CAPPED at 24 degrees rather than 90. Past that the puck
+ *      is in another player's space on every ring this app draws, so a wider
+ *      search cannot produce an answer worth having — it can only produce the
+ *      screenshot Dan sent.
+ *
+ * If nothing satisfies everything, the module's own answer is returned
+ * unchanged, exactly as before: this can still never make a seat worse than
+ * the geometry already had it.
+ */
 export function dealerButtonPositionClearOfSeat(
   seat: Pos,
   size: Size = NOMINAL_SCALER,
-  pod?: Size
+  pod?: Size,
+  allSeats?: ReadonlyArray<Pos>
 ): Pos {
   const placed = dealerButtonPosition(seat, size, pod);
 
   const chips = chipRestPosition(seat, size, pod);
   const puck = buttonRadiusWidthPct(size);
+  const sv = sq(seat, size);
+
+  /**
+   * True when `p` is nearer to this seat than to any other occupied chair.
+   * Strict: a tie means the puck sits on the midline between two players and
+   * belongs to neither, which is the reading Dan is objecting to.
+   *
+   * With no seat list (older callers, tests) this is vacuously true and the
+   * behaviour is the previous behaviour — the constraint can only ever be
+   * enforced with the information to enforce it.
+   */
+  const ownedByThisSeat = (p: Pos): boolean => {
+    if (!allSeats || allSeats.length < 2) return true;
+    const c = sq(p, size);
+    const own = Math.hypot(c.x - sv.x, c.y - sv.y);
+    return allSeats.every((other) => {
+      const ov = sq(other, size);
+      if (Math.abs(ov.x - sv.x) < 1e-6 && Math.abs(ov.y - sv.y) < 1e-6) return true;
+      return own < Math.hypot(c.x - ov.x, c.y - ov.y);
+    });
+  };
+
   const clear = (p: Pos) =>
     markerGapWidthPct(p, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT &&
     !isOnFeltText(p, size, puck) &&
     !overlapsTopSeatBox(p, seat, size) &&
     !overlapsSeatPlate(p, seat, size, pod) &&
-    !overlapsBoard(p, size);
+    !overlapsBoard(p, size) &&
+    ownedByThisSeat(p);
 
   if (clear(placed)) return placed;
 
   const c = feltCenter();
   const pv = sq(placed, size);
   const cv = sq(c, size);
-  const sv = sq(seat, size);
+
+  /* STEP 1 — RETREAT ALONG THE SEAT'S OWN AXIS. The puck walks from its
+     placed position toward the felt centre in 2% steps. This keeps it on the
+     line between its chair and the middle of the table, so it stays visibly
+     that chair's marker however far it has to move. */
+  {
+    const dx = cv.x - pv.x;
+    const dy = cv.y - pv.y;
+    const len = Math.hypot(dx, dy);
+    if (Number.isFinite(len) && len > 1e-6) {
+      const ux = dx / len;
+      const uy = dy / len;
+      for (let step = 2; step <= 30; step += 2) {
+        const walked: Pos = {
+          x: pv.x + ux * step,
+          y: ((pv.y + uy * step) * size.w) / size.h,
+        };
+        const cand = clampIntoFelt(walked, size, BUTTON_FELT_MARGIN_WIDTH_PCT);
+        if (clear(cand)) return cand;
+      }
+    }
+  }
+
+  /* STEP 2 — and only then, the swing. Capped at 24 degrees (16 steps of
+     1.5), both directions, nearest-to-own-seat wins. */
   let best: Pos | null = null;
   let bestDist = Infinity;
   for (const dir of [1, -1]) {
-    for (let i = 1; i <= 60; i++) {
+    for (let i = 1; i <= 16; i++) {
       const phi = dir * i * 1.5 * (Math.PI / 180);
       const cosP = Math.cos(phi);
       const sinP = Math.sin(phi);
@@ -304,7 +385,11 @@ export function DealerButton({
     scalerSize ?? undefined,
     typeof window === 'undefined'
       ? undefined
-      : seatPodPx(window.innerWidth, pos.y >= 100 && pos.x === 50)
+      : seatPodPx(window.innerWidth, pos.y >= 100 && pos.x === 50),
+    // Dan 2026-09-07, item 10: the whole ring, so the search can refuse any
+    // position that reads as another player's button. This component is
+    // already handed every seat; the constraint just needed to be given them.
+    seatPositions
   );
 
   // Only position is inlined — every other visual property lives on the

@@ -55,6 +55,43 @@ describe('the table says when it is not connected', () => {
     expect(banner.textContent).toContain('Reconnecting');
   });
 
+  /* ── AND IT MUST NOT SAY IT ABOUT A TABLE THAT IS RUNNING (2026-09-07) ────
+     Dan: "ALL TABLES STILL SAY CONNECTING TO THE TABLE, INSTEAD OF BEING
+     RUNNING AT ALL TIMES, AND PRE LOADED."
+     The banner above is right about a felt that has gone stale. It was also
+     firing on every ordinary entry, because the SOCKET reports 'connecting'
+     on each fresh open while the warm-up roster has already painted a live
+     hand. Those are two different facts and only one of them is the player's
+     business. */
+  it('says nothing about "connecting" when the felt is already showing a hand', async () => {
+    render(<TableConnectionBanner status="connecting" hasLiveState />);
+    await passGrace();
+    expect(screen.queryByTestId('table-connection-banner')).toBeNull();
+  });
+
+  it('still says "connecting" on a cold table with nothing painted yet', async () => {
+    render(<TableConnectionBanner status="connecting" hasLiveState={false} />);
+    await passGrace();
+    expect(screen.getByTestId('table-connection-banner').textContent).toContain('Connecting');
+  });
+
+  it('a RUNNING table that genuinely drops is still told about it', async () => {
+    // The suppression is narrow on purpose: only 'connecting'. Here the pixels
+    // really are stale, which is the whole reason this component exists.
+    for (const status of ['reconnecting', 'failed'] as const) {
+      const { unmount } = render(<TableConnectionBanner status={status} hasLiveState />);
+      await passGrace();
+      expect(screen.getByTestId('table-connection-banner')).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it('TablePage feeds it the hand number, which only the engine can supply', () => {
+    // A warm-up roster can paint seats and avatars; it cannot invent a dealt
+    // hand. So this is the honest test for "the felt is showing real state".
+    expect(TABLE_PAGE).toMatch(/hasLiveState=\{\(tableState\.handNumber \?\? 0\) > 0\}/);
+  });
+
   it('stays silent for a blip that recovers inside the grace window', async () => {
     const { rerender } = render(<TableConnectionBanner status="reconnecting" />);
     await act(async () => {

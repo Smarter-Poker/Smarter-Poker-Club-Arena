@@ -1186,7 +1186,7 @@
   font-family: 'JetBrains Mono', 'Georgia', serif;
   font-size: 24px;
   font-weight: 700;
-  color: #ffd700;
+  color: var(--sp-text-bright);
   text-shadow:
     0 0 20px rgba(255, 215, 0, 0.6),
     0 0 40px rgba(255, 215, 0, 0.2),

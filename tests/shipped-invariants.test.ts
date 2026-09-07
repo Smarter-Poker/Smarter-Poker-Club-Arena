@@ -451,6 +451,37 @@ describe('shipped functionality is still here', () => {
     ).toBe(true);
   });
 
+  it('the financial audit corrections retain their canonical RPCs', () => {
+    expect(has(
+      'supabase/migrations/20260907194634_mini_jackpot_allocations_conserve_before_recipient_credit.sql',
+      'CREATE OR REPLACE FUNCTION public.fn_bbj_mini_payout'
+    )).toBe(true);
+    expect(has(
+      'supabase/migrations/20260907195229_union_statements_retain_opening_balance_and_check_finance_access.sql',
+      'CREATE OR REPLACE FUNCTION public.fn_union_club_statement_of_account'
+    )).toBe(true);
+  });
+
+  it('parked jackpot shares retain single-refund and funded-redemption semantics', () => {
+    const sql = read('supabase/migrations/20260907202012_bbj_parked_shares_refund_and_redeem_exactly_once.sql');
+    expect(sql.includes('CREATE OR REPLACE FUNCTION public.bbj_credit_one_recipient')).toBe(true);
+    expect(sql.includes('IF v_claimed = 1 THEN')).toBe(true);
+    expect(sql.includes("CASE WHEN v_kind='mini' THEN p_amount ELSE 0 END")).toBe(true);
+    expect(sql.includes('parked jackpot amount cannot change on replay')).toBe(true);
+    expect(sql.includes('parked jackpot share lacks its original funding')).toBe(true);
+    expect(sql.includes('SET paid_at=now()')).toBe(true);
+    expect(sql.includes('FROM PUBLIC, anon, authenticated')).toBe(true);
+  });
+
+  it('jackpot bank spending preserves stored unpaid recipient obligations', () => {
+    const sql = read('supabase/migrations/20260907203446_bbj_preserves_parked_funding_and_replays_stored_obligations.sql');
+    expect(sql.includes('CREATE OR REPLACE FUNCTION public.fn_bbj_parked_reserve')).toBe(true);
+    expect(sql.includes('v_main := v_main-v_reserved')).toBe(true);
+    expect(sql.includes("v_backup - public.fn_bbj_parked_reserve(p_pool_id,'backup') - v_amount")).toBe(true);
+    expect(sql.includes('u.payout_id=v_existing AND u.paid_at IS NULL')).toBe(true);
+    expect(sql.includes('SET main_balance = v_keep_main, backup_balance = v_keep_backup')).toBe(true);
+  });
+
   it('the sentinel list is not empty or trivially passing', () => {
     // A guard that checks nothing passes forever. If someone empties the list
     // to make a build go green, this fails instead.
@@ -462,3 +493,6 @@ describe('shipped functionality is still here', () => {
     }
   });
 });
+
+
+

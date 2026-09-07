@@ -128,7 +128,7 @@
   padding: 8px 12px;
   margin: 0 0 12px 0;
   font-size: 12px;
-  color: #ffaa33;
+  color: var(--sp-warn);
   text-align: center;
 }
 

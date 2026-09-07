@@ -197,6 +197,7 @@ export function ThrowablePlayer({
         : toPos.x;
 
   const vars = {
+    '--animation-speed': speed,
     '--thr-u': `${unit}px`,
     '--thr-from-x': `${spawnX}px`,
     '--thr-from-y': `${spawnY}px`,

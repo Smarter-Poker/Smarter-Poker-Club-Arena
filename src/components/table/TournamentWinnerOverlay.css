@@ -285,6 +285,6 @@
     opacity: 0.5;
   }
   .winnerTitle {
-    -webkit-text-fill-color: #fbbf24;
+    -webkit-text-fill-color: var(--sp-text-bright);
   }
 }

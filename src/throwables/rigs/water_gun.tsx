@@ -150,6 +150,14 @@ function Gun({ uid, k }: { uid: string; k: string }) {
       <circle cx="-29" cy="-15" r="5" fill="#c9377f" />
       <circle cx="0" cy="-22" r="2.5" fill="#b52d70" />
       <rect x="-25" y="-20" width="22" height="3.5" rx="1.75" fill="#ffffff" opacity="0.55" />
+      <path
+        d="M -26 -12 Q -13 -8 2 -12"
+        fill="none"
+        stroke="#8c205f"
+        strokeWidth="0.8"
+        opacity="0.65"
+      />
+      <path d="M -28 -18 L -30 -12 M -26 -18 L -28 -12" stroke="#f884c1" strokeWidth="0.7" />
       {/* the receiver */}
       <rect
         x="-25"
@@ -162,6 +170,26 @@ function Gun({ uid, k }: { uid: string; k: string }) {
         strokeWidth="1.2"
       />
       <rect x="-22" y="-8" width="36" height="2.2" rx="1.1" fill="#ffffff" opacity="0.35" />
+      <path
+        d="M -23 5 Q -22 8 -18 8 L 12 8 Q 16 8 16 4"
+        fill="none"
+        stroke="#12386e"
+        strokeWidth="0.9"
+      />
+      <path
+        d="M 0 -5 L 10 -5 L 12 -2 L 10 4 L 0 4 Z"
+        fill="#2168bf"
+        stroke="#a2d9ff"
+        strokeWidth="0.6"
+      />
+      <path
+        d="M 3 -2 h 5 M 2 0 h 5 M 1 2 h 5"
+        stroke="#123e7e"
+        strokeWidth="0.8"
+        strokeLinecap="round"
+      />
+      <circle cx="-22" cy="1" r="0.9" fill="#cbeeff" stroke="#133f7b" strokeWidth="0.4" />
+      <circle cx="14" cy="1" r="0.9" fill="#cbeeff" stroke="#133f7b" strokeWidth="0.4" />
       {/* the reservoir window: cyan, a water line and one bubble */}
       <rect x="-19" y="-6" width="15" height="11" rx="2.5" fill={`url(#${g('water')})`} />
       <path
@@ -185,9 +213,20 @@ function Gun({ uid, k }: { uid: string; k: string }) {
       {/* the barrel, its muzzle band and the highlight along it */}
       <rect x="16" y="-6" width="15" height="9" rx="3" fill={`url(#${g('barrel')})`} />
       <rect x="27" y="-7" width="4" height="11" rx="1.5" fill="#1a4f9c" />
+      <ellipse
+        cx="31"
+        cy="-1.5"
+        rx="1.7"
+        ry="4.5"
+        fill="#a3dcff"
+        stroke="#1d59a0"
+        strokeWidth="0.7"
+      />
+      <ellipse cx="31.3" cy="-1.5" rx="0.8" ry="2.4" fill="#092d60" />
       <rect x="17" y="-5" width="11" height="1.8" rx="0.9" fill="#ffffff" opacity="0.6" />
       {/* the yellow pump grip under the barrel */}
       <rect x="17" y="4" width="9" height="5.5" rx="1.8" fill={`url(#${g('trig')})`} />
+      <path d="M 19 5 v 3 M 21 5 v 3 M 23 5 v 3" stroke="#b67b12" strokeWidth="0.6" />
     </g>
   );
 }
@@ -253,7 +292,7 @@ function Blob({ uid }: { uid: string }) {
           <stop offset="0%" stopColor="#d6fffb" />
           <stop offset="45%" stopColor="#8dfff3" />
           <stop offset="85%" stopColor="#62ebe0" />
-          <stop offset="100%" stopColor="#46d5cb" />
+          <stop offset="100%" stopColor="#24b7b4" />
         </radialGradient>
       </defs>
       <g fill={`url(#${id('blob')})`}>
@@ -276,6 +315,52 @@ function Blob({ uid }: { uid: string }) {
         <path d="M -8 -94 L 2 -102 L 8 -92 Z" />
       </g>
       {/* a soft top-left highlight on the wet surface */}
+      <path
+        d="M -66 -62 C -77 -54 -80 -39 -72 -30 M -83 10 Q -91 27 -76 38 M -13 -90 Q -2 -100 9 -90"
+        fill="none"
+        stroke="#d8fff5"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        opacity="0.8"
+      />
+      <path
+        d="M 68 37 Q 79 49 65 62 M 31 77 Q 14 91 -4 87 M 71 -54 Q 79 -41 75 -29"
+        fill="none"
+        stroke="#139d9f"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+      <path
+        d="M -45 11 C -63 25 -57 43 -40 47 M 25 14 C 42 8 57 20 50 33"
+        fill="none"
+        stroke="#d5fff8"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        opacity="0.45"
+      />
+      <ellipse
+        cx="-57"
+        cy="-5"
+        rx="5.5"
+        ry="7"
+        fill="#bafff3"
+        fillOpacity="0.2"
+        stroke="#eafffa"
+        strokeWidth="0.9"
+        opacity="0.7"
+      />
+      <ellipse
+        cx="53"
+        cy="-3"
+        rx="3.5"
+        ry="4.5"
+        fill="#bafff3"
+        fillOpacity="0.2"
+        stroke="#eafffa"
+        strokeWidth="0.8"
+        opacity="0.65"
+      />
       <ellipse
         cx="-30"
         cy="-50"

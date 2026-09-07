@@ -193,10 +193,32 @@ describe('a reading that could not be taken is not published as zero', () => {
     const current = sliceMethod(GOV, 'current(now: number = Date.now()): number {');
     // The window check lives in sample(), where the reset is.
     expect(sample).toContain('now - this.sampledAt < SAMPLE_EVERY_MS');
-    expect(sample).toContain('this.histogram.count === 0');
     // and current() no longer keeps a second copy of it that a direct caller
     // of sample() can walk straight past.
     expect(current).not.toContain('SAMPLE_EVERY_MS');
+
+    /**
+     * THE EMPTINESS DECISION IS MADE BY THE HELPERS, NOT BY AN EARLY RETURN.
+     *
+     * This used to assert `sample` contained `this.histogram.count === 0` — a
+     * guard that returned BEFORE `isEmptyReading` / `effectiveDelayMs`, which
+     * are the code written to handle exactly that case. `isEmptyReading`
+     * returns false whenever `count > 0`, so with the early return in place
+     * `empty` could never be true, the timer-lateness fallback was dead, and
+     * `snapshot().stale` was a constant false. The assertion pinned the bug.
+     *
+     * The intent it was reaching for — one authority for whether a reading
+     * exists — is kept, and now points at the authority that actually decides:
+     * `effectiveDelayMs` returning null is the single "no reading" verdict.
+     */
+    expect(
+      sample.includes('this.histogram.count === 0') &&
+        sample.indexOf('this.histogram.count === 0') < sample.indexOf('effectiveDelayMs'),
+      'sample() returns on an empty histogram before consulting effectiveDelayMs, ' +
+        'which makes the timer-lateness fallback unreachable - the one case it exists for'
+    ).toBe(false);
+    expect(sample).toContain('effectiveDelayMs');
+    expect(sample).toContain('if (delay === null)');
   });
 });
 

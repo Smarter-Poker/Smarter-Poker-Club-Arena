@@ -37,6 +37,7 @@ import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import CampaignQueue from '../../components/ads/CampaignQueue';
 import '../AdminDashboardPage.css';
+import { isPlatformStaffRole } from '../../utils/platformRoles';
 
 interface AdRow {
   id: string;
@@ -261,7 +262,7 @@ export default function HouseAdsPage() {
           .eq('id', user.id)
           .maybeSingle();
         if (error) throw error;
-        if (!cancelled) setAllowed(['admin', 'super_admin'].includes(String(data?.role || '')));
+        if (!cancelled) setAllowed(isPlatformStaffRole(data?.role));
       } catch (e) {
         reportError(e, 'HouseAdsPage.checkRole');
         // FAIL CLOSED. An unreadable role is not a grant.

@@ -279,7 +279,17 @@ describe('a write that changed nothing never reports success', () => {
 
 describe('the admin panel is platform staff only, and fails closed', () => {
   it('gates on the platform role, not club membership', () => {
-    expect(ADMIN).toMatch(/\['admin', 'super_admin'\]/);
+    /* UPDATED 2026-09-02 with the change it pins. This required the literal
+       `['admin', 'super_admin']`, which was the bug rather than the contract:
+       the database authority (`fn_is_platform_admin()`) answers
+       `role IN ('admin','superadmin','god')`, production holds `god` on 2
+       accounts and `super_admin` on none, so this page hid House Ads from the
+       two most privileged accounts on the platform while the database let
+       them call the admin RPCs. The shared predicate is now the single
+       vocabulary — see src/utils/platformRoles.ts and
+       tests/unit/platformRoles.test.ts, which pins the role list itself. */
+    expect(ADMIN).toMatch(/isPlatformStaffRole\(/);
+    expect(ADMIN).toMatch(/from '\.\.\/\.\.\/utils\/platformRoles'/);
   });
 
   it('treats an unreadable role as NOT allowed', () => {

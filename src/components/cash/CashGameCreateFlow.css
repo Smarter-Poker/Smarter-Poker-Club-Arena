@@ -126,3 +126,46 @@
   max-width: 360px;
   margin: 0 auto;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   A RULE THE HOST READS, NOT ONE THEY SET (Dan 2026-09-07)
+   ─────────────────────────────────────────────────────────────────────────────
+   "vpip for action is supposed to be 30% and vpip for madness is 50%."
+
+   Two sliders stood where this readout is. They are gone because the server
+   stopped honouring them: a BEFORE trigger on cash_games normalises the floor
+   and the window to fn_cash_template_defaults on every write, so a host who
+   dragged to 65% would have had it replaced the instant it landed and been
+   told nothing. This says what the template carries, in the place they used to
+   set it.
+   ───────────────────────────────────────────────────────────────────────────── */
+.cash-create__rule-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 4%);
+}
+
+.cash-create__rule-readout__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 55%);
+}
+
+.cash-create__rule-readout__value {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--sp-text-bright, rgb(236 242 252 / 95%));
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-create__rule-readout__note {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgb(255 255 255 / 52%);
+}

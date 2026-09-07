@@ -14,7 +14,8 @@
  */
 
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import TableMenu, { createDefaultMenuSections } from './TableMenu';
+import TableMenu, { createDefaultMenuSections, type MenuSection } from './TableMenu';
+import { TileViewIcon } from './TableMenuIcons';
 import { masterBus } from '../../core/MasterBus';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { useButtonImage } from '../../hooks/useButtonImage';
@@ -211,6 +212,25 @@ export interface TableTabBarProps {
   profitTrackingEnabled?: boolean;
   onToggleProfitTracking?: () => void;
   /**
+   * TILE VIEW, MOVED OFF THE STRIP (Dan 2026-09-07, item 1).
+   *
+   * "THE 4 SQUARE OPTION NEEDS TO LIVE INSIDE THE HAMBURGER MENU, NOT ON THE
+   *  SCREEN IN THE ACTION HEADER, CHANGE THAT GLOBALLY."
+   *
+   * The control itself is unchanged - it still only toggles MultiTablePage's
+   * `isTileView` - but it is a menu item now rather than a 46px button
+   * competing with the game pills for the 375px budget documented in
+   * TableTabBar.css.
+   *
+   * `canToggleTileView` is false with one table open: tile view of a single
+   * table is the view you are already in. The item is DISABLED rather than
+   * hidden, because a control that vanishes teaches nobody where it went -
+   * the same reason the old button rendered `--inert` instead of unmounting.
+   */
+  isTileView?: boolean;
+  canToggleTileView?: boolean;
+  onToggleTileView?: () => void;
+  /**
    * Supabase realtime link is down or reconnecting. Multi-tabling players
    * cannot otherwise tell that their tables have stopped receiving updates —
    * every tab looks identical to a healthy one.
@@ -238,6 +258,9 @@ export function TableTabBar({
   onBackAll,
   profitTrackingEnabled,
   onToggleProfitTracking,
+  isTileView = false,
+  canToggleTileView = false,
+  onToggleTileView,
 }: TableTabBarProps) {
   const emptySlots = maxTables - tabs.length;
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
@@ -573,7 +596,39 @@ export function TableTabBar({
    */
   const activeIsLobby = isLobbyId(activeTabId);
 
-  const menuSections = useMemo(
+  /**
+   * THE VIEW SECTION SITS OUTSIDE THE LOBBY-TAB GATE, DELIBERATELY.
+   *
+   * Everything in `createDefaultMenuSections` is about a SEAT, which is why a
+   * lobby tab drops all of it (see the note on `activeIsLobby` above). Tile
+   * view is not about a seat - it is about how many tables you are looking at -
+   * and it is exactly as meaningful with a lobby tab in front as with a felt.
+   * Dropping it there would have recreated the swallowed-action bug that note
+   * describes, one control later.
+   */
+  const viewSection = useMemo<MenuSection[]>(
+    () =>
+      onToggleTileView
+        ? [
+            {
+              title: 'View',
+              actions: [
+                {
+                  id: 'tile-view',
+                  label: isTileView ? 'Single Table View' : 'Tile View',
+                  icon: <TileViewIcon />,
+                  disabled: !canToggleTileView,
+                  badge: isTileView ? 'ON' : undefined,
+                  onClick: onToggleTileView,
+                },
+              ],
+            },
+          ]
+        : [],
+    [isTileView, canToggleTileView, onToggleTileView]
+  );
+
+  const tableSections = useMemo(
     () =>
       activeIsLobby
         ? []
@@ -655,6 +710,11 @@ export function TableTabBar({
             }
           ),
     [activeTabId, tabs, activeIsLobby, profitTrackingEnabled, onToggleProfitTracking]
+  );
+
+  const menuSections = useMemo(
+    () => [...viewSection, ...tableSections],
+    [viewSection, tableSections]
   );
 
   /**

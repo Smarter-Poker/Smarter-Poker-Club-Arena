@@ -882,3 +882,65 @@ export async function processMiniBBJPayout(params: {
     perPlayer: Number(row.per_player_share),
   };
 }
+
+/**
+ * WRITE DOWN THE JACKPOT THAT DID NOT FIRE, AND WHICH GATE REFUSED IT.
+ *
+ * Measured 2026-09-07: the main jackpot last paid on 2026-08-21 06:04:16 and
+ * has paid nothing in the seventeen days since, while `bbj_contributions` took
+ * the highest volume in the platform's history - 277,332 rows in the week of
+ * 08-31 against 175,939 in the week of 08-17, which produced NINE hits.
+ *
+ * Nothing in the database could say whether that was the rules working or the
+ * rules broken, because "no qualifying hand occurred" and "a qualifying hand
+ * occurred and something refused it" were the same observation.
+ * `detectBBJNearMiss` has computed the answer on every showdown since
+ * 2026-08-18 and sent it to a `console.log` and a hub event that expires in
+ * seconds. `bbj_hand_evidence_log` is written only by triggers on the payout
+ * path, so it is empty by construction exactly when nothing pays.
+ *
+ * This is CLAUDE.md 10.86 rule 1 - "I could not tell" is a distinct outcome and
+ * must have its own name - and rule 3 - a guard must have a reader. It is not a
+ * monitor standing in for a fix (10.12); it moves no money, gates nothing, and
+ * exists so the strictness of the rules is a question anyone can answer from
+ * rows.
+ *
+ * Fire-and-forget by construction: the caller does not await a failure and a
+ * throw here can never reach settlement. A jackpot must not be lost because its
+ * paperwork was.
+ */
+export async function recordBBJNearMiss(params: {
+  tableId: string;
+  clubId: string | null;
+  handNumber: number;
+  variant: string;
+  bigBlind: number | null;
+  potSize: number;
+  playersDealt: number;
+  userId?: string;
+  handName?: string;
+  reason?: string;
+  message?: string;
+}): Promise<void> {
+  const { error } = await supabase.from('bbj_near_misses').insert({
+    table_id: params.tableId,
+    club_id: params.clubId,
+    hand_number: params.handNumber,
+    variant: params.variant,
+    big_blind: params.bigBlind,
+    pot_size: params.potSize,
+    players_dealt: params.playersDealt,
+    user_id: params.userId ?? null,
+    hand_name: params.handName ?? null,
+    /* A near miss with no reason is a detector answering without knowing, which
+       is the thing 10.86 was written about. Say so rather than write a null. */
+    reason: params.reason ?? 'unspecified',
+    message: params.message ?? null,
+  });
+  if (error) {
+    reportError(error, 'bbj.near_miss_not_recorded', {
+      tableId: params.tableId,
+      handNumber: params.handNumber,
+    });
+  }
+}

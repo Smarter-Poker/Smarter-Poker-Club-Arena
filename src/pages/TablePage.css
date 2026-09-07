@@ -571,7 +571,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #ffd700;
+  color: var(--sp-text-bright);
 }
 
 .jackpot-amount {
@@ -1162,7 +1162,12 @@
      so the banner follows instead of being left behind in the board stack.
      CSS-declared, never written from JavaScript - it is not part of the felt's
      size expression and must not become part of it (feltReserveIsStatic). */
-  --sp-brand-top: 58%;
+  /* 58% -> 62% (Dan 2026-09-07, item 11: "THE SMARTER.POKER FONTS LOWERED").
+     Paired with .community-area moving 42.5% -> 40.5%; see the note there for
+     why both halves are needed rather than either alone — the identity line
+     can now wrap, so the brand block is taller than the arithmetic that set
+     58% assumed, and it grows upward into the board from its centred anchor. */
+  --sp-brand-top: 62%;
   position: absolute;
   /* Dan 2026-08-17: the felt window of the canonical skin composites after
      the scaler's cover-crop (source felt x 20.3-79.6% / y 8.9-89.2%, crop
@@ -1240,7 +1245,7 @@
      the board stack - on exactly the tables where losing the connection costs
      the most. One property, both elements, and the multi-board overrides now
      move both by moving it. */
-  top: var(--sp-brand-top, 58%);
+  top: var(--sp-brand-top, 62%);
   left: 50%;
   transform: translate(-50%, -50%);
   display: flex;
@@ -1360,8 +1365,13 @@
    of its own. Line 2 is the hand number, moved here from the upper-right
    corner. .table-brand__meta is already flex-column + align-items:center, so
    both rows centre under the wordmark with no extra work. */
+/* Dan 2026-09-07, item 8: "WE DON'T USE YELLOW." This was rgba(255,215,0,.5),
+   gold. The club and union line now prints in the masthead's own cool slate at
+   full strength, which separates it from the dimmer rows around it by
+   BRIGHTNESS rather than by hue — the same way the level row earns its
+   emphasis. */
 .table-brand__club {
-  color: rgba(255, 215, 0, 0.5);
+  color: rgba(214, 226, 244, 0.72);
 }
 
 /* Tournament masthead line 2 (Dan 2026-08-20): Level # · blinds · clock.
@@ -1414,31 +1424,45 @@
   white-space: nowrap;
 }
 
-/* THE REGULAR ANTE (Dan 2026-09-04): beside the blinds, same weight. */
-.table-brand__ante {
-  white-space: nowrap;
+/* ── LINE 1 OPTS OUT OF THE ELLIPSIS (Dan 2026-09-07, 7A) ──────────────────
+   "NEVER ABBREVIATE ANY NAME, THEY NEED TO BE FULLY SPELT OUT ON DESK TOP AND
+   MOBILE (NEVER USE ... IT CAN EXCEED THE LENGTH OF SMARTER.POKER)"
+
+   Every other masthead row keeps `.table-brand__line`'s nowrap + ellipsis,
+   and should: a clipped hand number or a clipped stake is still readable as
+   what it is. A clipped NAME is not. "MIDWAY U..." is not a shorter way of
+   writing Midway Union, it is a different word, printed on a felt a club pays
+   to have its name on.
+
+   So this row WRAPS instead of truncating. A name too long for one line takes
+   two; nothing is ever lost, which is what makes "never abbreviate" literally
+   true rather than true-up-to-a-point.
+
+   IT DOES NOT GET WIDER, AND THAT WAS MEASURED. Dan's "IT CAN EXCEED THE
+   LENGTH OF SMARTER.POKER" is permission, not a requirement, and taking it
+   costs more than it buys: the masthead's extent IS the dealer button's
+   keep-out (FELT_TEXT_BAND in components/table/tableGeometry.ts), so a wider
+   box walks every puck further from its own chair to clear it. Tried at 145%
+   and reverted — tests/unit/chipRail caught the puck at 0.44 of its seat's run
+   to the middle against a 0.40 ceiling, which is item 10's complaint made
+   worse in the act of fixing item 7A. Two lines inside the existing box shows
+   the whole name and moves nothing.
+
+   `lines: 3` in FELT_TEXT_BAND is the half that still has to change: the block
+   really can be a row taller now, and the puck must clear it at its tallest. */
+.table-brand__line--identity {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: 100%;
+  text-wrap: balance;
+  line-height: 1.3;
 }
 
-/* THE GAME STYLE (Dan 2026-09-04): Classic / Action / Madness under the
-   blinds - the one word that says what kind of game this is. Gold like the
-   club name, spaced wider so it reads as a badge and not a fourth fact. */
-.table-brand__line--style {
-  margin-top: 0;
-  letter-spacing: 0.26em;
-  /* Dan 2026-09-05: "ALL TABLES NEED TO SEE IF THEY ARE CLASSIC, ACTION OR
-     MADNESS ON THEM." A badge, not a footnote: bigger than the club line,
-     under the now-large blinds. */
-  font-size: 0.62rem;
-}
-
-.table-brand__style {
-  color: rgba(255, 215, 0, 0.7);
-  font-weight: 800;
-}
-
-/* THE RULES OF THE GAME (Dan 2026-09-05: "IF THEY HAVE AN ANTE OR VPIP
-   REQUIREMENT THAT SHOULD ALSO BE ON THE TABLE"). One row under the style:
-   "Ante 1 · VPIP 40% Min · 10 Hands". A shade brighter than the club line
+/* THE RULES OF THE GAME. Dan 2026-09-07, 7C: "VPIP 30% (FOR ACTION AND 50%
+   FOR MADNESS) IS ALL THAT SHOULD BE THERE (NO NEED FOR ANYTHING ELSE ABOUT
+   HANDS)". The ante moved up onto the stakes and the measurement window is
+   gone, so this row is one fact now. A shade brighter than the club line
    because it is a rule you are being held to, not a caption. */
 .table-brand__line--rules {
   display: inline-flex;
@@ -1450,30 +1474,7 @@
   font-weight: 700;
 }
 
-.table-brand__vpip,
-.table-brand__rules-sep {
-  white-space: nowrap;
-}
-
-.table-brand__rules-sep {
-  color: rgba(214, 224, 240, 0.35);
-}
-
-/* WHAT THIS TABLE IS PLAYING FOR (BBJ build plan phase 3.3, 2026-09-06).
-   A card room prints the jackpot on the placard beside the stakes, because the
-   drop that funds it comes off every raked pot at THIS table. Gold, like the
-   club name and the game style, so it reads as part of the house's own
-   printing rather than a fourth statistic; one line, never wrapped, and never
-   rendered at all when there is no jackpot to play for. */
-.table-brand__line--jackpot {
-  margin-top: 0;
-  font-size: 0.56rem;
-  letter-spacing: 0.16em;
-}
-
-.table-brand__jackpot {
-  color: rgba(255, 215, 0, 0.78);
-  font-weight: 800;
+.table-brand__vpip {
   white-space: nowrap;
 }
 
@@ -1498,7 +1499,7 @@
 }
 
 .table-brand__bomb {
-  color: rgba(255, 176, 32, 0.72);
+  color: color-mix(in srgb, var(--sp-warn) 72%, transparent);
   font-weight: 800;
 }
 
@@ -1507,7 +1508,7 @@
    state - see the badge ladder in TablePage.tsx - or it would pulse all
    session and stop meaning anything on every other table by association. */
 .table-brand__line--bomb-next .table-brand__bomb {
-  color: #ffb020;
+  color: var(--sp-warn);
   animation: bombEtaPulse 1.1s ease-in-out infinite;
 }
 
@@ -1552,10 +1553,12 @@
   white-space: nowrap;
 }
 
-/* Union name after the club on masthead line 1 — cooler tone than the club's
-   gold so the two read as different things at a glance. */
+/* Union name after the club on masthead line 1. Dan 2026-09-07, item 8: the
+   club half is no longer gold, so this no longer needs to be "the cool one
+   next to the warm one" — it is now a dimmer weight of the SAME slate, which
+   reads as club-then-union rather than as two unrelated labels. */
 .table-brand__union {
-  color: rgba(148, 197, 255, 0.45);
+  color: rgba(214, 226, 244, 0.5);
 }
 
 @media (max-width: 380px) {
@@ -1582,10 +1585,11 @@
     font-size: clamp(0.6rem, 10.5cqw, 0.9rem);
   }
 
-  .table-brand__line--style {
-    font-size: 0.57rem;
-  }
-
+  /* Dan 2026-09-07, 7B: the style badge merged INTO the level row above
+     ("ACTION PLO4 2/5" on one line), so there is no --style row to size any
+     more. Line 1 is the row that gained: it may now wrap rather than
+     ellipsize, and on the narrowest phone a two-line club + union is exactly
+     the case that rule exists for. */
   .table-brand__line--rules {
     font-size: 0.5rem;
   }
@@ -1709,6 +1713,25 @@
    Up is the direction with the room, and the note above already said so: the
    pot is pinned at 19% of the SCALER (109px here) while the board's new top
    edge is at 213px. The wordmark below gains rather than loses. */
+/* ── THE BOARD STAYS AT 42.5%; THE MASTHEAD MOVES (Dan 2026-09-07, item 11) ─
+   "THE BOARDS ... ARE OVERLAPPING THE 'SMARTER.POKER' WORDS ... CARDS NEED TO
+    BE RAISED UP, OF THE SMARTER.POKER FONTS LOWERED."
+
+   He offers both directions and only one of them is available. Raising the
+   board was TRIED (40.5%) and reverted: at 95% width the board is 11.7 points
+   of felt tall, and the seat rings leave exactly one clean band for it —
+   moving it up two points put it back through the side seats' nameplates and
+   into the dealer button's lane. Three geometry laws caught it at once
+   (tests/unit/boardBandIsClean, chipRail, seatCardsAndPlate), which is the
+   system working: THE BOARD'S BAND in src/lib/tableSeatGeometry.ts is a
+   negotiated settlement between the board, eight seat rings and two markers,
+   and the board does not get to move without renegotiating all of it.
+
+   So the clearance comes entirely from the other half of his sentence:
+   --sp-brand-top 58% -> 62% below. The masthead is centred on that anchor, so
+   four points of felt moves its top edge ~18px down a 375px phone — more than
+   the 9px the 2026-08-25 note measured as the shortfall, with the balance
+   paying for the identity line's new ability to wrap to two lines (item 7A). */
 .community-area {
   position: absolute;
   top: 42.5%;
@@ -1812,7 +1835,7 @@
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #ffd700;
+  color: var(--sp-text-bright);
   background: rgba(255, 215, 0, 0.16);
   padding: 1px 5px;
   border-radius: 4px;
@@ -1875,7 +1898,7 @@
      marker on this table wears. */
   background: rgba(12, 12, 20, 0.82);
   border: 1px solid rgba(255, 215, 0, 0.55);
-  color: #ffd76a;
+  color: var(--sp-text-bright);
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.55),
     0 0 14px rgba(255, 200, 60, 0.18);
@@ -2497,7 +2520,7 @@
 .control-strip__count {
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   font-size: 0.6875rem;
-  color: #ffd700;
+  color: var(--sp-text-bright);
   font-weight: 700;
   text-shadow: 0 0 6px rgba(255, 215, 0, 0.3);
 }
@@ -2580,7 +2603,7 @@
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   font-size: 0.8125rem;
   font-weight: 700;
-  color: #ffd700;
+  color: var(--sp-text-bright);
   text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
   position: relative;
 }
@@ -2658,7 +2681,7 @@
   font-size: 1.25rem;
   width: 28px;
   text-align: center;
-  color: #ffb800;
+  color: var(--sp-warn);
 }
 
 .menu-item-label {
@@ -2740,16 +2763,24 @@
        that later block; the base rule's shorthand supplies the rest. */
   }
 
-  .table-scaler {
-    /* Dan 2026-08-17: must stay locked to the skin crop's 605/1000 aspect at
-       every breakpoint, or the painted felt window drifts out from under
-       .table-surface and the seat ring leaves the rail. */
-    aspect-ratio: 605 / 1000;
-    /* The 360px max-width that used to sit here was dead in the same way: the
-       2026-08-24 block below raises the cap to calc(100% - 6px) at this exact
-       breakpoint. Restating a superseded cap here only makes the file argue
-       with itself about which number is the real one. */
-  }
+  /* THE ASPECT LOCK THAT USED TO SIT HERE IS GONE (2026-09-07).
+
+     It read `aspect-ratio: 605 / 1000`, under a 2026-08-17 note saying the
+     scaler "must stay locked to the skin crop's aspect at every breakpoint, or
+     the painted felt window drifts out from under .table-surface". That
+     requirement ended on 2026-08-18, when the art stopped being an oversized
+     composite cropped by object-fit: cover and became pre-cropped art drawn
+     with object-fit: FILL — the full argument is in the <=768px block at the
+     foot of this file, which deliberately sets `aspect-ratio: auto` at this
+     same breakpoint and therefore already overrode this line.
+
+     So it changed nothing, and it cost a reader: two rules at one breakpoint
+     stating opposite aspects, the losing one carrying the more emphatic
+     comment. Its two neighbours had already been deleted for exactly this
+     ("restating a superseded cap here only makes the file argue with itself
+     about which number is the real one"); this is the third. The live rule is
+     at the foot of the file, and it is the one that now also reads
+     --sp-table-ar-h so a six-handed table is a shorter table (Dan's item 4). */
 
   .table-rail {
     /* No padding: .table-surface is positioned in % against this element's
@@ -4224,8 +4255,13 @@ button.post-bb-overlay-button {
 /* ═══════════════════════════════════════════════════════════════════════════
    POT-WIN FLOAT (Dan 2026-08-21, PokerBros reference: the "+1" above the
    winner's avatar). Phase 1 (0-30%): the number rides from the pot to the
-   winner's seat alongside the chip fan (fan flight is ~600ms of the 2.2s
-   total). Phase 2 (30-100%): it holds above the seat, rises, and fades.
+   winner's seat alongside the chip fan. Phase 2 (30-100%): it holds above the
+   seat, rises, and fades.
+
+   Dan 2026-09-07: 2.2s -> 1.1s, in lockstep with HAND_COMPLETION.POT_PUSH_MS,
+   which exists to be exactly this duration. The keyframes are percentages so
+   the ride/hold/fade split is untouched; the whole story just plays twice as
+   fast. Change one of these two numbers and you must change the other.
    ═══════════════════════════════════════════════════════════════════════════ */
 .pot-win-float {
   position: fixed;
@@ -4241,13 +4277,13 @@ button.post-bb-overlay-button {
      float shipped with matched nothing in the recording, and its glow was
      already warm. One color for the whole +N story: this ride, the seat
      float, and the sparkles. */
-  color: #ffe94a;
+  color: var(--sp-text-bright);
   -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.55);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.85),
     0 0 10px rgba(255, 233, 74, 0.5);
   transform: translate(calc(var(--pwf-from-x) - 50%), calc(var(--pwf-from-y) - 50%));
-  animation: potWinFloatRide 2.2s cubic-bezier(0.25, 0.6, 0.3, 1) forwards;
+  animation: potWinFloatRide 1.1s cubic-bezier(0.25, 0.6, 0.3, 1) forwards;
 }
 
 @keyframes potWinFloatRide {
@@ -4389,7 +4425,7 @@ button.post-bb-overlay-button {
   font-size: 40px;
   font-weight: 800;
   line-height: 1.1;
-  color: #ffd479;
+  color: var(--sp-text-bright);
   text-shadow: 0 2px 14px rgba(255, 190, 80, 0.28);
 }
 .seat-buyin-confirm__meta {
@@ -4796,8 +4832,26 @@ button.post-bb-overlay-button {
        the reserves Dan tuned put it — every remaining pixel of length sits
        inside --sp-table-top / --sp-hero-clear / the bars, and those are his
        knobs, not this rule's. */
-    width: min(100%, calc(var(--sp-table-h, 100svh) * 0.7));
-    height: var(--sp-table-h, auto);
+    /* ── AND THE SEAT-COUNT HEIGHT IS READ HERE TOO (Dan 2026-09-07, item 4) ──
+       "WHY ARE THE 6 HANDED TABLES AND THE 9 HANDED TABLES THE SAME SIZE?"
+
+       Because on a phone they were, exactly, to the pixel. `--sp-table-ar-h`
+       (1000, or 960 for rings of 2-6 — see the measured block beside
+       `[data-seats]` above) reaches the base rule through `aspect-ratio`, and
+       the two declarations that replaced it here read `--sp-table-h` alone and
+       then set `aspect-ratio: auto`. So the one variable that encodes "a
+       six-handed table is a shorter table" was still being set on the element
+       and no longer read by anything at <=768px, which is the only width Dan
+       reviews from. It has been dead since the 2026-08-29 fill rule landed.
+
+       Restored as a HEIGHT SCALE rather than by putting the aspect lock back:
+       the lock is what starved the width on a notched phone, and that whole
+       argument above still stands. The ratio is applied to the height budget,
+       and the roundness cap is applied to the height the table actually takes,
+       so both halves keep meaning what they meant. */
+    --sp-seat-h-scale: calc(var(--sp-table-ar-h, 1000) / 1000);
+    height: calc(var(--sp-table-h, 100svh) * var(--sp-seat-h-scale));
+    width: min(100%, calc(var(--sp-table-h, 100svh) * var(--sp-seat-h-scale) * 0.7));
     aspect-ratio: auto;
   }
 
@@ -4976,7 +5030,7 @@ button.post-bb-overlay-button {
   font-size: clamp(18px, 2.6vw, 30px);
   font-weight: 900;
   letter-spacing: 0.08em;
-  color: #ffd76a;
+  color: var(--sp-text-bright);
   text-shadow: 0 2px 10px rgba(255, 160, 30, 0.55);
 }
 .bomb-scoop-banner__name {

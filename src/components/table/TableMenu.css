@@ -434,7 +434,7 @@
 
 .table-menu__observers-vip-hint {
   font-size: 10px;
-  color: #fbbf24;
+  color: var(--sp-text-bright);
   font-style: italic;
 }
 

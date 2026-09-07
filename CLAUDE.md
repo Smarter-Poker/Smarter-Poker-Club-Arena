@@ -1352,6 +1352,70 @@ fires" are not outcomes.** The outcome is that it does not happen again.
 
 ---
 
+## 10.12 NO BAND-AIDS. A REPAIR JOB IS NOT ALLOWED TO EXIST AS A FIX (Dan, 2026-09-07, BINDING)
+
+**Dan, verbatim: "I DO NOT WANT CRONS AND 'BACK PAY JOBS'! I DO NOT WANT
+SYSTEMS IN PLACE THAT 'MONITOR FOR ERRORS'! I WANT THE ERRORS FIXED AND PLUGGED
+AND HARD CODED SOLUTIONS TO THE ISSUES! MAKE IT A HARD RULE THAT IT IS NO
+LONGER ALLOWED TO CREATE ANYTHING THAT MONITORS AND BACK FILLS OR ADJUSTS A
+PAYOUT OR ANY OTHER ISSUE, IT MUST WORK FLAWLESSLY! I WANT HARD CODED FIXES AT
+THE ROOT SOURCE WHEN AN ISSUE IS DISCOVERED! NOT A FUCKING BAND AID!"**
+
+10.11 said a detector is not a fix. This says the next thing: **you may not
+build the repair either.** A real poker room pays the winner when the hand ends.
+It does not pay him six hours later out of a cron.
+
+### What you may NOT create, ever, as the answer to a defect
+
+- a scheduled job that pays, tops up, back-pays, re-drives, re-tries, re-books
+  or settles something the live path should have done;
+- a sweep, a healer, a catch-up or a backfill that repairs rows the live path
+  should have written correctly;
+- a compensating write - a second entry that cancels or corrects the first;
+- a reconciler that "will pick it up";
+- a monitor, a watch, an audit or an alert **presented as the resolution**.
+
+This holds whether the thing being repaired is money, a seat, a stat, a count,
+a denormalised column or a cache. "Any other issue" is Dan's phrase and it means
+what it says.
+
+### What you MUST do instead
+
+Find the line that produced the wrong outcome and change **that line** so the
+outcome cannot occur. Then settle the damage already done through the
+platform's own idempotent path (10.9), and pin the cause with a test. If the
+live path can fail - a crash mid-settle, a lock, a timeout - then the live path
+is what has to become atomic, retried **inside its own transaction**, or
+restartable from its own record. Not swept up an hour later by somebody else.
+
+### The two things this does NOT ban
+
+1. **A job whose schedule IS the product.** Tournaments that start on a clock,
+   blind levels, retention pruning, snapshots for reporting, digests, the
+   maintenance break. These do not repair anything; they are the thing.
+2. **Keeping an existing net alive until its cause is fixed.** Ripping out
+   today's repair jobs before their root fixes land would strand real players'
+   money. They stay, briefly, and they are DEBT: every one is listed in
+   [`docs/BAND-AIDS-REGISTER.md`](./docs/BAND-AIDS-REGISTER.md) with the root
+   fix that lets it be deleted, and deleting it is part of that fix.
+
+### A repair job firing is a P0, not a success
+
+If a repair job repaired something, a player was served wrongly and something
+else served them afterwards. Treat every fire as an incident: name the live
+path that failed, fix it, and remove the repair. **A repair job that has run
+twice for the same cause is proof the cause was never fixed.**
+
+### Where this bites in review
+
+A pull request that adds a `fn_*_repair_*`, `fn_*_backpay_*`, `fn_*_redrive_*`,
+`fn_*_sweep_*`, `fn_*_catchup_*`, `fn_*_heal_*` or a new `cron.job` that writes
+money is refused, and the refusal is not negotiable by explaining that the
+underlying bug is hard. If the underlying bug is hard, say so and stop - do not
+ship the plaster and call the defect handled.
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK
 
 ### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)

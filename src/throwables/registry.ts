@@ -12,6 +12,7 @@ import type { ThrowableSpec } from './spec';
 import type { ThrowableRig } from './rig';
 import { bananaPeelSpec, bananaPeelRig } from './rigs/banana_peel';
 import { beerSpec, beerRig } from './rigs/beer';
+import { bombSpec, bombRig } from './rigs/bomb';
 import { cakeSpec, cakeRig } from './rigs/cake';
 import { cashStackSpec, cashStackRig } from './rigs/cash_stack';
 import { champagneSpec, champagneRig } from './rigs/champagne';
@@ -19,6 +20,8 @@ import { crackedEggSpec, crackedEggRig } from './rigs/cracked_egg';
 import { diceSpec, diceRig } from './rigs/dice';
 import { fireworksSpec, fireworksRig } from './rigs/fireworks';
 import { horseshoeSpec, horseshoeRig } from './rigs/horseshoe';
+import { poopSpec, poopRig } from './rigs/poop';
+import { rocketSpec, rocketRig } from './rigs/rocket';
 import { roseSpec, roseRig } from './rigs/rose';
 import { snowmanSpec, snowmanRig } from './rigs/snowman';
 import { tomatoSpec, tomatoRig } from './rigs/tomato';
@@ -34,6 +37,7 @@ export interface RiggedThrowable {
 const RIGGED: Record<string, RiggedThrowable> = {
   banana_peel: { spec: bananaPeelSpec, rig: bananaPeelRig },
   beer: { spec: beerSpec, rig: beerRig },
+  bomb: { spec: bombSpec, rig: bombRig },
   cake: { spec: cakeSpec, rig: cakeRig },
   cash_stack: { spec: cashStackSpec, rig: cashStackRig },
   champagne: { spec: champagneSpec, rig: champagneRig },
@@ -41,6 +45,8 @@ const RIGGED: Record<string, RiggedThrowable> = {
   dice: { spec: diceSpec, rig: diceRig },
   fireworks: { spec: fireworksSpec, rig: fireworksRig },
   horseshoe: { spec: horseshoeSpec, rig: horseshoeRig },
+  poop: { spec: poopSpec, rig: poopRig },
+  rocket: { spec: rocketSpec, rig: rocketRig },
   rose: { spec: roseSpec, rig: roseRig },
   snowman: { spec: snowmanSpec, rig: snowmanRig },
   tomato: { spec: tomatoSpec, rig: tomatoRig },

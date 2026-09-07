@@ -495,11 +495,13 @@ export function GameRulesModal({
                     className={`rules-modal__feature ${bombPotRules?.enabled ? 'rules-modal__feature--active' : ''}`}
                   >
                     <span className="rules-modal__feature-text">
-                      {(bombPotRules?.boardCount ?? 0) >= 3
-                        ? 'Triple Board Bomb Pot'
-                        : bombPotRules?.doubleBoard
-                          ? 'Double Board Bomb Pot'
-                          : 'Bomb Pot'}
+                      {/* Two boards is the default every bomb pot runs, so the
+                          headline just says Bomb Pot (Dan 2026-09-07, item
+                          7D). Three is a departure and keeps its name. The
+                          exact count is still spelled out in the Boards row
+                          of the section below, where a player who wants the
+                          number goes looking for it. */}
+                      {(bombPotRules?.boardCount ?? 0) >= 3 ? 'Triple Board Bomb Pot' : 'Bomb Pot'}
                     </span>
                   </div>
                 </div>

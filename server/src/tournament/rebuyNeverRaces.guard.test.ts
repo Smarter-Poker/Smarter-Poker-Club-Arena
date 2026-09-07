@@ -83,7 +83,7 @@ describe('the SQL side matches: a rebuy needs no seat', () => {
     const sql = fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8');
     const wrapper = sliceBetween(
       sql,
-      'CREATE FUNCTION public.process_tournament_rebuy(',
+      'CREATE OR REPLACE FUNCTION public.process_tournament_rebuy(',
       'REVOKE ALL ON FUNCTION public.process_tournament_rebuy('
     );
     expect(wrapper).toMatch(/IF p_rebuy_type = 'addon' THEN/);

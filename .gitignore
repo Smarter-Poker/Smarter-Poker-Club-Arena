@@ -211,3 +211,5 @@ supabase/migrations/*_a_second_agent_wants_the_same_second.sql
 # directory. See tests/a-migration-version-is-reserved-not-guessed.law.test.ts.
 .tmp-migration-reservation-probe/
 infra/monitoring/.deployed-from
+.throwable-sources/
+.throwable-darkroom/

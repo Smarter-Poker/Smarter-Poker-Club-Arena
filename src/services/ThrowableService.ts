@@ -19,7 +19,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -52,15 +51,7 @@ export type ThrowPhysics = 'arc' | 'fastball' | 'lob' | 'float' | 'drop' | 'swoo
  * - burst    confetti-pop scatter (cash, champagne, fireworks)
  */
 export type ThrowImpact =
-  | 'splat'
-  | 'splash'
-  | 'bounce'
-  | 'thud'
-  | 'explode'
-  | 'shatter'
-  | 'zap'
-  | 'sparkle'
-  | 'burst';
+  'splat' | 'splash' | 'bounce' | 'thud' | 'explode' | 'shatter' | 'zap' | 'sparkle' | 'burst';
 
 export type ThrowWeight = 'light' | 'medium' | 'heavy';
 
@@ -921,8 +912,7 @@ class ThrowableServiceClass {
         packThrowsRemaining,
         diamondCost: remaining > 0 || packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
       };
-    } catch (err) {
-      reportError(err, 'ThrowableService.Error');
+    } catch {
       return {
         isVip: false,
         freeThrowsRemaining: 0,
@@ -958,17 +948,16 @@ class ThrowableServiceClass {
       });
       if (!atomicErr && atomic) {
         if ((atomic as any).success === true) return { success: true };
-        return { success: false, error: (atomic as any).error || 'Throw failed' };
+        return {
+          success: false,
+          error: (atomic as any).error || 'Throw failed',
+        };
       }
       // The legacy client-side fallback that used to live here is GONE.
       // (See 2026-08-17 session notes: fn_use_throwable is SECURITY DEFINER,
       // derives the user from auth.uid(), and is the only sanctioned path.)
-      if (atomicErr) {
-        reportError(atomicErr, 'ThrowableService.fn_use_throwable_failed');
-      }
       return { success: false, error: 'Throw unavailable, please try again' };
-    } catch (err) {
-      reportError(err, 'ThrowableService.Error');
+    } catch {
       return { success: false, error: 'Unexpected error' };
     }
   }

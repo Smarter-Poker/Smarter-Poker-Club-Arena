@@ -318,6 +318,20 @@ export function tierForBB(bigBlind: number): StakesTier {
   return TIERS.nosebleeds;
 }
 
+/**
+ * The tier's KEY, not its config. `bbj_mini_tiers` is keyed on the same six
+ * ids as `bbj_stakes_tiers` in the database, so the Mini BBJ needs the string
+ * a row is filed under rather than the numbers filed under it. Derived from
+ * the same ladder as tierForBB so the two can never disagree about where a
+ * stake sits.
+ */
+export function tierIdForBB(bigBlind: number): string {
+  for (const key of TIER_ORDER) {
+    if (bigBlind <= TIERS[key].maxBB) return key;
+  }
+  return 'nosebleeds';
+}
+
 /** The cap for a stake with no published row: the tier's, held to the ladder. */
 export function unscheduledCapFor(bigBlind: number, tierCap: number): number {
   if (!(bigBlind > 0)) return tierCap;

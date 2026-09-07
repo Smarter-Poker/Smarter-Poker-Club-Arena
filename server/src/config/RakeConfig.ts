@@ -40,6 +40,7 @@ import {
   capsByPlayersDealt,
   scheduleMatch,
   tierForBB,
+  tierIdForBB,
   unscheduledCapFor as specUnscheduledCapFor,
 } from './rakeSpec.js';
 import type { RakeScheduleEntry, StakesTier } from './rakeSpec.js';
@@ -286,6 +287,11 @@ export function findScheduleMatch(smallBlind: number, bigBlind: number): RakeSch
 /**
  * Get tier config for a given Big-Blind size (fallback for non-exact matches).
  */
+/** The tier KEY for a stake - what `bbj_mini_tiers` is filed under. */
+export function getTierIdForBB(bigBlind: number): string {
+  return tierIdForBB(bigBlind);
+}
+
 export function getTierForBB(bigBlind: number): StakesTier {
   // Tier boundaries based on Dan's BBJ payout screenshot + rake PDF:
   // Nano:  0.10 - 0.20   (fee 0.6bb,  payout 15%)
@@ -973,4 +979,145 @@ function doesHandQualify(
     default:
       return false;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MINI BBJ DETECTION (BBJ build plan phase 6 of 6, Dan 2026-09-07)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The SECOND tier of the jackpot: a flat amount out of the backup reserve for a
+ * hand that came close to the main bar and did not meet it.
+ *
+ * DAN'S DESIGN, signed off 2026-09-07 with the measurement in front of him:
+ *
+ *   hold'em family   ACES FULL OR BETTER must lose
+ *   PLO family       QUADS OR BETTER must lose
+ *
+ * and that asymmetry is the point rather than an accident. Measured over seven
+ * days of live cash play, the hands that qualify at those two bars arrive at
+ * 3.4 a day in hold'em and 0.6 a day in PLO - one rule applied to both games
+ * would have been either a lottery in one or a shrug in the other.
+ *
+ * WHAT THE MINI DROPS, and it is exactly the near-miss set. The main hold'em
+ * rule is aces full of JACKS or better, PLUS an Ace in the hole cards, PLUS
+ * both hole cards playing. The mini keeps the strength floor and drops the
+ * other two, so the hands it catches are the ones a player would swear was a
+ * bad beat and the main rule refused on a technicality. The main PLO rule is
+ * quad KINGS or better; the mini takes any quads, which is every quad below
+ * the main's floor.
+ *
+ * WHAT IT DOES NOT DROP:
+ *
+ *   - the winner must still hold QUADS OR BETTER. Aces full losing to a bigger
+ *     boat is a cooler, not a bad beat, and paying it was the 2026-08-18
+ *     finding that had cost $99,066 across 25 hits. Measured against seven days
+ *     of real showdowns this gate excludes nothing at these bars anyway -
+ *     anything that beats aces full already is quads or better - so it costs no
+ *     legitimate mini and closes the door on the shape that went wrong before.
+ *   - the pot floor, the 3-players-dealt floor and the double-board exclusion,
+ *     all read from BBJ_RULES so they can never drift apart from the main's.
+ *   - variant eligibility. PLO6 and Short Deck are not eligible for the
+ *     jackpot, so they are not eligible for the mini either.
+ *
+ * THIS FUNCTION CANNOT OVERRULE THE MAIN JACKPOT. Settlement calls it only
+ * when detectBBJHit returned no hit, and the payout RPC shares the main's
+ * idempotency key (pool, table, hand), so one hand can produce one payout of
+ * either kind and never both. Both halves of that are pinned by
+ * `theMiniNeverOverrulesTheMain.law.test.ts`.
+ */
+export interface BBJMiniDetectionResult extends BBJDetectionResult {
+  /** Which of Dan's two rules was applied, for the celebration and the log. */
+  miniRule?: 'holdem_aces_full' | 'plo_quads';
+}
+
+/** Aces full or better: a full house whose trips are Aces, or anything above. */
+function isAcesFullOrBetter(handRanking: number, kickers: number[]): boolean {
+  if (handRanking > HAND_RANK.FULL_HOUSE) return true;
+  if (handRanking < HAND_RANK.FULL_HOUSE) return false;
+  // Full house kickers are [tripRank, pairRank]; A = 14.
+  return kickers.length >= 1 && kickers[0] >= RANK_VALUES.A;
+}
+
+export function detectMiniBBJHit(
+  showdownResults: Array<{
+    userId: string;
+    handRanking: number;
+    handName: string;
+    kickers: number[];
+    holeCards?: Array<{ rank: string; suit: string }>;
+  }>,
+  winnerId: string | string[],
+  variant: string,
+  potSize: number,
+  bigBlind: number,
+  numPlayersDealt: number,
+  dealtInPlayerIds: string[],
+  context?: { doubleBoard?: boolean }
+): BBJMiniDetectionResult {
+  const noHit: BBJMiniDetectionResult = { hit: false };
+
+  // The mini lives under the main, so it inherits every floor the main has.
+  // Read from BBJ_RULES rather than restated, so the two can never drift.
+  if (numPlayersDealt < BBJ_RULES.minPlayersDealt) return noHit;
+  if (potSize < bigBlind * BBJ_RULES.minPotBB) return noHit;
+  if (BBJ_RULES.excludeDoubleBoard && context?.doubleBoard === true) return noHit;
+
+  const normalizedVariant = variant.toLowerCase();
+  const qualifying = BBJ_QUALIFYING_HANDS[normalizedVariant];
+  // A variant the jackpot does not cover at all does not get a mini either.
+  if (!qualifying || qualifying.eligible === false || !qualifying.handRank) return noHit;
+
+  const winnerIds = Array.isArray(winnerId) ? winnerId.filter(Boolean) : [winnerId];
+  const winnerIdSet = new Set(winnerIds);
+  const losers = showdownResults.filter((r) => !winnerIdSet.has(r.userId));
+  const winner = showdownResults
+    .filter((r) => winnerIdSet.has(r.userId))
+    .reduce<(typeof showdownResults)[number] | undefined>((best, r) => {
+      if (!best) return r;
+      if (r.handRanking > best.handRanking) return r;
+      if (r.handRanking === best.handRanking && compareKickers(r.kickers, best.kickers) > 0)
+        return r;
+      return best;
+    }, undefined);
+  if (!winner || losers.length === 0) return noHit;
+
+  // A bad beat means beaten by something huge, in both tiers.
+  if (winner.handRanking < HAND_RANK.FOUR_OF_A_KIND) return noHit;
+
+  const isHoldemFamily = qualifying.handRank === 'full_house';
+  const rule: BBJMiniDetectionResult['miniRule'] = isHoldemFamily
+    ? 'holdem_aces_full'
+    : 'plo_quads';
+  const meetsMiniBar = (r: (typeof showdownResults)[number]): boolean =>
+    isHoldemFamily
+      ? isAcesFullOrBetter(r.handRanking, r.kickers)
+      : r.handRanking >= HAND_RANK.FOUR_OF_A_KIND;
+
+  // The strongest qualifying loser, exactly as the main chooses one: the worse
+  // beat wins, deterministically, rather than whoever sat first.
+  let best: (typeof losers)[number] | null = null;
+  for (const loser of losers) {
+    if (!meetsMiniBar(loser)) continue;
+    if (
+      best === null ||
+      loser.handRanking > best.handRanking ||
+      (loser.handRanking === best.handRanking && compareKickers(loser.kickers, best.kickers) > 0)
+    ) {
+      best = loser;
+    }
+  }
+  if (!best) return noHit;
+
+  return {
+    hit: true,
+    loserUserId: best.userId,
+    loserHand: { ranking: best.handRanking, name: best.handName, kickers: best.kickers },
+    winnerUserId: winner.userId,
+    winnerHand: { ranking: winner.handRanking, name: winner.handName, kickers: winner.kickers },
+    dealtInPlayerIds,
+    variant: normalizedVariant,
+    qualifyingHandLabel: isHoldemFamily ? 'Aces Full Or Better' : 'Quads Or Better',
+    miniRule: rule,
+  };
 }

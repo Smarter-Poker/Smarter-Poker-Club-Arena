@@ -5,15 +5,16 @@
  *
  * The defect these pin: both payout sites fell back to "award 100% of the
  * prize pool to the winner" whenever `payout_structure` was missing or had no
- * place 1. Places 2..N are paid AT ELIMINATION, minutes earlier, so on a 10x+
- * Spin (80/20, 80/12/8) that fallback pays the pool out at 120%.
+ * place 1. The retired path paid places 2..N AT ELIMINATION, minutes earlier,
+ * so on a 10x+ Spin (80/20, 80/12/8) that fallback paid the pool out at 120%.
  *
- * Two independent guards, because either alone would still leave a hole:
+ * The current guards remove the guess entirely:
  *
  *   1. A Spin never needs the fallback — its split is a pure function of its
  *      multiplier, so the spec reconstructs it exactly.
- *   2. The fallback itself is capped at the UNSPENT pool, for every format.
- *      An MTT with a lost structure had the identical exposure.
+ *   2. A missing exact contract fails closed for every format. The unspent-pool
+ *      helper below preserves the arithmetic regression proof; it is not a
+ *      fallback payout path.
  */
 
 import { describe, it, expect } from 'vitest';

@@ -73,8 +73,7 @@ REVOKE ALL ON public.tournament_place_settlement_batches FROM PUBLIC, anon, auth
 /* The SECURITY DEFINER prepare/settle functions own every write. BYPASSRLS does
    not imply a table privilege, so SELECT-only keeps service_role from forging
    a header or its settled marker through PostgREST or a direct session. */
-REVOKE INSERT, UPDATE, DELETE ON public.tournament_place_settlement_batches
-  FROM service_role;
+REVOKE ALL ON public.tournament_place_settlement_batches FROM service_role;
 GRANT SELECT ON public.tournament_place_settlement_batches TO service_role;
 
 COMMENT ON TABLE public.tournament_place_settlement_batches IS
@@ -2881,8 +2880,9 @@ REVOKE ALL ON FUNCTION public.fn_apply_prize_guarantee(uuid, text)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_apply_prize_guarantee(uuid, text)
   TO service_role;
-REVOKE INSERT, UPDATE, DELETE ON public.tournament_guarantee_overlays
+REVOKE ALL ON public.tournament_guarantee_overlays
   FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON public.tournament_guarantee_overlays TO service_role;
 
 COMMENT ON FUNCTION public.fn_apply_prize_guarantee(uuid, text) IS
   'Atomic guarantee proof gate: the bank debit, exact overlay claim, explicit journal leg, live escrow credit and finalized published pool all commit together or none do.';
@@ -4439,7 +4439,9 @@ BEGIN
      OR has_table_privilege('service_role',
                             'public.tournament_place_settlement_batches', 'UPDATE')
      OR has_table_privilege('service_role',
-                            'public.tournament_place_settlement_batches', 'DELETE') THEN
+                            'public.tournament_place_settlement_batches', 'DELETE')
+     OR has_table_privilege('service_role',
+                            'public.tournament_place_settlement_batches', 'TRUNCATE') THEN
     RAISE EXCEPTION 'service_role can forge an atomic settlement batch';
   END IF;
   IF EXISTS (
@@ -4667,7 +4669,9 @@ BEGIN
      OR has_table_privilege('service_role',
        'public.tournament_guarantee_overlays', 'UPDATE')
      OR has_table_privilege('service_role',
-       'public.tournament_guarantee_overlays', 'DELETE') THEN
+       'public.tournament_guarantee_overlays', 'DELETE')
+     OR has_table_privilege('service_role',
+       'public.tournament_guarantee_overlays', 'TRUNCATE') THEN
     RAISE EXCEPTION 'service_role can forge a guarantee overlay claim';
   END IF;
   IF has_function_privilege('anon',

@@ -2737,132 +2737,201 @@ export class GameServer {
           // open table whose tournament is COMPLETED/CANCELLED gets closed here.
           try {
             const orphanPageSize = 500;
+
+            /**
+             * Candidate from evidence, not history (2026-09-07).
+             *
+             * This sweep briefly keyset-paged every tournament table so it could
+             * still find an already-closed table with a leaked live seat. That
+             * made each engine boot scan the complete historical table estate and
+             * then rewrite every terminal row, even when `status='closed'` and
+             * `current_players=0` were already exact. The returned rows were then
+             * reported as repairs, so a clean restart looked like a large cleanup.
+             *
+             * The evidence set is the union of (a) tournament tables whose own
+             * terminal fields need work and (b) table ids on live seats. The
+             * second set preserves the closed-table/leaked-seat case without
+             * reading or writing unrelated history. Both reads are keyset-paged;
+             * a failure makes the whole sweep UNKNOWN and therefore closes
+             * nothing.
+             */
+            const orphanCandidates = new Map<string, { tableId: string; tournamentId: string }>();
             let afterTableId: string | null = null;
             while (true) {
-              let openTableQuery = supabase
+              let nonterminalTableQuery = supabase
                 .from('tables')
-                .select('id, tournament_id')
+                .select('id, tournament_id, status, current_players')
                 .not('tournament_id', 'is', null)
+                .or(
+                  'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
+                )
                 .order('id', { ascending: true })
                 .limit(orphanPageSize);
-              if (afterTableId) openTableQuery = openTableQuery.gt('id', afterTableId);
-              const { data: openTourneyTables, error: openTableError } = await openTableQuery;
+              if (afterTableId) {
+                nonterminalTableQuery = nonterminalTableQuery.gt('id', afterTableId);
+              }
+              const { data: nonterminalTables, error: openTableError } =
+                await nonterminalTableQuery;
               if (openTableError) {
                 throw new Error(`orphan table list failed: ${openTableError.message}`);
               }
-              if (!openTourneyTables || openTourneyTables.length === 0) break;
-              afterTableId = String(openTourneyTables[openTourneyTables.length - 1].id);
-              if (openTourneyTables && openTourneyTables.length > 0) {
-                const orphanRows = openTourneyTables.map((t) => ({
-                  tableId: String(t.id),
-                  tournamentId: String(t.tournament_id),
-                }));
-                let closedOrphans = 0;
-                for (let i = 0; i < orphanRows.length; i += 100) {
-                  const batchRows = orphanRows.slice(i, i + 100);
+              if (!nonterminalTables || nonterminalTables.length === 0) break;
+              for (const table of nonterminalTables) {
+                orphanCandidates.set(String(table.id), {
+                  tableId: String(table.id),
+                  tournamentId: String(table.tournament_id),
+                });
+              }
+              afterTableId = String(nonterminalTables[nonterminalTables.length - 1].id);
+              if (nonterminalTables.length < orphanPageSize) break;
+            }
 
-                  /**
-                   * RE-READ THE TOURNAMENT IMMEDIATELY BEFORE THE WRITE
-                   * (2026-08-31). The finished set above was read once, before
-                   * the seat releases and the earlier batches; a tournament that
-                   * was re-opened, or a late-registration event that moved back
-                   * to RUNNING, would have been closed on the strength of a
-                   * stale read. `tablesASweepMayClose` is the rule in one place:
-                   * a SWEEP may only close a table whose tournament is already
-                   * COMPLETED or CANCELLED, and an unreadable status counts as
-                   * not-terminal, so the table is left open. See
-                   * services/tableCloseGuard.ts for the two outages behind it.
-                   */
-                  const { data: freshStatuses, error: freshErr } = await supabase
-                    .from('tournaments')
-                    .select('id, status')
-                    .in('id', [...new Set(batchRows.map((r) => r.tournamentId))]);
-                  if (freshErr) {
-                    reportError(
-                      new Error(
-                        `[GameServer] orphan sweep status re-read failed: ${freshErr.message}`
-                      ),
-                      'GameServer.orphan_status_reread_failed'
-                    );
-                    continue; // unreadable is UNKNOWN, and UNKNOWN never closes
-                  }
-                  const statusByTournament = new Map<string, string>(
-                    (freshStatuses ?? []).map((t) => [
-                      String((t as { id: string }).id),
-                      String((t as { status?: string }).status ?? ''),
-                    ])
+            let afterSeatId: string | null = null;
+            while (true) {
+              let liveSeatQuery = supabase
+                .from('table_seats')
+                .select('id, table_id')
+                .is('left_at', null)
+                .order('id', { ascending: true })
+                .limit(orphanPageSize);
+              if (afterSeatId) liveSeatQuery = liveSeatQuery.gt('id', afterSeatId);
+              const { data: liveSeats, error: liveSeatListError } = await liveSeatQuery;
+              if (liveSeatListError) {
+                throw new Error(`orphan live-seat list failed: ${liveSeatListError.message}`);
+              }
+              if (!liveSeats || liveSeats.length === 0) break;
+              afterSeatId = String(liveSeats[liveSeats.length - 1].id);
+
+              const liveSeatTableIds = [...new Set(liveSeats.map((seat) => String(seat.table_id)))];
+              for (let i = 0; i < liveSeatTableIds.length; i += 100) {
+                const { data: tournamentTables, error: liveSeatTableError } = await supabase
+                  .from('tables')
+                  .select('id, tournament_id, status, current_players')
+                  .in('id', liveSeatTableIds.slice(i, i + 100))
+                  .not('tournament_id', 'is', null);
+                if (liveSeatTableError) {
+                  throw new Error(
+                    `orphan live-seat table lookup failed: ${liveSeatTableError.message}`
                   );
-                  const batch = tablesASweepMayClose(batchRows, statusByTournament);
-                  if (batch.length === 0) continue;
-
-                  /**
-                   * RELEASE THE SEATS, not just the table (audit 2026-08-21).
-                   *
-                   * TournamentManagerEliminations releases seats on the NORMAL
-                   * finish, but a tournament can reach COMPLETED/CANCELLED without
-                   * ever passing through it - a crashed engine, the stuck-COMPLETING
-                   * recovery, or the 12-hour idle sweep. Those paths landed here,
-                   * where the table was closed and `table_seats` was left untouched,
-                   * so seats kept leaking at a slower rate after the main fix. Two
-                   * had already reappeared within hours of it shipping.
-                   *
-                   * This is the catch-all: whatever route a tournament took to
-                   * finished, its players end up released. `left_at IS NULL` is what
-                   * the multi-table rebuild reads as "I am still playing here", so a
-                   * seat left open at a closed table follows the player around as a
-                   * dead tab until something clears it.
-                   */
-                  const { error: seatErr } = await supabase
-                    .from('table_seats')
-                    .update({ left_at: new Date().toISOString() })
-                    .in('table_id', batch)
-                    .is('left_at', null);
-                  if (seatErr) {
-                    reportError(
-                      new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
-                      'GameServer.orphan_seat_release_failed'
-                    );
-                    continue;
-                  }
-
-                  const { count: liveSeatCount, error: seatProofError } = await supabase
-                    .from('table_seats')
-                    .select('id', { count: 'exact', head: true })
-                    .in('table_id', batch)
-                    .is('left_at', null);
-                  if (seatProofError || liveSeatCount !== 0) {
-                    reportError(
-                      new Error(
-                        `[GameServer] orphan seat release proof failed: ${seatProofError?.message ?? `${liveSeatCount ?? 'unknown'} live seat(s) remain`}`
-                      ),
-                      'GameServer.orphan_seat_release_unproven'
-                    );
-                    continue;
-                  }
-
-                  const { data: closedRows, error: closeError } = await supabase
-                    .from('tables')
-                    .update({ status: 'closed', current_players: 0 })
-                    .in('id', batch)
-                    .select('id');
-                  if (closeError || !closedRows || closedRows.length !== batch.length) {
-                    reportError(
-                      new Error(
-                        `[GameServer] orphan table close failed: ${closeError?.message ?? `${closedRows?.length ?? 0}/${batch.length} rows confirmed`}`
-                      ),
-                      'GameServer.orphan_table_close_failed'
-                    );
-                    continue;
-                  }
-                  closedOrphans += closedRows.length;
                 }
-                if (closedOrphans > 0) {
-                  console.log(
-                    `[GameServer] Reconciled ${closedOrphans} terminal tournament tables and released their seats`
-                  );
+                for (const table of tournamentTables ?? []) {
+                  orphanCandidates.set(String(table.id), {
+                    tableId: String(table.id),
+                    tournamentId: String(table.tournament_id),
+                  });
                 }
               }
-              if (openTourneyTables.length < orphanPageSize) break;
+              if (liveSeats.length < orphanPageSize) break;
+            }
+
+            const orphanRows = [...orphanCandidates.values()].sort((a, b) =>
+              a.tableId.localeCompare(b.tableId)
+            );
+            let closedOrphans = 0;
+            let releasedOrphanSeats = 0;
+            for (let i = 0; i < orphanRows.length; i += 100) {
+              const batchRows = orphanRows.slice(i, i + 100);
+
+              /**
+               * RE-READ THE TOURNAMENT IMMEDIATELY BEFORE THE WRITE
+               * (2026-08-31). The candidate evidence above can become stale;
+               * `tablesASweepMayClose` is the rule in one place: a sweep may
+               * only close a table whose tournament is already COMPLETED or
+               * CANCELLED, and an unreadable status leaves the table alone.
+               */
+              const { data: freshStatuses, error: freshErr } = await supabase
+                .from('tournaments')
+                .select('id, status')
+                .in('id', [...new Set(batchRows.map((r) => r.tournamentId))]);
+              if (freshErr) {
+                reportError(
+                  new Error(`[GameServer] orphan sweep status re-read failed: ${freshErr.message}`),
+                  'GameServer.orphan_status_reread_failed'
+                );
+                continue; // unreadable is UNKNOWN, and UNKNOWN never closes
+              }
+              const statusByTournament = new Map<string, string>(
+                (freshStatuses ?? []).map((t) => [
+                  String((t as { id: string }).id),
+                  String((t as { status?: string }).status ?? ''),
+                ])
+              );
+              const batch = tablesASweepMayClose(batchRows, statusByTournament);
+              if (batch.length === 0) continue;
+
+              const { data: releasedSeats, error: seatErr } = await supabase
+                .from('table_seats')
+                .update({ left_at: new Date().toISOString() })
+                .in('table_id', batch)
+                .is('left_at', null)
+                .select('id');
+              if (seatErr) {
+                reportError(
+                  new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
+                  'GameServer.orphan_seat_release_failed'
+                );
+                continue;
+              }
+              releasedOrphanSeats += releasedSeats?.length ?? 0;
+
+              // Do not turn a clean historical row into a write. The final
+              // read below proves both changed and already-correct candidates.
+              const { data: closedRows, error: closeError } = await supabase
+                .from('tables')
+                .update({ status: 'closed', current_players: 0 })
+                .in('id', batch)
+                .or(
+                  'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
+                )
+                .select('id');
+              if (closeError) {
+                reportError(
+                  new Error(`[GameServer] orphan table close failed: ${closeError.message}`),
+                  'GameServer.orphan_table_close_failed'
+                );
+                continue;
+              }
+
+              const [seatProof, tableProof] = await Promise.all([
+                supabase
+                  .from('table_seats')
+                  .select('id', { count: 'exact', head: true })
+                  .in('table_id', batch)
+                  .is('left_at', null),
+                supabase.from('tables').select('id, status, current_players').in('id', batch),
+              ]);
+              if (seatProof.error || seatProof.count !== 0) {
+                reportError(
+                  new Error(
+                    `[GameServer] orphan seat release proof failed: ${seatProof.error?.message ?? `${seatProof.count ?? 'unknown'} live seat(s) remain`}`
+                  ),
+                  'GameServer.orphan_seat_release_unproven'
+                );
+                continue;
+              }
+              const terminalTables = tableProof.data ?? [];
+              if (
+                tableProof.error ||
+                terminalTables.length !== batch.length ||
+                terminalTables.some(
+                  (table) => table.status !== 'closed' || table.current_players !== 0
+                )
+              ) {
+                reportError(
+                  new Error(
+                    `[GameServer] orphan table close proof failed: ${tableProof.error?.message ?? `${terminalTables.length}/${batch.length} rows read back terminal`}`
+                  ),
+                  'GameServer.orphan_table_close_unproven'
+                );
+                continue;
+              }
+              closedOrphans += closedRows?.length ?? 0;
+            }
+
+            if (closedOrphans > 0 || releasedOrphanSeats > 0) {
+              console.log(
+                `[GameServer] Reconciled ${closedOrphans} terminal tournament table state(s) and released ${releasedOrphanSeats} leaked seat(s)`
+              );
             }
             console.log('[GameServer] Stale data cleanup complete');
           } catch (orphanErr) {

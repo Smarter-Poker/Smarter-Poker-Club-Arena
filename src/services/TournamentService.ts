@@ -1282,13 +1282,12 @@ class TournamentService {
   // AUDIT M19: `eliminatePlayer` is deleted, not converted.
   //
   // Same story as collectBounty below. The engine owns finish-position payouts:
-  // it computes each prize server-side from `tournaments.payout_structure` and
-  // `prize_pool`, credits it via `credit_player_wallet` keyed
-  // `tourney:{id}:prize:{user}:{position}`, retries three times, and logs the
-  // transaction. This client copy computed the prize itself and passed no
-  // idempotency key, so it was a latent double-payout on top of the engine
-  // rather than an independent feature - and it had no callers outside this
-  // file.
+  // it prepares the exact full-field obligations, then one database transaction
+  // debits escrow, credits every wallet, records every payout and completes the
+  // tournament. This client copy computed one prize itself and passed no
+  // idempotency key, so it was a latent double-payout beside the authoritative
+  // settlement rather than an independent feature - and it had no callers
+  // outside this file.
   //
   // `calculatePayout` below is kept: it is a pure function used for DISPLAYING
   // projected payouts in the lobby, which is a legitimate client concern. It

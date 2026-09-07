@@ -73,6 +73,7 @@ import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
+import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
 
 /**
  * Two stamp maps hold the same answer.
@@ -452,9 +453,10 @@ import { MysteryBountyService, playerTotalsFromAwards } from '../services/Myster
  * `prize` the payout, `bounty_winnings` / `bounties_collected` the PKO side.
  * Field size comes from the tournament row.
  *
- * Never throws and never blocks the leave: on any failure it returns a result
- * with nulls, so the summary shows "\u2014" for the place rather than falling back
- * to a chip panel that would be actively wrong.
+ * Never throws: on any reported failure it returns a result with nulls, so the
+ * summary shows "\u2014" for the place rather than falling back to a chip panel
+ * that would be actively wrong. The exit caller also gives this optional read
+ * a deadline because a stalled browser transport may never report a failure.
  */
 async function fetchTournamentResult(
   tournamentId: string,
@@ -12220,7 +12222,17 @@ export default function TablePage({
                which, in multi-table, is somebody else's live table. */
             tournamentExitTimerRef.current = setTimeout(() => {
               void (async () => {
-                const full = tid ? await fetchTournamentResult(tid, userId) : undefined;
+                /* Result detail is optional enrichment, not permission to
+                   leave a table the settlement has already closed. A browser
+                   transport can produce a promise that neither resolves nor
+                   rejects; awaiting it directly after `exitStarted = true`
+                   stranded the player forever and made every retried outcome
+                   a no-op. The bounded fallback preserves the broadcast's
+                   authoritative position/prize and always reaches the card,
+                   close signals and navigation below. */
+                const full = tid
+                  ? await awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
+                  : undefined;
                 publishSessionSummary({
                   duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
                   handsPlayed: handsPlayedRef.current,

@@ -416,7 +416,10 @@ describe('a tournament pays every place or none', () => {
       /REVOKE ALL ON FUNCTION public\.fn_apply_prize_guarantee_before_atomic_proof\(uuid, text\)[\s\S]*?PUBLIC, anon, authenticated, service_role/
     );
     expect(executableSql).toMatch(
-      /REVOKE INSERT, UPDATE, DELETE ON public\.tournament_guarantee_overlays[\s\S]*?PUBLIC, anon, authenticated, service_role/
+      /REVOKE ALL ON public\.tournament_guarantee_overlays[\s\S]*?PUBLIC, anon, authenticated, service_role[\s\S]*?GRANT SELECT ON public\.tournament_guarantee_overlays TO service_role/
+    );
+    expect(executableSql).toMatch(
+      /has_table_privilege\('service_role',[\s\S]*?'public\.tournament_guarantee_overlays', 'TRUNCATE'\)/
     );
   });
 
@@ -697,6 +700,12 @@ describe('a tournament pays every place or none', () => {
     );
     expect(executableSql).toMatch(
       /REVOKE ALL ON public\.tournament_place_settlement_batches FROM PUBLIC, anon, authenticated/
+    );
+    expect(executableSql).toMatch(
+      /REVOKE ALL ON public\.tournament_place_settlement_batches FROM service_role[\s\S]*?GRANT SELECT ON public\.tournament_place_settlement_batches TO service_role/
+    );
+    expect(executableSql).toMatch(
+      /has_table_privilege\('service_role',[\s\S]*?'public\.tournament_place_settlement_batches', 'TRUNCATE'\)/
     );
     for (const fn of [
       'fn_prepare_tournament_place_obligations\\(uuid, text\\)',

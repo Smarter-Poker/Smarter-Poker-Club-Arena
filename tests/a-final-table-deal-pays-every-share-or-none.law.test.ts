@@ -78,7 +78,10 @@ describe('a final-table deal pays every share or none', () => {
     expect(TABLE).toMatch(/bubble_amount_owed\s+numeric\(15,2\) NOT NULL/);
     expect(TABLE).toMatch(/bubble_amount_paid_before\s+numeric\(15,2\) NOT NULL/);
     expect(executableSql).toMatch(
-      /REVOKE INSERT, UPDATE, DELETE ON public\.tournament_final_table_deal_batches FROM service_role/
+      /REVOKE ALL ON public\.tournament_final_table_deal_batches FROM service_role[\s\S]*?GRANT SELECT ON public\.tournament_final_table_deal_batches TO service_role/
+    );
+    expect(executableSql).toMatch(
+      /has_table_privilege\('service_role',[\s\S]*?'public\.tournament_final_table_deal_batches', 'TRUNCATE'\)/
     );
   });
 

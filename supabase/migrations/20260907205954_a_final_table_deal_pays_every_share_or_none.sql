@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS public.tournament_final_table_deal_batches (
 
 ALTER TABLE public.tournament_final_table_deal_batches ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.tournament_final_table_deal_batches FROM PUBLIC, anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.tournament_final_table_deal_batches FROM service_role;
+REVOKE ALL ON public.tournament_final_table_deal_batches FROM service_role;
 GRANT SELECT ON public.tournament_final_table_deal_batches TO service_role;
 
 COMMENT ON TABLE public.tournament_final_table_deal_batches IS
@@ -2257,7 +2257,9 @@ BEGIN
      OR has_table_privilege('service_role',
        'public.tournament_final_table_deal_batches', 'UPDATE')
      OR has_table_privilege('service_role',
-       'public.tournament_final_table_deal_batches', 'DELETE') THEN
+       'public.tournament_final_table_deal_batches', 'DELETE')
+     OR has_table_privilege('service_role',
+       'public.tournament_final_table_deal_batches', 'TRUNCATE') THEN
     RAISE EXCEPTION 'service_role can forge an atomic final-table-deal batch';
   END IF;
   IF NOT EXISTS (

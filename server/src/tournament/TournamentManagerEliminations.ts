@@ -1594,9 +1594,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (!isSatellite && tournament) {
       // resolvePayoutStructure parses the stored column and, for a Spin whose
       // column is missing or malformed, rebuilds it from the canonical spec.
-      // Places 2..N are paid HERE, minutes before finishTournament reads the
-      // same column again — so the two reads must agree, and a Spin that can
-      // reconstruct its own split is how they are made to.
+      // Places 2..N are priced HERE and recorded as result facts; the terminal
+      // atomic batch pays them later. Both stages resolve the same contract, so
+      // a Spin that can reconstruct its exact split keeps the reads aligned.
       // SHORT-FIELD RESIDUAL 2026-08-27: pay by a structure the field can
       // actually fill, so the leftover lands on a place somebody reached. The
       // second belt, on top of finalFieldSize's own two: never trim below the
@@ -3956,7 +3956,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return;
     }
 
-    // Calculate winner prize — with fallback if payout_structure missing or no place 1
+    // Calculate the winner's exact entitlement. A missing contract fails closed.
     // TOURNEY-AUDIT 2026-07-24 (sweep 6): satellites award SEATS at the end
     // (processSatelliteAwards below), never per-place cash here.
     const isSatelliteFinish =
@@ -4052,8 +4052,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     let winnerPrize = 0;
     if (!isSatelliteFinish) {
       // resolvePayoutStructure returns the stored structure when it is usable
-      // and, for a Spin, rebuilds it from spinTier(spin_multiplier) when it is
-      // not. So a Spin never reaches the fallback below.
+      // and, for a Spin, rebuilds it from spinTier(spin_multiplier). An unknown
+      // Spin draw and every non-Spin with no usable contract return null.
       const payouts = resolvePayoutStructure(tournament as any, await this.finalFieldSize());
       if (payouts) {
         // PAYOUT-INTEGRITY 2026-08-20: same residual rule as every other place

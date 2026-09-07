@@ -315,36 +315,54 @@ describe('standalone recovery cannot leave a live manager behind', () => {
   });
 });
 
-describe('the existing startup orphan cleanup is exhaustive and evidence checked', () => {
+describe('the startup orphan cleanup is evidence-bounded and evidence checked', () => {
   const cleanup = sliceEnclosingBlock(gameServer, 'const orphanPageSize = 500');
 
-  it('keyset-pages every tournament table, including closed tables with leaked seats', () => {
+  it('keyset-pages only nonterminal table state plus live-seat evidence', () => {
     const candidateRead = cleanup.slice(
-      cleanup.indexOf('let openTableQuery'),
-      cleanup.indexOf('const { data: openTourneyTables')
+      cleanup.indexOf('let nonterminalTableQuery'),
+      cleanup.indexOf('const { data: nonterminalTables')
     );
     expect(candidateRead).toMatch(/\.not\('tournament_id', 'is', null\)/);
+    expect(candidateRead).toMatch(
+      /\.or\([\s\S]*?status\.neq\.closed[\s\S]*?current_players\.neq\.0/
+    );
     expect(candidateRead).toMatch(/\.order\('id', \{ ascending: true \}\)/);
-    expect(candidateRead).not.toMatch(/\.(?:eq|neq|in|or)\('status'/);
-    expect(cleanup).toMatch(/openTableQuery = openTableQuery\.gt\('id', afterTableId\)/);
-    expect(cleanup).not.toMatch(/finishedSet|finishedError/);
+    expect(cleanup).toMatch(
+      /nonterminalTableQuery = nonterminalTableQuery\.gt\('id', afterTableId\)/
+    );
+    expect(cleanup).toMatch(
+      /\.from\('table_seats'\)[\s\S]*?\.is\('left_at', null\)[\s\S]*?\.order\('id'/
+    );
+    expect(cleanup).toMatch(/liveSeatQuery = liveSeatQuery\.gt\('id', afterSeatId\)/);
+    expect(cleanup).toMatch(
+      /\.from\('tables'\)[\s\S]*?\.in\('id', liveSeatTableIds\.slice\(i, i \+ 100\)\)/
+    );
+    expect(cleanup).not.toMatch(
+      /\.select\('id, tournament_id'\)[\s\S]*?\.not\('tournament_id', 'is', null\)[\s\S]*?\.order\('id'/
+    );
   });
 
-  it('fails closed on list, seat, proof or table-update errors and counts confirmed closes only', () => {
+  it('fails closed and counts only rows that were actually changed', () => {
     expect(cleanup).toMatch(/openTableError[\s\S]*?throw new Error/);
+    expect(cleanup).toMatch(/liveSeatListError[\s\S]*?throw new Error/);
+    expect(cleanup).toMatch(/liveSeatTableError[\s\S]*?throw new Error/);
     expect(cleanup).toMatch(/freshErr[\s\S]*?continue/);
     expect(cleanup).toMatch(/seatErr[\s\S]*?continue/);
     expect(cleanup).toMatch(
-      /\.from\('table_seats'\)[\s\S]*?\.update\(\{ left_at:[\s\S]*?\.is\('left_at', null\)/
+      /\.from\('table_seats'\)[\s\S]*?\.update\(\{ left_at:[\s\S]*?\.is\('left_at', null\)[\s\S]*?\.select\('id'\)/
+    );
+    expect(cleanup).toMatch(/releasedOrphanSeats \+= releasedSeats\?\.length \?\? 0/);
+    expect(cleanup).toMatch(
+      /\.update\(\{ status: 'closed', current_players: 0 \}\)[\s\S]*?\.or\([\s\S]*?status\.neq\.closed[\s\S]*?current_players\.neq\.0[\s\S]*?\.select\('id'\)/
     );
     expect(cleanup).toMatch(
       /\.select\('id', \{ count: 'exact', head: true \}\)[\s\S]*?\.is\('left_at', null\)/
     );
-    expect(cleanup).toMatch(/seatProofError \|\| liveSeatCount !== 0[\s\S]*?continue/);
-    expect(cleanup).toMatch(
-      /closeError \|\| !closedRows \|\| closedRows\.length !== batch\.length/
-    );
-    expect(cleanup).toMatch(/closedOrphans \+= closedRows\.length/);
+    expect(cleanup).toMatch(/seatProof\.error \|\| seatProof\.count !== 0[\s\S]*?continue/);
+    expect(cleanup).toMatch(/\.select\('id, status, current_players'\)/);
+    expect(cleanup).toMatch(/terminalTables\.length !== batch\.length/);
+    expect(cleanup).toMatch(/closedOrphans \+= closedRows\?\.length \?\? 0/);
     expect(cleanup).not.toMatch(/closedOrphans \+= batch\.length/);
   });
 });

@@ -41,10 +41,15 @@
  * tests/unit/tournamentRankingHost.test.tsx.
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
+import {
+  awaitTournamentResultEnrichment,
+  TOURNAMENT_RESULT_ENRICHMENT_TIMEOUT_MS,
+} from '../../src/utils/tournamentResultEnrichment';
+import type { TournamentResult } from '../../src/services/pendingSessionSummary';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -231,11 +236,27 @@ describe("The champion's exit", () => {
     expect(fn).toMatch(/exitStarted = true;/);
   });
 
+  it('bounds optional result enrichment before publishing and closing the table', () => {
+    const fn = exitFnBody();
+    expect(fn).toMatch(
+      /await awaitTournamentResultEnrichment\(fetchTournamentResult\(tid, userId\)\)/
+    );
+    expect(fn.indexOf('await awaitTournamentResultEnrichment(')).toBeLessThan(
+      fn.indexOf('publishSessionSummary(')
+    );
+    expect(fn.indexOf('publishSessionSummary(')).toBeLessThan(fn.indexOf("emit('TABLE_LEFT'"));
+    expect(fn).toMatch(/\.\.\.\(full \?\? \{/);
+    expect(fn).toMatch(/finishPlace:\s*position \|\| full\?\.finishPlace \|\| null/);
+    expect(fn).toMatch(/prize:\s*prize \|\| full\?\.prize \|\| 0/);
+  });
+
   it('the realtime event union still knows this event exists', () => {
     // Not the delivery path for the t-break channel, but it is the list the
     // next agent reads to learn what the engine emits. Letting it go stale is
     // how `broadcastWinner`/`broadcastElimination` became callerless.
     expect(realtime).toMatch(/'tournament_winner'/);
+    expect(realtime).not.toMatch(/\bonWinner\b/);
+    expect(realtime).not.toMatch(/case\s+['"]winner['"]/);
   });
 
   it('eliminatePlayer is still never called with place 1 — that is why this is needed', () => {
@@ -261,6 +282,60 @@ describe("The champion's exit", () => {
     expect(engine).not.toMatch(/eliminatePlayer\([^)]*,\s*1\s*\)/);
     expect(engine).toMatch(/while \(finishNext >= 2 && finishTakenPositions\.has\(finishNext\)\)/);
     expect(engine).toMatch(/no_free_finishing_place/);
+  });
+});
+
+describe('The tournament result lookup cannot strand an exit', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('continues after the deadline when the lookup never resolves', async () => {
+    expect(TOURNAMENT_RESULT_ENRICHMENT_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(TOURNAMENT_RESULT_ENRICHMENT_TIMEOUT_MS).toBeLessThanOrEqual(2_000);
+    let continuedToExit = false;
+    const neverResolvingLookup = new Promise<TournamentResult>(() => {});
+    const exit = (async () => {
+      const result = await awaitTournamentResultEnrichment(
+        neverResolvingLookup,
+        TOURNAMENT_RESULT_ENRICHMENT_TIMEOUT_MS
+      );
+      continuedToExit = true;
+      return result;
+    })();
+
+    await vi.advanceTimersByTimeAsync(TOURNAMENT_RESULT_ENRICHMENT_TIMEOUT_MS - 1);
+    expect(continuedToExit).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(exit).resolves.toBeUndefined();
+    expect(continuedToExit).toBe(true);
+  });
+
+  it('uses enrichment that arrives inside the budget', async () => {
+    const result: TournamentResult = {
+      finishPlace: 2,
+      entrants: 84,
+      prize: 125,
+      bountyWinnings: 15,
+      knockouts: 3,
+      rebuys: 0,
+      addOns: 0,
+      isSpin: false,
+    };
+    const lookup = new Promise<TournamentResult>((resolveLookup) => {
+      setTimeout(() => resolveLookup(result), 100);
+    });
+
+    const enriched = awaitTournamentResultEnrichment(lookup);
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(enriched).resolves.toEqual(result);
+  });
+
+  it('also falls through when an unexpected lookup rejection escapes', async () => {
+    await expect(
+      awaitTournamentResultEnrichment(Promise.reject(new Error('transport failed')))
+    ).resolves.toBeUndefined();
   });
 });
 

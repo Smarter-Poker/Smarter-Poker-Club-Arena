@@ -8,7 +8,6 @@ const REWARD_PAGES = [
   'src/pages/VIPPage.tsx',
   'src/pages/RakebackPage.tsx',
   'src/pages/PromotionsPage.tsx',
-  'src/pages/BonusPage.tsx',
   'src/pages/AchievementsPage.tsx',
   'src/pages/MarketplacePage.tsx',
 ];

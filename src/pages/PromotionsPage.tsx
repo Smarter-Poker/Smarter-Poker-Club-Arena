@@ -7,12 +7,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
-import DailyBonusWheel from '../components/bonus/DailyBonusWheel';
 import LeaderboardCard from '../components/leaderboard/LeaderboardCard';
 import ReferralModal from '../components/social/ReferralModal';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
-import { bonusService } from '../services/BonusService';
 import { promotionService } from '../services/PromotionService';
 import './PromotionsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -49,7 +47,6 @@ export default function PromotionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'upcoming'>('active');
-  const [showBonusWheel, setShowBonusWheel] = useState(false);
   const [showReferral, setShowReferral] = useState(false);
   const [visiblePromoCards, setVisiblePromoCards] = useState(new Set<number>());
   const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());
@@ -338,16 +335,8 @@ export default function PromotionsPage() {
         metrics={[
           { label: 'Visible Offers', value: filteredPromos.length, tone: 'live' },
           { label: 'View', value: filter.toUpperCase() },
-          { label: 'Daily Bonus', value: 'Ready', tone: 'attention' },
         ]}
       />
-      {/* Daily Bonus Button */}
-      <div className="daily-bonus-banner" onClick={() => setShowBonusWheel(true)}>
-        <span className="bonus-icon">▦</span>
-        <span className="bonus-text">Claim Your Daily Bonus!</span>
-        <span className="bonus-arrow">›</span>
-      </div>
-
       {/* Referral Banner */}
       <div className="referral-banner" onClick={() => setShowReferral(true)}>
         <span className="bonus-icon">◈</span>
@@ -497,44 +486,6 @@ export default function PromotionsPage() {
           ))
         )}
       </div>
-
-      {/* Daily Bonus Wheel Modal */}
-      {showBonusWheel && (
-        <div className="bonus-wheel-overlay" onClick={() => setShowBonusWheel(false)}>
-          <div className="bonus-wheel-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowBonusWheel(false)}>
-              ✕
-            </button>
-            <DailyBonusWheel
-              onSpin={async () => {
-                // The SERVER decides what a daily bonus pays — fn_claim_daily_bonus
-                // reads a fixed 7-day ladder out of daily_bonus_rewards; there is
-                // no randomness anywhere in it. Hand the real outcome back so the
-                // wheel stops on the day that was actually credited instead of a
-                // segment picked by Math.random() in the browser.
-                try {
-                  const res = await bonusService.claimDailyBonus(user?.id || '');
-                  toast.success(
-                    res.rewardType === 'vip_points'
-                      ? `Daily bonus: ${res.reward.toLocaleString()} VIP points (day ${res.day})`
-                      : `Daily bonus: ${res.reward.toLocaleString()} chips (day ${res.day})`
-                  );
-                  return {
-                    day: res.day,
-                    reward: res.reward,
-                    rewardType:
-                      res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
-                  };
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');
-                  setShowBonusWheel(false);
-                  return null;
-                }
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Referral Modal */}
       <ReferralModal

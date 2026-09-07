@@ -346,6 +346,7 @@ export const FinancialCronService = {
   async settleAllClubRakebacks(): Promise<{ clubsSettled: number; totalDistributed: number }> {
     let clubsSettled = 0;
     let totalDistributed = 0;
+    let periodsRemaining = 0;
 
     try {
       const { data: clubs } = await supabase
@@ -359,21 +360,50 @@ export const FinancialCronService = {
       for (const club of clubs) {
         try {
           // Server-authoritative: settle rakeback via Supabase RPC
-          const { data: settlement } = await supabase.rpc('settle_club_rakeback', {
-            p_club_id: club.id,
-          });
-          if (settlement && settlement.total_distributed > 0) {
-            clubsSettled++;
-            totalDistributed += settlement.total_distributed;
+          // settle_club_rakeback returns `total_payout`. It has never returned
+          // `total_distributed`, which is what this read until 2026-09-07 - so
+          // clubsSettled and totalDistributed were always 0 and the debug line
+          // below never fired, whatever the RPC actually paid.
+          //
+          // It is also BOUNDED since 2026-09-07 (40 periods / ~4s per call), so
+          // one call per club no longer drains a club. Nothing schedules this
+          // method - start() retired it, the durable drain is the engine's
+          // RakebackSettlerService.runRakebackDrain - so it is left as a single
+          // honest pass for an explicit admin action, and it reports what is
+          // left rather than implying it finished.
+          const { data: settlement, error: settleErr } = await supabase.rpc(
+            'settle_club_rakeback',
+            { p_club_id: club.id }
+          );
+          if (settleErr) {
+            reportError(settleErr, 'FinancialCronService.settleClubRakeback', {
+              clubId: club.id,
+            });
+          } else if (settlement?.success === true) {
+            const paid = Number(settlement.total_payout ?? 0);
+            if (paid > 0) {
+              clubsSettled++;
+              totalDistributed += paid;
+            }
+            periodsRemaining += Number(settlement.periods_remaining ?? 0);
+          } else if (settlement) {
+            // A refusal arrives as HTTP 200 with success:false.
+            reportError(
+              new Error(`settle_club_rakeback refused: ${JSON.stringify(settlement)}`),
+              'FinancialCronService.settleClubRakeback',
+              { clubId: club.id }
+            );
           }
         } catch (err) {
           reportError(err, 'FinancialCronService.settleClubRakeback', { clubId: club.id });
         }
       }
 
-      if (clubsSettled > 0) {
+      if (clubsSettled > 0 || periodsRemaining > 0) {
         console.debug(
-          `[FinancialCron] Rakeback settled for ${clubsSettled} clubs, total distributed: $${totalDistributed.toFixed(2)}`
+          `[FinancialCron] Rakeback settled for ${clubsSettled} clubs, total distributed: ` +
+            `${totalDistributed.toFixed(2)}; ${periodsRemaining} period(s) still pending ` +
+            `(one bounded pass - the engine settler drains the rest)`
         );
       }
     } catch (err) {

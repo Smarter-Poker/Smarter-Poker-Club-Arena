@@ -90,7 +90,7 @@ const BASELINE = new Map<string, number>([
   ['src/components/agent/ChipTransferModal.tsx', 2],
   ['src/components/agent/AgentScoreCard.tsx', 4],
   ['src/services/VoiceSignalService.ts', 3],
-  ['src/services/FinancialCronService.ts', 3],
+  ['src/services/FinancialCronService.ts', 2],
   ['src/services/DisputeService.ts', 3],
   ['src/services/DiamondService.ts', 1],
   // 3 -> 2 on 2026-09-01: executePayout is gone, and with it the discarded

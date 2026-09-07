@@ -27,12 +27,20 @@ import fs from 'fs';
 import path from 'path';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
+const readLatestMigration = (suffix: string): string => {
+  const migrations = path.join(process.cwd(), 'supabase', 'migrations');
+  const file = fs
+    .readdirSync(migrations)
+    .filter((name) => name.endsWith(suffix))
+    .sort()
+    .at(-1);
+  if (!file) throw new Error(`migration ending in ${suffix} not found`);
+  return fs.readFileSync(path.join(migrations, file), 'utf8');
+};
 
 const PAYERS = read('supabase/migrations/20260902201000_db_payers_settle_through_obligations.sql');
 const R3 = read('supabase/migrations/20260902201500_r3_money_path_log_only.sql');
-const CUTOVER = read(
-  'supabase/migrations/20260907205918_tournament_places_settle_and_complete_atomically.sql'
-);
+const CUTOVER = readLatestMigration('_tournament_places_settle_and_complete_atomically.sql');
 
 const ACTIVE_DIRECT_PAYERS = ['fn_backpay_spin_unpaid_winners', 'fn_final_table_deal'] as const;
 

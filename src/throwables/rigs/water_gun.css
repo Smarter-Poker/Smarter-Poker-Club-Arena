@@ -1,17 +1,30 @@
 /**
- * WATER GUN - keyframes. Every delay is from LANDING (launch + 400 ms); the
- * comment on each stop gives the catalogue's ms from launch. Every duration
- * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ * WATER GUN - keyframes. Every delay is from LANDING (launch + 300 ms); the
+ * comment on each stop gives the CORRECTED ms from launch - THROW 1's `L` is
+ * the spawn frame, so that is the catalogue's raw number minus 133. Every
+ * duration and delay multiplies by --animation-speed (CLAUDE.md 10.6).
  *
  * Units: 100 px in these keyframes = 1 avatar width (the rig viewBox), so the
  * numbers below are the measured pixel offsets scaled by 100/30 (video 1's
  * avatar was ~30 px wide).
  *
- * The long keyframes run the payload's whole 3170 ms so one percentage table
- * serves every beat: 367 = 11.58%, 500 = 15.77%, 533 = 16.81%, 600 = 18.93%,
- * 667 = 21.04%, 800 = 25.24%, 3067 = 96.75%, 3167 = 99.91%.
+ * THE WHOLE TABLE USED TO RUN 100 MS LATE, and it is worth saying how, because
+ * the shape is the one this programme keeps meeting. The four long rules start
+ * at LANDING + their own 67 ms delay = 367, but their percentages were computed
+ * against 267. Every stop after the first was therefore (ms - 267) / 3170
+ * instead of (ms - 367) / 3067: the squirt appeared at 900 while its own
+ * `squirt_start` cue fired at 800, the splat cut at 3434, and the gun's
+ * scale-out finished at 3534 - a hundred milliseconds after the payload had
+ * already unmounted at 3434, so the vanish never played at all. The spec's
+ * beats were right the whole time; only this table disagreed with them.
  *
- * The loop (533-3035) is nine 278 ms cycles: the blob pulse, the recoil and
+ * The long rules now run 3067 ms from 367 to 3434, which is exactly the
+ * payload's own end. One percentage table serves every beat, and each number
+ * is (corrected ms - 367) / 3067:
+ *   634 = 8.7%    767 = 13.04%   800 = 14.12%   867 = 16.3%
+ *   934 = 18.49%  1067 = 22.82%  3334 = 96.74%  3434 = 100%
+ *
+ * The loop (800-3302) is nine 278 ms cycles: the blob pulse, the recoil and
  * every droplet share that period; the stream's flow runs its own 180 ms.
  */
 
@@ -19,31 +32,31 @@
    under the blob for the stream and once over it for the gun, so the two
    stay in step by construction. ──────────────────────────────────────────── */
 .thr-water_gun__track {
-  animation: thr-water_gun-track calc(3.17s * var(--animation-speed, 1)) ease-in-out both;
+  animation: thr-water_gun-track calc(3.067s * var(--animation-speed, 1)) ease-in-out both;
   animation-delay: calc(0.067s * var(--animation-speed, 1));
 }
 
 @keyframes thr-water_gun-track {
   0%,
-  11.58% {
-    /* 400-767: settled at x -0.2 u, y -0.07 u, the lower-left of the face */
+  8.7% {
+    /* 367-634: settled at x -0.2 u, y -0.07 u, the lower-left of the face */
     transform: translate(-20px, -7px);
   }
-  15.77% {
-    /* 900: pulled back down-left to x -0.77 u, y +1.2 u */
+  13.04% {
+    /* 767: pulled back down-left to x -0.77 u, y +1.2 u */
     transform: translate(-77px, 120px);
   }
-  16.81% {
-    /* 933: the squirt starts from here */
+  14.12% {
+    /* 800: the squirt starts from here */
     transform: translate(-77px, 120px);
   }
-  25.24% {
-    /* 1200: the first recoil has pushed it back and down */
+  22.82% {
+    /* 1067: the first recoil has pushed it back and down */
     transform: translate(-64px, 160px);
   }
-  96.75%,
+  96.74%,
   100% {
-    /* 3467: the cut finds it at x -0.57 u, y +1.8 u */
+    /* 3334: the cut finds it at x -0.57 u, y +1.8 u */
     transform: translate(-57px, 180px);
   }
 }
@@ -55,26 +68,25 @@
 .thr-water_gun__aim {
   transform-box: fill-box;
   transform-origin: 50% 50%;
-  animation: thr-water_gun-aim calc(3.17s * var(--animation-speed, 1)) ease-in-out both;
+  animation: thr-water_gun-aim calc(3.067s * var(--animation-speed, 1)) ease-in-out both;
   animation-delay: calc(0.067s * var(--animation-speed, 1));
 }
 
 @keyframes thr-water_gun-aim {
   0%,
-  11.58% {
-    /* 400-767: as it flew */
+  8.7% {
+    /* 367-634: as it flew */
     opacity: 1;
     transform: rotate(-35deg) scale(1);
   }
-  15.77%,
-  96.75% {
-    /* 900-3467: aimed up-right at the face */
+  13.04%,
+  96.74% {
+    /* 767-3334: aimed up-right at the face */
     opacity: 1;
     transform: rotate(-60deg) scale(1);
   }
-  99.91%,
   100% {
-    /* 3567: gone */
+    /* 3434: gone, on the payload's own last frame */
     opacity: 0;
     transform: rotate(-60deg) scale(0);
   }
@@ -86,7 +98,7 @@
   animation-name: thr-water_gun-jitter;
   animation-duration: calc(0.278s * var(--animation-speed, 1));
   animation-timing-function: ease-out;
-  animation-delay: calc(0.6s * var(--animation-speed, 1));
+  animation-delay: calc(0.5s * var(--animation-speed, 1));
   animation-iteration-count: 9;
   animation-fill-mode: both;
 }
@@ -106,27 +118,27 @@
   }
 }
 
-/* ── LIVE: the stream and the droplets exist from 933 to 3467, on and off in
+/* ── LIVE: the stream and the droplets exist from 800 to 3334, on and off in
    one frame each way. Opacity only, so the wrapper never moves anything. ─── */
 .thr-water_gun__live {
   opacity: 0;
-  animation: thr-water_gun-live calc(3.17s * var(--animation-speed, 1)) linear both;
+  animation: thr-water_gun-live calc(3.067s * var(--animation-speed, 1)) linear both;
   animation-delay: calc(0.067s * var(--animation-speed, 1));
 }
 
 @keyframes thr-water_gun-live {
   0%,
-  16.8% {
+  14.11% {
     opacity: 0;
   }
-  16.81%,
-  96.74% {
-    /* 933-3467 */
+  14.12%,
+  96.73% {
+    /* 800-3334 */
     opacity: 1;
   }
-  96.75%,
+  96.74%,
   100% {
-    /* 3467: the cut */
+    /* 3334: the cut */
     opacity: 0;
   }
 }
@@ -137,7 +149,7 @@
   animation-name: thr-water_gun-flow;
   animation-duration: calc(0.18s * var(--animation-speed, 1));
   animation-timing-function: linear;
-  animation-delay: calc(0.6s * var(--animation-speed, 1));
+  animation-delay: calc(0.5s * var(--animation-speed, 1));
   animation-iteration-count: 14;
   animation-fill-mode: both;
 }
@@ -151,41 +163,41 @@
   }
 }
 
-/* ── THE SPLAT: full size in one frame at 933 (it covers the avatar at once),
-   a fast 1.1x pop by 1000, back by 1067, cut in one frame at 3467. ───────── */
+/* ── THE SPLAT: full size in one frame at 800 (it covers the avatar at once),
+   a fast 1.1x pop by 867, back by 934, cut in one frame at 3334. ───────── */
 .thr-water_gun__splat {
   transform-box: fill-box;
   transform-origin: 50% 50%;
   opacity: 0;
-  animation: thr-water_gun-splat calc(3.17s * var(--animation-speed, 1)) ease-out both;
+  animation: thr-water_gun-splat calc(3.067s * var(--animation-speed, 1)) ease-out both;
   animation-delay: calc(0.067s * var(--animation-speed, 1));
 }
 
 @keyframes thr-water_gun-splat {
   0%,
-  16.8% {
+  14.11% {
     opacity: 0;
     transform: scale(1);
   }
-  16.81% {
-    /* 933: on, full size */
+  14.12% {
+    /* 800: on, full size */
     opacity: 1;
     transform: scale(1);
   }
-  18.93% {
-    /* 1000: the pop */
+  16.3% {
+    /* 867: the pop */
     opacity: 1;
     transform: scale(1.1);
   }
-  21.04%,
-  96.74% {
-    /* 1067-3467: settled; the pulse below carries the loop */
+  18.49%,
+  96.73% {
+    /* 934-3334: settled; the pulse below carries the loop */
     opacity: 1;
     transform: scale(1);
   }
-  96.75%,
+  96.74%,
   100% {
-    /* 3467: the cut */
+    /* 3334: the cut */
     opacity: 0;
     transform: scale(1);
   }
@@ -198,7 +210,7 @@
   animation-name: thr-water_gun-pulse;
   animation-duration: calc(0.278s * var(--animation-speed, 1));
   animation-timing-function: ease-in-out;
-  animation-delay: calc(0.6s * var(--animation-speed, 1));
+  animation-delay: calc(0.5s * var(--animation-speed, 1));
   animation-iteration-count: 9;
   animation-fill-mode: both;
 }
@@ -218,14 +230,14 @@
 /* ── THE DROPLETS: each starts under the blob, surfaces at its rim and dies
    up to 0.4 u past it, once per pulse. Each carries its own end point in
    --dx / --dy and its own delay inline; the wrapper above cuts them all at
-   3467. The scale pivots on the droplet's own centre. ────────────────────── */
+   3334. The scale pivots on the droplet's own centre. ────────────────────── */
 .thr-water_gun__drop {
   transform-box: fill-box;
   transform-origin: 50% 50%;
   animation-name: thr-water_gun-drop;
   animation-duration: calc(0.278s * var(--animation-speed, 1));
   animation-timing-function: cubic-bezier(0.15, 0.75, 0.35, 1);
-  animation-delay: calc(0.6s * var(--animation-speed, 1));
+  animation-delay: calc(0.5s * var(--animation-speed, 1));
   animation-iteration-count: 9;
   animation-fill-mode: both;
 }

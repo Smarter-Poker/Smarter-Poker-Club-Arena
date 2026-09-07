@@ -33,6 +33,13 @@ import {
 import { isPotLimitVariant, isFixedLimitVariant } from './BettingStructure.js';
 import { equityGovernor, governedIterations } from './EquityLoadGovernor.js';
 
+/**
+ * V13's precision floor for banded multiway Omaha. It applies at FULL
+ * precision only — see the note at its use site: it is a way to spend headroom
+ * the engine has, never a way to overrule the governor when it has none.
+ */
+export const BANDED_OMAHA_FLOOR_ITERATIONS = 120;
+
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2017,7 +2024,8 @@ export function simulateEquity(
   // V44: the second look multiplies BEFORE the governor, so a saturated
   // loop still wins; the governor's floor is the governor's floor.
   if (equityDepth > 1) iterations = Math.floor(iterations * equityDepth);
-  iterations = governedIterations(iterations, equityGovernor.current());
+  const govScale = equityGovernor.current();
+  iterations = governedIterations(iterations, govScale);
   if (oppBands && vi.isOmaha) {
     // V13: the trim was HALVING the sample in exactly the spots that matter
     // most — multiway banded pots — and the measured cost was severe. Run to
@@ -2028,7 +2036,25 @@ export function simulateEquity(
     // Measured latency at the untrimmed count is 11-13 ms against a 25 ms
     // budget, so the trim was buying headroom the engine did not need.
     // Softened to a light trim for the widest multiway case only.
-    iterations = Math.max(120, Math.floor(iterations * (numOpponents >= 3 ? 0.85 : 1)));
+    //
+    // ── THE FLOOR BELOW USED TO OUTRANK THE GOVERNOR (fixed 2026-09-07) ────
+    // `Math.max(120, ...)` runs AFTER governedIterations, so on a saturated
+    // loop it RAISED the banded-Omaha sample back to 120 — double the
+    // governor's own floor of 60. The comment fourteen lines up says "the
+    // governor's floor is the governor's floor", and for the single most
+    // expensive path in the profile it was not: `scoreOmahaHi` (12.4%),
+    // `placeOmahaBandCombo` (3.6%), `scoreOmahaHiPartial` and
+    // `omahaQuickCategory` are all reached through here, and Omaha was 52% of
+    // the fleet's hands on the day this was measured. The V13 floor exists to
+    // buy PRECISION out of headroom the engine has; when the governor says
+    // there is no headroom, there is none to spend. So the floor still applies
+    // at full precision and the trim still trims — it simply may no longer
+    // raise the count above what the governor just allowed.
+    const bandFloor =
+      govScale >= 1
+        ? BANDED_OMAHA_FLOOR_ITERATIONS
+        : Math.min(BANDED_OMAHA_FLOOR_ITERATIONS, iterations);
+    iterations = Math.max(bandFloor, Math.floor(iterations * (numOpponents >= 3 ? 0.85 : 1)));
   }
   // Recorded after every trim, so it is the budget actually spent rather than
   // the one requested. See equitySampleSizeOfLastCall above.

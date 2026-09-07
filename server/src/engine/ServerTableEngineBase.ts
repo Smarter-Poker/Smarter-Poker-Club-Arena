@@ -3144,9 +3144,18 @@ export abstract class ServerTableEngineBase {
     return this.engineTelemetry.getPerformanceSummary();
   }
 
-  // Bible V8 §10.4 — Prometheus text exposition format
+  // Bible V8 §10.4 — Prometheus text exposition format.
+  // Correct for ONE engine in isolation. The fleet endpoint must NOT
+  // concatenate these: every global gauge in here is unlabelled, so N engines
+  // produce N samples of the same series. Use `telemetry` with
+  // `EngineTelemetry.renderFleetMetrics` instead — see the note there.
   getPrometheusMetrics(): string {
     return this.engineTelemetry.getPrometheusMetrics();
+  }
+
+  /** The telemetry instance, so the fleet renderer can aggregate globals once. */
+  get telemetry(): EngineTelemetry {
+    return this.engineTelemetry;
   }
 
   onHandComplete(

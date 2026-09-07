@@ -1389,6 +1389,8 @@ export class EngineChannelClient {
   private handshakeFailures = 0;
   private reconnectTimer: number | null = null;
   private intentionalClose = false;
+  private handshakeTimer: number | null = null;
+  private static readonly HANDSHAKE_TIMEOUT_MS = 15_000;
 
   private listeners: ChannelListeners = {
     onClubPresence: new Set(),
@@ -1560,6 +1562,7 @@ export class EngineChannelClient {
   /** Close the channel connection permanently. */
   disconnect(): void {
     this.intentionalClose = true;
+    this.clearHandshakeTimer();
     this.stopWatchdog();
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
@@ -1729,9 +1732,24 @@ export class EngineChannelClient {
       return;
     }
     this.ws = ws;
+    // The heartbeat watchdog starts only after OPEN. A stalled handshake
+    // therefore needs its own deadline, even when close emits no event.
+    this.clearHandshakeTimer();
+    this.handshakeTimer = window.setTimeout(() => {
+      this.handshakeTimer = null;
+      if (this.ws !== ws || ws.readyState !== WebSocket.CONNECTING) return;
+      this.ws = null;
+      try {
+        ws.close();
+      } catch {
+        // Recovery cannot depend on a broken socket acknowledging close.
+      }
+      if (!this.intentionalClose) this.scheduleReconnect();
+    }, EngineChannelClient.HANDSHAKE_TIMEOUT_MS);
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
+      this.clearHandshakeTimer();
       this.retryCount = 0;
       this.handshakeFailures = 0;
       // A fresh socket has no subscriptions, including on the first connect.
@@ -1767,7 +1785,8 @@ export class EngineChannelClient {
     };
 
     ws.onclose = (e) => {
-      if (this.ws !== null && this.ws !== ws) return;
+      if (this.ws !== ws) return;
+      this.clearHandshakeTimer();
       if (this.intentionalClose) return;
       if (e.code === CLOSE_AUTH_FAILED || closeMeansAuth(e.code, e.reason)) {
         this.setStatus('auth_failed');
@@ -1936,6 +1955,12 @@ export class EngineChannelClient {
         }
         this.scheduleReconnect();
       });
+  }
+
+  private clearHandshakeTimer(): void {
+    if (this.handshakeTimer === null) return;
+    window.clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
   }
 
   private scheduleReconnect(): void {

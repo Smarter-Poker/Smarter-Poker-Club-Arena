@@ -279,6 +279,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
          the original bug's own starting position, reached through the recovery
          path. Same source as the other two: the table row, never the roster. */
       max_seats: Number(this.tableInfo?.max_players) || 0,
+      // 2026-09-07: published beside max_seats on every payload so the client
+      // knows when seatIdentity() has scrubbed the roster and must not paint
+      // a real face over it from its own profile sync (an-avatar-change-
+      // stays-changed changelog). Absent on an older engine = not anonymous.
+      is_anonymous: this.tableInfo?.is_anonymous === true,
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,
       // 2026-08-23: publish the betting structure rather than leaving the
@@ -555,6 +560,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
          Clients older than this field fall back to the inference and are no
          worse off than they are today. */
       max_seats: Number(this.tableInfo?.max_players) || 0,
+      // 2026-09-07: published beside max_seats on every payload so the client
+      // knows when seatIdentity() has scrubbed the roster and must not paint
+      // a real face over it from its own profile sync (an-avatar-change-
+      // stays-changed changelog). Absent on an older engine = not anonymous.
+      is_anonymous: this.tableInfo?.is_anonymous === true,
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       // Dan 2026-08-29: the subset of the above who have ALREADY agreed to
       // post and are held out only by the seat they are in. Published so the
@@ -760,6 +770,11 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
          Clients older than this field fall back to the inference and are no
          worse off than they are today. */
       max_seats: Number(this.tableInfo?.max_players) || 0,
+      // 2026-09-07: published beside max_seats on every payload so the client
+      // knows when seatIdentity() has scrubbed the roster and must not paint
+      // a real face over it from its own profile sync (an-avatar-change-
+      // stays-changed changelog). Absent on an older engine = not anonymous.
+      is_anonymous: this.tableInfo?.is_anonymous === true,
       waiting_for_bb_user_ids: Array.from(this.waitingForBB),
       post_bb_deferred_user_ids: Array.from(this.postBBWhenClear),
       pots: [],

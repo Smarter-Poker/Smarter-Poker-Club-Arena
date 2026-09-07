@@ -17,6 +17,7 @@ import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { isPlatformStaffRole } from '../utils/platformRoles';
 import {
   readClubWorkspaceCache,
   removeClubWorkspaceCache,
@@ -232,10 +233,7 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
         setClubUUID(resolvedId);
         setClubRole(membershipResult.data?.role || null);
         setMembershipStatus(nextMembershipStatus);
-        setIsPlatformStaff(
-          !profileResult.error &&
-            (profileResult.data?.role === 'admin' || profileResult.data?.role === 'super_admin')
-        );
+        setIsPlatformStaff(!profileResult.error && isPlatformStaffRole(profileResult.data?.role));
         const verifiedAt = Date.now();
         setLastSyncedAt(verifiedAt);
         setUsingCachedAccess(false);
@@ -249,9 +247,7 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
             clubUUID: resolvedId,
             clubRole: membershipResult.data?.role || null,
             membershipStatus: nextMembershipStatus!,
-            isPlatformStaff:
-              !profileResult.error &&
-              (profileResult.data?.role === 'admin' || profileResult.data?.role === 'super_admin'),
+            isPlatformStaff: !profileResult.error && isPlatformStaffRole(profileResult.data?.role),
             verifiedAt,
           });
         } else {

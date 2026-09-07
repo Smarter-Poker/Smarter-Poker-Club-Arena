@@ -82,7 +82,18 @@ const code = {
     if (start === -1 || end === -1) throw new Error('THEME_PRESET_CATALOG not found');
     const block = themeLib.slice(start, end);
     const out = new Map();
-    for (const m of block.matchAll(/id: '([^']+)'[\s\S]{0,260}?tier: '(free|vip)'/g)) {
+    /* THE ID, NOT EVERY FIELD THAT ENDS IN `id` (2026-09-06).
+       This was /id: '([^']+)'.../ with no boundary, and every entry in this
+       catalog also carries `table_id`, `button_id`, `background_id` and
+       `cards_id`. `table_id: 'classic_green'` CONTAINS the substring
+       `id: 'classic_green'`, so the scanner read felt asset names as theme
+       ids and then reported all nine of them missing from cosmetic_catalog,
+       plus all nine real theme ids missing from the code. Every one of those
+       eighteen lines was false: the code's ids (default-dark, classic-brown,
+       neon-blue ...) match the database exactly.
+       The lookbehind rejects a preceding word character, so `table_id:` no
+       longer matches and only the entry's own `id:` does. */
+    for (const m of block.matchAll(/(?<![\w$])id: '([^']+)'[\s\S]{0,260}?tier: '(free|vip)'/g)) {
       out.set(m[1], m[2]);
     }
     return out;

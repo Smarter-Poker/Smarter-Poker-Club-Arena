@@ -1,6 +1,6 @@
 {
   "contractVersion": "smarter-poker.solver-policy.v1",
-  "policyVersion": "solver-policy-service.1.0.0",
+  "policyVersion": "solver-policy-service.1.0.1",
   "key": {
     "contractVersion": "smarter-poker.solver-policy.v1",
     "variant": "nlh",
@@ -36,8 +36,8 @@
       }
     ],
     "blinds": {
-      "smallBlind": 1,
-      "bigBlind": 2,
+      "smallBlind": 50,
+      "bigBlind": 100,
       "ante": 0,
       "bigBlindAnte": 0,
       "straddles": [],
@@ -72,7 +72,44 @@
     ],
     "publicActionHistory": {
       "complete": true,
-      "actions": []
+      "actions": [
+        {
+          "sequence": 0,
+          "street": "preflop",
+          "actor": "BTN",
+          "action": "small_blind",
+          "amountChips": 50,
+          "amountBb": 0.5,
+          "allIn": false
+        },
+        {
+          "sequence": 1,
+          "street": "preflop",
+          "actor": "BB",
+          "action": "big_blind",
+          "amountChips": 100,
+          "amountBb": 1,
+          "allIn": false
+        },
+        {
+          "sequence": 2,
+          "street": "preflop",
+          "actor": "BTN",
+          "action": "raise",
+          "amountChips": 300,
+          "amountBb": 3,
+          "allIn": false
+        },
+        {
+          "sequence": 3,
+          "street": "preflop",
+          "actor": "BB",
+          "action": "call",
+          "amountChips": 200,
+          "amountBb": 2,
+          "allIn": false
+        }
+      ]
     },
     "legalActions": [
       {

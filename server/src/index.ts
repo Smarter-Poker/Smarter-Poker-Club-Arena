@@ -43,7 +43,7 @@ import { startHorseDailyAudit } from './services/HorseDailyAudit.js';
 import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import { startHorseDataLedgerSync } from './services/HorseDataLedgerSync.js';
 import { startHorseLaneLoader } from './services/HorseLaneLoader.js';
-import { startGtoChartLoader } from './services/GtoChartLoader.js';
+import { startGtoChartLoader, stopGtoChartLoader } from './services/GtoChartLoader.js';
 import {
   startSolverPolicyArtifactLoader,
   stopSolverPolicyArtifactLoader,
@@ -247,6 +247,7 @@ const shutdown = async () => {
   // cannot finish inside Docker's default 10s grace — bound it so we exit
   // cleanly on our own terms instead of being SIGKILLed mid-flush.
   httpServer.close();
+  stopGtoChartLoader();
   stopSolverPolicyArtifactLoader();
   await Promise.race([
     (async () => {

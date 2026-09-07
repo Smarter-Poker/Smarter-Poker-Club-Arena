@@ -94,8 +94,10 @@ ones in phase 4.
   only way `globals.css` and `design-tokens.css` reach the bundle. Deleting
   them dropped 18 kB of rules (`.btn`, `.card`, `.badge`, `.skip-link` ...)
   from the web CSS; the entry-chunk gate caught it before merge. Restored, with
-  a comment saying why, and the index CSS is now byte-identical to production
-  (177,902 bytes, `cmp` clean).
+  a comment saying why. The rebuilt index CSS is the same 177,902 bytes as
+  production; `cmp` shows 43 short runs of difference, every one a CSS-module
+  class hash (`_container_k8pu7_1` vs `_container_15wyz_1`), which Vite
+  derives from the build machine's file path. No rule differs.
 
 ### ~70 hardcoded asset addresses (audit tier 1, "not broken today")
 

@@ -23813,12 +23813,41 @@ export default function TablePage({
 
             {/* ─── PRE-ACTION BAR — Show when hero is seated AND not their turn.
                  2026-04-14 fix: also require heroSeat > 0 so observers (heroSeat=0)
-                 don't see the pre-action bar; and require currentPlayerSeat to be
-                 a real player — if 0 (transient between hands), hide the bar so
-                 it doesn't flicker against the ActionPanel during the same window. */}
+                 don't see the pre-action bar.
+
+                 ═══ AND IT NO LONGER ASKS WHETHER ANYBODY IS ON THE CLOCK ═══
+                 Dan 2026-09-07, verbatim: "THE ACTION TAB CONSTANTLY DISAPPEARS
+                 AND REAPPEARS ON THE BOTTOM, WHEN ACTION MOVES, EVEN IF THE
+                 ACTION HAS NOT CHANGED ... PRE ACTION SELECTOR SHOULD STAY ON
+                 THE BOTTOM, AND DYNAMICALLY CHANGE IF THE ACTION CHANGES, NOT
+                 KEEP RE APPEARING EACH TIME."
+
+                 This gate used to carry `currentPlayerSeat > 0`, and that one
+                 clause is the whole bug. EVERY action by EVERY player blanks the
+                 seat before the next one is known - `handleHandEvent` does it on
+                 the acting seat (search `currentPlayerSeat: 0`), and so does the
+                 hero's own optimistic apply - so the live value goes
+                 `seat N -> 0 -> seat M` on every single action at the table.
+                 With `> 0` in the gate the bar unmounted in that gap and
+                 remounted a moment later, replaying its 300ms preActionCrossFade
+                 entrance. Nothing about the hero's options had changed; the bar
+                 was blinking at the reconciler.
+
+                 The honest question is not "is somebody on the clock" but "is
+                 the clock KNOWN to be the hero's". `0 !== heroSeat` answers that
+                 correctly with no timer and no bridged state: while the next
+                 actor is being resolved the hero still cannot act, so the bar
+                 they arm a pre-action with stays exactly where it was.
+
+                 The 2026-04-14 note this replaces worried about `0` "between
+                 hands" - that case is already covered, and covered better, by
+                 `isHandInProgress` on the line above. The `0 === 0` flicker it
+                 was really written for belongs to the ActionPanel's `===` test
+                 (which keeps its `> 0` guards, untouched); a `!==` test cannot
+                 have it, because both sides being 0 needs heroSeat 0, and
+                 heroSeat > 0 is asserted here. */}
             {tableState.isHandInProgress &&
               tableState.heroSeat > 0 &&
-              tableState.currentPlayerSeat > 0 &&
               tableState.currentPlayerSeat !== tableState.heroSeat &&
               /* Dan 2026-04-17: after hero folds, hide PreActionBar — the
                  "weird lingering bar" bug. Folded hero has no pre-turn action. */

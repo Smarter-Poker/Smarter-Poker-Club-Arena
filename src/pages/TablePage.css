@@ -2763,16 +2763,24 @@
        that later block; the base rule's shorthand supplies the rest. */
   }
 
-  .table-scaler {
-    /* Dan 2026-08-17: must stay locked to the skin crop's 605/1000 aspect at
-       every breakpoint, or the painted felt window drifts out from under
-       .table-surface and the seat ring leaves the rail. */
-    aspect-ratio: 605 / 1000;
-    /* The 360px max-width that used to sit here was dead in the same way: the
-       2026-08-24 block below raises the cap to calc(100% - 6px) at this exact
-       breakpoint. Restating a superseded cap here only makes the file argue
-       with itself about which number is the real one. */
-  }
+  /* THE ASPECT LOCK THAT USED TO SIT HERE IS GONE (2026-09-07).
+
+     It read `aspect-ratio: 605 / 1000`, under a 2026-08-17 note saying the
+     scaler "must stay locked to the skin crop's aspect at every breakpoint, or
+     the painted felt window drifts out from under .table-surface". That
+     requirement ended on 2026-08-18, when the art stopped being an oversized
+     composite cropped by object-fit: cover and became pre-cropped art drawn
+     with object-fit: FILL — the full argument is in the <=768px block at the
+     foot of this file, which deliberately sets `aspect-ratio: auto` at this
+     same breakpoint and therefore already overrode this line.
+
+     So it changed nothing, and it cost a reader: two rules at one breakpoint
+     stating opposite aspects, the losing one carrying the more emphatic
+     comment. Its two neighbours had already been deleted for exactly this
+     ("restating a superseded cap here only makes the file argue with itself
+     about which number is the real one"); this is the third. The live rule is
+     at the foot of the file, and it is the one that now also reads
+     --sp-table-ar-h so a six-handed table is a shorter table (Dan's item 4). */
 
   .table-rail {
     /* No padding: .table-surface is positioned in % against this element's
@@ -4824,8 +4832,26 @@ button.post-bb-overlay-button {
        the reserves Dan tuned put it — every remaining pixel of length sits
        inside --sp-table-top / --sp-hero-clear / the bars, and those are his
        knobs, not this rule's. */
-    width: min(100%, calc(var(--sp-table-h, 100svh) * 0.7));
-    height: var(--sp-table-h, auto);
+    /* ── AND THE SEAT-COUNT HEIGHT IS READ HERE TOO (Dan 2026-09-07, item 4) ──
+       "WHY ARE THE 6 HANDED TABLES AND THE 9 HANDED TABLES THE SAME SIZE?"
+
+       Because on a phone they were, exactly, to the pixel. `--sp-table-ar-h`
+       (1000, or 960 for rings of 2-6 — see the measured block beside
+       `[data-seats]` above) reaches the base rule through `aspect-ratio`, and
+       the two declarations that replaced it here read `--sp-table-h` alone and
+       then set `aspect-ratio: auto`. So the one variable that encodes "a
+       six-handed table is a shorter table" was still being set on the element
+       and no longer read by anything at <=768px, which is the only width Dan
+       reviews from. It has been dead since the 2026-08-29 fill rule landed.
+
+       Restored as a HEIGHT SCALE rather than by putting the aspect lock back:
+       the lock is what starved the width on a notched phone, and that whole
+       argument above still stands. The ratio is applied to the height budget,
+       and the roundness cap is applied to the height the table actually takes,
+       so both halves keep meaning what they meant. */
+    --sp-seat-h-scale: calc(var(--sp-table-ar-h, 1000) / 1000);
+    height: calc(var(--sp-table-h, 100svh) * var(--sp-seat-h-scale));
+    width: min(100%, calc(var(--sp-table-h, 100svh) * var(--sp-seat-h-scale) * 0.7));
     aspect-ratio: auto;
   }
 

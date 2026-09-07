@@ -88,8 +88,16 @@ describe('the tracker', () => {
     expect(rpc).toHaveBeenCalledWith('fn_cash_vpip_status', { p_table_id: 't1' });
     const el = screen.getByTestId('hero-vpip');
     expect(el.textContent).toContain('VPIP');
+    /* REDESIGNED 2026-09-07 (Dan item 3): "VPIP NEEDS TO BE A SIMPLE SQUARE
+       WITH THE MINIMUM GAME REQUIREMENT AND THE USERS CURRENT VPIP INSIDE A
+       SQUARE BOX NEXT TO THE HERO, NOT A LARGE GENERIC RECTANGLE." Two
+       numbers, not four: the hand count and the sampling window are how the
+       floor is enforced, not something a player plays differently for, and
+       they were most of what made the old readout a rectangle. */
+    expect(el.textContent).toContain('CURRENT');
     expect(el.textContent).toContain('42%');
-    expect(el.textContent).toContain('Min 30% · 7/10 Hands');
+    expect(el.textContent).toContain('MIN 30%');
+    expect(el.textContent).not.toContain('Hands');
     expect(el.className).toContain('hero-vpip--sample');
     expect(el.style.left).toBe('50%');
     expect(el.style.top).toBe('100%');
@@ -127,7 +135,10 @@ describe('the tracker', () => {
     expect(rpc.mock.calls.length).toBe(before + 1);
     const el = screen.getByTestId('hero-vpip');
     expect(el.className).toContain('hero-vpip--under');
-    expect(el.textContent).toContain('Min 30% · 10 Hands');
+    // The standing still reaches the wrapper (it is how the felt knows), but
+    // the BADGE never colours itself by it - spec section 25.
+    expect(el.textContent).toContain('MIN 30%');
+    expect(el.textContent).toContain('25%');
     // ...and on the backstop, without a hand.
     await act(async () => {
       vi.advanceTimersByTime(VPIP_BACKSTOP_MS + 1);
@@ -168,7 +179,12 @@ describe('the tracker', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it('shows the plain figure on a table with no floor', async () => {
+  it('draws NOTHING on a table with no floor - there is no requirement to print', async () => {
+    /* The badge Dan designed is a REQUIREMENT badge: its bottom row is the
+       game rule. A table that runs no VPIP rule has no rule to put there, and
+       the old fallback ("3 Hands") was exactly the generic readout he asked to
+       be rid of. Better to show nothing than to invent a minimum to fill the
+       row - the same reasoning as section 22's `--%` over a fabricated 0%. */
     rpc.mockResolvedValue(seated({ nit_game: false, required: 0, hands: 3, vpip: 66.7 }));
     render(
       <HeroVpipTracker
@@ -182,10 +198,7 @@ describe('the tracker', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    const el = screen.getByTestId('hero-vpip');
-    expect(el.textContent).toContain('67%');
-    expect(el.textContent).toContain('3 Hands');
-    expect(el.className).toContain('hero-vpip--none');
+    expect(screen.queryByTestId('hero-vpip')).toBeNull();
   });
 });
 
@@ -362,9 +375,15 @@ describe('the regular ante reaches the felt', () => {
     expect(css).toMatch(
       /transform: translate\(calc\(-100% - var\(--sp-hero-half\) - 3px\), -50%\);/
     );
-    /* And it stays small: a readout beside the hero, not a second seat. */
-    expect(css).toMatch(/\.hero-vpip__figure \{\s*font-size: 0\.66rem;/);
-    expect(css).toMatch(/min-width: 40px;/);
+    /* And it stays small: a plaque beside the hero, not a second seat. The
+       pin moved with the redesign (2026-09-07) - this file no longer draws
+       anything, so there is no `__figure` font size to hold. What it still
+       owns, and what still has to stay small, is the badge's ONE size input.
+       Its appearance is locked inside VpipRequirementBadge (spec section 27),
+       which is why nothing here may reach into it. */
+    expect(css).toMatch(/--vpip-badge-size: 58px;/);
+    expect(css).toMatch(/--vpip-badge-size: 40px;/);
+    expect(css).not.toMatch(/\.hero-vpip__(figure|eyebrow|detail)/);
     expect(css).not.toMatch(/:hover/);
   });
 });

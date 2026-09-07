@@ -25,6 +25,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import VpipRequirementBadge from './VpipRequirementBadge';
 import './HeroVpipTracker.css';
 
 export interface HeroVpipStatus {
@@ -140,35 +141,27 @@ export default function HeroVpipTracker({
   if (!enabled || !status?.ok || !status.seated || !heroPos) return null;
 
   const standing = vpipStanding(status);
-  const hands = Number(status.hands ?? 0);
-  const vpip = status.vpip == null ? null : Math.round(Number(status.vpip));
+  const vpip = status.vpip == null ? null : Number(status.vpip);
   const floor = Number(status.required ?? 0);
-  const window = Math.max(1, Number(status.window ?? 10));
 
-  const figure = vpip == null ? '--' : `${vpip}%`;
-  const detail =
-    floor > 0
-      ? hands < window
-        ? `Min ${floor}% · ${hands}/${window} Hands`
-        : `Min ${floor}% · ${hands} Hands`
-      : `${hands} ${hands === 1 ? 'Hand' : 'Hands'}`;
-  const label =
-    floor > 0
-      ? `Your VPIP ${figure}, minimum ${floor} percent after ${window} hands, ${hands} hands played`
-      : `Your VPIP ${figure} over ${hands} hands`;
+  /* A TABLE WITH NO FLOOR HAS NOTHING TO PLACARD (Dan 2026-09-07, item 3).
+     The badge he designed is a REQUIREMENT badge - its bottom row is the game
+     rule. On a table that runs no VPIP rule there is no requirement to print,
+     and the old rectangle's fallback ("7 Hands") was the generic readout he
+     asked to be rid of. So the tracker renders nothing there rather than
+     inventing a minimum to fill the row. */
+  if (!(floor > 0)) return null;
 
   return (
     <div
       className={`hero-vpip hero-vpip--${standing}`}
       style={{ left: `${heroPos.x}%`, top: `${heroPos.y}%` }}
-      role="status"
-      aria-live="polite"
-      aria-label={label}
       data-testid="hero-vpip"
     >
-      <span className="hero-vpip__eyebrow">VPIP</span>
-      <span className="hero-vpip__figure">{figure}</span>
-      <span className="hero-vpip__detail">{detail}</span>
+      {/* The badge owns its own aria-label and role - see
+          VpipRequirementBadge. This wrapper is position only: it places the
+          square beside the hero's seat and does not draw. */}
+      <VpipRequirementBadge minimumVpip={floor} currentVpip={vpip} />
     </div>
   );
 }

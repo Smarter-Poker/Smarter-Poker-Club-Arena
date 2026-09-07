@@ -89,6 +89,54 @@ describe('THE TIMING CONTRACT with the engine (2026-08-29 hardening)', () => {
   });
 });
 
+describe('THE BAR DOES NOT BLINK BETWEEN ACTORS (Dan 2026-09-07)', () => {
+  /* Dan, verbatim: "THE ACTION TAB CONSTANTLY DISAPPEARS AND REAPPEARS ON THE
+     BOTTOM, WHEN ACTION MOVES, EVEN IF THE ACTION HAS NOT CHANGED ... PRE
+     ACTION SELECTOR SHOULD STAY ON THE BOTTOM."
+
+     The cause was one clause. Every action at the table blanks
+     `currentPlayerSeat` to 0 before the next actor is known, so the live value
+     is `seat N -> 0 -> seat M` on every action by every player; a
+     `currentPlayerSeat > 0` clause in the PreActionBar's gate therefore
+     unmounted the bar in that gap and remounted it a moment later, replaying
+     its entrance animation for a change that had not happened. */
+  const PAGE = readFileSync(path.resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
+
+  it('the PreActionBar gate asks whose turn it is NOT, never whether one is known', () => {
+    const at = PAGE.indexOf('<PreActionBar');
+    expect(at).toBeGreaterThan(-1);
+    // The conditional immediately above the mount is the gate.
+    const gate = PAGE.slice(PAGE.lastIndexOf('{tableState.isHandInProgress &&', at), at);
+    expect(gate).toContain('tableState.currentPlayerSeat !== tableState.heroSeat');
+    expect(
+      gate,
+      'a `currentPlayerSeat > 0` clause here unmounts the bar between every actor'
+    ).not.toContain('tableState.currentPlayerSeat > 0');
+  });
+
+  it('the ActionPanel KEEPS its > 0 guards - a `===` test can read 0 === 0', () => {
+    /* The two gates are not symmetrical and must not be "tidied" into each
+       other. `currentPlayerSeat === heroSeat` is true for a microsecond on
+       every snapshot churn when both are 0, which is the 2026-04-14 flicker
+       burst; `!==` cannot have that failure, because both being 0 requires
+       heroSeat 0 and the gate asserts heroSeat > 0. */
+    const at = PAGE.indexOf('heroActionRenderedRef.current = true');
+    expect(at).toBeGreaterThan(-1);
+    const gate = PAGE.slice(PAGE.lastIndexOf('{tableState.heroSeat > 0 &&', at), at);
+    expect(gate).toContain('tableState.currentPlayerSeat > 0');
+    expect(gate).toContain('tableState.currentPlayerSeat === tableState.heroSeat');
+  });
+
+  it('both bars still collapse when the hand is not in progress', () => {
+    // The between-hands case the removed clause was credited with covering is
+    // covered here, and covered honestly.
+    const at = PAGE.indexOf('<PreActionBar');
+    const gate = PAGE.slice(PAGE.lastIndexOf('{tableState.isHandInProgress &&', at), at);
+    expect(gate).toContain('tableState.isHandInProgress');
+    expect(gate).toContain('tableState.heroSeat > 0');
+  });
+});
+
 describe('the disarm lives on the PAGE, not only in the bar (2026-08-29 hardening)', () => {
   /* PreActionBar unmounts the moment the turn arrives — the exact boundary
      where a raise can invalidate an armed Call/Check. TablePage must run the

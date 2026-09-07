@@ -3,8 +3,8 @@
 **2026-09-07.** Migration `20260907044041_the_union_week_ends_at_midnight_pacific`.
 Applied to production before the 07:00 UTC boundary the same morning.
 
-Dan: *"THE WEEK CAN'T END UNTIL 2 AM ON MONDAY MORNING, WHEN THE WEST COAST HITS
-11:59:59."*
+Dan: _"THE WEEK CAN'T END UNTIL 2 AM ON MONDAY MORNING, WHEN THE WEST COAST HITS
+11:59:59."_
 
 2 AM Central, 07:00 UTC and midnight `America/Los_Angeles` are the same instant.
 None of them was the instant the platform used.
@@ -21,18 +21,18 @@ It is not a rounding difference. Re-running the closing week on the two
 boundaries, for the same union:
 
 | SHARK CLUB, week ending 2026-09-07 | UTC boundary | Pacific boundary |
-| --- | --- | --- |
-| rake generated | 617,837.36 | **626,097.38** |
-| players won | -508,382.90 | **-366,080.18** |
-| ECO adjustment | -92,653.19 | **-76,323.86** |
-| settled in chips | 665,508.08 | **823,504.84** |
+| ---------------------------------- | ------------ | ---------------- |
+| rake generated                     | 617,837.36   | **626,097.38**   |
+| players won                        | -508,382.90  | **-366,080.18**  |
+| ECO adjustment                     | -92,653.19   | **-76,323.86**   |
+| settled in chips                   | 665,508.08   | **823,504.84**   |
 
 8,260.02 of rake and 16,329.33 of ECO were landing in the wrong week, every week.
 
 ## Why it went unnoticed for three weeks
 
 Three `GLOBAL_SETTLEMENT_FREEZE` rows had been active in `settlement_locks`
-since 2026-08-26 (*"EMERGENCY: PROFIT DRIFT INVESTIGATION"*, `unlock_at`
+since 2026-08-26 (_"EMERGENCY: PROFIT DRIFT INVESTIGATION"_, `unlock_at`
 2099-01-01, so they never expire). `fn_union_settlement_cascade` raises on any
 active row, and `fn_union_settlement_cascade_all` caught every union in
 `EXCEPTION WHEN OTHERS` and returned `'success', true` regardless.
@@ -45,7 +45,7 @@ recorded a single successful run in the table's history.
 ## What this migration changes
 
 1. **`fn_union_week_start` truncates in `America/Los_Angeles`,** and
-   `fn_union_prev_week_start` subtracts on the *local* timestamp so a DST week
+   `fn_union_prev_week_start` subtracts on the _local_ timestamp so a DST week
    is one calendar week rather than 168 hours. Asserted in the migration: the
    PDT-to-PST week is 169 hours and the PST-to-PDT week is 167.
 2. **`fn_union_settlement_cascade_all` returns `success: false` when any union
@@ -87,7 +87,7 @@ table had ever carried a `seated_end_cash` key** - `fn_union_pnl_bootstrap`
 writes one, but every stored row predated that code. The function reported this
 honestly as `baseline_cash_exact: false` and nothing had ever looked at it.
 
-The observable symptom: reading the *same closed period* four times over
+The observable symptom: reading the _same closed period_ four times over
 thirteen minutes returned four different answers, drifting from -92,653.19 to
 -92,701.73 on SHARK CLUB's ECO. `outstanding` is entirely ECO plus
 presettlements, so that is the number a club is billed.
@@ -155,3 +155,99 @@ separate surface, and they need their own change.
 
 Every assertion in the migration passed, including both DST week lengths; the
 migration aborts rather than leaving the platform half-moved.
+
+---
+
+# What the probes found afterwards
+
+Migrations `20260907045901` and `20260907050337`, applied the same morning.
+
+Moving the boundary was not enough. Probing the **real** settlement path in a
+rolled-back transaction found three more things, every one of which would have
+hit the 07:05 run.
+
+## 1. The hourly maintenance freeze kills the cascade
+
+Probing round 2 at 04:55 UTC returned, from `zz_freeze_guard`:
+
+    PLATFORM_FROZEN: INSERT on chip_transactions was refused
+
+The break announces at :53 and freezes :55 to :00 with `enforce_freeze: true`.
+Rounds 1 to 3 move chips through `fn_debit_treasury`, so a cascade still running
+at :53 dies and **rolls back every round it had already completed**. Section 13
+rule 5 has always required this gate for a periodic sweep that moves money; the
+settlement never had it. `fn_union_settlement_cascade_due()` now refuses to
+start while frozen, and refuses after :45.
+
+## 2. The due runner would have replayed an anomalous week
+
+Before the Monday boundary, `fn_union_week_start(now())` is still _last_ Monday.
+Called at 05:00 on 2026-09-07 the runner offered to settle
+**2026-08-24 to 2026-08-31** - one of the two weeks this changelog explicitly
+refuses to replay, carrying 1,242,950.74 of ECO against SHARK CLUB. It now
+refuses any period that closed more than three days ago. Verified live:
+
+    {"reason": "platform_frozen", "skipped": true, "success": true,
+     "period_start": "2026-08-24T07:00:00+00:00",
+     "period_end":   "2026-08-31T07:00:00+00:00"}
+
+## 3. `fn_union_club_invoice` was readable without an account
+
+`SECURITY DEFINER`, `EXECUTE` held by `PUBLIC`, and it never calls `auth.uid()`.
+It runs as the owner, past RLS, and returns every member club's rake, rakeback,
+player win/loss and amount outstanding **to anybody who asks**. Caught by
+`check-definer-authorization` in `.husky/pre-push` - pre-existing, and
+re-declaring the function is what surfaced it.
+
+Checked before revoking: it backs no RLS policy, no view depends on it, and its
+only caller is `pages/api/club-arena/union-invoice.js` using the service role
+key. Club owners read their statements through `ca_club_union_invoices`.
+Now `service_role` only; `anon` and `authenticated` revoked, `PUBLIC` named
+explicitly because anon inherits it.
+
+## 4. The job could never have finished
+
+The close job carried `statement_timeout = 600s`. Round 2 stamps `settled_at`
+on every commission row in the period, and `settled_at` is in the predicate of
+`agent_commissions_unsettled_idx`, so no update is HOT and eight indexes are
+maintained per row version. Measured:
+
+|                                    |                                              |
+| ---------------------------------- | -------------------------------------------- |
+| rows to stamp for the closing week | 2,124,321 of 3,560,875                       |
+| table size                         | 2,035 MB                                     |
+| measured rate                      | 100,000 rows in 31.44 s = **3,180 rows/sec** |
+| projected for the period           | **668 s**, for round 2 alone                 |
+
+Two full-cascade probes agree: one cancelled at 240 s and one at 540 s, both
+inside that UPDATE. The wall clock was never the constraint - :05 to :53 is 48
+minutes - the 600 s cap was. Raised to 2400 s, worst case landing at :45.
+
+**This is a ceiling, not an expectation.** If a run approaches it, the thing to
+change is the `settled_at` model: stamping two million rows a week to record one
+fact per (club, agent, period) is the cost, and deriving "unsettled" from the
+last settled period end removes the write entirely. That is a design change and
+it was not made at 05:00 on the morning the invoices go out.
+
+## The schedule now
+
+| job                               | schedule           | notes                                     |
+| --------------------------------- | ------------------ | ----------------------------------------- |
+| `union-weekly-rakeback-recompute` | `45 6,7 * * 1`     | ahead of the boundary in both PDT and PST |
+| `union-weekly-rakeback-close`     | `5 7,8,9,10 * * *` | **daily**, four attempts, 2400 s ceiling  |
+
+Daily rather than Monday-only because the runner is idempotent and refuses stale
+periods: a Monday missed entirely now heals on Tuesday instead of waiting a full
+week, which is the exact failure mode that hid three unsettled weeks.
+
+## Still open, and deliberately not touched tonight
+
+- `fn_union_active_player_counts` and `fn_union_slugify` are executable by
+  `anon` (`fn_union_governance_check`, critical). Both are low-yield reads and
+  `fn_union_slugify` backs the `unions` slug trigger, so revoking it needs the
+  trigger's ownership checked first.
+- Two member clubs have no `union_club_terms` row and fall back to the
+  hardcoded 0.90 commission default.
+- **Deep Stack Society** generated 17,193.48 of rake this week while belonging
+  to no union.
+- The World Hub club-level settlement defects listed above.

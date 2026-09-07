@@ -124,15 +124,37 @@ function Trophy({ uid, k, tone }: { uid: string; k: string; tone: 'gold' | 'dark
     <g>
       {tone === 'gold' && (
         <defs>
-          <linearGradient id={g('bowl')} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={GOLD_HIGH} />
-            <stop offset="45%" stopColor={GOLD_MID} />
-            <stop offset="100%" stopColor={GOLD_DEEP} />
+          <linearGradient id={g('bowl')} x1="0" y1="0" x2="1" y2="0.15">
+            <stop offset="0%" stopColor="#765008" />
+            <stop offset="17%" stopColor={GOLD_MID} />
+            <stop offset="29%" stopColor={GOLD_HIGH} />
+            <stop offset="37%" stopColor="#ffffff" />
+            <stop offset="47%" stopColor={GOLD_MID} />
+            <stop offset="74%" stopColor={GOLD_DEEP} />
+            <stop offset="91%" stopColor={GOLD_HIGH} />
+            <stop offset="100%" stopColor="#78520c" />
           </linearGradient>
+          <linearGradient id={g('plinth')} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#bd9253" />
+            <stop offset="35%" stopColor={BRONZE_BASE} />
+            <stop offset="100%" stopColor="#301e10" />
+          </linearGradient>
+          <radialGradient id={g('contact')}>
+            <stop offset="0%" stopColor="#0c0804" stopOpacity="0.5" />
+            <stop offset="100%" stopColor="#0c0804" stopOpacity="0" />
+          </radialGradient>
         </defs>
       )}
+      {tone === 'gold' && <ellipse cx="1" cy="46" rx="19" ry="4" fill={`url(#${g('contact')})`} />}
       {/* the plinth */}
-      <rect x="-14" y="34" width="28" height="11" rx="1.6" fill={base} />
+      <rect
+        x="-14"
+        y="34"
+        width="28"
+        height="11"
+        rx="1.6"
+        fill={tone === 'gold' ? `url(#${g('plinth')})` : base}
+      />
       {/* the stem */}
       <rect x="-3.2" y="16" width="6.4" height="18" fill={base} />
       {/* the bowl, a chalice tapering down to the stem */}
@@ -157,6 +179,46 @@ function Trophy({ uid, k, tone }: { uid: string; k: string; tone: 'gold' | 'dark
       />
       {/* rim */}
       <ellipse cx="0" cy="-39" rx="14" ry="3" fill={tone === 'gold' ? GOLD_HIGH : SILHOUETTE} />
+      {tone === 'gold' && (
+        <g>
+          {/* A recessed mouth, rolled rim, fluted stem and inset plaque. */}
+          <ellipse cx="0" cy="-39.3" rx="11.7" ry="1.7" fill="#825311" />
+          <path d="M -13 -37.8 Q 0 -33.8 13 -37.8" fill="none" stroke="#fff6cc" strokeWidth="1.3" />
+          <path
+            d="M -11 -30 C -10 -11 -7 2 -2 12"
+            fill="none"
+            stroke="#fff8de"
+            strokeWidth="1.2"
+            opacity="0.72"
+          />
+          <path
+            d="M 9 -28 C 8 -10 6 0 2 10"
+            fill="none"
+            stroke="#80510c"
+            strokeWidth="1.1"
+            opacity="0.7"
+          />
+          <path d="M -1.4 18 L -1.4 32" stroke="#fff1aa" strokeWidth="1.1" />
+          <ellipse cx="0" cy="32" rx="6" ry="1.7" fill={bowl} />
+          <path d="M -12 35 L 12 35 M -12 43.5 L 12 43.5" stroke="#d0a963" strokeWidth="0.9" />
+          <rect
+            x="-6.5"
+            y="37"
+            width="13"
+            height="5"
+            rx="0.6"
+            fill={bowl}
+            stroke="#3e2811"
+            strokeWidth="0.7"
+          />
+          <path
+            d="M 0 -19 L 1.7 -15.2 L 5.8 -14.8 L 2.7 -12 L 3.5 -8 L 0 -10 L -3.5 -8 L -2.7 -12 L -5.8 -14.8 L -1.7 -15.2 Z"
+            fill="#fff0ac"
+            stroke="#a87518"
+            strokeWidth="0.65"
+          />
+        </g>
+      )}
       {tone === 'gold' && (
         <ellipse
           cx="-5"
@@ -268,7 +330,9 @@ function Payload({ uid }: RigProps) {
           <g
             className="thr-trophy__sparkle"
             style={
-              { animationDelay: 'calc(2.3s * var(--animation-speed, 1))' } as React.CSSProperties
+              {
+                animationDelay: 'calc(2.3s * var(--animation-speed, 1))',
+              } as React.CSSProperties
             }
           >
             <SparkleGlint />
@@ -278,7 +342,9 @@ function Payload({ uid }: RigProps) {
           <g
             className="thr-trophy__sparkle"
             style={
-              { animationDelay: 'calc(2.634s * var(--animation-speed, 1))' } as React.CSSProperties
+              {
+                animationDelay: 'calc(2.634s * var(--animation-speed, 1))',
+              } as React.CSSProperties
             }
           >
             <SparkleGlint />

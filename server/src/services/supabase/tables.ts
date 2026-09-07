@@ -11,6 +11,7 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATABASE HELPERS — Common queries used by the engine
@@ -97,10 +98,13 @@ export async function loadSeatedPlayers(tableId: string) {
        untouched. Only the source column moves.
 
        Highest-leverage avatar read in the app - it feeds every seat at every
-       table. If it regresses, the felt shows photographs again. */
-    .select(
-      'id, display_name, username, is_horse, horse_profile, avatar_url:arena_avatar_url, use_real_name, equipped_frame, equipped_aura'
-    )
+       table. If it regresses, the felt shows photographs again.
+
+       2026-09-07: the projection lives in `./tableAvatar.ts`, the engine
+       mirror of `src/lib/tableAvatar.ts`, so this read and the client's live
+       profile sync name the SAME column by construction - a law test imports
+       both and fails if they drift. */
+    .select(SEATED_PROFILE_SELECT)
     .in('id', userIds);
   if (profileErr) {
     // The filter below drops every seat whose profile is missing, so a silent

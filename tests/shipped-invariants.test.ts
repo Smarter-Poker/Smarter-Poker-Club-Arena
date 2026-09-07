@@ -638,3 +638,11 @@ it('union periods require verified zero recipient shortfalls before settlement',
  expect(sql).toContain("OR jsonb_typeof(v_r3->'shortfalls') IS DISTINCT FROM 'number'");
  expect(has('scripts/ci/probes/union-recipient-shortfalls.sql','FAIL unpaid recipient marked period settled')).toBe(true);
 });
+
+
+it('Spin cancellation reverses aggregate rake with its original attribution identity', () => {
+ const sql = read('supabase/migrations/20260907223105_spin_cancellation_reverses_original_aggregate_rake_rows.sql');
+ expect(sql).toContain("'original_rake_record_id',v_fee_row.id");
+ expect(sql).toContain("'atomic_cancel_tournament',v_fee_row.player_contributions");
+ expect(has('scripts/ci/probes/spin-cancel-aggregate-fee.sql','FAIL fee reversal failure committed refunds or cancellation')).toBe(true);
+});

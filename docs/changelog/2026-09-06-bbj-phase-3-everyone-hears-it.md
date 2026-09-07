@@ -140,3 +140,74 @@ whose tab still holds the previous bundle is still subscribing, and taking the
 table out from under them before their client stops asking would freeze their
 figure with no way to know it. The publication drop is the last step of this
 phase, not the first.
+
+## 3.4 The jackpot says when it crosses a number the club chose
+
+A jackpot grows a few chips a hand and is hit about once a fortnight. Between
+those two facts sits the only marketing the feature has ever needed: the moment
+it passes a number that makes a player want to sit down. Nobody was told - a
+player had to happen to be looking at a screen that showed the figure.
+
+A club sets its own thresholds (`bbj_notify_thresholds`), every active member of
+that club is told once when the pool crosses one, and the threshold re-arms
+when the jackpot is next hit. Keyed by CLUB and not by pool: a union banks one
+jackpot for all of its clubs, so pool-keyed thresholds would let one club's
+operator decide when another club's members get told.
+
+Three things it deliberately does not do:
+
+- **It never runs on the money path.** The obvious implementation is a trigger
+  on `bbj_pools` and it is the wrong one - that row is updated inside the
+  transaction taking a player's rake, 40,219 times a day. A fan-out that can be
+  slow, or fail, has no business in there. This is a periodic reader of a
+  balance that has already been committed, and the worst a failure can do is
+  delay a message.
+- **It does not fire twice for one crossing.** A balance parked one chip above
+  the number would otherwise notify every member every five minutes for a
+  fortnight, and the first thing anybody would do is turn notifications off.
+- **It does not skip the horses.** CLAUDE.md 10.5, and this is exactly the
+  shape that law was written about - a fan-out where somebody reaches for
+  `AND NOT is_horse` because "a horse has no browser". A horse is a member and
+  is told, through the same path the payout notification already uses.
+
+### The probe found a deadlock, on the first attempt
+
+Run inside a self-aborting transaction against production (CLAUDE.md 11.5, an
+error IS the success case), and it did not get as far as the assertions:
+
+```
+40P01: deadlock detected
+while locking tuple (74,6) in relation "profiles"
+SELECT 1 FROM ONLY public.profiles x WHERE id = $1 FOR KEY SHARE OF x
+```
+
+`notifications.user_id` references `profiles.id`, so a bulk insert of one row
+per member takes a per-profile `FOR KEY SHARE` lock - up to 418 of them - **in
+whatever order `club_members` happened to return**. Any concurrent writer
+touching the same profiles in a different order deadlocks with it. That is not
+a rare race on a live database: it happened on the first attempt, against
+ordinary afternoon traffic.
+
+Fixed at the cause rather than wrapped in a retry (10.11): the fan-out is
+ordered by `user_id`, a total order every writer can agree on without
+coordinating. The arbitrary order was never a decision anybody made; it was the
+absence of one. Each threshold's work is now also caught separately, so one
+club's failure cannot cost the others theirs - and because the crossing row
+rolls back with the fan-out, a failed announcement leaves the threshold ARMED
+rather than recorded as announced to nobody.
+
+Re-probed, and rolled back:
+
+```
+418 members - balance 23,113.14
+run 1: {"crossings": 1, "notified": 418, "failed": 0}
+run 2: {"crossings": 0, "notified": 0,   "failed": 0}
+title: "The Bad Beat Jackpot Just Passed $11,556.57"
+```
+
+Zero residue afterwards: no thresholds, no crossings, no notifications.
+
+The grants on both new tables are named at birth rather than inherited - phase
+2 shipped exactly that latent hazard on `bbj_unclaimed_shares` (Supabase grants
+ALL to `anon` and `authenticated` on every new public table) and had to come
+back for it a day later.

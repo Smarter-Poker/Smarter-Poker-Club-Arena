@@ -40,6 +40,7 @@ import {
   logHandHistory,
   processBBJPayout,
   processMiniBBJPayout,
+  recordBBJNearMiss,
   resolveJackpotSiblingClubIds,
   completeHandSnapshot,
   supabase,
@@ -1180,6 +1181,27 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               `[ServerTableEngine:${this.tableId}] BBJ near miss (${nearMiss.reason}): ` +
                 `${nearMiss.userId} held ${nearMiss.handName}`
             );
+            /* AND WRITE IT DOWN (2026-09-07). Until now this branch produced a
+               console line and a hub event that expires in seconds, so after
+               the fact nothing could distinguish "no qualifying hand occurred"
+               from "one occurred and a gate refused it". That is exactly the
+               question the jackpot's seventeen-day silence turned on, and it
+               was unanswerable from this database (CLAUDE.md 10.86 rule 1).
+               Fire-and-forget: a cosmetic banner, and now a row, must never be
+               able to break settlement. */
+            void recordBBJNearMiss({
+              tableId: this.tableId,
+              clubId: this.tableInfo?.club_id ?? null,
+              handNumber: this.handCount,
+              variant,
+              bigBlind: this.tableInfo?.big_blind ?? null,
+              potSize: this.currentHandPotSize,
+              playersDealt: dealtInPlayerIds.length,
+              userId: nearMiss.userId,
+              handName: nearMiss.handName,
+              reason: nearMiss.reason,
+              message: nearMiss.message,
+            }).catch(() => undefined);
             this.hub?.emitEvent(this.tableId, {
               type: 'bbj_near_miss',
               table_id: this.tableId,

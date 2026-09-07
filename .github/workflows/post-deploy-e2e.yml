@@ -132,9 +132,18 @@ jobs:
 
       # See the note in ci.yml: apt-get on every run is correct for a throwaway
       # hosted image and pure waste on a box where the libraries are permanent.
+      # Keyed on runner.environment since 2026-09-07, not on vars.CI_RUNNER.
+      # The old condition was right, but only by coincidence: this workflow has
+      # one job and it routes on that same variable, so "the variable is set"
+      # happened to mean "this job is on the box". Nothing holds those two
+      # facts together - add a second job here, or pin this one back to
+      # ubuntu-latest for an afternoon, and the condition starts skipping
+      # --with-deps on a hosted image that has no browser libraries at all,
+      # which is a browser that cannot start rather than a browser that is
+      # slow. runner.environment answers the question actually being asked.
       - name: Install Chromium and WebKit
         run: |
-          if [ -n "${{ vars.CI_RUNNER }}" ]; then
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
             npx playwright install chromium webkit
           else
             npx playwright install chromium webkit --with-deps

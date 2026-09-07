@@ -1,0 +1,273 @@
+/**
+ * FIREWORKS - keyframes. `flight.mode` is 'none', so `throwableLandingMs`
+ * returns 0 and LANDING IS 0: every delay below IS the catalogue's ms from
+ * launch, with nothing subtracted. (Every other rig subtracts its flight.)
+ * Every duration and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and the reference's
+ * avatar was 30 px wide, so measured pixel offsets are scaled by 100/30.
+ *
+ *   0-200      rocket 1 trail rises at the lower-right
+ *   233-733    burst 1 (blue), peak 433-533
+ *   333-533    rocket 2 trail rises on the left
+ *   567-1100   burst 2 (magenta), peak 767-833
+ *   833-1000   rocket 3 trail rises on the right
+ *   1033-1767  burst 3, yellow -> orange -> brown-orange embers
+ *   1767-2033  gap: nothing on screen
+ *   2067-2300  wave 2, three trails together
+ *   2333-2967  wave 2, three bursts together; peak 2567, then darken and fade
+ *   3000       clean (the player unmounts)
+ *
+ * == THE IDIOM, and the two darkroom bugs behind it =========================
+ * An element that APPEARS at a beat carries `opacity: 0` in its own rule, runs
+ * `forwards` (NOT `both`), and its 0% frame is the VISIBLE open frame. Both
+ * halves are a bug this file actually shipped:
+ *
+ *   1. A blanket `.thr-fireworks--payload > g { opacity: 0 }` used to hide the
+ *      children. It could not work: every animated class here sits on an INNER
+ *      group inside a positioning `<g transform>`, so the blanket pinned the
+ *      PARENT at zero and all eleven beats photographed as a bare seat.
+ *   2. Replacing it with `both` plus a hidden 0% frame MOVED the bug rather
+ *      than fixing it: `backwards` fills the delay with the 0% frame, so the
+ *      burst was correctly hidden while waiting AND still invisible on the
+ *      very frame it was meant to open. The reference opens burst 1 as a 4 px
+ *      dot AT 233, not as nothing at 233.
+ *
+ * `forwards` leaves the element on its own `opacity: 0` until the delay
+ * elapses, then plays a 0% frame that is already on screen.
+ */
+
+.thr-fireworks {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* == THE ROCKET TRAILS ====================================================
+   A tapered streak that rises and dies, gone by the frame its burst opens.
+   The reference climbs about 5 px per frame for 6-7 frames. ============ */
+
+.thr-fireworks__t1,
+.thr-fireworks__t2,
+.thr-fireworks__t3,
+.thr-fireworks__t4 {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+}
+
+/* 0-200: rocket 1, up through 1.03 u (31 px), at the avatar's lower-right */
+.thr-fireworks__t1 {
+  animation: thr-fireworks-rise-103 calc(0.2s * var(--animation-speed, 1)) linear forwards;
+}
+
+/* 333-533: rocket 2, up through 1.33 u, on the LEFT */
+.thr-fireworks__t2 {
+  animation: thr-fireworks-rise-133 calc(0.2s * var(--animation-speed, 1)) linear
+    calc(0.333s * var(--animation-speed, 1)) forwards;
+}
+
+/* 833-1000: rocket 3, up through 1.17 u, on the RIGHT */
+.thr-fireworks__t3 {
+  animation: thr-fireworks-rise-117 calc(0.167s * var(--animation-speed, 1)) linear
+    calc(0.833s * var(--animation-speed, 1)) forwards;
+}
+
+/* 2067-2300: wave 2 - all three trails share this class, so they are in step
+   by construction rather than by three delays that could drift apart. */
+.thr-fireworks__t4 {
+  animation: thr-fireworks-rise-084 calc(0.233s * var(--animation-speed, 1)) linear
+    calc(2.067s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-fireworks-rise-103 {
+  0% {
+    /* the first spark: ON SCREEN, 1.03 u below where the burst will open */
+    opacity: 1;
+    transform: translateY(103px) scaleY(0.7);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(31px) scaleY(1);
+  }
+  100% {
+    /* arrived; the burst takes over in the next frame */
+    opacity: 0;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes thr-fireworks-rise-133 {
+  0% {
+    opacity: 1;
+    transform: translateY(133px) scaleY(0.7);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(40px) scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes thr-fireworks-rise-117 {
+  0% {
+    opacity: 1;
+    transform: translateY(117px) scaleY(0.7);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(35px) scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes thr-fireworks-rise-084 {
+  0% {
+    opacity: 1;
+    transform: translateY(84px) scaleY(0.7);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(25px) scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+/* == THE BURSTS ===========================================================
+   A dot on the opening frame, expansion to full over about five frames, a
+   peak hold, then alpha falls away. The reference's clouds do not shrink as
+   they die, they dim, so only opacity moves after the peak. ============ */
+
+.thr-fireworks__b1,
+.thr-fireworks__b2,
+.thr-fireworks__b3,
+.thr-fireworks__b3e,
+.thr-fireworks__w2,
+.thr-fireworks__w2e {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+}
+
+/* 233-733: burst 1, blue, 0.85 u, peak 433-533 */
+.thr-fireworks__b1 {
+  animation: thr-fireworks-burst calc(0.5s * var(--animation-speed, 1)) linear
+    calc(0.233s * var(--animation-speed, 1)) forwards;
+}
+
+/* 567-1100: burst 2, magenta, 1.2 u, peak 767-833 */
+.thr-fireworks__b2 {
+  animation: thr-fireworks-burst calc(0.533s * var(--animation-speed, 1)) linear
+    calc(0.567s * var(--animation-speed, 1)) forwards;
+}
+
+/* 1033-1500: burst 3's HOT stage, yellow into orange. It hands over to the
+   ember cloud rather than animating its own fill, so the colour shift the
+   catalogue describes happens without a fill animation. */
+.thr-fireworks__b3 {
+  animation: thr-fireworks-burst calc(0.467s * var(--animation-speed, 1)) linear
+    calc(1.033s * var(--animation-speed, 1)) forwards;
+}
+
+/* 1400-1767: burst 3's EMBER stage, brown-orange, fading to nothing. It opens
+   already at full size - an ember is what is left, not something that grows. */
+.thr-fireworks__b3e {
+  animation: thr-fireworks-ember calc(0.367s * var(--animation-speed, 1)) linear
+    calc(1.4s * var(--animation-speed, 1)) forwards;
+}
+
+/* 2333-2733: wave 2's three bursts, in step. Peak 2567. */
+.thr-fireworks__w2 {
+  animation: thr-fireworks-burst calc(0.4s * var(--animation-speed, 1)) linear
+    calc(2.333s * var(--animation-speed, 1)) forwards;
+}
+
+/* 2600-2967: wave 2 darkens into embers, last embers 2967. The player cuts at
+   3000, one frame later, exactly as the reference does. */
+.thr-fireworks__w2e {
+  animation: thr-fireworks-ember calc(0.367s * var(--animation-speed, 1)) linear
+    calc(2.6s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-fireworks-burst {
+  0% {
+    /* the open frame: a bright dot, ON SCREEN */
+    opacity: 1;
+    transform: scale(0.1);
+  }
+  6% {
+    opacity: 1;
+    transform: scale(0.24);
+  }
+  34% {
+    /* full size, about five frames after the dot */
+    opacity: 1;
+    transform: scale(1);
+  }
+  62% {
+    /* the peak hold: the cloud is at its densest and does not move */
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    /* dimmed away; the cloud keeps its size as it dies */
+    opacity: 0;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes thr-fireworks-ember {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.98);
+  }
+  18% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+
+/* == REDUCED MOTION =======================================================
+   A firework IS its motion, and freezing one would leave a permanent smear
+   over the seat. The set is shown AT ITS PEAK instead, still, for the life of
+   the payload: the player still knows exactly what was thrown at them, and
+   nothing on the screen moves. The player's own timers unmount it at 3000.
+   ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .thr-fireworks__t1,
+  .thr-fireworks__t2,
+  .thr-fireworks__t3,
+  .thr-fireworks__t4 {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-fireworks__b1,
+  .thr-fireworks__b2,
+  .thr-fireworks__b3,
+  .thr-fireworks__w2 {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+
+  .thr-fireworks__b3e,
+  .thr-fireworks__w2e {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}

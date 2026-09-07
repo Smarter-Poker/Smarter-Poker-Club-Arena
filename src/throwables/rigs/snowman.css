@@ -1,0 +1,176 @@
+/**
+ * SNOWMAN - keyframes. Every delay is from LANDING (launch + 600 ms); the
+ * comment on each stop gives the catalogue's ms from launch. Every duration
+ * and delay multiplies by --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 1's target
+ * avatar was ~30 px wide, so measured pixel offsets are scaled by 100/30.
+ *
+ * THE IDIOM: an element that APPEARS at a beat carries `opacity: 0` in its
+ * own rule, runs `forwards` (NOT `both`), and its 0% frame is the VISIBLE
+ * opening frame. The figure is on screen FROM LANDING and disappears in one
+ * frame, so it uses `steps(1, end)` with `both` and a visible 0% - the same
+ * shape as cracked_egg's egg-hide. Everything else here is born mid-throw
+ * (the nose, the plume, the specks) and uses the born-and-dies idiom.
+ */
+
+.thr-snowman {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* == THE FIGURE: on screen for one frame at landing (600), gone in one frame
+   at 633. steps(1, end) holds the visible 0% for the whole 33 ms and jumps
+   to hidden at its end, where `both` keeps it. ============================ */
+.thr-snowman__figure {
+  animation: thr-snowman-figure-hide calc(0.033s * var(--animation-speed, 1)) steps(1, end) both;
+}
+
+@keyframes thr-snowman-figure-hide {
+  0% {
+    /* 600: landed, whole */
+    opacity: 1;
+  }
+  100% {
+    /* 633: gone - only the nose remains */
+    opacity: 0;
+  }
+}
+
+/* == THE NOSE: born at the splat (633, +33), holds at the head's own nose
+   position, then falls to the chin between 767 and 1000 (+167..+400), and
+   stays there through the fade and the cut. ================================ */
+.thr-snowman__nose {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-snowman-nose calc(1.767s * var(--animation-speed, 1)) linear
+    calc(0.033s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-snowman-nose {
+  0% {
+    /* 633: the nose is there, already visible, where the head's was */
+    opacity: 1;
+    transform: translateY(0);
+  }
+  7.58% {
+    /* 767: still holding, about to fall */
+    opacity: 1;
+    transform: translateY(0);
+  }
+  20.77% {
+    /* 1000: fallen to the chin */
+    opacity: 1;
+    transform: translateY(45px);
+  }
+  100% {
+    /* held through the fade and the cut */
+    opacity: 1;
+    transform: translateY(45px);
+  }
+}
+
+/* == THE PLUME: born at 667 (+67) as a small puff, full size by 767 (+167),
+   lingers with a slow lobe shift 1000-1933 (+400..+1333), then fades. The
+   reference's own tail is 1967-2200 (+1367..+1600); it is stretched here to
+   2400 (+1800) to reach the grammar's payload-length floor without inventing
+   a beat the capture does not show - see the file header. ================ */
+.thr-snowman__plume {
+  transform-box: fill-box;
+  transform-origin: 50% 65%;
+  opacity: 0;
+  animation: thr-snowman-plume calc(1.733s * var(--animation-speed, 1)) ease-out
+    calc(0.067s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-snowman-plume {
+  0% {
+    /* 667: a small puff appearing above the head */
+    opacity: 0.4;
+    transform: translate(0, 6px) scale(0.3);
+  }
+  5.77% {
+    /* 767: full plume, 0.7 x 1.2 u */
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  19.2% {
+    /* 1000: lingering begins */
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  36.5% {
+    /* ~1300: the lobes shift */
+    opacity: 1;
+    transform: translate(2px, -3px) scale(1.03);
+  }
+  55.7% {
+    /* ~1633: shift the other way */
+    opacity: 1;
+    transform: translate(-2px, 2px) scale(0.98);
+  }
+  74.9% {
+    /* 1967: the fade begins, still near full */
+    opacity: 0.9;
+    transform: translate(0, -2px) scale(1);
+  }
+  100% {
+    /* 2400: gone */
+    opacity: 0;
+    transform: translate(0, -8px) scale(1.08);
+  }
+}
+
+/* == THE SPECKS: sprayed from the plume's base at 767 (+167), fading by
+   ~1000 (+400). Each carries its own end point in --dx / --dy. =========== */
+.thr-snowman__speck {
+  opacity: 0;
+  animation: thr-snowman-speck calc(0.233s * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.6, 0.4, 1) calc(0.167s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-snowman-speck {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.6);
+  }
+  35% {
+    opacity: 1;
+    transform: translate(calc(var(--dx) * 0.55), calc(var(--dy) * 0.55)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(0.4);
+  }
+}
+
+/* == REDUCED MOTION: the gag's meaningful moment - the nose fallen at the
+   chin, the powder plume present - is shown still, at its peak, rather than
+   the true final frame (a clean seat), which would show the player nothing
+   at all happened. The same choice fireworks.css makes for a burst. ====== */
+@media (prefers-reduced-motion: reduce) {
+  .thr-snowman__figure {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-snowman__nose {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translateY(45px) !important;
+  }
+
+  .thr-snowman__plume {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .thr-snowman__speck {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}

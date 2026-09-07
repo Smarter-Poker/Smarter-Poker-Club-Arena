@@ -1,0 +1,321 @@
+/**
+ * TRASH_CAN - keyframes. Every delay is from LANDING (launch + 333 ms, the
+ * flight duration - contract rule 1); the comment on each stop gives the
+ * catalogue's ms from launch too. Every duration and delay multiplies by
+ * --animation-speed (CLAUDE.md 10.6).
+ *
+ * Units: 100 px in these keyframes = 1 avatar width, and video 1's avatar was
+ * ~30 px wide, so measured pixels are scaled by 100/30 = 3.333.
+ *
+ * FOUR THREADS on their own clocks: the "2" (833 -> 2967), the "7" (1000 ->
+ * 2967, mirrored a beat later), the swear bubble (1267 -> 2500), and the can
+ * itself (a one-frame vanish at 333, then a second life from 1967 with an
+ * opening/closing lid and, from 3500, a few flies).
+ *
+ * THE IDIOM for an element that appears at a beat: `opacity: 0` in its own
+ * rule, `forwards` (not `both`), and a 0% frame that is already VISIBLE. The
+ * one exception is `__landed`: it is on screen from the moment the payload
+ * mounts (delay 0), so `both` with a visible 0% is correct there, exactly as
+ * rose's `__landed` and tomato's `__squash`.
+ */
+
+.thr-trash_can {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* == THE LANDED CAN: whole, at 333, gone in one frame at 533 (+200). ===== */
+.thr-trash_can__landed {
+  animation: thr-trash_can-landed calc(0.2s * var(--animation-speed, 1)) steps(1, end) both;
+}
+
+@keyframes thr-trash_can-landed {
+  0% {
+    /* 333: the can, full size, where the flight left it */
+    opacity: 1;
+  }
+  100% {
+    /* 533: gone; the avatar is bare until the "2" pops at 833 */
+    opacity: 0;
+  }
+}
+
+/* == THE "2": pops upper-left at 833 (+500), settles lower-left by 967
+   (+634), shifts right 1833-2000 (+1500..+1667), then rises and falls into
+   the can 2533-2967 (+2200..+2634-ish, life ends +2634). One continuous life,
+   like the rose's kiss. ==================================================== */
+.thr-trash_can__card2 {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-trash_can-card2 calc(2.134s * var(--animation-speed, 1)) linear
+    calc(0.5s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trash_can-card2 {
+  0% {
+    /* 833: tiny and rotated, upper-left */
+    opacity: 1;
+    transform: translate(-52px, -62px) rotate(-25deg) scale(0.25);
+  }
+  2% {
+    transform: translate(-52px, -62px) rotate(-25deg) scale(0.32);
+  }
+  6.3% {
+    /* 967: settled, lower-left, full size */
+    transform: translate(-36px, 20px) rotate(-8deg) scale(1);
+  }
+  46.9% {
+    /* 1833: the shift begins */
+    transform: translate(-36px, 20px) rotate(-8deg) scale(1);
+  }
+  54.7% {
+    /* 2000: shifted right, a hair smaller */
+    transform: translate(-9px, 20px) rotate(-8deg) scale(0.92);
+  }
+  79.7% {
+    /* 2533: the rise begins */
+    transform: translate(-9px, 20px) rotate(-8deg) scale(0.92);
+  }
+  85.2% {
+    /* ~2650: hangs over the can's mouth */
+    transform: translate(-18px, -25px) rotate(40deg) scale(0.75);
+  }
+  92% {
+    opacity: 0.85;
+    transform: translate(-21px, -30px) rotate(65deg) scale(0.45);
+  }
+  100% {
+    /* 2967: fallen in, gone below the rim */
+    opacity: 0;
+    transform: translate(-23px, -34px) rotate(90deg) scale(0.15);
+  }
+}
+
+/* == THE "7": pops upper-right at 1000 (+667), mirrors the 2 a beat later,
+   falls in at the SAME moment (2967) the 2 does. ========================== */
+.thr-trash_can__card7 {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  opacity: 0;
+  animation: thr-trash_can-card7 calc(1.967s * var(--animation-speed, 1)) linear
+    calc(0.667s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trash_can-card7 {
+  0% {
+    /* 1000: tiny and rotated, upper-right */
+    opacity: 1;
+    transform: translate(52px, -62px) rotate(25deg) scale(0.25);
+  }
+  2.3% {
+    transform: translate(52px, -62px) rotate(25deg) scale(0.32);
+  }
+  5.1% {
+    /* 1100: settled, lower-right, next to the 2 */
+    transform: translate(36px, 20px) rotate(8deg) scale(1);
+  }
+  42.4% {
+    /* 1833: the shift begins */
+    transform: translate(36px, 20px) rotate(8deg) scale(1);
+  }
+  50.8% {
+    /* 2000: shifted right */
+    transform: translate(63px, 20px) rotate(8deg) scale(0.92);
+  }
+  89.8% {
+    /* 2767: the 7 rises a beat after the 2 */
+    transform: translate(63px, 20px) rotate(8deg) scale(0.92);
+  }
+  94.9% {
+    /* ~2867: hangs over the can's mouth */
+    transform: translate(-25px, -25px) rotate(-35deg) scale(0.7);
+  }
+  97.5% {
+    opacity: 0.85;
+    transform: translate(-24px, -29px) rotate(-55deg) scale(0.4);
+  }
+  100% {
+    /* 2967: fallen in, together with the 2 */
+    opacity: 0;
+    transform: translate(-23px, -33px) rotate(-80deg) scale(0.15);
+  }
+}
+
+/* == THE SWEAR BUBBLE: pops at 1267 (+934) with a small overshoot, settles,
+   holds, gone in one frame at 2500 (+2167). =============================== */
+.thr-trash_can__bubble {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-trash_can-bubble calc(1.233s * var(--animation-speed, 1)) ease-out
+    calc(0.934s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trash_can-bubble {
+  0% {
+    /* 1267: small */
+    opacity: 1;
+    transform: scale(0.3);
+  }
+  2.7% {
+    /* 1300: overshoot */
+    transform: scale(1.15);
+  }
+  5.4% {
+    /* 1333: settle */
+    transform: scale(1);
+  }
+  97.3% {
+    /* 2467: still static */
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    /* 2500: gone in one frame */
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* == THE CAN RETURNS: rises from below at 1967 (+1634), growing to 1.2 u by
+   2100 (+1767), then STATIC (the `forwards` fill holds the 100% frame) all
+   the way to the cut. ====================================================== */
+.thr-trash_can__can-return {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  animation: thr-trash_can-can-return calc(0.133s * var(--animation-speed, 1)) ease-out
+    calc(1.634s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trash_can-can-return {
+  0% {
+    /* 1967: rising, small */
+    opacity: 1;
+    transform: scale(0.3) translateY(30px);
+  }
+  100% {
+    /* 2100: full size, seated */
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* == THE LID: appears closed WITH the can at 1967 (+1634), opens and hovers
+   2200-2500 (+1867..+2167), holds, closes 3000-3133 (+2667..+2800), then
+   STATIC (closed) to the cut. transform-origin sits at the rim's back edge
+   so the open pose reads as a hinge, not a slide. ========================= */
+.thr-trash_can__lid {
+  transform-box: fill-box;
+  transform-origin: 20% 90%;
+  opacity: 0;
+  animation: thr-trash_can-lid calc(1.166s * var(--animation-speed, 1)) ease-in-out
+    calc(1.634s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trash_can-lid {
+  0% {
+    /* 1967: closed, seated with the can */
+    opacity: 1;
+    transform: rotate(0deg) translate(0, 0);
+  }
+  20% {
+    /* 2200: still closed, the open begins */
+    transform: rotate(0deg) translate(0, 0);
+  }
+  45.7% {
+    /* 2500: open, hovering upper-left, ~-60 deg */
+    transform: rotate(-60deg) translate(-14px, -16px);
+  }
+  88.6% {
+    /* 3000: still hovering, the close begins */
+    transform: rotate(-60deg) translate(-14px, -16px);
+  }
+  100% {
+    /* 3133: closed, seated again; held to the cut */
+    transform: rotate(0deg) translate(0, 0);
+  }
+}
+
+/* == THE FLIES: pop visible at 3500 (+3167) and buzz until the cut. The
+   group's own entrance is a hard `steps` pop; each fly then runs its own
+   infinite jitter, staggered by a fixed per-fly delay set inline (never
+   random - contract rule 9). ============================================== */
+.thr-trash_can__flies {
+  opacity: 0;
+  animation: thr-trash_can-flies-in calc(0.034s * var(--animation-speed, 1)) steps(1, end)
+    calc(3.167s * var(--animation-speed, 1)) forwards;
+}
+
+@keyframes thr-trash_can-flies-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    /* 3500: visible; individual flies carry their own jitter */
+    opacity: 1;
+  }
+}
+
+.thr-trash_can__fly {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation:
+    thr-trash_can-flies-in calc(0.034s * var(--animation-speed, 1)) steps(1, end) forwards,
+    thr-trash_can-fly-jitter calc(0.3s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+@keyframes thr-trash_can-fly-jitter {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(3px, -2px);
+  }
+  50% {
+    transform: translate(-2px, 2px);
+  }
+  75% {
+    transform: translate(2px, 3px);
+  }
+}
+
+/* == REDUCED MOTION: the meaningful final state - the can back, closed, on
+   its seat; the flies present but still. The one-frame vanish, the cards'
+   whole flight and the bubble are pure motion beats already in the past by
+   the time the throw settles, so they go. ================================= */
+@media (prefers-reduced-motion: reduce) {
+  .thr-trash_can__landed,
+  .thr-trash_can__card2,
+  .thr-trash_can__card7,
+  .thr-trash_can__bubble {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-trash_can__can-return {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: scale(1) translateY(0) !important;
+  }
+
+  .thr-trash_can__lid {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: rotate(0deg) translate(0, 0) !important;
+  }
+
+  .thr-trash_can__flies {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+
+  .thr-trash_can__fly {
+    animation: none !important;
+    transform: none !important;
+  }
+}

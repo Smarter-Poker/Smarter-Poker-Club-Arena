@@ -93,6 +93,15 @@ interface Hit {
   recipients: Recipient[];
   /** How many jackpots this pool has paid in total, not just on this page. */
   total_hits?: number | null;
+  /**
+   * Which jackpot paid it (BBJ phase 6, 2026-09-07). A mini is a flat amount
+   * out of the backup reserve for a hand that came close to the main bar, and
+   * it belongs in this list beside the main ones - but unlabelled it would read
+   * as a main jackpot that paid a few hundred chips, which is the page telling
+   * a player something untrue. Optional: absent means main, which is every hit
+   * that predates the mini.
+   */
+  kind?: 'main' | 'mini' | null;
 }
 
 /**
@@ -505,7 +514,9 @@ export function BBJRecentHits({
             tabIndex={clickable ? 0 : undefined}
             aria-label={
               clickable
-                ? `${hit.bad_beat_name} Won ${money(amount, 0)} With ${label}` +
+                ? `${hit.bad_beat_name} Won ${money(amount, 0)}` +
+                  (hit.kind === 'mini' ? ' From The Mini Jackpot' : '') +
+                  ` With ${label}` +
                   (beatByLabel ? `, Beaten By ${hit.hand_winner_name} With ${beatByLabel}` : '') +
                   '. Open The Hand.'
                 : undefined
@@ -541,6 +552,11 @@ export function BBJRecentHits({
               <span className="bbj-hits__name">
                 {hit.bad_beat_name}
                 {isYou && <span className="bbj-hits__you">YOU</span>}
+                {hit.kind === 'mini' && (
+                  <span className="bbj-hits__mini" title="Mini Bad Beat Jackpot">
+                    MINI
+                  </span>
+                )}
               </span>
               <span className="bbj-hits__id">{hit.bad_beat_player_number || ''}</span>
             </div>

@@ -22,7 +22,7 @@ zero and every delay in its stylesheet is the catalogue's ms from launch with
 nothing subtracted. The reference proves nothing leaves the thrower with a 3x
 zoom on the hero seat, and the rig draws nothing there.
 
-## The sound: a fourth licence, because three cues do not exist in any CC0 pack
+## The sound: three cues no CC0 pack has, so we synthesise them
 
 Nine new cues, and six of them are Kenney CC0 layered to the reference's own
 spacing - `fw_crackle` is six impacts at the measured 130-170 ms bang interval,
@@ -46,8 +46,8 @@ different claim from `Own-Recording` on purpose: nothing was recorded, an
 expression in the manifest generates the file, and **that expression is the
 provenance**. A synth source therefore has no URL and must instead carry a
 `recipe`; the licence test was updated in the same commit to demand exactly
-that, and to refuse a synth layer that names a file or a file layer that names
-an expression. The placeholder ratchet is untouched at four.
+that, and to refuse a synth layer that names a file. (The placeholder ratchet was
+left at four here; the verification pass below takes it to zero.)
 
 ## The darkroom, and the three bugs it caught
 

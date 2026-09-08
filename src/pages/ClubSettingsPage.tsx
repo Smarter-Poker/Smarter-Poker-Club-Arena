@@ -75,6 +75,7 @@ import {
   validateBuyinRange,
   validateClubName,
 } from '../utils/clubSettingsRules';
+import { publicOrigin } from '../lib/appBase';
 
 const DESCRIPTION_MAX = 500;
 const TAGLINE_MAX = 72;
@@ -1344,7 +1345,7 @@ export default function ClubSettingsPage() {
                 //   3. `?c=` fed a five-digit code to a form that demanded six.
                 // Corroboration: club_members has 1502 rows and exactly ONE
                 // non-null invited_by.
-                const url = `${window.location.origin}/hub/club-arena/invite/${clubId}?ref=${playerNumber}`;
+                const url = `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${playerNumber}`;
                 navigator.clipboard.writeText(url);
                 toast.success('Invite Link Copied To Clipboard!');
               }}

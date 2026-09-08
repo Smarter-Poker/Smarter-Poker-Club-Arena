@@ -1,0 +1,147 @@
+/**
+ * DailyBonusService - the sheet's only door to the ledger.
+ *
+ * Pins the contract with fn_ca_daily_bonus_status / fn_ca_daily_bonus_claim:
+ * no amount is ever sent, a retry of the same (day, slot) reuses its request
+ * id so the server replays instead of paying twice, a refusal is returned
+ * rather than thrown, and no wallet-credit RPC is ever named by this module.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  emit: vi.fn(),
+  reportError: vi.fn(),
+}));
+
+vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
+vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: mocks.emit } }));
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.reportError }));
+
+import {
+  claimReasonText,
+  dailyBonusService,
+  diamondsToCentsLabel,
+} from '../../src/services/DailyBonusService';
+
+const STATUS = {
+  eligible: true,
+  today: '2026-09-08',
+  reset_at: '2026-09-09T05:00:00+00:00',
+  seconds_to_reset: 3600,
+  streak: 3,
+  cycle_day: 3,
+  streak_day: null,
+  multiplier: 1.2,
+  is_vip: false,
+  claimed_today: false,
+  unclaimed: 3,
+  tiles: [
+    {
+      slot: 1,
+      kind: 'diamonds',
+      label: 'Diamonds',
+      vip_only: false,
+      quantity: 0,
+      base_diamonds: 10,
+      diamonds: 12,
+      claimed: false,
+      claimed_at: null,
+      granted: null,
+      locked: false,
+      capped: false,
+    },
+  ],
+  week: [],
+  tomorrow: [],
+  caps: { daily_cap: 110, daily_used: 0, daily_remaining: 110 },
+  cents_per_diamond: 1,
+};
+
+describe('DailyBonusService', () => {
+  beforeEach(() => {
+    mocks.rpc.mockReset();
+    mocks.emit.mockReset();
+    sessionStorage.clear();
+  });
+
+  it('reads the sheet from fn_ca_daily_bonus_status with no arguments', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: STATUS, error: null });
+    const status = await dailyBonusService.getStatus();
+    expect(mocks.rpc).toHaveBeenCalledWith('fn_ca_daily_bonus_status');
+    expect(status.tiles[0].diamonds).toBe(12);
+    expect(status.streak).toBe(3);
+  });
+
+  it('throws a player-facing error when the status RPC fails', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(dailyBonusService.getStatus()).rejects.toThrow('Could Not Load Your Daily Bonus');
+  });
+
+  it('claims by slot and request id only; the amount is never sent', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        success: true,
+        slot: 1,
+        granted: { kind: 'diamonds', diamonds: 12, quantity: 0, balance_after: 512 },
+        streak: 3,
+      },
+      error: null,
+    });
+    const result = await dailyBonusService.claim('2026-09-08', 1);
+    expect(result.success).toBe(true);
+    const [name, args] = mocks.rpc.mock.calls[0];
+    expect(name).toBe('fn_ca_daily_bonus_claim');
+    expect(Object.keys(args).sort()).toEqual(['p_request_id', 'p_slot']);
+    expect(args.p_slot).toBe(1);
+    expect(args.p_request_id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('reuses one request id per (day, slot) so a retry replays instead of paying twice', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { success: false, reason: 'already_claimed' },
+      error: null,
+    });
+    await dailyBonusService.claim('2026-09-08', 2);
+    await dailyBonusService.claim('2026-09-08', 2);
+    await dailyBonusService.claim('2026-09-08', 3);
+    const ids = mocks.rpc.mock.calls.map(([, args]) => args.p_request_id);
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[2]).not.toBe(ids[0]);
+    expect(sessionStorage.getItem('ca_daily_bonus_req:2026-09-08:2')).toBe(ids[0]);
+  });
+
+  it('returns a refusal as an outcome rather than throwing', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: { success: false, reason: 'vip_only' }, error: null });
+    const result = await dailyBonusService.claim('2026-09-08', 5);
+    expect(result).toEqual({ success: false, reason: 'vip_only' });
+    expect(mocks.emit).not.toHaveBeenCalled();
+  });
+
+  it('tells the header to re-read balances after a grant, without an amount of its own', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        success: true,
+        granted: { kind: 'throwables', diamonds: 0, quantity: 3, balance_after: 500 },
+        streak: 1,
+      },
+      error: null,
+    });
+    await dailyBonusService.claim('2026-09-08', 2);
+    expect(mocks.emit).toHaveBeenCalledWith(
+      'BALANCE_UPDATED',
+      expect.objectContaining({ source: 'daily_bonus_credit' })
+    );
+  });
+
+  it('maps every server reason to Title Case copy and reads an unknown one as itself', () => {
+    expect(claimReasonText('vip_only')).toBe('VIP Members Only');
+    expect(claimReasonText('daily_cap')).toBe('Daily Diamond Cap Reached');
+    expect(claimReasonText('something_new')).toBe('Could Not Claim (something_new)');
+  });
+
+  it('prices diamonds at one cent each', () => {
+    expect(diamondsToCentsLabel(5)).toBe('5¢');
+    expect(diamondsToCentsLabel(125)).toBe('$1.25');
+  });
+});

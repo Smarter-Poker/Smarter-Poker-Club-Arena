@@ -344,7 +344,9 @@ describe('who is offered a hunt, and for how many cards', () => {
     expect(SQUASHED_TABLE_PAGE).toContain(
       squash('rabbitCards={showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards}')
     );
-    expect(TABLE_PAGE).toMatch(/: rabbitRevealedCards;/);
+    expect(SQUASHED_TABLE_PAGE).toContain(
+      squash('rabbitRevealedHandNumber === (tableState.handNumber ?? 0) ? rabbitRevealedCards : []')
+    );
     // The old shape must not come back: appending the reveal into `cards`
     // hides it behind the stage-derived count.
     expect(TABLE_PAGE).not.toMatch(/\.\.\.rabbitRevealedCards/);

@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
+import { publicOrigin } from '../lib/appBase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -154,8 +155,7 @@ class PlayerStatusServiceClass {
    * Generate a shareable profile link
    */
   generateProfileLink(userId: string): string {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/hub/club-arena/profile/${userId}`;
+    return `${publicOrigin()}/hub/club-arena/profile/${userId}`;
   }
 
   /**

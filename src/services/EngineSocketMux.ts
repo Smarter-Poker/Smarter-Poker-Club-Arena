@@ -262,6 +262,7 @@ class EngineSocketMuxImpl {
       clearTimeout(this.lingerTimer);
       this.lingerTimer = null;
     }
+    this.useTransportIdentity(baseUrl, token);
     // A stale facade for the same table (pre-reconnect) is superseded.
     // 2026-08-22: with a DEDICATED close code — closing it with 1000 made the
     // old owner's EngineStateClient schedule a reconnect, which re-acquired
@@ -293,9 +294,6 @@ class EngineSocketMuxImpl {
         ? prior!.takeWarmState()
         : [];
     if (prior) prior._close(CLOSE_MUX_SUPERSEDED, 'superseded by newer acquire');
-
-    this.baseUrl = baseUrl;
-    this.token = token;
 
     // 2026-08-22: a physical socket that is OPEN but has heard NOTHING for a
     // hard-stale interval is half-open — reusing it strands every facade
@@ -358,6 +356,7 @@ class EngineSocketMuxImpl {
 
   /** Use only spare subscription slots for lobby state; never evict a playing table. */
   acquireWarm(baseUrl: string, tableId: string, token: string): MuxTableSocket | null {
+    this.useTransportIdentity(baseUrl, token);
     if (this.isSubscribed(tableId)) return null;
     if (this.facades.size >= 4) {
       const oldestWarm = [...this.facades.values()].find((facade) => facade.isWarmSubscription());
@@ -383,9 +382,8 @@ class EngineSocketMuxImpl {
       clearTimeout(this.lingerTimer);
       this.lingerTimer = null;
     }
+    this.useTransportIdentity(baseUrl, token);
     if (this.ws && this.ws.readyState <= WebSocket.OPEN) return; // already warm
-    this.baseUrl = baseUrl;
-    this.token = token;
     this.ensureSocket();
   }
 
@@ -400,6 +398,17 @@ class EngineSocketMuxImpl {
   isSubscribed(tableId: string): boolean {
     const f = this.facades.get(tableId);
     return !!f && f.readyState !== 3 /* CLOSED */;
+  }
+
+  /** A socket is authenticated at its handshake, not by changing these fields. */
+  private useTransportIdentity(baseUrl: string, token: string): void {
+    if (this.baseUrl === baseUrl && this.token === token) return;
+    this.baseUrl = baseUrl;
+    this.token = token;
+    // Retire the old transport and its facades before checking adoption or
+    // registering the new caller. Otherwise SUBSCRIBE still runs under the
+    // old handshake and cached-state isolation alone does not isolate users.
+    this.teardownPhysical(4001, 'mux transport identity changed');
   }
 
   /** Force-close and detach the physical socket; surviving facades fail and

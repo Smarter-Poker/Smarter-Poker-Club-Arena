@@ -142,6 +142,9 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
     if (generation !== generationRef.current) return;
     // Use the throwable only after its artwork is ready.
     const result = await throwableService.useThrowable(userId, throwable.id);
+    // The charge may finish after this picker closes or switches accounts.
+    // Its receipt belongs to that original intent, never the replacement UI.
+    if (generation !== generationRef.current) return;
     if (!result.success) {
       if (/diamond|insufficient/i.test(result.error || '')) {
         showDiamondTopUp(toast, navigate, {

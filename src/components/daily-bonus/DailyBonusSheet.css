@@ -150,6 +150,13 @@
   text-shadow: var(--dbs-chrome-shadow);
 }
 
+/* The body sits inside the rails; everything in it is sized against the sheet. */
+.dbs__body {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+
 /* ── Plaques: the card's bay, label slot over the well ────────────────── */
 
 .dbs-plaque {

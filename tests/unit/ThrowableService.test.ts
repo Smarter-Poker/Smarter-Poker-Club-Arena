@@ -140,6 +140,7 @@ describe('uncertain throw receipts', () => {
     );
     await expect(throwableService.useThrowable('receipt-retry-user', 'beer')).resolves.toEqual({
       success: true,
+      requestId: first.p_request_id,
     });
     expect(rpc.mock.calls[1][1]).toEqual(rpc.mock.calls[0][1]);
     expect(sessionStorage.getItem('throwable-pending:receipt-retry-user:beer')).toBeNull();

@@ -17048,3 +17048,7 @@ Applied: serialize hand/table-hand retries before receipt and allocation; bind r
 ## 20260908051016: BBJ Table Routing And Receipt
 
 Applied: service-only table-scoped pool resolution and contribution commit; registered money RPC. Seven PostgreSQL route/rollback cases and fourteen engine receipt tests pass. See docs/changelog/2026-09-08-bbj-table-routing.md.
+
+## 20260908052322: Insurance Payment Scope And Journal Identity
+
+Applied: game-scoped insurance bank, canonical cents, bound replay, explicit journal, service-only access. Forty-one PostgreSQL cases pass; see docs/changelog/2026-09-08-insurance-payment-identity.md.

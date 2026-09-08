@@ -865,6 +865,9 @@ class ThrowableSoundServiceClass {
         return null;
       })();
       this.cueBytes.set(name, p);
+      void p.then((loaded) => {
+        if (!loaded && this.cueBytes.get(name) === p) this.cueBytes.delete(name);
+      });
     }
   }
 
@@ -875,8 +878,9 @@ class ThrowableSoundServiceClass {
     const cached = this.cueBuffers.get(name);
     if (cached) return cached;
     if (!this.cueBytes.has(name)) this.preloadCues([name], urlFor);
+    const byteRequest = this.cueBytes.get(name);
     const p = (async () => {
-      const loaded = await this.cueBytes.get(name)!;
+      const loaded = await byteRequest;
       if (!loaded || !this.ctx) return null;
       try {
         // Decoding detaches its input; retain cached bytes for later use.
@@ -902,7 +906,7 @@ class ThrowableSoundServiceClass {
     void p.then((buffer) => {
       if (!buffer && this.cueBuffers.get(name) === p) {
         this.cueBuffers.delete(name);
-        this.cueBytes.delete(name);
+        if (this.cueBytes.get(name) === byteRequest) this.cueBytes.delete(name);
       }
     });
     return p;

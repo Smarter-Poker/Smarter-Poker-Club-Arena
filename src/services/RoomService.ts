@@ -195,10 +195,15 @@ class RoomService {
   /**
    * Send chat message
    */
-  async sendChat(tableId: string, senderId: string, message: string): Promise<void> {
+  async sendChat(
+    tableId: string,
+    senderId: string,
+    message: string,
+    throwId?: string
+  ): Promise<void> {
     await this.broadcast(tableId, {
       type: 'CHAT',
-      payload: { message },
+      payload: { message, ...(throwId ? { throwId } : {}) },
       sender: senderId,
     });
   }

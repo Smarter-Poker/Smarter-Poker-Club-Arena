@@ -151,4 +151,37 @@ describe('the report and the rule read one number', () => {
     expect(boundary).toContain("has_function_privilege('authenticated'");
     expect(boundary).toContain('diamond engine spend report is browser-executable');
   });
+
+  it('revokes default table and sequence grants and restores only service reads', () => {
+    expect(boundary).toContain(
+      'REVOKE ALL ON TABLE public.ca_diamond_engine_spend\n  FROM PUBLIC, anon, authenticated, service_role'
+    );
+    expect(boundary).toContain(
+      'GRANT SELECT ON TABLE public.ca_diamond_engine_spend TO service_role'
+    );
+    expect(boundary).toContain(
+      'REVOKE ALL ON SEQUENCE public.ca_diamond_engine_spend_id_seq\n  FROM PUBLIC, anon, authenticated, service_role'
+    );
+    expect(boundary).toContain('service_role diamond engine spend access is not append-only');
+    expect(boundary).toContain('a browser can reach the diamond engine spend sequence');
+    expect(boundary).toContain('service_role can manufacture diamond engine spend identifiers');
+  });
+
+  it('blocks owner-bypass mutation at an always-on statement trigger', () => {
+    expect(boundary).toContain(
+      'BEFORE UPDATE OR DELETE OR TRUNCATE ON public.ca_diamond_engine_spend'
+    );
+    expect(boundary).toContain('FOR EACH STATEMENT');
+    expect(boundary).toContain("RAISE EXCEPTION 'ca_diamond_engine_spend is append-only'");
+    expect(boundary).toContain('diamond engine spend immutability trigger is missing');
+  });
+
+  it('requires every appended amount to be positive and keyed to one journal row', () => {
+    expect(boundary).toContain('ALTER COLUMN journal_id SET NOT NULL');
+    expect(boundary).toContain(
+      'CONSTRAINT ca_diamond_engine_spend_amount_positive CHECK (amount > 0) NOT VALID'
+    );
+    expect(boundary).toContain('diamond engine spend contains an unkeyed or non-positive row');
+    expect(boundary).toContain('diamond engine spend rows are not source-keyed positive evidence');
+  });
 });

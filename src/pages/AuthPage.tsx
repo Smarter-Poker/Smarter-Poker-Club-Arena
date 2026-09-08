@@ -14,6 +14,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { IS_NATIVE_BUILD } from '../lib/appBase';
 import { safeInAppRedirect, signInUrl } from '../lib/signIn';
 import { authReturnUrl } from '../lib/authReturnUrl';
+import { ageOn, latestAdultBirthday, MINIMUM_AGE } from '../lib/age';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { referralService } from '../services/ReferralService';
@@ -53,6 +54,13 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
+  /* THE APP STORE BUILD asks for a date of birth AT sign-up (Apple 1.1.4 and
+     Play's Real-Money Gambling / simulated gambling policies both want the
+     18+ check before the account exists, not after). Under 18 never reaches
+     signUp() and nothing about a minor is sent anywhere. The web is
+     unchanged: its accounts are gated by AgeGate once, on first use, and only
+     when AGE_GATE_ON_WEB is flipped. */
+  const [birthday, setBirthday] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(() =>
@@ -159,6 +167,20 @@ export default function AuthPage() {
       return;
     }
 
+    const signupAge = IS_NATIVE_BUILD ? ageOn(birthday, new Date()) : null;
+    if (IS_NATIVE_BUILD) {
+      if (signupAge === null) {
+        if (isMounted.current) setError('Please enter your date of birth');
+        setIsLoading(false);
+        return;
+      }
+      if (signupAge < MINIMUM_AGE) {
+        if (isMounted.current) setError(`You must be ${MINIMUM_AGE} or older to create an account`);
+        setIsLoading(false);
+        return;
+      }
+    }
+
     // Email format validation (beyond HTML type="email")
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       if (isMounted.current) setError('Please enter a valid email address');
@@ -257,6 +279,15 @@ export default function AuthPage() {
 
         // Check if email confirmation is required
         if (data.session) {
+          // The date of birth the player just gave, written once through the
+          // same RPC the age gate uses. Without a session (email confirmation
+          // on) the gate asks again on first sign-in; nothing is lost.
+          if (IS_NATIVE_BUILD && birthday) {
+            const { error: dobErr } = await supabase.rpc('fn_set_my_birthday', {
+              p_birthday: birthday,
+            });
+            if (dobErr) reportError(dobErr, 'AuthPage.set_birthday_failed');
+          }
           // Redeem referral code if provided
           if (referralCode.trim()) {
             const result = await referralService.redeemCode(data.user.id, referralCode.trim());
@@ -490,6 +521,21 @@ export default function AuthPage() {
                 autoComplete="username"
               />
             </div>
+
+            {IS_NATIVE_BUILD && (
+              <div className={styles.inputGroup}>
+                <label htmlFor="signup-birthday">Date Of Birth</label>
+                <input
+                  id="signup-birthday"
+                  type="date"
+                  value={birthday}
+                  onChange={(e) => setBirthday(e.target.value)}
+                  max={latestAdultBirthday(new Date())}
+                  required
+                  autoComplete="bday"
+                />
+              </div>
+            )}
 
             <div className={styles.inputGroup}>
               <label htmlFor="signup-email">Email</label>

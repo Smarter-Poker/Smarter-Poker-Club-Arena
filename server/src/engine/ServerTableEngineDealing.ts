@@ -252,11 +252,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        this.seatedPlayers = await this.withStepBudget(
-          'load_seats',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          loadSeatedPlayers(this.tableId)
-        );
+        this.seatedPlayers = await this.readNextHandInputs();
         // Restart fidelity: apply persisted is_sitting_out to seats the engine
         // has not seen yet. The start-up loop calls this too, but it breaks the
         // moment enough players are seated and never runs again — so a player
@@ -269,20 +265,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // ServerTableEngineBase.adoptMovedPresence.
         this.adoptMovedPresence();
         this.restoreSitOutsFromSeats();
-        await this.withStepBudget(
-          'refresh_blinds',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          this.refreshBlinds()
-        );
-        // 2026-08-18: cash tables re-read their rake settings here (throttled
-        // to once a minute inside the method). tableInfo is otherwise loaded
-        // once per engine lifetime, so before this an owner changing the rake
-        // saw nothing until the table restarted.
-        await this.withStepBudget(
-          'refresh_rake',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          this.refreshRakeConfig()
-        );
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.
@@ -1336,6 +1318,39 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
       }
     }
+  }
+
+  /** Read fresh hand inputs only after the settlement and pause gates. */
+  protected async readNextHandInputs(): Promise<SeatedPlayer[]> {
+    // These reads have no dependency on each other. Blinds update tournament
+    // settings; rake refresh updates cash settings; neither uses the roster.
+    // Keep every existing query and budget, but pay the slowest read instead
+    // of adding their round trips to the gap between hands.
+    const reads = [
+      this.withStepBudget(
+        'load_seats',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        loadSeatedPlayers(this.tableId)
+      ),
+      this.withStepBudget(
+        'refresh_blinds',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshBlinds()
+      ),
+      this.withStepBudget(
+        'refresh_rake',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.refreshRakeConfig()
+      ),
+    ] as const;
+    this.setLoopPhase('load_next_hand_inputs');
+    // Do not fail fast and start another iteration while a sibling read is
+    // still in its budget. The old roster is retained if any input fails.
+    const [seats, blinds, rake] = await Promise.allSettled(reads);
+    if (seats.status === 'rejected') throw seats.reason;
+    if (blinds.status === 'rejected') throw blinds.reason;
+    if (rake.status === 'rejected') throw rake.reason;
+    return seats.value;
   }
 
   protected async refreshBlinds(): Promise<void> {
@@ -2491,7 +2506,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           dbConsumedSeconds: 0,
         });
       }
-      this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
+      this.disconnectEngine.registerPlayer(
+        this.tableId,
+        p.user_id,
+        this.seatedPlayers.find((seat) => seat.user_id === p.user_id)?.reconnect_membership
+      );
     }
 
     // Step 5: Wire disconnect auto-action callback into HandController

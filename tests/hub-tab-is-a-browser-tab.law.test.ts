@@ -243,7 +243,11 @@ describe('round 2: a hub tab the player is not looking at', () => {
   });
 
   it('off-site links leave through window.open, never through the frame', () => {
-    expect(FRAME).toContain("window.open(url.href, '_blank', 'noopener,noreferrer')");
+    // 2026-09-07: the call is openInBrowser (src/lib/openExternal.ts), which
+    // IS window.open(url, '_blank', 'noopener,noreferrer') on the web and the
+    // in-app browser inside the native app. Same mechanism, one seam.
+    expect(FRAME).toContain('openInBrowser(url.href)');
+    expect(read('src/lib/openExternal.ts')).toContain("window.open(url, '_blank', features)");
     expect(FRAME).toContain('isOffSite(url, window.location.origin)');
   });
 

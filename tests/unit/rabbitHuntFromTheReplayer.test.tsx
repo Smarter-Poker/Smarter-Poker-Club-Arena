@@ -124,8 +124,9 @@ describe('one purchase path, two surfaces', () => {
     const page = squash(read('src/pages/TablePage.tsx'));
     expect(page).toContain(squash('onRabbitHunt={handleRabbitReveal}'));
     expect(page).toContain(squash('const handleRabbitReveal = useCallback('));
+    expect(page).toContain(squash('requestRabbitHunt(tableId, requestedHandNumber)'));
     expect(page, 'the hand being looked at, not the one the felt offered').toContain(
-      squash('handNumber ?? rabbitHandNumberRef.current ?? undefined')
+      squash('handNumber ?? rabbitHandNumberRef.current ?? liveHandNumberRef.current')
     );
   });
 });

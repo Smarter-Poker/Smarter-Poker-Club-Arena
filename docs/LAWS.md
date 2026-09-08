@@ -98,6 +98,31 @@ whichever test the next agent notices first.
   violation and remove it; do not read 10.6 as a reason to give the squeeze
   to seats Dan excluded.
 
+- **The header portrait's frame is a 0.5px black hairline and the baked
+  ornament is masked (ruled 2026-09-07, Dan, fourth time):** the approved
+  artwork bakes a silver ring with a blue glow around the profile slot. That
+  ring is never shown. `.profileBtn` paints an opaque `#000` disc over the
+  whole ornament at every width - centred on it, covering the glow (r 52 on
+  the 1648x168 plane) and clear of the rails (r 62) - and the photo's only
+  frame is `border: 0.5px solid rgba(0, 0, 0, 0.94)` on `.profileAvatarSlot`,
+  declared once. Dan, 2026-09-07, with a screenshot of the ring: "the profile
+  pic is supposed to be a .5 pixel black frame that 'appears invisible'
+  instead of this thick broken frame that exists now. once you fix it back, i
+  need you to harden it, and make it regression proof." Earlier, the same:
+  2026-08-31 (#2183, #2305, #2366 - ring removed, thin black edge, 0.5px),
+  2026-09-03 ("INSTEAD OF HAVING THE .50 PIXEL BLACK INVISIBLE CIRCLE
+  FRAME"), 2026-09-05 ("NOT IN ITS FRAME"). The loser: the 2026-09-01
+  "aperture" treatment (#2515) that removed the disc below 901px, seated the
+  photo inside the ring and wrote tests calling the disc "a shape drawn over
+  approved artwork" - which is why the 09-03 and 09-05 fixes restored only
+  the hairline and left the ring. "NO BOXES OVER HEADER ICONS" is about focus
+  rings on icons; the disc is its one deliberate exception. Pinned by
+  arithmetic in `the-header-portrait-frame-is-a-hairline.law.test.ts` and by
+  rendered pixels in `tests/e2e/header-portrait-frame.spec.ts`. The World Hub
+  and Club Commander headers carry the identical rule
+  (`GLOBAL_HEADER_PROFILE_FRAME_LAW.md` in the World Hub repo). Do not show
+  the ring; do not read "fix the profile image" as "show the ring".
+
 ## Registry
 
 **The registry is the directory `docs/laws.d/` - one file per law.** This

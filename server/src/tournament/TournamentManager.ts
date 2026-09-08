@@ -680,7 +680,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           ),
           'Tournament.satellite_target_unreadable'
         );
-        return;
+        throw new Error('Satellite award incomplete: satellite_target_unreadable');
       }
       target = (data as SatelliteTarget | null) ?? null;
     }
@@ -730,7 +730,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         ),
         'Tournament.satellite_finishers_unreadable'
       );
-      return;
+      throw new Error('Satellite award incomplete: satellite_finishers_unreadable');
     }
     const ranked = finishers ?? [];
     if (ranked.length === 0) return;
@@ -802,7 +802,10 @@ export class TournamentManager extends TournamentManagerEliminations {
           ),
           'Tournament.satellite_cash_failed'
         );
-        return;
+        throw new Error('Satellite award incomplete: satellite_cash_failed');
+      }
+      if (res.fully_settled !== true || (res.amount_paid ?? 0) < amount) {
+        throw new Error(`Satellite cash payment incomplete or unconfirmed for ${userId}`);
       }
     };
 
@@ -861,8 +864,27 @@ export class TournamentManager extends TournamentManagerEliminations {
           held_from_this_satellite?: boolean | null;
           origin_unknown?: boolean;
         } | null;
-        const regErr =
-          seatErr || (seat?.ok === false ? { message: seat?.reason || 'seat_refused' } : null);
+        // A transport error cannot prove the seat transaction rolled back.
+        // Do not turn a possibly committed seat into an additional cash award.
+        if (seatErr) {
+          throw new Error(`Satellite seat outcome unconfirmed: ${seatErr.message}`);
+        }
+        if (
+          !seat ||
+          typeof seat.ok !== 'boolean' ||
+          (seat.ok === true &&
+            (typeof seat.awarded !== 'boolean' ||
+              (seat.awarded === false &&
+                typeof seat.held_from_this_satellite !== 'boolean' &&
+                seat.origin_unknown !== true))) ||
+          (seat.ok === false &&
+            (typeof seat.reason !== 'string' ||
+              !seat.reason ||
+              /duplicate|unique|already_registered/i.test(seat.reason)))
+        ) {
+          throw new Error('Satellite seat receipt is incomplete or ambiguous');
+        }
+        const regErr = seat.ok === false ? { message: seat.reason || 'seat_refused' } : null;
         if (regErr && !/duplicate|unique|already_registered/i.test(regErr.message || '')) {
           // Registration failed for a real reason — pay ticket value in cash
           await payCash(

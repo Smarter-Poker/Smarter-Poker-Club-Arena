@@ -34,6 +34,7 @@
  */
 
 import { masterBus } from '../core/MasterBus';
+import { warmTable } from '../services/tableWarmup';
 
 export interface ObserveTableRequest {
   tableId: string;
@@ -48,6 +49,7 @@ export interface ObserveTableRequest {
  */
 export function requestObserveTable(request: ObserveTableRequest): boolean {
   if (!request?.tableId) return false;
+  warmTable(request.tableId);
   masterBus.emit('OPEN_OBSERVE_TABLE', {
     tableId: request.tableId,
     tableName: request.tableName,

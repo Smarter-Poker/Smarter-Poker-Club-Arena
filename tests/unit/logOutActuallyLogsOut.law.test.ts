@@ -75,7 +75,9 @@ describe('2. the redirect belongs to the handler, not to whoever happens to be m
         '/legal/fair-gaming and /legal/promotions — all five linked from this ' +
         'same drawer. The redirect must not be delegated.'
     ).toMatch(/window\.location\.href\s*=/);
-    expect(logOutBody).toMatch(/\/auth\/login\?redirect=/);
+    // 2026-09-07: the URL comes from src/lib/signIn.ts - /auth/login?redirect=
+    // on the web, the in-app AuthPage in the native build.
+    expect(logOutBody).toMatch(/window\.location\.href = signInUrl\(/);
   });
 });
 

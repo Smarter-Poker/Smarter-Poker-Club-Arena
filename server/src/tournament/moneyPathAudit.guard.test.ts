@@ -106,13 +106,24 @@ describe('no money path writes a ledger row it did not earn', () => {
     expect(owning.length, 'no migration defines the reconciler').toBeGreaterThan(0);
 
     const latest = sql(fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8'));
-    expect(latest, `${owning[owning.length - 1]} must credit through fn_credit_and_log`).toMatch(
-      /fn_credit_and_log/
+    // The original reconciler now delegates to the obligation writer. Verify
+    // both executable calls so a money_path label or comment cannot pass.
+    expect(latest).toMatch(/v_settle\s*:=\s*public\.fn_settle_tournament_obligation\s*\(/i);
+    const settlementDefinitions = files.filter((file) =>
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_settle_tournament_obligation\s*\(/i.test(
+        sql(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'))
+      )
     );
-    expect(
-      latest,
-      `${owning[owning.length - 1]} still uses the bare credit + unconditional log pair`
-    ).not.toMatch(/PERFORM credit_player_wallet\(/);
+    expect(settlementDefinitions.length, 'no obligation writer definition').toBeGreaterThan(0);
+    const settlement = sql(
+      fs.readFileSync(path.join(MIGRATIONS, settlementDefinitions.at(-1)!), 'utf8')
+    );
+    expect(settlement).toMatch(/v_credited\s*:=\s*public\.fn_credit_and_log\s*\(/i);
+    for (const body of [latest, settlement]) {
+      expect(body, 'bare credit can leave an unearned ledger row').not.toMatch(
+        /(?:PERFORM|SELECT)\s+(?:public\.)?credit_player_wallet\s*\(/i
+      );
+    }
   });
 
   it('the last-written reconciler keeps the exact-cent pricing', () => {

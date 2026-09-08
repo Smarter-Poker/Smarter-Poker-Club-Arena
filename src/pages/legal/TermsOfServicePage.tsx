@@ -46,11 +46,13 @@ const SECTIONS: LegalDocumentSection[] = [
   },
   {
     id: 'social-play',
-    title: 'Play Money Only',
+    title: 'Chips Are Club Play Credits',
     content: (
       <p>
-        Club Arena Uses Play Money Chips Only. All Chips, Diamonds, And Virtual Currency Have No
-        Real-World Monetary Value And Cannot Be Exchanged For Real Money Or Prizes.
+        Chips Are Club Play Credits. Smarter.Poker Does Not Sell, Redeem Or Pay Out Chips And
+        Assigns Them No Monetary Value; Any Arrangement Between A Member And Their Club's Agent Is
+        Private And Off-Platform. Diamonds Are A Virtual Currency Sold By Smarter.Poker For Use
+        Inside The Platform Only.
       </p>
     ),
   },

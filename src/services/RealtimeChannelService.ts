@@ -108,12 +108,14 @@ interface SubscriptionRecord {
   entityId: string;
   unlisteners: Array<() => void>;
   registeredAt: number;
+  consumerCount?: number;
 }
 
 // ─── Engine HTTP base URL (same origin as WS) ──────────────────────────────────
 
-const ENGINE_BASE_URL = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL
-  ?? 'https://engine.smarter.poker';
+const ENGINE_BASE_URL =
+  (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL ??
+  'https://engine.smarter.poker';
 
 function authHeader(): Record<string, string> {
   try {
@@ -133,6 +135,32 @@ function authHeader(): Record<string, string> {
 class RealtimeChannelService {
   private subscriptions: Map<string, SubscriptionRecord> = new Map();
   private presenceState: Map<string, ClubPresence[]> = new Map();
+
+  /** One server subscription can serve several independently mounted consumers. */
+  private retainSubscription(
+    channelName: string,
+    registration: SubscriptionRecord,
+    onLastRelease: () => void
+  ): () => void {
+    const record = this.subscriptions.get(channelName) ?? { ...registration, unlisteners: [] };
+    record.unlisteners.push(...registration.unlisteners);
+    record.consumerCount = (record.consumerCount ?? 0) + 1;
+    this.subscriptions.set(channelName, record);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      // Explicit unsubscribe may have removed this generation and a new mount
+      // may already own the same channel name. Old cleanup cannot release it.
+      if (this.subscriptions.get(channelName) !== record) return;
+      registration.unlisteners.forEach((fn) => fn());
+      record.unlisteners = record.unlisteners.filter(
+        (fn) => !registration.unlisteners.includes(fn)
+      );
+      record.consumerCount = (record.consumerCount ?? 1) - 1;
+      if (record.consumerCount === 0) onLastRelease();
+    };
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // CLUB CHANNELS
@@ -156,12 +184,10 @@ class RealtimeChannelService {
     }
   ): () => void {
     const channelName = `club:${clubId}`;
-    if (this.subscriptions.has(channelName)) {
-      return () => void this.unsubscribeFromClub(clubId);
-    }
 
     // Tell the engine we're joining this club
-    engineChannelClient.send({ type: 'JOIN_CLUB', clubId });
+    if (!this.subscriptions.has(channelName))
+      engineChannelClient.send({ type: 'JOIN_CLUB', clubId });
 
     // Register presence listener
     const unPresence = engineChannelClient.onClubPresence((msg: ClubPresenceUpdateMessage) => {
@@ -182,14 +208,16 @@ class RealtimeChannelService {
       callbacks.onEvent?.(msg.event);
     });
 
-    this.subscriptions.set(channelName, {
-      type: 'club',
-      entityId: clubId,
-      unlisteners: [unPresence, unEvent],
-      registeredAt: Date.now(),
-    });
-
-    return () => void this.unsubscribeFromClub(clubId);
+    return this.retainSubscription(
+      channelName,
+      {
+        type: 'club',
+        entityId: clubId,
+        unlisteners: [unPresence, unEvent],
+        registeredAt: Date.now(),
+      },
+      () => void this.unsubscribeFromClub(clubId)
+    );
   }
 
   async unsubscribeFromClub(clubId: string): Promise<void> {
@@ -245,11 +273,9 @@ class RealtimeChannelService {
     }
   ): () => void {
     const channelName = `tournament:${tournamentId}`;
-    if (this.subscriptions.has(channelName)) {
-      return () => void this.unsubscribeFromTournament(tournamentId);
-    }
 
-    engineChannelClient.send({ type: 'JOIN_TOURNAMENT', tournamentId });
+    if (!this.subscriptions.has(channelName))
+      engineChannelClient.send({ type: 'JOIN_TOURNAMENT', tournamentId });
 
     const unTournament = engineChannelClient.onTournamentEvent((msg: TournamentEventMessage) => {
       if (msg.tournamentId !== tournamentId) return;
@@ -271,14 +297,16 @@ class RealtimeChannelService {
       }
     });
 
-    this.subscriptions.set(channelName, {
-      type: 'tournament',
-      entityId: tournamentId,
-      unlisteners: [unTournament],
-      registeredAt: Date.now(),
-    });
-
-    return () => void this.unsubscribeFromTournament(tournamentId);
+    return this.retainSubscription(
+      channelName,
+      {
+        type: 'tournament',
+        entityId: tournamentId,
+        unlisteners: [unTournament],
+        registeredAt: Date.now(),
+      },
+      () => void this.unsubscribeFromTournament(tournamentId)
+    );
   }
 
   async unsubscribeFromTournament(tournamentId: string): Promise<void> {
@@ -394,11 +422,8 @@ class RealtimeChannelService {
     onJackpotHit?: (jackpot: unknown) => void;
   }): () => void {
     const channelName = 'lobby:global';
-    if (this.subscriptions.has(channelName)) {
-      return () => void this.unsubscribeFromLobby();
-    }
 
-    engineChannelClient.send({ type: 'JOIN_LOBBY' });
+    if (!this.subscriptions.has(channelName)) engineChannelClient.send({ type: 'JOIN_LOBBY' });
 
     const unLobby = engineChannelClient.onLobbyUpdate((msg: LobbyUpdateMessage) => {
       switch (msg.kind) {
@@ -416,14 +441,16 @@ class RealtimeChannelService {
       }
     });
 
-    this.subscriptions.set(channelName, {
-      type: 'lobby',
-      entityId: 'global',
-      unlisteners: [unLobby],
-      registeredAt: Date.now(),
-    });
-
-    return () => void this.unsubscribeFromLobby();
+    return this.retainSubscription(
+      channelName,
+      {
+        type: 'lobby',
+        entityId: 'global',
+        unlisteners: [unLobby],
+        registeredAt: Date.now(),
+      },
+      () => void this.unsubscribeFromLobby()
+    );
   }
 
   async unsubscribeFromLobby(): Promise<void> {

@@ -293,6 +293,13 @@ export interface MappedTableStatePatch {
    */
   maxSeats: number;
   /**
+   * The engine publishes `is_anonymous` (2026-09-07) when `seatIdentity()`
+   * is scrubbing every seat's name, avatar and cosmetics. The page must then
+   * NOT paint a real face over the scrub from its own live profile sync. An
+   * engine older than the field maps to false, which is today's behaviour.
+   */
+  isAnonymous: boolean;
+  /**
    * CHIP CONTINUITY: the hero's own leave lock, as the engine published it.
    * `remainingMs` is as of `at` (engine clock, ms); the leave control counts
    * down from there while `running`. Null when the hero is not seated or the
@@ -628,5 +635,6 @@ export function mapEngineSnapshot(
     // Phase 1 (2026-08-31): the resolved seat count, identical to the length
     // of every per-seat array in this patch. See the field docs above.
     maxSeats: effectiveMaxSeats,
+    isAnonymous: (s as unknown as { is_anonymous?: unknown }).is_anonymous === true,
   };
 }

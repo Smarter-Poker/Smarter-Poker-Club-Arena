@@ -59,7 +59,11 @@ function sumCents(values: number[]): number {
   return Number(total) / 100;
 }
 
-export function mapUnionStatementReport(unionId: string, raw: unknown, now = Date.now()): UnionSettlement {
+export function mapUnionStatementReport(
+  unionId: string,
+  raw: unknown,
+  now = Date.now()
+): UnionSettlement {
   const board = object(raw);
   if (board.union_id !== unionId || !Array.isArray(board.clubs)) {
     throw new Error('Statement report does not match this union');
@@ -69,17 +73,32 @@ export function mapUnionStatementReport(unionId: string, raw: unknown, now = Dat
   const share: number[] = [];
   const clubs = board.clubs.map((value): ClubSettlementBreakdown => {
     const row = object(value);
-    if (typeof row.club_id !== 'string' || seen.has(row.club_id)) throw new Error('Invalid statement club identity');
+    if (typeof row.club_id !== 'string' || seen.has(row.club_id))
+      throw new Error('Invalid statement club identity');
     seen.add(row.club_id);
     const base = { clubId: row.club_id, clubName: String(row.club_name ?? 'Unnamed Club') };
     if (row.status === 'missing') {
-      return { ...base, invoiceId: null, status: 'missing', rakeCollected: null,
-        unionShare: null, netToClub: null, wireDirection: null, outstanding: null };
+      return {
+        ...base,
+        invoiceId: null,
+        status: 'missing',
+        rakeCollected: null,
+        unionShare: null,
+        netToClub: null,
+        wireDirection: null,
+        outstanding: null,
+      };
     }
-    if (!row.invoice_id || !['generated', 'sent', 'pending', 'paid', 'overdue', 'disputed', 'cancelled'].includes(String(row.status))) {
+    if (
+      !row.invoice_id ||
+      !['generated', 'sent', 'pending', 'paid', 'overdue', 'disputed', 'cancelled'].includes(
+        String(row.status)
+      )
+    ) {
       throw new Error('Invalid issued statement identity or status');
     }
-    if (row.snapshot_complete !== true) throw new Error('Issued statement accounting snapshot is incomplete');
+    if (row.snapshot_complete !== true)
+      throw new Error('Issued statement accounting snapshot is incomplete');
     const amount = cents(row.amount);
     const paid = cents(row.paid_total);
     if (paid < 0) throw new Error('Statement paid total cannot be negative');
@@ -88,30 +107,58 @@ export function mapUnionStatementReport(unionId: string, raw: unknown, now = Dat
     const rakeAmount = cents(row.rake_generated);
     const shareAmount = cents(row.union_fee_kept);
     const clubAmount = cents(row.rakeback_due);
-    if (!cancelled) { rake.push(rakeAmount); share.push(shareAmount); }
+    if (!cancelled) {
+      rake.push(rakeAmount);
+      share.push(shareAmount);
+    }
     const due = row.due_at == null ? null : Date.parse(String(row.due_at));
     if (due !== null && !Number.isFinite(due)) throw new Error('Invalid statement due date');
-    const status: StatementStatus = cancelled ? 'cancelled'
-      : row.status === 'disputed' ? 'disputed'
-      : row.status === 'paid' && remaining === 0 ? 'paid'
-      : remaining > 0 && due !== null && due < now ? 'overdue' : 'pending';
-    return { ...base, invoiceId: String(row.invoice_id), status,
-      rakeCollected: rakeAmount / 100, unionShare: shareAmount / 100, netToClub: clubAmount / 100,
+    const status: StatementStatus = cancelled
+      ? 'cancelled'
+      : row.status === 'disputed'
+        ? 'disputed'
+        : row.status === 'paid' && remaining === 0
+          ? 'paid'
+          : remaining > 0 && due !== null && due < now
+            ? 'overdue'
+            : 'pending';
+    return {
+      ...base,
+      invoiceId: String(row.invoice_id),
+      status,
+      rakeCollected: rakeAmount / 100,
+      unionShare: shareAmount / 100,
+      netToClub: clubAmount / 100,
       wireDirection: amount > 0 ? 'PAY_TO_UNION' : amount < 0 ? 'COLLECT_FROM_UNION' : null,
-      outstanding: cancelled ? 0 : remaining / 100 };
+      outstanding: cancelled ? 0 : remaining / 100,
+    };
   });
-  const issued = clubs.filter(c => c.status !== 'missing' && c.status !== 'cancelled').length;
+  const issued = clubs.filter((c) => c.status !== 'missing' && c.status !== 'cancelled').length;
   const start = board.period_start == null ? null : String(board.period_start);
   const end = board.period_end == null ? null : String(board.period_end);
-  if (issued && (!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end)))) {
+  if (
+    issued &&
+    (!start || !end || !Number.isFinite(Date.parse(start)) || !Number.isFinite(Date.parse(end)))
+  ) {
     throw new Error('Issued statement period is missing');
   }
-  return { unionId, periodStart: start, periodEnd: end, totalClubs: clubs.length,
-    issuedClubs: issued, coverage: issued === 0 ? 'missing' : issued === clubs.length ? 'complete' : 'partial',
+  return {
+    unionId,
+    periodStart: start,
+    periodEnd: end,
+    totalClubs: clubs.length,
+    issuedClubs: issued,
+    coverage: issued === 0 ? 'missing' : issued === clubs.length ? 'complete' : 'partial',
     totalRakeCollected: issued ? sumCents(rake) : null,
     totalUnionTax: issued ? sumCents(share) : null,
     netUnionRevenue: issued ? sumCents(share) : null,
-    overdueAmount: sumCents(clubs.filter(c => c.status === 'overdue').map(c => cents(c.outstanding))),
-    pendingSettlements: clubs.filter(c => ['pending', 'overdue', 'disputed'].includes(c.status)).length,
-    totalAgentCommissions: null, totalPlayerRakeback: null, clubBreakdowns: clubs };
+    overdueAmount: sumCents(
+      clubs.filter((c) => c.status === 'overdue').map((c) => cents(c.outstanding))
+    ),
+    pendingSettlements: clubs.filter((c) => ['pending', 'overdue', 'disputed'].includes(c.status))
+      .length,
+    totalAgentCommissions: null,
+    totalPlayerRakeback: null,
+    clubBreakdowns: clubs,
+  };
 }

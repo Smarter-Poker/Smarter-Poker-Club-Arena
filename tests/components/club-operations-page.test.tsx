@@ -293,8 +293,17 @@ describe('a failed reading never takes the tools away', () => {
     await waitFor(() => expect(screen.getByText('Players')).toBeTruthy());
     // A refusal is not an error the operator can fix by retrying, so the page
     // says so plainly and does not offer a failure they might chase.
+    //
+    // WAIT FOR THE BANNER, DO NOT ASSUME IT ARRIVED WITH THE TOOLS
+    // (2026-09-08). The tool list is static and the refusal banner comes from
+    // the rejected RPC, so they settle on different ticks. Asserting the
+    // banner synchronously after awaiting only 'Players' passed on a quiet
+    // machine and failed on a loaded CI runner - it took shard 4 down, and
+    // fail-fast cancelled shard 3 with it.
+    await waitFor(() =>
+      expect(screen.getByText('Live Readings Restricted For This Role')).toBeTruthy()
+    );
     expect(screen.queryByText('Live Readings Unavailable')).toBeNull();
-    expect(screen.getByText('Live Readings Restricted For This Role')).toBeTruthy();
   });
 });
 

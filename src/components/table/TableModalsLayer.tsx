@@ -352,6 +352,7 @@ export interface TableModalsLayerProps {
    * if they do not finish. TablePage owns the clock; this only displays it.
    */
   buyInSecondsLeft?: number | null;
+  cashBuyInRecovery?: { p_amount: number; p_seat_number: number } | null;
   onCloseBuyInModal: () => void;
   onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<boolean | void>;
 
@@ -630,6 +631,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Buy-In
     showBuyInModal,
     buyInSecondsLeft,
+    cashBuyInRecovery,
     selectedSeat,
     heroAvatarUrl,
     onCloseBuyInModal,
@@ -1122,6 +1124,11 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         isOpen={showBuyInModal}
         onClose={onCloseBuyInModal}
         onConfirm={onConfirmBuyIn}
+        recovery={
+          cashBuyInRecovery
+            ? { amount: cashBuyInRecovery.p_amount, seat: cashBuyInRecovery.p_seat_number }
+            : null
+        }
         tableName={tableName}
         minBuyIn={(() => {
           return cashoutMinBuyIn > minBuyIn ? cashoutMinBuyIn : minBuyIn;

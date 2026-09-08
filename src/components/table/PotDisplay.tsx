@@ -38,6 +38,7 @@ import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
 import { AnimatedNumber } from '../common/AnimatedNumber';
 import { soundService } from '../../services/SoundService';
 import { visualChipStacks } from '../../lib/chipDenominations';
+import { formatTableChips } from '../../utils/format';
 import './PotDisplay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -95,16 +96,41 @@ export interface PotDisplayProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Always show whole numbers for amounts >= 1. Sub-dollar amounts show 2 decimals.
-function formatAmount(amount: number, currency: string = ''): string {
-  if (amount >= 1) return Math.round(amount).toLocaleString('en-US');
-  if (amount > 0) return amount.toFixed(2);
-  return '0';
+/**
+ * ═══ THE POT IS THE TRUE NUMBER (Dan 2026-09-04) ═══════════════════════════
+ *
+ * "FOR ALL SMALL STAKES GAMES .50/1 AND LESS THE POT SHOULD SHOW TRUE
+ * AMOUNTS... NOT ROUNDED UP. POT SHOULD SHOW 3.50 OR 6.80 OR WHAT EVER THE
+ * TRUE NUMBER IS IN THE SMALLER GAMES."
+ *
+ * This used to be `Math.round(amount)` for anything from 1 up, so a 0.10/0.25
+ * table with 5.10 of bomb antes in the middle read "POT 5", and a 1.50 pot of
+ * blinds and antes read "POT 2" - a number that was simply not the pot. The
+ * ladder of chips under the pill was exact (chipDenominations.ts), so the
+ * discs and the digits disagreed on every micro-stakes hand.
+ *
+ * At SMALL STAKES (big blind at or under SMALL_STAKES_BB_MAX) the pot reads to
+ * the penny with two places, always - 3.50, not 3.5, so a 3.50 and a 3.57 pot
+ * are the same width and the pill does not jitter as the count-up animation
+ * runs through 3.4, 3.47, 3.5. Above that, formatTableChips' own contract
+ * applies: integers clean (a 1,250 tournament pot is "1,250"), and a real
+ * fraction is kept when one exists (a 7.5 pot at 1/2 is "7.5"), never
+ * rounded away. A caller with no big blind to hand (bigBlind = 0) gets the
+ * same formatTableChips contract, which is also never a rounded magnitude.
+ */
+export const SMALL_STAKES_BB_MAX = 1;
+
+function formatAmount(amount: number, bigBlind: number = 0): string {
+  if (!(amount > 0)) return '0';
+  if (bigBlind > 0 && bigBlind <= SMALL_STAKES_BB_MAX) {
+    return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  return formatTableChips(amount);
 }
 
 // Format amount in Big Blinds
 function formatBB(amount: number, bigBlind: number): string {
-  if (bigBlind <= 0) return formatAmount(amount);
+  if (bigBlind <= 0) return formatAmount(amount, bigBlind);
   const bbs = amount / bigBlind;
   // Show 1 decimal for fractional BBs, whole number for clean amounts
   if (bbs === Math.floor(bbs)) {
@@ -134,7 +160,7 @@ function SidePotBadge({
       <span className="pot-display__side-pot-amount">
         {displayMode === 'bb' && bigBlind > 0
           ? formatBB(pot.amount, bigBlind)
-          : formatAmount(pot.amount)}
+          : formatAmount(pot.amount, bigBlind)}
       </span>
     </div>
   );
@@ -213,7 +239,9 @@ function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' 
 function PotDisplayComponent({
   mainPot,
   sidePots = [],
-  currency = '',
+  /* `currency` stays on the props (and in the memo comparator) for callers
+     that still pass it; the pill prints chips, not a currency symbol, and the
+     penny rule above is keyed on the big blind, so nothing reads it here. */
   bigBlind = 0,
   displayMode = 'chips',
   onToggleDisplayMode,
@@ -297,7 +325,7 @@ function PotDisplayComponent({
   }, [mainPot, sidePots]);
 
   const fmt = (n: number) =>
-    displayMode === 'bb' && bigBlind > 0 ? formatBB(n, bigBlind) : formatAmount(n, currency);
+    displayMode === 'bb' && bigBlind > 0 ? formatBB(n, bigBlind) : formatAmount(n, bigBlind);
 
   // Nothing at all to show: no pot, no live bets, no side pots, no push.
   if (mainPot === 0 && streetBets === 0 && sidePots.length === 0 && !collectTo) {
@@ -319,7 +347,7 @@ function PotDisplayComponent({
       }
       role="status"
       aria-live="polite"
-      aria-label={`Pot: ${formatAmount(displayPot, currency)}${streetBets > 0 ? `, ${formatAmount(streetBets, currency)} In Front Of Players` : ''}${sidePots && sidePots.length > 0 ? ` Plus ${sidePots.length} Side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
+      aria-label={`Pot: ${formatAmount(displayPot, bigBlind)}${streetBets > 0 ? `, ${formatAmount(streetBets, bigBlind)} In Front Of Players` : ''}${sidePots && sidePots.length > 0 ? ` Plus ${sidePots.length} Side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
     >
       {/* Main Pot pill — click to toggle chips/BB display */}
       <div

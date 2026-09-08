@@ -23,6 +23,15 @@ const AGREEMENT = read(
 const LIVENESS = read(
   'supabase/migrations/20260908181724_both_solver_hosts_and_the_compactor_leave_receipts.sql'
 );
+const RAISE_LINE_PROOF = read(
+  'supabase/migrations/20260908201302_the_solver_raise_bucket_uses_the_raisers_call.sql'
+);
+const RANK_HOLDOUT = read(
+  'supabase/migrations/20260908201749_the_solver_holdout_must_change_board_ranks.sql'
+);
+const CANONICAL_IDENTITY = read(
+  'supabase/migrations/20260908203000_certified_solver_identity_text_is_canonical.sql'
+);
 const STORE = read('server/src/engine/GtoPostflopV31.ts');
 const LOADER = read('server/src/services/GtoPostflopV31Loader.ts');
 const AUDIT = read('server/src/engine/HorseDataLedger.ts');
@@ -93,6 +102,20 @@ describe('the certified V31 release boundary', () => {
     expect(CORPUS).toContain("CROSS JOIN unnest(ARRAY['flop','turn','river'])");
   });
 
+  it('classifies a raise from the raiser pot-after-call and latest hero aggression', () => {
+    expect(RAISE_LINE_PROOF).toContain(
+      'v_last_raise_pot_after_call:=v_pot+(v_current_target-v_contributions[v_actor+1])'
+    );
+    expect(RAISE_LINE_PROOF).toContain(
+      'v_fraction:=(v_last_target-v_last_prior_target)/v_last_raise_pot_after_call'
+    );
+    expect(RAISE_LINE_PROOF).toContain(
+      'SELECT max(i) INTO v_hero_aggressive FROM generate_subscripts(v_types,1) i'
+    );
+    expect(RAISE_LINE_PROOF).toContain("'r:0:b50:b250',NULL,100,1000");
+    expect(RAISE_LINE_PROOF).toContain("'r:0:b50:b150:b300:b600',NULL,100,1000");
+  });
+
   it('computes the canonical node checksum in the database when a worker omits it', () => {
     expect(CORPUS).toContain("v_normalized_nodes jsonb := '[]'::jsonb");
     expect(CORPUS).toContain("AND NOT (v_node?'node_checksum')");
@@ -112,6 +135,33 @@ describe('the certified V31 release boundary', () => {
     expect(CORPUS).toContain("CASE WHEN a.machine_id='M2' THEN 'holdout' ELSE 'train' END");
     expect(CORPUS).toContain('v_machine_variants<>2');
     expect(CORPUS).toContain("state=CASE WHEN v_pass THEN 'evaluating' ELSE 'rejected' END");
+  });
+
+  it('rejects suit-isomorphic holdouts instead of calling them unseen boards', () => {
+    expect(RANK_HOLDOUT).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_gto_v31_board_rank_signature(p_board text)'
+    );
+    expect(RANK_HOLDOUT).toContain(
+      "public.fn_gto_v31_board_rank_signature(holdout.node#>>'{node_context,board}')="
+    );
+    expect(RANK_HOLDOUT).toContain(
+      "public.fn_gto_v31_board_rank_signature(train.node#>>'{node_context,board}')"
+    );
+    expect(RANK_HOLDOUT).toContain('rank-disjoint train and holdout sources');
+    expect(RANK_HOLDOUT).toContain("fn_gto_v31_board_rank_signature('AsKd7c') IS DISTINCT FROM");
+    expect(RANK_HOLDOUT).toContain("fn_gto_v31_board_rank_signature('7hAcKd')");
+    expect(RANK_HOLDOUT).toContain(
+      "fn_gto_v31_board_rank_signature('AsKd7c') IS NOT DISTINCT FROM"
+    );
+    expect(RANK_HOLDOUT).toContain("fn_gto_v31_board_rank_signature('AhQc6d')");
+  });
+
+  it('keeps solver and manifest identities byte-stable across attestation and provenance', () => {
+    expect(CANONICAL_IDENTITY).toContain('gto_v31_datasets_solver_version_canonical_chk');
+    expect(CANONICAL_IDENTITY).toContain('gto_v31_datasets_manifest_version_canonical_chk');
+    expect(CANONICAL_IDENTITY).toContain("solver_version !~ '^[[:space:]]|[[:space:]]$'");
+    expect(CANONICAL_IDENTITY).toContain("solver_version !~ '[[:cntrl:]]'");
+    expect(CANONICAL_IDENTITY).toContain("manifest_version !~ '[[:cntrl:]]'");
   });
 
   it('requires eight bound candidate results and never accepts a silent policy', () => {

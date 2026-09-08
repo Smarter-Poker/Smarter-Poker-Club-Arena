@@ -284,6 +284,210 @@ describe('V31 certification and lookup', () => {
 });
 
 describe('V31 reaches the full horse decision path', () => {
+  it('uses the all-in response cell for a covering stack but never in a straddled pot', () => {
+    const responseBase: GtoPostflopV31Row = {
+      ...CELL,
+      dataset_cells: 2,
+      street: 'flop',
+      hero_position: 'BB',
+      opponent_position: 'SB',
+      node_role: 'all_in',
+      facing_kind: 'all_in',
+      facing_size_bucket: 'all_in',
+      hand_matrix: { '43o:0': { fold: 0, call: 1 } },
+      action_specs: {
+        fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+        call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+      },
+      policy_ev_matrix: { '43o:0': 1 },
+      action_ev_matrix: { '43o:0': { fold: 0, call: 1 } },
+    };
+    replaceGtoPostflopV31([
+      responseBase,
+      {
+        ...responseBase,
+        node_role: 'facing_bet',
+        facing_kind: 'bet',
+        facing_size_bucket: 'big',
+        cell_key_checksum: '7'.repeat(64),
+        cell_payload_checksum: '8'.repeat(64),
+        lineage_checksum: '9'.repeat(64),
+        hand_matrix: { '43o:0': { fold: 1, call: 0 } },
+        policy_ev_matrix: { '43o:0': 0 },
+      },
+    ]);
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      username: 'Hero',
+      stack: 8_000,
+      bet: 0,
+      totalInvested: 0,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards('3c4d'),
+    };
+    const villain = {
+      seat: 2,
+      user_id: 'villain',
+      username: 'Villain',
+      stack: 8_000,
+      bet: 8_000,
+      totalInvested: 8_000,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: [],
+    };
+    const state = {
+      players: [hero, villain],
+      communityCards: BOARD.slice(0, 3),
+      pot: 8_100,
+      currentBet: 8_000,
+      minRaise: 8_000,
+      stage: 'flop',
+      gameVariant: 'nlh',
+      gameMode: 'cash',
+      format: 'cash',
+      bigBlind: 100,
+      smallBlind: 50,
+      dealerSeat: 2,
+      actionHistory: [
+        { stage: 'flop', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 0 },
+        {
+          stage: 'flop',
+          seat: 2,
+          userId: 'villain',
+          action: 'bet',
+          amount: 8_000,
+          timestamp: 1,
+        },
+      ],
+    };
+    const decision = HorseLogic.decide(
+      hero as never,
+      state as never,
+      'balanced',
+      {},
+      { mind: false, telemetry: false }
+    );
+    expect(decision.action).toBe('all_in');
+
+    const straddleReceipts: Array<{ actionId: string }> = [];
+    HorseLogic.decide(
+      hero as never,
+      { ...state, straddleActive: true } as never,
+      'balanced',
+      {},
+      {
+        mind: false,
+        telemetry: false,
+        gtoV31DatasetChecksum: H64,
+        onGtoV31Decision: (receipt) => straddleReceipts.push(receipt),
+      }
+    );
+    expect(straddleReceipts).toEqual([]);
+  });
+
+  it('selects turn and river cells by the flop-root effective stack', () => {
+    const response: GtoPostflopV31Row = {
+      ...CELL,
+      dataset_cells: 2,
+      hero_position: 'BB',
+      opponent_position: 'SB',
+      node_role: 'facing_bet',
+      facing_kind: 'bet',
+      facing_size_bucket: 'small',
+      hand_matrix: { '43o:0': { fold: 1, call: 0 } },
+      action_specs: {
+        fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+        call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+      },
+      policy_ev_matrix: { '43o:0': 0 },
+      action_ev_matrix: { '43o:0': { fold: 0, call: -1 } },
+    };
+    replaceGtoPostflopV31([
+      response,
+      {
+        ...response,
+        depth_bucket: 20,
+        cell_key_checksum: '7'.repeat(64),
+        cell_payload_checksum: '8'.repeat(64),
+        lineage_checksum: '9'.repeat(64),
+        hand_matrix: { '43o:0': { fold: 0, call: 1 } },
+        policy_ev_matrix: { '43o:0': -1 },
+      },
+    ]);
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      username: 'Hero',
+      stack: 2_000,
+      bet: 0,
+      totalInvested: 6_000,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards('3c4d'),
+    };
+    const villain = {
+      seat: 2,
+      user_id: 'villain',
+      username: 'Villain',
+      stack: 1_900,
+      bet: 100,
+      totalInvested: 6_100,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: [],
+    };
+    const state = {
+      players: [hero, villain],
+      communityCards: BOARD,
+      pot: 12_300,
+      currentBet: 100,
+      minRaise: 100,
+      stage: 'turn',
+      gameVariant: 'nlh',
+      gameMode: 'cash',
+      format: 'cash',
+      bigBlind: 100,
+      smallBlind: 50,
+      dealerSeat: 2,
+      actionHistory: [
+        { stage: 'flop', seat: 1, userId: 'hero', action: 'bet', amount: 6_000, timestamp: 0 },
+        {
+          stage: 'flop',
+          seat: 2,
+          userId: 'villain',
+          action: 'call',
+          amount: 6_000,
+          timestamp: 1,
+        },
+        { stage: 'turn', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 2 },
+        {
+          stage: 'turn',
+          seat: 2,
+          userId: 'villain',
+          action: 'bet',
+          amount: 100,
+          timestamp: 3,
+        },
+      ],
+    };
+
+    const decision = HorseLogic.decide(
+      hero as never,
+      state as never,
+      'balanced',
+      {},
+      { mind: false, telemetry: false }
+    );
+    expect(decision.action).toBe('fold');
+  });
+
   it('executes a genuine facing-bet fold and stamps that exact node', () => {
     const response: GtoPostflopV31Row = {
       ...CELL,
@@ -348,12 +552,36 @@ describe('V31 reaches the full horse decision path', () => {
       dealerSeat: 2,
       actionHistory: [
         {
+          stage: 'flop',
+          seat: 1,
+          userId: 'hero',
+          action: 'check',
+          amount: 0,
+          timestamp: 0,
+        },
+        {
+          stage: 'flop',
+          seat: 2,
+          userId: 'villain',
+          action: 'check',
+          amount: 0,
+          timestamp: 1,
+        },
+        {
+          stage: 'turn',
+          seat: 1,
+          userId: 'hero',
+          action: 'check',
+          amount: 0,
+          timestamp: 2,
+        },
+        {
           stage: 'turn',
           seat: 2,
           userId: 'villain',
           action: 'bet',
           amount: 60,
-          timestamp: 0,
+          timestamp: 3,
         },
       ],
     };
@@ -461,12 +689,36 @@ describe('V31 reaches the full horse decision path', () => {
           timestamp: 1,
         },
         {
+          stage: 'flop',
+          seat: 1,
+          userId: 'hero',
+          action: 'check',
+          amount: 0,
+          timestamp: 2,
+        },
+        {
+          stage: 'flop',
+          seat: 2,
+          userId: 'villain',
+          action: 'check',
+          amount: 0,
+          timestamp: 3,
+        },
+        {
+          stage: 'turn',
+          seat: 1,
+          userId: 'hero',
+          action: 'check',
+          amount: 0,
+          timestamp: 4,
+        },
+        {
           stage: 'turn',
           seat: 2,
           userId: 'villain',
           action: 'bet',
           amount: 4_000,
-          timestamp: 2,
+          timestamp: 5,
         },
       ],
       tournament: {

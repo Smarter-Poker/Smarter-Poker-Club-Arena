@@ -195,6 +195,7 @@ export default function DailyBonusSheet({
   const [burstSlot, setBurstSlot] = useState<number | null>(null);
   const [revealSlot, setRevealSlot] = useState<number | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLElement>(null);
   const burstTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -215,6 +216,21 @@ export default function DailyBonusSheet({
       if (event.key === 'Escape') {
         event.preventDefault();
         onClose?.();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = sheetRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
     document.addEventListener('keydown', onKey);
@@ -363,6 +379,7 @@ export default function DailyBonusSheet({
 
   const sheet = (
     <section
+      ref={sheetRef}
       className="dbs"
       data-mode={mode}
       role={mode === 'modal' ? 'dialog' : undefined}

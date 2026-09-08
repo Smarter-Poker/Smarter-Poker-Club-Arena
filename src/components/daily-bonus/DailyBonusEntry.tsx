@@ -89,6 +89,13 @@ export default function DailyBonusEntry({ suspended = false }: { suspended?: boo
     };
   }, [user?.id, suspended, location.pathname]);
 
+  // The Promotions door and the nav lead to /bonuses, which renders this
+  // same sheet inline; a modal copy left open above it would be two sheets.
+  // Closing here does not mark the day seen: the page is the sheet.
+  useEffect(() => {
+    if (open && isQuietPath(location.pathname)) setOpen(false);
+  }, [open, location.pathname]);
+
   if (!open || !user?.id) return null;
 
   return (

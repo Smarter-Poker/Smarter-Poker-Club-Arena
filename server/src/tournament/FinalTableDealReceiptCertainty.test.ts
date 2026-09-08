@@ -13,10 +13,23 @@ if (!method?.body) throw new Error('Actual deal method missing');
 const compiled = ts.transpileModule('return async function(alive) ' + method.body.getText(ast), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;
-const build = new Function('supabase', 'reportError', 'settleTournamentObligation', compiled);
-async function run(receipt: Record<string, unknown>) {
+const build = new Function(
+  'supabase',
+  'reportError',
+  'settleTournamentObligation',
+  'raiseFinancialAlert',
+  compiled
+);
+async function run(
+  receipt: Record<string, unknown>,
+  rows: Array<{ user_id: string; amount: unknown }> = [
+    { user_id: 'first', amount: 100 },
+    { user_id: 'second', amount: 100 },
+  ]
+) {
   const updates: Array<{ table: string; value: any }> = [];
   const report = vi.fn();
+  const alert = vi.fn(async () => undefined);
   const settle = vi.fn(async (_db, input) =>
     input.userId === 'first'
       ? receipt
@@ -42,10 +55,7 @@ async function run(receipt: Record<string, unknown>) {
             update
               ? { error: null }
               : {
-                  data: [
-                    { user_id: 'first', amount: 100 },
-                    { user_id: 'second', amount: 100 },
-                  ],
+                  data: rows,
                   error: null,
                 }
           ).then(resolve, reject);
@@ -64,11 +74,11 @@ async function run(receipt: Record<string, unknown>) {
     cleanupBroadcastChannel: vi.fn(),
     stop: vi.fn(),
   };
-  await build(db, report, settle).call(owner, [
+  await build(db, report, settle, alert).call(owner, [
     { user_id: 'first', chips: 200 },
     { user_id: 'second', chips: 100 },
   ]);
-  return { updates, owner, settle, report };
+  return { updates, owner, settle, report, alert };
 }
 describe('a final table deal completes only after every share settles', () => {
   it.each([
@@ -89,6 +99,44 @@ describe('a final table deal completes only after every share settles', () => {
     expect(r.updates.some((x) => x.table === 'tournaments' && x.value.status === 'COMPLETED')).toBe(
       true
     );
+    expect(r.owner.stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe('deal payout roster validation before any settlement', () => {
+  it.each([
+    [{ user_id: 'first', amount: 100 }],
+    [
+      { user_id: 'first', amount: 100 },
+      { user_id: 'first', amount: 100 },
+    ],
+    [
+      { user_id: 'first', amount: 100 },
+      { user_id: 'stranger', amount: 100 },
+    ],
+    ...[null, '', 'bad', '0x10', '1e2', -1, Infinity, NaN, 0.001, 0.0000000001].map((amount) => [
+      { user_id: 'first', amount: 100 },
+      { user_id: 'second', amount },
+    ]),
+  ])('rejects invalid roster %# without paying or completing', async (...rows) => {
+    const r = await run({ ok: true, fully_settled: true, amount_paid: 100 }, rows);
+    expect(r.settle).not.toHaveBeenCalled();
+    expect(r.alert).toHaveBeenCalledWith(
+      'critical',
+      'Tournament.final_table_deal_payout_roster_invalid',
+      expect.stringContaining('previous payment status is unconfirmed'),
+      expect.objectContaining({ tournament_id: 'event' })
+    );
+    expect(r.updates).toEqual([]);
+    expect(r.owner.stop).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalled();
+  });
+  it('accepts numeric database strings and a legitimate zero share', async () => {
+    const r = await run({ ok: true, fully_settled: true, amount_paid: 100 }, [
+      { user_id: 'first', amount: '100.00' },
+      { user_id: 'second', amount: 0 },
+    ]);
+    expect(r.settle).toHaveBeenCalledOnce();
     expect(r.owner.stop).toHaveBeenCalledOnce();
   });
 });

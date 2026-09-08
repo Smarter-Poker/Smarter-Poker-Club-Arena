@@ -351,6 +351,21 @@ precisely why 9.3's 16,426.46 was invisible for five months: rake attribution
 has nothing to reconcile against. The chip standard should either extend to
 them or say plainly that it does not, and why.
 
+**Phase 8 status, 2026-09-08 (built; deep dive pending before phase 9).**
+`docs/changelog/2026-09-08-phase-8-the-other-currencies.md`. Read first: two of
+the three currencies already had a journal (vip_points_ledger 5.75M legs,
+agent_commissions 3.96M rows) and their identities held exactly - by luck,
+with no guard on either side. Phase 8, in two migrations (20260908030358 the meter, 20260908030657 the
+guards - split because the meter's 10 s proof cannot run while a trigger holds
+ACCESS EXCLUSIVE against an engine with an 8 s statement timeout), attaches
+the chip journals' append-only guard to vip_points_ledger, agent_commissions and rakeback_period_payouts,
+makes vip_points move only through a writer that declares itself, rewrites
+fn_award_vip_credit to write its leg once (it used to insert 0 and update),
+and adds ca_currency_meter / fn_ca_currency_meter() on the nightly replay job.
+Rakeback is read, not enforced: three sources (periods paid 329,180.89,
+payout rows 285,190.25, chip legs since 09-07 231,046.71; 653 paid periods
+with no payout row) belong to a path another lane rewrote the same day.
+
 ### 9.8 THE RESET IS A PHASE, NOT AN EVENT (Dan: Monday)
 
 `ca_financial_epochs` already exists with `is_current`, which is the right hook.

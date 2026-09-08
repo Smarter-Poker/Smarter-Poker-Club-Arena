@@ -21,8 +21,9 @@
  * cards, the stage, the ghost cards - and the felt renders THAT copy in the
  * community-card area while the live hand has nothing to put there. Nothing
  * is frozen: seats, action, timers and events flow as they always did. The
- * copy yields the instant a newer hand has cards of its own, and expires on
- * its own after RABBIT_REVEAL_MIN_VISIBLE_MS regardless.
+ * copy yields the instant a newer hand exists (2026-09-07: it used to wait
+ * for that hand's flop - see retainedBoardShows), and expires on its own
+ * after RABBIT_REVEAL_MIN_VISIBLE_MS regardless.
  *
  * A pure module, so the rule that decides which board the felt shows can be
  * pinned without rendering the 24,000-line page.
@@ -56,31 +57,50 @@ export interface LiveBoardFacts {
  * Does the felt show the retained copy instead of the live board?
  *
  *   - No retained copy: the live board, obviously.
- *   - A NEWER hand already has community cards: the live board, immediately.
- *     The middle of the felt belongs to the hand being played.
- *   - Otherwise, whenever the live board has nothing to show (the next hand
- *     is preflop, or the finished hand's board has been cleared) or the hand
- *     number has moved on: the retained copy. On the finished hand itself,
- *     with its board still up, live and retained are the same picture and
- *     the live path (which already paints the ghost cards) is used so the
- *     switch never re-mounts a card.
+ *   - A NEWER hand, whatever it holds: the live board, immediately. The
+ *     middle of the felt belongs to the hand being played.
+ *   - On the finished hand itself, once its board has been cleared: the
+ *     retained copy - the cards the reveal was bought against, with the
+ *     ghost cards on them. With the board still up, live and retained are the
+ *     same picture and the live path (which already paints the ghost cards)
+ *     is used so the switch never re-mounts a card.
+ *
+ * DISPLAY AND MOVE ON (Dan 2026-09-07). Until today this also answered
+ * "yes" for a newer hand at preflop, so a reveal that landed late painted
+ * the PREVIOUS hand's whole board over the next hand's first street for up
+ * to RABBIT_REVEAL_MIN_VISIBLE_MS. With the new hand's hole cards already
+ * dealt around it, that read as the next hand not starting - "IF YOU USE
+ * RABBIT HUNT ... IT FORCES A DELAY IN THE NEXT HAND, INSTEAD OF IT JUST
+ * DISPLAYING AND MOVING ON." The finished board now yields to the next hand
+ * the moment that hand exists. What survives across the boundary is only
+ * the ghost cards themselves (retainedGhostsShow): drawn in the new hand's
+ * empty preflop slots, so a paid reveal that arrived late is still readable,
+ * and gone at the flop.
  */
 export function retainedBoardShows(
   retained: RetainedRabbitBoard | null,
   live: LiveBoardFacts
 ): boolean {
   if (!retained) return false;
-  const newerHand = live.handNumber !== retained.handNumber;
-  if (newerHand && live.cardCount > 0) return false;
-  return newerHand || live.cardCount === 0;
+  if (live.handNumber !== retained.handNumber) return false;
+  return live.cardCount === 0;
 }
 
 /**
- * The board a reveal is painted against. The felt remembers the last board
- * it showed for each hand; a reveal bought for that hand paints on it. A
- * reveal for a hand whose board was never non-empty (a preflop fold) paints
- * on an empty board at preflop, which is exactly what that hand looked like.
+ * Do the retained reveal's ghost cards ride the NEXT hand's empty board?
+ * Only while that hand is preflop - a newer hand with cards of its own owns
+ * every slot. The retained copy's own expiry timer bounds this as it always
+ * did.
  */
+export function retainedGhostsShow(
+  retained: RetainedRabbitBoard | null,
+  live: LiveBoardFacts
+): boolean {
+  if (!retained) return false;
+  if (live.handNumber === retained.handNumber) return false;
+  return live.cardCount === 0;
+}
+
 export function boardForRabbitReveal(
   lastBoard: { handNumber: number; cards: readonly Card[]; stage: BoardStage } | null,
   rabbitHandNumber: number | null,

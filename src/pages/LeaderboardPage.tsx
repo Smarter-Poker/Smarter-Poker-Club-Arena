@@ -45,6 +45,7 @@ import {
   prizePlanLabel,
   totalPrizePlan,
 } from '../utils/leaderboardPrizePlans';
+import { CLUB_CONTEXT_PARAM, findClubByParam, readClubContextParam } from '../utils/clubScopedPath';
 
 // ── SWR Cache helpers ──
 const LB_CACHE_KEY = 'lb_cache_v2_';
@@ -138,6 +139,15 @@ interface UserClub {
   name: string;
   role: string;
   canManagePrizes: boolean;
+  /* THE URL DOES NOT SPEAK UUID. `SlugEnforcer` rewrites every club path to
+     its slug, so the club a player is standing in reaches this page as
+     `?club=deep-stack-society`, not as a UUID — and the old membership check
+     (`clubs.some((c) => c.id === requestedClubId)`) could only ever be true
+     for a UUID. Carrying the slug and the 6-digit code on the record is what
+     lets `matchesClubParam` answer that question without a network hop.
+     Both are already in the `getUserMemberships` select. */
+  slug?: string | null;
+  club_id?: string | number | null;
 }
 
 // Metric definitions. Unicode symbols only (no emoji: build rule).
@@ -425,17 +435,19 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const requestedClubId = params.get('club');
+    const requestedClubId = readClubContextParam(params);
     if (params.get('setup') !== 'prizes' || !requestedClubId) {
       openedSetupLinkRef.current = null;
       return;
     }
 
-    if (
-      userClubs.some((club) => club.id === requestedClubId) &&
-      selectedClubId !== requestedClubId
-    ) {
-      setSelectedClubId(requestedClubId);
+    /* Same identity rule as the club selection above: the prize-setup deep
+       link is built by the hamburger with a UUID today, but a slug is an
+       equally valid thing for that URL to carry (and will be, the moment a
+       player copies the address bar), so both must resolve here too. */
+    const requestedClub = findClubByParam(userClubs, requestedClubId);
+    if (requestedClub && selectedClubId !== requestedClub.id) {
+      setSelectedClubId(requestedClub.id);
       setScope('my-clubs');
       setActiveTab('rankings');
       return;
@@ -443,11 +455,12 @@ export default function LeaderboardPage() {
 
     const requestKey = requestedClubId;
     if (
-      selectedClubId === requestedClubId &&
+      requestedClub &&
+      selectedClubId === requestedClub.id &&
       // A club switch and this effect can share one render. React has queued
       // the stale settings reset by then, but this closure can still see the
       // previous club's owner record. Never open that record under the new URL.
-      settings?.club_id === requestedClubId &&
+      settings?.club_id === requestedClub.id &&
       settings?.can_manage &&
       openedSetupLinkRef.current !== requestKey
     ) {
@@ -537,37 +550,90 @@ export default function LeaderboardPage() {
       } catch {
         setOwnerToolsError('Owner Prize Tools Could Not Be Loaded.');
       }
-      const memberClubs = memberships
-        .map((m) => ({
-          id: (m.club?.id || m.club_id) as string,
-          name: m.club?.name || 'Unknown Club',
-          role: String(m.role || 'member'),
-          canManagePrizes: rewardContexts.some(
-            (context) => context.club_id === (m.club?.id || m.club_id)
-          ),
-        }))
-        .filter((c): c is UserClub => Boolean(c.id));
-      const clubs = [...memberClubs];
+      const memberClubs: UserClub[] = memberships
+        .map(
+          (m): UserClub => ({
+            id: (m.club?.id || m.club_id) as string,
+            name: m.club?.name || 'Unknown Club',
+            role: String(m.role || 'member'),
+            canManagePrizes: rewardContexts.some(
+              (context) => context.club_id === (m.club?.id || m.club_id)
+            ),
+            slug: m.club?.slug ?? null,
+            club_id: m.club?.club_id ?? null,
+          })
+        )
+        .filter((c) => Boolean(c.id));
+      const clubs: UserClub[] = [...memberClubs];
       for (const context of rewardContexts) {
         if (clubs.some((club) => club.id === context.club_id)) continue;
+        /* A reward context is a club whose prizes this owner funds, which they
+           may not be a MEMBER of, so the membership join above never saw it and
+           there is no slug to carry. Such a club is still reachable by its UUID
+           — which is what the Owner Prize Tools link builds — so the null here
+           narrows how it can be addressed, not whether it can be. */
         clubs.push({
           id: context.club_id,
           name: context.club_name,
           role: context.funding_owner_type === 'union' ? 'union_owner' : 'owner',
           canManagePrizes: true,
+          slug: null,
+          club_id: null,
         });
       }
 
       if (getIsMounted && !getIsMounted()) return;
       setUserClubs(clubs);
-      const requestedClubId = new URLSearchParams(location.search).get('club');
-      setSelectedClubId((currentClubId) =>
-        requestedClubId && clubs.some((club) => club.id === requestedClubId)
-          ? requestedClubId
-          : clubs.some((club) => club.id === currentClubId)
-            ? currentClubId
-            : clubs[0]?.id || null
-      );
+
+      /* ── THE REPORTED BUG LIVED IN THE LINE BELOW (Dan, 2026-09-02) ───────
+         It used to read:
+
+             requestedClubId && clubs.some((club) => club.id === requestedClubId)
+               ? requestedClubId
+               : … : clubs[0]?.id || null
+
+         Two faults, and they compounded. First, `club.id === requestedClubId`
+         is true only for a UUID, while `SlugEnforcer` guarantees the URL
+         carries a SLUG — so arriving from inside Deep Stack Society, the test
+         failed on a club the player is very much in. Second, the failure was
+         silent: it fell through to `clubs[0]`, an arbitrary first membership,
+         which rendered Club JAQK under a heading that gave no hint the URL
+         had been ignored. A thrown-away parameter looked like a wrong number.
+
+         `findClubByParam` matches id, slug OR 6-digit code, so every form the
+         URL can legitimately carry now resolves — and it resolves to the club
+         RECORD, so `selectedClubId` stays the UUID the queries below need
+         while the address bar keeps the slug Dan reads. */
+      const requestedClubId = readClubContextParam(location.search);
+      const requestedClub = findClubByParam(clubs, requestedClubId);
+
+      /* An unmatched param is NOT the same as no param: the URL named a club
+         this viewer is not in (left the club, wrong account, stale link).
+         Falling back to `clubs[0]` silently is what made the original fault
+         invisible, so say so instead of just substituting.
+
+         THE TOAST FIRES HERE, NOT INSIDE THE UPDATER BELOW. A `setState`
+         updater must be pure — React may invoke it more than once for a
+         single update — so a toast raised inside one is a duplicate-render
+         bug waiting for the next React upgrade. The Toast layer's dedupe
+         would have hidden it, which is worse: hidden, not absent. */
+      if (requestedClubId && !requestedClub) {
+        toast.error('That Club Leaderboard Is Not Available To You. Showing Your Clubs Instead.');
+        /* And take the bad club OUT of the URL. Left there, the hamburger, the
+           section rail and the footer keep stamping it onto every link, and
+           the workspace keeps trying to load a club this viewer is not in,
+           while the page shows a different one - the address bar would be
+           lying about what is on screen. */
+        const params = new URLSearchParams(location.search);
+        params.delete(CLUB_CONTEXT_PARAM);
+        navigate({ search: params.toString() }, { replace: true });
+      }
+
+      setSelectedClubId((currentClubId) => {
+        if (requestedClub) return requestedClub.id;
+        if (clubs.some((club) => club.id === currentClubId)) return currentClubId;
+        return clubs[0]?.id || null;
+      });
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_clubs');
       if (!getIsMounted || getIsMounted()) {
@@ -578,6 +644,44 @@ export default function LeaderboardPage() {
     }
     if (getIsMounted && !getIsMounted()) return;
     setClubsLoading(false);
+  };
+
+  /**
+   * Switch club AND say so in the URL.
+   *
+   * The selector used to call `setSelectedClubId` alone, which left the page
+   * showing one club while `?club=` still named another. That disagreement is
+   * not cosmetic on this page: the hamburger, the section rail and the footer
+   * all read the URL to decide which club THEIR links carry, so a player who
+   * switched clubs here and then opened the menu was handed links back to the
+   * club they had just switched away from.
+   *
+   * The slug is preferred over the UUID for the same reason `SlugEnforcer`
+   * exists — Dan's "THE SLUGS MUST MATCH" — and `findClubByParam` reads both,
+   * so a shared link keeps working either way. `replace` keeps the back
+   * button meaning "the page before this one" rather than replaying every
+   * club the player skimmed through.
+   */
+  /* The URL can change while this page stays mounted: the hamburger's club
+     selector rewrites `?club=` on a scoped page, the section rail's
+     Leaderboards link is clicked while already here, or the back button moves
+     between two clubs. `/leaderboard` has no route key, so nothing remounts,
+     and `loadUserClubs` reads the param only once per account. Follow the
+     param whenever it names a club this viewer is in; an unmatched one was
+     already reported and cleared by `loadUserClubs`. `selectClub` below writes
+     the same club it selects, so this cannot loop. */
+  useEffect(() => {
+    if (userClubs.length === 0) return;
+    const requested = findClubByParam(userClubs, readClubContextParam(location.search));
+    if (requested && requested.id !== selectedClubId) setSelectedClubId(requested.id);
+  }, [location.search, userClubs, selectedClubId]);
+
+  const selectClub = (clubId: string) => {
+    setSelectedClubId(clubId);
+    const club = userClubs.find((candidate) => candidate.id === clubId);
+    const params = new URLSearchParams(location.search);
+    params.set(CLUB_CONTEXT_PARAM, club?.slug || clubId);
+    navigate({ search: params.toString() }, { replace: true });
   };
 
   const reqSeqRef = useRef(0);
@@ -1170,7 +1274,7 @@ export default function LeaderboardPage() {
                   <select
                     aria-label="Club"
                     value={selectedClubId || ''}
-                    onChange={(e) => setSelectedClubId(e.target.value)}
+                    onChange={(e) => selectClub(e.target.value)}
                   >
                     {userClubs.map((club) => (
                       <option key={club.id} value={club.id}>

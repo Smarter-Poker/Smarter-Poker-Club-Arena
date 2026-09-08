@@ -1,0 +1,4 @@
+{
+  "_owner": "codex/rebuy-shared-receipt-validation",
+  "functions": ["atomic_table_rebuy_before_maintenance_announcement_gate"]
+}

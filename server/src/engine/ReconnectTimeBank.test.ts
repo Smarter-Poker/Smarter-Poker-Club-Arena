@@ -30,6 +30,10 @@ afterEach(() => {
 
 function harness() {
   const engine = new ServerTableEngine(TABLE) as any;
+  // This focused harness bypasses start(); explicitly model a live process-owned
+  // generation so reconnect behavior is exercised behind the ownership fence.
+  engine.running = true;
+  engine.isCurrentEngine = () => true;
   engine.tableInfo = {} as any;
   engine.handController = {
     getState: () => ({

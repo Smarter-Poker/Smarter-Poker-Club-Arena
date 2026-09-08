@@ -100,6 +100,9 @@ export interface RotatorEngine {
 export class HorseSessionRotator {
   private isRunning = false;
   private handle: ReturnType<typeof setInterval> | null = null;
+  private lifecycleGeneration = 0;
+  private stopOperation: Promise<void> | null = null;
+  private readonly inFlightRotations = new Set<Promise<void>>();
   /**
    * V8: horses currently on a short break -> when to sit back in.
    *
@@ -175,28 +178,57 @@ export class HorseSessionRotator {
 
   constructor(private getEngine: (tableId: string) => RotatorEngine | undefined) {}
 
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.isRunning && this.lifecycleGeneration === generation;
+  }
+
+  private launchRotation(): void {
+    const generation = this.lifecycleGeneration;
+    if (!this.lifecycleIsCurrent(generation) || this.inFlightRotations.size > 0) return;
+
+    let tracked!: Promise<void>;
+    tracked = this.rotate(generation)
+      .catch((err) => reportError(err, 'HorseSessionRotator.cycle'))
+      .finally(() => this.inFlightRotations.delete(tracked));
+    this.inFlightRotations.add(tracked);
+  }
+
+  private async drainRotations(): Promise<void> {
+    while (this.inFlightRotations.size > 0) {
+      await Promise.allSettled([...this.inFlightRotations]);
+    }
+  }
+
   start(): void {
     if (this.isRunning) return;
     this.isRunning = true;
+    this.lifecycleGeneration += 1;
+    this.stopOperation = null;
     this.handle = setInterval(() => {
       // THE FREEZE (Dan 2026-09-01): "HORSES SHOULD NOT STAND UP OR ROTATE."
       // A seat changing hands under a break screen is also the loudest
       // possible horse tell (CLAUDE.md 10.5: timing is part of the treatment).
       if (isMaintenanceFrozen()) return;
-      this.rotate().catch((err) => reportError(err, 'HorseSessionRotator.cycle'));
+      this.launchRotation();
     }, CYCLE_MS);
+    this.handle.unref?.();
     console.log(`[SessionRotator] Running - humanlike departures every ${CYCLE_MS / 1000}s cycle`);
   }
 
-  stop(): void {
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
     this.isRunning = false;
+    this.lifecycleGeneration += 1;
     if (this.handle) {
       clearInterval(this.handle);
       this.handle = null;
     }
+    this.stopOperation = this.drainRotations();
+    return this.stopOperation;
   }
 
-  private async rotate(): Promise<void> {
+  private async rotate(generation: number): Promise<void> {
+    if (!this.lifecycleIsCurrent(generation)) return;
     // Seated horses at CASH tables with enough table population to spare one.
     /* ═══ NO CEILING. IT PAGES UNTIL IT HAS THE WHOLE ROOM ═══════════════
        Dan 2026-08-27: "there should never be a cap on the amount of players
@@ -243,6 +275,7 @@ export class HorseSessionRotator {
         .order('table_id', { ascending: true })
         .order('seat_number', { ascending: true })
         .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (!this.lifecycleIsCurrent(generation)) return;
       // A failed page means an INCOMPLETE room, and rotating against half a
       // room is how a table gets picked that should not have been. Decline
       // the pass; it runs again on the next cycle.
@@ -295,6 +328,7 @@ export class HorseSessionRotator {
               .in('user_id', batch),
           'HorseSessionRotator.bankrollRolls'
         );
+        if (!this.lifecycleIsCurrent(generation)) return;
         const mem = memRead.complete ? memRead.rows : [];
         for (const m of mem ?? []) {
           const v = Number((m as { chip_balance: unknown }).chip_balance);
@@ -315,6 +349,7 @@ export class HorseSessionRotator {
           .gte('created_at', new Date(oldest - 60_000).toISOString())
           .not('table_id', 'is', null)
           .limit(20_000);
+        if (!this.lifecycleIsCurrent(generation)) return;
         for (const r of led ?? []) {
           const row = r as {
             from_entity_id: string | null;
@@ -382,6 +417,7 @@ export class HorseSessionRotator {
       (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
       'HorseSessionRotator.horseIds'
     );
+    if (!this.lifecycleIsCurrent(generation)) return;
     if (!horseRead.complete) return; // an unreadable horse set is not an empty one
     const horseIds = new Set(horseRead.rows.map((h) => h.id));
     const hourUTC = new Date().getUTCHours();
@@ -401,6 +437,7 @@ export class HorseSessionRotator {
         .from('table_waitlist')
         .select('table_id, user_id, status')
         .in('status', ['waiting', 'notified']);
+      if (!this.lifecycleIsCurrent(generation)) return;
       if (qErr) throw new Error(qErr.message);
       for (const row of queued ?? []) {
         const r = row as { table_id?: string; user_id?: string };
@@ -415,6 +452,7 @@ export class HorseSessionRotator {
     // V8: end any due short breaks FIRST — sitting a horse back in is never
     // rate-limited.
     for (const [key, info] of [...this.breaks]) {
+      if (!this.lifecycleIsCurrent(generation)) return;
       if (Date.now() < info.sitBackAt) continue;
       this.breaks.delete(key);
       try {
@@ -455,6 +493,7 @@ export class HorseSessionRotator {
      * others while the table empties over a few minutes.
      */
     for (const [tableId, tableSeats] of byTable) {
+      if (!this.lifecycleIsCurrent(generation)) return;
       const t = (tableSeats[0] as any)?.tables;
       /* A CLUSTER TABLE IS NEVER RETIRED BY THE FLEET (2026-09-05). Its life
          is its game's controller's: it breaks and moves its players itself.
@@ -487,6 +526,7 @@ export class HorseSessionRotator {
       if (!horseSeat) continue;
       try {
         const result = await engine.leaveTable(horseSeat.user_id);
+        if (!this.lifecycleIsCurrent(generation)) return;
         if (result.success) {
           this.breaks.delete(HorseSessionRotator.breakKey(tableId, horseSeat.user_id));
           console.log(
@@ -520,12 +560,16 @@ export class HorseSessionRotator {
      * state. Outside the realism cap for the same reason the retirement drain
      * is: this is not a healthy floor thinning itself.
      */
-    this.lastLoneStands = await this.standLoneHorses(byTable, horseIds, departedThisCycle).catch(
-      (err) => {
-        reportError(err, 'HorseSessionRotator.loneStands');
-        return 0;
-      }
-    );
+    this.lastLoneStands = await this.standLoneHorses(
+      byTable,
+      horseIds,
+      departedThisCycle,
+      generation
+    ).catch((err) => {
+      reportError(err, 'HorseSessionRotator.loneStands');
+      return 0;
+    });
+    if (!this.lifecycleIsCurrent(generation)) return;
     if (this.lastLoneStands > 0) {
       console.log(
         `[SessionRotator] loneStands=${this.lastLoneStands} - horse(s) alone at a cluster table ` +
@@ -551,11 +595,13 @@ export class HorseSessionRotator {
       seats,
       byTable,
       horseIds,
-      departedThisCycle
+      departedThisCycle,
+      generation
     ).catch((err) => {
       reportError(err, 'HorseSessionRotator.tournamentLeaves');
       return 0;
     });
+    if (!this.lifecycleIsCurrent(generation)) return;
     if (this.lastTournamentLeaves > 0) {
       console.log(
         `[SessionRotator] tournamentLeaves=${this.lastTournamentLeaves} - horse(s) left a cash ` +
@@ -566,6 +612,7 @@ export class HorseSessionRotator {
     let departures = 0;
     let breakTaken = false;
     for (const [tableId, tableSeats] of byTable) {
+      if (!this.lifecycleIsCurrent(generation)) return;
       if (departures >= GLOBAL_DEPARTURES_PER_CYCLE) break;
       // A retiring table was handled above; nothing discretionary happens on
       // it - no top-ups into a table that is closing, no breaks.
@@ -662,9 +709,12 @@ export class HorseSessionRotator {
             });
           }
           if (amount >= bb) {
-            engine
-              .addChips(seat.user_id, amount)
-              .catch((err) => reportError(err, 'HorseSessionRotator.topUp'));
+            try {
+              await engine.addChips(seat.user_id, amount);
+            } catch (err) {
+              reportError(err, 'HorseSessionRotator.topUp');
+            }
+            if (!this.lifecycleIsCurrent(generation)) return;
           } else if (desiredTopUp >= bb) {
             /**
              * The reload the old code would have paid, and the policy did
@@ -770,6 +820,7 @@ export class HorseSessionRotator {
       if (best && Math.random() < best.p) {
         try {
           const result = await engine.leaveTable(best.seat.user_id);
+          if (!this.lifecycleIsCurrent(generation)) return;
           if (result.success) {
             departures++;
             departedThisCycle.add(`${tableId}:${best.seat.user_id}`);
@@ -820,9 +871,13 @@ export class HorseSessionRotator {
     }
 
     // THE SEAT CHANGE, last, because it needs to know who is already leaving.
-    await this.considerSeatChanges(byTable, horseIds, humansWaiting, departedThisCycle).catch(
-      (err) => reportError(err, 'HorseSessionRotator.seatChange')
-    );
+    await this.considerSeatChanges(
+      byTable,
+      horseIds,
+      humansWaiting,
+      departedThisCycle,
+      generation
+    ).catch((err) => reportError(err, 'HorseSessionRotator.seatChange'));
   }
 
   /**
@@ -837,8 +892,10 @@ export class HorseSessionRotator {
   private async standLoneHorses(
     byTable: Map<string, any[]>,
     horseIds: Set<string>,
-    departedThisCycle: Set<string>
+    departedThisCycle: Set<string>,
+    generation: number
   ): Promise<number> {
+    if (!this.lifecycleIsCurrent(generation)) return 0;
     const now = Date.now();
     type LoneTable = { tableId: string; seat: any; t: any; minutesSeated: number };
     const candidates: LoneTable[] = [];
@@ -879,6 +936,7 @@ export class HorseSessionRotator {
           .in('to_table_id', batch),
       'HorseSessionRotator.loneInbound'
     );
+    if (!this.lifecycleIsCurrent(generation)) return 0;
     if (!inboundRead.complete) return 0;
     const inbound = new Set(inboundRead.rows.map((r) => r.to_table_id));
 
@@ -896,6 +954,7 @@ export class HorseSessionRotator {
           .gte('created_at', since),
       'HorseSessionRotator.loneHands'
     );
+    if (!this.lifecycleIsCurrent(generation)) return 0;
     if (!handsRead.complete) return 0;
     const lastHandAt = new Map<string, number>();
     for (const h of handsRead.rows) {
@@ -906,6 +965,7 @@ export class HorseSessionRotator {
 
     let stood = 0;
     for (const c of candidates) {
+      if (!this.lifecycleIsCurrent(generation)) return stood;
       const last = lastHandAt.get(c.tableId);
       const verdict = loneStandVerdict({
         clusterTable: true,
@@ -926,6 +986,7 @@ export class HorseSessionRotator {
         // one, so this cashes out immediately; if one somehow is, leaveTable
         // folds and cashes out at the hand boundary like any other leave.
         const result = await engine.leaveTable(userId);
+        if (!this.lifecycleIsCurrent(generation)) return stood;
         if (result.success) {
           stood++;
           departedThisCycle.add(`${c.tableId}:${userId}`);
@@ -958,8 +1019,10 @@ export class HorseSessionRotator {
     allSeats: any[],
     byTable: Map<string, any[]>,
     horseIds: Set<string>,
-    departedThisCycle: Set<string>
+    departedThisCycle: Set<string>,
+    generation: number
   ): Promise<number> {
+    if (!this.lifecycleIsCurrent(generation)) return 0;
     const now = Date.now();
     /* Every live seat per horse (cash and tournament), and the tournaments
        the horse already sits in - the SQL's NEVER BOTH exclusion. */
@@ -1019,7 +1082,9 @@ export class HorseSessionRotator {
         }
       );
     const timed = await bookingRead('timed');
+    if (!this.lifecycleIsCurrent(generation)) return 0;
     const seatFirst = await bookingRead('seat_first');
+    if (!this.lifecycleIsCurrent(generation)) return 0;
     /* A short read leaves nobody this cycle rather than guessing who is
        committed; the horse is seated late by ensureLateRegSeated, as before. */
     if (!timed.complete || !seatFirst.complete) return 0;
@@ -1061,6 +1126,7 @@ export class HorseSessionRotator {
 
     let left = 0;
     for (const [uid, imminentBookings] of bookingsByHorse) {
+      if (!this.lifecycleIsCurrent(generation)) return left;
       const cashSeats = cashSeatsByHorse.get(uid) ?? [];
       if (cashSeats.length === 0) continue;
       const verdict = tournamentCommitmentVerdict({
@@ -1072,11 +1138,13 @@ export class HorseSessionRotator {
         random: Math.random(),
       });
       for (const s of verdict.leaveNow) {
+        if (!this.lifecycleIsCurrent(generation)) return left;
         if (isMaintenanceFrozen()) return left;
         const engine = this.getEngine(s.tableId);
         if (!engine) continue;
         try {
           const result = await engine.leaveTable(uid);
+          if (!this.lifecycleIsCurrent(generation)) return left;
           if (result.success) {
             left++;
             departedThisCycle.add(`${s.tableId}:${uid}`);
@@ -1122,12 +1190,13 @@ export class HorseSessionRotator {
     byTable: Map<string, Array<Record<string, unknown>>>,
     horseIds: Set<string>,
     humansWaiting: Map<string, number>,
-    departedThisCycle: Set<string>
+    departedThisCycle: Set<string>,
+    generation: number
   ): Promise<void> {
     // THE FREEZE (Dan 2026-09-01): no seat changes across the maintenance
     // break. The door refuses anyway (PLATFORM_FROZEN); asking would just
     // spend a refusal out of the retry budget for a stop we scheduled.
-    if (isMaintenanceFrozen()) return;
+    if (isMaintenanceFrozen() || !this.lifecycleIsCurrent(generation)) return;
 
     const now = Date.now();
     for (const [k, until] of [...this.seatChangeAsked]) {
@@ -1167,6 +1236,7 @@ export class HorseSessionRotator {
           .in('lifecycle', ['live', 'opening']),
       'HorseSessionRotator.seatChangeTables'
     );
+    if (!this.lifecycleIsCurrent(generation)) return;
     if (!tableRead.complete) return;
 
     /* Per game: how many tables a seat change may go to at all. Main 1 is
@@ -1181,6 +1251,7 @@ export class HorseSessionRotator {
 
     let asked = 0;
     for (const [tableId, tableSeats] of byTable) {
+      if (!this.lifecycleIsCurrent(generation)) return;
       if (asked >= HorseSessionRotator.SEAT_CHANGE_PER_CYCLE) break;
       const t = tableSeats[0]?.tables as
         | {
@@ -1204,6 +1275,7 @@ export class HorseSessionRotator {
       const otherTables = Math.max(0, changeable - (thisOneCounts ? 1 : 0));
 
       for (const seat of tableSeats) {
+        if (!this.lifecycleIsCurrent(generation)) return;
         if (asked >= HorseSessionRotator.SEAT_CHANGE_PER_CYCLE) break;
         const userId = String(seat.user_id ?? '');
         if (!userId || !horseIds.has(userId)) continue;
@@ -1236,6 +1308,7 @@ export class HorseSessionRotator {
            the retry window if the door gives a passing refusal. */
         this.seatChangeAsked.set(key, now + HorseSessionRotator.SEAT_CHANGE_STAY_MS);
         const res = await requestSeatChangeFor(gameId, userId, null);
+        if (!this.lifecycleIsCurrent(generation)) return;
         if (res.ok) {
           console.log(
             `[SessionRotator] horse=${userId.slice(0, 8)} asked for a seat change at ` +

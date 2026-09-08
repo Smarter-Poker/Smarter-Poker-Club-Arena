@@ -13,7 +13,7 @@
  *   - nothing here exposes a "blocked" flag and nothing in the engine reads
  *     one - the only import of the drift state is /health in GameServer.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -45,6 +45,11 @@ const THIRD = '00000000000000000000000000000000';
 beforeEach(() => {
   mockRaiseAlert.mockClear();
   guard.resetRakeSpecGuardForTests();
+});
+
+afterEach(async () => {
+  await guard.stopRakeSpecGuard();
+  vi.useRealTimers();
 });
 
 describe('rakeSpecGuard: match', () => {
@@ -145,6 +150,35 @@ describe('rakeSpecGuard: it never holds a table (Dan 2026-09-02 risk ruling)', (
   it('startRakeSpecGuard resolves on a mismatch instead of throwing', async () => {
     const v = await guard.startRakeSpecGuard(clientReturning(OTHER), 60_000);
     expect(v).toBe('mismatch');
-    guard.stopRakeSpecGuard();
+    await guard.stopRakeSpecGuard();
+  });
+
+  it('stop joins an interval check before shutdown may release ownership', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    let finishCheck!: () => void;
+    const delayedClient: { rpc: Rpc } = {
+      rpc: async () => {
+        calls++;
+        if (calls === 1) return { data: spec.rakeSpecChecksum(), error: null };
+        await new Promise<void>((resolve) => {
+          finishCheck = resolve;
+        });
+        return { data: spec.rakeSpecChecksum(), error: null };
+      },
+    };
+
+    await guard.startRakeSpecGuard(delayedClient, 10);
+    await vi.advanceTimersByTimeAsync(10);
+    let stopped = false;
+    const stopping = guard.stopRakeSpecGuard().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+
+    finishCheck();
+    await stopping;
+    expect(stopped).toBe(true);
   });
 });

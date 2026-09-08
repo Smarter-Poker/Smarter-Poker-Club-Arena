@@ -137,9 +137,9 @@ describe('AoF: engine wiring (source pins)', () => {
     expect(read('server/src/tournament/TournamentManagerBase.ts')).toMatch(
       /all_in_or_fold:\s*tournament\.all_in_or_fold === true/
     );
-    expect(read('server/src/tournament/TournamentManager.ts')).toMatch(
-      /all_in_or_fold:\s*this\.tournamentCache\?\.all_in_or_fold === true/
-    );
+    expect(
+      read('supabase/migrations/20260908042200_late_registration_can_build_its_first_table.sql')
+    ).toMatch(/COALESCE\(v_t\.big_blind_ante,false\),COALESCE\(v_t\.all_in_or_fold,false\)/);
   });
 
   it('horse decisions are coerced: non-fold becomes the all-in at AoF tables', () => {

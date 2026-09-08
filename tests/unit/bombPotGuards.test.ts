@@ -77,7 +77,7 @@ describe('the LIVE hand variant is the one seam (spec §10.1)', () => {
 
   it('hand history records the variant the hand was DEALT as', () => {
     expect(SETTLEMENT).toMatch(
-      /gameVariant: snap\.variant \|\| this\.tableInfo\.game_variant \|\| 'nlh'/
+      /gameVariant: snap\.variant \|\| tableInfo\.game_variant \|\| 'nlh'/
     );
   });
 

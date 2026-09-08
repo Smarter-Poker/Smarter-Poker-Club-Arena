@@ -260,8 +260,8 @@ export async function syncStacks(
   }[],
   handNumber?: number,
   options: StackWriteOptions = {}
-): Promise<void> {
-  if (players.length === 0) return;
+): Promise<boolean> {
+  if (players.length === 0) return true;
   if (handNumber === undefined || handNumber === null) {
     /* Every hand result names its hand (settlement step 8 reads the snapshot).
        A write with no hand number used to take the unchecked per-seat loop -
@@ -272,7 +272,7 @@ export async function syncStacks(
       new Error(`[DB] syncStacks called for table ${tableId} without a hand number - refused`),
       'DB.sync_stacks_without_hand'
     );
-    return;
+    return false;
   }
 
   /* ZERO-DRIFT phase 5 (2026-08-31) + chip standard (2026-09-04): the stack
@@ -416,7 +416,8 @@ export async function syncStacks(
   let lastError = '';
   for (let attempt = 1; attempt <= STACK_WRITE_ATTEMPTS; attempt++) {
     const verdict = await attemptStackWrite();
-    if (verdict.kind === 'landed' || verdict.kind === 'refused') return;
+    if (verdict.kind === 'landed') return true;
+    if (verdict.kind === 'refused') return false;
     lastError = verdict.error;
     if (attempt < STACK_WRITE_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, STACK_WRITE_BACKOFF_MS(attempt)));
@@ -441,7 +442,8 @@ export async function syncStacks(
       const verdict = await attemptStackWrite();
       // A refusal is the database's final word, not a transport failure: it has
       // already been reported above. Stop retrying it.
-      if (verdict.kind === 'landed' || verdict.kind === 'refused') return { done: true };
+      if (verdict.kind === 'landed') return { done: true };
+      if (verdict.kind === 'refused') return { done: true, refused: true };
       return { done: false, error: verdict.error };
     },
     onGiveUp: async (finalError, elapsedMs, attempts) => {
@@ -479,6 +481,7 @@ export async function syncStacks(
       `[DB] hand-stack write for table ${tableId} hand ${handNumber} is already queued off-path`
     );
   }
+  return false;
 }
 
 /**
@@ -506,7 +509,7 @@ function timeBankWritePayload(p: {
   return payload;
 }
 
-async function persistTimeBanks(
+export async function persistTimeBanks(
   tableId: string,
   players: {
     user_id: string;
@@ -538,14 +541,28 @@ async function persistTimeBanks(
 /**
  * Sync tournament player chips from table_seats to tournament_players
  */
-export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<void> {
-  const { data: seats } = await supabase
+export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<boolean> {
+  const { data: seats, error: seatsError } = await supabase
     .from('table_seats')
     .select('user_id, stack')
     .eq('table_id', tableId)
     .is('left_at', null);
 
-  if (!seats || seats.length === 0) return;
+  /* This result gates the tournament elimination wake. Unknown input must not
+     be reported as a successful mirror: otherwise a sweep can run while
+     tournament_players still carries the pre-hand positive chip count and
+     miss a bust until the safety pass. */
+  if (seatsError) {
+    reportError(seatsError, 'supabase.syncTournamentChips.seats_read');
+    return false;
+  }
+  if (!seats || seats.length === 0) {
+    reportError(
+      new Error(`[DB] tournament chip sync for ${tournamentId}/${tableId} found no active seats`),
+      'supabase.syncTournamentChips.empty_seats'
+    );
+    return false;
+  }
 
   // ONE bulk statement, not one UPDATE per seat.
   //
@@ -581,7 +598,11 @@ export async function syncTournamentChips(tableId: string, tournamentId: string)
     p_tournament_id: tournamentId,
     p_updates: chipUpdates,
   });
-  if (error) reportError(error, 'supabase.syncTournamentChips');
+  if (error) {
+    reportError(error, 'supabase.syncTournamentChips');
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -667,7 +688,10 @@ export async function updateTableStatus(
  * table needs no second HTTP request. Changed summaries still use the database
  * comparison filter; missing/failed reads never manufacture an empty table.
  */
-export async function reconcileTableSeatCount(tableId: string): Promise<number | null> {
+export async function reconcileTableSeatCount(
+  tableId: string,
+  canMutate: () => boolean = () => true
+): Promise<number | null> {
   const { data, error } = await supabase
     .from('tables')
     .select('current_players,status,seats:table_seats!table_seats_table_id_fkey(user_id)')
@@ -686,6 +710,7 @@ export async function reconcileTableSeatCount(tableId: string): Promise<number |
   const count = data.seats.length;
   const status = count >= 2 ? 'running' : 'waiting';
   if (data.current_players !== count || data.status !== status) {
+    if (!canMutate()) return null;
     const { error: updateError } = await supabase
       .from('tables')
       .update({ current_players: count, status })

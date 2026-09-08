@@ -39,7 +39,12 @@ LOCK_FILE="${LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
 # The engine's own HEALTHCHECK + autoheal react faster; this is the backstop for
 # when autoheal itself is dead.
 FAIL_THRESHOLD="${FAIL_THRESHOLD:-3}"
-# Grace after container start. Must exceed --health-start-period (90s).
+# A saturated event loop made the old five-second request deadline expire even
+# while /health remained semantically live. The supervisor runs independently
+# of Docker health, so it must use the same tolerant probe deadline or it can
+# recreate the false-positive restart storm by itself.
+HEALTH_TIMEOUT_SEC="${HEALTH_TIMEOUT_SEC:-15}"
+# Grace after container start. Must be at least --health-start-period (300s).
 #
 # 2026-08-30: raised 120 -> 300. During the Supabase resize outage the engine's
 # cold boot legitimately ran 5-8 minutes (repair sweeps + loaders against a
@@ -306,8 +311,16 @@ fi
 # /health, which fails safe (we act) rather than staying blind forever.
 
 # ── 8. Is it actually serving? "running" is not the same as "working". ───────
-BODY=$(curl -sf --max-time 5 "http://127.0.0.1:${PORT}/health" 2>/dev/null || echo "")
-if [ -n "$BODY" ] && echo "$BODY" | grep -q '"running":true'; then
+# Do not use curl -f here. A healthy standby deliberately answers HTTP 503 so
+# Caddy keeps traffic on the leader, but its JSON liveness is `standby` and it
+# must remain alive to take over. Match the Docker verdict exactly: a running
+# `ok` or `standby` process is healthy; only `dead` (or an unreadable/malformed
+# response) advances the restart counter.
+BODY=$(curl -sS --max-time "$HEALTH_TIMEOUT_SEC" "http://127.0.0.1:${PORT}/health" 2>/dev/null || echo "")
+if [ -n "$BODY" ] \
+  && echo "$BODY" | grep -q '"running":true' \
+  && { echo "$BODY" | grep -q '"liveness":"ok"' \
+    || echo "$BODY" | grep -q '"liveness":"standby"'; }; then
   PREV=$(readnum "$STATE_FILE")
   [ "$PREV" != "0" ] && log "health recovered after $PREV consecutive failures"
   writenum "$STATE_FILE" 0
@@ -316,10 +329,14 @@ if [ -n "$BODY" ] && echo "$BODY" | grep -q '"running":true'; then
 fi
 
 FAILS=$(bump "$STATE_FILE")
-log "health check failed (${FAILS}/${FAIL_THRESHOLD} consecutive)"
+if echo "$BODY" | grep -q '"liveness":"dead"'; then
+  log "health reported liveness=dead (${FAILS}/${FAIL_THRESHOLD} consecutive)"
+else
+  log "health check failed (${FAILS}/${FAIL_THRESHOLD} consecutive)"
+fi
 
 if [ "$FAILS" -ge "$FAIL_THRESHOLD" ]; then
-  act "engine unresponsive on /health for ${FAILS} consecutive checks — restarting container"
+  act "engine unresponsive or liveness=dead for ${FAILS} consecutive checks - restarting container"
   docker logs --tail 60 "$CONTAINER" 2>&1 | tail -60 | sed 's/^/[pre-restart-log] /' || true
   if ! docker restart -t 45 "$CONTAINER" >/dev/null 2>&1; then
     act "docker restart failed — recreating from $IMAGE"

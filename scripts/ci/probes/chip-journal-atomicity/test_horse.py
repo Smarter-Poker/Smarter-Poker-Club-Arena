@@ -8,7 +8,12 @@ def verify_horse(run):
  X="70000000-0000-4000-8000-000000000005"
  seed=f"INSERT INTO clubs(id) VALUES('{C}'); INSERT INTO tables(id,club_id) VALUES('{T}','{C}'),('{X}','{C}'); INSERT INTO table_seats(table_id,user_id,seat_number,stack) VALUES('{T}','{U}',1,0);"
  def call(table=T,user=U,amount=5,op=O):return f"fn_horse_fund_from_treasury('{table}','{user}',{amount},'{op}')"
- names=["clubs","table_seats","chip_transactions","chip_ledger","cash_baselines"]
+ # The public maintenance door owns an immutable response receipt in addition
+ # to the money core's chip-ledger receipt.  Keep it in both state snapshots
+ # and teardown: otherwise one committed concurrency case leaks a completed
+ # receipt into the next case and turns the intended contention into an
+ # immediate replay/conflict.
+ names=["clubs","table_seats","chip_transactions","chip_ledger","cash_baselines","entry_purchase_idempotency_receipts"]
  state="jsonb_build_array("+",".join(f"(SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb) FROM {t} t)" for t in names)+")"
  count=0
  run("BEGIN;"+seed+f"""

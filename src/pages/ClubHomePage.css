@@ -2704,8 +2704,8 @@
     padding: 18px 36px;
     overflow: hidden;
     background:
-      url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-universal-v4.png') center /
-        100% 100% no-repeat,
+      url('/assets/club-buttons/lobby/lobby-header-frame-universal-v4.png') center / 100% 100%
+        no-repeat,
       #020507;
     text-align: center;
   }
@@ -2794,8 +2794,7 @@
     padding: 10px 4px;
     overflow: hidden;
     border: 16px solid transparent;
-    border-image: url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-v3.png') 25 42 /
-      16px stretch;
+    border-image: url('/assets/club-buttons/lobby/lobby-header-frame-v3.png') 25 42 / 16px stretch;
     background: #04080b;
     color: #edf2f6;
     box-shadow: inset 0 0 18px #000;
@@ -2805,7 +2804,7 @@
     width: 50px;
     height: 42px;
     justify-self: center;
-    background: url('/hub/club-arena/assets/club-buttons/wallets/square/wallet-player-wallet-square-v1.webp')
+    background: url('/assets/club-buttons/wallets/square/wallet-player-wallet-square-v1.webp')
       center / contain no-repeat;
     filter: drop-shadow(0 2px 4px #000);
   }
@@ -2989,7 +2988,7 @@
     overflow: hidden;
     border: 0;
     background:
-      url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center / 100% 100% no-repeat,
+      url('/assets/club-buttons/club-nav-shell.webp') center / 100% 100% no-repeat,
       #02070a;
     box-shadow:
       inset 1px 0 #000,

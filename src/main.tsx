@@ -56,6 +56,9 @@ import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 import { reportError, reportWarning } from './utils/errorReporter';
 import { hasLocalSession } from './lib/authUtils';
+// One source of truth for where this bundle lives (web sub-path or native
+// root). A basename that does not match the URL is a white screen, not a 404.
+import { ROUTER_BASENAME, IS_NATIVE_BUILD } from './lib/appBase';
 import {
   importWithRetry,
   installVitePreloadErrorRecovery,
@@ -151,11 +154,20 @@ if (bootStatus.antigravityOk) {
   // getSession() caused 2-10s blank screens — completely unacceptable.
   root.render(
     <ErrorBoundary>
-      <BrowserRouter basename="/hub/club-arena">
+      <BrowserRouter basename={ROUTER_BASENAME}>
         <App />
       </BrowserRouter>
     </ErrorBoundary>
   );
+
+  // NATIVE ONLY: hide the splash, style the status bar, tell the OTA updater
+  // this bundle booted. Compile-time constant, so the web bundle carries
+  // neither this branch nor the Capacitor plugins it imports.
+  if (IS_NATIVE_BUILD) {
+    void importWithRetry(() => import('./lib/nativeShell'))
+      .then(({ initNativeShell }) => initNativeShell())
+      .catch((err) => reportDeferredImportFailure(err, 'main.Native_shell_init_non_blocking'));
+  }
 } else {
   // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
   reportError(

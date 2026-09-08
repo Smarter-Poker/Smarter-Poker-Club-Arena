@@ -3319,16 +3319,20 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
         rebuysTaken: currentRebuys,
       });
-      const success =
-        rebuyAmount > 0 &&
-        (await autoRebuyHorse(
-          this.tableId,
-          horse.user_id,
-          rebuyAmount,
-          this.tableInfo?.club_id || ''
-        ));
-      if (success) {
-        horse.stack = rebuyAmount;
+      const funding =
+        rebuyAmount > 0
+          ? await autoRebuyHorse(
+              this.tableId,
+              horse.user_id,
+              rebuyAmount,
+              this.tableInfo?.club_id || '',
+              this.handCount
+            )
+          : { status: 'declined' as const };
+      // An unreadable response may follow a committed transfer. Preserve the seat.
+      if (funding.status === 'unknown') continue;
+      if (funding.status === 'funded') {
+        horse.stack = funding.stack;
         this.horseRebuys.set(horse.user_id, currentRebuys + 1);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(

@@ -171,7 +171,7 @@ describe('WIRING - both engine sites ask, and a zero is a decision to leave', ()
     it(`the ${name} site treats zero as a decision to leave`, () => {
       // Not merely "the call appears": the funding call must be SHORT-CIRCUITED
       // by it, or a zero decision still reloads the horse.
-      expect(SRC).toMatch(/const success =\s*rebuyAmount > 0 &&\s*\(await autoRebuyHorse\(/);
+      expect(SRC).toMatch(/const funding =\s*rebuyAmount > 0\s*\? await autoRebuyHorse\(/);
     });
 
     it(`the ${name} site passes the table's own limits, not just the blind`, () => {

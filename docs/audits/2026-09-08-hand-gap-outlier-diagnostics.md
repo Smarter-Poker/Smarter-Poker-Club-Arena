@@ -43,3 +43,37 @@ Remaining investigation includes settlement tail latency, tournament chip
 read/RPC sequencing, seat cleanup and move announcement waits, and physical
 network-loss/recovery across all game formats. The maintenance thaw and
 resume-wave delay also needs a durable reconnect-deadline audit.
+
+## Release and reconnect checkpoint
+
+- World Hub #1584 merged as fa0ae14ba5e701f659770a039b0914c72f5798be.
+  Both public Club Arena root and deep table routes were checked with HTTP
+  200 and stale-while-revalidate=60, matching the corrected Hetzner origin.
+- Club Arena #3753 merged as e803e8b88c65c7ce2fe7f3034e00cc2ebe103ba4.
+  The Hetzner build-info endpoint served that SHA at approximately 13:07 UTC.
+- Initial HTTP login ownership is pushed as #3763, head 83df20bf. At the
+  checkpoint its client test shards, TypeScript and production build passed;
+  browser CI was still running. It is not counted as published yet.
+- Caddy config staging initially installed a root-only file at 12:27:41 UTC.
+  Mode 0644 and service restoration at 12:28:36 ended the 55-second outage.
+  The permanent deployment-script correction merged in #3746. This incident
+  was disclosed when it occurred; root validation alone was insufficient.
+- Reconnect policy uses one server function for all formats: 30 seconds,
+  or 45 for is_vip=true with future expiry or explicit null lifetime expiry.
+  Invalid, missing and expired dates do not qualify. The loader preserves
+  expiry values, and an old lifetime tier cannot override an expired card.
+- Further HTTP outage work is required: bounding authentication does not
+  bound the subsequent fetch or response body. Several GameServerAPI calls
+  still have no network deadline. Any correction must preserve ambiguous
+  mutation outcomes and must not automatically replay timed-out wagers,
+  purchases, top-ups or other mutations.
+- The global sessionRevoked probe and sign-out/redirect flow still lack
+  complete identity ownership across SDK awaits. An outer socket deadline
+  does not prevent late SDK side effects. This remains a separate fix.
+- No physical mobile outage or Wi-Fi/cellular transition trial has been
+  completed for every game type. Unit policy parity is not that evidence.
+
+A subsequent 13:14:53 sample remained variable: median 2228 ms, p90 4199 ms,
+maximum 9881 ms. The earlier two-second median must not be represented as a
+stable universal result. The new diagnostics still need normal production
+adoption before they can identify those specific outliers.

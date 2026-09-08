@@ -1,0 +1,56 @@
+{
+  "normalizedSpeedChecks": [
+    {
+      "t": 150,
+      "rigs": [
+        {
+          "id": "party_face",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "t": 650,
+      "rigs": [
+        {
+          "id": "party_face",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "t": 1400,
+      "rigs": [
+        {
+          "id": "party_face",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "t": 2350,
+      "rigs": [
+        {
+          "id": "party_face",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "t": 3000,
+      "rigs": [
+        {
+          "id": "party_face",
+          "count": 9
+        }
+      ]
+    }
+  ],
+  "reduced": [
+    {
+      "id": "party_face",
+      "animations": 0
+    }
+  ],
+  "pageErrors": []
+}

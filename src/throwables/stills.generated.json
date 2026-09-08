@@ -1,0 +1,237 @@
+{
+  "alien": {
+    "192": "images/throwables/stylized/alien-192-ba2e8000646e.webp",
+    "320": "images/throwables/stylized/alien-320-caad18c32394.webp",
+    "640": "images/throwables/stylized/alien-640-108abee9a678.webp"
+  },
+  "angry_emoji": {
+    "192": "images/throwables/stylized/angry_emoji-192-3ce025a36f3d.webp",
+    "320": "images/throwables/stylized/angry_emoji-320-fdec04152943.webp",
+    "640": "images/throwables/stylized/angry_emoji-640-0d6759295644.webp"
+  },
+  "anvil": {
+    "192": "images/throwables/stylized/anvil-192-f32acefa76a5.webp",
+    "320": "images/throwables/stylized/anvil-320-744f62e6adbe.webp",
+    "640": "images/throwables/stylized/anvil-640-c6fa81d6f73a.webp"
+  },
+  "banana_peel": {
+    "192": "images/throwables/stylized/banana_peel-192-c68cc57c776c.webp",
+    "320": "images/throwables/stylized/banana_peel-320-9e793e0aa722.webp",
+    "640": "images/throwables/stylized/banana_peel-640-827b0a879e5d.webp"
+  },
+  "basketball": {
+    "192": "images/throwables/stylized/basketball-192-fc7fa0d79ea0.webp",
+    "320": "images/throwables/stylized/basketball-320-675c28d24e9b.webp",
+    "640": "images/throwables/stylized/basketball-640-c1604a20fc7f.webp"
+  },
+  "bear": {
+    "192": "images/throwables/stylized/bear-192-663b5ad5ab48.webp",
+    "320": "images/throwables/stylized/bear-320-36dcbb305964.webp",
+    "640": "images/throwables/stylized/bear-640-2056439e92c3.webp"
+  },
+  "beer": {
+    "192": "images/throwables/stylized/beer-192-3ad753cf56fd.webp",
+    "320": "images/throwables/stylized/beer-320-ac28c5fd2fb0.webp",
+    "640": "images/throwables/stylized/beer-640-4c737f2bfffe.webp"
+  },
+  "bomb": {
+    "192": "images/throwables/stylized/bomb-192-06812dffdfb5.webp",
+    "320": "images/throwables/stylized/bomb-320-7650e10ec372.webp",
+    "640": "images/throwables/stylized/bomb-640-ad18cb3a7bfe.webp"
+  },
+  "bowling_ball": {
+    "192": "images/throwables/stylized/bowling_ball-192-449953697466.webp",
+    "320": "images/throwables/stylized/bowling_ball-320-05c48d50a317.webp",
+    "640": "images/throwables/stylized/bowling_ball-640-8caff6c0842b.webp"
+  },
+  "cake": {
+    "192": "images/throwables/stylized/cake-192-51c30af13d94.webp",
+    "320": "images/throwables/stylized/cake-320-8566c9385e51.webp",
+    "640": "images/throwables/stylized/cake-640-fd5b9aa3e207.webp"
+  },
+  "cash_stack": {
+    "192": "images/throwables/stylized/cash_stack-192-33a2ac610d7d.webp",
+    "320": "images/throwables/stylized/cash_stack-320-6d1d8126b4f4.webp",
+    "640": "images/throwables/stylized/cash_stack-640-29df87280ab4.webp"
+  },
+  "champagne": {
+    "192": "images/throwables/stylized/champagne-192-38306da4f1fb.webp",
+    "320": "images/throwables/stylized/champagne-320-fe364d1c88df.webp",
+    "640": "images/throwables/stylized/champagne-640-81d1e737a19a.webp"
+  },
+  "chicken": {
+    "192": "images/throwables/stylized/chicken-192-138e964c9274.webp",
+    "320": "images/throwables/stylized/chicken-320-4e39ff92be0d.webp",
+    "640": "images/throwables/stylized/chicken-640-bd12da3871ee.webp"
+  },
+  "coffee": {
+    "192": "images/throwables/stylized/coffee-192-b9b0b1c6a101.webp",
+    "320": "images/throwables/stylized/coffee-320-330ce0ef6a86.webp",
+    "640": "images/throwables/stylized/coffee-640-e00910252db2.webp"
+  },
+  "cool_sunglasses_emoji": {
+    "192": "images/throwables/stylized/cool_sunglasses_emoji-192-11364f1d4a45.webp",
+    "320": "images/throwables/stylized/cool_sunglasses_emoji-320-5ef07129c3da.webp",
+    "640": "images/throwables/stylized/cool_sunglasses_emoji-640-b38469a31022.webp"
+  },
+  "cracked_egg": {
+    "192": "images/throwables/stylized/cracked_egg-192-ddeb6989a3b5.webp",
+    "320": "images/throwables/stylized/cracked_egg-320-7971fa2e6725.webp",
+    "640": "images/throwables/stylized/cracked_egg-640-3cfabc49f268.webp"
+  },
+  "crying_emoji": {
+    "192": "images/throwables/stylized/crying_emoji-192-cda2dbf6aa72.webp",
+    "320": "images/throwables/stylized/crying_emoji-320-4fc218036980.webp",
+    "640": "images/throwables/stylized/crying_emoji-640-b2e3924ac5a1.webp"
+  },
+  "diamond": {
+    "192": "images/throwables/stylized/diamond-192-e0ed231b757c.webp",
+    "320": "images/throwables/stylized/diamond-320-d1e8016c78c4.webp",
+    "640": "images/throwables/stylized/diamond-640-0c6e9b947547.webp"
+  },
+  "dice": {
+    "192": "images/throwables/stylized/dice-192-7c91688030dc.webp",
+    "320": "images/throwables/stylized/dice-320-bed1a0ccbedc.webp",
+    "640": "images/throwables/stylized/dice-640-906b1249b3c0.webp"
+  },
+  "doge": {
+    "192": "images/throwables/stylized/doge-192-37320e5318df.webp",
+    "320": "images/throwables/stylized/doge-320-1f8570cb3427.webp",
+    "640": "images/throwables/stylized/doge-640-5bb0502896a2.webp"
+  },
+  "fireworks": {
+    "192": "images/throwables/stylized/fireworks-192-4005fe6e887d.webp",
+    "320": "images/throwables/stylized/fireworks-320-2d8f30226734.webp",
+    "640": "images/throwables/stylized/fireworks-640-2701d0564546.webp"
+  },
+  "football": {
+    "192": "images/throwables/stylized/football-192-382111ebbffe.webp",
+    "320": "images/throwables/stylized/football-320-c9ecfc8563e2.webp",
+    "640": "images/throwables/stylized/football-640-fc60302fb290.webp"
+  },
+  "ghost": {
+    "192": "images/throwables/stylized/ghost-192-e9b66f917ed5.webp",
+    "320": "images/throwables/stylized/ghost-320-bf0f062564d5.webp",
+    "640": "images/throwables/stylized/ghost-640-adaa466a2f9e.webp"
+  },
+  "heart": {
+    "192": "images/throwables/stylized/heart-192-28eba45760a8.webp",
+    "320": "images/throwables/stylized/heart-320-f18e845089d7.webp",
+    "640": "images/throwables/stylized/heart-640-7ae54d9bae78.webp"
+  },
+  "horseshoe": {
+    "192": "images/throwables/stylized/horseshoe-192-9a1098152e25.webp",
+    "320": "images/throwables/stylized/horseshoe-320-999762d923ff.webp",
+    "640": "images/throwables/stylized/horseshoe-640-8338b2181d33.webp"
+  },
+  "laughing_emoji": {
+    "192": "images/throwables/stylized/laughing_emoji-192-271de604ae87.webp",
+    "320": "images/throwables/stylized/laughing_emoji-320-0bda0e1195cf.webp",
+    "640": "images/throwables/stylized/laughing_emoji-640-e6cbd75925dc.webp"
+  },
+  "lightning_bolt": {
+    "192": "images/throwables/stylized/lightning_bolt-192-242cf8769546.webp",
+    "320": "images/throwables/stylized/lightning_bolt-320-b59fdace803b.webp",
+    "640": "images/throwables/stylized/lightning_bolt-640-12263b011b7c.webp"
+  },
+  "magic_8_ball": {
+    "192": "images/throwables/stylized/magic_8_ball-192-f3f08cf78759.webp",
+    "320": "images/throwables/stylized/magic_8_ball-320-9064b17f440b.webp",
+    "640": "images/throwables/stylized/magic_8_ball-640-514ea1e375d9.webp"
+  },
+  "magnet": {
+    "192": "images/throwables/stylized/magnet-192-b6be1783502c.webp",
+    "320": "images/throwables/stylized/magnet-320-9380af3d7de4.webp",
+    "640": "images/throwables/stylized/magnet-640-ca2209018ddf.webp"
+  },
+  "pizza_slice": {
+    "192": "images/throwables/stylized/pizza_slice-192-c6b3b8443bef.webp",
+    "320": "images/throwables/stylized/pizza_slice-320-919c74cccc0b.webp",
+    "640": "images/throwables/stylized/pizza_slice-640-3b664bfb3e47.webp"
+  },
+  "poop": {
+    "192": "images/throwables/stylized/poop-192-9619c675268c.webp",
+    "320": "images/throwables/stylized/poop-320-cfc90e3164dd.webp",
+    "640": "images/throwables/stylized/poop-640-06d54195be9e.webp"
+  },
+  "robot": {
+    "192": "images/throwables/stylized/robot-192-2e85d06e5548.webp",
+    "320": "images/throwables/stylized/robot-320-67fbee1c29ba.webp",
+    "640": "images/throwables/stylized/robot-640-afcc2a4ce945.webp"
+  },
+  "rocket": {
+    "192": "images/throwables/stylized/rocket-192-49f8b056c3a9.webp",
+    "320": "images/throwables/stylized/rocket-320-1db078896e36.webp",
+    "640": "images/throwables/stylized/rocket-640-57b47d79ccc6.webp"
+  },
+  "rose": {
+    "192": "images/throwables/stylized/rose-192-ebcddfa009f6.webp",
+    "320": "images/throwables/stylized/rose-320-35e19f2481b4.webp",
+    "640": "images/throwables/stylized/rose-640-800cb25a3216.webp"
+  },
+  "rubber_duck": {
+    "192": "images/throwables/stylized/rubber_duck-192-abf18d0e9fcb.webp",
+    "320": "images/throwables/stylized/rubber_duck-320-71df1b45cc37.webp",
+    "640": "images/throwables/stylized/rubber_duck-640-3c5f3a080291.webp"
+  },
+  "shark": {
+    "192": "images/throwables/stylized/shark-192-7650dc01de2c.webp",
+    "320": "images/throwables/stylized/shark-320-6b87d7a63387.webp",
+    "640": "images/throwables/stylized/shark-640-eb0d41693690.webp"
+  },
+  "skull": {
+    "192": "images/throwables/stylized/skull-192-e5b6c8ac1e11.webp",
+    "320": "images/throwables/stylized/skull-320-9cb3a01cead7.webp",
+    "640": "images/throwables/stylized/skull-640-08132ab8f7c8.webp"
+  },
+  "snowman": {
+    "192": "images/throwables/stylized/snowman-192-002624d41619.webp",
+    "320": "images/throwables/stylized/snowman-320-dc1e215c4e7e.webp",
+    "640": "images/throwables/stylized/snowman-640-7a495f2c86b1.webp"
+  },
+  "star": {
+    "192": "images/throwables/stylized/star-192-085fb1ac7453.webp",
+    "320": "images/throwables/stylized/star-320-0f049fa61381.webp",
+    "640": "images/throwables/stylized/star-640-7cf5154347c8.webp"
+  },
+  "tennis_ball": {
+    "192": "images/throwables/stylized/tennis_ball-192-c01ac1c26a5b.webp",
+    "320": "images/throwables/stylized/tennis_ball-320-744bd5761f04.webp",
+    "640": "images/throwables/stylized/tennis_ball-640-997feaaa9ae7.webp"
+  },
+  "thumbs_down": {
+    "192": "images/throwables/stylized/thumbs_down-192-a25daf693a29.webp",
+    "320": "images/throwables/stylized/thumbs_down-320-000463a054aa.webp",
+    "640": "images/throwables/stylized/thumbs_down-640-c5b6f04f8b7e.webp"
+  },
+  "thumbs_up": {
+    "192": "images/throwables/stylized/thumbs_up-192-2f45fbfd2cb6.webp",
+    "320": "images/throwables/stylized/thumbs_up-320-b157f1283b28.webp",
+    "640": "images/throwables/stylized/thumbs_up-640-e9885e29cdf8.webp"
+  },
+  "tomato": {
+    "192": "images/throwables/stylized/tomato-192-d4b6e177cea1.webp",
+    "320": "images/throwables/stylized/tomato-320-3a870596110f.webp",
+    "640": "images/throwables/stylized/tomato-640-8e71a69d79a7.webp"
+  },
+  "trash_can": {
+    "192": "images/throwables/stylized/trash_can-192-e19b6b62353f.webp",
+    "320": "images/throwables/stylized/trash_can-320-508cbabc813d.webp",
+    "640": "images/throwables/stylized/trash_can-640-3c45b7ee7847.webp"
+  },
+  "trophy": {
+    "192": "images/throwables/stylized/trophy-192-a40e4ee777fb.webp",
+    "320": "images/throwables/stylized/trophy-320-5c38fe525164.webp",
+    "640": "images/throwables/stylized/trophy-640-92ee014c2845.webp"
+  },
+  "ufo": {
+    "192": "images/throwables/stylized/ufo-192-c57b9deb89e5.webp",
+    "320": "images/throwables/stylized/ufo-320-92199b87d763.webp",
+    "640": "images/throwables/stylized/ufo-640-6789b90a9722.webp"
+  },
+  "water_gun": {
+    "192": "images/throwables/stylized/water_gun-192-0e2a63ff1464.webp",
+    "320": "images/throwables/stylized/water_gun-320-f6865c40ae75.webp",
+    "640": "images/throwables/stylized/water_gun-640-7c1b71198a57.webp"
+  }
+}

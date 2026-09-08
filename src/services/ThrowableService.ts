@@ -19,6 +19,9 @@
  */
 
 import { supabase } from '../lib/supabase';
+import stillManifest from '../throwables/stills.generated.json';
+
+const premiumStills: Record<string, Record<string, string>> = stillManifest;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -51,7 +54,15 @@ export type ThrowPhysics = 'arc' | 'fastball' | 'lob' | 'float' | 'drop' | 'swoo
  * - burst    confetti-pop scatter (cash, champagne, fireworks)
  */
 export type ThrowImpact =
-  'splat' | 'splash' | 'bounce' | 'thud' | 'explode' | 'shatter' | 'zap' | 'sparkle' | 'burst';
+  | 'splat'
+  | 'splash'
+  | 'bounce'
+  | 'thud'
+  | 'explode'
+  | 'shatter'
+  | 'zap'
+  | 'sparkle'
+  | 'burst';
 
 export type ThrowWeight = 'light' | 'medium' | 'heavy';
 
@@ -784,6 +795,8 @@ const imageUrlCache = new Map<string, string>();
  * the fallback when the transform endpoint is unavailable.
  */
 export function getThrowableRawUrl(id: string): string {
+  const premium = premiumStills[id]?.['640'];
+  if (premium) return `${import.meta.env.BASE_URL}${premium}`;
   const key = `${id}@raw`;
   const cached = imageUrlCache.get(key);
   if (cached) return cached;
@@ -817,6 +830,8 @@ export function getThrowableImageUrl(id: string, displayPx?: number): string {
   //   <=96px  -> 192  (selector tiles at 84)
   //   >96px   -> 320  (flight 84-116, impact 112-152, bomb-pot hero ~210)
   const bucket = displayPx !== undefined && displayPx <= 96 ? 192 : 320;
+  const premium = premiumStills[id]?.[String(bucket)];
+  if (premium) return `${import.meta.env.BASE_URL}${premium}`;
   const key = `${id}@${bucket}`;
   const cached = imageUrlCache.get(key);
   if (cached) return cached;
@@ -833,6 +848,7 @@ export function getThrowableImageUrl(id: string, displayPx?: number): string {
 }
 
 const VIP_FREE_THROWS_PER_MONTH = 500;
+const MEMBER_FREE_THROWS_PER_MONTH = 30;
 const DIAMOND_COST_PER_THROW = 1;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -840,7 +856,42 @@ const DIAMOND_COST_PER_THROW = 1;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class ThrowableServiceClass {
-  /** All 49 throwables */
+  private pendingUses = new Map<string, string>();
+
+  /** Keep an uncertain charge's identity across retries and panel remounts. */
+  private useRequest(key: string): string {
+    const pending = this.pendingUses.get(key);
+    if (pending) return pending;
+    let saved: string | null = null;
+    try {
+      saved = sessionStorage.getItem(key);
+    } catch {
+      // Storage can be disabled; the in-memory identity still protects retries.
+    }
+    const id =
+      saved && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saved)
+        ? saved
+        : crypto.randomUUID();
+    this.pendingUses.set(key, id);
+    try {
+      sessionStorage.setItem(key, id);
+    } catch {
+      // Best effort persistence; never make storage access a payment dependency.
+    }
+    return id;
+  }
+
+  private finishUse(key: string, id: string): void {
+    if (this.pendingUses.get(key) !== id) return;
+    this.pendingUses.delete(key);
+    try {
+      if (sessionStorage.getItem(key) === id) sessionStorage.removeItem(key);
+    } catch {
+      // In-memory state has already been released.
+    }
+  }
+
+  /** All current catalogue entries. */
   getThrowables(): Throwable[] {
     return THROWABLES;
   }
@@ -888,6 +939,7 @@ class ThrowableServiceClass {
         .reduce((sum, row) => sum + Math.max(0, Number(row.uses_remaining) || 0), 0);
 
       const profile = profileResult.data;
+      if (!profile) throw new Error('Profile unavailable');
       const isVip =
         !!profile?.is_vip &&
         (profile.vip_tier === 'lifetime' ||
@@ -903,16 +955,7 @@ class ThrowableServiceClass {
         };
       }
 
-      if (!isVip) {
-        return {
-          isVip: false,
-          freeThrowsRemaining: 0,
-          packThrowsRemaining,
-          diamondCost: packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
-        };
-      }
-
-      // Get this month's usage for VIP
+      // Every member receives the calendar-month allowance; VIP raises it to 500.
       const monthStart = new Date();
       monthStart.setUTCDate(1);
       monthStart.setUTCHours(0, 0, 0, 0);
@@ -925,10 +968,11 @@ class ThrowableServiceClass {
 
       if (error || count === null) throw error || new Error('Allowance count unavailable');
       const used = count;
-      const remaining = Math.max(0, VIP_FREE_THROWS_PER_MONTH - used);
+      const limit = isVip ? VIP_FREE_THROWS_PER_MONTH : MEMBER_FREE_THROWS_PER_MONTH;
+      const remaining = Math.max(0, limit - used);
 
       return {
-        isVip: true,
+        isVip,
         freeThrowsRemaining: remaining,
         packThrowsRemaining,
         diamondCost: remaining > 0 || packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
@@ -957,6 +1001,8 @@ class ThrowableServiceClass {
     }
 
     try {
+      const requestKey = `throwable-pending:${userId}:${throwableId}`;
+      const requestId = this.useRequest(requestKey);
       // ── Atomic server path (2026-08-17) ──────────────────────────────────
       // fn_use_throwable serialises the free-allowance check per user
       // (advisory xact lock) and does charge+record in ONE transaction,
@@ -965,10 +1011,14 @@ class ThrowableServiceClass {
       // failure between deduct_diamonds and the usage insert charged a
       // diamond and recorded nothing. Allowance and price are
       // server-authoritative there.
-      const { data: atomic, error: atomicErr } = await supabase.rpc('fn_use_throwable', {
+      // The v1 wrapper creates a new UUID on every call. Retrying a lost
+      // response through it could charge twice. v2 replays the same receipt.
+      const { data: atomic, error: atomicErr } = await supabase.rpc('fn_use_throwable_v2', {
         p_throwable_id: throwableId,
+        p_request_id: requestId,
       });
-      if (!atomicErr && atomic) {
+      if (!atomicErr && atomic && typeof (atomic as any).success === 'boolean') {
+        this.finishUse(requestKey, requestId);
         if ((atomic as any).success === true) return { success: true };
         return {
           success: false,

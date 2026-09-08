@@ -52,10 +52,14 @@ import { getThrowableImageUrl, getThrowableRawUrl } from './ThrowableService';
 const HARD = 26;
 /** Colour distance above which a pixel is definitely NOT background. */
 const SOFT = 74;
+/** Clean local artwork needs a narrow band to preserve dark material at 192px. */
+export const PREMIUM_THROWABLE_MATTE = { hard: 2, soft: 8 } as const;
 
 const cache = new Map<string, Promise<string>>();
 const resolved = new Map<string, string>();
 const objectUrls: string[] = [];
+let cacheGeneration = 0;
+const IMAGE_LOAD_TIMEOUT_MS = 10_000;
 
 // MUST mirror getThrowableImageUrl's buckets exactly, or a cutout gets cached
 // under a key no reader ever asks for and every lookup silently misses.
@@ -113,10 +117,24 @@ function bgDistance(data: Uint8ClampedArray, i: number, bg: [number, number, num
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      img.onload = null;
+      img.onerror = null;
+      if (error) reject(error);
+      else resolve(img);
+    };
+    const timeout = setTimeout(
+      () => finish(new Error('cutout: image load timed out')),
+      IMAGE_LOAD_TIMEOUT_MS
+    );
     img.crossOrigin = 'anonymous';
     img.decoding = 'async';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`cutout: image failed to load (${src})`));
+    img.onload = () => finish();
+    img.onerror = () => finish(new Error(`cutout: image failed to load (${src})`));
     img.src = src;
   });
 }
@@ -128,7 +146,13 @@ function loadImage(src: string): Promise<HTMLImageElement> {
  *
  * Returns how many pixels were made non-opaque, for the plausibility check.
  */
-export function knockOutBackground(data: Uint8ClampedArray, w: number, h: number): number {
+export function knockOutBackground(
+  data: Uint8ClampedArray,
+  w: number,
+  h: number,
+  matte = { hard: HARD, soft: SOFT }
+): number {
+  const { hard, soft } = matte;
   const n = w * h;
   const bg = sampleBackground(data, w, h);
   // `lum` is now "distance from the background colour", not luminance. On the
@@ -146,7 +170,7 @@ export function knockOutBackground(data: Uint8ClampedArray, w: number, h: number
   // background; brighter means the item bleeds off-frame, so we do not seed
   // there and that edge simply stays opaque.
   const seed = (idx: number) => {
-    if (!isBg[idx] && lum[idx] < SOFT) {
+    if (!isBg[idx] && lum[idx] < soft) {
       isBg[idx] = 1;
       stack.push(idx);
     }
@@ -172,16 +196,16 @@ export function knockOutBackground(data: Uint8ClampedArray, w: number, h: number
   }
 
   let cleared = 0;
-  const span = SOFT - HARD;
+  const span = soft - hard;
   for (let i = 0; i < n; i++) {
     if (!isBg[i]) continue; // enclosed dark pixels are part of the item
     const l = lum[i];
-    if (l <= HARD) {
+    if (l <= hard) {
       data[i * 4 + 3] = 0;
       cleared++;
     } else {
       // Feather across the ringing band so edges stay smooth.
-      const a = Math.min(255, Math.max(0, Math.round(((l - HARD) / span) * 255)));
+      const a = Math.min(255, Math.max(0, Math.round(((l - hard) / span) * 255)));
       data[i * 4 + 3] = a;
       if (a < 250) cleared++;
     }
@@ -189,7 +213,7 @@ export function knockOutBackground(data: Uint8ClampedArray, w: number, h: number
   return cleared;
 }
 
-async function buildCutout(id: string, px: number): Promise<string> {
+async function buildCutout(id: string, px: number, generation: number): Promise<string> {
   let img: HTMLImageElement;
   try {
     img = await loadImage(getThrowableImageUrl(id, px));
@@ -197,6 +221,8 @@ async function buildCutout(id: string, px: number): Promise<string> {
     // Transform endpoint unavailable — try the original before giving up.
     img = await loadImage(getThrowableRawUrl(id));
   }
+
+  if (generation !== cacheGeneration) throw new Error('cutout: cache was released');
 
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
@@ -211,7 +237,15 @@ async function buildCutout(id: string, px: number): Promise<string> {
 
   // Throws SecurityError if the canvas is tainted (CORS refused).
   const frame = ctx.getImageData(0, 0, w, h);
-  const cleared = knockOutBackground(frame.data, w, h);
+  // Fresh local PNG-derived thumbnails have a clean matte. The aggressive
+  // legacy JPEG tolerance erased dark fur, black props and cuffs.
+  const cleanMatte = getThrowableImageUrl(id, px).includes('images/throwables/stylized/');
+  const cleared = knockOutBackground(
+    frame.data,
+    w,
+    h,
+    cleanMatte ? PREMIUM_THROWABLE_MATTE : undefined
+  );
 
   // Plausibility: an image that keys to almost nothing, or to almost
   // everything, does not match the "subject on black" assumption. Refuse
@@ -229,9 +263,12 @@ async function buildCutout(id: string, px: number): Promise<string> {
       'image/png'
     )
   );
+  // Route teardown can happen while the browser encodes the canvas. A late
+  // result must not recreate revoked cache entries or leak a new object URL.
+  if (generation !== cacheGeneration) throw new Error('cutout: cache was released');
   const url = URL.createObjectURL(blob);
   objectUrls.push(url);
-  resolved.set(`${id}@${px}`, url);
+  resolved.set(`${id}@${bucketOf(px)}`, url);
   return url;
 }
 
@@ -248,8 +285,11 @@ export function getThrowableCutout(id: string, px = 320): Promise<string> {
   const key = `${id}@${bucket}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  const p = buildCutout(id, bucket).catch((err) => {
-    cache.delete(key); // allow a later retry (transient network, etc.)
+  // URL selection takes display pixels, not the already-normalized cache
+  // bucket. Passing 192 here selected the 320px source for every small icon.
+  const p = buildCutout(id, px, cacheGeneration).catch((err) => {
+    // A released request may settle after a new request for this same key.
+    if (cache.get(key) === p) cache.delete(key);
     throw err;
   });
   cache.set(key, p);
@@ -263,6 +303,7 @@ export function peekThrowableCutout(id: string, px = 320): string | null {
 
 /** Release every blob URL this module created (route teardown / tests). */
 export function releaseThrowableCutouts(): void {
+  cacheGeneration += 1;
   for (const u of objectUrls.splice(0)) {
     try {
       URL.revokeObjectURL(u);

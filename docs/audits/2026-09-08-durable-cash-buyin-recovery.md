@@ -69,3 +69,13 @@ publication. Browser tooling currently times out refreshing its CDP connection.
 No physical iPad home-screen, offline/network-switch or production paid-join
 verification has been claimed. The broad connection incident and long hand-gap
 outliers remain open despite the repaired permanent settlement freezes.
+
+## Guarded Build And Integration, 20:10 UTC
+
+The local unpublished-commit preservation hook refused the rebase. Rebase was
+aborted, restoring the clean committed tree, and origin/main was merged normally
+without conflicts. No guard override or history rewrite was used. Build commit
+266b32ff passed npm run build, including the final provenance check with
+behind-main=0. TypeScript and 106 targeted tests across six files passed on that
+integrated source. Existing PostgreSQL proof remains valid; the merge changed
+none of the cash receipt migration or probe files.

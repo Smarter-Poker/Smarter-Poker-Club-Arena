@@ -350,5 +350,13 @@
     "checkpointSource": "art-source/static/party_face.png",
     "sha256": "7064770d4de9a78b0b61923e4cb1c597556450e6739de45509ca273558350f55",
     "status": "Transparent matching still and choreographed atlas integrated. Dedicated audio and end-to-end acceptance pending."
+  },
+  {
+    "id": "thinking",
+    "integrated": true,
+    "source": "art-source/animated/thinking.png",
+    "checkpointSource": "art-source/static/thinking.png",
+    "sha256": "72b76ff485c9c543c74c3782e8ee9c9201f225697bf235d4df98ac5e99bcd783",
+    "status": "Generated transparent artwork integrated with a separate animated hand and three expressions. Dedicated hmm audio and full end-to-end acceptance pending."
   }
 ]

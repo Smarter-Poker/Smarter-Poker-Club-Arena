@@ -69,6 +69,38 @@ import { tableCountChangedFilter } from './tables.js';
  *
  * FIX 208: Replaced RPC with direct queries to avoid PostgREST schema cache "text = uuid" errors
  */
+/** A completed transport call is not proof that the seat departed. */
+function confirmedCashout(data: unknown, seatNumber?: number): { stack: number; absent: boolean } {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Cash-out receipt missing; departure unconfirmed');
+  }
+  const receipt = data as Record<string, unknown>;
+  if (
+    receipt.ok !== true ||
+    typeof receipt.stack !== 'number' ||
+    !Number.isFinite(receipt.stack) ||
+    receipt.stack < 0
+  ) {
+    throw new Error('Cash-out receipt invalid; departure unconfirmed');
+  }
+  if (receipt.reason === 'no_active_seat' && receipt.stack === 0) {
+    return { stack: 0, absent: true };
+  }
+  if (
+    receipt.reason !== undefined ||
+    !Number.isInteger(receipt.seat_number) ||
+    (seatNumber !== undefined && receipt.seat_number !== seatNumber) ||
+    typeof receipt.credited !== 'boolean' ||
+    typeof receipt.tournament_table !== 'boolean' ||
+    typeof receipt.idempotency_key !== 'string' ||
+    !receipt.idempotency_key.startsWith('cashout:') ||
+    receipt.idempotency_key.length <= 'cashout:'.length
+  ) {
+    throw new Error('Cash-out receipt incomplete; departure unconfirmed');
+  }
+  return { stack: receipt.stack, absent: false };
+}
+
 export async function markSeatAsLeft(
   tableId: string,
   userId: string,
@@ -87,24 +119,20 @@ export async function markSeatAsLeft(
   // scoped to the seat the RPC itself locked, so it cannot vacate another seat
   // this call never read.
   try {
-    const { error } = await supabase.rpc('atomic_seat_cashout_locked', {
+    const { data, error } = await supabase.rpc('atomic_seat_cashout_locked', {
       p_user_id: userId,
       p_table_id: tableId,
       p_seat_number: seatNumber,
     });
-    if (error) {
-      console.error(
-        `[markSeatAsLeft] Locked cash-out failed for ${userId} at ${tableId} seat ${seatNumber} - seat preserved so the stack is not destroyed:`,
-        error.message
-      );
-      return;
-    }
-    void notifyWaitlistSeatOpen(tableId);
+    if (error) throw new Error(error.message);
+    const receipt = confirmedCashout(data, seatNumber);
+    if (!receipt.absent) void notifyWaitlistSeatOpen(tableId);
   } catch (err: any) {
     console.error(
-      `[markSeatAsLeft] Transport failure for ${userId} at ${tableId} seat ${seatNumber} - seat preserved:`,
+      `[markSeatAsLeft] Departure unconfirmed for ${userId} at ${tableId} seat ${seatNumber}:`,
       err?.message
     );
+    throw err;
   }
 }
 
@@ -176,15 +204,12 @@ export async function atomicCashout(
       return 0;
     }
 
-    const stack = Number((data as any)?.stack ?? 0);
-    if ((data as any)?.reason === 'no_active_seat') return 0;
-
-    // Seat opened — notify the waitlist. Unchanged behaviour.
-    void notifyWaitlistSeatOpen(tableId);
-    return Number.isFinite(stack) ? stack : 0;
+    const receipt = confirmedCashout(data, seatNumber);
+    if (!receipt.absent) void notifyWaitlistSeatOpen(tableId);
+    return receipt.stack;
   } catch (err: any) {
     console.warn(
-      `[atomicCashout] Transport failure for ${userId} at ${tableId} - seat preserved for retry:`,
+      `[atomicCashout] Departure unconfirmed for ${userId} at ${tableId} - retain tracking for retry:`,
       err?.message
     );
     opts?.onFailed?.(String(err?.message || 'transport failure'));

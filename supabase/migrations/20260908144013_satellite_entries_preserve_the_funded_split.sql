@@ -774,4 +774,17 @@ BEGIN
 END;
 $function$;
 
+-- Preserve the private helper boundary declared by the atomic finish migration.
+-- Only its SECURITY DEFINER parent calls this helper, never a direct RPC.
+REVOKE ALL ON FUNCTION public.fn_deliver_satellite_ticket_exact(
+  uuid,uuid,uuid,text,integer,numeric)
+  FROM PUBLIC,anon,authenticated,service_role;
+
+REVOKE ALL ON FUNCTION public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)
+  FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_escrow_apply(uuid,text,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_escrow_apply(uuid,text,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric,numeric)
+  TO service_role;
+
 COMMIT;

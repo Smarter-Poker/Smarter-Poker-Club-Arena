@@ -821,6 +821,32 @@ class ThrowableSoundServiceClass {
     this.cueDrops[reason] += 1;
   }
 
+  /** Bound both response headers and body reads so a stalled CDN request
+   * cannot pin a cue cache entry forever or prevent the alternate container. */
+  private async fetchCueBytes(url: string): Promise<ArrayBuffer | null> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve(null);
+      }, 10_000);
+    });
+    try {
+      return await Promise.race([
+        (async () => {
+          const response = await fetch(url, { signal: controller.signal });
+          return response.ok ? await response.arrayBuffer() : null;
+        })(),
+        deadline,
+      ]);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** Start fetching the bytes for these cues now (rig modules call this at
    *  import time). Safe to call repeatedly; safe without an AudioContext. */
   preloadCues(names: readonly string[], urlFor: (name: string, ext: 'webm' | 'm4a') => string) {
@@ -830,8 +856,8 @@ class ThrowableSoundServiceClass {
       const p = (async () => {
         for (const ext of ['webm', 'm4a'] as const) {
           try {
-            const res = await fetch(urlFor(name, ext));
-            if (res.ok) return { bytes: await res.arrayBuffer(), ext };
+            const bytes = await this.fetchCueBytes(urlFor(name, ext));
+            if (bytes) return { bytes, ext };
           } catch {
             /* try the other container */
           }
@@ -859,9 +885,8 @@ class ThrowableSoundServiceClass {
         // A successful HTTP response does not imply codec support (Safari).
         if (loaded.ext === 'webm') {
           try {
-            const res = await fetch(urlFor(name, 'm4a'));
-            if (res.ok) {
-              const bytes = await res.arrayBuffer();
+            const bytes = await this.fetchCueBytes(urlFor(name, 'm4a'));
+            if (bytes) {
               const decoded = await this.ctx.decodeAudioData(bytes.slice(0));
               this.cueBytes.set(name, Promise.resolve({ bytes, ext: 'm4a' }));
               return decoded;

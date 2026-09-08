@@ -54,7 +54,7 @@ function Payload(_props: RigProps) {
           height={70}
         />
       </g>
-      <g className="thr-pizza_slice__pepperoni">
+      <g>
         <AtlasSprite
           src="pizza_slice"
           rect={[541, 810, 390, 390]}

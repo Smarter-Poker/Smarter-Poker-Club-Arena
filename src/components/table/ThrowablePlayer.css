@@ -38,8 +38,8 @@
   translate: var(--thr-from-x) var(--thr-from-y);
 }
 
-.thr__proj svg,
-.thr__payload svg {
+.thr__proj > svg,
+.thr__payload > svg {
   display: block;
   width: 100%;
   height: 100%;

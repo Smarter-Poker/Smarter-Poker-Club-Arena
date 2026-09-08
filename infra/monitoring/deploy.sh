@@ -181,6 +181,20 @@ else
   echo "   ✅ $CADDY_DST already up-to-date"
 fi
 
+# The live Caddyfile is operator-managed because it contains the real
+# monitoring password hash and, on engine-01, routes not present in the repo's
+# placeholder template. Patch only the credential-carrying WebSocket header
+# out of the runtime logger; the installer validates a candidate, preserves
+# the exact live file as its rollback, reloads gracefully and proves Caddy is
+# still active. The monitoring workflow ships this exact script alongside the
+# monitoring checkout, so this is not a reference to a file the host may lack.
+CADDY_REDACTION_INSTALLER="$SRC_DIR/server/scripts/install-caddy-websocket-log-redaction.sh"
+if [[ ! -x "$CADDY_REDACTION_INSTALLER" ]]; then
+  echo "   ❌ Caddy WebSocket log-redaction installer missing: $CADDY_REDACTION_INSTALLER"
+  exit 1
+fi
+"$CADDY_REDACTION_INSTALLER"
+
 # ─── 5. Bring up the stack ───────────────────────────────────────────────
 echo "🟢 Starting stack..."
 cd "$RUN_DIR"

@@ -39,10 +39,10 @@
  *
  * A leadership check gates whether ANY table deals, so a bug here could stop
  * the platform outright. But "always fail to leader" is WRONG, and dangerously
- * so, because the table lease fails open too:
+ * so. Before protocol-2 enforcement, the table lease could also fail open:
  *
  *   database outage -> standby cannot reach the RPC -> it promotes itself
- *                   -> claimTable() also fails open and answers true
+ *                   -> an unverified table admission also answers true
  *                   -> TWO engines dealing the same table.
  *
  * That is the exact corruption the leases exist to prevent, and a fail-open
@@ -124,6 +124,49 @@ let holderAgeSeconds: number | null = null;
 let becameLeaderAt: number | null = null;
 let errors = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
+export type LeadershipShutdownHandler = (reason: string) => Promise<void>;
+let shutdownHandler: LeadershipShutdownHandler | null = null;
+
+/**
+ * GameServer owns the actual table/tournament teardown; the process entrypoint
+ * owns its index-started services and transports. Leadership may request that
+ * single authoritative shutdown, but must never release/exit around it.
+ */
+export function registerLeadershipShutdownHandler(handler: LeadershipShutdownHandler): () => void {
+  shutdownHandler = handler;
+  return () => {
+    if (shutdownHandler === handler) shutdownHandler = null;
+  };
+}
+
+function hardExitAfterRejectedShutdown(reason: string, error?: unknown): void {
+  reportError(
+    error instanceof Error
+      ? error
+      : new Error(`Leadership shutdown could not be certified (${reason})`),
+    'Leadership.shutdown_failed'
+  );
+  // Keep this timer referenced. If the authoritative owner is absent or
+  // rejects, allowing Node to fall off the event loop would report a clean
+  // exit even though ownership release was never certified.
+  setTimeout(() => process.exit(1), 250);
+}
+
+function requestAuthoritativeShutdown(reason: string): void {
+  if (restartScheduled) return;
+  restartScheduled = true;
+  stopLeadershipRenewal();
+  const handler = shutdownHandler;
+  if (!handler) {
+    hardExitAfterRejectedShutdown(reason);
+    return;
+  }
+  try {
+    void handler(reason).catch((error) => hardExitAfterRejectedShutdown(reason, error));
+  } catch (error) {
+    hardExitAfterRejectedShutdown(reason, error);
+  }
+}
 
 /** True unless we positively know another instance holds leadership. */
 /**
@@ -168,31 +211,11 @@ function restartIntoLeaderBoot(reason: string): void {
    * doubles the log, and the next reader of this function should not have to
    * work out whether that matters.
    */
-  if (restartScheduled) return;
-  restartScheduled = true;
   console.error(
     `[leadership] ${INSTANCE_ID} promoted (${reason}) but booted as a standby, so it has ` +
       'no discovery loop or fleet - exiting so the supervisor restarts it as a real leader.'
   );
-  /**
-   * HAND THE LEASE BACK BEFORE DYING (2026-08-24). The grant that got us here
-   * just wrote THIS instance into the lease row with a fresh heartbeat. Exiting
-   * while holding it forces the successor to boot as a standby (the row is not
-   * stale yet), wait out the staleness window, win the lease while
-   * standby-booted, and exit again: an infinite restart loop with a period of
-   * roughly the staleness window that never deals a hand. Observed in
-   * production within the hour of this function shipping — die/start every
-   * ~30s, activeTables pinned at 0. Releasing first means the successor's
-   * boot-time claim is granted immediately and it boots as a real leader.
-   *
-   * The hard timer is the backstop: a hung release (the same DB trouble that
-   * can put us here) must not keep a useless process alive.
-   */
-  const hardExit = setTimeout(() => process.exit(0), 5000);
-  (hardExit as { unref?: () => void }).unref?.();
-  void releaseLeadership().finally(() => {
-    setTimeout(() => process.exit(0), 250).unref?.();
-  });
+  requestAuthoritativeShutdown(`promoted standby requires full leader boot: ${reason}`);
 }
 
 export function isLeader(): boolean {
@@ -317,7 +340,7 @@ export async function renewLeadership(): Promise<EngineRole> {
       );
       console.error('[leadership] LOST LEADERSHIP - exiting so we restart as a standby');
       role = 'standby';
-      setTimeout(() => process.exit(0), 250).unref?.();
+      requestAuthoritativeShutdown(`lost leadership to ${row.holder}`);
       return role;
     }
     role = 'standby';
@@ -375,5 +398,6 @@ export function __resetLeadership(): void {
   holderAgeSeconds = null;
   becameLeaderAt = null;
   errors = 0;
+  shutdownHandler = null;
   stopLeadershipRenewal();
 }

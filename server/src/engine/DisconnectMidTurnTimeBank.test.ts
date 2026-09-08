@@ -32,6 +32,10 @@ afterEach(() => {
 
 function harness(overrides: Record<string, unknown> = {}) {
   const engine = new ServerTableEngine(TABLE) as any;
+  // This focused harness bypasses start(); explicitly preserve the production
+  // precondition that only the process-owned live generation may mutate turns.
+  engine.running = true;
+  engine.isCurrentEngine = () => true;
   engine.tableInfo = {} as any;
   engine.handController = {
     getState: () => ({

@@ -1,0 +1,45 @@
+{
+  "_owner": "fix/final-table-deal-is-atomic",
+  "_comment": "Branch-only declaration for the pending final-table-deal atomic-settlement migration. It does not claim production deployment; the live snapshot may absorb it only after every object is published.",
+  "tables": ["tournament_final_table_deal_batches"],
+  "functions": [
+    "fn_check_atomic_final_table_deal",
+    "fn_settle_final_table_deal_atomic",
+    "trg_atomic_final_table_deal_completion_guard",
+    "trg_lock_atomic_final_table_deal_status",
+    "trg_freeze_atomic_final_table_deal_obligation",
+    "trg_freeze_batched_tournament_result"
+  ],
+  "columns": {
+    "tournament_final_table_deal_batches": [
+      "tournament_id",
+      "plan_fingerprint",
+      "plan",
+      "prior_standings_fingerprint",
+      "live_input_snapshot",
+      "live_input_fingerprint",
+      "field_count",
+      "live_count",
+      "structure_place_count",
+      "place_line_count",
+      "deal_line_count",
+      "place_amount",
+      "deal_amount",
+      "amount_owed",
+      "amount_moved",
+      "escrow_prize_before",
+      "escrow_prize_after",
+      "deal_table_id",
+      "bubble_contract_required",
+      "bubble_obligation_id",
+      "bubble_user_id",
+      "bubble_source",
+      "bubble_amount_owed",
+      "bubble_amount_paid_before",
+      "chip_leader",
+      "source",
+      "prepared_at",
+      "settled_at"
+    ]
+  }
+}

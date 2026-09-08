@@ -76,12 +76,12 @@ doing at the end of a long session on top of an unrelated fix.
 Three times today a verification grep gave a confident wrong answer, in both
 directions:
 
-| grep | what it matched | truth |
-| --- | --- | --- |
-| `unless on()` | nothing | Prometheus serialises it `unless on ()`; the guards were live and I reported them missing |
-| `nextHourBoundary` in `MaintenanceBreak.ts` on main | two comments describing the deleted function | the function was gone |
-| `padding-top: env(safe-area-inset-top)` in `index.css` | a comment saying it is deliberately absent, plus an `@supports` condition | no declaration on `body` |
-| `.lt('created_at', zombieCutoff)` in `push-health.js` | a comment explaining its removal | not in the query |
+| grep                                                   | what it matched                                                           | truth                                                                                     |
+| ------------------------------------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `unless on()`                                          | nothing                                                                   | Prometheus serialises it `unless on ()`; the guards were live and I reported them missing |
+| `nextHourBoundary` in `MaintenanceBreak.ts` on main    | two comments describing the deleted function                              | the function was gone                                                                     |
+| `padding-top: env(safe-area-inset-top)` in `index.css` | a comment saying it is deliberately absent, plus an `@supports` condition | no declaration on `body`                                                                  |
+| `.lt('created_at', zombieCutoff)` in `push-health.js`  | a comment explaining its removal                                          | not in the query                                                                          |
 
 This repo's house style is long explanatory comments naming the thing that was
 removed, which is good for the next reader and actively hostile to a substring

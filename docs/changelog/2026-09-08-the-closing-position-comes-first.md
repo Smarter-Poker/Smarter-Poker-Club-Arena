@@ -47,8 +47,8 @@ would have been an instruction that could not be followed.
 
 **`ca_epoch_closing_positions`** — one row per account per capture,
 **immutable**: every `UPDATE` and every `DELETE` is refused. It was first given
-the shared journal guard and that turned out to be wrong for it; see *A guard
-that refused for the wrong reason* below. With 9.1's two-decimal constraint and
+the shared journal guard and that turned out to be wrong for it; see _A guard
+that refused for the wrong reason_ below. With 9.1's two-decimal constraint and
 service-role-only RLS.
 
 Deliberately **not** `ca_account_snapshots`: that table is operational and

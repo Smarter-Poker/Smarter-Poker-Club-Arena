@@ -137,6 +137,7 @@ const T = (
 });
 
 const THROWABLES: Throwable[] = [
+  T('fish', 'Fish', 'throws', 'fastball', 'splash', 'fish_flop', 'light', false, '#58BDEB', 0),
   // ── REACTIONS (8) — floaty emoji, sparkle finishes ────────────────────────────
   T(
     'thumbs_up',

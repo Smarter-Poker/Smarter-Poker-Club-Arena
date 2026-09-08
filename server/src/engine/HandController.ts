@@ -878,9 +878,11 @@ export class HandController {
     // FIX-A1 2026-07-19 (Bible V8 §4.14 / TDA Rule 44): reject a `raise` that
     // cannot legally reopen betting — e.g. a player who already acted and now
     // faces only a sub-full-raise all-in may call or fold, not re-raise. This is
-    // the authoritative server enforcement; getAvailableActions hides the button
-    // but a hand-crafted action must be rejected here too. `all_in` is exempt.
-    if (action === 'raise' && !this.canReopenBetting(player)) return false;
+    // the authoritative server enforcement; getAvailableActions hides the button.
+    // An all-in that exceeds the call is also a raise, never an exemption.
+    const raisesBet =
+      action === 'raise' || (action === 'all_in' && player.stack > bettingState.toCall + 0.005);
+    if (raisesBet && !this.canReopenBetting(player)) return false;
 
     let actualAmount = 0;
     let isFullRaiseFlag: boolean | undefined;
@@ -907,7 +909,7 @@ export class HandController {
         // wrong when the player hadn't called yet (e.g., CO raising preflop with bet=0).
         // Correct: raiseSize = newBetLevel - previousBetLevel
         const raiseSize = actualAmount - this.state.currentBet;
-        isFullRaiseFlag = true; // Normal bet/raise is always a full raise
+        isFullRaiseFlag = raiseSize >= bettingState.minRaise - 0.005;
         if (raiseSize > this.state.lastRaise) this.state.lastRaise = raiseSize;
         // Bible V8 §4.14: Keep minRaise in sync — must be at least lastRaise or BB
         this.state.minRaise = Math.max(this.config.bigBlind, this.state.lastRaise);
@@ -933,7 +935,7 @@ export class HandController {
         // A short all-in (raise increment < lastRaise) does NOT reopen betting
         if (player.bet > this.state.currentBet) {
           const rs = player.bet - this.state.currentBet;
-          isFullRaiseFlag = rs >= this.state.lastRaise;
+          isFullRaiseFlag = rs >= bettingState.minRaise - 0.005;
           if (isFullRaiseFlag) {
             this.state.lastRaise = rs;
             // Bible V8 §4.14: Keep minRaise in sync for full-raise all-ins
@@ -1288,8 +1290,8 @@ export class HandController {
     // A short all-in (raise increment < lastRaise) does NOT count as aggression.
     let lastAggressorSeat = -1;
     for (const action of stageActions) {
-      if (action.action === 'bet' || action.action === 'raise') {
-        // Normal bet/raise always reopens
+      if ((action.action === 'bet' || action.action === 'raise') && action.isFullRaise !== false) {
+        // A short stack may express its all-in as a raise; it remains short.
         lastAggressorSeat = action.seat;
       } else if (action.action === 'all_in' && action.isFullRaise) {
         // All-in only reopens if it was a full raise
@@ -1307,7 +1309,8 @@ export class HandController {
           const a = stageActions[i];
           if (
             a.seat === lastAggressorSeat &&
-            (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise))
+            (((a.action === 'bet' || a.action === 'raise') && a.isFullRaise !== false) ||
+              (a.action === 'all_in' && a.isFullRaise))
           ) {
             lastAggressorActionIdx = i;
             break;
@@ -2223,7 +2226,10 @@ export class HandController {
           potsByBoard[b],
           this.config.gameVariant,
           this.state.dealerSeat,
-          perPot
+          perPot,
+          undefined,
+          // A tournament chip does not divide (2026-09-08).
+          this.config.isTournament ? 1 : 0.01
         );
         winnersPerBoard.push(boardWinners);
         this.pendingPerPotAwards.push(
@@ -2282,7 +2288,9 @@ export class HandController {
                 `awarded to the contenders instead`
             ),
             'HandController.pot_eligibility_snapshot_stale'
-          )
+          ),
+        // A tournament chip does not divide (2026-09-08).
+        this.config.isTournament ? 1 : 0.01
       );
       this.pendingPerPotAwards = perPot;
     }
@@ -2345,7 +2353,10 @@ export class HandController {
           })),
           this.config.gameVariant,
           this.state.dealerSeat,
-          recoveredPerPot
+          recoveredPerPot,
+          undefined,
+          // A tournament chip does not divide (2026-09-08).
+          this.config.isTournament ? 1 : 0.01
         );
         if (winners.length > 0) this.pendingPerPotAwards = recoveredPerPot;
       }
@@ -2995,18 +3006,12 @@ export class HandController {
       // bet, big bet, capped round) for it to drift against.
       const bettingState = this.buildBettingState(player);
       const probe = this.clampToStructure(player, 'all_in', undefined, bettingState);
-      // A clamped pot-limit shove is a RAISE by the time performAction runs
-      // (that is where the "all_in is exempt" note stops applying - the clamp
-      // has already rewritten the action), so it must also pass the
-      // reopen-betting rule. A player who has acted and faces only a
-      // sub-full-raise may call or fold, never raise: TDA 44 / Bible V8
-      // 4.14. Offering all_in there is what the fuzzer caught. (The fixed-limit
-      // branch of the clamp already degrades such a raise to a call, so this
-      // only still bites in pot-limit.)
-      const wasClamped = probe.action !== 'all_in';
+      const raisesBet =
+        probe.action === 'raise' ||
+        (probe.action === 'all_in' && player.stack > bettingState.toCall + 0.005);
       const legal =
         validateAction(probe.action, probe.amount, player.stack, bettingState).valid &&
-        (!wasClamped || probe.action !== 'raise' || this.canReopenBetting(player));
+        (!raisesBet || this.canReopenBetting(player));
       if (legal) {
         actions.push('all_in');
       }
@@ -3021,8 +3026,9 @@ export class HandController {
    * currently facing a full raise made since their last action. This mirrors the
    * full-aggressor logic used by isBettingRoundComplete so both agree.
    *
-   * Note: this gates the explicit `raise` action only. A player may always go
-   * `all_in` for their remaining stack even when it does not reopen betting.
+   * An all-in exceeding the call obeys the same reopening rule. A short
+   * all-in call remains legal. Cumulative short raises are relative to each
+   * player's last matched wager, not just the last aggressor's identity.
    */
   /**
    * The street `advanceStage` is about to move into. Mirrors the order its own
@@ -3161,7 +3167,10 @@ export class HandController {
     let lastFullAggressorIdx = -1;
     for (let i = 0; i < stageActions.length; i++) {
       const a = stageActions[i];
-      if (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise)) {
+      if (
+        ((a.action === 'bet' || a.action === 'raise') && a.isFullRaise !== false) ||
+        (a.action === 'all_in' && a.isFullRaise)
+      ) {
         lastFullAggressorSeat = a.seat;
         lastFullAggressorIdx = i;
       }
@@ -3176,6 +3185,18 @@ export class HandController {
         playerLastIdx = i;
         break;
       }
+    }
+
+    // TDA 47A: multiple short all-ins can together face this player with a
+    // full increment. An intervening caller's bet is higher, so that caller
+    // does not inherit another player's reopening rights.
+    if (
+      playerLastIdx !== -1 &&
+      !isFixedLimitVariant(this.config.gameVariant) &&
+      this.state.currentBet - player.bet >=
+        Math.max(this.config.bigBlind, this.state.lastRaise) - 0.005
+    ) {
+      return true;
     }
 
     if (lastFullAggressorSeat !== -1 && lastFullAggressorSeat !== player.seat) {

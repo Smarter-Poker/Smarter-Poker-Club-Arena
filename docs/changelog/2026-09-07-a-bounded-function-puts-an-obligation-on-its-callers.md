@@ -56,7 +56,7 @@ how many periods are still pending rather than implying it finished.
 ### 3. The admin button would roll back the periods it had just paid
 
 **This is the one that mattered.** `fn_run_pending_rakeback_settlement` is what
-*Settle Now* on the settlement dashboard calls, and the dashboard passes
+_Settle Now_ on the settlement dashboard calls, and the dashboard passes
 `p_max_clubs = 200`. It loops `settle_club_rakeback` over every club with
 pending work **in one transaction**, and carries no `statement_timeout` of its
 own. The `authenticated` role it arrives as is pinned at 8 seconds.
@@ -71,7 +71,7 @@ the money that appeared to move did not.
 The same defect this phase started with — a drain cancelled by a timeout nobody
 budgeted for — one level up, introduced by fixing the level below.
 
-**Fixed** (`20260907195018`): a 6-second wall-clock budget checked *between*
+**Fixed** (`20260907195018`): a 6-second wall-clock budget checked _between_
 clubs, so it returns with what it did instead of being shot with what it did. It
 now also reports `deferred_reasons`, `periods_remaining` and `out_of_time`, so
 an admin who presses the button and sees nothing move is told why.
@@ -94,7 +94,7 @@ permanently.
 
 **Fixed** (`20260907195158`): `ORDER BY defer_count, period_end, id`, with a
 matching partial index. Least-refused first. Nothing is skipped or given up on —
-`defer_count` only decides *order* — so a period that becomes payable is picked
+`defer_count` only decides _order_ - so a period that becomes payable is picked
 up on the next pass it reaches the head. Self-balancing, and it needs no list of
 "permanent" reasons to maintain and get wrong.
 

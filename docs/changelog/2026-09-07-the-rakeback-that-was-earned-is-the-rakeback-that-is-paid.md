@@ -19,12 +19,12 @@ share allocation to recover one player's share.
 
 Measured on production before anything was changed:
 
-| measurement | value |
-| --- | --- |
-| one period close | 2,632 ms average, 4,070 ms worst |
-| Midway's pending periods | 1,769 |
-| therefore, one call | ~4,656 s (78 minutes) in a single statement |
-| `service_role` statement_timeout | **8 s** |
+| measurement                      | value                                       |
+| -------------------------------- | ------------------------------------------- |
+| one period close                 | 2,632 ms average, 4,070 ms worst            |
+| Midway's pending periods         | 1,769                                       |
+| therefore, one call              | ~4,656 s (78 minutes) in a single statement |
+| `service_role` statement_timeout | **8 s**                                     |
 
 Every server-side caller — the Open Claw Monday cron, the engine's
 `RakebackSettlerService`, the browser `FinancialCronService` — authenticates as
@@ -53,7 +53,7 @@ Measured across the 3,458 pending periods:
 - 1,505 would have paid a different number;
 - **95,645.93 underpaid** across 1,301 of them;
 - **17,479.31 overpaid** across 204 — and every one of those 204 would have paid
-  a player *more than their upline receives*, which is the exact margin
+  a player _more than their upline receives_, which is the exact margin
   violation `fn_club_rakeback_margin_violations` exists to detect and the payer
   never consulted.
 
@@ -69,7 +69,7 @@ another club's float.
 
 `fn_run_pending_rakeback_settlement` gates on the caller being an admin profile,
 then called `settle_club_rakeback`, which accepted only the engine or the club
-**owner**. A platform admin owns no clubs, so *Settle Now* on the settlement
+**owner**. A platform admin owns no clubs, so _Settle Now_ on the settlement
 dashboard has always settled nothing and returned
 `success:true, clubs_processed:0`.
 
@@ -122,7 +122,7 @@ refusal is right on the substance, not just the spelling.
 > BACK FILLS OR ADJUSTS A PAYOUT OR ANY OTHER ISSUE ... I WANT HARD CODED FIXES
 > AT THE ROOT SOURCE."
 
-The root cause *is* fixed — the drain could not finish and now can. What remains
+The root cause _is_ fixed - the drain could not finish and now can. What remains
 is that Midway holds 0.50 chips and owes 280,142.41, which no code fixes. The
 rule's own instruction for that case is to say so plainly and stop, not to ship
 an alarm and call the shortfall handled. It was also already visible in two
@@ -159,13 +159,13 @@ Both were mine, and both would have re-created the original failure.
 77 club-days of rollup were backfilled first, which took every period from a
 ~2.6 s scan to an indexed sum.
 
-| club | periods | players | paid |
-| --- | ---: | ---: | ---: |
-| Club JAQK | 670 | 448 | 92,517.31 |
-| Deep Stack Society | 416 | 416 | 87,568.61 |
-| SHARK CLUB | 603 | 412 | 50,960.63 |
-| Midway Union | 2 | 2 | 0.16 |
-| **total** | **1,691** | **987** | **231,046.71** |
+| club               |   periods | players |           paid |
+| ------------------ | --------: | ------: | -------------: |
+| Club JAQK          |       670 |     448 |      92,517.31 |
+| Deep Stack Society |       416 |     416 |      87,568.61 |
+| SHARK CLUB         |       603 |     412 |      50,960.63 |
+| Midway Union       |         2 |       2 |           0.16 |
+| **total**          | **1,691** | **987** | **231,046.71** |
 
 Paid amounts exceed the previous estimates because the policy rate is what the
 players were actually owed; the ladder had been under-rating them.

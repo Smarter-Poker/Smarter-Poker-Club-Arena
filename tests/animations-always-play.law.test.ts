@@ -33,6 +33,7 @@ const read = (p: string) => readFileSync(resolve(__dirname, '../', p), 'utf8');
 const SOUND = read('src/services/SoundService.ts');
 const THROW_SOUND = read('src/services/ThrowableSoundService.ts');
 const TABLE_PAGE = read('src/pages/TablePage.tsx');
+const ENGINE_CLIENT = read('src/services/EngineStateClient.ts');
 const SEAT_TSX = read('src/components/table/SeatSlot.tsx');
 const SEAT_CSS = read('src/components/table/SeatSlot.css');
 const DEAL = read('src/components/table/DealAnimation.tsx');
@@ -355,6 +356,41 @@ describe('LAW: the end-of-hand cadence plays in order, every hand', () => {
     // "…PAUSE 1 SECOND, MOVE THE BUTTON ANIMATION… START DEALING NEXT HAND."
     // The puck glides alone, lands with its tock, THEN the cards fly.
     expect(TABLE_PAGE).toContain('HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed()');
+  });
+
+  it('normal and transport-gap deals share the exact same scheduler', () => {
+    // A reconnect recovery must not grow a second, faster animation path. The
+    // event handler and the guarded snapshot transition both enter the one
+    // scheduler that owns BUTTON_MOVE_MS.
+    expect(TABLE_PAGE).toContain('const scheduleDealPresentation = useCallback(');
+    expect(TABLE_PAGE).toMatch(
+      /case 'HAND_STARTED':[\s\S]*?scheduleDealPresentation\(startedHandNumber\)/
+    );
+    expect(TABLE_PAGE).toMatch(
+      /pendingHandStartRecoveryRef\.current[\s\S]*?scheduleDealPresentation\(handNum\)/
+    );
+  });
+
+  it('snapshot recovery requires both a real prior hand and a transport gap', () => {
+    // First-load hydration into an already-running hand must remain still. A
+    // snapshot may substitute for HAND_STARTED only after an in-session hand
+    // transition and an explicit reconnect / EVENT-sequence continuity notice.
+    expect(TABLE_PAGE).toContain("case 'ENGINE_EVENT_GAP'");
+    expect(TABLE_PAGE).toContain('previousHandNumber > 0');
+    expect(TABLE_PAGE).toContain('const pendingRecovery = pendingHandStartRecoveryRef.current');
+    expect(TABLE_PAGE.match(/shouldRecoverMissedHandStartPresentation\(/g)).toHaveLength(2);
+    expect(TABLE_PAGE).toContain('previousHandNumber === 0');
+    expect(TABLE_PAGE).toContain(
+      'Joining or refreshing into a running hand establishes a baseline'
+    );
+  });
+
+  it('gap recovery cannot rewind a mid-street or already-acted hand into its deal', () => {
+    expect(ENGINE_CLIENT).toContain("String(engineStage || '').toLowerCase() !== 'preflop'");
+    expect(ENGINE_CLIENT).toContain(
+      'boards.every((board) => Array.isArray(board) && board.length === 0)'
+    );
+    expect(ENGINE_CLIENT).toContain('lastActions.some((action) => action != null)');
   });
   // The 1-second rest itself (POST_PUSH_PAUSE_MS) is pinned arithmetically in
   // tests/unit/handCompletionLaw.test.ts, in every hold formula.
@@ -907,14 +943,14 @@ describe('LAW: a Crazy Pineapple discard is seen and heard', () => {
   });
 
   it('an all-in seat whose discard the engine makes for it is announced too', () => {
-    // AUDIT 2026-08-31: resolvePendingPineappleDiscards spliced the card and
+    // AUDIT 2026-08-31: the forced-discard commit spliced the card and
     // emitted CARDS_DEALT only. No PLAYER_ACTION meant no toss, no cue, three
     // backs left on the felt, and the discard missing from hand_history - the
     // Phase 3 bug still alive on the one path a player cannot see coming.
     // CLAUDE.md 10.6: owed every time it is owed, not on the convenient paths.
     const resolve = sliceMethod(
       read('server/src/engine/HandController.ts'),
-      'private resolvePendingPineappleDiscards(): void {'
+      'public commitPreparedPineappleRunoutDiscards(flop: readonly Card[]): boolean {'
     );
     expect(resolve).toContain("action: 'discard'");
     expect(resolve).toContain("type: 'PLAYER_ACTION'");

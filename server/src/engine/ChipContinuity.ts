@@ -77,6 +77,8 @@ export interface ChipContinuityDeps {
   isCash: () => boolean;
   /** Never evaluate during the maintenance freeze (CLAUDE.md section 13 rule 5). */
   isFrozen: () => boolean;
+  /** Exact engine/process authority for reflecting an awaited database answer. */
+  canMutate?: () => boolean;
   evaluate: (tableId: string, entries: CashSessionEntry[]) => Promise<CashSessionRow[] | null>;
   report: (err: unknown, context: string) => void;
 }
@@ -173,7 +175,7 @@ export class ChipContinuityTracker {
     const run = async () => {
       try {
         const rows = await this.deps.evaluate(this.deps.tableId, entries);
-        if (!rows) return;
+        if (!rows || this.deps.canMutate?.() === false) return;
         for (const r of rows) if (!this.departed.has(r.user_id)) this.rows.set(r.user_id, r);
         for (const e of entries)
           if (!this.departed.has(e.user_id)) this.lastActive.set(e.user_id, e.active);

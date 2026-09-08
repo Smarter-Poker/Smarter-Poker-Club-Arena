@@ -185,6 +185,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     for (const report of [
       'cashier.json',
       'stats.json',
+      'live-table-realtime.json',
       'club-members.json',
       'daily-missions.json',
       'daily-missions-accessibility.json',
@@ -208,6 +209,18 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
 
     const sweep = step(WORKFLOW, 'Run the specs that need a deployed page');
     expect(sweep).toContain('daily missions accessibility exit=$daily_missions_accessibility_rc');
+  });
+
+  it('runs live-table continuity as real mobile WebKit with exact engine provenance', () => {
+    const sweep = step(WORKFLOW, 'Run the specs that need a deployed page');
+    const honesty = step(WORKFLOW, 'Did the suite actually verify production?');
+
+    expect(sweep).toContain('tests/e2e/production-live-table-realtime.spec.ts');
+    expect(sweep).toContain('--project=webkit-live-table-realtime');
+    expect(sweep).toContain("LIVE_TABLE_REALTIME_CERTIFICATION: '1'");
+    expect(sweep).toContain('EXPECTED_ENGINE_SHA: ${{ steps.live.outputs.sha }}');
+    expect(sweep).toContain('live table realtime exit=$live_table_realtime_rc');
+    expect(honesty).toContain('e2e-report/live-table-realtime.json');
   });
 
   it('refuses a green verdict when the Daily Missions database settlement suite only skipped', () => {

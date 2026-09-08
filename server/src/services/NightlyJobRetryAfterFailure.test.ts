@@ -57,8 +57,10 @@ describe('standing down must never mark the day done', () => {
 
   /** The stand-down branch, from its `if` to its `return`. */
   const standDownBlock = (src: string, claimCall: string): string => {
-    const start = src.indexOf(claimCall);
-    expect(start).toBeGreaterThan(-1);
+    const claim = src.indexOf(claimCall);
+    expect(claim).toBeGreaterThan(-1);
+    const start = src.indexOf('if (!claimed)', claim);
+    expect(start).toBeGreaterThan(claim);
     const end = src.indexOf('return;', start);
     expect(end).toBeGreaterThan(start);
     return src.slice(start, end);
@@ -67,7 +69,7 @@ describe('standing down must never mark the day done', () => {
   it('HorseDailyAudit does not set lastAuditedDay when the claim is lost', () => {
     const block = standDownBlock(
       read('HorseDailyAudit.ts'),
-      "if (!(await claimNightlyJob('daily_audit', target)))"
+      "const claimed = await claimNightlyJob('daily_audit', target)"
     );
     expect(block).not.toContain('lastAuditedDay = target');
   });
@@ -75,13 +77,25 @@ describe('standing down must never mark the day done', () => {
   it('HorseSelfTuner does not set lastRunDate when the claim is lost', () => {
     const block = standDownBlock(
       read('HorseSelfTuner.ts'),
-      "if (!(await claimNightlyJob('self_tuner', today)))"
+      "const claimed = await claimNightlyJob('self_tuner', today)"
     );
     expect(block).not.toContain('lastRunDate = today');
   });
 
   it('HorseDailyAudit only records the day after a run that succeeded', () => {
     const src = read('HorseDailyAudit.ts');
-    expect(src).toContain('if (await runDailyAudit(target)) {');
+    expect(src).toContain('const completed = await runDailyAudit(target);');
+    expect(src).toMatch(/if \(completed\) \{\s*lastAuditedDay = target;/);
+  });
+
+  it('HorseSelfTuner only records the day after durable tune output exists', () => {
+    const src = read('HorseSelfTuner.ts');
+    const run = src.indexOf('await runSelfTune(today');
+    const proof = src.indexOf('const completed = await alreadyTunedToday(today);', run);
+    const latch = src.indexOf('if (completed) lastRunDate = today;', proof);
+    expect(run).toBeGreaterThan(-1);
+    expect(proof).toBeGreaterThan(run);
+    expect(latch).toBeGreaterThan(proof);
+    expect(src.slice(run, latch)).not.toContain('lastRunDate = today');
   });
 });

@@ -239,9 +239,14 @@ describe('the in-flight hand is voided, and that is the safe answer', () => {
     // mid-hand syncStacks is ever added, an abandoned hand starts destroying
     // chips and this test is the thing that should stop it.
     const settlement = strip(read('src/engine/ServerTableEngineSettlement.ts'));
-    expect(settlement).toMatch(/syncStacks\(/);
+    expect(settlement).toContain('protected async postHandTasks(');
+    expect(settlement).toContain('atomicCommit: {');
+    expect(settlement).toContain('settlementCommitted');
+    expect(settlement.indexOf('atomicCommit: {')).toBeGreaterThan(
+      settlement.indexOf('protected async postHandTasks(')
+    );
     const turns = strip(read('src/engine/ServerTableEngineTurns.ts'));
-    expect(turns).not.toMatch(/syncStacks\(/);
-    expect(DEALING).not.toMatch(/syncStacks\(/);
+    expect(turns).not.toMatch(/logHandHistory\(/);
+    expect(DEALING).not.toMatch(/logHandHistory\(/);
   });
 });

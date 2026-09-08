@@ -48,24 +48,26 @@ const strip = (s: string) => s.replace(/^\s*--.*$/gm, '');
  * that carries it. Sliced, because a migration that redefines two functions
  * would otherwise let one of them satisfy an assertion about the other.
  */
-function newestDefining(fn: string): string {
+function newestDefining(fn: string, required = ''): string {
   const bodies = fs
     .readdirSync(MIGRATIONS)
     .filter((f) => f.endsWith('.sql'))
     .sort()
-    .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
-    .filter((b) => b.includes(`FUNCTION public.${fn}`));
+    .map((f) => strip(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
+    .filter((b) => b.includes(`FUNCTION public.${fn}`))
+    .map((body) => {
+      const start = body.indexOf(`CREATE OR REPLACE FUNCTION public.${fn}`);
+      const next = body.indexOf('CREATE OR REPLACE FUNCTION', start + 1);
+      return body.slice(start, next === -1 ? undefined : next);
+    })
+    .filter((body) => !required || body.includes(required));
   expect(bodies.length).toBeGreaterThan(0);
-
-  const body = strip(bodies[bodies.length - 1]);
-  const start = body.indexOf(`FUNCTION public.${fn}`);
-  const next = body.indexOf('CREATE OR REPLACE FUNCTION', start + 1);
-  return body.slice(start, next === -1 ? undefined : next);
+  return bodies[bodies.length - 1];
 }
 
 describe('fn_mystery_bounty_settle', () => {
   it('pays the already revealed awards before it decides what is unclaimed', () => {
-    const def = newestDefining('fn_mystery_bounty_settle');
+    const def = newestDefining('fn_mystery_bounty_settle', 'PERFORM public.fn_mystery_bounty_pay');
     const paysRevealed = def.indexOf('PERFORM public.fn_mystery_bounty_pay');
     const countsUnclaimed = def.indexOf("status IN ('available','reserved','revealed')");
     expect(paysRevealed).toBeGreaterThan(-1);
@@ -74,14 +76,14 @@ describe('fn_mystery_bounty_settle', () => {
   });
 
   it('voids the awards of the chests it sweeps to the champion', () => {
-    const def = newestDefining('fn_mystery_bounty_settle');
+    const def = newestDefining('fn_mystery_bounty_settle', 'PERFORM public.fn_mystery_bounty_pay');
     expect(def).toMatch(
-      /UPDATE\s+public\.tournament_bounty_awards[\s\S]{0,200}SET\s+status\s*=\s*'void'/,
+      /UPDATE\s+public\.tournament_bounty_awards[\s\S]{0,200}SET\s+status\s*=\s*'void'/
     );
   });
 
   it('clamps the champion residual to what the pool still holds in the ledger', () => {
-    const def = newestDefining('fn_mystery_bounty_settle');
+    const def = newestDefining('fn_mystery_bounty_settle', 'PERFORM public.fn_mystery_bounty_pay');
     expect(def).toContain('FROM wallet_transactions wt');
     expect(def).toMatch(/v_room/);
     expect(def).toMatch(/v_residual\s*>\s*v_room/);
@@ -90,13 +92,19 @@ describe('fn_mystery_bounty_settle', () => {
 
 describe('fn_mystery_bounty_pay', () => {
   it('refuses an award the settlement already voided', () => {
-    const def = newestDefining('fn_mystery_bounty_pay');
+    const def = newestDefining('fn_mystery_bounty_pay', 'award_voided_by_settlement');
     expect(def).toContain('award_voided_by_settlement');
     expect(def).toMatch(/v_a\.status\s*=\s*'void'/);
   });
 
   it('refuses a chest that was settled to the champion', () => {
-    const def = newestDefining('fn_mystery_bounty_pay');
+    const def = newestDefining('fn_mystery_bounty_pay', 'award_voided_by_settlement');
     expect(def).toContain('chest_settled_to_champion');
+  });
+
+  it('the recoverability wrapper delegates only to the private guarded implementation', () => {
+    const wrapper = newestDefining('fn_mystery_bounty_pay');
+    expect(wrapper).toContain('fn_mystery_bounty_pay_unguarded_20260907');
+    expect(wrapper).toMatch(/public\.fn_mystery_bounty_pay_unguarded_20260907\(p_award_id\)/);
   });
 });

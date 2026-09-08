@@ -106,8 +106,9 @@ SELECT count(*) FILTER (WHERE max_pos = entrants) AS correct,
   ) a;
 
 -- ── 3. MONEY OWED ──────────────────────────────────────────────────────────
--- Every completed non-satellite event with a pool, dry run, nothing applied.
--- Expect 0.00.
+-- Every completed non-satellite event with a pool. This reads the immutable
+-- atomic settlement records and moves nothing. Expect 0.00 owed, zero missing
+-- batches, and zero unsettled batches.
 --
 -- NOTE THE WINDOW. `started_at`, not `updated_at`: `tournaments.updated_at` is
 -- never maintained and holds row-creation time, which is what let 38 events
@@ -120,11 +121,22 @@ WITH cand AS (
      AND started_at > now() - interval '30 days'
      AND COALESCE(prize_pool, 0) > 0
      AND COALESCE(variant, '') <> 'satellite'
+), state AS (
+  SELECT c.id,
+         b.tournament_id IS NULL AS missing_batch,
+         b.settled_at IS NULL AS unsettled_batch,
+         round(COALESCE(sum(GREATEST(o.amount_owed - o.amount_paid, 0)), 0), 2) AS owed
+    FROM cand c
+    LEFT JOIN tournament_place_settlement_batches b ON b.tournament_id = c.id
+    LEFT JOIN tournament_obligations o
+      ON o.tournament_id = c.id
+     AND o.kind IN ('place', 'bubble_protection')
+   GROUP BY c.id, b.tournament_id, b.settled_at
 )
-SELECT round(
-         COALESCE(sum((fn_tournament_payout_reconcile(id, false)->>'total_top_up')::numeric), 0), 2
-       ) AS total_owed
-  FROM cand;
+SELECT round(COALESCE(sum(owed), 0), 2) AS total_owed,
+       count(*) FILTER (WHERE missing_batch) AS missing_atomic_batches,
+       count(*) FILTER (WHERE unsettled_batch) AS unsettled_atomic_batches
+  FROM state;
 
 -- ── 4. DUPLICATE SEATS ─────────────────────────────────────────────────────
 -- Multi-tabling is LEGAL: a player may sit at up to MAX_TABLES tables at once,

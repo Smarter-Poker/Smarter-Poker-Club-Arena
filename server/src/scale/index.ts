@@ -21,7 +21,12 @@ export type {
   InMemoryBusOptions,
 } from './CrossNodeBus.js';
 
-export { InProcessShardManager, InlineWorkerFactory, NodeWorkerFactory } from './ShardManager.js';
+export {
+  InProcessShardManager,
+  InlineWorkerFactory,
+  NodeWorkerFactory,
+  DrainFailedError,
+} from './ShardManager.js';
 export type {
   ShardManager,
   WorkerFactory,
@@ -42,6 +47,10 @@ export type {
   ManagerToWorker,
   WorkerToManager,
   WorkerId,
+  WorkerGeneration,
+  OwnershipEpoch,
   TableId,
+  TableLease,
+  TableCloseFailure,
   ShardWorkerData,
 } from './protocol.js';

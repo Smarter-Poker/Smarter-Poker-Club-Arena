@@ -178,9 +178,9 @@ describe('horses take seats, not just places on a list', () => {
 
   it('both callers batch, so neither loops a query', () => {
     // Anchored on the DEFINITION, not the first mention: the first occurrence of
-    // `createOpenSeatTable` is a call site, and slicing a method from there
+    // `seedOpenSeatTable` is a call site, and slicing a method from there
     // returns the call, not the body.
-    for (const caller of ['private async createOpenSeatTable(', 'async topUpWithHorses(']) {
+    for (const caller of ['private async seedOpenSeatTable(', 'async topUpWithHorses(']) {
       expect(recurring.indexOf(caller), `${caller} is gone`).toBeGreaterThan(-1);
       // The held-empty gates (Dan 2026-08-26) sit between each entry point and
       // its pickFreeHorses call, so the window has to be the whole method - a

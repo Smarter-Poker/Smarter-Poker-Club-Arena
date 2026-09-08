@@ -1,0 +1,100 @@
+{
+  "checks": [
+    {
+      "id": "loser_hand",
+      "speedParity": true,
+      "reducedMotion": true
+    },
+    {
+      "id": "blush",
+      "speedParity": true,
+      "reducedMotion": true
+    },
+    {
+      "id": "ok_smug",
+      "speedParity": true,
+      "reducedMotion": true
+    },
+    {
+      "id": "sleeping",
+      "speedParity": true,
+      "reducedMotion": true
+    },
+    {
+      "id": "facepalm",
+      "speedParity": true,
+      "reducedMotion": true
+    },
+    {
+      "id": "screaming",
+      "speedParity": true,
+      "reducedMotion": true
+    },
+    {
+      "id": "vomit_rainbow",
+      "speedParity": true,
+      "reducedMotion": true
+    },
+    {
+      "id": "surrender",
+      "speedParity": true,
+      "reducedMotion": true
+    },
+    {
+      "id": "energy_ball",
+      "speedParity": true,
+      "reducedMotion": true
+    },
+    {
+      "id": "sloth",
+      "speedParity": true,
+      "reducedMotion": true
+    }
+  ],
+  "peaks": [
+    {
+      "id": "loser_hand",
+      "at": 2100,
+      "part": "mouth",
+      "opacity": 1
+    },
+    {
+      "id": "ok_smug",
+      "at": 1600,
+      "part": "wink",
+      "opacity": 1
+    },
+    {
+      "id": "screaming",
+      "at": 3550,
+      "part": "jaw",
+      "opacity": 1
+    },
+    {
+      "id": "vomit_rainbow",
+      "at": 2600,
+      "part": "pour",
+      "opacity": 1
+    },
+    {
+      "id": "vomit_rainbow",
+      "at": 3867,
+      "part": "wipe",
+      "opacity": 1
+    },
+    {
+      "id": "energy_ball",
+      "at": 3175,
+      "part": "flash",
+      "opacity": 1
+    },
+    {
+      "id": "sloth",
+      "at": 2700,
+      "part": "yawn",
+      "opacity": 1
+    }
+  ],
+  "browserErrors": [],
+  "scope": "Isolated production rigs; full authenticated multiplayer and device acceptance remain pending."
+}

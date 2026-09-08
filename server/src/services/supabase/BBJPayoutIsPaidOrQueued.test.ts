@@ -32,7 +32,12 @@ vi.mock('../financialAlerts.js', () => ({
   raiseFinancialAlert: (...a: unknown[]) => raiseFinancialAlert(...a),
 }));
 
-import { processBBJPayout, setBBJPayoutQueue, resolveJackpotSiblingClubIds } from './bbj.js';
+import {
+  processBBJPayout,
+  processMiniBBJPayout,
+  setBBJPayoutQueue,
+  resolveJackpotSiblingClubIds,
+} from './bbj.js';
 
 const POOL = 'f9806a7f-e7a2-47d2-a676-36336e3a5337';
 const PARAMS = {
@@ -255,6 +260,7 @@ describe('when every attempt fails, the hit is queued and alarmed, never dropped
   });
 
   it('an empty pool is final: nothing to pay, and the claim is closed', async () => {
+    rpc.mockResolvedValue({ data: [{ applied: false, already_paid: false }], error: null });
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: null }, error: null });
       if (name === 'bbj_pools')
@@ -266,7 +272,7 @@ describe('when every attempt fails, the hit is queued and alarmed, never dropped
     setBBJPayoutQueue({ claim, settle });
 
     expect(await run()).toEqual({ status: 'nothing_to_pay', reason: 'no_pool_or_empty' });
-    expect(rpc).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledTimes(1);
     expect(claim).toHaveBeenCalledTimes(1);
     expect(settle).toHaveBeenCalledTimes(1);
   });
@@ -363,5 +369,75 @@ describe('the club-wide announcement fans out to the whole union', () => {
       throw new Error('boom');
     });
     expect(await resolveJackpotSiblingClubIds('solo')).toEqual(['solo']);
+  });
+});
+
+describe('Mini payouts retain the original durable jackpot operation', () => {
+  const miniParams = { ...PARAMS, tierId: 'low', metadata: { rule: 'near_miss' } };
+  it('claims before attempting, retries transport failure and invokes only the Mini RPC', async () => {
+    const order: string[] = [];
+    const claim = vi.fn(async (_params: unknown, _note: string) => {
+      order.push('claim');
+    });
+    const settle = vi.fn(async () => {
+      order.push('settle');
+    });
+    setBBJPayoutQueue({ claim, settle });
+    rpc
+      .mockImplementationOnce(async () => {
+        order.push('rpc');
+        return { data: null, error: { message: 'fetch failed' } };
+      })
+      .mockImplementationOnce(async () => {
+        order.push('rpc');
+        return { data: [appliedRow()], error: null };
+      });
+    const pending = processMiniBBJPayout(miniParams);
+    for (let i = 0; i < 8; i++) await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(result.status).toBe('paid');
+    expect(order.slice(0, 3)).toEqual(['claim', 'rpc', 'rpc']);
+    expect(claim.mock.calls[0][0]).toMatchObject({ kind: 'mini', tierId: 'low' });
+    expect(rpc.mock.calls.slice(0, 2).every(([name]) => name === 'fn_bbj_mini_payout')).toBe(true);
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty('p_payout_total_percent');
+  });
+  it('keeps database failures pending instead of calling them skipped', async () => {
+    const claim = vi.fn();
+    const settle = vi.fn();
+    setBBJPayoutQueue({ claim, settle });
+    rpc.mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
+    const pending = processMiniBBJPayout(miniParams);
+    await vi.runAllTimersAsync();
+    expect((await pending).status).toBe('queued');
+    expect(settle).not.toHaveBeenCalled();
+    expect(claim).toHaveBeenCalled();
+  });
+  it('closes a persisted business-rule refusal without retrying it', async () => {
+    const claim = vi.fn();
+    const settle = vi.fn();
+    setBBJPayoutQueue({ claim, settle });
+    rpc.mockResolvedValue({
+      data: [{ applied: false, already_paid: false, refused: 'reserve_at_floor' }],
+      error: null,
+    });
+    expect(await processMiniBBJPayout(miniParams)).toEqual({
+      status: 'skipped',
+      reason: 'reserve_at_floor',
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(settle).toHaveBeenCalledTimes(1);
+  });
+  it('lets the RPC replay an existing hand even when the current Main bank is empty', async () => {
+    from.mockImplementation((name: string) =>
+      name === 'clubs'
+        ? table({ data: { union_id: null }, error: null })
+        : table({ data: { id: POOL, main_balance: 0, backup_balance: 1000 }, error: null })
+    );
+    rpc.mockResolvedValue({
+      data: [appliedRow({ applied: false, already_paid: true })],
+      error: null,
+    });
+    expect(await processBBJPayout(PARAMS)).toEqual({ status: 'already_paid' });
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 });

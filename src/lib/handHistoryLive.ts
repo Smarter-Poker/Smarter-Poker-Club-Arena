@@ -24,6 +24,7 @@
  */
 
 export const HAND_HISTORY_PAGE = 50;
+import { publicOrigin } from './appBase';
 /** A list older than this refetches on open, in case an event was missed. */
 export const HAND_HISTORY_STALE_MS = 5 * 60_000;
 
@@ -77,10 +78,6 @@ const APP_BASE = '/hub/club-arena';
 
 export function handDeepLink(handId: string, origin?: string): string {
   const base = APP_BASE;
-  const o =
-    origin ??
-    (typeof window !== 'undefined' && window.location
-      ? window.location.origin
-      : 'https://smarter.poker');
+  const o = origin ?? publicOrigin();
   return `${o}${base}/hand-history?hand=${encodeURIComponent(handId)}`;
 }

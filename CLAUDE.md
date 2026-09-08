@@ -840,6 +840,34 @@ test the next agent notices first.
 
 ---
 
+## 10.7b THE HEADER PORTRAIT FRAME IS A HAIRLINE; THE RING IS MASKED (added 2026-09-07, binding)
+
+Dan, 2026-09-07, with a screenshot of the artwork's chrome ring showing
+around his photo: "the profile pic is supposed to be a .5 pixel black frame
+that 'appears invisible' instead of this thick broken frame that exists now."
+Fourth time he has said it (08-31, 09-03, 09-05, 09-07).
+
+The approved header artwork bakes a silver ring with a blue glow around the
+profile slot. **That ring is never shown.** `.profileBtn` in
+`GlobalHeader.module.css` paints an opaque black disc over the whole ornament
+at every width, and the photo's only frame is the 0.5px hairline on
+`.profileAvatarSlot`, declared once. The ruling and its history are in
+`docs/LAWS.md` (resolved conflicts); the law is
+`tests/the-header-portrait-frame-is-a-hairline.law.test.ts` (geometry, by
+arithmetic) and `tests/e2e/header-portrait-frame.spec.ts` (rendered pixels).
+
+**How it regressed, so you do not do it again:** "the profile image needs to
+be fixed" was read on 2026-09-01 as "show the ring". The disc was removed,
+the photo was seated in the ring's aperture, and tests were written calling
+the disc "a shape drawn over approved artwork". Every later agent obeyed those
+tests and restored only the hairline. If a request about the profile image
+seems to call for showing the ring, it does not - ask Dan before touching the
+disc. "NO BOXES OVER HEADER ICONS" is about focus rings on icons; the disc is
+its one deliberate exception. The World Hub and Club Commander headers carry
+the identical rule (`GLOBAL_HEADER_PROFILE_FRAME_LAW.md` in that repo).
+
+---
+
 ## 10.8 LAWS LIVE IN docs/LAWS.md, AND YOU NEVER WAIT ON CI (added 2026-09-01, binding)
 
 **1. THE LAW REGISTRY.** Every `*.law.test.*` file must have a file in

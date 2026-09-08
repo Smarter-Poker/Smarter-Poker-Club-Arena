@@ -6,6 +6,7 @@ import {
 } from '../../config/clubIntegrityNavigation';
 import { useClubNavigationAccess } from '../../hooks/useClubNavigationAccess';
 import styles from './ClubIntegrityHeader.module.css';
+import { mediaUrl } from '../../utils/mediaBase';
 
 interface IntegrityMetric {
   label: string;
@@ -50,7 +51,7 @@ export default function ClubIntegrityHeader({
 
         <div className={styles.visual} aria-hidden="true">
           <img
-            src="/hub/club-arena/assets/club-buttons/club/club-identity-template-bbj-finish-v1.png"
+            src={mediaUrl('assets/club-buttons/club/club-identity-template-bbj-finish-v1.png')}
             alt=""
           />
           <div className={styles.scanLine} />

@@ -319,7 +319,7 @@ const flush = async () => {
 };
 
 type Verdict = 'alive' | 'revoked' | 'unknown';
-let verdict: Verdict = 'unknown';
+let verdict: Verdict | Promise<Verdict> = 'unknown';
 const rejections: string[] = [];
 
 vi.mock('../src/lib/sessionRevoked', async (importOriginal) => {
@@ -334,6 +334,7 @@ vi.mock('../src/lib/sessionRevoked', async (importOriginal) => {
 });
 
 let EngineStateClient: typeof import('../src/services/EngineStateClient').EngineStateClient;
+let EngineChannelClient: typeof import('../src/services/EngineStateClient').EngineChannelClient;
 let HANDSHAKE_FAILURES_BEFORE_SESSION_CHECK: number;
 
 beforeEach(async () => {
@@ -353,6 +354,7 @@ beforeEach(async () => {
   vi.resetModules();
   const mod = await import('../src/services/EngineStateClient');
   EngineStateClient = mod.EngineStateClient;
+  EngineChannelClient = mod.EngineChannelClient;
   HANDSHAKE_FAILURES_BEFORE_SESSION_CHECK = mod.HANDSHAKE_FAILURES_BEFORE_SESSION_CHECK;
 });
 
@@ -476,4 +478,46 @@ describe('LAW 4 - a revoked session stops the ladder; the player is sent to sign
     expect(statuses[statuses.length - 1]).toBe('auth_failed');
     c.disconnect();
   });
+});
+
+describe.each(['table', 'channel'] as const)('%s delayed session check ownership', (kind) => {
+  it.each([false, true])(
+    'does not mark a recovered socket reconnecting (disconnect=%s)',
+    async (disconnect) => {
+      let finish!: (value: Verdict) => void;
+      verdict = new Promise<Verdict>((resolve) => {
+        finish = resolve;
+      });
+      const statuses: string[] = [];
+      const opts = {
+        baseUrl: 'https://engine.example',
+        getToken: async () => 'token',
+        onStatus: (status: string) => statuses.push(status),
+      };
+      const c =
+        kind === 'table'
+          ? new EngineStateClient({ ...opts, tableId: TABLE, onSnapshot: () => {} })
+          : new EngineChannelClient(opts);
+      try {
+        await c.connect();
+        const failed = live();
+        failed._serverClose(4401, 'auth:session_not_found');
+        await flush();
+        expect(rejections).toHaveLength(1);
+        if (disconnect) c.disconnect();
+        await c.connect();
+        const replacement = live();
+        expect(replacement).not.toBe(failed);
+        replacement._open();
+        expect(statuses.at(-1)).toBe('connected');
+        finish('unknown');
+        await flush();
+        expect(statuses.at(-1)).toBe('connected');
+        expect(FakeWebSocket.instances).toHaveLength(2);
+      } finally {
+        finish('unknown');
+        c.disconnect();
+      }
+    }
+  );
 });

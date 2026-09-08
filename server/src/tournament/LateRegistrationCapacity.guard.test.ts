@@ -195,6 +195,7 @@ describe('late-registration capacity authority', () => {
   });
 
   it('retires the minute repair cron once registration and seating are atomic', () => {
+    const retirement = MIGRATION.slice(MIGRATION.indexOf('DO $retire_seatless_cron$'));
     expect(MIGRATION).toContain("jobname='sweep-seatless-late-registrants'");
     expect(MIGRATION).toContain("command LIKE '%public.fn_sweep_seatless_late_registrants()%'");
     expect(MIGRATION).toContain('PERFORM cron.unschedule(v_job.jobid)');
@@ -204,6 +205,9 @@ describe('late-registration capacity authority', () => {
     );
     expect(MIGRATION).toContain('seatless late-registration repair function remains callable');
     expect(MIGRATION).not.toContain('cron.schedule(');
+    // cron.unschedule owns the catalog mutation. SELECT FOR UPDATE would
+    // require direct UPDATE privilege on the extension-owned cron.job table.
+    expect(retirement).not.toContain('FOR UPDATE');
   });
 
   it('installs capacity, seating, cron retirement and legacy-door removal atomically', () => {

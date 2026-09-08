@@ -1306,10 +1306,9 @@ BEGIN
 
   FOR v_job IN
     SELECT jobid
-      FROM cron.job
+     FROM cron.job
      WHERE jobname='sweep-seatless-late-registrants'
         OR command LIKE '%public.fn_sweep_seatless_late_registrants()%'
-     FOR UPDATE
   LOOP
     PERFORM cron.unschedule(v_job.jobid);
   END LOOP;

@@ -131,7 +131,14 @@ describe('the DB seat gate agrees with the TS seat gate', () => {
    */
   it('the latest fn_award_satellite_seat closes AT the cap, not one level past it', () => {
     const sql = AWARD;
-    expect(sql).toMatch(/COALESCE\(v_t\.current_level, 0\) >= v_cap/);
+    expect(sql).toContain('fn_tournament_late_registration_open(p_target_id)');
+    const admission = latestFunction('fn_tournament_late_registration_open');
+    expect(admission).toMatch(
+      /COALESCE\(t\.current_level,0\)<COALESCE\(t\.late_reg_levels,t\.rebuy_levels,0\)/
+    );
+    expect(admission).toContain(
+      'clock_timestamp()<t.started_at+make_interval(mins=>t.late_reg_mins)'
+    );
     // The post-apply assertion that the off-by-one cannot come back.
     expect(AWARD_ASSERTIONS).toMatch(/the off-by-one level guard survived the rewrite/);
   });

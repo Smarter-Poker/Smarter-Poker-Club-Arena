@@ -368,7 +368,8 @@ export const WalletService = {
    * Transfer funds between wallets (same user)
    */
   async internalTransfer(userId: string, request: TransferRequest): Promise<boolean> {
-    if (request.amount <= 0) throw new Error('Transfer amount must be positive');
+    if (!Number.isFinite(request.amount) || request.amount <= 0)
+      throw new Error('Transfer amount must be positive');
     if (request.fromWallet === request.toWallet) throw new Error('Cannot transfer to same wallet');
 
     const desc = request.note || `Transfer ${request.fromWallet} → ${request.toWallet}`;
@@ -394,20 +395,23 @@ export const WalletService = {
     });
 
     if (error) throw error;
-    if (!transferRes?.success) {
+    if (transferRes?.success !== true) {
       throw new Error(transferRes?.error || 'Insufficient balance for transfer');
     }
 
-    // Log both sides of the transfer (RPCs already log, but this provides app-level audit trail)
-    await this.logTransaction(
-      userId,
-      request.fromWallet,
-      request.amount,
-      'debit',
-      'transfer',
-      desc
-    );
-    await this.logTransaction(userId, request.toWallet, request.amount, 'credit', 'transfer', desc);
+    // Both history entries are part of the database transaction. A browser
+    // insert here would duplicate them and could fail after money committed.
+    if (
+      transferRes.from !== request.fromWallet ||
+      transferRes.to !== request.toWallet ||
+      transferRes.amount !== request.amount ||
+      !Number.isFinite(transferRes.from_balance) ||
+      !Number.isFinite(transferRes.to_balance) ||
+      transferRes.from_balance < 0 ||
+      transferRes.to_balance < 0
+    ) {
+      throw new Error('Transfer receipt was not confirmed for the requested wallets and amount');
+    }
 
     // Emit bus event so UI (header balances, cashier) updates immediately
     masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId });
@@ -428,27 +432,9 @@ export const WalletService = {
   },
 
   /**
-   * Transfer chips to another user.
-   *
-   * ── CANNOT SUCCEED FROM THE BROWSER (verified 2026-08-25) ─────────────────
-   * `wallet_user_transfer` is granted EXECUTE to `postgres` and `service_role`
-   * only — `authenticated` is not on its ACL — so every call from a signed-in
-   * user returns 42501 and this method throws. It has two LIVE call sites in
-   * AgentDashboardPage (the agent's "send chips" and "take credit back"
-   * controls), which means both of those buttons have been failing for as long
-   * as the grant has looked like this.
-   *
-   * NOT PAPERED OVER HERE. The fix is a grant plus an auth check inside the
-   * function (an agent may move chips to their own downline and nobody else),
-   * or a service-role API route the way minting goes through
-   * /api/club-arena/mint-chips. Both are server-side and out of scope for a
-   * display audit; making the client "work" by widening the grant without the
-   * auth check would let any signed-in user move any other user's chips.
-   *
-   * `retryAsync` is left in place deliberately: it only retries THROWN
-   * transient errors and supabase-js RESOLVES with `{ error }`, so a 42501 is
-   * returned once and not amplified. (Checked, because the identical wrapper
-   * around log_wallet_transaction was amplifying — that one threw.)
+   * Legacy user-to-user transfer. This RPC has no operation key, so a lost
+   * response must not trigger another submission. Only a positive server
+   * receipt can authorize success events and the application audit entries.
    */
   async transferToUser(
     fromUserId: string,
@@ -457,30 +443,21 @@ export const WalletService = {
     fromWallet: WalletType = 'PLAYER',
     toWallet: WalletType = 'PLAYER'
   ): Promise<boolean> {
-    if (amount <= 0) throw new Error('Transfer amount must be positive');
+    if (!Number.isFinite(amount) || amount <= 0)
+      throw new Error('Transfer amount must be positive');
 
-    const { data: transferData, error } = await retryAsync(async () => {
-      const res = await supabase.rpc('wallet_user_transfer', {
-        p_from_user_id: fromUserId,
-        p_to_user_id: toUserId,
-        p_amount: amount,
-        p_from_wallet: fromWallet,
-        p_to_wallet: toWallet,
-      });
-      return res;
+    const { data: transferData, error } = await supabase.rpc('wallet_user_transfer', {
+      p_from_user_id: fromUserId,
+      p_to_user_id: toUserId,
+      p_amount: amount,
+      p_from_wallet: fromWallet,
+      p_to_wallet: toWallet,
     });
 
     if (error) throw error;
-    /* Cashier audit 2026-08-27 (P1-7): the RPCs in this codebase return
-       refusals as { success: false, error } rather than throwing —
-       internalTransfer above checks it, this call discarded `data`, so a
-       refusal logged both sides and emitted BALANCE_UPDATED for a transfer
-       that never happened. Latent today (42501 from the browser, see the
-       docblock) but armed to fire the moment the grant is fixed — which is
-       the stated intended fix. */
     const parsed = transferData as { success?: boolean; error?: string } | null;
-    if (parsed && parsed.success === false) {
-      throw new Error(parsed.error || 'Transfer refused by the server');
+    if (parsed?.success !== true) {
+      throw new Error(parsed?.error || 'Transfer was not confirmed by the server');
     }
 
     // Log both sides of the user-to-user transfer

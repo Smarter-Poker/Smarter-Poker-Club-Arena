@@ -138,6 +138,12 @@ import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import { useButtonImage } from '../hooks/useButtonImage';
 
 import { cashBuyInRange, cashBuyInRefusalText } from '../lib/cashBuyIn';
+import {
+  cashBuyInJournal,
+  executeCashBuyIn,
+  sameCashBuyInIntent,
+  type CashBuyInAttempt,
+} from '../services/CashBuyInRecovery';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
@@ -2107,6 +2113,7 @@ export default function TablePage({
     lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
     lastUserEvent: engineLastUserEvent,
+    requestSnapshot: requestEngineSnapshot,
   } = useEngineTableState(tableId || undefined, {
     enabled: USE_ENGINE_WS,
     /* The break's end, from the database, handed to the reconnect ladder so it
@@ -4634,25 +4641,14 @@ export default function TablePage({
 
   // Buy-in processing lock to prevent double-click
   const buyInProcessingRef = useRef(false);
-  /**
-   * IDEMPOTENCY KEY — generated ONCE when the user first presses Confirm,
-   * held stable for the entire attempt lifecycle including offline retries.
-   *
-   * WHY: crypto.randomUUID() inside the callback produces a fresh UUID on every
-   * invocation. A network timeout after the RPC commits causes the UI to show
-   * "Buy-in failed" and invite a retry — which would call the RPC again with a
-   * new UUID, bypassing the idempotency table and double-debiting the wallet.
-   *
-   * THE FIX: mint the key here (null = no active attempt), set it at the top of
-   * onConfirmBuyIn before the first await, and clear it only on:
-   *   - confirmed success (RPC returned without error)
-   *   - user cancels (onCloseBuyInModal)
-   *   - a server-side rejection (rpcResult.success === false) — these are
-   *     genuine refusals, not network failures, and a retry would correctly fail
-   *     again, so we may safely rotate the key.
-   * Offline queue retries reuse the same key via their stored operationId.
-   */
+  // The durable journal owns an unanswered purchase across cancel/reload.
   const buyInIdempotencyKeyRef = useRef<string | null>(null);
+  const [cashBuyInRecovery, setCashBuyInRecovery] = useState<CashBuyInAttempt | null>(null);
+  const cashBuyInPendingRef = useRef<CashBuyInAttempt | null>(null);
+  const buyInOperationRef = useRef<symbol | null>(null);
+  const buyInScopeRef = useRef('');
+  const restoredBuyInScopeRef = useRef<string | null>(null);
+  buyInScopeRef.current = `${userId}:${tableId}`;
   // FIX 132: Persistent hero seat ref — set IMMEDIATELY on buy-in, never stale
   // Prevents race condition where tableState.heroSeat is 0 during DB query but user tries to sit again
   const heroSeatRef = useRef(0);
@@ -6351,6 +6347,33 @@ export default function TablePage({
   // its own state lets the placeholder survive until real data replaces it.
   // ─────────────────────────────────────────────────────────────────
   const [pendingSeat, setPendingSeat] = useState<number | null>(null);
+  useEffect(() => {
+    const scope = `${userId}:${tableId}`;
+    if (restoredBuyInScopeRef.current !== null && restoredBuyInScopeRef.current !== scope) {
+      setShowBuyInModal(false);
+      setSelectedSeat(null);
+      setPendingSeat(null);
+    }
+    restoredBuyInScopeRef.current = scope;
+    buyInOperationRef.current = null;
+    buyInProcessingRef.current = false;
+    cashBuyInPendingRef.current = null;
+    setCashBuyInRecovery(null);
+    buyInIdempotencyKeyRef.current = null;
+    if (!userId || userId === 'guest' || !tableId) return;
+    try {
+      const pending = cashBuyInJournal.read(userId, tableId);
+      if (!pending) return;
+      cashBuyInPendingRef.current = pending;
+      buyInIdempotencyKeyRef.current = pending.payload.p_idempotency_key;
+      setCashBuyInRecovery(pending);
+      setSelectedSeat(pending.payload.p_seat_number);
+      setShowBuyInModal(true);
+    } catch (error) {
+      reportError(error, 'TablePage.cash_buyin_recovery_unreadable');
+      toast.error('Your Saved Buy-In Needs Verification Before Another Purchase.');
+    }
+  }, [userId, tableId]);
   /**
    * Dan 2026-08-18: the stack the hero just bought in for. Between "buy-in
    * confirmed" and "dealt into a hand" the engine's players array does not
@@ -8906,7 +8929,10 @@ export default function TablePage({
      *      already bought in — whatever else races, that stays true.
      */
     const commitInFlight =
-      buyInProcessingRef.current || seatFirstPending || seatFirstPendingRef.current;
+      buyInProcessingRef.current ||
+      seatFirstPending ||
+      seatFirstPendingRef.current ||
+      cashBuyInRecovery !== null;
     const alreadySeated = tableState.heroSeat > 0 || heroSeatRef.current > 0;
     const sheetOpen =
       (showBuyInModal || seatFirstConfirm !== null) && !commitInFlight && !alreadySeated;
@@ -8933,6 +8959,7 @@ export default function TablePage({
          is precisely the race that took Dan off a seat he had paid for. Refs,
          not state: a value committed during this tick is visible here and the
          re-rendered state is not. */
+      if (cashBuyInPendingRef.current) return;
       if (buyInProcessingRef.current || seatFirstPendingRef.current || heroSeatRef.current > 0)
         return;
 
@@ -8966,7 +8993,14 @@ export default function TablePage({
        re-evaluated is not a guard. Pressing Buy In flips `seatFirstPending`
        true and must tear this interval down in that same commit. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showBuyInModal, seatFirstConfirm, tableId, seatFirstPending, tableState.heroSeat]);
+  }, [
+    showBuyInModal,
+    seatFirstConfirm,
+    tableId,
+    seatFirstPending,
+    tableState.heroSeat,
+    cashBuyInRecovery,
+  ]);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -18591,6 +18625,12 @@ export default function TablePage({
       return;
     }
 
+    if (cashBuyInPendingRef.current) {
+      setCashBuyInRecovery(cashBuyInPendingRef.current);
+      setSelectedSeat(cashBuyInPendingRef.current.payload.p_seat_number);
+      setShowBuyInModal(true);
+      return;
+    }
     console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
     // Paint the seat as taken THIS FRAME, before any network work starts.
     setPendingSeat(seatNumber);
@@ -25267,6 +25307,7 @@ export default function TablePage({
            the bus round trip. */
 
         buyInSecondsLeft={buyInSecondsLeft}
+        cashBuyInRecovery={cashBuyInRecovery?.payload ?? null}
         onCloseBuyInModal={() => {
           // Releasing the modal must release the optimistic seat too, or the
           // player is locked out of every seat at the table by their own
@@ -25274,239 +25315,151 @@ export default function TablePage({
           setShowBuyInModal(false);
           setPendingSeat(null);
           setSelectedSeat(null);
-          // A cancel is a clean end to this attempt — rotate the key so any
-          // future attempt at the same seat+amount is a distinct transaction.
-          buyInIdempotencyKeyRef.current = null;
+          // Closing the sheet does not cancel a request that may have committed.
+          // Its durable payload and operation ID remain available for recovery.
         }}
         onConfirmBuyIn={async (amount, autoRebuy) => {
           if (buyInProcessingRef.current) return false;
           buyInProcessingRef.current = true;
-          const optimisticSeat = selectedSeat;
-          let seatedOptimistically = false;
+          const operation = Symbol('cash-buy-in');
+          buyInOperationRef.current = operation;
+          const scope = `${userId}:${tableId}`;
+          const stillCurrent = () =>
+            buyInScopeRef.current === scope && buyInOperationRef.current === operation;
           let buyInCommitted = false;
-          /** Undo the optimistic seat when the server refuses the buy-in. */
-          const revertSeat = () => {
-            if (buyInCommitted || !seatedOptimistically || !optimisticSeat) return;
-            setTableState((prev) => {
-              const players = [...prev.players];
-              if (players[optimisticSeat - 1]?.id === userId) {
-                players[optimisticSeat - 1] = null as any;
-              }
-              return { ...prev, players, heroSeat: 0 };
-            });
-            heroSeatRef.current = 0;
-            setPendingSeat(null);
-          };
           try {
-            // Mint a stable idempotency key for this entire attempt lifecycle.
-            // If one already exists (this is a retry of a failed-to-deliver RPC),
-            // REUSE IT — that is the whole point. A new UUID here would bypass the
-            // idempotency table and double-debit the wallet on a network retry.
-            if (!buyInIdempotencyKeyRef.current) {
-              buyInIdempotencyKeyRef.current = uuid();
-            }
-            const stableIdempotencyKey = buyInIdempotencyKeyRef.current;
-
-            pendingSeatStackRef.current = amount;
-            // Dan 2026-08-15: chips land in the seat on CONFIRM, not on RPC
-            // completion. Paint the stack in this frame. The atomic buy-in
-            // owns seat validation; no preliminary network read may delay it. `seatedOptimistically` gates
-            // that rollback so we never tear down a seat we never painted.
-            if (userId && userId !== 'guest' && tableId && optimisticSeat) {
-              // Keep the sheet visible until the server answers. The seat
-              // can paint optimistically underneath its Joining state.
-              setTableState((prev) => {
-                const updatedPlayers = [...prev.players];
-                for (let j = 0; j < updatedPlayers.length; j++) {
-                  if (updatedPlayers[j]?.id === userId && j !== optimisticSeat - 1) {
-                    updatedPlayers[j] = null as any;
-                  }
-                }
-                updatedPlayers[optimisticSeat - 1] = {
-                  id: userId,
-                  name: username || 'Player',
-                  avatar: heroAvatarUrl || '',
-                  stack: amount,
-                  status: 'active',
-                  isHero: true,
-                  showCards: false,
-                };
-                return { ...prev, players: updatedPlayers, heroSeat: optimisticSeat };
-              });
-              heroSeatRef.current = optimisticSeat;
-              // Taking a seat is the one thing that clears the left-seat latch.
-              leftSeatPendingRef.current = false;
-              setPendingSeat(null);
-              seatedOptimistically = true;
-            }
-            if (userId && userId !== 'guest' && tableId && selectedSeat) {
-              try {
-                // atomic_table_buyin validates seat ownership atomically. A
-                // cosmetic seat read used to stall this purchase indefinitely.
-                // stableIdempotencyKey was minted once at the top of this
-                // callback and is held in buyInIdempotencyKeyRef. Do NOT mint
-                // a new UUID here — that would bypass the idempotency table on
-                // a network retry and double-debit the wallet.
-                const payload = {
-                  p_user_id: userId,
-                  p_table_id: tableId,
-                  p_seat_number: selectedSeat,
-                  p_amount: amount,
-                  p_auto_rebuy: autoRebuy || false,
-                  p_idempotency_key: stableIdempotencyKey,
-                  p_club_id: useUserStore.getState().currentClubId ?? null,
-                };
-                const { data: rpcData, error: rpcErr } = await supabase.rpc(
-                  'atomic_table_buyin',
-                  payload
-                );
-                if (rpcErr) {
-                  reportError(rpcErr, 'TablePage.atomic_table_buyin_FAILED');
-                  if (rpcErr.message?.includes('FetchError') || !navigator.onLine) {
-                    // The buy-in is NOT queued for replay. A queued buy-in is a
-                    // debit that fires at a moment nobody chose, against a seat
-                    // that may be gone; the queue cannot check freshness with
-                    // anything but the device's own clock. Release the
-                    // optimistic seat and say so. stableIdempotencyKey stays in
-                    // its ref, so an immediate retry is still de-duplicated by
-                    // transaction_idempotency_keys on the server.
-                    revertSeat();
-                    toast?.error(
-                      'You Are Offline. Try The Buy-In Again When Your Connection Returns.'
-                    );
-                    return false;
-                  }
-                  throw new Error('Failed to buy-in: ' + rpcErr.message);
-                }
-                /* AUDIT 2026-08-25 — A BARE JSON.parse ON A MONEY PATH.
-                   This was `typeof rpcData === 'string' ? JSON.parse(rpcData)
-                   : rpcData`, unguarded. `atomic_table_buyin` had already
-                   RETURNED WITHOUT ERROR at this point, so the transaction has
-                   committed and the chips have left the player's wallet. A
-                   throw from JSON.parse lands in the catch forty lines below,
-                   which calls revertSeat() and says "Buy-in failed. Please try
-                   again." — inviting a second buy-in against a wallet that has
-                   already paid for the first.
-
-                   An unparseable body is not evidence of refusal. Report it,
-                   treat the result as unknown, and let the code fall through
-                   to the success path: the ONLY thing that may revert a seat
-                   here is `rpcErr` (the RPC itself failed) or an explicit
-                   `success: false` from the function. Nothing is probed live
-                   to prove this — CLAUDE.md §11.5 — it is a strictly narrower
-                   failure condition than the one it replaces. */
-                let rpcResult: any = rpcData;
-                if (typeof rpcData === 'string') {
-                  try {
-                    rpcResult = JSON.parse(rpcData);
-                  } catch (parseErr) {
-                    reportError(
-                      { parseErr, rpcData },
-                      'TablePage.atomic_table_buyin_unparseable_response'
-                    );
-                    rpcResult = null;
-                  }
-                }
-                if (rpcResult && rpcResult.success === false) {
-                  reportError(rpcResult, 'TablePage.atomic_table_buyin_returned_failure');
-                  // Server explicitly refused (insufficient funds, seat taken, etc.).
-                  // This is a genuine rejection, NOT a network failure — it is safe
-                  // to rotate the key so a corrected retry is a fresh transaction.
-                  buyInIdempotencyKeyRef.current = null;
-                  throw new Error(
-                    'Buy-in rejected: ' + (rpcResult.error || 'Unknown server error')
-                  );
-                }
-                buyInCommitted = true;
-                // RPC committed — clear the key. The seat is taken; any future
-                // buy-in at this table is a distinct transaction.
-                buyInIdempotencyKeyRef.current = null;
-                applyBalanceDelta((prev) => (prev === null ? null : Math.max(0, prev - amount)));
-                totalBuyInRef.current += amount;
-                if (amount > peakStackRef.current) peakStackRef.current = amount;
-                // The seat + stack were already painted above, before this RPC
-                // was even sent. Nothing to do here but confirm the ref.
-                heroSeatRef.current = selectedSeat;
-                // Taking a seat is the one thing that clears the left-seat latch.
-                leftSeatPendingRef.current = false;
-                seatAcquiredAtRef.current = Date.now();
-                // A new seat is a clean slate: a later removal must be announced again.
-                bootNoticeShownRef.current = false;
-                // These notifications do not own the debit. Neither a throw
-                // nor a stalled engine acknowledgement may revert a paid seat
-                // or hold the confirmation latch after Postgres has committed.
-                void Promise.resolve()
-                  .then(() => HydraService.onRealPlayerJoined(tableId, userId))
-                  .catch((error) =>
-                    reportError(error, 'TablePage.buyin_hydra_notification_failed')
-                  );
-                void Promise.resolve()
-                  .then(() =>
-                    sendAction('player_seated', {
-                      seat: optimisticSeat,
-                      userId,
-                      stack: amount,
-                      autoRebuy,
-                    })
-                  )
-                  .catch((error) => {
-                    reportError(error, 'TablePage.buyin_engine_notification_failed');
-                    toast.warning('Buy-In Confirmed. Reconnecting Your Seat To The Table.');
-                  });
-
-                // The game engine's 'player_seated' event will update table state globally.
-                // RoomService presence is no longer needed since TableWebSocket handles connection.
-                masterBus.emit('TABLE_SEATED', {
-                  tableId,
-                  seat: selectedSeat,
-                  tableName: tableState.tableName,
-                  userId,
-                });
-                // Dan 2026-08-26: the buy-in confirmation is immediately
-                // followed by the entry choice — post the big blind now, or
-                // wait for it to reach the seat. Cash only; a tournament
-                // entrant is engine-seated with no blind decision to make.
-                if (!tableStateRef.current.isTournament) {
-                  setPostOrWaitOpen(true);
-                }
-              } catch (error) {
-                if (buyInCommitted) throw error;
-                reportError(error, 'TablePage.Buyin_FAILED');
-                revertSeat();
-                /* NAME THE RULE THAT FIRED (2026-08-28). atomic_table_buyin
-                   refuses for sixteen distinct reasons and this branch used to
-                   answer all of them with "check your balance" - the one thing
-                   that is usually NOT the problem. cashBuyInRefusalText returns
-                   null for anything it does not recognise, so an unknown
-                   refusal keeps the old text and the reportError above still
-                   carries the raw message. */
-                const refusal = cashBuyInRefusalText(error);
-                toast.error(refusal ?? 'Buy-in failed. Please try again or check your balance.');
-                return false;
-              }
-            } else {
-              reportError(
-                { userId, tableId, selectedSeat },
-                'TablePage.FELL_THROUGH__no_branch_matched'
-              );
-              toast.error('Unable to complete buy-in. Please try again.');
+            if (!userId || userId === 'guest' || !tableId || !selectedSeat) {
+              toast.error('Unable To Verify Your Table And Seat.');
               return false;
             }
+            const reviewed =
+              cashBuyInRecovery?.payload.p_user_id.toLowerCase() === userId.toLowerCase() &&
+              cashBuyInRecovery.payload.p_table_id.toLowerCase() === tableId.toLowerCase()
+                ? cashBuyInRecovery
+                : null;
+            const intent = reviewed?.payload ?? {
+              p_user_id: userId,
+              p_table_id: tableId,
+              p_seat_number: selectedSeat,
+              p_amount: amount,
+              p_auto_rebuy: autoRebuy || false,
+              p_club_id: useUserStore.getState().currentClubId ?? null,
+            };
+            const { attempt, recovered } = await cashBuyInJournal.reserve(intent);
+            if (!stillCurrent()) return false;
+            cashBuyInPendingRef.current = attempt;
+            buyInIdempotencyKeyRef.current = attempt.payload.p_idempotency_key;
+            setCashBuyInRecovery(attempt);
+            if (
+              recovered &&
+              (reviewed?.payload.p_idempotency_key !== attempt.payload.p_idempotency_key ||
+                !sameCashBuyInIntent(intent, attempt.payload))
+            ) {
+              setSelectedSeat(attempt.payload.p_seat_number);
+              toast.warning('Review Your Original Buy-In Before Retrying.');
+              return false;
+            }
+            const outcome = await executeCashBuyIn(attempt, recovered, undefined, stillCurrent);
+            if (outcome.kind !== 'unknown') {
+              // Cleanup failure leaves a safely replayable receipt, never a new
+              // apparent failure after the server has confirmed the purchase.
+              void cashBuyInJournal
+                .complete(attempt)
+                .catch((error) =>
+                  reportError(error, 'TablePage.cash_buyin_journal_cleanup_failed')
+                );
+            }
+            if (!stillCurrent()) return false;
+            if (outcome.kind === 'unknown') {
+              reportError(outcome.error, 'TablePage.cash_buyin_outcome_unknown');
+              toast.warning('Buy-In Not Yet Confirmed. Retrying Uses The Same Request.');
+              return false;
+            }
+            cashBuyInPendingRef.current = null;
+            buyInIdempotencyKeyRef.current = null;
+            setCashBuyInRecovery(null);
+            if (outcome.kind === 'rejected') {
+              reportError(outcome.error, 'TablePage.atomic_table_buyin_returned_failure');
+              toast.error(cashBuyInRefusalText(outcome.error) ?? 'The Server Refused This Buy-In.');
+              return false;
+            }
+            buyInCommitted = true;
+            const paid = attempt.payload;
+            // Wallet broadcasts may already contain this debit. Re-read the
+            // balance instead of subtracting it again during receipt recovery.
+            retryAccountBalance();
+            void Promise.resolve()
+              .then(() => {
+                if (buyInScopeRef.current === scope) requestEngineSnapshot();
+              })
+              .catch((error) => {
+                reportError(error, 'TablePage.buyin_snapshot_refresh_failed');
+                if (buyInScopeRef.current === scope)
+                  toast.warning('Buy-In Confirmed. Reconnecting Your Table Display.');
+              });
+            if (!outcome.fromReceipt) {
+              pendingSeatStackRef.current = paid.p_amount;
+              // Only a confirmed new purchase may paint its initial stack.
+              // A historical receipt cannot reseat somebody who already left,
+              // or replace the current stack with their old buy-in amount.
+              if (!(tableStateRef.current.heroSeat > 0)) {
+                setTableState((prev) => {
+                  if (prev.heroSeat > 0) return prev;
+                  const players = [...prev.players];
+                  players[paid.p_seat_number - 1] = {
+                    id: userId,
+                    name: username || 'Player',
+                    avatar: heroAvatarUrl || '',
+                    stack: paid.p_amount,
+                    status: 'active',
+                    isHero: true,
+                    showCards: false,
+                  };
+                  return { ...prev, players, heroSeat: paid.p_seat_number };
+                });
+                heroSeatRef.current = paid.p_seat_number;
+              }
+              totalBuyInRef.current += paid.p_amount;
+              peakStackRef.current = Math.max(peakStackRef.current, paid.p_amount);
+              leftSeatPendingRef.current = false;
+              seatAcquiredAtRef.current = Date.now();
+              bootNoticeShownRef.current = false;
+              void Promise.resolve()
+                .then(() => HydraService.onRealPlayerJoined(tableId, userId))
+                .catch((error) => reportError(error, 'TablePage.buyin_hydra_notification_failed'));
+              masterBus.emit('TABLE_SEATED', {
+                tableId,
+                seat: paid.p_seat_number,
+                tableName: tableState.tableName,
+                userId,
+              });
+              if (!tableStateRef.current.isTournament) setPostOrWaitOpen(true);
+            } else {
+              toast.warning('Your Previous Buy-In Is Confirmed. Updating Your Table.');
+            }
+            setPendingSeat(null);
             setShowBuyInModal(false);
             return true;
-          } catch (outerErr) {
-            reportError(outerErr, 'TablePage.UNHANDLED_error_in_onConfirm');
-            revertSeat();
+          } catch (error) {
+            reportError(error, 'TablePage.cash_buyin_confirmation_failed');
+            if (!stillCurrent()) return false;
             if (buyInCommitted) {
               toast.warning('Buy-In Confirmed. Your Table Display Is Catching Up.');
+              setShowBuyInModal(false);
             } else {
-              toast.error('Unable To Complete Buy-In. Please Try Again.');
+              toast.error(
+                cashBuyInPendingRef.current
+                  ? 'Unable To Confirm Your Buy-In. The Original Request Is Kept For Recovery.'
+                  : 'Unable To Start Your Buy-In. Please Try Again.'
+              );
             }
-            if (buyInCommitted) setShowBuyInModal(false);
             return buyInCommitted;
           } finally {
-            buyInProcessingRef.current = false;
-            if (buyInCommitted) setSelectedSeat(null);
+            if (buyInOperationRef.current === operation) {
+              buyInProcessingRef.current = false;
+              buyInOperationRef.current = null;
+              if (buyInCommitted && buyInScopeRef.current === scope) setSelectedSeat(null);
+            }
           }
         }}
         // Rabbit Hunt

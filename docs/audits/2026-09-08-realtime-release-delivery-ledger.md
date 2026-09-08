@@ -152,3 +152,34 @@ remain **not running in the engine** at this snapshot, despite being merged
 and present in the public repository artifact. The next engine adoption must
 be verified before claiming either server behavior is live. The new settlement
 blockage telemetry is likewise tracked separately from already served code.
+
+## Production Reconciliation, 20:03-20:06 UTC
+
+The scheduled Hetzner deployment run 34270395338 / job 102210235665 succeeded.
+Its public-host probe at 19:56:53 and engine_leader proof at 19:56:55 both report
+ad6342dfbe4699357a88be7c9e3aacc4d5ac3ae3, replacing 6f11ed3f. A fresh public
+health read independently reports ad6342df. This adopts #3850 reconnect wave
+compensation, #3854 Spin draw readback and #3857 settlement blockage health.
+All eight resume waves completed, 267 of 267 tables resumed. Settlement fields
+are present with status ok and zero blocked settlements at this sample.
+
+Both public Club Arena and ca-static build-info agree on
+b0eeaf65c52ae257c2a7bcb17cfa818404e5461a, built 19:45:29 by publisher run 34270591657. These are public artifact reads, not assumptions from merged PRs.
+
+The reported Madness table is dealing hand 8303519 with six seated and five
+dealable players. Both previously stuck Spin tournaments now report RUNNING in
+the database. The bounded four-minute engine log sample contains no repeat of
+the prior Spin draw readback loop.
+
+Remaining latency is material: at 20:06, the 2,000-sample hand-gap window is
+p50 2,003ms, p90 8,125ms, max 29,304ms. Settlement post-commit phase p90 is
+10,753ms and awaiting post-hand work p90 is 4,976ms. Per-phase percentiles have
+different sample populations and must not be summed. Seven durable envelopes
+were pending in a contemporaneous database sample, with the oldest only seconds
+old. These measurements do not support closing the hand-delay incident.
+
+The new cash buy-in receipt function was applied at catalog version
+20260908194834 and verified separately. Its durable client recovery change is
+still awaiting branch publication and CI at this checkpoint. Physical iPad
+home-screen and offline/reconnect testing remain unverified because the browser
+connection tool times out. No production buy-in or financial test was performed.

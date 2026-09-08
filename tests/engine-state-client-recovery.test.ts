@@ -147,6 +147,21 @@ describe('EngineStateClient — heartbeats cannot acknowledge missing game state
   const resyncs = (ws: FakeWebSocket) =>
     ws.sent.map((s) => JSON.parse(s)).filter((m) => m.type === 'RESYNC');
 
+  it('refreshes a confirmed purchase through the current table socket without another connection', async () => {
+    const { c, ws } = await openTable();
+    try {
+      const before = resyncs(ws).length;
+      const sockets = FakeWebSocket.instances.length;
+      c.requestSnapshot();
+      expect(resyncs(ws)).toHaveLength(before + 1);
+      expect(resyncs(ws).at(-1)).toMatchObject({ type: 'RESYNC', tableId: TABLE });
+      expect(FakeWebSocket.instances).toHaveLength(sockets);
+      expect(ws.closedWith).toHaveLength(0);
+    } finally {
+      c.disconnect();
+    }
+  });
+
   it('requests the missing first snapshot and reconnects despite continuing pings', async () => {
     const { c, ws, statuses } = await openTable();
     try {

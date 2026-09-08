@@ -330,7 +330,7 @@ own money routes under `pages/api/club-arena/`, in another repo, and nothing has
 ever been checked against that register. A door is only closed if both repos
 agree it is closed.
 
-**Phase 7 status, 2026-09-07 22:35 UTC (built; deep dive pending before phase 8).**
+**Phase 7 status, 2026-09-07 23:05 UTC (built, deep dive done - `docs/changelog/2026-09-07-the-second-writer-is-the-whole-world-hub.md` - phase closed).**
 `docs/changelog/2026-09-07-phase-7-the-player-and-the-second-writer.md`. 9.5:
 `fn_ca_chip_statement` and `ChipStatement` on the wallet page and the club
 financials page - both directions, balance by club, and the nightly reading the

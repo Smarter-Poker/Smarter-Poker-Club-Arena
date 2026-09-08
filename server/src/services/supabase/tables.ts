@@ -58,7 +58,7 @@ export async function loadSeatedPlayers(tableId: string) {
   const embedded = await supabase
     .from('table_seats')
     .select(
-      `${SEAT_SELECT}, profile:profiles!fk_table_seats_user_id_profiles(${SEATED_PROFILE_SELECT})`
+      `${SEAT_SELECT}, profile:profiles!fk_table_seats_user_id_profiles(${SEATED_PROFILE_SELECT}, is_vip, vip_tier, vip_expires_at)`
     )
     .eq('table_id', tableId)
     .is('left_at', null)
@@ -97,7 +97,7 @@ export async function loadSeatedPlayers(tableId: string) {
   const userIds = seats.map((d) => d.user_id);
   const { data: profiles, error: profileErr } = await supabase
     .from('profiles')
-    .select(SEATED_PROFILE_SELECT)
+    .select(`${SEATED_PROFILE_SELECT}, is_vip, vip_tier, vip_expires_at`)
     .in('id', userIds);
   if (profileErr) {
     throw new Error('loadSeatedPlayers profiles failed for ' + tableId + ': ' + profileErr.message);
@@ -135,6 +135,9 @@ interface SeatedProfileRow {
   use_real_name: boolean | null;
   equipped_frame: string | null;
   equipped_aura: string | null;
+  is_vip?: boolean | null;
+  vip_tier?: string | null;
+  vip_expires_at?: string | null;
 }
 
 /** One seat + its profile -> the SeatedPlayer shape the engine deals from. Shared by both read paths. */
@@ -149,6 +152,11 @@ function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
     stack: seat.stack,
     seat_number: seat.seat_number || 1,
     is_horse: profile.is_horse || false,
+    reconnect_membership: {
+      is_vip: profile.is_vip,
+      vip_tier: profile.vip_tier,
+      vip_expires_at: profile.vip_expires_at,
+    },
     horse_profile: (profile.horse_profile ?? undefined) as string | undefined,
     time_bank_remaining: seat.time_bank_remaining || 0,
     time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,

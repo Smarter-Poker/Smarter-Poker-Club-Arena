@@ -680,7 +680,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           ),
           'Tournament.satellite_target_unreadable'
         );
-        return;
+        throw new Error('Satellite award incomplete: satellite_target_unreadable');
       }
       target = (data as SatelliteTarget | null) ?? null;
     }
@@ -730,7 +730,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         ),
         'Tournament.satellite_finishers_unreadable'
       );
-      return;
+      throw new Error('Satellite award incomplete: satellite_finishers_unreadable');
     }
     const ranked = finishers ?? [];
     if (ranked.length === 0) return;
@@ -802,7 +802,10 @@ export class TournamentManager extends TournamentManagerEliminations {
           ),
           'Tournament.satellite_cash_failed'
         );
-        return;
+        throw new Error('Satellite award incomplete: satellite_cash_failed');
+      }
+      if (res.fully_settled !== true || (res.amount_paid ?? 0) < amount) {
+        throw new Error(`Satellite cash payment incomplete or unconfirmed for ${userId}`);
       }
     };
 

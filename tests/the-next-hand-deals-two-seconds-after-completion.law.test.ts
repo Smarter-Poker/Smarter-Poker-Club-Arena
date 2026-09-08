@@ -157,11 +157,11 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
   it('the roster is one round trip through the profiles FK, with the two-step read as the fallback', () => {
     const fn = TABLES.slice(TABLES.indexOf('export async function loadSeatedPlayers('));
     expect(fn).toMatch(
-      /profile:profiles!fk_table_seats_user_id_profiles\(\$\{SEATED_PROFILE_SELECT\}\)/
+      /profile:profiles!fk_table_seats_user_id_profiles\(\$\{SEATED_PROFILE_SELECT\}, is_vip, vip_tier, vip_expires_at\)/
     );
     expect(fn).toMatch(/DB\.load_seated_players_embed_fallback/);
     expect(fn).toMatch(
-      /\.from\('profiles'\)\s*\.select\(SEATED_PROFILE_SELECT\)\s*\.in\('id', userIds\)/
+      /\.from\('profiles'\)\s*\.select\(`\$\{SEATED_PROFILE_SELECT\}, is_vip, vip_tier, vip_expires_at`\)\s*\.in\('id', userIds\)/
     );
   });
 

@@ -28,7 +28,7 @@ const BASE = read('src/tournament/TournamentManagerBase.ts');
 const MANAGER = read('src/tournament/TournamentManager.ts');
 const DEALING = read('src/engine/ServerTableEngineDealing.ts');
 const CAPACITY_SQL = read(
-  '../supabase/migrations/20260907204500_late_registration_can_build_its_first_table.sql'
+  '../supabase/migrations/20260908042200_late_registration_can_build_its_first_table.sql'
 );
 
 describe('the seat law is arithmetic, not preference', () => {

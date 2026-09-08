@@ -10,7 +10,7 @@
 -- primitive is the authority for capacity. Capacity is derived from the
 -- tournament contract itself at its current blind level; it does not need a
 -- live or historical table. The registration wrapper installed by
--- 20260907180000 reserves its not-yet-inserted entrant through that primitive
+-- 20260908042000 reserves its not-yet-inserted entrant through that primitive
 -- inside the same outer transaction as debit, roster insertion and seating.
 -- The manager calls the SAME primitive with no reservation. Both calls take
 -- the tournament row lock and re-count demand and capacity after waiting, so
@@ -1028,7 +1028,7 @@ BEGIN
 END;
 $function$;
 
--- 20260907180000 installed a deliberately small wrapper around the historical
+-- 20260908042000 installed a deliberately small wrapper around the historical
 -- money function. Point that wrapper at the one capacity authority. A failed
 -- first registration lives in a PL/pgSQL subtransaction, so its debit, roster
 -- row and seat attempt are rolled back before the reservation is made; the
@@ -1068,7 +1068,7 @@ END;
 $function$;
 $registration_wrapper$;
 BEGIN
-  -- 20260907205918 preserves this capacity wrapper under a private name and
+  -- 20260908042400 preserves this capacity wrapper under a private name and
   -- installs a no-default lifecycle gate on the public signature. On an
   -- ordered migration replay, refresh the preserved capacity core instead of
   -- restoring DEFAULT false on the newer public function: PostgreSQL cannot
@@ -1123,7 +1123,7 @@ REVOKE ALL ON FUNCTION public.fn_complete_tournament_entry_reprice(uuid)
   FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.fn_complete_tournament_entry_reprice(uuid)
   TO service_role;
--- This migration replaces the add-on close after 20260907180000. Reassert its
+-- This migration replaces the add-on close after 20260908042000. Reassert its
 -- service-only boundary on the final definition too.
 REVOKE ALL ON FUNCTION public.fn_close_tournament_addon_period(uuid,text)
   FROM PUBLIC,anon,authenticated,service_role;

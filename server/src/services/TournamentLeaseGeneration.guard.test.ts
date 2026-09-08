@@ -11,7 +11,7 @@ const migration = readFileSync(
     repo,
     'supabase',
     'migrations',
-    '20260908021000_tournament_leases_have_fencing_generations.sql'
+    '20260908042900_tournament_leases_have_fencing_generations.sql'
   ),
   'utf8'
 );

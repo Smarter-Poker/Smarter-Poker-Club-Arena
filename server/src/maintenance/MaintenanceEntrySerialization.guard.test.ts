@@ -16,7 +16,7 @@ const SQL = readFileSync(
     '..',
     'supabase',
     'migrations',
-    '20260907235950_maintenance_announcement_and_entry_purchases_are_serialized.sql'
+    '20260908042800_maintenance_announcement_and_entry_purchases_are_serialized.sql'
   ),
   'utf8'
 );

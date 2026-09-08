@@ -29,11 +29,11 @@ const RECOVERY = code(read('src/tournament/tournamentRecovery.ts'));
 const MANAGER = code(read('src/tournament/TournamentManager.ts'));
 const ELIM = code(read('src/tournament/TournamentManagerEliminations.ts'));
 const LATE_REG = sql(
-  read('../supabase/migrations/20260907204500_late_registration_can_build_its_first_table.sql')
+  read('../supabase/migrations/20260908042200_late_registration_can_build_its_first_table.sql')
 );
 const ATOMIC_SATELLITE = sql(
   read(
-    '../supabase/migrations/20260907205500_a_satellite_finish_pays_one_frozen_entitlement_plan.sql'
+    '../supabase/migrations/20260908042300_a_satellite_finish_pays_one_frozen_entitlement_plan.sql'
   )
 );
 

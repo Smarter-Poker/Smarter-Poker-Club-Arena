@@ -27,7 +27,7 @@ describe('production database changes are named and ledgered', () => {
         root,
         'supabase',
         'migrations',
-        '20260907235121_retire_public_arbitrary_sql_executor.sql'
+        '20260908042700_retire_public_arbitrary_sql_executor.sql'
       ),
       'utf8'
     );

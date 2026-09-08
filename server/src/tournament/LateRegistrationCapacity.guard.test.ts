@@ -10,7 +10,7 @@ const MIGRATION = readFileSync(
     '..',
     'supabase',
     'migrations',
-    '20260907204500_late_registration_can_build_its_first_table.sql'
+    '20260908042200_late_registration_can_build_its_first_table.sql'
   ),
   'utf8'
 );

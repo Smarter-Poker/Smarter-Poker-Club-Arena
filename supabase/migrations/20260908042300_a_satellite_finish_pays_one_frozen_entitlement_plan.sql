@@ -214,7 +214,7 @@ FOR EACH ROW EXECUTE FUNCTION public.trg_freeze_satellite_settlement_batch();
 
 -- The previous seat helper had a second, level-only interpretation of a
 -- RUNNING target's entry window. Replace exactly that block with the database
--- authority installed by 20260907204500. This is an asserted source rewrite:
+-- authority installed by 20260908042200. This is an asserted source rewrite:
 -- an unexpected deployed definition refuses the migration instead of silently
 -- leaving the divergent gate in place.
 DO $unify_satellite_target_entry_window$

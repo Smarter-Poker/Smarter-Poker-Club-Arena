@@ -16,7 +16,7 @@ const MIGRATION = readFileSync(
     '..',
     'supabase',
     'migrations',
-    '20260908023000_table_leases_and_hand_commits_have_generations.sql'
+    '20260908043100_table_leases_and_hand_commits_have_generations.sql'
   ),
   'utf8'
 );
@@ -27,7 +27,7 @@ const ORIGINAL = readFileSync(
     '..',
     'supabase',
     'migrations',
-    '20260907203000_an_accepted_hand_is_one_commit_and_stats_leave_the_hot_path.sql'
+    '20260908042100_an_accepted_hand_is_one_commit_and_stats_leave_the_hot_path.sql'
   ),
   'utf8'
 );
@@ -67,7 +67,7 @@ const lockedTableRead = 'FROM public.tables t\n   WHERE t.id = p_table_id\n   FO
 describe('table leases and accepted hands carry exact generations', () => {
   it('adds non-null generation and protocol columns without rewriting old authority as v2', () => {
     expect(MIGRATION).toContain(
-      '20260908023000 requires the tournament lease generation migration first'
+      '20260908043100 requires the tournament lease generation migration first'
     );
     expect(MIGRATION).toContain(
       'ADD COLUMN IF NOT EXISTS lease_generation uuid DEFAULT gen_random_uuid()'

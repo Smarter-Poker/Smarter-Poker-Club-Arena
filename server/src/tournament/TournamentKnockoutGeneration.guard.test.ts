@@ -13,7 +13,7 @@ const SQL = readFileSync(
     '..',
     'supabase',
     'migrations',
-    '20260907203000_an_accepted_hand_is_one_commit_and_stats_leave_the_hot_path.sql'
+    '20260908042100_an_accepted_hand_is_one_commit_and_stats_leave_the_hot_path.sql'
   ),
   'utf8'
 );

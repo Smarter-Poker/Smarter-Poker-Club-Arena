@@ -25,7 +25,7 @@ const recovery = code(read('src/tournament/tournamentRecovery.ts'));
 const gameServer = code(read('src/GameServer.ts'));
 const managerBase = code(read('src/tournament/TournamentManagerBase.ts'));
 const finishCertificate = code(
-  read('../supabase/migrations/20260907210000_completed_means_financially_certified.sql')
+  read('../supabase/migrations/20260908042600_completed_means_financially_certified.sql')
 );
 
 const sqlFunction = (source: string, name: string): string => {

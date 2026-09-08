@@ -17,7 +17,7 @@ const SQL = readFileSync(
     '..',
     'supabase',
     'migrations',
-    '20260907180000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
+    '20260908042000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
   ),
   'utf8'
 );

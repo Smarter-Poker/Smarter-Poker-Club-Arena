@@ -1,4 +1,4 @@
--- 20260907235121_retire_public_arbitrary_sql_executor.sql
+-- 20260908042700_retire_public_arbitrary_sql_executor.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

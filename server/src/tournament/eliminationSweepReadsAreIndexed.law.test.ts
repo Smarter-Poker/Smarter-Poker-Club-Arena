@@ -35,7 +35,7 @@ const src = readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'), 'u
 const migration = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260907180000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
+    '../../../supabase/migrations/20260908042000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
   ),
   'utf8'
 );

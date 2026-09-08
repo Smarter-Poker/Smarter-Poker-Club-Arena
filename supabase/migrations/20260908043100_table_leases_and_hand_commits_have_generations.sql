@@ -51,7 +51,7 @@ BEGIN
           AND c.is_nullable = 'NO'
      ) THEN
     RAISE EXCEPTION
-      '20260908023000 requires the tournament lease generation migration first';
+      '20260908043100 requires the tournament lease generation migration first';
   END IF;
 END;
 $assert_hand_fence_prerequisites$;

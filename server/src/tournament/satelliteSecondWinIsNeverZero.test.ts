@@ -26,7 +26,7 @@ const migration = readFileSync(
     '..',
     'supabase',
     'migrations',
-    '20260907205500_a_satellite_finish_pays_one_frozen_entitlement_plan.sql'
+    '20260908042300_a_satellite_finish_pays_one_frozen_entitlement_plan.sql'
   ),
   'utf8'
 );

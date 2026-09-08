@@ -10,7 +10,7 @@ const settlement = read('src/engine/ServerTableEngineSettlement.ts');
 const handHistory = read('src/services/supabase/handHistory.ts');
 const projection = read('src/services/supabase/handProjection.ts');
 const migration = read(
-  '../supabase/migrations/20260908040000_post_commit_obligations_are_atomic_and_resumable.sql'
+  '../supabase/migrations/20260908043400_post_commit_obligations_are_atomic_and_resumable.sql'
 );
 
 describe('an accepted hand cannot outrun its durable post-commit obligations', () => {

@@ -31,7 +31,7 @@ const THAW_SQL = read(
   'supabase/migrations/20260902091000_the_thaw_gives_back_every_frozen_minute.sql'
 );
 const ENTRY_BOUNDARY_SQL = read(
-  'supabase/migrations/20260907235950_maintenance_announcement_and_entry_purchases_are_serialized.sql'
+  'supabase/migrations/20260908042800_maintenance_announcement_and_entry_purchases_are_serialized.sql'
 );
 const HOOK = read('src/hooks/useMaintenanceBreak.ts');
 

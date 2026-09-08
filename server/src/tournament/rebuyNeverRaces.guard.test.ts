@@ -40,7 +40,7 @@ describe('the elimination CAS re-checks the chips, not just the status', () => {
     const sql = fs.readFileSync(
       path.join(
         MIGRATIONS,
-        '20260907180000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
+        '20260908042000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
       ),
       'utf8'
     );
@@ -134,7 +134,7 @@ describe('the SQL side matches: a rebuy needs no seat', () => {
     // that private core so this law continues to pin the distinction between
     // a seatless rebuy and an add-on that must land on one live seat.
     const lifecycleSql = fs.readFileSync(
-      path.join(MIGRATIONS, '20260907205918_tournament_places_settle_and_complete_atomically.sql'),
+      path.join(MIGRATIONS, '20260908042400_tournament_places_settle_and_complete_atomically.sql'),
       'utf8'
     );
     const lifecycleWrapper = sliceBetween(
@@ -155,7 +155,7 @@ describe('the SQL side matches: a rebuy needs no seat', () => {
     const sql = fs.readFileSync(
       path.join(
         MIGRATIONS,
-        '20260907203000_an_accepted_hand_is_one_commit_and_stats_leave_the_hot_path.sql'
+        '20260908042100_an_accepted_hand_is_one_commit_and_stats_leave_the_hot_path.sql'
       ),
       'utf8'
     );

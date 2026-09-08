@@ -35,13 +35,13 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 const ELIM = read('src/tournament/TournamentManagerEliminations.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const ATOMIC_ELIMINATION = read(
-  '../supabase/migrations/20260907180000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
+  '../supabase/migrations/20260908042000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
 );
 const ATOMIC_FINAL_TABLE_DEAL = read(
-  '../supabase/migrations/20260907205954_a_final_table_deal_pays_every_share_or_none.sql'
+  '../supabase/migrations/20260908042500_a_final_table_deal_pays_every_share_or_none.sql'
 );
 const FINISH_CERTIFICATE = read(
-  '../supabase/migrations/20260907210000_completed_means_financially_certified.sql'
+  '../supabase/migrations/20260908042600_completed_means_financially_certified.sql'
 );
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */

@@ -231,7 +231,7 @@ export async function fetchQuickLinkClubs(userId: string): Promise<QuickLinkClub
   try {
     const { data, error } = await supabase
       .from('club_members')
-      .select('status, club:clubs(id, club_id, name, logo_url, member_count, is_union)')
+      .select('status, club:clubs(id, club_id, slug, name, logo_url, member_count, is_union)')
       .eq('user_id', userId)
       .in('status', ACTIVE_MEMBER_STATUSES);
     if (error) {

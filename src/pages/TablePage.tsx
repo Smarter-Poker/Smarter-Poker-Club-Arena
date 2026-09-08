@@ -754,6 +754,7 @@ interface TableState {
    */
   bettingStructure?: 'no_limit' | 'pot_limit' | 'fixed_limit';
   fixedBetSize?: number;
+  fixedRaiseSize?: number;
   wagersCapped?: boolean;
 
   currentBet?: number;
@@ -2623,6 +2624,7 @@ export default function TablePage({
         // rather than re-derived from the variant string down in the panel.
         bettingStructure: mapped.bettingStructure,
         fixedBetSize: mapped.fixedBetSize,
+        fixedRaiseSize: mapped.fixedRaiseSize,
         wagersCapped: mapped.wagersCapped,
 
         sidePots: mapped.sidePots.map((sp, i) => ({
@@ -5874,7 +5876,10 @@ export default function TablePage({
     const isFixedLimit = structure === 'fixed_limit';
     const potLimitRaiseTo = potSizedRaiseTo(serverCurrentBet, tableState.pot, callAmount);
     const flBetSize = tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
-    const flWagerTo = Math.min(allInTo, serverCurrentBet + flBetSize);
+    const flWagerTo = Math.min(
+      allInTo,
+      serverCurrentBet + (tableState.fixedRaiseSize ?? flBetSize)
+    );
     const wagersCapped = isFixedLimit && tableState.wagersCapped === true;
     const minRaiseTo = isFixedLimit ? flWagerTo : serverCurrentBet + raiseIncrement;
     const maxRaiseTo = isFixedLimit
@@ -5897,6 +5902,7 @@ export default function TablePage({
     tableState.gameType,
     tableState.pot,
     tableState.fixedBetSize,
+    tableState.fixedRaiseSize,
     tableState.boardStage,
     tableState.wagersCapped,
   ]);
@@ -24593,7 +24599,10 @@ export default function TablePage({
                   // A short stack clamps to its all-in.
                   const flBetSize =
                     tableState.fixedBetSize ?? fixedLimitBetSize(bb, tableState.boardStage);
-                  const flWagerTo = Math.min(allInTo, serverCurrentBet + flBetSize);
+                  const flWagerTo = Math.min(
+                    allInTo,
+                    serverCurrentBet + (tableState.fixedRaiseSize ?? flBetSize)
+                  );
                   const wagersCapped = isFixedLimit && tableState.wagersCapped === true;
 
                   // Raise-TO floor. When currentBet===0 (first bet of a street)

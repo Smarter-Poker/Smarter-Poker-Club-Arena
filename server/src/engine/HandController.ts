@@ -24,6 +24,7 @@ import {
   isFixedLimitVariant,
   isPotLimitVariant,
   fixedLimitBetSize,
+  fixedLimitStreetBounds,
   isFixedLimitCapped,
 } from './BettingStructure.js';
 import {
@@ -2982,7 +2983,11 @@ export class HandController {
     // here as well as rejected in validateAction so the button never appears.
     const wagersCapped =
       isFixedLimitVariant(this.config.gameVariant) &&
-      isFixedLimitCapped(this.state.actionHistory, this.state.stage);
+      isFixedLimitCapped(
+        this.state.actionHistory,
+        this.state.stage,
+        fixedLimitBetSize(this.config.bigBlind, this.state.stage)
+      );
     if (toCall === 0) {
       actions.push('check');
 
@@ -3096,7 +3101,17 @@ export class HandController {
         {
           // Small bet preflop and flop, big bet turn and river.
           betSize: fixedLimitBetSize(this.config.bigBlind, this.state.stage),
-          capped: isFixedLimitCapped(this.state.actionHistory, this.state.stage),
+          raiseSize: fixedLimitStreetBounds(
+            this.state.actionHistory,
+            this.state.stage,
+            fixedLimitBetSize(this.config.bigBlind, this.state.stage),
+            this.state.currentBet
+          ).raiseSize,
+          capped: isFixedLimitCapped(
+            this.state.actionHistory,
+            this.state.stage,
+            fixedLimitBetSize(this.config.bigBlind, this.state.stage)
+          ),
         }
       );
     }

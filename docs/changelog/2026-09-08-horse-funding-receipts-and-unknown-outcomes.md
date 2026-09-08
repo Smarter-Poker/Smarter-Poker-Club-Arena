@@ -13,3 +13,5 @@ Database application succeeded through Supabase apply_migration. Its authoritati
 Engine publication and scheduled Hetzner adoption are pending. Do not describe the new callers as live until their build is verified. The separate cashout barrier fix merged as PR #3727 (b3c7a40c5398a627713555529b661c6d4386eaf8).
 
 Remaining: combined cash-hand crash durability and dependent continuation, all external leave routes, legacy unkeyed funding cutover, and global cashier/ticket/tournament/diamond/downstream-rake scope remain open. No historical balance adjustment or incident closure was made.
+
+The pre-push authorization check required explicit grants in the replacement migration. Production ACL was verified as owner plus service_role only (anon/authenticated execute both false). The source now restates that same restriction for schema rebuilds. No browser permission was added and no gate was bypassed.

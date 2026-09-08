@@ -123,5 +123,8 @@ BEGIN
 END;
 $function$;
 
+-- Restate the existing live service-only ACL when rebuilding this function.
+REVOKE ALL ON FUNCTION public.fn_horse_fund_from_treasury(uuid,uuid,numeric,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_horse_fund_from_treasury(uuid,uuid,numeric,uuid) TO service_role;
 NOTIFY pgrst,'reload schema';
 COMMIT;

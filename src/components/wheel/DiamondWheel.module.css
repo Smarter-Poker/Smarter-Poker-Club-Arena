@@ -1,0 +1,108 @@
+/*
+ * DIAMOND WHEEL - the wheel's own sheet. CSS Module so nothing here can collide
+ * with another page's class (tests/global-css-does-not-leak-across-pages).
+ * No :hover anywhere (tests/no-hover-effects.law.test.ts): the wheel is a
+ * phone-first surface and the spin button carries the press feedback.
+ */
+
+.frame {
+  position: relative;
+  margin: 0 auto;
+  border-radius: 50%;
+  /* The wheel sits IN a cavity in the panel: a dark well with a lit top edge. */
+  background: radial-gradient(circle at 50% 40%, #131b26 0%, #070a0f 70%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -8px 18px rgba(0, 0, 0, 0.7),
+    0 18px 40px rgba(0, 0, 0, 0.6);
+}
+
+.svg {
+  display: block;
+  overflow: visible;
+}
+
+.segGold {
+  fill: url(#dw-gold);
+}
+
+.segGoldHot {
+  fill: url(#dw-gold-hot);
+}
+
+.segCyan {
+  fill: url(#dw-cyan);
+}
+
+.segDark {
+  fill: url(#dw-dark);
+}
+
+.segLocked {
+  opacity: 0.38;
+  filter: saturate(0.3);
+}
+
+.segText {
+  font-family: var(
+    --realism-font-display,
+    'Rajdhani',
+    'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif
+  );
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  fill: #0b1017;
+  paint-order: stroke fill;
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 0.6px;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.segDark .segText,
+.segCyan .segText {
+  fill: #eaf6ff;
+  stroke: rgba(0, 0, 0, 0.5);
+}
+
+.segLock {
+  font-family: var(--realism-font-label, 'Roboto Condensed', Inter, system-ui, sans-serif);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  fill: #e6edf3;
+}
+
+.hubGlyph {
+  font-size: 26px;
+  fill: #8fe9ff;
+  paint-order: stroke fill;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 1px;
+}
+
+.lamp {
+  fill: #5a4a22;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 0.5;
+}
+
+.lampOn {
+  fill: #fff2b8;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 0.5;
+  animation: dw-lamp-chase calc(0.28s * var(--animation-speed, 1)) steps(2) infinite;
+}
+
+@keyframes dw-lamp-chase {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.25;
+  }
+}

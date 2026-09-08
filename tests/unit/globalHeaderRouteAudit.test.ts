@@ -44,14 +44,16 @@ describe('the complete route manifest inherits one global header', () => {
     // which until now could only be reached by walking into a member club.
     // +1 for clubs/:clubId/hand-review (Previous Hand phase 6): the flagged-hand
     // queue and the audited hole-card lookup, beside Reports and Disputes.
-    expect(allPaths).toHaveLength(133); // +2 management consoles, +1 financial decision harness
+    // +2 for the Diamond Wheel (2026-09-07): clubs/:clubId/wheel (the player's
+    // wheel) and clubs/:clubId/wheel-operations (the operator console).
+    expect(allPaths).toHaveLength(135); // +2 management consoles, +1 financial decision harness
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
     expect(allPaths).toContain('*');
   });
 
   it('puts every shell route under AppLayout', () => {
-    expect(shellPaths).toHaveLength(124); // +2: club and union table-management consoles, +1: union data, +1: hand review
+    expect(shellPaths).toHaveLength(126); // +2: club and union table-management consoles, +1: union data, +1: hand review, +2: diamond wheel
     expect(APP_LAYOUT).toContain('{showGlobalHeader && <GlobalHeader />}');
   });
 
@@ -65,7 +67,7 @@ describe('the complete route manifest inherits one global header', () => {
       (path) => !applicable.has(path) && !intentionalExceptions.has(path)
     );
 
-    expect(applicable.size).toBe(125); // +2: club and union table-management consoles, +1: union data, +1: hand review
+    expect(applicable.size).toBe(127); // +2: club and union table-management consoles, +1: union data, +1: hand review, +2: diamond wheel
     expect(unclassified).toEqual([]);
   });
 

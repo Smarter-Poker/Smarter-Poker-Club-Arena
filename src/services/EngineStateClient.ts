@@ -24,6 +24,7 @@ import { noteServerTime, serverNow } from '../utils/serverClock';
 import jsonPatch from 'fast-json-patch';
 import {
   engineSocketMux,
+  MuxTableSocket,
   isMuxEnabled,
   CLOSE_MUX_SUPERSEDED,
   engineSocketUrl,
@@ -439,6 +440,8 @@ export class EngineStateClient {
   private lastInboundAt = 0;
   /** Heartbeats prove transport liveness, not delivery of a requested snapshot. */
   private pendingSnapshotSince: number | null = null;
+  private foregroundProbeTimer: number | null = null;
+  private static readonly FOREGROUND_STATE_BUDGET_MS = 5_000;
   /** Wake grace must not forgive resyncs that still have no snapshot reply. */
   private unansweredSnapshotResyncs = 0;
   private watchdogTimer: number | null = null;
@@ -506,8 +509,11 @@ export class EngineStateClient {
     if (this.onOnline === null && typeof window !== 'undefined') {
       this.onOnline = () => {
         if (this.intentionalClose) return;
-        // Healthy OPEN socket — nothing to do.
-        if (this.ws !== null && this.ws.readyState === 1) return;
+        // Mobile network changes can leave readyState OPEN on a dead link.
+        if (this.ws !== null && this.ws.readyState === 1) {
+          this.beginForegroundStateProbe();
+          return;
+        }
         // 2026-08-22: a socket wedged in CONNECTING (captive portal, TCP
         // blackhole, network transition) used to BLOCK this recovery path —
         // the guard treated CONNECTING as healthy, no timer was pending, and
@@ -766,6 +772,7 @@ export class EngineStateClient {
       // second reconnect against a live connection.
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      this.clearForegroundStateProbe();
       // Clean intentional close
       if (this.intentionalClose) return;
 
@@ -1095,6 +1102,7 @@ export class EngineStateClient {
       this.snapshot = msg.state;
       this.seq = msg.seq;
       this.pendingSnapshotSince = null;
+      this.clearForegroundStateProbe();
       this.unansweredSnapshotResyncs = 0;
       this.opts.onSnapshot(this.snapshot, this.seq);
       return;
@@ -1130,6 +1138,7 @@ export class EngineStateClient {
    * first snapshot must not sit behind a dead socket's events.
    */
   private resetInbox(): void {
+    this.clearForegroundStateProbe();
     this.inbox = [];
     this.lastEventSeq = 0;
     this.eventGapReportedForSeq = 0;
@@ -1166,6 +1175,54 @@ export class EngineStateClient {
     this.snapshot = null;
     this.pendingSnapshotSince = null;
     this.unansweredSnapshotResyncs = 0;
+  }
+
+  private clearForegroundStateProbe(): void {
+    if (this.foregroundProbeTimer !== null) {
+      window.clearTimeout(this.foregroundProbeTimer);
+      this.foregroundProbeTimer = null;
+    }
+  }
+
+  /** Wake recovery must fit inside the player's existing reconnect allowance. */
+  private beginForegroundStateProbe(): void {
+    if (
+      this.intentionalClose ||
+      this.status !== 'connected' ||
+      document.visibilityState !== 'visible' ||
+      this.inAnnouncedRestart() ||
+      this.foregroundProbeTimer !== null
+    )
+      return;
+    const socket = this.ws;
+    if (!socket || socket.readyState !== 1) return;
+    const startedAt = Date.now();
+    // Arm before sending: even a synchronous test/adapter response may cancel
+    // it. Repeated wake events never move the first request's deadline.
+    this.foregroundProbeTimer = window.setTimeout(() => {
+      this.foregroundProbeTimer = null;
+      if (
+        this.ws !== socket ||
+        this.intentionalClose ||
+        this.status !== 'connected' ||
+        document.visibilityState !== 'visible' ||
+        this.inAnnouncedRestart()
+      )
+        return;
+      this.opts.onError({ reason: 'table state did not answer the foreground recovery probe' });
+      beacon('stale');
+      this.setStatus('reconnecting');
+      this.ws = null;
+      try {
+        if (socket instanceof MuxTableSocket) socket.recoverAfterUnansweredProbe(startedAt);
+        else socket.close(4001, 'no table state after foreground probe');
+      } catch {
+        // The old generation is already detached; its close cannot own recovery.
+      }
+      this.retryCount = 0;
+      this.scheduleReconnect();
+    }, EngineStateClient.FOREGROUND_STATE_BUDGET_MS);
+    this.requestResync();
   }
 
   /** Refresh authoritative state after a confirmed server purchase. */
@@ -1278,13 +1335,17 @@ export class EngineStateClient {
             Date.now() - EngineStateClient.STALE_SOFT_MS
           );
         }
-        if (this.status === 'connected') this.requestResync();
+        if (this.status === 'connected') {
+          if (this.inAnnouncedRestart()) this.requestResync();
+          else this.beginForegroundStateProbe();
+        }
       };
       document.addEventListener('visibilitychange', this.onVisibility);
     }
   }
 
   private stopWatchdog(): void {
+    this.clearForegroundStateProbe();
     if (this.watchdogTimer !== null) {
       window.clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;

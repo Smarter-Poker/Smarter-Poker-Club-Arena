@@ -88,7 +88,7 @@ export const PENDING_WRITE_MAX_DELAY_MS = 5_000;
  */
 export const MAX_PENDING_WRITES = 500;
 
-export type PendingWriteOutcome = { done: true } | { done: false; error: string };
+export type PendingWriteOutcome = { done: true; refused?: true } | { done: false; error: string };
 
 export interface PendingWrite {
   /**
@@ -145,10 +145,16 @@ async function runOne(entry: Entry): Promise<void> {
     entry.attempts += 1;
     if (outcome.done) {
       pending.delete(entry.key);
-      console.log(
-        `[pending-writes] ${entry.describedAs} landed after ${entry.attempts} off-path attempt(s), ` +
-          `${Math.round((now() - entry.enqueuedAt) / 1000)}s after the dealing path gave up`
-      );
+      if (outcome.refused) {
+        console.warn(
+          `[pending-writes] ${entry.describedAs} was refused; its failure handler has run`
+        );
+      } else {
+        console.log(
+          `[pending-writes] ${entry.describedAs} landed after ${entry.attempts} off-path attempt(s), ` +
+            `${Math.round((now() - entry.enqueuedAt) / 1000)}s after the dealing path gave up`
+        );
+      }
       return;
     }
     entry.lastError = outcome.error;

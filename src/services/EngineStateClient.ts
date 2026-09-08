@@ -1749,6 +1749,8 @@ export class EngineChannelClient {
   // network silently killed club presence, lobby, tournament events and
   // FINANCIAL_UPDATE (wallet!) for the rest of the page's life.
   private lastInboundAt = 0;
+  private foregroundProbeTimer: number | null = null;
+  private static readonly FOREGROUND_CHANNEL_BUDGET_MS = 5_000;
   private watchdogTimer: number | null = null;
   private onOnline: (() => void) | null = null;
   private onResume: ((event: Event) => void) | null = null;
@@ -1807,7 +1809,10 @@ export class EngineChannelClient {
     if (this.onOnline === null && typeof window !== 'undefined') {
       this.onOnline = () => {
         if (this.intentionalClose) return;
-        if (this.ws !== null && this.ws.readyState === 1) return;
+        if (this.ws !== null && this.ws.readyState === 1) {
+          this.beginForegroundChannelProbe();
+          return;
+        }
         if (this.ws !== null && this.ws.readyState === 0) {
           try {
             this.ws.close();
@@ -2099,12 +2104,14 @@ export class EngineChannelClient {
         return;
       }
       if (!msg || typeof (msg as { type?: string }).type !== 'string') return;
+      this.clearForegroundChannelProbe();
       this.handleMessage(msg);
     };
 
     ws.onclose = (e) => {
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      this.clearForegroundChannelProbe();
       if (this.intentionalClose) return;
       if (e.code === CLOSE_AUTH_FAILED || closeMeansAuth(e.code, e.reason)) {
         this.setStatus('auth_failed');
@@ -2204,6 +2211,53 @@ export class EngineChannelClient {
    * minute of silence on an OPEN socket is a half-open link that will never
    * fire onclose on its own. Tear it down into the backoff ladder.
    */
+  private clearForegroundChannelProbe(): void {
+    if (this.foregroundProbeTimer !== null) {
+      window.clearTimeout(this.foregroundProbeTimer);
+      this.foregroundProbeTimer = null;
+    }
+  }
+
+  private beginForegroundChannelProbe(): void {
+    if (
+      this.intentionalClose ||
+      this.status !== 'connected' ||
+      document.visibilityState !== 'visible' ||
+      this.foregroundProbeTimer !== null
+    )
+      return;
+    const socket = this.ws;
+    if (!socket || socket.readyState !== 1) return;
+    this.foregroundProbeTimer = window.setTimeout(() => {
+      this.foregroundProbeTimer = null;
+      if (
+        this.ws !== socket ||
+        this.intentionalClose ||
+        this.status !== 'connected' ||
+        document.visibilityState !== 'visible'
+      )
+        return;
+      this.setStatus('reconnecting');
+      this.ws = null;
+      try {
+        socket.close(4001, 'channel did not answer foreground probe');
+      } catch {
+        /* Detached generation cannot drive a second recovery. */
+      }
+      this.retryCount = 0;
+      this.scheduleReconnect();
+    }, EngineChannelClient.FOREGROUND_CHANNEL_BUDGET_MS);
+    try {
+      // Already implemented by the running channel server. A quiet lobby has
+      // a deterministic response; it need not wait for the next 25-second ping.
+      socket.send(JSON.stringify({ type: 'CHANNEL_PING' }));
+      this.lastReassertAt = Date.now();
+      this.replayDesiredState(socket);
+    } catch {
+      // The bounded probe owns recovery even if send does not emit onclose.
+    }
+  }
+
   private startWatchdog(): void {
     this.lastInboundAt = Date.now();
     if (this.watchdogTimer !== null) return;
@@ -2246,12 +2300,14 @@ export class EngineChannelClient {
           this.lastInboundAt,
           Date.now() - EngineChannelClient.WAKE_GRACE_MS
         );
+        this.beginForegroundChannelProbe();
       };
       document.addEventListener('visibilitychange', this.onVisibility);
     }
   }
 
   private stopWatchdog(): void {
+    this.clearForegroundChannelProbe();
     if (this.watchdogTimer !== null) {
       window.clearInterval(this.watchdogTimer);
       this.watchdogTimer = null;

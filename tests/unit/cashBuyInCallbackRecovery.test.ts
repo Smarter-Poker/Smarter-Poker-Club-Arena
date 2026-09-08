@@ -130,13 +130,31 @@ describe('cash buy-in callback recovery', () => {
     expect(f.d.buyInProcessingRef.current).toBe(false);
   });
 
+  it('keeps the sheet open while the purchase is pending, then closes on confirmation', async () => {
+    const f = fixture();
+    let finish!: (value: any) => void;
+    f.d.supabase.rpc.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const pending = f.handler(100, false);
+    expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
+    expect(f.d.buyInProcessingRef.current).toBe(true);
+    finish({ data: null, error: null });
+    expect(await pending).toBe(true);
+    expect(f.d.setShowBuyInModal).toHaveBeenCalledWith(false);
+  });
+
   it('still rolls back an explicit refusal and releases the processing latch', async () => {
     const f = fixture();
     f.d.supabase.rpc.mockResolvedValue({
       data: { success: false, error: 'seat_taken' } as any,
       error: null,
     });
-    await f.handler(100, false);
+    expect(await f.handler(100, false)).toBe(false);
+    expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
+    expect(f.d.setSelectedSeat).not.toHaveBeenCalledWith(null);
     expect(f.state().heroSeat).toBe(0);
     expect(f.d.applyBalanceDelta).not.toHaveBeenCalled();
     expect(f.d.buyInIdempotencyKeyRef.current).toBeNull();

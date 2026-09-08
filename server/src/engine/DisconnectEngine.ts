@@ -1223,8 +1223,7 @@ export class DisconnectEngine {
       (state.disconnectedAt ?? Date.now()) +
         reconnectProtectionSeconds(state.reconnectMembership ?? {}) * 1000;
     state.reconnectDeadlineMs = deadline;
-    const durationMs = Math.max(0, deadline - Date.now());
-    this.preciseTimer.startTimer(tableId, `disconnect:${playerId}`, durationMs, () => {
+    this.preciseTimer.startTimerAt(tableId, `disconnect:${playerId}`, deadline, () => {
       // Check if player reconnected during the countdown
       if (state.isConnected) return;
 

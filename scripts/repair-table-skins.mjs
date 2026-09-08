@@ -21,26 +21,37 @@
  * so the painted table has to sit in the same place on all fourteen canvases.
  * Seven of them agree to the pixel. Five do not:
  *
- *     skin                 measured (opaque box)      drift from canonical
- *     arctic_white         60,14  582,983             40px right, 42px narrow
- *     ice_cavern           29,56  562,957             46px low,   79px short
- *     ocean_blue           49,24  574,981             29px right, 39px narrow
- *     neon_city            41,20  581,985             21px right, 24px narrow
- *     crimson              35,11  579,979             15px right, 20px narrow
+ *     skin                 opaque box          centre       size
+ *     arctic_white         60,14  582,982      +19, -1      -42, -10
+ *     ice_cavern           30,56  562,956      -6, +7       -32, -79
+ *     ocean_blue           49,25  574,980      +9, +3       -39, -24
+ *     neon_city            42,21  581,985      +9, +3       -24, -15
+ *     crimson              35,12  579,979      +5, -4       -20, -12
  *
- * On the 460 CSS px the table renders at on a phone, arctic_white's 40px is a
- * visible 30px shove: the seat ring sits over the rail down one side and off it
- * down the other, and the pot lands nearer one edge than the other. Nobody had
- * measured it because the felt is a photograph and a photograph always looks
- * deliberate.
+ * On the 460 CSS px the table renders at on a phone, arctic_white's 19px centre
+ * offset plus 42px of missing width is a visible shove: the seat ring sits over
+ * the rail down one side and off it down the other, and the pot lands nearer one
+ * edge than the other. It also MOVED when the player changed skin, which is how
+ * a bug like this gets reported as "the table looks weird sometimes" and never
+ * reproduced. Nobody had measured it, because the felt is a photograph and a
+ * photograph always looks deliberate.
  *
- * The fix resamples each offender by the affine that maps its own opaque box onto
- * the canonical one. Lanczos, at most an 8% scale, on artwork that is already
- * displayed below 1:1 — the softening is not resolvable. What it buys is that a
- * skin change no longer moves the felt.
+ * Four of the five are resampled by the affine that maps their own opaque box
+ * onto the canonical one. Lanczos, at most an 8% scale, on artwork already
+ * displayed below 1:1 — the softening is not resolvable.
  *
- * `final_table` is deliberately NOT normalised: it paints gold wings outside the
- * rail, so its alpha silhouette is not its table body. See tableSkinGeometry.mjs.
+ * ICE_CAVERN IS RE-CENTRED BUT NOT RESCALED, and that is not a shortcut. Scaling
+ * it to canonical moves its bright ice rim across the seat positions and takes
+ * `table-skin-must-not-paint-seats.law` from a midpoint deviation of 21.0 to
+ * 47.5 against a limit of 35. Measured three ways — full affine 47.5, uniform
+ * scale 44.4, translate only 25.3 — so it is the SCALING that does it, not the
+ * move. That law watches for a seat sitting on something its neighbour is not,
+ * and on a rail made of chaotic ice that is exactly what scaling produces. The
+ * 6% size gap it still carries wants new art, not a resample, and
+ * `tableSkinGeometry.mjs` records it rather than hiding it.
+ *
+ * `final_table` keeps its size too: it paints gold wings outside the rail, so
+ * its alpha silhouette is not its table body.
  *
  * ── 2. THE LINE ────────────────────────────────────────────────────────────────
  *
@@ -76,7 +87,7 @@
  * sound.law.test.ts` fails if anything drifts back.
  */
 
-import { readdir } from 'node:fs/promises';
+import { readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -87,12 +98,16 @@ import {
   CANONICAL,
   CANONICAL_W,
   CANONICAL_H,
-  EDGE_TOLERANCE,
-  GEOMETRY_EXEMPT,
+  CENTRE_TOLERANCE,
+  SIZE_TOLERANCE,
+  SIZE_EXEMPT,
+  TRANSLATE_ONLY,
   readRGBA,
   opaqueBounds,
-  edgeDrift,
-  worstDrift,
+  centreOffset,
+  worstCentreOffset,
+  sizeOffset,
+  worstSizeOffset,
   ringProfile,
   median,
   luminance,
@@ -133,15 +148,29 @@ const REPAIR_HALF_WIDTH = 8;
 /** Columns at each end of that strip that fade back into the untouched felt. */
 const FEATHER = 3;
 
+/**
+ * Lossless, and the same size the originals already were.
+ *
+ * sharp's default PNG writer produced files 37% LARGER than the ones it was
+ * replacing (1014KB against 742KB on classic_green) for byte-identical pixels —
+ * six of those is 1.8MB of extra download on a poker client's critical path.
+ * `adaptiveFiltering` closes the whole gap: 743KB, RMSE 0.000.
+ *
+ * Do NOT add `effort: 10` to make it smaller still. It looks lossless and is
+ * not: sharp silently switches to an 8-bit palette, 379KB at RMSE 38, which on
+ * a felt made almost entirely of soft gradients means banding.
+ */
+const PNG_OUT = { compressionLevel: 9, adaptiveFiltering: true };
+
 function fmtBounds(b) {
   return `${b.minX},${b.minY} ${b.maxX},${b.maxY} (${b.maxX - b.minX + 1}x${b.maxY - b.minY + 1})`;
 }
 
-async function normaliseGeometry(sharp, file, img, bounds) {
+async function normaliseGeometry(sharp, file, img, bounds, { translateOnly = false } = {}) {
   const w = bounds.maxX - bounds.minX + 1;
   const h = bounds.maxY - bounds.minY + 1;
-  const sx = CANONICAL_W / w;
-  const sy = CANONICAL_H / h;
+  const sx = translateOnly ? 1 : CANONICAL_W / w;
+  const sy = translateOnly ? 1 : CANONICAL_H / h;
 
   const scaledW = Math.round(CANVAS_W * sx);
   const scaledH = Math.round(CANVAS_H * sy);
@@ -158,12 +187,23 @@ async function normaliseGeometry(sharp, file, img, bounds) {
     })
     .toBuffer();
 
-  const left = Math.round(bounds.minX * sx) + PAD - CANONICAL.minX;
-  const top = Math.round(bounds.minY * sy) + PAD - CANONICAL.minY;
+  // Translate-only skins keep their size, so they are centred rather than
+  // pinned to the canonical top-left — pinning would move a smaller table into
+  // the corner instead of the middle.
+  const bw = (bounds.maxX - bounds.minX + 1) * sx;
+  const bh = (bounds.maxY - bounds.minY + 1) * sy;
+  const targetX = translateOnly
+    ? (CANONICAL.minX + CANONICAL.maxX + 1) / 2 - bw / 2
+    : CANONICAL.minX;
+  const targetY = translateOnly
+    ? (CANONICAL.minY + CANONICAL.maxY + 1) / 2 - bh / 2
+    : CANONICAL.minY;
+  const left = Math.round(bounds.minX * sx + PAD - targetX);
+  const top = Math.round(bounds.minY * sy + PAD - targetY);
 
   return sharp(scaled)
     .extract({ left, top, width: CANVAS_W, height: CANVAS_H })
-    .png({ compressionLevel: 9 })
+    .png(PNG_OUT)
     .toBuffer();
 }
 
@@ -274,20 +314,26 @@ async function main() {
     const stem = file.replace(/\.png$/, '');
     const img = await readRGBA(path.join(TABLES, file));
     const bounds = opaqueBounds(img);
-    const drift = worstDrift(bounds);
-    const exempt = GEOMETRY_EXEMPT.has(stem);
-    const needsGeometry = !exempt && drift > EDGE_TOLERANCE;
+    const offCentre = worstCentreOffset(bounds);
+    const offSize = worstSizeOffset(bounds);
+    const translateOnly = TRANSLATE_ONLY.has(stem);
+    const sizeExempt = SIZE_EXEMPT.has(stem);
+    const needsGeometry = offCentre > CENTRE_TOLERANCE || (!sizeExempt && offSize > SIZE_TOLERANCE);
     const repair = LINE_REPAIRS.find((r) => r.file === file);
 
-    const notes = [`${fmtBounds(bounds)} drift ${drift}px`];
-    if (exempt) notes.push('geometry-exempt');
+    const c = centreOffset(bounds);
+    const s = sizeOffset(bounds);
+    const sign = (n) => `${n >= 0 ? '+' : ''}${n}`;
+    const notes = [
+      `${fmtBounds(bounds)} centre ${sign(c.x)},${sign(c.y)} size ${sign(s.w)},${sign(s.h)}`,
+    ];
+    if (sizeExempt) notes.push('size-exempt');
 
     let buffer = null;
 
     if (needsGeometry) {
-      const d = edgeDrift(bounds);
-      notes.push(`NORMALISE (l${d.left} t${d.top} r${d.right} b${d.bottom})`);
-      buffer = await normaliseGeometry(sharp, file, img, bounds);
+      notes.push(translateOnly ? 'RE-CENTRE (no rescale)' : 'NORMALISE');
+      buffer = await normaliseGeometry(sharp, file, img, bounds, { translateOnly });
     }
 
     if (repair) {
@@ -309,7 +355,7 @@ async function main() {
         buffer = await sharp(target.data, {
           raw: { width: target.width, height: target.height, channels: target.channels },
         })
-          .png({ compressionLevel: 9 })
+          .png(PNG_OUT)
           .toBuffer();
       } else {
         notes.push('line sound');
@@ -319,7 +365,10 @@ async function main() {
     console.log(`${stem.padEnd(24)} ${notes.join('  ')}`);
 
     if (buffer && WRITE) {
-      await sharp(buffer).toFile(path.join(TABLES, file));
+      // writeFile, not sharp().toFile(): a round trip through sharp re-encodes
+      // with DEFAULT png options and silently throws PNG_OUT away — which is how
+      // eight skins landed 2MB heavier than they needed to be on the first pass.
+      await writeFile(path.join(TABLES, file), buffer);
       changed += 1;
     } else if (buffer) {
       changed += 1;

@@ -38,7 +38,7 @@ sound line blows out to 255 — and they cleared an 88% bar comfortably.
 Interpolating between two shoulders reproduces the shoulder for 36 rows. Donors
 now have to clear 97%.
 
-## 2. Five skins paint the table somewhere else
+## 2. Seven skins paint the table somewhere else
 
 Measuring all fourteen for the first time turned up the larger fault. `TablePage.css`
 gives every skin one geometry:
@@ -49,31 +49,64 @@ gives every skin one geometry:
 ```
 
 There is no per-skin offset, so the painted table has to sit in the same box on
-every 605x1000 canvas. Seven of them agree to the pixel — the signature of one
-master render with only the material changed. Five do not:
+every 605x1000 canvas. Six of them agree to the pixel — the signature of one
+master render with only the material changed. Canonical is `20,10 584,989`,
+565x980, centre (302, 499.5).
 
-| skin           | opaque box (before) | drift from canonical    |
-| -------------- | ------------------- | ----------------------- |
-| `arctic_white` | 60,14 582,982       | 40px right, 42px narrow |
-| `ice_cavern`   | 30,56 562,956       | 46px low, 79px short    |
-| `ocean_blue`   | 49,25 574,980       | 29px right, 39px narrow |
-| `neon_city`    | 42,21 581,985       | 22px right, 24px narrow |
-| `crimson`      | 35,12 579,979       | 15px right, 20px narrow |
+| skin           | opaque box    | centre off | size off |
+| -------------- | ------------- | ---------- | -------- |
+| `arctic_white` | 60,14 582,982 | +19, -1.5  | -42, -11 |
+| `ocean_blue`   | 49,25 574,980 | +9.5, +3   | -39, -24 |
+| `neon_city`    | 42,21 581,985 | +9.5, +3.5 | -25, -15 |
+| `ice_cavern`   | 30,56 562,956 | -6, +6.5   | -32, -79 |
+| `crimson`      | 35,12 579,979 | +5, -4     | -20, -12 |
+| `carbon_red`   | 25,15 579,982 | 0, -1      | -10, -12 |
+| `mahogany_red` | 26,11 580,983 | +1, -2.5   | -10, -7  |
 
-Canonical is `20,10 584,989` — 565x980.
+On the ~460 CSS px a phone renders the table at, arctic*white's 19px centre
+offset plus 42px of missing width is a visible shove: the seat ring over the rail
+down one side and off it down the other, the pot nearer one edge than the other.
+And it \_moved when the player changed skin*, which is the shape of a complaint
+that arrives as "the table looks weird sometimes" and never gets reproduced.
 
-On the ~460 CSS px a phone renders the table at, arctic_white's 40px is a visible
-30px shove: the seat ring over the rail down one side and off it down the other,
-the pot nearer one edge than the other. And it moved when the player changed
-skins, which is the shape of a complaint that arrives as "the table looks weird
-sometimes" and never gets reproduced.
+Six of the seven are resampled by the affine mapping their own opaque box onto
+the canonical one. Lanczos, at most 8% scale, on art already displayed below 1:1.
 
-Each of the five is resampled by the affine that maps its own opaque box onto the
-canonical one. Lanczos, at most 8% scale, on art already displayed below 1:1.
+## 2b. ice_cavern is re-centred but NOT rescaled, and that is the interesting part
 
-`final_table` is left alone on purpose: it paints gold wings outside the rail, so
-its alpha silhouette is not its table body. Its body measures 551x983 centred
-within 2px.
+Scaling ice_cavern to canonical made an existing law go red:
+`table-skin-must-not-paint-seats.law` went from a midpoint deviation of 21.0 to
+**47.5** against a limit of 35. Measured three ways — full affine 47.5, uniform
+scale 44.4, translate only 25.3 — so it is the scaling that does it, not the
+move.
+
+That law samples 44px patches at the two side-rail seat positions and asks
+whether the rail between them is a smooth run. ice_cavern's rail is a chaotic ice
+formation, not the shared moulded one; scaled up, its bright veins land under one
+seat and not its neighbour. **The law is right.** It was written to catch painted
+seat furniture and it caught a real "these two seats sit on visibly different
+things" — arriving by a route nobody anticipated.
+
+So ice_cavern is translated only. It keeps a genuine 6% size deficit, recorded in
+`SIZE_EXEMPT` rather than hidden, and that gap wants new art rather than a
+resample. `final_table` keeps its size for a different reason: it paints gold
+wings outside the rail, so its alpha silhouette is not its table body.
+
+This is why the law here asserts **centre (4px, no exemptions)** and **size (8px,
+two named exemptions)** separately. Centre is what decides whether the seat ring
+lands on the rail, and all fourteen can satisfy it.
+
+## 2c. The first write was 2MB heavier for identical pixels
+
+`sharp().toFile(buf)` re-encodes with DEFAULT png options, silently discarding
+the ones the buffer was built with. Eight skins landed +2,073,257 bytes for
+byte-identical pixels. Writing the buffer with `fs.writeFile`, and setting
+`adaptiveFiltering: true` (which is what the original encoder used — 743KB
+against sharp's default 1014KB, RMSE 0.000), the same eight files now come out
+**182,072 bytes smaller than what they replace**.
+
+Not `effort: 10`, which looks lossless and is not: sharp switches to an 8-bit
+palette at RMSE 38, and a felt made almost entirely of soft gradients bands.
 
 ## 3. What was deliberately not touched
 
@@ -96,24 +129,26 @@ in the World Hub, a 78x125 development leftover backed by no source avatar.
 `tests/table-skin-art-is-sound.law.test.ts` asserts, for all fourteen:
 
 - a 605x1000 canvas
-- an opaque box within 8px per edge of canonical
+- a table centre within **4px** of canonical — no exemptions, all fourteen pass
+- a table size within **8px** of canonical — `final_table` and `ice_cavern`
+  exempt by name, each with the measurement that earned it
 - no run longer than 6 rows where the racetrack line drops below 55% of its own
   median
 
-Both thresholds are loose on purpose. 8px (~1.3%) leaves the four skins sitting a
-pixel or two out alone rather than resampling them for nothing. 55% is a hole,
-not a highlight — tighter and carbon_ion goes red for its design, and the next
-agent "fixes" it.
+The line threshold is loose on purpose: 55% is a hole, not a highlight. Tighter
+and carbon_ion goes red for its design, and the next agent "fixes" it.
 
 The row scan runs 300..700 rather than the full 255..730 the table is straight
 over: at the ends of the wider range the stripe has begun to bend, the scan
 follows it out of its window, and electric_purple was reported as having a 7-row
-hole in a stripe that is intact. Two sides are exempt by name and reason, in
-`LINE_EXEMPT` — carbon_ion (segmented by design) and ice_cavern's left, which has
-no stripe at all, only a broad uneven ice glow.
+hole in a stripe that is intact. Three sides are exempt by name and reason in
+`LINE_EXEMPT` — carbon_ion both sides (segmented by design) and ice_cavern both,
+which has no stripe at all on either, only a broad mottled ice glow. Both were
+checked by eye against classic_green's right side before being exempted.
 
-Verified the law fails on the art as it was: `skin_arctic_white` on geometry
-(40 > 8) and `skin_classic_green` on a 30-row hole at y=374..403.
+Verified the law fails on the art as it was: `skin_arctic_white` on centre
+(19 > 4) and on size (42 > 8), and `skin_classic_green` on a 30-row hole at
+y=374..403.
 
 `scripts/repair-table-skins.mjs` is idempotent — it runs the line pass to a fixed
 point, because repairing raises the median and can pull a marginal row under the

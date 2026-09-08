@@ -16,24 +16,36 @@
  *     .table-art     { object-fit: fill }
  *
  * — so the painted table has to occupy the same box on every 605x1000 canvas.
- * Seven skins agreed to the pixel. Five did not: arctic_white sat 40px right and
- * 42px narrow, ice_cavern 46px low and 79px short, ocean_blue 29px right,
- * neon_city 22px right, crimson 15px right. At the ~460 CSS px a phone renders
- * the table at, arctic_white's 40px is a visible shove — the seat ring over the
- * rail on one side and off it on the other, the pot nearer one edge than the
- * other — and it changed depending on which skin the player had chosen, which is
- * the kind of bug that gets reported as "the table looks weird sometimes".
+ * Seven skins agreed to the pixel. Five did not: arctic_white sat 19px right of
+ * centre and 42px narrow, ice_cavern 7px low and 79px short, ocean_blue 9px
+ * right, neon_city 9px right, crimson 5px right. At the ~460 CSS px a phone
+ * renders the table at, arctic_white's offset is a visible shove — the seat ring
+ * over the rail on one side and off it on the other, the pot nearer one edge
+ * than the other — and it changed depending on which skin the player had chosen,
+ * which is the kind of bug reported as "the table looks weird sometimes" and
+ * never reproduced.
  *
- * Both were corrected by `scripts/repair-table-skins.mjs`. This is what stops
- * them coming back, and what a NEW skin has to satisfy before it can ship.
+ * Corrected by `scripts/repair-table-skins.mjs`. This is what stops it coming
+ * back, and what a NEW skin has to satisfy before it can ship.
  *
- * THE TWO THRESHOLDS ARE DIFFERENT ON PURPOSE.
- *   - geometry: 8px on any edge (~1.3%). Loose enough to leave the four skins
- *     that sit a pixel or two out alone rather than resample them for nothing.
+ * CENTRE AND SIZE ARE ASSERTED SEPARATELY, because only one of them can always
+ * be fixed by moving pixels.
+ *
+ *   - centre, 4px, NO exemptions. This is the one that decides whether the seat
+ *     ring lands on the rail, and all fourteen can satisfy it.
+ *   - size, 8px (~1.3%), two named exemptions with measured reasons in
+ *     `SIZE_EXEMPT`. Loose enough to leave the skins sitting a pixel or two out
+ *     alone rather than resampling them for nothing.
  *   - line: 55% of the line's OWN median brightness, and only a run of 6+ rows
  *     counts. That is a hole, not a highlight. carbon_ion's cyan tube is
  *     deliberately segmented and its specular core is deliberately ragged; a
  *     tighter bar would fail it and the next agent would "fix" a design.
+ *
+ * The size exemptions are not a shrug. ice_cavern is 6% small and RESCALING IT
+ * MAKES THINGS WORSE — it drives `table-skin-must-not-paint-seats.law` from 21.0
+ * to 47.5 against a limit of 35, because its rail is chaotic ice and scaling
+ * lands one seat on a bright vein and its neighbour on a dark one. That law is
+ * right; the gap wants new art. Both exempt skins are still held to the centre.
  */
 import { describe, expect, it } from 'vitest';
 import { readdirSync } from 'node:fs';
@@ -42,15 +54,17 @@ import { join } from 'node:path';
 import {
   CANVAS_W,
   CANVAS_H,
-  CANONICAL,
-  EDGE_TOLERANCE,
-  GEOMETRY_EXEMPT,
+  CENTRE_TOLERANCE,
+  SIZE_TOLERANCE,
+  SIZE_EXEMPT,
   LINE_EXEMPT,
   getSharp,
   readRGBA,
   opaqueBounds,
-  edgeDrift,
-  worstDrift,
+  centreOffset,
+  worstCentreOffset,
+  sizeOffset,
+  worstSizeOffset,
   ringProfile,
   deadRuns,
 } from '../scripts/lib/tableSkinGeometry.mjs';
@@ -76,21 +90,29 @@ describe.skipIf(!sharpAvailable)('table skin art is sound', () => {
     expect([img!.width, img!.height]).toEqual([CANVAS_W, CANVAS_H]);
   });
 
-  it.each(skins)('%s paints its table where .table-surface expects it', async (file) => {
+  it.each(skins)('%s centres its table where .table-surface expects it', async (file) => {
+    const img = await readRGBA(join(TABLES, file));
+    const bounds = opaqueBounds(img!);
+    const c = centreOffset(bounds);
+    expect(
+      worstCentreOffset(bounds),
+      `${file} table centre is off by ${c.x},${c.y}px. ` +
+        `Run: node scripts/repair-table-skins.mjs --write`
+    ).toBeLessThanOrEqual(CENTRE_TOLERANCE);
+  });
+
+  it.each(skins)('%s draws its table the size the others are', async (file) => {
     const stem = file.replace(/\.png$/, '');
-    if (GEOMETRY_EXEMPT.has(stem)) return; // see tableSkinGeometry.mjs
+    if (SIZE_EXEMPT.has(stem)) return; // named, with a measured reason, in the module
 
     const img = await readRGBA(join(TABLES, file));
     const bounds = opaqueBounds(img!);
-    const drift = edgeDrift(bounds);
-
+    const s = sizeOffset(bounds);
     expect(
-      worstDrift(bounds),
-      `${stem} opaque box ${bounds.minX},${bounds.minY} ${bounds.maxX},${bounds.maxY} ` +
-        `drifts l${drift.left} t${drift.top} r${drift.right} b${drift.bottom} from canonical ` +
-        `${CANONICAL.minX},${CANONICAL.minY} ${CANONICAL.maxX},${CANONICAL.maxY}. ` +
+      worstSizeOffset(bounds),
+      `${file} table is ${s.w}x${s.h}px off canonical. ` +
         `Run: node scripts/repair-table-skins.mjs --write`
-    ).toBeLessThanOrEqual(EDGE_TOLERANCE);
+    ).toBeLessThanOrEqual(SIZE_TOLERANCE);
   });
 
   it.each(skins)('%s has no hole in its racetrack line', async (file) => {

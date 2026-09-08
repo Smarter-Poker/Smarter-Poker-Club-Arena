@@ -288,6 +288,12 @@ export interface TableInfo {
 }
 
 export interface SeatedPlayer {
+  /** Server-only, authoritative membership used by disconnect protection. */
+  reconnect_membership?: {
+    is_vip?: boolean | null;
+    vip_tier?: string | null;
+    vip_expires_at?: string | null;
+  };
   user_id: string;
   username: string;
   stack: number;

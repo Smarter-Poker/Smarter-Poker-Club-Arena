@@ -55,3 +55,5 @@ Installed-function fingerprints were checked read-only against production and ma
 The credit fixture is a pinned read-only export including later dynamic migration patches; it is not a migration. An initial probe using the older CREATE declaration was superseded by the matching installed definition. Authorization, session policy, wallet provisioning, ledger triggers, PostgREST and browser rendering remain explicit fixture boundaries, assigned to their later phases. This evidence closes the isolated engine/service/database departure-and-retry scenario, not those broader audits.
 
 The normal containing engine rollout and this evidence branch's push/CI/merge still require verification. Phase 1 remains open until those gates are satisfied.
+
+PR #3840 initial CI caught a portability defect in the probe's safety check: a hardcoded temporary-directory prefix. The runner and test now share the OS temporary directory, resolve its real path, and still require the private departure fixture directory and socket. This corrects the fixture rather than exempting it from the portability gate. Separate PostgreSQL execution remains required for the six opt-in cases.

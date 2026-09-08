@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
+import { basename, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 const transport = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: transport,
@@ -14,7 +17,12 @@ const host = process.env.CA_DEPARTURE_PG_HOST;
 // Opt-in: scripts/dev/probe-departure-postgres.sh owns a disposable socket-only DB.
 // These are actual cashout/credit SQL transactions, not PostgREST/browser tests.
 function sql(query: string): any {
-  if (!host?.startsWith('/tmp/ca-departure.') || !host.endsWith('/socket'))
+  if (
+    !host ||
+    basename(host) !== 'socket' ||
+    !basename(dirname(host)).startsWith('ca-departure.') ||
+    realpathSync(dirname(dirname(host))) !== realpathSync(tmpdir())
+  )
     throw new Error('A disposable departure database is required');
   const result = execFileSync(
     process.env.CA_DEPARTURE_PSQL!,

@@ -4,7 +4,8 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PGBIN="${PGBIN:-/opt/homebrew/opt/postgresql@17/bin}"
 test -x "$PGBIN/initdb"
 test -x "$PGBIN/psql"
-departure_tmp="$(mktemp -d /tmp/ca-departure.XXXXXX)"
+departure_root="$(node -p 'require("node:os").tmpdir()')"
+departure_tmp="$(mktemp -d "$departure_root/ca-departure.XXXXXX")"
 cleanup() {
   "$PGBIN/pg_ctl" -D "$departure_tmp/data" -m immediate -w stop >/dev/null 2>&1 || true
   rm -rf "$departure_tmp"

@@ -26,7 +26,7 @@ import {
   readClubChipBalances,
 } from '../services/supabase.js';
 import { cashMinBuyIn } from '../config/cashBuyIn.js';
-import { horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
@@ -3143,6 +3143,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   protected async standUpBustedCashPlayers(): Promise<void> {
     if (this.isTournamentTable()) return;
+    // THE FREEZE (CLAUDE.md 13.5): the horse twin below checks it twice; this
+    // one stood humans up through the break. Same gate, same place.
+    if (isMaintenanceFrozen()) return;
 
     // Horses have their own recovery pass with its own stop-loss and treasury
     // accounting; removing them here too would double-handle the same seat.
@@ -3203,39 +3206,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       const inHand = liveHand?.players.find((p) => p.user_id === player.user_id);
       if (inHand?.is_all_in && !inHand.is_folded) continue;
 
-      try {
-        /* atomicCashout, not markSeatAsLeft-by-hand: it takes the seat lock,
-           credits any residual stack through atomic_credit_wallet_and_log under
-           an idempotency key, and stamps left_at — all in one RPC. The stack is
-           zero here by definition, so no chips actually move, but going through
-           the money path anyway is what keeps this seat exit OFF
-           fn_unaccounted_seat_exits (CLAUDE.md 11.5). */
-        await atomicCashout(player.user_id, this.tableId, player.seat_number);
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: player.seat_number,
-          user_id: player.user_id,
-          mid_hand: false,
-          reason: 'busted_no_rebuy',
-          timestamp: Date.now(),
-        });
-        this.chipContinuity.forget(player.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, player.user_id);
-        this.straddleEngine.removePlayer(this.tableId, player.user_id);
-        this.preActionEngine.removePlayer(this.tableId, player.user_id);
-        this.bustedSince.delete(player.user_id);
-        this.rebuyPromptOpenAt.delete(player.user_id);
-        removed.push(player.user_id);
-        console.log(
-          `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy - seat ${player.seat_number} released`
-        );
-      } catch (err) {
-        reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_standup_cashout');
-        // Keep the roster and grace tracking intact until this same cashout
-        // confirms departure on a later sweep. An unknown outcome is not a leave.
-      }
+      /* One door out for a busted seat (releaseBustedSeat): the money path,
+         then the event, then the trackers - and on a failed write nothing at
+         all, so the roster and grace tracking wait for a later sweep to ask
+         the same cashout again. An unknown outcome is not a leave. */
+      const released = await this.releaseBustedSeat(player, 'busted_no_rebuy');
+      if (!released) continue;
+      this.bustedSince.delete(player.user_id);
+      this.rebuyPromptOpenAt.delete(player.user_id);
+      removed.push(player.user_id);
+      console.log(
+        `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy - seat ${player.seat_number} released`
+      );
     }
 
     if (removed.length > 0) {
@@ -3257,38 +3239,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
       const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
 
-      // Stop-Loss Bankroll logic (same rule as Settlement step 5): after two
-      // rebuys (3 buy-ins lost) the horse leaves instead of rebuying again.
-      if (currentRebuys >= 2) {
-        /* ── HORSES ARE PLAYERS (CLAUDE.md 10.5) ────────────────────────────
-           This branch used to release the seat SILENTLY: no `seat_left` event,
-           where the human path immediately above emits one. Both stand a busted
-           player up for the same reason — out of chips, not coming back — but a
-           busted human's seat cleared on every client the instant the event
-           arrived, and a busted horse's seat cleared only when a client next
-           happened to diff a snapshot.
-
-           That is a TELL, and it is the one this file's own comment warns
-           about in the other direction: "a felt that clears a busted horse's
-           seat promptly and leaves a busted human's sitting there is a tell
-           either way round." Timing is part of the treatment (Dan 2026-08-27) —
-           the rhythm of the table is what gives the fleet away, not any one
-           hand. Same event, same reason, same moment. */
-        this.hub?.emitEvent(this.tableId, {
-          type: 'seat_left',
-          table_id: this.tableId,
-          seat: horse.seat_number,
-          user_id: horse.user_id,
-          mid_hand: false,
-          reason: 'busted_no_rebuy',
-          timestamp: Date.now(),
-        });
-        await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
-        this.chipContinuity.forget(horse.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+      // Stop-loss: the SAME rule Settlement step 5 applies (HorseRebuyPolicy,
+      // the temperament's own figure). This site used to hard-code `>= 2`
+      // while Settlement had moved on, which is the "two sites reloading on
+      // two different rules" the comment below warns about.
+      if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
+        /* HORSES ARE PLAYERS (CLAUDE.md 10.5): the same door the busted human
+           leaves through - money path, then `seat_left`, then the trackers -
+           so a busted horse's seat clears on every client at the same moment
+           a human's does. Timing is part of the treatment (Dan 2026-08-27). */
+        const released = await this.releaseBustedSeat(horse, 'busted_stop_loss');
+        if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
@@ -3329,12 +3290,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           `[ServerTableEngine:${this.tableId}] Dead-table recovery: rebought ${horse.username} -> ${rebuyAmount} chips (Rebuy #${currentRebuys + 1})`
         );
       } else {
-        await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
-        this.chipContinuity.forget(horse.user_id);
-        this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
-        this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
-        this.straddleEngine.removePlayer(this.tableId, horse.user_id);
-        this.preActionEngine.removePlayer(this.tableId, horse.user_id);
+        const released = await this.releaseBustedSeat(horse, 'busted_unfunded');
+        if (!released) continue;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(

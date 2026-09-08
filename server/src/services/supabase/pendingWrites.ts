@@ -52,6 +52,7 @@
  */
 
 import { reportError } from '../errorReporter.js';
+import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
 
 /**
  * How long a PostgREST schema-cache reload takes on THIS database, measured.
@@ -112,6 +113,14 @@ interface Entry extends PendingWrite {
   attempts: number;
   lastError: string;
   inFlight: boolean;
+  /**
+   * Milliseconds this entry has spent waiting out a platform freeze. Not
+   * charged against the budget: the freeze's own triggers (zz_freeze_guard)
+   * refuse every money write for the five-minute break, and a budget of
+   * 168 s that keeps ticking through it gives up on guaranteed refusals and
+   * alarms about chips that were never at risk (final sweep, 2026-09-08).
+   */
+  frozenMs: number;
 }
 
 const pending = new Map<string, Entry>();
@@ -165,12 +174,15 @@ async function runOne(entry: Entry): Promise<void> {
     entry.inFlight = false;
   }
 
-  if (now() - entry.enqueuedAt >= PENDING_WRITE_BUDGET_MS) {
+  if (now() - entry.enqueuedAt - entry.frozenMs >= PENDING_WRITE_BUDGET_MS) {
     await giveUp(entry);
     return;
   }
   entry.nextAttemptAt = now() + backoffFor(entry.attempts);
 }
+
+/** Wall time of the last drain tick, so a frozen tick can be credited back. */
+let lastDrainAt = 0;
 
 function ensureTimer(): void {
   if (timer || pending.size === 0) return;
@@ -189,7 +201,17 @@ async function drainDue(): Promise<void> {
     }
     return;
   }
-  const due = [...pending.values()].filter((e) => !e.inFlight && e.nextAttemptAt <= now());
+  const tickAt = now();
+  const sinceLast = lastDrainAt > 0 ? Math.max(0, tickAt - lastDrainAt) : 0;
+  lastDrainAt = tickAt;
+  // THE FREEZE (CLAUDE.md 13.5): during the break every money write is refused
+  // at the database, so an attempt now is a wasted attempt and a burnt budget.
+  // Wait it out and credit the frozen time back to every entry's clock.
+  if (isMaintenanceFrozen()) {
+    for (const e of pending.values()) e.frozenMs += sinceLast;
+    return;
+  }
+  const due = [...pending.values()].filter((e) => !e.inFlight && e.nextAttemptAt <= tickAt);
   await Promise.all(due.map((e) => runOne(e)));
 }
 
@@ -223,6 +245,7 @@ export function enqueuePendingWrite(write: PendingWrite): boolean {
     attempts: 0,
     lastError: '',
     inFlight: false,
+    frozenMs: 0,
   });
   ensureTimer();
   return true;

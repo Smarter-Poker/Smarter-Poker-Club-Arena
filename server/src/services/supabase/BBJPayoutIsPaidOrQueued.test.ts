@@ -88,6 +88,16 @@ beforeEach(() => {
   from.mockImplementation((name: string) => {
     if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
     if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
+    if (name === 'bbj_unclaimed_shares') return table({ data: [], error: null });
+    if (name === 'bbj_payout_recipients')
+      return table({
+        data: PARAMS.dealtInPlayerIds.map((user_id) => ({
+          user_id,
+          amount:
+            user_id === 'loser-uuid' ? 13049.59 : user_id === 'winner-uuid' ? 6524.8 : 2174.93,
+        })),
+        error: null,
+      });
     if (name === 'bbj_pools')
       return table({
         data: { id: POOL, main_balance: 104396.75, backup_balance: 32081.72 },
@@ -158,6 +168,16 @@ describe('a transient failure is retried, and the second attempt pays', () => {
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
       if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
+      if (name === 'bbj_unclaimed_shares') return table({ data: [], error: null });
+      if (name === 'bbj_payout_recipients')
+        return table({
+          data: PARAMS.dealtInPlayerIds.map((user_id) => ({
+            user_id,
+            amount:
+              user_id === 'loser-uuid' ? 13049.59 : user_id === 'winner-uuid' ? 6524.8 : 2174.93,
+          })),
+          error: null,
+        });
       if (name === 'bbj_pools') {
         poolReads++;
         return poolReads === 1
@@ -179,6 +199,7 @@ describe('when every attempt fails, the hit is queued and alarmed, never dropped
     setBBJPayoutQueue({
       claim: async (params, note) => {
         queued.push({ params, note });
+        return true;
       },
       settle: async () => undefined,
     });
@@ -266,6 +287,16 @@ describe('when every attempt fails, the hit is queued and alarmed, never dropped
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: null }, error: null });
       if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
+      if (name === 'bbj_unclaimed_shares') return table({ data: [], error: null });
+      if (name === 'bbj_payout_recipients')
+        return table({
+          data: PARAMS.dealtInPlayerIds.map((user_id) => ({
+            user_id,
+            amount:
+              user_id === 'loser-uuid' ? 13049.59 : user_id === 'winner-uuid' ? 6524.8 : 2174.93,
+          })),
+          error: null,
+        });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 0, backup_balance: 500 }, error: null });
       return table({ data: null, error: null });
@@ -299,6 +330,16 @@ describe('every recipient is told, seated or not (phase 1), and the note says wh
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
       if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
+      if (name === 'bbj_unclaimed_shares') return table({ data: [], error: null });
+      if (name === 'bbj_payout_recipients')
+        return table({
+          data: PARAMS.dealtInPlayerIds.map((user_id) => ({
+            user_id,
+            amount:
+              user_id === 'loser-uuid' ? 13049.59 : user_id === 'winner-uuid' ? 6524.8 : 2174.93,
+          })),
+          error: null,
+        });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 1000, backup_balance: 0 }, error: null });
       if (name === 'notifications') {
@@ -323,6 +364,16 @@ describe('every recipient is told, seated or not (phase 1), and the note says wh
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
       if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
+      if (name === 'bbj_unclaimed_shares') return table({ data: [], error: null });
+      if (name === 'bbj_payout_recipients')
+        return table({
+          data: PARAMS.dealtInPlayerIds.map((user_id) => ({
+            user_id,
+            amount:
+              user_id === 'loser-uuid' ? 13049.59 : user_id === 'winner-uuid' ? 6524.8 : 2174.93,
+          })),
+          error: null,
+        });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 1000, backup_balance: 0 }, error: null });
       if (name === 'notifications') {
@@ -340,11 +391,11 @@ describe('every recipient is told, seated or not (phase 1), and the note says wh
     expect(inserted.map((r) => r.user_id).sort()).toEqual([...PARAMS.dealtInPlayerIds].sort());
     const seated = inserted.find((r) => r.user_id === 'loser-uuid')!;
     const departed = inserted.find((r) => r.user_id === 'p4')!;
-    expect(seated.message).toContain('added to your stack at the table');
+    expect(seated.message).toContain('confirmed jackpot credit');
     expect(seated.message).toContain('You took the bad beat');
-    expect(seated.metadata.placed).toBe('table_stack');
-    expect(departed.message).toContain('credited to your wallet');
-    expect(departed.metadata.placed).toBe('club_wallet');
+    expect(seated.metadata.placed).toBe('credited');
+    expect(departed.message).toContain('confirmed jackpot credit');
+    expect(departed.metadata.placed).toBe('credited');
   });
 });
 
@@ -463,6 +514,109 @@ describe('unknown payout receipts cannot close the durable claim', () => {
     expect((await run()).status).toBe('queued');
     expect(claim).toHaveBeenCalled();
     expect(settle).not.toHaveBeenCalled();
+  });
+});
+
+describe('recipient notifications follow recorded delivery', () => {
+  it.each(['parked', 'read_error', 'missing', 'duplicate', 'mismatch'])(
+    'does not invent a successful delivery for %s',
+    async (scenario) => {
+      const original = from.getMockImplementation()!;
+      const inserted: Array<{ user_id: string; title: string; message: string }> = [];
+      from.mockImplementation((name: string) => {
+        if (name === 'bbj_unclaimed_shares')
+          return table({
+            data: scenario === 'parked' ? [{ user_id: 'loser-uuid', amount: 13049.59 }] : [],
+            error: null,
+          });
+        if (name === 'bbj_payout_recipients')
+          return table({
+            data:
+              scenario === 'missing'
+                ? []
+                : PARAMS.dealtInPlayerIds
+                    .filter((id) => scenario !== 'parked' || id !== 'loser-uuid')
+                    .map((id) => ({
+                      user_id: id,
+                      amount:
+                        id === 'loser-uuid' ? 13049.59 : id === 'winner-uuid' ? 6524.8 : 2174.93,
+                    }))
+                    .concat(scenario === 'duplicate' ? [{ user_id: 'p3', amount: 2174.93 }] : [])
+                    .map((row) => (scenario === 'mismatch' ? { ...row, amount: -1 } : row)),
+            error: scenario === 'read_error' ? { message: 'unreadable' } : null,
+          });
+        if (name === 'notifications')
+          return {
+            insert: async (rows: typeof inserted) => {
+              inserted.push(...rows);
+              return { error: null };
+            },
+          };
+        return original(name);
+      });
+      rpc.mockResolvedValue({ data: [appliedRow()], error: null });
+      await run();
+      if (scenario === 'parked') {
+        const note = inserted.find((r) => r.user_id === 'loser-uuid');
+        expect(note?.title).toContain('Pending');
+        expect(note?.message).not.toContain('was added');
+        expect(note?.message).not.toContain('was credited');
+      } else expect(inserted).toEqual([]);
+    }
+  );
+});
+
+it('sends one recorded-credit notice per person without guessing seat or wallet delivery', async () => {
+  const original = from.getMockImplementation()!;
+  const inserted: Array<{ user_id: string; message: string }> = [];
+  from.mockImplementation((name: string) =>
+    name === 'notifications'
+      ? {
+          insert: async (rows: typeof inserted) => {
+            inserted.push(...rows);
+            return { error: null };
+          },
+        }
+      : original(name)
+  );
+  rpc.mockResolvedValue({ data: [appliedRow()], error: null });
+  await run(
+    processBBJPayout({
+      ...PARAMS,
+      dealtInPlayerIds: [...PARAMS.dealtInPlayerIds, 'p3', 'loser-uuid'],
+    })
+  );
+  expect(inserted).toHaveLength(5);
+  expect(new Set(inserted.map((row) => row.user_id)).size).toBe(5);
+  expect(inserted.every((row) => row.message.includes('confirmed jackpot credit'))).toBe(true);
+  expect(inserted.some((row) => /stack|wallet/.test(row.message))).toBe(false);
+});
+
+describe('queue durability is a confirmed write, not writer registration', () => {
+  it.each([false, undefined, true])('reports the writer receipt %j accurately', async (receipt) => {
+    setBBJPayoutQueue({ claim: vi.fn().mockResolvedValue(receipt), settle: vi.fn() });
+    rpc.mockResolvedValue({ data: null, error: { message: 'refused connection' } });
+    await run();
+    expect(raiseFinancialAlert).toHaveBeenCalledWith(
+      'critical',
+      'processBBJPayout.exhausted',
+      expect.any(String),
+      expect.objectContaining({ queued: receipt === true })
+    );
+  });
+  it('does not claim durability when the registered writer throws', async () => {
+    setBBJPayoutQueue({
+      claim: vi.fn().mockRejectedValue(new Error('queue unavailable')),
+      settle: vi.fn(),
+    });
+    rpc.mockResolvedValue({ data: null, error: { message: 'refused connection' } });
+    await run();
+    expect(raiseFinancialAlert).toHaveBeenCalledWith(
+      'critical',
+      'processBBJPayout.exhausted',
+      expect.stringContaining('not confirmed'),
+      expect.objectContaining({ queued: false })
+    );
   });
 });
 

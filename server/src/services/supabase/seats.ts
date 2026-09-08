@@ -150,7 +150,9 @@ export async function markSeatAsLeft(
  * which the clock never blocks. A refusal is reported through `onLocked` with
  * the remaining milliseconds and the function returns 0 with the seat exactly
  * as it was; any other failure goes to `onFailed`. Callbacks rather than a
- * richer return type so every existing caller keeps its `number` contract.
+ * richer return type so handled refusals keep the number contract. Without a
+ * failure callback an unconfirmed departure rejects, so awaiting callers
+ * cannot accidentally execute success cleanup.
  */
 export interface CashoutOptions {
   /** 'vpip_evicted' (Dan 2026-09-05): a nit-game eviction - a system exit
@@ -186,22 +188,13 @@ export async function atomicCashout(
 
     if (error) {
       const locked = LEAVE_LOCKED_RE.exec(String(error.message || ''));
-      if (locked) {
+      if (locked && opts?.onLocked) {
         // Refused by the stay clock. Not a failure: the player is still in
         // their chair and the caller shows them the countdown.
         opts?.onLocked?.(Number(locked[1]));
         return 0;
       }
-      // The seat is untouched: the whole thing was one transaction, so a
-      // failure here rolled back the credit AND the vacate together. The stack
-      // is still on the seat and the next pass retries it. This is the property
-      // the old code needed `safeToClearSeat` to approximate.
-      console.warn(
-        `[atomicCashout] Locked cash-out failed for ${userId} at ${tableId} - seat preserved for retry:`,
-        error.message
-      );
-      opts?.onFailed?.(String(error.message || 'cash-out failed'));
-      return 0;
+      throw new Error(String(error.message || 'cash-out failed'));
     }
 
     const receipt = confirmedCashout(data, seatNumber);
@@ -212,7 +205,8 @@ export async function atomicCashout(
       `[atomicCashout] Departure unconfirmed for ${userId} at ${tableId} - retain tracking for retry:`,
       err?.message
     );
-    opts?.onFailed?.(String(err?.message || 'transport failure'));
+    if (!opts?.onFailed) throw err;
+    opts.onFailed(String(err?.message || 'transport failure'));
     return 0;
   }
 }

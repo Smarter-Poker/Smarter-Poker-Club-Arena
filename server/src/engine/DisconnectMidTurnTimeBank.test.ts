@@ -180,6 +180,22 @@ describe('a player who drops out of reconnect grace mid-turn', () => {
 });
 
 describe('unified outage allowance on a live turn', () => {
+  it('preserves the outage deadline when the clock advances during timer handoff', () => {
+    const engine = harness();
+    engine.disconnectEngine.registerPlayer(TABLE, 'u1');
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now++);
+    engine.startTurnTimer('u1', SEAT, 15);
+    engine.disconnectEngine.markDisconnected(TABLE, 'u1');
+    const expected = engine.disconnectEngine.getFsmState(TABLE, 'u1').graceDeadlineMs;
+    try {
+      expect(engine.disconnectEngine.armedAutoActionDeadlineMs(TABLE, 'u1')).toBe(expected);
+      expect(engine.playerTurnStartTime + engine.playerTurnDuration * 1000).toBe(expected);
+    } finally {
+      engine.preciseTimer.dispose();
+    }
+  });
+
   it.each([false, true])(
     'transfers the primary clock to the original protection deadline, VIP=%s',
     (vip) => {

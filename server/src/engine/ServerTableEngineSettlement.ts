@@ -2393,6 +2393,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             const persisted = stackByUser.get(player.user_id);
             if (persisted !== undefined && Number.isFinite(persisted)) player.stack = persisted;
           }
+          /* The envelope resolved the frozen add-ons silently. Say what it
+             did (the add_on_applied bubble, the private add_on_adjusted
+             frame) and rebuild the cap cache - see announceEnvelopeResolvedAddOns. */
+          await this.announceEnvelopeResolvedAddOns(v_handHistoryId, players);
+          if (!this.lifecycleCanMutate()) postCommitStateCanReflect = false;
         }
       }
     }

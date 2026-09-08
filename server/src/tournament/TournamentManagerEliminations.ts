@@ -9,6 +9,7 @@
  */
 
 import nodeCrypto from 'node:crypto';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
@@ -1116,10 +1117,22 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
         }
 
-        await this.checkTableBalance();
+        // THE FREEZE IS TOTAL (Dan 2026-09-01/03; measured 2026-09-07). A
+        // table-balance move is a seat closed on one felt and opened on
+        // another with the same stack, and the break is the one time the
+        // platform has promised that nothing moves. This sweep kept moving
+        // players between parked tables inside the freeze (26 seats / 571k
+        // chips in the 17:55 break alone), which is both a promise broken and
+        // the whole of the freeze-conservation drift the scorecard kept
+        // reporting: a move caught mid-way by the :00 mark counts the stack
+        // twice or not at all. Nothing is lost by waiting five minutes; the
+        // next sweep after the thaw balances exactly as this one would have.
+        if (!isMaintenanceFrozen()) {
+          await this.checkTableBalance();
 
-        // FIX 155: Check if new tables need to be created during rebuy/late-reg period
-        await this.checkDynamicTableExpansion();
+          // FIX 155: Check if new tables need to be created during rebuy/late-reg period
+          await this.checkDynamicTableExpansion();
+        }
 
         // ── HAND-FOR-HAND BUBBLE MODE ──
         // Multi-table tournaments only (not Spin/SNG single-table)

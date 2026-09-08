@@ -73,7 +73,7 @@ describe('LAW: the throw is one clock, at the speed the player chose', () => {
   it('hands the same speed to the sound, on the AudioContext clock', () => {
     // Not four setTimeouts: a main thread laying out a table drifts a timer by
     // tens of milliseconds and the priority window then eats the late arrival.
-    expect(PLAYER).toMatch(/scheduleCues\(spec\.audio, \{[\s\S]*?speed,/);
+    expect(PLAYER).toMatch(/scheduleCues\(audio, \{[\s\S]*?speed,/);
     const SOUND = code(read('src/services/ThrowableSoundService.ts'));
     expect(SOUND).toMatch(/src\.start\(Math\.max\(startAt, now\)\)/);
     expect(SOUND).toMatch(/const t0 = ctx\.currentTime/);

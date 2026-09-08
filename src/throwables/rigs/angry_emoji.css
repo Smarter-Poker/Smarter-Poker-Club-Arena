@@ -1,0 +1,107 @@
+.thr-angry_emoji__orange {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: thr-angry_emoji-orange calc(1.3s * var(--animation-speed, 1)) linear
+    calc(0s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-angry_emoji-orange {
+  0%,
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-angry_emoji__red {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: thr-angry_emoji-red calc(1.367s * var(--animation-speed, 1)) linear
+    calc(0s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-angry_emoji-red {
+  0% {
+    opacity: 0;
+  }
+  70%,
+  95% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-angry_emoji__shout {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-angry_emoji-shout calc(0.266s * var(--animation-speed, 1)) linear
+    calc(1.367s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-angry_emoji-shout {
+  0%,
+  99% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-angry_emoji__fire {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-angry_emoji-fire calc(0.2267s * var(--animation-speed, 1)) ease-in-out
+    calc(1.633s * var(--animation-speed, 1)) 10 forwards;
+}
+@keyframes thr-angry_emoji-fire {
+  0% {
+    opacity: 1;
+    transform: scale(0.94, 1.03);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03, 0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(0.98, 1.02);
+  }
+}
+.thr-angry_emoji__rage {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: thr-angry_emoji-rage calc(0.28s * var(--animation-speed, 1)) ease-in-out
+    calc(1.633s * var(--animation-speed, 1)) 8 forwards;
+}
+@keyframes thr-angry_emoji-rage {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  25% {
+    transform: translateX(-3px) rotate(-2deg);
+  }
+  75% {
+    transform: translateX(3px) rotate(2deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-angry_emoji__rage,
+  .thr-angry_emoji__red,
+  .thr-angry_emoji__orange,
+  .thr-angry_emoji__shout,
+  .thr-angry_emoji__fire {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-angry_emoji__rage,
+  .thr-angry_emoji__red {
+    opacity: 1 !important;
+  }
+  .thr-angry_emoji__orange,
+  .thr-angry_emoji__shout,
+  .thr-angry_emoji__fire {
+    opacity: 0 !important;
+  }
+}

@@ -31,6 +31,31 @@ import {
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
 
+/** The socket watchdog cannot run until authentication has returned a token. */
+async function tokenForConnection(
+  getToken: () => Promise<string | null>,
+  signal: AbortSignal
+): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await new Promise<string | null>((resolve, reject) => {
+      onAbort = () => reject(new Error('Engine connection cancelled'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      timer = setTimeout(() => reject(new Error('Engine token request timed out')), 15_000);
+      // Both outcomes stay observed if the deadline or disconnect wins first.
+      Promise.resolve(getToken()).then(resolve, reject);
+    });
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  }
+}
+
 // ─── Protocol types — mirror server/src/transport/TableStateHub.ts ────────────
 
 export type EngineSnapshot = Record<string, unknown>;
@@ -351,6 +376,7 @@ export class EngineStateClient {
    */
   private connectionGeneration = 0;
   private openingGeneration: number | null = null;
+  private tokenWait: AbortController | null = null;
   private onVisibility: (() => void) | null = null;
   /** Dan 2026-08-21: browser 'online' hook for instant post-outage reconnect. */
   private onOnline: (() => void) | null = null;
@@ -423,6 +449,8 @@ export class EngineStateClient {
   disconnect(): void {
     this.connectionGeneration++;
     this.intentionalClose = true;
+    this.tokenWait?.abort();
+    this.tokenWait = null;
     // Review fix 2026-08-25: no queued frame may fire onSnapshot/onEvent
     // against a page that has moved on (the CA-22 class).
     this.resetInbox();
@@ -495,13 +523,17 @@ export class EngineStateClient {
     // status stuck at 'connecting' — the single worst frozen-table path in
     // the client. A rejection is now just another retry.
     let token: string | null = null;
+    const tokenWait = new AbortController();
+    this.tokenWait = tokenWait;
     try {
-      token = await this.opts.getToken();
+      token = await tokenForConnection(() => this.opts.getToken(), tokenWait.signal);
     } catch {
       if (!this.intentionalClose && generation === this.connectionGeneration) {
         this.scheduleReconnect();
       }
       return;
+    } finally {
+      if (this.tokenWait === tokenWait) this.tokenWait = null;
     }
     // P2-1: disconnect() may have fired while getToken() was in flight
     // (tableId switch / unmount / StrictMode double-invoke). If so, abort before
@@ -1575,6 +1607,8 @@ export class EngineChannelClient {
   disconnect(): void {
     this.connectionGeneration++;
     this.intentionalClose = true;
+    this.tokenWait?.abort();
+    this.tokenWait = null;
     this.clearHandshakeTimer();
     this.stopWatchdog();
     if (this.onOnline !== null && typeof window !== 'undefined') {
@@ -1713,6 +1747,7 @@ export class EngineChannelClient {
 
   private connectionGeneration = 0;
   private openingGeneration: number | null = null;
+  private tokenWait: AbortController | null = null;
 
   private async openOnce(): Promise<void> {
     // Single-flight + live-socket guard — same race as EngineStateClient:
@@ -1735,13 +1770,17 @@ export class EngineChannelClient {
     // 2026-08-22: a getToken rejection must be a retry, not the permanent end
     // of the reconnect ladder (same fix as EngineStateClient.openOnce).
     let token: string | null = null;
+    const tokenWait = new AbortController();
+    this.tokenWait = tokenWait;
     try {
-      token = await this.opts.getToken();
+      token = await tokenForConnection(() => this.opts.getToken(), tokenWait.signal);
     } catch {
       if (!this.intentionalClose && generation === this.connectionGeneration) {
         this.scheduleReconnect();
       }
       return;
+    } finally {
+      if (this.tokenWait === tokenWait) this.tokenWait = null;
     }
     // P2-1: disconnect() may have fired while getToken() was in flight. Abort
     // before creating the socket to avoid leaking a zombie channel connection.

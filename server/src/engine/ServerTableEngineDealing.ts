@@ -85,14 +85,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       try {
         // FIX 211: Await any pending postHandTasks before reloading players
         // This ensures DB stacks are synced before the next hand starts.
-        // BOUNDED (2026-08-22): postHandTasks performs a chain of Supabase
-        // calls, each individually capped at 15s but with no cap on the SUM —
-        // and it never calls markProgress(), so a degraded DB could hold this
-        // await past the 90s idle watchdog and get the engine killed (across
-        // every table at once, since DB degradation is correlated). Cap the
-        // wait at 45s; on timeout the remaining tasks keep running in the
-        // background (their .catch already reports) and the loop proceeds —
-        // stack sync is idempotent and the next hand's settlement re-syncs.
+        // There is no time-based escape from settlement. Retry slices preserve
+        // process liveness; settlementAgeMs independently exposes a blocked hand.
         /* THE BARRIER IS RE-READ AFTER EVERY WAIT (chip standard 2026-09-04).
            handleHandCompleteEvent assigns the barrier and settleCompletedHand
            later REASSIGNS it to include the postHandTasks chain (sync_stacks,
@@ -120,8 +114,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
              slices instead, and simply do not deal the next hand until this
              hand's money and record are done. A table on a database too sick
              to settle for five full minutes has no business dealing anyway;
-             at that point proceed as before, but say - durably - which hand's
-             record is now at risk. */
+             keep waiting and expose its age in the settlement health signal. */
           const sliceMs = 15_000;
           let waited = 0;
           let settled = false;

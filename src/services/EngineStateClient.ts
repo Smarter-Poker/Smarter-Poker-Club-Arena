@@ -1584,6 +1584,12 @@ export interface FinancialUpdateMessage {
   total: number;
   ledgerEntry?: unknown;
 }
+/** The server refused a subscribe (ChannelHub ChannelErrorMsg). */
+export interface ChannelErrorMessage {
+  type: 'CHANNEL_ERROR';
+  code: string;
+  message: string;
+}
 
 export type ChannelServerMessage =
   | ChannelPingMessage
@@ -1594,7 +1600,8 @@ export type ChannelServerMessage =
   | LobbyUpdateMessage
   | HandReplayEventMessage
   | TableMetaUpdateMessage
-  | FinancialUpdateMessage;
+  | FinancialUpdateMessage
+  | ChannelErrorMessage;
 
 // ─── Client → Server message types ───────────────────────────────────────────
 
@@ -2179,6 +2186,14 @@ export class EngineChannelClient {
       }
       case 'FINANCIAL_UPDATE': {
         this.emit('onFinancialUpdate', msg);
+        return;
+      }
+      case 'CHANNEL_ERROR': {
+        /* The server sends this when it refuses a subscribe. It fell through
+           this switch unread (final sweep 2026-09-08): a subscribe rejection
+           produced no log, no status change and no UI. It is at least on the
+           record now. */
+        console.warn(`[EngineChannelClient] CHANNEL_ERROR ${msg.code}: ${msg.message}`);
         return;
       }
     }

@@ -1,0 +1,116 @@
+.thr-tilt_meter__frame {
+  transform-origin: 0 0;
+  animation: thr-tilt_meter-frame calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-tilt_meter-frame {
+  0.00000% {
+    opacity: 0;
+    transform: scaleY(0.1);
+  }
+  4.55413% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+.thr-tilt_meter__mercury {
+  transform-origin: 0 0;
+  animation: thr-tilt_meter-mercury calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-tilt_meter-mercury {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(65px) scaleY(0.15);
+  }
+  7.28116% {
+    opacity: 1;
+    transform: translateY(65px) scaleY(0.15);
+  }
+  40.00545% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+  42.73248% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-tilt_meter__steam {
+  transform-origin: 0 0;
+  animation: thr-tilt_meter-steam calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-tilt_meter-steam {
+  0.00000% {
+    opacity: 0;
+    transform: scale(0.1);
+  }
+  42.73248% {
+    opacity: 0;
+    transform: scale(0.1);
+  }
+  48.18653% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  67.27570% {
+    opacity: 0;
+    transform: translateY(-35px) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-35px) scale(1.2);
+  }
+}
+.thr-tilt_meter__stamp {
+  transform-origin: 0 0;
+  animation: thr-tilt_meter-stamp calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-tilt_meter-stamp {
+  0.00000% {
+    opacity: 0;
+    transform: scale(2);
+  }
+  44.09599% {
+    opacity: 0;
+    transform: scale(2);
+  }
+  48.18653% {
+    opacity: 1;
+    transform: scale(0.9);
+  }
+  52.27707% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-tilt_meter__frame {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-tilt_meter__mercury {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-tilt_meter__steam {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-tilt_meter__stamp {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+}

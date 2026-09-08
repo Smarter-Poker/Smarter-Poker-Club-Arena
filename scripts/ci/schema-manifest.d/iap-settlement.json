@@ -1,0 +1,5 @@
+{
+  "_owner": "feat/iap-settlement",
+  "tables": ["iap_products", "iap_events"],
+  "functions": ["fn_iap_settle_event"]
+}

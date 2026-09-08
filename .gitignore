@@ -9,6 +9,9 @@ node_modules
 
 # Build
 dist
+# The native (Capacitor) bundle. Rebuilt by `npm run build:native`, copied
+# into ios/ and android/ by `cap sync`; never published as the web bundle.
+dist-native
 coverage
 
 # Vercel

@@ -328,7 +328,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       >
         <div className={styles.artPanel} aria-hidden="true">
           <img
-            src="/hub/club-arena/images/club-arena/vault-iris-emblem-v1-320.webp"
+            src={mediaUrl('images/club-arena/vault-iris-emblem-v1-320.webp')}
             alt=""
             width="320"
             height="296"

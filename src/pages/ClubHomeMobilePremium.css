@@ -103,8 +103,8 @@
     overflow: hidden;
     border: 0;
     border-radius: 0;
-    background: url('/hub/club-arena/assets/club-buttons/wallets/my-wallets-v1/chassis.png')
-      center / 100% 100% no-repeat;
+    background: url('/assets/club-buttons/wallets/my-wallets-v1/chassis.png') center / 100% 100%
+      no-repeat;
     box-shadow: none;
     color: #edf2f6;
   }

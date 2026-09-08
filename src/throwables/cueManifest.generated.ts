@@ -70,6 +70,12 @@ export const THROWABLE_CUE_MANIFEST: Record<string, CueManifestEntry> = {
   chip_clatter: { placeholder: false, license: 'CC0-1.0' },
   steam_hiss: { placeholder: false, license: 'Own-Synthesis' },
   magnet_hum: { placeholder: false, license: 'Own-Synthesis' },
+  donkey_bray: { placeholder: false, license: 'CC0-1.0' },
+  applause_bed: { placeholder: false, license: 'CC0-1.0' },
+  whale_call: { placeholder: false, license: 'Own-Synthesis' },
+  ambulance_siren_small: { placeholder: false, license: 'Own-Synthesis' },
+  pressure_rise: { placeholder: false, license: 'Own-Synthesis' },
+  reel_spin_loop: { placeholder: false, license: 'Own-Synthesis' },
 };
 
 export const THROWABLE_CUE_ALLOWED_LICENSES: readonly string[] = [

@@ -24,6 +24,14 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "bad_beat_bandage.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 924930,
+    "runtimeBytes": 614548,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "banana_peel.png",
     "width": 1254,
     "height": 1254,
@@ -48,6 +56,14 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "blush.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 649866,
+    "runtimeBytes": 408648,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "bomb.png",
     "width": 1254,
     "height": 1254,
@@ -61,6 +77,14 @@
     "height": 1254,
     "sourceBytes": 1094162,
     "runtimeBytes": 741024,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "bubble_boy.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 788273,
+    "runtimeBytes": 594586,
     "visiblePixelsIdentical": true
   },
   {
@@ -80,6 +104,14 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "champagne_tower.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 795465,
+    "runtimeBytes": 559394,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "champagne.png",
     "width": 1254,
     "height": 1254,
@@ -93,6 +125,14 @@
     "height": 1254,
     "sourceBytes": 1731850,
     "runtimeBytes": 1171058,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "chip_rain.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 918522,
+    "runtimeBytes": 636570,
     "visiblePixelsIdentical": true
   },
   {
@@ -120,11 +160,27 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "crown.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1180218,
+    "runtimeBytes": 820376,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "crying_emoji.png",
     "width": 1254,
     "height": 1254,
     "sourceBytes": 1675821,
     "runtimeBytes": 1195194,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "diamond_shower.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1142341,
+    "runtimeBytes": 863858,
     "visiblePixelsIdentical": true
   },
   {
@@ -152,6 +208,30 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "donkey.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 218143,
+    "runtimeBytes": 147404,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "energy_ball.png",
+    "width": 1327,
+    "height": 1186,
+    "sourceBytes": 736883,
+    "runtimeBytes": 565936,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "facepalm.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1105132,
+    "runtimeBytes": 741378,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "fireworks.png",
     "width": 1254,
     "height": 1254,
@@ -165,6 +245,14 @@
     "height": 1254,
     "sourceBytes": 1533518,
     "runtimeBytes": 1112684,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "heart_arrow.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 530302,
+    "runtimeBytes": 336224,
     "visiblePixelsIdentical": true
   },
   {
@@ -192,6 +280,14 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "loser_hand.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1027105,
+    "runtimeBytes": 670452,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "magnet.png",
     "width": 1254,
     "height": 1254,
@@ -200,11 +296,35 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "ok_smug.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 771557,
+    "runtimeBytes": 513800,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "party_popper.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 812615,
+    "runtimeBytes": 586462,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "poop.png",
     "width": 1254,
     "height": 1254,
     "sourceBytes": 1486330,
     "runtimeBytes": 1005282,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "pumpkin.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 846704,
+    "runtimeBytes": 591790,
     "visiblePixelsIdentical": true
   },
   {
@@ -248,11 +368,59 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "screaming.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 957497,
+    "runtimeBytes": 640568,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "sleeping.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1031155,
+    "runtimeBytes": 720694,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "slot_machine.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 987343,
+    "runtimeBytes": 703604,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "sloth.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 2335812,
+    "runtimeBytes": 1517164,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "snowball.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 938680,
+    "runtimeBytes": 644112,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "snowman.png",
     "width": 1254,
     "height": 1254,
     "sourceBytes": 1246936,
     "runtimeBytes": 893464,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "standing_ovation.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1177333,
+    "runtimeBytes": 831642,
     "visiblePixelsIdentical": true
   },
   {
@@ -264,11 +432,27 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "surrender.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 682329,
+    "runtimeBytes": 444246,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "tennis_ball.png",
     "width": 1264,
     "height": 1244,
     "sourceBytes": 1299917,
     "runtimeBytes": 921750,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "thinking.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 722382,
+    "runtimeBytes": 457974,
     "visiblePixelsIdentical": true
   },
   {
@@ -285,6 +469,22 @@
     "height": 1254,
     "sourceBytes": 1300332,
     "runtimeBytes": 862886,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "tilt_meter.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 823597,
+    "runtimeBytes": 571956,
+    "visiblePixelsIdentical": true
+  },
+  {
+    "file": "to_the_moon.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 973143,
+    "runtimeBytes": 645024,
     "visiblePixelsIdentical": true
   },
   {
@@ -312,67 +512,11 @@
     "visiblePixelsIdentical": true
   },
   {
-    "file": "water_gun.png",
+    "file": "velvet_rope.png",
     "width": 1254,
     "height": 1254,
-    "sourceBytes": 1108754,
-    "runtimeBytes": 872202,
-    "visiblePixelsIdentical": true
-  },
-  {
-    "file": "thinking.png",
-    "width": 1254,
-    "height": 1254,
-    "sourceBytes": 722382,
-    "runtimeBytes": 457974,
-    "visiblePixelsIdentical": true
-  },
-  {
-    "file": "loser_hand.png",
-    "width": 1254,
-    "height": 1254,
-    "sourceBytes": 1027105,
-    "runtimeBytes": 670452,
-    "visiblePixelsIdentical": true
-  },
-  {
-    "file": "blush.png",
-    "width": 1254,
-    "height": 1254,
-    "sourceBytes": 649866,
-    "runtimeBytes": 408648,
-    "visiblePixelsIdentical": true
-  },
-  {
-    "file": "ok_smug.png",
-    "width": 1254,
-    "height": 1254,
-    "sourceBytes": 771557,
-    "runtimeBytes": 513800,
-    "visiblePixelsIdentical": true
-  },
-  {
-    "file": "sleeping.png",
-    "width": 1254,
-    "height": 1254,
-    "sourceBytes": 1031155,
-    "runtimeBytes": 720694,
-    "visiblePixelsIdentical": true
-  },
-  {
-    "file": "facepalm.png",
-    "width": 1254,
-    "height": 1254,
-    "sourceBytes": 1105132,
-    "runtimeBytes": 741378,
-    "visiblePixelsIdentical": true
-  },
-  {
-    "file": "screaming.png",
-    "width": 1254,
-    "height": 1254,
-    "sourceBytes": 957497,
-    "runtimeBytes": 640568,
+    "sourceBytes": 705212,
+    "runtimeBytes": 488270,
     "visiblePixelsIdentical": true
   },
   {
@@ -384,27 +528,19 @@
     "visiblePixelsIdentical": true
   },
   {
-    "file": "surrender.png",
+    "file": "water_gun.png",
     "width": 1254,
     "height": 1254,
-    "sourceBytes": 682329,
-    "runtimeBytes": 444246,
+    "sourceBytes": 1108754,
+    "runtimeBytes": 872202,
     "visiblePixelsIdentical": true
   },
   {
-    "file": "energy_ball.png",
-    "width": 1327,
-    "height": 1186,
-    "sourceBytes": 736883,
-    "runtimeBytes": 565936,
-    "visiblePixelsIdentical": true
-  },
-  {
-    "file": "sloth.png",
+    "file": "whale.png",
     "width": 1254,
     "height": 1254,
-    "sourceBytes": 2335812,
-    "runtimeBytes": 1517164,
+    "sourceBytes": 981477,
+    "runtimeBytes": 668208,
     "visiblePixelsIdentical": true
   }
 ]

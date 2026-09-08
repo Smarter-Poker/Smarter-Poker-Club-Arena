@@ -943,18 +943,21 @@ export async function recoverStuckCompletingTournaments(
           // the POSITION does not) — and step 3 read their prize as 0 forever.
           // Throwing leaves the tournament COMPLETING; the credit above is
           // idempotent, so the retry re-runs it for free.
-          const { error: stampErr } = await supabase
+          const { error: stampErr, count: stampCount } = await supabase
             .from('tournament_players')
-            .update({
-              status: place === 1 ? 'winner' : 'eliminated',
-              position: place,
-              prize,
-              eliminated_at: place === 1 ? null : new Date().toISOString(),
-            })
+            .update(
+              {
+                status: place === 1 ? 'winner' : 'eliminated',
+                position: place,
+                prize,
+                eliminated_at: place === 1 ? null : new Date().toISOString(),
+              },
+              { count: 'exact' }
+            )
             .eq('id', alive[i].id);
-          if (stampErr) {
+          if (stampErr || stampCount !== 1) {
             throw new Error(
-              `paid place ${place} to ${alive[i].user_id.slice(0, 8)} but could not record it: ${stampErr.message}`
+              `paid place ${place} to ${alive[i].user_id.slice(0, 8)} but could not record it: ${stampErr?.message ?? `affected rows: ${stampCount ?? 'unknown'}`}`
             );
           }
         }
@@ -1018,13 +1021,13 @@ export async function recoverStuckCompletingTournaments(
             // Same rule as the survivor stamp above: a top-up that is paid but
             // not recorded leaves prize < owed, so every later pass recomputes
             // the same shortfall and re-attempts it forever.
-            const { error: topUpErr } = await supabase
+            const { error: topUpErr, count: topUpCount } = await supabase
               .from('tournament_players')
-              .update({ prize: owed })
+              .update({ prize: owed }, { count: 'exact' })
               .eq('id', r.id);
-            if (topUpErr) {
+            if (topUpErr || topUpCount !== 1) {
               throw new Error(
-                `topped up place ${r.position} for ${r.user_id.slice(0, 8)} but could not record it: ${topUpErr.message}`
+                `topped up place ${r.position} for ${r.user_id.slice(0, 8)} but could not record it: ${topUpErr?.message ?? `affected rows: ${topUpCount ?? 'unknown'}`}`
               );
             }
           }
@@ -1063,13 +1066,15 @@ export async function recoverStuckCompletingTournaments(
         // everything above landed. A discarded error printed "Recovered ..."
         // over a tournament still sitting in COMPLETING, so the log said the
         // watchdog had done its job on every single pass while it had not.
-        const { error: completeErr } = await supabase
+        const { error: completeErr, count: completeCount } = await supabase
           .from('tournaments')
-          .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
+          .update({ status: 'COMPLETED', ended_at: new Date().toISOString() }, { count: 'exact' })
           .eq('id', t.id)
           .eq('status', 'COMPLETING');
-        if (completeErr) {
-          throw new Error(`could not mark COMPLETED: ${completeErr.message}`);
+        if (completeErr || completeCount !== 1) {
+          throw new Error(
+            `could not mark COMPLETED: ${completeErr?.message ?? `affected rows: ${completeCount ?? 'unknown'}`}`
+          );
         }
         const { error: closeErr } = await supabase
           .from('tables')

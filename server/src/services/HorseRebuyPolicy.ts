@@ -49,6 +49,7 @@
  * game in it.
  */
 
+import { createHash } from 'node:crypto';
 import { bankrollPolicyFor, rebuyDecision, referenceBuyIn } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 
@@ -68,6 +69,28 @@ export interface HorseRebuyRequest {
   maxBuyIn?: number | null;
   /** Reloads already taken this session. Buy-ins committed is this plus one. */
   rebuysTaken: number;
+}
+
+/**
+ * One durable name for one horse bust.
+ *
+ * A random per-request key does not survive an engine crash or a lost RPC
+ * response. Table + player + authoritative hand number identifies the only
+ * legitimate rebuy produced by that bust, so every retry and replacement
+ * process presents the same UUID and the treasury function can answer the
+ * original receipt instead of funding the same stack twice.
+ */
+export function horseRebuyOperationId(tableId: string, userId: string, handNumber: number): string {
+  const hex = createHash('sha256')
+    .update(`horse-cash-rebuy|${tableId}|${userId}|${Math.max(0, Math.trunc(handNumber))}`)
+    .digest('hex');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `5${hex.slice(13, 16)}`,
+    `${((parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join('-');
 }
 
 /** The flat sizing both call sites used before this module existed. */

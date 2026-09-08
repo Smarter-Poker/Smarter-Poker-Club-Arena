@@ -74,7 +74,19 @@ const MAX_TOPUP_PER_CYCLE = 40;
 let timer: NodeJS.Timeout | null = null;
 let bootTimer: NodeJS.Timeout | null = null;
 let running = false;
+let lifecycleGeneration = 0;
+let lifecycleActive = false;
+let stopOperation: Promise<void> | null = null;
+const inFlightCycles = new Set<Promise<void>>();
 const seeder = new TournamentRecurringService();
+
+export interface HorseOverlayGuardHandle {
+  stop(): Promise<void>;
+}
+
+const guardHandle: HorseOverlayGuardHandle = Object.freeze({
+  stop: () => stopHorseOverlayGuard(),
+});
 
 export interface OverlayRisk {
   tournament_id: string;
@@ -125,17 +137,24 @@ export function freerollTargetFor(t: FreerollTarget): number {
  * Register currently-playing horses into open freerolls, up to capacity.
  * Uses the allLanes override: free money is not a lane decision.
  */
-export async function fillFreerollsOnce(unionId: string = MIDWAY_UNION_ID): Promise<number> {
+export async function fillFreerollsOnce(
+  unionId: string = MIDWAY_UNION_ID,
+  shouldContinue: () => boolean = () => true
+): Promise<number> {
   let added = 0;
   try {
+    if (!shouldContinue()) return added;
     const { data, error } = await supabase.rpc('fn_freeroll_fill_targets', { p_union: unionId });
+    if (!shouldContinue()) return added;
     if (error) throw new Error(error.message);
     const targets = (data ?? []) as FreerollTarget[];
     for (const t of targets) {
+      if (!shouldContinue()) return added;
       const target = freerollTargetFor(t);
       if (target <= t.current_players) continue;
       const n = await seeder.topUpWithHorses(t.tournament_id, target, { allLanes: true });
       added += n;
+      if (!shouldContinue()) return added;
       if (n > 0) {
         console.log(
           `[HorseOverlayGuard] freeroll ${t.name}: ${t.current_players}/${t.max_players} ` +
@@ -155,22 +174,29 @@ export async function fillFreerollsOnce(unionId: string = MIDWAY_UNION_ID): Prom
   }
 }
 
-export async function runOverlayGuardOnce(unionId: string = MIDWAY_UNION_ID): Promise<number> {
+export async function runOverlayGuardOnce(
+  unionId: string = MIDWAY_UNION_ID,
+  shouldContinue: () => boolean = () => true
+): Promise<number> {
   if (running) return 0;
   running = true;
   let acted = 0;
   try {
+    if (!shouldContinue()) return acted;
     const { data, error } = await supabase.rpc('fn_overlay_at_risk', { p_union: unionId });
+    if (!shouldContinue()) return acted;
     if (error) throw new Error(error.message);
     const risks = (data ?? []) as OverlayRisk[];
     if (risks.length === 0) return 0;
 
     for (const risk of risks) {
+      if (!shouldContinue()) return acted;
       if (risk.shortfall <= 0) continue;
       const target = topUpTargetFor(risk);
       if (target <= risk.current_players) continue;
       const added = await seeder.topUpWithHorses(risk.tournament_id, target);
       acted += added;
+      if (!shouldContinue()) return acted;
       const overlay = risk.guaranteed_prize - risk.current_players * risk.buy_in;
       if (added > 0) {
         console.log(
@@ -198,28 +224,72 @@ export async function runOverlayGuardOnce(unionId: string = MIDWAY_UNION_ID): Pr
 }
 
 /** One full cycle: guaranteed events first, then freerolls. */
-export async function runEventFillCycle(unionId: string = MIDWAY_UNION_ID): Promise<number> {
-  const guaranteed = await runOverlayGuardOnce(unionId);
-  const freerolls = await fillFreerollsOnce(unionId);
+export async function runEventFillCycle(
+  unionId: string = MIDWAY_UNION_ID,
+  shouldContinue: () => boolean = () => true
+): Promise<number> {
+  const guaranteed = await runOverlayGuardOnce(unionId, shouldContinue);
+  if (!shouldContinue()) return guaranteed;
+  const freerolls = await fillFreerollsOnce(unionId, shouldContinue);
   return guaranteed + freerolls;
 }
 
-export function startHorseOverlayGuard(): void {
-  if (timer || !enabled()) return;
+function lifecycleIsCurrent(generation: number): boolean {
+  return lifecycleActive && lifecycleGeneration === generation;
+}
+
+function launchOwnedCycle(context: string): void {
+  const generation = lifecycleGeneration;
+  if (!lifecycleIsCurrent(generation) || inFlightCycles.size > 0) return;
+
+  let tracked!: Promise<void>;
+  tracked = (async () => {
+    if (!lifecycleIsCurrent(generation)) return;
+    await runOverlayGuardOnce(MIDWAY_UNION_ID, () => lifecycleIsCurrent(generation));
+    // Shutdown revokes this scheduler between its two independent mutation
+    // passes. The already-started pass is joined by stop(); the second one is
+    // never launched by a stale generation.
+    if (!lifecycleIsCurrent(generation)) return;
+    await fillFreerollsOnce(MIDWAY_UNION_ID, () => lifecycleIsCurrent(generation));
+  })()
+    .catch((err: unknown) => reportError(err, context))
+    .finally(() => inFlightCycles.delete(tracked));
+  inFlightCycles.add(tracked);
+}
+
+async function drainOwnedCycles(): Promise<void> {
+  // Fixed point rather than one snapshot: a promise can settle and enqueue a
+  // final continuation in the same turn. stop() does not resolve until the
+  // owned set is observably empty.
+  while (inFlightCycles.size > 0) {
+    await Promise.allSettled([...inFlightCycles]);
+  }
+}
+
+export function startHorseOverlayGuard(): HorseOverlayGuardHandle | null {
+  if (timer || bootTimer || lifecycleActive || !enabled()) return null;
+  lifecycleActive = true;
+  lifecycleGeneration += 1;
+  stopOperation = null;
   timer = setInterval(() => {
-    void runEventFillCycle().catch((err: unknown) => reportError(err, 'HorseOverlayGuard.tick'));
+    launchOwnedCycle('HorseOverlayGuard.tick');
   }, CYCLE_MS);
   timer.unref?.();
   bootTimer = setTimeout(() => {
-    void runEventFillCycle().catch((err: unknown) => reportError(err, 'HorseOverlayGuard.boot'));
+    bootTimer = null;
+    launchOwnedCycle('HorseOverlayGuard.boot');
   }, BOOT_DELAY_MS);
   bootTimer.unref?.();
   console.log(
     '[HorseOverlayGuard] started - guaranteed events topped to their guarantee and freerolls filled from every lane, every 2 minutes'
   );
+  return guardHandle;
 }
 
-export function stopHorseOverlayGuard(): void {
+export function stopHorseOverlayGuard(): Promise<void> {
+  if (stopOperation) return stopOperation;
+  lifecycleActive = false;
+  lifecycleGeneration += 1;
   if (timer) {
     clearInterval(timer);
     timer = null;
@@ -228,4 +298,6 @@ export function stopHorseOverlayGuard(): void {
     clearTimeout(bootTimer);
     bootTimer = null;
   }
+  stopOperation = drainOwnedCycles();
+  return stopOperation;
 }

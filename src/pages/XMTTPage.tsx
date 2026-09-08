@@ -227,8 +227,6 @@ export default function XMTTPage() {
     };
     const unsubs = [
       masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', refresh, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_STARTED', refresh, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', refresh, 500),
       // Phase 4: Cross-page sync (ported from World Hub xmtt.js)
       masterBus.subscribeDebounced('TOURNAMENT_CANCELLED', refresh, 500),
       // TOURNAMENT_LEVEL_CHANGE removed 2026-08-28: nothing emits it on the

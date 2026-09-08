@@ -1,0 +1,29 @@
+{
+  "_owner": "agent/codex-live-realtime/fix/live-table-realtime-continuity",
+  "tables": [
+    "tournament_finish_receipts",
+    "tournament_satellite_economic_snapshots",
+    "tournament_satellite_entitlements",
+    "tournament_satellite_settlement_batches"
+  ],
+  "functions": [
+    "fn_tournament_finish_kind",
+    "fn_claim_tournament_finish",
+    "fn_tournament_finish_readiness",
+    "fn_guard_tournament_completed_certificate",
+    "fn_guard_tournament_completing_claim",
+    "fn_certify_tournament_finish",
+    "trg_freeze_satellite_entitlement",
+    "trg_freeze_satellite_economic_snapshot",
+    "trg_freeze_satellite_settlement_batch",
+    "trg_capture_satellite_economics_on_start",
+    "trg_require_satellite_economics_at_entry_close",
+    "fn_materialize_satellite_entitlements_locked",
+    "fn_settle_satellite_cash_entitlement_exact",
+    "fn_deliver_satellite_ticket_exact",
+    "trg_guard_atomic_satellite_completion",
+    "fn_get_tournament_satellite_entitlement_depth",
+    "fn_check_atomic_satellite_finish",
+    "fn_settle_satellite_finish_atomic"
+  ]
+}

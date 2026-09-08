@@ -65,6 +65,12 @@ export { parseTableIdFromPath, extractBearerToken };
 const HEARTBEAT_INTERVAL_MS = 25_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
 /**
+ * Timer drift below this is ordinary scheduling noise. A larger overrun means
+ * the engine's own event loop denied sockets a fair chance to have their PONG
+ * processed before the timeout sweep ran.
+ */
+const HEARTBEAT_SCHEDULER_LATE_MS = 5_000;
+/**
  * How long a closing socket is given to flush its close frame before the fd is
  * reclaimed. Without it the frame is written and discarded in the same tick and
  * the peer only ever sees 1006, so the reason never reaches a single client.
@@ -259,6 +265,12 @@ interface ConnectionState {
   tableId: string;
   ws: WebSocket;
   lastPongAt: number;
+  /**
+   * A late heartbeat sweep is server debt, not client silence. This adjusted
+   * liveness anchor subtracts only time the server lost to scheduler stalls,
+   * without lying about when its last PONG actually arrived.
+   */
+  heartbeatGraceAt: number;
   inboundCount: number;
   inboundWindowStart: number;
   /** Client address from the x-forwarded-for chain; null when unknown. */
@@ -401,6 +413,8 @@ export class EngineWebSocketServer {
   private wss: WebSocketServer;
   private connections: Map<WebSocket, ConnectionState> = new Map();
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  /** Last time the heartbeat interval actually got CPU time. */
+  private lastHeartbeatSweepAt = Date.now();
   private readonly hub: TableStateHub;
   private readonly tableExists: TableExistsCheck;
   private readonly ensureTable?: EnsureTableCheck;
@@ -671,6 +685,7 @@ export class EngineWebSocketServer {
     });
 
     if (!this.heartbeatTimer) {
+      this.lastHeartbeatSweepAt = Date.now();
       this.heartbeatTimer = setInterval(() => this.heartbeatSweep(), HEARTBEAT_INTERVAL_MS);
     }
   }
@@ -968,6 +983,7 @@ export class EngineWebSocketServer {
       tableId,
       ws,
       lastPongAt: Date.now(),
+      heartbeatGraceAt: 0,
       inboundCount: 0,
       inboundWindowStart: Date.now(),
       clientIp,
@@ -1038,6 +1054,7 @@ export class EngineWebSocketServer {
       tableId: '',
       ws,
       lastPongAt: Date.now(),
+      heartbeatGraceAt: 0,
       inboundCount: 0,
       inboundWindowStart: Date.now(),
       clientIp,
@@ -1248,6 +1265,7 @@ export class EngineWebSocketServer {
     switch (msg.type) {
       case 'PONG':
         conn.lastPongAt = Date.now();
+        conn.heartbeatGraceAt = 0;
         return;
       case 'SUBSCRIBE':
         if (!tableId) return;
@@ -1323,6 +1341,7 @@ export class EngineWebSocketServer {
     switch (msg.type) {
       case 'PONG':
         conn.lastPongAt = Date.now();
+        conn.heartbeatGraceAt = 0;
         return;
       case 'RESYNC': {
         const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
@@ -1458,11 +1477,27 @@ export class EngineWebSocketServer {
 
   private heartbeatSweep(): void {
     const now = Date.now();
+    const sweepGap = now - this.lastHeartbeatSweepAt;
+    const schedulerDebtMs =
+      sweepGap > HEARTBEAT_INTERVAL_MS + HEARTBEAT_SCHEDULER_LATE_MS
+        ? sweepGap - HEARTBEAT_INTERVAL_MS
+        : 0;
+    this.lastHeartbeatSweepAt = now;
     // Trust has to be renewed: see REAUTH_INTERVAL_MS. Runs first so a socket
     // whose session died is closed on this sweep rather than pinged first.
     this.reauthSweep(now);
     for (const [ws, conn] of this.connections) {
-      if (now - conn.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
+      // If THIS process was late, a healthy PONG can be queued behind the same
+      // event-loop stall that delayed this sweep. Credit only the lost
+      // scheduling time (not a whole new timeout), then send a fresh probe.
+      if (schedulerDebtMs > 0) {
+        conn.heartbeatGraceAt = Math.min(
+          now,
+          Math.max(conn.lastPongAt, conn.heartbeatGraceAt) + schedulerDebtMs
+        );
+      }
+      const lastFairLivenessAt = Math.max(conn.lastPongAt, conn.heartbeatGraceAt);
+      if (now - lastFairLivenessAt > HEARTBEAT_TIMEOUT_MS) {
         try {
           ws.close(1001, 'heartbeat timeout');
         } catch {

@@ -27,3 +27,5 @@ export PGNODE PGHOST="$journal_tmp/socket" PGPORT=55441 PGUSER=journal_test PGDA
 unset PGCONTAINER
 "$PGBIN/postgres" --version
 python3 "$probe_dir/test_atomicity.py" fixed --bootstrap
+
+python3 "$probe_dir/test_satellite_split.py"

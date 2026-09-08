@@ -2014,6 +2014,12 @@ describe('HorseLogic V9 - humanization polish', () => {
     const moods = Array.from({ length: 100 }, (_, i) => moodOf(`horse-${i}`));
     expect(new Set(moods.map((m) => Math.round(m * 100))).size).toBeGreaterThan(20);
   });
+
+  it('pins hourly mood to the decision request time instead of worker queue time', () => {
+    const requestedAt = 3_599_999;
+    expect(moodOf('queued-horse', requestedAt)).toBe(moodOf('queued-horse', 0));
+    expect(moodOf('queued-horse', requestedAt)).not.toBe(moodOf('queued-horse', requestedAt + 1));
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────────────

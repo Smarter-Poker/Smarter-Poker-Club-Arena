@@ -11,7 +11,15 @@ if (!url || !serviceKey || !publishableKey || !assetUrl) {
   throw new Error('Club Create Certification Requires Supabase And Asset Environment Variables.');
 }
 
-const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
+const admin = createClient(url, serviceKey, {
+  auth: { persistSession: false },
+  global: {
+    headers: {
+      'x-smarter-data-actor': 'service',
+      'x-smarter-data-protocol': '1',
+    },
+  },
+});
 const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const email = `club-create-cert-${stamp}@smarter-poker.invalid`;
 const password = `Cert-${crypto.randomUUID()}-9a!`;

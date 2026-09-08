@@ -8,9 +8,10 @@
  *
  * Paged at 500 rows so no single response carries an unbounded amount of
  * jsonb, and refreshed every 6 hours so the ongoing V31 aggregation reaches
- * the fleet without a deploy. That refresh matters far more here than it does
- * for V30: this table is built from empty over days, so nearly every refresh
- * is delivering cells that did not exist before.
+ * the fleet without a deploy. The live worker explicitly awaits the initial
+ * load; this module's timer owns periodic refresh only. That refresh matters
+ * far more here than it does for V30: this table is built from empty over days,
+ * so nearly every refresh is delivering cells that did not exist before.
  *
  * COLLECT-THEN-SWAP, deliberately: every page is fetched before the store is
  * touched, and a failed or partial load changes nothing. The brain keeps the
@@ -35,12 +36,9 @@ import {
 } from '../engine/GtoPostflopV31.js';
 
 const REFRESH_MS = 6 * 60 * 60_000;
-/** After the V30 loader (25s), so the two do not page the DB together. */
-const BOOT_DELAY_MS = 35_000;
 const PAGE = 500;
 
 let timer: NodeJS.Timeout | null = null;
-let bootTimer: NodeJS.Timeout | null = null;
 
 export async function loadGtoPostflopV31(): Promise<number> {
   try {
@@ -80,8 +78,6 @@ export async function loadGtoPostflopV31(): Promise<number> {
 
 export function startGtoPostflopV31Loader(): void {
   if (timer) return;
-  bootTimer = setTimeout(() => void loadGtoPostflopV31(), BOOT_DELAY_MS);
-  bootTimer.unref?.();
   timer = setInterval(() => void loadGtoPostflopV31(), REFRESH_MS);
   timer.unref?.();
 }
@@ -90,9 +86,5 @@ export function stopGtoPostflopV31Loader(): void {
   if (timer) {
     clearInterval(timer);
     timer = null;
-  }
-  if (bootTimer) {
-    clearTimeout(bootTimer);
-    bootTimer = null;
   }
 }

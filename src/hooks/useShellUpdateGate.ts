@@ -57,6 +57,7 @@
  */
 import { useEffect } from 'react';
 import { masterBus } from '../core/MasterBus';
+import { readDeployedShell } from '../lib/readDeployedShell';
 
 /** How long before another shell reload may be attempted in this tab. */
 export const RELOAD_COOLDOWN_MS = 10 * 60 * 1000;
@@ -247,9 +248,9 @@ export function useShellUpdateGate(): void {
           ? import.meta.env.BASE_URL
           : '/';
       verifying = true;
-      fetch(`${base}index.html`, { cache: 'no-cache' })
-        .then((res) => (res.ok ? res.text() : null))
+      readDeployedShell(`${base}index.html`)
         .then((html) => {
+          if (!armed) return;
           const deployed = html ? extractEntryScript(html) : null;
           const stale = !!deployed && deployed !== running;
           /* 2026-08-29 telemetry: emitted for BOTH outcomes — the not-stale
@@ -306,9 +307,9 @@ export function useShellUpdateGate(): void {
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
           ? import.meta.env.BASE_URL
           : '/';
-      fetch(`${base}index.html`, { cache: 'no-cache' })
-        .then((res) => (res.ok ? res.text() : null))
+      readDeployedShell(`${base}index.html`)
         .then((html) => {
+          if (!armed) return;
           if (!html) return;
           const deployed = extractEntryScript(html);
           const stale = !!deployed && deployed !== running;
@@ -348,7 +349,13 @@ export function useShellUpdateGate(): void {
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
 
+    // Home Screen startup can finish pageshow before React mounts this hook.
+    // Check once now as well as on later resumes; the existing throttle and
+    // table/visibility/cooldown gates still own network and reload frequency.
+    checkStaleness();
+
     return () => {
+      armed = false; // Late network completions cannot reload an unmounted app.
       navigator.serviceWorker.removeEventListener('message', onMessage);
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
       document.removeEventListener('visibilitychange', onVisibility);

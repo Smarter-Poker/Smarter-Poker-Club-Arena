@@ -50,19 +50,17 @@ const tournamentService = code(tournamentServiceRaw);
 
 /**
  * The insert object for the Spin, bounded by where it actually ends. This
- * used to be `.slice(0, 1600)` — a guess about block length that broke the
+ * used to be `.slice(0, 1600)`, a guess about block length that broke the
  * SpinSeatCount guard the day comments were added above the line it checked.
  * A test that fails when a comment is added is a test people learn to ignore.
  */
 function spinInsertBlock(src: string): string {
   const i = src.indexOf("tournament_type: 'SPIN',");
   expect(i, 'expected a Spin insert').toBeGreaterThan(-1);
-  const end = src.indexOf('.select()', i);
-  expect(end, 'Spin insert does not end in .select()').toBeGreaterThan(i);
-  // Walk back to the start of the insert object so buy_in_fee (written above
-  // tournament_type) is inside the window.
-  const start = src.lastIndexOf('.insert(', i);
-  expect(start, 'no .insert( above the Spin marker').toBeGreaterThan(-1);
+  const end = src.indexOf("createSeatFirstGameAtomic(spinRow, 'spin')", i);
+  expect(end, 'Spin config does not reach the atomic seat-first creator').toBeGreaterThan(i);
+  const start = src.lastIndexOf('const spinRow = {', i);
+  expect(start, 'no spinRow object above the Spin marker').toBeGreaterThan(-1);
   return src.slice(start, end);
 }
 
@@ -200,7 +198,7 @@ describe('every game is booked', () => {
     expect(i, 'expected a call to fn_spin_settle_game').toBeGreaterThan(-1);
     const block = sliceEnclosingBlock(engine, "supabase.rpc('fn_spin_settle_game'", 0, 2);
     expect(block).toMatch(/reportError/);
-    expect(block).toMatch(/unbooked/i);
+    expect(block).toMatch(/spin_settle_failed/);
   });
 
   it('books the rake at the rate the stake actually implies', () => {

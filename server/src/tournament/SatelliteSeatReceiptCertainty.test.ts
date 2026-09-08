@@ -1,201 +1,191 @@
-import { describe, expect, it } from 'vitest';
+/**
+ * Satellite seat/cash decisions no longer cross the application boundary one
+ * winner at a time. fn_settle_satellite_finish_atomic owns every seat, cash
+ * fallback, prize stamp, immutable receipt, and COMPLETED transition in one
+ * transaction. These tests execute the actual TypeScript methods and pin the
+ * only application-side decisions that remain: accept an exact atomic receipt,
+ * or prove a lost receipt from durable COMPLETED truth.
+ */
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { isSatelliteTargetOpen, satelliteTicketCost } from './satelliteTargetOpen.js';
-import { planSatelliteAwards } from './satelliteAwardPlan.js';
+
 function method(path: string, name: string) {
   const source = readFileSync(path, 'utf8');
   const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
   let body: ts.Block | undefined;
-  function visit(n: ts.Node) {
-    if (ts.isMethodDeclaration(n) && n.name.getText(ast) === name) body = n.body;
-    ts.forEachChild(n, visit);
+  function visit(node: ts.Node) {
+    if (ts.isMethodDeclaration(node) && node.name.getText(ast) === name) body = node.body;
+    ts.forEachChild(node, visit);
   }
   visit(ast);
-  if (!body) throw new Error('Missing actual method ' + name);
+  if (!body) throw new Error(`Missing actual method ${name}`);
   return { ast, body: body as ts.Block };
 }
-const awards = method('src/tournament/TournamentManager.ts', 'processSatelliteAwards');
-const compiled = ts.transpileModule(
-  'return async function(tournament) ' + awards.body.getText(awards.ast),
-  {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
-  }
-).outputText;
-const make = new Function(
-  'supabase',
-  'settleTournamentObligation',
-  'reportError',
-  'raiseFinancialAlert',
-  'isSatelliteTargetOpen',
-  'satelliteTicketCost',
-  'planSatelliteAwards',
-  compiled
-);
-function fixture(
-  seat: unknown,
-  error: unknown = null,
-  options: { cashReceipt?: Record<string, unknown>; readError?: string } = {}
+
+function compileMethod(
+  path: string,
+  name: string,
+  parameters: string,
+  dependencies: string[] = []
 ) {
-  const writes: string[] = [];
-  const alerts: unknown[][] = [];
-  const client = {
-    from(table: string) {
-      let op = 'read';
-      const c: Record<string, unknown> = {};
-      for (const m of ['select', 'eq', 'not', 'order']) c[m] = () => c;
-      c.update = () => {
-        op = 'update';
-        return c;
-      };
-      const answer = () => {
-        if (op === 'read' && options.readError === table)
-          return { data: null, error: { message: 'injected read failure' } };
-        if (op === 'update') writes.push(table);
-        return {
-          data:
-            table === 'tournaments'
-              ? {
-                  id: 'target',
-                  name: 'Target',
-                  status: 'REGISTERING',
-                  buy_in_amount: 10,
-                  buy_in_fee: 0,
-                }
-              : [{ user_id: 'winner', username: 'Winner', position: 1 }],
-          count: 1,
-          error: null,
-        };
-      };
-      c.maybeSingle = async () => answer();
-      c.then = (resolve: (v: unknown) => unknown) => Promise.resolve(answer()).then(resolve);
-      return c;
-    },
-    rpc: async () => ({ data: seat, error }),
-  };
-  const run = make(
-    client,
-    async () => {
-      writes.push('cash');
-      return options.cashReceipt ?? { ok: true, paid: 10, amount_paid: 10, fully_settled: true };
-    },
-    () => {},
-    async (...args: unknown[]) => {
-      alerts.push(args);
-    },
-    isSatelliteTargetOpen,
-    satelliteTicketCost,
-    planSatelliteAwards
-  );
+  const actual = method(path, name);
+  const code = ts.transpileModule(
+    `return async function(${parameters}) ${actual.body.getText(actual.ast)}`,
+    { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
+  ).outputText;
+  return (...values: unknown[]) => new Function(...dependencies, code)(...values);
+}
+
+const buildAtomicAward = compileMethod(
+  'src/tournament/TournamentManager.ts',
+  'processSatelliteAwards',
+  '_tournament',
+  ['supabase', 'reportError']
+);
+
+function atomicAwardFixture(data: unknown, error: unknown = null, throws?: unknown) {
+  const reportError = vi.fn();
+  const rpc = vi.fn(async () => {
+    if (throws !== undefined) throw throws;
+    return { data, error };
+  });
+  const run = buildAtomicAward({ rpc }, reportError) as (
+    this: unknown,
+    tournament: unknown
+  ) => Promise<boolean>;
   return {
-    writes,
-    alerts,
-    run: () =>
-      run.call(
-        { tournamentId: 'satellite' },
-        { prize_pool: 10, satellite_target_id: 'target', satellite_seats: 1 }
-      ),
+    reportError,
+    rpc,
+    run: () => run.call({ tournamentId: 'satellite' }, {}),
   };
 }
-describe('unknown seat outcome cannot become cash or a confirmed prize', () => {
+
+describe('only an exact atomic satellite receipt confirms every seat and cash outcome', () => {
   it.each([
     [null, { message: 'timeout after commit' }],
-    [{ ok: true, awarded: true }, { message: 'transport response error' }],
+    [{ ok: true, settled: true }, { message: 'transport response error' }],
     [null, null],
     [{}, null],
-    [{ ok: 'true', awarded: true }, null],
-    [{ ok: true, awarded: false }, null],
-  ])('rejects ambiguous receipt %j / %j', async (seat, error) => {
-    const f = fixture(seat, error);
-    await expect(f.run()).rejects.toThrow();
-    expect(f.writes).toEqual([]);
-    expect(f.alerts).toHaveLength(1);
-    expect(f.alerts[0]).toEqual([
-      'critical',
-      'Satellite.seat_outcome_unconfirmed',
-      expect.any(String),
-      expect.objectContaining({
-        tournament_id: 'satellite',
-        target_id: 'target',
-        user_id: 'winner',
-        position: 1,
-      }),
-    ]);
+    [{ ok: 'true', settled: true }, null],
+    [{ ok: true, settled: 'true' }, null],
+    [{ ok: true, settled: false }, null],
+  ])('refuses an ambiguous atomic receipt %j / %j', async (data, error) => {
+    const fixture = atomicAwardFixture(data, error);
+
+    await expect(fixture.run()).resolves.toBe(false);
+    expect(fixture.reportError).toHaveBeenCalledOnce();
+    expect(fixture.reportError.mock.calls[0]?.[1]).toBe(
+      'Tournament.atomic_satellite_finish_failed'
+    );
+    expect(fixture.rpc).toHaveBeenCalledWith('fn_settle_satellite_finish_atomic', {
+      p_tournament_id: 'satellite',
+      p_source: 'engine.finishTournament',
+    });
   });
-  it('keeps cash fallback for an explicit target refusal', async () => {
-    const f = fixture({ ok: false, reason: 'target_closed' });
-    await f.run();
-    expect(f.writes.filter((x) => x === 'cash')).toHaveLength(1);
+
+  it('accepts a new or replayed transaction only with exact settled proof', async () => {
+    const fixture = atomicAwardFixture({
+      ok: true,
+      settled: true,
+      already_settled: true,
+      award_depth: 2,
+      amount_settled: 20,
+    });
+
+    await expect(fixture.run()).resolves.toBe(true);
+    expect(fixture.reportError).not.toHaveBeenCalled();
+    expect(fixture.rpc).toHaveBeenCalledOnce();
   });
-  it.each([
-    { ok: true, awarded: true },
-    { ok: true, awarded: false, held_from_this_satellite: true },
-  ])('confirms a new or replayed seat %j without cash', async (seat) => {
-    const f = fixture(seat);
-    await f.run();
-    expect(f.writes).not.toContain('cash');
-    expect(f.writes).toContain('tournament_players');
+
+  it('fails closed when the transport throws before a receipt is available', async () => {
+    const fixture = atomicAwardFixture(null, null, new Error('socket closed'));
+
+    await expect(fixture.run()).resolves.toBe(false);
+    expect(fixture.reportError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'socket closed' }),
+      'Tournament.atomic_satellite_finish_threw'
+    );
   });
-  it('pays cash when a seat is explicitly held from elsewhere', async () => {
-    const f = fixture({ ok: true, awarded: false, held_from_this_satellite: false });
-    await f.run();
-    expect(f.writes.filter((x) => x === 'cash')).toHaveLength(1);
-  });
-});
-const finish = method('src/tournament/TournamentManagerEliminations.ts', 'finishTournament');
-const handoff = finish.body.statements.find(
-  (n) => ts.isIfStatement(n) && n.expression.getText(finish.ast) === 'isSatelliteFinish'
-);
-if (!handoff) throw new Error('Missing actual satellite handoff');
-const handoffCode = ts.transpileModule(
-  'return async function(tournament) { const isSatelliteFinish=true; ' +
-    handoff.getText(finish.ast) +
-    '; return "completed"; }',
-  { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
-).outputText;
-const finishHandoff = new Function('reportError', handoffCode)(() => {});
-it('the finish handoff stops after an award exception', async () => {
-  await expect(
-    finishHandoff.call(
-      {
-        processSatelliteAwards: async () => {
-          throw new Error('unknown seat');
-        },
-      },
-      {}
-    )
-  ).resolves.toBeUndefined();
-});
-it('the finish handoff proceeds after a successful award method', async () => {
-  await expect(finishHandoff.call({ processSatelliteAwards: async () => {} }, {})).resolves.toBe(
-    'completed'
-  );
 });
 
-describe('satellite cash and reads require confirmed completion', () => {
-  it.each([
-    { ok: false, paid: 0, refused_reason: 'escrow_short' },
-    { ok: true, paid: 4, amount_paid: 4, fully_settled: false },
-    { ok: true, paid: 0, already_paid: 4 },
-    { ok: true, paid: 0, amount_paid: 8, fully_settled: true },
-  ])('does not stamp full cash for %j', async (cashReceipt) => {
-    const f = fixture({ ok: false, reason: 'target_closed' }, null, { cashReceipt });
-    await expect(f.run()).rejects.toThrow();
-    expect(f.writes).toEqual(['cash']);
+const buildAtomicHandoff = compileMethod(
+  'src/tournament/TournamentManagerEliminations.ts',
+  'settleSatelliteFinishAtomically',
+  'tournament'
+);
+
+describe('a lost atomic response is resolved only from durable terminal truth', () => {
+  it('does not perform a status read after an exact success receipt', async () => {
+    const processSatelliteAwards = vi.fn(async () => true);
+    const readDurableTournamentStatus = vi.fn(async () => ({ status: 'COMPLETING', error: null }));
+    const run = buildAtomicHandoff() as (this: unknown, tournament: unknown) => Promise<boolean>;
+
+    await expect(
+      run.call(
+        { tournamentId: 'satellite', processSatelliteAwards, readDurableTournamentStatus },
+        {}
+      )
+    ).resolves.toBe(true);
+    expect(readDurableTournamentStatus).not.toHaveBeenCalled();
   });
-  it.each(['tournaments', 'tournament_players'])(
-    'does not complete on unreadable %s',
-    async (readError) => {
-      const f = fixture({ ok: true, awarded: true }, null, { readError });
-      await expect(f.run()).rejects.toThrow();
-      expect(f.writes).toEqual([]);
+
+  it('accepts a lost response only when the durable row is COMPLETED', async () => {
+    const run = buildAtomicHandoff() as (this: unknown, tournament: unknown) => Promise<boolean>;
+    const base = { tournamentId: 'satellite', processSatelliteAwards: async () => false };
+
+    await expect(
+      run.call(
+        {
+          ...base,
+          readDurableTournamentStatus: async () => ({ status: 'COMPLETED', error: null }),
+        },
+        {}
+      )
+    ).resolves.toBe(true);
+    for (const durable of [
+      { status: 'COMPLETING', error: null },
+      { status: null, error: 'read timeout' },
+    ]) {
+      await expect(
+        run.call({ ...base, readDurableTournamentStatus: async () => durable }, {})
+      ).resolves.toBe(false);
     }
-  );
-  it('accepts a confirmed fully paid replay', async () => {
-    const f = fixture({ ok: false, reason: 'target_closed' }, null, {
-      cashReceipt: { ok: true, paid: 0, amount_paid: 10, fully_settled: true },
-    });
-    await f.run();
-    expect(f.writes).toContain('tournament_players');
+  });
+});
+
+const finish = method('src/tournament/TournamentManagerEliminations.ts', 'finishTournament');
+const satelliteBranch = finish.body.statements.find(
+  (node) => ts.isIfStatement(node) && node.expression.getText(finish.ast) === 'isSatelliteFinish'
+);
+if (!satelliteBranch) throw new Error('Missing actual satellite finish handoff');
+const handoffCode = ts.transpileModule(
+  `return async function(tournament) { const isSatelliteFinish = true; ${satelliteBranch.getText(
+    finish.ast
+  )}; return 'completed'; }`,
+  { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
+).outputText;
+const finishHandoff = new Function('TournamentManagerBase', handoffCode)({
+  UNRESOLVED_BUST_RETRY_MS: 250,
+}) as (this: unknown, tournament: unknown) => Promise<string | undefined>;
+
+describe('the finish path cannot clean up after an unconfirmed satellite transaction', () => {
+  it('keeps the manager retryable when atomic settlement is not proven', async () => {
+    const requestUrgentEliminationSweepAfter = vi.fn();
+    const context = {
+      tournamentFinished: true,
+      settleSatelliteFinishAtomically: async () => false,
+      requestUrgentEliminationSweepAfter,
+    };
+
+    await expect(finishHandoff.call(context, {})).resolves.toBeUndefined();
+    expect(context.tournamentFinished).toBe(false);
+    expect(requestUrgentEliminationSweepAfter).toHaveBeenCalledWith(250);
+  });
+
+  it('continues only after the atomic handoff is confirmed', async () => {
+    await expect(
+      finishHandoff.call({ settleSatelliteFinishAtomically: async () => true }, {})
+    ).resolves.toBe('completed');
   });
 });

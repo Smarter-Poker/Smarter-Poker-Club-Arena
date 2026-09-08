@@ -73,18 +73,25 @@ describe('the drain gate cannot pin production on stale code', () => {
     // If this ever stops being true, the cap must be reconsidered — which is
     // why the two are asserted in one test.
     const idx = read('server/src/index.ts');
-    const shutdown = idx.slice(idx.indexOf('const shutdown'), idx.indexOf("process.on('SIGINT'"));
-    expect(shutdown).toMatch(/drainHands\(\d+\)/);
-    expect(read('server/src/GameServer.ts')).toMatch(/engine\.pauseAfterHand\(\)/);
+    const shutdown = idx.slice(
+      idx.indexOf('async function performShutdown'),
+      idx.indexOf("process.on('SIGINT'")
+    );
+    const gameServer = read('server/src/GameServer.ts');
+    expect(shutdown).toMatch(/await gameServer\.stop\(\)/);
+    expect(shutdown).not.toMatch(/Promise\.race/);
+    expect(gameServer).toMatch(/engine\.pauseAfterHand\(/);
   });
 
-  it('the drain budget fits inside the grace the supervisor actually gives', () => {
-    // engine-up.sh stops the container with an explicit grace period. A drain
-    // longer than that grace is a drain that gets SIGKILLed halfway.
+  it('the authoritative shutdown deadline fits inside the supervisor grace', () => {
+    // engine-up.sh stops the container with an explicit grace period. A
+    // shutdown deadline longer than that grace is one Docker defeats with a
+    // SIGKILL before the engine can report unresolved ownership.
     const up = read('server/scripts/engine-up.sh');
     const grace = Number(up.match(/docker stop -t (\d+)/)![1]) * 1000;
-    const budget = Number(read('server/src/index.ts').match(/drainHands\((\d+)\)/)![1]);
-    expect(budget).toBeLessThan(grace);
+    const deadlineParts = read('server/src/index.ts').match(/SHUTDOWN_DEADLINE_MS = (\d+)_?(\d*)/)!;
+    const deadline = Number(`${deadlineParts[1]}${deadlineParts[2]}`);
+    expect(deadline).toBeLessThan(grace);
   });
 
   it('a run that ships nothing says so loudly, not quietly', () => {

@@ -80,10 +80,12 @@ describe('the hand rests before the next one', () => {
     expect(arm, 'the rest is not armed after the broadcast').toBeGreaterThan(broadcast);
     expect(awaited, 'the rest is not awaited in the dealing loop').toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(awaited);
-    // nothing between the await and the deal but whitespace
+    // The sole permitted statement between the rest and the deal is the
+    // authority re-proof. A dealer whose lease expired while awaiting the
+    // rest must not start one final hand.
     expect(
       DEALING_CODE.slice(awaited + 'await this.awaitNextHandRest();'.length, deal).trim()
-    ).toBe('');
+    ).toBe('if (!this.lifecycleCanMutate()) return;');
   });
 
   it('it happens on EVERY hand, with nothing to branch on', () => {

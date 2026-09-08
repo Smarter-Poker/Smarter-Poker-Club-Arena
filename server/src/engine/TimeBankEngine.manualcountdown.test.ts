@@ -156,6 +156,10 @@ describe('arming: the press that costs nothing', () => {
 describe('engine: the two deadlines agree', () => {
   function harness(remainingSeconds: number) {
     const engine = new ServerTableEngine(TABLE) as any;
+    // activateTimeBank is an authoritative mutation. This unit harness bypasses
+    // start(), so supply the same live process-ownership proof start() establishes.
+    engine.running = true;
+    engine.isCurrentEngine = () => true;
     engine.tableInfo = {} as any;
     engine.handController = {
       getState: () => ({

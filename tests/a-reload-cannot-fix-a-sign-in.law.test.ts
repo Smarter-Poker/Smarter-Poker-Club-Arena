@@ -1,12 +1,10 @@
 /**
  * LAW: A RELOAD CANNOT FIX A SIGN-IN (Realtime programme Phase 3, 2026-09-05)
  *
- * TablePage carries a failsafe: twenty seconds of a 'failed' engine socket and
- * the page reloads itself. It is a good failsafe for the thing it was written
- * for - a wedged socket that a fresh page fixes. It is actively harmful for an
- * AUTH refusal, because the fresh page presents the same token to the same
- * refusal and lands back here in another twenty seconds, having thrown away
- * the felt, the overlays and any armed pre-action on the way.
+ * TablePage used to carry a failsafe: twenty seconds of a 'failed' engine
+ * socket reloaded the page. A fresh page cannot repair engine capacity,
+ * authentication or the network; it only discards the felt, overlays and any
+ * armed pre-action before presenting the same inputs to the same failure.
  *
  * On 2026-09-03 that is exactly what happened, all night, and nothing on the
  * platform could tell it apart from bad Wi-Fi. The client cannot tell them
@@ -18,11 +16,11 @@
  * still an auth outage.
  *
  * PINS
- *   1. The failsafe checks the auth cause and returns before reloading.
+ *   1. TablePage has no generic reload path at all.
  *   2. The cause is remembered from the close frame (4401 / auth: reason) and
  *      from the auth_failed status, and cleared ONLY by a socket that opens.
- *   3. Not silent in either direction: the player is told it is a sign-in
- *      problem, and the server is told with `reload_suppressed`.
+ *   3. The player is told it is a sign-in problem while the reconnect ladder
+ *      continues; no page-level workaround competes with that ladder.
  *   4. `reload_suppressed` is a symptom report and must not inflate the
  *      per-user reconnect count the alert reads.
  *   5. The banner copy obeys the house rule (Title Case, no em dashes) and
@@ -44,40 +42,23 @@ import { isEngineAuthClose } from '../src/lib/sessionRevoked';
 
 const ROOT = join(__dirname, '..');
 const TABLE_PAGE = readFileSync(join(ROOT, 'src', 'pages', 'TablePage.tsx'), 'utf8');
-const BEACON = readFileSync(join(ROOT, 'src', 'services', 'clientConnectionBeacon.ts'), 'utf8');
 const EVENTS = readFileSync(
   join(ROOT, 'server', 'src', 'observability', 'ClientConnectionEvents.ts'),
   'utf8'
 );
 
-/** The auto-reload failsafe, bounded by the block it lives in. */
-function failsafe(): string {
-  return sliceEnclosingBlock(TABLE_PAGE, "const KEY = 'ca_ws_autoreload_at'");
-}
-
-describe('LAW 1 - the failsafe does not reload an auth refusal', () => {
-  it('returns before the reload when the engine refused auth', () => {
-    const code = blankNonCode(failsafe());
-    const guard = code.indexOf('engineRefusedAuthRef.current');
-    const reload = code.indexOf('window.location.reload()');
-    expect(guard, 'the auth guard is gone from the failsafe').toBeGreaterThan(0);
-    expect(reload).toBeGreaterThan(guard);
+describe('LAW 1 - a failed socket never reloads the live table', () => {
+  it('removes the old page-level reload loop and its throttle key', () => {
+    const code = blankNonCode(TABLE_PAGE);
+    expect(code).not.toContain('window.location.reload()');
+    expect(code).not.toContain('ca_ws_autoreload_at');
+    expect(code).not.toContain('wsAutoReload');
   });
 
-  it('the guard is a real early return, not a condition around the reload', () => {
-    const code = blankNonCode(failsafe());
-    const guard = code.indexOf('if (engineRefusedAuthRef.current)');
-    expect(guard).toBeGreaterThan(0);
-    // Everything between the guard and the reload is the beacon and a return.
-    expect(code.slice(guard, code.indexOf('window.location.reload()'))).toContain('return;');
-  });
-
-  it('the reload throttle is still there for the case it was written for', () => {
-    // A wedged socket with no auth involved must still be reloaded once every
-    // two minutes: this law narrows the failsafe, it does not remove it.
-    const code = failsafe();
-    expect(code).toContain('120_000');
-    expect(code).toContain('window.location.reload()');
+  it('leaves the explicit incompatible-bundle reload in the transport', () => {
+    const client = readFileSync(join(ROOT, 'src', 'services', 'EngineStateClient.ts'), 'utf8');
+    expect(client).toContain('CLOSE_UPGRADE_REQUIRED');
+    expect(client).toContain('void reloadForNewBundle()');
   });
 });
 
@@ -102,17 +83,7 @@ describe('LAW 2 - the cause is remembered, and only an open socket clears it', (
   });
 });
 
-describe('LAW 3/4 - the suppression is announced, and does not inflate the alert', () => {
-  it('the failsafe beacons reload_suppressed before returning', () => {
-    expect(failsafe()).toContain("reportConnectionEvent('reload_suppressed')");
-  });
-
-  it('the beacon is loaded lazily, so it stays out of the entry chunk', () => {
-    const code = failsafe();
-    expect(code).toContain("import('../services/clientConnectionBeacon')");
-    expect(BEACON).toContain("'reload_suppressed'");
-  });
-
+describe('LAW 3/4 - legacy suppression telemetry stays harmless', () => {
   it('the server accepts the reason rather than folding it into other', () => {
     // Read as source, not imported: this is a client suite and the engine's
     // module graph has no business being pulled into it.

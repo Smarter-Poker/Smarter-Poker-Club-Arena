@@ -10,8 +10,12 @@ import {
   solverPolicyArtifactStatus,
 } from '../gto/SolverPolicyArtifactLoader.js';
 import { startGtoChartLoader, stopGtoChartLoader } from './GtoChartLoader.js';
+import { startGtoPostflopLoader, stopGtoPostflopLoader } from './GtoPostflopLoader.js';
+import { startGtoPostflopV31Loader, stopGtoPostflopV31Loader } from './GtoPostflopV31Loader.js';
 
 afterEach(() => {
+  stopGtoPostflopV31Loader();
+  stopGtoPostflopLoader();
   stopGtoChartLoader();
   vi.useRealTimers();
 });
@@ -84,11 +88,63 @@ describe('GTO chart corpus refresh guard', () => {
     _clearSolverPolicyArtifactsForTests();
   });
 
-  it('cancels both boot and refresh timers during graceful shutdown', () => {
+  it('arms one idempotent periodic timer per store and cancels all of them at shutdown', () => {
     vi.useFakeTimers();
     startGtoChartLoader();
-    expect(vi.getTimerCount()).toBe(2);
+    startGtoPostflopLoader();
+    startGtoPostflopV31Loader();
+    expect(vi.getTimerCount()).toBe(3);
+
+    startGtoChartLoader();
+    startGtoPostflopLoader();
+    startGtoPostflopV31Loader();
+    expect(vi.getTimerCount()).toBe(3);
+
+    stopGtoPostflopV31Loader();
+    stopGtoPostflopLoader();
     stopGtoChartLoader();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('loads each live store exactly once before arming its periodic refresh', () => {
+    const workerSource = readFileSync(
+      fileURLToPath(new URL('../engine/horseDecision/workerRuntime.ts', import.meta.url)),
+      'utf8'
+    );
+    const stores = [
+      {
+        load: 'loadGtoCharts',
+        start: 'startGtoChartLoader',
+        source: './GtoChartLoader.ts',
+      },
+      {
+        load: 'loadGtoPostflop',
+        start: 'startGtoPostflopLoader',
+        source: './GtoPostflopLoader.ts',
+      },
+      {
+        load: 'loadGtoPostflopV31',
+        start: 'startGtoPostflopV31Loader',
+        source: './GtoPostflopV31Loader.ts',
+      },
+    ] as const;
+
+    for (const store of stores) {
+      const loaderSource = readFileSync(
+        fileURLToPath(new URL(store.source, import.meta.url)),
+        'utf8'
+      );
+      const loadCalls = workerSource.match(new RegExp(`\\b${store.load}\\(\\)`, 'g')) ?? [];
+      const startCalls = workerSource.match(new RegExp(`\\b${store.start}\\(\\)`, 'g')) ?? [];
+
+      expect(loadCalls, `${store.load} must have one authoritative boot read`).toHaveLength(1);
+      expect(startCalls, `${store.start} must arm one refresh owner`).toHaveLength(1);
+      expect(workerSource.indexOf(`${store.load}()`)).toBeLessThan(
+        workerSource.indexOf(`${store.start}()`)
+      );
+      expect(loaderSource).not.toContain('setTimeout(');
+      expect(loaderSource).not.toContain('BOOT_DELAY_MS');
+      expect(loaderSource.match(/setInterval\(/g) ?? []).toHaveLength(1);
+    }
   });
 });

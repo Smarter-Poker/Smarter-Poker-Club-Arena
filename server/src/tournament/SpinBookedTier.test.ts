@@ -16,6 +16,7 @@ const compiled = ts.transpileModule(
     '\nreturn spinRowPatch; }\nreturn run.call(this);',
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }
 ).outputText;
+class TestTournamentLifecycleAbortedError extends Error {}
 const execute = new Function(
   'tournament',
   'spinMultiplier',
@@ -27,6 +28,8 @@ const execute = new Function(
   'reportError',
   'console',
   'redrawnLockedTiers',
+  'lifecycle',
+  'TournamentLifecycleAbortedError',
   compiled
 );
 
@@ -49,7 +52,13 @@ describe('the booked Spin tier determines the start patch', () => {
       error: null,
     }));
     const patch = await execute.call(
-      { tournamentId: 'test-spin', seatFirstTableIds: [], spinRevealLagMs: 0, spinRevealAt: 0 },
+      {
+        tournamentId: 'test-spin',
+        seatFirstTableIds: [],
+        spinRevealLagMs: 0,
+        spinRevealAt: 0,
+        assertLifecycleCurrent: vi.fn(),
+      },
       { buy_in_amount: 1, club_id: 'club', starting_chips: 1000 },
       drawn,
       { rpc },
@@ -59,7 +68,9 @@ describe('the booked Spin tier determines the start patch', () => {
       SPIN_SEATS,
       vi.fn(),
       { log: vi.fn() },
-      null
+      null,
+      { generation: 1 },
+      TestTournamentLifecycleAbortedError
     );
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(patch.spin_multiplier).toBe(booked);

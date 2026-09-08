@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn(), emit: vi.fn(), track: vi.fn() }));
 vi.mock('../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
@@ -7,6 +9,12 @@ vi.mock('../src/services/ClubEntryTrustService', () => ({
 }));
 import { getArenaContext } from '../src/services/ArenaContextService';
 import { ClubJoinService } from '../src/services/ClubJoinService';
+import {
+  DIAMOND_ARENA_CLUB_ID,
+  DIAMOND_ARENA_ENTRY,
+  isDiamondArenaClubKey,
+  isDiamondArenaClubPath,
+} from '../src/lib/diamondArenaIdentity';
 const identity = { id: 'diamond-id', asset: 'diamonds', is_platform: true, union_id: null };
 const entitlement = { arena: identity, member: true, role: 'player' };
 const preview = {
@@ -22,6 +30,29 @@ describe('Poker Arena authoritative access', () => {
     vi.resetAllMocks();
     window.localStorage.clear();
   });
+  it('publishes one stable automatic-entry identity for home and route chrome', () => {
+    expect(DIAMOND_ARENA_ENTRY).toEqual({
+      id: DIAMOND_ARENA_CLUB_ID,
+      slug: 'diamond-arena',
+      name: 'Diamond Arena',
+      entity_type: 'club',
+      automatic_entry: true,
+    });
+    expect(isDiamondArenaClubKey('diamond-arena')).toBe(true);
+    expect(isDiamondArenaClubKey(DIAMOND_ARENA_CLUB_ID)).toBe(true);
+    expect(isDiamondArenaClubKey('shark-club')).toBe(false);
+    expect(isDiamondArenaClubPath('/clubs/diamond-arena/finance')).toBe(true);
+    expect(isDiamondArenaClubPath('/clubs/shark-club/finance')).toBe(false);
+
+    const home = readFileSync(resolve(process.cwd(), 'src/pages/HomePage.tsx'), 'utf8');
+    const carousel = readFileSync(
+      resolve(process.cwd(), 'src/components/home/CarouselSection.tsx'),
+      'utf8'
+    );
+    expect(home).toContain('clubs.push(DIAMOND_ARENA_ENTRY)');
+    expect(carousel).toContain('club.automatic_entry ? undefined');
+  });
+
   it('returns player-only capabilities without reading a materialized membership', async () => {
     mocks.rpc.mockResolvedValue({ data: entitlement, error: null });
     expect(await getArenaContext('diamond-id')).toMatchObject({

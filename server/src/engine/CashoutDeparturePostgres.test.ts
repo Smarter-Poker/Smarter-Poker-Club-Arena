@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -58,8 +58,138 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sql(
-      'TRUNCATE tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
+      'TRUNCATE tournaments,tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
+  });
+  it.each(['user', 'tournament'] as const)(
+    'seat expiry waits for the %s lock without already owning the seat lock',
+    async (scope) => {
+      sql(`INSERT INTO tournaments VALUES('${TABLE}');
+      INSERT INTO tables VALUES('${TABLE}',${scope === 'tournament' ? `'${TABLE}'` : 'NULL'},1);
+      INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
+      INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
+      25,now(),NULL,false,'${CLUB}')`);
+      // sql() above validates the disposable database before any child connection.
+      const args = [
+        '-X',
+        '-qAt',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-h',
+        host!,
+        '-p',
+        '55443',
+        '-U',
+        'departure_test',
+        '-d',
+        'postgres',
+      ];
+      const holder = spawn(process.env.CA_DEPARTURE_PSQL!, args);
+      let holderOutput = '';
+      holder.stdout.on('data', (data) => {
+        holderOutput += String(data);
+      });
+      let expiry: ReturnType<typeof spawn> | undefined;
+      let expiryError = '';
+      let expiryDone: Promise<number | null> | undefined;
+      const holderDone = new Promise<number | null>((resolve) => holder.once('exit', resolve));
+      const until = async (ready: () => boolean) => {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          if (ready()) return;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error('Concurrent PostgreSQL connection did not reach its barrier');
+      };
+      try {
+        holder.stdin.write(`BEGIN;
+        ${
+          scope === 'user'
+            ? `SELECT pg_advisory_xact_lock(hashtextextended('table_cap:${USER}',0));`
+            : `SELECT id FROM tournaments WHERE id='${TABLE}' FOR NO KEY UPDATE;`
+        }
+        SELECT 'scope_locked';
+`);
+        await until(() => holderOutput.includes('scope_locked'));
+        expiry = spawn(process.env.CA_DEPARTURE_PSQL!, args);
+        expiry.stderr!.on('data', (data) => {
+          expiryError += String(data);
+        });
+        expiryDone = new Promise<number | null>((resolve) => expiry!.once('exit', resolve));
+        expiry.stdin!.end(`SET application_name='ca-departure-expiry';
+        SELECT player_leave_table('${TABLE}','${USER}');
+`);
+        await until(
+          () =>
+            sql(`SELECT to_json(EXISTS(
+        SELECT 1 FROM pg_stat_activity WHERE application_name='ca-departure-expiry'
+          AND wait_event='${scope === 'user' ? 'advisory' : 'transactionid'}'))`) === true
+        );
+        // A third transaction must still be able to lock the seat NOWAIT.
+        // Before correction this throws: expiry already holds the seat while
+        // waiting for the user lock, the inverse of a concurrent buy-in.
+        expect(() =>
+          sql(`BEGIN;
+        SELECT to_json(id) FROM table_seats WHERE table_id='${TABLE}' FOR UPDATE NOWAIT;
+        ROLLBACK;`)
+        ).not.toThrow();
+      } finally {
+        holder.stdin.end(`ROLLBACK;
+`);
+        await holderDone;
+        if (expiryDone) {
+          const result = await expiryDone;
+          expect(result, expiryError).toBe(0);
+        }
+      }
+      expect(snapshot()).toEqual(
+        scope === 'user'
+          ? { balance: 125, active: 0, credits: 1, keys: 1, closes: 1 }
+          : { balance: 100, active: 0, credits: 0, keys: 0, closes: 0 }
+      );
+    }
+  );
+  it('keeps seat expiry available only to the service role', () => {
+    expect(
+      sql(`SELECT json_build_object(
+      'anon',has_function_privilege('anon','public.player_leave_table(uuid,uuid)','EXECUTE'),
+      'authenticated',has_function_privilege('authenticated','public.player_leave_table(uuid,uuid)','EXECUTE'),
+      'service_role',has_function_privilege('service_role','public.player_leave_table(uuid,uuid)','EXECUTE'))`)
+    ).toEqual({ anon: false, authenticated: false, service_role: true });
+  });
+  it('keeps anonymous cashout forbidden and authorized roles executable', () => {
+    expect(
+      sql(`SELECT json_build_object(
+      'anon',has_function_privilege('anon','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'),
+      'authenticated',has_function_privilege('authenticated','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'),
+      'service_role',has_function_privilege('service_role','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'))`)
+    ).toEqual({ anon: false, authenticated: true, service_role: true });
+  });
+  it.each([
+    'NULL',
+    '-1',
+    '0.001',
+    '25.001',
+    "'NaN'::numeric",
+    "'Infinity'::numeric",
+    "'-Infinity'::numeric",
+  ])('rejects invalid cash stack %s before credit, seat exit or session close', (invalidStack) => {
+    sql(`INSERT INTO tables VALUES('${TABLE}',NULL,1);
+        INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
+        INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
+        ${invalidStack},now(),NULL,false,'${CLUB}')`);
+    expect(() => sql(`SELECT atomic_seat_cashout_locked('${USER}','${TABLE}',2,NULL)`)).toThrow(
+      /CASHOUT_INVALID_STACK/
+    );
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+  it('refuses a missing table context without consuming an orphaned seat', () => {
+    sql(`INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
+      INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
+      25,now(),NULL,false,'${CLUB}')`);
+    expect(() => sql(`SELECT atomic_seat_cashout_locked('${USER}','${TABLE}',2,NULL)`)).toThrow(
+      /CASHOUT_TABLE_NOT_FOUND/
+    );
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
   });
   for (const path of ['eviction', 'busted'] as const) {
     it.each(['normal', 'lost_after_commit', 'rollback'] as const)(

@@ -54,7 +54,11 @@ const EFFECT = sliceEnclosingBlock(PAGE, 'const commitInFlight =', 0, 1)
 
 describe('the clock stops when the money moves', () => {
   it('a commit in flight is not an open sheet', () => {
-    expect(EFFECT).toContain('seatFirstPending || seatFirstPendingRef.current');
+    expect(EFFECT.replace(/\s+/g, ' ')).toContain(
+      'seatFirstPending || seatFirstPendingRef.current'
+    );
+    expect(EFFECT).toContain('cashBuyInRecovery !== null');
+    expect(EFFECT).toContain('if (cashBuyInPendingRef.current) return;');
     expect(EFFECT).toMatch(/!commitInFlight/);
   });
 

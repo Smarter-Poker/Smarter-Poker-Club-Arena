@@ -161,6 +161,10 @@ function seatedPlayerFrom(seat: SeatRow, profile: SeatedProfileRow) {
     horse_profile: (profile.horse_profile ?? undefined) as string | undefined,
     time_bank_remaining: seat.time_bank_remaining || 0,
     time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
+    persisted_time_bank: {
+      remainingSeconds: seat.time_bank_remaining,
+      usesRemaining: seat.time_bank_uses_remaining,
+    },
     is_sitting_out: seat.is_sitting_out === true,
     sit_out_at: seat.sit_out_at ?? null,
     entry_hold: seat.entry_hold ?? null,
@@ -252,6 +256,7 @@ export async function syncStacks(
     stack_before?: number;
     time_bank_uses_remaining?: number;
     time_bank_remaining?: number;
+    persisted_time_bank?: { remainingSeconds: number | null; usesRemaining: number | null };
   }[],
   handNumber?: number,
   options: StackWriteOptions = {}
@@ -478,66 +483,57 @@ export async function syncStacks(
   return false;
 }
 
+/**
+ * Compare against this hand's raw roster read, not a process-wide cache or an
+ * assumed successful write. Unchanged banks need no HTTP request. Unknown and
+ * null baselines still write, including a real zero; the database filter below
+ * remains the final no-op/WAL guard. Do not mark a failed write as persisted.
+ */
+function timeBankWritePayload(p: {
+  time_bank_uses_remaining?: number;
+  time_bank_remaining?: number;
+  persisted_time_bank?: { remainingSeconds: number | null; usesRemaining: number | null };
+}): { time_bank_uses_remaining?: number; time_bank_remaining?: number } {
+  const payload: { time_bank_uses_remaining?: number; time_bank_remaining?: number } = {};
+  if (
+    p.time_bank_uses_remaining !== undefined &&
+    p.time_bank_uses_remaining !== p.persisted_time_bank?.usesRemaining
+  )
+    payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
+  if (
+    p.time_bank_remaining !== undefined &&
+    p.time_bank_remaining !== p.persisted_time_bank?.remainingSeconds
+  )
+    payload.time_bank_remaining = p.time_bank_remaining;
+  return payload;
+}
+
 export async function persistTimeBanks(
   tableId: string,
-  players: { user_id: string; time_bank_uses_remaining?: number; time_bank_remaining?: number }[]
+  players: {
+    user_id: string;
+    time_bank_uses_remaining?: number;
+    time_bank_remaining?: number;
+    persisted_time_bank?: { remainingSeconds: number | null; usesRemaining: number | null };
+  }[]
 ): Promise<void> {
-  // Stacks are settled atomically; persist the non-money seat fields.
+  // Stacks are already settled atomically. Keep genuine bank changes inside
+  // the settlement barrier, but do not pay a round trip for every idle bank.
   await Promise.all(
-    players
-      .filter(
-        (p) => p.time_bank_uses_remaining !== undefined || p.time_bank_remaining !== undefined
-      )
-      .map(async (p) => {
-        const payload: Record<string, unknown> = {};
-        if (p.time_bank_uses_remaining !== undefined)
-          payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
-        if (p.time_bank_remaining !== undefined)
-          payload.time_bank_remaining = p.time_bank_remaining;
-        await supabase
-          .from('table_seats')
-          .update(payload)
-          .eq('table_id', tableId)
-          .eq('user_id', p.user_id)
-          .is('left_at', null)
-          // WRITE ONLY WHAT CHANGED (2026-09-02, performance).
-          //
-          // This ran for EVERY seated player after EVERY hand, and a
-          // time bank almost never moves - it only changes on the hands
-          // where somebody actually burns it. So the overwhelming
-          // majority of these were an UPDATE that set a column to the
-          // value it already held.
-          //
-          // Postgres does not care much; Realtime does. `table_seats` is
-          // in the `supabase_realtime` publication, so every one of these
-          // no-op writes produced a WAL record that `realtime.apply_rls`
-          // then decoded and RLS-filtered for every subscriber on the
-          // table. Measured 2026-09-02: 408,121 of these calls, 98.7% of
-          // all table_seats writes, on a table that is 36% of everything
-          // Realtime decodes - and `realtime.list_changes` was the single
-          // largest consumer of the whole database at 17.5% of total time
-          // with a 460 ms mean, which is felt at the table as lag.
-          //
-          // The guard is a FILTER, not a diff we track in memory: if
-          // neither column differs from what is stored, zero rows match,
-          // Postgres writes nothing, and no WAL record is produced. There
-          // is no cache to go stale, it is correct across an engine
-          // restart and against any concurrent writer, and a genuine
-          // change still writes exactly as before.
-          //
-          // `is.null` is in the OR deliberately. PostgREST `neq` uses SQL
-          // three-valued logic, so a NULL column would NOT match `neq`
-          // and the row would be filtered out - silently skipping a write
-          // that IS needed. Both columns are NOT NULL with defaults today
-          // (`20260313_time_bank_*`, pinned by RestartFidelity), and this
-          // clause is what keeps the guard correct if that ever changes.
-          .or(
-            timeBankChangedFilter({
-              time_bank_remaining: p.time_bank_remaining,
-              time_bank_uses_remaining: p.time_bank_uses_remaining,
-            })
-          );
-      })
+    players.map(async (p) => {
+      const payload = timeBankWritePayload(p);
+      if (Object.keys(payload).length === 0) return;
+      const { error } = await supabase
+        .from('table_seats')
+        .update(payload)
+        .eq('table_id', tableId)
+        .eq('user_id', p.user_id)
+        .is('left_at', null)
+        .or(timeBankChangedFilter(payload));
+      // PostgREST resolves SQL failures; they must not masquerade as success.
+      // The next fresh roster still differs and retries the remaining change.
+      if (error) reportError(error, 'DB.persist_time_banks_failed');
+    })
   );
 }
 

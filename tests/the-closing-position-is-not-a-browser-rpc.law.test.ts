@@ -12,6 +12,10 @@ const SQL = readFileSync(
   'supabase/migrations/20260908121900_the_closing_position_is_not_a_browser_rpc.sql',
   'utf8'
 );
+const STORAGE = readFileSync(
+  'supabase/migrations/20260908122500_the_closing_position_storage_is_private_and_immutable.sql',
+  'utf8'
+);
 
 describe('closing-position RPC authority', () => {
   it('replaces the SECURITY DEFINER current_user check by asserted substitution', () => {
@@ -46,5 +50,31 @@ describe('closing-position RPC authority', () => {
     expect(SQL).toContain('IF v_capture IS NULL AND v_summary IS NULL THEN');
     expect(SQL).toContain('IF v_capture IS NULL OR v_summary IS NULL THEN');
     expect(SQL).toContain('refusing an incomplete authority repair');
+  });
+});
+
+describe('closing-position storage authority', () => {
+  it('removes direct browser and service writes from the evidence table', () => {
+    expect(STORAGE).toContain(
+      'REVOKE ALL ON TABLE public.ca_epoch_closing_positions\n    FROM PUBLIC, anon, authenticated, service_role'
+    );
+    expect(STORAGE).toContain(
+      'GRANT SELECT ON TABLE public.ca_epoch_closing_positions TO service_role'
+    );
+    expect(STORAGE).toContain('service_role closing-position access is not read-only');
+  });
+
+  it('leaves the sequence accessible only to the postgres-owned capture body', () => {
+    expect(STORAGE).toContain(
+      'REVOKE ALL ON SEQUENCE public.ca_epoch_closing_positions_id_seq\n    FROM PUBLIC, anon, authenticated, service_role'
+    );
+    expect(STORAGE).toContain('service_role retains direct closing-position sequence access');
+  });
+
+  it('refuses truncate at the same immutable trigger boundary', () => {
+    expect(STORAGE).toMatch(
+      /BEFORE UPDATE OR DELETE OR TRUNCATE ON public\.ca_epoch_closing_positions[\s\S]{0,100}FOR EACH STATEMENT/
+    );
+    expect(STORAGE).toContain('statement-level UPDATE, DELETE and TRUNCATE');
   });
 });

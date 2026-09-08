@@ -1263,12 +1263,19 @@ export class RakebackSettlerService {
 
       // 2. Weekly agent credit invoices
       {
-        const { error } = await this.supabaseRpc('fn_generate_all_credit_invoices', {});
-        if (error) {
+        const { data, error } = await supabase.rpc('fn_generate_all_credit_invoices', {
+          p_period_end: `${currentWeekStart}T00:00:00Z`,
+        });
+        if (error || data?.success !== true || data?.failed !== 0) {
           reportError(
-            new Error(`fn_generate_all_credit_invoices failed: ${JSON.stringify(error)}`),
+            new Error(
+              error
+                ? `fn_generate_all_credit_invoices failed: ${JSON.stringify(error)}`
+                : 'fn_generate_all_credit_invoices did not confirm zero failed invoices'
+            ),
             'RakebackSettler.weekly_invoices'
           );
+          return;
         }
       }
 
@@ -1283,11 +1290,13 @@ export class RakebackSettlerService {
             new Error(`weekly_rake_generated reset failed: ${error.message}`),
             'RakebackSettler.weekly_rake_reset'
           );
+          return;
         }
       }
 
-      // 4. Mark this week closed
-      await supabase.from('daemon_state').upsert(
+      // 4. Mark this week closed. Reset and latch are still separate writes;
+      // a lost latch receipt must be reported, never logged as confirmed completion.
+      const { error: closeError } = await supabase.from('daemon_state').upsert(
         {
           daemon: WEEKLY_KEY,
           high_water_mark: new Date(`${currentWeekStart}T00:00:00Z`).toISOString(),
@@ -1295,6 +1304,13 @@ export class RakebackSettlerService {
         },
         { onConflict: 'daemon' }
       );
+      if (closeError) {
+        reportError(
+          new Error(`weekly-close latch failed: ${closeError.message}`),
+          'RakebackSettler.weekly_close'
+        );
+        return;
+      }
       console.log(
         '[RakebackSettler] Weekly financial close done: invoices generated, weekly counters reset'
       );

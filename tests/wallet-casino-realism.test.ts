@@ -117,7 +117,9 @@ describe('the header wallet button opens the wallet', () => {
     // takes you to marketplace. It's supposed to take you to the wallet."
     // The wallet button element: from its class token to its closing tag.
     const walletBtn = sliceBetween(HEADER, 'styles.walletBtn', '</button>');
-    expect(walletBtn).toContain("navigate('/wallet')");
+    // It still opens the wallet; since 2026-09-07 it carries the club the
+    // page is inside so the wallet opens on that club (the-menu-stays-in-the-club).
+    expect(walletBtn).toContain("navigate(withClubContext('/wallet', routeClubId))");
     expect(walletBtn).not.toContain('marketplace?tab=diamonds');
   });
 });

@@ -122,6 +122,10 @@
           NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
         } catch (e) {}
         if (NATIVE) MAX_RETRIES = 0;
+        // The one class every native-only stylesheet rule hangs off
+        // (src/styles/club-engine.css, "THE APP"). Set here, before any CSS
+        // applies, so there is no frame where the document rubber-bands.
+        if (NATIVE) document.documentElement.classList.add('ca-native');
         var RETRY_KEY = '__club_arena_recovery';
         var retryCount = 0;
         try {

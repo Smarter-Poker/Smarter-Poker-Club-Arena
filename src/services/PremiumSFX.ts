@@ -51,6 +51,19 @@ const NOTE = {
 
 let _ctx: AudioContext | null = null;
 
+// A phone call or a backgrounded app leaves the context suspended (iOS says
+// 'interrupted'); resume when the page is visible again, as SoundService
+// already does, so the first cue after a call is not silent. (2026-09-08)
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && _ctx && _ctx.state !== 'running') {
+      _ctx.resume().catch(() => {
+        /* will resume on next user gesture */
+      });
+    }
+  });
+}
+
 /** Lazily create or resume the AudioContext (requires user gesture) */
 function getCtx(): AudioContext | null {
   try {

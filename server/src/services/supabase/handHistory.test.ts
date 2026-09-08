@@ -362,7 +362,7 @@ describe('logHandHistory - accepted-hand transaction', () => {
       },
     ];
 
-    const input = atomicParams();
+    const input = { ...atomicParams(), handId: historyId.toUpperCase() };
     const result = await logHandHistory(input);
 
     expect(result).toMatchObject({
@@ -541,6 +541,56 @@ describe('logHandHistory - accepted-hand transaction', () => {
     expect(rpcCalls).toHaveLength(2);
     expect(rpcCalls[0].args).toEqual(rpcCalls[1].args);
     expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
+    expect(handHistoryQueueDepth()).toBe(0);
+  });
+
+  it('holds an immutable purchase payload while a lost response is retried', async () => {
+    vi.useFakeTimers();
+    try {
+      const input = obligationsParams();
+      atomicRpcResults = [
+        { data: null, error: { message: 'response lost after commit' } },
+        {
+          data: {
+            success: true,
+            atomic_hand_commit: true,
+            history_id: historyId,
+            post_commit_obligations: true,
+            replay: true,
+          },
+          error: null,
+        },
+      ];
+      const pending = logHandHistory(input);
+      await vi.advanceTimersByTimeAsync(0);
+      const accepted = structuredClone(rpcCalls[0].args);
+      input.atomicCommit.stacks[0].stack = 999;
+      input.atomicCommit.acceptedPostCommitFacts.contributions.u1 = 999;
+      input.atomicCommit.postCommitObligations.time_banks[0].uses_remaining = 999;
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(pending).resolves.toMatchObject({ settlementCommitted: true });
+      expect(rpcCalls).toHaveLength(2);
+      expect(rpcCalls[0].args).toEqual(accepted);
+      expect(rpcCalls[1].args).toEqual(accepted);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not accept a valid receipt for a different requested hand UUID', async () => {
+    atomicRpcResults = [
+      {
+        data: { success: true, atomic_hand_commit: true, history_id: historyId },
+        error: null,
+      },
+    ];
+    const input = { ...atomicParams(), handId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' };
+    await expect(logHandHistory(input)).rejects.toThrow(
+      /atomic hand commit refused \(receipt_identity_mismatch\)/
+    );
+    expect(rpcCalls).toHaveLength(1);
+    expect(mockWakeHandProjection).not.toHaveBeenCalled();
+    expect(mockObserveCompletedHand).not.toHaveBeenCalled();
     expect(handHistoryQueueDepth()).toBe(0);
   });
 

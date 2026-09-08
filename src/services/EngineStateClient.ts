@@ -466,6 +466,7 @@ export class EngineStateClient {
   private onVisibility: (() => void) | null = null;
   /** Dan 2026-08-21: browser 'online' hook for instant post-outage reconnect. */
   private onOnline: (() => void) | null = null;
+  private onResume: ((event: Event) => void) | null = null;
 
   /** How often the watchdog samples. */
   private static readonly WATCHDOG_TICK_MS = 5_000;
@@ -528,6 +529,23 @@ export class EngineStateClient {
       };
       window.addEventListener('online', this.onOnline);
     }
+    if (this.onResume === null && typeof window !== 'undefined') {
+      this.onResume = (event) => {
+        if (this.intentionalClose || document.visibilityState !== 'visible') return;
+        if (this.status === 'connected') {
+          // pageshow can be the only wake event after Home Screen/BFCache
+          // restoration. A healthy link keeps its existing bounded resync.
+          if (event.type === 'pageshow') this.onVisibility?.();
+          return;
+        }
+        // Browser wake does not necessarily produce an online event. Do not
+        // leave a foreground table behind a 30-second retry scheduled asleep.
+        // Reuse the existing single-flight, authenticated recovery path.
+        this.onOnline?.();
+      };
+      window.addEventListener('pageshow', this.onResume);
+      document.addEventListener('visibilitychange', this.onResume);
+    }
     await this.openOnce();
   }
 
@@ -543,6 +561,11 @@ export class EngineStateClient {
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
       this.onOnline = null;
+    }
+    if (this.onResume !== null && typeof window !== 'undefined') {
+      window.removeEventListener('pageshow', this.onResume);
+      document.removeEventListener('visibilitychange', this.onResume);
+      this.onResume = null;
     }
     // Dan 2026-08-15 (item 6): tear the watchdog down here or its interval and
     // visibilitychange listener outlive the client. In MultiTablePage, where
@@ -1662,6 +1685,7 @@ export class EngineChannelClient {
   private lastInboundAt = 0;
   private watchdogTimer: number | null = null;
   private onOnline: (() => void) | null = null;
+  private onResume: ((event: Event) => void) | null = null;
   /** 2026-08-22: bounded wake grace — see startWatchdog. */
   private onVisibility: (() => void) | null = null;
   private static readonly WATCHDOG_TICK_MS = 10_000;
@@ -1735,6 +1759,23 @@ export class EngineChannelClient {
       };
       window.addEventListener('online', this.onOnline);
     }
+    if (this.onResume === null && typeof window !== 'undefined') {
+      this.onResume = (event) => {
+        if (this.intentionalClose || document.visibilityState !== 'visible') return;
+        if (this.status === 'connected') {
+          // pageshow can be the only wake event after Home Screen/BFCache
+          // restoration. A healthy link keeps its existing bounded resync.
+          if (event.type === 'pageshow') this.onVisibility?.();
+          return;
+        }
+        // Browser wake does not necessarily produce an online event. Do not
+        // leave a foreground table behind a 30-second retry scheduled asleep.
+        // Reuse the existing single-flight, authenticated recovery path.
+        this.onOnline?.();
+      };
+      window.addEventListener('pageshow', this.onResume);
+      document.addEventListener('visibilitychange', this.onResume);
+    }
     await this.openOnce();
   }
 
@@ -1749,6 +1790,11 @@ export class EngineChannelClient {
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
       this.onOnline = null;
+    }
+    if (this.onResume !== null && typeof window !== 'undefined') {
+      window.removeEventListener('pageshow', this.onResume);
+      document.removeEventListener('visibilitychange', this.onResume);
+      this.onResume = null;
     }
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);

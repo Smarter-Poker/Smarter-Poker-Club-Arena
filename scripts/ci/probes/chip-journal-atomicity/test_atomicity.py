@@ -625,3 +625,7 @@ if mode=="fixed":
 if mode=='fixed':
  from test_rebuy_receipts import verify_rebuy_receipts
  verify_rebuy_receipts(run)
+
+if mode=="fixed":
+ from test_bbj_source_correction import verify_bbj_source_correction
+ verify_bbj_source_correction(run)

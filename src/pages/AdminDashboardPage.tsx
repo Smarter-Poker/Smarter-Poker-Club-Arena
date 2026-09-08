@@ -641,12 +641,17 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       if (pErr) throw pErr;
       const currentPeriod = periods?.[0] || null;
 
-      // agent_commissions schema: id, club_id, user_id, amount, commission_rate, source_type, source_id, notes, created_at
-      // Note: agent_commissions has NO period_id or status columns
+      // THE TABLE SAYS "PENDING", SO IT HAS TO MEAN IT (2026-09-08, phase 7).
+      // This read had no settled filter of any kind: it listed every commission
+      // accrued in the period, paid or not. agent_commissions_unsettled is the
+      // one definition of "still owed" that round 2, the agent claim and the
+      // rollup all share - a row drops out of it when its own settled_at is set
+      // OR a settlement row covers its period, which is how round 2 pays now.
+      // It is security_invoker, so RLS still decides which rows this admin sees.
       let commissions: CommissionRow[] = [];
       if (currentPeriod) {
         const { data: comms } = await supabase
-          .from('agent_commissions')
+          .from('agent_commissions_unsettled')
           .select('id, user_id, amount, commission_rate, source_type, notes, created_at')
           .eq('club_id', uuid)
           .gte('created_at', currentPeriod.start_at)

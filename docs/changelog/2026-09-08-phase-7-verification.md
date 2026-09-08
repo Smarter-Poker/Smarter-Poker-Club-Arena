@@ -141,6 +141,26 @@ Thirteen objects were verified present in the live schema before the fragment
 was written, and the nightly refresh goes red on any fragment that names
 something production does not have.
 
+## Defect 5: a table headed "Pending Commissions" listed the paid ones too
+
+Found on the second pass, by grepping every client read of the ledger rather
+than only the three screens the first pass had touched. Ten files read
+`agent_commissions`. Five (`CommissionHistoryModal`, `AgentFinancialPortal`,
+`AgentPortalPage`, `CommissionService`, `FinancialExportService`) select only
+`amount`, `created_at` and `source_type`: they report what was EARNED, which
+the settlement model does not change, and they are correct as they stand.
+
+`AdminDashboardPage`'s "Pending Commissions" table was the exception. Its query
+had no settled filter of any kind - not the new one, not even the old one - so
+it listed every commission accrued since the period start whether or not it had
+been paid. It now reads `agent_commissions_unsettled`, the one definition of
+"still owed" that round 2, the claim and the rollup already share. The view is
+`security_invoker`, so RLS still decides which rows an admin sees.
+
+This is the same table whose two buttons were removed in defect 3. With the
+buttons gone it is purely informational, which is exactly why the number on it
+has to be true.
+
 ## Defect 4: the filename version and the recorded version were not the same number
 
 `apply_migration` stamps the migration with **its own** timestamp, taken when

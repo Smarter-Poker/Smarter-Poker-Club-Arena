@@ -485,6 +485,35 @@ async function attemptBBJPayoutOnce(
     );
   }
 
+  // Validate the receipt before publishing amounts or closing its claim.
+  // PostgreSQL numeric values may arrive as numbers or decimal strings.
+  const amounts = [
+    rpc.total_payout,
+    rpc.loser_share,
+    rpc.winner_share,
+    rpc.table_share,
+    rpc.per_player_share,
+  ];
+  const cents = amounts.map((raw) => {
+    if (
+      (typeof raw !== 'number' && typeof raw !== 'string') ||
+      (typeof raw === 'string' && !/^\d+(?:\.\d+)?$/.test(raw))
+    )
+      throw new Error(`${rpcName} returned an invalid payout amount`);
+    const amount = Number(raw);
+    const value = Math.round(amount * 100);
+    if (!Number.isSafeInteger(value) || value < 0 || amount !== value / 100) {
+      throw new Error(`${rpcName} returned an invalid cent amount`);
+    }
+    return value;
+  });
+  if (cents[0] !== cents[1] + cents[2] + cents[3]) {
+    throw new Error(`${rpcName} payout shares do not equal its total`);
+  }
+  if (typeof rpc.payout_id !== 'string' || !rpc.payout_id.trim()) {
+    throw new Error(`${rpcName} returned no applied payout identity`);
+  }
+
   const totalPayout = Number(rpc.total_payout);
   const loserShare = Number(rpc.loser_share);
   const winnerShare = Number(rpc.winner_share);

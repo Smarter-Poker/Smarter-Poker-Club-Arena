@@ -41,7 +41,9 @@ import { execSync } from 'node:child_process';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
-const DIST = path.join(process.cwd(), 'dist');
+// CA_DIST: the native build (npm run build:native) writes dist-native/ so the
+// two bundles can never be confused. Unset means 'dist', exactly as before.
+const DIST = path.join(process.cwd(), process.env.CA_DIST || 'dist');
 
 function git(cmd, fallback = 'unknown') {
   try {

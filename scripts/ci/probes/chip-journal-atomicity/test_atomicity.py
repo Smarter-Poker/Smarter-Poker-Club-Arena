@@ -136,3 +136,11 @@ if mode=="fixed":
  if os.environ.get("HAND_ORIGINAL_PROOF"):
   verify_hand(run, os.environ["HAND_ORIGINAL_PROOF"])
  verify_hand(run)
+
+if mode=="fixed":
+ from test_union_periods import verify_union_periods
+ verify_union_periods(run)
+
+if mode=="fixed":
+ from test_bbj import verify_bbj
+ verify_bbj(run)

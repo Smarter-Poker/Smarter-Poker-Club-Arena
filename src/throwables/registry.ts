@@ -1,3 +1,9 @@
+import { spec as magic_8_ballSpec, rig as magic_8_ballRig } from './rigs/magic_8_ball';
+import { spec as lightning_boltSpec, rig as lightning_boltRig } from './rigs/lightning_bolt';
+import { spec as skullSpec, rig as skullRig } from './rigs/skull';
+import { spec as ufoSpec, rig as ufoRig } from './rigs/ufo';
+import { spec as ghostSpec, rig as ghostRig } from './rigs/ghost';
+import { spec as anvilSpec, rig as anvilRig } from './rigs/anvil';
 import { spec as sharkSpec, rig as sharkRig } from './rigs/shark';
 import { spec as bearSpec, rig as bearRig } from './rigs/bear';
 import { spec as pizzaSliceSpec, rig as pizzaSliceRig } from './rigs/pizza_slice';
@@ -61,6 +67,12 @@ export interface RiggedThrowable {
 }
 
 const RIGGED: Record<string, RiggedThrowable> = {
+  magic_8_ball: { spec: magic_8_ballSpec, rig: magic_8_ballRig },
+  lightning_bolt: { spec: lightning_boltSpec, rig: lightning_boltRig },
+  skull: { spec: skullSpec, rig: skullRig },
+  ufo: { spec: ufoSpec, rig: ufoRig },
+  ghost: { spec: ghostSpec, rig: ghostRig },
+  anvil: { spec: anvilSpec, rig: anvilRig },
   shark: { spec: sharkSpec, rig: sharkRig },
   bear: { spec: bearSpec, rig: bearRig },
   pizza_slice: { spec: pizzaSliceSpec, rig: pizzaSliceRig },

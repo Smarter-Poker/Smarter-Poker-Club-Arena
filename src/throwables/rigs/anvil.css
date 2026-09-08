@@ -1,0 +1,171 @@
+.thr-anvil__shadow,
+.thr-anvil__metal,
+.thr-anvil__face,
+.thr-anvil__ring,
+.thr-anvil__dust,
+.thr-anvil__impact,
+.thr-anvil__caption {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.thr-anvil__shadow {
+  animation: thr-anvil-shadow calc(3.2s * var(--animation-speed, 1)) linear 1 forwards;
+}
+@keyframes thr-anvil-shadow {
+  0% {
+    opacity: 0;
+    transform: scale(0.1);
+  }
+  18.75%,
+  78% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+}
+.thr-anvil__metal {
+  animation: thr-anvil-metal calc(3.1s * var(--animation-speed, 1)) linear 1 forwards;
+}
+@keyframes thr-anvil-metal {
+  0%,
+  12.9% {
+    opacity: 0;
+    transform: translateY(-190px);
+  }
+  13% {
+    opacity: 1;
+    transform: translateY(-190px);
+  }
+  19.35% {
+    opacity: 1;
+    transform: translateY(2px);
+  }
+  22.58%,
+  80.64% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-190px);
+  }
+}
+.thr-anvil__face {
+  opacity: 0;
+  animation: thr-anvil-face calc(2.5s * var(--animation-speed, 1)) linear
+    calc(0.7s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-anvil-face {
+  0%,
+  72% {
+    opacity: 1;
+    transform: translateY(30px) scaleY(0.3);
+  }
+  84% {
+    opacity: 1;
+    transform: translateY(-5px) scaleY(1.12);
+  }
+  92% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0) scaleY(1);
+  }
+}
+.thr-anvil__ring {
+  opacity: 0;
+  animation: thr-anvil-ring calc(0.7s * var(--animation-speed, 1)) ease-out
+    calc(0.6s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-anvil-ring {
+  0% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  40% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+.thr-anvil__dust {
+  opacity: 0;
+  animation: thr-anvil-dust calc(0.9s * var(--animation-speed, 1)) ease-out
+    calc(0.67s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-anvil-dust {
+  0% {
+    opacity: 0;
+    transform: translateY(15px) scale(0.3);
+  }
+  20% {
+    opacity: 0.65;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-30px) scale(1.1);
+  }
+}
+.thr-anvil__impact {
+  opacity: 0;
+  animation: thr-anvil-impact calc(0.15s * var(--animation-speed, 1)) linear
+    calc(0.6s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-anvil-impact {
+  0% {
+    opacity: 1;
+    transform: scale(0.5);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+.thr-anvil__caption {
+  opacity: 0;
+  animation: thr-anvil-caption calc(0.65s * var(--animation-speed, 1)) linear
+    calc(0.6s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-anvil-caption {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-anvil__shadow,
+  .thr-anvil__metal,
+  .thr-anvil__face,
+  .thr-anvil__ring,
+  .thr-anvil__dust,
+  .thr-anvil__impact,
+  .thr-anvil__caption {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-anvil__shadow,
+  .thr-anvil__face,
+  .thr-anvil__ring,
+  .thr-anvil__dust,
+  .thr-anvil__impact {
+    opacity: 0 !important;
+  }
+  .thr-anvil__metal,
+  .thr-anvil__caption {
+    opacity: 1 !important;
+  }
+}

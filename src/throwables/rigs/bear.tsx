@@ -89,6 +89,16 @@ function Payload(_props: RigProps) {
             />
           </g>
         </g>
+        <g className="thr-bear__vein">
+          <AtlasSprite
+            src="impact-details"
+            rect={[627, 627, 627, 627]}
+            x={24}
+            y={-48}
+            width={23}
+            height={23}
+          />
+        </g>
         <g className="thr-bear__stars">
           <AtlasSprite src="star" rect={[60, 65, 505, 515]} x={8} y={-27} width={12} height={12} />
           <AtlasSprite src="star" rect={[60, 65, 505, 515]} x={36} y={-19} width={11} height={11} />

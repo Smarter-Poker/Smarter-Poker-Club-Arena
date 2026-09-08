@@ -42,7 +42,6 @@ export interface EnginePublicPlayer {
   equipped_frame?: string;
   /** Equipped avatar aura token, e.g. `aura-fire`. '' or absent means none. */
   equipped_aura?: string;
-  is_horse?: boolean;
   hand_name?: string;
   /**
    * SHOWDOWN SYSTEM 2026-08-25: the engine ruled this hand muckable at

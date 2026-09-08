@@ -1,3 +1,4 @@
+import type { ArenaAccessContext } from '../../server/src/domain/ArenaContext';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { ClubEntryTrustService } from './ClubEntryTrustService';
@@ -9,6 +10,8 @@ const CLUB_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/i;
 
 export interface ClubJoinPreview {
   found: boolean;
+  arena_context?: ArenaAccessContext;
+  automatic_membership?: boolean;
   id?: string;
   club_id?: number;
   slug?: string;
@@ -22,6 +25,8 @@ export interface ClubJoinPreview {
 
 export interface ClubJoinResult {
   success: boolean;
+  arena_context?: ArenaAccessContext;
+  automatic_membership?: boolean;
   code?: string;
   error?: string;
   club?: { id: string; club_id: number; slug?: string; name: string; logo_url?: string | null };
@@ -108,6 +113,33 @@ export async function joinClubByIdentifier(options: {
     requestId: options.requestId || crypto.randomUUID(),
     createdAt: Date.now(),
   };
+  const { getArenaContext } = await import('./ArenaContextService');
+  const context = await getArenaContext(pending.identifier);
+  if (context?.automaticMembership) {
+    const preview = await previewClubJoin(context.arena.id);
+    if (
+      !preview.found ||
+      preview.id !== context.arena.id ||
+      !preview.name ||
+      preview.club_id == null
+    ) {
+      throw new Error('Could Not Resolve Diamond Arena');
+    }
+    savePending(null);
+    return {
+      success: true,
+      status: 'automatic',
+      automatic_membership: true,
+      arena_context: context,
+      club: {
+        id: preview.id,
+        club_id: preview.club_id,
+        slug: preview.slug,
+        name: preview.name,
+        logo_url: preview.logo_url,
+      },
+    };
+  }
   savePending(pending);
   const { data, error } = await supabase.rpc('fn_join_club_atomic', {
     p_identifier: pending.identifier,

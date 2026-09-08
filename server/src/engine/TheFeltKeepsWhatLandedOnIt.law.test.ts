@@ -57,7 +57,6 @@ vi.mock('../services/supabase.js', () => ({
   supabase: { rpc: vi.fn(), from: vi.fn() },
   loadTable: vi.fn(),
   syncStacks: vi.fn(),
-  syncTournamentChips: vi.fn(),
   updateTableStatus: vi.fn(),
   autoRebuyHorse: vi.fn(),
   markSeatAsLeft: vi.fn(),
@@ -238,6 +237,22 @@ describe('LAW 3: the write is atomic, in delta mode, with no absolute fallback',
     expect(fn).not.toContain("'DB.settle_hand_stacks_fallback'");
     // A write with no hand number is refused, not routed to a per-seat loop.
     expect(fn).toContain("'DB.sync_stacks_without_hand'");
+  });
+
+  it('a tournament hand requires the same transaction to prove its standings mirror', () => {
+    expect(fn).toContain('const expectedTournamentId = options.expectedTournamentId ?? null;');
+    expect(fn).toContain('tournamentStackProofIsExact(');
+    expect(fn).toContain("'DB.settle_hand_stacks_tournament_proof_invalid'");
+    const settlement = code(read('./ServerTableEngineSettlement.ts'));
+    const write = settlement.slice(
+      settlement.indexOf("await runStep('sync_stacks'"),
+      settlement.indexOf("await runStep('hand_history'")
+    );
+    expect(write).toMatch(
+      /expectedTournamentId:\s*this\.isTournamentTable\(\)\s*\?\s*\(this\.tableInfo\?\.tournament_id\s*\?\?\s*null\)\s*:\s*null/
+    );
+    expect(settlement).not.toContain('syncTournamentChips');
+    expect(tables).not.toContain('export async function syncTournamentChips');
   });
 });
 

@@ -1,0 +1,16 @@
+{
+  "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
+  "_comment": "One immutable whole-pool satellite settlement: every funded full ticket is one seat-or-cash award line, all sub-ticket residual goes to exactly one next finisher, and every source table and seat closes in the same transaction under an exact replayable identity snapshot. The legacy per-seat service door stays live during the rolling deployment; retirement is deferred to a separately gated stage two.",
+  "tables": [
+    "tournament_satellite_awards",
+    "tournament_satellite_settlement_cutover",
+    "tournament_satellite_settlements"
+  ],
+  "functions": [
+    "fn_ca_satellite_settlement_receipt",
+    "fn_resolve_satellite_settlement_outcome",
+    "fn_satellite_settlement_receipts_are_append_only",
+    "fn_settle_satellite_tournament"
+  ],
+  "columns": {}
+}

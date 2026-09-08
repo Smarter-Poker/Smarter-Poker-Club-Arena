@@ -358,20 +358,14 @@ export class GameServer {
   private lastHuBackpayAt = 0;
   /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
   private lastNoHandResultCheckAt = 0;
-  /** Last fn_payout_guarantee_check pass (2026-09-01 every-earner-is-paid). */
-  private lastPayoutGuaranteeCheckAt = 0;
   /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
   private lastPlaceOverpayChargeAt = 0;
   /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
   private lastRakeAttributionRepairAt = 0;
-  /** Last fn_backpay_spin_unpaid_winners pass (2026-08-28 spin deep dive). */
-  private lastSpinBackpayAt = 0;
   /** Last fn_spin_expire_unfilled pass (2026-08-31 phase 2 review). */
   private lastSpinExpireAt = 0;
   /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
   private lastFeeRequeueAt = 0;
-  /** Last fn_pay_backed_payout_shortfalls pass (2026-08-28 backed payouts). */
-  private lastBackedPayoutAt = 0;
   private running: boolean = false;
   private startTime: number = Date.now();
 
@@ -3946,54 +3940,6 @@ export class GameServer {
           }
         }
 
-        // ── EVERY EARNER IS PAID (2026-09-01) ──
-        // Dan, verbatim: "IT IS AN ABSOLUTE MUST THAT PLAYERS ALWAYS 100% GET
-        // PAID OUT OF EVERY SINGLE MTT, SPIN OR HEADS UP THEY PLAY (IF THEY
-        // EARNED A PAYOUT)." This is the check that makes that verifiable, and
-        // it is the only one on the platform that asks the question against
-        // the WALLET rather than against tournament_payouts.
-        //
-        // It catches three things nothing else looked for:
-        //   - a paid place with no holder. Fifteen MTTs between 2026-05-08 and
-        //     2026-07-19 recorded finishing places 1, 2, then 6 onwards, so the
-        //     18/10/7 percent places had nobody in them and 193.10 chips went
-        //     to no one. The cause was fixed on 2026-07-19; the blindness was
-        //     not, and it had run for ten weeks.
-        //   - an earner whose wallet never saw the money. Across 150 days and
-        //     ~49,000 events that is exactly one player, short by 0.02.
-        //   - prizes paid with no payout record (61 events, 5,515.91 chips),
-        //     which is what arms fn_tournament_payout_reconcile to pay a second
-        //     time, because it reads that record to decide what is owed.
-        //
-        // Hourly, on its own timer, and it moves no money.
-        if (Date.now() - this.lastPayoutGuaranteeCheckAt > 60 * 60 * 1000) {
-          this.lastPayoutGuaranteeCheckAt = Date.now();
-          try {
-            const { data: pg, error: pgErr } = await supabase.rpc('fn_payout_guarantee_check', {
-              p_since_days: 7,
-            });
-            if (pgErr) {
-              reportError(
-                new Error(`[GameServer] payout guarantee check failed: ${pgErr.message}`),
-                'GameServer.payout_guarantee_check_failed'
-              );
-            } else if (
-              Number(pg?.vacant_paid_place_events) > 0 ||
-              Number(pg?.earners_not_paid) > 0 ||
-              Number(pg?.paid_but_unrecorded_events) > 0
-            ) {
-              console.log(
-                `[GameServer] Payout guarantee: ${pg.vacant_paid_place_events} event(s) with an unheld paid place ` +
-                  `(${pg.vacant_paid_place_chips} chips), ${pg.earners_not_paid} earner(s) unpaid ` +
-                  `(${pg.earners_not_paid_chips} chips), ${pg.paid_but_unrecorded_events} event(s) paid without a record ` +
-                  `(${pg.paid_but_unrecorded_chips} chips), ${pg.alerts_raised} new alert(s)`
-              );
-            }
-          } catch (pgEx) {
-            reportError(pgEx, 'GameServer.payout_guarantee_check_threw');
-          }
-        }
-
         // ── DUPLICATE-PLACE OVERPAY CHARGE (2026-08-28) ──
         // 259 duplicate finishing places were renumbered; 19 of the demoted
         // rows had collected more than their corrected place is worth. Dan's
@@ -4087,48 +4033,6 @@ export class GameServer {
           }
         }
 
-        // ── SPIN WINNER BACK-PAY (2026-08-28) ──
-        // v_spin_unpaid_settlements compares what the reserve pool DREW for a
-        // Spin against what reached a player's wallet. 52 events had already
-        // diverged when it was built, every one of them with exactly one
-        // player at position 1 - the prize left the bank and landed nowhere.
-        // Spin is excluded from fn_tournament_money_conservation entirely
-        // (`variant NOT IN ('spin','satellite')`), so nothing else on the
-        // platform was ever going to notice. Its own timer, for the reason
-        // written above the HU back-pay: a repair gated on another job's clock
-        // runs at boot and then effectively never.
-        if (Date.now() - this.lastSpinBackpayAt > 10 * 60 * 1000) {
-          this.lastSpinBackpayAt = Date.now();
-          try {
-            const { data: sbp, error: sbpErr } = await supabase.rpc(
-              'fn_backpay_spin_unpaid_winners',
-              // p_since_hours EXPLICIT (2026-08-31). This call had been
-              // failing on EVERY invocation with 57014 statement timeout:
-              // the RPC read the unbounded v_spin_unpaid_settlements three
-              // times, ~2.4s each, against an 8s service_role limit, so the
-              // safety net under "a prize left the bank and landed nowhere"
-              // had not run in production. It now sweeps a window it can
-              // finish. Six hours covers thirty-six passes of this ten-minute
-              // loop; anything older than that is not a repair, it is an
-              // audit, and an audit passes its own window.
-              { p_apply: true, p_limit: 200, p_since_hours: 6 }
-            );
-            if (sbpErr) {
-              reportError(
-                new Error(`[GameServer] spin winner back-pay failed: ${sbpErr.message}`),
-                'GameServer.spin_backpay_failed'
-              );
-            } else if (Number(sbp?.winners_paid) > 0) {
-              console.log(
-                `[GameServer] Spin winner back-pay: ${sbp.winners_paid} winner(s), ${sbp.chips} chips ` +
-                  `(owed ${sbp.owed_before} -> ${sbp.owed_after})`
-              );
-            }
-          } catch (sbpEx) {
-            reportError(sbpEx, 'GameServer.spin_backpay_threw');
-          }
-        }
-
         /* ── UNFILLED-SPIN REFUND, ON THE ENGINE'S OWN CLOCK (2026-08-31) ──
          * A Spin is seat-first: you pay when you sit. Nothing bounded the
          * wait for the third seat, so a game that never filled held every
@@ -4145,9 +4049,8 @@ export class GameServer {
          * day this shipped: /api/cron/spin-sweep had not fired for 37 minutes
          * on a fifteen-minute schedule while the engine's own timers kept perfect time.
          * Money owed back to a player must not wait on the least reliable
-         * clock available; this is the same reasoning as the back-pay above,
-         * whose comment says a repair gated on another job's clock runs at
-         * boot and then effectively never. */
+         * clock available. This is a normal refund lifecycle for an unfilled
+         * product, not a payout reconciler or a substitute settlement path. */
         if (Date.now() - this.lastSpinExpireAt > 10 * 60 * 1000) {
           this.lastSpinExpireAt = Date.now();
           try {
@@ -4206,46 +4109,6 @@ export class GameServer {
             }
           } catch (rqEx) {
             reportError(rqEx, 'GameServer.fee_requeue_threw');
-          }
-        }
-
-        // ── BACKED PAYOUT SHORTFALLS (2026-08-28) ──
-        // Events that finished owing an identifiable finisher money AND still
-        // hold the chips to pay it. The rule is strict and lives in the RPC:
-        // pay only where fn_tournament_conservation_delta >= total_top_up, so
-        // an event can never be pushed into deficit to make a player whole,
-        // and refuse afterwards if conservation would go negative anyway.
-        // Spins and satellites are excluded - a Spin's pool is funded by the
-        // Reserve Pool rather than its own collections, and a satellite awards
-        // seats, so neither delta means what it means elsewhere.
-        //
-        // Wired here because the playbook's own wiring check caught it as dead
-        // code: it had been run by hand and had no caller. Everything else in
-        // this block learned the same lesson the hard way - a repair that
-        // depends on someone remembering to run it does not run.
-        if (Date.now() - this.lastBackedPayoutAt > 60 * 60 * 1000) {
-          this.lastBackedPayoutAt = Date.now();
-          try {
-            const { data: bp, error: bpErr } = await supabase.rpc(
-              'fn_pay_backed_payout_shortfalls',
-              { p_apply: true, p_limit: 500 }
-            );
-            if (bpErr) {
-              reportError(
-                new Error(`[GameServer] backed payout sweep failed: ${bpErr.message}`),
-                'GameServer.backed_payout_failed'
-              );
-            } else if (
-              Number(bp?.events_paid) > 0 ||
-              Number(bp?.events_withheld_unfunded_pool) > 0
-            ) {
-              console.log(
-                `[GameServer] Backed payout sweep: ${bp.events_paid} event(s) paid ${bp.chips_paid} chips, ` +
-                  `${bp.events_withheld_unfunded_pool} withheld (${bp.chips_withheld_unfunded_pool} chips, unfunded pools)`
-              );
-            }
-          } catch (bpEx) {
-            reportError(bpEx, 'GameServer.backed_payout_threw');
           }
         }
 

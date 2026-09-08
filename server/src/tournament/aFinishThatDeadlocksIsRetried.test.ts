@@ -15,11 +15,6 @@ import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  COMPLETED_FLIP_ATTEMPTS,
-  COMPLETED_FLIP_BACKOFF_MS,
-  isTransientFlipError,
-} from './completedFlip.js';
-import {
   COMPLETING_DWELL_MS,
   COMPLETING_MANAGED_GRACE_MS,
   managerHasOverstayed,
@@ -28,38 +23,42 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const ELIM = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
 const SERVER = readFileSync(join(here, '..', 'GameServer.ts'), 'utf8');
+const TERMINAL = readFileSync(
+  join(
+    here,
+    '../../../supabase/migrations/20260908045932_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+  ),
+  'utf8'
+);
 
-describe('the flip is retried on a deadlock and nothing else', () => {
-  it('three attempts, a quarter second apart, growing', () => {
-    expect(COMPLETED_FLIP_ATTEMPTS).toBe(3);
-    expect(COMPLETED_FLIP_BACKOFF_MS).toBe(250);
+describe('the completion flip is part of the money transaction', () => {
+  it('runtime has no independent completion write or retry helper', () => {
+    const finish = ELIM.slice(ELIM.indexOf('protected async finishTournament'));
+    expect(finish).toContain('requestTournamentTerminalReceipt(');
+    expect(finish).not.toContain("status: 'COMPLETED'");
+    expect(finish).not.toContain('COMPLETED_FLIP_ATTEMPTS');
+    expect(finish).not.toContain('isTransientFlipError');
   });
 
-  it('a deadlock, a lock timeout and a serialization failure are transient', () => {
-    expect(isTransientFlipError({ code: '40P01', message: 'deadlock detected' })).toBe(true);
-    expect(
-      isTransientFlipError({ code: '55P03', message: 'canceling statement due to lock timeout' })
-    ).toBe(true);
-    expect(isTransientFlipError({ code: '40001' })).toBe(true);
-    expect(isTransientFlipError({ message: 'deadlock detected' })).toBe(true);
+  it('the database claims COMPLETING and completes exactly one row before storing the receipt', () => {
+    const update = TERMINAL.indexOf("SET status = 'COMPLETED'");
+    const count = TERMINAL.indexOf('IF v_rows <> 1 THEN', update);
+    const receipt = TERMINAL.indexOf('INSERT INTO public.tournament_terminal_settlements', update);
+    expect(update).toBeGreaterThan(-1);
+    expect(count).toBeGreaterThan(update);
+    expect(receipt).toBeGreaterThan(count);
+    expect(TERMINAL.slice(update, count)).toMatch(/status::text,''\)\) = 'COMPLETING'/);
   });
 
-  it('a refusal is not retried - a trigger that says no means no', () => {
-    expect(isTransientFlipError({ code: '23514', message: 'a spin cannot complete unpaid' })).toBe(
-      false
+  it('replay validates the stored receipt before any payer call', () => {
+    const body = TERMINAL.slice(TERMINAL.indexOf('AS $complete_terminal$'));
+    const replay = body.indexOf('tournament_terminal_settlements h');
+    const firstPayer = body.indexOf('public.fn_settle_tournament_places(');
+    expect(replay).toBeGreaterThan(-1);
+    expect(firstPayer).toBeGreaterThan(replay);
+    expect(body.slice(replay, firstPayer)).toContain(
+      'RETURN public.fn_ca_tournament_terminal_receipt('
     );
-    expect(isTransientFlipError({ code: 'PGRST301', message: 'JWT expired' })).toBe(false);
-    expect(isTransientFlipError(null)).toBe(false);
-  });
-
-  it('finishTournament loops the update and keeps the COMPLETING guard on every attempt', () => {
-    const i = ELIM.indexOf('for (let attempt = 1; attempt <= COMPLETED_FLIP_ATTEMPTS; attempt++)');
-    expect(i).toBeGreaterThan(0);
-    const body = ELIM.slice(i, ELIM.indexOf('if (completedErr) {', i));
-    expect(body).toContain(".eq('status', 'COMPLETING')");
-    expect(body).toContain("status: 'COMPLETED'");
-    expect(body).toContain('if (!error || !isTransientFlipError(error)) break;');
-    expect(body).toContain('COMPLETED_FLIP_BACKOFF_MS * attempt');
   });
 });
 

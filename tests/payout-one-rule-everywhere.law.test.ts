@@ -40,7 +40,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-import { computePlacePrize } from '../src/lib/payoutMath';
+import { computePlacePrize, prizePoolAvailableToPlaces } from '../src/lib/payoutMath';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -90,6 +90,22 @@ describe('the payout rule is written once', () => {
     ] as const) {
       expect(src, `${name} does not use computePlacePrize`).toMatch(/computePlacePrize/);
     }
+
+    for (const file of [
+      'src/pages/TournamentPage.tsx',
+      'src/components/tournament/TournamentInfoPanel.tsx',
+      'src/components/lobby/GameLobbyPanel.tsx',
+      'src/components/tournament/details/RewardsTab.tsx',
+    ]) {
+      const display = code(read(file));
+      expect(display, `${file} bypasses the shared place calculation`).toMatch(/placePrize/);
+      expect(display, `${file} bypasses the pool-funded bubble reserve`).toMatch(
+        /effectivePlaceLadderPool/
+      );
+      expect(display, `${file} multiplies a raw pool by one percentage`).not.toMatch(
+        /prize_pool[^;\n]{0,120}\*[^;\n]{0,120}percentage|percentage[^;\n]{0,120}\*[^;\n]{0,120}prize_pool/
+      );
+    }
   });
 
   it('nothing shaves the excess off first place', () => {
@@ -97,6 +113,38 @@ describe('the payout rule is written once', () => {
     // when truncation overshot. The engine's rule puts any adjustment on the
     // SMALLEST prize, deliberately.
     expect(code(read('src/services/PayoutEngine.ts'))).not.toMatch(/amounts\[0\]\.amount =/);
+  });
+});
+
+describe('cash bubble protection comes from the prize pool', () => {
+  const ladder = [50, 30, 20].map((percentage, i) => ({ place: i + 1, percentage }));
+
+  it('reserves exactly one base buy-in and the ladder plus bubble equals the pool', () => {
+    const placePool = prizePoolAvailableToPlaces(1000, ladder, 4, true, 100);
+    expect(placePool).toBe(900);
+    const ladderCents = ladder.reduce(
+      (sum, row) => sum + Math.round(computePlacePrize(placePool!, ladder, row.place) * 100),
+      0
+    );
+    expect(ladderCents).toBe(90000);
+    expect(ladderCents + 10000).toBe(100000);
+  });
+
+  it('does not reserve when protection is disabled or no stone bubble exists', () => {
+    expect(prizePoolAvailableToPlaces(1000, ladder, 4, false, 100)).toBe(1000);
+    expect(prizePoolAvailableToPlaces(1000, ladder, 3, true, 100)).toBe(1000);
+  });
+
+  it('leaves a satellite pool untouched for its separate residual authority', () => {
+    expect(prizePoolAvailableToPlaces(1000, ladder, 4, false, 100)).toBe(1000);
+  });
+
+  it('fails closed on values the database settlement refuses', () => {
+    expect(prizePoolAvailableToPlaces(1000.001, ladder, 4, true, 100)).toBeNull();
+    expect(prizePoolAvailableToPlaces(1000, ladder, 4, true, 100.001)).toBeNull();
+    expect(prizePoolAvailableToPlaces(50, ladder, 4, true, 100)).toBeNull();
+    expect(prizePoolAvailableToPlaces(1000, [], 4, true, 100)).toBeNull();
+    expect(prizePoolAvailableToPlaces(1000, ladder, 0, true, 100)).toBeNull();
   });
 });
 

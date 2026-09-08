@@ -29,19 +29,14 @@ import {
   eliminationSweepsInflight,
   eliminationSweepOverrunsTotal,
 } from '../observability/engineInstruments.js';
+import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
+import { resolvePayoutStructure, parsePayoutStructure } from './payoutStructure.js';
+import { type VerifiedTournamentCompletionReceipt } from './completionSettlementReceipt.js';
 import {
-  COMPLETED_FLIP_ATTEMPTS,
-  COMPLETED_FLIP_BACKOFF_MS,
-  isTransientFlipError,
-} from './completedFlip.js';
-import { computePlacePrize } from './payoutMath.js';
-import { settleTournamentObligation, TRANSPORT_REFUSAL } from './settleObligation.js';
-import {
-  resolvePayoutStructure,
-  parsePayoutStructure,
-  isSpinTournament,
-  remainingPoolAfterAwards,
-} from './payoutStructure.js';
+  requestTournamentTerminalReceipt,
+  TerminalSettlementOutcomeUnknownError,
+} from './terminalSettlementRpc.js';
+import { SatelliteSettlementOutcomeUnknownError } from './satelliteSettlementRpc.js';
 
 interface QueuedBountyReveal {
   awardId: string;
@@ -60,6 +55,57 @@ interface TableRevealQueue {
   presented: number;
   /** Open only until the first chest of a burst is presented. */
   coalesceTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface BubbleSettlementReceipt {
+  ok?: boolean;
+  fully_settled?: boolean;
+  reason?: string;
+  user_id?: unknown;
+  position?: unknown;
+  amount?: unknown;
+}
+
+class TerminalSettlementCommittedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TerminalSettlementCommittedError';
+  }
+}
+
+/**
+ * PostgREST normally decodes jsonb, but older database clients can return the
+ * same receipt as a JSON string. A malformed transport value is a refusal,
+ * never permission to continue closing a tournament whose money is unknown.
+ */
+function bubbleSettlementReceipt(value: unknown): BubbleSettlementReceipt {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? (parsed as BubbleSettlementReceipt) : {};
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === 'object' ? (value as BubbleSettlementReceipt) : {};
+}
+
+/**
+ * The bubble is a finishing PLACE, not the number of rows in the ladder.
+ *
+ * Canonical payout structures are usually contiguous, which hid this defect:
+ * a ladder paying places 1, 2, 3 and 5 has four rows but its stone bubble is
+ * 6th. Both hand-for-hand and the immediate Bubble Protection settlement must
+ * therefore follow the deepest canonical place the payout resolver returned.
+ */
+function deepestCanonicalPaidPlace(
+  payouts: ReadonlyArray<{ place?: number }> | null | undefined
+): number {
+  if (!Array.isArray(payouts)) return 0;
+  return payouts.reduce((deepest, payout) => {
+    const place = Number(payout?.place);
+    return Number.isInteger(place) && place > deepest ? place : deepest;
+  }, 0);
 }
 
 export abstract class TournamentManagerEliminations extends TournamentManagerBase {
@@ -119,15 +165,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       reportError(err, 'Tournament.refresh_chip_cap_inputs');
     }
   }
-
-  /** SEATLESS-PHANTOM GUARD (2026-08-30): userId -> consecutive sweeps seen
-   *  'playing' with chips > 0 while holding NO open seat anywhere in the
-   *  tournament. See the block in the sweep for the full story. */
-  protected seatlessPlayingStrikes = new Map<string, number>();
-  /** ~2 minutes at the 5s sweep cadence — a live paid player is re-seated by
-   *  ensureLateRegSeated within one or two cycles; only a vacated bust whose
-   *  chips-zero write was lost stays seatless this long. */
-  protected static readonly SEATLESS_PHANTOM_STRIKES = 24;
 
   /**
    * One reveal queue per table (sections 22 and 61 — only the affected table
@@ -267,317 +304,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       eliminationSweepsInflight.inc();
 
       try {
-        // ── SYNC STACKS: table_seats → tournament_players ──
-        // The poker engine updates table_seats.stack after each hand. Collect all
-        // seat stacks across every table, then push them to tournament_players in
-        // ONE bulk statement (fn_sync_tournament_chips) instead of one UPDATE per
-        // seat per table every 5s (the old N+1 that flooded Postgres logs).
-        /**
-         * ═══════════════════════════════════════════════════════════════════
-         *  ONE PLAYER, ONE STACK (2026-08-25)
-         * ═══════════════════════════════════════════════════════════════════
-         *
-         * Two defects, both of which end with a live player's chip count being
-         * set from a stack that is not theirs any more.
-         *
-         * (a) THE READ WAS NOT CHECKED. `if (seats)` skipped a table whose
-         *     read failed exactly as if that table had no seats, so the sweep
-         *     went on to bust players using a chip picture it knew was
-         *     incomplete. Deciding who is out on a partial read is the same
-         *     mistake as deciding a tournament is over on a failed count.
-         *
-         * (b) SEATS WERE NOT DEDUPED BY PLAYER. One entry was pushed per SEAT,
-         *     and a player can hold more than one open seat: a table move that
-         *     writes the destination seat but does not stamp `left_at` on the
-         *     source leaves both rows live. Measured on production
-         *     2026-08-25, one running MTT (Turbo Tuesday Graveyard): 502 open
-         *     seats across 376 distinct players, 108 of them holding more than
-         *     one, double-counting 1,461,180 chips. Postgres resolves
-         *     `UPDATE ... FROM jsonb_to_recordset` against duplicate keys by
-         *     picking an ARBITRARY row, so `fn_sync_tournament_chips` could
-         *     overwrite a live stack with a dead one — and a dead seat's stack
-         *     is frequently 0, which is precisely what the bust sweep below
-         *     eliminates people for.
-         *
-         * The live seat is the one most recently joined, so keep that and drop
-         * the rest. If two open seats claim the same `joined_at`, or it is
-         * missing, there is no evidence for which is live: that player is
-         * UNKNOWN and is left out of this sync entirely rather than guessed at.
-         *
-         * This does NOT fix the duplicate seats themselves — they are created
-         * by the table-move path in TournamentManager, which this layer does
-         * not own. It stops them from moving money here.
-         */
-        /**
-         * ═══════════════════════════════════════════════════════════════════
-         *  ONE READ FOR THE TOURNAMENT, NOT ONE PER TABLE (2026-08-28)
-         * ═══════════════════════════════════════════════════════════════════
-         *
-         * This was a `for (const [tableId] of this.tableEngines)` loop issuing
-         * one AWAITED round-trip per table, and it is why the "5-second"
-         * elimination sweep is not a 5-second sweep on a big field.
-         *
-         * MEASURED. `$100 Freeroll 12:00 AM` on 2026-08-28: 326 entrants
-         * across 37 tables. Thirty-seven sequential round-trips at even 150ms
-         * apiece is 5.5 seconds — the sweep could not finish inside its own
-         * interval, so `isProcessingEliminations` dropped the next tick, and
-         * the next. That is the reported symptom exactly: a horse sitting at
-         * 0 chips, not marked eliminated, for 22 minutes, in an event that had
-         * recorded no eliminations at all. Nothing was stuck. The sweep was
-         * simply arriving minutes late, and the bigger the field the later it
-         * arrives — precisely backwards, because a big field is where busts
-         * come fastest.
-         *
-         * One paged query over `tables.tournament_id` instead. Cost no longer
-         * scales with table count, and the lag it was causing goes with it.
-         *
-         * IT ALSO CLOSES A BLIND SPOT. The old loop read `this.tableEngines`,
-         * an IN-MEMORY map. A table this process holds no engine for — adopted
-         * late, created by the balancer between hydrations, or orphaned by a
-         * restart — was invisible: its players' chips were never synced, so
-         * they could never appear in the bust list below, so they could never
-         * be eliminated. Their seats sat there permanently. Reading by
-         * tournament_id covers every table the tournament actually has,
-         * whether or not this process happens to be dealing it.
-         */
-        // null = this player holds seats we cannot rank; skip them, do not guess.
-        const bestSeat = new Map<string, { chips: number; joinedAt: number } | null>();
-        const SEAT_PAGE = 1000;
-        const seatRows: Array<{
-          user_id: string;
-          stack: number | null;
-          joined_at: string | null;
-        }> = [];
-        /**
-         * ===================================================================
-         *  TWO INDEXED READS, NOT ONE SCAN OF EVERY LIVE SEAT (2026-09-01)
-         * ===================================================================
-         *
-         * The read this replaces was right in intent and right in coverage. It
-         * reads what the TOURNAMENT has rather than what this process happens to
-         * hold engines for, which is the blind spot the block above closed. Its
-         * SHAPE was the problem.
-         *
-         * `.select('...tables!inner(tournament_id)').eq('tables.tournament_id')`
-         * compiles to a LATERAL join in which the OUTER table carries no
-         * tournament predicate at all:
-         *
-         *   FROM table_seats
-         *   INNER JOIN LATERAL (SELECT 1 FROM tables
-         *                       WHERE tables.tournament_id = $1
-         *                         AND tables.id = table_seats.table_id) ON true
-         *   WHERE table_seats.left_at IS NULL
-         *   ORDER BY table_seats.user_id LIMIT 1000
-         *
-         * So Postgres walks EVERY live seat on the platform and probes `tables`
-         * once per seat, discarding the ones that belong to other tournaments.
-         * Under an inner join with a LIMIT it cannot stop early either.
-         *
-         * MEASURED in production (pg_stat_statements, 2026-09-01): 68,049 calls
-         * at 45ms mean, 3,085 seconds of database time - the largest single
-         * component of the 6% of all DB time that table_seats reads account for.
-         *
-         * Replaced with the two reads the indexes were built for:
-         *   tables      -> idx_tables_tournament_id (946,647 lifetime scans)
-         *   table_seats -> idx_table_seats_table    (131,417 lifetime scans)
-         * Coverage is IDENTICAL: still every table the tournament has, read from
-         * the database rather than from this process's memory.
-         *
-         * PAGING IS ALSO DETERMINISTIC NOW, which is a correctness fix and not a
-         * performance one. The old read paged with `.order('user_id')`, and
-         * user_id IS NOT UNIQUE in table_seats - the block above exists precisely
-         * because one user can hold several open seats. Two seats of the same
-         * user straddling a 1000-row page boundary can be returned twice or not
-         * at all depending on how Postgres breaks the tie, and this sweep is what
-         * decides who is eliminated. Ordering on `id`, the primary key, makes
-         * every page boundary unambiguous.
-         */
-        const TABLE_PAGE = 1000;
-        const TABLE_ID_CHUNK = 200;
-
-        // (1) Which tables does this tournament have? Indexed lookup.
-        const tableIds: string[] = [];
-        for (let page = 0; ; page++) {
-          if (page > 10_000) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] table paging did not terminate - skipping this sweep`
-              ),
-              'Tournament.table_paging_runaway'
-            );
-            return; // the finally block clears isProcessingEliminations
-          }
-          const { data: tblChunk, error: tblErr } = await supabase
-            .from('tables')
-            .select('id')
-            .eq('tournament_id', this.tournamentId)
-            .order('id', { ascending: true })
-            .range(page * TABLE_PAGE, page * TABLE_PAGE + TABLE_PAGE - 1);
-
-          if (tblErr || !tblChunk) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] table read failed (${tblErr?.message ?? 'null chunk'}) - skipping the whole sweep rather than busting on a partial chip picture`
-              ),
-              'Tournament.table_read_failed'
-            );
-            return; // the finally block clears isProcessingEliminations
-          }
-          for (const row of tblChunk as Array<{ id: string }>) tableIds.push(row.id);
-          if (tblChunk.length < TABLE_PAGE) break;
-        }
-
-        // (2) Live seats at those tables. Chunked, because the largest field on
-        //     record is 1,076 tables and an unbounded IN list is its own outage.
-        for (let start = 0; start < tableIds.length; start += TABLE_ID_CHUNK) {
-          const idsForChunk = tableIds.slice(start, start + TABLE_ID_CHUNK);
-          for (let page = 0; ; page++) {
-            if (page > 10_000) {
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate - skipping this sweep`
-                ),
-                'Tournament.seat_paging_runaway'
-              );
-              return; // the finally block clears isProcessingEliminations
-            }
-            const { data: chunk, error: seatsErr } = await supabase
-              .from('table_seats')
-              .select('user_id, stack, joined_at')
-              .in('table_id', idsForChunk)
-              .is('left_at', null)
-              .order('id', { ascending: true })
-              .range(page * SEAT_PAGE, page * SEAT_PAGE + SEAT_PAGE - 1);
-
-            if (seatsErr || !chunk) {
-              reportError(
-                new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) - skipping the whole sweep rather than busting on a partial chip picture`
-                ),
-                'Tournament.seat_read_failed'
-              );
-              return; // the finally block clears isProcessingEliminations
-            }
-            seatRows.push(...(chunk as unknown as typeof seatRows));
-            if (chunk.length < SEAT_PAGE) break;
-          }
-        }
-
-        {
-          const seats = seatRows;
-          for (const seat of seats ?? []) {
-            // Guard against corrupted stack values (NaN, negative, undefined).
-            const stackValue =
-              typeof seat.stack === 'number' && !isNaN(seat.stack) && seat.stack >= 0
-                ? seat.stack
-                : 0;
-            // Floor here too — tournament_players.chips is INTEGER (the RPC also
-            // floors, but keep the payload clean).
-            const chips = Math.floor(stackValue);
-            const joinedAt = seat.joined_at ? new Date(seat.joined_at).getTime() : NaN;
-
-            const held = bestSeat.get(seat.user_id);
-            if (held === undefined) {
-              bestSeat.set(seat.user_id, { chips, joinedAt });
-              continue;
-            }
-            if (held === null) continue; // already ruled UNKNOWN this sweep
-            if (!Number.isFinite(joinedAt) || !Number.isFinite(held.joinedAt)) {
-              bestSeat.set(seat.user_id, null); // no evidence which seat is live
-              continue;
-            }
-            if (joinedAt > held.joinedAt) {
-              bestSeat.set(seat.user_id, { chips, joinedAt });
-            } else if (joinedAt === held.joinedAt) {
-              bestSeat.set(seat.user_id, null); // a tie is not evidence either
-            }
-          }
-        }
-
-        const chipUpdates: { user_id: string; chips: number }[] = [];
-        const ambiguousSeatUsers: string[] = [];
-        for (const [userId, seat] of bestSeat) {
-          if (seat === null) {
-            ambiguousSeatUsers.push(userId);
-            continue;
-          }
-          chipUpdates.push({ user_id: userId, chips: seat.chips });
-        }
-        if (ambiguousSeatUsers.length > 0) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] ${ambiguousSeatUsers.length} player(s) hold multiple open seats with no usable joined_at - chip sync skipped for them this sweep: ${ambiguousSeatUsers.map((u) => u.slice(0, 8)).join(', ')}`
-            ),
-            'Tournament.ambiguous_live_seat'
-          );
-        }
-
-        /**
-         * ═══════════════════════════════════════════════════════════════════
-         *  A PHANTOM IS NOT A PLAYER (2026-08-30)
-         * ═══════════════════════════════════════════════════════════════════
-         *
-         * The bust-vacates-the-seat rule (Dan 2026-08-30) created a state this
-         * sweep had never seen: a player 'playing' with STALE chips > 0 and no
-         * open seat anywhere in the event. The chip sync above reads OPEN
-         * seats, so it can never zero them; the bust query below reads
-         * `chips <= 0`, so it can never eliminate them; ensureLateRegSeated
-         * would seat them (chips > 0 looks live), except the seat rows that
-         * proved their bust were reused or gone. Ten of sixteen RUNNING MTTs
-         * hung exactly here, heads-up champion unseated-forever unpaid.
-         *
-         * The dealing engine now zeroes chips at the moment of the vacate;
-         * this block is the backstop for the write that fails, the process
-         * that restarts mid-bust, and the ten events already stranded.
-         * A player seatless for SEATLESS_PHANTOM_STRIKES consecutive sweeps
-         * (~2 minutes) while the self-heal seater runs every 5 seconds is not
-         * between seats — their seat is gone because they busted. Zero their
-         * chips through the same sync RPC so the ordinary elimination path
-         * (rebuy window included) takes them from there. Strikes reset the
-         * moment a player reappears in an open seat, and the map is
-         * per-manager so a restart merely restarts the two-minute clock.
-         */
-        try {
-          const { data: playingRows, error: playingRowsErr } = await supabase
-            .from('tournament_players')
-            .select('user_id, chips')
-            .eq('tournament_id', this.tournamentId)
-            .eq('status', 'playing')
-            .gt('chips', 0);
-          if (!playingRowsErr && playingRows) {
-            const seatless = playingRows.filter((p) => !bestSeat.has(p.user_id));
-            const seatlessIds = new Set(seatless.map((p) => p.user_id));
-            for (const uid of this.seatlessPlayingStrikes.keys()) {
-              if (!seatlessIds.has(uid)) this.seatlessPlayingStrikes.delete(uid);
-            }
-            for (const p of seatless) {
-              const strikes = (this.seatlessPlayingStrikes.get(p.user_id) ?? 0) + 1;
-              this.seatlessPlayingStrikes.set(p.user_id, strikes);
-              // `>=`, not `===`: if the sync write fails on the firing sweep,
-              // the next sweep must fire again. The zero is idempotent.
-              if (strikes >= TournamentManagerEliminations.SEATLESS_PHANTOM_STRIKES) {
-                chipUpdates.push({ user_id: p.user_id, chips: 0 });
-                reportError(
-                  new Error(
-                    `[Tournament:${this.tournamentId.slice(0, 8)}] ${p.user_id.slice(0, 8)} has been 'playing' with ${p.chips} stale chips and NO open seat for ${strikes} sweeps - treating as a vacated bust and zeroing chips so the elimination path can finish the event`
-                  ),
-                  'Tournament.seatless_phantom_zeroed'
-                );
-              }
-            }
-          }
-        } catch (phantomErr) {
-          reportError(phantomErr, 'Tournament.seatless_phantom_guard');
-        }
-
-        if (chipUpdates.length > 0) {
-          const { error: syncErr } = await supabase.rpc('fn_sync_tournament_chips', {
-            p_tournament_id: this.tournamentId,
-            p_updates: chipUpdates,
-          });
-          if (syncErr) reportError(syncErr, 'GameServer.syncTournamentChips');
-        }
-
         // CHIP-CAP INPUTS (2026-08-31): entrants + rebuys/add-ons granted, so
         // capLevelToTournamentChips knows how many chips the event has issued.
         // Throttled to once a minute — the cap only needs to be roughly right,
@@ -1085,7 +811,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
         // FINAL TABLE DEAL (2026-08-22 parity): while the field is down to one
         // table and the feature is on, watch tournament_deal_votes; unanimity
-        // executes fn_final_table_deal. Cheap by construction — it stands down
+        // executes fn_settle_tournament_final_table_deal. Cheap by construction:
+        // it stands down
         // immediately unless the flag is set, and throttles its own polling.
         await this.checkFinalTableDeal();
 
@@ -1202,19 +929,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               }
               return; // the finally block clears isProcessingEliminations
             }
-            const payoutCount = paidPlaces?.length ?? 0;
+            const payoutThreshold = deepestCanonicalPaidPlace(paidPlaces);
 
-            if (payoutCount > 0 && playingNow === payoutCount + 1 && !this.handForHandActive) {
+            if (
+              payoutThreshold > 0 &&
+              playingNow === payoutThreshold + 1 &&
+              !this.handForHandActive
+            ) {
               this.handForHandActive = true;
               if (!this.handForHandAnnounced) {
                 this.handForHandAnnounced = true;
                 console.log(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] HAND-FOR-HAND - ${playingNow} players, ${payoutCount} paid`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] HAND-FOR-HAND - ${playingNow} players, paid through place ${payoutThreshold}`
                 );
                 await this.broadcast('hand_for_hand', {
                   active: true,
                   playersRemaining: playingNow,
-                  paidPositions: payoutCount,
+                  paidPositions: payoutThreshold,
                 });
                 // Pause all table engines for hand-for-hand sync
                 for (const engine of this.tableEngines.values()) {
@@ -1223,7 +954,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
                 // Start hand-for-hand sync check
                 this.startHandForHandSync();
               }
-            } else if (this.handForHandActive && playingNow <= payoutCount) {
+            } else if (this.handForHandActive && playingNow <= payoutThreshold) {
               // Bubble burst — resume normal play
               this.handForHandActive = false;
               this.stopHandForHandSync();
@@ -1536,7 +1267,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // when the stored column is unreadable. See payoutStructure.ts.
         // bubble_protection + buy_in_amount (2026-08-22 parity): the stone
         // bubble's buy-in refund needs both.
-        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier, bubble_protection, buy_in_amount'
+        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, satellite_target, spin_multiplier, bubble_protection, buy_in_amount'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -1568,6 +1299,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return;
     }
 
+    // This is standings/UI data only. Cash is deliberately NOT moved while a
+    // tournament is still running: fn_settle_tournament_places derives and
+    // settles the complete ladder atomically at finish.
     let prize = 0;
     // TOURNEY-AUDIT 2026-07-24 (sweep 6): SATELLITES pay SEATS, not cash — the
     // award happens once at finishTournament (top finishers are registered
@@ -1577,7 +1311,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        lines below reads `variant === 'satellite' || tournament_type ===
        'SATELLITE'`. The two halves of the same rule disagreed, and the whole
        point of the flag is that they must not: place 2..N is priced as CASH
-       here, and processSatelliteAwards pays the remainder there. A row the
+       here, and the atomic satellite settlement pays the remainder there. A row the
        first half misses and the second half catches is paid twice.
 
        Nothing had been paid twice yet, and only by luck of a constant: the
@@ -1586,20 +1320,22 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        any satellite would have turned that into live money.
 
        satellite_target_id is the column that actually means "this pays a
-       seat" - it is what fn_award_satellite_seat, fn_satellite_conservation_audit
-       and fn_tournament_conservation_delta all key on - so it is included
-       here as the third and most durable spelling. */
+       seat" - it is what the atomic satellite authority and the conservation
+       audit key on - so it is included here as the third and most durable
+       spelling. */
     const isSatellite =
       (tournament as any)?.variant === 'satellite' ||
       String((tournament as any)?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
-      !!(tournament as any)?.satellite_target_id;
+      !!((tournament as any)?.satellite_target_id || (tournament as any)?.satellite_target);
     if (!isSatellite && tournament) {
       // resolvePayoutStructure parses the stored column and, for a Spin whose
       // column is missing or malformed, rebuilds it from the canonical spec.
-      // Places 2..N are paid HERE, minutes before finishTournament reads the
-      // same column again — so the two reads must agree, and a Spin that can
-      // reconstruct its own split is how they are made to.
-      // SHORT-FIELD RESIDUAL 2026-08-27: pay by a structure the field can
+      // Places 2..N are DISPLAYED here, while the tournament is still running.
+      // The authoritative finish RPC prices and pays the whole ladder from
+      // locked database state. Keeping the preview on the shared resolver makes
+      // the live standings agree with the eventual receipt without granting the
+      // game server a second money path.
+      // SHORT-FIELD RESIDUAL 2026-08-27: display by a structure the field can
       // actually fill, so the leftover lands on a place somebody reached. The
       // second belt, on top of finalFieldSize's own two: never trim below the
       // place being priced right now. A field smaller than the position being
@@ -1609,7 +1345,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       const safeField = field !== undefined && field >= position ? field : undefined;
       const payouts = resolvePayoutStructure(tournament as any, safeField);
       if (payouts) {
-        prize = computePlacePrize(Number(tournament.prize_pool || 0), payouts, position);
+        const ladderPool = prizePoolAvailableToPlaces(
+          Number(tournament.prize_pool || 0),
+          payouts,
+          safeField ?? 0,
+          (tournament as any).bubble_protection === true,
+          Number((tournament as any).buy_in_amount || 0)
+        );
+        if (ladderPool === null) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] prize preview refused invalid pool or bubble inputs`
+            ),
+            'Tournament.prize_preview_invalid_pool_inputs'
+          );
+        } else {
+          prize = computePlacePrize(ladderPool, payouts, position);
+        }
       }
     }
 
@@ -1698,73 +1450,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
     await this.releaseTournamentSeat(userId);
 
-    if (prize > 0) {
-      // ONE SETTLE PATH (chip standard 3.2 step 5, 2026-09-02). This used to
-      // be a 3x retry loop around `fn_credit_and_log` keyed
-      // `tourney:{id}:prize:place:{position}` - place-scoped since 2026-08-28,
-      // when Union PKO Afternoon (PLO4) 4f42d847 paid `position 2` twice to two
-      // players and disbursed 720.00 against a 600.00 pool. The place-scoping
-      // survives, but it now lives in the database: `tournament_obligations`
-      // is UNIQUE on (tournament, 'place', N), the RPC pays only what that row
-      // has not paid yet, and the recovery watchdog settles the same row. The
-      // helper carries the transport retry (3 attempts, same back-off) and
-      // never retries a refusal.
-      const settled = await settleTournamentObligation(supabase, {
-        tournamentId: this.tournamentId,
-        kind: 'place',
-        place: position,
-        userId,
-        amount: prize,
-        source: 'engine.eliminatePlayer',
-        memo: `Tournament prize: position ${position}`,
-      });
-      // A refusal (escrow short) has already raised its own critical alert in
-      // the helper; the alert below is for the database never answering.
-      if (!settled.ok && settled.refused_reason === TRANSPORT_REFUSAL) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} - ${prize} chips lost`
-          ),
-          'TournamentthistournamentIdslic.CRITICAL'
-        );
-        /**
-         * AND ESCALATE IT AS MONEY (2026-08-31).
-         *
-         * This was a Sentry report and nothing else. `raiseFinancialAlert`
-         * exists precisely for "chips were owed and did not move", and every
-         * one of its callers was a CASH settlement path — no tournament payout
-         * path raised one, so a failed prize sat in an error tracker with the
-         * stack traces rather than in the financial alerts queue with the
-         * other money incidents.
-         *
-         * Awaited: the alert must be on disk before this process can be
-         * recycled, which is the whole point of it for a payout.
-         */
-        await raiseFinancialAlert(
-          'critical',
-          'Tournament.prize_credit_failed',
-          `Prize credit failed after 3 retries - ${prize} chips owed to ${userId} for place ${position} were never paid`,
-          {
-            tournament_id: this.tournamentId,
-            user_id: userId,
-            place: position,
-            prize,
-            obligation: { kind: 'place', place: position },
-            transport_error: settled.transport_error ?? null,
-          }
-        );
-      }
-    }
-
     // ── BUBBLE PROTECTION (2026-08-22 parity) ──
     // The stone bubble — eliminated exactly one place before the money — gets
-    // their buy-in back when the tournament opted in. Positions are distinct
-    // by construction (see the basePosition notes above), so exactly one
-    // player can ever hold paidPlaces + 1; the in-memory flag and the
-    // per-user idempotency key are belt and braces on top of that.
+    // their base buy-in from the tournament prize pool when the event opted
+    // in. This local position check only avoids pointless RPC calls; the
+    // database locks the field and derives the user, place and amount.
     if (
       !isSatellite &&
       tournament &&
+      this.prizePoolFinalized &&
       (tournament as any).bubble_protection === true &&
       prize <= 0
     ) {
@@ -1774,58 +1468,51 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // In a field smaller than the structure everybody is already in the
         // money, there is no bubble, and this correctly never fires.
         const bubbleField = await this.finalFieldSize();
-        const payouts = resolvePayoutStructure(
-          tournament as any,
-          bubbleField !== undefined && bubbleField >= position ? bubbleField : undefined
-        );
-        const paidPlaces = Array.isArray(payouts) ? payouts.length : 0;
-        const refund = Math.max(0, Number((tournament as any).buy_in_amount || 0));
-        if (
-          !this.bubbleProtectionPaid &&
-          paidPlaces > 0 &&
-          position === paidPlaces + 1 &&
-          refund > 0
-        ) {
-          // ONE SETTLE PATH (2026-09-02): a user-keyed obligation of kind
-          // 'bubble_protection' - UNIQUE on (tournament, kind, user), so the
-          // per-user dedupe the old `bubbleprotection:{user}` key gave is now
-          // a database constraint rather than a string.
-          const bp = await settleTournamentObligation(supabase, {
-            tournamentId: this.tournamentId,
-            kind: 'bubble_protection',
-            userId,
-            amount: refund,
-            source: 'engine.eliminatePlayer',
-            memo: `Bubble protection: buy-in returned (bubbled at position ${position})`,
-          });
-          if (!bp.ok) {
+        // A failed final-field read is not permission to fall back to the
+        // untrimmed structure: that can name a different stone bubble. Skip the
+        // immediate presentation path; terminal SQL derives and pays it later.
+        const payouts =
+          bubbleField !== undefined && bubbleField >= position
+            ? resolvePayoutStructure(tournament as any, bubbleField)
+            : null;
+        const bubblePlace = deepestCanonicalPaidPlace(payouts) + 1;
+        if (!this.bubbleProtectionPaid && bubblePlace > 1 && position === bubblePlace) {
+          const { data: bubbleData, error: bubbleError } = await supabase.rpc(
+            'fn_settle_tournament_bubble_protection',
+            {
+              p_tournament_id: this.tournamentId,
+              p_observed_bubble_user_id: userId,
+            }
+          );
+          const bubble = bubbleSettlementReceipt(bubbleData);
+          const bubbleAmount = Number(bubble.amount);
+          const bubblePosition = Number(bubble.position);
+          const exactReceipt =
+            !bubbleError &&
+            bubble.ok === true &&
+            bubble.fully_settled === true &&
+            bubble.user_id === userId &&
+            Number.isInteger(bubblePosition) &&
+            bubblePosition === position &&
+            Number.isFinite(bubbleAmount) &&
+            bubbleAmount > 0;
+          if (!exactReceipt) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Bubble protection credit FAILED for ${userId.slice(0, 8)}: ${bp.refused_reason}${bp.transport_error ? ` (${bp.transport_error})` : ''}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Bubble protection settlement FAILED for ${userId.slice(0, 8)}: ${bubbleError?.message ?? bubble.reason ?? 'incomplete database receipt'}`
               ),
-              'Tournament.bubble_protection_credit_failed'
+              'Tournament.bubble_protection_settlement_failed'
             );
-          }
-          if (bp.fully_settled === true) {
+          } else {
             this.bubbleProtectionPaid = true;
             await this.broadcast('bubble_protection_paid', {
               userId,
-              position,
-              amount: refund,
+              position: bubblePosition,
+              amount: bubbleAmount,
             });
             console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] BUBBLE PROTECTION: ${userId.slice(0, 8)} refunded ${refund} at position ${position}`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] BUBBLE PROTECTION: ${userId.slice(0, 8)} received ${bubbleAmount} from the prize pool at position ${bubblePosition}`
             );
-          } else {
-            await this.broadcast('bubble_protection_pending', {
-              userId,
-              position,
-              amount: refund,
-              paid: bp.paid,
-              alreadyPaid: bp.already_paid,
-              remaining: bp.remaining ?? null,
-              obligationId: bp.obligation_id,
-            });
           }
         }
       } catch (bpThrew) {
@@ -2725,65 +2412,6 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
   }
 
-  /**
-   * FINAL RECONCILIATION (Dan sections 46 and 71).
-   *
-   * Runs at completion, BEFORE fn_finalize_bounty_pool, on both finish paths
-   * (the ordinary one and the final-table deal). Two jobs:
-   *
-   *   - settle every chest nobody claimed to the champion. The last player
-   *     standing was never knocked out, so their own chest is theirs, and so
-   *     is any chest a broken elimination left behind;
-   *   - prove the event balances. `sum(paid) === mystery_bounty_pool_cents`,
-   *     to the cent, or a critical error names the variance.
-   *
-   * Order matters: settle moves `bounty_pool_paid`, so fn_finalize_bounty_pool
-   * afterwards pays the champion only the genuine residual of the REGULAR half
-   * rather than the mystery money a second time.
-   */
-  protected async reconcileMysteryBounty(winnerId: string | null): Promise<void> {
-    if (!this.tournamentCache?.is_mystery_bounty) return;
-    if (this.mysteryBountyStage === 'pending') return;
-    try {
-      const { data, error } = await supabase.rpc('fn_mystery_bounty_settle', {
-        p_tournament_id: this.tournamentId,
-        p_winner_user_id: winnerId,
-      });
-      if (error) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty settlement FAILED: ${error.message}`
-          ),
-          'Tournament.mystery_bounty_settle_failed'
-        );
-        return;
-      }
-      const res = (data ?? {}) as {
-        ok?: boolean;
-        balanced?: boolean;
-        pool_cents?: number;
-        settled_cents?: number;
-        unclaimed_cents?: number;
-        variance_cents?: number;
-      };
-      this.mysteryBountyStage = 'complete';
-      if (res.ok && res.balanced === false) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty DOES NOT RECONCILE - pool ${res.pool_cents}c, settled ${res.settled_cents}c, variance ${res.variance_cents}c`
-          ),
-          'Tournament.mystery_bounty_unbalanced'
-        );
-      } else if (res.ok) {
-        console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Mystery bounty reconciled exactly: ${res.settled_cents}c of ${res.pool_cents}c (${res.unclaimed_cents}c unclaimed to champion)`
-        );
-      }
-    } catch (err) {
-      reportError(err, 'Tournament.mystery_bounty_settle_threw');
-    }
-  }
-
   /** Reveal (idempotently), pay, and tell the table what was in the chest. */
   protected async settleMysteryBountyAward(
     awardId: string,
@@ -2914,9 +2542,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * needed, call the RPC. */
 
   /**
-   * Recalculate prizes for players eliminated during late reg.
-   * When the prize pool grows during late reg, early eliminations got smaller prizes.
-   * This credits the difference now that the final pool is known.
+   * Refresh the displayed prizes for players eliminated during late reg.
+   *
+   * No wallet movement belongs here. The final pool and every finisher are
+   * settled together by fn_settle_tournament_places after the field closes.
    */
   protected async recalculateEliminatedPrizes(finalPrizePool: number): Promise<void> {
     const { data: eliminated, error: eliminatedErr } = await supabase
@@ -2926,121 +2555,73 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       .eq('status', 'eliminated')
       .gt('prize', 0); // Only ITM players
 
-    // PAYOUT-INTEGRITY 2026-08-25: this runs exactly ONCE, when the pool is
-    // finalised at the close of late registration. `!eliminated` swallowed a
-    // read error as "no ITM players to adjust" and there is no second pass —
-    // every early finisher simply keeps the prize computed against the smaller
-    // pool, and nothing anywhere says why.
+    // This runs exactly once when late registration closes. A failed read must
+    // be visible, even though the authoritative finish RPC will still price
+    // and settle the complete ladder from locked database state.
     if (eliminatedErr) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc ABORTED - could not read ITM finishers (${eliminatedErr.message}); early busts keep their pre-late-reg prizes`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] prize preview refresh ABORTED - could not read ITM finishers (${eliminatedErr.message})`
         ),
-        'Tournament.prize_recalc_read_failed'
+        'Tournament.prize_preview_refresh_read_failed'
       );
       return;
     }
     if (!eliminated || eliminated.length === 0) return;
 
-    // PAYOUT-INTEGRITY 2026-08-25: use the SHARED structure resolver, not a
-    // bare parse of the cached column. resolvePayoutStructure rebuilds a
-    // Spin's split from its multiplier when the stored column is unusable,
-    // which is the same rule both live payout sites follow — parsing the
-    // column here meant a top-up computed from a DIFFERENT structure than the
-    // payment it is topping up.
-    const payouts = resolvePayoutStructure(
-      this.tournamentCache as any,
-      await this.finalFieldSize()
-    );
+    // Keep the preview on the shared resolver so it agrees with the structure
+    // shown elsewhere while remaining entirely non-financial.
+    const finalField = await this.finalFieldSize();
+    const payouts = resolvePayoutStructure(this.tournamentCache as any, finalField);
     if (!payouts || payouts.length === 0) return;
+    const cache = this.tournamentCache as any;
+    const isSatellite =
+      String(cache?.variant ?? '').toLowerCase() === 'satellite' ||
+      String(cache?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(cache?.satellite_target_id || cache?.satellite_target);
+    const ladderPool = prizePoolAvailableToPlaces(
+      finalPrizePool,
+      payouts,
+      finalField ?? 0,
+      !isSatellite && cache?.bubble_protection === true,
+      Number(cache?.buy_in_amount || 0)
+    );
+    if (ladderPool === null) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] prize preview refresh refused invalid pool or bubble inputs`
+        ),
+        'Tournament.prize_preview_refresh_invalid_pool_inputs'
+      );
+      return;
+    }
 
     for (const player of eliminated) {
       const payoutEntry = payouts.find((p: any) => Number(p.place) === Number(player.position));
       if (!payoutEntry) continue;
 
-      /**
-       * PAYOUT-INTEGRITY 2026-08-25: A FOURTH INDEPENDENT PRIZE FORMULA.
-       *
-       * This was `Math.round(((finalPrizePool * percentage) / 100) * 100) / 100`
-       * — every place rounded on its own, which is exactly the scheme
-       * computePlacePrize was written to replace (see payoutMath.ts). Two
-       * consequences, both real money:
-       *
-       *   1. It DISAGREES with the payment it is adjusting. eliminatePlayer
-       *      pays the last paid place the residual; this recomputed that same
-       *      place as a raw rounded percentage, credited the difference, and
-       *      then wrote its own number into `prize`. On the 9-place structure
-       *      over a 483.00 pool the independent rounding sums to 483.01, so
-       *      the pool pays out a cent more than it holds.
-       *   2. It puts the row permanently at odds with
-       *      fn_tournament_payout_reconcile, which implements the residual
-       *      rule — so the reconciler reports a false overpay and raises a
-       *      critical alert on a tournament that is fine.
-       *
-       * One rule, one helper, every site.
-       */
-      const correctPrize = computePlacePrize(finalPrizePool, payouts, Number(player.position));
-      const difference = Math.round((correctPrize - (player.prize || 0)) * 100) / 100;
+      const correctPrize = computePlacePrize(ladderPool, payouts, Number(player.position));
+      const difference = Math.round((correctPrize - Number(player.prize || 0)) * 100) / 100;
 
-      if (difference > 0) {
+      if (difference !== 0) {
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc: ${player.user_id.slice(0, 8)} pos ${player.position} - old: ${player.prize}, new: ${correctPrize}, diff: +${difference}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Prize preview refresh: ${player.user_id.slice(0, 8)} pos ${player.position} - old: ${player.prize}, new: ${correctPrize}, diff: ${difference > 0 ? '+' : ''}${difference}`
         );
 
-        /**
-         * ONE SETTLE PATH (2026-09-02): THE AMOUNT IS WHAT IS OWED, NOT THE
-         * DIFFERENCE, AND IT IS NOT IN THE KEY.
-         *
-         * This used to credit `difference` under
-         * `tourney:{id}:prizeadj:{user}:{place}:{correctPrize}` - the amount
-         * baked into the key so a re-run with the same figure deduped. The
-         * flip side (docs/CHIP-ACCOUNTING-STANDARD.md 2.2, payer 4) is that a
-         * re-run with a DIFFERENT figure was a brand-new key and a brand-new
-         * payment on top of the old one, and nothing reconciled the two.
-         *
-         * The obligation row for this place is keyed (tournament,
-         * 'late_reg_adjustment', place). We tell it the NEW correct prize; it
-         * raises `amount_owed` to that and pays only `owed - already paid`.
-         * The database computes the delta, so there is no amount to put in a
-         * key and no second key to invent.
-         */
-        const adj = await settleTournamentObligation(supabase, {
-          tournamentId: this.tournamentId,
-          kind: 'late_reg_adjustment',
-          place: Number(player.position),
-          userId: player.user_id,
-          amount: correctPrize,
-          source: 'engine.recalculateEliminatedPrizes',
-          memo: `Tournament prize adjustment (late reg pool finalized): position ${player.position}`,
-        });
-
-        if (adj.ok) {
-          // Update the recorded prize.
-          // PAYOUT-INTEGRITY 2026-08-25: the idempotency key above is keyed on
-          // `correctPrize`, so an unrecorded top-up cannot be re-credited — but
-          // the row then under-reports what the player was actually paid, and
-          // `fn_tournament_payout_reconcile` reads that row. It would see a
-          // shortfall that no longer exists and top the player up AGAIN under
-          // its own key. Report the write failure instead of discarding it.
-          const { error: recordErr } = await supabase
-            .from('tournament_players')
-            .update({ prize: correctPrize })
-            .eq('tournament_id', this.tournamentId)
-            .eq('user_id', player.user_id);
-          if (recordErr) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc CREDITED ${difference} to ${player.user_id.slice(0, 8)} but could not record prize=${correctPrize}: ${recordErr.message}`
-              ),
-              'Tournament.prize_recalc_record_failed'
-            );
-          }
-        } else {
+        // This column is a preview until the atomic finish receipt commits.
+        // Check the write so a stale UI estimate is visible, but never turn a
+        // display failure into a second credit path.
+        const { error: recordErr } = await supabase
+          .from('tournament_players')
+          .update({ prize: correctPrize })
+          .eq('tournament_id', this.tournamentId)
+          .eq('user_id', player.user_id);
+        if (recordErr) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc credit FAILED for ${player.user_id.slice(0, 8)}: ${adj.refused_reason}${adj.transport_error ? ` (${adj.transport_error})` : ''}`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] prize preview refresh FAILED for ${player.user_id.slice(0, 8)}: ${recordErr.message}`
             ),
-            'TournamentthistournamentIdslic.Prize_recalc_credit_FAILED_for'
+            'Tournament.prize_preview_refresh_failed'
           );
         }
       }
@@ -3058,92 +2639,21 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
   // ── FINAL TABLE DEAL (2026-08-22 parity) ─────────────────────────────────
   protected finalTableDealHandled = false;
+  private finalTableDealBoundaryTask: Promise<void> | null = null;
   private lastDealPollAt = 0;
   private lastDealVoteCount = -1;
-
-  /**
-   * ═══ TOURNAMENT RAKE SETTLEMENT ═══
-   * Rake is held by union (if club is in a union) or by standalone club owner.
-   * Union distributes 90% rake back to clubs weekly. Union holds all BBJ & promo.
-   *
-   * RAKE-AUDIT 2026-07-24: totalRake is the SUM of fees ACTUALLY COLLECTED
-   * (rake_records fee ledger: entry + rebuy + add-on + re-entry fees, minus
-   * unregister reversals). The old formula `buy_in_fee x current_players`
-   * credited the union/club wallet a fee for EVERY entrant INCLUDING HORSES
-   * (who used to register free), minting phantom revenue, and it ignored
-   * rebuy/add-on/re-entry fees entirely.
-   *
-   * Extracted from finishTournament on 2026-08-22 so the final-table-deal
-   * completion path settles rake identically.
-   */
-  protected async settleTournamentRake(tournament: any): Promise<void> {
-    // SETTLEMENT INTEGRITY 2026-08-26. This used to sum the fee ledger and
-    // credit the union/club wallet from HERE, in two separate client calls
-    // with no idempotency marker. Two consequences, both measured live:
-    //
-    //   - a tournament finished by the recovery watchdog (which never called
-    //     this) or whose wallet credit failed simply NEVER landed its rake —
-    //     ~6,748 chips across ~940 events in the 30 days before the fix,
-    //     debited from players and held by nothing;
-    //   - any re-run of the finish path would have credited the wallet a
-    //     second time, with nothing to say it already had.
-    //
-    // fn_settle_tournament_rake does the whole thing in ONE transaction:
-    // claims the tournament_rake_settlements PK (so a second caller gets
-    // already_settled instead of a second credit), sums the fee ledger, and
-    // credits the union rake wallet or standalone club treasury. Retried
-    // here because it is idempotent; anything that still fails is caught by
-    // fn_sweep_unsettled_tournament_rake on the discovery loop.
-    void tournament; // destination now resolves inside the RPC
-    let lastErr = '';
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const { data, error } = await supabase.rpc('fn_settle_tournament_rake', {
-          p_tournament_id: this.tournamentId,
-          p_source: 'engine_finish',
-        });
-        if (!error && data?.ok) {
-          if (data.already_settled) {
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake already settled (${data.amount} -> ${data.destination})`
-            );
-          } else {
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${data.amount} -> ${data.destination}`
-            );
-          }
-          return;
-        }
-        lastErr = error?.message || data?.reason || 'settle_failed';
-      } catch (err: any) {
-        lastErr = String(err?.message ?? err);
-      }
-      if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
-    }
-    // Not silent, and not fatal: the sweep re-drives it, so nothing is lost —
-    // but a failing settle path is a signal someone should see.
-    reportError(
-      new Error(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settlement FAILED after 3 attempts (${lastErr}) - fn_sweep_unsettled_tournament_rake will re-drive it`
-      ),
-      'Tournament.rake_settlement_failed'
-    );
-  }
 
   /**
    * FINAL TABLE DEAL (2026-08-22 parity). When the tournament opted in
    * (final_table_deal_enabled) and the field is down to one table
    * (remaining <= table_size), every remaining player may vote a deal via
    * tournament_deal_votes (RLS restricts inserts to seated, alive players of a
-   * RUNNING deal-enabled tournament). Unanimity executes fn_final_table_deal —
-   * an even chip-chop of the undistributed pool, recorded in
-   * tournament_payouts — after which THIS engine settles the recorded payouts
-   * to wallets (the SQL function only writes the record), stamps final
-   * standings by chip count, and completes the tournament through the same
-   * COMPLETING -> COMPLETED tail finishTournament uses (rake settled, seats
-   * released, tables closed). fn_tournament_payout_reconcile is deliberately
-   * NOT run here: a deal's amounts intentionally differ from the payout
-   * structure, and the reconciler would "correct" them back.
+   * RUNNING deal-enabled tournament). Unanimity executes
+   * fn_settle_tournament_final_table_deal,
+   * which settles every chip-chop share and records its payout evidence in one
+   * database transaction. The server continues only after the RPC returns a
+   * complete settlement receipt, then verifies the stamped standings and runs
+   * the ordinary closeout tail. There is no client-side second payer.
    *
    * Clients see the feature through the tournaments row realtime
    * (final_table_deal_enabled is on the row); the vote-count broadcast below
@@ -3154,6 +2664,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const t = this.tournamentCache;
     if (!t || t.final_table_deal_enabled !== true) return;
     if (String(t.status || 'RUNNING') !== 'RUNNING') return;
+    const isSatelliteDeal =
+      String(t.variant ?? '').toLowerCase() === 'satellite' ||
+      String(t.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(t.satellite_target_id || t.satellite_target);
+    if (isSatelliteDeal) return;
 
     // Throttle: the elimination sweep runs every 5s; the deal poll is cheap
     // but needs nothing like that cadence.
@@ -3180,7 +2695,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        *
        * The count above is necessary and NOT sufficient. Nine players spread
        * three-three-three across three felts satisfy it, and unanimity among
-       * those nine would then run `fn_final_table_deal` — an even chip-chop
+       * those nine would then run `fn_settle_tournament_final_table_deal`,
+       * an even chip-chop
        * of the whole undistributed pool — between players sitting at three
        * separate tables, mid-hand, with two thirds of them unaware the vote
        * was open. That is the most expensive single write in this file and it
@@ -3211,201 +2727,214 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
       if (votesFromAlive < alive.length) return; // not unanimous yet
 
+      // Reserve this outcome before arming the engine boundary. The task is
+      // detached from the periodic elimination sweep so a long live hand does
+      // not hold that sweep's local lock or invite a second settlement task.
       this.finalTableDealHandled = true;
-      const { data: deal, error: dealErr } = await supabase.rpc('fn_final_table_deal', {
-        p_tournament_id: this.tournamentId,
-      });
-      const res = (deal ?? {}) as { ok?: boolean; reason?: string };
-      if (dealErr || res.ok !== true) {
-        if (res.reason === 'deal_already_executed') {
-          // A concurrent run already chopped it — leave handled=true; the
-          // settlement below is idempotent, so run it anyway to be sure the
-          // wallets and standings landed.
-        } else {
-          // Transient refusal (e.g. a bust changed the field mid-vote) —
-          // retry on a later poll.
+      this.tournamentFinished = true;
+      const boundaryTask = this.completeFinalTableDealAtBoundary();
+      this.finalTableDealBoundaryTask = boundaryTask;
+      void boundaryTask
+        .then(() => {
+          if (this.finalTableDealBoundaryTask === boundaryTask) {
+            this.finalTableDealBoundaryTask = null;
+          }
+        })
+        .catch(async (err) => {
+          if (this.finalTableDealBoundaryTask === boundaryTask) {
+            this.finalTableDealBoundaryTask = null;
+          }
+          if (
+            err instanceof TerminalSettlementOutcomeUnknownError ||
+            err instanceof TerminalSettlementCommittedError
+          ) {
+            // A lost response may follow a committed receipt. Never reopen a
+            // table or clear the local owner while that outcome is unknown.
+            const incident =
+              err instanceof TerminalSettlementCommittedError
+                ? 'Tournament.final_table_deal_postcommit_failure'
+                : 'Tournament.final_table_deal_terminal_outcome_unknown';
+            reportError(err, incident);
+            void raiseFinancialAlert(
+              'critical',
+              incident,
+              err instanceof TerminalSettlementCommittedError
+                ? 'The Final Table Deal Committed, But Its Presentation Contract Failed. Play Was Stopped Without Reopening The Tournament.'
+                : 'The Final Table Deal Result Could Not Be Confirmed. Play Was Stopped Without Reopening The Tournament.',
+              { tournament_id: this.tournamentId }
+            ).catch((alertErr) =>
+              reportError(
+                alertErr,
+                'Tournament.final_table_deal_terminal_outcome_unknown_alert_failed'
+              )
+            );
+            await this.stopAndWait();
+            return;
+          }
+          for (const engine of this.tableEngines.values()) {
+            engine.releaseTerminalCloseoutPause();
+          }
+          // A stale vote, a bust during the hand, a refused RPC, or an
+          // unreadable receipt returns the field to ordinary play/finish.
           this.finalTableDealHandled = false;
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] final table deal refused: ${dealErr?.message ?? res.reason ?? 'unknown'}`
-            ),
-            'Tournament.final_table_deal_refused'
-          );
-          return;
-        }
-      }
-
-      await this.settleFinalTableDeal(alive);
+          this.tournamentFinished = false;
+          reportError(err, 'Tournament.final_table_deal_boundary_or_settlement_failed');
+        });
     } catch (err) {
+      this.finalTableDealHandled = false;
+      this.tournamentFinished = false;
       reportError(err, 'Tournament.final_table_deal_threw');
     }
   }
 
   /**
-   * Pay the recorded deal to wallets and walk the tournament through the
-   * normal COMPLETING -> COMPLETED tail. Idempotent: wallet credits carry
-   * per-user idempotency keys and every state write is CAS-guarded.
+   * Stop the final table before another deal, wait for the hand already in
+   * flight to persist its final stacks, then revalidate unanimity against that
+   * exact boundary before invoking the one terminal database authority.
    */
-  private async settleFinalTableDeal(
-    alive: Array<{ user_id: string; chips: number | null }>
-  ): Promise<void> {
-    // The SQL function only writes the record (tournament_payouts) — the
-    // wallets are settled HERE. Amounts come from the table, not the RPC
-    // response, because the flooring remainder lands on the chip leader's ROW
-    // after the response payload is built.
-    const { data: payoutRows, error: prErr } = await supabase
-      .from('tournament_payouts')
-      .select('user_id, amount')
-      .eq('tournament_id', this.tournamentId)
-      .eq('source', 'final_table_deal');
-    if (prErr || !payoutRows || payoutRows.length === 0) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal executed but payout rows unreadable (${prErr?.message ?? 'none found'})`
-        ),
-        'Tournament.final_table_deal_payouts_unreadable'
+  private async completeFinalTableDealAtBoundary(): Promise<void> {
+    const activeEntries = [...this.tableEngines.entries()].filter(([, engine]) =>
+      engine.isRunning()
+    );
+    if (activeEntries.length !== 1) {
+      throw new Error(
+        `Final-table deal requires exactly one running table engine; found ${activeEntries.length}`
       );
-      return; // handled stays true; the record exists for manual recovery
+    }
+    const [activeTableId, activeEngine] = activeEntries[0];
+
+    const parked = await activeEngine.parkForTerminalCloseout();
+    if (parked !== true) {
+      throw new Error('Final-table deal could not prove a fully persisted hand boundary');
     }
 
-    for (const p of payoutRows as Array<{ user_id: string; amount: number }>) {
-      const amount = Math.max(0, Number(p.amount) || 0);
-      if (amount <= 0) continue;
-      // ONE SETTLE PATH (2026-09-02): a user-keyed 'final_table_deal'
-      // obligation - UNIQUE on (tournament, kind, user) - replaces the
-      // `tourney:{id}:ftd:{user}` key. A raced settle still cannot double-pay
-      // a deal share; the guarantee is now a constraint, not a string.
-      const share = await settleTournamentObligation(supabase, {
-        tournamentId: this.tournamentId,
-        kind: 'final_table_deal',
-        userId: p.user_id,
-        amount,
-        source: 'engine.settleFinalTableDeal',
-        memo: 'Final table deal (even chip chop)',
+    const t = this.tournamentCache;
+    const tableSize = Math.max(Math.min(Number(t?.table_size) || 9, 10), 2);
+    const { data: alive, error: aliveErr } = await supabase
+      .from('tournament_players')
+      .select('user_id, chips')
+      .eq('tournament_id', this.tournamentId)
+      .eq('status', 'playing');
+    if (
+      aliveErr ||
+      !Array.isArray(alive) ||
+      alive.length < 2 ||
+      alive.length > tableSize ||
+      alive.some(
+        (player) =>
+          typeof player.user_id !== 'string' ||
+          !Number.isFinite(Number(player.chips)) ||
+          Number(player.chips) <= 0
+      )
+    ) {
+      throw new Error(
+        `Final-table deal boundary roster is unreadable or changed during the hand: ${aliveErr?.message ?? 'invalid live stacks'}`
+      );
+    }
+    if ((await this.countLiveTablesWithPlayers()) !== 1) {
+      throw new Error('Final-table deal boundary no longer has exactly one live table');
+    }
+
+    const { data: votes, error: votesErr } = await supabase
+      .from('tournament_deal_votes')
+      .select('user_id')
+      .eq('tournament_id', this.tournamentId);
+    if (votesErr || !Array.isArray(votes)) {
+      throw new Error(
+        `Final-table deal boundary votes are unreadable: ${votesErr?.message ?? 'invalid vote rows'}`
+      );
+    }
+    const aliveIds = new Set(alive.map((player) => player.user_id));
+    const voted = new Set(votes.map((vote) => vote.user_id));
+    if ([...aliveIds].some((userId) => !voted.has(userId))) {
+      throw new Error('Final-table deal is no longer unanimous at the persisted hand boundary');
+    }
+
+    const receipt = await requestTournamentTerminalReceipt(
+      this.tournamentId,
+      'final_table_deal',
+      null
+    );
+    try {
+      const payoutIds = new Set(receipt.dealShares.map((payout) => payout.userId));
+      const payoutPlaces = new Set(receipt.dealShares.map((payout) => payout.place));
+      const payoutShapeIsExact =
+        receipt.dealShares.length === alive.length &&
+        payoutIds.size === alive.length &&
+        payoutPlaces.size === alive.length &&
+        receipt.dealShares.every(
+          (payout) =>
+            aliveIds.has(payout.userId) &&
+            payout.place >= 1 &&
+            payout.place <= alive.length &&
+            payout.amount >= 0
+        ) &&
+        receipt.tableClosure.closedTableIds.includes(activeTableId) &&
+        receipt.tableClosure.releasedSeatCount >= alive.length;
+      if (!payoutShapeIsExact) {
+        throw new Error('stored deal shares or table closure differ from the parked live table');
+      }
+
+      await this.settleFinalTableDeal(receipt);
+    } catch (error) {
+      throw new TerminalSettlementCommittedError(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] committed final-table deal could not complete presentation: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Walk an already-completed deal through presentation cleanup. The stored
+   * receipt is evidence returned by the sole terminal database authority; it
+   * is never re-executed by the game server.
+   */
+  private async settleFinalTableDeal(receipt: VerifiedTournamentCompletionReceipt): Promise<void> {
+    // The database transaction already chose and stamped the authoritative
+    // standings. Re-ranking by a later, stale in-memory chip snapshot can pick
+    // a different order on tied stacks and collide with the unique place
+    // constraint. The receipt is therefore the only ordering consumed here.
+    const ordered = [...receipt.dealShares].sort((a, b) => a.place - b.place);
+    const winnerId = receipt.winnerId;
+
+    // The owner-only receipt verifier already proved the locked standings and
+    // durable table closeout before the transaction published this receipt.
+    // Presentation is deliberately best effort and cannot reopen money or
+    // strand a durable seat if a channel or engine operation fails here.
+    try {
+      await this.broadcast('final_table_deal', {
+        payouts: ordered.map((payout) => ({
+          user_id: payout.userId,
+          place: payout.place,
+          amount: payout.amount,
+        })),
+        chipLeader: winnerId,
       });
-      if (!share.ok) {
+    } catch (broadcastErr) {
+      reportError(broadcastErr, 'Tournament.final_table_deal_broadcast_failed');
+    }
+
+    for (const [tableId, engine] of this.tableEngines) {
+      try {
+        await engine.stop();
+      } catch (stopErr) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal credit FAILED for ${p.user_id.slice(0, 8)}: ${share.refused_reason}${share.transport_error ? ` (${share.transport_error})` : ''}`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] final-table deal could not stop engine ${tableId.slice(0, 8)} after durable closeout: ${stopErr instanceof Error ? stopErr.message : String(stopErr)}`
           ),
-          'Tournament.final_table_deal_credit_failed'
+          'Tournament.final_table_deal_engine_stop_failed'
         );
-        continue;
       }
-    }
-
-    // Final standings by chip count: chip leader takes 1st, the rest 2..N.
-    // Prize columns were already stamped by fn_final_table_deal — only status
-    // and position move here, so the recovery watchdog can never mistake
-    // these players for unresolved and re-pay them from the structure.
-    this.tournamentFinished = true;
-    const ordered = [...alive].sort((a, b) => (Number(b.chips) || 0) - (Number(a.chips) || 0));
-    const nowIso = new Date().toISOString();
-    for (let i = 1; i < ordered.length; i++) {
-      await supabase
-        .from('tournament_players')
-        .update({ status: 'eliminated', position: i + 1, eliminated_at: nowIso })
-        .eq('tournament_id', this.tournamentId)
-        .eq('user_id', ordered[i].user_id)
-        .eq('status', 'playing');
-    }
-    const winnerId = ordered[0].user_id;
-    // PAYOUT-INTEGRITY 2026-08-25: same rule as the normal finish path — an
-    // unstamped winner row on a settled deal reads as an unresolved player to
-    // the recovery watchdog, which would then re-rank the field and pay place
-    // 1 from the PAYOUT STRUCTURE on top of the chop that was just settled.
-    const { error: dealWinnerErr } = await supabase
-      .from('tournament_players')
-      .update({ status: 'winner', position: 1 })
-      .eq('tournament_id', this.tournamentId)
-      .eq('user_id', winnerId);
-    if (dealWinnerErr) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal winner row not stamped for ${winnerId.slice(0, 8)}: ${dealWinnerErr.message}`
-        ),
-        'Tournament.final_table_deal_winner_stamp_failed'
-      );
-    }
-
-    await this.broadcast('final_table_deal', {
-      payouts: payoutRows,
-      chipLeader: winnerId,
-    });
-
-    // Bounty formats: the champion's remaining head + pool residual still
-    // settle exactly as on the normal finish path (idempotent RPC).
-    if (
-      this.tournamentCache?.is_bounty ||
-      this.tournamentCache?.is_pko ||
-      this.tournamentCache?.is_mystery_bounty
-    ) {
-      // Mystery chests settle FIRST — see reconcileMysteryBounty.
-      await this.reconcileMysteryBounty(winnerId);
-      try {
-        const { error: finErr } = await supabase.rpc('fn_finalize_bounty_pool', {
-          p_tournament_id: this.tournamentId,
-          p_winner_user_id: winnerId,
-        });
-        if (finErr) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty pool finalisation FAILED after deal: ${finErr.message}`
-            ),
-            'Tournament.bounty_pool_finalise_failed'
-          );
-        }
-      } catch (obEx) {
-        reportError(obEx, 'Tournament.deal_own_bounty_exception');
-      }
-    }
-
-    await this.settleTournamentRake(this.tournamentCache);
-
-    // fn_final_table_deal already claimed RUNNING -> COMPLETING; close it out.
-    const { error: dealCompletedErr } = await supabase
-      .from('tournaments')
-      .update({
-        status: 'COMPLETED',
-        ended_at: new Date().toISOString(),
-        on_break: false,
-        break_ends_at: null,
-      })
-      .eq('id', this.tournamentId)
-      .eq('status', 'COMPLETING');
-    // PAYOUT-INTEGRITY 2026-08-25: a deal left in COMPLETING is picked up by
-    // recoverStuckCompletingTournaments, which pays from the PAYOUT STRUCTURE
-    // — the one thing this path's docblock says must never be applied to a
-    // deal. Discarding this error made that silent; it must be loud.
-    if (dealCompletedErr) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal settled but COMPLETING -> COMPLETED failed: ${dealCompletedErr.message} - the structure-based recovery watchdog can now reach a dealt event`
-        ),
-        'Tournament.final_table_deal_completed_transition_failed'
-      );
-    }
-
-    // Release the players and close the tables — same tail as finishTournament.
-    for (const [tableId, engine] of this.tableEngines) {
-      await engine.stop();
-      try {
-        await supabase
-          .from('table_seats')
-          .update({ left_at: new Date().toISOString() })
-          .eq('table_id', tableId)
-          .is('left_at', null);
-      } catch (seatThrew) {
-        reportError(seatThrew, 'Tournament.deal_seat_release_threw');
-      }
-      await supabase.from('tables').update({ status: 'closed' }).eq('id', tableId);
     }
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE DEAL settled - ${payoutRows.length} player(s) paid, chip leader ${winnerId.slice(0, 8)} takes 1st`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] FINAL TABLE DEAL settled - ${ordered.length} player(s) paid, receipt winner ${winnerId.slice(0, 8)} takes 1st`
     );
 
-    await this.cleanupBroadcastChannel();
+    try {
+      await this.cleanupBroadcastChannel();
+    } catch (cleanupErr) {
+      reportError(cleanupErr, 'Tournament.final_table_deal_channel_cleanup_failed');
+    }
     this.stop();
   }
 
@@ -3414,298 +2943,48 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETE! Winner: ${winnerId.slice(0, 8)}`
     );
 
-    // Atomic DB guard: only proceed if we can claim the RUNNING → COMPLETING transition
-    const { data: claimResult, error: claimErr } = await supabase
-      .from('tournaments')
-      .update({ status: 'COMPLETING' } as any)
-      .eq('id', this.tournamentId)
-      .eq('status', 'RUNNING')
-      .select('id')
-      .maybeSingle();
-
-    // PAYOUT-INTEGRITY 2026-08-25: not claiming is the SAFE outcome — nothing
-    // is paid twice — but a failed CAS and a lost race were reported with the
-    // same reassuring line, and only one of them is benign. A tournament whose
-    // claim errors is still RUNNING with one player left and no bust to come,
-    // so nothing retries it and it hangs there until a human notices.
-    if (claimErr) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: could not claim RUNNING -> COMPLETING: ${claimErr.message} - tournament left RUNNING, winner ${winnerId.slice(0, 8)} unpaid`
-        ),
-        'Tournament.finish_claim_failed'
-      );
-      return;
-    }
-
-    if (!claimResult) {
-      console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Could not claim finish - already finishing/completed`
-      );
-      return;
-    }
-
-    // Guard: prevent double-finishing (set AFTER DB guard succeeds)
     if (this.tournamentFinished) return;
+    // This is only a same-process concurrency guard. The database RPC owns the
+    // durable RUNNING -> COMPLETING claim and every cash payout. Any refusal or
+    // unreadable receipt releases this flag so the next sweep can safely retry.
     this.tournamentFinished = true;
+    const releaseFinishGuard = () => {
+      this.tournamentFinished = false;
+    };
 
     const { data: tournament, error: tourneyLoadErr } = await supabase
       .from('tournaments')
       // TOURNEY-AUDIT 2026-07-24: bounty flags added so the champion's own
       // bounty head can be paid below.
       .select(
-        // spin_multiplier: lets a Spin rebuild its own payout split from the
-        // spec rather than falling through to "winner takes the whole pool",
-        // which on a 10x+ Spin is a 20% overpay on top of money already sent
-        // to 2nd and 3rd at elimination. See payoutStructure.ts.
-        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, spin_multiplier, satellite_target_id, satellite_seats'
+        'payout_structure, prize_pool, guaranteed_prize, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, spin_multiplier, satellite_target_id, satellite_target, satellite_seats'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     if (!tournament || tourneyLoadErr) {
-      /**
-       * PAYOUT-INTEGRITY 2026-08-25: DO NOT MARK IT COMPLETED.
-       *
-       * This branch used to do the worst possible thing with a failed read: it
-       * wrote COMPLETED — with no CAS guard at all, so it overrode whatever the
-       * status actually was — while stating in its own message that it was
-       * paying nobody. That is not a recoverable state. The winner's prize and
-       * every unpaid ITM place are gone, and they are gone FOR GOOD, because
-       * `recoverStuckCompletingTournaments` only ever looks at COMPLETING; the
-       * one mechanism built to rescue exactly this case can no longer see it.
-       *
-       * The tournament has already been claimed into COMPLETING above. Leaving
-       * it there is what the watchdog is for: it re-reads the tournament, ranks
-       * the survivors, pays every place from the structure and completes the
-       * event. So on an unreadable row we stop and leave the claim standing —
-       * a tournament that finishes a few minutes late, instead of a field that
-       * is never paid.
-       */
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Could not load tournament for finish: ${tourneyLoadErr?.message ?? 'no row'} - left in COMPLETING for recoverStuckCompletingTournaments to pay and close`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] could not load tournament for atomic finish: ${tourneyLoadErr?.message ?? 'no row'} - tournament remains unchanged and the next sweep will retry`
         ),
-        'TournamentthistournamentIdslic.CRITICAL'
+        'Tournament.atomic_finish_tournament_unreadable'
       );
-      this.stop();
+      releaseFinishGuard();
       return;
     }
 
     // Calculate winner prize — with fallback if payout_structure missing or no place 1
-    // TOURNEY-AUDIT 2026-07-24 (sweep 6): satellites award SEATS at the end
-    // (processSatelliteAwards below), never per-place cash here.
+    // Satellites settle every ticket and the one residual together at the end
+    // through the atomic database authority, never per-place cash here.
     const isSatelliteFinish =
       (tournament as any)?.variant === 'satellite' ||
-      ((tournament as any)?.tournament_type || '').toUpperCase() === 'SATELLITE';
-    /**
-     * THE GUARANTEE IS FUNDED HERE OR IT IS NEVER FUNDED (2026-08-31, phase 6).
-     *
-     * applyPrizeGuarantee had exactly two triggers, and between them they miss
-     * an entire shape of event:
-     *
-     *   start()          only when late_reg_levels <= 0
-     *   level change     only when currentLevel >= late_reg_levels
-     *
-     * An event with a late-reg window that FINISHES BELOW THAT LEVEL calls it
-     * ZERO times. The pool is never topped up, and the finish path below then
-     * prices every place off a pool the guarantee never reached.
-     *
-     * Measured before this was written: 12 completed events since 2026-08-29
-     * short of their guarantee with no overlay row, and TWELVE OF FOURTEEN
-     * died below their late-reg cap. Nine of them were freerolls, whose pool
-     * is 0 by construction and whose guarantee is therefore the ONLY money
-     * they ever have. Those nine ranked a full field - up to 326 players -
-     * stamped a winner, and paid zero chips to anybody.
-     *
-     * TournamentManagerBase's own comment promises `fn_sweep_unfunded_guarantees`
-     * as the safety net for exactly this. It was never written; the name
-     * appears nowhere else in the repo or the database. This is that net, put
-     * where it cannot be missed: the last moment before the money is priced.
-     *
-     * Deliberately NOT guarded on prize_pool > 0 or on buy_in_amount - those
-     * two conditions are precisely what made a freeroll invisible to every
-     * other check. The RPC is idempotent (it returns early on `finalized`) and
-     * settles to greatest(pool, guarantee), so a re-drive of an event that was
-     * already funded moves nothing.
-     *
-     * A failure here must never strand a finish, so it is caught: the event
-     * still completes and pays what its pool holds, and the shortfall is
-     * raised for a human rather than silently priced in.
-     */
-    if (
-      !isSatelliteFinish &&
-      Number((tournament as { guaranteed_prize?: number }).guaranteed_prize ?? 0) > 0
-    ) {
-      try {
-        const funded = await this.applyPrizeGuarantee('finish_fallback');
-        if (typeof funded === 'number' && funded > Number(tournament.prize_pool || 0)) {
-          // The RPC moved chips into the pool. Our row is a snapshot taken
-          // before that, so every price computed below would still use the
-          // old pool. Re-read it rather than trusting the local copy.
-          const { data: refreshed } = await supabase
-            .from('tournaments')
-            .select('prize_pool')
-            .eq('id', this.tournamentId)
-            .maybeSingle();
-          if (refreshed?.prize_pool != null) {
-            (tournament as { prize_pool?: number }).prize_pool = Number(refreshed.prize_pool);
-          }
-        }
-      } catch (guaranteeErr) {
-        reportError(guaranteeErr, 'Tournament.guarantee_finish_fallback_failed');
-      }
-    }
-
-    let winnerPrize = 0;
-    if (!isSatelliteFinish) {
-      // resolvePayoutStructure returns the stored structure when it is usable
-      // and, for a Spin, rebuilds it from spinTier(spin_multiplier) when it is
-      // not. So a Spin never reaches the fallback below.
-      const payouts = resolvePayoutStructure(tournament as any, await this.finalFieldSize());
-      if (payouts) {
-        // PAYOUT-INTEGRITY 2026-08-20: same residual rule as every other place
-        // (see computePlacePrize). For a single-place structure (a 2x-5x Spin)
-        // place 1 IS the last place, so the winner receives the whole pool
-        // exactly; on 80/20 and 80/12/8 the parts sum to the pool to the cent.
-        winnerPrize = computePlacePrize(Number(tournament.prize_pool || 0), payouts, 1);
-      } else {
-        // FALLBACK: no usable structure. Winner-take-all is the right net for
-        // an MTT whose structure never wrote — but it must be CAPPED.
-        //
-        // PAYOUT-INTEGRITY 2026-08-20 (second pass): this used to award 100% of
-        // prize_pool unconditionally. Places 2..N are paid at ELIMINATION, so
-        // if the column became unreadable between those payments and this read,
-        // the pool paid out well over 100%. A prize pool cannot pay out more
-        // than it holds, whatever a fallback believes, so the winner gets what
-        // is actually left. This applies to every format; the Spin case above
-        // is a stronger fix on top of it, not a replacement for it.
-        // An unreadable award list would make `alreadyAwarded` 0 — the
-        // OVERPAYING direction, and the exact "a failed query reads as nobody
-        // is left" shape that has bitten this file before. So it is retried,
-        // and a persistent failure is reported as CRITICAL rather than
-        // absorbed. It is still paid: leaving a champion unpaid over a
-        // transient read is the worse of the two failures, and it is
-        // recoverable where an unpaid winner needs a human.
-        let awarded: Array<{ prize: number }> | null = null;
-        let awardedErr: { message: string } | null = null;
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          const res = await supabase
-            .from('tournament_players')
-            .select('prize')
-            .eq('tournament_id', this.tournamentId)
-            .neq('user_id', winnerId)
-            .gt('prize', 0);
-          if (!res.error) {
-            awarded = (res.data ?? []) as Array<{ prize: number }>;
-            awardedErr = null;
-            break;
-          }
-          awardedErr = res.error;
-          if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 500));
-        }
-
-        const alreadyAwarded = (awarded ?? []).reduce(
-          (sum: number, r: any) => sum + Number(r?.prize || 0),
-          0
-        );
-        const pool = Number(tournament?.prize_pool || 0);
-        winnerPrize = remainingPoolAfterAwards(pool, alreadyAwarded);
-
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] ${awardedErr ? 'CRITICAL: ' : ''}` +
-              `No usable payout_structure` +
-              `${isSpinTournament(tournament as any) ? ' and no spin_multiplier to rebuild it from' : ''}` +
-              ` - paying the winner the UNSPENT pool (${winnerPrize} of ${pool}; ` +
-              `${alreadyAwarded} already paid to ${(awarded ?? []).length} finisher(s))` +
-              `${awardedErr ? ` - award read FAILED after 3 attempts (${awardedErr.message}), so "already paid" may be understated and this may be an OVERPAY` : ''}`
-          ),
-          'TournamentthistournamentIdslic.No_usable_payout_structure'
-        );
-      }
-    }
-
-    /**
-     * A WINNER PAID NOTHING MUST SAY SO (2026-08-31, phase 6).
-     *
-     * `if (winnerPrize > 0)` is the right guard for the credit and the wrong
-     * place to stop thinking. Every alert this path added on 2026-08-31 -
-     * winner_prize_credit_failed, prize_credit_failed - lives INSIDE this
-     * block, so it can only escalate a credit that was ATTEMPTED AND FAILED.
-     * A credit that is never attempted is silent.
-     *
-     * That silence is what let nine freerolls rank a full field (313 and 326
-     * players among them), stamp a winner, and pay zero chips with not one
-     * alert anywhere. Their pool was 0, so every price was 0, so this branch
-     * was simply skipped - and the Phase 2 detector could not see them either,
-     * because it filters on `prize_pool > 0`, the exact column the defect
-     * zeroes.
-     *
-     * Zero is a legitimate outcome for a play-money or unfunded event, so this
-     * is a WARNING, not a critical, and it never blocks the finish. But it is
-     * no longer nothing.
-     */
-    if (winnerPrize <= 0 && !isSatelliteFinish) {
-      const gtd = Number((tournament as { guaranteed_prize?: number }).guaranteed_prize ?? 0);
-      await raiseFinancialAlert(
-        gtd > 0 ? 'critical' : 'warning',
-        'Tournament.winner_paid_nothing',
-        gtd > 0
-          ? 'A tournament with an advertised guarantee crowned a winner and paid them nothing. The guarantee was never funded into the prize pool.'
-          : 'A tournament crowned a winner and paid them nothing, because its prize pool is zero.',
-        {
-          tournament_id: this.tournamentId,
-          tournament_name: (tournament as { name?: string }).name ?? null,
-          winner_id: winnerId,
-          prize_pool: Number(tournament.prize_pool || 0),
-          guaranteed_prize: gtd,
-          field_size: await this.finalFieldSize(),
-        }
-      );
-    }
-
-    if (winnerPrize > 0) {
-      // ONE SETTLE PATH (2026-09-02). The 3x retry loop around
-      // `fn_credit_and_log` keyed `tourney:{id}:prize:place:1` is now the
-      // obligation (tournament, 'place', 1): this path, the stuck-COMPLETING
-      // watchdog and the reconciler all settle the SAME row, so the winner
-      // cannot be paid twice across paths whatever key each of them used to
-      // carry. Transport retry lives in the helper; a refusal is never retried.
-      const settled = await settleTournamentObligation(supabase, {
-        tournamentId: this.tournamentId,
-        kind: 'place',
-        place: 1,
-        userId: winnerId,
-        amount: winnerPrize,
-        source: 'engine.finishTournament',
-        memo: `Tournament winner prize: 1st place`,
-      });
-
-      if (!settled.ok && settled.refused_reason === TRANSPORT_REFUSAL) {
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} - ${winnerPrize} chips lost`
-          ),
-          'TournamentthistournamentIdslic.CRITICAL'
-        );
-        // The champion's prize. See the note on the same escalation above:
-        // until 2026-08-31 no tournament payout path raised a financial alert.
-        await raiseFinancialAlert(
-          'critical',
-          'Tournament.winner_prize_credit_failed',
-          `WINNER prize credit failed after 3 retries - ${winnerPrize} chips owed to ${winnerId} were never paid`,
-          {
-            tournament_id: this.tournamentId,
-            user_id: winnerId,
-            place: 1,
-            prize: winnerPrize,
-            obligation: { kind: 'place', place: 1 },
-            transport_error: settled.transport_error ?? null,
-          }
-        );
-      }
-    }
+      ((tournament as any)?.tournament_type || '').toUpperCase() === 'SATELLITE' ||
+      !!((tournament as any)?.satellite_target_id || (tournament as any)?.satellite_target);
+    // Cash guarantee funding is deliberately absent from this process-side
+    // preflight. fn_settle_tournament_places funds and proves the guarantee in
+    // the same locked database transaction as every payout. A refused overlay
+    // therefore refuses the finish instead of paying a smaller pool and hoping
+    // a later repair can reconstruct the promise.
 
     // PAYOUT-INTEGRITY 2026-08-20: never finalise while players are still
     // unresolved. If we reach here with survivors other than the winner, they
@@ -3722,7 +3001,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // Ranking rule is the standard one already used by the bust sweep: a
     // bigger stack finishes higher. Places run 2..N+1 with the shortest stack
     // taking the lowest place, so they are distinct and 1st stays the winner's.
-    // eliminatePlayer pays each place, so the pool is disbursed in full.
+    // eliminatePlayer stamps the result only; the atomic finish RPC will pay
+    // the complete ladder after every place is attributable.
     const { data: stillPlaying, error: stillPlayingErr } = await supabase
       .from('tournament_players')
       .select('user_id, chips')
@@ -3730,14 +3010,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       .eq('status', 'playing')
       .neq('user_id', winnerId);
 
-    if (stillPlayingErr) {
+    if (stillPlayingErr || !Array.isArray(stillPlaying)) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] could not read unresolved players at finish: ${stillPlayingErr.message}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] could not read unresolved players at finish: ${stillPlayingErr?.message ?? 'invalid roster'}`
         ),
         'Tournament.unresolved_players_read_failed'
       );
-    } else if (stillPlaying && stillPlaying.length > 0) {
+      releaseFinishGuard();
+      return;
+    } else if (stillPlaying.length > 0) {
       console.warn(
         `[Tournament:${this.tournamentId.slice(0, 8)}] finishing with ${stillPlaying.length} unresolved player(s) - assigning places 2..${stillPlaying.length + 1}`
       );
@@ -3746,13 +3028,30 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // below it was taken — with a single unresolved player it ALWAYS wrote
       // place 2, occupied or not, paying a second 2nd-place prize. Same
       // free-place walk as the bust sweep.
-      const { data: finishTaken } = await supabase
+      const { data: finishTaken, error: finishTakenErr } = await supabase
         .from('tournament_players')
         .select('position')
         .eq('tournament_id', this.tournamentId)
         .not('position', 'is', null);
+      if (
+        finishTakenErr ||
+        !Array.isArray(finishTaken) ||
+        finishTaken.some(
+          (row) => !Number.isInteger(Number(row.position)) || Number(row.position) < 1
+        ) ||
+        new Set(finishTaken.map((row) => Number(row.position))).size !== finishTaken.length
+      ) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] cannot assign unresolved finishers because occupied positions are unreadable or inconsistent: ${finishTakenErr?.message ?? 'invalid positions'}`
+          ),
+          'Tournament.finish_taken_positions_unreadable'
+        );
+        releaseFinishGuard();
+        return;
+      }
       const finishTakenPositions = new Set<number>(
-        (finishTaken || [])
+        finishTaken
           .map((r) => Number((r as { position: unknown }).position))
           .filter((n) => Number.isFinite(n))
       );
@@ -3766,225 +3065,150 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             ),
             'TournamentManager.no_free_finishing_place_at_finish'
           );
-          break;
+          releaseFinishGuard();
+          return;
         }
         await this.eliminatePlayer(ordered[i].user_id, finishNext);
         finishTakenPositions.add(finishNext);
         finishNext--;
       }
-    }
 
-    // PAYOUT-INTEGRITY 2026-08-25: this row is the ONLY record that place 1
-    // was paid. Discarded, a failure here left the champion status='playing'
-    // with prize 0 on a COMPLETED event — unattributable money, the same shape
-    // as the 113 under-paid tournaments the comment above describes — and
-    // fn_tournament_payout_reconcile would then read prize 0 for place 1 and
-    // try to top the winner up to the full first prize a second time.
-    const { error: winnerStampErr } = await supabase
-      .from('tournament_players')
-      .update({ status: 'winner', position: 1, prize: winnerPrize })
-      .eq('tournament_id', this.tournamentId)
-      .eq('user_id', winnerId);
-    if (winnerStampErr) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: winner row not stamped for ${winnerId.slice(0, 8)} (prize ${winnerPrize}): ${winnerStampErr.message}`
-        ),
-        'Tournament.winner_row_stamp_failed'
-      );
-    }
-
-    // ── SATELLITE SEAT AWARDS ──
-    // TOURNEY-AUDIT 2026-07-24 (sweep 6): satellites finally award what they
-    // promise — SEATS in the target tournament. seats = floor(pool / target
-    // entry cost); the top `seats` finishers are auto-registered into the
-    // target (no wallet movement — the seat IS the prize; their tp.prize
-    // records the ticket value for history). Any remainder is paid as cash to
-    // the next finisher. If the target is missing or no longer open, each
-    // would-be seat winner receives the ticket value in cash instead.
-    if (isSatelliteFinish) {
-      try {
-        await this.processSatelliteAwards(tournament);
-      } catch (satErr) {
-        reportError(satErr, 'Tournament.satellite_awards_failed');
-      }
-    }
-
-    // TOURNEY-AUDIT 2026-07-24 [money]: in bounty/PKO formats the champion
-    // collects their OWN remaining bounty head (base bounty + everything
-    // accumulated via PKO 50%-to-head splits). This was never paid — the
-    // winner path skipped bounty collection entirely, silently forfeiting
-    // real money the winner is owed. Credit it here, idempotently (head is
-    // zeroed after payment).
-    if (tournament?.is_bounty || tournament?.is_pko || tournament?.is_mystery_bounty) {
-      // DAN'S SPEC 2026-08-15: settle whatever remains in the funded bounty
-      // pool to the champion — their own unclaimed head plus any residual left
-      // by the tiered mystery draw. One RPC, idempotent on the ownbounty key,
-      // and it leaves bounty_pool_paid == bounty_pool so the event is exactly
-      // conserving (verified live: pool 75.00 -> paid 75.00, residual 0.00).
-      // Mystery chests settle FIRST — see reconcileMysteryBounty.
-      await this.reconcileMysteryBounty(winnerId);
-      try {
-        const { data: fin, error: finErr } = await supabase.rpc('fn_finalize_bounty_pool', {
-          p_tournament_id: this.tournamentId,
-          p_winner_user_id: winnerId,
-        });
-        if (finErr) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty pool finalisation FAILED: ${finErr.message}`
-            ),
-            'Tournament.bounty_pool_finalise_failed'
-          );
-        } else {
-          const residual = Number((fin as { residual?: number } | null)?.residual || 0);
-          if (residual > 0) {
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Champion ${winnerId.slice(0, 8)} collected remaining bounty pool: ${residual}`
-            );
-          }
-        }
-      } catch (obEx) {
-        reportError(obEx, 'Tournament.winner_own_bounty_exception');
-      }
-    }
-
-    // TOURNEY-AUDIT 2026-07-24 (sweep 5): normalize FINAL standings.
-    // Eliminations during open late registration were stamped with positions
-    // relative to the field size AT BUST TIME, so an early bust carries a
-    // flattering place once more players enter; same-sweep ties were ordered
-    // arbitrarily. Money was already paid correctly at bust (paying places
-    // only exist after late reg closes), so this renumbers POSITIONS ONLY —
-    // rows that were paid a prize (and the winner) keep their positions; all
-    // zero-prize finishers are re-ranked by bust time (earliest bust = worst
-    // place) over the FINAL entrant count.
-    try {
-      const { data: allRows } = await supabase
+      // eliminatePlayer may return after a failed compare-and-set. Confirm
+      // every provisional finisher is actually resolved before the database
+      // authority is allowed to lock and pay the final standings.
+      const { data: remainingPlayers, error: remainingPlayersErr } = await supabase
         .from('tournament_players')
-        .select('id, status, position, prize, eliminated_at')
-        .eq('tournament_id', this.tournamentId);
-      if (allRows && allRows.length > 0) {
-        const totalEntrants = allRows.length;
-        const protectedRows = allRows.filter(
-          (r) => r.status === 'winner' || Number(r.prize || 0) > 0
-        );
-        const protectedPositions = new Set(
-          protectedRows.map((r) => r.position).filter((p) => p != null)
-        );
-        const unpaid = allRows
-          .filter((r) => r.status === 'eliminated' && Number(r.prize || 0) === 0)
-          .sort(
-            (a, b) =>
-              new Date(a.eliminated_at || 0).getTime() - new Date(b.eliminated_at || 0).getTime()
-          );
-        let nextPos = totalEntrants;
-        for (const row of unpaid) {
-          while (protectedPositions.has(nextPos) && nextPos > 1) nextPos--;
-          if (nextPos <= 1) break;
-          if (row.position !== nextPos) {
-            await supabase
-              .from('tournament_players')
-              .update({ position: nextPos })
-              .eq('id', row.id);
-          }
-          nextPos--;
-        }
-      }
-    } catch (standErr) {
-      reportError(standErr, 'Tournament.final_standings_renumber');
-    }
-
-    await this.settleTournamentRake(tournament);
-
-    // Mark completed. RAKE-AUDIT 2026-07-24: total_rake is NO LONGER overwritten
-    // here — it is maintained incrementally by increment_tournament_rake as fees
-    // are actually collected (entry/rebuy/add-on/re-entry, minus reversals). The
-    // old overwrite (`buy_in_fee × current_players`) replaced the accurate
-    // collected total with a phantom number that counted free horse entries.
-    // PAYOUT-INTEGRITY 2026-08-25: result checked. A discarded failure here
-    // leaves the event in COMPLETING — which is harmless, because the recovery
-    // watchdog finds it and finishes it idempotently — but SILENT, so nobody
-    // learns that the normal finish path is failing to close its own events.
-    /**
-     * A FINISH THAT DEADLOCKS IS RETRIED (2026-09-06). This update fires
-     * fn_clear_seats_on_game_end, which closes every seat of the event, while
-     * a table engine may be cashing one of those seats out
-     * (atomic_seat_cashout_locked) - 40P01 five times in one hour on
-     * 2026-09-06 (b88db8d6, 80fdff30, db05ecf2, 40102ace, ab102e3d), every
-     * one a paid event left in COMPLETING. A deadlock victim is chosen in
-     * milliseconds and the other side commits; the same statement a moment
-     * later succeeds. Three attempts, short backoff, then the watchdog - which
-     * now also refuses to be hidden by this manager (managerHasOverstayed).
-     */
-    let completedErr: { message?: string; code?: string } | null = null;
-    for (let attempt = 1; attempt <= COMPLETED_FLIP_ATTEMPTS; attempt++) {
-      const { error } = await supabase
-        .from('tournaments')
-        .update({
-          status: 'COMPLETED',
-          ended_at: new Date().toISOString(),
-          // 2026-08-20: clear the break flags on the way out. endBreak() is what
-          // normally resets them, and it never runs if the event finishes DURING
-          // a break -- leaving COMPLETED tournaments permanently flagged
-          // on_break=true (3 of them, one showing 1,231 minutes "on break").
-          // Harmless to play, since nothing resumes a COMPLETED event, but it
-          // makes a finished tournament read as stuck to anything inspecting
-          // these columns.
-          on_break: false,
-          break_ends_at: null,
-        })
-        .eq('id', this.tournamentId)
-        .eq('status', 'COMPLETING'); // Guard: only COMPLETING → COMPLETED
-      completedErr = error;
-      if (!error || !isTransientFlipError(error)) break;
-      console.warn(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED attempt ${attempt} of ${COMPLETED_FLIP_ATTEMPTS} hit ${error.code ?? '?'} (${error.message}) - retrying`
-      );
-      await new Promise((r) => setTimeout(r, COMPLETED_FLIP_BACKOFF_MS * attempt));
-    }
-    if (completedErr) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED failed: ${completedErr.message} - left for recoverStuckCompletingTournaments`
-        ),
-        'Tournament.completed_transition_failed'
-      );
-    }
-
-    // PAYOUT-INTEGRITY 2026-08-20: final settlement check. Prizes are emitted
-    // incrementally (places 2..N as players bust, place 1 here), so until now
-    // nothing ever verified that the pool was actually disbursed in full --
-    // which is why 113 multi-place tournaments under-paid and 11 double-paid.
-    //
-    // fn_tournament_payout_reconcile recomputes every place from prize_pool
-    // and payout_structure, compares it against what each finisher was really
-    // paid, and tops up any shortfall using the SAME idempotency key format
-    // this file uses, so it can never collide with the payments above. It
-    // reports overpayment rather than clawing it back, and refuses to guess
-    // when a place has no single recorded finisher.
-    //
-    // Runs after the COMPLETED transition so it sees final standings, and is
-    // deliberately non-fatal: a failure here must not undo a finished event.
-    try {
-      const { data: reconcile, error: reconcileErr } = await supabase.rpc(
-        'fn_tournament_payout_reconcile',
-        { p_tournament_id: this.tournamentId, p_apply: true }
-      );
-      if (reconcileErr) {
+        .select('user_id')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'playing')
+        .neq('user_id', winnerId);
+      if (remainingPlayersErr || !Array.isArray(remainingPlayers) || remainingPlayers.length > 0) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] payout reconcile failed: ${reconcileErr.message}`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] cannot confirm that every finishing player was resolved: ${remainingPlayersErr?.message ?? `${remainingPlayers?.length ?? 'unknown'} still playing`}`
           ),
-          'Tournament.payout_reconcile_failed'
+          'Tournament.finish_players_unresolved'
         );
-      } else if (reconcile && (reconcile as any).clean === false) {
-        console.warn(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] payout reconcile: topped up ${(reconcile as any).total_top_up}, issues ${JSON.stringify((reconcile as any).issues)}`
-        );
+        releaseFinishGuard();
+        return;
       }
-    } catch (reconcileThrew) {
-      reportError(reconcileThrew, 'Tournament.payout_reconcile_threw');
     }
+
+    let winnerPrize = 0;
+    if (isSatelliteFinish) {
+      // Satellite standing, complete-ticket delivery, the single bubble
+      // residual, rake, evidence, escrow drain and COMPLETED status share one
+      // database transaction. Nothing is pre-claimed or stamped here: an RPC
+      // refusal or unreadable receipt leaves the event retryable in RUNNING.
+      try {
+        winnerPrize = await this.processSatelliteAwards(tournament, winnerId);
+      } catch (satErr) {
+        const outcomeUnknown = satErr instanceof SatelliteSettlementOutcomeUnknownError;
+        reportError(
+          satErr,
+          outcomeUnknown
+            ? 'Tournament.satellite_settlement_outcome_unknown'
+            : 'Tournament.satellite_settlement_failed'
+        );
+        if (!outcomeUnknown) releaseFinishGuard();
+        try {
+          await raiseFinancialAlert(
+            'critical',
+            outcomeUnknown ? 'Satellite.settlement_outcome_unknown' : 'Satellite.settlement_failed',
+            outcomeUnknown
+              ? 'The Satellite Completion Result Could Not Be Confirmed. Play Was Stopped Without Reopening The Tournament.'
+              : 'Atomic Satellite Completion Was Definitively Refused. The Event Remains Retryable And No Presentation Closeout Was Allowed.',
+            {
+              tournament_id: this.tournamentId,
+              winner_id: winnerId,
+              rpc_error: satErr instanceof Error ? satErr.message : String(satErr),
+            }
+          );
+        } catch (alertErr) {
+          reportError(alertErr, 'Tournament.satellite_settlement_alert_failed');
+        }
+        if (outcomeUnknown) await this.stopAndWait();
+        return;
+      }
+    } else {
+      let receipt: VerifiedTournamentCompletionReceipt;
+      try {
+        receipt = await requestTournamentTerminalReceipt(this.tournamentId, 'places', winnerId);
+      } catch (settlementErr) {
+        const outcomeUnknown = settlementErr instanceof TerminalSettlementOutcomeUnknownError;
+        reportError(
+          settlementErr,
+          outcomeUnknown
+            ? 'Tournament.atomic_terminal_settlement_outcome_unknown'
+            : 'Tournament.atomic_terminal_settlement_failed'
+        );
+        if (!outcomeUnknown) releaseFinishGuard();
+        try {
+          await raiseFinancialAlert(
+            'critical',
+            outcomeUnknown
+              ? 'Tournament.atomic_terminal_settlement_outcome_unknown'
+              : 'Tournament.atomic_terminal_settlement_failed',
+            outcomeUnknown
+              ? 'The Tournament Completion Result Could Not Be Confirmed. Play Was Stopped Without Reopening The Tournament.'
+              : 'Atomic Tournament Completion Was Definitively Refused. The Event Remains Retryable And No Presentation Closeout Was Allowed.',
+            {
+              tournament_id: this.tournamentId,
+              winner_id: winnerId,
+              rpc_error:
+                settlementErr instanceof Error ? settlementErr.message : String(settlementErr),
+            }
+          );
+        } catch (alertErr) {
+          reportError(alertErr, 'Tournament.atomic_terminal_settlement_alert_failed');
+        }
+        if (outcomeUnknown) await this.stopAndWait();
+        return;
+      }
+
+      // The terminal receipt proves cash, bounty, rake, escrow and COMPLETED
+      // together. TypeScript consumes it only for presentation.
+      winnerPrize = receipt.winnerAmount;
+      if (receipt.bubbleProtection && !this.bubbleProtectionPaid) {
+        this.bubbleProtectionPaid = true;
+        try {
+          await this.broadcast('bubble_protection_paid', {
+            userId: receipt.bubbleProtection.userId,
+            position: receipt.bubbleProtection.position,
+            amount: receipt.bubbleProtection.amount,
+          });
+        } catch (broadcastErr) {
+          reportError(broadcastErr, 'Tournament.bubble_protection_broadcast_failed');
+        }
+      }
+    }
+
+    if (winnerPrize <= 0 && !isSatelliteFinish) {
+      try {
+        const gtd = Number((tournament as { guaranteed_prize?: number }).guaranteed_prize ?? 0);
+        await raiseFinancialAlert(
+          gtd > 0 ? 'critical' : 'warning',
+          'Tournament.winner_paid_nothing',
+          gtd > 0
+            ? 'A tournament with an advertised guarantee crowned a winner and paid them nothing. The guarantee was never funded into the prize pool.'
+            : 'A tournament crowned a winner and paid them nothing, because its prize pool is zero.',
+          {
+            tournament_id: this.tournamentId,
+            tournament_name: (tournament as { name?: string }).name ?? null,
+            winner_id: winnerId,
+            prize_pool: Number(tournament.prize_pool || 0),
+            guaranteed_prize: gtd,
+            field_size: await this.finalFieldSize(),
+          }
+        );
+      } catch (alertErr) {
+        reportError(alertErr, 'Tournament.winner_paid_nothing_alert_failed');
+      }
+    }
+
+    // Both terminal database authorities return only after the event is
+    // COMPLETED and its entire escrow is proven empty. There is deliberately
+    // no process-side status flip or second money door below this point.
 
     /**
      * ═══════════════════════════════════════════════════════════════════════
@@ -4015,8 +3239,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      * on that event, and announcing the champion as knocked out is worse than
      * saying nothing at all.
      *
-     * Sent AFTER the payout reconcile so the row the client reads back is
-     * final, and BEFORE cleanupBroadcastChannel() tears the channel down.
+     * Sent only after the authoritative settlement receipt and completion
+     * attempt, and before cleanupBroadcastChannel() tears the channel down.
      */
     let winnerName = 'Player';
     try {
@@ -4031,12 +3255,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       /* name lookup is cosmetic — never block the finish on it */
     }
 
-    await this.broadcast('tournament_winner', {
-      userId: winnerId,
-      position: 1,
-      prize: winnerPrize,
-      playerName: winnerName,
-    });
+    try {
+      await this.broadcast('tournament_winner', {
+        userId: winnerId,
+        position: 1,
+        prize: winnerPrize,
+        playerName: winnerName,
+      });
+    } catch (broadcastErr) {
+      reportError(broadcastErr, 'Tournament.winner_broadcast_failed');
+    }
 
     /**
      * ═══════════════════════════════════════════════════════════════════════
@@ -4056,43 +3284,36 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      * as a tab, and MultiTablePage's `seated` flag treated it as a live seat.
      * Releasing the seats is what actually puts the player back in the lobby.
      *
-     * Done BEFORE the table is closed and per-table, so a failure on one table
-     * cannot strand the rest, and never fatal: the event is over and the money
-     * is already paid: a seat-release error must not undo that.
+     * The terminal database authority now releases every durable seat and
+     * closes every tournament table in the same transaction as money. This
+     * loop only stops in-memory engines, independently, after that proof.
      */
     for (const [tableId, engine] of this.tableEngines) {
-      await engine.stop();
-
       try {
-        const { error: seatErr } = await supabase
-          .from('table_seats')
-          .update({ left_at: new Date().toISOString() })
-          .eq('table_id', tableId)
-          .is('left_at', null);
-        if (seatErr) {
-          reportError(
-            new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] seat release failed on ${tableId.slice(0, 8)}: ${seatErr.message}`
-            ),
-            'Tournament.seat_release_failed'
-          );
-        }
-      } catch (seatThrew) {
-        reportError(seatThrew, 'Tournament.seat_release_threw');
+        await engine.stop();
+      } catch (stopErr) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] could not stop engine ${tableId.slice(0, 8)} after durable closeout: ${stopErr instanceof Error ? stopErr.message : String(stopErr)}`
+          ),
+          'Tournament.engine_stop_after_closeout_failed'
+        );
       }
-
-      await supabase.from('tables').update({ status: 'closed' }).eq('id', tableId);
     }
 
     // Clean up the reusable broadcast channel
-    await this.cleanupBroadcastChannel();
+    try {
+      await this.cleanupBroadcastChannel();
+    } catch (cleanupErr) {
+      reportError(cleanupErr, 'Tournament.channel_cleanup_after_closeout_failed');
+    }
 
     this.stop();
   }
 
   // ── Implemented by TournamentManager (layer 3/3) ──
   protected abstract checkTableBalance(): Promise<void>;
-  protected abstract processSatelliteAwards(tournament: any): Promise<void>;
+  protected abstract processSatelliteAwards(tournament: any, winnerId: string): Promise<number>;
   protected abstract ensureLateRegSeated(): Promise<void>;
   protected abstract checkDynamicTableExpansion(): Promise<void>;
 }

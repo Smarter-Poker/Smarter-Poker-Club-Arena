@@ -50,6 +50,7 @@ import {
   chips,
   chipsCompact,
   clockText,
+  effectivePlaceLadderPool,
   effectivePrizePool,
   isPlayerLive,
   lastPaidPlace,
@@ -369,13 +370,25 @@ export default function DetailOverviewTab({
   }, [startAtMs, tick]);
 
   /* ── Prize pool: the stored pool is authoritative, the guarantee is a floor. ── */
-  const prize = useMemo(
-    () => ({
+  const prize = useMemo(() => {
+    const isSatellite =
+      String(tournament?.variant ?? '').toLowerCase() === 'satellite' ||
+      String(tournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      Boolean(tournament?.satellite_target_id || tournament?.satellite_target);
+    return {
       effective: effectivePrizePool(tournament?.prize_pool, tournament?.guaranteed_prize),
+      ladder: effectivePlaceLadderPool(
+        tournament?.prize_pool,
+        tournament?.guaranteed_prize,
+        tournament?.payout_structure,
+        field.entries,
+        tournament?.bubble_protection === true,
+        Number(tournament?.buy_in_amount) || 0,
+        isSatellite
+      ),
       guarantee: Number(tournament?.guaranteed_prize) || 0,
-    }),
-    [tournament?.guaranteed_prize, tournament?.prize_pool]
-  );
+    };
+  }, [tournament, field.entries]);
 
   const lateRegText = useMemo(() => {
     const levels = Number(tournament?.late_reg_levels) || 0;
@@ -592,7 +605,7 @@ export default function DetailOverviewTab({
     /* The EFFECTIVE pool, not the raw one. Rewards prints first place off the
        guarantee-floored figure; printing the raw `prize_pool` here made the two
        tabs quote different money for the same finish on any overlay event. */
-    const pool = prize.effective;
+    const pool = prize.ladder;
     return (Array.isArray(entries) ? entries : [])
       .filter((e) => typeof e.position === 'number' && (e.position as number) <= 3)
       .sort((a, b) => (a.position || 99) - (b.position || 99))
@@ -600,9 +613,17 @@ export default function DetailOverviewTab({
         const row = structure.find((p) => p.place === player.position);
         // The whole structure, not one percentage: the last paid place absorbs
         // the residual, so a place cannot be priced without the others.
-        return { player, prizeValue: row ? placePrize(pool, structure, row.place) : 0 };
+        const recorded = Number(player.prize);
+        return {
+          player,
+          prizeValue: Number.isFinite(recorded)
+            ? recorded
+            : row && pool !== null
+              ? placePrize(pool, structure, row.place)
+              : 0,
+        };
       });
-  }, [isCompleted, entries, tournament?.payout_structure, prize.effective]);
+  }, [isCompleted, entries, tournament?.payout_structure, prize.ladder]);
 
   /**
    * The runners-up list under the podium.

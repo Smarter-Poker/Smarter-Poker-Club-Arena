@@ -1,0 +1,7 @@
+{
+  "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
+  "_comment": "One immutable receipt for evidence-derived tournament cancellation refunds, fee reversals, and tournament/player/table closeout. The existing service-role cancellation and obligation doors remain available for the database-first rolling cutover.",
+  "tables": ["tournament_cancellation_receipts"],
+  "functions": ["fn_tournament_cancellation_receipts_append_only"],
+  "columns": {}
+}

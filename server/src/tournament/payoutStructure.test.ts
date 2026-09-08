@@ -51,8 +51,29 @@ describe('parsePayoutStructure accepts only a USABLE structure', () => {
     expect(parsePayoutStructure([{ place: 2, percentage: 100 }])).toBeNull();
     // Percentages that cannot split anything.
     expect(parsePayoutStructure([{ place: 1, percentage: 0 }])).toBeNull();
+    expect(
+      parsePayoutStructure([
+        { place: 1, percentage: 100 },
+        { place: 2, percentage: 0 },
+      ])
+    ).toBeNull();
     expect(parsePayoutStructure([{ place: 1, percentage: -50 }])).toBeNull();
     expect(parsePayoutStructure([{ place: 0, percentage: 100 }])).toBeNull();
+    expect(parsePayoutStructure([{ place: 1.5, percentage: 100 }])).toBeNull();
+    expect(parsePayoutStructure([{ position: 1, percentage: 100 }])).toBeNull();
+  });
+
+  it('sorts explicit places and lets the first duplicate win', () => {
+    expect(
+      parsePayoutStructure([
+        { place: 3, percentage: 20 },
+        { place: 1, percentage: 40 },
+        { place: 1, percentage: 50 },
+      ])
+    ).toEqual([
+      { place: 1, percentage: 40 },
+      { place: 3, percentage: 20 },
+    ]);
   });
 });
 
@@ -225,21 +246,25 @@ describe('every payout path actually uses the rule', () => {
   const ELIM = code(read('src/tournament/TournamentManagerEliminations.ts'));
   const RECOVERY = code(read('src/tournament/tournamentRecovery.ts'));
 
-  it('both live sites resolve the structure rather than parsing it themselves', () => {
+  it('both live preview sites resolve the structure rather than parsing it themselves', () => {
     const uses = ELIM.match(/resolvePayoutStructure\(/g) ?? [];
-    expect(uses.length, 'eliminatePlayer and finishTournament').toBeGreaterThanOrEqual(2);
+    expect(uses.length, 'eliminatePlayer and late-reg preview').toBeGreaterThanOrEqual(2);
   });
 
-  it('the stuck-COMPLETING rescue shares it too', () => {
-    expect(RECOVERY).toMatch(/resolvePayoutStructure\(/);
+  it('the stuck-COMPLETING rescue delegates pricing to the database door', () => {
+    expect(RECOVERY).not.toMatch(/resolvePayoutStructure\(/);
+    expect(RECOVERY).not.toMatch(/computePlacePrize\(/);
+    expect(RECOVERY).not.toMatch(/payout_structure|spin_multiplier/);
+    expect(RECOVERY).toMatch(/fn_complete_tournament_terminal/);
+    expect(RECOVERY).toMatch(/isFinalTableDeal \? 'final_table_deal' : 'places'/);
   });
 
-  it('the uncapped "award the whole pool" fallback is gone', () => {
-    // The exact shape: winnerPrize set from prize_pool with nothing subtracted.
+  it('the game server no longer invents any winner fallback amount', () => {
     expect(ELIM).not.toMatch(
       /winnerPrize\s*=\s*Math\.round\(\s*\(?\s*tournament\??\.?\??\.prize_pool/
     );
-    expect(ELIM).toMatch(/remainingPoolAfterAwards\(/);
+    expect(ELIM).toMatch(/fn_complete_tournament_terminal/);
+    expect(ELIM).toMatch(/winnerPrize\s*=\s*receipt\.winnerAmount/);
   });
 
   it('both sites select what a rebuild needs', () => {
@@ -264,8 +289,8 @@ describe('every payout path actually uses the rule', () => {
  *
  * Sunday Midway Major: 9 places, 8 entrants, 250.00 of a 10,000.00 pool
  * stranded. PLO Daily 18155d71: 5 places, 4 entrants, 52.50. Eight events with
- * a pool in thirty days, each also leaving fn_tournament_payout_reconcile
- * holding a no_finisher_recorded critical it correctly refuses to resolve alone.
+ * a pool in thirty days, each also leaving a no_finisher_recorded critical
+ * that no payment path may resolve by guessing a recipient.
  *
  * Trimming is the direction that OVERPAYS - a field size that is too small
  * promotes an earlier place to residual holder - so most of these pin the cases

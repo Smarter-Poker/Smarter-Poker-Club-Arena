@@ -38,6 +38,9 @@ const SETTLER = read('src/services/RakebackSettlerService.ts');
 const PAYOUT_MATH = read('src/tournament/payoutMath.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const MANAGER = read('src/tournament/TournamentManager.ts');
+const TERMINAL_AUTHORITY = read(
+  '../supabase/migrations/20260908045932_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+);
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -128,27 +131,34 @@ describe('one rounding rule, shared by every payout site', () => {
   it('both payout sites use it, and neither rounds on its own', () => {
     // Defect: each place rounded independently, so a 9-place structure on a
     // 483.00 pool paid 483.01. It also put the engine permanently at odds with
-    // fn_tournament_payout_reconcile, which uses the residual rule.
+    // the database payout calculation, which uses the residual rule.
     expect(code(ELIM)).toMatch(/computePlacePrize\(/);
     expect(code(ELIM)).not.toMatch(/prizeRaw/);
   });
 
-  it('the stuck-COMPLETING rescue shares it too', () => {
-    // Defect: a THIRD independent formula meant a rescued tournament could be
-    // paid a cent differently from one that finished normally.
-    expect(code(RECOVERY)).toMatch(/computePlacePrize\(/);
+  it('the stuck-COMPLETING rescue cannot grow a third pricing implementation', () => {
+    // The database derives the complete locked ladder. Recovery may replay its
+    // receipt, but it may not parse a structure or price a place itself.
+    expect(code(RECOVERY)).not.toMatch(/computePlacePrize\(/);
+    expect(code(RECOVERY)).not.toMatch(/resolvePayoutStructure\(/);
+    expect(code(RECOVERY)).toMatch(/fn_complete_tournament_terminal/);
   });
 });
 
 describe('every tournament settles against its own prize pool', () => {
-  it('the COMPLETED transition reconciles payouts', () => {
-    expect(code(ELIM)).toMatch(/fn_tournament_payout_reconcile/);
+  it('cash finishes use one database-derived atomic settlement receipt', () => {
+    const finish = sliceMethod(code(ELIM), 'protected async finishTournament');
+    expect(finish).toMatch(/fn_complete_tournament_terminal/);
+    expect(finish).toMatch(/p_observed_winner_id:\s*winnerId/);
+    expect(finish).toMatch(/verifyTournamentCompletionReceipt\(/);
+    expect(finish).not.toMatch(/fn_tournament_payout_reconcile/);
   });
 
   it('and clears the break flags on the way out', () => {
     // Defect: endBreak() never runs if the event finishes DURING a break, so
     // COMPLETED tournaments sat flagged on_break=true forever.
-    expect(code(ELIM)).toMatch(/on_break:\s*false/);
+    expect(code(TERMINAL_AUTHORITY)).toMatch(/on_break\s*=\s*false/);
+    expect(code(TERMINAL_AUTHORITY)).toMatch(/break_ends_at\s*=\s*NULL/);
   });
 });
 
@@ -191,7 +201,6 @@ describe('the settler keeps running every sentinel it is meant to', () => {
   const sentinels = [
     'runUnionEcoRecord',
     'runUnionRakeRollupCatchup',
-    'runTournamentPayoutSweep',
     'runTournamentChipConservation',
   ];
   for (const s of sentinels) {
@@ -200,6 +209,12 @@ describe('the settler keeps running every sentinel it is meant to', () => {
       expect(code(SETTLER)).toMatch(new RegExp(`await this\\.${s}\\(`));
     });
   }
+
+  it('does not run a payout repair sweep after atomic finish settlement', () => {
+    const settler = code(SETTLER);
+    expect(settler).not.toContain('runTournamentPayoutSweep');
+    expect(settler).not.toContain("rpc('fn_tournament_payout_sweep'");
+  });
 });
 
 describe('ESM: every relative import carries its .js extension', () => {

@@ -481,6 +481,7 @@ export default function TournamentDetails({
               chips?: number;
               status: string;
               position?: number | null;
+              prize?: number | null;
               table_id?: string | null;
               registered_at?: string | null;
               rebuys?: number | null;
@@ -521,6 +522,12 @@ export default function TournamentDetails({
                   // call (triggered by TOURNAMENT_UPDATED) hydrates the rest.
                   chips: newPlayer.chips || 0,
                   position: newPlayer.position || undefined,
+                  prize:
+                    newPlayer.prize !== null &&
+                    newPlayer.prize !== undefined &&
+                    Number.isFinite(Number(newPlayer.prize))
+                      ? Number(newPlayer.prize)
+                      : undefined,
                   status: newPlayer.status as TournamentEntry['status'],
                   table_id: newPlayer.table_id || null,
                   created_at: newPlayer.registered_at ?? null,
@@ -541,6 +548,7 @@ export default function TournamentDetails({
               chips?: number;
               status: string;
               position?: number | null;
+              prize?: number | null;
               table_id?: string | null;
               rebuys?: number | null;
               add_on?: boolean | null;
@@ -554,6 +562,10 @@ export default function TournamentDetails({
                       chips: updatedPlayer.chips,
                       status: updatedPlayer.status as TournamentEntry['status'],
                       position: updatedPlayer.position || undefined,
+                      prize:
+                        updatedPlayer.prize !== undefined && updatedPlayer.prize !== null
+                          ? Number(updatedPlayer.prize)
+                          : e.prize,
                       table_id:
                         updatedPlayer.table_id !== undefined ? updatedPlayer.table_id : e.table_id,
                       rebuys:
@@ -892,7 +904,7 @@ export default function TournamentDetails({
         const { data: playersData, error } = await supabase
           .from('tournament_players')
           .select(
-            'id, user_id, username, chips, status, position, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
+            'id, user_id, username, chips, status, position, prize, table_id, registered_at, rebuys, add_on, is_satellite_qualifier, profile:profiles!user_id(player_number, avatar_url:arena_avatar_url)'
           )
           .eq('tournament_id', data.id)
           .order('registered_at', { ascending: true });
@@ -919,6 +931,10 @@ export default function TournamentDetails({
                 player_code: profile?.player_number ? String(profile.player_number) : null,
                 chips: (e.chips as number) || data.starting_chips,
                 position: (e.position as number) || undefined,
+                prize:
+                  e.prize !== null && e.prize !== undefined && Number.isFinite(Number(e.prize))
+                    ? Number(e.prize)
+                    : undefined,
                 status: e.status as TournamentEntry['status'],
                 /* `club_id` was selected here and mapped onto the entry solely
                    so the old inline Unions block could count

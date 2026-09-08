@@ -187,10 +187,9 @@ describe('round 8: silent under-reports and confident zeros now leave a trace', 
     expect(bounties).toContain('player_bounties_read_failed');
   });
 
-  it('a failed POY placements read reports instead of vanishing the event from the race', () => {
-    const finalize = sliceMethod(SRC, 'async finalizeTournament(');
-    expect(finalize).toContain('error: poyReadErr');
-    expect(finalize).toContain('poy_placements_read_failed');
+  it('the browser service exposes no privileged tournament completion bypass', () => {
+    expect(SRC).not.toContain('async finalizeTournament(');
+    expect(SRC).not.toMatch(/update\(\{[\s\S]{0,160}?status:\s*'COMPLETED'/);
   });
 
   it('the balance and merge checks report a failed read behind their safe false', () => {

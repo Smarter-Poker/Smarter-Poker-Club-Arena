@@ -3,18 +3,16 @@
  *
  * The boot-time stale sweep flips any RUNNING tournament older than twelve
  * hours with no hand in the last hour to COMPLETING and hands it to
- * `recoverStuckCompletingTournaments`. That function asks `fieldIsStillLive`
- * and REFUSES a field with more players left than the structure pays - and
- * once it has refused, nothing can finish the event: the discovery loop
- * resumes RUNNING tournaments only, so a COMPLETING row is invisible to the
- * one path that could play it out.
+ * `recoverStuckCompletingTournaments`. Recovery now requires a durable winner
+ * and cannot rank that live field at all. Once the sweep has claimed the row,
+ * the discovery loop cannot resume it because managers adopt RUNNING rows.
  *
  * PLO4 Heads-Up 25 (3e281f5c) sat in exactly that state for three days with
  * two players holding chips, and was settled by hand (migration
  * 20260906153943). The sweep took a stalled game a manager could still adopt
  * and made it permanently stuck.
  *
- * The fix is to ask the same question, with the same guard, BEFORE the claim.
+ * The fix is to ask whether the field is still live BEFORE the claim.
  * The decision is `fieldIsStillLive` (pure, tested in its own file); this
  * pins the wiring, because the sweep needs a live Supabase to run.
  */
@@ -33,7 +31,7 @@ const sweep = SERVER.slice(
   SERVER.indexOf("await recoverStuckCompletingTournaments('startup-stale-12h-settle'")
 );
 
-describe('the sweep asks what the recovery will ask', () => {
+describe('the sweep refuses a row recovery has no authority to decide', () => {
   it('reads the live field and the paid places before it claims the row', () => {
     expect(sweep).toContain(
       'fieldIsStillLive({ livePlayers: liveCount, paidPlaces: sweepPayouts.length })'
@@ -75,7 +73,7 @@ describe('the sweep asks what the recovery will ask', () => {
   });
 });
 
-describe('the guard the sweep now shares with the recovery', () => {
+describe('the guard used before the recovery handoff', () => {
   it('refuses the shape that stuck 3e281f5c: two alive, one paid place', () => {
     expect(fieldIsStillLive({ livePlayers: 2, paidPlaces: 1 })).toBe(true);
   });

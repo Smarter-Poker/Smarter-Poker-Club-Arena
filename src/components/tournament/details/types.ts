@@ -23,7 +23,11 @@
 
 import type { Tournament } from '../../../types/database.types';
 import type { UseMysteryBountyResult } from '../../../hooks/useMysteryBounty';
-import { computePlacePrize } from '../../../lib/payoutMath';
+import { computePlacePrize, prizePoolAvailableToPlaces } from '../../../lib/payoutMath';
+import { parsePayoutStructure } from '../../../lib/payoutStructure';
+
+export { parsePayoutStructure } from '../../../lib/payoutStructure';
+export type { PayoutPlace } from '../../../lib/payoutStructure';
 
 /**
  * SEVEN TABS. Dan 2026-08-25, verbatim: "CHIPS SHOULD BE CALLED 'RANKING'" and
@@ -103,6 +107,8 @@ export interface TournamentEntry {
   avatar_url: string | null;
   /** Finishing position once eliminated; absent while still playing. */
   position?: number;
+  /** Exact settled prize from tournament_players; required for dealt finishes. */
+  prize?: number;
   chips?: number;
   status: 'registered' | 'playing' | 'eliminated' | 'finished' | 'winner';
   table_id?: string | null;
@@ -259,88 +265,15 @@ export function clockText(totalSeconds: number): string {
    THE PAYOUT STRUCTURE — parsed in ONE place
    ═══════════════════════════════════════════════════════════════════════════
 
-   `tournaments.payout_structure` is a TEXT column holding JSON, written by four
-   generations of builder, and until the 2026-08-26 audit it was parsed THREE
-   separate ways: RewardsTab expanded range rows into one entry per place,
-   DetailOverviewTab did a shallow `Array.isArray` cast, and the bubble count fed
-   to HandForHandBanner came off that shallow cast.
-
-   That divergence was not cosmetic. A structure written as
-   `[{place:1,percentage:50},{from:2,to:9,percentage:6.25}]` pays NINE places.
-   Detail counted it as TWO, so the hand-for-hand banner said the bubble was 2nd,
-   and its podium prize lookup (`p.place === position`) found nothing for 2nd or
-   3rd and printed a dash where a real prize existed.
-
-   One parser, one answer, every tab. */
-
-/** One paid finishing position, expanded from whatever shape the column held. */
-export interface PayoutPlace {
-  place: number;
-  percentage: number;
-}
+   `tournaments.payout_structure` is a TEXT column holding JSON. The engine and
+   database settle one canonical shape: explicit positive integer `place` and
+   positive `percentage` rows. Every browser surface imports the same parser,
+   so malformed or retired shapes cannot be advertised as payable ladders. */
 
 /** Coerce anything the column might hold into a finite number. */
 function finite(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
-}
-
-/**
- * Parse `payout_structure` into ONE ENTRY PER PLACE.
- *
- * Accepts the per-place shape ({ place | position | rank, percentage }) and the
- * two range shapes builders have emitted ({ from, to } and place: "4-6").
- *
- * Returns null — not an empty array — when the column is unusable, so a caller
- * can tell "no structure published" from "a structure that pays nobody".
- */
-export function parsePayoutStructure(raw: unknown): PayoutPlace[] | null {
-  let value: unknown = raw;
-  if (typeof value === 'string') {
-    if (!value.trim()) return null;
-    try {
-      value = JSON.parse(value);
-    } catch {
-      return null;
-    }
-  }
-  if (!Array.isArray(value) || value.length === 0) return null;
-
-  const places: PayoutPlace[] = [];
-  for (const row of value as Record<string, unknown>[]) {
-    if (!row || typeof row !== 'object') continue;
-    const percentage = finite(row.percentage ?? row.percent ?? row.pct);
-    if (percentage <= 0) continue;
-
-    // Range shapes first, because a range row also carries a `place`.
-    const from = finite(row.from ?? row.fromPlace ?? row.start);
-    const to = finite(row.to ?? row.toPlace ?? row.end);
-    if (from >= 1 && to >= from && to - from < 5000) {
-      for (let p = from; p <= to; p++) places.push({ place: p, percentage });
-      continue;
-    }
-
-    const rawPlace = row.place ?? row.position ?? row.rank;
-    if (typeof rawPlace === 'string' && rawPlace.includes('-')) {
-      const [a, b] = rawPlace.split('-').map((s) => finite(s.trim()));
-      if (a >= 1 && b >= a && b - a < 5000) {
-        for (let p = a; p <= b; p++) places.push({ place: p, percentage });
-        continue;
-      }
-    }
-
-    const place = finite(rawPlace);
-    if (place >= 1) places.push({ place, percentage });
-  }
-
-  if (places.length === 0) return null;
-
-  // De-duplicate on place (last write wins) and order the field.
-  const byPlace = new Map<number, number>();
-  for (const p of places) byPlace.set(p.place, p.percentage);
-  return [...byPlace.entries()]
-    .map(([place, percentage]) => ({ place, percentage }))
-    .sort((a, b) => a.place - b.place);
 }
 
 /** How many places this event pays. Zero when no structure is published. */
@@ -363,10 +296,8 @@ export function paidPlaceCount(raw: unknown): number {
  *   - compared against each row's place to tag the bubble row, so on such a
  *     structure the tag rendered on the wrong row or on none.
  *
- * The same class of bug as the range-row count fixed on 2026-08-26 and noted
- * above parsePayoutStructure — one layer up, and it survived that fix because a
- * length is exactly right for every contiguous structure, which is nearly all
- * of them. It is wrong precisely where it matters and nowhere else.
+ * A length is exactly right for every contiguous structure, which is nearly
+ * all of them. It is wrong precisely where it matters and nowhere else.
  */
 export function lastPaidPlace(raw: unknown): number {
   const places = parsePayoutStructure(raw);
@@ -417,6 +348,31 @@ export function effectivePrizePool(
   const pool = finite(poolValue);
   const guarantee = finite(guaranteeValue);
   return guarantee > 0 ? Math.max(pool, guarantee) : pool;
+}
+
+/**
+ * The advertised pool remains the tournament prize pool; this is the portion
+ * its place percentages divide after the optional stone-bubble buy-in has
+ * been reserved. Satellite residuals belong to their seat-award authority.
+ */
+export function effectivePlaceLadderPool(
+  poolValue: number | null | undefined,
+  guaranteeValue: number | null | undefined,
+  structureValue: unknown,
+  fieldSize: number,
+  bubbleProtection: boolean,
+  buyInAmount: number,
+  isSatellite: boolean
+): number | null {
+  const pool = effectivePrizePool(poolValue, guaranteeValue);
+  const structure = parsePayoutStructure(structureValue) ?? [];
+  return prizePoolAvailableToPlaces(
+    pool,
+    structure,
+    fieldSize,
+    bubbleProtection && !isSatellite,
+    buyInAmount
+  );
 }
 
 /** Two initials for an avatar that has no image. */

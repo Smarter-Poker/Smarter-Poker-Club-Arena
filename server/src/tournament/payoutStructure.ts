@@ -57,6 +57,12 @@ export interface PayoutSubject {
   spin_multiplier?: number | null;
 }
 
+function numericJsonScalar(value: unknown): number {
+  if (typeof value !== 'number' && typeof value !== 'string') return Number.NaN;
+  if (typeof value === 'string' && value.trim() === '') return Number.NaN;
+  return Number(value);
+}
+
 /** Is this a Spin? Either column may carry it, in either case. */
 export function isSpinTournament(t: PayoutSubject | null | undefined): boolean {
   if (!t) return false;
@@ -85,17 +91,28 @@ export function parsePayoutStructure(raw: unknown): PayoutPlace[] | null {
   if (!Array.isArray(value) || value.length === 0) return null;
 
   const places: PayoutPlace[] = [];
+  const seen = new Set<number>();
   for (const entry of value) {
-    const place = Number((entry as any)?.place);
-    const percentage = Number((entry as any)?.percentage);
-    if (!Number.isFinite(place) || place < 1) return null;
-    if (!Number.isFinite(percentage) || percentage < 0) return null;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const place = numericJsonScalar((entry as any)?.place);
+    const percentage = numericJsonScalar((entry as any)?.percentage);
+    const basisPoints = Math.round(percentage * 100);
+    if (!Number.isInteger(place) || place < 1 || place > 2_147_483_647) return null;
+    if (
+      !Number.isFinite(percentage) ||
+      percentage <= 0 ||
+      !Number.isSafeInteger(basisPoints) ||
+      basisPoints <= 0
+    ) {
+      return null;
+    }
+    if (seen.has(place)) continue;
+    seen.add(place);
     places.push({ place, percentage });
   }
-  if (!places.some((p) => p.place === 1)) return null;
-  if (places.reduce((s, p) => s + p.percentage, 0) <= 0) return null;
+  if (!seen.has(1)) return null;
 
-  return places;
+  return places.sort((a, b) => a.place - b.place);
 }
 
 /** The structure a Spin's multiplier implies, from the canonical spec. */

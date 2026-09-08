@@ -194,54 +194,10 @@ describe('3. one rate decides the fee, and every writer asks it', () => {
   });
 });
 
-describe('4. the payout sweep can actually reach the events it repairs', () => {
-  it('passes p_limit EXPLICITLY -- omitting it silently caps the scan at 50', () => {
-    expect(settler).toMatch(/p_limit:\s*limit/);
-    expect(settler).not.toMatch(/p_days:\s*1,/);
-  });
-
-  it('looks 30 days back on the deep pass, with a limit that covers the window', () => {
-    // Measured: 48,093 events in a 30-day window; 150,000 restores headroom.
-    expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_DAYS\s*=\s*30/);
-
-    // A FLOOR, NOT A LITERAL. This pinned `= 40000` exactly, the limit was
-    // deliberately raised to 150,000 (about 3x the population, with the
-    // reasoning written beside it in RakebackSettlerService), and the pin went
-    // red on a change that made the sweep strictly better - main published
-    // nothing for anyone until somebody noticed. Re-pinning the new literal
-    // just schedules the same outage for the next improvement.
-    //
-    // The bug this guards is a limit too SMALL to cover its window: a large one
-    // costs seconds, a small one silently shrinks the window back down and is
-    // the original defect in a new coat. Assert the direction that can hurt.
-    const deepLimit = Number(settler.match(/PAYOUT_SWEEP_DEEP_LIMIT\s*=\s*(\d+)/)?.[1] ?? NaN);
-    expect(deepLimit, 'the deep limit must be readable').not.toBeNaN();
-    expect(deepLimit).toBeGreaterThanOrEqual(40000);
-  });
-
-  it('does not pay the ~10s scan on all 48 cycles a day', () => {
-    // The narrow pass is what runs every cycle; the deep pass runs on the first
-    // cycle after boot and then about twice a day.
-    expect(settler).toMatch(/PAYOUT_SWEEP_RECENT_DAYS\s*=\s*2/);
-    expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_EVERY\s*=\s*24/);
-  });
-
-  it('every limit EXCEEDS the population of the window it is paired with', () => {
-    // The limit binds the SCAN, so a limit smaller than the window's population
-    // silently shrinks the window back down -- which is the original bug in a
-    // new coat. Measured 2026-08-27: 35,220 COMPLETED events in 30 days,
-    // ~1,174/day, so a 2-day window holds roughly 2,350.
-    const num = (name: string) =>
-      Number(settler.match(new RegExp(`${name}\\s*=\\s*(\\d+)`))?.[1] ?? NaN);
-    const perDay = 1174;
-    expect(num('PAYOUT_SWEEP_RECENT_LIMIT')).toBeGreaterThan(
-      num('PAYOUT_SWEEP_RECENT_DAYS') * perDay
-    );
-    expect(num('PAYOUT_SWEEP_DEEP_LIMIT')).toBeGreaterThan(num('PAYOUT_SWEEP_DEEP_DAYS') * perDay);
-  });
-
-  it('a failed deep pass does not cost the cycle its routine sweep', () => {
-    expect(settler).toMatch(/if \(deepOk\) return;/);
-    expect(settler).toMatch(/payoutSweepPass\(\s*RakebackSettlerService\.PAYOUT_SWEEP_RECENT_DAYS/);
+describe('4. payout repair does not survive the atomic cash cutover', () => {
+  it('the settler has no repair cycle, limits, or applying RPC call', () => {
+    expect(settler).not.toMatch(/runTournamentPayoutSweep|payoutSweepPass|PAYOUT_SWEEP_/);
+    expect(settler).not.toMatch(/fn_tournament_payout_sweep/);
+    expect(settler).not.toMatch(/p_apply:\s*true/);
   });
 });

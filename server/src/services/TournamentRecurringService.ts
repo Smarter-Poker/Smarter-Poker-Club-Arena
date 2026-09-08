@@ -1872,7 +1872,7 @@ const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
  *     finish path (isSatelliteFinish -> processSatelliteAwards) registers the winner into
  *     the target through the same money-correct path the scheduled satellite
  *     MTTs use, and pays whatever the pool holds beyond the seat to the
- *     runner-up as cash (satelliteAwardPlan);
+ *     single next finisher as the atomic settlement remainder;
  *   - the lobby classifies a two-seat game as heads-up whatever its variant
  *     (classifyTournament: a cap of 2 is an 'sng'), and lobbyEntries puts the
  *     SATELLITE badge on anything whose name says so. So it appears in the

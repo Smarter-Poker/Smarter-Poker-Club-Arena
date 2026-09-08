@@ -1208,6 +1208,28 @@ export abstract class ServerTableEngineBase {
    */
   protected maintenancePaused: boolean = false;
 
+  /**
+   * A terminal tournament settlement is a third, independent pause owner.
+   * It is armed synchronously before awaiting the current hand boundary, so
+   * no next hand can slip between a unanimous deal vote and the final stack
+   * snapshot used by the database settlement authority.
+   */
+  protected terminalCloseoutPaused: boolean = false;
+  private terminalCloseoutWaiters: Set<(parked: boolean) => void> = new Set();
+  /** A prepared but unstarted hand was discarded after the terminal owner arrived. */
+  private terminalCloseoutDiscardedPreparedHand: boolean = false;
+
+  /**
+   * Proof that every hand this engine started reached the durable stack
+   * authority. A failed write is latched for the lifetime of this engine: a
+   * later successful hand cannot make an earlier missing result trustworthy.
+   * Restarting is the recovery boundary because the replacement engine loads
+   * its source stacks from the database instead of the lost in-memory hand.
+   */
+  private terminalBoundaryPersistenceGeneration: number = 0;
+  private terminalBoundaryPendingGenerations: Set<number> = new Set();
+  private terminalBoundaryPersistenceFailed: boolean = false;
+
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
 
@@ -1217,7 +1239,7 @@ export abstract class ServerTableEngineBase {
 
   // 2026-09-06: the drain's view of the same fact, cleared by the promise
   // rather than by the next hand. See trackSettlementInFlight().
-  protected settlementInFlight: Promise<void> | null = null;
+  protected settlementInFlight: Set<Promise<void>> = new Set();
 
   // FIX 147: Bible V8 §6.3 — Periodic heartbeat check to detect disconnects mid-hand
   // Without this, disconnects are only detected between hands in dealingLoop().
@@ -2107,7 +2129,11 @@ export abstract class ServerTableEngineBase {
          * placed lower would be unreachable for exactly the tables that need
          * it most.
          */
-        if (this.maintenancePaused || (this.handForHandPaused && this.holdBeforeNextHand)) {
+        if (
+          this.terminalCloseoutPaused ||
+          this.maintenancePaused ||
+          (this.handForHandPaused && this.holdBeforeNextHand)
+        ) {
           this.setLoopPhase('parked_for_pause');
           await this.awaitPauseGate();
           if (!this.running) break;
@@ -2230,6 +2256,12 @@ export abstract class ServerTableEngineBase {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+    this.resolveTerminalCloseoutWaiters(false);
+    if (this.handForHandResolve) {
+      const releasePark = this.handForHandResolve;
+      this.handForHandResolve = null;
+      releasePark();
+    }
     // A stop before `waiting` is a "never got there"; after it, a no-op.
     this.settleReady(false);
 
@@ -2259,7 +2291,17 @@ export abstract class ServerTableEngineBase {
       // C15: flush any coalesced snapshot BEFORE dropping the controller — after
       // handController is null saveSnapshot() early-returns, so a pending write
       // would be silently lost on every shutdown.
-      await this.flushSnapshot();
+      try {
+        await this.flushSnapshot();
+      } catch (err) {
+        // A snapshot failure cannot strand the engine halfway through stop().
+        // Money persistence has its own tracked boundary; teardown must still
+        // cancel deadlines, dispose modules, and release current-engine ownership.
+        reportError(err, 'ServerTableEngine.snapshot_flush_during_stop_failed', {
+          tableId: this.tableId,
+          handNumber: this.handCount,
+        });
+      }
     }
     if (this.snapshotTimer) {
       clearTimeout(this.snapshotTimer);
@@ -2990,7 +3032,7 @@ export abstract class ServerTableEngineBase {
    * board_not_recorded detectors have been finding their work.
    */
   hasSettlementInFlight(): boolean {
-    return this.settlementInFlight !== null;
+    return (this.settlementInFlight?.size ?? 0) > 0;
   }
 
   /**
@@ -3007,18 +3049,37 @@ export abstract class ServerTableEngineBase {
    * this field, and a stale promise resolving afterwards must not clear a
    * newer one.
    */
-  protected trackSettlementInFlight(p: Promise<void> | null): void {
-    this.settlementInFlight = p;
-    if (!p) return;
+  protected trackSettlementInFlight(p: Promise<void>): void {
+    this.settlementInFlight ??= new Set<Promise<void>>();
+    if (this.settlementInFlight.has(p)) return;
+    this.settlementInFlight.add(p);
     const tracked = p;
-    const clear = (): void => {
-      if (this.settlementInFlight === tracked) this.settlementInFlight = null;
+    const clear = (failed: boolean): void => {
+      this.settlementInFlight.delete(tracked);
+      if (failed) this.terminalBoundaryPersistenceFailed = true;
+      this.resolveTerminalCloseoutIfParked();
     };
-    /* .then(clear).catch(clear) rather than .then(clear, clear): the two-arg
-       form handles rejection just as well, but noUnhandledRejections.law reads
-       `void ....then(` and asks for a visible .catch, and a reader scanning for
-       one deserves the same answer the linter gets. */
-    void tracked.then(clear).catch(clear);
+    void tracked.then(() => clear(false)).catch(() => clear(true));
+  }
+
+  /** Mark one actually-starting hand as requiring a durable stack result. */
+  protected beginTerminalBoundaryPersistence(): number {
+    this.terminalBoundaryPersistenceGeneration ??= 0;
+    this.terminalBoundaryPendingGenerations ??= new Set<number>();
+    const generation = ++this.terminalBoundaryPersistenceGeneration;
+    this.terminalBoundaryPendingGenerations.add(generation);
+    return generation;
+  }
+
+  /**
+   * Complete one hand's proof exactly once. Failure is permanent on this
+   * engine instance; otherwise an unrelated later hand could conceal it.
+   */
+  protected finishTerminalBoundaryPersistence(generation: number, persisted: boolean): void {
+    this.terminalBoundaryPendingGenerations ??= new Set<number>();
+    if (!this.terminalBoundaryPendingGenerations.delete(generation)) return;
+    if (!persisted) this.terminalBoundaryPersistenceFailed = true;
+    this.resolveTerminalCloseoutIfParked();
   }
   /**
    * Allocate this hand's GLOBAL hand number (2026-08-18).
@@ -3222,6 +3283,83 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * Park this engine at the next fully persisted hand boundary. The returned
+   * promise resolves true only while the dealing loop is inside its pause
+   * gate, the hand controller is gone, and no post-hand settlement remains.
+   */
+  parkForTerminalCloseout(maxWaitMs: number = 16 * 60 * 1000): Promise<boolean> {
+    if (!this.running) return Promise.resolve(false);
+    this.terminalCloseoutPaused = true;
+    if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+
+    return new Promise<boolean>((resolve) => {
+      let timer: NodeJS.Timeout | null = null;
+      const finish = (parked: boolean): void => {
+        if (!this.terminalCloseoutWaiters.delete(finish)) return;
+        if (timer) clearTimeout(timer);
+        resolve(parked);
+      };
+      this.terminalCloseoutWaiters.add(finish);
+      timer = setTimeout(() => finish(false), maxWaitMs);
+      timer.unref?.();
+      this.resolveTerminalCloseoutIfParked();
+    });
+  }
+
+  /** Release only the terminal owner after a refused or stale deal attempt. */
+  releaseTerminalCloseoutPause(): void {
+    this.terminalCloseoutPaused = false;
+    this.resolveTerminalCloseoutWaiters(false);
+    if (!this.handForHandPaused && !this.maintenancePaused) this.releasePauseGate();
+    if (this.terminalCloseoutDiscardedPreparedHand) {
+      // Preparation advances local button, orbit, and feature state. If the
+      // terminal request is refused, reload those values from their durable
+      // sources instead of dealing from a partly discarded hand.
+      this.terminalCloseoutDiscardedPreparedHand = false;
+      this.killForRestart('terminal_closeout_discarded_prepared_hand');
+    }
+  }
+
+  /**
+   * Last synchronous gate before an asynchronously prepared hand may start.
+   * Returns true when the terminal owner arrived during one of the preparation
+   * awaits and this engine discarded the unstarted controller.
+   */
+  protected discardPreparedHandForTerminalCloseout(): boolean {
+    if (!this.terminalCloseoutPaused) return false;
+    this.handController = null;
+    this.currentHandDealtStacks.clear();
+    this.terminalCloseoutDiscardedPreparedHand = true;
+    try {
+      this.handSpan?.end();
+    } catch {
+      /* telemetry cannot keep an unstarted hand alive */
+    }
+    this.handSpan = null;
+    this.shadowRecorder = null;
+    return true;
+  }
+
+  private resolveTerminalCloseoutWaiters(parked: boolean): void {
+    for (const waiter of [...this.terminalCloseoutWaiters]) waiter(parked);
+  }
+
+  private resolveTerminalCloseoutIfParked(): void {
+    this.terminalBoundaryPendingGenerations ??= new Set<number>();
+    if (
+      this.terminalCloseoutPaused &&
+      this.handForHandResolve !== null &&
+      this.handController === null &&
+      !this.hasSettlementInFlight()
+    ) {
+      const durableBoundary =
+        this.terminalBoundaryPendingGenerations.size === 0 &&
+        !this.terminalBoundaryPersistenceFailed;
+      this.resolveTerminalCloseoutWaiters(durableBoundary);
+    }
+  }
+
+  /**
    * Write this table's presence FSM to engine_presence_parked so the next
    * boot (loadPresenceFromPark in start()) continues it rather than
    * resetting it. Called when the break is announced and when the loop
@@ -3264,7 +3402,7 @@ export abstract class ServerTableEngineBase {
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
   resumeFromMaintenance(): void {
     this.maintenancePaused = false;
-    if (this.handForHandPaused) return; // hand-for-hand still owns the table
+    if (this.handForHandPaused || this.terminalCloseoutPaused) return;
     this.releasePauseGate();
   }
 
@@ -3351,7 +3489,7 @@ export abstract class ServerTableEngineBase {
     // during a break is immediately — and without this line it would deal a
     // hand inside the break and destroy the break's pause budget on the way
     // through. See the `maintenancePaused` field.
-    if (this.maintenancePaused) {
+    if (this.maintenancePaused || this.terminalCloseoutPaused) {
       this.pausedSinceMs = this.pausedSinceMs || Date.now();
       return;
     }
@@ -3411,7 +3549,11 @@ export abstract class ServerTableEngineBase {
    */
   protected async awaitPauseGate(): Promise<void> {
     // Either authority holds the gate; see the `maintenancePaused` field.
-    if ((!this.handForHandPaused && !this.maintenancePaused) || !this.running) return;
+    if (
+      (!this.handForHandPaused && !this.maintenancePaused && !this.terminalCloseoutPaused) ||
+      !this.running
+    )
+      return;
     // Bible V8 §3.1: Table FSM — running → paused. GUARDED: the FSM has no
     // waiting → paused edge, and this gate is now reachable from the idle
     // branches where the table sits in 'waiting'. An unguarded transition
@@ -3424,6 +3566,7 @@ export abstract class ServerTableEngineBase {
     );
     await new Promise<void>((resolve) => {
       this.handForHandResolve = resolve;
+      this.resolveTerminalCloseoutIfParked();
       /**
        * Safety timeout so a table can never wedge forever.
        *
@@ -3437,6 +3580,9 @@ export abstract class ServerTableEngineBase {
       const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
       const timer = setTimeout(() => {
         if (this.handForHandResolve === resolve) {
+          // A terminal closeout has its own bounded caller and must never let
+          // one safety timer deal a hand underneath a settlement decision.
+          if (this.terminalCloseoutPaused) return;
           console.warn(
             `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(
               maxWaitMs / 1000
@@ -3551,6 +3697,7 @@ export abstract class ServerTableEngineBase {
     return (
       this.handForHandPaused ||
       this.maintenancePaused ||
+      this.terminalCloseoutPaused ||
       this.dealHoldUntilMs > Date.now() ||
       this.tableFSM.state === 'paused'
     );
@@ -5000,7 +5147,11 @@ export abstract class ServerTableEngineBase {
   abstract rePushHoleCards(userId: string): Promise<void>;
 
   // ── Implemented by ServerTableEngineHandEvents (layer 7/8) ──
-  protected abstract handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void>;
+  protected abstract handleHandEvent(
+    event: HandEvent,
+    players: SeatedPlayer[],
+    persistenceGeneration?: number
+  ): Promise<void>;
 
   // ── Implemented by ServerTableEngine (layer 8/8) ──
   protected abstract broadcastCurrentState(): Promise<void>;

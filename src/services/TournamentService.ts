@@ -415,7 +415,7 @@ class TournamentService {
     const { data: clubTournaments, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target'
       )
       .eq('club_id', resolvedId)
       // Lobby fix 2026-08-15: this query had NO status filter, so every
@@ -542,7 +542,7 @@ class TournamentService {
           const { data: xmttData, error: xmttErr } = await supabase
             .from('tournaments')
             .select(
-              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target'
             )
             .eq('union_id', unionClub.union_id)
             // 2026-08-19: dropped `.eq('is_xmtt', true)`. Under the union
@@ -595,7 +595,7 @@ class TournamentService {
     const { data, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, prize_pool_finalized, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats, satellite_target_id, satellite_target'
       )
       .eq('id', tournamentId)
       .maybeSingle();
@@ -1248,7 +1248,7 @@ class TournamentService {
     if (!parsedBlinds.length) {
       throw new Error('Tournament has no blind structure defined');
     }
-    if (!parsedPayouts.length) {
+    if (!parsedPayouts?.length) {
       throw new Error('Tournament has no payout structure defined');
     }
     if ((tournament.starting_chips || 0) <= 0) {
@@ -2649,91 +2649,12 @@ class TournamentService {
      somewhere". Nothing called it, and for months nothing announced the
      winner at all. */
 
-  /**
-   * Finalize tournament (process payouts)
+  /*
+   * Tournament completion is intentionally absent from this browser service.
+   * The server-owned terminal database authority is the only component that
+   * may commit COMPLETED together with payouts, rake, table closure, released
+   * seats, and its immutable receipt.
    */
-  async finalizeTournament(tournamentId: string): Promise<{ success: boolean }> {
-    // Get tournament details
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) {
-      return { success: false };
-    }
-
-    // Update tournament status
-    const { error: statusError } = await supabase
-      .from('tournaments')
-      .update({
-        status: 'COMPLETED',
-        ended_at: new Date().toISOString(),
-      })
-      .eq('id', tournamentId);
-
-    if (statusError) {
-      reportError(statusError, 'TournamentService.Failed_to_mark_tournament_COMPLETED');
-      return { success: false };
-    }
-
-    // RAKE-AUDIT 2026-07-24: distribute_tournament_prizes call REMOVED.
-    // (a) The RPC does not exist in the live database — this call errored on
-    //     every finalize and the error was swallowed.
-    // (b) Prizes are SERVER-AUTHORITATIVE: the game server credits each
-    //     player's prize at elimination and the winner's prize when the
-    //     tournament completes (GameServer.eliminatePlayer / finish path).
-    //     If the RPC were ever created, this call would DOUBLE-PAY every
-    //     placement — so it must stay removed, not fixed.
-    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_prizes', tournamentId });
-
-    // Submit all placements to POY leaderboard system
-    try {
-      const { data: players, error: poyReadErr } = await supabase
-        .from('tournament_players')
-        .select('user_id, position, prize')
-        .eq('tournament_id', tournamentId)
-        .not('position', 'is', null)
-        .order('position', { ascending: true });
-
-      // ROUND 8 (2026-08-29): a failed read silently submitted nothing to the
-      // POY leaderboard - every placement in the event vanished from the race
-      // with no trace. Reported; the catch below only sees thrown errors.
-      if (poyReadErr) {
-        reportError(poyReadErr, 'TournamentService.poy_placements_read_failed', { tournamentId });
-      }
-      if (players && players.length > 0) {
-        // Dynamically import to avoid circular deps
-        const { POYService } = await import('./POYService');
-
-        // Map tournament variant to game_type for POY
-        const gameType =
-          tournament.variant === 'spin'
-            ? 'spin-n-go'
-            : tournament.variant === 'sng'
-              ? 'sit-n-go'
-              : tournament.variant === 'satellite'
-                ? 'satellite'
-                : 'tournament';
-
-        // Submit each player's result
-        for (const player of players) {
-          await POYService.submitTournamentResult({
-            player_id: player.user_id,
-            club_id: tournament.club_id,
-            game_type: gameType,
-            game_id: tournamentId,
-            placement: player.position,
-            total_players: tournament.current_players || players.length,
-            buy_in: tournament.buy_in_amount || 0,
-            winnings: player.prize || 0,
-          });
-        }
-      }
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_submit_to_POY');
-    }
-
-    masterBus.emit('TOURNAMENT_COMPLETE', { tournamentId, clubId: tournament.club_id });
-
-    return { success: true };
-  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // SPIN & GO

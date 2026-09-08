@@ -77,8 +77,8 @@ import {
   chipsCompact,
   initials,
   isPlayerOut,
+  lastPaidPlace,
   ordinal,
-  paidPlaceCount,
   type TournamentTabProps,
 } from './types';
 import type { TournamentEntry } from './types';
@@ -794,18 +794,18 @@ export default function RankingTab({
    * where the bubble is - and it renders nothing at all when no structure has
    * been published, rather than claiming the bubble is 0th.
    */
-  const paidPlaces = useMemo(
-    () => paidPlaceCount(tournament?.payout_structure),
+  const deepestPaidPlace = useMemo(
+    () => lastPaidPlace(tournament?.payout_structure),
     [tournament?.payout_structure]
   );
 
   const money = useMemo(() => {
-    if (paidPlaces <= 0 || living.length === 0) return null;
-    const toBust = living.length - paidPlaces;
+    if (deepestPaidPlace <= 0 || living.length === 0) return null;
+    const toBust = living.length - deepestPaidPlace;
     if (toBust <= 0) return { state: 'in' as const, toBust: 0 };
     if (toBust === 1) return { state: 'bubble' as const, toBust: 1 };
     return { state: 'away' as const, toBust };
-  }, [paidPlaces, living.length]);
+  }, [deepestPaidPlace, living.length]);
 
   // ── watch flow ──────────────────────────────────────────────────────────────
   const handlePick = useCallback((entry: TournamentEntry) => {
@@ -888,7 +888,7 @@ export default function RankingTab({
           </span>
           <span className="rk-money__value">
             {money.state === 'in'
-              ? `Top ${chips(paidPlaces)} Paid`
+              ? `Deepest Paid Place ${ordinal(deepestPaidPlace)}`
               : money.state === 'bubble'
                 ? 'One Player To Go'
                 : `${chips(money.toBust)} To Bust`}

@@ -1,38 +1,84 @@
+-- Stage-one cash cutover proof. The atomic terminal wrapper is the new engine
+-- authority, while the legacy reconciler and generic obligation payer remain
+-- available to an old process during the rolling deployment. This probe is
+-- deliberately self-aborting so it changes nothing.
 DO $probe$
-DECLARE src text; r jsonb; event uuid:='00000000-0000-4000-8000-000000000101'; player uuid:='00000000-0000-4000-8000-000000000102';
+DECLARE
+  v_terminal text;
+  v_reconciler text;
+  v_obligation text;
 BEGIN
-CREATE TEMP TABLE tournaments(id uuid,prize_pool numeric,payout_structure text,status text,variant text,tournament_type text,name text) ON COMMIT DROP;
-CREATE TEMP TABLE tournament_players(tournament_id uuid,user_id uuid,position integer,prize numeric) ON COMMIT DROP;
-CREATE TEMP TABLE tournament_payouts(tournament_id uuid,user_id uuid,position integer,amount numeric,source text,idempotency_key text) ON COMMIT DROP;
-CREATE TEMP TABLE financial_alerts(severity text,source text,message text,context jsonb,resolved boolean) ON COMMIT DROP;
-CREATE TEMP TABLE fixture_receipt(receipt jsonb) ON COMMIT DROP;
-EXECUTE $stub$CREATE FUNCTION pg_temp.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text) RETURNS jsonb LANGUAGE sql AS 'SELECT receipt FROM pg_temp.fixture_receipt'$stub$;
-SELECT pg_get_functiondef('public.fn_tournament_payout_reconcile(uuid,boolean)'::regprocedure) INTO src;
-EXECUTE replace(src,'public.','pg_temp.');
-INSERT INTO pg_temp.tournaments VALUES(event,100,'[{"place":1,"percentage":100}]','COMPLETED','freezeout','MTT','audit fixture');
-INSERT INTO pg_temp.tournament_players VALUES(event,player,1,0);
-INSERT INTO pg_temp.tournament_payouts VALUES(event,player,1,0,'structure','fixture');
-INSERT INTO pg_temp.fixture_receipt VALUES('{"ok":true,"paid":40,"already_paid":0,"amount_owed":100,"amount_paid":40,"remaining":60,"fully_settled":false}');
-r:=pg_temp.fn_tournament_payout_reconcile(event,true);
-IF (SELECT prize FROM pg_temp.tournament_players) <> 0 THEN RAISE EXCEPTION 'FAIL partial credit was displayed as full prize'; END IF;
-UPDATE pg_temp.fixture_receipt SET receipt='{"ok":true,"paid":99.99,"fully_settled":false}';
-r:=pg_temp.fn_tournament_payout_reconcile(event,true);
-IF (SELECT prize FROM pg_temp.tournament_players) <> 0 THEN RAISE EXCEPTION 'FAIL one cent short was displayed as full prize'; END IF;
-UPDATE pg_temp.fixture_receipt SET receipt='{"ok":false,"paid":0,"refused_reason":"escrow_short"}';
-r:=pg_temp.fn_tournament_payout_reconcile(event,true);
-IF (SELECT prize FROM pg_temp.tournament_players) <> 0 THEN RAISE EXCEPTION 'FAIL refused credit was displayed as full prize'; END IF;
-UPDATE pg_temp.fixture_receipt SET receipt='{"ok":true,"paid":100,"fully_settled":true}';
-r:=pg_temp.fn_tournament_payout_reconcile(event,true);
-IF (SELECT prize FROM pg_temp.tournament_players) <> 100 THEN RAISE EXCEPTION 'FAIL full credit was not displayed'; END IF;
-UPDATE pg_temp.tournament_players SET prize=0;
-UPDATE pg_temp.tournament_payouts SET amount=60;
-UPDATE pg_temp.fixture_receipt SET receipt='{"ok":true,"paid":40,"already_paid":60,"fully_settled":true}';
-r:=pg_temp.fn_tournament_payout_reconcile(event,true);
-IF (SELECT prize FROM pg_temp.tournament_players) <> 100 THEN RAISE EXCEPTION 'FAIL prior payment plus actual topup was not displayed'; END IF;
-UPDATE pg_temp.tournament_players SET prize=0;
-UPDATE pg_temp.tournament_payouts SET amount=100;
-UPDATE pg_temp.fixture_receipt SET receipt='{"ok":false,"paid":0}';
-r:=pg_temp.fn_tournament_payout_reconcile(event,true);
-IF (SELECT prize FROM pg_temp.tournament_players) <> 100 THEN RAISE EXCEPTION 'FAIL recorded full payment was not displayed'; END IF;
-RAISE EXCEPTION 'AUDIT_TEST_PASS: six actual reconciliation display cases; all rolled back';
-END $probe$;
+  IF to_regprocedure(
+       'public.fn_settle_tournament_places(uuid,uuid)') IS NULL
+     OR to_regprocedure(
+       'public.fn_settle_tournament_final_table_deal(uuid)') IS NULL
+     OR to_regprocedure(
+       'public.fn_complete_tournament_terminal(uuid,uuid,text)') IS NULL
+     OR to_regprocedure(
+       'public.fn_resolve_tournament_terminal_outcome(uuid,uuid,text)') IS NULL
+     OR to_regclass('public.tournament_terminal_settlements') IS NULL THEN
+    RAISE EXCEPTION 'FAIL a stage-one atomic cash authority or receipt is missing';
+  END IF;
+
+  SELECT prosrc INTO v_terminal
+    FROM pg_proc
+   WHERE oid =
+     'public.fn_complete_tournament_terminal(uuid,uuid,text)'::regprocedure;
+  IF v_terminal !~ 'IF v_mode = ''places'' THEN'
+     OR v_terminal !~ 'public.fn_settle_tournament_places\('
+     OR v_terminal !~ 'public.fn_settle_tournament_final_table_deal\('
+     OR v_terminal !~ 'INSERT INTO public.tournament_terminal_settlements'
+     OR v_terminal !~ 'SET status = ''COMPLETED'''
+     OR v_terminal ~* 'EXCEPTION\s+WHEN' THEN
+    RAISE EXCEPTION 'FAIL terminal wrapper lost its single atomic sequence';
+  END IF;
+
+  IF NOT has_function_privilege(
+       'service_role',
+       'public.fn_complete_tournament_terminal(uuid,uuid,text)', 'EXECUTE')
+     OR has_function_privilege(
+       'authenticated',
+       'public.fn_complete_tournament_terminal(uuid,uuid,text)', 'EXECUTE')
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_settle_tournament_places(uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege(
+       'service_role',
+       'public.fn_settle_tournament_final_table_deal(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL terminal wrapper or component authority ACLs are wrong';
+  END IF;
+
+  IF to_regprocedure(
+       'public.fn_tournament_payout_reconcile(uuid,boolean)') IS NULL
+     OR to_regprocedure(
+       'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)')
+          IS NULL
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.fn_tournament_payout_reconcile(uuid,boolean)', 'EXECUTE')
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)',
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'FAIL rolling cash compatibility was retired before engine cutover';
+  END IF;
+
+  SELECT prosrc INTO v_reconciler
+    FROM pg_proc
+   WHERE oid =
+     'public.fn_tournament_payout_reconcile(uuid,boolean)'::regprocedure;
+  SELECT prosrc INTO v_obligation
+    FROM pg_proc
+   WHERE oid =
+     'public.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text,uuid)'::regprocedure;
+  IF v_reconciler !~ 'public.fn_settle_tournament_obligation\('
+     OR v_reconciler ~* '(PERFORM|SELECT)\s+(public\.)?credit_player_wallet\s*\('
+     OR v_obligation !~ 'public.fn_credit_and_log\('
+     OR v_obligation ~* '(PERFORM|SELECT)\s+(public\.)?credit_player_wallet\s*\(' THEN
+    RAISE EXCEPTION 'FAIL a rolling compatibility path can split credit from evidence';
+  END IF;
+
+  RAISE EXCEPTION
+    'AUDIT_TEST_PASS: stage-one atomic cash authority and rolling compatibility pass; all probe work rolled back';
+END;
+$probe$;

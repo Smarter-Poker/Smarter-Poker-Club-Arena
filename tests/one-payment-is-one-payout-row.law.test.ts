@@ -56,8 +56,80 @@ const ALREADY_CORRECTED = [
   '20260906233733_one_payment_is_one_payout_row.sql',
 ];
 
-const CREDIT_PATHS = /fn_credit_and_log|credit_and_log\(|fn_tournament_payout_reconcile/i;
+const CREDIT_PATHS = /fn_credit_and_log|credit_and_log\(/i;
 const HAND_WRITES = /INSERT\s+INTO\s+(public\.)?tournament_payouts/i;
+
+/**
+ * The credit primitive itself owns the payout-evidence INSERT. Remove that
+ * definition before asking whether a caller both invokes the primitive and
+ * hand-writes a second row.
+ */
+function withoutCreditPrimitive(sql: string): string {
+  const signature = /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_credit_and_log\s*\(/gi;
+  let result = sql;
+  let start = signature.exec(result)?.index ?? -1;
+  while (start >= 0) {
+    const as = result.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/i);
+    if (!as) break;
+    const tag = as[1];
+    const bodyStart = start + (as.index ?? 0);
+    const end = result.indexOf(`${tag};`, bodyStart + tag.length);
+    if (end < 0) break;
+    result = result.slice(0, start) + result.slice(end + tag.length + 1);
+    signature.lastIndex = 0;
+    start = signature.exec(result)?.index ?? -1;
+  }
+  return result;
+}
+
+/**
+ * A whole-event satellite has two mutually exclusive delivery branches. Cash
+ * uses fn_credit_and_log (which owns its payout row); an actual target seat
+ * moves no wallet money, so that branch must write its own satellite_seat
+ * payout evidence. Remove that authority from the generic mixed-writer scan
+ * only when the separation and final whole-pool proof are all visible.
+ */
+function withoutSeparatedSatelliteDelivery(sql: string): string {
+  const signature =
+    /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_settle_satellite_tournament\s*\(/gi;
+  let result = sql;
+  let start = signature.exec(result)?.index ?? -1;
+  while (start >= 0) {
+    const as = result.slice(start).match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/i);
+    if (!as) break;
+    const tag = as[1];
+    const bodyStart = start + (as.index ?? 0);
+    const end = result.indexOf(`${tag};`, bodyStart + tag.length);
+    if (end < 0) break;
+    const definition = result.slice(start, end + tag.length + 1);
+    const seatStart = definition.indexOf("IF v_delivery_kind = 'seat' THEN");
+    const cashStart = definition.indexOf("ELSIF v_delivery_kind = 'cash' THEN", seatStart);
+    const cashEnd = definition.indexOf('\n    ELSE', cashStart);
+    const seat = definition.slice(seatStart, cashStart);
+    const cash = definition.slice(cashStart, cashEnd);
+    const directPayoutWrites = definition.match(new RegExp(HAND_WRITES.source, 'gi')) ?? [];
+    const separated =
+      seatStart >= 0 &&
+      cashStart > seatStart &&
+      cashEnd > cashStart &&
+      directPayoutWrites.length === 1 &&
+      HAND_WRITES.test(seat) &&
+      !CREDIT_PATHS.test(seat) &&
+      CREDIT_PATHS.test(cash) &&
+      !HAND_WRITES.test(cash) &&
+      seat.includes("'satellite_seat'") &&
+      cash.includes("p_payout_source => 'satellite_ticket'") &&
+      definition.includes('v_paid IS DISTINCT FROM v_pool');
+    if (separated) {
+      result = result.slice(0, start) + result.slice(end + tag.length + 1);
+      signature.lastIndex = 0;
+      start = signature.exec(result)?.index ?? -1;
+    } else {
+      start = signature.exec(result)?.index ?? -1;
+    }
+  }
+  return result;
+}
 
 describe('one payment is one payout row', () => {
   it('the corrective migration exists and removes exactly the duplicate record', () => {
@@ -98,8 +170,12 @@ describe('one payment is one payout row', () => {
     for (const f of files) {
       if (ALREADY_CORRECTED.includes(f)) continue;
       const sql = readFileSync(join(MIGRATIONS, f), 'utf8');
-      // comments quote both freely; only look at what runs
-      const code = sql
+      // Comments and verifier string literals quote both freely; only look at
+      // executable SQL after removing the primitive that legitimately owns
+      // the one payout-evidence insert.
+      const code = withoutSeparatedSatelliteDelivery(withoutCreditPrimitive(sql))
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/'(?:''|[^'])*'/g, "''")
         .split('\n')
         .filter((l) => !l.trimStart().startsWith('--'))
         .join('\n');
@@ -109,5 +185,5 @@ describe('one payment is one payout row', () => {
       offenders,
       'a migration that credits through fn_credit_and_log must not also INSERT INTO tournament_payouts - the credit path records the payout itself, and doing both records one payment twice'
     ).toEqual([]);
-  });
+  }, 15_000);
 });

@@ -1,28 +1,17 @@
 /**
- * D5 — A SPIN MULTIPLIER IS EITHER DRAWN OR UNKNOWN. IT IS NEVER INVENTED.
+ * A SPIN DRAW, RESERVE MOVE, JOURNAL, ESCROW FUNDING AND ROW STAMP ARE ONE
+ * DATABASE EVENT. The former two-RPC engine path released the reserve lock
+ * after choosing a multiplier, then tried to settle and stamp later. A crash
+ * or concurrent draw could leave a truthful number with missing money, or
+ * money with a missing row. The combined authority returns a complete receipt
+ * and an unreadable result remains UNKNOWN; it is never invented locally.
  *
- * Defect (found 2026-08-25, in TournamentManagerBase.start()):
- *
- *   const { data: draw } = await supabase.rpc('fn_spin_draw_multiplier', {...});
- *   ...
- *   } catch { /* handled below *\/ }
- *   if (!spinMultiplier || spinMultiplier <= 0) {
- *     spinMultiplier = SPIN_TIERS[0].multiplier;   // <- the lie
- *
- * The RPC's `error` was discarded and the catch was empty, so any failure to
- * READ the draw silently resolved the player DOWN to the lowest tier. Three
- * players then watched a genuine-looking wheel chase five laps and land on a
- * 2x that the database had never told anyone it drew, and fn_spin_settle_game
- * moved real money against that number. This is the same house rule already
- * enforced on the elimination count ('remaining_count_unavailable' in
- * TournamentManagerEliminations): an unreadable result is UNKNOWN, never a
- * value.
- *
- * The second guard covers the row write. `spin_multiplier` NULL means every
- * client gate for the wheel (all of which require `> 0`) fails forever, so a
- * write that never lands does not merely lose a ledger row — it removes the
- * feature from that game for everyone. It must self-heal, and only ever into
- * an empty column.
+ * The second guard covers settlement and the row write. A failed settlement
+ * or an unprovable `spin_multiplier` is a hard pre-deal stop. The old code let
+ * the game run and trusted a timer/sweep to fill the financial or row gap
+ * later; that made a repair process part of the money path. The next ordinary
+ * start attempt adopts the immutable draw from the reserve ledger and retries
+ * the same write before dealing, so no background reconciler is needed.
  *
  * These are source guards, in the style of TournamentFixes.guard.test.ts:
  * start() is a ~600-line method against live Supabase and cannot be exercised
@@ -45,64 +34,53 @@ const BASE = fs.readFileSync(
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const CODE = code(BASE);
 
-describe('a spin draw that could not be read is UNKNOWN, not the lowest tier', () => {
+describe('a Spin has one atomic service money door', () => {
   it('never assigns a multiplier from the tier table as a fallback', () => {
     // The exact line that made the wheel lie: `spinMultiplier = SPIN_TIERS[0].multiplier`.
     expect(CODE).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
   });
 
-  it('reads the RPC error instead of destructuring only `data`', () => {
-    const call = CODE.slice(CODE.indexOf('fn_spin_draw_multiplier') - 400);
-    expect(call).toMatch(/error:\s*drawErr/);
-    expect(CODE).toMatch(/if\s*\(\s*drawErr\s*\)\s*throw/);
+  it('calls only the combined draw-and-settle RPC', () => {
+    expect(CODE).toMatch(/supabase\.rpc\('fn_spin_draw_and_settle'/);
+    expect(CODE).not.toMatch(/supabase\.rpc\('fn_spin_draw_multiplier'/);
+    expect(CODE).not.toMatch(/supabase\.rpc\('fn_spin_settle_game'/);
   });
 
-  it('has no empty catch around the draw', () => {
-    // `catch { }` / `catch (e) { }` with nothing in it is what swallowed it.
-    const drawBlock = CODE.slice(
-      CODE.indexOf('fn_spin_draw_multiplier'),
-      CODE.indexOf('spin_draw_unavailable')
-    );
-    expect(drawBlock).not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
+  it('reads the RPC error and validates the whole receipt', () => {
+    const call = CODE.slice(CODE.indexOf('fn_spin_draw_and_settle') - 300);
+    expect(call).toMatch(/\{ data, error \}/);
+    expect(call).toMatch(/if \(error\) throw/);
+    expect(call).toMatch(/parseSpinSettlementReceipt\(data/);
   });
 
-  it('stands the start down rather than resolving to a value', () => {
-    expect(CODE).toMatch(/spin_draw_unavailable/);
-    const failure = sliceEnclosingBlock(CODE, 'spin_draw_unavailable');
-    // The stand-down pattern the short-field and unpaid-seat gates already use.
+  it('stands the start down before reveal or deal when receipt proof fails', () => {
+    const failure = sliceEnclosingBlock(CODE, 'if (!atomicReceipt)');
+    expect(failure).toMatch(/spin_atomic_settlement_unavailable/);
     expect(failure).toMatch(/this\.running\s*=\s*false/);
-    // And the old error tag, which named a state that no longer exists, is gone.
-    expect(CODE).not.toMatch(/spin_draw_rpc_down/);
-  });
-
-  it('rejects a response it cannot read a positive multiplier out of', () => {
-    expect(CODE).toMatch(/no usable multiplier/);
+    expect(failure).toMatch(/return/);
   });
 });
 
-describe('the drawn multiplier reaches the row, or keeps trying', () => {
-  it('schedules a bounded background repair when the write never lands', () => {
-    expect(CODE).toMatch(/scheduleSpinRowRepair/);
-    expect(CODE).toMatch(/spin_row_repair_exhausted/);
-  });
-
-  it('the repair only ever fills an empty column', () => {
-    const repair = CODE.slice(CODE.indexOf('private scheduleSpinRowRepair'));
-    expect(repair).toMatch(/spin_multiplier\.is\.null,spin_multiplier\.eq\.0/);
-  });
-
-  it('the repair confirms by re-reading, not by the absence of an error', () => {
-    const repair = CODE.slice(
-      CODE.indexOf('private scheduleSpinRowRepair'),
-      CODE.indexOf('spin_row_repair_exhausted')
+describe('settlement and the drawn row are hard pre-deal gates', () => {
+  it('reads every immutable core field back', () => {
+    expect(CODE).toMatch(
+      /\.select\('id, spin_multiplier, prize_pool, spin_locked_tiers'\)\s*\.maybeSingle\(\)/
     );
-    expect(repair).toMatch(/Number\(after\?\.spin_multiplier\)\s*>\s*0/);
+    expect(CODE).toMatch(/writtenRow\?\.prize_pool/);
+    expect(CODE).toMatch(/lockedMatches/);
   });
 
-  it('the repair re-applies the patch this start drew, not a fresh draw', () => {
-    const repair = CODE.slice(CODE.indexOf('private scheduleSpinRowRepair'));
-    const body = repair.slice(0, repair.indexOf('spin_row_repair_exhausted'));
-    expect(body).not.toMatch(/fn_spin_draw_multiplier/);
+  it('stands down when the row cannot be persisted and verified', () => {
+    const failure = sliceEnclosingBlock(CODE, 'if (!spinRowWritten)');
+    expect(failure).toMatch(/this\.running\s*=\s*false/);
+    expect(failure).toMatch(/return/);
+  });
+
+  it('has no background row watcher or sweep dependency', () => {
+    expect(CODE).not.toMatch(/scheduleSpinRowRepair/);
+    expect(CODE).not.toMatch(/spin_row_repair_exhausted/);
+    expect(CODE).not.toMatch(/fn_spin_sweep_unbooked/);
+    expect(CODE).not.toMatch(/spin_settle_failed/);
   });
 });
 

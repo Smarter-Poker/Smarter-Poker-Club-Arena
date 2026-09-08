@@ -195,7 +195,7 @@ describe('LAW 3: a conservation refusal from the database is never written aroun
     expect(after).toMatch(/'DB\.settle_hand_stacks_conservation_refused'/);
     expect(
       after.slice(0, after.indexOf("'DB.settle_hand_stacks_conservation_refused'") + 900)
-    ).toMatch(/return;/);
+    ).toMatch(/return false;/);
     expect(fn).not.toMatch(/'DB\.settle_hand_stacks_fallback'/);
     expect(fn).not.toMatch(/\.update\(\s*\{\s*stack/);
   });

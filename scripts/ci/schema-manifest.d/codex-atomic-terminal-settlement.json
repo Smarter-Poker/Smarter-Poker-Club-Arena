@@ -1,0 +1,26 @@
+{
+  "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
+  "_comment": "One immutable non-satellite terminal receipt commits exactly one cash authority, funded bounty and mystery closure, durable successful rake attribution, exact zero escrow, exact table and seat closure, and COMPLETED lifecycle. A deferred invariant rejects receiptless completion, an irreversible table marker blocks terminal-state regression, and a serialized resolver distinguishes committed receipts from proven misses after a lost response.",
+  "tables": ["tournament_terminal_settlement_cutover", "tournament_terminal_settlements"],
+  "functions": [
+    "fn_ca_mystery_bounty_completion_evidence",
+    "fn_ca_settle_hand_stacks_absolute",
+    "fn_ca_tournament_terminal_receipt",
+    "fn_collect_bounty",
+    "fn_complete_tournament_terminal",
+    "fn_finalize_bounty_pool",
+    "fn_mystery_bounty_pay",
+    "fn_mystery_bounty_reserve",
+    "fn_mystery_bounty_settle",
+    "fn_non_satellite_completed_requires_terminal_receipt",
+    "fn_resolve_tournament_terminal_outcome",
+    "fn_settle_tournament_final_table_deal",
+    "fn_settle_tournament_places",
+    "fn_settle_tournament_rake",
+    "fn_tournament_table_terminal_close_is_irreversible",
+    "fn_tournament_terminal_receipts_are_append_only"
+  ],
+  "columns": {
+    "tables": ["terminal_closed_at"]
+  }
+}

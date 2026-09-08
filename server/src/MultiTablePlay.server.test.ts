@@ -366,10 +366,10 @@ describe('satellite award current_players write', () => {
     expect(oldWrite(snapshot, 2)).toBe(12); // CONTROL: erases the 3 humans
   });
 
-  it('shipped source pin: the satellite path recounts and the stale formula is gone', () => {
+  it('shipped source pin: the atomic database authority owns target registration counts', () => {
     const src = readFileSync(join(process.cwd(), 'src/tournament/TournamentManager.ts'), 'utf8');
-    expect(src).toContain("{ count: 'exact', head: true }");
-    expect(src).toContain('current_players: targetCount');
+    expect(src).toContain("rpc('fn_settle_satellite_tournament'");
+    expect(src).toContain('verifySatelliteSettlementReceipt(');
     // Strip comments first — the fix documents the old formula in prose, and a
     // naive substring check would match its own documentation.
     const code = src
@@ -380,5 +380,6 @@ describe('satellite award current_players write', () => {
       })
       .join('\n');
     expect(code).not.toContain('Number(target.current_players || 0) + awardCount');
+    expect(code).not.toMatch(/\.from\('tournaments'\)[\s\S]{0,240}?current_players:/);
   });
 });

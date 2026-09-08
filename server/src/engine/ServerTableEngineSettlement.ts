@@ -29,7 +29,6 @@ import { maybeArmed } from '../services/supabase/bbjDrillRegistry.js';
 import {
   loadTable,
   syncStacks,
-  syncTournamentChips,
   updateTableStatus,
   autoRebuyHorse,
   markSeatAsLeft,
@@ -408,9 +407,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    */
   protected async handleHandCompleteEvent(
     event: HandEvent,
-    players: SeatedPlayer[]
+    players: SeatedPlayer[],
+    persistenceGeneration: number
   ): Promise<void> {
-    const wholeSettlement = this.settleCompletedHand(event, players);
+    const wholeSettlement = this.settleCompletedHand(event, players, persistenceGeneration);
+    // Track the unguarded promise too. The gameplay barrier intentionally
+    // resolves after reporting a failure so later hands are not wedged, but a
+    // terminal closeout must retain the fact that this hand was not proven.
+    this.trackSettlementInFlight(wholeSettlement);
     /* CHAIN, NEVER OVERWRITE (chip standard 2026-09-04). settleCompletedHand
        runs synchronously to completion on the common path - its only awaits
        are the insurance-shortfall alerts - so by the time it returns it has
@@ -435,7 +439,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     return wholeSettlement;
   }
 
-  private async settleCompletedHand(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
+  private async settleCompletedHand(
+    event: HandEvent,
+    players: SeatedPlayer[],
+    persistenceGeneration: number
+  ): Promise<void> {
     // ═══════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE — 15-step mandatory order
     //
@@ -1245,7 +1253,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // this method and every post-hand task are done reading this hand's
     // capture fields.
     const priorBarrier = this.postHandTasksPromise;
-    const postTasks = this.postHandTasks(players).catch((err) =>
+    const rawPostTasks = this.postHandTasks(players, persistenceGeneration);
+    this.trackSettlementInFlight(rawPostTasks);
+    const postTasks = rawPostTasks.catch((err) =>
       reportError(err, 'ServerTableEnginethistableId.Posthand_error')
     );
     this.postHandTasksPromise = priorBarrier
@@ -1355,7 +1365,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
   // POST-HAND TASKS
   // ═════════════════════════════════════════════════════════════════════════════
 
-  protected async postHandTasks(players: SeatedPlayer[]): Promise<void> {
+  protected async postHandTasks(
+    players: SeatedPlayer[],
+    persistenceGeneration: number
+  ): Promise<void> {
     /* ═══ THIS HAND'S RECORD IS CAPTURED BEFORE THE FIRST AWAIT (2026-08-31)
        Everything below used to read the live `this.currentHand*` fields and
        `this.handCount` between awaited database calls. Those fields belong to
@@ -1428,16 +1441,23 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           handNumber: snap.handNumber,
         });
         if (moneyCritical) {
-          await raiseFinancialAlert(
-            'critical',
-            `postHandTasks.${stepName}_failed`,
-            `Post-hand step ${stepName} threw for hand #${snap.handNumber}; later steps continued`,
-            {
-              table_id: this.tableId,
-              hand_number: snap.handNumber,
-              error: err instanceof Error ? err.message : String(err),
-            }
-          );
+          try {
+            await raiseFinancialAlert(
+              'critical',
+              `postHandTasks.${stepName}_failed`,
+              `Post-hand step ${stepName} threw for hand #${snap.handNumber}; later steps continued`,
+              {
+                table_id: this.tableId,
+                hand_number: snap.handNumber,
+                error: err instanceof Error ? err.message : String(err),
+              }
+            );
+          } catch (alertErr) {
+            reportError(alertErr, `postHandTasks.alert_failed.${stepName}`, {
+              tableId: this.tableId,
+              handNumber: snap.handNumber,
+            });
+          }
         }
       }
     };
@@ -1485,49 +1505,65 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     }
 
-    await runStep('sync_stacks', true, async () => {
-      // SETTLEMENT STEP 8: Persist results to database (atomic transaction)
-      if (!tournamentHandConserved) return;
-      await syncStacks(
-        this.tableId,
-        players.map((p) => ({
-          user_id: p.user_id,
-          stack: p.stack,
-          // Chip standard 2026-09-04: the stack this seat was dealt from, so
-          // the database applies the hand's DIFFERENCE to the row instead of
-          // overwriting whatever landed on it meanwhile. A seat not in the
-          // dealt map was not in this hand: delta 0.
-          stack_before: snap.dealtStacks.get(p.user_id) ?? p.stack,
-          // VIP time banks 2026-08-18: HandController players never carried
-          // time_bank_uses_remaining (always undefined), so this column sat
-          // at its insert default (4) on every one of 22,805 seat rows -
-          // the persist had NEVER once written. Ask the engine, the actual
-          // source of truth.
-          time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
-          time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
-        })),
-        // ZERO-DRIFT phase 5: identify the hand so the write is atomic and
-        // idempotent (fn_ca_settle_hand_stacks_absolute). The BBJ re-sync
-        // later in this file deliberately does NOT pass a hand number - it is
-        // a correction pass over the same hand and must not be swallowed by
-        // the idempotency replay.
-        // Read from the snapshot, never the live field (stale-continuation
-        // law): dealHand reassigns handCount while a stalled settlement is
-        // still writing.
-        snap.handNumber,
-        // Chip standard 2026-09-04: rake and BBJ drop are DECLARED, so the
-        // database asserts sum(delta) = -rake - bbj on every cash hand. A
-        // tournament hand declares 0 and 0 and the same identity holds.
-        {
-          rake: this.isTournamentTable() ? 0 : snap.rake,
-          bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
-          // Insurance payouts and premiums moved chips between the bank and
-          // these seats before this write; declared, or the identity refuses
-          // every insured hand.
-          inflow: snap.insuranceNet,
-        }
+    let stackPersistenceSucceeded = false;
+    try {
+      await runStep('sync_stacks', true, async () => {
+        // SETTLEMENT STEP 8: Persist results to database (atomic transaction)
+        if (!tournamentHandConserved) return;
+        stackPersistenceSucceeded = await syncStacks(
+          this.tableId,
+          players.map((p) => ({
+            user_id: p.user_id,
+            stack: p.stack,
+            // Chip standard 2026-09-04: the stack this seat was dealt from, so
+            // the database applies the hand's DIFFERENCE to the row instead of
+            // overwriting whatever landed on it meanwhile. A seat not in the
+            // dealt map was not in this hand: delta 0.
+            stack_before: snap.dealtStacks.get(p.user_id) ?? p.stack,
+            // VIP time banks 2026-08-18: HandController players never carried
+            // time_bank_uses_remaining (always undefined), so this column sat
+            // at its insert default (4) on every one of 22,805 seat rows -
+            // the persist had NEVER once written. Ask the engine, the actual
+            // source of truth.
+            time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
+            time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
+          })),
+          // ZERO-DRIFT phase 5: identify the hand so the write is atomic and
+          // idempotent (fn_ca_settle_hand_stacks_absolute). The BBJ re-sync
+          // later in this file deliberately does NOT pass a hand number - it is
+          // a correction pass over the same hand and must not be swallowed by
+          // the idempotency replay.
+          // Read from the snapshot, never the live field (stale-continuation
+          // law): dealHand reassigns handCount while a stalled settlement is
+          // still writing.
+          snap.handNumber,
+          // Chip standard 2026-09-04: rake and BBJ drop are DECLARED, so the
+          // database asserts sum(delta) = -rake - bbj on every cash hand. A
+          // tournament hand declares 0 and 0 and the same identity holds.
+          {
+            rake: this.isTournamentTable() ? 0 : snap.rake,
+            bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
+            // Insurance payouts and premiums moved chips between the bank and
+            // these seats before this write; declared, or the identity refuses
+            // every insured hand.
+            inflow: snap.insuranceNet,
+            expectedTournamentId: this.isTournamentTable()
+              ? (this.tableInfo?.tournament_id ?? null)
+              : null,
+          }
+        );
+      });
+    } finally {
+      this.finishTerminalBoundaryPersistence(
+        persistenceGeneration,
+        tournamentHandConserved && stackPersistenceSucceeded
       );
-    });
+    }
+    if (this.isTournamentTable() && !stackPersistenceSucceeded) {
+      // The standings mirror is the elimination source. A tournament cannot
+      // deal another hand after that same-transaction proof was refused.
+      this.killForRestart('tournament_stack_persistence_unproven');
+    }
 
     // ─── ROUND 38 + 43 FIX: REORDERED — hand_history FIRST, then rake/BBJ ───
     // Round 38: rake_records.hand_id needed the v_handHistoryId.
@@ -2488,17 +2524,6 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             );
           }
         }
-      }
-    });
-
-    // SETTLEMENT STEP 8d: Tournament chip sync
-    await runStep('tournament_chip_sync', true, async () => {
-      // Lane F: a hand that did not conserve persisted nothing above, and
-      // mirroring table_seats into tournament_players is a no-op then. Kept
-      // explicit so the refusal cannot be undone by a later step.
-      if (!tournamentHandConserved) return;
-      if (this.isTournamentTable() && this.tableInfo?.tournament_id) {
-        await syncTournamentChips(this.tableId, this.tableInfo.tournament_id);
       }
     });
 

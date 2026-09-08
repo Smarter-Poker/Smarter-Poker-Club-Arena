@@ -298,51 +298,66 @@ stopped depending on a leg that could be absent.
 
 ---
 
-### 10. `unclassified` payouts — 32 rows, median 105 days late
+### 10. `unclassified` payouts - root fix implemented
 
 **What it is.** Payout rows whose `source` nobody set. A money row with no
-provenance is unauditable by definition.
+provenance is unauditable by definition. The 32-row, 161.30-chip cohort was
+traced to one exact cause: the 2026-09-01 vacant-place repair used keys shaped
+as `tourney:<id>:vacantplace:<user>:<place>`, but the shared payout classifier
+did not know that grammar and the credit funnel substituted `unclassified`.
 
-**The hard fix.** `tournament_payouts.source` becomes `NOT NULL` with a
-`CHECK` against the known list. A path that cannot name itself cannot pay.
+**The hard fix.**
+`every_tournament_payout_names_its_source` removes the legacy `payout` default,
+keeps `source NOT NULL`, adds a validated `CHECK` against the complete source
+vocabulary, and makes `fn_credit_and_log` reject an unresolved or unknown
+source before the wallet move. The shared classifier now maps the exact
+`vacantplace` grammar to `finish_position_correction` and its encoded place.
+
+The same migration corrects only the 32 exact historical rows. A digest pins
+every payout, recipient, event, amount, key, timestamp and repair fact; all 32
+must also match their wallet idempotency claim. Each metadata-only change gets
+an immutable receipt in `tournament_payout_source_corrections`. The cohort's
+32 wallet claims still total 161.30 before and after, so no chips move.
+
+**Closure proof.** Zero rows may remain as `unclassified`; an omitted source
+fails `NOT NULL`, an unknown source fails the closed `CHECK`, and the atomic
+credit door refuses both cases before crediting. There is no watcher,
+reconciler, fallback label or scheduled repair for this rule.
 
 ---
 
-### 11. Bubble protection is promised out of a pool already promised in full — **Dan's call**
+### 11. Bubble protection is reserved from the prize pool - root fix implemented
 
-**Not a band-aid. A promise the platform makes twice**, and the reason 360.00
-of the 432.17 currently owed is owed.
+Dan decided that Bubble Protection is funded by the tournament prize pool,
+never the house bank. The old path paid the Bubble one buy-in but still priced
+the normal ladder against 100% of the same pool. That double allocation then
+appeared as a false winner shortfall.
 
 Both _Sunday $200 Deep Stack_ events on 2026-09-06/07:
 
-| event      | prize pool |  paid out | of which bubble protection | winner still owed |
-| ---------- | ---------: | --------: | -------------------------: | ----------------: |
-| `a449e853` |  28,640.00 | 28,640.00 |                     180.00 |            180.00 |
-| `f7412940` |  52,920.00 | 52,920.00 |                     180.00 |            180.00 |
+| event      | prize pool |  paid out | of which Bubble Protection | stale obligation tail |
+| ---------- | ---------: | --------: | -------------------------: | --------------------: |
+| `a449e853` |  28,640.00 | 28,640.00 |                     180.00 |                180.00 |
+| `f7412940` |  52,920.00 | 52,920.00 |                     180.00 |                180.00 |
 
-The payout structure allocates **100% of the pool**. Bubble protection then pays
-the first player out of the money **one buy-in (180.00) from that same pool**.
-The arithmetic cannot close, and the shortfall always lands on the last place
-paid — which is always **first place**. Two winners, 180.00 each, twice in one
-weekend.
+**The hard fix.** The database now reserves exactly one base buy-in before it
+prices the percentage ladder. Bubble plus all paid places therefore equal the
+locked prize pool exactly. The Bubble payer can spend only that pool escrow;
+there is no club-wallet or house-bank fallback. Satellites remain separate:
+their complete tickets are paid first and every sub-ticket residual chip goes
+to exactly one next finisher.
 
-**This is not fixable by a job and no job should try.** It is a pricing
-decision, and 10.9 says pricing is Dan's:
+The two production events above had already paid every chip in their pools,
+including the Bubble buy-in. Their 180-chip rows were stale allocation
+metadata, not unpaid money. The six-event evidence migration records each
+exact full-pool proof and retires only those named obligation tails without a
+wallet, payout, escrow, ledger, rake, or bank write.
 
-- **(a) the house funds bubble protection.** It is a marketing promise; the
-  house pays for it. Players' 100% stays 100%. Cost: one buy-in per event that
-  reaches the bubble.
-- **(b) the structure is computed on `pool − bubble_protection`.** The pool pays
-  for it and every paid place is fractionally smaller. Costs the house nothing;
-  the advertised structure has to say so.
-
-Either is one line at the source. Until Dan picks one, the two winners stay
-180.00 short and the `fn_settle_tournament_obligation` alerts describing it stay
-open — deliberately, because they are the accurate description.
-
-**A law already anticipates this**: `docs/laws.d/a-bank-that-is-short-pays-what-it-holds.md`
-ends _"Who funds bubble protection — the 180.00 the pool promises twice — is
-Dan's decision under 10.9 and is deliberately not made here."_
+**Closure proof.** The atomic cash settlement writes the Bubble debt before
+the first credit, pays it and every ladder place in one transaction, and
+requires payout total = locked pool before terminal completion. A failure
+rolls the complete finish back. Tests pin the pool subtraction, exact one-buy-in
+amount, single stone-Bubble identity, no house funding, and exact replay.
 
 ---
 

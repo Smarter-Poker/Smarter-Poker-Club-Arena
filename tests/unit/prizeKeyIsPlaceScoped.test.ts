@@ -20,14 +20,10 @@
  * the fix (2026-08-28) was at the key: keyed on the place, the second payment
  * is a no-op regardless of who holds it or which code path pays it.
  *
- * 2026-09-02 (chip accounting standard, Lane A2): the key moved out of the
- * engine and into the database. Every tournament credit now goes through
- * `settleTournamentObligation`, which settles the obligation row
- * (tournament_id, kind, place) — UNIQUE by constraint — and the RPC derives
- * the ledger key from that row. There is no `tourney:` string left for a
- * refactor to get wrong. What these pins now assert is the same property in
- * its new home: every 'place' settle carries a PLACE, and no paying path
- * builds a key of its own.
+ * 2026-09-08: every terminal leg now commits behind
+ * `fn_complete_tournament_terminal`. The generic obligation payer is private
+ * database plumbing. These pins assert that live and recovery code share the
+ * domain authority and build no payment key of their own.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -56,14 +52,36 @@ const tourneyKeys = (src: string): string[] =>
 
 describe('a place is paid once: the place obligation, not a hand-built key', () => {
   for (const path of PAYING_PATHS) {
-    it(`${path} settles through the one helper`, () => {
-      expect(settleCalls(read(path)).length).toBeGreaterThan(0); // this file does pay
+    it(`${path} settles through an approved database authority`, () => {
+      const src = code(read(path));
+      if (path.endsWith('/tournamentRecovery.ts')) {
+        const cashRecovery = src.slice(
+          src.indexOf('export async function recoverStuckCompletingTournaments')
+        );
+        expect(cashRecovery).toMatch(/fn_complete_tournament_terminal/);
+        expect(cashRecovery).toMatch(/p_settlement_mode:\s*settlementMode/);
+        expect(cashRecovery).not.toMatch(/settleTournamentObligation\(/);
+      } else if (path.endsWith('/TournamentManagerEliminations.ts')) {
+        const finish = src.slice(src.indexOf('protected async finishTournament'));
+        expect(finish).toMatch(/fn_complete_tournament_terminal/);
+        expect(finish).not.toMatch(/settleTournamentObligation\(/);
+      } else if (path.endsWith('/TournamentManager.ts')) {
+        expect(src).toMatch(/rpc\('fn_settle_satellite_tournament'/);
+        expect(src).toMatch(/verifySatelliteSettlementReceipt\s*\(/);
+        expect(src).not.toMatch(/rpc\('fn_award_satellite_seat'/);
+      } else {
+        expect(settleCalls(src).length).toBeGreaterThan(0);
+      }
     });
 
     it(`${path} builds no tourney: idempotency key of its own`, () => {
       // A key built here is a second opinion about what was paid. The
       // database holds the only one.
-      expect(tourneyKeys(read(path))).toEqual([]);
+      const source = read(path);
+      const payingSource = path.endsWith('/tournamentRecovery.ts')
+        ? source.slice(source.indexOf('export async function recoverStuckCompletingTournaments'))
+        : source;
+      expect(tourneyKeys(payingSource)).toEqual([]);
     });
 
     it(`${path} gives every 'place' settle a place`, () => {
@@ -86,13 +104,14 @@ describe('a place is paid once: the place obligation, not a hand-built key', () 
     });
   }
 
-  it('the finish path and the recovery watchdog settle the SAME obligation for place 1', () => {
-    // They must collide on purpose — that is what makes a retry a no-op.
+  it('the finish path delegates every place to the one authoritative database door', () => {
     const eliminations = read('server/src/tournament/TournamentManagerEliminations.ts');
-    const recovery = read('server/src/tournament/tournamentRecovery.ts');
-    expect(
-      settleCalls(eliminations).some((c) => /kind:\s*'place'[\s\S]*place:\s*1\b/.test(c))
-    ).toBe(true);
-    expect(code(recovery)).toMatch(/\{ kind: 'place', place \}/);
+    const finish = code(eliminations).slice(
+      code(eliminations).indexOf('protected async finishTournament'),
+      code(eliminations).indexOf('protected abstract checkTableBalance')
+    );
+    expect(finish).toMatch(/fn_complete_tournament_terminal/);
+    expect(finish).toMatch(/p_observed_winner_id:\s*winnerId/);
+    expect(finish).not.toMatch(/kind:\s*'place'/);
   });
 });

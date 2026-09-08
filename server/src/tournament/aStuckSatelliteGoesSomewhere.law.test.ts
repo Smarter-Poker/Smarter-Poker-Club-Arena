@@ -1,107 +1,86 @@
 /**
- * A STUCK SATELLITE GOES SOMEWHERE - ALL THREE SHAPES OF IT.
+ * A STUCK SATELLITE REPLAYS THE SAME WHOLE-EVENT AUTHORITY.
  *
- * The 2026-08-30 rule resolved the UNDECIDED case (2+ alive -> RUNNING) and
- * left the DECIDED one reported-then-skipped on every recovery cycle, forever.
- * Nothing else drives it: no pg_cron job, no edge function, no workflow, no
- * other caller transitions a COMPLETING satellite. The pool was collected and
- * the seats were never awarded.
- *
- * These pins are textual on purpose. The behaviour lives in a recovery loop
- * that talks to Supabase and to a live manager, so the cheap thing to pin is
- * that the three branches exist, in the right order, with the right guards -
- * the same shape the other law tests in this directory use.
+ * Recovery used to infer success from any payout row or target seat, then
+ * close the tournament even when the rest of the locked pool was missing.
+ * New satellite finishes are atomic, so recovery has no second calculator or
+ * observer: it may repair a historical undecided status, or replay the exact
+ * database authority from one durable winner and validate its v2 receipt.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const RECOVERY = fs.readFileSync(path.join(HERE, 'tournamentRecovery.ts'), 'utf8');
-const DEALING = fs.readFileSync(path.join(HERE, '../engine/ServerTableEngineDealing.ts'), 'utf8');
-const BASE = fs.readFileSync(path.join(HERE, '../engine/ServerTableEngineBase.ts'), 'utf8');
 
-/** The file with `--` line comments removed, so a pin cannot pass on prose. */
-function executable(src: string): string {
-  return src
-    .split('\n')
-    .filter((l) => !l.trimStart().startsWith('//') && !l.trimStart().startsWith('*'))
-    .join('\n');
+function executable(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 }
-const CODE = executable(RECOVERY);
 
-describe('every decided satellite takes one of three exits', () => {
-  it('an already-awarded satellite is CLOSED, not left spinning', () => {
-    expect(CODE).toMatch(/recoverStuckCompleting_satellite_closed/);
-    expect(CODE).toMatch(/status:\s*'COMPLETED'/);
+const branchStart = RECOVERY.indexOf(
+  "String((t as { variant?: string }).variant ?? '').toLowerCase() === 'satellite'"
+);
+const branchEnd = RECOVERY.indexOf('// A COMPLETING cash event is resumable', branchStart);
+const BRANCH = executable(RECOVERY.slice(branchStart, branchEnd));
+
+describe('a stuck satellite has no observer-based completion path', () => {
+  it('finds the satellite branch and keeps it outside cash-place recovery', () => {
+    expect(branchStart).toBeGreaterThan(-1);
+    expect(branchEnd).toBeGreaterThan(branchStart);
+    expect(BRANCH).not.toMatch(/fn_settle_tournament_places|computePlacePrize/);
+    expect(BRANCH).toMatch(/continue;/);
   });
 
-  it('it decides "already awarded" from the payout record AND from a seat', () => {
-    // Phase 3's record is what makes the question answerable at all. The seat
-    // arm covers satellites that ran before the record existed.
-    expect(CODE).toMatch(/from\('tournament_payouts'\)/);
-    expect(CODE).toMatch(/eq\('source_satellite_id', t\.id\)/);
-    expect(CODE).toMatch(/alreadyAwarded/);
-  });
-
-  it('a lone survivor is flipped to RUNNING so the awards pass can claim it', () => {
-    expect(CODE).toMatch(/aliveCount === 1/);
-    expect(CODE).toMatch(/recoverStuckCompleting_satellite_revived_decided/);
-  });
-
-  it('the revive is a compare-and-set, so two servers cannot both flip it', () => {
-    const revive = CODE.slice(CODE.indexOf('aliveCount === 1'));
-    expect(revive).toMatch(/\.eq\('status', 'COMPLETING'\)/);
-  });
-
-  it('no survivor and nothing awarded raises a CRITICAL alert and moves no money', () => {
-    expect(CODE).toMatch(/Satellite\.stuck_completing_unawarded/);
-    expect(CODE).toMatch(/'critical'/);
-    // It must still fall through to the skip, not to the structure-cash path.
-    expect(CODE).toMatch(/recoverStuckCompleting_satellite_skipped/);
-  });
-
-  it('the ambiguous case is never auto-paid on a guessed winner', () => {
-    // The engine's fallback treats the LAST ELIMINATED player as the winner,
-    // which in a normal finish is second place. That guess must not move money.
-    const tail = CODE.slice(CODE.indexOf('Satellite.stuck_completing_unawarded'));
-    const untilSkip = tail.slice(0, tail.indexOf('recoverStuckCompleting_satellite_skipped'));
-    expect(untilSkip).not.toMatch(/fn_credit_and_log/);
-    expect(untilSkip).not.toMatch(/status:\s*'RUNNING'/);
+  it('never treats one payout or target seat as proof the whole pool settled', () => {
+    expect(BRANCH).not.toMatch(/from\('tournament_payouts'\)/);
+    expect(BRANCH).not.toMatch(/\.eq\('source_satellite_id'|alreadyAwarded|recordCount/);
+    expect(BRANCH).not.toMatch(/status:\s*'COMPLETED'/);
   });
 });
 
-describe('the undecided rule from 2026-08-30 still stands', () => {
-  it('2+ alive is still flipped back to RUNNING', () => {
-    expect(CODE).toMatch(/aliveCount >= 2/);
-    expect(CODE).toMatch(/recoverStuckCompleting_satellite_revived/);
+describe('only durable roster evidence can select the observed winner', () => {
+  it('fails closed when the roster read is unknown', () => {
+    expect(BRANCH).toMatch(/from\('tournament_players'\)/);
+    expect(BRANCH).toMatch(/select\(['"]user_id, status, position['"]\)/);
+    expect(BRANCH).toMatch(/satellitePlayersErr|rosterErr/);
+    expect(BRANCH).toMatch(/Array\.isArray/);
+  });
+
+  it('does not rank a replacement from chips, timestamps, or array order', () => {
+    expect(BRANCH).not.toMatch(/\.chips|created_at|updated_at|elimination_sequence|\.sort\(/);
+    expect(BRANCH).toMatch(/position\) === 1|position === 1/);
+    expect(BRANCH).toMatch(/\.length !== 1|\.length === 1/);
+  });
+
+  it('alerts and changes nothing when no single durable winner exists', () => {
+    expect(BRANCH).toMatch(/Satellite\.stuck_completing_winner_absent/);
+    expect(BRANCH).toMatch(/await raiseFinancialAlert\(\s*['"]critical['"]/);
   });
 });
 
-describe('reviving a decided satellite cannot deal a card', () => {
-  it('a tournament table refuses to deal below two players', () => {
-    expect(BASE).toMatch(/minPlayersToDeal\(\)/);
-    expect(BASE).toMatch(/isTournamentTable\(\)/);
-    expect(DEALING).toMatch(/activePlayers\.length < this\.minPlayersToDeal\(\)/);
-  });
-
-  it('and parks the loop instead of proceeding', () => {
-    expect(DEALING).toMatch(/idle_not_enough_players/);
+describe('the only historical state repair is an exact undecided CAS', () => {
+  it('returns registered or multi-live legacy rows to RUNNING with one-row proof', () => {
+    expect(BRANCH).toContain("'registered'");
+    expect(BRANCH).toMatch(/\.length >= 2/);
+    expect(BRANCH).toMatch(/\.update\(\{ status: 'RUNNING' \}/);
+    expect(BRANCH).toMatch(/\{ count: 'exact' \}/);
+    expect(BRANCH).toMatch(/\.eq\('status', 'COMPLETING'\)/);
+    expect(BRANCH).toMatch(/count !== 1/);
   });
 });
 
-describe('the satellite branch never reaches the structure-cash rescue', () => {
-  it('every satellite exit is a continue', () => {
-    // Bound the slice at the LAST satellite exit, not at whatever comes next
-    // in the file - the structure-cash rescue below is exactly what must stay
-    // outside this window.
-    const start = CODE.indexOf("'satellite'");
-    const skip = CODE.indexOf('recoverStuckCompleting_satellite_skipped', start);
-    expect(start).toBeGreaterThan(-1);
-    expect(skip).toBeGreaterThan(start);
-    const branch = CODE.slice(start, CODE.indexOf('continue;', skip) + 'continue;'.length);
-    // Four exits: undecided revive, closed, decided revive, alerted skip.
-    expect((branch.match(/continue;/g) ?? []).length).toBeGreaterThanOrEqual(4);
-    expect(branch).not.toMatch(/computePlacePrize/);
+describe('decided recovery replays one atomic satellite receipt', () => {
+  it('requests the whole-event receipt with the durable winner', () => {
+    expect(BRANCH).toContain('requestSatelliteSettlementReceipt(t.id, winnerId)');
+    expect(RECOVERY).toMatch(
+      /import \{ requestSatelliteSettlementReceipt \} from '\.\/satelliteSettlementRpc\.js'/
+    );
+  });
+
+  it('awaits a critical outcome-unconfirmed alert on transport or receipt ambiguity', () => {
+    expect(BRANCH).toContain('Satellite.seat_outcome_unconfirmed');
+    expect(BRANCH).toMatch(/await raiseFinancialAlert\(\s*['"]critical['"]/);
+    expect(BRANCH).not.toMatch(/fn_settle_tournament_rake|fn_credit_and_log/);
   });
 });

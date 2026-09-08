@@ -27,12 +27,18 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-import { computePlacePrize } from './payoutMath.js';
+import { computePlacePrize, prizePoolAvailableToPlaces } from './payoutMath.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
 const ELIM = read('src/tournament/TournamentManagerEliminations.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
+const CASH_AUTHORITY = read(
+  '../supabase/migrations/20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql'
+);
+const TERMINAL_AUTHORITY = read(
+  '../supabase/migrations/20260908045932_non_satellite_terminal_settlement_commits_one_stored_receipt.sql'
+);
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -57,10 +63,29 @@ const totalPaid = (pool: number, payouts: Array<{ place?: number; percentage?: n
   round2(payouts.reduce((sum, p) => sum + computePlacePrize(pool, payouts, Number(p.place)), 0));
 
 describe('the places sum to the pool, whatever the structure', () => {
+  it('funds one cash bubble buy-in inside the pool before pricing places', () => {
+    const ladderPool = prizePoolAvailableToPlaces(1000, NINE_PLACE, 10, true, 100);
+    expect(ladderPool).toBe(900);
+    expect(totalPaid(ladderPool!, NINE_PLACE) + 100).toBe(1000);
+  });
+
+  it('does not reserve cash bubble money without a stone bubble', () => {
+    expect(prizePoolAvailableToPlaces(1000, NINE_PLACE, 9, true, 100)).toBe(1000);
+    expect(prizePoolAvailableToPlaces(1000, NINE_PLACE, 10, false, 100)).toBe(1000);
+  });
+
+  it('refuses invalid cents, field, structure, and an unfundable buy-in', () => {
+    expect(prizePoolAvailableToPlaces(1000.001, NINE_PLACE, 10, true, 100)).toBeNull();
+    expect(prizePoolAvailableToPlaces(1000, NINE_PLACE, 10, true, 100.001)).toBeNull();
+    expect(prizePoolAvailableToPlaces(50, NINE_PLACE, 10, true, 100)).toBeNull();
+    expect(prizePoolAvailableToPlaces(1000, [], 10, true, 100)).toBeNull();
+    expect(prizePoolAvailableToPlaces(1000, NINE_PLACE, 0, true, 100)).toBeNull();
+  });
+
   it('pays 483.00 out of a 483.00 pool on the 9-place structure', () => {
     // The named defect: independently rounded places sum to 483.01 here — a
     // one-cent overpay on every such event, and a permanent false "overpaid"
-    // from fn_tournament_payout_reconcile, which implements the residual rule.
+    // from the historical payout repair arm, which used the residual rule.
     expect(totalPaid(483, NINE_PLACE)).toBe(483);
     // And the adjustment lands on the SMALLEST prize, never a headline one.
     expect(computePlacePrize(483, NINE_PLACE, 1)).toBe(144.9);
@@ -151,9 +176,9 @@ describe('every payout site shares the one rounding rule', () => {
     // Defect: recalculateEliminatedPrizes was a FOURTH independent formula —
     // `Math.round(((finalPrizePool * percentage) / 100) * 100) / 100` — so a
     // top-up disagreed with the payment it was adjusting, wrote its own number
-    // into `prize`, and left the row permanently at odds with
-    // fn_tournament_payout_reconcile.
-    expect(code(ELIM)).toMatch(/computePlacePrize\(\s*finalPrizePool\s*,/);
+    // into `prize`, and left the row permanently at odds with the database
+    // payout calculation.
+    expect(code(ELIM)).toMatch(/computePlacePrize\(\s*ladderPool\s*,/);
     expect(code(ELIM)).not.toMatch(/finalPrizePool\s*\*\s*payoutEntry\.percentage/);
   });
 
@@ -161,12 +186,12 @@ describe('every payout site shares the one rounding rule', () => {
     // A bare JSON.parse of the cached column cannot rebuild a Spin's split
     // from its multiplier, so the top-up used a different structure than the
     // payment.
-    expect(code(ELIM)).toMatch(/resolvePayoutStructure\(\s*this\.tournamentCache/);
+    expect(code(ELIM)).toMatch(/resolvePayoutStructure\(\s*this\.tournamentCache\s+as\s+any/);
     // STRONGER 2026-08-27: and it must resolve with the FIELD SIZE, like every
     // other payout site, or the top-up would price a short field by a
     // structure that still contains the place nobody reached.
     expect(code(ELIM)).toMatch(
-      /resolvePayoutStructure\(\s*this\.tournamentCache[\s\S]{0,90}?finalFieldSize\(\)/
+      /const\s+finalField\s*=\s*await\s+this\.finalFieldSize\(\)[\s\S]{0,180}?resolvePayoutStructure\(\s*this\.tournamentCache\s+as\s+any\s*,\s*finalField/
     );
   });
 
@@ -230,7 +255,7 @@ describe('a failed query must never read as "nobody is left" - the money paths',
     // Reached, not merely present — `if (false) { throw ... }` passed a
     // string-only assertion during the sabotage run.
     expect(code(RECOVERY)).toMatch(
-      /if\s*\(\s*playersErr\s*\)\s*\{[\s\S]{0,400}?refusing to complete a tournament we cannot pay/
+      /if\s*\(\s*playersErr\s*\|\|\s*!players\s*\)\s*\{[\s\S]{0,400}?durable field unreadable/
     );
   });
 
@@ -267,30 +292,29 @@ describe('a failed query must never read as "nobody is left" - the money paths',
   });
 });
 
-describe('a tournament that cannot be paid is left where the watchdog can find it', () => {
-  it('finishTournament does not mark COMPLETED when it could not load the tournament', () => {
-    // Defect: it wrote COMPLETED with NO CAS guard while stating it was paying
-    // nobody. recoverStuckCompletingTournaments only looks at COMPLETING, so
-    // that write put the event permanently beyond the one mechanism built to
-    // rescue it.
+describe('a tournament that cannot be paid stays retryable', () => {
+  it('finishTournament changes no durable state when it could not load the tournament', () => {
+    // The authoritative cash RPC owns RUNNING -> COMPLETING. A failed read
+    // before that call must release the in-memory guard and leave the row
+    // untouched so the next elimination sweep can retry.
     const branch = code(ELIM).slice(
       code(ELIM).indexOf('if (!tournament || tourneyLoadErr)'),
       code(ELIM).indexOf('const isSatelliteFinish')
     );
     expect(branch.length).toBeGreaterThan(0);
     expect(branch).not.toMatch(/COMPLETED/);
-    expect(code(ELIM)).toMatch(/left in COMPLETING for recoverStuckCompletingTournaments/);
+    expect(branch).toMatch(/releaseFinishGuard\(\)/);
+    expect(branch).toMatch(/tournament remains unchanged and the next sweep will retry/);
   });
 });
 
-describe('finishing places must be distinct - in the rescue path too', () => {
-  it('the rescue refuses to hand a survivor a place an eliminated player already holds', () => {
-    // Defect: survivors were given 1..N with no regard for the places already
-    // recorded. The wallet key `tourney:{id}:prize:{user}:{place}` dedupes a
-    // repeated USER, not a repeated PLACE, so both holders are paid in full.
-    // Identical shape to the Math.max(2, ...) clamp that cost 11 tournaments
-    // 12 extra payments.
-    expect(code(RECOVERY)).toMatch(/recoverStuckCompleting_position_collision/);
+describe('recovery never invents or reassigns a finishing place', () => {
+  it('requires exactly one durable winner before replaying database settlement', () => {
+    const recovery = code(RECOVERY);
+    expect(recovery).toMatch(/player\.status === 'winner' && Number\(player\.position\) === 1/);
+    expect(recovery).toMatch(/durableChampions\.length !== 1 \|\| otherFirstPlaces\.length > 0/);
+    expect(recovery).toMatch(/recoverStuckCompleting_durable_winner_absent/);
+    expect(recovery).not.toMatch(/\.sort\(\(a, b\) => Number\(b\.chips/);
   });
 });
 
@@ -358,20 +382,39 @@ describe('a write that decides a payout is checked', () => {
     expect(code(ELIM)).toMatch(/elimination_write_failed/);
   });
 
-  it('the winner row stamp is checked on both finish paths', () => {
-    expect(code(ELIM)).toMatch(/winner_row_stamp_failed/);
-    expect(code(ELIM)).toMatch(/final_table_deal_winner_stamp_failed/);
+  it('each finish path verifies the winner standing it relies on', () => {
+    // Place and satellite finishes now stamp their winner inside their one
+    // database transaction. The cash authority must prove that exact write;
+    // TypeScript then verifies the terminal receipt instead of issuing a
+    // second, potentially conflicting rank write.
+    expect(code(CASH_AUTHORITY)).toMatch(
+      /SET status = 'winner', position = 1[\s\S]{0,180}?GET DIAGNOSTICS v_rows = ROW_COUNT;[\s\S]{0,180}?could not promote exactly one winner/
+    );
+    expect(code(TERMINAL_AUTHORITY)).toMatch(/ambiguous or incomplete final standings/);
+    expect(code(TERMINAL_AUTHORITY)).toMatch(
+      /tp\.status::text\s*=\s*'winner'\s+AND tp\.position\s*=\s*1/
+    );
+    expect(code(ELIM)).not.toMatch(/final_table_deal_winner_stamp_failed/);
   });
 
-  it('a settled final-table deal that stays COMPLETING is reported, not swallowed', () => {
-    // A dealt event left in COMPLETING is picked up by the recovery watchdog,
-    // which pays from the PAYOUT STRUCTURE — the one thing a deal must never
-    // be re-paid from.
-    expect(code(ELIM)).toMatch(/final_table_deal_completed_transition_failed/);
+  it('a final-table deal cannot commit money without terminal completion', () => {
+    const source = code(ELIM);
+    const deal = source.slice(
+      source.indexOf('protected async checkFinalTableDeal'),
+      source.indexOf('private async settleFinalTableDeal')
+    );
+    expect(deal).toMatch(/fn_complete_tournament_terminal/);
+    expect(deal).toMatch(/verifyTournamentCompletionReceipt/);
+    expect(deal).not.toMatch(/status:\s*'COMPLETED'/);
   });
 
   it('the rescue only claims to have recovered a tournament it actually completed', () => {
-    expect(code(RECOVERY)).toMatch(/could not mark COMPLETED/);
+    const recovery = code(RECOVERY).slice(
+      code(RECOVERY).indexOf('export async function recoverStuckCompletingTournaments')
+    );
+    expect(recovery).toMatch(/fn_complete_tournament_terminal/);
+    expect(recovery).toMatch(/verifyTournamentCompletionReceipt/);
+    expect(recovery).not.toMatch(/status:\s*'COMPLETED'/);
   });
 });
 

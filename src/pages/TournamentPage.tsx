@@ -13,7 +13,6 @@ import './TournamentPage.css';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import EliminationOverlay from '../components/tournament/EliminationOverlay';
 import { tableService } from '../services/TableService';
 // Tournament registration/refunds handled via TournamentService → Player Wallet RPCs
 import { useToast } from '../components/common/Toast';
@@ -36,7 +35,13 @@ import { TournamentClock } from '../components/tournament/TournamentClock';
    marker, the distance to the money, the click-through to a player's table -
    come with it. */
 import RankingTab from '../components/tournament/details/RankingTab';
-import type { NormalisedBlindLevel, TournamentTable } from '../components/tournament/details/types';
+import {
+  effectivePlaceLadderPool,
+  parsePayoutStructure,
+  placePrize,
+  type NormalisedBlindLevel,
+  type TournamentTable,
+} from '../components/tournament/details/types';
 import { useTournamentEntries } from '../hooks/useTournamentEntries';
 import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
 import { reportError } from '../utils/errorReporter';
@@ -1048,16 +1053,46 @@ export default function TournamentPage() {
      minutes. Everything else it derives itself. */
 
   const selectedIsRunning = selectedTournament?.status === 'RUNNING';
+  const selectedIsCompleted = selectedTournament?.status === 'COMPLETED';
 
   const {
     entries: liveEntries,
+    entryCount: durableEntryCount,
     loading: entriesLoading,
     loadFailed: entriesFailed,
   } = useTournamentEntries(
     selectedTournament?.id ?? null,
-    Boolean(selectedIsRunning),
+    Boolean(selectedIsRunning || selectedIsCompleted),
     Number(selectedTournament?.starting_chips) || 0
   );
+
+  const selectedPayouts = useMemo(
+    () => parsePayoutStructure(selectedTournament?.payout_structure) ?? [],
+    [selectedTournament?.payout_structure]
+  );
+  const selectedIsSatellite =
+    String(selectedTournament?.variant ?? '').toLowerCase() === 'satellite' ||
+    String(selectedTournament?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+    Boolean(selectedTournament?.satellite_target_id || selectedTournament?.satellite_target);
+  const selectedBubbleNeedsDurableField =
+    !selectedIsSatellite &&
+    selectedTournament?.bubble_protection === true &&
+    Boolean(selectedIsRunning || selectedIsCompleted);
+  const selectedPlaceLadderPool = useMemo<number | null>(() => {
+    if (!selectedTournament) return 0;
+    if (selectedBubbleNeedsDurableField && durableEntryCount === null) return null;
+    const fieldSize =
+      durableEntryCount ?? Math.max(0, Number(selectedTournament.current_players) || 0);
+    return effectivePlaceLadderPool(
+      selectedTournament.prize_pool,
+      selectedTournament.guaranteed_prize,
+      selectedTournament.payout_structure,
+      fieldSize,
+      selectedTournament.bubble_protection === true,
+      Number(selectedTournament.buy_in_amount) || 0,
+      selectedIsSatellite
+    );
+  }, [durableEntryCount, selectedBubbleNeedsDurableField, selectedIsSatellite, selectedTournament]);
 
   const rankingTables = useMemo<TournamentTable[]>(
     () =>
@@ -1550,35 +1585,26 @@ export default function TournamentPage() {
               <div className="payout-structure">
                 <h3>Payouts</h3>
                 <div className="payout-list">
-                  {(Array.isArray(selectedTournament.payout_structure)
-                    ? selectedTournament.payout_structure
-                    : (() => {
-                        try {
-                          return typeof selectedTournament.payout_structure === 'string'
-                            ? JSON.parse(selectedTournament.payout_structure)
-                            : [];
-                        } catch {
-                          return [];
-                        }
-                      })()
-                  )
-                    .slice(0, 5)
-                    .map((payout: any, i: number) => {
-                      const pos = payout.place || payout.position || i + 1;
-                      return (
-                        <div key={i} className="payout-item">
-                          <span className="payout-place">
-                            {pos === 1 ? '' : pos === 2 ? '' : pos === 3 ? '' : `${pos}th`}
-                          </span>
-                          <span className="payout-percent">{payout.percentage}%</span>
-                          <span className="payout-amount">
-                            {Math.trunc(
-                              ((selectedTournament.prize_pool * payout.percentage) / 100) * 100
-                            ) / 100}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  {selectedPayouts.slice(0, 5).map((payout, i) => {
+                    const pos = payout.place;
+                    const amount =
+                      selectedPlaceLadderPool === null
+                        ? null
+                        : placePrize(selectedPlaceLadderPool, selectedPayouts, pos);
+                    return (
+                      <div key={i} className="payout-item">
+                        <span className="payout-place">
+                          {pos === 1 ? '' : pos === 2 ? '' : pos === 3 ? '' : `${pos}th`}
+                        </span>
+                        <span className="payout-percent">{payout.percentage}%</span>
+                        <span className="payout-amount">
+                          {amount === null
+                            ? '-'
+                            : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1675,29 +1701,27 @@ export default function TournamentPage() {
                 <div className="tourn-results-overlay">
                   <div className="results-header">Final Standings</div>
                   <div className="results-podium">
-                    {(Array.isArray(selectedTournament.payout_structure)
-                      ? selectedTournament.payout_structure
-                      : (() => {
-                          try {
-                            return typeof selectedTournament.payout_structure === 'string'
-                              ? JSON.parse(selectedTournament.payout_structure)
-                              : [];
-                          } catch {
-                            return [];
-                          }
-                        })()
-                    )
-                      .slice(0, 3)
-                      .map((p: any, i: number) => (
+                    {selectedPayouts.slice(0, 3).map((p, i) => {
+                      const recorded = liveEntries.find(
+                        (entry) => entry.position === p.place
+                      )?.prize;
+                      const amount =
+                        recorded !== undefined && Number.isFinite(recorded)
+                          ? recorded
+                          : selectedPlaceLadderPool === null
+                            ? null
+                            : placePrize(selectedPlaceLadderPool, selectedPayouts, p.place);
+                      return (
                         <div key={i} className={`podium-place podium-${i + 1}`}>
                           <div className="podium-icon">{i === 0 ? '★' : i === 1 ? '☆' : '✧'}</div>
                           <div className="podium-payout">
-                            {Math.trunc(
-                              ((selectedTournament.prize_pool * (p.percentage || 0)) / 100) * 100
-                            ) / 100}
+                            {amount === null
+                              ? '-'
+                              : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
                           </div>
                         </div>
-                      ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

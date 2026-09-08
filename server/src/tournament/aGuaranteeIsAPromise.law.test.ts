@@ -23,9 +23,13 @@ import path from 'node:path';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const ELIM = fs.readFileSync(path.join(HERE, 'TournamentManagerEliminations.ts'), 'utf8');
-const RECONCILER = fs.readFileSync(path.join(HERE, '../services/FeeReconciler.ts'), 'utf8');
-const GAMESERVER = fs.readFileSync(path.join(HERE, '../GameServer.ts'), 'utf8');
-
+const SETTLEMENT = fs.readFileSync(
+  path.resolve(
+    HERE,
+    '../../../supabase/migrations/20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql'
+  ),
+  'utf8'
+);
 /** The file with comments stripped, so a pin cannot pass on prose. */
 function executable(src: string): string {
   return src
@@ -38,44 +42,45 @@ function executable(src: string): string {
 }
 const CODE = executable(ELIM);
 
+function sqlFunction(name: string): string {
+  const start = SETTLEMENT.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+  const end = SETTLEMENT.indexOf(`REVOKE ALL ON FUNCTION public.${name}`, start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  return SETTLEMENT.slice(start, end).replace(/--.*$/gm, '');
+}
+
 describe('the finish path funds the guarantee', () => {
-  it('calls applyPrizeGuarantee with a finish-specific source', () => {
-    expect(CODE).toMatch(/applyPrizeGuarantee\('finish_fallback'\)/);
+  it('funds inside both locked cash settlement authorities before pricing', () => {
+    for (const [name, firstPrice] of [
+      ['fn_settle_tournament_places', 'fn_ca_tournament_place_amounts'],
+      ['fn_settle_tournament_final_table_deal', 'fn_ca_tournament_place_amounts'],
+    ] as const) {
+      const body = sqlFunction(name);
+      const fund = body.indexOf('public.fn_apply_prize_guarantee(');
+      const price = body.indexOf(firstPrice, fund + 1);
+      expect(fund).toBeGreaterThan(-1);
+      expect(price).toBeGreaterThan(fund);
+      expect(body).toContain('prize_pool_finalized');
+      expect(body).toContain('guaranteed_prize');
+      expect(body).toMatch(/prize_pool\s*<\s*COALESCE\(v_t\.guaranteed_prize,\s*0\)/);
+    }
   });
 
-  it('funds BEFORE the winner prize is priced, or it would price off a stale pool', () => {
-    const fund = CODE.indexOf("applyPrizeGuarantee('finish_fallback')");
-    const price = CODE.indexOf('let winnerPrize = 0;');
-    expect(fund).toBeGreaterThan(-1);
-    expect(price).toBeGreaterThan(-1);
-    expect(fund).toBeLessThan(price);
+  it('has no process-side finish fallback that can catch funding failure and keep paying', () => {
+    expect(CODE).not.toMatch(/applyPrizeGuarantee\('finish_fallback'\)/);
+    expect(CODE).not.toMatch(/guarantee_finish_fallback_failed/);
   });
 
-  it('re-reads the pool after funding rather than trusting the local snapshot', () => {
-    const tail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
-    const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).toMatch(/from\('tournaments'\)/);
-    expect(window).toMatch(/select\('prize_pool'\)/);
-  });
-
-  it('is NOT gated on prize_pool or buy_in_amount - the two filters that hid the freerolls', () => {
-    const tail = CODE.slice(CODE.indexOf('const isSatelliteFinish'));
-    const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).not.toMatch(/prize_pool\s*[><]/);
-    expect(window).not.toMatch(/buy_in_amount/);
-  });
-
-  it('skips satellites, which award seats rather than structure cash', () => {
-    const tail = CODE.slice(CODE.indexOf('const isSatelliteFinish'));
-    const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).toMatch(/!isSatelliteFinish/);
-  });
-
-  it('a failure funding the guarantee never strands the finish', () => {
-    const tail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
-    const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).toMatch(/catch/);
-    expect(window).toMatch(/guarantee_finish_fallback_failed/);
+  it('turns a refused or unverifiable funding receipt into a database exception', () => {
+    for (const name of ['fn_settle_tournament_places', 'fn_settle_tournament_final_table_deal']) {
+      const body = sqlFunction(name);
+      expect(body).toMatch(
+        /COALESCE\(\(v_guarantee_result->>'ok'\)::boolean,\s*false\) IS NOT TRUE/
+      );
+      expect(body).toMatch(/RAISE EXCEPTION[\s\S]*?guarantee funding/);
+      expect(body).not.toMatch(/EXCEPTION\s+WHEN[\s\S]*?guarantee/i);
+    }
   });
 });
 
@@ -85,37 +90,16 @@ describe('a winner paid nothing says so', () => {
     expect(CODE).toMatch(/Tournament\.winner_paid_nothing/);
   });
 
-  it('the alert sits OUTSIDE the `winnerPrize > 0` block, which is the whole point', () => {
+  it('the alert is driven by the authoritative winner amount, not a local formula', () => {
     const zero = CODE.indexOf('winnerPrize <= 0 && !isSatelliteFinish');
-    const positive = CODE.indexOf('if (winnerPrize > 0) {');
+    const authoritative = CODE.indexOf('winnerPrize = receipt.winnerAmount');
     expect(zero).toBeGreaterThan(-1);
-    expect(positive).toBeGreaterThan(zero);
+    expect(authoritative).toBeGreaterThan(-1);
+    expect(authoritative).toBeLessThan(zero);
   });
 
   it('an unfunded guarantee is critical; a genuinely poolless event is a warning', () => {
     const tail = CODE.slice(CODE.indexOf('winnerPrize <= 0 && !isSatelliteFinish'));
-    const window = tail.slice(0, tail.indexOf('if (winnerPrize > 0) {'));
-    expect(window).toMatch(/gtd > 0 \? 'critical' : 'warning'/);
-  });
-});
-
-describe('something finally asks whether the guarantee was kept', () => {
-  it('the reconciler exposes the check', () => {
-    expect(RECONCILER).toMatch(/export async function auditGuaranteesKept/);
-    expect(RECONCILER).toMatch(/fn_tournament_guarantee_check/);
-  });
-
-  it('it is wired into the periodic sweep beside the other audits', () => {
-    expect(GAMESERVER).toMatch(/auditGuaranteesKept\(24\)/);
-    expect(GAMESERVER).toMatch(/auditGuaranteesKept,/);
-  });
-
-  it('it detects and never repairs - no credit call in the audit path', () => {
-    const fn = RECONCILER.slice(
-      RECONCILER.indexOf('export async function auditGuaranteesKept'),
-      RECONCILER.indexOf('export async function auditSatelliteConservation')
-    );
-    expect(fn).not.toMatch(/fn_credit_and_log/);
-    expect(fn).not.toMatch(/fn_apply_prize_guarantee/);
+    expect(tail).toMatch(/gtd > 0 \? 'critical' : 'warning'/);
   });
 });

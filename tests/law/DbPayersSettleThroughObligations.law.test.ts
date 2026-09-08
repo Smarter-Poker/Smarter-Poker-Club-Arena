@@ -29,6 +29,9 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 
 const PAYERS = read('supabase/migrations/20260902201000_db_payers_settle_through_obligations.sql');
 const R3 = read('supabase/migrations/20260902201500_r3_money_path_log_only.sql');
+const AUTHORITATIVE = read(
+  'supabase/migrations/20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql'
+);
 
 const SIX = [
   'fn_tournament_payout_reconcile',
@@ -46,6 +49,52 @@ function bodyOf(sql: string, name: string): string {
   const end = sql.indexOf('$function$;', start);
   return end < 0 ? sql.slice(start) : sql.slice(start, end);
 }
+
+function authoritativeCashBody(): string {
+  const start = AUTHORITATIVE.indexOf(
+    'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_places('
+  );
+  expect(start, 'fn_settle_tournament_places must be defined').toBeGreaterThan(-1);
+  const end = AUTHORITATIVE.indexOf('$settle_places$;', start);
+  return AUTHORITATIVE.slice(start, end < 0 ? AUTHORITATIVE.length : end);
+}
+
+describe('the cash ladder settles through one authoritative database door', () => {
+  const settle = authoritativeCashBody();
+
+  it('derives the complete ladder behind the tournament and roster locks', () => {
+    expect(settle).toContain('fn_ca_tournament_place_amounts');
+    expect(settle).toMatch(/FROM public\.tournaments[\s\S]*FOR UPDATE/);
+    expect(settle).toMatch(/FROM public\.tournament_players[\s\S]*FOR UPDATE/);
+    expect(settle).toContain('fn_ca_settle_tournament_place_raw');
+  });
+
+  it('is the only new payout primitive granted to service_role', () => {
+    expect(AUTHORITATIVE).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_settle_tournament_places\(uuid,uuid\)[\s\S]*TO service_role;/
+    );
+    for (const ownerOnly of [
+      'fn_ca_tournament_place_amounts',
+      'fn_ca_settle_tournament_place_raw',
+      'fn_credit_and_log',
+    ]) {
+      expect(AUTHORITATIVE).toMatch(
+        new RegExp(
+          `has_function_privilege\\('service_role',[\\s\\S]{0,180}?public\\.${ownerOnly}[\\s\\S]{0,180}?'EXECUTE'\\)`,
+          'i'
+        )
+      );
+    }
+  });
+
+  it('returns success only after every place and its evidence are proven', () => {
+    expect(settle).toContain('post-settlement proof failed');
+    expect(settle).toContain("'fully_settled',true");
+    expect(settle.indexOf('post-settlement proof failed')).toBeLessThan(
+      settle.indexOf("'fully_settled',true")
+    );
+  });
+});
 
 /** The predicate the law enforces, so the negative control tests the SAME rule.
  *  A payer settles through the obligation ledger either by calling the settle

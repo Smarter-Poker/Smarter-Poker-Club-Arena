@@ -97,6 +97,12 @@ describe('the recount call sites carry the guard', () => {
     expect(src).toContain('tableCountChangedFilter({ current_players: playerCount, status })');
   });
 
+  it('a delayed hand settlement cannot reopen a terminally closed table', () => {
+    const src = readSrc('tables.ts');
+    expect(src).toContain(".neq('status', 'closed')");
+    expect(src).toContain('status recount failed');
+  });
+
   it('processLeavePending refuses to write a count it could not read', () => {
     // The pre-2026-09-06 version did `count || 0` on an undestructured error,
     // so ONE failed read wrote current_players = 0 on a live table - the same

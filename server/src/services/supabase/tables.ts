@@ -205,6 +205,61 @@ export interface StackWriteOptions {
   ref?: string | null;
   /** Chips that arrived on the felt from a declared pool this write (a BBJ payout). */
   inflow?: number | null;
+  /**
+   * When present, require proof that this same transaction mirrored every
+   * resulting seat stack into the tournament standings source.
+   */
+  expectedTournamentId?: string | null;
+}
+
+export interface TournamentStackProof {
+  tournament_id?: unknown;
+  tournament_players_synced?: unknown;
+  tournament_player_count?: unknown;
+  tournament_player_user_ids?: unknown;
+  tournament_player_chips?: unknown;
+}
+
+/** Validate the exact tournament-standing proof returned by the hand RPC. */
+export function tournamentStackProofIsExact(
+  proof: TournamentStackProof,
+  expectedTournamentId: string,
+  expectedPlayerIds: readonly string[]
+): boolean {
+  const expectedUsers = [...new Set(expectedPlayerIds)].sort();
+  if (expectedUsers.length !== expectedPlayerIds.length) return false;
+  const returnedUsers = Array.isArray(proof.tournament_player_user_ids)
+    ? proof.tournament_player_user_ids.filter(
+        (userId): userId is string => typeof userId === 'string'
+      )
+    : [];
+  const returnedChips = Array.isArray(proof.tournament_player_chips)
+    ? proof.tournament_player_chips
+    : [];
+  const chipUsers = returnedChips.map((row) =>
+    row && typeof row === 'object' && typeof (row as { user_id?: unknown }).user_id === 'string'
+      ? String((row as { user_id: string }).user_id)
+      : null
+  );
+  const chipAmountsAreExact = returnedChips.every((row) => {
+    if (!row || typeof row !== 'object') return false;
+    const amount = Number((row as { chips?: unknown }).chips);
+    return (
+      Number.isFinite(amount) &&
+      amount >= 0 &&
+      Math.abs(amount * 100 - Math.round(amount * 100)) < 1e-7
+    );
+  });
+  return (
+    proof.tournament_id === expectedTournamentId &&
+    proof.tournament_players_synced === true &&
+    Number(proof.tournament_player_count) === expectedUsers.length &&
+    returnedUsers.length === expectedUsers.length &&
+    returnedUsers.every((userId, index) => userId === expectedUsers[index]) &&
+    chipUsers.length === expectedUsers.length &&
+    chipUsers.every((userId, index) => userId === expectedUsers[index]) &&
+    chipAmountsAreExact
+  );
 }
 
 const STACK_WRITE_ATTEMPTS = 5;
@@ -231,8 +286,8 @@ export async function syncStacks(
   }[],
   handNumber?: number,
   options: StackWriteOptions = {}
-): Promise<void> {
-  if (players.length === 0) return;
+): Promise<boolean> {
+  if (players.length === 0) return false;
   if (handNumber === undefined || handNumber === null) {
     /* Every hand result names its hand (settlement step 8 reads the snapshot).
        A write with no hand number used to take the unchecked per-seat loop -
@@ -243,7 +298,7 @@ export async function syncStacks(
       new Error(`[DB] syncStacks called for table ${tableId} without a hand number - refused`),
       'DB.sync_stacks_without_hand'
     );
-    return;
+    return false;
   }
 
   /* ZERO-DRIFT phase 5 (2026-08-31) + chip standard (2026-09-04): the stack
@@ -299,6 +354,11 @@ export async function syncStacks(
     reason?: string;
     error?: unknown;
     rebased?: Record<string, number>;
+    tournament_id?: unknown;
+    tournament_players_synced?: unknown;
+    tournament_player_count?: unknown;
+    tournament_player_user_ids?: unknown;
+    tournament_player_chips?: unknown;
   };
   let lastError = '';
   for (let attempt = 1; attempt <= STACK_WRITE_ATTEMPTS; attempt++) {
@@ -316,6 +376,24 @@ export async function syncStacks(
     }
 
     if (!error && data?.success === true) {
+      const expectedTournamentId = options.expectedTournamentId ?? null;
+      if (expectedTournamentId !== null) {
+        if (
+          !tournamentStackProofIsExact(
+            data,
+            expectedTournamentId,
+            players.map((player) => player.user_id)
+          )
+        ) {
+          reportError(
+            new Error(
+              `[DB] tournament hand-stack settle for table ${tableId} hand ${handNumber} returned incomplete standings proof`
+            ),
+            'DB.settle_hand_stacks_tournament_proof_invalid'
+          );
+          return false;
+        }
+      }
       const rebased =
         data.rebased && typeof data.rebased === 'object' ? Object.keys(data.rebased) : [];
       if (rebased.length > 0) {
@@ -328,7 +406,7 @@ export async function syncStacks(
         );
       }
       await persistTimeBanks(tableId, players);
-      return;
+      return true;
     }
 
     /* chip-std Lane F (2026-09-02) + 2026-09-04: a refusal is not a transport
@@ -357,7 +435,7 @@ export async function syncStacks(
           'DB.settle_hand_stacks_declined'
         );
       }
-      return;
+      return false;
     }
 
     lastError = error ? String(error.message ?? error) : `in_flight (${JSON.stringify(data)})`;
@@ -387,6 +465,7 @@ export async function syncStacks(
   } catch (err) {
     reportError(err, 'DB.settle_hand_stacks_unreachable_alert_failed');
   }
+  return false;
 }
 
 async function persistTimeBanks(
@@ -450,55 +529,6 @@ async function persistTimeBanks(
           );
       })
   );
-}
-
-/**
- * Sync tournament player chips from table_seats to tournament_players
- */
-export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<void> {
-  const { data: seats } = await supabase
-    .from('table_seats')
-    .select('user_id, stack')
-    .eq('table_id', tableId)
-    .is('left_at', null);
-
-  if (!seats || seats.length === 0) return;
-
-  // ONE bulk statement, not one UPDATE per seat.
-  //
-  // This function was the last surviving caller of the N+1 that
-  // TournamentManagerEliminations.ts:30-63 already replaced with
-  // fn_sync_tournament_chips. Measured on production 2026-08-25 it was still
-  // issuing 27,206 single-row PostgREST UPDATEs - a 9-handed table cost nine
-  // separate round trips every settlement - and tournament_players is in the
-  // supabase_realtime publication, so every one of those also paid a logical
-  // decode plus an RLS evaluation per subscriber. tournament_players was 48%
-  // of all writes to published tables while realtime decoding was the single
-  // largest consumer of database time.
-  //
-  // The RPC additionally skips rows whose chip count is already correct
-  // (migration 20260825_perf_sync_tournament_chips_skip_noop_writes), which a
-  // per-row UPDATE could never do, and scopes the write to status='playing' so
-  // an already-eliminated player's final stack cannot be overwritten.
-  const chipUpdates = seats.map((seat) => ({
-    user_id: seat.user_id,
-    // Guard against corrupted stack values (NaN, negative, undefined), matching
-    // the guard in TournamentManagerEliminations.
-    // Math.floor — tournament_players.chips is INTEGER. An earlier version
-    // computed 2-decimal cents (e.g. 80511.97) which Postgres rejected at
-    // PostgREST cast time, flooding postgres logs with thousands of
-    // "invalid input syntax for type integer" errors per minute.
-    // Verified in Smarter-Poker-World-Hub/.agent/POSTGRES_INTEGER_CAST_FLOOD.md
-    chips: Math.floor(
-      typeof seat.stack === 'number' && !isNaN(seat.stack) && seat.stack >= 0 ? seat.stack : 0
-    ),
-  }));
-
-  const { error } = await supabase.rpc('fn_sync_tournament_chips', {
-    p_tournament_id: tournamentId,
-    p_updates: chipUpdates,
-  });
-  if (error) reportError(error, 'supabase.syncTournamentChips');
 }
 
 /**
@@ -572,9 +602,16 @@ export async function updateTableStatus(
   playerCount: number,
   status: string = 'running'
 ): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('tables')
     .update({ current_players: playerCount, status })
     .eq('id', tableId)
+    // A hand that began before tournament completion may reach this recount
+    // after the terminal transaction has closed the table. The compare-and-set
+    // makes that delayed writer a no-op instead of reopening a completed game.
+    .neq('status', 'closed')
     .or(tableCountChangedFilter({ current_players: playerCount, status }));
+  if (error) {
+    throw new Error(`table ${tableId} status recount failed: ${error.message}`);
+  }
 }

@@ -57,33 +57,38 @@ describe('a field larger than the payout structure is not a finish', () => {
   });
 });
 
-describe('the guard is actually wired into the rescue', () => {
-  const RECOVERY = code(read('src/tournament/tournamentRecovery.ts'));
+describe('the guard is wired before the stale RUNNING sweep claims a row', () => {
+  const GAME_SERVER = code(read('src/GameServer.ts'));
 
-  it('recoverStuckCompletingTournaments consults it', () => {
-    expect(RECOVERY).toMatch(/import \{ fieldIsStillLive \} from '\.\/recoveryFieldGuard\.js'/);
-    expect(RECOVERY).toMatch(/fieldIsStillLive\(\{\s*livePlayers,\s*paidPlaces\s*\}\)/);
+  it('GameServer consults the pure guard before handing recovery a tournament', () => {
+    expect(GAME_SERVER).toMatch(
+      /import \{ fieldIsStillLive \} from '\.\/tournament\/recoveryFieldGuard\.js'/
+    );
+    expect(GAME_SERVER).toMatch(
+      /fieldIsStillLive\(\{ livePlayers: liveCount, paidPlaces: sweepPayouts\.length \}\)/
+    );
   });
 
-  it('counts live players from the field it just read, and places from the structure', () => {
-    expect(RECOVERY).toMatch(
-      /const livePlayers = rows\.filter\(\(r\) => r\.status === 'playing'\)\.length/
-    );
-    expect(RECOVERY).toMatch(/const paidPlaces = payouts\.length/);
+  it('reads both database counts before making the claim', () => {
+    expect(GAME_SERVER).toMatch(/const \[\{ count: liveCount, error: liveErr \}/);
+    expect(GAME_SERVER).toMatch(/\{ count: fieldCount, error: fieldErr \}/);
+    expect(GAME_SERVER).toMatch(/const sweepPayouts =/);
   });
 
   it('refuses by CONTINUING - it must not fall through and pay', () => {
-    // The whole failure was paying. A guard that reports and then proceeds is
-    // the same bug with better logging.
-    const window = sliceEnclosingBlock(RECOVERY, 'fieldIsStillLive({ livePlayers, paidPlaces })');
-    expect(window).toMatch(/recoverStuckCompleting_field_still_live/);
+    const window = sliceEnclosingBlock(
+      GAME_SERVER,
+      'fieldIsStillLive({ livePlayers: liveCount, paidPlaces: sweepPayouts.length })'
+    );
+    expect(window).toMatch(/stale_sweep_left_live_field_running/);
     expect(window).toMatch(/continue;/);
   });
 
-  it('decides BEFORE any credit is issued', () => {
-    const guard = RECOVERY.indexOf('fieldIsStillLive');
-    // 2026-09-02: the credit is settleTournamentObligation (one settle path).
-    const credit = RECOVERY.indexOf('settleTournamentObligation(supabase');
+  it('decides BEFORE the RUNNING-to-COMPLETING claim', () => {
+    const guard = GAME_SERVER.indexOf(
+      'fieldIsStillLive({ livePlayers: liveCount, paidPlaces: sweepPayouts.length })'
+    );
+    const credit = GAME_SERVER.indexOf("update({ status: 'COMPLETING' })", guard);
     expect(guard).toBeGreaterThan(-1);
     expect(credit).toBeGreaterThan(-1);
     expect(guard).toBeLessThan(credit);

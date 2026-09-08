@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { money } from '../../utils/buyIn';
+import { effectivePlaceLadderPool, parsePayoutStructure, placePrize } from './details/types';
 import './TournamentInfoPanel.css';
 
 type TabId = 'ranking' | 'prizes' | 'tables' | 'blinds';
@@ -48,10 +49,14 @@ interface TournamentRow {
   name: string;
   status: string;
   variant: string | null;
+  tournament_type: string | null;
   buy_in_amount: number | null;
   buy_in_fee: number | null;
   prize_pool: number | null;
   guaranteed_prize: number | null;
+  bubble_protection: boolean | null;
+  satellite_target_id: string | null;
+  satellite_target: string | null;
   bounty_pool: number | null;
   current_players: number | null;
   max_players: number | null;
@@ -93,6 +98,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
   const [tab, setTab] = useState<TabId>('ranking');
   const [t, setT] = useState<TournamentRow | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  const [fieldSize, setFieldSize] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   /**
    * A FAILED QUERY IS NOT AN EMPTY TOURNAMENT (2026-08-25).
@@ -115,14 +121,15 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
         supabase
           .from('tournaments')
           .select(
-            'id, name, status, variant, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, blind_structure, payout_structure, is_bounty, start_time'
+            'id, name, status, variant, tournament_type, buy_in_amount, buy_in_fee, prize_pool, guaranteed_prize, bubble_protection, satellite_target_id, satellite_target, bounty_pool, current_players, max_players, starting_chips, current_level, level_started_at, late_reg_levels, blind_structure, payout_structure, is_bounty, start_time'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
         supabase
           .from('tournament_players')
           .select(
-            'user_id, username, chips, status, position, prize, rebuys, bounties_collected, table_id'
+            'user_id, username, chips, status, position, prize, rebuys, bounties_collected, table_id',
+            { count: 'exact' }
           )
           .eq('tournament_id', tournamentId)
           .limit(500),
@@ -139,6 +146,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
       setFailed(false);
       if (tRes.data) setT(tRes.data as TournamentRow);
       setRows((pRes.data as Row[]) ?? []);
+      setFieldSize(typeof pRes.count === 'number' ? pRes.count : (pRes.data?.length ?? 0));
     } catch (err) {
       reportError(err, 'TournamentInfoPanel.load');
       setFailed(true);
@@ -172,7 +180,7 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
     const pool = Math.max(num(t?.prize_pool), num(t?.guaranteed_prize));
     return {
       entriesAlive: alive.length,
-      entriesTotal: rows.length,
+      entriesTotal: fieldSize ?? rows.length,
       prizePool: pool,
       bountyPool: num(t?.bounty_pool),
       avg: stacks.length ? Math.round(stacks.reduce((a, b) => a + b, 0) / stacks.length) : 0,
@@ -184,10 +192,27 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
       myStatus: mine?.status ?? null,
       ranked,
     };
-  }, [rows, t, heroUserId]);
+  }, [rows, t, heroUserId, fieldSize]);
 
   const blinds = useMemo(() => asArray(t?.blind_structure), [t]);
-  const payouts = useMemo(() => asArray(t?.payout_structure), [t]);
+  const payouts = useMemo(() => parsePayoutStructure(t?.payout_structure) ?? [], [t]);
+  const isSatellite =
+    String(t?.variant ?? '').toLowerCase() === 'satellite' ||
+    String(t?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+    Boolean(t?.satellite_target_id || t?.satellite_target);
+  const placeLadderPool = useMemo<number | null>(() => {
+    if (!t) return 0;
+    if (t.bubble_protection === true && !isSatellite && fieldSize === null) return null;
+    return effectivePlaceLadderPool(
+      t.prize_pool,
+      t.guaranteed_prize,
+      t.payout_structure,
+      fieldSize ?? 0,
+      t.bubble_protection === true,
+      num(t.buy_in_amount),
+      isSatellite
+    );
+  }, [fieldSize, isSatellite, t]);
   /**
    * LEVEL DISPLAY IS 1-BASED, THE COLUMN IS NOT (2026-08-23).
    *
@@ -351,13 +376,17 @@ export default function TournamentInfoPanel({ tournamentId, heroUserId, onClose 
               </thead>
               <tbody>
                 {payouts.map((p, i) => {
-                  const pct = num(p.percentage);
+                  const pct = p.percentage;
+                  const amount =
+                    placeLadderPool === null ? null : placePrize(placeLadderPool, payouts, p.place);
                   return (
                     <tr key={i}>
-                      <td>{num(p.place) || i + 1}</td>
+                      <td>{p.place}</td>
                       <td className="tip__num">{pct}%</td>
                       <td className="tip__num">
-                        {money(Math.round((stats.prizePool * pct) / 100))}
+                        {amount === null
+                          ? '-'
+                          : amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
                       </td>
                     </tr>
                   );

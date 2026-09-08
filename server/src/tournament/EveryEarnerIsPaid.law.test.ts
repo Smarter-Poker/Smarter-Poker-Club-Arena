@@ -34,6 +34,13 @@ const migration = readFileSync(
   ),
   'utf8'
 );
+const atomicCashMigration = readFileSync(
+  join(
+    __dirname,
+    '../../../supabase/migrations/20260908012648_tournament_cash_settlement_has_one_atomic_authority.sql'
+  ),
+  'utf8'
+);
 const gameServer = readFileSync(join(__dirname, '../GameServer.ts'), 'utf8');
 
 describe('the check exists and asks all three questions', () => {
@@ -84,70 +91,22 @@ describe('the check exists and asks all three questions', () => {
   });
 });
 
-describe('the sweep that pays cannot fail a player quietly', () => {
-  const sweep = migration.slice(
-    migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_pay_backed_payout_shortfalls')
-  );
-
-  it('withholding raises a durable alert instead of a console line', () => {
-    // This branch used to increment a counter and nothing else. Money owed to a
-    // player and not paid left no record anywhere that anyone could find later.
-    expect(sweep).toContain("'withheld_unfunded_pool'");
-    expect(sweep).toMatch(/SELECT 'critical', 'fn_pay_backed_payout_shortfalls'/);
-    const withheldAt = sweep.indexOf("'withheld_unfunded_pool'");
-    const guardAt = sweep.indexOf('IF r.delta < r.topup THEN');
-    expect(guardAt).toBeGreaterThan(-1);
-    expect(withheldAt).toBeGreaterThan(guardAt);
-  });
-
-  it('refuses to top up an event whose wallet already covers its pool', () => {
-    // The reconciler reads tournament_payouts to decide what is owed. 61 events
-    // paid 5,515.91 chips that were never recorded there, so it reports those
-    // as outstanding. Nothing but an unfunded pool was stopping a second
-    // payment; that is luck, not a safety property.
-    expect(sweep).toContain("'refused_already_disbursed'");
-    expect(sweep).toMatch(/IF r\.wallet_prizes \+ 0\.01 >= COALESCE\(r\.prize_pool, 0\)/);
-  });
-
-  it('treats the backfill log as a receipt, not a tombstone', () => {
-    // `NOT EXISTS (... backfill_log ...)` meant one inspection excluded an
-    // event for good, so a shortfall that became payable later - a guarantee
-    // funded, a baseline acknowledged - would never be looked at again.
-    expect(sweep).not.toMatch(
-      /NOT EXISTS\s*\(SELECT 1 FROM public\.tournament_payout_backfill_log/
+describe('the repair payer remains untouched during the rolling stage-one install', () => {
+  it('is neither redefined nor dropped by the atomic authority migration', () => {
+    expect(atomicCashMigration).not.toMatch(
+      /CREATE OR REPLACE FUNCTION public\.fn_pay_backed_payout_shortfalls/
     );
-    expect(sweep).toContain('ON CONFLICT (tournament_id) DO UPDATE');
-    // The only correct exclusion is that nothing is owed.
-    expect(sweep).toContain('CONTINUE WHEN r.topup <= 0.005;');
-  });
-
-  it('still refuses to pay more than the event is holding', () => {
-    expect(sweep).toContain('IF r.delta < r.topup THEN');
-    expect(sweep).toMatch(/would leave conservation at %; refusing/);
-  });
-
-  it('still leaves satellites and spins alone', () => {
-    expect(sweep).toMatch(/COALESCE\(t\.variant, ''\) <> 'satellite'/);
-    expect(sweep).toMatch(/COALESCE\(t\.variant, ''\) <> 'spin'/);
+    expect(atomicCashMigration).not.toMatch(
+      /DROP FUNCTION(?: IF EXISTS)? public\.fn_pay_backed_payout_shortfalls/
+    );
   });
 });
 
-describe('the check actually runs', () => {
-  it('GameServer calls it on its own timer', () => {
-    // The lesson recorded on the overpay charge: a repair gated on another
-    // job's clock runs once at boot and then effectively never.
-    expect(gameServer).toContain("'fn_payout_guarantee_check'");
-    expect(gameServer).toContain('lastPayoutGuaranteeCheckAt');
-    const declAt = gameServer.indexOf('private lastPayoutGuaranteeCheckAt = 0;');
-    const gateAt = gameServer.indexOf(
-      'Date.now() - this.lastPayoutGuaranteeCheckAt > 60 * 60 * 1000'
-    );
-    expect(declAt).toBeGreaterThan(-1);
-    expect(gateAt).toBeGreaterThan(declAt);
-  });
-
-  it('a failed call is reported rather than swallowed', () => {
-    expect(gameServer).toContain('GameServer.payout_guarantee_check_failed');
-    expect(gameServer).toContain('GameServer.payout_guarantee_check_threw');
+describe('the engine has no payout watcher or repair timer', () => {
+  it('does not call either retired payout path', () => {
+    expect(gameServer).not.toContain("'fn_payout_guarantee_check'");
+    expect(gameServer).not.toContain('lastPayoutGuaranteeCheckAt');
+    expect(gameServer).not.toContain("'fn_pay_backed_payout_shortfalls'");
+    expect(gameServer).not.toContain('lastBackedPayoutAt');
   });
 });

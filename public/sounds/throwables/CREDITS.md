@@ -59,39 +59,43 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 - Licence: Own-Synthesis
 - Generated: ffmpeg lavfi sources (aevalsrc / anoisesrc) shaped by the per-layer `filter` in this manifest, then loudness-normalised with every other cue. The expression IS the provenance: nothing is downloaded, nobody is credited, and the file is reproducible from this repo alone. Used only where no CC0 sample pack has the sound - a rising firework whistle, a low rumble and a champagne fizz bed are not in Kenney's libraries, and Freesound needs an API key nobody has supplied yet (plan 3.3.1, phase 6).
 
-| Cue               | ffmpeg source expression                                                                                   |
-| ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| `boom`            | `anoisesrc=d=0.45:c=brown:a=0.85:r=48000`                                                                  |
-| `explosion_boom`  | `anoisesrc=d=1.6:c=brown:a=0.9:r=48000`                                                                    |
-| `fizz_loop`       | `anoisesrc=d=2.4:c=white:a=0.30:r=48000`                                                                   |
-| `flies_buzz`      | `aevalsrc='0.5*sin(2*PI*162*t)+0.3*sin(2*PI*324*t)+0.15*sin(2*PI*487*t)':d=1.1:s=48000`                    |
-| `fuse_ignite`     | `anoisesrc=d=0.16:c=white:a=0.8:r=48000`                                                                   |
-| `fuse_sizzle`     | `anoisesrc=d=0.75:c=white:a=0.55:r=48000`                                                                  |
-| `fw_barrage`      | `anoisesrc=d=1.4:c=brown:a=0.9:r=48000`                                                                    |
-| `fw_rumble`       | `anoisesrc=d=1.5:c=brown:a=0.85:r=48000`                                                                   |
-| `fw_whistle`      | `aevalsrc='0.55*sin(2*PI*(900+2900*t*t)*t)':d=0.85:s=48000`, `anoisesrc=d=0.85:c=white:a=0.10:r=48000`     |
-| `lock_beep`       | `aevalsrc='0.6*sin(2*PI*2400*t)+0.25*sin(2*PI*4800*t)':d=0.17:s=48000`                                     |
-| `lock_confirm`    | `aevalsrc='0.6*sin(2*PI*3100*t)+0.3*sin(2*PI*6200*t)':d=0.2:s=48000`                                       |
-| `missile_whistle` | `aevalsrc='0.55*sin(2*PI*(3500-1900*t/0.83)*t)':d=0.83:s=48000`, `anoisesrc=d=0.83:c=white:a=0.16:r=48000` |
-| `poof_soft`       | `anoisesrc=d=0.75:c=pink:a=0.7:r=48000`                                                                    |
-| `swell_low`       | `aevalsrc='0.5*sin(2*PI*(70+38*t)*t)+0.28*sin(2*PI*(140+76*t)*t)':d=0.85:s=48000`                          |
-| `whoosh_low`      | `anoisesrc=d=0.4:c=brown:a=0.8:r=48000`                                                                    |
-| `alien_blip`      | `aevalsrc='sin(2*PI*(640*t+90*t*t)+2*sin(2*PI*23*t))*exp(-7*t)':d=0.28:s=48000`                            |
-| `scan_sweep`      | `aevalsrc='0.7*sin(2*PI*(360*t+720*t*t))+0.2*sin(2*PI*120*t)':d=0.8:s=48000`                               |
-| `servo_whir`      | `aevalsrc='0.5*sin(2*PI*96*t+3*sin(2*PI*2*t))+0.2*sin(2*PI*768*t)':d=1.4:s=48000`                          |
-| `zap_short`       | `anoisesrc=d=0.4:c=white:a=0.6:r=48000:seed=816`                                                           |
-| `power_down`      | `aevalsrc='sin(2*PI*(650*t-450*t*t))+0.2*sin(2*PI*87*t)':d=0.6:s=48000`                                    |
-| `duck_squeak`     | `aevalsrc=0.5*sin(2*PI*(900*t+350*t*t)+2*sin(2*PI*53*t)):s=48000:d=0.24`                                   |
-| `water_lap`       | `anoisesrc=color=pink:seed=724:sample_rate=48000:duration=1.6`                                             |
-| `raspberry_short` | `aevalsrc=0.5*sin(2*PI*145*t+1.5*sin(2*PI*32*t))*(0.6+0.4*sin(2*PI*24*t)):s=48000:d=0.65`                  |
-| `basket_swish`    | `anoisesrc=color=pink:seed=637:s=48000:d=0.28`                                                             |
-| `basket_bounce`   | `aevalsrc=sin(2*PI*(90*t-25*t*t))*exp(-20*t):s=48000:d=0.24`                                               |
-| `tennis_pop`      | `aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14`                                |
-| `tennis_pop_soft` | `aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14`                                |
-| `tennis_pop_last` | `aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14`                                |
-| `roll_rumble`     | `anoisesrc=color=brown:seed=546:s=48000:d=0.6`                                                             |
-| `steam_hiss`      | `anoisesrc=color=white:seed=213:s=48000:d=1.6`                                                             |
-| `magnet_hum`      | `aevalsrc=sin(2*PI*105*t+2*sin(2*PI*3*t)):s=48000:d=0.8`                                                   |
+| Cue                     | ffmpeg source expression                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `boom`                  | `anoisesrc=d=0.45:c=brown:a=0.85:r=48000`                                                                  |
+| `explosion_boom`        | `anoisesrc=d=1.6:c=brown:a=0.9:r=48000`                                                                    |
+| `fizz_loop`             | `anoisesrc=d=2.4:c=white:a=0.30:r=48000`                                                                   |
+| `flies_buzz`            | `aevalsrc='0.5*sin(2*PI*162*t)+0.3*sin(2*PI*324*t)+0.15*sin(2*PI*487*t)':d=1.1:s=48000`                    |
+| `fuse_ignite`           | `anoisesrc=d=0.16:c=white:a=0.8:r=48000`                                                                   |
+| `fuse_sizzle`           | `anoisesrc=d=0.75:c=white:a=0.55:r=48000`                                                                  |
+| `fw_barrage`            | `anoisesrc=d=1.4:c=brown:a=0.9:r=48000`                                                                    |
+| `fw_rumble`             | `anoisesrc=d=1.5:c=brown:a=0.85:r=48000`                                                                   |
+| `fw_whistle`            | `aevalsrc='0.55*sin(2*PI*(900+2900*t*t)*t)':d=0.85:s=48000`, `anoisesrc=d=0.85:c=white:a=0.10:r=48000`     |
+| `lock_beep`             | `aevalsrc='0.6*sin(2*PI*2400*t)+0.25*sin(2*PI*4800*t)':d=0.17:s=48000`                                     |
+| `lock_confirm`          | `aevalsrc='0.6*sin(2*PI*3100*t)+0.3*sin(2*PI*6200*t)':d=0.2:s=48000`                                       |
+| `missile_whistle`       | `aevalsrc='0.55*sin(2*PI*(3500-1900*t/0.83)*t)':d=0.83:s=48000`, `anoisesrc=d=0.83:c=white:a=0.16:r=48000` |
+| `poof_soft`             | `anoisesrc=d=0.75:c=pink:a=0.7:r=48000`                                                                    |
+| `swell_low`             | `aevalsrc='0.5*sin(2*PI*(70+38*t)*t)+0.28*sin(2*PI*(140+76*t)*t)':d=0.85:s=48000`                          |
+| `whoosh_low`            | `anoisesrc=d=0.4:c=brown:a=0.8:r=48000`                                                                    |
+| `alien_blip`            | `aevalsrc='sin(2*PI*(640*t+90*t*t)+2*sin(2*PI*23*t))*exp(-7*t)':d=0.28:s=48000`                            |
+| `scan_sweep`            | `aevalsrc='0.7*sin(2*PI*(360*t+720*t*t))+0.2*sin(2*PI*120*t)':d=0.8:s=48000`                               |
+| `servo_whir`            | `aevalsrc='0.5*sin(2*PI*96*t+3*sin(2*PI*2*t))+0.2*sin(2*PI*768*t)':d=1.4:s=48000`                          |
+| `zap_short`             | `anoisesrc=d=0.4:c=white:a=0.6:r=48000:seed=816`                                                           |
+| `power_down`            | `aevalsrc='sin(2*PI*(650*t-450*t*t))+0.2*sin(2*PI*87*t)':d=0.6:s=48000`                                    |
+| `duck_squeak`           | `aevalsrc=0.5*sin(2*PI*(900*t+350*t*t)+2*sin(2*PI*53*t)):s=48000:d=0.24`                                   |
+| `water_lap`             | `anoisesrc=color=pink:seed=724:sample_rate=48000:duration=1.6`                                             |
+| `raspberry_short`       | `aevalsrc=0.5*sin(2*PI*145*t+1.5*sin(2*PI*32*t))*(0.6+0.4*sin(2*PI*24*t)):s=48000:d=0.65`                  |
+| `basket_swish`          | `anoisesrc=color=pink:seed=637:s=48000:d=0.28`                                                             |
+| `basket_bounce`         | `aevalsrc=sin(2*PI*(90*t-25*t*t))*exp(-20*t):s=48000:d=0.24`                                               |
+| `tennis_pop`            | `aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14`                                |
+| `tennis_pop_soft`       | `aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14`                                |
+| `tennis_pop_last`       | `aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14`                                |
+| `roll_rumble`           | `anoisesrc=color=brown:seed=546:s=48000:d=0.6`                                                             |
+| `steam_hiss`            | `anoisesrc=color=white:seed=213:s=48000:d=1.6`                                                             |
+| `magnet_hum`            | `aevalsrc=sin(2*PI*105*t+2*sin(2*PI*3*t)):s=48000:d=0.8`                                                   |
+| `whale_call`            | `aevalsrc=0.35*sin(2*PI*(160*t+18*sin(2*PI*0.7*t))):s=48000:d=1.9`                                         |
+| `ambulance_siren_small` | `aevalsrc=0.3*sin(2*PI*(650*t+60*sin(2*PI*2*t))):s=48000:d=1`                                              |
+| `pressure_rise`         | `aevalsrc=0.3*sin(2*PI*(180*t+420*t*t)):s=48000:d=1.3`                                                     |
+| `reel_spin_loop`        | `anoisesrc=color=white:seed=419:sample_rate=48000:duration=1.45`                                           |
 
 ## Kenney - Interface Sounds (1.0)
 
@@ -158,3 +162,23 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | Cue           | Source file(s) |
 | ------------- | -------------- |
 | `squirt_loop` | `pump_01.ogg`  |
+
+## Donkeys - Donkey Bray, Close Perspective
+
+- Author: TheKingOfGeeks360
+- Licence: CC0-1.0
+- URL: https://freesound.org/people/TheKingOfGeeks360/sounds/787564/
+
+| Cue           | Source file(s)    |
+| ------------- | ----------------- |
+| `donkey_bray` | `donkey-bray.mp3` |
+
+## Applause in a large hall or church
+
+- Author: eXpl0it3r
+- Licence: CC0-1.0
+- URL: https://opengameart.org/content/applause-in-a-large-hall-or-church
+
+| Cue            | Source file(s) |
+| -------------- | -------------- |
+| `applause_bed` | `applause.wav` |

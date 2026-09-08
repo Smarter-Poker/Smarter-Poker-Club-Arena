@@ -1,0 +1,132 @@
+.thr-pumpkin__shell {
+  transform-origin: 0 0;
+  animation: thr-pumpkin-shell calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-pumpkin-shell {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(-80px);
+  }
+  8.64467% {
+    opacity: 1;
+    transform: scale(1.15, 0.8);
+  }
+  14.09872% {
+    opacity: 1;
+    transform: none;
+  }
+  31.82438% {
+    opacity: 1;
+  }
+  34.55140% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-pumpkin__lit {
+  transform-origin: 0 0;
+  animation: thr-pumpkin-lit calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-pumpkin-lit {
+  0.00000% {
+    opacity: 0;
+  }
+  31.82438% {
+    opacity: 0;
+  }
+  34.55140% {
+    opacity: 1;
+  }
+  50.91355% {
+    opacity: 0.75;
+  }
+  64.54868% {
+    opacity: 1;
+  }
+  78.18380% {
+    opacity: 0.8;
+  }
+  91.81893% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+.thr-pumpkin__lid {
+  transform-origin: 0 0;
+  animation: thr-pumpkin-lid calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-pumpkin-lid {
+  0.00000% {
+    opacity: 0;
+  }
+  14.09872% {
+    opacity: 0;
+  }
+  15.46223% {
+    opacity: 1;
+    transform: none;
+  }
+  23.64331% {
+    opacity: 1;
+    transform: translateY(-35px) rotate(-10deg);
+  }
+  31.82438% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-pumpkin__spark {
+  transform-origin: 0 0;
+  animation: thr-pumpkin-spark calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-pumpkin-spark {
+  0.00000% {
+    opacity: 0;
+  }
+  16.82574% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  26.37033% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  42.73248% {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-pumpkin__shell {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-pumpkin__lit {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-pumpkin__lid {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-pumpkin__spark {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+}

@@ -31,9 +31,11 @@
  * HOW IT WORKS
  *
  * The entry chunk's sourcemap lists every module Rollup put inside it. That
- * list is committed as `entry-chunk-baseline.json`. A module arriving in the
- * entry chunk is then a line in a diff that a reviewer sees, with the same
- * shape as this estate's other baselines (definer exposure, bus wiring).
+ * list is committed as `entry-chunk-baseline.json`, PLUS whatever the
+ * fragments under `entry-chunk.d/` add (see below - one shared array that
+ * every branch edits is a conflict generator). A module arriving in the entry
+ * chunk is then a line in a diff that a reviewer sees, with the same shape as
+ * this estate's other baselines (definer exposure, bus wiring).
  *
  * Only `src/**` is tracked. Third-party modules land in the entry as a
  * CONSEQUENCE of a first-party import — every package that appeared on
@@ -49,17 +51,85 @@
  * made on purpose, rather than a side effect of an import line.
  *
  * Usage:  node scripts/ci/entry-chunk-delta.mjs [dist]
- *         node scripts/ci/entry-chunk-delta.mjs [dist] --update
+ *         node scripts/ci/entry-chunk-delta.mjs [dist] --update       (your branch's fragment)
+ *         node scripts/ci/entry-chunk-delta.mjs [dist] --update-base  (periodic refresh only)
  * Exit:   0 clean · 1 an unreviewed module in the entry · 2 script error
  */
-import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, readdirSync, mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 
 const DIST = process.argv.find((a) => !a.startsWith('-') && a !== process.argv[0] && a !== process.argv[1]) || 'dist';
 const UPDATE = process.argv.includes('--update');
+const UPDATE_BASE = process.argv.includes('--update-base');
 const ASSETS = path.join(DIST, 'assets');
 const BASELINE = path.join('scripts', 'ci', 'entry-chunk-baseline.json');
+const FRAGMENTS = path.join('scripts', 'ci', 'entry-chunk.d');
+
+/**
+ * ONE SORTED ARRAY THAT EVERY BRANCH EDITS IS A CONFLICT GENERATOR.
+ *
+ * `entry-chunk-baseline.json` held a single `modules` array, so any two
+ * branches that legitimately added a module to first paint collided on it -
+ * by construction, on a file that has nothing to do with either change. That
+ * is CLAUDE.md 10.9's `MIGRATION-CHANGELOG.md` lesson in a different costume,
+ * and it is not theoretical: on 2026-09-08 two branches hit it within an hour,
+ * and resolving one of them by taking main's copy SILENTLY DROPPED the
+ * module the branch had recorded - so CI went red on work that was correct,
+ * naming a module the author had already reviewed.
+ *
+ * So the base file stays as the machine-generated snapshot, and a branch
+ * declares its own additions in its OWN file under `entry-chunk.d/`. Two
+ * files written independently cannot conflict. The gate reads the base UNION
+ * every fragment, exactly as the schema manifest does.
+ *
+ *     scripts/ci/entry-chunk.d/fix-my-branch.json
+ *     { "_owner": "fix/my-branch - why this module belongs in first paint",
+ *       "modules": ["src/utils/thing.ts"] }
+ *
+ * `--update` writes a fragment named after the current branch, never the base.
+ * `--update-base` rewrites the base and is for the periodic refresh only.
+ */
+function fragmentModules() {
+  if (!existsSync(FRAGMENTS)) return [];
+  const out = [];
+  for (const name of readdirSync(FRAGMENTS)) {
+    if (!name.endsWith('.json')) continue;
+    const file = path.join(FRAGMENTS, name);
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync(file, 'utf8'));
+    } catch (err) {
+      // A fragment that cannot be read is not "no modules" - that would let a
+      // typo silently re-arm the gate against a module somebody reviewed.
+      console.error(`[entry-chunk] ${file} is not valid JSON: ${err.message}`);
+      process.exit(2);
+    }
+    if (!Array.isArray(parsed.modules)) {
+      console.error(`[entry-chunk] ${file} has no "modules" array.`);
+      process.exit(2);
+    }
+    out.push(...parsed.modules);
+  }
+  return out;
+}
+
+function currentBranchSlug() {
+  const fromEnv = process.env.GITHUB_HEAD_REF || process.env.CA_BRANCH;
+  let branch = fromEnv;
+  if (!branch) {
+    try {
+      branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+        encoding: 'utf8',
+      }).trim();
+    } catch {
+      branch = '';
+    }
+  }
+  const slug = (branch || 'local').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug || 'local';
+}
 
 /**
  * WHERE THE MODULE LIST COMES FROM, AND WHY NOT THE SOURCEMAP.
@@ -110,23 +180,61 @@ const kb = (n) => Math.round(n / 1024);
 
 const chunk = entryChunk();
 
-if (UPDATE) {
+if (UPDATE_BASE) {
   writeFileSync(
     BASELINE,
     JSON.stringify({ entry_gz_kb: kb(chunk.gz), modules: chunk.modules }, null, 2) + '\n'
   );
   console.log(
-    `[entry-chunk] baseline written: ${chunk.modules.length} src modules, ${kb(chunk.gz)}kB gz.`
+    `[entry-chunk] BASE baseline rewritten: ${chunk.modules.length} src modules, ${kb(chunk.gz)}kB gz. ` +
+      'Fragments under entry-chunk.d/ that name a module now in the base can be deleted.'
   );
   process.exit(0);
 }
 
 if (!existsSync(BASELINE)) {
-  console.error(`[entry-chunk] ${BASELINE} is missing. Create it with --update.`);
+  console.error(`[entry-chunk] ${BASELINE} is missing. Create it with --update-base.`);
   process.exit(2);
 }
 const baseline = JSON.parse(readFileSync(BASELINE, 'utf8'));
-const known = new Set(baseline.modules || []);
+const known = new Set([...(baseline.modules || []), ...fragmentModules()]);
+
+if (UPDATE) {
+  /* Record ONLY what this branch adds, in this branch's own file. Writing the
+     whole chunk here would re-create the shared array in a new place. */
+  const mine = chunk.modules.filter((m) => !known.has(m));
+  const slug = currentBranchSlug();
+  const file = path.join(FRAGMENTS, `${slug}.json`);
+  if (mine.length === 0) {
+    console.log(
+      `[entry-chunk] nothing to record: every module in the entry chunk is already ` +
+        'in the base or in a fragment.'
+    );
+    process.exit(0);
+  }
+  mkdirSync(FRAGMENTS, { recursive: true });
+  const existing = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+  writeFileSync(
+    file,
+    JSON.stringify(
+      {
+        _owner:
+          existing._owner ||
+          `${slug} - REPLACE THIS with why these modules belong in first paint`,
+        modules: [...new Set([...(existing.modules || []), ...mine])].sort(),
+      },
+      null,
+      2
+    ) + '\n'
+  );
+  console.log(
+    `[entry-chunk] wrote ${file} with ${mine.length} module(s):\n` +
+      mine.map((m) => `  ${m}`).join('\n') +
+      '\n\nSay in `_owner` why each belongs in first paint - that sentence is the ' +
+      'whole point of the gate.'
+  );
+  process.exit(0);
+}
 const added = chunk.modules.filter((m) => !known.has(m));
 const removed = (baseline.modules || []).filter((m) => !chunk.modules.includes(m));
 const drift = kb(chunk.gz) - (baseline.entry_gz_kb || 0);
@@ -151,7 +259,8 @@ if (summary && (added.length || removed.length || drift !== 0)) {
 if (removed.length && !added.length) {
   console.log(
     `[entry-chunk] ${removed.length} module(s) left the entry chunk. That is an improvement, ` +
-      'but the baseline is now stale: refresh it with --update so the next change is measured against the truth.'
+      'but the baseline is now stale. It is refreshed with --update-base; a fragment under ' +
+      'entry-chunk.d/ naming a module that has left can simply be deleted.'
   );
 }
 
@@ -165,7 +274,8 @@ if (added.length) {
       'tree into first paint this way.\n\n' +
       'If a module genuinely belongs in the entry, that is a real decision and the ' +
       'answer is to run `node scripts/ci/entry-chunk-delta.mjs dist --update` in the same ' +
-      'commit and say why in the pull request.'
+      'commit, which writes scripts/ci/entry-chunk.d/<your-branch>.json - your own file, ' +
+      'which cannot conflict with anyone else\'s - and then say why in its `_owner`.'
   );
   process.exit(1);
 }

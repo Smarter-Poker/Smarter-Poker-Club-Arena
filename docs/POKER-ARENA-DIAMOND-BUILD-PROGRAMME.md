@@ -151,16 +151,20 @@ Exit: reviewable programme and reconciled policy, required checks passed, merged
 
 ### Phase 2 Of 12: Arena Identity, Access And Asset Boundaries
 
-- [ ] Inspect current schema/RPC/trigger chain and preserve any existing arena obligations.
-- [ ] Establish exactly one system Diamond identity; no ordinary club grants.
-- [ ] Define typed frontend/server arena context and explicit capability rules.
-- [ ] Implement automatic Diamond entitlement for current/new users and repairable participation.
-- [ ] Keep explicit join/approval before chip-club games and member data, including Shark Club.
-- [ ] Enforce no union, agent, commission or private membership-slot association.
-- [ ] Authorize lobby, direct links, table state, WebSockets and staff routes consistently.
-- [ ] Make unknown/mismatched asset fail at transaction entry; no fallback to chips.
+- [x] Inspect current schema/RPC/trigger chain and preserve any existing arena obligations.
+- [x] Establish exactly one system Diamond identity; no ordinary club grants.
+- [x] Define typed frontend/server arena context and explicit capability rules.
+- [x] Implement automatic Diamond entitlement for current/new users and repairable participation.
+- [x] Keep explicit join/approval before chip-club games and member data, including Shark Club.
+- [x] Enforce no union, agent, commission or private membership-slot association.
+- [x] Authorize lobby, direct links, table state, WebSockets and staff routes consistently.
+- [x] Make unknown/mismatched asset fail at transaction entry; no fallback to chips.
 
-Exit: access and wrong-asset integration tests pass, no public funded games yet.
+- [ ] Verify the merged Phase 2 frontend on production and confirm the engine runs the Phase 2 server code before starting Phase 3.
+
+Implementation and audit evidence: PR #3814, merged as ea30980397158749d0d91c1726c9f8e004e83e56. All 24,638 unit tests, 166 browser checks and 39 isolated SQL assertions pass. Six production migrations are applied. Publication remains a separate, incomplete gate; do not mistake these checked implementation items for authorization to begin Phase 3.
+
+Exit: access and wrong-asset integration tests pass, merged frontend and server publication verified, no public funded games yet.
 
 ### Phase 3 Of 12: Diamond Custody, Ledger And Reconciliation
 

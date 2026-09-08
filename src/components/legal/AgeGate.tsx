@@ -31,13 +31,16 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { IS_NATIVE_BUILD } from '../../lib/appBase';
 import { reportError } from '../../utils/errorReporter';
+import { ageOn, latestAdultBirthday, MINIMUM_AGE } from '../../lib/age';
 import './TOSAcceptanceModal.css';
 import './AgeGate.css';
 
 /** Dan's to flip. The stores review the app; the web is unchanged. */
 export const AGE_GATE_ON_WEB = false;
 
-export const MINIMUM_AGE = 18;
+/* Age arithmetic lives in src/lib/age.ts so the sign-up form can share it
+   without importing this component. Re-exported for the existing callers. */
+export { ageOn, latestAdultBirthday, MINIMUM_AGE };
 
 type GateState = 'checking' | 'verified' | 'missing' | 'unknown';
 
@@ -46,30 +49,6 @@ const ALWAYS_REACHABLE = ['/legal', '/auth', '/help'];
 function isAlwaysReachable(pathname: string): boolean {
   const path = pathname.replace(/\/+$/, '') || '/';
   return ALWAYS_REACHABLE.some((root) => path === root || path.startsWith(`${root}/`));
-}
-
-/** Pure: whole years between a birthday and a reference date. Exported for tests. */
-export function ageOn(birthday: string, today: Date): number | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birthday);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const b = new Date(Date.UTC(y, mo - 1, d));
-  if (b.getUTCFullYear() !== y || b.getUTCMonth() !== mo - 1 || b.getUTCDate() !== d) return null;
-  let age = today.getUTCFullYear() - y;
-  const beforeBirthday =
-    today.getUTCMonth() < mo - 1 || (today.getUTCMonth() === mo - 1 && today.getUTCDate() < d);
-  if (beforeBirthday) age -= 1;
-  return age;
-}
-
-/** The latest date of birth that is 18 today, for the input's max. */
-export function latestAdultBirthday(today: Date): string {
-  const d = new Date(
-    Date.UTC(today.getUTCFullYear() - MINIMUM_AGE, today.getUTCMonth(), today.getUTCDate())
-  );
-  return d.toISOString().slice(0, 10);
 }
 
 /**

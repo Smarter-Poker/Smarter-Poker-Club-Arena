@@ -114,6 +114,9 @@ const root = ReactDOM.createRoot(document.getElementById('root')!);
 async function boot(): Promise<void> {
   if (IS_NATIVE_BUILD) {
     try {
+      // Before ANY fetch: relative /api/* goes to smarter.poker (src/lib/native/hubFetchShim).
+      const { installHubFetchShim } = await import('./lib/native/hubFetchShim');
+      installHubFetchShim();
       const { restoreSessionFromNativeStore } = await import('./lib/native/sessionMirror');
       await restoreSessionFromNativeStore();
     } catch (err) {

@@ -10,6 +10,7 @@ import { useRef, useState } from 'react';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { masterBus } from '../../core/MasterBus';
+import { isNativePlatform } from '../../lib/appBase';
 import { fmt, formatDate } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
 import { VipArt } from './ItemArt';
@@ -56,6 +57,45 @@ export default function MembershipTab({
     inFlightRef.current = false;
     intentKeyRef.current = null;
     setBusy(null);
+  };
+
+  /* THE APP STORE BUILD (2026-09-08). Inside the Capacitor app a subscription
+     is sold through StoreKit / Play Billing (startCheckout branches to
+     src/lib/native/purchases.ts), and Apple 3.1.2 requires two things a web
+     page never needed: a Restore Purchases button and a way to reach the
+     store's own subscription management screen. Both are native-only; the
+     web keeps its Stripe copy and its /hub/diamond-store link untouched. */
+  const native = isNativePlatform();
+
+  const restorePurchases = async () => {
+    if (!claimIntent('restore')) return;
+    try {
+      const { restoreNativePurchases } = await import('../../lib/native/purchases');
+      const result = await restoreNativePurchases(userId);
+      if (result.ok) {
+        toast.success('Purchases Restored');
+        onWalletChanged();
+      } else {
+        toast.error(
+          result.error === 'store_not_configured'
+            ? 'Purchases Are Not Set Up On This Build Yet.'
+            : 'Could Not Restore Purchases.'
+        );
+      }
+    } catch {
+      toast.error('Could Not Restore Purchases.');
+    } finally {
+      releaseIntent();
+    }
+  };
+
+  const manageSubscription = async () => {
+    try {
+      const { openNativeSubscriptionManagement } = await import('../../lib/native/purchases');
+      await openNativeSubscriptionManagement();
+    } catch {
+      toast.error('Could Not Open Subscription Settings.');
+    }
   };
 
   /*
@@ -237,10 +277,14 @@ export default function MembershipTab({
                     onClick={() => buyWithCard(plan.checkoutPlan as string)}
                   >
                     {busy === `card-${plan.checkoutPlan}`
-                      ? 'Opening Checkout...'
+                      ? native
+                        ? 'Opening Store...'
+                        : 'Opening Checkout...'
                       : wallet.isVip
                         ? 'Switch To This Plan'
-                        : 'Subscribe With Card'}
+                        : native
+                          ? 'Subscribe'
+                          : 'Subscribe With Card'}
                   </button>
                 )}
                 <button
@@ -258,13 +302,33 @@ export default function MembershipTab({
         ))}
       </div>
 
-      <div className={styles.infoNote}>
-        Card Subscriptions Renew Automatically And Can Be Canceled Anytime.{' '}
-        <a className={styles.inlineLink} href="/hub/diamond-store?tab=vip">
-          Manage Subscription
-        </a>
-        . Diamond-Paid Plans Do Not Auto-Renew, And Lifetime Never Does.
-      </div>
+      {native ? (
+        <div className={styles.infoNote}>
+          Subscriptions Renew Automatically Through Your App Store Account And Can Be Canceled
+          Anytime.{' '}
+          <button type="button" className={styles.inlineLink} onClick={manageSubscription}>
+            Manage Subscription
+          </button>
+          {' or '}
+          <button
+            type="button"
+            className={styles.inlineLink}
+            disabled={busy !== null}
+            onClick={restorePurchases}
+          >
+            {busy === 'restore' ? 'Restoring...' : 'Restore Purchases'}
+          </button>
+          . Diamond-Paid Plans Do Not Auto-Renew, And Lifetime Never Does.
+        </div>
+      ) : (
+        <div className={styles.infoNote}>
+          Card Subscriptions Renew Automatically And Can Be Canceled Anytime.{' '}
+          <a className={styles.inlineLink} href="/hub/diamond-store?tab=vip">
+            Manage Subscription
+          </a>
+          . Diamond-Paid Plans Do Not Auto-Renew, And Lifetime Never Does.
+        </div>
+      )}
     </>
   );
 }

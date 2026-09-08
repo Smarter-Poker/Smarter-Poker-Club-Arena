@@ -338,4 +338,6 @@ BEGIN
 END;
 $function$
 ;
+REVOKE ALL ON FUNCTION public.fn_thaw_platform(timestamptz,numeric,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_thaw_platform(timestamptz,numeric,text) TO service_role;
 COMMIT;

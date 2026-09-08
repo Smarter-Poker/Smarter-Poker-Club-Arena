@@ -85,6 +85,20 @@ const PARAMS = {
   playerWon: false,
 };
 
+const RECEIPT = {
+  id: TX_ID,
+  table_id: PARAMS.tableId,
+  club_id: PARAMS.clubId,
+  hand_number: PARAMS.handNumber,
+  player_id: PARAMS.playerId,
+  equity_percent: PARAMS.equityPercent,
+  premium: PARAMS.premium,
+  insured_amount: PARAMS.insuredAmount,
+  payout: PARAMS.payout,
+  player_won: PARAMS.playerWon,
+  kind: 'insurance',
+};
+
 describe('logInsuranceSettlement', () => {
   beforeEach(() => {
     mockRpc.mockReset();
@@ -96,7 +110,7 @@ describe('logInsuranceSettlement', () => {
   });
 
   it('records a settlement and returns the transaction id on the first attempt', async () => {
-    mockRpc.mockResolvedValue({ data: { id: TX_ID }, error: null });
+    mockRpc.mockResolvedValue({ data: RECEIPT, error: null });
 
     const result = await logInsuranceSettlement(PARAMS);
 
@@ -122,7 +136,7 @@ describe('logInsuranceSettlement', () => {
   });
 
   it('unwraps a single-row composite that PostgREST returned as an array', async () => {
-    mockRpc.mockResolvedValue({ data: [{ id: TX_ID }], error: null });
+    mockRpc.mockResolvedValue({ data: [RECEIPT], error: null });
     const result = await logInsuranceSettlement(PARAMS);
     expect(result).toEqual({ ok: true, transactionId: TX_ID, attempts: 1 });
   });
@@ -130,7 +144,7 @@ describe('logInsuranceSettlement', () => {
   it('AUDIT M3: retries a transient RPC error and succeeds without alerting', async () => {
     mockRpc
       .mockResolvedValueOnce({ data: null, error: { message: 'ETIMEDOUT' } })
-      .mockResolvedValueOnce({ data: { id: TX_ID }, error: null });
+      .mockResolvedValueOnce({ data: RECEIPT, error: null });
 
     const result = await logInsuranceSettlement(PARAMS);
 
@@ -145,7 +159,7 @@ describe('logInsuranceSettlement', () => {
   it('AUDIT M3: retries a thrown transport error too', async () => {
     mockRpc
       .mockRejectedValueOnce(new Error('socket hang up'))
-      .mockResolvedValueOnce({ data: { id: TX_ID }, error: null });
+      .mockResolvedValueOnce({ data: RECEIPT, error: null });
 
     const result = await logInsuranceSettlement(PARAMS);
 
@@ -158,7 +172,7 @@ describe('logInsuranceSettlement', () => {
     // Guessing either way is wrong: guess success and we hide a lost ledger
     // write; guess failure and every settlement raises a CRITICAL. So confirm.
     mockRpc.mockResolvedValue({ data: { unexpected: 'shape' }, error: null });
-    mockMaybeSingle.mockResolvedValue({ data: { id: TX_ID }, error: null });
+    mockMaybeSingle.mockResolvedValue({ data: RECEIPT, error: null });
 
     const result = await logInsuranceSettlement(PARAMS);
 
@@ -281,5 +295,19 @@ describe('logInsuranceSettlement', () => {
     });
 
     await expect(logInsuranceSettlement(PARAMS)).resolves.toMatchObject({ ok: false });
+  });
+  it('rejects an old receipt for a changed payment, including the confirmation read', async () => {
+    const changed = { ...RECEIPT, premium: PARAMS.premium + 1 };
+    mockRpc.mockResolvedValue({ data: changed, error: null });
+    mockMaybeSingle.mockResolvedValue({ data: changed, error: null });
+    expect((await logInsuranceSettlement(PARAMS)).ok).toBe(false);
+  });
+
+  it('normalizes the RPC amounts to the same cents that its receipt verifies', async () => {
+    const params = { ...PARAMS, premium: 1.234, payout: 0.456 };
+    mockRpc.mockResolvedValue({ data: { ...RECEIPT, premium: 1.23, payout: 0.46 }, error: null });
+    expect((await logInsuranceSettlement(params)).ok).toBe(true);
+    expect(mockRpc.mock.calls[0][1].p_premium).toBe(1.23);
+    expect(mockRpc.mock.calls[0][1].p_payout).toBe(0.46);
   });
 });

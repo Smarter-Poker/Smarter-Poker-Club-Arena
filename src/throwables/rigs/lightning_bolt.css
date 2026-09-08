@@ -1,0 +1,124 @@
+.thr-lightning_bolt__cloud,
+.thr-lightning_bolt__hair,
+.thr-lightning_bolt__smoke {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.thr-lightning_bolt__cloud {
+  animation: thr-lightning_bolt-cloud calc(0.8s * var(--animation-speed, 1)) linear 1 forwards;
+}
+@keyframes thr-lightning_bolt-cloud {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  75%,
+  87.5% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+.thr-lightning_bolt__bolt {
+  opacity: 0;
+  animation: thr-lightning_bolt-bolt calc(0.16s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.7s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-lightning_bolt-bolt {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-lightning_bolt__flash {
+  opacity: 0;
+  animation: thr-lightning_bolt-flash calc(0.0167s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.7s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-lightning_bolt-flash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-lightning_bolt__soot,
+.thr-lightning_bolt__reaction {
+  opacity: 0;
+  animation: thr-lightning_bolt-reaction calc(1.6s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.8s * var(--animation-speed, 1)) 1 forwards;
+}
+.thr-lightning_bolt__soot {
+  filter: brightness(0);
+}
+@keyframes thr-lightning_bolt-reaction {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-lightning_bolt__hair {
+  transform-origin: center bottom;
+  animation: thr-lightning_bolt-hair calc(0.18s * var(--animation-speed, 1)) ease-out
+    calc(0.8s * var(--animation-speed, 1)) 1 both;
+}
+@keyframes thr-lightning_bolt-hair {
+  0% {
+    transform: scaleY(0.1);
+  }
+  70% {
+    transform: scaleY(1.1);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+.thr-lightning_bolt__smoke {
+  opacity: 0;
+  animation: thr-lightning_bolt-smoke calc(1.6s * var(--animation-speed, 1)) ease-out
+    calc(0.8s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-lightning_bolt-smoke {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.4);
+  }
+  20% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-30px) scale(1.2);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-lightning_bolt__cloud,
+  .thr-lightning_bolt__soot,
+  .thr-lightning_bolt__reaction,
+  .thr-lightning_bolt__hair,
+  .thr-lightning_bolt__smoke,
+  .thr-lightning_bolt__bolt,
+  .thr-lightning_bolt__flash {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-lightning_bolt__soot,
+  .thr-lightning_bolt__reaction,
+  .thr-lightning_bolt__smoke,
+  .thr-lightning_bolt__flash {
+    opacity: 0 !important;
+  }
+  .thr-lightning_bolt__cloud,
+  .thr-lightning_bolt__bolt {
+    opacity: 1 !important;
+  }
+}

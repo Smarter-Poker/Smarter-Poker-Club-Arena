@@ -1,0 +1,128 @@
+{
+  "normalizedSpeedChecks": [
+    {
+      "t": 150,
+      "rigs": [
+        {
+          "id": "skull",
+          "count": 8
+        },
+        {
+          "id": "lightning_bolt",
+          "count": 7
+        },
+        {
+          "id": "magic_8_ball",
+          "count": 5
+        },
+        {
+          "id": "bear",
+          "count": 11
+        }
+      ]
+    },
+    {
+      "t": 650,
+      "rigs": [
+        {
+          "id": "skull",
+          "count": 8
+        },
+        {
+          "id": "lightning_bolt",
+          "count": 7
+        },
+        {
+          "id": "magic_8_ball",
+          "count": 5
+        },
+        {
+          "id": "bear",
+          "count": 11
+        }
+      ]
+    },
+    {
+      "t": 1400,
+      "rigs": [
+        {
+          "id": "skull",
+          "count": 8
+        },
+        {
+          "id": "lightning_bolt",
+          "count": 7
+        },
+        {
+          "id": "magic_8_ball",
+          "count": 5
+        },
+        {
+          "id": "bear",
+          "count": 11
+        }
+      ]
+    },
+    {
+      "t": 2350,
+      "rigs": [
+        {
+          "id": "skull",
+          "count": 8
+        },
+        {
+          "id": "lightning_bolt",
+          "count": 7
+        },
+        {
+          "id": "magic_8_ball",
+          "count": 5
+        },
+        {
+          "id": "bear",
+          "count": 11
+        }
+      ]
+    },
+    {
+      "t": 3000,
+      "rigs": [
+        {
+          "id": "skull",
+          "count": 8
+        },
+        {
+          "id": "lightning_bolt",
+          "count": 7
+        },
+        {
+          "id": "magic_8_ball",
+          "count": 5
+        },
+        {
+          "id": "bear",
+          "count": 11
+        }
+      ]
+    }
+  ],
+  "reduced": [
+    {
+      "id": "skull",
+      "animations": 0
+    },
+    {
+      "id": "lightning_bolt",
+      "animations": 0
+    },
+    {
+      "id": "magic_8_ball",
+      "animations": 0
+    },
+    {
+      "id": "bear",
+      "animations": 0
+    }
+  ],
+  "pageErrors": []
+}

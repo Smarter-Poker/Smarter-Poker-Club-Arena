@@ -1,0 +1,32 @@
+{
+  "scope": "Phase 2 cashout receipt and database amount corrections; phase remains open",
+  "receipt_pr": 3867,
+  "receipt_merge": "49ad56452a5d6efd708b0c57d475bc0543ebfeca",
+  "hetzner_run": 34279659263,
+  "served_built_at": "2026-09-08T21:18:51Z",
+  "amount_pr": 3872,
+  "migration_source_version": "20260908211251",
+  "migration_applied_version": "20260908212101",
+  "installed_function_md5": "9dba1ae69cb2c842c449ba90682dc3bc",
+  "grants": {
+    "anon": false,
+    "authenticated": true,
+    "service_role": true
+  },
+  "verification": {
+    "postgres_cases": 15,
+    "full_migration_applications_in_disposable_db": 2,
+    "client_cases": 91,
+    "client_types": "pass",
+    "server_types": "pass",
+    "new_database_cases_failed_before": 8
+  },
+  "open_defects": [
+    "An old unbound cashout request can close a new occupancy after rejoin. Browser, engine and installed SQL paths need an occupancy-bound request contract.",
+    "Some SQL cashout wrappers take seat locks before the canonical user advisory lock; concurrency ordering requires a separate proven correction."
+  ],
+  "limits": [
+    "Production synthetic financial transactions were not executed.",
+    "These fixes do not close all 13 Phase 2 acceptance items."
+  ]
+}

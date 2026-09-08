@@ -14,7 +14,7 @@ def run(sql):
 if "--bootstrap" in sys.argv:
  here=Path(__file__).resolve().parent
  root=here.parents[3]
- names={"atomic_distribute_rake","credit_club_rake_to_treasury","fn_ca_autoledger","fn_ca_autoledger_delete","fn_ca_post_leg","fn_club_members_ledger_writer","fn_horse_fund_from_treasury","fn_horse_seat_from_treasury"}
+ names={"fn_award_satellite_seat","atomic_distribute_rake","credit_club_rake_to_treasury","fn_ca_autoledger","fn_ca_autoledger_delete","fn_ca_post_leg","fn_club_members_ledger_writer","fn_horse_fund_from_treasury","fn_horse_seat_from_treasury"}
  definitions={}
  baseline="20260908024909"
  for path in sorted((root/"supabase/migrations").glob("*.sql")):
@@ -120,3 +120,7 @@ BEGIN
 END $verify$;ROLLBACK;""")
   passed+=1
 print(f"TOTAL {mode}: {passed} passing cases",flush=True)
+
+if mode=="fixed":
+ from test_satellite import verify_satellite
+ verify_satellite(run)

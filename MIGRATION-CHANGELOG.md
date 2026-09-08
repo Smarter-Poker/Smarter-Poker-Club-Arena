@@ -17024,3 +17024,7 @@ both sides, ui-text gate green.
 **Verified:** Production migration applied; all eight live definitions re-read with swallowed ledger logging absent. Isolated PostgreSQL: 45 original defect reproductions, 57 fixed checks including successful balance assertions and replay.
 **TypeScript:** Initial local check lacked installed native packages; clean lockfile installation performed; subsequent TypeScript check passed.
 **Limits:** This fixes shared journal failure atomicity, not separate hand stack/rake/BBJ transactions or every historical incident. Existing repair dependencies remain open work, not a claimed solution.
+
+## 20260908032050 Satellite Award Atomicity
+
+Applied to production: satellite seat creation, source transfer, target counters and payout receipt now roll back together on failure. Missing/insufficient source funding and inconsistent idempotency keys cannot commit a new award. 15 original reproductions; 17 corrected PostgreSQL cases plus 57 existing checks passed. See docs/changelog/2026-09-08-satellite-award-atomicity.md.

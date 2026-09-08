@@ -1,0 +1,129 @@
+.thr-velvet_rope__post0 {
+  transform-origin: 0 0;
+  animation: thr-velvet_rope-post0 calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-velvet_rope-post0 {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(80px);
+  }
+  5.91764% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-velvet_rope__post1 {
+  transform-origin: 0 0;
+  animation: thr-velvet_rope-post1 calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-velvet_rope-post1 {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(80px);
+  }
+  5.91764% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-velvet_rope__rope {
+  transform-origin: 0 0;
+  animation: thr-velvet_rope-rope calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-velvet_rope-rope {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(-70px);
+  }
+  7.28116% {
+    opacity: 0;
+    transform: translateY(-70px);
+  }
+  14.09872% {
+    opacity: 1;
+    transform: none;
+  }
+  83.63785% {
+    opacity: 1;
+    transform: none;
+  }
+  90.45541% {
+    opacity: 0;
+    transform: translateY(-100px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-100px);
+  }
+}
+.thr-velvet_rope__sign {
+  transform-origin: 0 0;
+  animation: thr-velvet_rope-sign calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-velvet_rope-sign {
+  0.00000% {
+    opacity: 0;
+  }
+  14.09872% {
+    opacity: 0;
+    transform: rotate(-18deg);
+  }
+  18.18926% {
+    opacity: 1;
+    transform: rotate(15deg);
+  }
+  25.00682% {
+    opacity: 1;
+    transform: rotate(-10deg);
+  }
+  34.55140% {
+    opacity: 1;
+    transform: rotate(5deg);
+  }
+  45.45950% {
+    opacity: 1;
+    transform: none;
+  }
+  83.63785% {
+    opacity: 1;
+    transform: none;
+  }
+  90.45541% {
+    opacity: 0;
+    transform: translateY(-100px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-100px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-velvet_rope__post0 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-velvet_rope__post1 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-velvet_rope__rope {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-velvet_rope__sign {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+}

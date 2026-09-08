@@ -613,12 +613,21 @@ function tournamentOpenFirst(
  * club lobby the player came from.
  */
 import PageErrorBoundary from '../components/common/PageErrorBoundary';
+import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
 import { publicOrigin } from '../lib/appBase';
 
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
+  // Routed entry is checked by ClubMemberGuard. Embedded table lobbies need
+  // the same boundary because they do not mount that route guard.
   return (
     <PageErrorBoundary pageName="ClubHomePage">
-      <ClubHomePageContent clubIdOverride={clubIdOverride} />
+      {clubIdOverride ? (
+        <ArenaAccessBoundary clubKey={clubIdOverride}>
+          <ClubHomePageContent clubIdOverride={clubIdOverride} />
+        </ArenaAccessBoundary>
+      ) : (
+        <ClubHomePageContent />
+      )}
     </PageErrorBoundary>
   );
 }

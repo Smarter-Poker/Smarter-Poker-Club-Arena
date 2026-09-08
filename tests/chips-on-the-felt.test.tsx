@@ -166,6 +166,30 @@ describe('the pot', () => {
     expect(container.querySelector('.pot-display__amount')?.textContent).toContain('21');
   });
 
+  it('reads the TRUE amount at small stakes, never a rounded one (Dan 2026-09-04)', () => {
+    // "FOR ALL SMALL STAKES GAMES .50/1 AND LESS THE POT SHOULD SHOW TRUE
+    // AMOUNTS... NOT ROUNDED UP. POT SHOULD SHOW 3.50 OR 6.80 OR WHAT EVER
+    // THE TRUE NUMBER IS." The pill used to Math.round anything from 1 up,
+    // so 5.10 of antes read "5" and 1.50 read "2". Two places, always, at a
+    // big blind of 1 or under - 3.50, not 3.5, so the pill does not jitter.
+    const text = (pot: number, bb: number) => {
+      const { container } = render(<PotDisplay mainPot={pot} bigBlind={bb} />);
+      const t = container.querySelector('.pot-display__amount')?.textContent ?? '';
+      cleanup();
+      return t;
+    };
+    expect(text(3.5, 0.25)).toContain('3.50');
+    expect(text(6.8, 1)).toContain('6.80');
+    expect(text(5.1, 0.25)).toContain('5.10');
+    expect(text(1.5, 0.1)).toContain('1.50');
+    // A whole-chip pot at small stakes still reads to the penny.
+    expect(text(5, 0.5)).toContain('5.00');
+    // Above small stakes: integers clean, a real fraction kept, never rounded.
+    expect(text(1250, 25)).toContain('1,250');
+    expect(text(7.5, 2)).toContain('7.5');
+    expect(text(7.5, 2)).not.toContain('8');
+  });
+
   it('colours a million-chip pot teal instead of a heap of oranges', () => {
     // The old local ladders stopped at 5,000, so everything above it drew
     // orange: blue, pink, teal and maroon simply did not exist.

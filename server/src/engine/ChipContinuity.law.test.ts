@@ -184,8 +184,8 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
 
   it('the between-hands answer IS the database answer: awaited, seat_left only after the money, no fallback (A0.16)', () => {
     const body = sliceMethod(SEATING, 'public async leaveTable(');
-    expect(body).toContain(
-      'await atomicCashoutVoluntary(userId, this.tableId, player.seat_number, player.occupancy_id)'
+    expect(body.replace(/\s+/g, '').replace(/,\)/g, ')')).toContain(
+      'awaitatomicCashoutVoluntary(userId,this.tableId,player.seat_number,player.occupancy_id)'
     );
     expect(blankNonCode(body)).not.toContain('markSeatAsLeft');
     const emit = body.indexOf('const emitSeatLeft = () =>');
@@ -207,8 +207,8 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
       'if (this.leaveHeldByClock.has(userId)) return true;'
     );
     const release = sliceMethod(BASE, 'protected async releaseLeavesHeldByClock()');
-    expect(release).toContain(
-      'atomicCashoutVoluntary(userId, this.tableId, seated.seat_number, seated.occupancy_id)'
+    expect(release.replace(/\s+/g, '').replace(/,\)/g, ')')).toContain(
+      'atomicCashoutVoluntary(userId,this.tableId,seated.seat_number,seated.occupancy_id)'
     );
     expect(sliceMethod(BASE, 'protected scheduleHeartbeatCheck()')).toContain(
       'releaseLeavesHeldByClock()'
@@ -258,8 +258,8 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
       body.indexOf("runStep('horse_cashouts'"),
       body.indexOf("runStep('deferred_sitouts'")
     );
-    expect(horse).toContain(
-      'atomicCashoutVoluntary(horse.user_id, this.tableId, horse.seat_number, horse.occupancy_id)'
+    expect(horse.replace(/\s+/g, '').replace(/,\)/g, ')')).toContain(
+      'atomicCashoutVoluntary(horse.user_id,this.tableId,horse.seat_number,horse.occupancy_id)'
     );
     expect(blankNonCode(horse)).not.toContain('markSeatAsLeft');
     expect(horse).toContain("exit.code === 'LEAVE_LOCKED'");

@@ -62,6 +62,9 @@ function idleEngine() {
   engine.seatedPlayers = [busted];
   engine.tableInfo = { id: TABLE, tournament_id: null };
   engine.postHandTasksPromise = null;
+  engine.allocateGlobalHandNumber = vi.fn(async () => 8_000_000);
+  engine.executePendingSeatMoves = vi.fn(async () => {});
+  engine.stopIfClusterTableClosed = vi.fn(async () => {});
   engine.refreshBlinds = vi.fn().mockResolvedValue(undefined);
   engine.refreshRakeConfig = vi.fn().mockResolvedValue(undefined);
   engine.recoverBustedSeatedHorses = vi.fn().mockResolvedValue(undefined);

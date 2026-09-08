@@ -3802,6 +3802,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         await this.processSatelliteAwards(tournament);
       } catch (satErr) {
         reportError(satErr, 'Tournament.satellite_awards_failed');
+        return; // Award uncertainty must not fall through to COMPLETED.
       }
     }
 

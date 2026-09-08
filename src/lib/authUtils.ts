@@ -47,7 +47,15 @@ export function parseJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    return JSON.parse(atob(parts[1]));
+    // JWT claims use Base64url, not the plain Base64 alphabet accepted by
+    // atob. Decode the bytes as UTF-8 before parsing JSON; otherwise valid
+    // tokens containing '-'/'_' fail and Unicode claims become mojibake.
+    const encoded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+    const payload: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    return payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }

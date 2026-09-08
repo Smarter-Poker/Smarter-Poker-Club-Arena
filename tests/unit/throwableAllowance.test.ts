@@ -29,7 +29,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
 });
-describe('throwable allowance matches the live server rules', () => {
+describe('throwable allowance matches the planned 30/500 server allowance', () => {
   it('uses UTC month boundaries and reports the remaining 500-use allowance', async () => {
     const gte = data({ is_vip: true, vip_expires_at: '2026-10-01T00:00:00Z' }, 499);
     expect(await throwableService.getThrowAllowance('user')).toMatchObject({
@@ -39,12 +39,12 @@ describe('throwable allowance matches the live server rules', () => {
     });
     expect(gte).toHaveBeenCalledWith('created_at', '2026-09-01T00:00:00.000Z');
   });
-  it('does not promise monthly free throws to an expired VIP', async () => {
+  it('gives an expired VIP the ordinary member allowance', async () => {
     data({ is_vip: true, vip_expires_at: '2026-08-31T00:00:00Z' });
     expect(await throwableService.getThrowAllowance('user')).toMatchObject({
       isVip: false,
-      freeThrowsRemaining: 0,
-      diamondCost: 1,
+      freeThrowsRemaining: 30,
+      diamondCost: 0,
     });
   });
   it('shows lifetime membership as unlimited even with an old expiry field', async () => {
@@ -68,6 +68,39 @@ describe('throwable allowance matches the live server rules', () => {
   });
   it('does not turn a failed usage count into a fresh allowance of 500', async () => {
     data({ is_vip: true }, null, { message: 'unavailable' });
+    expect(await throwableService.getThrowAllowance('user')).toMatchObject({
+      unavailable: true,
+      freeThrowsRemaining: 0,
+    });
+  });
+});
+
+describe('ordinary member monthly allowance', () => {
+  it('shows the 30th free throw without requiring VIP', async () => {
+    data({ is_vip: false }, 29);
+    expect(await throwableService.getThrowAllowance('user')).toMatchObject({
+      isVip: false,
+      freeThrowsRemaining: 1,
+      diamondCost: 0,
+    });
+  });
+  it('falls back to pack credits once all 30 free throws are used', async () => {
+    data({ is_vip: false }, 30, null, [{ uses_remaining: 4, expires_at: null }]);
+    expect(await throwableService.getThrowAllowance('user')).toMatchObject({
+      freeThrowsRemaining: 0,
+      packThrowsRemaining: 4,
+      diamondCost: 0,
+    });
+  });
+  it('falls back to diamonds after the member allowance and pack credits', async () => {
+    data({ is_vip: false }, 30);
+    expect(await throwableService.getThrowAllowance('user')).toMatchObject({
+      freeThrowsRemaining: 0,
+      diamondCost: 1,
+    });
+  });
+  it('does not promise free throws when the member usage query fails', async () => {
+    data({ is_vip: false }, null, { message: 'unavailable' });
     expect(await throwableService.getThrowAllowance('user')).toMatchObject({
       unavailable: true,
       freeThrowsRemaining: 0,

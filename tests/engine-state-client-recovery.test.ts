@@ -781,3 +781,65 @@ it('ignores a detached table socket close while replacement auth is pending', as
     localStorage.removeItem('ca_ws_mux');
   }
 });
+
+describe('token acquisition cannot strand either connection type', () => {
+  it.each(['table', 'channel'])(
+    '%s retries a hung token request and ignores its late result',
+    async (kind) => {
+      localStorage.setItem('ca_ws_mux', '0');
+      let finishFirst!: (token: string) => void;
+      const first = new Promise<string>((resolve) => {
+        finishFirst = resolve;
+      });
+      const getToken = vi.fn().mockReturnValueOnce(first).mockResolvedValue('fresh-token');
+      const onStatus = vi.fn();
+      const c =
+        kind === 'table'
+          ? client({ getToken, onStatus, initialDelay: 1, maxDelay: 1 }).c
+          : new EngineChannelClient({
+              baseUrl: 'https://engine.example',
+              getToken,
+              onStatus,
+              initialDelay: 1,
+              maxDelay: 1,
+            });
+      try {
+        void c.connect();
+        await vi.advanceTimersByTimeAsync(16_000);
+        expect(getToken).toHaveBeenCalledTimes(2);
+        expect(FakeWebSocket.instances).toHaveLength(1);
+        const ws = live();
+        expect(ws.protocols).toEqual(['bearer', 'fresh-token']);
+        ws._open();
+        finishFirst('stale-token');
+        await vi.advanceTimersByTimeAsync(1);
+        expect(FakeWebSocket.instances).toHaveLength(1);
+        expect(onStatus).toHaveBeenLastCalledWith('connected');
+      } finally {
+        c.disconnect();
+        localStorage.removeItem('ca_ws_mux');
+      }
+    }
+  );
+
+  it.each(['table', 'channel'])(
+    '%s cancels the token wait on disconnect without retrying',
+    async (kind) => {
+      const getToken = vi.fn(() => new Promise<string>(() => {}));
+      const onStatus = vi.fn();
+      const c =
+        kind === 'table'
+          ? client({ getToken, onStatus }).c
+          : new EngineChannelClient({ baseUrl: 'https://engine.example', getToken, onStatus });
+      const connected = c.connect();
+      await vi.advanceTimersByTimeAsync(1);
+      c.disconnect();
+      await connected;
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(getToken).toHaveBeenCalledTimes(1);
+      expect(FakeWebSocket.instances).toHaveLength(0);
+      expect(onStatus).toHaveBeenLastCalledWith('idle');
+    }
+  );
+});

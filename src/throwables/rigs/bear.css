@@ -142,3 +142,28 @@
     opacity: 1 !important;
   }
 }
+
+.thr-bear__vein {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation:
+    thr-bear-vein calc(1.633s * var(--animation-speed, 1)) steps(1, end) 1 forwards,
+    thr-bear-shout calc(0.125s * var(--animation-speed, 1)) linear
+      calc(2.1s * var(--animation-speed, 1)) 16 forwards;
+}
+@keyframes thr-bear-vein {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-bear__vein {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0 !important;
+  }
+}

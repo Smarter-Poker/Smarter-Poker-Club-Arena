@@ -1,0 +1,104 @@
+{
+  "normalizedSpeedChecks": [
+    {
+      "t": 150,
+      "rigs": [
+        {
+          "id": "anvil",
+          "count": 7
+        },
+        {
+          "id": "ghost",
+          "count": 7
+        },
+        {
+          "id": "ufo",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "t": 650,
+      "rigs": [
+        {
+          "id": "anvil",
+          "count": 7
+        },
+        {
+          "id": "ghost",
+          "count": 7
+        },
+        {
+          "id": "ufo",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "t": 1400,
+      "rigs": [
+        {
+          "id": "anvil",
+          "count": 7
+        },
+        {
+          "id": "ghost",
+          "count": 7
+        },
+        {
+          "id": "ufo",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "t": 2350,
+      "rigs": [
+        {
+          "id": "anvil",
+          "count": 7
+        },
+        {
+          "id": "ghost",
+          "count": 7
+        },
+        {
+          "id": "ufo",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "t": 3000,
+      "rigs": [
+        {
+          "id": "anvil",
+          "count": 7
+        },
+        {
+          "id": "ghost",
+          "count": 7
+        },
+        {
+          "id": "ufo",
+          "count": 5
+        }
+      ]
+    }
+  ],
+  "reduced": [
+    {
+      "id": "anvil",
+      "animations": 0
+    },
+    {
+      "id": "ghost",
+      "animations": 0
+    },
+    {
+      "id": "ufo",
+      "animations": 0
+    }
+  ],
+  "pageErrors": []
+}

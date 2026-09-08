@@ -413,7 +413,7 @@ export class EngineSocketJournal {
  * The deal layer is intentionally short-lived, and the dealer puck moves by
  * mutating its inline position. A locator inspected after HAND_STARTED can miss
  * both. Install one in-page observer before waiting for the next hand and keep
- * only presentation facts—never cards, names, auth, or table state.
+ * only presentation facts-never cards, names, auth, or table state.
  */
 export async function installLiveTablePresentationJournal(page: Page): Promise<void> {
   await page.evaluate(() => {

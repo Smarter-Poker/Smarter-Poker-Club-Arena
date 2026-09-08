@@ -54,4 +54,3 @@ psql_cmd=("${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 -h "$socket_dir" -p "$port" -
 "${psql_cmd[@]}" -f "$migration" >/dev/null
 "${psql_cmd[@]}" -f \
   "$repo_dir/scripts/dev/probe-post-commit-obligations-pg17.sql"
-

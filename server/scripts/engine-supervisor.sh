@@ -336,7 +336,7 @@ else
 fi
 
 if [ "$FAILS" -ge "$FAIL_THRESHOLD" ]; then
-  act "engine unresponsive or liveness=dead for ${FAILS} consecutive checks — restarting container"
+  act "engine unresponsive or liveness=dead for ${FAILS} consecutive checks - restarting container"
   docker logs --tail 60 "$CONTAINER" 2>&1 | tail -60 | sed 's/^/[pre-restart-log] /' || true
   if ! docker restart -t 45 "$CONTAINER" >/dev/null 2>&1; then
     act "docker restart failed — recreating from $IMAGE"

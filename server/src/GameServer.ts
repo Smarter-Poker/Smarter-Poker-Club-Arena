@@ -1412,7 +1412,7 @@ export class GameServer {
   private seatFirstFullSince: Map<string, number> = new Map();
   /** Last fn_sweep_unsettled_tournament_rake pass (2026-08-26 settlement integrity). */
   private lastRakeSweepAt = 0;
-  /** One seat-first finish sweep per minute — see the call site for why. */
+  /** One seat-first finish sweep per minute - see the call site for why. */
   private lastSeatFirstFinishSweepAt = 0;
   /** One reopen sweep per minute for tables closed under a live tournament. */
   private lastClosedTableReopenSweepAt = 0;
@@ -1466,7 +1466,7 @@ export class GameServer {
     },
   });
   private tournamentRecurring = new TournamentRecurringService();
-  // Data-driven recurring schedules (tournament_schedules) — runs alongside the
+  // Data-driven recurring schedules (tournament_schedules) - runs alongside the
   // hardcoded recurring blocks, acting only on rows written into the database.
   private scheduledTournaments = new ScheduledTournamentService();
   /**
@@ -3926,7 +3926,7 @@ export class GameServer {
     // break and must not be held.
     this.breakEndsAt = 0;
     console.log(`[GameServer] ═══ BREAK ENDED ═══ Resuming ${breakEngines.length} tournament(s)`);
-    // Resume everything on break, not just the :55 snapshot — a tournament
+    // Resume everything on break, not just the :55 snapshot - a tournament
     // that started during the break was held by holdIfBreakIsRunning and is
     // not in breakEngines. resumeFromBreak no-ops on anything not on break.
     const toResume = new Set<TournamentManager>(breakEngines);
@@ -4200,7 +4200,7 @@ export class GameServer {
           if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
           try {
             // 6. Cancel stale RUNNING MTT tournaments (BUG 019 FIX 2026-04-15):
-            //    Prior threshold was 2 hours which killed every legitimate MTT — deep-stack
+            //    Prior threshold was 2 hours which killed every legitimate MTT - deep-stack
             //    tournaments routinely run 6+ hours. 133 MTTs were nuked before this fix.
             //    New policy:
             //      - bump threshold to 12 hours (truly crashed servers would mean tournaments
@@ -4375,7 +4375,7 @@ export class GameServer {
             // TOURNEY-AUDIT 2026-07-24 [CRITICAL]: the old path blind-flipped
             // COMPLETING → COMPLETED. A crash between the COMPLETING claim and the
             // winner credit meant the winner (and any unpaid ITM places) were NEVER
-            // paid — the tournament just "completed" with stranded 'playing' rows
+            // paid - the tournament just "completed" with stranded 'playing' rows
             // (verified live: a COMPLETED bounty MTT with 8 players still 'playing'
             // and $60 of a $100 guaranteed pool never paid). Recovery now PAYS what
             // is owed (positions by chip count, prizes per normalized payout

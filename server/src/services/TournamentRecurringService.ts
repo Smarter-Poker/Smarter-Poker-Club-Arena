@@ -5125,7 +5125,7 @@ export class TournamentRecurringService {
 
         /**
          * HELD-EMPTY GATE (Dan 2026-08-26): a seat-first game flagged held-empty
-         * gets NO horses while no human has bought a seat — 33% of Spins and
+         * gets NO horses while no human has bought a seat - 33% of Spins and
          * 50% of Heads-Up boards stay genuinely open for a human to start.
          * The instant a human sits, the hold releases and this same function
          * fills the remaining seats so the game can start.
@@ -5134,7 +5134,7 @@ export class TournamentRecurringService {
          * that actually HAS no players. It used to apply at any occupancy, which
          * created a second class of permanently stuck game: a board that opened
          * NOT held (two horses seated, one seat left) and then had the hold roll
-         * on later was refused its final horse forever, sitting at 2/3 — visibly
+         * on later was refused its final horse forever, sitting at 2/3 - visibly
          * alive, impossible to start, and counting as coverage for its price
          * point the whole time.
          *
@@ -5151,8 +5151,8 @@ export class TournamentRecurringService {
           )
         ) {
           /**
-           * liveCount === 0 above, so there is nobody seated at all — human or
-           * horse — and the board is genuinely open for a human to start. The
+           * liveCount === 0 above, so there is nobody seated at all - human or
+           * horse - and the board is genuinely open for a human to start. The
            * seat-count reconciliation still runs, because a board advertising a
            * stale count is the other way a seat-first game gets stuck.
            *
@@ -5217,8 +5217,8 @@ export class TournamentRecurringService {
               { p_tournament_id: tournamentId, p_user_id: horse }
             );
             // 2026-08-24 audit: do NOT break on one refusal. A single horse
-            // rejected — the four-table hard limit (23514), a race on the seat,
-            // an already_registered anomaly — used to halt the whole fill even
+            // rejected - the four-table hard limit (23514), a race on the seat,
+            // an already_registered anomaly - used to halt the whole fill even
             // when free horses remained in the candidate list.
             //
             // 2026-08-25: and do not DISCARD the refusal either. The capacity
@@ -5260,7 +5260,7 @@ export class TournamentRecurringService {
          * down, and paid for there seat."
          *
          * A seat-first game counts SEATS, not rows in tournament_players. Those
-         * two disagree constantly — a registration is never removed when a
+         * two disagree constantly - a registration is never removed when a
          * player leaves or busts, so writing the registration count back into
          * current_players re-introduced the drift that had live spins reading
          * 3/3 with two seats sold (which then refuses every further sit-down
@@ -5288,7 +5288,7 @@ export class TournamentRecurringService {
          * The quote is the requirement; the restoration note is why it went
          * missing twice. Six duplicate PRs (#566, #570, #572, #575, #581, #583)
          * were opened against a stale base and every one sat DIRTY on this one
-         * comment — nothing else across 27 files conflicted at all.
+         * comment - nothing else across 27 files conflicted at all.
          */
         if (seatFirst) {
           await supabase.rpc('fn_sync_seat_first_player_count', {

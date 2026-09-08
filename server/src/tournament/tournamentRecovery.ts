@@ -1293,7 +1293,7 @@ export async function recoverStuckCompletingTournaments(
          *
          * A tournament with no `playing` row is not a decided tournament, it
          * is one that never dealt. Pay nobody, say so, and leave it COMPLETING
-         * for human review or a future evidence-driven recovery — the same stance this function
+         * for human review or a future evidence-driven recovery - the same stance this function
          * already takes for a position collision below.
          */
         const anyDealtIn = alive.some((r) => r.status === 'playing');

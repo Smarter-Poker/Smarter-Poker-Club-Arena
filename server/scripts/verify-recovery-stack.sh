@@ -53,13 +53,13 @@ HC_TIMEOUT_NS=$(docker container inspect -f '{{if .Config.Healthcheck}}{{json .C
 case "$HC_TIMEOUT_NS" in ''|*[!0-9]*) HC_TIMEOUT_NS=0 ;; esac
 [ "$HC_TIMEOUT_NS" -ge "$MIN_HEALTH_TIMEOUT_NS" ] 2>/dev/null \
   && ok "HEALTHCHECK timeout is at least 15s (event-loop saturation tolerance)" \
-  || bad "HEALTHCHECK timeout is ${HC_TIMEOUT_NS}ns — below the 15s safety floor; load can trigger false restarts"
+  || bad "HEALTHCHECK timeout is ${HC_TIMEOUT_NS}ns - below the 15s safety floor; load can trigger false restarts"
 
 HC_START_NS=$(docker container inspect -f '{{if .Config.Healthcheck}}{{json .Config.Healthcheck.StartPeriod}}{{else}}0{{end}}' "$CONTAINER" 2>/dev/null || echo 0)
 case "$HC_START_NS" in ''|*[!0-9]*) HC_START_NS=0 ;; esac
 [ "$HC_START_NS" -ge "$MIN_HEALTH_START_PERIOD_NS" ] 2>/dev/null \
   && ok "HEALTHCHECK start period is at least 300s (cold-boot grace)" \
-  || bad "HEALTHCHECK start period is ${HC_START_NS}ns — below the 300s cold-boot safety floor"
+  || bad "HEALTHCHECK start period is ${HC_START_NS}ns - below the 300s cold-boot safety floor"
 
 # Docker considers the start period complete after the first successful probe.
 # The command therefore has to enforce the same grace from PID 1's age, or a

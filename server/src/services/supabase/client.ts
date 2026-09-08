@@ -74,13 +74,13 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
     global: {
       /**
        * Two layers here, both load-bearing:
-       * 1. Per-attempt hard deadline (2026-08-15 freeze fix above) — a hung
+       * 1. Per-attempt hard deadline (2026-08-15 freeze fix above) - a hung
        *    socket becomes a rejection the dealing loop can handle.
-       * 2. Pre-execution-503 retry (2026-08-31 PGRST002 outage) — PostgREST
+       * 2. Pre-execution-503 retry (2026-08-31 PGRST002 outage) - PostgREST
        *    returns 503 with code PGRST001/PGRST002/PGRST003 BEFORE the statement
        *    executes (no connection / schema cache loading / pool acquisition
        *    timed out). Replaying those is safe for any method, including the
-       *    dealing RPCs — the statement never ran. Any other 503, non-JSON 503,
+       *    dealing RPCs - the statement never ran. Any other 503, non-JSON 503,
        *    or network throw is NOT retried here; the loop's existing catch and
        *    backoff still own those. Retries are short (300ms/1.2s) so worst case
        *    stays inside one dealing tick budget.
@@ -92,7 +92,7 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
             (typeof Request !== 'undefined' && input instanceof Request ? input.signal : undefined);
           // Cancellation may precede this attempt, including during retry backoff.
           callerSignal?.throwIfAborted();
-          // A Request object's body stream is consumed by fetch — clone per
+          // A Request object's body stream is consumed by fetch - clone per
           // attempt so a retry never replays a consumed stream. (supabase-js
           // passes a URL string + init in practice; this is belt-and-braces.)
           const attemptInput =

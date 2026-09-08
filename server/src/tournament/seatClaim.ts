@@ -24,7 +24,7 @@
  * immediately before the write, by every writer.
  *
  * An unreadable answer is UNKNOWN, never "no seat". A writer that cannot see
- * the player's seats does not get to add one — the process-wide detector
+ * the player's seats does not get to add one - the process-wide detector
  * rechecks within its bounded recovery cadence, so refusing costs a player
  * one cycle, while guessing costs the tournament its chip count.
  */

@@ -2656,7 +2656,7 @@ export abstract class ServerTableEngineBase {
 
     // TOCTOU FIX (2026-08-22 review): ownership MUST be re-read AFTER the
     // flushSnapshot await. That Supabase write can take up to 15s on a
-    // degraded DB — exactly when engines get reaped — and the owner now
+    // degraded DB - exactly when engines get reaped - and the owner now
     // rebuilds a replacement directly from the terminal-generation signal. A
     // pre-await ownership snapshot would
     // resume `true` here and cancel the NEW engine's heartbeat/turn deadlines

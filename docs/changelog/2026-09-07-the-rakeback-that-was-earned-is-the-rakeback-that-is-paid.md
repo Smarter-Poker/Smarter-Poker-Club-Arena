@@ -122,7 +122,7 @@ refusal is right on the substance, not just the spelling.
 > BACK FILLS OR ADJUSTS A PAYOUT OR ANY OTHER ISSUE ... I WANT HARD CODED FIXES
 > AT THE ROOT SOURCE."
 
-The root cause _is_ fixed — the drain could not finish and now can. What remains
+The root cause _is_ fixed - the drain could not finish and now can. What remains
 is that Midway holds 0.50 chips and owes 280,142.41, which no code fixes. The
 rule's own instruction for that case is to say so plainly and stop, not to ship
 an alarm and call the shortfall handled. It was also already visible in two

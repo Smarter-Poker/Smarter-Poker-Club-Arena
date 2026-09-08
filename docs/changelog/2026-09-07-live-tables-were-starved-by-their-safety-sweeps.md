@@ -40,7 +40,7 @@ The per-manager five-second interval is gone. One process-wide scheduler now:
 - coalesces repeated wakes for the same tournament;
 - prioritizes a committed zero-stack/bust without starving routine causal work;
 - admits work only from manager admission, a durable state-transition receipt,
-  a committed hand result, or an exact known deadline—never an all-tournament
+  a committed hand result, or an exact known deadline-never an all-tournament
   wall-clock repair scan; and
 - owns one delayed-wake timer for add-on retries, final-table deal polling and
   post-expansion seating instead of recreating an interval per manager.

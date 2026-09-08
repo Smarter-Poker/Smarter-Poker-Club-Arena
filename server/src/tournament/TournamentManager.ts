@@ -794,7 +794,7 @@ export class TournamentManager extends TournamentManagerEliminations {
    * This used to poll hand_state_snapshots every two seconds for up to sixty
    * seconds. Under the process-wide scheduler, four ordinary in-hand tables
    * could therefore occupy all four physical sweep slots and starve an urgent
-   * bust for a full minute—the same fan-out in a different shape. The engine
+   * bust for a full minute-the same fan-out in a different shape. The engine
    * already owns the authoritative boundary: no hand controller and no
    * settlement promise in flight. Probe it once, fail closed, and let the
    * caller arm one coalesced BALANCE_REDRIVE_MS wake.
@@ -1179,7 +1179,7 @@ export class TournamentManager extends TournamentManagerEliminations {
 
   protected async checkDynamicTableExpansion(): Promise<boolean> {
     if (!this.eliminationMutationAllowed()) return false;
-    // Skip expansion in the same scheduler pass as a break — gives
+    // Skip expansion in the same scheduler pass as a break - gives
     // executePlayerMoves time to actually seat players to remaining tables
     // before we evaluate "are we over capacity?"
     if (this.breakOccurredThisCycle) {

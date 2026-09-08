@@ -584,7 +584,7 @@ BEGIN
 
   /* The unique-index wait above cannot observe an uncommitted placeholder.
      A committed placeholder without a response means some code violated the
-     same-transaction contract, so it is corruption—not permission to rerun
+     same-transaction contract, so it is corruption-not permission to rerun
      a money core. */
   SELECT r.request, r.response
     INTO STRICT v_request, v_response

@@ -5663,7 +5663,7 @@ export abstract class TournamentManagerBase {
    * `duration_minutes` (snake-case writers), or `duration` in SECONDS (the
    * spin spec, mirrored client/server). The timer arms read ONLY
    * `durationMinutes || 10`, so every spin level silently became 10 minutes
-   * — observed live: spins started 02:27Z levelled up at exactly +10:00
+   * - observed live: spins started 02:27Z levelled up at exactly +10:00
    * against Dan's 3-minute spec. The client masthead already normalizes all
    * three formats; this is the engine-side twin.
    */
@@ -5677,7 +5677,7 @@ export abstract class TournamentManagerBase {
       if (Number.isFinite(secs) && secs > 0) baseMs = secs * 1000;
     }
     // ACCELERATED MTT (2026-08-22 parity): once late registration has closed,
-    // an accelerated tournament halves every remaining level — ceil(min/2).
+    // an accelerated tournament halves every remaining level - ceil(min/2).
     if (this.tournamentCache?.accelerated_mtt === true && this.isLateRegClosed()) {
       return acceleratedLevelMs(baseMs);
     }

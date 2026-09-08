@@ -528,7 +528,7 @@ export class RakebackSettlerService {
         // AUDIT M6: drain the backlog instead of processing one batch and then
         // sleeping 30 minutes. `_runSettlementInner` advances the durable cursor
         // before returning 'more', so each pass through this loop starts strictly
-        // after the last row of the previous one — an interruption anywhere in
+        // after the last row of the previous one - an interruption anywhere in
         // the loop resumes correctly rather than replaying.
         let backlogRemains = false;
         for (let batch = 1; ; batch++) {
@@ -552,7 +552,7 @@ export class RakebackSettlerService {
         // AUDIT PASS 3 [ORDER + CADENCE]: the union's weekly 90% must land BEFORE
         // runWeeklyFinancialClose() pays player rakeback, because player rakeback
         // is now funded from clubs.chip_treasury and the union payback is what
-        // replenishes it — running them the other way round deferred every
+        // replenishes it - running them the other way round deferred every
         // player payout by a week on the first close. It also runs EVERY cycle
         // rather than inside the once-a-week gate: the RPC is idempotent and
         // no-ops mid-week, so a close that fails (or an engine outage spanning a
@@ -568,22 +568,22 @@ export class RakebackSettlerService {
         // invariants that the whole rake/payout audit is meant to guarantee, so a
         // future regression that mints chips, strands players, or wrongly rakes a
         // tournament hand is caught within one settler cycle instead of silently
-        // corrupting the ledger. Never mutates game state — reportError only.
+        // corrupting the ledger. Never mutates game state - reportError only.
         await this.runTournamentSentinel();
-        // AUDIT 2026-08-19: union treasury conservation sentinel — one cheap RPC
+        // AUDIT 2026-08-19: union treasury conservation sentinel - one cheap RPC
         // per cycle; breaches land in financial_alerts (deduped) and telemetry.
         await this.runUnionTreasurySentinel();
         // P3-1 2026-08-20: governance + settlement-conservation invariants now
         // run every settler cycle instead of only inside Monday's PHASE 8 on
         // the workers. Every rule they enforce fails silently as data drift; a
         // weekly-only check means up to seven days of unnoticed breakage.
-        // reportError only — never mutates state. Monday's PHASE 8 still
+        // reportError only - never mutates state. Monday's PHASE 8 still
         // notifies the union owner/admins for critical breaks.
         await this.runUnionGovernanceSentinel();
         // 2026-08-20: keep the union rake rollup warm OUTSIDE the money
         // transaction. The rollup is filled lazily by its first caller, and on
         // Monday that caller is fn_union_settle_player_pnl while it holds
-        // FOR UPDATE locks on union_wallets and clubs.chip_treasury — the same
+        // FOR UPDATE locks on union_wallets and clubs.chip_treasury - the same
         // rows live horse funding writes to. Measured 2026-08-20: 4 unrolled
         // days would have added ~12s of scan inside that lock window. This
         // also RE-ROLLS days whose inputs changed retroactively (the union

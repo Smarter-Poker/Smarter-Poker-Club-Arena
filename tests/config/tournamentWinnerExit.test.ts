@@ -106,7 +106,7 @@ function committedTableCleanupBody(): string {
 }
 
 describe("The champion's exit", () => {
-  it('a committed finish broadcasts the durable winner — it used to end in silence', () => {
+  it('a committed finish broadcasts the durable winner - it used to end in silence', () => {
     // THE regression. If this line goes, every champion of every event is
     // stranded again at a table the engine has already closed, and nothing
     // else in the suite notices: the payout still lands, the row is still

@@ -101,7 +101,7 @@ payout structure and pays whatever the engine did not. It is the single largest
 band-aid on the platform: **342 payouts, 32,849.99 chips, 191 events in 7 days**,
 median 6.3 hours after the player finished.
 
-**Root cause — two forms of the same split transaction.**
+**Root cause - two forms of the same split transaction.**
 
 - _Partial settle_ (69 events, 27,807.56 chips): the engine pays place 1..N and
   stops. The settle loop is not atomic — a failure part-way leaves the earlier

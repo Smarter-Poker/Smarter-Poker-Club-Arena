@@ -690,7 +690,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             );
             busted = busted.filter((b) => {
               if (answered.has(b.user_id)) return true;
-              // Omitted means the locked row was no longer a playing zero —
+              // Omitted means the locked row was no longer a playing zero -
               // most commonly a concurrent rebuy. Never eliminate from the
               // stale snapshot captured before that transaction committed.
               if (!decisions.has(b.user_id)) return false;
@@ -1018,7 +1018,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (this.eliminationSweepCursor.nextStage > 5) break finalDealStage;
         // FINAL TABLE DEAL (2026-08-22 parity): while the field is down to one
         // table and the feature is on, watch tournament_deal_votes; unanimity
-        // executes fn_settle_final_table_deal_atomic. Cheap by construction — it stands down
+        // executes fn_settle_final_table_deal_atomic. Cheap by construction - it stands down
         // immediately unless the flag is set, and throttles its own polling.
         if (!(await this.checkFinalTableDeal())) return;
         if (sweepStopped()) return;
@@ -4025,7 +4025,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
        *
        * The count above is necessary and NOT sufficient. Nine players spread
        * three-three-three across three felts satisfy it, and unanimity among
-       * those nine would then run `fn_settle_final_table_deal_atomic` — an even chip-chop
+       * those nine would then run `fn_settle_final_table_deal_atomic` - an even chip-chop
        * of the whole undistributed pool — between players sitting at three
        * separate tables, mid-hand, with two thirds of them unaware the vote
        * was open. That is the most expensive single write in this file and it

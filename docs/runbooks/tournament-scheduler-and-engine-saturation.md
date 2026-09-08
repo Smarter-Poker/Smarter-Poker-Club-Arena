@@ -75,7 +75,7 @@ empty.
    promise still owns the slot until it actually settles.
 3. Never release or replace a live promise to make this gauge fall. Doing so
    recreates overlapping sweeps and database fan-out.
-4. Use the shared engine liveness verdict—not this alert alone—to decide on a
+4. Use the shared engine liveness verdict-not this alert alone-to decide on a
    restart. When liveness still shows forward progress, repair or reduce the
    blocked work without interrupting active hands.
 

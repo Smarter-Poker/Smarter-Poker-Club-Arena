@@ -1,5 +1,5 @@
 /*
- * STAGE A — transport and database foundation for tournament-manager request
+ * STAGE A - transport and database foundation for tournament-manager request
  * fencing.  This migration is deliberately rolling-deploy compatible:
  *
  *   - an old engine sends no actor headers and is still admitted;

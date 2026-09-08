@@ -370,7 +370,7 @@ export class DealRateVerifier {
       this.tablesExpectedDealing = tableIds.length;
 
       // Guard 2: too small a fleet to conclude anything about the DEAL RATE
-      // from. But standing down silently is the canary hole — a failure that also
+      // from. But standing down silently is the canary hole - a failure that also
       // empties the fleet would switch this detector off exactly when it matters.
       // So the floor is watched separately, and losing it is its own alarm.
       if (tableIds.length < FLEET_FLOOR_TABLES) {
@@ -380,7 +380,7 @@ export class DealRateVerifier {
          * The grace is right: a cold start genuinely has no dealable tables for
          * minutes, and crying wolf during a slow boot is worse than not alarming
          * at all. But `startedAt` is THIS PROCESS's clock, and it resets on every
-         * restart — so the grace silences the alarm completely in the one
+         * restart - so the grace silences the alarm completely in the one
          * scenario it exists for.
          *
          * Observed on 2026-08-30: Supabase went into RESIZING, the engine could
@@ -400,7 +400,7 @@ export class DealRateVerifier {
           const darkAcrossRestarts = await this.fleetDarkAcrossRestarts();
           if (this.lifecycleEnded(generation)) return;
           if (!darkAcrossRestarts) {
-            // Genuinely still booting — hands are being dealt somewhere, or the
+            // Genuinely still booting - hands are being dealt somewhere, or the
             // database could not be asked, and neither is evidence of collapse.
             this.silentChecks = 0;
             this.handsInWindow = null;

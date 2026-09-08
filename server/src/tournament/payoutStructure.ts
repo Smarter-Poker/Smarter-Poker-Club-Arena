@@ -16,7 +16,7 @@
  * payout contract leaves the tournament COMPLETING for repair.
  *
  * For a Spin at 10x or above it was a 20% overpay. Those tiers pay 80/20 and
- * 80/12/8, and the retired path paid places 2 and 3 AT ELIMINATION — minutes
+ * 80/12/8, and the retired path paid places 2 and 3 AT ELIMINATION - minutes
  * before finish read `payout_structure` again. If the column was unreadable on
  * that second read, the winner took the whole pool on top of money already
  * sent. The pool paid out 120%.

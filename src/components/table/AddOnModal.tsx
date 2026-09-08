@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  TOURNAMENT ADD-ON MODAL — Persisted Add-On Window
+ *  TOURNAMENT ADD-ON MODAL - Persisted Add-On Window
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Displays to all tournament players when the add-on period starts
@@ -100,7 +100,7 @@ export default function AddOnModal({
       setCountdown(remaining);
       if (remaining > 0 || decidedRef.current) return;
 
-      // The persisted deadline expired — auto-decline exactly once. Deriving
+      // The persisted deadline expired - auto-decline exactly once. Deriving
       // from Date.now() avoids extending the offer when browser timers were
       // throttled while the tab was in the background.
       decidedRef.current = true;

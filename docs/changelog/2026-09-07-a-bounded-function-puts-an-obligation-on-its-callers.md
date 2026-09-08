@@ -94,7 +94,7 @@ permanently.
 
 **Fixed** (`20260907195158`): `ORDER BY defer_count, period_end, id`, with a
 matching partial index. Least-refused first. Nothing is skipped or given up on —
-`defer_count` only decides _order_ — so a period that becomes payable is picked
+`defer_count` only decides _order_ - so a period that becomes payable is picked
 up on the next pass it reaches the head. Self-balancing, and it needs no list of
 "permanent" reasons to maintain and get wrong.
 

@@ -6482,7 +6482,7 @@ export default function TablePage({
         }
       }
 
-      // Hold the action panel from this instant — the button beat is part of
+      // Hold the action panel from this instant - the button beat is part of
       // the deal, and a player must not act into it.
       beginDealHold();
       if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);

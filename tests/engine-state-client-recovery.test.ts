@@ -361,7 +361,7 @@ describe('EngineStateClient — a token that will not load', () => {
   });
 });
 
-describe('EngineStateClient — transient event continuity', () => {
+describe('EngineStateClient - transient event continuity', () => {
   it('reports an EVENT sequence gap, resyncs, then delivers the real event separately', async () => {
     const events: Array<Record<string, unknown>> = [];
     const { c } = client({ onEvent: (event: Record<string, unknown>) => events.push(event) });

@@ -1928,7 +1928,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             tournamentId: tableInfo.tournament_id || undefined,
             handNumber: snap.handNumber,
             // VARIANT OVERRIDE 2026-08-28 (spec §10.1/§20): the variant this
-            // hand was DEALT as — plo4 on a PLO4 bomb hand at an NLH table.
+            // hand was DEALT as - plo4 on a PLO4 bomb hand at an NLH table.
             // Falling back to the table label only when the capture is absent.
             gameVariant: snap.variant || tableInfo.game_variant || 'nlh',
             smallBlind: tableInfo.small_blind,
@@ -1939,7 +1939,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             communityCards: snap.communityCards,
             communityCards2: snap.communityCards2,
             // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + the frozen bomb facts
-            // (trigger reason, ante, board count — spec §20).
+            // (trigger reason, ante, board count - spec §20).
             communityCards3: snap.communityCards3,
             bombPot: snap.bombPot,
             // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The

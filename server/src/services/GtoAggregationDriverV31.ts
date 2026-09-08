@@ -61,8 +61,29 @@ import { reportError } from './errorReporter.js';
 const TICK_MS = 20_000;
 /** After V30's driver (45s) and the loaders; never in the boot rush. */
 const BOOT_DELAY_MS = 90_000;
-/** Measured on the RPC path against an 8s statement_timeout. See header. */
-const BATCH = 10;
+/**
+ * Measured on the RPC path against an 8s statement_timeout. See header.
+ *
+ * RAISED 10 -> 25 on 2026-09-08, after the cursor stopped rescanning its own
+ * progress (migration 20260908034500). Every number in the header's table was
+ * taken while each batch ALSO re-read every already-processed row - 761 ms
+ * and ~4.8 GB of buffers at the cursor's position that day, growing with
+ * progress - so "25 = 9.06s, cancelled" was mostly the rescan, not the work.
+ * Re-measured on this same RPC path immediately after the fix:
+ *
+ *     batch   cold     warm                  verdict
+ *     -----   ------   -------------------   ---------------------------
+ *      10     5.56s    -                     fits
+ *      25     4.53s    1.15 / 1.30 / 1.38s   fits, 44% headroom when cold
+ *      35     -        1.57 / 1.64s          fits warm; no cold sample
+ *      50     8s+      -                     57014, over the ceiling
+ *     100     8s+      -                     57014, over the ceiling
+ *
+ * 25 is chosen because it is the largest size with a COLD measurement behind
+ * it, which is the case that has to fit. 35 looked fine warm and is not taken
+ * on warm samples alone - the same discipline the original 10 was chosen by.
+ */
+export const BATCH = 25;
 /** Wall-clock work budget per tick — the rest of the tick is the rest. */
 const TICK_BUDGET_MS = 12_000;
 /**
@@ -84,11 +105,26 @@ const TICK_BUDGET_MS = 12_000;
  * which is a decision to make against the fleet, with a fresh measurement,
  * not a constant to nudge.
  *
+ * 2026-09-08, WITH that fresh measurement: the cap was no longer the binding
+ * constraint OR the budget - the cursor was (see BATCH). A warm batch of 25
+ * now costs ~1.3s, so four calls used 5.2s of the 12s budget and the driver
+ * idled for the rest. Raised 4 -> 6, which puts a warm tick at ~7.8s and
+ * leaves TICK_BUDGET_MS as the governor again: a COLD tick still self-limits
+ * to two or three calls, because 6 x 4.5s is well past the budget. Combined
+ * with the batch, throughput goes from 20-40 rows a tick to ~150, and the
+ * remaining ~1.23M rows from "11-22 days" to under two.
+ *
+ * Still gentler than it could be, and for a better reason than before: the
+ * point of finishing is that solved_spots_gold - 80 GB, 57% of the database,
+ * read by nothing on the deal path once this build is done - can then be
+ * archived off the primary. The backoff below still yields the moment the
+ * database pushes back.
+ *
  * Deliberately gentler than V30's eight calls regardless: nothing reads
  * gto_postflop_v31 yet, so this build yields to everything that does. The
  * cursor makes every restart free, so a long build costs patience only.
  */
-const MAX_CALLS_PER_TICK = 4;
+export const MAX_CALLS_PER_TICK = 6;
 /** Consecutive all-timeout ticks before backing off (DB under pressure). */
 const BACKOFF_AFTER_STALLED_TICKS = 5;
 

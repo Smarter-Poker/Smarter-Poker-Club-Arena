@@ -551,6 +551,8 @@ export const WalletService = {
     if (clubErr) throw clubErr;
     if (!club) throw new Error('Club not found');
 
+    // One payment identity survives every network retry, including a lost commit response.
+    const operationId = crypto.randomUUID();
     const { data, error } = await retryAsync(
       () =>
         supabase.rpc('fn_promo_disburse', {
@@ -561,7 +563,7 @@ export const WalletService = {
           p_amount: amount,
           p_note: note ?? null,
           p_club_id: clubId,
-          p_op_id: crypto.randomUUID(),
+          p_op_id: operationId,
         }),
       3
     );
@@ -569,8 +571,8 @@ export const WalletService = {
     if (error) throw error;
     // A { success: false } body must never report as a paid disbursement.
     const parsed = data as { success?: boolean; error?: string } | null;
-    if (parsed && parsed.success === false) {
-      throw new Error(parsed.error || 'Promo disbursement refused by the server');
+    if (parsed?.success !== true) {
+      throw new Error(parsed?.error || 'Promo disbursement outcome is unconfirmed');
     }
 
     masterBus.emit('BALANCE_UPDATED', { source: 'promo', userId: playerId });

@@ -24,6 +24,28 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Deep links (2026-09-07): clubarena://... opens the app with no store
+	     account needed. Universal links (https://smarter.poker/hub/club-arena/...)
+	     are the Associated Domains entitlement + apple-app-site-association on
+	     smarter.poker, which need the Apple Team ID - phase 6. Handled by
+	     src/lib/native/deepLinks.ts. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>poker.smarter.clubarena</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>clubarena</string>
+			</array>
+		</dict>
+	</array>
+	<!-- The lobby, the felt and every sheet are designed portrait-first
+	     (CLAUDE.md 10.6: mobile-first, 375px). A phone is locked to portrait
+	     by the OS rather than by the CSS overlay in PortraitLock.tsx; iPad
+	     keeps rotation below. -->
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -54,8 +76,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

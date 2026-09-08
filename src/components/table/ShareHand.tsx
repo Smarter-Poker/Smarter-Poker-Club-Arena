@@ -15,6 +15,7 @@ import { haptic } from '../../services/SoundService';
 import { CardImage, type Card } from '../table/CardImage';
 import './ShareHand.css';
 import { reportError } from '../../utils/errorReporter';
+import { openInBrowser } from '../../lib/openExternal';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -738,7 +739,7 @@ export function ShareHand({
         whatsapp: `https://wa.me/?text=${encodedText}%0A%0A${encodedUrl}`,
       };
 
-      window.open(urls[platform], '_blank', 'width=600,height=400');
+      openInBrowser(urls[platform], 'width=600,height=400');
     },
     [shareUrl, shareText]
   );

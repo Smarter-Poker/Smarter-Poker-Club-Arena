@@ -1,4 +1,4 @@
-import { isDiamondArenaClubPath } from '../../lib/diamondArenaIdentity';
+import { isDiamondArenaClubPath } from '../../lib/constants';
 
 /** Routes whose own immersive or public chrome must not be covered by the
  * authenticated Club Arena navigation footer. Every other application route

@@ -25,8 +25,7 @@ import { unionRouteRef } from '../utils/unionIdResolver';
 /* Dan 2026-08-28: HomePage is the in-tab lobby's fallback branch when no home
    club is resolved, so it inherits the same rule. See InTabLobbyContext.tsx. */
 import { useAppNavigate, useInTabLobby } from '../context/InTabLobbyContext';
-import { SHARK_CLUB_ID } from '../lib/constants';
-import { DIAMOND_ARENA_CLUB_ID, DIAMOND_ARENA_ENTRY } from '../lib/diamondArenaIdentity';
+import { DIAMOND_ARENA_CLUB_ID, DIAMOND_ARENA_ENTRY, SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
 import { UnionService } from '../services/UnionService';

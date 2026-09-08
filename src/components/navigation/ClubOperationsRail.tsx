@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react';
 import { useLocation } from 'react-router-dom';
 import { getClubOperationContext } from '../../config/clubOperationsNavigation';
 import { useClubNavigationAccess } from '../../hooks/useClubNavigationAccess';
-import { isDiamondArenaClubKey } from '../../lib/diamondArenaIdentity';
+import { isDiamondArenaClubKey } from '../../lib/constants';
 
 /**
  * The compact sibling rail for club staff pages. The fuller tool inventory

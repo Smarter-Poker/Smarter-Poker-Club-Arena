@@ -25,7 +25,7 @@ import { unionRouteRef } from '../utils/unionIdResolver';
 /* Dan 2026-08-28: HomePage is the in-tab lobby's fallback branch when no home
    club is resolved, so it inherits the same rule. See InTabLobbyContext.tsx. */
 import { useAppNavigate, useInTabLobby } from '../context/InTabLobbyContext';
-import { SHARK_CLUB_ID } from '../lib/constants';
+import { DIAMOND_ARENA_CLUB_ID, DIAMOND_ARENA_ENTRY, SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
 import { UnionService } from '../services/UnionService';
@@ -792,6 +792,15 @@ function HomePageInner() {
        The cold-start skeleton further down already covers the loading moment
        properly, so there is nothing to fill here. */
     const stillLoadingFirstList = isLoading && userClubs.length === 0;
+    if (!loadFailed && !stillLoadingFirstList) {
+      /* Diamond access is automatic for every authenticated player, so it is
+         an entry destination rather than a chip-club membership. ClubsService
+         deliberately excludes it from userClubs; add the access card only
+         after the authoritative directory request succeeds. */
+      if (!clubs.some((c) => c.id === DIAMOND_ARENA_CLUB_ID)) {
+        clubs.push(DIAMOND_ARENA_ENTRY);
+      }
+    }
     if (
       !loadFailed &&
       !stillLoadingFirstList &&

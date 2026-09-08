@@ -181,10 +181,10 @@ describe('a seat this device has left is never re-adopted', () => {
 
   it('clears the latch only by taking a seat again', () => {
     /* A latch that nothing clears would lock a player out of a seat they have
-       just bought. Sitting down is the one event that clears it, and there are
-       three ways to sit down. */
+       just bought. Seat-first confirmation and a newly confirmed cash purchase
+       clear it. A replayed historical receipt must not undo an explicit leave. */
     const clears = PAGE.match(/leftSeatPendingRef\.current = false/g) || [];
-    expect(clears.length, 'all three seat-taking paths must clear it').toBe(3);
+    expect(clears.length, 'both confirmed seat-taking paths must clear it').toBe(2);
   });
 
   it('reads leave_pending everywhere it decides what a seat means', () => {

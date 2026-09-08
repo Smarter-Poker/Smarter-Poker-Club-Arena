@@ -54,11 +54,11 @@ disagree with the identity by a known, named, bounded number rather than an
 unknown one, and that is a strictly better position than a tidy total nobody can
 explain.
 
-Worked example, from this same PR: 7,814 rows across two tables carry sub-cent
-values totalling **0.5184 chips**. Rounding them would rewrite settled `paid`
-records. They are written off: the constraint that stops any new one is added
-`NOT VALID`, and its `COMMENT` in the catalogue says exactly which rows and
-why.
+Worked example, from this same PR: 8,057 rows across three tables carry sub-cent
+values, **net +0.0414 chips** (two of the three nearly cancel, and the third
+cancels exactly). Rounding them would rewrite settled `paid` records. They are
+written off: the constraint that stops any new one is added `NOT VALID`, and its
+`COMMENT` in the catalogue says exactly which rows, which window and how much.
 
 ### RE-RUN — recompute and pay the difference forward. **Only when all four hold.**
 
@@ -83,7 +83,7 @@ The threshold is on the **total restated**, not per player.
 | **any size, if it changes future terms** | Dan                                        | 10.9 already says so                                                                                      |
 
 The 2026-09-06 case (16,426.46) sits in the middle band: the agent decides,
-and Dan hears about it in the same breath. The 0.5184 in this PR sits in the
+and Dan hears about it in the same breath. The 0.0414 in this PR sits in the
 first: decided here, written down here.
 
 ## 4. What the affected party is told

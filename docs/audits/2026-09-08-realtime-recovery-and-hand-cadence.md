@@ -7,7 +7,7 @@ all cash games, MTTs, Spins and Sit & Gos, including heads-up, use the same
 disconnect protection. VIP members receive exactly 50 percent longer.
 The implementation keeps the existing 30-second base, giving active VIPs
 45 seconds. Ordinary paid decision time banks remain separately accounted.
-Membership is read by the server; lifetime, unexpired and explicitly non-expiring memberships qualify, matching the production entitlement rule.
+Membership is read by the server. Active VIP cards with an explicit null expiry are lifetime memberships and always qualify. Cards with a future expiry qualify until that instant. Expired cards never qualify, even if a stale tier label says lifetime. Missing or invalid expiry data does not establish eligibility.
 
 ## Current Changes
 

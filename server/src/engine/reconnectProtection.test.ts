@@ -12,12 +12,22 @@ describe('one reconnect allowance, with a 50 percent VIP extension', () => {
     expect(
       reconnectProtectionSeconds({ is_vip: true, vip_expires_at: '2026-10-01T00:00:00Z' }, now)
     ).toBe(45);
-    expect(reconnectProtectionSeconds({ is_vip: true, vip_tier: 'lifetime' }, now)).toBe(45);
+    expect(
+      reconnectProtectionSeconds({ is_vip: true, vip_tier: 'lifetime', vip_expires_at: null }, now)
+    ).toBe(45);
   });
   it.each([undefined, 'invalid', '2026-09-07T00:00:00Z', '2026-09-08T00:00:00Z'])(
     'does not grant a paid membership benefit for expiry %s',
     (vip_expires_at) => {
       expect(reconnectProtectionSeconds({ is_vip: true, vip_expires_at }, now)).toBe(30);
+    }
+  );
+  it.each(['2026-09-07T00:00:00Z', '2026-09-08T00:00:00Z', 'invalid', undefined])(
+    'never lets a lifetime label override expired or unverified expiry %s',
+    (vip_expires_at) => {
+      expect(
+        reconnectProtectionSeconds({ is_vip: true, vip_tier: 'lifetime', vip_expires_at }, now)
+      ).toBe(30);
     }
   );
   it('does not infer membership from a stale lifetime label', () => {

@@ -619,3 +619,47 @@ describe('queue durability is a confirmed write, not writer registration', () =>
     );
   });
 });
+
+describe('applied BBJ shares require valid cent amounts before confirmation', () => {
+  for (const field of [
+    'total_payout',
+    'loser_share',
+    'winner_share',
+    'table_share',
+    'per_player_share',
+  ]) {
+    it.each([null, undefined, -1, Infinity, 0.001, '', false, 'invalid'])(
+      `keeps invalid ${field} pending: %j`,
+      async (value) => {
+        const settle = vi.fn();
+        setBBJPayoutQueue({ claim: vi.fn(), settle });
+        rpc.mockResolvedValue({ data: [appliedRow({ [field]: value })], error: null });
+        expect((await run()).status).toBe('queued');
+        expect(settle).not.toHaveBeenCalled();
+        expect(from.mock.calls.some(([name]) => name === 'notifications')).toBe(false);
+      }
+    );
+  }
+  it('does not confirm shares that exceed the total payout by one cent', async () => {
+    rpc.mockResolvedValue({ data: [appliedRow({ loser_share: 13049.6 })], error: null });
+    expect((await run()).status).toBe('queued');
+  });
+  it('does not confirm an applied receipt without a payout identity', async () => {
+    rpc.mockResolvedValue({ data: [appliedRow({ payout_id: null })], error: null });
+    expect((await run()).status).toBe('queued');
+  });
+  it('accepts PostgreSQL decimal strings with unchanged amounts', async () => {
+    const receipt = appliedRow();
+    for (const key of [
+      'total_payout',
+      'loser_share',
+      'winner_share',
+      'table_share',
+      'per_player_share',
+    ]) {
+      (receipt as Record<string, unknown>)[key] = String((receipt as Record<string, unknown>)[key]);
+    }
+    rpc.mockResolvedValue({ data: [receipt], error: null });
+    expect((await run()).status).toBe('paid');
+  });
+});

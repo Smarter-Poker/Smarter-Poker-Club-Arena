@@ -327,5 +327,20 @@
     "source": "/workspace/scratch/d5165408b7af/generated_images/exec-9ea41a05-30bb-4f49-9415-80d220e56a44.png",
     "status": "Local premium delivery and dark/light browser cutout review passed; not published.",
     "checkpointSource": "art-source/static/star.png"
+  },
+  {
+    "id": "fish",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-2b81416c-d4a9-4c1b-9a0b-56eb2fb7231f.png",
+    "status": "RGBA source visually reviewed, three delivery sizes verified locally; publication pending.",
+    "checkpointSource": "art-source/static/fish.png",
+    "sha256": "10137651102a72ee0183ebff761740b1e230a997c90eb82402a49a9979821350"
+  },
+  {
+    "id": "rat_card",
+    "integrated": false,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-bfb64b10-4fbe-451f-9731-2dfb9dd8b5ad.png",
+    "status": "RGBA source and delivery art reviewed; premium catalogue activation awaits ownership/purchase gates.",
+    "checkpointSource": "art-source/static/rat_card.png"
   }
 ]

@@ -39,7 +39,8 @@ describe('BBJ banking requires an atomic matching receipt', () => {
     rpc.mockResolvedValue({ data: receipt, error: null });
     expect(await settle()).toBe(true);
     expect(from).not.toHaveBeenCalled();
-    expect(rpc).toHaveBeenCalledExactlyOnceWith('bbj_record_table_contribution', {
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('bbj_record_table_contribution', {
       p_table_id: payment[0],
       p_club_id: payment[1],
       p_hand_number: payment[2],

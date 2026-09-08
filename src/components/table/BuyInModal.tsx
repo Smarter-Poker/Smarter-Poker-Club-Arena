@@ -413,7 +413,6 @@ export function BuyInModal({
               ink={minPressed ? 'white' : 'silver'}
               label="Buy In For The Minimum"
               pressed={minPressed}
-              className="buy-in-modal__min-label"
               onClick={() => setBuyInAmount(effectiveMinBuyIn)}
               disabled={!!recovery}
             />
@@ -421,7 +420,6 @@ export function BuyInModal({
               zone={BUY_IN_ZONES.bays[1].value}
               text={bigBlinds > 0 ? `${bigBlinds}BB` : '0'}
               ink="silver"
-              className="buy-in-modal__bb-value"
             />
             <BayButton
               zone={BUY_IN_ZONES.bays[2].value}
@@ -429,7 +427,6 @@ export function BuyInModal({
               ink={maxPressed ? 'white' : 'silver'}
               label="Buy In For The Maximum"
               pressed={maxPressed}
-              className="buy-in-modal__max-label"
               onClick={() => setBuyInAmount(maxBuyIn)}
               disabled={!!recovery}
             />
@@ -463,7 +460,6 @@ export function BuyInModal({
                 canvasH={BUY_IN_DECK_H}
                 label="Top Up"
                 ink="gold"
-                className="buy-in-modal__top-up"
                 disabled={isProcessing}
                 onClick={onTopUp}
                 aria-label="Top Up Account"
@@ -473,7 +469,6 @@ export function BuyInModal({
                 zone={BUY_IN_ZONES.secondaryAction}
                 canvasH={BUY_IN_DECK_H}
                 label="Close"
-                className="buy-in-modal__close"
                 disabled={isProcessing}
                 onClick={() => {
                   if (!confirmInFlightRef.current) onClose();

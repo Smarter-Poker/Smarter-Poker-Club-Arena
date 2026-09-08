@@ -141,7 +141,6 @@ export function ConfirmModal({
       >
         <SpadeConsole
           as="div"
-          className="confirm-modal__console"
           title={formatPopupText(title)}
           titleId="confirm-modal-title"
           pill={variant === 'danger' ? 'Sure?' : 'Confirm'}

@@ -46,8 +46,10 @@ would have been an instruction that could not be followed.
 ## What was built
 
 **`ca_epoch_closing_positions`** — one row per account per capture,
-**append-only** under `fn_ca_journal_append_only`, the guard phase 8 put on the
-other journals, with 9.1's two-decimal constraint and service-role-only RLS.
+**immutable**: every `UPDATE` and every `DELETE` is refused. It was first given
+the shared journal guard and that turned out to be wrong for it; see *A guard
+that refused for the wrong reason* below. With 9.1's two-decimal constraint and
+service-role-only RLS.
 
 Deliberately **not** `ca_account_snapshots`: that table is operational and
 rolling (9,098 rows, read by the replay). A record that a dispute will be

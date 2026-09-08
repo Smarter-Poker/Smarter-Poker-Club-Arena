@@ -107,72 +107,98 @@ const bootStatus = initAntiGravity();
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 
-if (bootStatus.antigravityOk) {
-  // PHASE 2: MasterBus — synchronous, instant. Must complete before render
-  // so cross-store sync handlers are ready when auth events fire.
-  initMasterBus();
-
-  // PHASE 3: Start IdentityDNA BEFORE render (fire-and-forget).
-  // setupAuthListener() runs synchronously at the start of init(), which
-  // guarantees the onAuthStateChange listener is registered BEFORE any
-  // React useEffect can call setSession() (useEffects run after paint).
-  // The async getSession() part continues in the background.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const identityPromise = initIdentityDNA().catch((err) => {
-    reportError(err, 'main.IdentityDNA_init_error_app_already_rende');
-  });
-
-  // PHASE 3.5: warm the lobby's first query NOW.
-  //
-  // PERF 2026-08-23. getUserMemberships() is the first thing the app asks the
-  // network for, and nothing could ask for it until React had mounted,
-  // resolved the route and loaded HomePage's chunk - several hundred
-  // milliseconds on a phone with the connection sitting idle. Starting it here
-  // overlaps that request with React's own start-up; ClubsService de-duplicates
-  // in flight, so HomePage's call joins this one instead of making a second.
-  //
-  // Only with a local session: a signed-out visitor has nothing to fetch.
-  // Fire-and-forget, and it swallows its own errors - whoever asks next sees
-  // the real failure through the normal path.
-  if (hasLocalSession()) {
-    void importWithRetry(() => import('./services/ClubsService'))
-      .then(({ warmUserMemberships }) => warmUserMemberships())
-      .catch((err) => reportDeferredImportFailure(err, 'main.Membership_warm_start_non_blocking'));
-  }
-
-  // PHASE 4: Activation-funnel tracker (Phase 5.1.2b). Fire-and-forget;
-  // subscribes to MasterBus + IdentityDNA for first_table_seat,
-  // first_hand_played, first_session_of_30min. No-ops if VITE_POSTHOG_KEY
-  // is unset. Never throws out — all handlers swallow their own errors.
-  void importWithRetry(() => import('./lib/funnelTracker'))
-    .then(({ startFunnelTracker }) => startFunnelTracker())
-    .catch((err) => reportDeferredImportFailure(err, 'main.FunnelTracker_init_error_non_blocking'));
-
-  // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
-  // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline
-  // Banner that gracefully handle degraded state. Blocking rendering for
-  // getSession() caused 2-10s blank screens — completely unacceptable.
-  root.render(
-    <ErrorBoundary>
-      <BrowserRouter basename={ROUTER_BASENAME}>
-        <App />
-      </BrowserRouter>
-    </ErrorBoundary>
-  );
-
-  // NATIVE ONLY: hide the splash, style the status bar, tell the OTA updater
-  // this bundle booted. Compile-time constant, so the web bundle carries
-  // neither this branch nor the Capacitor plugins it imports.
+// NATIVE ONLY: the session may need putting back into the webview's storage
+// from the app's own store before anything reads it (src/lib/native/sessionMirror).
+// On the web this function body runs synchronously to completion - there is
+// no await on that path - so the boot order below is exactly what it was.
+async function boot(): Promise<void> {
   if (IS_NATIVE_BUILD) {
-    void importWithRetry(() => import('./lib/nativeShell'))
-      .then(({ initNativeShell }) => initNativeShell())
-      .catch((err) => reportDeferredImportFailure(err, 'main.Native_shell_init_non_blocking'));
+    try {
+      const { restoreSessionFromNativeStore } = await import('./lib/native/sessionMirror');
+      await restoreSessionFromNativeStore();
+    } catch (err) {
+      reportWarning('Native session restore skipped', 'main.Native_session_restore_skipped', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
-} else {
-  // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
-  reportError(
-    new Error('[BOOT] Missing environment variables - rendering diagnostic screen'),
-    'main.Missing_environment_variables__rendering'
-  );
-  root.render(<SystemOffline status={bootStatus} />);
+  bootReactTree();
 }
+
+function bootReactTree(): void {
+  if (bootStatus.antigravityOk) {
+    // PHASE 2: MasterBus — synchronous, instant. Must complete before render
+    // so cross-store sync handlers are ready when auth events fire.
+    initMasterBus();
+
+    // PHASE 3: Start IdentityDNA BEFORE render (fire-and-forget).
+    // setupAuthListener() runs synchronously at the start of init(), which
+    // guarantees the onAuthStateChange listener is registered BEFORE any
+    // React useEffect can call setSession() (useEffects run after paint).
+    // The async getSession() part continues in the background.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const identityPromise = initIdentityDNA().catch((err) => {
+      reportError(err, 'main.IdentityDNA_init_error_app_already_rende');
+    });
+
+    // PHASE 3.5: warm the lobby's first query NOW.
+    //
+    // PERF 2026-08-23. getUserMemberships() is the first thing the app asks the
+    // network for, and nothing could ask for it until React had mounted,
+    // resolved the route and loaded HomePage's chunk - several hundred
+    // milliseconds on a phone with the connection sitting idle. Starting it here
+    // overlaps that request with React's own start-up; ClubsService de-duplicates
+    // in flight, so HomePage's call joins this one instead of making a second.
+    //
+    // Only with a local session: a signed-out visitor has nothing to fetch.
+    // Fire-and-forget, and it swallows its own errors - whoever asks next sees
+    // the real failure through the normal path.
+    if (hasLocalSession()) {
+      void importWithRetry(() => import('./services/ClubsService'))
+        .then(({ warmUserMemberships }) => warmUserMemberships())
+        .catch((err) =>
+          reportDeferredImportFailure(err, 'main.Membership_warm_start_non_blocking')
+        );
+    }
+
+    // PHASE 4: Activation-funnel tracker (Phase 5.1.2b). Fire-and-forget;
+    // subscribes to MasterBus + IdentityDNA for first_table_seat,
+    // first_hand_played, first_session_of_30min. No-ops if VITE_POSTHOG_KEY
+    // is unset. Never throws out — all handlers swallow their own errors.
+    void importWithRetry(() => import('./lib/funnelTracker'))
+      .then(({ startFunnelTracker }) => startFunnelTracker())
+      .catch((err) =>
+        reportDeferredImportFailure(err, 'main.FunnelTracker_init_error_non_blocking')
+      );
+
+    // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
+    // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline
+    // Banner that gracefully handle degraded state. Blocking rendering for
+    // getSession() caused 2-10s blank screens — completely unacceptable.
+    root.render(
+      <ErrorBoundary>
+        <BrowserRouter basename={ROUTER_BASENAME}>
+          <App />
+        </BrowserRouter>
+      </ErrorBoundary>
+    );
+
+    // NATIVE ONLY: hide the splash, style the status bar, tell the OTA updater
+    // this bundle booted. Compile-time constant, so the web bundle carries
+    // neither this branch nor the Capacitor plugins it imports.
+    if (IS_NATIVE_BUILD) {
+      void importWithRetry(() => import('./lib/nativeShell'))
+        .then(({ initNativeShell }) => initNativeShell())
+        .catch((err) => reportDeferredImportFailure(err, 'main.Native_shell_init_non_blocking'));
+    }
+  } else {
+    // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
+    reportError(
+      new Error('[BOOT] Missing environment variables - rendering diagnostic screen'),
+      'main.Missing_environment_variables__rendering'
+    );
+    root.render(<SystemOffline status={bootStatus} />);
+  }
+}
+
+void boot();

@@ -25,7 +25,12 @@
 
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import { ServerTableEngineHandEvents } from './ServerTableEngineHandEvents.js';
-import { bettingStructureFor, fixedLimitBetSize, isFixedLimitCapped } from './BettingStructure.js';
+import {
+  bettingStructureFor,
+  fixedLimitBetSize,
+  fixedLimitStreetBounds,
+  isFixedLimitCapped,
+} from './BettingStructure.js';
 import type { GameState } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -174,6 +179,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
   private bettingStructureFields(state: GameState): {
     betting_structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
     fixed_bet_size?: number;
+    fixed_raise_size?: number;
     wagers_capped?: boolean;
   } {
     // VARIANT OVERRIDE 2026-08-28: the LIVE hand's variant, not the table's —
@@ -186,7 +192,17 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     return {
       betting_structure: structure,
       fixed_bet_size: fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
-      wagers_capped: isFixedLimitCapped(state.actionHistory ?? [], stage),
+      fixed_raise_size: fixedLimitStreetBounds(
+        state.actionHistory ?? [],
+        stage,
+        fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage),
+        state.currentBet
+      ).raiseSize,
+      wagers_capped: isFixedLimitCapped(
+        state.actionHistory ?? [],
+        stage,
+        fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, stage)
+      ),
     };
   }
 

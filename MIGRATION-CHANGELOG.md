@@ -17104,3 +17104,7 @@ Migration 20260908151800 applied and live definition/permissions verified. Self-
 ## 2026-09-08: BBJ Main Leg Source Correction
 
 Migration 20260908160032 appends one proven missing 0.25 main BBJ journal entry without changing any balance. It preserves the correct 0.25/0.12/0.13 split and the prior incident explanation. Twenty-four isolated PostgreSQL cases pass; live hand total, correction receipt and incident were read-verified. Details: docs/changelog/2026-09-08-bbj-main-leg-source-correction.md.
+
+## 2026-09-08: Phase 2 fixed-limit completion
+
+Correct below-half wager completion and counted-wager caps across engine validation, action bounds and snapshot/client wiring. Add fixed-limit and pot-limit regression evidence in docs/audits/2026-09-08-phase2-limit-completion.md. No database migration. Merge and runtime adoption remain separate gates.

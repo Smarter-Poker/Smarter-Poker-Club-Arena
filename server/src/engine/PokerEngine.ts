@@ -663,22 +663,20 @@ export function calculateBettingState(
    * flop, the big bet on turn and river (BettingStructure.fixedLimitBetSize).
    * `capped` is true once the street has taken a bet and three raises.
    *
-   * When present it overrides both bounds: min and max are BOTH `betSize`, so
-   * the only legal wager is exactly that size. That is the whole of fixed
-   * limit — there is no sizing decision to make, which is why this reuses the
-   * pot-limit ceiling machinery rather than adding a parallel one.
+   * Both bounds are the legal increment. Normally this is betSize; a short
+   * wager below half the street bet can instead be completed by raiseSize.
    */
-  fixedLimit?: { betSize: number; capped: boolean }
+  fixedLimit?: { betSize: number; capped: boolean; raiseSize?: number }
 ): BettingState {
   const toCall = currentBet - playerBet;
 
   if (fixedLimit) {
     return {
       currentBet,
-      minRaise: fixedLimit.betSize,
+      minRaise: fixedLimit.raiseSize ?? fixedLimit.betSize,
       pot,
       toCall,
-      maxRaise: fixedLimit.betSize,
+      maxRaise: fixedLimit.raiseSize ?? fixedLimit.betSize,
       wagersCapped: fixedLimit.capped,
       structure: 'fixed_limit',
     };

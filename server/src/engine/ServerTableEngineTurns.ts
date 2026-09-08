@@ -14,6 +14,7 @@ import {
   isPotLimitVariant,
   isFixedLimitVariant,
   fixedLimitBetSize,
+  fixedLimitStreetBounds,
   isFixedLimitCapped,
   substituteOnCappedStreet,
   type BettingStructure,
@@ -1482,7 +1483,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // no-limit sizing should still make a legal bet. Small bet preflop and
     // flop, big bet turn and river.
     const flBetSize = isFixedLimit
-      ? fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage)
+      ? fixedLimitStreetBounds(
+          state.actionHistory,
+          state.stage,
+          fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage),
+          state.currentBet
+        ).raiseSize
       : 0;
 
     /**
@@ -1846,7 +1852,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // stack as maxRaise here is what would have let a limit table render a
       // no-limit slider and then have every drag rejected.
       betSize = fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage);
-      const wagerTo = state.currentBet + betSize;
+      const wagerTo =
+        state.currentBet +
+        fixedLimitStreetBounds(state.actionHistory, state.stage, betSize, state.currentBet)
+          .raiseSize;
       minRaiseTo = Math.min(wagerTo, maxRaiseTo);
       maxRaiseTo = minRaiseTo;
     }
@@ -2722,7 +2731,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           const liveState = handControllerRef.getState();
           if (
             horseFlBetSize > 0 &&
-            isFixedLimitCapped(liveState.actionHistory ?? [], liveState.stage)
+            isFixedLimitCapped(
+              liveState.actionHistory ?? [],
+              liveState.stage,
+              fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, liveState.stage)
+            )
           ) {
             const substituted = substituteOnCappedStreet(action as ActionType, toCall);
             if (substituted !== action) {

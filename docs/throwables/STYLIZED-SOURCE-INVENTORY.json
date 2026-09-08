@@ -342,5 +342,13 @@
     "source": "/workspace/scratch/d5165408b7af/generated_images/exec-bfb64b10-4fbe-451f-9731-2dfb9dd8b5ad.png",
     "status": "RGBA source and delivery art reviewed; premium catalogue activation awaits ownership/purchase gates.",
     "checkpointSource": "art-source/static/rat_card.png"
+  },
+  {
+    "id": "party_face",
+    "integrated": true,
+    "source": "/workspace/scratch/d5165408b7af/generated_images/exec-29eeba04-b81f-4a38-80ef-67dccd4c576f.png",
+    "checkpointSource": "art-source/static/party_face.png",
+    "sha256": "7064770d4de9a78b0b61923e4cb1c597556450e6739de45509ca273558350f55",
+    "status": "Transparent matching still and choreographed atlas integrated. Dedicated audio and end-to-end acceptance pending."
   }
 ]

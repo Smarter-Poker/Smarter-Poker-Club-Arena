@@ -51,7 +51,15 @@ export type ThrowPhysics = 'arc' | 'fastball' | 'lob' | 'float' | 'drop' | 'swoo
  * - burst    confetti-pop scatter (cash, champagne, fireworks)
  */
 export type ThrowImpact =
-  'splat' | 'splash' | 'bounce' | 'thud' | 'explode' | 'shatter' | 'zap' | 'sparkle' | 'burst';
+  | 'splat'
+  | 'splash'
+  | 'bounce'
+  | 'thud'
+  | 'explode'
+  | 'shatter'
+  | 'zap'
+  | 'sparkle'
+  | 'burst';
 
 export type ThrowWeight = 'light' | 'medium' | 'heavy';
 
@@ -840,7 +848,42 @@ const DIAMOND_COST_PER_THROW = 1;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class ThrowableServiceClass {
-  /** All 49 throwables */
+  private pendingUses = new Map<string, string>();
+
+  /** Keep an uncertain charge's identity across retries and panel remounts. */
+  private useRequest(key: string): string {
+    const pending = this.pendingUses.get(key);
+    if (pending) return pending;
+    let saved: string | null = null;
+    try {
+      saved = sessionStorage.getItem(key);
+    } catch {
+      // Storage can be disabled; the in-memory identity still protects retries.
+    }
+    const id =
+      saved && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saved)
+        ? saved
+        : crypto.randomUUID();
+    this.pendingUses.set(key, id);
+    try {
+      sessionStorage.setItem(key, id);
+    } catch {
+      // Best effort persistence; never make storage access a payment dependency.
+    }
+    return id;
+  }
+
+  private finishUse(key: string, id: string): void {
+    if (this.pendingUses.get(key) !== id) return;
+    this.pendingUses.delete(key);
+    try {
+      if (sessionStorage.getItem(key) === id) sessionStorage.removeItem(key);
+    } catch {
+      // In-memory state has already been released.
+    }
+  }
+
+  /** All current catalogue entries. */
   getThrowables(): Throwable[] {
     return THROWABLES;
   }
@@ -957,6 +1000,8 @@ class ThrowableServiceClass {
     }
 
     try {
+      const requestKey = `throwable-pending:${userId}:${throwableId}`;
+      const requestId = this.useRequest(requestKey);
       // ── Atomic server path (2026-08-17) ──────────────────────────────────
       // fn_use_throwable serialises the free-allowance check per user
       // (advisory xact lock) and does charge+record in ONE transaction,
@@ -965,10 +1010,14 @@ class ThrowableServiceClass {
       // failure between deduct_diamonds and the usage insert charged a
       // diamond and recorded nothing. Allowance and price are
       // server-authoritative there.
-      const { data: atomic, error: atomicErr } = await supabase.rpc('fn_use_throwable', {
+      // The v1 wrapper creates a new UUID on every call. Retrying a lost
+      // response through it could charge twice. v2 replays the same receipt.
+      const { data: atomic, error: atomicErr } = await supabase.rpc('fn_use_throwable_v2', {
         p_throwable_id: throwableId,
+        p_request_id: requestId,
       });
-      if (!atomicErr && atomic) {
+      if (!atomicErr && atomic && typeof (atomic as any).success === 'boolean') {
+        this.finishUse(requestKey, requestId);
         if ((atomic as any).success === true) return { success: true };
         return {
           success: false,

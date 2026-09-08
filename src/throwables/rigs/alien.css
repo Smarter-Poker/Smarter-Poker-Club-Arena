@@ -1,0 +1,163 @@
+/* Every pose uses the same landing clock and a deterministic hard handoff. */
+.thr-alien__neutral {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 65%;
+  animation: thr-alien-neutral calc(0.567s * var(--animation-speed, 1)) linear
+    calc(0s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-alien-neutral {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  99.9% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-alien__blink {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 65%;
+  animation: thr-alien-blink calc(0.3s * var(--animation-speed, 1)) linear
+    calc(0.567s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-alien-blink {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  99.9% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-alien__speak {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 65%;
+  animation: thr-alien-speak calc(1.2s * var(--animation-speed, 1)) linear
+    calc(0.867s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-alien-speak {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  20%,
+  60% {
+    transform: translateY(-2px) scaleY(1.02);
+  }
+  40%,
+  80% {
+    transform: translateY(1px) scaleY(0.98);
+  }
+  99.9% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-alien__scan {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 65%;
+  animation: thr-alien-scan calc(1.6s * var(--animation-speed, 1)) linear
+    calc(2.067s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-alien-scan {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  25% {
+    transform: rotate(-4deg);
+  }
+  65% {
+    transform: rotate(4deg);
+  }
+  99.9% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+/* Bubble speaks above the head; a separate scanner travels down the avatar. */
+.thr-alien__speech {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 20% 100%;
+  animation: thr-alien-speech calc(1.2s * var(--animation-speed, 1)) ease-out
+    calc(0.867s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-alien-speech {
+  0% {
+    opacity: 1;
+    transform: scale(0.4);
+  }
+  12%,
+  90% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+.thr-alien__ring {
+  opacity: 0;
+  animation: thr-alien-ring calc(0.8s * var(--animation-speed, 1)) linear
+    calc(2.267s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-alien-ring {
+  0% {
+    opacity: 1;
+    transform: translateY(-70px);
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(70px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-alien__speech,
+  .thr-alien__ring {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .thr-alien__neutral {
+    animation: none !important;
+    opacity: 0 !important;
+    transform: none !important;
+  }
+  .thr-alien__blink {
+    animation: none !important;
+    opacity: 0 !important;
+    transform: none !important;
+  }
+  .thr-alien__speak {
+    animation: none !important;
+    opacity: 0 !important;
+    transform: none !important;
+  }
+  .thr-alien__scan {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

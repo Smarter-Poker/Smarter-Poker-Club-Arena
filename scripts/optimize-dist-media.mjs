@@ -98,6 +98,10 @@ const CACHE_DIR =
 // game-card emblems and club logos never render above ~256 CSS px, card backs
 // top out at 80x120 CSS (240x360 @3x), page backgrounds at viewport width.
 const DIR_RULES = [
+  // Atlas crops are measured in native pixels. These are already encoded
+  // losslessly and validated against their approved sources; resizing or
+  // lossy re-encoding would alter the performance artwork after verification.
+  { prefix: 'images/throwables/animated/', maxDim: 0 },
   // Approved Club Arena footer is a pixel-locked visual source. Re-encoding
   // the lossless WebP changed 465,144 of 490,496 pixels in the production
   // artifact, so it must pass through byte-for-byte.

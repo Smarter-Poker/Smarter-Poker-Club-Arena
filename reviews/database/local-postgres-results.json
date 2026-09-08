@@ -1,0 +1,88 @@
+{
+  "postgres": "PostgreSQL 17.11 (Homebrew) on aarch64-apple-darwin25.6.0, compiled by Apple clang version 21.0.0 (clang-2100.1.1.101), 64-bit",
+  "scope": "Exported production functions on synthetic local tables; not production RLS, triggers, HTTP auth, or browser verification.",
+  "results": [
+    {
+      "name": "Unauthenticated use writes nothing",
+      "passed": true
+    },
+    {
+      "name": "500th VIP throw is free",
+      "passed": true
+    },
+    {
+      "name": "501st VIP throw charges exactly one diamond",
+      "passed": true
+    },
+    {
+      "name": "UTC month excludes prior-month usage despite session timezone",
+      "passed": true
+    },
+    {
+      "name": "Expired VIP with a null tier receives no VIP allowance",
+      "passed": true
+    },
+    {
+      "name": "Lifetime remains unlimited above 500",
+      "passed": true
+    },
+    {
+      "name": "Oldest pack is consumed before diamonds",
+      "passed": true
+    },
+    {
+      "name": "Eight concurrent retries spend once and replay seven receipts",
+      "passed": true
+    },
+    {
+      "name": "Concurrent different requests enforce the account cooldown",
+      "passed": true
+    },
+    {
+      "name": "Insufficient diamonds leave all records unchanged",
+      "passed": true
+    },
+    {
+      "name": "A receipt insertion failure rolls back the charge and usage atomically",
+      "passed": true
+    },
+    {
+      "name": "Reproduce: a locked valid pack is skipped and a diamond is wrongly charged",
+      "passed": true
+    },
+    {
+      "name": "Candidate fix waits for the pack row and consumes credit without a diamond debit",
+      "passed": true
+    },
+    {
+      "name": "Reproduce: a delayed transaction records an old usage time and bypasses cooldown",
+      "passed": true
+    },
+    {
+      "name": "Cooldown uses actual consumption time for diamonds after a delayed transaction",
+      "passed": true
+    },
+    {
+      "name": "Cooldown uses actual consumption time for vip after a delayed transaction",
+      "passed": true
+    },
+    {
+      "name": "Cooldown uses actual consumption time for lifetime after a delayed transaction",
+      "passed": true
+    },
+    {
+      "name": "Cooldown uses actual consumption time for pack after a delayed transaction",
+      "passed": true
+    }
+  ],
+  "observedBug": {
+    "paid": true,
+    "source": "diamonds",
+    "balance": 9,
+    "success": true,
+    "consumed": true,
+    "idempotent": false,
+    "diamonds_spent": 1
+  },
+  "candidateAppliedToThisLocalDatabase": true
+}

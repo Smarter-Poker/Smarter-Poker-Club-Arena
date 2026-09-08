@@ -33,6 +33,7 @@ import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import './ThrowableSelector.css';
 import { haptic } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
+import { prepareThrowableArtwork } from '../../throwables/artwork';
 
 interface ThrowableSelectorProps {
   userId: string;
@@ -95,12 +96,18 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
    *
    * The panel stayed open and tappable for the whole round trip (onClose is
    * two awaits away), the grid buttons were never disabled, and
-   * fn_use_throwable carries no idempotency key — its advisory lock stops a
-   * concurrent double-spend of the last FREE throw but cannot deduplicate two
-   * legitimate sequential charges. A ref, not state, because two taps inside
+   * the server receipt protects repeated requests while this ref blocks a
+   * second UI intent before the first has completed. A ref, not state, because two taps inside
    * one commit both read stale state.
    */
   const sendingRef = useRef(false);
+  const generationRef = useRef(0);
+  useEffect(
+    () => () => {
+      generationRef.current += 1;
+    },
+    [userId]
+  );
   const [sending, setSending] = useState(false);
 
   const handleSelect = async (throwable: Throwable) => {
@@ -116,7 +123,17 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
   };
 
   const sendThrowable = async (throwable: Throwable) => {
-    // Use the throwable (deducts from allowance or charges diamonds)
+    const generation = generationRef.current;
+    try {
+      await prepareThrowableArtwork(throwable.id);
+    } catch {
+      if (generation === generationRef.current)
+        toast.error('Reaction artwork could not load. Please try again.');
+      return;
+    }
+    // Closing the picker or changing account cancels an uncharged intent.
+    if (generation !== generationRef.current) return;
+    // Use the throwable only after its artwork is ready.
     const result = await throwableService.useThrowable(userId, throwable.id);
     if (!result.success) {
       if (/diamond|insufficient/i.test(result.error || '')) {

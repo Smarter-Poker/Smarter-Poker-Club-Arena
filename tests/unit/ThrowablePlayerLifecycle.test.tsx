@@ -3,10 +3,21 @@ import { act, cleanup, render } from '@testing-library/react';
 import { ThrowablePlayer } from '../../src/components/table/ThrowablePlayer';
 import type { ThrowEvent } from '../../src/services/ThrowableService';
 import type { ThrowableSpec } from '../../src/throwables/spec';
-const state = vi.hoisted(() => ({ speed: 2, cancel: vi.fn(), schedule: vi.fn() }));
+const state = vi.hoisted(() => ({
+  speed: 2,
+  reduced: false,
+  artwork: false,
+  prepare: vi.fn(),
+  cancel: vi.fn(),
+  schedule: vi.fn(),
+}));
+vi.mock('../../src/throwables/artwork', () => ({
+  hasThrowableArtwork: () => state.artwork,
+  prepareThrowableArtwork: () => state.prepare(),
+}));
 vi.mock('../../src/utils/animationSpeed', () => ({
   getAnimationSpeed: () => state.speed,
-  prefersReducedMotion: () => false,
+  prefersReducedMotion: () => state.reduced,
 }));
 vi.mock('../../src/services/ThrowableSoundService', () => ({
   throwableSoundService: {
@@ -46,6 +57,8 @@ const positions = new Map([
 beforeEach(() => {
   vi.useFakeTimers();
   state.speed = 2;
+  state.reduced = false;
+  state.artwork = false;
   vi.clearAllMocks();
 });
 afterEach(() => {
@@ -118,5 +131,135 @@ describe('throwable player lifecycle', () => {
     );
     expect(done).toHaveBeenCalledOnce();
     expect(state.schedule).not.toHaveBeenCalled();
+  });
+});
+
+it.each([
+  [400, 100, '1px', '0px'],
+  [300, 0, '0px', '-1px'],
+  [600, 500, '0.6px', '0.8px'],
+  [300, 100, '0px', '-1px'],
+])('points return effects toward source (%s, %s)', (x, y, expectedX, expectedY) => {
+  const view = render(
+    <ThrowablePlayer
+      event={event}
+      spec={spec}
+      rig={rig}
+      seatPositions={
+        new Map([
+          [1, { x, y }],
+          [2, { x: 300, y: 100 }],
+        ])
+      }
+      onComplete={vi.fn()}
+    />
+  );
+  const style = view.container.querySelector<HTMLElement>('.thr')!.style;
+  expect(style.getPropertyValue('--thr-return-x')).toBe(expectedX);
+  expect(style.getPropertyValue('--thr-return-y')).toBe(expectedY);
+});
+
+describe('immediate payload clock', () => {
+  it.each([true, false])(
+    'starts visible performance and sound together (reduced=%s)',
+    (reduced) => {
+      state.reduced = reduced;
+      state.speed = 1;
+      const immediateSpec: ThrowableSpec = {
+        ...spec,
+        flight: reduced ? spec.flight : { ms: 0, mode: 'none' },
+        audio: reduced
+          ? [
+              { at: 50, sample: 'travel' },
+              { at: 200, sample: 'land' },
+              { at: 500, sample: 'act' },
+            ]
+          : [
+              { at: 0, sample: 'land' },
+              { at: 300, sample: 'act' },
+            ],
+      };
+      const done = vi.fn();
+      const view = render(
+        <ThrowablePlayer
+          event={event}
+          spec={immediateSpec}
+          rig={rig}
+          seatPositions={positions}
+          onComplete={done}
+        />
+      );
+      expect(view.queryByTestId('payload')).not.toBeNull();
+      const [audio, options] = state.schedule.mock.calls[0];
+      expect(audio.map((cue: { sample: string }) => cue.sample)).toEqual(['land', 'act']);
+      expect(audio.map((cue: { at: number }) => cue.at + options.offsetMs)).toEqual([0, 300]);
+      act(() => vi.advanceTimersByTime(999));
+      expect(done).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1));
+      expect(done).toHaveBeenCalledOnce();
+      expect(view.queryByTestId('payload')).toBeNull();
+    }
+  );
+});
+
+describe('cold artwork playback', () => {
+  it('starts neither visuals nor sound until decoding completes, then uses a fresh clock', async () => {
+    state.artwork = true;
+    state.speed = 1;
+    let ready!: () => void;
+    state.prepare.mockReturnValue(
+      new Promise<void>((resolve) => {
+        ready = resolve;
+      })
+    );
+    const done = vi.fn();
+    const view = render(
+      <ThrowablePlayer
+        event={event}
+        spec={spec}
+        rig={rig}
+        seatPositions={positions}
+        onComplete={done}
+      />
+    );
+    act(() => vi.advanceTimersByTime(4000));
+    expect(view.queryByTestId('projectile')).toBeNull();
+    expect(state.schedule).not.toHaveBeenCalled();
+    expect(done).not.toHaveBeenCalled();
+    await act(async () => {
+      ready();
+    });
+    expect(view.queryByTestId('projectile')).not.toBeNull();
+    expect(state.schedule).toHaveBeenCalledOnce();
+    act(() => vi.advanceTimersByTime(300));
+    expect(view.queryByTestId('payload')).not.toBeNull();
+    act(() => vi.advanceTimersByTime(1000));
+    expect(done).toHaveBeenCalledOnce();
+  });
+
+  it('does not start a decoded throw after its table unmounts', async () => {
+    state.artwork = true;
+    let ready!: () => void;
+    state.prepare.mockReturnValue(
+      new Promise<void>((resolve) => {
+        ready = resolve;
+      })
+    );
+    const done = vi.fn();
+    const view = render(
+      <ThrowablePlayer
+        event={event}
+        spec={spec}
+        rig={rig}
+        seatPositions={positions}
+        onComplete={done}
+      />
+    );
+    view.unmount();
+    await act(async () => {
+      ready();
+    });
+    expect(state.schedule).not.toHaveBeenCalled();
+    expect(done).not.toHaveBeenCalled();
   });
 });

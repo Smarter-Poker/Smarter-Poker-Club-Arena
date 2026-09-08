@@ -48,3 +48,13 @@ All entries below remain pending full review; partial evidence above must not be
 | BX04 | Run multiple boards with several side pots and indivisible units: fixed eligibility, deterministic residuals and exact contribution conservation.                                     |
 | BX05 | Late RIT consent cannot change the run count after any additional card is disclosed.                                                                                                  |
 | CX11 | Map test/certification evidence to exact deployed RNG, evaluator, payout, platform and client versions; fairness-affecting changes receive required external review where applicable. |
+
+## C07 / BX04: High-low Splits Must Use The Hand's Chip Unit
+
+The high/low split was performed in cents before distributePot divided each half into whole tournament chips. Odd whole-chip pots therefore became two fractional halves. This was distinct from the earlier tie-split correction and survived it. Fourteen direct evaluator/award cases reproduced12 failures and2 cash passes before correction. The high/low partition now uses the same chip unit as tied-winner distribution, giving the odd unit to high and preserving any pre-existing legacy sub-unit residue without creation or loss. Cash remains cent-based.
+
+Dated comparator: Poker TDA2024 rules20(C) and21, checked September8,2026 at https://www.pokertda.com/view-poker-tda-rules/ . High receives the odd unit; each side pot is split separately. This is a scoped comparison, not certification.
+
+After correction,90 tests passed across high/low awards, tournament indivisibility, fixed-limit, run-it-twice parity and showdown rules. Two additional complete HandController cases then passed (16/16 in the new test file), driving plo8/flo8 from blinds through checked river. A nine-chip pot is awarded high1=2,high2=3,low=4; emitted awards match applied stacks, starting300 chips remain300, and exactly one HAND_COMPLETE emits. Server TypeScript passed. Production HandController passes the tournament unit through normal, multiple-board and recovery calls to determineWinners. No client animation or database mutation controls the calculation.
+
+The preceding fixed-limit correction merged as PR#3868,7dc9863f615d884759381343021e1bf80aef769c; normal push gates passed3014 related tests/235 files (six opt-in DB tests skipped). Its deployed runtime is still a separate check. This high/low correction needs its own normal push,CI,merge and runtime proof. Phase2 remains incomplete; no remaining requirement is silently marked done.

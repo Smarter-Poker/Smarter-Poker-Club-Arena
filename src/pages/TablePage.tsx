@@ -13509,7 +13509,7 @@ export default function TablePage({
           // Processes animation for all users (including sender).
           // Normal chat messages return false and are safely ignored,
           // as they are handled natively by the useTableChat Supabase Postgres listener.
-          parseIncomingMessageRef.current(content, senderId);
+          parseIncomingMessageRef.current(content, senderId, chatPayload?.throwId);
           break;
         }
       }

@@ -704,6 +704,11 @@ export async function recoverStuckCompletingTournaments(
               `settle ${obligation.kind} place ${obligation.place} failed for ${userId}: ${res.refused_reason}${res.transport_error ? ` (${res.transport_error})` : ''}`
             );
           }
+          if (res.fully_settled !== true || (res.amount_paid ?? 0) < amount) {
+            throw new Error(
+              `settle ${obligation.kind} place ${obligation.place} remains incomplete or unconfirmed for ${userId}`
+            );
+          }
           return res.paid > 0;
         };
 

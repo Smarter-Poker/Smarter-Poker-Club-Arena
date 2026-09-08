@@ -39,8 +39,9 @@ const executable = (sql: string): string =>
     .join('\n');
 
 const AWARD = () => executable(migration('a_satellite_seat_is_a_payout'));
-const MANAGER = () =>
-  readFileSync(join(SRC, 'tournament', 'TournamentManager.ts'), 'utf8');
+const ATOMIC_FINISH = () =>
+  executable(migration('a_satellite_finish_pays_one_frozen_entitlement_plan'));
+const MANAGER = () => readFileSync(join(SRC, 'tournament', 'TournamentManager.ts'), 'utf8');
 
 describe('the seat itself is recorded', () => {
   it('writes a tournament_payouts row inside the awarding transaction', () => {
@@ -94,21 +95,24 @@ describe('an unknown origin is not a "no"', () => {
     expect(AWARD()).not.toMatch(/v_existing IS NOT NULL AND v_existing = p_satellite_id/);
   });
 
-  it('the engine pays only on an explicit false', () => {
-    // `=== false` is what makes NULL fall through to paying nothing. A loose
-    // `!seat.held_from_this_satellite` would pay on unknown.
-    expect(MANAGER()).toMatch(/seat\?\.held_from_this_satellite === false/);
+  it('the atomic adopter refuses ambiguous or incompletely-backed legacy seats', () => {
+    const sql = ATOMIC_FINISH();
+    expect(sql).toContain('existing target satellite seat has ambiguous origin');
+    expect(sql).toContain('existing target seat has no exact fully-backed payout event');
+    expect(sql).toContain("l.metadata->>'unbacked'");
   });
 
-  it('the engine says so out loud instead of logging a seat award', () => {
-    const m = MANAGER();
-    expect(m).toMatch(/seat\?\.origin_unknown === true/);
-    expect(m).toContain('Satellite.seat_origin_unknown');
-    expect(m).toContain('raiseFinancialAlert');
+  it('one database RPC owns every seat/cash outcome and completion', () => {
+    const manager = MANAGER();
+    expect(manager).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
+    expect(manager).not.toContain("supabase.rpc('fn_award_satellite_seat'");
+    expect(manager).not.toContain('settleTournamentObligation(supabase');
   });
 
   it('passes the finishing place, so the record can name it', () => {
-    expect(MANAGER()).toMatch(/p_position: w\.position/);
+    expect(ATOMIC_FINISH()).toMatch(
+      /fn_deliver_satellite_ticket_exact\([\s\S]*?p_tournament_id,[\s\S]*?e\.position,e\.ticket_value/
+    );
   });
 });
 

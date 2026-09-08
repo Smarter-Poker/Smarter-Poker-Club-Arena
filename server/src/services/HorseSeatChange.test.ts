@@ -227,7 +227,9 @@ describe('the wiring: the horse presses the same button', () => {
 
   it('the freeze and a queued human both stop the pass', () => {
     const pass = ROTATOR.slice(ROTATOR.indexOf('private async considerSeatChanges'));
-    expect(pass).toMatch(/if \(isMaintenanceFrozen\(\)\) return;/);
+    expect(pass).toMatch(
+      /if \(isMaintenanceFrozen\(\) \|\| !this\.lifecycleIsCurrent\(generation\)\) return;/
+    );
     expect(pass).toMatch(/if \(\(humansWaiting\.get\(tableId\) \?\? 0\) > 0\) continue;/);
   });
 

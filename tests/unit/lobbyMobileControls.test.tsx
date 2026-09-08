@@ -50,6 +50,7 @@ const TABLE = read('src/components/lobby/LobbyTable.tsx');
 const TABLE_CSS = read('src/components/lobby/LobbyTable.css');
 const CARD = read('src/components/lobby/game-cards/ArenaGameCard.tsx');
 const PREMIUM = read('src/components/lobby/game-cards/NlhPremiumCard.tsx');
+const LOBBY_CARD = read('src/components/lobby/game-cards/ArenaLobbyGameCard.tsx');
 
 /* ═══════════════════════════════════════════════════════════════════════════
    ITEM 3 — THE MOBILE SORT BAR
@@ -126,6 +127,18 @@ describe('the mobile sort bar', () => {
     // `.lobby-table-wrap` is display:none on a phone and a hidden element
     // announces nothing, so without this, sorting was silent on mobile.
     expect(TABLE).toMatch(/lobby-sortbar[\s\S]{0,1400}role="status"/);
+  });
+});
+
+describe('mobile live-table selector metadata', () => {
+  it('keeps table identity and live occupancy on the wrapper that is visible on a phone', () => {
+    expect(LOBBY_CARD).toContain('data-testid="arena-lobby-game-card"');
+    expect(LOBBY_CARD).toContain('data-id={entry.id}');
+    expect(LOBBY_CARD).toContain('data-kind={entry.kind}');
+    expect(LOBBY_CARD).toContain("data-live={entry.live ? 'true' : 'false'}");
+    expect(LOBBY_CARD).toContain('data-players={entry.players}');
+    expect(LOBBY_CARD).toContain("data-target={entry.game ? 'game' : 'table'}");
+    expect(LOBBY_CARD).toContain('presentation="mobile"');
   });
 });
 

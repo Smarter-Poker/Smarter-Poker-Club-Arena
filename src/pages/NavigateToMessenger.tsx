@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { leaveForHub } from '../lib/openExternal';
 
 /**
  * Component that replaces the old embedded iframe messenger.
@@ -36,8 +37,8 @@ export default function NavigateToMessenger() {
     const qs = params.toString();
     const destination = `/hub/messenger${qs ? '?' + qs : ''}`;
 
-    // Perform full native redirect
-    window.location.replace(destination);
+    // Full navigation on the web; the in-app browser in the native app.
+    leaveForHub(destination, { replace: true });
   }, [clubId, conversationId, searchParams]);
 
   return null;

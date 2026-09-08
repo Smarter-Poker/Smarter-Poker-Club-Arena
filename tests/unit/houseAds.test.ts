@@ -98,7 +98,17 @@ describe('a write that changed nothing never reports success', () => {
 
 describe('the admin panel is platform staff only, and fails closed', () => {
   it('gates on the platform role, not club membership', () => {
-    expect(ADMIN).toMatch(/\['admin', 'super_admin'\]/);
+    /* UPDATED 2026-09-02 with the change it pins. This required the literal
+       `['admin', 'super_admin']`, which was the bug rather than the contract:
+       the database authority (`fn_is_platform_admin()`) answers
+       `role IN ('admin','superadmin','god')`, production holds `god` on 2
+       accounts and `super_admin` on none, so this page hid House Ads from the
+       two most privileged accounts on the platform while the database let
+       them call the admin RPCs. The shared predicate is now the single
+       vocabulary — see src/utils/platformRoles.ts and
+       tests/unit/platformRoles.test.ts, which pins the role list itself. */
+    expect(ADMIN).toMatch(/isPlatformStaffRole\(/);
+    expect(ADMIN).toMatch(/from '\.\.\/\.\.\/utils\/platformRoles'/);
   });
 
   it('treats an unreadable role as NOT allowed', () => {
@@ -510,7 +520,11 @@ describe('the referral funnel the ads point at does not drop the referral', () =
 
   it('does not hardcode the host, so a preview build shares itself', () => {
     // A hardcoded link in a preview build sends testers to production.
-    expect(DASH).toMatch(/window\.location\?\.origin/);
+    // 2026-09-07: through publicOrigin(), which IS window.location.origin on
+    // the web (and smarter.poker inside the native app, where the webview's
+    // origin is capacitor://localhost and nobody could open the link).
+    expect(DASH).toContain('const origin = publicOrigin();');
+    expect(read('src/lib/appBase.ts')).toMatch(/const o = window\.location\?\.origin;/);
   });
 
   it('the clipboard fallback carries the link too', () => {

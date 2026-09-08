@@ -15,7 +15,14 @@
  *
  * These pins are the contract that keeps that from being true again.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+// The failure is an explicit fixture even when this checkout has live credentials.
+vi.mock('./supabase.js', () => ({
+  supabase: {
+    rpc: vi.fn(async () => ({ data: null, error: { message: 'audit fixture: unavailable' } })),
+  },
+}));
+import { supabase } from './supabase.js';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
@@ -91,8 +98,9 @@ describe('the engine exposes tournament gauges', () => {
       seatFirstWaiting: 3,
       collectedAt: Date.now(),
     };
-    // The RPC will fail in test (no database); the snapshot must survive.
+    // The mocked RPC refuses the read; the snapshot must survive.
     await m.refresh();
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_tournament_metrics', expect.any(Object));
     expect(m.get().running).toBe(42);
     expect(m.get().registering).toBe(7);
   });

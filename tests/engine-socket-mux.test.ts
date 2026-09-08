@@ -395,3 +395,136 @@ describe('EngineSocketMux', () => {
     // and the facades still saw the PING (their staleness watchdogs stamp it)
   });
 });
+
+describe('warm table state survives entry', () => {
+  it('delivers the warmed snapshot and ordered deltas before another server reply', async () => {
+    const warm = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    warm.retainWarmState();
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const snapshot = { type: 'SNAPSHOT', tableId: T1, seq: 10, state: { pot: 20 } };
+    const delta = { type: 'DELTA', tableId: T1, prev: 10, seq: 11, patch: [] };
+    ws._frame(snapshot);
+    ws._frame(delta);
+    ws._frame({ type: 'USER_EVENT', tableId: T1, payload: { cards: ['As'] } });
+    ws._frame({ type: 'EVENT', tableId: T1, payload: { type: 'throwable' } });
+    const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const delivered: unknown[] = [];
+    live.onopen = () => delivered.push('open');
+    live.onmessage = (event) => delivered.push(JSON.parse(event.data));
+    await Promise.resolve();
+    expect(delivered).toEqual(['open', snapshot, delta]);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it.each(['gap', 'restart', 'stale', 'overflow'])(
+    'never adopts an invalid %s warm state',
+    async (failure) => {
+      const warm = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+      warm.retainWarmState();
+      const ws = lastSocket();
+      ws._open();
+      ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+      ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 10, state: { pot: 20 } });
+      if (failure === 'gap')
+        ws._frame({ type: 'DELTA', tableId: T1, prev: 12, seq: 13, patch: [] });
+      if (failure === 'restart')
+        ws._frame({ type: 'EVENT', tableId: T1, payload: { type: 'engine_restarting' } });
+      if (failure === 'stale') vi.advanceTimersByTime(15_001);
+      if (failure === 'overflow')
+        for (let seq = 11; seq < 150; seq++) {
+          ws._frame({ type: 'DELTA', tableId: T1, prev: seq - 1, seq, patch: [] });
+        }
+      const live = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+      const receive = vi.fn();
+      live.onmessage = receive;
+      await Promise.resolve();
+      expect(receive).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe('speculative tables yield to real table entry', () => {
+  it('releases speculative slots before subscribing a real table', () => {
+    for (const id of ['warm1', 'warm2', 'warm3', 'warm4']) {
+      expect(engineSocketMux.acquireWarm('https://engine.example', id, 'jwt')).not.toBeNull();
+    }
+    const ws = lastSocket();
+    ws._open();
+    ws.sent = [];
+    const playing = engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    expect(ws.sent.map((raw) => JSON.parse(raw).type)).toEqual([
+      'UNSUBSCRIBE',
+      'UNSUBSCRIBE',
+      'UNSUBSCRIBE',
+      'UNSUBSCRIBE',
+      'SUBSCRIBE',
+    ]);
+    expect(playing.readyState).toBe(0);
+    expect(engineSocketMux.isSubscribed(T1)).toBe(true);
+  });
+
+  it('never evicts one of four active tables for speculative loading', () => {
+    for (const id of ['live1', 'live2', 'live3', 'live4']) {
+      engineSocketMux.acquire('https://engine.example', id, 'jwt');
+    }
+    expect(engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt')).toBeNull();
+    for (const id of ['live1', 'live2', 'live3', 'live4'])
+      expect(engineSocketMux.isSubscribed(id)).toBe(true);
+  });
+
+  it('never transfers cached state across authentication tokens', async () => {
+    engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt-first');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    ws._frame({ type: 'SNAPSHOT', tableId: T1, seq: 1, state: {} });
+    const next = engineSocketMux.acquire('https://engine.example', T1, 'jwt-second');
+    const receive = vi.fn();
+    next.onmessage = receive;
+    await Promise.resolve();
+    expect(receive).not.toHaveBeenCalled();
+  });
+});
+
+describe('physical transport identity', () => {
+  it('reauthenticates an acquire instead of subscribing under the previous token', async () => {
+    engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt-first');
+    const old = lastSocket();
+    old._open();
+    old._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const next = engineSocketMux.acquire('https://engine.example', T1, 'jwt-second');
+    await Promise.resolve();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(old.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(lastSocket().protocols).toEqual(['bearer', 'jwt-second']);
+    expect(next.readyState).toBe(FakeWebSocket.CONNECTING);
+    lastSocket()._open();
+    lastSocket()._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    expect(next.readyState).toBe(FakeWebSocket.OPEN);
+  });
+
+  it('replaces a prewarm that is still connecting with a different token', () => {
+    engineSocketMux.prewarm('https://engine.example', 'jwt-first');
+    const old = lastSocket();
+    engineSocketMux.prewarm('https://engine.example', 'jwt-second');
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(old.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(lastSocket().protocols).toEqual(['bearer', 'jwt-second']);
+  });
+
+  it('does not carry a subscription to a different engine origin', async () => {
+    engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const old = lastSocket();
+    old._open();
+    old._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const next = engineSocketMux.acquire('https://replacement.example', T1, 'jwt');
+    await Promise.resolve();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(lastSocket().url).toContain('replacement.example');
+    expect(next.readyState).toBe(FakeWebSocket.CONNECTING);
+    old._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    expect(next.readyState).toBe(FakeWebSocket.CONNECTING);
+  });
+});

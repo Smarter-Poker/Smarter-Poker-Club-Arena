@@ -330,6 +330,18 @@ own money routes under `pages/api/club-arena/`, in another repo, and nothing has
 ever been checked against that register. A door is only closed if both repos
 agree it is closed.
 
+**Phase 7 status, 2026-09-07 23:05 UTC (built, deep dive done - `docs/changelog/2026-09-07-the-second-writer-is-the-whole-world-hub.md` - phase closed).**
+`docs/changelog/2026-09-07-phase-7-the-player-and-the-second-writer.md`. 9.5:
+`fn_ca_chip_statement` and `ChipStatement` on the wallet page and the club
+financials page - both directions, balance by club, and the nightly reading the
+balance is checked against, in the player's words. 9.6:
+`fn_ca_second_writer_check` plus `scripts/ci/audit-second-writer.mjs`, hourly
+from `schema-manifest-refresh.yml`, comparing every World Hub route call with
+`pg_proc` and the register; the first comparison found two closed doors still
+called, four calls whose parameter names never matched a live signature, and
+eighteen money routes with no caller anywhere - five of them (all defective)
+removed in the World Hub's own pull request, thirteen left for a decision.
+
 ### 9.7 THE OTHER CURRENCIES HAVE NO LEDGER AT ALL
 
 Diamonds have their own programme and their own drift. **VIP points, rakeback

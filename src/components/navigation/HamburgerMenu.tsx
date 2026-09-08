@@ -29,6 +29,7 @@ import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { AUTH_STORAGE_KEY, SPA_AUTH_BREADCRUMB } from '../../lib/authUtils';
+import { isPlatformStaffRole } from '../../utils/platformRoles';
 import { fetchGameCreationAccess } from '../../services/GameAccessService';
 import { soundService } from '../../services/SoundService';
 import { isSoundAllowed } from '../../utils/soundGate';
@@ -53,6 +54,8 @@ import { formatPopupText } from '../../utils/popupStyle';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import styles from './HamburgerMenu.module.css';
 import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCanCreateUnion';
+import { mediaUrl } from '../../utils/mediaBase';
+import { signInUrl } from '../../lib/signIn';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -575,7 +578,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             /* `profiles.show_stack_bb` is NOT read here any more — see the note
                where the second query used to be. */
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
-            setIsPlatformStaff(data.role === 'admin' || data.role === 'super_admin');
+            setIsPlatformStaff(isPlatformStaffRole(data.role));
           }
         });
 
@@ -889,8 +892,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         /* private mode */
       }
       onClose();
-      const redirectUrl = '/hub/club-arena' + location.pathname + location.search;
-      window.location.href = `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`;
+      // Web: the World Hub login. Native: the in-app AuthPage (src/lib/signIn).
+      window.location.href = signInUrl(location.pathname + location.search);
     }
   };
 
@@ -946,11 +949,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       >
         <div className={styles.utilityRail}>
           <div className={styles.brandLockup}>
-            <img
-              src="/hub/club-arena/images/diamond-icon.webp"
-              alt=""
-              className={styles.brandMark}
-            />
+            <img src={mediaUrl('images/diamond-icon.webp')} alt="" className={styles.brandMark} />
             <span>
               <span className={styles.brandEyebrow}>Smarter.Poker</span>
               <span className={styles.brandTitle} id={dialogTitleId}>

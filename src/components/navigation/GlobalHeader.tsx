@@ -20,6 +20,7 @@ import type { InTabLobbyNav } from '../../context/InTabLobbyContext';
 
 import styles from './GlobalHeader.module.css';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import { leaveForHub } from '../../lib/openExternal';
 
 const BASE = MEDIA_BASE;
 
@@ -276,7 +277,7 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
       }
       setIsNavigatingAway(true);
       requestAnimationFrame(() => {
-        window.location.href = path;
+        leaveForHub(path);
       });
     },
     [inTabHub, authUser?.id]

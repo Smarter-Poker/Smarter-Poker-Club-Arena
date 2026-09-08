@@ -23,6 +23,8 @@ import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
 import { readLocalSession, hasLocalSession, SPA_AUTH_BREADCRUMB } from '../../lib/authUtils';
 import { reportError } from '../../utils/errorReporter';
+import { IS_NATIVE_BUILD } from '../../lib/appBase';
+import { signInUrl } from '../../lib/signIn';
 
 const SESSION_CHECK_TIMEOUT = 5000; // 5s max wait for getSession (increased from 3s)
 
@@ -328,10 +330,16 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   // Redirect to auth ONLY if not authenticated
   if (!isAuthenticated) {
-    // HARDENED: Always redirect to the canonical World Hub login page
+    const back = location.pathname + location.search + location.hash;
+    if (IS_NATIVE_BUILD) {
+      // NATIVE (2026-09-07): there is no World Hub in the bundle, so the
+      // in-app AuthPage is the login page. Routed in-SPA: no reload, and the
+      // way back is an in-app path. src/lib/signIn.ts decides the shape.
+      return <Navigate to={signInUrl(back)} replace />;
+    }
+    // WEB, HARDENED: Always redirect to the canonical World Hub login page
     // instead of the regressed internal SPA auth component.
-    const redirectUrl = '/hub/club-arena' + location.pathname + location.search + location.hash;
-    window.location.href = `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`;
+    window.location.href = signInUrl(back);
     return null;
   }
 

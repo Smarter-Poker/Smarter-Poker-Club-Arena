@@ -100,7 +100,7 @@ const BASELINE = new Map<string, number>([
   // touched the file, so its three reads were fixed under the ratchet's own
   // rule: shrink what you touch).
   ['src/pages/tournament/TournamentLobbyPage.tsx', 3],
-  ['src/pages/VIPPage.tsx', 3],
+  ['src/pages/VIPPage.tsx', 2],
   ['src/pages/RakebackDashboard.tsx', 3],
   ['src/pages/PlayerSessionsPage.tsx', 2],
   ['src/pages/NotificationsPage.tsx', 3],
@@ -126,7 +126,7 @@ const BASELINE = new Map<string, number>([
   // with its reads, and the server fleet is the one seat creator for horses.
   ['src/services/HydraService.ts', 0],
   ['src/services/FinancialExportService.ts', 2],
-  ['src/services/BonusService.ts', 1],
+  // BonusService.ts was deleted 2026-09-07 with the chip daily-bonus ladder.
   /* 0 since 2026-09-05: the last unbound read here was the player_stats
      lookup in updateUserStats, which is now `const { data, error }` and
      reports. See the note in that function - it was also asking a per-club
@@ -164,7 +164,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/AvatarService.ts', 1],
   ['src/services/AdService.ts', 1],
   ['src/services/AchievementService.ts', 1],
-  ['src/pages/admin/AnalyticsDashboard.tsx', 1],
+  ['src/pages/admin/AnalyticsDashboard.tsx', 0],
   ['src/pages/XMTTPage.tsx', 0],
   ['src/pages/UnionStatementsPage.tsx', 1],
   ['src/pages/TournamentPage.tsx', 1],

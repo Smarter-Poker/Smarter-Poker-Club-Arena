@@ -77,17 +77,20 @@ class RoomService {
 
     // Handle broadcasts
     channel.on('broadcast', { event: 'game_event' }, (payload) => {
+      if (this.channels.get(tableId) !== channel) return;
       this.handleMessage(tableId, payload.payload as RoomMessage);
     });
 
     // Handle presence sync
     channel.on('presence', { event: 'sync' }, () => {
+      if (this.channels.get(tableId) !== channel) return;
       const state = channel.presenceState();
       this.updatePresence(tableId, state);
     });
 
     // Handle joins
     channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
+      if (this.channels.get(tableId) !== channel) return;
       this.notifyHandlers(tableId, {
         type: 'PLAYER_JOINED',
         payload: { userId: key, presences: newPresences },
@@ -98,6 +101,7 @@ class RoomService {
 
     // Handle leaves
     channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+      if (this.channels.get(tableId) !== channel) return;
       this.notifyHandlers(tableId, {
         type: 'PLAYER_LEFT',
         payload: { userId: key, presences: leftPresences },

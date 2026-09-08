@@ -60,6 +60,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { reportError } from '../utils/errorReporter';
 import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
+import { TABLE_AVATAR_COLUMN, tableAvatarFromProfileRow } from '../lib/tableAvatar';
 
 export interface SeatedProfileChange {
   userId: string;
@@ -81,12 +82,13 @@ export interface SeatedProfileSyncHandle {
 function toProfileChange(row: Record<string, unknown>): SeatedProfileChange | null {
   const userId = typeof row.id === 'string' ? row.id : '';
   if (!userId) return null;
-  const rawAvatar = row.arena_avatar_url;
   const rawFrame = row.equipped_frame;
   const rawAura = row.equipped_aura;
   return {
     userId,
-    avatar: typeof rawAvatar === 'string' && rawAvatar ? rawAvatar : undefined,
+    // The ONE column a seat shows, named by src/lib/tableAvatar.ts and read
+    // by the engine through its byte-identical mirror. Never `avatar_url`.
+    avatar: tableAvatarFromProfileRow(row),
     frame: typeof rawFrame === 'string' && rawFrame ? rawFrame : null,
     aura: typeof rawAura === 'string' && rawAura ? rawAura : null,
   };
@@ -177,7 +179,7 @@ export function useSeatedProfileSync(
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, arena_avatar_url, equipped_frame, equipped_aura')
+          .select(`id, ${TABLE_AVATAR_COLUMN}, equipped_frame, equipped_aura`)
           .in('id', safeIds);
         if (!mounted) return;
         if (error) {

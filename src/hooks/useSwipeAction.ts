@@ -39,7 +39,19 @@ export function useSwipeAction(opts: SwipeActionOptions = {}) {
         const dy = e.clientY - startY.current;
         // Only start horizontal drag if horizontal movement dominates
         if (!isDragging.current && Math.abs(dy) > Math.abs(dx)) return;
-        if (Math.abs(dx) > 10) isDragging.current = true;
+        if (!isDragging.current && Math.abs(dx) > 10) {
+          isDragging.current = true;
+          // Pointer capture (2026-09-08): once this is a drag, the row keeps
+          // receiving move/up even when the finger leaves it - the "slider
+          // sticks" class of bug in a webview. Only after the drag is
+          // recognised, so a tap never captures and its click target is
+          // exactly what it was.
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            /* not capturable (synthetic event, or already captured) */
+          }
+        }
         if (!isDragging.current) return;
         e.preventDefault();
         // Clamp to actionWidth range

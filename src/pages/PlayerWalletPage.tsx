@@ -45,7 +45,7 @@ import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
-import TransactionLedgerView from '../components/common/TransactionLedgerView';
+import ChipStatement from '../components/wallet/ChipStatement';
 import { DiamondService } from '../services/DiamondService';
 import { storeFetch } from './marketplace/marketplaceShared';
 import { diamondTxLabel } from '../components/wallet/DiamondWalletModal';
@@ -55,6 +55,7 @@ import { mediaUrl } from '../utils/mediaBase';
 import { reportError } from '../utils/errorReporter';
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
 import './PlayerWalletPage.css';
+import { publicOrigin } from '../lib/appBase';
 
 type WalletTab = 'overview' | 'send' | 'receive' | 'earn' | 'history';
 type WalletType = 'BUSINESS' | 'PLAYER' | 'PROMO';
@@ -770,9 +771,9 @@ export default function PlayerWalletPage() {
 
   const profileLink = useMemo(() => {
     if (!user?.id) return '';
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-    return `${origin}${base}/profile/${user.id}`;
+    // A profile link is a WEB link on every target: the public origin, never
+    // the webview's own (capacitor://localhost), with the web sub-path.
+    return `${publicOrigin()}/hub/club-arena/profile/${user.id}`;
   }, [user?.id]);
 
   const copyText = async (text: string, which: 'id' | 'link') => {
@@ -1441,7 +1442,7 @@ export default function PlayerWalletPage() {
                 <button type="button" className="earn-door" onClick={() => navigate('/bonuses')}>
                   <span className="earn-door__title">Bonuses</span>
                   <span className="earn-door__sub">
-                    Spin The Daily Wheel And Unlock Deposit Bonuses.
+                    Your Daily Club Arena Bonus And Club Promotions.
                   </span>
                 </button>
                 <button type="button" className="earn-door" onClick={() => navigate('/promotions')}>
@@ -1476,11 +1477,16 @@ export default function PlayerWalletPage() {
               </h3>
               <TransactionHistory walletId={user.id} limit={50} />
             </section>
+            {/* Phase 7 (roadmap 9.5): a statement the player can AUDIT, not a
+                feed. The feed this replaces asked chip_ledger for legs where the
+                player was performed_by or to_entity_id, so every chip that LEFT
+                the player was invisible. The statement shows both directions and
+                the nightly reading the balance is checked against. */}
             <section className="vault-panel" aria-labelledby="audit-title">
               <h3 id="audit-title" className="vault-panel__title">
-                Chip Movement Audit Trail
+                Chip Statement
               </h3>
-              <TransactionLedgerView userId={user.id} limit={20} />
+              <ChipStatement scope="player" />
             </section>
           </div>
         )}

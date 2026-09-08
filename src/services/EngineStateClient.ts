@@ -617,7 +617,7 @@ export class EngineStateClient {
       // Stale-socket guard: only the CURRENT socket's close drives recovery.
       // Without this, a superseded socket's late close could schedule a
       // second reconnect against a live connection.
-      if (this.ws !== null && this.ws !== ws) return;
+      if (this.ws !== ws) return;
       this.clearHandshakeTimer();
       // Clean intentional close
       if (this.intentionalClose) return;

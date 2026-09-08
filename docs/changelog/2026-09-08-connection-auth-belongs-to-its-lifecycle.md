@@ -25,3 +25,8 @@ clients with and without an intervening disconnect. Existing tests still require
 a current revoked session to stop retrying and an inconclusive current probe to
 keep recovery running. The shared session prober's own sign-out effects remain
 a separate audit item.
+
+A detached table socket's late close also passed the old guard while the new
+lifecycle had no socket yet. The table close handler now requires exact current
+socket identity, matching the channel client and the other table callbacks.
+A regression reproduces the false reconnect status during replacement auth.

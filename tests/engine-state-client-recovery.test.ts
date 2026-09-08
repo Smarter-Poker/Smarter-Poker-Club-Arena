@@ -751,3 +751,33 @@ describe.each(['table', 'channel'] as const)('%s connection auth ownership', (ki
     }
   });
 });
+
+it('ignores a detached table socket close while replacement auth is pending', async () => {
+  localStorage.setItem('ca_ws_mux', '0');
+  let finish!: (token: string) => void;
+  const pending = new Promise<string>((resolve) => {
+    finish = resolve;
+  });
+  const getToken = vi.fn().mockResolvedValueOnce('first-token').mockReturnValueOnce(pending);
+  const { c, statuses } = client({ getToken });
+  try {
+    await c.connect();
+    const old = live();
+    old._open();
+    c.disconnect();
+    const next = c.connect();
+    expect(statuses.at(-1)).toBe('connecting');
+    // Browser close events may arrive well after close() was requested.
+    old._serverClose(1006);
+    expect(statuses.at(-1)).toBe('connecting');
+    finish('replacement-token');
+    await next;
+    expect(live()).not.toBe(old);
+    live()._open();
+    expect(statuses.at(-1)).toBe('connected');
+  } finally {
+    finish('replacement-token');
+    c.disconnect();
+    localStorage.removeItem('ca_ws_mux');
+  }
+});

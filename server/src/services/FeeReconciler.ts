@@ -317,7 +317,7 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
           // is checked and any unconfirmed banking reaches the existing alarm.
           if (!TRANSIENT_DB_ERROR.test(res.error)) {
             await alarmUnqueueableFee(kind, fee, res.error);
-            return { done: true };
+            return { done: true, refused: true };
           }
           return { done: false, error: res.error };
         },

@@ -51,6 +51,14 @@ The cap moved from the assignment to the claim, and the reason is measured: the 
 
 **A horse is never a certification fixture, and now the code cannot forget it.** `fn_ca_is_fixture_account` matched 468 of the 1,000 live horses, because an earlier sweep tagged two horse generations into `ca_cert_accounts`; the earn ledger, the budgets and incident severity had been skipping them. The predicate now excludes horses by asking the profile, the mis-tagged rows are deactivated (active rows 519 -> 51), and the law pins the guarantee rather than the absence of a word.
 
+## Amendment 3 (2026-09-08, migration 20260908031918; docs/changelog/2026-09-08-diamond-transfers-and-gifts.md)
+
+**Rulings 4 and 12 are built.** Player-to-player transfers are off at the door, at the route (410) and in the wallet UI; the legacy `transfer_diamonds_*` pair is dropped. The stream gift is the one social transfer and the World Hub route now delegates to `send_stream_gift` as the player, so both legs, the gift row and both journal rows land in one transaction and the compensating refund the route used to hold is gone (CLAUDE.md 10.12). The hard-coded exempt account and both cap waivers are removed, a second cap policy that was live under the same name is dropped, and the answer no longer promises a lift date.
+
+**Ruling 4's "promotional balance first" is now precise.** A player may gift only the part of the balance that is not an unconsumed purchased lot (`fn_ca_giftable_balance`). Purchased diamonds are the collateral of the refund and chargeback sub-ledger in ruling 1, so they do not leave the wallet as a gift.
+
+**Five defects were found by reading the gift path rather than trusting it**, and every one of them was live: an idempotency guard that looked for a key the function never writes (a replay gifted twice), two unclassified journal legs, an undefined lock order between two profiles, purchased diamonds that could leave, and a function granted to players that the privileged-column guard refused - unnoticed because the route never called it.
+
 ## Amendment 4 (2026-09-08, migration 20260908033824; docs/changelog/2026-09-08-diamond-phase-three.md)
 
 **RULING 7 WAS INVERTED, AND DAN'S ROW IS THE CORRECT ONE.** The ruling read "1 diamond = 100 chips". The live `ca_bridge_rate` row, set on 2026-09-07 and annotated with Dan's own pricing - "1 diamond = 1 cent, 1 chip = 1 dollar. 100 diamonds per chip" - says the opposite: **100 diamonds buy 1 chip**. Dan sets what players are owed in future events (CLAUDE.md 10.9), so his row stands and the ruling is corrected to match it. `fn_mint_chips_from_diamonds` already reads the row, never a literal, and mints the chip leg through the Mint, so the bridge half of ruling 7 is built. **Anyone who reads ruling 7's original wording and "fixes" the live rate would divide the price of a chip by ten thousand.**

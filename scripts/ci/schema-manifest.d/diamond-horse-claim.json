@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/diamond-horse-claim-real-path (2026-09-08). Applied to production as 20260908043830_the_horse_claim_is_on_the_path_the_engine_calls. It patches the six-argument record_daily_challenge_event and declares no new name.",
+  "tables": [],
+  "functions": []
+}

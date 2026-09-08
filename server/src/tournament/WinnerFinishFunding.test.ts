@@ -19,7 +19,8 @@ async function run(
   receipt?: Record<string, unknown>,
   awardRead?: { data: unknown; error: unknown },
   format: Record<string, unknown> = {},
-  playerReads: Record<string, { data: unknown; error: unknown }> = {}
+  playerReads: Record<string, { data: unknown; error: unknown }> = {},
+  writeErrors: Record<string, unknown> = {}
 ) {
   const updates: Array<{ table: string; value: any }> = [];
   const alerts = vi.fn(async () => undefined);
@@ -70,6 +71,11 @@ async function run(
           return q;
         },
         then(resolve: any, reject: any) {
+          if (value?.status && writeErrors[value.status])
+            return Promise.resolve({ data: null, error: writeErrors[value.status] }).then(
+              resolve,
+              reject
+            );
           if (table === 'tournament_players' && !value && playerReads[columns])
             return Promise.resolve(playerReads[columns]).then(resolve, reject);
           if (table === 'tournament_players' && columns === 'prize' && awardRead)
@@ -304,5 +310,44 @@ describe('finish verifies that unresolved players were actually eliminated', () 
     );
     expect(r.owner.eliminatePlayer).toHaveBeenCalledWith('loser', 2);
     expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(true);
+  });
+});
+
+describe('finish requires confirmed winner and completion writes', () => {
+  it('does not complete or announce after the winner stamp fails', async () => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {},
+      {
+        winner: { message: 'winner write unavailable' },
+      }
+    );
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(false);
+    expect(r.owner.broadcast).not.toHaveBeenCalled();
+    expect(r.owner.cleanupBroadcastChannel).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalledWith(expect.any(Error), 'Tournament.winner_row_stamp_failed');
+  });
+  it('does not announce completion or close the channel after the completion write fails', async () => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {},
+      {
+        COMPLETED: { message: 'completion write unavailable', code: 'XX000' },
+      }
+    );
+    expect(r.owner.broadcast).not.toHaveBeenCalled();
+    expect(r.owner.cleanupBroadcastChannel).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Tournament.completed_transition_failed'
+    );
   });
 });

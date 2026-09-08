@@ -3919,6 +3919,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         ),
         'Tournament.winner_row_stamp_failed'
       );
+      return;
     }
 
     // ── SATELLITE SEAT AWARDS ──
@@ -4077,6 +4078,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         ),
         'Tournament.completed_transition_failed'
       );
+      return;
     }
 
     // PAYOUT-INTEGRITY 2026-08-20: final settlement check. Prizes are emitted

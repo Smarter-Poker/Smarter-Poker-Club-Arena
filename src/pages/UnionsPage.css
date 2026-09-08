@@ -367,8 +367,8 @@
     padding-bottom: 92px;
     background:
       linear-gradient(180deg, rgba(5, 9, 13, 0.88), #05090d 460px),
-      url('/hub/club-arena/assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp') center
-        top / 520px auto no-repeat,
+      url('/assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp') center top / 520px auto
+        no-repeat,
       #05090d;
   }
 

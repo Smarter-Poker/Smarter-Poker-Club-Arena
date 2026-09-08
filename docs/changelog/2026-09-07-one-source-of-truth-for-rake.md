@@ -165,7 +165,11 @@ select n,k,v,case when v=expect then 'PASS' else 'FAIL expected '||expect end fr
 Row 8, after the engine deploys: `select count(*) from agent_commissions
 where source_type='tournament_fee' and created_at > '<deploy time>'` must be 0.
 
-## Decisions - Dan's, not mine
+## Decisions - taken 2026-09-08 (Dan: "this is for you to decide")
+
+All three decided and shipped; see
+`docs/changelog/2026-09-08-phase-6-verification-and-the-three-decisions.md`.
+The options as they stood on 2026-09-07 are kept below for the record.
 
 1. **Switch statements back on?** `weekly_invoices_enabled` is 0 for Midway.
    The basis is unified; the next close (2026-09-14 07:00 UTC, the first

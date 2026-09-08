@@ -3210,16 +3210,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       const inHand = liveHand?.players.find((p) => p.user_id === player.user_id);
       if (inHand?.is_all_in && !inHand.is_folded) continue;
 
-      this.hub?.emitEvent(this.tableId, {
-        type: 'seat_left',
-        table_id: this.tableId,
-        seat: player.seat_number,
-        user_id: player.user_id,
-        mid_hand: false,
-        reason: 'busted_no_rebuy',
-        timestamp: Date.now(),
-      });
-
       try {
         /* atomicCashout, not markSeatAsLeft-by-hand: it takes the seat lock,
            credits any residual stack through atomic_credit_wallet_and_log under
@@ -3228,6 +3218,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            the money path anyway is what keeps this seat exit OFF
            fn_unaccounted_seat_exits (CLAUDE.md 11.5). */
         await atomicCashout(player.user_id, this.tableId, player.seat_number);
+        this.hub?.emitEvent(this.tableId, {
+          type: 'seat_left',
+          table_id: this.tableId,
+          seat: player.seat_number,
+          user_id: player.user_id,
+          mid_hand: false,
+          reason: 'busted_no_rebuy',
+          timestamp: Date.now(),
+        });
         this.chipContinuity.forget(player.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
         this.timeBankEngine.removePlayer(this.tableId, player.user_id);
@@ -3241,15 +3240,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_standup_cashout');
-        /* If the FALLBACK also fails, say so. Swallowing it left the worst
-           outcome invisible: `seat_left` has already been broadcast above, so
-           every client has cleared the seat while the row is still occupied —
-           a ghost seat that blocks a paying player and that nothing anywhere
-           reports. A cleanup that cannot complete is exactly the case worth
-           knowing about. */
-        await markSeatAsLeft(this.tableId, player.user_id, player.seat_number).catch((err2) =>
-          reportError(err2, 'ServerTableEngine.' + this.tableId + '.busted_standup_mark_left')
-        );
+        // Keep the roster and grace tracking intact until this same cashout
+        // confirms departure on a later sweep. An unknown outcome is not a leave.
       }
     }
 

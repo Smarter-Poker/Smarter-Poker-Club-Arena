@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ cashout: vi.fn() }));
+const mocks = vi.hoisted(() => ({ cashout: vi.fn(), markLeft: vi.fn() }));
 vi.mock('../services/supabase.js', async () => ({
   ...(await vi.importActual<Record<string, unknown>>('../services/supabase.js')),
-  markSeatAsLeft: vi.fn().mockResolvedValue(undefined),
+  markSeatAsLeft: (...args: unknown[]) => mocks.markLeft(...args),
   atomicCashout: (...args: unknown[]) => mocks.cashout(...args),
 }));
 const { ServerTableEngine } = await import('./ServerTableEngine.js');
@@ -23,7 +23,10 @@ function engine() {
   e.handController = null;
   return e;
 }
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.markLeft.mockResolvedValue(undefined);
+});
 describe('eviction only reflects a confirmed cashout', () => {
   it('does not emit a departure before the cashout resolves', async () => {
     const e = engine();
@@ -63,5 +66,50 @@ describe('eviction only reflects a confirmed cashout', () => {
     expect(e.seatedPlayers).toHaveLength(1);
     expect(mocks.cashout).not.toHaveBeenCalled();
     expect(e.hub.emitEvent).not.toHaveBeenCalled();
+  });
+});
+
+function bustedEngine() {
+  const e = engine();
+  e.seatedPlayers[0].stack = 0;
+  e.bustedSince = new Map([['player', Date.now() - 3600000]]);
+  e.rebuyPromptOpenAt = new Map();
+  e.pendingAddOns = new Map();
+  e.usersWithPendingLedgerChips = vi.fn().mockResolvedValue(new Set());
+  return e;
+}
+describe('busted seat departure confirmation', () => {
+  it('waits for the cashout receipt before broadcasting or clearing the seat', async () => {
+    const e = bustedEngine();
+    let resolve!: (value: number) => void;
+    mocks.cashout.mockReturnValue(
+      new Promise<number>((r) => {
+        resolve = r;
+      })
+    );
+    const pending = e.standUpBustedCashPlayers();
+    await Promise.resolve();
+    expect(mocks.cashout).toHaveBeenCalledOnce();
+    expect(e.hub.emitEvent).not.toHaveBeenCalled();
+    expect(e.seatedPlayers).toHaveLength(1);
+    resolve(0);
+    await pending;
+    expect(e.hub.emitEvent).toHaveBeenCalledOnce();
+    expect(e.seatedPlayers).toHaveLength(0);
+  });
+  it('preserves tracking on failure and confirms the next retry before removal', async () => {
+    const e = bustedEngine();
+    mocks.cashout.mockRejectedValueOnce(new Error('unknown outcome')).mockResolvedValueOnce(0);
+    await e.standUpBustedCashPlayers();
+    expect(e.hub.emitEvent).not.toHaveBeenCalled();
+    expect(e.seatedPlayers).toHaveLength(1);
+    expect(e.bustedSince.has('player')).toBe(true);
+    expect(e.chipContinuity.forget).not.toHaveBeenCalled();
+    expect(e.disconnectEngine.unregisterPlayer).not.toHaveBeenCalled();
+    await e.standUpBustedCashPlayers();
+    expect(mocks.cashout).toHaveBeenCalledTimes(2);
+    expect(e.seatedPlayers).toHaveLength(0);
+    expect(e.bustedSince.has('player')).toBe(false);
+    expect(e.hub.emitEvent).toHaveBeenCalledOnce();
   });
 });

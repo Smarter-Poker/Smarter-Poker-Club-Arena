@@ -39,7 +39,7 @@
     "fn_gto_v31_active_cells",
     "fn_gto_v31_evaluation_cells",
     "fn_audit_gto_v31_certified",
-    "fn_horse_solver_agreement_decision_valid",
+    "fn_horse_solver_agreement_decision",
     "fn_horse_solver_agreement_add",
     "fn_audit_solver_agreement",
     "ca_horse_solver_agreement",

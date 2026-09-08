@@ -27,7 +27,8 @@
  */
 
 export type LedgerKind =
-  /** a HorseDecideOpts switch read by decide() / decidePreflopV7 */
+  /** a HorseDecideOpts control read by decide() / decidePreflopV7; this also
+   *  includes non-boolean offline evaluation selectors and evidence hooks */
   | 'flag'
   /** a StyleParams number the style + profile + persona resolve into */
   | 'param'
@@ -91,6 +92,17 @@ const flag = (
   consumer,
   note,
   since,
+});
+
+const evaluationControl = (key: string, note: string): LedgerEntry => ({
+  key,
+  kind: 'flag',
+  source:
+    'Offline GtoV31CandidateEvaluation and HorseLeague only; excluded from live worker requests',
+  cadence: 'per_action',
+  consumer: 'HorseLogic.decide certified V31 candidate path',
+  note,
+  since: 'Phase4',
 });
 
 const receipt = (
@@ -387,7 +399,9 @@ export const TAG_CONSUMERS: LedgerEntry[] = [
 
 export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // ─────────────────────────────────────────────────────────────────────────
-  // FLAGS. Every HorseDecideOpts switch. Off = the layer's league b-side.
+  // HORSE DECISION CONTROLS. Boolean switches use off as the league b-side;
+  // the two Phase 4 evaluation controls are offline-only and fail closed at
+  // the live worker boundary.
   // ─────────────────────────────────────────────────────────────────────────
   flag(
     'decisionTimeMs',
@@ -482,6 +496,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v29GtoFlop', 'NLH flop solver cells', 'V29'),
   flag('v30GtoTurnRiver', 'NLH turn/river solver cells', 'V30'),
   flag('v31GtoSuitAware', 'suit-aware solver lookups', 'V31'),
+  evaluationControl(
+    'gtoV31DatasetChecksum',
+    'selects one exact sealed candidate checksum without changing the active live store'
+  ),
+  evaluationControl(
+    'onGtoV31Decision',
+    'captures decision-level source receipts for paired replay and league reconciliation'
+  ),
   flag('v32FacingDefense', 'solver facing-bet defense', 'V32'),
   flag('v33DepthCeiling', 'solver depth ceiling (300bb)', 'V33'),
   flag('v37Satellite', 'satellite survival play', 'V37'),

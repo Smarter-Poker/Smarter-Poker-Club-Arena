@@ -40,3 +40,11 @@ The next ordinary scheduled audit and live hand-gap sampling must establish
 runtime effect. The broad delay incident remains open.
 
 Reference: https://www.postgresql.org/docs/17/sql-createindex.html
+
+## First scheduled result
+
+The ordinary 21:39 audit succeeded in 45.32 seconds, compared with 98.07 seconds
+at 21:24 before the index. This is a measured reduction, not full resolution:
+the job still consumes substantial time. PR #3876 passed CI 34281716229 and
+merged as 70acbb3fe067b20a7043ac79bfeee43cad1ce176 at 21:42:03 UTC.
+The index was already live; frontend publication does not control SQL adoption.

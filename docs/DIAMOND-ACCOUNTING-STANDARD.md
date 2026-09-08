@@ -1,5 +1,7 @@
 # DIAMOND ACCOUNTING STANDARD - how diamonds are supposed to be issued, held, spent and retired
 
+> Current Diamond Arena authority: [Poker Arena Build Programme](./POKER-ARENA-DIAMOND-BUILD-PROGRAMME.md), updated by Dan on September 8, 2026. Earlier audit snapshots and decision lists below are historical where they conflict: transfers are allowed, membership is automatic, custody is diamond-only, all legacy Arena runtime and standalone routes must be removed. Preserve the approved original Diamond card artwork inside Poker Arena and remove the separate World Hub card. Existing shared wallet services and financial evidence are retained. This specification does not claim those runtime changes are already implemented.
+
 **Status: BINDING from 2026-09-03. Author: Claude (Cowork), written from production evidence pulled 2026-09-02 22:30 to 2026-09-03 00:30 UTC.**
 **Scope: every diamond movement on the platform - purchase, refund, chargeback, every earn engine, every sink, transfers and gifts, the diamonds-to-chips bridge, account deletion, the Mint, and the accounting the Diamond Arena (one platform club playing cash, MTTs, SNGs, spins and satellites in diamonds) must be built on.**
 **Companion documents: `docs/CHIP-ACCOUNTING-STANDARD.md` (the chip standard this one clones), the four audits in `docs/audits/2026-09-02-diamond-economy/`, and `docs/DIAMOND-ACCOUNTING-ROADMAP.md` (the scorecard and phases).**

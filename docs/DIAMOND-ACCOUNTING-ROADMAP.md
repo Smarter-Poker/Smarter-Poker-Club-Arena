@@ -1,5 +1,7 @@
 # DIAMOND ACCOUNTING ROADMAP - what is done, what is left, in phases
 
+> Current Diamond Arena authority: [Poker Arena Build Programme](./POKER-ARENA-DIAMOND-BUILD-PROGRAMME.md), updated by Dan on September 8, 2026. Earlier audit snapshots and decision lists below are historical where they conflict: transfers are allowed, membership is automatic, custody is diamond-only, all legacy Arena runtime and standalone routes must be removed. Preserve the approved original Diamond card artwork inside Poker Arena and remove the separate World Hub card. Existing shared wallet services and financial evidence are retained. This specification does not claim those runtime changes are already implemented.
+
 **Written 2026-09-03 ~01:20 UTC by Claude (Cowork), from the four read-only audits in `docs/audits/2026-09-02-diamond-economy/`, the six fix-lane changelogs `docs/changelog/2026-09-03-diamond-*.md`, and the phase 3 conflict audit `docs/audits/2026-09-02-diamond-economy/phase3-conflicts.md`. Every number below comes from a query run tonight; anything not measured is marked UNVERIFIED.**
 **Companion to `docs/DIAMOND-ACCOUNTING-STANDARD.md` (the standard) and `docs/changelog/2026-09-03-diamond-orchestrator.md` (what shipped tonight).**
 
@@ -71,7 +73,7 @@ gated on chip 4.2/4.3.
 **Phase 5.5 is part-closed.** The World Hub arena pages were showing invented
 players, invented personal win records and invented lifetime stats, plus a
 realtime subscription to `diamond_arena_scores`, a table that does not exist.
-All removed. Routing `/hub/diamond-arena` into the SPA is still open.
+All removed in that historical workstream. The later Poker Arena programme supersedes the routing proposal: delete the standalone route and its aliases, and use the Diamond selection inside Poker Arena.
 
 **Two open defects and two numbers for Dan** are in
 `docs/changelog/2026-09-08-phase-5-status-and-two-open-defects.md`. The first -
@@ -146,7 +148,7 @@ The current product build sequence is the 12-phase POKER-ARENA-DIAMOND-BUILD-PRO
 5.2 Dedicated diamond custody and atomic reserve/release from the platform wallet. The former deposit/withdraw into club_members.chip_balance is superseded; migrate proven existing obligations forward without erasing evidence. Preserve purchased-lot and settlement-window rules.
 5.3 Reporting learns `asset`: chip `fn_ca_trial_balance` and `fn_ca_supply_snapshot` exclude the platform club; the diamond trial balance includes `arena_wallets`, `table_stack`, `tournament_escrow`, `diamond_bbj`, `spin_reserve` for it.
 5.4 Guarantees and freerolls from the house (`fn_apply_prize_guarantee` bank_type `house`), rake to the house, one `bbj_pools` row for the platform club after chip roadmap 4.2 and 4.3 land, horses funded from the house by the Mint.
-5.5 One Poker Arena World Hub entrance; shared Club Arena SPA selector with Shark Club, Diamond Arena and joined clubs. Diamond membership is automatic, chip membership requires joining. Old Diamond links select the skin inside the same app; retire the iframe and independent app.
+5.5 One Poker Arena World Hub entrance; shared Club Arena SPA selector with Shark Club, Diamond Arena and joined clubs. Diamond membership is automatic, chip membership requires joining. Remove old standalone Diamond routes and aliases, update callers to the new Poker Arena selection, and delete the iframe and independent app. Preserve the approved original Diamond card artwork inside Poker Arena; remove its separate World Hub card.
 5.6 Trivia tournaments re-pointed at `tournament_obligations` or retired; no second payout engine.
 Entry condition: seven consecutive days of `fn_ca_diamond_trial_balance` at 0 on every account, suspense 0, and no open critical `ca_diamond_incidents`.
 

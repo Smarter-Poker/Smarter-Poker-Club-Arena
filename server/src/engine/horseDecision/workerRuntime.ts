@@ -316,6 +316,13 @@ export class HorseDecisionWorkerRuntime {
       throw new Error('decisionTimeMs must be a finite epoch');
     }
     if (
+      (request.type === 'DECIDE_FAST' || request.type === 'DECIDE_DEEP') &&
+      request.opts &&
+      ('gtoV31DatasetChecksum' in request.opts || 'onGtoV31Decision' in request.opts)
+    ) {
+      throw new Error('offline V31 candidate controls are forbidden in live decision requests');
+    }
+    if (
       request.type === 'DECIDE_DEEP' &&
       (!Number.isInteger(request.rngBefore) ||
         request.rngBefore < 0 ||

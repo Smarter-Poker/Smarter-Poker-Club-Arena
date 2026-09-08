@@ -17014,3 +17014,13 @@ both sides, ui-text gate green.
 **Why:** Cashier history latency should scale with one club and one wallet, not the global ledger.
 **Verified:** YES — both ledger indexes and the roster index are live, ready, and valid in production.
 **TypeScript:** PASS — no runtime TypeScript surface.
+
+## Change: Chip Journal Errors Roll Back The Movement (2026-09-08)
+
+**Files:** supabase/migrations/20260908024909_chip_journal_failure_rolls_back_movement.sql; scripts/ci/probes/chip-journal-atomicity; .github/workflows/ci.yml.
+**Before:** Production fn_ca_autoledger lines 69-98, fn_club_members_ledger_writer lines 48-92, fn_ca_post_leg lines 17-30, plus direct treasury/rake/seat journals swallowed journal INSERT failures.
+**Change:** Eight posting handlers rethrow the original SQLSTATE, so the enclosing movement rolls back. CI executes the real function bodies with injected failures against isolated PostgreSQL in the existing required TypeScript Check.
+**Why:** Production failures 871 (BBJ 0.25, lock timeout) and 867 (rake 0.68, lock timeout) demonstrate balances accepted without accounting records.
+**Verified:** Production migration applied; all eight live definitions re-read with swallowed ledger logging absent. Isolated PostgreSQL: 45 original defect reproductions, 57 fixed checks including successful balance assertions and replay.
+**TypeScript:** Initial local check lacked installed native packages; clean lockfile installation performed; subsequent TypeScript check passed.
+**Limits:** This fixes shared journal failure atomicity, not separate hand stack/rake/BBJ transactions or every historical incident. Existing repair dependencies remain open work, not a claimed solution.

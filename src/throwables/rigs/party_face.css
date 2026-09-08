@@ -1,0 +1,117 @@
+.thr-party_face__pop {
+  transform-origin: 0 0;
+  animation: thr-party_face-pop calc(0.3s * var(--animation-speed, 1)) ease-out both;
+}
+@keyframes thr-party_face-pop {
+  0% {
+    transform: scale(0.23);
+  }
+  45% {
+    transform: scale(1.35);
+  }
+  75% {
+    transform: scale(0.85);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.thr-party_face__neutral {
+  animation: thr-party_face-neutral calc(0.001s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.967s * var(--animation-speed, 1)) forwards;
+}
+.thr-party_face__mouth {
+  animation: thr-party_face-neutral calc(0.001s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.967s * var(--animation-speed, 1)) forwards;
+}
+.thr-party_face__mouth-open {
+  opacity: 0;
+  animation: thr-party_face-cheer calc(0.534s * var(--animation-speed, 1)) linear
+    calc(0.3s * var(--animation-speed, 1)) forwards;
+}
+.thr-party_face__cheer {
+  opacity: 0;
+  animation: thr-party_face-cheer calc(0.001s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.967s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-party_face-neutral {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes thr-party_face-cheer {
+  to {
+    opacity: 1;
+  }
+}
+.thr-party_face__horn {
+  opacity: 0;
+  transform-origin: 0 12px;
+  animation: thr-party_face-horn calc(0.4s * var(--animation-speed, 1)) ease-out
+    calc(0.167s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-party_face-horn {
+  0% {
+    opacity: 1;
+    transform: scaleX(0.05);
+  }
+  70% {
+    opacity: 1;
+    transform: scaleX(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+.thr-party_face__streamers {
+  opacity: 0;
+  transform-origin: 0 0;
+  animation: thr-party_face-streamers calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(1.234s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-party_face-streamers {
+  0% {
+    opacity: 1;
+    transform: scale(0.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.thr-party_face__ribbons {
+  transform-origin: 0 0;
+  animation: thr-party_face-ribbons calc(0.38s * var(--animation-speed, 1)) ease-in-out
+    calc(1.234s * var(--animation-speed, 1)) infinite alternate;
+}
+@keyframes thr-party_face-ribbons {
+  from {
+    transform: rotate(-4deg) scaleY(0.96);
+  }
+  to {
+    transform: rotate(4deg) scaleY(1.04);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-party_face__pop,
+  .thr-party_face__neutral,
+  .thr-party_face__mouth,
+  .thr-party_face__mouth-open,
+  .thr-party_face__cheer,
+  .thr-party_face__horn,
+  .thr-party_face__streamers,
+  .thr-party_face__ribbons {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-party_face__neutral,
+  .thr-party_face__mouth {
+    opacity: 0;
+  }
+  .thr-party_face__cheer,
+  .thr-party_face__horn,
+  .thr-party_face__streamers {
+    opacity: 1;
+  }
+}

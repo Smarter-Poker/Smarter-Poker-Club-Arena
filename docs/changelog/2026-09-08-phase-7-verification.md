@@ -65,7 +65,7 @@ trigger that does not exist. It had not fired yet only because
 `agent_commission_settlements` still holds zero rows: round 2 has not run since
 the model changed. This landed before the close that would have produced it.
 
-Fixed in `20260908042306` by one `FROM` clause. The migration is a transform
+Fixed in `20260908042554` by one `FROM` clause. The migration is a transform
 rather than a pasted function body: the meter is ~130 lines covering four
 currencies and retyping the other three risks altering a financial alert by
 accident, so it asserts the old clause is present exactly once, replaces only
@@ -118,7 +118,7 @@ Neither ever worked, which is the only reason this is not an incident: RLS on
 `agent_commissions` has SELECT-only policies for `authenticated` and reserves
 writes to `service_role`, so the DELETE matched zero rows and returned success.
 The button reported payment, changed nothing, and the row was still there after
-the refresh. `20260908035532` revoked the table-level write grants as well,
+the refresh. `20260908035653` revoked the table-level write grants as well,
 which would have turned that silent lie into a visible 403.
 
 Both actions and both buttons are removed. An agent is paid by exactly two
@@ -140,6 +140,35 @@ manifest; the sanctioned path is a fragment under
 Thirteen objects were verified present in the live schema before the fragment
 was written, and the nightly refresh goes red on any fragment that names
 something production does not have.
+
+## Defect 4: the filename version and the recorded version were not the same number
+
+`apply_migration` stamps the migration with **its own** timestamp, taken when
+it runs. `scripts/reserve-migration-version.sh` hands out a version for the
+filename earlier, when the file is created. The two are minutes apart, so the
+repo and `supabase_migrations.schema_migrations` end up naming the same
+migration differently:
+
+```
+file 20260908035532   database 20260908035653   the_commission_ledger_grants_no_writes_to_a_browser_role
+file 20260908040611   database 20260908040743   the_rollup_rebuild_survives_safeupdate_...
+file 20260908042306   database 20260908042554   the_currency_meter_asks_the_same_question_...
+```
+
+Supabase keys `schema_migrations` on the version, so a rebuild from this repo
+would find those filename versions unrecorded and **run those files again**.
+All three of mine are idempotent, so re-running them is harmless; that is luck,
+not design. The three files are renamed here to the versions the database
+actually recorded, so the repo and the ledger agree.
+
+**This is not only mine.** Of the 43 migration files dated 2026-09-08 on
+`main`, **12 carry a version that appears nowhere in `schema_migrations`** -
+ten of them other agents', written the same way in the same window. Nothing
+catches it: `check-applied-migrations-are-recorded` asks whether the database
+holds migrations the repo lacks, and `check-migrations-applied` asks whether
+the objects a migration declares exist. Neither asks whether the version on the
+file is the version that ran. The other ten are left alone rather than renamed
+underneath the agents who own them, and are reported instead.
 
 ## What was checked and found clean
 

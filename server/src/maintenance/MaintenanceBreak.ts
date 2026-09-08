@@ -98,6 +98,7 @@
  * seats are horses.
  */
 
+import { completeReconnectFreeze } from './reconnectFreeze.js';
 import { setMaintenanceFrozen } from './freezeState.js';
 
 /**
@@ -811,6 +812,8 @@ export class MaintenanceBreak {
     let thawOk: boolean | null = null;
     if (this.deps.thaw && this.breakStartedAt > 0) {
       const frozenSeconds = Math.max(1, Math.round((this.now() - this.breakStartedAt) / 1000));
+      // Retain the same interval for engines restored before OR after the DB thaw.
+      completeReconnectFreeze(this.breakStartedAt, frozenSeconds * 1000);
       try {
         await this.deps.thaw(this.breakStartedAt, frozenSeconds);
         thawOk = true;

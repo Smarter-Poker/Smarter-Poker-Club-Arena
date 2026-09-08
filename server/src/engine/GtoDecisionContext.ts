@@ -164,12 +164,21 @@ export function gtoV31UtilityContext(args: {
   };
 }): GtoV31UtilityContext | null {
   if (args.objective === 'cash_ev') return args.family === 'cash' ? 'cash_ev' : null;
-  if (args.objective === 'chip_ev') return args.family === 'cash' ? null : 'chip_ev';
   const tournament = args.tournament;
-  if (!tournament || (tournament.bountyFactor ?? 0) > 0) return null;
-  if ((tournament.mysteryChestsLeft ?? 0) > 0 || (tournament.meanBountyCents ?? 0) > 0) {
+  // Inspect event utility before accepting even a chip-EV tournament cell.
+  // Otherwise a bounty event with incomplete ICM inputs silently falls into
+  // tourney_ev and consumes a freezeout policy that cannot price the head.
+  if (
+    (tournament?.bountyFactor ?? 0) > 0 ||
+    (tournament?.mysteryChestsLeft ?? 0) > 0 ||
+    (tournament?.meanBountyCents ?? 0) > 0
+  ) {
     return null;
   }
+  if (args.objective === 'chip_ev') {
+    return args.family === 'spin' || args.family === 'tourney_ev' ? 'chip_ev' : null;
+  }
+  if (!tournament) return null;
   if (args.family === 'spin') return 'spin_ladder';
   if (args.family !== 'tourney_icm') return null;
   if (tournament.satellite) return 'satellite';

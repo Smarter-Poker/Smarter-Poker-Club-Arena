@@ -432,11 +432,13 @@ function rowIsValid(
     ) {
       return false;
     }
-    const mixedEv = actionIds.reduce(
-      (total, id) => total + Number(mix[id]) * Number(handActionEvs[id]),
-      0
-    );
-    if (Math.abs(policyEv - mixedEv) > 0.02) return false;
+    // The database validates policy EV = frequency-weighted action EV for
+    // every source combo before compaction. At compact hand-class level,
+    // policy EV, frequencies, and counterfactual action EVs are each
+    // reach-weighted aggregates. Their product is not algebraically required
+    // to equal the separately averaged source policy EV when frequency and EV
+    // covary across suits/runouts. Reapplying the source identity here rejects
+    // valid sealed cells; completeness and finiteness remain mandatory.
   }
   if (
     Object.keys(policyEvs).some((handKey) => !(handKey in row.hand_matrix)) ||

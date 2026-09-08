@@ -15,13 +15,13 @@ const ROOT = join(__dirname, '..', '..', '..');
 const read = (path: string) => readFileSync(join(ROOT, path), 'utf8');
 
 const CORPUS = read(
-  'supabase/migrations/20260908163125_the_horse_reads_only_a_certified_solver_dataset.sql'
+  'supabase/migrations/20260908181657_the_horse_reads_only_a_certified_solver_dataset.sql'
 );
 const AGREEMENT = read(
-  'supabase/migrations/20260908163137_the_solver_score_keeps_every_decision_receipt.sql'
+  'supabase/migrations/20260908181714_the_solver_score_keeps_every_decision_receipt.sql'
 );
 const LIVENESS = read(
-  'supabase/migrations/20260908163147_both_solver_hosts_and_the_compactor_leave_receipts.sql'
+  'supabase/migrations/20260908181724_both_solver_hosts_and_the_compactor_leave_receipts.sql'
 );
 const STORE = read('server/src/engine/GtoPostflopV31.ts');
 const LOADER = read('server/src/services/GtoPostflopV31Loader.ts');

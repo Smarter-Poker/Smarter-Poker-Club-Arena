@@ -144,6 +144,29 @@ describe('canonical V31 node context', () => {
         tournament: { nearBubble: true, bountyFactor: 0.25 },
       })
     ).toBeNull();
+    expect(
+      gtoV31UtilityContext({
+        family: 'tourney_ev',
+        objective: 'chip_ev',
+        tournament: { bountyFactor: 0.25 },
+      })
+    ).toBeNull();
+    expect(
+      gtoV31UtilityContext({
+        family: 'spin',
+        objective: 'chip_ev',
+        tournament: { mysteryChestsLeft: 4 },
+      })
+    ).toBeNull();
+    expect(
+      gtoV31UtilityContext({
+        family: 'tourney_ev',
+        objective: 'chip_ev',
+        tournament: { meanBountyCents: 1_000 },
+      })
+    ).toBeNull();
+    expect(gtoV31UtilityContext({ family: 'tourney_icm', objective: 'chip_ev' })).toBeNull();
+    expect(gtoV31UtilityContext({ family: 'tourney_ev', objective: 'icm' })).toBeNull();
   });
 
   it('refuses a heads-up tree after any third player acted postflop', () => {

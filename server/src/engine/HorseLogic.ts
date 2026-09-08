@@ -3753,28 +3753,6 @@ export class HorseLogic {
           ? 'callOnce'
           : 'foldToRaise';
 
-    // ═══ V37 SATELLITE, POSTFLOP (action) ═══ placed after the raise-plan
-    // assignment above so a chip-in here can never consume another table's
-    // plan (HorseRaisePlanIsPerDecision). The read itself is taken above.
-    if (sat37.locked) {
-      if (tele15) noteFire('v37_sat_locked_postflop');
-      if (facingBet) {
-        const odds37 = toCall / Math.max(1e-9, pot + toCall);
-        const cheap = toCall <= stack * 0.08;
-        if (equity >= 0.9) return { action: 'call', amount: toCall, thinkTime: 0 };
-        if (cheap && equity >= odds37 + 0.1)
-          return { action: 'call', amount: toCall, thinkTime: 0 };
-        return { action: 'fold', thinkTime: 0 };
-      }
-      if (equity >= 0.9 && !isRiver) {
-        return this.betSize(pot, 0.5 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
-      }
-      if (equity >= 0.85 && isRiver) {
-        return this.betSize(pot, 0.4 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
-      }
-      return { action: 'check', thinkTime: 0 };
-    }
-
     const useV11 = opts.v11 !== false;
     // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
     // marginal calls against the raked pot, not the raw one. Above the cap
@@ -3963,6 +3941,30 @@ export class HorseLogic {
       ) {
         noteFire('v31_certified_skip_multiway_history');
       }
+    }
+
+    // ═══ V37 SATELLITE, POSTFLOP FALLBACK ═══ Certified exact satellite ICM
+    // gets first refusal above.  The survival heuristic remains the fail-
+    // closed answer when no exact candidate/active cell can answer (or when
+    // the game is ineligible), but it must never make the evaluator's
+    // satellite component structurally incapable of executing the candidate.
+    if (sat37.locked) {
+      if (tele15) noteFire('v37_sat_locked_postflop');
+      if (facingBet) {
+        const odds37 = toCall / Math.max(1e-9, pot + toCall);
+        const cheap = toCall <= stack * 0.08;
+        if (equity >= 0.9) return { action: 'call', amount: toCall, thinkTime: 0 };
+        if (cheap && equity >= odds37 + 0.1)
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        return { action: 'fold', thinkTime: 0 };
+      }
+      if (equity >= 0.9 && !isRiver) {
+        return this.betSize(pot, 0.5 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
+      }
+      if (equity >= 0.85 && isRiver) {
+        return this.betSize(pot, 0.4 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
+      }
+      return { action: 'check', thinkTime: 0 };
     }
 
     /** V34: the solver said CALL with a drawing hand; the semi-bluff raise

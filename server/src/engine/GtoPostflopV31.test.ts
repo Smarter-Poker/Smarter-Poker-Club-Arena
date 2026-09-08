@@ -137,6 +137,44 @@ describe('V31 certification and lookup', () => {
     }
   });
 
+  it('accepts independently reach-weighted compact EV aggregates but still requires complete finite EVs', () => {
+    const covarianceCell: GtoPostflopV31Row = {
+      ...CELL,
+      hand_matrix: {
+        'AKs:2': { check: 0.5, overbet: 0.5 },
+        'AKs:0': { check: 0.5, overbet: 0.5 },
+      },
+      // Source-combo policy identities were validated before compaction. The
+      // independent class averages need not satisfy 0.5 * 2 + 0.5 * 8 = 5.
+      policy_ev_matrix: { 'AKs:2': 6.25, 'AKs:0': 6.25 },
+      action_ev_matrix: {
+        'AKs:2': { check: 2, overbet: 8 },
+        'AKs:0': { check: 2, overbet: 8 },
+      },
+    };
+    expect(replaceGtoPostflopV31([covarianceCell])).toBe(1);
+    expect(lookup().hit).toBe(true);
+    expect(() =>
+      replaceGtoPostflopV31([
+        {
+          ...covarianceCell,
+          policy_ev_matrix: { 'AKs:2': Number.NaN, 'AKs:0': 6.25 },
+        },
+      ])
+    ).toThrow(/uncertified_or_malformed/);
+    expect(() =>
+      replaceGtoPostflopV31([
+        {
+          ...covarianceCell,
+          action_ev_matrix: {
+            'AKs:2': { check: 2 },
+            'AKs:0': { check: 2, overbet: 8 },
+          },
+        },
+      ])
+    ).toThrow(/uncertified_or_malformed/);
+  });
+
   it('keeps a sealed candidate isolated behind its exact checksum', () => {
     replaceGtoPostflopV31([CELL]);
     const candidate: GtoPostflopV31Row = {
@@ -334,6 +372,144 @@ describe('V31 reaches the full horse decision path', () => {
     const fires = Object.fromEntries(drainFires().map((row) => [row.feature, row.fires]));
     expect(fires.v31_certified_facing_bet).toBe(1);
     expect(fires.v32_defend_fold ?? 0).toBe(0);
+  });
+
+  it('lets an exact satellite ICM candidate execute before the locked-seat fallback', () => {
+    const checksum = '7'.repeat(64);
+    const candidate: GtoPostflopV31Row = {
+      ...CELL,
+      dataset_id: '22222222-2222-4222-8222-222222222222',
+      dataset_key: 'phase4-satellite-candidate',
+      dataset_checksum: checksum,
+      dataset_state: 'evaluating',
+      game_family: 'tourney_icm',
+      objective: 'icm',
+      utility_context: 'satellite',
+      table_size: 2,
+      pot_type: 'srp',
+      hero_position: 'BB',
+      opponent_position: 'SB',
+      node_role: 'facing_bet',
+      facing_kind: 'bet',
+      facing_size_bucket: 'big',
+      hand_matrix: { '43o:0': { fold: 0, call: 1, raise: 0 } },
+      action_specs: {
+        fold: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+        call: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+        raise: {
+          family: 'raise',
+          size_unit: 'pot_after_call_fraction',
+          size_value: 0.75,
+          all_in: false,
+        },
+      },
+      policy_ev_matrix: { '43o:0': -0.2 },
+      action_ev_matrix: { '43o:0': { fold: 0, call: -0.2, raise: -1 } },
+    };
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      username: 'Hero',
+      stack: 8_000,
+      bet: 0,
+      totalInvested: 300,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards('3c4d'),
+    };
+    const villain = {
+      seat: 2,
+      user_id: 'villain',
+      username: 'Villain',
+      stack: 4_000,
+      bet: 4_000,
+      totalInvested: 4_300,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: [],
+    };
+    const state = {
+      players: [hero, villain],
+      communityCards: BOARD,
+      pot: 5_000,
+      currentBet: 4_000,
+      minRaise: 4_000,
+      stage: 'turn',
+      gameVariant: 'nlh',
+      gameMode: 'tournament',
+      format: 'mtt',
+      bigBlind: 100,
+      smallBlind: 50,
+      dealerSeat: 2,
+      actionHistory: [
+        {
+          stage: 'preflop',
+          seat: 2,
+          userId: 'villain',
+          action: 'raise',
+          amount: 300,
+          timestamp: 0,
+        },
+        {
+          stage: 'preflop',
+          seat: 1,
+          userId: 'hero',
+          action: 'call',
+          amount: 200,
+          timestamp: 1,
+        },
+        {
+          stage: 'turn',
+          seat: 2,
+          userId: 'villain',
+          action: 'bet',
+          amount: 4_000,
+          timestamp: 2,
+        },
+      ],
+      tournament: {
+        playersLeft: 5,
+        spotsPaid: 4,
+        satellite: true,
+        satelliteSeats: 4,
+        stacks: [8_000, 2_000, 1_800, 1_600, 1_400],
+        payoutPct: [0.25, 0.25, 0.25, 0.25],
+        avgStackChips: 2_960,
+      },
+    };
+
+    const fallback = HorseLogic.decide(
+      hero as never,
+      state as never,
+      'balanced',
+      {},
+      { mind: false }
+    );
+    expect(fallback.action).toBe('fold');
+
+    replaceGtoPostflopV31Evaluation([candidate]);
+    const receipts: Array<{ datasetChecksum: string; nodeRole: string; actionId: string }> = [];
+    const decision = HorseLogic.decide(
+      hero as never,
+      state as never,
+      'balanced',
+      {},
+      {
+        mind: false,
+        gtoV31DatasetChecksum: checksum,
+        onGtoV31Decision: (receipt) => receipts.push(receipt),
+      }
+    );
+    expect(decision).toMatchObject({ action: 'call', amount: 4_000 });
+    expect(receipts).toEqual([
+      expect.objectContaining({
+        datasetChecksum: checksum,
+        nodeRole: 'facing_bet',
+        actionId: 'call',
+      }),
+    ]);
   });
 
   it('the worker owns the loader and the loader reads only the certified RPC', () => {

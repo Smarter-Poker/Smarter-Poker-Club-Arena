@@ -573,19 +573,24 @@ BEGIN
     END LOOP;
     IF abs(v_sum - 1) > 0.002 THEN RETURN false; END IF;
 
-    IF v_policy_evs ? v_hand.key
-       AND jsonb_typeof(v_policy_evs -> (v_hand.key)) NOT IN ('number','null') THEN
+    IF NOT (v_policy_evs ? v_hand.key)
+       OR jsonb_typeof(v_policy_evs -> (v_hand.key)) <> 'number' THEN
       RETURN false;
     END IF;
-    IF v_action_evs ? v_hand.key THEN
-      IF jsonb_typeof(v_action_evs -> (v_hand.key)) <> 'object' THEN RETURN false; END IF;
-      FOR v_frequency IN SELECT key, value FROM jsonb_each(v_action_evs -> (v_hand.key)) LOOP
-        IF NOT (v_actions ? v_frequency.key)
-           OR jsonb_typeof(v_frequency.value) NOT IN ('number','null') THEN
-          RETURN false;
-        END IF;
-      END LOOP;
+    IF NOT (v_action_evs ? v_hand.key)
+       OR jsonb_typeof(v_action_evs -> (v_hand.key)) <> 'object'
+       OR (SELECT count(*) FROM jsonb_object_keys(v_action_evs -> (v_hand.key))) <>
+          (SELECT count(*) FROM jsonb_object_keys(v_actions))
+       OR EXISTS (SELECT 1 FROM jsonb_object_keys(v_actions) a(key)
+            WHERE NOT ((v_action_evs -> (v_hand.key)) ? a.key)) THEN
+      RETURN false;
     END IF;
+    FOR v_frequency IN SELECT key, value FROM jsonb_each(v_action_evs -> (v_hand.key)) LOOP
+      IF NOT (v_actions ? v_frequency.key)
+         OR jsonb_typeof(v_frequency.value) <> 'number' THEN
+        RETURN false;
+      END IF;
+    END LOOP;
   END LOOP;
 
   IF EXISTS (
@@ -1287,7 +1292,10 @@ BEGIN
   FOR v_i IN 0..1325 LOOP
     IF jsonb_typeof(v_matchups->v_i)<>'number' THEN RETURN false; END IF;
     v_weight:=(v_matchups->>v_i)::numeric;
-    IF v_weight<0 OR v_weight>1 THEN RETURN false; END IF;
+    -- calc_ev's second vector is matchup mass, not a [0,1] range weight.
+    -- It must be finite/nonnegative JSON numeric, but can legitimately exceed
+    -- one when many weighted opponent combinations remain.
+    IF v_weight<0 THEN RETURN false; END IF;
     v_frequency_sum:=0; v_expected_ev:=0;
     FOR v_action IN SELECT key FROM jsonb_each(v_specs) LOOP
       IF jsonb_typeof(v_frequencies->v_action.key->v_i)<>'number' THEN RETURN false; END IF;
@@ -1485,6 +1493,7 @@ DECLARE
   v_holdout_rows integer;
   v_spec_variants integer;
   v_machine_variants integer;
+  v_cross_split_board_overlaps integer;
   v_specs jsonb;
   v_hand_matrix jsonb;
   v_policy_evs jsonb;
@@ -1554,14 +1563,20 @@ BEGIN
   )
   SELECT count(*),count(*) FILTER (WHERE split='train'),count(*) FILTER (WHERE split='holdout'),
          count(DISTINCT node->'action_specs'),count(DISTINCT machine_id),
+         (SELECT count(*) FROM source_nodes train
+           JOIN source_nodes holdout
+             ON holdout.node#>>'{node_context,board}'=train.node#>>'{node_context,board}'
+          WHERE train.split='train' AND holdout.split='holdout'),
          (array_agg(node->'action_specs'))[1],
          encode(digest(string_agg(source_row_id::text||':'||(node->>'node')||':'||
            (node->>'node_checksum'),'' ORDER BY source_row_id::text,node->>'node'),'sha256'),'hex')
-    INTO v_source_rows,v_train_rows,v_holdout_rows,v_spec_variants,v_machine_variants,v_specs,v_lineage
+    INTO v_source_rows,v_train_rows,v_holdout_rows,v_spec_variants,v_machine_variants,
+         v_cross_split_board_overlaps,v_specs,v_lineage
     FROM source_nodes;
   IF v_source_rows<2 OR v_train_rows<1 OR v_holdout_rows<1 OR v_spec_variants<>1
-     OR v_machine_variants<>2 OR v_specs IS NULL OR v_lineage IS NULL THEN
-    RAISE EXCEPTION 'cell needs M1 and M2, one action topology, and independent train and holdout sources';
+     OR v_machine_variants<>2 OR v_cross_split_board_overlaps<>0
+     OR v_specs IS NULL OR v_lineage IS NULL THEN
+    RAISE EXCEPTION 'cell needs M1 and M2, one action topology, and board-disjoint train and holdout sources';
   END IF;
 
   WITH source_nodes AS MATERIALIZED (
@@ -1931,7 +1946,8 @@ BEGIN
   v_regret_observations:=COALESCE((v_metrics->>'regret_observations')::bigint,0);
   v_live_observations:=COALESCE((v_metrics->>'live_combo_observations')::bigint,0);
   v_missing:=COALESCE((v_metrics->>'missing_observations')::bigint,0);
-  IF v_missing<>0 OR v_frequency_observations=0 OR v_policy_observations=0
+  IF v_missing<>0 OR v_frequency_observations=0 OR v_sizing_observations=0
+     OR v_policy_observations=0
      OR v_regret_observations=0 OR v_live_observations=0
      OR v_frequency_mae IS NULL OR v_sizing_mae IS NULL OR v_policy_mae IS NULL
      OR v_regret IS NULL OR v_regret_coverage IS NULL THEN
@@ -1946,6 +1962,7 @@ BEGIN
   FOREACH v_family IN ARRAY ARRAY['cash','spin','tourney_ev','tourney_icm'] LOOP
     v_family_metrics:=public.fn_gto_v31_heldout_metrics(p_dataset_id,v_family);
     IF COALESCE((v_family_metrics->>'frequency_observations')::bigint,0)=0
+       OR COALESCE((v_family_metrics->>'sizing_observations')::bigint,0)=0
        OR COALESCE((v_family_metrics->>'policy_ev_observations')::bigint,0)=0
        OR COALESCE((v_family_metrics->>'regret_observations')::bigint,0)=0
        OR COALESCE((v_family_metrics->>'missing_observations')::bigint,0)<>0 THEN
@@ -2279,6 +2296,9 @@ BEGIN
      OR COALESCE((v_dataset.coverage->>'complete')::boolean,false) IS NOT true
      OR COALESCE((v_dataset.heldout_metrics->>'frequency_mae')::numeric,99) > (v_dataset.quality_gates->>'max_frequency_mae')::numeric
      OR COALESCE((v_dataset.heldout_metrics->>'sizing_mae')::numeric,99) > (v_dataset.quality_gates->>'max_sizing_mae')::numeric
+     OR COALESCE((v_dataset.heldout_metrics->>'sizing_observations')::bigint,0)<=0
+     OR EXISTS (SELECT 1 FROM unnest(ARRAY['cash','spin','tourney_ev','tourney_icm']) family(value)
+       WHERE COALESCE((v_dataset.heldout_metrics#>>ARRAY['by_family',family.value,'sizing_observations'])::bigint,0)<=0)
      OR COALESCE((v_dataset.heldout_metrics->>'policy_ev_mae_bb')::numeric,99) > (v_dataset.quality_gates->>'max_policy_ev_mae_bb')::numeric
      OR COALESCE((v_dataset.heldout_metrics->>'mean_action_regret_bb')::numeric,99) > (v_dataset.quality_gates->>'max_action_regret_bb')::numeric
      OR COALESCE((v_dataset.heldout_metrics->>'regret_coverage')::numeric,-1) < (v_dataset.quality_gates->>'min_regret_coverage')::numeric

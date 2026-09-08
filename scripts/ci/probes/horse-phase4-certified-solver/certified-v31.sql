@@ -20,14 +20,20 @@ DECLARE
     'r:0:c:c:2h:c:c:3s','r:0','r:0:c:c:2h:c:c:3s','r:0',
     'r:0:c:c:2h:c:c:3s'];
   coverage jsonb:='[]'::jsonb; cov jsonb; dataset uuid; bundle uuid; bundle_checksum text;
-  i integer; role text; facing text; bucket text; board text; specs jsonb; context jsonb;
+  i integer; role text; facing text; bucket text; board text; holdout_board text;
+  holdout_node_id text; specs jsonb; context jsonb;
   preflop_aggressor integer; hero_solver_player integer; line_proof jsonb; derived_line jsonb;
-  node_raw jsonb; node jsonb; forged jsonb; matrix jsonb; live jsonb; zeros jsonb; nulls jsonb;
-  train_id uuid; holdout_id uuid; train_art jsonb; holdout_art jsonb; result_checksum text;
+  node_raw jsonb; node jsonb; holdout_node_raw jsonb; holdout_node jsonb;
+  forged jsonb; matrix jsonb; holdout_matrix jsonb; live jsonb; zeros jsonb; nulls jsonb;
+  holdout_live jsonb; holdout_zeros jsonb; holdout_nulls jsonb;
+  holdout_frequencies jsonb; holdout_action_evs jsonb; selected_action text;
+  train_id uuid; holdout_id uuid; duplicate_id uuid;
+  train_art jsonb; holdout_art jsonb; duplicate_art jsonb; result_checksum text;
   failed boolean; kind text; family text; result_id bigint; eval_id uuid; status jsonb;
   eval_scenarios text[]; eval_roles text[]:=ARRAY['all_in','barrel','bet_raise','cbet',
     'check_raise','delayed_cbet','facing_bet','facing_raise','open','probe'];
   components jsonb; scenario_hands integer; component_stderr numeric;
+  hand_key text; action_key text;
 BEGIN
   CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $auth$ SELECT 'authenticated'::text $auth$;
   bundle:=public.ca_gto_v31_approve_input_bundle(jsonb_build_object(
@@ -169,6 +175,37 @@ BEGIN
     matrix:=jsonb_build_object('schema','smarter-poker.pio-artifact.v31.1',
       'combo_order','card=rank*4+suit; combo=b*(b-1)/2+a; 2c2d=0..AhAs=1325',
       'nodes',jsonb_build_array(CASE WHEN i=1 THEN node_raw ELSE node END));
+    holdout_board:=CASE streets[i] WHEN 'flop' THEN 'AcKh7d'
+      WHEN 'turn' THEN 'AcKh7d2s' ELSE 'AcKh7d2s3c' END;
+    holdout_node_id:=replace(replace(nodes[i],':2h',':2s'),':3s',':3c');
+    SELECT jsonb_agg(to_jsonb(CASE WHEN EXISTS (
+             SELECT 1 FROM unnest(public.fn_gto_v31_combo_cards(n)) c(card)
+              WHERE position(c.card IN holdout_board)>0) THEN 0.0 ELSE 1.0 END) ORDER BY n),
+           jsonb_agg(to_jsonb(0.0::numeric) ORDER BY n),
+           jsonb_agg(CASE WHEN EXISTS (
+             SELECT 1 FROM unnest(public.fn_gto_v31_combo_cards(n)) c(card)
+              WHERE position(c.card IN holdout_board)>0) THEN 'null'::jsonb ELSE to_jsonb(1.0::numeric) END ORDER BY n)
+      INTO holdout_live,holdout_zeros,holdout_nulls FROM generate_series(0,1325) n;
+    selected_action:=CASE WHEN facing='none' THEN 'bet75'
+      WHEN role='all_in' THEN 'call' ELSE 'call' END;
+    SELECT jsonb_object_agg(key,CASE WHEN key=selected_action THEN holdout_live ELSE holdout_zeros END),
+           jsonb_object_agg(key,holdout_nulls)
+      INTO holdout_frequencies,holdout_action_evs FROM jsonb_object_keys(specs) key;
+    holdout_node_raw:=jsonb_set(node-'node_checksum','{node}',to_jsonb(holdout_node_id));
+    holdout_node_raw:=jsonb_set(holdout_node_raw,'{node_context,board}',to_jsonb(holdout_board));
+    holdout_node_raw:=jsonb_set(holdout_node_raw,'{frequencies}',holdout_frequencies);
+    holdout_node_raw:=jsonb_set(holdout_node_raw,'{policy_evs_bb}',holdout_nulls);
+    holdout_node_raw:=jsonb_set(holdout_node_raw,'{action_evs_bb}',holdout_action_evs);
+    holdout_node_raw:=jsonb_set(holdout_node_raw,'{matchups}',holdout_live);
+    holdout_node:=holdout_node_raw||jsonb_build_object(
+      'node_checksum',public.fn_gto_v31_node_checksum(holdout_node_raw));
+    IF public.fn_gto_texture_class_any(holdout_board)<>(coverage->(i-1)->>'texture_class')
+       OR NOT public.fn_gto_v31_source_node_valid(holdout_node) THEN
+      RAISE EXCEPTION 'holdout board fixture % does not preserve the compact context',i;
+    END IF;
+    holdout_matrix:=jsonb_build_object('schema','smarter-poker.pio-artifact.v31.1',
+      'combo_order','card=rank*4+suit; combo=b*(b-1)/2+a; 2c2d=0..AhAs=1325',
+      'nodes',jsonb_build_array(holdout_node));
     train_id:=gen_random_uuid();
     holdout_id:=gen_random_uuid();
     train_art:=jsonb_build_object('id',train_id,'scenario_hash','phase4.'||i||'.m1',
@@ -176,7 +213,7 @@ BEGIN
       'solved_at',now(),'strategy_matrix_v2',matrix);
     holdout_art:=jsonb_build_object('id',holdout_id,'scenario_hash','phase4.'||i||'.m2',
       'game_family',families[i],'stack_depth',80,'street',streets[i],
-      'solved_at',now(),'strategy_matrix_v2',matrix);
+      'solved_at',now(),'strategy_matrix_v2',holdout_matrix);
     IF i=1 THEN
       failed:=false;
       BEGIN
@@ -184,6 +221,12 @@ BEGIN
           jsonb_set(train_art,'{strategy_matrix_v2,nodes,0,frequencies,bet75,0}','0.5'::jsonb));
       EXCEPTION WHEN OTHERS THEN failed:=true; END;
       IF NOT failed THEN RAISE EXCEPTION 'unnormalized source was accepted'; END IF;
+      forged:=jsonb_set(node_raw,'{matchups,0}','4'::jsonb);
+      forged:=forged||jsonb_build_object(
+        'node_checksum',public.fn_gto_v31_node_checksum(forged));
+      IF NOT public.fn_gto_v31_source_node_valid(forged) THEN
+        RAISE EXCEPTION 'valid calc_ev matchup mass above one was rejected';
+      END IF;
     END IF;
     PERFORM public.fn_gto_v31_ingest_source_artifact(dataset,'M1',train_art);
     IF i=1 AND NOT EXISTS (
@@ -194,9 +237,72 @@ BEGIN
     ) THEN
       RAISE EXCEPTION 'database did not seal the checksum-less worker node';
     END IF;
+    IF i=1 THEN
+      duplicate_id:=gen_random_uuid();
+      duplicate_art:=jsonb_build_object('id',duplicate_id,
+        'scenario_hash','phase4.1.m2.duplicate-board',
+        'game_family',families[i],'stack_depth',80,'street',streets[i],
+        'solved_at',now(),'strategy_matrix_v2',matrix);
+      PERFORM public.fn_gto_v31_ingest_source_artifact(dataset,'M2',duplicate_art);
+      failed:=false;
+      BEGIN
+        PERFORM public.fn_gto_v31_build_cell(dataset,coverage->(i-1));
+      EXCEPTION WHEN OTHERS THEN failed:=true; END;
+      IF NOT failed THEN
+        RAISE EXCEPTION 'an M2 copy of an M1 board was accepted as held-out evidence';
+      END IF;
+      DELETE FROM public.gto_v31_source_artifacts
+       WHERE dataset_id=dataset AND source_row_id=duplicate_id;
+      DELETE FROM public.solved_spots_gold WHERE id=duplicate_id;
+    END IF;
     PERFORM public.fn_gto_v31_ingest_source_artifact(dataset,'M2',holdout_art);
     PERFORM public.fn_gto_v31_build_cell(dataset,coverage->(i-1));
   END LOOP;
+
+  SELECT to_jsonb(c) INTO forged
+    FROM public.gto_v31_runtime_cells c WHERE c.dataset_id=dataset LIMIT 1;
+  SELECT key INTO hand_key FROM jsonb_object_keys(forged->'hand_matrix') key LIMIT 1;
+  SELECT key INTO action_key FROM jsonb_object_keys(forged->'action_specs') key LIMIT 1;
+  node_raw:=jsonb_set(forged,'{policy_ev_matrix}',(forged->'policy_ev_matrix')-hand_key);
+  node_raw:=jsonb_set(node_raw,'{cell_payload_checksum}',
+    to_jsonb(public.fn_gto_v31_cell_payload_checksum(node_raw)));
+  IF public.fn_gto_v31_cell_payload_valid(node_raw) THEN
+    RAISE EXCEPTION 'a compact cell missing one policy EV was accepted';
+  END IF;
+  node_raw:=jsonb_set(forged,ARRAY['action_ev_matrix',hand_key],
+    ((forged->'action_ev_matrix')->hand_key)-action_key);
+  node_raw:=jsonb_set(node_raw,'{cell_payload_checksum}',
+    to_jsonb(public.fn_gto_v31_cell_payload_checksum(node_raw)));
+  IF public.fn_gto_v31_cell_payload_valid(node_raw) THEN
+    RAISE EXCEPTION 'a compact cell missing one action EV was accepted';
+  END IF;
+
+  -- Prove the release gate rejects a corpus whose sizing score is merely the
+  -- COALESCE(…, 0) of no measured non-all-in sizes. The temporary wrapper is
+  -- transaction-local because this entire behavior probe rolls back.
+  EXECUTE 'ALTER FUNCTION public.fn_gto_v31_heldout_metrics(uuid,text) RENAME TO fn_gto_v31_heldout_metrics_probe_real';
+  EXECUTE $ddl$
+    CREATE FUNCTION public.fn_gto_v31_heldout_metrics(
+      p_dataset_id uuid,
+      p_game_family text DEFAULT NULL
+    ) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+    AS $mock$
+      SELECT public.fn_gto_v31_heldout_metrics_probe_real($1,$2)
+        || jsonb_build_object('sizing_observations',0)
+    $mock$
+  $ddl$;
+  failed:=false;
+  BEGIN
+    PERFORM public.fn_gto_v31_seal_build(dataset);
+  EXCEPTION WHEN OTHERS THEN
+    failed:=true;
+  END;
+  IF NOT failed OR (SELECT state FROM public.gto_v31_datasets WHERE dataset_id=dataset)<>'building' THEN
+    RAISE EXCEPTION 'a dataset with no measured sizing evidence was sealed';
+  END IF;
+  EXECUTE 'DROP FUNCTION public.fn_gto_v31_heldout_metrics(uuid,text)';
+  EXECUTE 'ALTER FUNCTION public.fn_gto_v31_heldout_metrics_probe_real(uuid,text) RENAME TO fn_gto_v31_heldout_metrics';
 
   result_checksum:=public.fn_gto_v31_seal_build(dataset);
   IF result_checksum!~'^[0-9a-f]{64}$' OR (SELECT state FROM public.gto_v31_datasets WHERE dataset_id=dataset)<>'evaluating'

@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/diamond-transfers (Diamond Accounting Standard, rulings 4 and 12; 2026-09-08). Applied to production as 20260908031918_transfers_are_off_gifts_are_atomic_and_the_waivers_are_gone: P2P transfers refused and revoked, the anti-farming ladder rewritten without its exempt account and both waivers, the stream gift corrected in five ways, and the legacy transfer pair dropped. Only fn_ca_giftable_balance is a new name; every other function already existed.",
+  "tables": [],
+  "functions": ["fn_ca_giftable_balance"]
+}

@@ -74,16 +74,13 @@ describe('the button comes back to where it was', () => {
 
   it('reads the column that is actually populated', () => {
     // button_seat is written on every settled hand and was read by nobody.
-    // 2026-08-31 (Phase 2.2): `players` joins it in the same read so the seat
-    // that posted the BIG BLIND can be derived on restart too -- without it a
-    // restart between two heads-up hands drops the dead-button rule for one
-    // hand and somebody posts the big blind twice. Same row, same query, no
-    // extra round trip; the pin stays exact so a silent widening is still a
-    // visible change here.
+    // The latest button and the last actually posted blind can belong to
+    // different hands. Read bomb_pot to distinguish them; the behavioral
+    // restart cases cover the extra filtered read after a bomb pot.
     const at = BASE.indexOf('private async restoreButtonFromHistory');
     const body = sliceMethod(BASE, 'private async restoreButtonFromHistory');
     expect(body).toMatch(/from\('hand_history'\)/);
-    expect(body).toMatch(/select\('button_seat, players'\)/);
+    expect(body).toMatch(/select\('button_seat, players, bomb_pot'\)/);
     expect(body).toMatch(/order\('hand_number', \{ ascending: false \}\)/);
   });
 

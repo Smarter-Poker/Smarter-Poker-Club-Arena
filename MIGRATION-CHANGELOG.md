@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-08: Restore The Last Real Big Blind After Bomb Pots
+
+The latest hand still restores the button, but bomb-pot history no longer invents a blind. Recovery reads the last ordinary hand for the BB anchor. 75 tests and server TypeScript pass; production read-only query compatibility verified. Normal CI and deployment pending. Evidence: docs/audits/2026-09-08-phase2-blind-restore.md.
+
 ## 2026-09-08: Horse Funding Receipts And Unknown Outcomes
 
 Migration 20260908121053 applied and body-verified. Both engine rebuy paths now use stable operation identities and matching receipts; uncertain transport outcomes cannot authorize seat removal. 260 database checks and 6,815 engine tests pass; TypeScript passes. Engine adoption pending. Details: docs/changelog/2026-09-08-horse-funding-receipts-and-unknown-outcomes.md.

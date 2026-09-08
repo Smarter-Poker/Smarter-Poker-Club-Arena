@@ -1,0 +1,13 @@
+# Phase 2: Heads-up Blind Restoration
+
+C09, September 8, 2026. The dealing loop correctly preserves lastBigBlindSeat across bomb pots, but restoreButtonFromHistory previously derived both button and big blind from the latest hand. A bomb pot has a button and no blinds. Reconstructing a phantom big blind could give the last actual big blind another big blind after restart.
+
+Before correction, the actual engine restore method failed4 of8 behavioral cases. The correction retains the latest settled button, then, only for a bomb-pot latest hand, reads the newest hand with bomb_pot IS NULL to recover the real blind anchor. It does not use a fixed lookback that could miss long bomb-pot runs. Ordinary hands still require one read. Missing older history leaves the blind unknown; a failed second read retains the known button and reports the failure. It does not invent a seat or stop the table. This preserves the existing degraded-read behavior.
+
+After correction,75 tests across5files passed. Eleven new cases cover single and consecutive bomb pots, all-bomb history, earlier-query failure, no history, ordinary two/three-player history, and all three departure positions from a three-handed game. The latter run the real HandController and verify actual SB/BB debits, the button acting first preflop, and the other seat acting first on the flop. Existing entry/wait-for-BB, button fairness and restart safeguards pass. Server TypeScript passes.
+
+Read-only production verification at22:49UTC confirmed bomb_pot is populated as an object, hand-history players carry the seat field, and the per-table bomb_pot IS NULL ordered lookup returns an ordinary hand. No wallet or host mutation was performed. This is schema/query compatibility, not deployed adoption of this patch or a real restart exercise.
+
+Benchmark: TDA2024 rule34B, https://www.pokertda.com/view-poker-tda-rules/ , reviewed September8. Heads-up button/SB acts first preflop and last afterward, and the transition must avoid repeating the big blind. Existing in-memory next-blind rotation was retained; the corrected path is restoration.
+
+Logs: /tmp/phase2-blind-restore-before.log (4failed4passed), /tmp/phase2-blind-restore-final.log (75passed), /tmp/phase2-blind-restore-tsc.log. CI, automatic merge and normal engine adoption remain pending. Phase2 is not complete.

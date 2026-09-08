@@ -5603,15 +5603,14 @@ export abstract class ServerTableEngineBase {
    */
   private async restoreButtonFromHistory(): Promise<void> {
     try {
-      // Same (table_id, hand_number DESC) index seedHandCountFromHistory uses.
+      // The latest hand owns button position even when it was a bomb pot.
       const { data, error } = await supabase
         .from('hand_history')
-        .select('button_seat, players')
+        .select('button_seat, players, bomb_pot')
         .eq('table_id', this.tableId)
         .order('hand_number', { ascending: false })
         .limit(1)
         .maybeSingle();
-
       if (error) {
         console.warn(
           `[ServerTableEngine:${this.tableId}] Could not restore button seat (${error.message}) - ` +
@@ -5619,38 +5618,56 @@ export abstract class ServerTableEngineBase {
         );
         return;
       }
-
-      const row = data as { button_seat?: number; players?: Array<{ seat?: number }> } | null;
+      type BlindHistory = {
+        button_seat?: number;
+        players?: Array<{ seat?: number }>;
+        bomb_pot?: unknown;
+      };
+      const row = data as BlindHistory | null;
       const seat = Number(row?.button_seat ?? 0);
-      /**
-       * The big blind seat comes back with the button, derived from the same
-       * row rather than stored separately: `players` carries the seats that
-       * were dealt in and `button_seat` says where the button was, which is
-       * all the blind walk needs. Without it a restart between two heads-up
-       * hands leaves lastBigBlindSeat at 0, the dead-button rule stands down,
-       * and the very bug it fixes reappears for one hand on every deploy.
-       */
-      const seats = Array.isArray(row?.players)
-        ? row.players
-            .map((p) => Number(p?.seat))
-            .filter((s) => Number.isFinite(s) && s > 0)
-            .sort((a, b) => a - b)
-        : [];
-      if (seats.length >= 2 && Number.isFinite(seat) && seat > 0) {
-        const nextOf = (from: number) => seats.find((s) => s > from) ?? seats[0];
-        const sb = seats.length === 2 ? seat : nextOf(seat);
-        this.lastBigBlindSeat = nextOf(sb);
-      }
       if (Number.isFinite(seat) && seat > 0) {
         this.lastButtonSeat = seat;
         console.log(
           `[ServerTableEngine:${this.tableId}] Button restored to seat ${seat} from the last settled hand`
         );
       }
+
+      // Bomb pots post no blinds. The in-memory anchor already skips them;
+      // restart recovery must also find the last hand that actually had blinds.
+      // Query that row directly instead of guessing a bounded history window.
+      // Ordinary hands still restore both anchors with one read.
+      let blindRow = row;
+      if (row?.bomb_pot != null) {
+        const previous = await supabase
+          .from('hand_history')
+          .select('button_seat, players')
+          .eq('table_id', this.tableId)
+          .is('bomb_pot', null)
+          .order('hand_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (previous.error) {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Could not restore prior big blind (${previous.error.message}); latest button retained`
+          );
+          return;
+        }
+        blindRow = previous.data as BlindHistory | null;
+      }
+      const blindButton = Number(blindRow?.button_seat ?? 0);
+      const seats = Array.isArray(blindRow?.players)
+        ? [...new Set(blindRow.players.map((p) => Number(p?.seat)))]
+            .filter((s) => Number.isFinite(s) && s > 0)
+            .sort((a, b) => a - b)
+        : [];
+      if (seats.length >= 2 && Number.isFinite(blindButton) && blindButton > 0) {
+        const nextOf = (from: number) => seats.find((s) => s > from) ?? seats[0];
+        const sb = seats.length === 2 ? blindButton : nextOf(blindButton);
+        this.lastBigBlindSeat = nextOf(sb);
+      }
     } catch (err) {
       console.warn(
-        `[ServerTableEngine:${this.tableId}] Button restore threw (${(err as Error)?.message}) - ` +
-          `starting from the lowest occupied seat.`
+        `[ServerTableEngine:${this.tableId}] Button/blind restore threw (${(err as Error)?.message}); retained known anchors`
       );
     }
   }

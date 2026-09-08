@@ -175,7 +175,7 @@ describe('the dealing loop is wired to both rules', () => {
   it('restores the last big blind seat across an engine restart', () => {
     expect(BASE).toMatch(/protected lastBigBlindSeat: number = 0;/);
     const body = sliceMethod(BASE, 'private async restoreButtonFromHistory');
-    expect(body).toMatch(/select\('button_seat, players'\)/);
+    expect(body).toMatch(/select\('button_seat, players, bomb_pot'\)/);
     expect(body).toMatch(/this\.lastBigBlindSeat = nextOf\(sb\);/);
   });
 });

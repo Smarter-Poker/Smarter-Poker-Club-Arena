@@ -32,7 +32,11 @@ const make = new Function(
   'planSatelliteAwards',
   compiled
 );
-function fixture(seat: unknown, error: unknown = null) {
+function fixture(
+  seat: unknown,
+  error: unknown = null,
+  options: { cashReceipt?: Record<string, unknown>; readError?: string } = {}
+) {
   const writes: string[] = [];
   const client = {
     from(table: string) {
@@ -44,6 +48,8 @@ function fixture(seat: unknown, error: unknown = null) {
         return c;
       };
       const answer = () => {
+        if (op === 'read' && options.readError === table)
+          return { data: null, error: { message: 'injected read failure' } };
         if (op === 'update') writes.push(table);
         return {
           data:
@@ -70,7 +76,7 @@ function fixture(seat: unknown, error: unknown = null) {
     client,
     async () => {
       writes.push('cash');
-      return { ok: true, paid: 10, amount_paid: 10, fully_settled: true };
+      return options.cashReceipt ?? { ok: true, paid: 10, amount_paid: 10, fully_settled: true };
     },
     () => {},
     async () => {},
@@ -148,4 +154,32 @@ it('the finish handoff proceeds after a successful award method', async () => {
   await expect(finishHandoff.call({ processSatelliteAwards: async () => {} }, {})).resolves.toBe(
     'completed'
   );
+});
+
+describe('satellite cash and reads require confirmed completion', () => {
+  it.each([
+    { ok: false, paid: 0, refused_reason: 'escrow_short' },
+    { ok: true, paid: 4, amount_paid: 4, fully_settled: false },
+    { ok: true, paid: 0, already_paid: 4 },
+    { ok: true, paid: 0, amount_paid: 8, fully_settled: true },
+  ])('does not stamp full cash for %j', async (cashReceipt) => {
+    const f = fixture({ ok: false, reason: 'target_closed' }, null, { cashReceipt });
+    await expect(f.run()).rejects.toThrow();
+    expect(f.writes).toEqual(['cash']);
+  });
+  it.each(['tournaments', 'tournament_players'])(
+    'does not complete on unreadable %s',
+    async (readError) => {
+      const f = fixture({ ok: true, awarded: true }, null, { readError });
+      await expect(f.run()).rejects.toThrow();
+      expect(f.writes).toEqual([]);
+    }
+  );
+  it('accepts a confirmed fully paid replay', async () => {
+    const f = fixture({ ok: false, reason: 'target_closed' }, null, {
+      cashReceipt: { ok: true, paid: 0, amount_paid: 10, fully_settled: true },
+    });
+    await f.run();
+    expect(f.writes).toContain('tournament_players');
+  });
 });

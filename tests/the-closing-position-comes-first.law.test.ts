@@ -77,9 +77,23 @@ describe('the closing position is its own record', () => {
   it('is service-role only, both by grant and by RLS', () => {
     expect(CODE).toMatch(/ENABLE ROW LEVEL SECURITY/);
     expect(CODE).toMatch(/ca_epoch_closing_positions_service_only/);
+    expect(CODE).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_ca_capture_closing_position(text, boolean)\n  FROM PUBLIC, anon, authenticated'
+    );
+    expect(CODE).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_ca_closing_position_summary(uuid)\n  FROM PUBLIC, anon, authenticated'
+    );
     expect(CODE).toMatch(
       /GRANT EXECUTE ON FUNCTION public\.fn_ca_capture_closing_position\(text, boolean\) TO service_role/
     );
+    expect(CODE).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_ca_closing_position_summary\(uuid\) TO service_role/
+    );
+  });
+
+  it('identifies the request instead of trusting SECURITY DEFINER current_user', () => {
+    expect(CODE.match(/COALESCE\(NULLIF\(auth\.role\(\), ''\), session_user\)/g)).toHaveLength(2);
+    expect(CODE).not.toMatch(/current_user\s+IN\s*\(/);
   });
 });
 

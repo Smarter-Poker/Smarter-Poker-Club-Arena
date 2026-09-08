@@ -62,7 +62,8 @@ DECLARE
   v_total  numeric := 0;
   v_by     jsonb;
 BEGIN
-  IF NOT (current_user IN ('postgres', 'service_role')) THEN
+  IF COALESCE(NULLIF(auth.role(), ''), session_user)
+       NOT IN ('service_role', 'postgres', 'supabase_admin') THEN
     RAISE EXCEPTION 'closing-position capture is operator-only';
   END IF;
 
@@ -182,7 +183,8 @@ BEGIN
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION public.fn_ca_capture_closing_position(text, boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fn_ca_capture_closing_position(text, boolean)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_capture_closing_position(text, boolean) TO service_role;
 
 COMMENT ON FUNCTION public.fn_ca_capture_closing_position(text, boolean) IS
@@ -199,7 +201,8 @@ DECLARE
   v_ref uuid := p_capture_ref;
   v_out jsonb;
 BEGIN
-  IF NOT (current_user IN ('postgres', 'service_role')) THEN
+  IF COALESCE(NULLIF(auth.role(), ''), session_user)
+       NOT IN ('service_role', 'postgres', 'supabase_admin') THEN
     RAISE EXCEPTION 'closing-position summary is operator-only';
   END IF;
 
@@ -231,7 +234,8 @@ BEGIN
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION public.fn_ca_closing_position_summary(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.fn_ca_closing_position_summary(uuid)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_closing_position_summary(uuid) TO service_role;
 
 COMMENT ON FUNCTION public.fn_ca_closing_position_summary(uuid) IS

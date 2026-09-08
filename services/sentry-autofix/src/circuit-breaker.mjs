@@ -20,7 +20,15 @@ function sb() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('Supabase env missing: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY');
-  client = createClient(url, key, { auth: { persistSession: false } });
+  client = createClient(url, key, {
+    auth: { persistSession: false },
+    global: {
+      headers: {
+        'x-smarter-data-actor': 'service',
+        'x-smarter-data-protocol': '1',
+      },
+    },
+  });
   return client;
 }
 

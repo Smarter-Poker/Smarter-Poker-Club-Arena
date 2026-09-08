@@ -199,6 +199,15 @@ export function wakeCluster(gameId: string): void {
 export class ClusterController {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  /**
+   * A cleared interval does not join a pass already inside its RPC, and a
+   * cleared debounce does not join a wake already moving seats. Keep every
+   * admitted continuation here so stop can prove the old leader owns no
+   * cluster mutation before its lease is released.
+   */
+  private readonly lifecycleJobs = new Set<Promise<unknown>>();
+  private lifecycleGeneration = 0;
+  private stopOperation: Promise<void> | null = null;
   private inTick = false;
   private tickStartedAt = 0;
   private lastSummary: ClusterTickSummary | null = null;
@@ -243,23 +252,74 @@ export class ClusterController {
 
   constructor(private readonly deps: ClusterControllerDeps) {}
 
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.running && this.lifecycleGeneration === generation;
+  }
+
+  private trackLifecycleJob<T>(job: Promise<T>): Promise<T> {
+    const tracked = job.finally(() => this.lifecycleJobs.delete(tracked));
+    this.lifecycleJobs.add(tracked);
+    return tracked;
+  }
+
+  private openLifecycleScope(): () => void {
+    let release!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    void this.trackLifecycleJob(completion);
+    return release;
+  }
+
+  private launchLifecycleJob<T>(
+    generation: number | null,
+    work: () => Promise<T>,
+    context: string,
+    detail?: Record<string, unknown>
+  ): void {
+    if (generation !== null && !this.lifecycleIsCurrent(generation)) return;
+    void this.trackLifecycleJob(work()).catch((error) => reportError(error, context, detail));
+  }
+
+  private async drainLifecycleJobs(): Promise<void> {
+    while (this.lifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.lifecycleJobs]);
+    }
+  }
+
   start(): void {
+    if (this.stopOperation) {
+      console.warn('[ClusterController] Start refused while the prior generation is stopping');
+      return;
+    }
     if (this.timer) return;
     this.running = true;
-    activeController = this;
+    const generation = ++this.lifecycleGeneration;
+    activeController = this; // eslint-disable-line @typescript-eslint/no-this-alias -- module wake door
     this.timer = setInterval(() => {
-      void this.tick().catch((err) => reportError(err, 'ClusterController.tick_error'));
+      this.launchLifecycleJob(generation, () => this.tick(), 'ClusterController.tick_error');
     }, CLUSTER_TICK_MS);
     console.log(`[ClusterController] Running - every ${CLUSTER_TICK_MS / 1000}s on the leader`);
   }
 
-  stop(): void {
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
+
+    // Synchronous generation fence first; no old callback is admitted after it.
     this.running = false;
+    this.lifecycleGeneration++;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     for (const t of this.wakeTimers.values()) clearTimeout(t);
     this.wakeTimers.clear();
     if (activeController === this) activeController = null;
+
+    const drain = this.drainLifecycleJobs();
+    const trackedStop = drain.finally(() => {
+      if (this.stopOperation === trackedStop) this.stopOperation = null;
+    });
+    this.stopOperation = trackedStop;
+    return trackedStop;
   }
 
   get summary(): ClusterTickSummary | null {
@@ -285,10 +345,14 @@ export class ClusterController {
       this.wakesCoalescedCount++;
       return;
     }
+    const generation = this.lifecycleGeneration;
     const handle = setTimeout(() => {
       this.wakeTimers.delete(gameId);
-      void this.tickGame(gameId).catch((err) =>
-        reportError(err, 'ClusterController.wake_tick_error', { game_id: gameId })
+      this.launchLifecycleJob(
+        generation,
+        () => this.tickGame(gameId),
+        'ClusterController.wake_tick_error',
+        { game_id: gameId }
       );
     }, CLUSTER_WAKE_DEBOUNCE_MS);
     this.wakeTimers.set(gameId, handle);
@@ -300,6 +364,7 @@ export class ClusterController {
    * because the debounce map holds one handle per game.
    */
   private async tickGame(gameId: string): Promise<void> {
+    const generation = this.lifecycleGeneration;
     const frozen = this.deps.frozen ?? isMaintenanceFrozen;
     if (frozen() || !this.running) return;
     const rpc = this.deps.rpc ?? supabase.rpc.bind(supabase);
@@ -312,6 +377,7 @@ export class ClusterController {
       p_game_id: gameId,
       p_eligible_horses: eligible,
     });
+    if (!this.lifecycleIsCurrent(generation)) return;
     if (error) {
       reportError(error, 'ClusterController.wake_rpc_failed', { game_id: gameId });
       return;
@@ -326,7 +392,8 @@ export class ClusterController {
       },
       result,
       summary,
-      'wake'
+      'wake',
+      generation
     );
   }
 
@@ -371,156 +438,175 @@ export class ClusterController {
    * acceptance probe) can drive it without the clock.
    */
   async tick(): Promise<ClusterTickSummary> {
-    const frozen = this.deps.frozen ?? isMaintenanceFrozen;
-    const summary = this.emptySummary();
-    const startedAt = Date.now();
-    // THE FREEZE (CLAUDE.md 13): a tick moves seats and opens tables; not
-    // during the break. Emitted as a summary so the log says it was skipped
-    // rather than merely silent.
-    if (frozen()) return this.frozenSkip(summary, startedAt);
-    // A slow tick never overlaps the next one (the same guard the fleet uses)
-    // - but a STUCK one is released, loudly. Every await inside a pass is
-    // bounded (the Supabase client times out at 15 s and the wake is not
-    // awaited), so a pass that is still open past the stall ceiling is a
-    // defect, and the right response to a defect is to keep ticking and say
-    // so, not to go silent forever. Each game's tick locks its own row, so an
-    // overlapping pass is safe.
-    if (this.inTick) {
-      const heldMs = Date.now() - this.tickStartedAt;
-      if (heldMs < CLUSTER_TICK_STALL_MS) return this.lastSummary ?? summary;
-      reportError(
-        new Error(`ClusterController pass still open after ${heldMs}ms; releasing the latch`),
-        'ClusterController.tick_stalled'
-      );
-      clusterMetrics.recordStalled();
-    }
-    this.inTick = true;
-    this.tickStartedAt = startedAt;
-    this.passCount++;
+    // Direct acceptance probes intentionally work while the controller is not
+    // started. A leader-owned pass captures a generation and must not continue
+    // after stop fences it; both shapes are still joined by the lifecycle set.
+    const generation = this.running ? this.lifecycleGeneration : null;
+    const releaseLifecycleScope = this.openLifecycleScope();
     try {
-      const rpc = this.deps.rpc ?? supabase.rpc.bind(supabase);
-
-      // The fleet's whole census, keyed by table id. Only the tables a horse
-      // could actually sit at are sent; the SQL reads a missing key as 0.
-      const eligible: Record<string, number> = {};
-      for (const [tableId, n] of this.deps.eligibleCounts()) {
-        if (n > 0) eligible[tableId] = n;
+      const frozen = this.deps.frozen ?? isMaintenanceFrozen;
+      const summary = this.emptySummary();
+      const startedAt = Date.now();
+      // THE FREEZE (CLAUDE.md 13): a tick moves seats and opens tables; not
+      // during the break. Emitted as a summary so the log says it was skipped
+      // rather than merely silent.
+      if (frozen()) return this.frozenSkip(summary, startedAt);
+      // A slow tick never overlaps the next one (the same guard the fleet uses)
+      // - but a STUCK one is released, loudly. Every await inside a pass is
+      // bounded (the Supabase client times out at 15 s and the wake is not
+      // awaited), so a pass that is still open past the stall ceiling is a
+      // defect, and the right response to a defect is to keep ticking and say
+      // so, not to go silent forever. Each game's tick locks its own row, so an
+      // overlapping pass is safe.
+      if (this.inTick) {
+        const heldMs = Date.now() - this.tickStartedAt;
+        if (heldMs < CLUSTER_TICK_STALL_MS) return this.lastSummary ?? summary;
+        reportError(
+          new Error(`ClusterController pass still open after ${heldMs}ms; releasing the latch`),
+          'ClusterController.tick_stalled'
+        );
+        clusterMetrics.recordStalled();
       }
+      this.inTick = true;
+      this.tickStartedAt = startedAt;
+      this.passCount++;
+      try {
+        const rpc = this.deps.rpc ?? supabase.rpc.bind(supabase);
 
-      summary.rpcs++;
-      const { data, error } = await rpc('fn_cash_clusters_tick_all', { p_eligible: eligible });
-      if (error) {
-        reportError(error, 'ClusterController.pass_failed');
-        summary.errors++;
-        summary.elapsedMs = Date.now() - startedAt;
-        clusterMetrics.recordPass(summary);
-        this.lastSummary = summary;
-        return summary;
-      }
-      const pass = (data ?? {}) as Partial<ClusterTickAllResult>;
-      // The SQL saw the break start between our check and its own. Until
-      // 2026-09-05 this path recorded NOTHING - same event, same summary
-      // flag, no counter - so poker_cluster_pass_skipped_frozen_total
-      // undercounted every break by however many passes began just before
-      // :53. It goes through the same one door now.
-      if (pass.skipped === 'frozen') return this.frozenSkip(summary, startedAt);
-      summary.games = Number(pass.games ?? 0);
-      summary.rested = Number(pass.rested ?? 0);
-      summary.deferred = Number(pass.deferred ?? 0);
-      if (summary.deferred > 0) {
-        /* Not an error: the pass committed everything it started. But a
+        // The fleet's whole census, keyed by table id. Only the tables a horse
+        // could actually sit at are sent; the SQL reads a missing key as 0.
+        const eligible: Record<string, number> = {};
+        for (const [tableId, n] of this.deps.eligibleCounts()) {
+          if (n > 0) eligible[tableId] = n;
+        }
+
+        summary.rpcs++;
+        const { data, error } = await rpc('fn_cash_clusters_tick_all', { p_eligible: eligible });
+        if (generation !== null && !this.lifecycleIsCurrent(generation)) return summary;
+        if (error) {
+          reportError(error, 'ClusterController.pass_failed');
+          summary.errors++;
+          summary.elapsedMs = Date.now() - startedAt;
+          clusterMetrics.recordPass(summary);
+          this.lastSummary = summary;
+          return summary;
+        }
+        const pass = (data ?? {}) as Partial<ClusterTickAllResult>;
+        // The SQL saw the break start between our check and its own. Until
+        // 2026-09-05 this path recorded NOTHING - same event, same summary
+        // flag, no counter - so poker_cluster_pass_skipped_frozen_total
+        // undercounted every break by however many passes began just before
+        // :53. It goes through the same one door now.
+        if (pass.skipped === 'frozen') return this.frozenSkip(summary, startedAt);
+        summary.games = Number(pass.games ?? 0);
+        summary.rested = Number(pass.rested ?? 0);
+        summary.deferred = Number(pass.deferred ?? 0);
+        if (summary.deferred > 0) {
+          /* Not an error: the pass committed everything it started. But a
            pass that defers is a pass that is slow, and a pass that defers
            EVERY time is a controller running behind its cadence. The gauge
            below carries it; this line names the number. */
-        console.warn(
-          `[ClusterController] pass reached its budget after ${Number(pass.elapsed_ms ?? 0)}ms: ` +
-            `${summary.deferred} due game(s) deferred to the next pass`
-        );
-      }
-      const results = Array.isArray(pass.results) ? pass.results : [];
-      /* THE STATE GAUGE IS FED BY THE PASS ITSELF (2026-09-05). Every game
+          console.warn(
+            `[ClusterController] pass reached its budget after ${Number(pass.elapsed_ms ?? 0)}ms: ` +
+              `${summary.deferred} due game(s) deferred to the next pass`
+          );
+        }
+        const results = Array.isArray(pass.results) ? pass.results : [];
+        /* THE STATE GAUGE IS FED BY THE PASS ITSELF (2026-09-05). Every game
          this pass SAW - ticked or rested - with the state the worklist read,
          handed to recordPass so poker_cluster_games{state} is set from the
          pass rather than left as a series nothing writes. */
-      const seen: ClusterRow[] = [];
+        const seen: ClusterRow[] = [];
 
-      for (const entry of results) {
-        if (!entry || typeof entry.game_id !== 'string') continue;
-        const row: ClusterRow = {
-          game_id: entry.game_id,
-          main1_table_id: entry.main1_table_id ?? null,
-          state: typeof entry.state === 'string' ? entry.state : undefined,
-          enabled: entry.enabled === true,
-        };
-        this.rowByGame.set(row.game_id, {
-          main1_table_id: row.main1_table_id,
-          enabled: row.enabled,
-          seenAtPass: this.passCount,
-        });
-        seen.push(row);
-        if (entry.error) {
-          // The SQL caught it, rolled that game back, wrote the
-          // controller_tick_error row and carried on. Reported here too so
-          // Sentry sees the same thing the table does.
-          reportError(
-            new Error(
-              `fn_cash_cluster_tick failed for ${row.game_id.slice(0, 8)}: ${entry.error.sqlstate ?? '?'} ${entry.error.message ?? ''}`
-            ),
-            'ClusterController.tick_rpc_failed',
-            { game_id: row.game_id, sqlstate: entry.error.sqlstate }
+        for (const entry of results) {
+          if (generation !== null && !this.lifecycleIsCurrent(generation)) return summary;
+          if (!entry || typeof entry.game_id !== 'string') continue;
+          const row: ClusterRow = {
+            game_id: entry.game_id,
+            main1_table_id: entry.main1_table_id ?? null,
+            state: typeof entry.state === 'string' ? entry.state : undefined,
+            enabled: entry.enabled === true,
+          };
+          this.rowByGame.set(row.game_id, {
+            main1_table_id: row.main1_table_id,
+            enabled: row.enabled,
+            seenAtPass: this.passCount,
+          });
+          seen.push(row);
+          if (entry.error) {
+            // The SQL caught it, rolled that game back, wrote the
+            // controller_tick_error row and carried on. Reported here too so
+            // Sentry sees the same thing the table does.
+            reportError(
+              new Error(
+                `fn_cash_cluster_tick failed for ${row.game_id.slice(0, 8)}: ${entry.error.sqlstate ?? '?'} ${entry.error.message ?? ''}`
+              ),
+              'ClusterController.tick_rpc_failed',
+              { game_id: row.game_id, sqlstate: entry.error.sqlstate }
+            );
+            summary.errors++;
+            continue;
+          }
+          summary.ticked++;
+          await this.afterGameTick(
+            row,
+            (entry.result ?? {}) as ClusterTickResult,
+            summary,
+            'pass',
+            generation
           );
-          summary.errors++;
-          continue;
+          if (generation !== null && !this.lifecycleIsCurrent(generation)) return summary;
         }
-        summary.ticked++;
-        await this.afterGameTick(row, (entry.result ?? {}) as ClusterTickResult, summary, 'pass');
-      }
 
-      /* A RESTED GAME ANSWERS THE WAKE (2026-09-05, 20260906011113). A game
+        /* A RESTED GAME ANSWERS THE WAKE (2026-09-05, 20260906011113). A game
          the SQL let rest appears in no `results` entry, so until this map was
          also built from `rested_games` a wake on one found no row, read
          `enabled` as false and skipped the 18.4 dealer wake - for exactly the
          dormant game a wake exists to serve.
          IDENTITY ONLY: no `afterGameTick`, no `summary.ticked`, and NOT added
          to `summary.rested` either, which the SQL has already counted once. */
-      const restedRows = Array.isArray(pass.rested_games) ? pass.rested_games : [];
-      for (const entry of restedRows) {
-        if (!entry || typeof entry.game_id !== 'string') continue;
-        const row: ClusterRow = {
-          game_id: entry.game_id,
-          main1_table_id: entry.main1_table_id ?? null,
-          state: typeof entry.state === 'string' ? entry.state : undefined,
-          enabled: entry.enabled === true,
-        };
-        this.rowByGame.set(row.game_id, {
-          main1_table_id: row.main1_table_id,
-          enabled: row.enabled,
-          seenAtPass: this.passCount,
-        });
-        seen.push(row);
-      }
+        const restedRows = Array.isArray(pass.rested_games) ? pass.rested_games : [];
+        for (const entry of restedRows) {
+          if (generation !== null && !this.lifecycleIsCurrent(generation)) return summary;
+          if (!entry || typeof entry.game_id !== 'string') continue;
+          const row: ClusterRow = {
+            game_id: entry.game_id,
+            main1_table_id: entry.main1_table_id ?? null,
+            state: typeof entry.state === 'string' ? entry.state : undefined,
+            enabled: entry.enabled === true,
+          };
+          this.rowByGame.set(row.game_id, {
+            main1_table_id: row.main1_table_id,
+            enabled: row.enabled,
+            seenAtPass: this.passCount,
+          });
+          seen.push(row);
+        }
 
-      /* A row the worklist has not vouched for in ROW_STALE_PASSES passes is
+        /* A row the worklist has not vouched for in ROW_STALE_PASSES passes is
          dropped - see the note on rowByGame. `tickGame` then answers "I have
          no row for this game" instead of pointing the fleet at a table id that
          may have been closed an hour ago. */
-      for (const [gameId, held] of this.rowByGame) {
-        if (this.passCount - held.seenAtPass > ClusterController.ROW_STALE_PASSES) {
-          this.rowByGame.delete(gameId);
+        for (const [gameId, held] of this.rowByGame) {
+          if (this.passCount - held.seenAtPass > ClusterController.ROW_STALE_PASSES) {
+            this.rowByGame.delete(gameId);
+          }
         }
-      }
 
-      summary.elapsedMs = Date.now() - startedAt;
-      if (summary.elapsedMs > CLUSTER_TICK_MS) {
-        console.warn(
-          `[ClusterController] pass over ${summary.games} games took ${summary.elapsedMs}ms (cadence ${CLUSTER_TICK_MS}ms)`
-        );
+        summary.elapsedMs = Date.now() - startedAt;
+        if (summary.elapsedMs > CLUSTER_TICK_MS) {
+          console.warn(
+            `[ClusterController] pass over ${summary.games} games took ${summary.elapsedMs}ms (cadence ${CLUSTER_TICK_MS}ms)`
+          );
+        }
+        clusterMetrics.recordPass(summary, seen);
+        this.lastSummary = summary;
+        return summary;
+      } finally {
+        this.inTick = false;
       }
-      clusterMetrics.recordPass(summary, seen);
-      this.lastSummary = summary;
-      return summary;
     } finally {
-      this.inTick = false;
+      releaseLifecycleScope();
     }
   }
 
@@ -532,7 +618,8 @@ export class ClusterController {
     g: ClusterRow,
     result: ClusterTickResult,
     summary: ClusterTickSummary,
-    via: 'pass' | 'wake'
+    via: 'pass' | 'wake',
+    generation: number | null = null
   ): Promise<void> {
     try {
       if (Array.isArray(result.actions) && result.actions.length > 0) {
@@ -555,6 +642,7 @@ export class ClusterController {
         !this.deps.hasEngine(g.main1_table_id)
       ) {
         const seated = await this.deps.seatedCount(g.main1_table_id);
+        if (generation !== null && !this.lifecycleIsCurrent(generation)) return;
         if (seated > 0) {
           // NEVER AWAITED. ensureEngine resolves when engine.start()
           // resolves, and start() returns only once the table has enough
@@ -567,20 +655,18 @@ export class ClusterController {
           // next pass and nothing is started twice.
           const tableId = g.main1_table_id;
           summary.woken++;
-          void this.deps
-            .ensureEngine(tableId)
-            .then((ok) => {
-              if (!ok)
-                console.warn(
-                  `[ClusterController] ${g.game_id.slice(0, 8)} wake refused for ${tableId.slice(0, 8)}`
-                );
-            })
-            .catch((err) =>
-              reportError(err, 'ClusterController.wake_failed', {
-                game_id: g.game_id,
-                table_id: tableId,
-              })
-            );
+          this.launchLifecycleJob(
+            generation,
+            () =>
+              this.deps.ensureEngine(tableId).then((ok) => {
+                if (!ok)
+                  console.warn(
+                    `[ClusterController] ${g.game_id.slice(0, 8)} wake refused for ${tableId.slice(0, 8)}`
+                  );
+              }),
+            'ClusterController.wake_failed',
+            { game_id: g.game_id, table_id: tableId }
+          );
         }
       }
     } catch (err) {

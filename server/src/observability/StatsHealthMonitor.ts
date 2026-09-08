@@ -207,6 +207,13 @@ export class StatsHealthMonitor {
   private snapshotAt = 0;
   private lastError: string | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private isRunning = false;
+  /** Tick reads are local, but evaluate() posts durable alert transitions. */
+  private readonly lifecycleJobs = new Set<Promise<unknown>>();
+  private lifecycleGeneration = 0;
+  private stopOperation: Promise<void> | null = null;
+  /** Direct tick() probes are valid before start, but not after stop. */
+  private acceptingTicks = true;
   private inFlight = false;
   private readonly now: () => number;
   private readonly log: (msg: string) => void;
@@ -216,35 +223,120 @@ export class StatsHealthMonitor {
     this.log = deps.log ?? ((m) => console.warn(m));
   }
 
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.isRunning && this.lifecycleGeneration === generation;
+  }
+
+  private lifecycleEnded(generation: number | null): boolean {
+    return generation !== null && !this.lifecycleIsCurrent(generation);
+  }
+
+  private trackLifecycleJob<T>(job: Promise<T>): Promise<T> {
+    const tracked = job.finally(() => this.lifecycleJobs.delete(tracked));
+    this.lifecycleJobs.add(tracked);
+    return tracked;
+  }
+
+  private openLifecycleScope(): () => void {
+    let release!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    void this.trackLifecycleJob(completion);
+    return release;
+  }
+
+  private launchTick(generation: number): void {
+    if (!this.lifecycleIsCurrent(generation)) return;
+    void this.trackLifecycleJob(this.tick()).catch((error) =>
+      this.log(`[StatsHealthMonitor] detached tick failed: ${(error as Error)?.message ?? error}`)
+    );
+  }
+
+  /**
+   * Own an alert POST independently from the surrounding tick. If shutdown
+   * starts while the POST is in flight, stop joins it and this returns false
+   * so evaluate() cannot publish a later transition from the stale snapshot.
+   */
+  private async deliverAlert(
+    generation: number | null,
+    work: () => Promise<unknown> | unknown
+  ): Promise<boolean> {
+    if (this.lifecycleEnded(generation)) return false;
+    await this.trackLifecycleJob(
+      Promise.resolve().then(() => {
+        // The microtask itself is an admission boundary: stop can run after
+        // deliverAlert queues it but before the callback begins.
+        if (this.lifecycleEnded(generation)) return;
+        return work();
+      })
+    );
+    return !this.lifecycleEnded(generation);
+  }
+
+  private async drainLifecycleJobs(): Promise<void> {
+    while (this.lifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.lifecycleJobs]);
+    }
+  }
+
   start(periodMs = STATS_HEALTH_PERIOD_MS): void {
+    if (this.stopOperation) {
+      this.log('[StatsHealthMonitor] start refused while the prior generation is stopping');
+      return;
+    }
     if (this.timer) return;
-    void this.tick();
-    this.timer = setInterval(() => void this.tick(), periodMs);
+    this.isRunning = true;
+    this.acceptingTicks = true;
+    const generation = ++this.lifecycleGeneration;
+    this.launchTick(generation);
+    this.timer = setInterval(() => this.launchTick(generation), periodMs);
     (this.timer as { unref?: () => void }).unref?.();
   }
 
-  stop(): void {
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
+
+    this.isRunning = false;
+    this.acceptingTicks = false;
+    this.lifecycleGeneration++;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+
+    const drain = this.drainLifecycleJobs();
+    const trackedStop = drain.finally(() => {
+      if (this.stopOperation === trackedStop) this.stopOperation = null;
+    });
+    this.stopOperation = trackedStop;
+    return trackedStop;
   }
 
   /** One read + one evaluation. Public so a test can drive it without timers. */
   async tick(): Promise<void> {
-    if (this.inFlight) return;
-    this.inFlight = true;
+    if (!this.acceptingTicks) return;
+    const releaseLifecycle = this.openLifecycleScope();
+    const generation = this.isRunning ? this.lifecycleGeneration : null;
     try {
-      const raw = await this.deps.read();
-      this.snapshot = parseStatsHealth(raw, new Date(this.now()).toISOString());
-      this.snapshotAt = this.now();
-      this.lastError = null;
-      await this.evaluate(this.snapshot);
-    } catch (err) {
-      // A failed read is not a stats failure and never an engine failure:
-      // keep the last snapshot, mark it stale, say why.
-      this.lastError = (err as Error)?.message ?? String(err);
-      this.log(`[StatsHealthMonitor] read failed: ${this.lastError}`);
+      if (this.inFlight || this.lifecycleEnded(generation)) return;
+      this.inFlight = true;
+      try {
+        const raw = await this.deps.read();
+        if (this.lifecycleEnded(generation)) return;
+        this.snapshot = parseStatsHealth(raw, new Date(this.now()).toISOString());
+        this.snapshotAt = this.now();
+        this.lastError = null;
+        await this.evaluate(this.snapshot, generation);
+      } catch (err) {
+        if (this.lifecycleEnded(generation)) return;
+        // A failed read is not a stats failure and never an engine failure:
+        // keep the last snapshot, mark it stale, say why.
+        this.lastError = (err as Error)?.message ?? String(err);
+        this.log(`[StatsHealthMonitor] read failed: ${this.lastError}`);
+      } finally {
+        this.inFlight = false;
+      }
     } finally {
-      this.inFlight = false;
+      releaseLifecycle();
     }
   }
 
@@ -322,29 +414,39 @@ export class StatsHealthMonitor {
     ];
   }
 
-  private async evaluate(s: StatsHealthSnapshot): Promise<void> {
+  private async evaluate(s: StatsHealthSnapshot, generation: number | null): Promise<void> {
     // 1. Index lag. Suppressed during a break (the ceiling cannot move while
     //    no hands are written), evaluated on the very next healthy read.
     const lag = s.indexLagSeconds;
     if (lag !== null && lag > STATS_INDEX_LAG_THRESHOLD_S && !this.deps.paused()) {
-      await this.deps.raise({
-        alertname: STATS_INDEX_LAG_ALERT,
-        severity: 'warning',
-        component: STATS_HEALTH_COMPONENT,
-        summary: `Stats hand index is ${Math.round(lag / 60)} minutes behind the hands`,
-        description:
-          'ca_hand_player_idx is advanced by /api/cron/club-stats-maintenance (Open Claw, ' +
-          'every 15 minutes) and this lag means that route has not completed for two or more ' +
-          'ticks. "Hands Played" on every stats page is stale by this much. Check the Open Claw ' +
-          "dispatcher on the Hetzner host and the route's own errors array.",
-        labels: { lag_seconds: String(Math.round(lag)) },
-      });
+      if (
+        !(await this.deliverAlert(generation, () =>
+          this.deps.raise({
+            alertname: STATS_INDEX_LAG_ALERT,
+            severity: 'warning',
+            component: STATS_HEALTH_COMPONENT,
+            summary: `Stats hand index is ${Math.round(lag / 60)} minutes behind the hands`,
+            description:
+              'ca_hand_player_idx is advanced by /api/cron/club-stats-maintenance (Open Claw, ' +
+              'every 15 minutes) and this lag means that route has not completed for two or more ' +
+              'ticks. "Hands Played" on every stats page is stale by this much. Check the Open Claw ' +
+              "dispatcher on the Hetzner host and the route's own errors array.",
+            labels: { lag_seconds: String(Math.round(lag)) },
+          })
+        ))
+      )
+        return;
     } else if (lag !== null && lag <= STATS_INDEX_LAG_THRESHOLD_S) {
-      await this.deps.resolve(
-        STATS_INDEX_LAG_ALERT,
-        STATS_HEALTH_COMPONENT,
-        'Stats hand index caught up'
-      );
+      if (
+        !(await this.deliverAlert(generation, () =>
+          this.deps.resolve(
+            STATS_INDEX_LAG_ALERT,
+            STATS_HEALTH_COMPONENT,
+            'Stats hand index caught up'
+          )
+        ))
+      )
+        return;
     }
 
     // 2. The live trigger. A hand with no stat row 90 seconds after it was
@@ -352,24 +454,34 @@ export class StatsHealthMonitor {
     //    the hand land) - the page is now waiting on the 15-minute roll.
     const gap = s.recentHandsWithoutStat;
     if (gap !== null && gap > 0) {
-      await this.deps.raise({
-        alertname: STATS_TRIGGER_GAP_ALERT,
-        severity: 'warning',
-        component: STATS_HEALTH_COMPONENT,
-        summary: `${gap} recent hand(s) have no stat row - the live stats trigger is failing`,
-        description:
-          'trg_ca_stats_live_from_hand writes ca_hand_player_stat inside the hand insert and ' +
-          'swallows its own errors as WARNINGs so the hand always lands. Read the Postgres log ' +
-          'for "trg_ca_stats_live_from_hand:" to see why; the forward roll will backfill, but ' +
-          'the page is not live until this is 0.',
-        labels: { hands_without_stat: String(gap) },
-      });
+      if (
+        !(await this.deliverAlert(generation, () =>
+          this.deps.raise({
+            alertname: STATS_TRIGGER_GAP_ALERT,
+            severity: 'warning',
+            component: STATS_HEALTH_COMPONENT,
+            summary: `${gap} recent hand(s) have no stat row - the live stats trigger is failing`,
+            description:
+              'trg_ca_stats_live_from_hand writes ca_hand_player_stat inside the hand insert and ' +
+              'swallows its own errors as WARNINGs so the hand always lands. Read the Postgres log ' +
+              'for "trg_ca_stats_live_from_hand:" to see why; the forward roll will backfill, but ' +
+              'the page is not live until this is 0.',
+            labels: { hands_without_stat: String(gap) },
+          })
+        ))
+      )
+        return;
     } else if (gap === 0) {
-      await this.deps.resolve(
-        STATS_TRIGGER_GAP_ALERT,
-        STATS_HEALTH_COMPONENT,
-        'Every recent hand has a stat row'
-      );
+      if (
+        !(await this.deliverAlert(generation, () =>
+          this.deps.resolve(
+            STATS_TRIGGER_GAP_ALERT,
+            STATS_HEALTH_COMPONENT,
+            'Every recent hand has a stat row'
+          )
+        ))
+      )
+        return;
     }
 
     // 3. The witness audit. Zero is the only healthy number for all four.
@@ -382,30 +494,40 @@ export class StatsHealthMonitor {
         (a.playerHandsWithoutIdx ?? 0) +
         (a.humanWithoutFacts ?? 0);
       if (bad > 0) {
-        await this.deps.raise({
-          alertname: STATS_WITNESS_ALERT,
-          severity: 'warning',
-          component: STATS_HEALTH_COMPONENT,
-          summary:
-            `Witness audit: ${a.buttonDisagree ?? 0} button, ${a.showdownDisagree ?? 0} showdown, ` +
-            `${a.handsWithoutStat ?? 0} no-stat, ${a.playerHandsWithoutIdx ?? 0} no-index, ` +
-            `${a.humanWithoutFacts ?? 0} no-facts disagreements`,
-          description:
-            'ca_stats_witness_audit() compares what the engine recorded (button_seat, the ' +
-            'showdown roster) with the action log, and counts the seats the stat trigger, the ' +
-            'index writer and the settlement writer missed. A non-zero count is a recording defect in the engine or ' +
-            'a failed writer - read the latest ca_stats_witness_audit_log row and the hands in ' +
-            'its window. Positions, WTSD and exact money on the stats page depend on these.',
-          labels: {
-            button_disagree: String(a.buttonDisagree ?? 0),
-            showdown_disagree: String(a.showdownDisagree ?? 0),
-            hands_without_stat: String(a.handsWithoutStat ?? 0),
-            player_hands_without_idx: String(a.playerHandsWithoutIdx ?? 0),
-            human_without_facts: String(a.humanWithoutFacts ?? 0),
-          },
-        });
+        if (
+          !(await this.deliverAlert(generation, () =>
+            this.deps.raise({
+              alertname: STATS_WITNESS_ALERT,
+              severity: 'warning',
+              component: STATS_HEALTH_COMPONENT,
+              summary:
+                `Witness audit: ${a.buttonDisagree ?? 0} button, ${a.showdownDisagree ?? 0} showdown, ` +
+                `${a.handsWithoutStat ?? 0} no-stat, ${a.playerHandsWithoutIdx ?? 0} no-index, ` +
+                `${a.humanWithoutFacts ?? 0} no-facts disagreements`,
+              description:
+                'ca_stats_witness_audit() compares what the engine recorded (button_seat, the ' +
+                'showdown roster) with the action log, and counts the seats the stat trigger, the ' +
+                'index writer and the settlement writer missed. A non-zero count is a recording defect in the engine or ' +
+                'a failed writer - read the latest ca_stats_witness_audit_log row and the hands in ' +
+                'its window. Positions, WTSD and exact money on the stats page depend on these.',
+              labels: {
+                button_disagree: String(a.buttonDisagree ?? 0),
+                showdown_disagree: String(a.showdownDisagree ?? 0),
+                hands_without_stat: String(a.handsWithoutStat ?? 0),
+                player_hands_without_idx: String(a.playerHandsWithoutIdx ?? 0),
+                human_without_facts: String(a.humanWithoutFacts ?? 0),
+              },
+            })
+          ))
+        )
+          return;
       } else {
-        await this.deps.resolve(STATS_WITNESS_ALERT, STATS_HEALTH_COMPONENT, 'Witness audit clean');
+        if (
+          !(await this.deliverAlert(generation, () =>
+            this.deps.resolve(STATS_WITNESS_ALERT, STATS_HEALTH_COMPONENT, 'Witness audit clean')
+          ))
+        )
+          return;
       }
     }
 
@@ -414,41 +536,52 @@ export class StatsHealthMonitor {
     //    below the bar means the settlement writer is dropping equity again.
     const ev = s.evCoverage7d;
     if (ev && ev.allInShowdowns !== null && ev.ratio !== null) {
-      if (
-        ev.allInShowdowns >= STATS_EV_COVERAGE_MIN_SAMPLE &&
-        ev.ratio < STATS_EV_COVERAGE_MIN_RATIO
-      ) {
-        await this.deps.raise({
-          alertname: STATS_EV_COVERAGE_ALERT,
-          severity: 'warning',
-          component: STATS_HEALTH_COMPONENT,
-          summary:
-            `All-in equity coverage is ${(ev.ratio * 100).toFixed(1)}% over 7 days ` +
-            `(${ev.withoutEquity ?? 0} of ${ev.allInShowdowns} all-in runout seats without equity)`,
-          description:
-            'ca_hand_facts.all_in_equity is captured from the all_in_equity broadcast of every ' +
-            'all-in runout and written at settlement. The EV line, "EV Adjusted" and the luck ' +
-            'readouts on the stats page are computed from it, so a missing figure understates or ' +
-            'overstates a player. Find the hands with ' +
-            'SELECT hand_id FROM ca_hand_facts WHERE was_all_in AND went_to_showdown AND ' +
-            "coalesce(all_in_street,'') <> 'river' AND all_in_equity IS NULL AND played_at >= now() - interval '7 days' " +
-            '(then discard the ones whose action log shows betting after the last all-in: those ' +
-            'were side pots, not runouts, and owe nothing).',
-          labels: {
-            allin_showdowns_7d: String(ev.allInShowdowns),
-            without_equity_7d: String(ev.withoutEquity ?? 0),
-            ratio: ev.ratio.toFixed(4),
-          },
-        });
+      // Capture narrowed scalars before the alert callback. TypeScript cannot
+      // assume a mutable object property stays non-null across a closure.
+      const allInShowdowns = ev.allInShowdowns;
+      const ratio = ev.ratio;
+      if (allInShowdowns >= STATS_EV_COVERAGE_MIN_SAMPLE && ratio < STATS_EV_COVERAGE_MIN_RATIO) {
+        if (
+          !(await this.deliverAlert(generation, () =>
+            this.deps.raise({
+              alertname: STATS_EV_COVERAGE_ALERT,
+              severity: 'warning',
+              component: STATS_HEALTH_COMPONENT,
+              summary:
+                `All-in equity coverage is ${(ratio * 100).toFixed(1)}% over 7 days ` +
+                `(${ev.withoutEquity ?? 0} of ${allInShowdowns} all-in runout seats without equity)`,
+              description:
+                'ca_hand_facts.all_in_equity is captured from the all_in_equity broadcast of every ' +
+                'all-in runout and written at settlement. The EV line, "EV Adjusted" and the luck ' +
+                'readouts on the stats page are computed from it, so a missing figure understates or ' +
+                'overstates a player. Find the hands with ' +
+                'SELECT hand_id FROM ca_hand_facts WHERE was_all_in AND went_to_showdown AND ' +
+                "coalesce(all_in_street,'') <> 'river' AND all_in_equity IS NULL AND played_at >= now() - interval '7 days' " +
+                '(then discard the ones whose action log shows betting after the last all-in: those ' +
+                'were side pots, not runouts, and owe nothing).',
+              labels: {
+                allin_showdowns_7d: String(allInShowdowns),
+                without_equity_7d: String(ev.withoutEquity ?? 0),
+                ratio: ratio.toFixed(4),
+              },
+            })
+          ))
+        )
+          return;
       } else if (
-        ev.ratio >= STATS_EV_COVERAGE_MIN_RATIO ||
-        ev.allInShowdowns < STATS_EV_COVERAGE_MIN_SAMPLE
+        ratio >= STATS_EV_COVERAGE_MIN_RATIO ||
+        allInShowdowns < STATS_EV_COVERAGE_MIN_SAMPLE
       ) {
-        await this.deps.resolve(
-          STATS_EV_COVERAGE_ALERT,
-          STATS_HEALTH_COMPONENT,
-          'All-in equity coverage is back above the bar'
-        );
+        if (
+          !(await this.deliverAlert(generation, () =>
+            this.deps.resolve(
+              STATS_EV_COVERAGE_ALERT,
+              STATS_HEALTH_COMPONENT,
+              'All-in equity coverage is back above the bar'
+            )
+          ))
+        )
+          return;
       }
     }
   }

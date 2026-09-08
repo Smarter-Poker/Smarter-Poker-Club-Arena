@@ -1323,8 +1323,21 @@ function icmRiskBase(
 
 /** V3/V4/V5 decision options (benchmark/test hooks — production uses defaults). */
 export interface HorseDecideOpts {
+  /**
+   * Epoch captured when the turn decision was requested. Live decisions can
+   * wait in the isolated worker's FIFO; pinning time here prevents queue
+   * latency from changing an hourly mood at the boundary between two hours.
+   */
+  decisionTimeMs?: number;
   /** disable the HorseMind opponent-intelligence layer (default: enabled) */
   mind?: boolean;
+  /**
+   * Internal live-worker replay control. A deep second look must read the same
+   * opponent model as its fast decision without ingesting the same action
+   * snapshot again. This is deliberately separate from `mind`: false keeps
+   * every strategic read enabled and suppresses only HorseMind.observe().
+   */
+  observeMind?: boolean;
   /** disable the V4 street-IQ layer: initiative, position, scare cards,
    *  made-hand class, pot geometry (default: enabled) */
   streetIQ?: boolean;
@@ -1604,8 +1617,8 @@ export interface HorseDecideOpts {
  * kind of exploitable-looking texture humans produce — while staying zero-mean
  * across the fleet and across time.
  */
-function moodOf(userId: string): number {
-  const key = userId + '|' + Math.floor(Date.now() / 3_600_000);
+function moodOf(userId: string, decisionTimeMs = Date.now()): number {
+  const key = userId + '|' + Math.floor(decisionTimeMs / 3_600_000);
   let h = 17;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return (h % 1000) / 1000; // 0..1, stable for the hour
@@ -1731,7 +1744,7 @@ export class HorseLogic {
       // Wrapped so observation can never take down a decision.
       // V12: benchmark/league decisions pass mind:false — they must never
       // write synthetic hands into the live opponent memory.
-      if (opts.mind !== false) {
+      if (opts.mind !== false && opts.observeMind !== false) {
         try {
           HorseMind.observe(gameState.actionHistory, gameState.players);
         } catch {
@@ -1882,7 +1895,7 @@ export class HorseLogic {
     // V9: hourly mood gear-shift — a horse's bluff/aggression volume drifts
     // hour to hour the way a human's does. Zero-mean across the fleet.
     if ((opts.v9Mood ?? opts.v9) !== false) {
-      const m01 = moodOf(player.user_id);
+      const m01 = moodOf(player.user_id, opts.decisionTimeMs);
       params.bluffFreq *= 0.88 + 0.24 * m01;
       params.aggression *= 0.96 + 0.08 * m01;
     }

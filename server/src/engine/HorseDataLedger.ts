@@ -86,7 +86,7 @@ const flag = (
 ): LedgerEntry => ({
   key,
   kind: 'flag',
-  source: 'HorseDecideOpts (scheduleHorseAction defaults; league ablation b-sides)',
+  source: 'HorseDecideOpts (live worker snapshot; league ablation b-sides)',
   cadence: 'per_action',
   consumer,
   note,
@@ -389,7 +389,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // ─────────────────────────────────────────────────────────────────────────
   // FLAGS. Every HorseDecideOpts switch. Off = the layer's league b-side.
   // ─────────────────────────────────────────────────────────────────────────
+  flag(
+    'decisionTimeMs',
+    'turn-request epoch captured before worker FIFO wait; pins the hourly mood boundary',
+    'V50',
+    'HorseLogic.moodOf'
+  ),
   flag('telemetry', 'live decisions only; arms noteFire for this decision', 'V15'),
+  flag(
+    'observeMind',
+    'fast authoritative decisions capture opponent-memory effects; speculative deep replays read without observing twice',
+    'V50'
+  ),
   flag('mind', 'the whole opponent-intelligence layer (reads + writes)', 'V3'),
   flag('streetIQ', 'position/initiative/scare/texture reads', 'V4'),
   flag('handReading', 'street-by-street range narrowing from the full history', 'V5'),

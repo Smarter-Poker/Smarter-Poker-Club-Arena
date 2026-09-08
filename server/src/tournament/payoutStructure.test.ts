@@ -5,15 +5,16 @@
  *
  * The defect these pin: both payout sites fell back to "award 100% of the
  * prize pool to the winner" whenever `payout_structure` was missing or had no
- * place 1. Places 2..N are paid AT ELIMINATION, minutes earlier, so on a 10x+
- * Spin (80/20, 80/12/8) that fallback pays the pool out at 120%.
+ * place 1. The retired path paid places 2..N AT ELIMINATION, minutes earlier,
+ * so on a 10x+ Spin (80/20, 80/12/8) that fallback paid the pool out at 120%.
  *
- * Two independent guards, because either alone would still leave a hole:
+ * The current guards remove the guess entirely:
  *
  *   1. A Spin never needs the fallback — its split is a pure function of its
  *      multiplier, so the spec reconstructs it exactly.
- *   2. The fallback itself is capped at the UNSPENT pool, for every format.
- *      An MTT with a lost structure had the identical exposure.
+ *   2. A missing exact contract fails closed for every format. The unspent-pool
+ *      helper below preserves the arithmetic regression proof; it is not a
+ *      fallback payout path.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -141,16 +142,17 @@ describe('resolvePayoutStructure', () => {
     }
   });
 
-  it('falls back to the stored column when the ladder does not know the multiplier', () => {
-    // Pre-draw (null), and a retired tier such as the old 500x: the spec has
-    // nothing to say, so the column is all there is.
+  it('refuses a stored Spin placeholder when the durable draw is missing or unknown', () => {
+    // Pre-draw (null), and a retired tier such as the old 500x, do not identify
+    // a canonical split. Paying the stored creation placeholder could turn a
+    // missing high-tier draw into winner-take-all.
     const stored = [{ place: 1, percentage: 100 }];
     expect(
       resolvePayoutStructure({ payout_structure: stored, variant: 'spin', spin_multiplier: null })
-    ).toEqual(stored);
+    ).toBeNull();
     expect(
       resolvePayoutStructure({ payout_structure: stored, variant: 'spin', spin_multiplier: 500 })
-    ).toEqual(stored);
+    ).toBeNull();
     expect(spinStoredStructureIsStale({ variant: 'spin', spin_multiplier: 500 })).toBe(false);
   });
 
@@ -239,7 +241,10 @@ describe('every payout path actually uses the rule', () => {
     expect(ELIM).not.toMatch(
       /winnerPrize\s*=\s*Math\.round\(\s*\(?\s*tournament\??\.?\??\.prize_pool/
     );
-    expect(ELIM).toMatch(/remainingPoolAfterAwards\(/);
+    // A positive pool without a complete published ladder now fails closed;
+    // the engine no longer guesses any fallback amount at all.
+    expect(ELIM).toContain('payout_structure_unavailable_at_finish');
+    expect(ELIM).toMatch(/else if \(Number\(tournament\.prize_pool \|\| 0\) > 0\)/);
   });
 
   it('both sites select what a rebuild needs', () => {

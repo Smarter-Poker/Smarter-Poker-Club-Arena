@@ -26,7 +26,6 @@ import {
   fixedLimitBetSize,
   isFixedLimitCapped,
 } from './BettingStructure.js';
-import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
 import {
   deckSizeFor,
   holeCardCount,
@@ -140,6 +139,17 @@ export class HandController {
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
+  /**
+   * All-in Pineapple has no player-action discard round, but showdown is still
+   * a two-card game. The table engine computes those choices on the live horse
+   * worker before it deals the flop and installs the result here. HandController
+   * owns only validation and mutation: poker strategy must never run on the
+   * authoritative event loop.
+   */
+  private preparedPineappleRunoutDiscards: {
+    flopKey: string;
+    decisions: Map<number, number>;
+  } | null = null;
   /**
    * DOUBLE-BOARD BOMB POT 2026-08-20 / TRIPLE-BOARD 2026-08-27: how many
    * boards THIS hand actually deals — 1, 2 or 3 — set in postBombPotAntes()
@@ -1539,6 +1549,14 @@ export class HandController {
     const deck = this.state.deck as unknown as Deck;
     const currentLength = this.state.communityCards.length;
 
+    // A caller that reached the flop before worker preparation must park here.
+    // Dealing the turn would make a stale or absent discard impossible to
+    // distinguish from a legitimate two-card Pineapple hand at settlement.
+    if (currentLength >= 3 && !this.resolvePendingPineappleDiscards()) {
+      this.reportMissingPineappleRunoutDiscards('dealNextStreet');
+      return { board: [...this.state.communityCards], stage: this.state.stage, complete: false };
+    }
+
     if (currentLength >= 5) {
       return { board: [...this.state.communityCards], stage: 'river', complete: true };
     }
@@ -1596,7 +1614,10 @@ export class HandController {
 
        Same call, same place in the street, as the path that had it. */
     if (this.config.gameVariant === 'pineapple' && this.state.communityCards.length >= 3) {
-      this.resolvePendingPineappleDiscards();
+      if (!this.resolvePendingPineappleDiscards()) {
+        this.reportMissingPineappleRunoutDiscards('dealNextStreet');
+        return { board: [...this.state.communityCards], stage, complete: false };
+      }
     }
 
     const complete = this.state.communityCards.length >= 5;
@@ -1616,6 +1637,13 @@ export class HandController {
    */
   public finalizeRunout(skipDistribution: boolean = false): void {
     if (this.refuseUnlessRunout('finalizeRunout')) return;
+    if (
+      this.config.gameVariant === 'pineapple' &&
+      this.state.players.some((player) => !player.is_folded && player.cards.length === 3)
+    ) {
+      this.reportMissingPineappleRunoutDiscards('finalizeRunout');
+      return;
+    }
     this.transitionStage('showdown');
     if (skipDistribution) {
       // RIT or other caller already distributed pots — just emit completion
@@ -1751,6 +1779,10 @@ export class HandController {
 
   private runOutCommunityCards(): void {
     const deck = this.state.deck as unknown as Deck;
+    if (this.state.communityCards.length >= 3 && !this.resolvePendingPineappleDiscards()) {
+      this.reportMissingPineappleRunoutDiscards('continueRunout');
+      return;
+    }
     // CORRECTION 2026-08-19 (Dan: "YOU CAN'T HAVE 8 MAX PLO6"). An earlier
     // version of this comment justified the bound below with a short-deck
     // scenario that CANNOT HAPPEN, and the claim was wrong twice over:
@@ -1810,7 +1842,10 @@ export class HandController {
       // extra-card advantage. Resolve pending discards as soon as the flop is
       // on the board, exactly where the discard belongs in the hand flow.
       if (this.config.gameVariant === 'pineapple' && this.state.communityCards.length >= 3) {
-        this.resolvePendingPineappleDiscards();
+        if (!this.resolvePendingPineappleDiscards()) {
+          this.reportMissingPineappleRunoutDiscards('continueRunout');
+          return;
+        }
       }
       if (this.state.communityCards.length === lengthBefore) {
         // The deck gave us nothing. Another turn of this loop would give us
@@ -1822,33 +1857,97 @@ export class HandController {
     this.completeHand();
   }
 
-  /**
-   * AUDIT V2 (2026-07-23): Force-resolve outstanding pineapple discards for
-   * players who were all-in (or otherwise skipped) before the discard phase.
-   * Keeps the best two cards for the player — the same choice any player
-   * would make for themselves — so showdown is always a legal 2-card hand.
-   */
-  private resolvePendingPineappleDiscards(): void {
-    const flop = this.state.communityCards.slice(0, 3);
-    for (const player of this.state.players) {
-      if (player.is_folded || player.cards.length !== 3) continue;
-      /* ── KEEP THE BEST HAND, NOT THE BEST FLOP (2026-08-31) ──────────────
-         This scored the flop-MADE hand and kept the highest of those. That is
-         backwards in the only situation it runs: an ALL-IN, where two more
-         cards are coming and there is no more betting, which is exactly when a
-         draw is worth the most it will ever be worth. On A(h)K(h)+2(h) against
-         7(h)8(h)3(c) it kept the pair of nothing and threw the nut flush draw
-         away, because a pair outranks a draw on the flop and the flop was all
-         it looked at.
+  /** Stable identity for the exact flop a worker priced. */
+  private pineappleFlopKey(cards: readonly Card[]): string {
+    return cards.map((card) => `${card.rank}:${card.suit}`).join('|');
+  }
 
-         It now uses the same equity-priced chooser a HORSE uses, which is the
-         point: CLAUDE.md 10.5 requires a horse and a human to be treated
-         identically, and a decision made by two different rules cannot be. */
-      const bestIdx = bestPineappleDiscard(
-        player.cards,
-        flop,
-        this.config.gameVariant ?? 'pineapple'
-      );
+  /**
+   * Immutable worker input for an all-in Pineapple discard. Before the flop is
+   * dealt, the next three cards are already fixed by this controller's shuffled
+   * deck; pricing that exact snapshot off-thread lets the existing synchronous
+   * deal/event order remain unchanged.
+   */
+  public getPineappleRunoutDiscardSnapshot(): {
+    flop: Card[];
+    players: Array<{ seat: number; cards: Card[] }>;
+  } | null {
+    if (this.config.gameVariant !== 'pineapple' || !this.handStarted) return null;
+    const players = this.state.players
+      .filter((player) => !player.is_folded && player.cards.length === 3)
+      .map((player) => ({ seat: player.seat, cards: [...player.cards] }));
+    if (players.length === 0) return null;
+
+    const existingFlop = this.state.communityCards.slice(0, 3);
+    const missing = 3 - existingFlop.length;
+    const flop =
+      missing > 0 ? [...existingFlop, ...this.getRemainingDeck().slice(0, missing)] : existingFlop;
+    if (flop.length !== 3) return null;
+    return { flop, players };
+  }
+
+  /**
+   * Install one complete off-thread result set. Partial, stale, mismatched-flop
+   * and invalid-index sets are rejected as a unit, so a later deal can never
+   * combine decisions from different hands or leave half the seats resolved.
+   */
+  public preparePineappleRunoutDiscards(
+    flop: readonly Card[],
+    decisions: ReadonlyMap<number, number>
+  ): boolean {
+    const snapshot = this.getPineappleRunoutDiscardSnapshot();
+    if (!snapshot || this.pineappleFlopKey(snapshot.flop) !== this.pineappleFlopKey(flop)) {
+      return false;
+    }
+    if (decisions.size !== snapshot.players.length) return false;
+    for (const player of snapshot.players) {
+      const index = decisions.get(player.seat);
+      if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= 3) {
+        return false;
+      }
+    }
+    this.preparedPineappleRunoutDiscards = {
+      flopKey: this.pineappleFlopKey(flop),
+      decisions: new Map(decisions),
+    };
+    return true;
+  }
+
+  /**
+   * Consume an already-computed all-in discard set. Returns false rather than
+   * choosing on the main thread when preparation is absent or stale; callers
+   * must not deal another street or settle until the live worker answers.
+   */
+  public commitPreparedPineappleRunoutDiscards(flop: readonly Card[]): boolean {
+    if (this.config.gameVariant !== 'pineapple') return true;
+    const pending = this.state.players.filter(
+      (player) => !player.is_folded && player.cards.length === 3
+    );
+    if (pending.length === 0) {
+      this.preparedPineappleRunoutDiscards = null;
+      return true;
+    }
+    if (flop.length < 3) return false;
+
+    const prepared = this.preparedPineappleRunoutDiscards;
+    const flopKey = this.pineappleFlopKey(flop.slice(0, 3));
+    if (!prepared || prepared.flopKey !== flopKey || prepared.decisions.size !== pending.length) {
+      return false;
+    }
+    for (const player of pending) {
+      const index = prepared.decisions.get(player.seat);
+      if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= 3) {
+        return false;
+      }
+    }
+
+    // Clear before emitting. Listeners are isolated, but a re-entrant snapshot
+    // must never expose a reusable decision set after its cards have changed.
+    this.preparedPineappleRunoutDiscards = null;
+    const discardStage: HandStage =
+      this.state.communityCards.length >= 3 ? this.state.stage : ('flop' as HandStage);
+    for (const player of pending) {
+      const bestIdx = prepared.decisions.get(player.seat) as number;
       const forced = player.cards.splice(bestIdx, 1);
       this.pineappleDiscardsRemaining.delete(player.seat);
 
@@ -1884,18 +1983,33 @@ export class HandController {
         action: 'discard',
         amount: 0,
         timestamp: Date.now(),
-        stage: this.state.stage,
+        stage: discardStage,
       });
       this.emit({
         type: 'PLAYER_ACTION',
         seat: player.seat,
         action: 'discard',
         amount: 0,
-        stage: this.state.stage,
+        stage: discardStage,
       });
 
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });
     }
+    return true;
+  }
+
+  private resolvePendingPineappleDiscards(): boolean {
+    return this.commitPreparedPineappleRunoutDiscards(this.state.communityCards.slice(0, 3));
+  }
+
+  private reportMissingPineappleRunoutDiscards(operation: string): void {
+    reportError(
+      new Error(
+        `[HandController] ${operation} refused on Pineapple hand ${this.config.handNumber}: ` +
+          'all-in discard decisions were not prepared for this exact flop'
+      ),
+      'HandController.pineapple_runout_discard_not_prepared'
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────

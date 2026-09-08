@@ -99,15 +99,18 @@ describe('and no hand was dealt at all', () => {
 describe('the guards are wired where they can guard something', () => {
   const src = read('./tournamentRecovery.ts');
 
-  it('both tests run before the loop that credits places', () => {
+  it('both tests run before guarantee funding or the atomic place payment', () => {
     const chipsAt = src.indexOf('if (chipsCannotRank(alive))');
     const handAt = src.indexOf('noHandWasEverDealt({');
-    // 2026-09-02: places settle as the obligation (tournament, 'place', N)
-    // through settleTournamentObligation; that call is the pay marker.
-    const payAt = src.indexOf("{ kind: 'place', place }");
+    const fundAt = src.indexOf("'fn_apply_prize_guarantee'");
+    // The atomic settler is now the only normal place-money marker.
+    const payAt = src.indexOf('settleTournamentPlacesAtomically(');
     expect(chipsAt).toBeGreaterThan(-1);
     expect(handAt).toBeGreaterThan(-1);
+    expect(fundAt).toBeGreaterThan(-1);
     expect(payAt).toBeGreaterThan(-1);
+    expect(chipsAt).toBeLessThan(fundAt);
+    expect(handAt).toBeLessThan(fundAt);
     expect(chipsAt).toBeLessThan(payAt);
     expect(handAt).toBeLessThan(payAt);
   });

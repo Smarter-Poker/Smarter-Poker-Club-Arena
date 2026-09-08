@@ -17028,3 +17028,7 @@ both sides, ui-text gate green.
 ## 20260908032050 Satellite Award Atomicity
 
 Applied to production: satellite seat creation, source transfer, target counters and payout receipt now roll back together on failure. Missing/insufficient source funding and inconsistent idempotency keys cannot commit a new award. 15 original reproductions; 17 corrected PostgreSQL cases plus 57 existing checks passed. See docs/changelog/2026-09-08-satellite-award-atomicity.md.
+
+## 2026-09-08: Cashout Escrow And Receipt Atomicity
+
+Applied 20260908035339_cashout_escrow_ledger_atomicity.sql to production. Request, approve and release declare the actual escrow journal counterparty, serialize caller retries, validate replay payloads, and propagate receipt failures so the whole movement rolls back. 64 isolated PostgreSQL cases pass, including four concurrent sessions tests. Authenticated and service_role grants preserved; no historical balance changes. See docs/changelog/2026-09-08-cashout-escrow-atomicity.md.

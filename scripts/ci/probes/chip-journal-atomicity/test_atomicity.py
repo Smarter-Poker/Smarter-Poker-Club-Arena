@@ -126,3 +126,7 @@ print(f"TOTAL {mode}: {passed} passing cases",flush=True)
 if mode=="fixed":
  from test_satellite import verify_satellite
  verify_satellite(run)
+
+if mode=="fixed":
+ from test_cashout import verify_cashout
+ verify_cashout(run)

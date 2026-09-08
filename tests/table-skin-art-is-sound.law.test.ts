@@ -79,6 +79,27 @@ const MAX_DEAD_RUN = 6;
 
 const sharpAvailable = await getSharp();
 
+/**
+ * A SKIP IS NOT A PASS. Locally, someone without an image codec should not have
+ * a red build over one. In CI it is the opposite: every assertion below reads
+ * pixels, so a silent skip turns this whole law into a comment - which is the
+ * exact failure the World Hub's avatar guard had on the same day, where a check
+ * named after holes never opened an image and 86 busts were holed again.
+ *
+ * The unit job runs a full `npm ci` and sharp is a declared dependency
+ * (tests/sharp-is-installed-not-downloaded.law.test.ts pins that), so this
+ * should never fire. If it does, the law was not run and wants fixing, not
+ * ignoring.
+ */
+describe('the image codec this law needs', () => {
+  it.skipIf(!process.env.CI)('is present in CI', () => {
+    expect(
+      sharpAvailable,
+      'sharp is unavailable, so every assertion below SKIPPED rather than ran'
+    ).toBeTruthy();
+  });
+});
+
 describe.skipIf(!sharpAvailable)('table skin art is sound', () => {
   it('ships fourteen skins, so a deletion is not silent', () => {
     expect(skins.length).toBe(14);

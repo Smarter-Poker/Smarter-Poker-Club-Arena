@@ -172,7 +172,11 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
         containerRef.current?.closest('.table-page') ??
         containerRef.current?.ownerDocument ??
         document;
-      const blockH = titleBlockRef.current?.getBoundingClientRect().height ?? 0;
+      // offsetHeight, not getBoundingClientRect: after the first anchor the
+      // block may be SCALED, and the rect reports the scaled height. A
+      // re-measure on resize would then read band == height, set scale 1,
+      // and climb back onto the seats.
+      const blockH = titleBlockRef.current?.offsetHeight ?? 0;
       setTitleAnchor(measureTitleAnchor(scope, blockH));
     };
     measure();

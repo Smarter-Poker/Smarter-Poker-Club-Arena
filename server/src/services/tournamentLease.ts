@@ -273,7 +273,8 @@ export async function claimTournamentLease(
  * A transport failure is typed UNKNOWN and does not extend authority. The
  * manager continues only until its previously proven monotonic deadline. A
  * successful response proves each exact generation and advances its deadline
- * from the instant before this RPC began.
+ * from the instant before this RPC began. A busy exact generation extends
+ * nothing; the existing proof deadline and expiry timer remain authoritative.
  */
 export async function heartbeatTournaments(
   claims: TournamentLeaseHeartbeatClaim[]
@@ -284,7 +285,7 @@ export async function heartbeatTournaments(
   const tournamentIds = claims.map((claim) => claim.tournamentId);
   const proofDeadlineMonotonicMs = tournamentLeaseMonotonicNow() + TOURNAMENT_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('heartbeat_tournament_leases_v3', {
+    const { data, error } = await supabase.rpc('heartbeat_tournament_leases_v4', {
       p_instance_id: INSTANCE_ID,
       p_claims: claims.map((claim) => ({
         tournament_id: claim.tournamentId,
@@ -306,7 +307,7 @@ export async function heartbeatTournaments(
     const expectedIds = new Set(tournamentIds);
     const rowsById = new Map<
       string,
-      { state: 'kept' | 'taken' | 'stale' | 'missing'; leaseGeneration: unknown }
+      { state: 'kept' | 'taken' | 'stale' | 'missing' | 'busy'; leaseGeneration: unknown }
     >();
     let malformed = rawRows === null || rawRows.length !== claims.length;
     for (const candidate of rawRows ?? []) {
@@ -322,14 +323,14 @@ export async function heartbeatTournaments(
       if (
         typeof row.tournament_id !== 'string' ||
         !expectedIds.has(row.tournament_id) ||
-        !['kept', 'taken', 'stale', 'missing'].includes(String(row.state)) ||
+        !['kept', 'taken', 'stale', 'missing', 'busy'].includes(String(row.state)) ||
         rowsById.has(row.tournament_id)
       ) {
         malformed = true;
         continue;
       }
       rowsById.set(row.tournament_id, {
-        state: row.state as 'kept' | 'taken' | 'stale' | 'missing',
+        state: row.state as 'kept' | 'taken' | 'stale' | 'missing' | 'busy',
         leaseGeneration: row.lease_generation,
       });
     }
@@ -359,6 +360,11 @@ export async function heartbeatTournaments(
         proofs.push({ ...claim, proofDeadlineMonotonicMs });
         continue;
       }
+
+      // A locked exact generation is UNKNOWN, never a renewal. GameServer
+      // checks the existing monotonic deadline after this response and its
+      // ordinary expiry timer remains armed throughout repeated busy replies.
+      if (row.state === 'busy' && exactGeneration) continue;
 
       lostTournamentIds.push(claim.tournamentId);
       if (row.state === 'missing' || row.state === 'stale') reclaimableHeartbeats++;

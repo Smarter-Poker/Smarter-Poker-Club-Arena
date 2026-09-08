@@ -2897,8 +2897,8 @@ export default function TablePage({
   }, [preAction]);
   /** A hero-turn alert the TURN_CHANGE handler held back because a
    *  pre-action was armed; rung by the heroPromptedToAct effect, or dropped
-   *  when the engine takes the turn. */
-  const deferredTurnAlertRef = useRef(false);
+   *  when the engine takes the turn. State, so the effect re-runs on it. */
+  const [turnAlertDeferred, setTurnAlertDeferred] = useState(false);
   // P2-1 FIX: only send a server 'clear' if a pre-action was actually armed
   // before — prevents a junk serverSetPreAction(clear) firing on every mount
   // (preAction starts null).
@@ -5958,6 +5958,130 @@ export default function TablePage({
        the FOOTER's rendered label, not this. */
   }, [heroTabSittingOut, sitOutSince, tableState.isTournament]);
 
+  /* ═══ THE PRE-ACTION GATE, DECLARED EARLY (2026-09-08) ═══════════════════
+     These used to live ~14,000 lines further down, beside the ActionPanel.
+     The multi-table reporting effect below (tab badge, soft ping, dock
+     countdown, desktop Notification) needs `heroPromptedToAct` too, and a
+     const cannot be read above its declaration - so the whole gate moved up
+     here, above the first thing that reads it. Nothing in it depends on
+     anything declared between here and where it used to be. */
+  // Unified Table Timer Logic (Phase M) - Moved out of the way of all earlier references.
+  // 2026-04-14 CRITICAL FIX (Dan E2E bug "engine skipped my turn"):
+  //   The previous gate was `currentPlayerSeat === heroSeat && isHandInProgress`.
+  //   Both fields default to 0 between hands / during snapshot races, so
+  //   `0 === 0` returned true for a microsecond on every snapshot churn,
+  //   causing ActionPanel to mount/unmount in flicker bursts. Hero saw the
+  //   action buttons flash on then off and could not click. Adding the
+  //   explicit `> 0` guards eliminates the false-trigger.
+  const isHeroTurnContext =
+    tableState.heroSeat > 0 &&
+    tableState.currentPlayerSeat > 0 &&
+    tableState.currentPlayerSeat === tableState.heroSeat &&
+    tableState.isHandInProgress;
+
+  /**
+   * ═══ AN ARMED PRE-ACTION MUST NOT FLASH THE ACTION PANEL (Dan 2026-08-29) ═══
+   *
+   * Dan, verbatim: "WHEN YOU ARE PLAYING IN THE LIVE PAGES, AND YOU CLICK A
+   * 'PRE SELECT OPTION' IT SHOULD JUST EXECUTE THAT OPTION ... IT CURRENTLY
+   * 'EXECUTES THE CHOICE' BUT THEN IT 'FLASHES THE ACTION TAB BACK UP' BEFORE
+   * IT CLOSES IT AGAIN. THAT SHOULDN'T HAPPEN."
+   *
+   * Pre-actions are executed by the ENGINE (Bible V8 §4.15 — the client's
+   * delayed executor was removed, see the P2-1 note below). So between the
+   * snapshot that hands the hero the turn and the snapshot that carries the
+   * engine's auto-executed action there is one network round trip — and the
+   * ActionPanel was mounting for exactly that gap, flashing up and closing.
+   *
+   * While the armed pre-action is one the engine CAN honor right now, the
+   * panel stays down for a short grace window:
+   *   - fold / check-fold and Call Any are always honorable;
+   *   - Check is honorable only when there is nothing to call;
+   *   - Call <N> is honorable only while the price still fits the cap the
+   *     player armed (the engine refuses past it — same rule, both halves).
+   *
+   * If the engine has NOT acted by the end of the grace window — engine down,
+   * clear lost, cap refused in a way the client could not predict — the panel
+   * appears and the player acts manually. The suppression can only ever cost
+   * the flash gap; it can never cost the player their turn.
+   */
+  const preActionCallDue = Math.max(
+    0,
+    (tableState.currentBet || 0) -
+      (tableState.heroSeat > 0 ? tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0 : 0)
+  );
+  const awaitingPreActionExec =
+    isHeroTurnContext &&
+    preAction !== null &&
+    isPreActionHonorable(preAction, preActionCallDue, preActionCallAmountRef.current);
+  const [preActionOverdue, setPreActionOverdue] = useState(false);
+  useEffect(() => {
+    if (!awaitingPreActionExec) {
+      setPreActionOverdue(false);
+      return;
+    }
+    const t = window.setTimeout(() => setPreActionOverdue(true), PRE_ACTION_EXEC_GRACE_MS);
+    return () => window.clearTimeout(t);
+  }, [awaitingPreActionExec]);
+  const suppressPanelForPreAction = awaitingPreActionExec && !preActionOverdue;
+
+  /**
+   * ═══ ONE BOOLEAN FOR "YOU ARE PROMPTED TO ACT" (Dan 2026-09-04) ═══════════
+   *
+   * Dan, verbatim: "WHEN YOU CLICK THE FOLD BUTTON WHEN USING THE PRE ACTION
+   * BAR, TO CLICK FOLD, CHECK CALL WHAT EVER, IT STILL 'PROMPTS YOU' AND
+   * STARTS THE CLOCK FOR A SPLIT SECOND INSTEAD OF JUST EXECUTING THE PRE
+   * TURN ACTION YOU'VE SELECTED. THIS IS A GLITCH THAT NEEDS TO BE FIXED."
+   *
+   * The 2026-08-29 fix above (suppressPanelForPreAction) hid ONE of the seven
+   * surfaces that announce the hero's turn - the ActionPanel - and left the
+   * other six reading `currentPlayerSeat === heroSeat` on their own: the
+   * bell and the haptic (TURN_CHANGE handler), the countdown ring on the
+   * hero's seat, the control strip's time-bank button and ticking numeral,
+   * the time-bank tile in the HUD corner, the `table-page--hero-turn` pulse,
+   * the bottom-bar reserve (`heroActionState`), and the ActionClockWarning.
+   * The engine stamps a full deadline and broadcasts it BEFORE its visible
+   * pre-action beat (preActionVisibleMs in ServerTableEngineTurns, 250ms
+   * since 2026-09-07), so every one of those surfaces lit for the beat plus
+   * a round trip, and then the fold landed. That is the prompt-and-clock Dan
+   * sees.
+   *
+   * There is now exactly one answer to "is the hero being asked to act", and
+   * every surface reads it. The suppression is still bounded by the same
+   * grace window (PRE_ACTION_EXEC_GRACE_MS) and the same honorability rule,
+   * so a refused or lost pre-action still prompts the player before the
+   * clock costs them anything - it just never prompts them for a turn the
+   * engine is already taking on their behalf.
+   */
+  const heroPromptedToAct = isHeroTurnContext && !suppressPanelForPreAction;
+
+  /**
+   * The bell and the buzz follow the SAME boolean. The TURN_CHANGE handler
+   * rings on the discrete event (which lands before the snapshot, so the
+   * alert is early) only when no pre-action is armed; when one is, it defers
+   * here, and this rings only if the hero ends up genuinely prompted - the
+   * engine refused the arm, or did not act inside the grace window. A turn
+   * the engine takes for the player never rings.
+   *
+   * The deferral is STATE, not a ref: the engine sends the SNAPSHOT before
+   * the discrete turn_change, so by the time the handler marks the deferral
+   * this effect has already run for the turn and would not run again on a
+   * ref write. State re-runs it.
+   */
+  useEffect(() => {
+    if (!isHeroTurnContext) {
+      if (turnAlertDeferred) setTurnAlertDeferred(false);
+      return;
+    }
+    if (heroPromptedToAct && turnAlertDeferred) {
+      setTurnAlertDeferred(false);
+      import('../services/HapticService').then(({ haptic }) => haptic.medium());
+      if (soundService.isEnabled() && (isActive || !isMultiTable) && !muted) {
+        soundService.playTurnAlert();
+      }
+    }
+  }, [isHeroTurnContext, heroPromptedToAct, turnAlertDeferred, isActive, isMultiTable, muted]);
+
   // Win/loss edge for the tab showdown flash. engineWinners only carries a
   // value while the engine is settling a hand, so this collapses back to ''
   // between hands; the hand number key makes back-to-back same outcomes
@@ -6003,7 +6127,12 @@ export default function TablePage({
       tableState.heroSeat > 0 &&
       tableState.currentPlayerSeat > 0 &&
       tableState.currentPlayerSeat === tableState.heroSeat &&
-      tableState.isHandInProgress;
+      tableState.isHandInProgress &&
+      /* Dan 2026-09-04: a turn the engine is taking for the player (armed
+         pre-action) is not "YOUR TURN" on the tab either - no badge, no soft
+         ping, no dock countdown for the engine's beat. Same boolean the felt
+         uses; see heroPromptedToAct above. */
+      heroPromptedToAct;
     onTableInfoUpdate({
       name:
         tableState.tableName !== 'Loading...' && tableState.gameType && tableState.blinds
@@ -6040,6 +6169,7 @@ export default function TablePage({
     tableState.currentPlayerSeat,
     tableState.heroSeat,
     tableState.isHandInProgress,
+    heroPromptedToAct,
     tableState.actionTimerDeadline,
     tableState.actionTimerStartTime,
     heroTabToCall,
@@ -7256,7 +7386,11 @@ export default function TablePage({
   /** What the last add-on request actually did, for callers that only get
    *  the boolean (the auto top-up's toast). */
   const lastAddChipsResultRef = useRef<{ applied: number; queued: boolean } | null>(null);
-  const handleAddChips = async (amount: number, opId?: string): Promise<boolean> => {
+  const handleAddChips = async (
+    amount: number,
+    opId?: string,
+    opts?: { source?: 'manual' | 'auto' }
+  ): Promise<boolean> => {
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
         new Error('Cannot add chips: not authenticated'),
@@ -7277,6 +7411,15 @@ export default function TablePage({
       // only after it acks.
       const res = await GameServerAPI.addChips(tableId, amount, opId);
       if (!res.success) {
+        /* The AUTOMATIC top-up sizes itself from the stack it can see, and
+           it cannot see a queued mid-hand add-on that already fills the seat
+           (the engine caps on stack + pending). "Already at the maximum" is
+           then the ordinary answer, not an incident: no toast, no report,
+           the next snapshot re-evaluates. A manual request still hears it. */
+        if (opts?.source === 'auto' && /maximum buy-in/i.test(String(res.error || ''))) {
+          lastAddChipsResultRef.current = { applied: 0, queued: false };
+          return false;
+        }
         reportError(
           new Error(res.error || 'addChips rejected by engine'),
           'TablePage.addChips_engine_rejected'
@@ -9742,9 +9885,16 @@ export default function TablePage({
      converges on the next frame, and an engine "nothing armed" clears the bar
      without a round trip (hadPreActionRef is dropped first so the clear
      effect does not send a clear for something the engine never held). */
+  const handledAddOnAdjustmentsRef = useRef<Set<string>>(new Set());
+  const handledUserEventRef = useRef<unknown>(null);
   useEffect(() => {
     const ev = engineLastUserEvent;
     if (!ev) return;
+    /* One frame, one pass. The hole-card and pre-action branches are
+       idempotent; the add-on adjustment is not, and this effect re-runs
+       whenever handleHoleCardPayload changes identity. */
+    if (handledUserEventRef.current === ev) return;
+    handledUserEventRef.current = ev;
     if (ev.kind === 'hole_cards' && ev.row && typeof ev.row === 'object') {
       handleHoleCardPayload({ new: ev.row });
       return;
@@ -9763,10 +9913,25 @@ export default function TablePage({
          the numbers that actually moved. */
       const applied = Number(ev.applied) || 0;
       const refunded = Number(ev.refunded) || 0;
+      /* ONCE PER LEDGER ROW. The engine re-sends this frame on RESYNC and a
+         replayed settlement can send it again; this effect also re-runs when
+         handleHoleCardPayload changes identity (mute, tab switch) with the
+         same frame still in `engineLastUserEvent`. The correction below is
+         not idempotent, so the row id is the gate. */
+      const rowId = typeof ev.pending_id === 'string' ? ev.pending_id : null;
+      if (rowId && handledAddOnAdjustmentsRef.current.has(rowId)) return;
+      if (rowId) handledAddOnAdjustmentsRef.current.add(rowId);
+      /* Only a top-up through handleAddChips debited the client's own
+         figures at request time. A bust REBUY goes to atomic_table_rebuy
+         directly (confirmBustRebuy) and never touched them, so crediting its
+         refund here would invent balance. The player is still told. */
+      const clientDebited = ev.addon_kind === 'addon' || ev.addon_kind === undefined;
       if (refunded > 0) {
-        applyBalanceDelta((prev) => (prev === null ? null : prev + refunded));
-        totalBuyInRef.current = Math.max(0, totalBuyInRef.current - refunded);
-        if (tableId) sessionStatsService.recordRebuy(tableId, -refunded);
+        if (clientDebited) {
+          applyBalanceDelta((prev) => (prev === null ? null : prev + refunded));
+          totalBuyInRef.current = Math.max(0, totalBuyInRef.current - refunded);
+          if (tableId) sessionStatsService.recordRebuy(tableId, -refunded);
+        }
         if (typeof window !== 'undefined') {
           toast.info(
             applied > 0
@@ -15751,7 +15916,9 @@ export default function TablePage({
               events.push(...createChipToPotEvent(seatPos, potPos, post.amount));
             }
             if (events.length > 0) setChipAnimations((prev) => [...prev, ...events]);
-            if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playChips();
+            // No chip click here: BLINDS_POSTED lands in the same tick and
+            // already plays one; two stacked clicks at every hand start is
+            // noise, not information.
           }
         }
         break;
@@ -15781,7 +15948,7 @@ export default function TablePage({
             // before the snapshot, so the arm is read from the ref the
             // mirror effect keeps, not from render state.
             if (preActionArmedRef.current !== null) {
-              deferredTurnAlertRef.current = true;
+              setTurnAlertDeferred(true);
             } else {
               import('../services/HapticService').then(({ haptic }) => haptic.medium());
               // Bible V8 §5.3: turn alert sound for hero.
@@ -19784,55 +19951,6 @@ export default function TablePage({
 
   //broadcastLocalHandState removed — server broadcasts state authoritatively
 
-  // Unified Table Timer Logic (Phase M) - Moved out of the way of all earlier references.
-  // 2026-04-14 CRITICAL FIX (Dan E2E bug "engine skipped my turn"):
-  //   The previous gate was `currentPlayerSeat === heroSeat && isHandInProgress`.
-  //   Both fields default to 0 between hands / during snapshot races, so
-  //   `0 === 0` returned true for a microsecond on every snapshot churn,
-  //   causing ActionPanel to mount/unmount in flicker bursts. Hero saw the
-  //   action buttons flash on then off and could not click. Adding the
-  //   explicit `> 0` guards eliminates the false-trigger.
-  const isHeroTurnContext =
-    tableState.heroSeat > 0 &&
-    tableState.currentPlayerSeat > 0 &&
-    tableState.currentPlayerSeat === tableState.heroSeat &&
-    tableState.isHandInProgress;
-
-  /**
-   * ═══ AN ARMED PRE-ACTION MUST NOT FLASH THE ACTION PANEL (Dan 2026-08-29) ═══
-   *
-   * Dan, verbatim: "WHEN YOU ARE PLAYING IN THE LIVE PAGES, AND YOU CLICK A
-   * 'PRE SELECT OPTION' IT SHOULD JUST EXECUTE THAT OPTION ... IT CURRENTLY
-   * 'EXECUTES THE CHOICE' BUT THEN IT 'FLASHES THE ACTION TAB BACK UP' BEFORE
-   * IT CLOSES IT AGAIN. THAT SHOULDN'T HAPPEN."
-   *
-   * Pre-actions are executed by the ENGINE (Bible V8 §4.15 — the client's
-   * delayed executor was removed, see the P2-1 note below). So between the
-   * snapshot that hands the hero the turn and the snapshot that carries the
-   * engine's auto-executed action there is one network round trip — and the
-   * ActionPanel was mounting for exactly that gap, flashing up and closing.
-   *
-   * While the armed pre-action is one the engine CAN honor right now, the
-   * panel stays down for a short grace window:
-   *   - fold / check-fold and Call Any are always honorable;
-   *   - Check is honorable only when there is nothing to call;
-   *   - Call <N> is honorable only while the price still fits the cap the
-   *     player armed (the engine refuses past it — same rule, both halves).
-   *
-   * If the engine has NOT acted by the end of the grace window — engine down,
-   * clear lost, cap refused in a way the client could not predict — the panel
-   * appears and the player acts manually. The suppression can only ever cost
-   * the flash gap; it can never cost the player their turn.
-   */
-  const preActionCallDue = Math.max(
-    0,
-    (tableState.currentBet || 0) -
-      (tableState.heroSeat > 0 ? tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0 : 0)
-  );
-  const awaitingPreActionExec =
-    isHeroTurnContext &&
-    preAction !== null &&
-    isPreActionHonorable(preAction, preActionCallDue, preActionCallAmountRef.current);
   /**
    * ═══ IS THERE STILL ACTION TO COME? (Dan 2026-09-07, corrected same day) ══
    *
@@ -19879,68 +19997,6 @@ export default function TablePage({
     tableState.isHandInProgress &&
     !handSettling &&
     (tableState.currentPlayerSeat > 0 || actorGapBridged);
-
-  const [preActionOverdue, setPreActionOverdue] = useState(false);
-  useEffect(() => {
-    if (!awaitingPreActionExec) {
-      setPreActionOverdue(false);
-      return;
-    }
-    const t = window.setTimeout(() => setPreActionOverdue(true), PRE_ACTION_EXEC_GRACE_MS);
-    return () => window.clearTimeout(t);
-  }, [awaitingPreActionExec]);
-  const suppressPanelForPreAction = awaitingPreActionExec && !preActionOverdue;
-
-  /**
-   * ═══ ONE BOOLEAN FOR "YOU ARE PROMPTED TO ACT" (Dan 2026-09-04) ═══════════
-   *
-   * Dan, verbatim: "WHEN YOU CLICK THE FOLD BUTTON WHEN USING THE PRE ACTION
-   * BAR, TO CLICK FOLD, CHECK CALL WHAT EVER, IT STILL 'PROMPTS YOU' AND
-   * STARTS THE CLOCK FOR A SPLIT SECOND INSTEAD OF JUST EXECUTING THE PRE
-   * TURN ACTION YOU'VE SELECTED. THIS IS A GLITCH THAT NEEDS TO BE FIXED."
-   *
-   * The 2026-08-29 fix above (suppressPanelForPreAction) hid ONE of the seven
-   * surfaces that announce the hero's turn - the ActionPanel - and left the
-   * other six reading `currentPlayerSeat === heroSeat` on their own: the
-   * bell and the haptic (TURN_CHANGE handler), the countdown ring on the
-   * hero's seat, the control strip's time-bank button and ticking numeral,
-   * the time-bank tile in the HUD corner, the `table-page--hero-turn` pulse,
-   * the bottom-bar reserve (`heroActionState`), and the ActionClockWarning.
-   * The engine stamps a full deadline and broadcasts it BEFORE its 900ms
-   * pre-action beat (ServerTableEngineTurns.handleTurnChange), so every one
-   * of those surfaces lit for the beat plus a round trip, and then the fold
-   * landed. That is the prompt-and-clock Dan sees.
-   *
-   * There is now exactly one answer to "is the hero being asked to act", and
-   * every surface reads it. The suppression is still bounded by the same
-   * grace window (PRE_ACTION_EXEC_GRACE_MS) and the same honorability rule,
-   * so a refused or lost pre-action still prompts the player before the
-   * clock costs them anything - it just never prompts them for a turn the
-   * engine is already taking on their behalf.
-   */
-  const heroPromptedToAct = isHeroTurnContext && !suppressPanelForPreAction;
-
-  /**
-   * The bell and the buzz follow the SAME boolean. The TURN_CHANGE handler
-   * rings on the discrete event (which lands before the snapshot, so the
-   * alert is early) only when no pre-action is armed; when one is, it defers
-   * here, and this rings only if the hero ends up genuinely prompted - the
-   * engine refused the arm, or did not act inside the grace window. A turn
-   * the engine takes for the player never rings.
-   */
-  useEffect(() => {
-    if (!isHeroTurnContext) {
-      deferredTurnAlertRef.current = false;
-      return;
-    }
-    if (heroPromptedToAct && deferredTurnAlertRef.current) {
-      deferredTurnAlertRef.current = false;
-      import('../services/HapticService').then(({ haptic }) => haptic.medium());
-      if (soundService.isEnabled() && (isActive || !isMultiTable) && !muted) {
-        soundService.playTurnAlert();
-      }
-    }
-  }, [isHeroTurnContext, heroPromptedToAct, isActive, isMultiTable, muted]);
 
   /**
    * ═══ THE DISARM THAT CANNOT UNMOUNT (2026-08-29 hardening pass) ═══════════
@@ -21522,7 +21578,7 @@ export default function TablePage({
             if (!autoTopUpKeyRef.current || autoTopUpKeyRef.current.amount !== topUpAmount) {
               autoTopUpKeyRef.current = { amount: topUpAmount, key: crypto.randomUUID() };
             }
-            handleAddChips(topUpAmount, autoTopUpKeyRef.current.key)
+            handleAddChips(topUpAmount, autoTopUpKeyRef.current.key, { source: 'auto' })
               .then((res) => {
                 if (res && typeof window !== 'undefined') {
                   // Spent: a later shortfall is a new purchase and needs a new
@@ -21607,7 +21663,13 @@ export default function TablePage({
       tableState.isHandInProgress &&
       tableState.heroSeat > 0 &&
       tableState.currentPlayerSeat > 0 &&
-      tableState.currentPlayerSeat !== tableState.heroSeat &&
+      (tableState.currentPlayerSeat !== tableState.heroSeat ||
+        /* The engine's pre-action beat: the seat is the hero's, nothing is
+           rendered, and the bar was 'waiting' a moment ago and will be again
+           the moment the fold lands. 'none' here collapsed the wrapper to
+           1px for the beat, so the bottom chrome blinked out and back on
+           every executed pre-action (2026-09-08 sweep). */
+        suppressPanelForPreAction) &&
       heroIsActionable
     ) {
       return 'waiting';

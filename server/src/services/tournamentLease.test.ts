@@ -460,3 +460,64 @@ describe('releaseTournaments', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 });
+
+describe('tournament heartbeat lock isolation', () => {
+  it('renews an available generation while a busy one receives no proof', async () => {
+    const lease = await load();
+    lease._setTournamentLeaseMonotonicNowForTests(() => 1000);
+    rpc.mockResolvedValue({
+      data: [
+        { tournament_id: T, state: 'busy', lease_generation: G },
+        { tournament_id: T2, state: 'kept', lease_generation: G2 },
+      ],
+      error: null,
+    });
+    const outcome = await lease.heartbeatTournaments([
+      { tournamentId: T, leaseGeneration: G },
+      { tournamentId: T2, leaseGeneration: G2 },
+    ]);
+    expect(outcome).toEqual({
+      status: 'answered',
+      proofs: [{ tournamentId: T2, leaseGeneration: G2, proofDeadlineMonotonicMs: 21000 }],
+      lostTournamentIds: [],
+    });
+    expect(rpc.mock.calls[0][0]).toBe('heartbeat_tournament_leases_v4');
+  });
+
+  it('never renews from repeated busy replies, including after the prior deadline', async () => {
+    const lease = await load();
+    let now = 0;
+    lease._setTournamentLeaseMonotonicNowForTests(() => now);
+    rpc.mockResolvedValue({
+      data: [{ tournament_id: T, state: 'busy', lease_generation: G }],
+      error: null,
+    });
+    for (now of [0, 10000, 20000, 30000, 60000]) {
+      await expect(
+        lease.heartbeatTournaments([{ tournamentId: T, leaseGeneration: G }])
+      ).resolves.toEqual({
+        status: 'answered',
+        proofs: [],
+        lostTournamentIds: [],
+      });
+    }
+  });
+
+  it.each([null, G2, 'invalid-generation'])(
+    'fails closed on a busy reply with invalid authority %s',
+    async (returned) => {
+      const lease = await load();
+      rpc.mockResolvedValue({
+        data: [{ tournament_id: T, state: 'busy', lease_generation: returned }],
+        error: null,
+      });
+      await expect(
+        lease.heartbeatTournaments([{ tournamentId: T, leaseGeneration: G }])
+      ).resolves.toEqual({
+        status: 'answered',
+        proofs: [],
+        lostTournamentIds: [T],
+      });
+    }
+  );
+});

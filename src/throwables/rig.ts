@@ -34,8 +34,8 @@
  * built from the `uid` the player passes (`useId()`), never written literally.
  * The knockout learned this; a test pins it here.
  *
- * ART. Hand-authored paths and gradients, like the knockout's star and stamp.
- * No raster, no `<image>`, no emoji glyphs, no text except a spec'd caption.
+ * ART. Approved premium stylized 3D atlases may be drawn through AtlasSprite.
+ * Local versioned assets only; no emoji glyphs, no text except a spec'd caption.
  * Everything animates `transform` and `opacity` (a `filter` only where a
  * bloom is the point, and never animated), and no `will-change` anywhere:
  * eight simultaneous throws is the budget and a promoted layer each is a GPU

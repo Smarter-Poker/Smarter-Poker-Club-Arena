@@ -1,3 +1,4 @@
+import { AtlasSprite } from '../AtlasSprite';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  WATER GUN - a pistol, a pull-back, a squirt that becomes a face (phase 1,
@@ -87,147 +88,9 @@ preloadThrowableCues(waterGunSpec.audio.map((c) => c.sample));
  * plastic: vertical gradients, a highlight along the barrel and the tank.
  * The barrel tip is at (31, -1.5); the stream starts there.
  */
-function Gun({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-water_gun-${n}-${uid}-${k}`;
+function Gun(_: { uid: string; k: string }) {
   return (
-    <g>
-      <defs>
-        <linearGradient id={g('body')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#7cc4ff" />
-          <stop offset="50%" stopColor="#3a8ae6" />
-          <stop offset="100%" stopColor="#1f5fb4" />
-        </linearGradient>
-        <linearGradient id={g('barrel')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#8fd0ff" />
-          <stop offset="55%" stopColor="#2f7fdc" />
-          <stop offset="100%" stopColor="#1a4f9c" />
-        </linearGradient>
-        <linearGradient id={g('grip')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#2f6fc4" />
-          <stop offset="100%" stopColor="#163f85" />
-        </linearGradient>
-        <linearGradient id={g('tank')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#ffc2e0" />
-          <stop offset="55%" stopColor="#ff6cb8" />
-          <stop offset="100%" stopColor="#d8418f" />
-        </linearGradient>
-        <linearGradient id={g('trig')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#ffe680" />
-          <stop offset="100%" stopColor="#f5b71c" />
-        </linearGradient>
-        <radialGradient id={g('water')} cx="0.35" cy="0.3" r="0.8">
-          <stop offset="0%" stopColor="#e4fffc" />
-          <stop offset="60%" stopColor="#8cf7ee" />
-          <stop offset="100%" stopColor="#4ad3c9" />
-        </radialGradient>
-      </defs>
-      {/* grip, behind the body, slanted back */}
-      <path
-        d="M -14 7 L 0 7 L -9 22 L -23 22 Z"
-        fill={`url(#${g('grip')})`}
-        stroke="#163d7c"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M -17 12 L -8 12 M -19 16 L -10 16"
-        stroke="#123f80"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        opacity="0.6"
-      />
-      {/* trigger guard and the yellow trigger inside it */}
-      <path
-        d="M 1 9 Q -1 19 9 19 Q 15 19 13 12"
-        fill="none"
-        stroke="#2a63b8"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-      />
-      <path d="M 3 9 L 9 9 Q 10.5 13 7 17 L 3 15 Z" fill={`url(#${g('trig')})`} />
-      {/* the tank on top, pink, with its rear cap and fill port */}
-      <rect x="-30" y="-22" width="37" height="14" rx="7" fill={`url(#${g('tank')})`} />
-      <circle cx="-29" cy="-15" r="5" fill="#c9377f" />
-      <circle cx="0" cy="-22" r="2.5" fill="#b52d70" />
-      <rect x="-25" y="-20" width="22" height="3.5" rx="1.75" fill="#ffffff" opacity="0.55" />
-      <path
-        d="M -26 -12 Q -13 -8 2 -12"
-        fill="none"
-        stroke="#8c205f"
-        strokeWidth="0.8"
-        opacity="0.65"
-      />
-      <path d="M -28 -18 L -30 -12 M -26 -18 L -28 -12" stroke="#f884c1" strokeWidth="0.7" />
-      {/* the receiver */}
-      <rect
-        x="-25"
-        y="-9"
-        width="43"
-        height="18"
-        rx="4.5"
-        fill={`url(#${g('body')})`}
-        stroke="#163d7c"
-        strokeWidth="1.2"
-      />
-      <rect x="-22" y="-8" width="36" height="2.2" rx="1.1" fill="#ffffff" opacity="0.35" />
-      <path
-        d="M -23 5 Q -22 8 -18 8 L 12 8 Q 16 8 16 4"
-        fill="none"
-        stroke="#12386e"
-        strokeWidth="0.9"
-      />
-      <path
-        d="M 0 -5 L 10 -5 L 12 -2 L 10 4 L 0 4 Z"
-        fill="#2168bf"
-        stroke="#a2d9ff"
-        strokeWidth="0.6"
-      />
-      <path
-        d="M 3 -2 h 5 M 2 0 h 5 M 1 2 h 5"
-        stroke="#123e7e"
-        strokeWidth="0.8"
-        strokeLinecap="round"
-      />
-      <circle cx="-22" cy="1" r="0.9" fill="#cbeeff" stroke="#133f7b" strokeWidth="0.4" />
-      <circle cx="14" cy="1" r="0.9" fill="#cbeeff" stroke="#133f7b" strokeWidth="0.4" />
-      {/* the reservoir window: cyan, a water line and one bubble */}
-      <rect x="-19" y="-6" width="15" height="11" rx="2.5" fill={`url(#${g('water')})`} />
-      <path
-        d="M -18 -1 Q -12 -3.5 -5 -1"
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth="1.2"
-        opacity="0.6"
-      />
-      <circle cx="-9" cy="2" r="1.3" fill="#ffffff" opacity="0.7" />
-      <rect
-        x="-19"
-        y="-6"
-        width="15"
-        height="11"
-        rx="2.5"
-        fill="none"
-        stroke="#163d7c"
-        strokeWidth="1.2"
-      />
-      {/* the barrel, its muzzle band and the highlight along it */}
-      <rect x="16" y="-6" width="15" height="9" rx="3" fill={`url(#${g('barrel')})`} />
-      <rect x="27" y="-7" width="4" height="11" rx="1.5" fill="#1a4f9c" />
-      <ellipse
-        cx="31"
-        cy="-1.5"
-        rx="1.7"
-        ry="4.5"
-        fill="#a3dcff"
-        stroke="#1d59a0"
-        strokeWidth="0.7"
-      />
-      <ellipse cx="31.3" cy="-1.5" rx="0.8" ry="2.4" fill="#092d60" />
-      <rect x="17" y="-5" width="11" height="1.8" rx="0.9" fill="#ffffff" opacity="0.6" />
-      {/* the yellow pump grip under the barrel */}
-      <rect x="17" y="4" width="9" height="5.5" rx="1.8" fill={`url(#${g('trig')})`} />
-      <path d="M 19 5 v 3 M 21 5 v 3 M 23 5 v 3" stroke="#b67b12" strokeWidth="0.6" />
-    </g>
+    <AtlasSprite src="water_gun" rect={[7, 150, 412, 438]} x={-42} y={-41} width={84} height={84} />
   );
 }
 
@@ -236,42 +99,18 @@ function Gun({ uid, k }: { uid: string; k: string }) {
  *  put well inside the blob from every gun position in the loop, so its far
  *  end is always hidden under the splat. A dashed lighter core line slides
  *  along it inside a clip for the flow. */
-const STREAM_D = 'M 31 -4.5 Q 100 -9 172 -8.5 L 172 6.5 Q 100 7 31 1.5 Z';
 
-function Stream({ uid }: { uid: string }) {
-  const id = (n: string) => `thr-water_gun-${n}-${uid}`;
+function Stream(_: { uid: string }) {
   return (
-    <g>
-      <defs>
-        <linearGradient id={id('stream')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#c6fff9" />
-          <stop offset="40%" stopColor="#78fff0" />
-          <stop offset="100%" stopColor="#5ef0e4" />
-        </linearGradient>
-        <clipPath id={id('clip')}>
-          <path d={STREAM_D} />
-        </clipPath>
-      </defs>
-      <path d={STREAM_D} fill={`url(#${id('stream')})`} opacity="0.95" />
-      <g clipPath={`url(#${id('clip')})`}>
-        <line
-          className="thr-water_gun__flow"
-          x1="10"
-          y1="-1.2"
-          x2="200"
-          y2="-1"
-          stroke="#e9fffc"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeDasharray="9 9"
-          opacity="0.8"
-        />
-      </g>
-      {/* spray beads along the edges, static; they recoil with the gun */}
-      <circle cx="58" cy="-9.5" r="1.5" fill="#e9fffc" opacity="0.75" />
-      <circle cx="84" cy="9.5" r="1.2" fill="#e9fffc" opacity="0.7" />
-      <circle cx="116" cy="-12" r="1.6" fill="#e9fffc" opacity="0.75" />
-      <circle cx="140" cy="11" r="1.3" fill="#e9fffc" opacity="0.7" />
+    <g className="thr-water_gun__flow">
+      <AtlasSprite
+        src="water_gun"
+        rect={[889, 347, 355, 160]}
+        x={38}
+        y={-16}
+        width={140}
+        height={30}
+      />
     </g>
   );
 }
@@ -283,103 +122,16 @@ function Stream({ uid }: { uid: string }) {
  * continuous across them, seven spikes at the rim, a highlight, and two
  * white eyes with black pupils that make it a face.
  */
-function Blob({ uid }: { uid: string }) {
-  const id = (n: string) => `thr-water_gun-${n}-${uid}`;
+function Blob(_: { uid: string }) {
   return (
-    <g transform="translate(0 -17)">
-      <defs>
-        <radialGradient id={id('blob')} gradientUnits="userSpaceOnUse" cx="-25" cy="-45" r="120">
-          <stop offset="0%" stopColor="#d6fffb" />
-          <stop offset="45%" stopColor="#8dfff3" />
-          <stop offset="85%" stopColor="#62ebe0" />
-          <stop offset="100%" stopColor="#24b7b4" />
-        </radialGradient>
-      </defs>
-      <g fill={`url(#${id('blob')})`}>
-        <ellipse cx="0" cy="0" rx="78" ry="84" />
-        <circle cx="-52" cy="-48" r="30" />
-        <circle cx="48" cy="-52" r="28" />
-        <circle cx="66" cy="18" r="26" />
-        <circle cx="-68" cy="22" r="25" />
-        <circle cx="0" cy="68" r="28" />
-        <circle cx="-38" cy="62" r="24" />
-        <circle cx="42" cy="58" r="22" />
-        <circle cx="0" cy="-76" r="22" />
-        {/* spikes at the rim */}
-        <path d="M -60 -72 L -72 -92 L -48 -78 Z" />
-        <path d="M 40 -76 L 56 -94 L 60 -68 Z" />
-        <path d="M 84 -20 L 94 -32 L 90 -6 Z" />
-        <path d="M -86 30 L -94 44 L -80 46 Z" />
-        <path d="M 60 62 L 74 78 L 50 76 Z" />
-        <path d="M -56 70 L -64 88 L -44 80 Z" />
-        <path d="M -8 -94 L 2 -102 L 8 -92 Z" />
-      </g>
-      {/* a soft top-left highlight on the wet surface */}
-      <path
-        d="M -66 -62 C -77 -54 -80 -39 -72 -30 M -83 10 Q -91 27 -76 38 M -13 -90 Q -2 -100 9 -90"
-        fill="none"
-        stroke="#d8fff5"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        opacity="0.8"
-      />
-      <path
-        d="M 68 37 Q 79 49 65 62 M 31 77 Q 14 91 -4 87 M 71 -54 Q 79 -41 75 -29"
-        fill="none"
-        stroke="#139d9f"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        opacity="0.55"
-      />
-      <path
-        d="M -45 11 C -63 25 -57 43 -40 47 M 25 14 C 42 8 57 20 50 33"
-        fill="none"
-        stroke="#d5fff8"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        opacity="0.45"
-      />
-      <ellipse
-        cx="-57"
-        cy="-5"
-        rx="5.5"
-        ry="7"
-        fill="#bafff3"
-        fillOpacity="0.2"
-        stroke="#eafffa"
-        strokeWidth="0.9"
-        opacity="0.7"
-      />
-      <ellipse
-        cx="53"
-        cy="-3"
-        rx="3.5"
-        ry="4.5"
-        fill="#bafff3"
-        fillOpacity="0.2"
-        stroke="#eafffa"
-        strokeWidth="0.8"
-        opacity="0.65"
-      />
-      <ellipse
-        cx="-30"
-        cy="-50"
-        rx="26"
-        ry="14"
-        fill="#ffffff"
-        opacity="0.32"
-        transform="rotate(-25 -30 -50)"
-      />
-      {/* the eyes: white discs, black pupils looking down-left at the gun */}
-      <g>
-        <circle cx="-24" cy="-30" r="8" fill="#ffffff" stroke="#3fc9c0" strokeWidth="1" />
-        <circle cx="24" cy="-30" r="8" fill="#ffffff" stroke="#3fc9c0" strokeWidth="1" />
-        <circle cx="-25.5" cy="-28.5" r="3.5" fill="#101820" />
-        <circle cx="22.5" cy="-28.5" r="3.5" fill="#101820" />
-        <circle cx="-27" cy="-30" r="1.2" fill="#ffffff" />
-        <circle cx="21" cy="-30" r="1.2" fill="#ffffff" />
-      </g>
-    </g>
+    <AtlasSprite
+      src="water_gun"
+      rect={[502, 702, 425, 412]}
+      x={-94}
+      y={-117}
+      width={188}
+      height={200}
+    />
   );
 }
 
@@ -432,13 +184,9 @@ function Payload({ uid }: RigProps) {
       {/* THE DROPLETS, under the splat so they surface at its rim. */}
       <g className="thr-water_gun__live">
         {DROPLETS.map(([dx, dy, r, step], i) => (
-          <circle
+          <g
             key={i}
             className="thr-water_gun__drop"
-            cx="0"
-            cy="-17"
-            r={r}
-            fill="#a9fff6"
             style={
               {
                 '--dx': `${dx}px`,
@@ -446,7 +194,16 @@ function Payload({ uid }: RigProps) {
                 animationDelay: `calc((0.6s + ${(step * 0.03).toFixed(2)}s) * var(--animation-speed, 1))`,
               } as React.CSSProperties
             }
-          />
+          >
+            <AtlasSprite
+              src="water_gun"
+              rect={[1000, 775, 220, 300]}
+              x={-r}
+              y={-17 - r}
+              width={r * 2}
+              height={r * 2.7}
+            />
+          </g>
         ))}
       </g>
       {/* THE SPLAT: on in one frame at 933 with a 1.1x pop, pulsing 1.0 ->

@@ -351,6 +351,12 @@
    ANIMATED BANNER BORDERS (Initiative 9)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+.promotions-daily-bonus {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 1rem 0.25rem;
+}
+
 .referral-banner {
   margin: 0 1rem 1rem;
   padding: 1rem 1.25rem;

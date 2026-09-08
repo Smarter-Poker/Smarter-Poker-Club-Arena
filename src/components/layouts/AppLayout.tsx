@@ -22,6 +22,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProfileModal';
 import { ClubWorkspaceProvider } from '../../contexts/ClubWorkspaceContext';
 import NavigationTelemetry from '../navigation/NavigationTelemetry';
+import DailyBonusEntry from '../daily-bonus/DailyBonusEntry';
 
 /*
  * THE ROUTE ART IS GONE (2026-08-30).
@@ -98,6 +99,11 @@ function AppLayoutContent() {
       {profileReady && (
         <CompleteProfileModal isOpen={showProfileModal} onComplete={finishProfile} />
       )}
+
+      {/* The Daily Club Arena Bonus sheet, once per day on entry. It waits
+          behind the welcome and the profile gate so a first-run player meets
+          them in order, and never opens on a table. */}
+      {isReady && profileReady && <DailyBonusEntry suspended={showWelcome || showProfileModal} />}
 
       {/* Global Header — Always visible except on active table pages.
           It carries Back and Hub on every page now, so there is no longer a

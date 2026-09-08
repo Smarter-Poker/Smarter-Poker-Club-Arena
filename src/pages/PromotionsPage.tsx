@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import LeaderboardCard from '../components/leaderboard/LeaderboardCard';
+import { ArenaActionButton } from '../components/club-buttons/ClubButtons';
 import ReferralModal from '../components/social/ReferralModal';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
@@ -41,6 +42,7 @@ export default function PromotionsPage() {
   useVisibilityRefresh(() => loadPromotions());
   const { clubId } = useParams();
   const { user } = useAuthUser();
+  const navigate = useNavigate();
   const toast = useToast();
 
   const [promotions, setPromotions] = useState<Promotion[]>([]);
@@ -337,6 +339,17 @@ export default function PromotionsPage() {
           { label: 'View', value: filter.toUpperCase() },
         ]}
       />
+      {/* Daily Club Arena Bonus: the painted action shell, not a flat banner. */}
+      <div className="promotions-daily-bonus">
+        <ArenaActionButton
+          icon="diamond"
+          label="Daily Club Arena Bonus"
+          sublabel="Claim Today’s Tiles"
+          size="large"
+          onClick={() => navigate('/bonuses')}
+        />
+      </div>
+
       {/* Referral Banner */}
       <div className="referral-banner" onClick={() => setShowReferral(true)}>
         <span className="bonus-icon">◈</span>

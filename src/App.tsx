@@ -115,6 +115,7 @@ const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
 const PlayerStatsPage = lazyWithRetry(() => import('./pages/PlayerStatsPage'));
 const PromotionsPage = lazyWithRetry(() => import('./pages/PromotionsPage'));
+const DailyBonusPage = lazyWithRetry(() => import('./pages/DailyBonusPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
@@ -1743,12 +1744,18 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
-                {/* /bonuses: the chip daily-bonus ladder was retired on
-                    2026-09-07 (nothing ever earns chips, only diamonds). The
-                    Daily Club Arena Bonus sheet takes this path back in the
-                    next phase; until then the nav links, wallet door and old
-                    bookmarks land on Promotions instead of a dead page. */}
-                <Route path="bonuses" element={<Navigate to="/promotions" replace />} />
+                {/* /bonuses: the Daily Club Arena Bonus sheet as a page. The
+                    chip ladder that lived here was retired on 2026-09-07. */}
+                <Route
+                  path="bonuses"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Daily Bonus">
+                        <DailyBonusPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
                 <Route
                   path="waitlist"
                   /* THE WAITLIST LIVES WHERE THE TABLES ARE (Phase 7).

@@ -34,6 +34,7 @@ import { ClubEntryTrustService, type ClubEntryFlags } from '../services/ClubEntr
 import { backfillClubCards } from '../services/ClubCardBackfill';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
+import DailyBonusEntry from '../components/daily-bonus/DailyBonusEntry';
 import FloatingOrbs from '../components/home/FloatingOrbs';
 import haptic from '../services/HapticService';
 
@@ -1450,6 +1451,10 @@ function HomePageInner() {
           }}
         />
       </Suspense>
+
+      {/* DAILY CLUB ARENA BONUS - once per day on entry (HomePage mounts
+          outside AppLayout, so it hosts its own copy). */}
+      <DailyBonusEntry />
 
       {/* FIND A PLAYER MODAL */}
       <Suspense fallback={null}>

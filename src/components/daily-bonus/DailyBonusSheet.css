@@ -1,0 +1,748 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DAILY CLUB ARENA BONUS - the sheet
+
+   Machined metal, not glass. The chassis is the chamfered chrome of the
+   popup kit; every tile sits in the painted club-utility shell (brushed
+   steel, black bay, crystal side lights); the day strip is a row of chips
+   turned from the same stock. Depth comes from stacked edges, inset
+   highlights and cast shadows. Blue, white, black. Diamonds read cyan.
+   Brass appears once, on the VIP tile. No yellow anywhere (Dan 2026-09-05).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dbs,
+.dbs-overlay {
+  --dbs-obsidian: #04070b;
+  --dbs-carbon: #0b1118;
+  --dbs-plate: #121a24;
+  --dbs-plate-lit: #1c2733;
+  --dbs-steel: #5d6a78;
+  --dbs-chrome: #c9d3dc;
+  --dbs-chrome-hot: #f1f5f9;
+  --dbs-muted: #8593a2;
+  --dbs-blue: #168fff;
+  --dbs-blue-deep: #0b56b8;
+  --dbs-cyan: #36d3ff;
+  --dbs-brass: #d6ad52;
+  --dbs-green: #3fb950;
+  --dbs-font-display: 'Rajdhani', 'Roboto Condensed', Inter, system-ui, sans-serif;
+  --dbs-font-label: 'Roboto Condensed', 'Rajdhani', Inter, system-ui, sans-serif;
+  --dbs-font-mono: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  --dbs-shell: url('/hub/club-arena/assets/club-buttons/club-utility-shell.webp');
+  color: var(--dbs-chrome-hot);
+  font-family: var(--dbs-font-label);
+  color-scheme: dark;
+}
+
+/* ── Backdrop ─────────────────────────────────────────────────────────── */
+
+.dbs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(60% 45% at 50% 0%, rgba(22, 143, 255, 0.18), transparent 70%),
+    rgba(2, 4, 7, 0.86);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.dbs-overlay__center {
+  width: min(100%, 560px);
+  max-height: 100%;
+  display: flex;
+}
+
+@media (min-width: 720px) {
+  .dbs-overlay {
+    align-items: center;
+  }
+}
+
+/* ── Chassis ──────────────────────────────────────────────────────────── */
+
+.dbs {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 100%;
+  border: 1px solid #7a838d;
+  clip-path: polygon(
+    16px 0,
+    calc(100% - 16px) 0,
+    100% 16px,
+    100% calc(100% - 16px),
+    calc(100% - 16px) 100%,
+    16px 100%,
+    0 calc(100% - 16px),
+    0 16px
+  );
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 18%),
+    linear-gradient(180deg, #171c22, #060809 24%, var(--dbs-carbon));
+  box-shadow:
+    inset 0 0 0 4px #0b0d10,
+    inset 0 0 0 5px #3a424b,
+    inset 0 0 0 6px #0b0d10,
+    0 24px 40px rgba(0, 0, 0, 0.7);
+}
+
+.dbs[data-mode='inline'] {
+  max-height: none;
+  margin: 0 auto 1.5rem;
+  max-width: 640px;
+}
+
+/* A blue hairline burns along the top edge, the way the lobby frames do. */
+.dbs::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 18%;
+  right: 18%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--dbs-cyan), transparent);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* ── Plaque ───────────────────────────────────────────────────────────── */
+
+.dbs__plaque {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 8px 0;
+  padding: 16px 18px 14px;
+  border: 1px solid #333c46;
+  border-bottom-color: #05080c;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 40%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0 2px, transparent 2px 5px),
+    linear-gradient(180deg, var(--dbs-plate-lit), var(--dbs-plate));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.7),
+    0 6px 14px rgba(0, 0, 0, 0.55);
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%, 0 10px);
+}
+
+.dbs__eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #79a9e0;
+  font: 700 0.62rem/1.2 var(--dbs-font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.dbs__title {
+  margin: 0;
+  color: var(--dbs-chrome-hot);
+  font-family: var(--dbs-font-display);
+  font-size: clamp(1.15rem, 4.7vw, 1.7rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  text-shadow:
+    0 1px 0 #fff3,
+    0 -1px 0 #0009,
+    0 0 18px rgba(22, 143, 255, 0.25);
+}
+
+.dbs__close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #3a434d;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #2a343f, #0d1218 70%);
+  color: var(--dbs-chrome);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 3px 8px rgba(0, 0, 0, 0.6);
+}
+
+.dbs__close:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
+
+.dbs__close:focus-visible,
+.dbs-tile__claim:focus-visible {
+  outline: 2px solid var(--dbs-cyan);
+  outline-offset: 2px;
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────── */
+
+.dbs__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 12px 16px;
+}
+
+.dbs__state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 36px 16px;
+  color: var(--dbs-muted);
+  text-align: center;
+}
+
+.dbs__state p {
+  margin: 0;
+  font-family: var(--dbs-font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dbs__spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid #26303a;
+  border-top-color: var(--dbs-cyan);
+  border-radius: 50%;
+  animation: dbs-spin 0.9s linear infinite;
+}
+
+/* ── Deck: streak chip + readouts ─────────────────────────────────────── */
+
+.dbs__deck {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.dbs__coin {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #2b3642, #0a0f15 68%);
+  box-shadow:
+    inset 0 0 0 3px #060a0e,
+    inset 0 0 0 5px #4b5661,
+    inset 0 0 0 7px #0d1218,
+    inset 0 2px 4px rgba(255, 255, 255, 0.12),
+    0 10px 18px rgba(0, 0, 0, 0.65);
+}
+
+.dbs__coin-ring {
+  position: absolute;
+  inset: 9px;
+  border-radius: 50%;
+  border: 1px dashed rgba(201, 211, 220, 0.28);
+}
+
+.dbs__coin[data-lit] {
+  box-shadow:
+    inset 0 0 0 3px #060a0e,
+    inset 0 0 0 5px var(--dbs-blue),
+    inset 0 0 0 7px #0d1218,
+    inset 0 2px 4px rgba(255, 255, 255, 0.12),
+    0 0 22px rgba(22, 143, 255, 0.45),
+    0 10px 18px rgba(0, 0, 0, 0.65);
+}
+
+.dbs__coin-num {
+  margin-top: 2px;
+  color: var(--dbs-chrome-hot);
+  font-family: var(--dbs-font-display);
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 1px 0 #fff3,
+    0 -1px 0 #000c;
+}
+
+.dbs__coin-cap {
+  margin-bottom: 8px;
+  color: var(--dbs-muted);
+  font: 700 0.5rem/1 var(--dbs-font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.dbs__meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+
+.dbs__meta div {
+  min-width: 0;
+  padding: 7px 6px 6px;
+  border: 1px solid #1e2830;
+  border-top-color: #2e3a45;
+  background: linear-gradient(180deg, #0b1117, #05090d);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -8px 12px rgba(0, 0, 0, 0.45);
+}
+
+.dbs__meta dt {
+  color: var(--dbs-muted);
+  font: 700 0.55rem/1 var(--dbs-font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dbs__meta dd {
+  margin: 5px 0 0;
+  color: var(--dbs-chrome-hot);
+  font-family: var(--dbs-font-display);
+  font-size: clamp(0.8rem, 3.3vw, 1.05rem);
+  font-weight: 700;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.dbs__clock {
+  color: var(--dbs-cyan);
+  text-shadow: 0 0 10px rgba(54, 211, 255, 0.35);
+}
+
+/* ── The week: seven chips ────────────────────────────────────────────── */
+
+.dbs__week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 10px 8px;
+  list-style: none;
+  border: 1px solid #1a222b;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.012) 0 2px, transparent 2px 6px),
+    linear-gradient(180deg, #080d12, #04070a);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.75);
+}
+
+.dbs__day {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 32%, #222c37, #0a0f15 70%);
+  box-shadow:
+    inset 0 0 0 2px #05080b,
+    inset 0 0 0 3px #3a444e,
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    0 4px 8px rgba(0, 0, 0, 0.6);
+  color: var(--dbs-muted);
+}
+
+.dbs__day-num {
+  font-family: var(--dbs-font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.dbs__day-val {
+  font: 700 0.5rem/1 var(--dbs-font-mono);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dbs__day[data-state='done'] {
+  color: var(--dbs-chrome-hot);
+  box-shadow:
+    inset 0 0 0 2px #05080b,
+    inset 0 0 0 3px var(--dbs-blue-deep),
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    0 4px 8px rgba(0, 0, 0, 0.6);
+}
+
+.dbs__day[data-state='done'] .dbs__day-val {
+  color: #79a9e0;
+}
+
+.dbs__day[data-state='today'] {
+  color: var(--dbs-chrome-hot);
+  box-shadow:
+    inset 0 0 0 2px #05080b,
+    inset 0 0 0 3px var(--dbs-cyan),
+    inset 0 1px 2px rgba(255, 255, 255, 0.14),
+    0 0 14px rgba(54, 211, 255, 0.45),
+    0 4px 8px rgba(0, 0, 0, 0.6);
+  animation: dbs-today 2.4s ease-in-out infinite;
+}
+
+.dbs__day[data-state='today'] .dbs__day-val {
+  color: var(--dbs-cyan);
+}
+
+/* ── Tiles ────────────────────────────────────────────────────────────── */
+
+.dbs__tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (min-width: 480px) {
+  .dbs__tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.dbs-tile {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  transition:
+    transform 180ms ease,
+    filter 240ms ease;
+}
+
+/* The painted shell: brushed steel plate, black bay, crystal side lights. */
+.dbs-tile__bay {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  justify-items: center;
+  aspect-ratio: 1105 / 1133;
+  padding: 22% 19% 20%;
+  background: var(--dbs-shell) center / 100% 100% no-repeat;
+  filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.62));
+  text-align: center;
+}
+
+.dbs-tile__label {
+  align-self: start;
+  color: #9fb1bd;
+  font: 700 0.56rem/1.1 var(--dbs-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.dbs-tile__icon {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  width: 30%;
+  color: var(--dbs-cyan);
+  filter: drop-shadow(0 0 8px rgba(54, 211, 255, 0.45));
+}
+
+.dbs-tile__icon svg {
+  width: 100%;
+  height: auto;
+}
+
+.dbs-tile[data-kind='throwables'] .dbs-tile__icon,
+.dbs-tile[data-kind='rabbit_hunts'] .dbs-tile__icon,
+.dbs-tile[data-kind='time_bank'] .dbs-tile__icon {
+  color: var(--dbs-chrome);
+  filter: drop-shadow(0 0 6px rgba(201, 211, 220, 0.25));
+}
+
+.dbs-tile[data-vip] .dbs-tile__icon {
+  color: var(--dbs-brass);
+  filter: drop-shadow(0 0 8px rgba(214, 173, 82, 0.4));
+}
+
+.dbs-tile[data-vip] .dbs-tile__label {
+  color: var(--dbs-brass);
+}
+
+.dbs-tile__value {
+  color: var(--dbs-chrome-hot);
+  font-family: var(--dbs-font-display);
+  font-size: clamp(1.25rem, 5.4vw, 1.7rem);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 1px 0 #fff3,
+    0 -1px 0 #000d,
+    0 0 14px rgba(22, 143, 255, 0.3);
+}
+
+.dbs-tile[data-kind='diamonds'] .dbs-tile__value {
+  color: var(--dbs-cyan);
+}
+
+.dbs-tile__sub {
+  margin-top: 3px;
+  color: var(--dbs-muted);
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Mystery: the bay holds a question mark that shimmers until it is tapped. */
+.dbs-tile[data-kind='mystery'] .dbs-tile__value {
+  color: var(--dbs-chrome-hot);
+  font-size: clamp(1.9rem, 8vw, 2.4rem);
+  animation: dbs-shimmer 2.2s ease-in-out infinite;
+}
+
+.dbs-tile[data-kind='mystery'][data-revealed] .dbs-tile__bay {
+  animation: dbs-reveal 640ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The claim control: a chamfered blue-core bar with a chrome lip. */
+.dbs-tile__claim {
+  position: relative;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #0a3f86;
+  border-top-color: #6fb6ff;
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%, 0 8px);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 45%),
+    linear-gradient(180deg, #2a9bff, var(--dbs-blue-deep) 60%, #073f8c);
+  color: #fff;
+  font-family: var(--dbs-font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.45),
+    0 0 16px rgba(22, 143, 255, 0.35),
+    0 6px 12px rgba(0, 0, 0, 0.6);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    filter 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dbs-tile__claim:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.6),
+    0 0 10px rgba(22, 143, 255, 0.25);
+}
+
+.dbs-tile__claim:disabled {
+  cursor: default;
+  filter: saturate(0.4) brightness(0.75);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+.dbs-tile[data-state='busy'] .dbs-tile__claim {
+  animation: dbs-busy 1s ease-in-out infinite;
+}
+
+/* Claimed: the plate goes quiet, the bar becomes a chrome plaque. */
+.dbs-tile[data-state='claimed'] .dbs-tile__bay {
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5)) saturate(0.6) brightness(0.82);
+}
+
+.dbs-tile__done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #2b343d;
+  border-top-color: #55606b;
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%, 0 8px);
+  background: linear-gradient(180deg, #1a222b, #0a0f14);
+  color: var(--dbs-green);
+  font-family: var(--dbs-font-display);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -6px 10px rgba(0, 0, 0, 0.4);
+}
+
+.dbs-tile__done .cb-icon {
+  width: 0.9em;
+  height: 0.9em;
+}
+
+.dbs-tile__done--locked {
+  color: var(--dbs-brass);
+  font-size: 0.68rem;
+}
+
+.dbs-tile[data-state='locked'] .dbs-tile__bay {
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.5)) brightness(0.7);
+}
+
+.dbs-tile__note {
+  color: #f0b08f;
+  font: 700 0.52rem/1.2 var(--dbs-font-mono);
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* Sparks on a successful claim: eight cyan motes leave the bay. */
+.dbs-tile__sparks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.dbs-tile__sparks i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px;
+  border-radius: 50%;
+  background: var(--dbs-cyan);
+  box-shadow: 0 0 8px var(--dbs-cyan);
+  transform: rotate(calc(var(--i) * 45deg)) translateY(0);
+  animation: dbs-spark 900ms ease-out forwards;
+}
+
+.dbs-tile[data-burst] .dbs-tile__bay {
+  animation: dbs-pop 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+
+.dbs__foot {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #1a222b;
+  color: var(--dbs-muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.dbs__foot p {
+  margin: 0 0 4px;
+}
+
+.dbs__tomorrow span {
+  margin-right: 6px;
+  color: #79a9e0;
+  font: 700 0.58rem/1 var(--dbs-font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* ── Motion ───────────────────────────────────────────────────────────── */
+
+@keyframes dbs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dbs-today {
+  50% {
+    box-shadow:
+      inset 0 0 0 2px #05080b,
+      inset 0 0 0 3px var(--dbs-cyan),
+      inset 0 1px 2px rgba(255, 255, 255, 0.14),
+      0 0 22px rgba(54, 211, 255, 0.7),
+      0 4px 8px rgba(0, 0, 0, 0.6);
+  }
+}
+
+@keyframes dbs-shimmer {
+  50% {
+    text-shadow:
+      0 0 22px rgba(54, 211, 255, 0.85),
+      0 1px 0 #fff3;
+    color: var(--dbs-cyan);
+  }
+}
+
+@keyframes dbs-reveal {
+  0% {
+    transform: perspective(600px) rotateY(90deg);
+    filter: brightness(1.6);
+  }
+  100% {
+    transform: perspective(600px) rotateY(0);
+  }
+}
+
+@keyframes dbs-pop {
+  40% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes dbs-spark {
+  to {
+    transform: rotate(calc(var(--i) * 45deg)) translateY(-70px);
+    opacity: 0;
+  }
+}
+
+@keyframes dbs-busy {
+  50% {
+    filter: brightness(1.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dbs__day[data-state='today'],
+  .dbs-tile[data-kind='mystery'] .dbs-tile__value,
+  .dbs-tile[data-kind='mystery'][data-revealed] .dbs-tile__bay,
+  .dbs-tile[data-state='busy'] .dbs-tile__claim,
+  .dbs-tile[data-burst] .dbs-tile__bay,
+  .dbs-tile__sparks i {
+    animation: none;
+  }
+
+  .dbs-tile__sparks {
+    display: none;
+  }
+
+  .dbs,
+  .dbs-tile,
+  .dbs-tile__claim,
+  .dbs__close {
+    transition: none;
+  }
+}

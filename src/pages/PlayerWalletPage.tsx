@@ -1417,7 +1417,7 @@ export default function PlayerWalletPage() {
                 <button type="button" className="earn-door" onClick={() => navigate('/bonuses')}>
                   <span className="earn-door__title">Bonuses</span>
                   <span className="earn-door__sub">
-                    Spin The Daily Wheel And Unlock Deposit Bonuses.
+                    Your Daily Club Arena Bonus And Club Promotions.
                   </span>
                 </button>
                 <button type="button" className="earn-door" onClick={() => navigate('/promotions')}>

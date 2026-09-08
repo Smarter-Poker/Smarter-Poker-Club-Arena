@@ -115,6 +115,7 @@ const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
 const PlayerStatsPage = lazyWithRetry(() => import('./pages/PlayerStatsPage'));
 const PromotionsPage = lazyWithRetry(() => import('./pages/PromotionsPage'));
+const DailyBonusPage = lazyWithRetry(() => import('./pages/DailyBonusPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
@@ -129,7 +130,6 @@ const TableBombSettingsPage = lazyWithRetry(() => import('./pages/club/TableBomb
 const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
-const BonusPage = lazyWithRetry(() => import('./pages/BonusPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
@@ -1754,12 +1754,14 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* /bonuses: the Daily Club Arena Bonus sheet as a page. The
+                    chip ladder that lived here was retired on 2026-09-07. */}
                 <Route
                   path="bonuses"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Bonuses">
-                        <BonusPage />
+                      <PageErrorBoundary pageName="Daily Bonus">
+                        <DailyBonusPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

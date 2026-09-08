@@ -217,14 +217,15 @@ const BROWSER_ROLES = ['public', 'anon', 'authenticated'];
 /**
  * Can a browser role execute this function after everything the migration says?
  *
- * Starts from the Postgres default, which is EXECUTE granted to PUBLIC, and
- * applies each GRANT and REVOKE in file order to the roles it actually names.
+ * Starts from the live Supabase public-schema defaults: EXECUTE is granted to
+ * PUBLIC, anon and authenticated as separate ACL entries.  It then applies
+ * each GRANT and REVOKE in file order to the roles it actually names.
  * Effective browser access is public OR anon OR authenticated, which is why a
  * lone `REVOKE ... FROM PUBLIC` does not close a function that was also granted
  * to `authenticated` explicitly.
  */
 function effectiveGrants(sql, name) {
-  const held = { public: true, anon: false, authenticated: false };
+  const held = { public: true, anon: true, authenticated: true };
   /* THE GAP CANNOT CROSS A STATEMENT BOUNDARY (2026-09-01). This used to be
      `[\s\S]*?`, which let the word "grant" ANYWHERE - inside a RAISE EXCEPTION
      string, a column name, a comment that survived stripping - reach forward to

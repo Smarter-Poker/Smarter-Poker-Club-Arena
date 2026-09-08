@@ -28,14 +28,37 @@ const GAME_SERVER_URL =
   import.meta.env.VITE_GAME_SERVER_URL ||
   (import.meta.env.PROD ? 'https://engine.smarter.poker' : 'http://localhost:8080');
 
+/** An outage must not leave an HTTP action waiting forever before fetch starts. */
+const ENGINE_AUTH_WAIT_MS = 15_000;
+async function waitForEngineAuth<T>(work: (stillWaiting: () => boolean) => Promise<T>): Promise<T> {
+  let waiting = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work(() => waiting),
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          waiting = false;
+          reject(new Error('Engine authentication wait timed out'));
+        }, ENGINE_AUTH_WAIT_MS);
+      }),
+    ]);
+  } finally {
+    waiting = false;
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /**
  * Get JWT auth headers for server requests.
  * Bible V8 §1.3: All game server endpoints require Supabase JWT auth.
  * The server extracts userId from the token — prevents spoofing.
  */
 async function getAuthHeaders(): Promise<Record<string, string>> {
-  try {
-    /* 2026-09-04: THE TOKEN CACHE FIRST. This used to call
+  return waitForEngineAuth<Record<string, string>>(
+    async (stillWaiting): Promise<Record<string, string>> => {
+      try {
+        /* 2026-09-04: THE TOKEN CACHE FIRST. This used to call
        supabase.auth.getSession() and fall straight through to a request with
        NO Authorization header when that came back empty - which it does for
        the whole of a token refresh, and for the first moments after a page
@@ -52,23 +75,27 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
        gate (scripts/ci/entry-chunk-delta.mjs) refused it. The call is on an
        async path, so the import costs nothing the request was not already
        waiting on, and the module is cached after the first. */
-    const { getFreshAccessToken } = await import('../lib/authToken');
-    let token = await getFreshAccessToken();
-    if (!token) {
-      const refreshed = await supabase.auth.refreshSession();
-      token = refreshed.data.session?.access_token ?? null;
+        const { getFreshAccessToken } = await import('../lib/authToken');
+        if (!stillWaiting()) return { 'Content-Type': 'application/json' };
+        let token = await getFreshAccessToken();
+        if (!stillWaiting()) return { 'Content-Type': 'application/json' };
+        if (!token) {
+          const refreshed = await supabase.auth.refreshSession();
+          token = refreshed.data.session?.access_token ?? null;
+        }
+        if (token) {
+          return {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          };
+        }
+      } catch (e) {
+        reportError(e, 'GameServerAPI.getAuthHeaders');
+        // Silent — fall through to no-auth headers
+      }
+      return { 'Content-Type': 'application/json' };
     }
-    if (token) {
-      return {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      };
-    }
-  } catch (e) {
-    reportError(e, 'GameServerAPI.getAuthHeaders');
-    // Silent — fall through to no-auth headers
-  }
-  return { 'Content-Type': 'application/json' };
+  );
 }
 
 /**
@@ -104,7 +131,7 @@ async function engineFetch(url: string, init: RequestInit = {}): Promise<Respons
   const stillOwnsRequest = () => ownsRequest(readLocalSession()?.accessToken);
   if (!stillOwnsRequest()) return resp;
   try {
-    const refreshed = await supabase.auth.refreshSession();
+    const refreshed = await waitForEngineAuth(() => supabase.auth.refreshSession());
     const token = refreshed.data.session?.access_token ?? null;
     if (!stillOwnsRequest()) return resp;
     if (!token) {

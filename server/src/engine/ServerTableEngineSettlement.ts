@@ -1418,6 +1418,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       miniBbjHit: this.currentHandMiniBBJHit,
       miniBbjTierId: this.currentHandMiniBBJTierId,
       dealtStacks: new Map(this.currentHandDealtStacks),
+      // Capture bank values before settlement yields, just like the hand's
+      // money and cards. A late continuation must not read the next hand's bank.
+      timeBanks: new Map(
+        players.map((p) => [
+          p.user_id,
+          {
+            time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
+            time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
+            persisted_time_bank: p.persisted_time_bank ? { ...p.persisted_time_bank } : undefined,
+          },
+        ])
+      ),
     };
     // ═══════════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE (continued) — Steps 8-15
@@ -1624,8 +1636,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // at its insert default (4) on every one of 22,805 seat rows -
           // the persist had NEVER once written. Ask the engine, the actual
           // source of truth.
-          time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
-          time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
+          ...snap.timeBanks.get(p.user_id),
         })),
         // ZERO-DRIFT phase 5: identify the hand so the write is atomic and
         // idempotent (fn_ca_settle_hand_stacks_absolute). The BBJ re-sync

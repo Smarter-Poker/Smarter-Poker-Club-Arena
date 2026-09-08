@@ -105,9 +105,9 @@ describe('throwable catalog integrity', () => {
     ).toEqual([]);
   });
 
-  it('the catalog holds 50 items and no duplicate ids', () => {
-    expect(catalog).toHaveLength(50);
-    expect(new Set(catalog.map((t) => t.id)).size).toBe(50);
+  it('the catalog holds 51 items and no duplicate ids', () => {
+    expect(catalog).toHaveLength(51);
+    expect(new Set(catalog.map((t) => t.id)).size).toBe(51);
   });
 
   it('ids are storage-safe stems, because the id IS the filename', () => {

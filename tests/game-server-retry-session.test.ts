@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ refresh: vi.fn(), token: vi.fn(), probe: vi.fn() }));
 vi.mock('../src/lib/supabase', () => ({ supabase: { auth: { refreshSession: mocks.refresh } } }));
@@ -103,5 +103,66 @@ describe('engine HTTP retry belongs to the original login', () => {
     expect((await act()).success).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(mocks.refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('engine HTTP authentication has a deadline', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it.each([null, jwt()])(
+    'does not send a late action when a timed-out token read returns %s',
+    async (lateToken) => {
+      const pending = deferred<string | null>();
+      mocks.token.mockReturnValueOnce(pending.promise);
+      let finished = false;
+      const result = act().then((value) => {
+        finished = true;
+        return value;
+      });
+      await vi.waitFor(() => expect(mocks.token).toHaveBeenCalledTimes(1));
+      expect(finished).toBe(false);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect((await result).success).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+      pending.resolve(lateToken);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mocks.refresh).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  );
+
+  it('bounds the fallback refresh before sending a request', async () => {
+    mocks.token.mockResolvedValueOnce(null);
+    mocks.refresh.mockReturnValueOnce(new Promise(() => {}));
+    const result = act();
+    await vi.waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect((await result).success).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('returns the original 401 when refresh hangs and never retries after its late success', async () => {
+    const pending = deferred<ReturnType<typeof session>>();
+    mocks.refresh.mockReturnValueOnce(pending.promise);
+    fetchMock.mockResolvedValueOnce(denied());
+    const result = act();
+    await vi.waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect((await result).success).toBe(false);
+    pending.resolve(session(jwt('player-a', 'login-a', 2)));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mocks.probe).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears both successful auth deadlines when a normal retry completes', async () => {
+    fetchMock.mockResolvedValueOnce(denied()).mockResolvedValueOnce(accepted());
+    expect((await act()).success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

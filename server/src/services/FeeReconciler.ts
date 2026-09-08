@@ -461,7 +461,12 @@ export async function reconcilePendingFees(): Promise<{
     /* A jackpot that landed from the QUEUE rather than live. The table is told
        when it does, so the celebration still happens - late, but it happens
        (phase 2.2). */
-    let paidLate: { tableId: string; handNumber: number; totalPayout?: number } | null = null;
+    let paidLate: {
+      tableId: string;
+      handNumber: number;
+      totalPayout?: number;
+      kind?: 'main' | 'mini';
+    } | null = null;
 
     // REVIEW FIX 2026-08-20 — the hole that kept this alert alive.
     //
@@ -528,7 +533,9 @@ export async function reconcilePendingFees(): Promise<{
           !p.loserUserId ||
           !p.winnerUserId ||
           !Array.isArray(p.dealtInPlayerIds) ||
-          typeof p.payoutTotalPercent !== 'number'
+          typeof p.payoutTotalPercent !== 'number' ||
+          (p.kind !== undefined && p.kind !== 'main' && p.kind !== 'mini') ||
+          (p.kind === 'mini' && !p.tierId)
         ) {
           ok = false;
           failureMessage = 'bbj_payout row is missing its parameters';
@@ -551,6 +558,9 @@ export async function reconcilePendingFees(): Promise<{
               dealtInPlayerIds: p.dealtInPlayerIds,
               seatedUserIds: p.dealtInPlayerIds.filter((id) => seatedNow.has(id)),
               payoutTotalPercent: p.payoutTotalPercent,
+              kind: p.kind,
+              tierId: p.tierId,
+              metadata: p.metadata,
             },
             { fromQueue: true }
           );
@@ -567,6 +577,7 @@ export async function reconcilePendingFees(): Promise<{
             paidLate = {
               tableId: p.tableId,
               handNumber: Number(p.handNumber ?? row.hand_number),
+              kind: p.kind,
               totalPayout: outcome.status === 'paid' ? outcome.result.totalPayout : undefined,
             };
           }
@@ -632,6 +643,7 @@ export async function reconcilePendingFees(): Promise<{
         const { tableStateHub } = await import('../transport/TableStateHub.js');
         tableStateHub.emitEvent(paidLate.tableId, {
           type: 'bbj_payout_paid',
+          kind: paidLate.kind ?? 'main',
           table_id: paidLate.tableId,
           hand_number: paidLate.handNumber,
           totalPayout: paidLate.totalPayout,

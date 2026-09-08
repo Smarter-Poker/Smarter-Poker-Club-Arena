@@ -18,6 +18,8 @@
  * rather than assume it worked.
  */
 
+import { isNativePlatform } from '../lib/appBase';
+
 /** RFC 4180: quote anything containing a quote, comma or newline. */
 export function csvEscape(value: unknown): string {
   let s = value === null || value === undefined ? '' : String(value);
@@ -41,6 +43,15 @@ export function downloadCsv(filename: string, csv: string): boolean {
   // The BOM is what makes Excel read this as UTF-8 instead of guessing;
   // club and player names are not all ASCII.
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  // THE APP (2026-09-08): a webview does not honour the download attribute,
+  // so the file goes to the system share sheet (src/lib/native/share.ts).
+  if (isNativePlatform()) {
+    void import('../lib/native/share')
+      .then(({ nativeShareBlob }) => nativeShareBlob(blob, filename))
+      .catch(() => {});
+    return true;
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

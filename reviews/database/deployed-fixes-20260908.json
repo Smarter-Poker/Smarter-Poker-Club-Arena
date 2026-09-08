@@ -2,11 +2,16 @@
   "project": "kuklfnapbkmacvwxktbh",
   "migrations": [
     "20260908021633_throwable_wait_for_owned_pack_credit",
-    "20260908023324_throwable_record_actual_consumption_time"
+    "20260908023324_throwable_record_actual_consumption_time",
+    "20260908040103_throwable_member_monthly_allowance"
   ],
-  "liveFunctionMD5": "4c0bd3b5606f9d6f6ae9ccd7700dbc6a",
+  "liveFunctionMD5": "8772c2ff647fc93dc5dcdb0c21b4f26d",
   "stampedInsertPaths": 4,
   "anonymousExecute": false,
   "authenticatedExecute": true,
-  "verification": "Source and privilege verification after successful migration; functional checks use exported functions and synthetic local tables, not production user transactions."
+  "verification": "Source and privilege verification after successful migration; functional checks use exported functions and synthetic local tables, not production user transactions.",
+  "memberMonthlyLimit": 30,
+  "vipMonthlyLimit": 500,
+  "lifetimeUnlimited": true,
+  "securityAdvisors": "Only existing intentional authenticated SECURITY DEFINER warnings for v1/v2; anonymous execution remains denied."
 }

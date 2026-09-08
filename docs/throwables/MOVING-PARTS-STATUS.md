@@ -2,7 +2,7 @@
 
 ## Current state, 2026-09-08
 
-38/47 existing non-glove rigs now use premium moving artwork. The glove is separate. The expanded catalogue in the handoff plan includes additional items beyond these 47, so this fraction is not overall completion. Nothing in this premium frontend checkpoint has been pushed or published.
+38/47 existing non-glove rigs now use premium moving artwork. The glove is separate. The expanded catalogue in the handoff plan includes additional items beyond these 47, so this fraction is not overall completion. The premium frontend branch is pushed and PR #3673 is in CI. Hetzner publication is not yet verified.
 
 - Added heart, angry_emoji and cool_sunglasses_emoji. Independent heartbeat accents, progressive anger/shout/flames and dropping glasses/lens glint replace static landing-only behavior.
 - All 40 runtime atlases are lossless WebP: 40,685,060 bytes versus 56,890,941 source PNG bytes, 28.5% smaller. Both machines verified exact alpha and visible RGB preservation for all 40. Sources are under art-source/animated, outside the public deployment tree. Production media optimization preserves verified atlas bytes.
@@ -10,11 +10,11 @@
 - Receipt retry protection and removal of the post-payment client cooldown are now present in the full isolated checkout as well as this snapshot. Authenticated event receipts and shared wire identity are still pending.
 - Full isolated-checkout TypeScript and all 16,346 client tests across 1,188 files pass after the picker, cutout, account-response ownership and draft-member-policy changes. After a clean merge of origin/main, full TypeScript and the production build passed at 28e81ca4 with behind-main=0. All 141 built picker thumbnails match their hashed source bytes and all 39 then-integrated atlases are byte-identical. The chicken integration subsequently passed full TypeScript, 25 focused checks and a clean production build at ee90152b with behind-main=0; all 40 built atlases and 141 thumbnail hashes match.
 - All 47 approved non-glove picker stills are wired locally as 141 versioned WebP thumbnails, about 4.61 MB. Actual component browser QA covers all 47 on dark/light backgrounds, 94 decoded cutouts and no page errors. Narrow matte thresholds preserve dark bodies and cuffs. Small icons now decode the correct 192px bucket, with a real black-sphere opacity regression test.
-- Live database pack-credit fix is migration 20260908021633; actual consumption timestamps are migration 20260908023324. Both were applied and live source/privileges verified. Synthetic local PostgreSQL checks total 25. The later 30-member monthly allowance migration 20260908025914 is draft only and must release with its matching frontend. VIP 500 and Lifetime unlimited behavior remain covered.
+- Live database pack-credit fix is migration 20260908021633; actual consumption timestamps are migration 20260908023324. Both were applied and live source/privileges verified. Synthetic local PostgreSQL checks total 25. The 30-member monthly allowance was applied as 20260908040103; its live function hash and unchanged execute privileges were verified. VIP 500 and Lifetime unlimited behavior remain covered. The file was renamed from its reserved draft version to match the returned production ledger version.
 
-Remaining original rigs: anvil, bear, ghost, lightning_bolt, magic_8_ball, pizza_slice, shark, skull, ufo. Also pending: added plan catalogue; final fringe/crop and organic/voice audio review; server item entitlements and release of the drafted free allowance; authenticated receipt transport; real purchase/multiplayer/device/Safari tests; final full-repository gates; CI/publication and deployed SHA verification.
+Remaining original rigs: anvil, bear, ghost, lightning_bolt, magic_8_ball, pizza_slice, shark, skull, ufo. Also pending: added plan catalogue; final fringe/crop and organic/voice audio review; server item entitlements; authenticated receipt transport; real purchase/multiplayer/device/Safari tests; final full-repository gates; CI/publication and deployed SHA verification.
 
-Publication blocker: automatic approval review rejected private source upload to Smarter-Poker/Smarter-Poker-Club-Arena and required explicit named-destination confirmation. Generic continuation messages do not resolve that rejection. Do not bypass it using a different upload mechanism.
+Publication route: user clarified the Club Arena-to-Hetzner destination and continued the release. Standard branch push succeeded, pre-push hooks ran without bypass, and autopilot opened PR #3673. The earlier upload approval blocker is resolved. Follow CI/autopilot and publish-club-arena.yml; no manual merge or alternate publisher.
 
 ## Latest visual sequence: Chicken
 

@@ -135,7 +135,7 @@ try {
     assert.equal((await use(c,req)).idempotent,true);
     assert.equal(await count('throw_usage',id),1);
   });
-  await db.query(fs.readFileSync(path.resolve(root, '../../supabase/migrations/20260908025914_throwable_member_monthly_allowance.sql'), 'utf8'));
+  await db.query(fs.readFileSync(path.resolve(root, '../../supabase/migrations/20260908040103_throwable_member_monthly_allowance.sql'), 'utf8'));
   await check('30th member throw is free even with zero diamonds', async () => {
     const id=await user({ used:29,diamonds:0 }); const c=await connect(id); const r=await use(c);
     assert.equal(r.source,'member_monthly'); assert.equal(r.free_remaining,0); assert.equal(await balance(id),0);

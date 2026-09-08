@@ -79,35 +79,6 @@
 }
 
 /* -- THE STEM AND LEAVES: pop with the burst, lying on the splat's centre-top. */
-.thr-tomato__stem {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-  opacity: 0;
-  animation: thr-tomato-stem calc(0.133s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.9, 0.3, 1)
-    calc(0.067s * var(--animation-speed, 1)) forwards;
-}
-
-@keyframes thr-tomato-stem {
-  0% {
-    /* 300 */
-    opacity: 1;
-    transform: scale(0.5);
-  }
-  3% {
-    opacity: 1;
-    transform: scale(0.52);
-  }
-  40% {
-    /* ~353 */
-    opacity: 1;
-    transform: scale(1.15);
-  }
-  100% {
-    /* 433 */
-    opacity: 1;
-    transform: scale(1);
-  }
-}
 
 /* -- THE DRIPS: each grows DOWN from its own top (the splat's lower edge)
    between 467 and 733. Delay and duration are set inline per drip so the
@@ -172,7 +143,6 @@
     opacity: 0 !important;
   }
   .thr-tomato__splat,
-  .thr-tomato__stem,
   .thr-tomato__drip {
     animation: none !important;
     opacity: 1 !important;
@@ -194,3 +164,39 @@
    it is a black frame at a documented moment, and that is the instrument this
    programme verifies itself with. `forwards` plus a VISIBLE 0% frame leaves the
    element on its own `opacity: 0` while it waits and opens on the beat. */
+
+/* Both premium poses share the measured pop. Burst swaps to residue at 433ms. */
+.thr-tomato__burst-pose {
+  animation: thr-tomato-burst-pose calc(0.133s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.067s * var(--animation-speed, 1)) both;
+}
+.thr-tomato__settled-pose {
+  animation: thr-tomato-settled-pose calc(0.133s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.067s * var(--animation-speed, 1)) both;
+}
+@keyframes thr-tomato-burst-pose {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes thr-tomato-settled-pose {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-tomato__burst-pose {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .thr-tomato__settled-pose {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}

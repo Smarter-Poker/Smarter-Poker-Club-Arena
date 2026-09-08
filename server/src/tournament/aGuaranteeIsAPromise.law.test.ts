@@ -51,11 +51,12 @@ describe('the finish path funds the guarantee', () => {
     expect(fund).toBeLessThan(price);
   });
 
-  it('re-reads the pool after funding rather than trusting the local snapshot', () => {
+  it('uses the validated funding receipt instead of the stale local snapshot', () => {
     const tail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
     const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).toMatch(/from\('tournaments'\)/);
-    expect(window).toMatch(/select\('prize_pool'\)/);
+    expect(window).toContain('tournament.prize_pool = funded;');
+    expect(window).toContain('funded === null');
+    expect(window).toContain('funded < Number(tournament.guaranteed_prize)');
   });
 
   it('is NOT gated on prize_pool or buy_in_amount - the two filters that hid the freerolls', () => {
@@ -71,7 +72,7 @@ describe('the finish path funds the guarantee', () => {
     expect(window).toMatch(/!isSatelliteFinish/);
   });
 
-  it('a failure funding the guarantee never strands the finish', () => {
+  it('a funding exception is reported and cannot authorize pricing', () => {
     const tail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
     const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
     expect(window).toMatch(/catch/);

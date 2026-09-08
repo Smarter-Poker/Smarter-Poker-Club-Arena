@@ -54,6 +54,7 @@ import { THROWABLE_GRAMMAR, throwableLandingMs } from '../../throwables/spec';
 import type { ThrowableRig } from '../../throwables/rig';
 import { cueUrl, isPlaceholderCue, placeholderRecipe } from '../../throwables/cues';
 import './ThrowablePlayer.css';
+import { hasThrowableArtwork, prepareThrowableArtwork } from '../../throwables/artwork';
 
 export interface ThrowablePlayerProps {
   event: ThrowEvent;
@@ -64,7 +65,7 @@ export interface ThrowablePlayerProps {
   onComplete: () => void;
 }
 
-type Phase = 'spawn' | 'flight' | 'payload' | 'residue' | 'done';
+type Phase = 'loading' | 'spawn' | 'flight' | 'payload' | 'residue' | 'done';
 
 /** Normalised stereo position (-1..1) for a scaler x, from the scaler width. */
 function panFor(x: number, root: HTMLElement | null): number {
@@ -116,7 +117,11 @@ export function ThrowablePlayer({
   const speed = useMemo(() => getAnimationSpeed(), []);
   const reduced = useMemo(() => prefersReducedMotion(), []);
   const [phase, setPhase] = useState<Phase>(() =>
-    reduced || spec.flight.mode === 'none' ? 'payload' : 'spawn'
+    hasThrowableArtwork(spec.id)
+      ? 'loading'
+      : reduced || spec.flight.mode === 'none'
+        ? 'payload'
+        : 'spawn'
   );
   const [unit, setUnit] = useState<number>(84);
 
@@ -135,47 +140,67 @@ export function ThrowablePlayer({
     const timers: ReturnType<typeof setTimeout>[] = [];
     const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, Math.max(0, ms * speed)));
 
-    const landing = spec.spawnMs + throwableLandingMs(spec);
-    const atTarget = Math.max(spec.payload.ms, spec.residue?.ms ?? 0);
+    let cancelled = false;
+    let cancelCues = () => {};
+    const start = () => {
+      if (cancelled) return;
+      setPhase(reduced || spec.flight.mode === 'none' ? 'payload' : 'spawn');
+      const landing = spec.spawnMs + throwableLandingMs(spec);
+      const atTarget = Math.max(spec.payload.ms, spec.residue?.ms ?? 0);
 
-    // The cues: "ms from launch", and the throw is mounted spawnMs before launch.
-    const cancelCues = throwableSoundService.scheduleCues(spec.audio, {
-      speed,
-      offsetMs: reduced ? 0 : spec.spawnMs,
-      panTarget: panFor(toPos.x, root),
-      panThrower: panFor(fromPos.x, root),
-      urlFor: cueUrl,
-      isPlaceholder: isPlaceholderCue,
-      playPlaceholder: (name, pan) => {
-        const recipe = placeholderRecipe(name);
-        if (recipe) throwableSoundService.playImpact(recipe, 'medium', pan);
-      },
-    });
-
-    if (reduced || spec.flight.mode === 'none') {
-      // Straight to the performance. Fireworks spawn nothing at the thrower
-      // by design; reduced motion gets the meaning without the travel.
-      const delay = spec.flight.mode === 'none' && !reduced ? landing : 0;
-      at(delay + spec.payload.ms, () => {
-        if (spec.residue && spec.residue.ms > spec.payload.ms) setPhase('residue');
+      // Immediate payloads skip spawn/flight. Shift their sound clock by the
+      // same amount and omit cues belonging only to the skipped travel.
+      const immediatePayload = reduced || spec.flight.mode === 'none';
+      const audio = immediatePayload
+        ? spec.audio.filter((cue) => cue.at >= throwableLandingMs(spec))
+        : spec.audio;
+      cancelCues = throwableSoundService.scheduleCues(audio, {
+        speed,
+        offsetMs: immediatePayload ? -throwableLandingMs(spec) : spec.spawnMs,
+        panTarget: panFor(toPos.x, root),
+        panThrower: panFor(fromPos.x, root),
+        urlFor: cueUrl,
+        isPlaceholder: isPlaceholderCue,
+        playPlaceholder: (name, pan) => {
+          const recipe = placeholderRecipe(name);
+          if (recipe) throwableSoundService.playImpact(recipe, 'medium', pan);
+        },
       });
-      at(delay + atTarget, () => {
+
+      if (reduced || spec.flight.mode === 'none') {
+        // Straight to the performance. Fireworks spawn nothing at the thrower
+        // by design; reduced motion gets the meaning without the travel.
+        at(spec.payload.ms, () => {
+          if (spec.residue && spec.residue.ms > spec.payload.ms) setPhase('residue');
+        });
+        at(atTarget, () => {
+          setPhase('done');
+          onCompleteRef.current();
+        });
+      } else {
+        at(spec.spawnMs, () => setPhase('flight'));
+        at(landing, () => setPhase('payload'));
+        if (spec.residue && spec.residue.ms > spec.payload.ms) {
+          at(landing + spec.payload.ms, () => setPhase('residue'));
+        }
+        at(landing + atTarget, () => {
+          setPhase('done');
+          onCompleteRef.current();
+        });
+      }
+    };
+    if (hasThrowableArtwork(spec.id)) {
+      void prepareThrowableArtwork(spec.id).then(start, () => {
+        if (cancelled) return;
         setPhase('done');
         onCompleteRef.current();
       });
     } else {
-      at(spec.spawnMs, () => setPhase('flight'));
-      at(landing, () => setPhase('payload'));
-      if (spec.residue && spec.residue.ms > spec.payload.ms) {
-        at(landing + spec.payload.ms, () => setPhase('residue'));
-      }
-      at(landing + atTarget, () => {
-        setPhase('done');
-        onCompleteRef.current();
-      });
+      start();
     }
 
     return () => {
+      cancelled = true;
       timers.forEach(clearTimeout);
       cancelCues();
     };
@@ -196,7 +221,13 @@ export function ThrowablePlayer({
         ? toPos.x + 0.6 * unit
         : toPos.x;
 
+  // Unit direction toward the source, so return gags work from every seat.
+  const backX = fromPos.x - toPos.x;
+  const backY = fromPos.y - toPos.y;
+  const backLength = Math.hypot(backX, backY);
   const vars = {
+    '--thr-return-x': `${backLength ? backX / backLength : 0}px`,
+    '--thr-return-y': `${backLength ? backY / backLength : -1}px`,
     '--animation-speed': speed,
     '--thr-u': `${unit}px`,
     '--thr-from-x': `${spawnX}px`,

@@ -22,7 +22,7 @@ import { reportError } from '../../utils/errorReporter';
 export interface BuyInModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (amount: number, autoRebuy: boolean) => void;
+  onConfirm: (amount: number, autoRebuy: boolean) => void | Promise<void>;
   tableName?: string;
   minBuyIn: number;
   maxBuyIn: number;
@@ -93,6 +93,8 @@ export function BuyInModal({
   const [displayAmount, setDisplayAmount] = useState(effectiveDefault);
   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const confirmInFlightRef = useRef(false);
 
   // 60-second kicker visual countdown
   const [timeLeft, setTimeLeft] = useState(60);
@@ -231,13 +233,22 @@ export function BuyInModal({
   // Handle confirm
   const handleConfirm = useCallback(async () => {
     if (!hasEnoughBalance || isProcessing) return;
-    soundService.playBuyInConfirm();
+    if (confirmInFlightRef.current) return;
+    confirmInFlightRef.current = true;
+    setConfirmError(null);
     setIsProcessing(true);
     try {
+      try {
+        soundService.playBuyInConfirm();
+      } catch (audioError) {
+        reportError(audioError, 'BuyInModal.confirm_sound_failed');
+      }
       await onConfirm(clampedBuyIn, autoRebuy);
     } catch (err) {
       reportError(err, 'BuyInModal.onConfirm_threw');
+      setConfirmError('Unable To Confirm Your Buy-In. Please Check Your Connection And Try Again.');
     } finally {
+      confirmInFlightRef.current = false;
       setIsProcessing(false);
     }
   }, [clampedBuyIn, autoRebuy, hasEnoughBalance, isProcessing, onConfirm]);
@@ -250,11 +261,15 @@ export function BuyInModal({
      * to sit down, and it had no dialog semantics at all: no role, no
      * aria-modal, no accessible name, and no Escape handler — the backdrop
      * click was the only way out, which is not reachable by keyboard. The
-     * overlay is marked aria-hidden because it is a redundant affordance for
-     * the same action Escape now performs (the pattern TableMenu already
-     * uses).
+     * overlay must not be aria-hidden: that would hide the dialog and its
+     * error messages from assistive technology too.
      */
-    <div className="buy-in-modal__overlay" onClick={onClose} aria-hidden="true">
+    <div
+      className="buy-in-modal__overlay"
+      onClick={() => {
+        if (!confirmInFlightRef.current) onClose();
+      }}
+    >
       <div
         className="buy-in-modal"
         onClick={(e) => e.stopPropagation()}
@@ -270,7 +285,14 @@ export function BuyInModal({
           <h2 className="buy-in-modal__title" id="buy-in-modal-title">
             BUY-IN
           </h2>
-          <button className="buy-in-modal__close" onClick={onClose} aria-label="Close Buy-In">
+          <button
+            className="buy-in-modal__close"
+            disabled={isProcessing}
+            onClick={() => {
+              if (!confirmInFlightRef.current) onClose();
+            }}
+            aria-label="Close Buy-In"
+          >
             <span aria-hidden="true">×</span>
           </button>
         </div>
@@ -414,6 +436,12 @@ export function BuyInModal({
             not doing it is worse than not offering it. If this is wanted, it
             needs a real server-side implementation and a product decision about
             automatically spending a player's wallet while they are away. */}
+
+        {confirmError && (
+          <p role="alert" className="buy-in-modal__balance-value--insufficient">
+            {confirmError}
+          </p>
+        )}
 
         {/* Confirm Button */}
         <button

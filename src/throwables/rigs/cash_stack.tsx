@@ -54,6 +54,7 @@ import type { ThrowableSpec } from '../spec';
 import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import { preloadThrowableCues } from '../cues';
 import './cash_stack.css';
+import { AtlasSprite } from '../AtlasSprite';
 
 export const cashStackSpec: ThrowableSpec = {
   id: 'cash_stack',
@@ -88,109 +89,22 @@ export const cashStackSpec: ThrowableSpec = {
 preloadThrowableCues(cashStackSpec.audio.map((c) => c.sample));
 
 /** The measured greenish-grey bundle, and the money-cloud bills' green. */
-const BUNDLE_LIGHT = '#d6d7c7';
-const BUNDLE_MID = '#acac9c';
-const BUNDLE_DARK = '#7d7f6f';
-const BILL_LIGHT = '#8fd39e';
-const BILL_GREEN = '#4f9a5c';
-const BILL_DARK = '#2e6b3a';
-const BILL_SEAL = '#eef7ec';
-const WING_WHITE = '#ffffff';
-const WING_EDGE = '#d8e6da';
 
 /**
  * The bundle: 3 overlapping bill-shaped rectangles fanned, 45x25 units in
  * flight (the measured 18x10 px on a 40 px avatar), greenish grey. `k` keeps
  * the projectile's and the payload's gradients apart.
  */
-function Bundle({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-cash_stack-${n}-${uid}-${k}`;
+function Bundle(_: { uid: string; k: string }) {
   return (
-    <g>
-      <defs>
-        <linearGradient id={g('bundle')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={BUNDLE_LIGHT} />
-          <stop offset="100%" stopColor={BUNDLE_DARK} />
-        </linearGradient>
-      </defs>
-      <g transform="rotate(-8)">
-        <rect
-          x="-20"
-          y="-11"
-          width="40"
-          height="22"
-          rx="2"
-          fill={BUNDLE_MID}
-          stroke={BUNDLE_DARK}
-          strokeWidth="1"
-        />
-      </g>
-      <g transform="rotate(2)">
-        <rect
-          x="-21"
-          y="-12"
-          width="42"
-          height="23"
-          rx="2"
-          fill={`url(#${g('bundle')})`}
-          stroke={BUNDLE_DARK}
-          strokeWidth="1"
-        />
-        <path
-          d="M -21 -4 L 21 -4 M -21 4 L 21 4"
-          stroke={BUNDLE_DARK}
-          strokeWidth="0.7"
-          opacity="0.4"
-        />
-      </g>
-      <g transform="rotate(10)">
-        <path d="M -19 -10 L 19 -10 L 20 8 L 18 12 L -19 12 Z" fill={BUNDLE_DARK} />
-        <path d="M -18 9 L 18 9 M -18 10.5 L 18 10.5" stroke={BUNDLE_LIGHT} strokeWidth="0.6" />
-        <rect
-          x="-19"
-          y="-10"
-          width="38"
-          height="20"
-          rx="1.5"
-          fill={BUNDLE_LIGHT}
-          stroke="#f3f1de"
-          strokeWidth="0.7"
-        />
-        <rect
-          x="-16.5"
-          y="-7.5"
-          width="33"
-          height="15"
-          rx="1"
-          fill="none"
-          stroke={BUNDLE_DARK}
-          strokeWidth="0.65"
-        />
-        <ellipse
-          cx="0"
-          cy="0"
-          rx="6"
-          ry="7"
-          fill={BUNDLE_MID}
-          stroke={BUNDLE_DARK}
-          strokeWidth="0.7"
-        />
-        <path d="M -3 4 Q -4 1 -1 0 Q -4 -4 0 -5 Q 4 -4 2 0 Q 5 1 4 4 Z" fill={BUNDLE_DARK} />
-        <path
-          d="M -14 -4 h 5 M -14 -2 h 4 M -14 3 h 5 M 9 -4 h 5 M 10 -2 h 4 M 9 3 h 5"
-          fill="none"
-          stroke={BUNDLE_DARK}
-          strokeWidth="0.6"
-        />
-        <path
-          d="M 5 -10 L 10 -10 L 10 10 L 5 10 Z"
-          fill="#ead7ad"
-          stroke="#a88756"
-          strokeWidth="0.6"
-        />
-        <path d="M 6 -9 L 6 9" stroke="#fff1cf" strokeWidth="0.8" />
-      </g>
-    </g>
+    <AtlasSprite
+      src="cash_stack"
+      rect={[23, 98, 627, 513]}
+      x={-40}
+      y={-32}
+      width={80}
+      height={64}
+    />
   );
 }
 
@@ -199,78 +113,34 @@ function Bundle({ uid, k }: { uid: string; k: string }) {
  * wings (the "money with wings" shape) grouped so they flap as one. Drawn
  * around (0,0), 35x20 units (the measured 14x8 px).
  */
-function Bill({ uid }: { uid: string }) {
-  const billBody = `thr-cash_stack-bill-${uid}-body`;
+function Bill(_: { uid: string }) {
   return (
     <g>
-      {/* the wings, grouped so `.thr-cash_stack__wing` flaps both together */}
       <g className="thr-cash_stack__wing">
-        <path
-          d="M -16 3 C -21 3 -24 -1 -29 -6 Q -31 -9 -28 -8 L -21 -3 L -25 -9 Q -26 -12 -23 -10 L -18 -5 L -20 -11 Q -20 -14 -18 -11 Q -14 -4 -16 3 Z"
-          fill={WING_WHITE}
-          stroke={WING_EDGE}
-          strokeWidth="0.5"
+        <AtlasSprite
+          src="cash_stack"
+          rect={[650, 748, 245, 285]}
+          x={-36}
+          y={-24}
+          width={22}
+          height={30}
         />
-        <path
-          d="M 16 3 C 21 3 24 -1 29 -6 Q 31 -9 28 -8 L 21 -3 L 25 -9 Q 26 -12 23 -10 L 18 -5 L 20 -11 Q 20 -14 18 -11 Q 14 -4 16 3 Z"
-          fill={WING_WHITE}
-          stroke={WING_EDGE}
-          strokeWidth="0.5"
-        />
-        <path
-          d="M -17 1 Q -21 -1 -25 -5 M -17 -1 L -22 -7 M 17 1 Q 21 -1 25 -5 M 17 -1 L 22 -7"
-          fill="none"
-          stroke="#a7c4b6"
-          strokeWidth="0.6"
+        <AtlasSprite
+          src="cash_stack"
+          rect={[1065, 685, 179, 295]}
+          x={14}
+          y={-24}
+          width={18}
+          height={30}
         />
       </g>
-      <path d="M -17 6 L 18 6 L 17 12 L -16 11 Z" fill="#24573a" />
-      <rect
-        x="-17.5"
-        y="-10"
-        width="35"
-        height="20"
-        rx="2"
-        fill={`url(#${billBody})`}
-        stroke={BILL_DARK}
-        strokeWidth="0.8"
-      />
-      <rect
-        x="-15"
-        y="-7.5"
-        width="30"
-        height="15"
-        rx="1"
-        fill="none"
-        stroke="#d1efd1"
-        strokeWidth="0.65"
-      />
-      <ellipse
-        cx="0"
-        cy="0"
-        rx="5"
-        ry="6.4"
-        fill={BILL_SEAL}
-        stroke={BILL_DARK}
-        strokeWidth="0.4"
-      />
-      <path
-        d="M -2.8 4 Q -3.5 1 -0.8 0 Q -3 -3.5 0 -4.5 Q 3.5 -3.5 1.8 0 Q 4 1.5 3 4 Z"
-        fill={BILL_DARK}
-        opacity="0.8"
-      />
-      <path
-        d="M -13 -2 h 5 M -13 0 h 4 M -13 2 h 5 M 8 -2 h 5 M 9 0 h 4 M 8 2 h 5"
-        stroke={BILL_DARK}
-        strokeWidth="0.5"
-        opacity="0.8"
-      />
-      <path d="M -16 -9 L 15 -9" stroke="#d9ffe1" strokeWidth="0.8" />
-      <path
-        d="M -14 -6 L -10 -6 M -14 6 L -10 6 M 14 -6 L 10 -6 M 14 6 L 10 6"
-        stroke={BILL_LIGHT}
-        strokeWidth="1"
-        opacity="0.7"
+      <AtlasSprite
+        src="cash_stack"
+        rect={[665, 185, 563, 303]}
+        x={-18}
+        y={-10}
+        width={36}
+        height={20}
       />
     </g>
   );
@@ -306,16 +176,8 @@ function Projectile({ uid }: RigProps) {
 }
 
 function Payload({ uid }: RigProps) {
-  const billBody = `thr-cash_stack-bill-${uid}-body`;
   return (
     <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id={billBody} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={BILL_LIGHT} />
-          <stop offset="100%" stopColor={BILL_GREEN} />
-        </linearGradient>
-      </defs>
-
       {/* 333 (+0): the bundle at the top of the head, overshoots at 367
           (+34), falls back and settles centred by 667 (+334). Fades out as
           it bursts, 700-867 (+367..+534). */}

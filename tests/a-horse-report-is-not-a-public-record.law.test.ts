@@ -116,3 +116,54 @@ describe('LAW: a horse avatar does not live at a path that says horse', () => {
     expect(script).not.toMatch(/horse-avatars-v2\/\$\{/);
   });
 });
+
+describe('LAW: a public author row does not say horse, and realtime does not broadcast is_bot', () => {
+  /* The avatar pass repointed `profiles` and missed `content_authors`, which
+     the same generators write and which carries the policy "Public can read
+     authors" - 577 of 1,039 rows still filed under a horse-named path, with
+     `profile_id` beside them, readable SIGNED OUT. And `club_members` sat in
+     the realtime publication with all 46 columns including `is_bot` (which a
+     trigger keeps equal to `profiles.is_horse`): a column grant does not
+     filter a realtime payload, which is the lesson `profiles` taught on
+     2026-09-02. Separately, 219 objects under the `avatars/` prefix - the one
+     `preset_avatars_are_listable` lets ANON enumerate - were named
+     `horse_avatar_<profile uuid>_<ts>.png`, so the listing itself was the
+     roster. */
+  const AUTHORS =
+    '20260908031934_a_public_author_row_does_not_say_horse_and_realtime_does_not_broadcast_is_bot.sql';
+
+  it('repoints every public author row, and only onto a copy that exists', () => {
+    const sql = read(AUTHORS);
+    expect(sql).toContain("ca.avatar_url ~* 'horse-avatars|horse_avatar'");
+    expect(sql).toContain("ELSE 'author-' || ca.id::text END");
+    expect(sql).toContain("o.bucket_id = 'avatars'");
+    expect(sql).toMatch(
+      /RAISE EXCEPTION 'POST-FLIGHT: % public author rows still carry a horse-named avatar'/
+    );
+  });
+
+  it('sets a realtime column list for club_members that omits is_bot', () => {
+    const sql = read(AUTHORS);
+    expect(sql).toContain("AND column_name <> 'is_bot'");
+    expect(sql).toContain('ALTER PUBLICATION supabase_realtime SET TABLE public.club_members');
+    expect(sql).toMatch(
+      /RAISE EXCEPTION 'POST-FLIGHT: realtime still broadcasts club_members\.is_bot'/
+    );
+    // A collapsed column list would also "omit" is_bot - and break the feed.
+    expect(sql).toMatch(/the club_members column list collapsed to % columns/);
+  });
+
+  it('the object sweep refuses to delete anything still referenced', () => {
+    const script = readFileSync(
+      join(root, 'scripts/ops/delete-listable-horse-avatar-objects.mjs'),
+      'utf8'
+    );
+    expect(script).toContain("['profiles', 'avatar_url=imatch.horse-avatars%7Chorse_avatar']");
+    expect(script).toContain(
+      "['content_authors', 'avatar_url=imatch.horse-avatars%7Chorse_avatar']"
+    );
+    expect(script).toContain('REFUSING');
+    // Only the listable prefix; horse-avatars-v2 is not covered by the policy.
+    expect(script).toContain("prefix: 'avatars/'");
+  });
+});

@@ -47,6 +47,7 @@ import {
 } from '../services/supabase.js';
 import type { HandEvent, SeatedPlayer } from '../types.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
+import { v5 as uuidv5 } from 'uuid';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
@@ -179,10 +180,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       return { success: true, cards, board_length: offer.boardLength, source: 'already_revealed' };
     }
     if (this.rabbitHuntInFlight.has(userId)) {
-      // Two taps that race the RPC would both pass the `revealed` check above,
-      // because that set is only written after the charge returns. The advisory
-      // lock in fn_consume_rabbit_hunt serialises them, so they would not
-      // corrupt the pool — they would just both succeed, and bill twice.
+      // Keep concurrent taps from duplicating work while the first RPC runs.
+      // The durable request ID below also protects payment if its response is
+      // lost and a later tap retries after this in-memory guard is released.
       return { success: false, error: 'Rabbit Hunt Is Already Loading' };
     }
     this.rabbitHuntInFlight.add(userId);
@@ -192,8 +192,20 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // simply not calling it.
     let charge: Record<string, unknown> | null = null;
     try {
-      const { data, error } = await supabase.rpc('fn_consume_rabbit_hunt', {
+      // A timeout can follow a committed charge. Reuse the durable receipt for
+      // this player/table/hand, including after an engine instance changes.
+      const requestId = uuidv5(
+        JSON.stringify([
+          'club-arena.rabbit-hunt.v1',
+          this.tableId.toLowerCase(),
+          hand,
+          userId.toLowerCase(),
+        ]),
+        uuidv5.URL
+      );
+      const { data, error } = await supabase.rpc('fn_consume_rabbit_hunt_v2', {
         p_user_id: userId,
+        p_request_id: requestId,
       });
       if (error) throw error;
       charge = (data ?? null) as Record<string, unknown> | null;

@@ -1,92 +1,83 @@
-/**
- * DICE - keyframes. Every delay is from LANDING (launch + 233 ms, the flight
- * duration - contract rule 1); the comment on each stop gives the catalogue's
- * ms from launch too. Every duration and delay multiplies by
- * --animation-speed (CLAUDE.md 10.6).
- *
- * Units: 100 px in these keyframes = 1 avatar width, and video 1's avatar was
- * ~30 px wide, so measured pixels are scaled by 100/30 = 3.333.
- *
- * The player's own `thr__payload--land` class (ThrowablePlayer.css) supplies
- * the hand's pop-in at landing - a 1.1x overshoot settle, same as any upright
- * object. This file owns exactly one thing: the shake, a single INFINITE loop
- * so the hand is never not shaking once it has arrived, matching the
- * reference's "hand loop 367-5967+, cycle roughly 40-45 frames" (~1.4 s). The
- * dice are drawn as children of the hand group and move with it rigidly -
- * they are cupped, not independently animated.
- *
- * The build sheet's own words for the cycle: "upright hold 367-960, dip,
- * palm-down jiggle 1300-1600, low hold, shake, repeat." One cycle below runs
- * the same shape: hold, dip, turn palm-down with three quick jiggles, low
- * hold, a last shake, back to upright.
- */
-
-/* == THE SHAKE: infinite from 367 (+134, once the land-pop has settled).
-   transform-origin sits at the wrist, low in the group, so the rotation
-   reads as a hand turning rather than the whole payload box spinning. ==== */
+/* Three finite shake bursts synchronized with the existing cue groups.
+   All times are relative to landing, with one shared animation-speed clock. */
 .thr-dice__hand {
   transform-box: fill-box;
   transform-origin: 50% 92%;
-  animation: thr-dice-shake calc(1.4s * var(--animation-speed, 1)) ease-in-out
-    calc(0.134s * var(--animation-speed, 1)) infinite;
+  animation: thr-dice-shake calc(5.3s * var(--animation-speed, 1)) linear both;
 }
-
-@keyframes thr-dice-shake {
-  0% {
-    /* upright hold */
-    transform: rotate(0deg) translateY(0);
-  }
-  38% {
-    transform: rotate(0deg) translateY(0);
-  }
-  44% {
-    /* the dip */
-    transform: rotate(-2deg) translateY(4px);
-  }
-  50% {
-    /* turning palm-down */
-    transform: rotate(14deg) translateY(6px);
-  }
-  55% {
-    /* jiggle 1 */
-    transform: rotate(-10deg) translateY(9px);
-  }
-  59% {
-    /* jiggle 2 */
-    transform: rotate(13deg) translateY(6px);
-  }
-  63% {
-    /* jiggle 3 */
-    transform: rotate(-7deg) translateY(9px);
-  }
-  70% {
-    transform: rotate(4deg) translateY(7px);
-  }
-  80% {
-    /* low hold, dice showing under the fingers */
-    transform: rotate(2deg) translateY(8px);
-  }
-  86% {
-    /* the last shake */
-    transform: rotate(-6deg) translateY(4px);
-  }
-  90% {
-    transform: rotate(8deg) translateY(6px);
-  }
-  95% {
-    transform: rotate(-3deg) translateY(2px);
-  }
+.thr-dice__hold-pose {
+  animation: thr-dice-hold calc(5.3s * var(--animation-speed, 1)) steps(1, end) both;
+}
+.thr-dice__cup-pose {
+  animation: thr-dice-cup calc(5.3s * var(--animation-speed, 1)) steps(1, end) both;
+}
+@keyframes thr-dice-hold {
+  0%,
+  34%,
+  51%,
   100% {
-    /* back upright; loops */
-    transform: rotate(0deg) translateY(0);
+    opacity: 1;
+  }
+  18.86%,
+  46.54%,
+  88.05% {
+    opacity: 0;
   }
 }
-
-/* == REDUCED MOTION: the hand is simply there, upright, cupping the dice -
-   the meaning (a hand shaking dice) still reads from the pose even still. */
+@keyframes thr-dice-cup {
+  0%,
+  34%,
+  51%,
+  100% {
+    opacity: 0;
+  }
+  18.86%,
+  46.54%,
+  88.05% {
+    opacity: 1;
+  }
+}
+@keyframes thr-dice-shake {
+  0%,
+  18%,
+  36%,
+  46%,
+  53%,
+  87%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  19%,
+  24%,
+  29%,
+  33%,
+  47%,
+  50%,
+  89%,
+  94%,
+  98% {
+    transform: rotate(12deg) translateY(5px);
+  }
+  21%,
+  26%,
+  31%,
+  48.5%,
+  91%,
+  96% {
+    transform: rotate(-9deg) translateY(9px);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .thr-dice__hand {
     animation: none !important;
-    transform: rotate(0deg) translateY(0) !important;
+    transform: none !important;
+  }
+  .thr-dice__hold-pose {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  .thr-dice__cup-pose {
+    animation: none !important;
+    opacity: 0 !important;
   }
 }

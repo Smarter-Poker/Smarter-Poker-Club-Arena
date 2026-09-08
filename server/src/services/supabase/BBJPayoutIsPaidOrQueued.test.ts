@@ -87,6 +87,7 @@ beforeEach(() => {
   setBBJPayoutQueue(null);
   from.mockImplementation((name: string) => {
     if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
+    if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
     if (name === 'bbj_pools')
       return table({
         data: { id: POOL, main_balance: 104396.75, backup_balance: 32081.72 },
@@ -156,6 +157,7 @@ describe('a transient failure is retried, and the second attempt pays', () => {
     let poolReads = 0;
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
+      if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
       if (name === 'bbj_pools') {
         poolReads++;
         return poolReads === 1
@@ -263,6 +265,7 @@ describe('when every attempt fails, the hit is queued and alarmed, never dropped
     rpc.mockResolvedValue({ data: [{ applied: false, already_paid: false }], error: null });
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: null }, error: null });
+      if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 0, backup_balance: 500 }, error: null });
       return table({ data: null, error: null });
@@ -295,6 +298,7 @@ describe('every recipient is told, seated or not (phase 1), and the note says wh
     const inserted: unknown[] = [];
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
+      if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 1000, backup_balance: 0 }, error: null });
       if (name === 'notifications') {
@@ -318,6 +322,7 @@ describe('every recipient is told, seated or not (phase 1), and the note says wh
     const inserted: Array<{ user_id: string; message: string; metadata: { placed: string } }> = [];
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
+      if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 1000, backup_balance: 0 }, error: null });
       if (name === 'notifications') {
@@ -429,8 +434,8 @@ describe('Mini payouts retain the original durable jackpot operation', () => {
   });
   it('lets the RPC replay an existing hand even when the current Main bank is empty', async () => {
     from.mockImplementation((name: string) =>
-      name === 'clubs'
-        ? table({ data: { union_id: null }, error: null })
+      name === 'bbj_payouts'
+        ? table({ data: { pool_id: POOL }, error: null })
         : table({ data: { id: POOL, main_balance: 0, backup_balance: 1000 }, error: null })
     );
     rpc.mockResolvedValue({
@@ -439,5 +444,68 @@ describe('Mini payouts retain the original durable jackpot operation', () => {
     });
     expect(await processBBJPayout(PARAMS)).toEqual({ status: 'already_paid' });
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('unknown payout receipts cannot close the durable claim', () => {
+  it.each([
+    {},
+    { applied: false },
+    { applied: 'true', already_paid: false },
+    { applied: false, already_paid: 'true' },
+    { applied: true, already_paid: true },
+    [appliedRow(), appliedRow()],
+  ])('keeps malformed settlement response pending: %j', async (data) => {
+    const claim = vi.fn().mockResolvedValue(undefined);
+    const settle = vi.fn().mockResolvedValue(undefined);
+    setBBJPayoutQueue({ claim, settle });
+    rpc.mockResolvedValue({ data, error: null });
+    expect((await run()).status).toBe('queued');
+    expect(claim).toHaveBeenCalled();
+    expect(settle).not.toHaveBeenCalled();
+  });
+});
+
+describe('applied BBJ shares require valid cent amounts before confirmation', () => {
+  for (const field of [
+    'total_payout',
+    'loser_share',
+    'winner_share',
+    'table_share',
+    'per_player_share',
+  ]) {
+    it.each([null, undefined, -1, Infinity, 0.001, '', false, 'invalid'])(
+      `keeps invalid ${field} pending: %j`,
+      async (value) => {
+        const settle = vi.fn();
+        setBBJPayoutQueue({ claim: vi.fn(), settle });
+        rpc.mockResolvedValue({ data: [appliedRow({ [field]: value })], error: null });
+        expect((await run()).status).toBe('queued');
+        expect(settle).not.toHaveBeenCalled();
+        expect(from.mock.calls.some(([name]) => name === 'notifications')).toBe(false);
+      }
+    );
+  }
+  it('does not confirm shares that exceed the total payout by one cent', async () => {
+    rpc.mockResolvedValue({ data: [appliedRow({ loser_share: 13049.6 })], error: null });
+    expect((await run()).status).toBe('queued');
+  });
+  it('does not confirm an applied receipt without a payout identity', async () => {
+    rpc.mockResolvedValue({ data: [appliedRow({ payout_id: null })], error: null });
+    expect((await run()).status).toBe('queued');
+  });
+  it('accepts PostgreSQL decimal strings with unchanged amounts', async () => {
+    const receipt = appliedRow();
+    for (const key of [
+      'total_payout',
+      'loser_share',
+      'winner_share',
+      'table_share',
+      'per_player_share',
+    ]) {
+      (receipt as Record<string, unknown>)[key] = String((receipt as Record<string, unknown>)[key]);
+    }
+    rpc.mockResolvedValue({ data: [receipt], error: null });
+    expect((await run()).status).toBe('paid');
   });
 });

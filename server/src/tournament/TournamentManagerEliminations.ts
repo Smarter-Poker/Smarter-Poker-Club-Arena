@@ -3456,7 +3456,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
   protected async finishTournament(winnerId: string): Promise<void> {
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETE! Winner: ${winnerId.slice(0, 8)}`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Finishing tournament. Winner: ${winnerId.slice(0, 8)}`
     );
 
     // Atomic DB guard: only proceed if we can claim the RUNNING → COMPLETING transition
@@ -3503,7 +3503,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // spec rather than falling through to "winner takes the whole pool",
         // which on a 10x+ Spin is a 20% overpay on top of money already sent
         // to 2nd and 3rd at elimination. See payoutStructure.ts.
-        'payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, spin_multiplier, satellite_target_id, satellite_seats'
+        'payout_structure, prize_pool, guaranteed_prize, buy_in_fee, current_players, club_id, name, status, is_bounty, is_pko, is_mystery_bounty, variant, tournament_type, spin_multiplier, satellite_target_id, satellite_seats'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -3542,7 +3542,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // (processSatelliteAwards below), never per-place cash here.
     const isSatelliteFinish =
       (tournament as any)?.variant === 'satellite' ||
-      ((tournament as any)?.tournament_type || '').toUpperCase() === 'SATELLITE';
+      String((tournament as any)?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      !!(tournament as any)?.satellite_target_id;
     /**
      * THE GUARANTEE IS FUNDED HERE OR IT IS NEVER FUNDED (2026-08-31, phase 6).
      *
@@ -3574,32 +3575,34 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      * settles to greatest(pool, guarantee), so a re-drive of an event that was
      * already funded moves nothing.
      *
-     * A failure here must never strand a finish, so it is caught: the event
-     * still completes and pays what its pool holds, and the shortfall is
-     * raised for a human rather than silently priced in.
+     * Winner pricing requires confirmed funding. Failure must not turn the
+     * stale collected pool into the advertised final prize pool.
      */
-    if (
-      !isSatelliteFinish &&
-      Number((tournament as { guaranteed_prize?: number }).guaranteed_prize ?? 0) > 0
-    ) {
+    if (!isSatelliteFinish && Number(tournament.guaranteed_prize ?? 0) > 0) {
+      let funded: number | null = null;
       try {
-        const funded = await this.applyPrizeGuarantee('finish_fallback');
-        if (typeof funded === 'number' && funded > Number(tournament.prize_pool || 0)) {
-          // The RPC moved chips into the pool. Our row is a snapshot taken
-          // before that, so every price computed below would still use the
-          // old pool. Re-read it rather than trusting the local copy.
-          const { data: refreshed } = await supabase
-            .from('tournaments')
-            .select('prize_pool')
-            .eq('id', this.tournamentId)
-            .maybeSingle();
-          if (refreshed?.prize_pool != null) {
-            (tournament as { prize_pool?: number }).prize_pool = Number(refreshed.prize_pool);
-          }
-        }
+        funded = await this.applyPrizeGuarantee('finish_fallback');
       } catch (guaranteeErr) {
         reportError(guaranteeErr, 'Tournament.guarantee_finish_fallback_failed');
       }
+      // The helper validates the RPC receipt. A successful but still-short
+      // pool is not fulfillment of the published guarantee either.
+      if (funded === null || funded < Number(tournament.guaranteed_prize)) {
+        await raiseFinancialAlert(
+          'critical',
+          'Tournament.finish_guarantee_unconfirmed',
+          'The tournament guarantee is not confirmed funded. Winner pricing and completion were not attempted by this invocation.',
+          {
+            tournament_id: this.tournamentId,
+            guaranteed_prize: Number(tournament.guaranteed_prize),
+            confirmed_pool: funded,
+          }
+        );
+        return;
+      }
+      // Use the confirmed funding result. Another read can fail or return
+      // the pre-funding snapshot, silently pricing the winner too low.
+      tournament.prize_pool = funded;
     }
 
     let winnerPrize = 0;
@@ -3628,10 +3631,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // An unreadable award list would make `alreadyAwarded` 0 — the
         // OVERPAYING direction, and the exact "a failed query reads as nobody
         // is left" shape that has bitten this file before. So it is retried,
-        // and a persistent failure is reported as CRITICAL rather than
-        // absorbed. It is still paid: leaving a champion unpaid over a
-        // transient read is the worse of the two failures, and it is
-        // recoverable where an unpaid winner needs a human.
+        // and a persistent failure prevents residual pricing. Unknown prior
+        // awards cannot authorize another payment from the full pool.
         let awarded: Array<{ prize: number }> | null = null;
         let awardedErr: { message: string } | null = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -3642,12 +3643,39 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             .neq('user_id', winnerId)
             .gt('prize', 0);
           if (!res.error) {
-            awarded = (res.data ?? []) as Array<{ prize: number }>;
+            awarded = res.data as Array<{ prize: number }> | null;
             awardedErr = null;
             break;
           }
           awardedErr = res.error;
           if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 500));
+        }
+
+        const readableAwards =
+          Array.isArray(awarded) &&
+          awarded.every((row) => {
+            const raw = row?.prize;
+            const amount = Number(raw);
+            return (
+              (typeof raw === 'number' ||
+                (typeof raw === 'string' && /^[0-9]+(?:[.][0-9]+)?$/.test(raw))) &&
+              Number.isFinite(amount) &&
+              amount >= 0 &&
+              Number.isSafeInteger(Math.round(amount * 100)) &&
+              Math.round(amount * 100) / 100 === amount
+            );
+          });
+        if (awardedErr || !readableAwards) {
+          await raiseFinancialAlert(
+            'critical',
+            'Tournament.winner_prior_awards_unconfirmed',
+            'Winner residual pricing requires readable prior awards. No residual payment or completion was attempted by this invocation.',
+            {
+              tournament_id: this.tournamentId,
+              detail: awardedErr?.message ?? 'invalid award rows',
+            }
+          );
+          return;
         }
 
         const alreadyAwarded = (awarded ?? []).reduce(
@@ -3659,12 +3687,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
 
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] ${awardedErr ? 'CRITICAL: ' : ''}` +
+            `[Tournament:${this.tournamentId.slice(0, 8)}] ` +
               `No usable payout_structure` +
               `${isSpinTournament(tournament as any) ? ' and no spin_multiplier to rebuild it from' : ''}` +
               ` - paying the winner the UNSPENT pool (${winnerPrize} of ${pool}; ` +
-              `${alreadyAwarded} already paid to ${(awarded ?? []).length} finisher(s))` +
-              `${awardedErr ? ` - award read FAILED after 3 attempts (${awardedErr.message}), so "already paid" may be understated and this may be an OVERPAY` : ''}`
+              `${alreadyAwarded} recorded for ${(awarded ?? []).length} finisher(s))`
           ),
           'TournamentthistournamentIdslic.No_usable_payout_structure'
         );
@@ -3749,6 +3776,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             transport_error: settled.transport_error ?? null,
           }
         );
+      }
+      // A transport-successful partial credit is still an unpaid obligation.
+      // Do not stamp the requested prize or announce a completed tournament.
+      if (!settled.ok || !settled.fully_settled || (settled.amount_paid ?? 0) < winnerPrize) {
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Winner obligation is not fully settled`
+          ),
+          'Tournament.winner_obligation_incomplete'
+        );
+        return;
       }
     }
 

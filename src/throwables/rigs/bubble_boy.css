@@ -1,0 +1,111 @@
+.thr-bubble_boy__bubble {
+  transform-origin: 0 0;
+  animation: thr-bubble_boy-bubble calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-bubble_boy-bubble {
+  0.00000% {
+    opacity: 0;
+    transform: scale(0.1);
+  }
+  11.37169% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  20.91628% {
+    opacity: 1;
+    transform: translateY(-25px);
+  }
+  45.45950% {
+    opacity: 1;
+    transform: translateY(-45px);
+  }
+  76.82029% {
+    opacity: 1;
+    transform: translateY(-35px) scale(1.08);
+  }
+  80.91083% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-bubble_boy__burst {
+  transform-origin: 0 0;
+  animation: thr-bubble_boy-burst calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-bubble_boy-burst {
+  0.00000% {
+    opacity: 0;
+  }
+  80.88356% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  80.91083% {
+    opacity: 1;
+    transform: scale(0.4);
+  }
+  87.72839% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  98.63649% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-bubble_boy__bubble {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-bubble_boy__burst {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+}
+.thr-bubble_boy__avatar {
+  animation: thr-bubble_boy-avatar calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-bubble_boy-avatar {
+  0%,
+  11% {
+    opacity: 0;
+    transform: none;
+  }
+  12% {
+    opacity: 1;
+    transform: none;
+  }
+  21% {
+    transform: translateY(-25px);
+  }
+  70% {
+    transform: translateY(-45px);
+  }
+  81% {
+    transform: translateY(-35px);
+  }
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  91%,
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-bubble_boy__avatar {
+    animation: none !important;
+    opacity: 0;
+  }
+}

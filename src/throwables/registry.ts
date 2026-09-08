@@ -1,3 +1,21 @@
+import { spec as crownSpec, rig as crownRig } from './rigs/crown';
+import { spec as chip_rainSpec, rig as chip_rainRig } from './rigs/chip_rain';
+import { spec as diamond_showerSpec, rig as diamond_showerRig } from './rigs/diamond_shower';
+import { spec as velvet_ropeSpec, rig as velvet_ropeRig } from './rigs/velvet_rope';
+import { spec as champagne_towerSpec, rig as champagne_towerRig } from './rigs/champagne_tower';
+import { spec as standing_ovationSpec, rig as standing_ovationRig } from './rigs/standing_ovation';
+import { spec as whaleSpec, rig as whaleRig } from './rigs/whale';
+import { spec as to_the_moonSpec, rig as to_the_moonRig } from './rigs/to_the_moon';
+import { spec as missileSpec, rig as missileRig } from './rigs/missile';
+import { spec as donkeySpec, rig as donkeyRig } from './rigs/donkey';
+import { spec as tilt_meterSpec, rig as tilt_meterRig } from './rigs/tilt_meter';
+import { spec as bad_beat_bandageSpec, rig as bad_beat_bandageRig } from './rigs/bad_beat_bandage';
+import { spec as bubble_boySpec, rig as bubble_boyRig } from './rigs/bubble_boy';
+import { spec as slot_machineSpec, rig as slot_machineRig } from './rigs/slot_machine';
+import { spec as pumpkinSpec, rig as pumpkinRig } from './rigs/pumpkin';
+import { spec as snowballSpec, rig as snowballRig } from './rigs/snowball';
+import { spec as party_popperSpec, rig as party_popperRig } from './rigs/party_popper';
+import { spec as heart_arrowSpec, rig as heart_arrowRig } from './rigs/heart_arrow';
 import { spec as slothSpec, rig as slothRig } from './rigs/sloth';
 import { spec as energy_ballSpec, rig as energy_ballRig } from './rigs/energy_ball';
 import { spec as surrenderSpec, rig as surrenderRig } from './rigs/surrender';
@@ -81,6 +99,24 @@ export interface RiggedThrowable {
 }
 
 const RIGGED: Record<string, RiggedThrowable> = {
+  crown: { spec: crownSpec, rig: crownRig },
+  chip_rain: { spec: chip_rainSpec, rig: chip_rainRig },
+  diamond_shower: { spec: diamond_showerSpec, rig: diamond_showerRig },
+  velvet_rope: { spec: velvet_ropeSpec, rig: velvet_ropeRig },
+  champagne_tower: { spec: champagne_towerSpec, rig: champagne_towerRig },
+  standing_ovation: { spec: standing_ovationSpec, rig: standing_ovationRig },
+  whale: { spec: whaleSpec, rig: whaleRig },
+  to_the_moon: { spec: to_the_moonSpec, rig: to_the_moonRig },
+  missile: { spec: missileSpec, rig: missileRig },
+  donkey: { spec: donkeySpec, rig: donkeyRig },
+  tilt_meter: { spec: tilt_meterSpec, rig: tilt_meterRig },
+  bad_beat_bandage: { spec: bad_beat_bandageSpec, rig: bad_beat_bandageRig },
+  bubble_boy: { spec: bubble_boySpec, rig: bubble_boyRig },
+  slot_machine: { spec: slot_machineSpec, rig: slot_machineRig },
+  pumpkin: { spec: pumpkinSpec, rig: pumpkinRig },
+  snowball: { spec: snowballSpec, rig: snowballRig },
+  party_popper: { spec: party_popperSpec, rig: party_popperRig },
+  heart_arrow: { spec: heart_arrowSpec, rig: heart_arrowRig },
   loser_hand: { spec: loser_handSpec, rig: loser_handRig },
   blush: { spec: blushSpec, rig: blushRig },
   ok_smug: { spec: ok_smugSpec, rig: ok_smugRig },

@@ -54,6 +54,7 @@ import type { ThrowableSpec } from '../spec';
 import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import { preloadThrowableCues } from '../cues';
 import './fireworks.css';
+import { AtlasSprite } from '../AtlasSprite';
 
 export const fireworksSpec: ThrowableSpec = {
   id: 'fireworks',
@@ -97,153 +98,27 @@ preloadThrowableCues(fireworksSpec.audio.map((c) => c.sample));
  * multiplies nx/ny by its own radius, so one fixed table draws six different
  * clouds and every throw draws the identical frame.
  */
-const PARTICLES: ReadonlyArray<readonly [number, number, number]> = [
-  [0.066, 0.0, 1.04],
-  [-0.096, 0.088, 1.03],
-  [0.016, -0.179, 1.02],
-  [0.134, 0.175, 1.01],
-  [-0.254, -0.045, 0.99],
-  [0.247, -0.157, 0.98],
-  [-0.084, 0.313, 0.97],
-  [-0.163, -0.314, 0.96],
-  [0.36, 0.131, 0.94],
-  [-0.379, 0.156, 0.93],
-  [0.185, -0.395, 0.92],
-  [0.138, 0.441, 0.91],
-  [-0.421, -0.244, 0.89],
-  [0.498, -0.109, 0.88],
-  [-0.307, 0.436, 0.87],
-  [-0.071, -0.551, 0.86],
-  [0.442, 0.372, 0.84],
-  [-0.598, 0.025, 0.83],
-  [0.439, -0.437, 0.82],
-  [-0.03, 0.64, 0.81],
-  [-0.423, -0.507, 0.79],
-  [0.674, 0.091, 0.78],
-  [-0.575, 0.4, 0.77],
-  [0.158, -0.702, 0.76],
-  [0.367, 0.64, 0.74],
-  [-0.721, -0.23, 0.73],
-  [0.703, -0.325, 0.72],
-  [-0.306, 0.731, 0.71],
-  [-0.274, -0.763, 0.69],
-  [0.733, 0.385, 0.68],
-  [-0.817, 0.215, 0.67],
-  [0.466, -0.725, 0.66],
-  [0.149, 0.867, 0.64],
-  [-0.708, -0.549, 0.63],
-  [0.909, -0.075, 0.62],
-  [-0.631, 0.682, 0.61],
-  [0.005, -0.945, 0.59],
-  [0.645, 0.712, 0.58],
-  [-0.972, -0.09, 0.57],
-  [0.79, -0.6, 0.56],
-];
-
-/** The measured colours of the six bursts, plus the ember stage they all die
- *  into ("blue -> teal, magenta -> purple, yellow -> orange-brown"). */
 const BLUE = ['#eafcff', '#4fd8ff', '#1a7fd4'] as const;
 const MAGENTA = ['#ffe9fb', '#ff5fd0', '#b3229b'] as const;
 const YELLOW = ['#fffdf0', '#ffd83d', '#ff9a12'] as const;
 const WHITE_HOT = ['#ffffff', '#fff4b0', '#ffc23a'] as const;
 const EMBER = ['#ffb765', '#c1590f', '#5a2405'] as const;
 
-/**
- * One burst: a soft core glow and a dense round cloud of dots on a radial
- * gradient that fades to nothing at the dot's edge, which is what gives the
- * soft edge without a filter (rule 6 forbids an animated blur).
- *
- * `r` is the cloud radius in units, `dot` the base dot radius, `n` how many of
- * the 40 particles to draw (the ember stages draw fewer, because the reference
- * ember is dimmer and more diffuse than the flash it follows).
- */
-function Burst({
-  uid,
-  k,
-  r,
-  dot,
-  colors,
-  n = PARTICLES.length,
-}: {
-  uid: string;
-  k: string;
-  r: number;
-  dot: number;
-  colors: readonly [string, string, string] | readonly string[];
-  n?: number;
-}) {
-  const g = (name: string) => `thr-fireworks-${name}-${uid}-${k}`;
-  const [c0, c1, c2] = colors;
-  return (
-    <g>
-      <defs>
-        <radialGradient id={g('dot')}>
-          <stop offset="0%" stopColor={c0} />
-          <stop offset="42%" stopColor={c1} />
-          <stop offset="100%" stopColor={c2} stopOpacity="0" />
-        </radialGradient>
-        <radialGradient id={g('glow')}>
-          <stop offset="0%" stopColor={c0} stopOpacity="0.8" />
-          <stop offset="50%" stopColor={c1} stopOpacity="0.3" />
-          <stop offset="100%" stopColor={c2} stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <circle cx="0" cy="0" r={Math.round(r * 0.85)} fill={`url(#${g('glow')})`} />
-      {PARTICLES.slice(0, n).map(([nx, ny, rr], i) => {
-        const x = nx * r;
-        const y = ny * r;
-        const width = dot * rr * 0.3;
-        const length = Math.hypot(nx, ny) || 1;
-        const tx = (-ny / length) * width;
-        const ty = (nx / length) * width;
-        return (
-          <g key={i}>
-            <path
-              d={`M ${x * 0.58} ${y * 0.58} L ${x + tx} ${y + ty} L ${x - tx} ${y - ty} Z`}
-              fill={c1}
-              opacity="0.42"
-            />
-            <circle
-              cx={Number(x.toFixed(1))}
-              cy={Number(y.toFixed(1))}
-              r={Number((dot * rr).toFixed(1))}
-              fill={`url(#${g('dot')})`}
-            />
-            <ellipse
-              cx={Number(x.toFixed(1))}
-              cy={Number(y.toFixed(1))}
-              rx={Math.max(0.4, dot * rr * 0.22)}
-              ry={Math.max(0.6, dot * rr * 0.4)}
-              fill={c0}
-              opacity="0.95"
-            />
-          </g>
-        );
-      })}
-    </g>
-  );
+/** Isolated luminous bursts retain each wave's independent timing and scale. */
+function Burst({ r, colors }: { r: number; colors: readonly string[] }) {
+  const rect =
+    colors === BLUE
+      ? ([808, 153, 441, 455] as const)
+      : colors === MAGENTA
+        ? ([0, 675, 431, 465] as const)
+        : colors === EMBER
+          ? ([848, 710, 391, 416] as const)
+          : ([428, 675, 426, 466] as const);
+  return <AtlasSprite src="fireworks" rect={rect} x={-r} y={-r} width={r * 2} height={r * 2} />;
 }
-
-/**
- * A rocket trail: a 20-unit tapered streak with a bright head, drawn at the
- * END of its climb. The CSS lifts it from `--rise` units below to 0, so the
- * spark arrives exactly where its burst opens.
- */
-function Trail({ uid, k, colors }: { uid: string; k: string; colors: readonly string[] }) {
-  const id = `thr-fireworks-trail-${uid}-${k}`;
-  const [c0, c1] = colors;
+function Trail() {
   return (
-    <g>
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={c0} />
-          <stop offset="55%" stopColor={c1} stopOpacity="0.7" />
-          <stop offset="100%" stopColor={c1} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d="M -2.6 -10 L 2.6 -10 L 1.4 22 L -1.4 22 Z" fill={`url(#${id})`} />
-      <circle cx="0" cy="-11" r="3.4" fill={c0} />
-    </g>
+    <AtlasSprite src="fireworks" rect={[515, 23, 234, 629]} x={-7} y={-14} width={14} height={39} />
   );
 }
 
@@ -257,36 +132,36 @@ function Projectile(_props: RigProps) {
   );
 }
 
-function Payload({ uid }: RigProps) {
+function Payload(_props: RigProps) {
   return (
     <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* ── WAVE 1 ─────────────────────────────────────────────────────────
           Three rockets one after another: trail, then a round burst. */}
       <g transform="translate(53 0)">
         <g className="thr-fireworks__t1">
-          <Trail uid={uid} k="t1" colors={BLUE} />
+          <Trail />
         </g>
       </g>
       <g transform="translate(60 -10)">
         <g className="thr-fireworks__b1">
-          <Burst uid={uid} k="b1" r={42} dot={5.5} colors={BLUE} />
+          <Burst r={42} colors={BLUE} />
         </g>
       </g>
 
       <g transform="translate(-83 0)">
         <g className="thr-fireworks__t2">
-          <Trail uid={uid} k="t2" colors={MAGENTA} />
+          <Trail />
         </g>
       </g>
       <g transform="translate(-77 -63)">
         <g className="thr-fireworks__b2">
-          <Burst uid={uid} k="b2" r={58} dot={6.5} colors={MAGENTA} />
+          <Burst r={58} colors={MAGENTA} />
         </g>
       </g>
 
       <g transform="translate(60 -20)">
         <g className="thr-fireworks__t3">
-          <Trail uid={uid} k="t3" colors={YELLOW} />
+          <Trail />
         </g>
       </g>
       {/* burst 3 shifts colour as it dies: the hot yellow cloud fades out
@@ -294,10 +169,10 @@ function Payload({ uid }: RigProps) {
           "yellow -> orange -> brown-orange embers" without animating a fill. */}
       <g transform="translate(23 -123)">
         <g className="thr-fireworks__b3">
-          <Burst uid={uid} k="b3" r={50} dot={6} colors={YELLOW} />
+          <Burst r={50} colors={YELLOW} />
         </g>
         <g className="thr-fireworks__b3e">
-          <Burst uid={uid} k="b3e" r={54} dot={7} colors={EMBER} n={18} />
+          <Burst r={54} colors={EMBER} />
         </g>
       </g>
 
@@ -306,42 +181,42 @@ function Payload({ uid }: RigProps) {
           are in step by construction, as the reference has them. */}
       <g transform="translate(-50 -10)">
         <g className="thr-fireworks__t4">
-          <Trail uid={uid} k="t4" colors={BLUE} />
+          <Trail />
         </g>
       </g>
       <g transform="translate(7 -10)">
         <g className="thr-fireworks__t4">
-          <Trail uid={uid} k="t5" colors={WHITE_HOT} />
+          <Trail />
         </g>
       </g>
       <g transform="translate(60 -10)">
         <g className="thr-fireworks__t4">
-          <Trail uid={uid} k="t6" colors={MAGENTA} />
+          <Trail />
         </g>
       </g>
 
       <g transform="translate(-77 -40)">
         <g className="thr-fireworks__w2">
-          <Burst uid={uid} k="w2a" r={53} dot={6} colors={BLUE} />
+          <Burst r={53} colors={BLUE} />
         </g>
         <g className="thr-fireworks__w2e">
-          <Burst uid={uid} k="w2ae" r={57} dot={7} colors={EMBER} n={16} />
+          <Burst r={57} colors={EMBER} />
         </g>
       </g>
       <g transform="translate(-7 -100)">
         <g className="thr-fireworks__w2">
-          <Burst uid={uid} k="w2b" r={53} dot={6} colors={WHITE_HOT} />
+          <Burst r={53} colors={WHITE_HOT} />
         </g>
         <g className="thr-fireworks__w2e">
-          <Burst uid={uid} k="w2be" r={57} dot={7} colors={EMBER} n={16} />
+          <Burst r={57} colors={EMBER} />
         </g>
       </g>
       <g transform="translate(70 -40)">
         <g className="thr-fireworks__w2">
-          <Burst uid={uid} k="w2c" r={53} dot={6} colors={MAGENTA} />
+          <Burst r={53} colors={MAGENTA} />
         </g>
         <g className="thr-fireworks__w2e">
-          <Burst uid={uid} k="w2ce" r={57} dot={7} colors={EMBER} n={16} />
+          <Burst r={57} colors={EMBER} />
         </g>
       </g>
     </svg>

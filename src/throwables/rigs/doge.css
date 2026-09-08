@@ -1,0 +1,130 @@
+.thr-doge__pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: thr-doge-pop calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(0s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-doge-pop {
+  0% {
+    transform: scale(0.23);
+  }
+  40% {
+    transform: scale(1.4);
+  }
+  70% {
+    transform: scale(0.85);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.thr-doge__glasses {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-doge-glasses calc(0.167s * var(--animation-speed, 1)) ease-out
+    calc(1.233s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-doge-glasses {
+  0% {
+    opacity: 1;
+    transform: translate(95px, -75px) rotate(25deg);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-3px, 2px) rotate(-2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-doge__sun {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-doge-sun calc(2.7s * var(--animation-speed, 1)) linear
+    calc(1.433s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-doge-sun {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-10deg);
+  }
+  8% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 0.65;
+    transform: rotate(12deg);
+  }
+  55% {
+    opacity: 1;
+    transform: rotate(24deg);
+  }
+  80% {
+    opacity: 0.7;
+    transform: rotate(36deg);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(45deg);
+  }
+}
+.thr-doge__neutral {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: thr-doge-neutral calc(4.133s * var(--animation-speed, 1)) linear
+    calc(0s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-doge-neutral {
+  0%,
+  75%,
+  85%,
+  100% {
+    opacity: 1;
+  }
+  76%,
+  84% {
+    opacity: 0;
+  }
+}
+.thr-doge__wink {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-doge-wink calc(4.133s * var(--animation-speed, 1)) linear
+    calc(0s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-doge-wink {
+  0%,
+  75%,
+  85%,
+  100% {
+    opacity: 0;
+  }
+  76%,
+  84% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-doge__pop,
+  .thr-doge__neutral,
+  .thr-doge__glasses,
+  .thr-doge__sun,
+  .thr-doge__wink {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-doge__pop,
+  .thr-doge__neutral,
+  .thr-doge__glasses,
+  .thr-doge__sun {
+    opacity: 1 !important;
+  }
+  .thr-doge__wink {
+    opacity: 0 !important;
+  }
+}

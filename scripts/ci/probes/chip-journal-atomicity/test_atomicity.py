@@ -609,6 +609,8 @@ if mode=="fixed":
 if mode=="fixed":
  from test_bbj import verify_bbj
  verify_bbj(run)
+ from test_post_commit_addons import verify_post_commit_addons
+ verify_post_commit_addons(run)
 
 if mode=="fixed":
  from test_insurance import verify_insurance

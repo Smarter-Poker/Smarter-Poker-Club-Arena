@@ -17036,3 +17036,7 @@ Applied 20260908035339_cashout_escrow_ledger_atomicity.sql to production. Reques
 ## 2026-09-08: Hand Settlement Roster And Replay Identity
 
 Applied 20260908042156_hand_settlement_roster_and_replay_identity.sql. Reproduced a duplicate-player request minting 5 chips while returning success; duplicate/malformed/mixed rosters now fail before writes. Seat locking uses UUID order and new successful receipts bind the economic payload. 17 new PostgreSQL cases and 34 existing source guard tests pass. Service-only grants preserved. See docs/changelog/2026-09-08-hand-settlement-roster.md.
+
+## 2026-09-08: Union Close Period Boundaries
+
+Applied 20260908044150_union_close_period_boundaries_are_disjoint.sql. The weekly cursor aligns after the reset floor, uses Pacific calendar boundaries across DST, and the direct close refuses future/misaligned or overlapping periods. Eleven PostgreSQL boundary/concurrency cases pass. Rates, funding, reset floor and historical records remain unchanged. See docs/changelog/2026-09-08-union-close-period-boundaries.md.

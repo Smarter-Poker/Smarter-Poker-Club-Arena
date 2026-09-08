@@ -1,0 +1,4 @@
+{
+  "_owner": "codex-realtime-continuation-sep08; applied Supabase migration 20260908194834 and verified live function MD5 82e0c070a873103964f597a1968745c7. Authenticated-only receipt read; no underlying table SELECT grant.",
+  "functions": ["fn_ca_cash_buyin_receipt"]
+}

@@ -79,10 +79,24 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const maxBuyIn = this.getMaxBuyIn();
     const midHand = !!this.handController;
 
-    // Effective current chips for the cap: mid-hand include already-queued
-    // (already-debited) pending add-ons so we never exceed the ceiling.
+    // Effective current chips for the cap: include already-queued (already-
+    // debited) pending add-ons so we never exceed the ceiling.
+    //
+    // IN BOTH BRANCHES (Dan 2026-09-04, the add-on that must "auto adjust").
+    // This used to add `pending` only while `midHand`, on the theory that a
+    // pending row cannot exist between hands. It can: settlement fires with
+    // `void this.handleHandEvent(...)` and `handController` is nulled at
+    // once, so between that instant and settlement step 8e (which resolves
+    // the ledger) the table is "between hands" with the mid-hand row still
+    // unresolved. The client's auto top-up fires in exactly that window (its
+    // gate is the early hand_complete broadcast), so it took this branch,
+    // ignored the queued 49.95, applied straight to the seat, and the sweep
+    // then found no headroom for the row that was queued FIRST and refunded
+    // it - the wrong add-on adjusted, and the player told nothing. Counting
+    // the queued chips here means the second request is sized to the real
+    // remaining room from the start.
     const pending = this.pendingAddOns.get(userId) || 0;
-    const effectiveStack = midHand ? player.stack + pending : player.stack;
+    const effectiveStack = player.stack + pending;
     const headroom = Math.max(0, maxBuyIn - effectiveStack);
     const applied = Math.min(amount, headroom);
     if (applied <= 0) {
@@ -299,6 +313,10 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       let delivered = 0;
       for (const row of rows ?? []) {
         const applied = Number(row.applied ?? 0);
+        const refunded = Number(row.refunded ?? 0);
+        if (typeof row.user_id === 'string') {
+          this.tellPlayerAddOnAdjusted(row.user_id, row.kind ?? 'addon', applied, refunded);
+        }
         if (!(applied > 0) || !Number.isFinite(applied) || typeof row.user_id !== 'string') {
           continue;
         }
@@ -382,6 +400,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       const applied = Number(result?.applied ?? 0);
       const refunded = Number(result?.refunded ?? 0);
       const wasResolvedByUs = result?.was_resolved !== false;
+      if (wasResolvedByUs) {
+        this.tellPlayerAddOnAdjusted(row.user_id, row.kind ?? 'addon', applied, refunded);
+      }
 
       // Mirror the DB's decision into the live in-memory stack. The RPC has
       // already written table_seats, so this only keeps the engine's view in
@@ -431,6 +452,47 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       this.requestPendingAddOnSweep();
     }
     if (delivered > 0) this.broadcastCurrentState();
+  }
+
+  /**
+   * ═══ THE ADD-ON THAT ADJUSTED ITSELF IS SAID OUT LOUD (Dan 2026-09-04) ═════
+   *
+   * Dan: "IF YOU ADD ON DURING A HAND ... AND YOU WIN THE POT, THE ADD ON NEEDS
+   * TO BE AUTO ADJUSTED. I ADDED ON FOR $49.95 BUT THEN WON THE VERY SMALL
+   * POT, MY ADD ON NEEDS TO ADJUST TO ONLY ALLOW FOR $49.95 - REMAINING CHIPS.
+   * THIS NEEDS TO BE A REAL TIME ADJUSTMENT."
+   *
+   * The money side already did this: resolve_pending_addon caps the landing
+   * at the max buy-in less the stack AS IT STANDS AFTER THE POT, and refunds
+   * the rest to the wallet (his 49.95 landed as 48.88 with 1.07 returned,
+   * table_pending_addons row cd60239c). What never happened was TELLING HIM:
+   * the client had debited its balance and its session figures by the full
+   * 49.95 and the refund reached only a console.log on this box. So the
+   * adjustment was real and invisible, which reads as no adjustment at all.
+   *
+   * A private frame, because it is about one player's wallet. The table-wide
+   * `add_on_applied` bubble still says what the stack gained.
+   */
+  protected tellPlayerAddOnAdjusted(
+    userId: string,
+    kind: string,
+    applied: number,
+    refunded: number
+  ): void {
+    // The hub type carries sendToUser; a test double that only stubs
+    // emitEvent must not turn a refund notice into a thrown settlement.
+    if (!this.hub || typeof this.hub.sendToUser !== 'function' || !userId) return;
+    if (!(refunded > 0) || !Number.isFinite(refunded)) return;
+    const safeApplied = Number.isFinite(applied) && applied > 0 ? applied : 0;
+    this.hub.sendToUser(this.tableId, userId, {
+      kind: 'add_on_adjusted',
+      addon_kind: kind,
+      requested: Math.round((safeApplied + refunded) * 100) / 100,
+      applied: Math.round(safeApplied * 100) / 100,
+      refunded: Math.round(refunded * 100) / 100,
+      max_buy_in: this.getMaxBuyIn(),
+      hand_number: this.handCount,
+    });
   }
 
   /**

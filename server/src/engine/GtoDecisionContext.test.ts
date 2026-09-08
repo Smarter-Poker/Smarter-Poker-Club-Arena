@@ -3,6 +3,7 @@ import type { ActionRecord, HandStage, SeatPlayer } from '../types.js';
 import {
   classifyGtoDecisionContext,
   gtoV31DealtInSeats,
+  gtoV31FlopRootStack,
   gtoV31HasHeadsUpPostflopLine,
   gtoV31Position,
   gtoV31PotType,
@@ -72,6 +73,72 @@ describe('canonical V31 node context', () => {
     expect(lastAggressor(history, 'preflop')).toBe(1);
     expect(lastAggressor(history, 'flop')).toBe(2);
     expect(lastAggressor(history, 'turn')).toBeNull();
+  });
+
+  it('reconstructs flop-root depth instead of shrinking the solver stack each street', () => {
+    const history = [
+      rec(1, 'bet', 50, 'flop'),
+      rec(2, 'raise', 150, 'flop'),
+      rec(1, 'call', 100, 'flop'),
+      rec(1, 'bet', 200, 'turn'),
+      rec(2, 'call', 200, 'turn'),
+    ];
+    expect(
+      gtoV31FlopRootStack({
+        street: 'turn',
+        player: { seat: 1, stack: 650, bet: 200 },
+        actionHistory: history,
+      })
+    ).toBe(1_000);
+    expect(
+      gtoV31FlopRootStack({
+        street: 'river',
+        player: { seat: 1, stack: 650, bet: 0 },
+        actionHistory: history,
+      })
+    ).toBe(1_000);
+    expect(
+      gtoV31FlopRootStack({
+        street: 'river',
+        player: { seat: 2, stack: 650, bet: 0 },
+        actionHistory: history,
+      })
+    ).toBe(1_000);
+    expect(
+      gtoV31FlopRootStack({
+        street: 'turn',
+        player: { seat: 1, stack: Number.NaN, bet: 0 },
+        actionHistory: history,
+      })
+    ).toBeNull();
+    expect(
+      gtoV31FlopRootStack({
+        street: 'turn',
+        player: { seat: 1, stack: 800, bet: 0 },
+        actionHistory: [],
+      })
+    ).toBeNull();
+    expect(
+      gtoV31FlopRootStack({
+        street: 'turn',
+        player: { seat: 1, stack: 650, bet: 250 },
+        actionHistory: history,
+      })
+    ).toBeNull();
+    expect(
+      gtoV31FlopRootStack({
+        street: 'turn',
+        player: { seat: 1, stack: 1_000, bet: 0 },
+        actionHistory: [rec(1, 'check', 5, 'flop')],
+      })
+    ).toBeNull();
+    expect(
+      gtoV31FlopRootStack({
+        street: 'turn',
+        player: { seat: 1, stack: 1_000, bet: 0 },
+        actionHistory: [rec(1, 'fold', 0, 'flop')],
+      })
+    ).toBeNull();
   });
 
   it('keys exact positions and original table size rather than a coarse late bucket', () => {
@@ -216,35 +283,69 @@ describe('canonical V31 node context', () => {
 
   it('distinguishes a check-raise from a plain bet-raise and a generic facing raise', () => {
     const checkRaise = context(
-      [rec(2, 'check', 0, 'turn'), rec(1, 'bet', 40, 'turn'), rec(2, 'raise', 140, 'turn')],
+      [rec(2, 'check', 0, 'turn'), rec(1, 'bet', 50, 'turn'), rec(2, 'raise', 250, 'turn')],
       {
-        hero: { seat: 1, bet: 40, stack: 960 },
-        opponents: [{ seat: 2, bet: 140, stack: 860, is_all_in: false }],
-        currentBet: 140,
-        pot: 280,
+        hero: { seat: 1, bet: 50, stack: 950 },
+        opponents: [{ seat: 2, bet: 250, stack: 750, is_all_in: false }],
+        currentBet: 250,
+        pot: 400,
       }
     );
     expect(checkRaise?.nodeRole).toBe('check_raise');
     expect(checkRaise?.facingKind).toBe('raise');
+    expect(checkRaise?.facingSizeBucket).toBe('mid');
 
-    const betRaise = context([rec(1, 'bet', 40, 'turn'), rec(2, 'raise', 140, 'turn')], {
-      hero: { seat: 1, bet: 40, stack: 960 },
-      opponents: [{ seat: 2, bet: 140, stack: 860, is_all_in: false }],
-      currentBet: 140,
-      pot: 280,
+    const betRaise = context([rec(1, 'bet', 50, 'turn'), rec(2, 'raise', 250, 'turn')], {
+      hero: { seat: 1, bet: 50, stack: 950 },
+      opponents: [{ seat: 2, bet: 250, stack: 750, is_all_in: false }],
+      currentBet: 250,
+      pot: 400,
     });
     expect(betRaise?.nodeRole).toBe('bet_raise');
+    expect(betRaise?.facingSizeBucket).toBe('mid');
 
     const facingRaise = context(
-      [rec(2, 'bet', 40, 'turn'), rec(1, 'raise', 140, 'turn'), rec(2, 'raise', 360, 'turn')],
+      [
+        rec(1, 'bet', 50, 'turn'),
+        rec(2, 'raise', 150, 'turn'),
+        rec(1, 'raise', 300, 'turn'),
+        rec(2, 'raise', 900, 'turn'),
+      ],
       {
-        hero: { seat: 1, bet: 140, stack: 860 },
-        currentBet: 360,
-        pot: 640,
-        opponents: [{ seat: 2, bet: 360, stack: 640, is_all_in: false }],
+        hero: { seat: 1, bet: 300, stack: 700 },
+        currentBet: 900,
+        pot: 1_300,
+        opponents: [{ seat: 2, bet: 900, stack: 100, is_all_in: false }],
       }
     );
     expect(facingRaise?.nodeRole).toBe('facing_raise');
+    expect(facingRaise?.facingSizeBucket).toBe('mid');
+
+    expect(
+      context([rec(2, 'bet', 80, 'turn')], {
+        hero: { seat: 1, bet: 0, stack: 1_000 },
+        currentBet: 90,
+        pot: 180,
+        opponents: [{ seat: 2, bet: 90, stack: 910, is_all_in: false }],
+      })
+    ).toBeNull();
+
+    expect(
+      context([rec(2, 'bet', 100, 'turn')], {
+        hero: { seat: 1, bet: 0, stack: Number.NaN },
+        currentBet: 100,
+        pot: 200,
+        opponents: [{ seat: 2, bet: 100, stack: 900, is_all_in: false }],
+      })
+    ).toBeNull();
+
+    expect(
+      context([rec(2, 'bet', 100, 'turn')], {
+        currentBet: 100,
+        pot: 100,
+        opponents: [{ seat: 2, bet: 100, stack: 900, is_all_in: false }],
+      })
+    ).toBeNull();
 
     expect(
       context([rec(2, 'raise', 140, 'turn')], {
@@ -262,6 +363,30 @@ describe('canonical V31 node context', () => {
       opponents: [{ seat: 2, bet: 1_000, stack: 0, is_all_in: true }],
     });
     expect(result).toEqual({
+      nodeRole: 'all_in',
+      facingKind: 'all_in',
+      facingSizeBucket: 'all_in',
+    });
+
+    const coveringBet = context([rec(2, 'bet', 500, 'turn')], {
+      hero: { seat: 1, bet: 0, stack: 200 },
+      currentBet: 500,
+      pot: 600,
+      opponents: [{ seat: 2, bet: 500, stack: 500, is_all_in: false }],
+    });
+    expect(coveringBet).toEqual({
+      nodeRole: 'all_in',
+      facingKind: 'all_in',
+      facingSizeBucket: 'all_in',
+    });
+
+    const coveringRaise = context([rec(1, 'bet', 100, 'turn'), rec(2, 'raise', 500, 'turn')], {
+      hero: { seat: 1, bet: 100, stack: 150 },
+      currentBet: 500,
+      pot: 700,
+      opponents: [{ seat: 2, bet: 500, stack: 500, is_all_in: false }],
+    });
+    expect(coveringRaise).toEqual({
       nodeRole: 'all_in',
       facingKind: 'all_in',
       facingSizeBucket: 'all_in',

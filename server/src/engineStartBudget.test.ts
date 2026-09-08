@@ -135,7 +135,7 @@ describe('C20 wiring - the verdict is unskippable', () => {
 
   it('applies it from a finally, so a throw cannot deny recovery', () => {
     // THE DEFECT: the verdict sat in the try, after heartbeatTables(),
-    // claimTable() and the adoption loop. Any throw in those skipped it while
+    // the exact table-lease claim and adoption loop. Any throw in those skipped it while
     // the RPC-error path still halved - so the budget only ever went down.
     const fin = code.slice(code.lastIndexOf('} finally {'));
     expect(code).toContain('} finally {');

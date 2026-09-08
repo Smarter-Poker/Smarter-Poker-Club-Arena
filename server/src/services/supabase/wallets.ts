@@ -12,6 +12,7 @@
 import { v5 as uuidv5 } from 'uuid';
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
 
 export type HorseRebuyResult =
   | { status: 'funded'; stack: number }
@@ -26,6 +27,7 @@ export async function autoRebuyHorse(
   clubId: string,
   handNumber: number
 ): Promise<HorseRebuyResult> {
+  if (isMaintenanceFrozen()) return { status: 'unknown' };
   if (
     !Number.isSafeInteger(handNumber) ||
     handNumber < 0 ||
@@ -43,6 +45,7 @@ export async function autoRebuyHorse(
   const payload = { p_table_id: tableId, p_user_id: userId, p_amount: rebuyAmount, p_op_id: opId };
   let lastError = 'missing or mismatched funding receipt';
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (isMaintenanceFrozen()) return { status: 'unknown' };
     try {
       const { data, error } = await supabase.rpc('fn_horse_fund_from_treasury', payload);
       if (
@@ -59,6 +62,14 @@ export async function autoRebuyHorse(
       ) {
         return { status: 'funded', stack: data.new_stack };
       }
+      const message = String(error?.message || data?.error || '');
+      if (
+        data?.deferred === true ||
+        /PLATFORM_FROZEN|scheduled maintenance/i.test(message) ||
+        isMaintenanceFrozen()
+      ) {
+        return { status: 'unknown' };
+      }
       if (
         !error &&
         data?.success === false &&
@@ -66,10 +77,11 @@ export async function autoRebuyHorse(
       ) {
         return { status: 'declined' };
       }
-      lastError = error?.message || data?.error || 'missing or mismatched funding receipt';
+      lastError = message || 'missing or mismatched funding receipt';
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
+    if (isMaintenanceFrozen()) return { status: 'unknown' };
     if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
   }
   reportError(new Error(lastError), 'DB.horse_treasury_rebuy_unknown');

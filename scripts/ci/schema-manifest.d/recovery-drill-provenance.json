@@ -1,0 +1,8 @@
+{
+  "_owner": "agent/codex-live-realtime/clean-history-rebuild-v2",
+  "_comment": "Structured engine-recovery provenance keeps fault-injection drills visible without counting them as production watchdog kills. Production deployment is not claimed by this fragment.",
+  "functions": ["fn_classify_engine_recovery_event"],
+  "columns": {
+    "engine_recovery_events": ["event_class"]
+  }
+}

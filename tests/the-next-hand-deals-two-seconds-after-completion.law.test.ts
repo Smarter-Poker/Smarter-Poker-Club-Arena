@@ -71,7 +71,9 @@ describe('LAW: the next hand deals two seconds after completion (Dan 2026-09-07)
     const deal = DEALING.indexOf("this.setLoopPhase('dealing');");
     expect(awaited).toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(awaited);
-    expect(DEALING.slice(awaited + 'await this.awaitNextHandRest();'.length, deal).trim()).toBe('');
+    expect(DEALING.slice(awaited + 'await this.awaitNextHandRest();'.length, deal).trim()).toBe(
+      'if (!this.lifecycleCanMutate()) return;'
+    );
   });
 
   it('the old separate sleeps are gone - the clear and the window live inside the rest', () => {

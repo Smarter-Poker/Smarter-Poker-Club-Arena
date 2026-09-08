@@ -60,7 +60,8 @@ describe('settlement reads its own hand, never the live fields', () => {
   it('the dealing loop waits with liveness instead of walking away at 45s', () => {
     const src = read('./ServerTableEngineDealing.ts');
     expect(src).not.toMatch(/postHandTasks exceeded 45s/);
-    expect(src).toContain('settlement_barrier_abandoned');
+    expect(src).not.toContain('settlement_barrier_abandoned');
+    expect(src).toContain('the drain owns it from here');
   });
 });
 

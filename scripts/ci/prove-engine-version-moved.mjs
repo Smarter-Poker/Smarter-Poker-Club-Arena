@@ -35,6 +35,7 @@
  * would roll back a build that is fine.
  */
 import process from 'node:process';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 const MODE = (process.env.MODE || 'prove').trim();
 const ENGINE_URL = (process.env.ENGINE_URL || 'https://engine.smarter.poker').replace(/\/$/, '');
@@ -91,7 +92,7 @@ async function readLeaderRest() {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/engine_leader?select=engine_version,heartbeat_at&id=eq.true`,
       {
-        headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+        headers: supabaseServerHeaders(SERVICE_KEY),
         signal: AbortSignal.timeout(15000),
       }
     );
@@ -140,7 +141,10 @@ async function notifyInApp(message) {
   try {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/ca_incident_recipients?scope=eq.platform&active=eq.true&select=user_id`,
-      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` }, signal: AbortSignal.timeout(20000) }
+      {
+        headers: supabaseServerHeaders(SERVICE_KEY),
+        signal: AbortSignal.timeout(20000),
+      }
     );
     const rows = res.ok ? await res.json() : [];
     const recipients = [...new Set((rows || []).map((r) => r.user_id).filter(Boolean))];
@@ -153,11 +157,9 @@ async function notifyInApp(message) {
       // Title Case, no em dashes: house popup rules (CLAUDE.md 5.7).
       const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/fn_raise_notification`, {
         method: 'POST',
-        headers: {
-          apikey: SERVICE_KEY,
-          authorization: `Bearer ${SERVICE_KEY}`,
+        headers: supabaseServerHeaders(SERVICE_KEY, {
           'content-type': 'application/json',
-        },
+        }),
         body: JSON.stringify({
           p_user_id: user,
           p_type: 'deploy_shipped_nothing',

@@ -52,8 +52,13 @@ describe('running tournaments survive a server restart', () => {
 
   it('discovery still resumes RUNNING tournaments that have no engine', () => {
     const discovery = SRC.slice(SRC.indexOf('private async discoverTournaments'));
+    const admission = SRC.slice(
+      SRC.indexOf('private async performTournamentManagerAdmission'),
+      SRC.indexOf('private async finishTournamentManagerAdmission')
+    );
     expect(discovery).toMatch(/\.eq\(\s*'status'\s*,\s*'RUNNING'\s*\)/);
-    expect(discovery).toContain('tm.resume()');
+    expect(discovery).toMatch(/ensureTournamentManagerAdmission\([\s\S]{0,100}?'resume'/);
+    expect(admission).toContain("if (mode === 'resume') await manager.resume()");
   });
 
   it('resume rebuilds the tables when none survived, instead of giving up', () => {

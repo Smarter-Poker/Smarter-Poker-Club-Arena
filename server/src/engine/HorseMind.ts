@@ -240,6 +240,41 @@ export interface HorseMindSandbox {
 export type RaiseResponsePlan = 'commit' | 'callOnce' | 'foldToRaise';
 
 /**
+ * Plan writes produced by one speculative HorseLogic decision. Opponent
+ * observations are not speculative: they describe action-history that was
+ * already authoritative when the request was fenced. These three writes are
+ * different because they describe what the horse intends to do after an
+ * action that may never reach the table.
+ */
+export type HorseMindDecisionEffect =
+  | {
+      type: 'plan';
+      handKey: string;
+      userId: string;
+      barrelIntent: boolean;
+    }
+  | {
+      type: 'outlook';
+      handKey: string;
+      userId: string;
+      street: string;
+      good: string[];
+      scare: string[];
+    }
+  | {
+      type: 'raise_plan';
+      handKey: string;
+      userId: string;
+      street: string;
+      plan: RaiseResponsePlan;
+    };
+
+export interface CapturedHorseMindDecision<T> {
+  value: T;
+  effects: HorseMindDecisionEffect[];
+}
+
+/**
  * ═══ V45 SCOPED READS (2026-09-05) ═══════════════════════════════════════
  * A player's stats were one bucket across every game they played. A PLO6
  * VPIP (structurally ~60%) polluted the same player's NLH read; heads-up
@@ -914,6 +949,51 @@ export class HorseMind {
    * sets are never exported, so nothing synthetic can reach the DB.
    */
   private static sandboxDepth = 0;
+  /**
+   * The live worker may compute an answer that becomes stale before its think
+   * timer fires. Keep intent writes out of the durable mind until the exact
+   * action is accepted by HandController. This is synchronous and deliberately
+   * non-nestable: HorseLogic and every writer it calls are synchronous.
+   */
+  private static decisionEffectSink: HorseMindDecisionEffect[] | null = null;
+
+  static captureDecisionEffects<T>(fn: () => T): CapturedHorseMindDecision<T> {
+    if (this.decisionEffectSink) {
+      throw new Error('HorseMind.captureDecisionEffects: capture already active');
+    }
+    const effects: HorseMindDecisionEffect[] = [];
+    this.decisionEffectSink = effects;
+    try {
+      return { value: fn(), effects };
+    } finally {
+      this.decisionEffectSink = null;
+    }
+  }
+
+  /** Apply one accepted decision's idempotent intent writes in FIFO order. */
+  static applyDecisionEffects(effects: readonly HorseMindDecisionEffect[]): void {
+    if (this.decisionEffectSink) {
+      throw new Error('HorseMind.applyDecisionEffects: cannot commit during capture');
+    }
+    for (const effect of effects) {
+      if (effect.type === 'plan') {
+        this.notePlan(effect.handKey, effect.userId, effect.barrelIntent);
+      } else if (effect.type === 'outlook') {
+        this.noteOutlook(
+          effect.handKey,
+          effect.userId,
+          effect.street,
+          [...effect.good],
+          [...effect.scare]
+        );
+      } else if (effect.type === 'raise_plan') {
+        this.noteRaisePlan(effect.handKey, effect.userId, effect.street, effect.plan);
+      } else {
+        const neverEffect: never = effect;
+        throw new Error(`HorseMind.applyDecisionEffects: unknown effect ${String(neverEffect)}`);
+      }
+    }
+  }
 
   static createSandbox(): HorseMindSandbox {
     return {
@@ -1355,6 +1435,10 @@ export class HorseMind {
 
   static notePlan(handKey: string | null, userId: string, barrelIntent: boolean): void {
     if (!handKey) return;
+    if (this.decisionEffectSink) {
+      this.decisionEffectSink.push({ type: 'plan', handKey, userId, barrelIntent });
+      return;
+    }
     // V28: evict the oldest quarter, never .clear() — see noteRaisePlan.
     if (this.plans.size > this.MAX_PLANS) evictOldest(this.plans, this.MAX_PLANS);
     this.plans.set(`${handKey}|${userId}`, barrelIntent);
@@ -1382,6 +1466,17 @@ export class HorseMind {
     scare: string[]
   ): void {
     if (!handKey) return;
+    if (this.decisionEffectSink) {
+      this.decisionEffectSink.push({
+        type: 'outlook',
+        handKey,
+        userId,
+        street,
+        good: [...good],
+        scare: [...scare],
+      });
+      return;
+    }
     if (this.outlooks.size > this.MAX_PLANS) evictOldest(this.outlooks, this.MAX_PLANS);
     this.outlooks.set(`${handKey}|${userId}|${street}`, {
       good: new Set(good),
@@ -1422,6 +1517,10 @@ export class HorseMind {
     plan: RaiseResponsePlan
   ): void {
     if (!handKey) return;
+    if (this.decisionEffectSink) {
+      this.decisionEffectSink.push({ type: 'raise_plan', handKey, userId, street, plan });
+      return;
+    }
     // V28 AUDIT FIX: .clear() wiped EVERY hand in flight when the cap
     // tripped — the exact wholesale-clear failure mode the V12.3 doctrine at
     // the top of this file forbids for every other container. A cleared plan

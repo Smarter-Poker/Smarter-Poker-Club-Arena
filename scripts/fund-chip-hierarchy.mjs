@@ -20,7 +20,15 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: {
+    headers: {
+      'x-smarter-data-actor': 'service',
+      'x-smarter-data-protocol': '1',
+    },
+  },
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS

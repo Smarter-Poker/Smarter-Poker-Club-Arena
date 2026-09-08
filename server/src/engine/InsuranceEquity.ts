@@ -21,6 +21,7 @@
  */
 import type { Card } from '../types.js';
 import { evaluateHand, evaluateOmahaHand, compareHands, SUITS, RANKS } from './PokerEngine.js';
+import { isOmahaVariant } from './VariantRules.js';
 // PRICING FIX 2026-08-18: sampling uses SeededRandom, not secureShuffle.
 // A CSPRNG shuffle costs ~45 syscalls per sample - 6000 samples froze the
 // event loop, which is why pricing was pushed to the Monte-Carlo worker
@@ -153,7 +154,7 @@ export function leaderOuts(
   shortDeck: boolean = false
 ): Card[] {
   if (board.length < 3 || board.length >= 5) return [];
-  const isOmaha = variant.startsWith('plo');
+  const isOmaha = isOmahaVariant(variant);
   const evalFn: EvalFn = isOmaha
     ? (h, b) => evaluateOmahaHand(h, b)
     : (h, b) => evaluateHand(h, b, shortDeck);
@@ -200,7 +201,7 @@ export function insuranceEquity(
   variant: string,
   shortDeck: boolean = false
 ): InsuranceEquityResult {
-  const isOmaha = variant.startsWith('plo');
+  const isOmaha = isOmahaVariant(variant);
   const evalFn: EvalFn = isOmaha
     ? (h, b) => evaluateOmahaHand(h, b)
     : (h, b) => evaluateHand(h, b, shortDeck);

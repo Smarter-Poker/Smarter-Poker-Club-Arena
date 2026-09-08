@@ -62,21 +62,24 @@ const BRAIN_FILES = [
   // V44: the second look fires its receipts from the one call site that is
   // a live horse at a live table.
   'engine/ServerTableEngineTurns.ts',
+  // V50: live decisions and their deep replay run in the sole worker. Its
+  // injected noteFeature is BrainTelemetry.noteFire in production.
+  'engine/horseDecision/workerRuntime.ts',
   // V48: the voluntary straddle is decided at the deal, which is the only
   // place that knows the hand number and the seat order.
   'engine/ServerTableEngineDealing.ts',
 ];
 const BRAIN_SOURCE = BRAIN_FILES.map(read).join('\n');
 
-/** Pull the argument text of every `noteFire(...)` call, respecting nesting. */
-function noteFireArgs(src: string): string[] {
+/** Pull the argument text of a telemetry call, respecting nested arguments. */
+function telemetryArgs(src: string, call: 'noteFire' | 'noteFeature'): string[] {
   const out: string[] = [];
   let idx = 0;
   for (;;) {
-    const at = src.indexOf('noteFire(', idx);
+    const at = src.indexOf(`${call}(`, idx);
     if (at < 0) break;
     let depth = 0;
-    let i = at + 'noteFire'.length;
+    let i = at + call.length;
     const start = i + 1;
     for (; i < src.length; i++) {
       const ch = src[i];
@@ -147,7 +150,11 @@ describe('HorseDataLedger - the contract holds against the source', () => {
   it('registers every telemetry key the brain fires (exact or family), and every registered receipt is fired', () => {
     const literals = new Set<string>();
     const dynamicPrefixes = new Set<string>();
-    for (const rawArg of noteFireArgs(BRAIN_SOURCE)) {
+    const firedArgs = [
+      ...telemetryArgs(BRAIN_SOURCE, 'noteFire'),
+      ...telemetryArgs(BRAIN_SOURCE, 'noteFeature'),
+    ];
+    for (const rawArg of firedArgs) {
       // template literal: `prefix_${...}` -> the text before the first ${;
       // the literals INSIDE the ${...} are fragments, not keys.
       const tpl = rawArg.match(/`([a-z0-9_]*)\$\{/);

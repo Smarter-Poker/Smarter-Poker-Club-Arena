@@ -20,6 +20,14 @@
  * as the flop lands, and the per-street refresh prices every street after.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+const estimateEquity = vi.hoisted(() =>
+  vi.fn(async (hands: unknown[][]) => hands.map(() => 1 / hands.length))
+);
+vi.mock('./equity/EquityWorkerPool.js', () => ({
+  getEquityPool: () => ({ estimateEquity }),
+}));
+
 import { ServerTableEngine } from './ServerTableEngine.js';
 
 const TABLE = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
@@ -30,9 +38,20 @@ function harness(variant: string) {
   engine.tableInfo = { game_variant: variant } as any;
   engine.activeHandVariant = () => variant;
   engine.liveExtraBoards = () => [];
+  engine.lifecycleCanMutate = () => true;
   engine.hub = { emitEvent: vi.fn() };
   engine.broadcastEvent = vi.fn();
   return engine;
+}
+
+function bindLiveBoard(engine: any, board: Array<{ rank: string; suit: string }>) {
+  engine.handController = {
+    getState: () => ({
+      communityCards: board,
+      communityCards2: [],
+      communityCards3: [],
+    }),
+  };
 }
 
 const seat = (n: number, cards: string[]) => ({
@@ -78,16 +97,14 @@ describe('all-in equity on a pineapple table', () => {
     const engine = harness('pineapple');
     const emitted: any[] = [];
     engine.hub.emitEvent = vi.fn((_t: string, e: unknown) => emitted.push(e));
+    const board = [
+      { rank: '7', suit: 'h' },
+      { rank: '8', suit: 'h' },
+      { rank: '3', suit: 'c' },
+    ];
+    bindLiveBoard(engine, board);
 
-    await engine.broadcastAllInEquity(
-      [seat(1, ['Ah', 'Kh']), seat(2, ['Qs', 'Qd'])],
-      [
-        { rank: '7', suit: 'h' },
-        { rank: '8', suit: 'h' },
-        { rank: '3', suit: 'c' },
-      ],
-      100
-    );
+    await engine.broadcastAllInEquity([seat(1, ['Ah', 'Kh']), seat(2, ['Qs', 'Qd'])], board, 100);
 
     expect(emitted.length, 'a legal two-card hand is priced as normal').toBeGreaterThan(0);
   });
@@ -96,6 +113,7 @@ describe('all-in equity on a pineapple table', () => {
     const engine = harness('plo4');
     const emitted: any[] = [];
     engine.hub.emitEvent = vi.fn((_t: string, e: unknown) => emitted.push(e));
+    bindLiveBoard(engine, []);
 
     await engine.broadcastAllInEquity(
       [seat(1, ['Ah', 'Kh', '2c', '9d']), seat(2, ['Qs', 'Qd', '7h', '4s'])],

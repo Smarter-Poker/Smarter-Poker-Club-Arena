@@ -120,7 +120,7 @@ function peakDbOf(file) {
   // "-inf" (pure silence) does not match the number pattern, and neither does a
   // failed run. Both are "I could not tell it is loud enough", which is NOT the
   // same as fine (CLAUDE.md 10.86 rule 1) - the caller refuses on null.
-  return m ? Number(m[1]) : null;
+  return r.status === 0 && m ? Number(m[1]) : null;
 }
 
 // ── Licences: refuse anything not on the allowlist, before touching ffmpeg ──
@@ -325,16 +325,23 @@ for (const [name, cue] of cues) {
   // by silence it ducks by tens of dB. Nothing caught it, because every test
   // there is asks whether the FILE exists and is over 256 bytes - which a
   // silent file also is. Measure the bytes we just wrote, and refuse.
-  const peak = peakDbOf(webm);
-  if (peak === null) {
-    fail(`cue '${name}': could not measure the output level, so it is not shippable`);
+  // Decode and measure BOTH containers. A valid Opus file cannot prove the
+  // AAC output is complete or audible on Safari.
+  const peaks = [];
+  for (const output of [webm, m4a]) {
+    const peak = peakDbOf(output);
+    if (peak === null) {
+      fail(`cue '${name}' (${output}): could not measure the output level, so it is not shippable`);
+    }
+    if (peak < QUIET_FLOOR_DB) {
+      fail(
+        `cue '${name}' (${output}): peaks at ${peak.toFixed(1)} dBFS, below the ${QUIET_FLOOR_DB} dBFS floor - ` +
+          `it would play and nobody would hear it. Raise the cue's "levelDb", or its layer gains.`
+      );
+    }
+    peaks.push(peak);
   }
-  if (peak < QUIET_FLOOR_DB) {
-    fail(
-      `cue '${name}': peaks at ${peak.toFixed(1)} dBFS, below the ${QUIET_FLOOR_DB} dBFS floor - ` +
-        `it would play and nobody would hear it. Raise the cue's "levelDb", or its layer gains.`
-    );
-  }
+  const peak = Math.max(...peaks);
 
   built += 1;
   console.log(

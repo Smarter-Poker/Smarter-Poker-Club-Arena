@@ -8,8 +8,6 @@
  * `src/services/supabase.ts` remains as a barrel re-exporting every submodule,
  * so no import anywhere else in the codebase changed.
  *
- * `bbjPoolCache` lives here and ONLY here: it is module-level shared state,
- * so duplicating it into another module would silently fork the cache.
  */
 
 import { supabase } from './client.js';
@@ -72,256 +70,67 @@ const BBJ_PAYOUT_ATTEMPTS = 4;
 const BBJ_PAYOUT_BACKOFF_MS = (attempt: number): number => 400 * 3 ** (attempt - 1);
 
 /**
- * Log BBJ contribution — splits fee into main/backup/promo pools per allocation.
- * BBJ pool ownership: union-level (if club is in union) or club-level (standalone).
- * FIX 140: Pivot-based allocation matching Bible V8 §4.13 / BBJService spec:
- *   STANDARD (<100k main pool): 50% Main, 25% Backup, 25% Promo
- *   PIVOT (>=100k main pool): 25% Main, 25% Backup, 50% Promo
- *   (Dan 2026-08-18: past the pivot, steer new rake to promo; the Back Up
- *    share stays flat at 25% because its job is to reseed main after a full
- *    hit, not to grow. Was 30/40/30.)
- *
- * A5 FIX (2026-08-08): returns whether the fee is DURABLY BANKED — `true` only
- * once bbj_record_contribution has committed (or there was nothing to
- * contribute), `false` on any failure. See the block above the RPC call: a
- * failure here destroys chips, it does not merely skip a ledger row.
+ * The database resolves the table's private/union scope and posts its BBJ
+ * contribution in one transaction. Only a matching receipt confirms banking.
  */
-// IMPROVE 2026-07-21: per-hand BBJ collection used to run TWO extra queries
-// per raked hand (clubs.union_id + the pool lookup). Cache the resolved pool
-// id per club with a 5-minute TTL — pool membership changes are rare (a club
-// joining/leaving a union), and the TTL bounds the staleness window. The
-// pivot check still reads the LIVE main_balance via the cached pool id.
-const bbjPoolCache = new Map<string, { poolId: string; expiresAt: number }>();
-const BBJ_POOL_CACHE_TTL_MS = 5 * 60 * 1000;
-
 export async function logBBJCollection(
   tableId: string,
   clubId: string,
   handNumber: number,
   bbjAmount: number,
   bigBlind: number,
-  // Round 44 fix: hand_history.id (UUID) for FK linking the bbj_contributions
-  // audit row back to the originating hand. Default null preserves caller compat.
   handId: string | null = null
 ): Promise<boolean> {
-  // Nothing to contribute is not a failure — no chips left the pot.
-  if (bbjAmount <= 0) return true;
+  if (bbjAmount === 0) return true;
+  if (!Number.isFinite(bbjAmount) || bbjAmount < 0) return false;
 
-  // FIX 140: Pivot-based allocation thresholds (Bible V8 §4.13)
-  const BBJ_PIVOT_THRESHOLD = 100000; // 100,000 chips
-  const BBJ_ALLOCATION = {
-    STANDARD: { MAIN: 0.5, BACKUP: 0.25, PROMO: 0.25 },
-    PIVOT: { MAIN: 0.25, BACKUP: 0.25, PROMO: 0.5 },
+  const payment = {
+    p_table_id: tableId,
+    p_club_id: clubId,
+    p_hand_number: handNumber,
+    p_amount: bbjAmount,
+    p_big_blind: bigBlind,
+    p_hand_id: handId,
   };
-
-  try {
-    let pool: { id: string; main_balance: number | null } | null = null;
-
-    const cached = bbjPoolCache.get(clubId);
-    if (cached && cached.expiresAt > Date.now()) {
-      // Cached pool id — one query for the live balance (pivot check).
-      const { data: cachedPool } = await supabase
-        .from('bbj_pools')
-        .select('id, main_balance')
-        .eq('id', cached.poolId)
-        .eq('status', 'active') // HARDEN 2026-08-18: never bank into a retired pool
-        .maybeSingle();
-      pool = cachedPool;
-      if (!pool) bbjPoolCache.delete(clubId); // pool vanished — fall through
+  let failure = 'No matching committed contribution receipt';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const { data, error } = await supabase.rpc('bbj_record_table_contribution', payment);
+      const receipt = Array.isArray(data) ? (data.length === 1 ? data[0] : null) : data;
+      if (
+        !error &&
+        receipt?.id &&
+        receipt.pool_id &&
+        receipt.table_id === tableId &&
+        receipt.club_id === clubId &&
+        receipt.hand_id === handId &&
+        Number(receipt.hand_number) === handNumber &&
+        receipt.amount != null &&
+        Number(receipt.amount) === bbjAmount &&
+        receipt.big_blind != null &&
+        Number(receipt.big_blind) === bigBlind
+      ) {
+        return true;
+      }
+      failure = error?.message ?? 'No matching committed contribution receipt';
+      if (error?.code === '22023') break;
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
     }
-
-    if (!pool) {
-      // Find the BBJ pool for this club (or its union)
-      const { data: club } = await supabase
-        .from('clubs')
-        .select('union_id')
-        .eq('id', clubId)
-        .maybeSingle();
-
-      if (!club) {
-        console.warn(`[logBBJCollection] Club ${clubId} not found - skipping BBJ logging`);
-        return false;
-      }
-
-      // Look up pool: union-level first, then club-level — include main_balance for pivot check
-      // HARDEN 2026-08-18: status='active' — the column is NOT NULL DEFAULT
-      // 'active' (verified in production), so this only excludes pools an
-      // admin has deliberately retired.
-      let poolQuery = supabase.from('bbj_pools').select('id, main_balance').eq('status', 'active');
-      if (club.union_id) {
-        poolQuery = poolQuery.eq('union_id', club.union_id);
-      } else {
-        poolQuery = poolQuery.eq('club_id', clubId);
-      }
-      const { data: freshPool } = await poolQuery.maybeSingle();
-      pool = freshPool;
-      if (pool) {
-        bbjPoolCache.set(clubId, {
-          poolId: pool.id,
-          expiresAt: Date.now() + BBJ_POOL_CACHE_TTL_MS,
-        });
-      }
-    }
-
-    if (!pool) {
-      // RAKE-AUDIT 2026-07-24: AUTO-CREATE the pool instead of skipping. The
-      // old "no pool → skip" path meant the BBJ fee had already been deducted
-      // from the pot but was banked NOWHERE — silent money destruction for any
-      // club (or union) whose bbj_pools row was never seeded. Service-role
-      // client bypasses RLS, so this insert is safe server-side only.
-      const { data: clubRow } = await supabase
-        .from('clubs')
-        .select('union_id')
-        .eq('id', clubId)
-        .maybeSingle();
-      const insertPayload = clubRow?.union_id
-        ? {
-            union_id: clubRow.union_id,
-            main_balance: 0,
-            backup_balance: 0,
-            promo_balance: 0,
-            status: 'active',
-          }
-        : {
-            club_id: clubId,
-            main_balance: 0,
-            backup_balance: 0,
-            promo_balance: 0,
-            status: 'active',
-          };
-      const { data: newPool, error: createErr } = await supabase
-        .from('bbj_pools')
-        .insert(insertPayload)
-        .select('id, main_balance')
-        .maybeSingle();
-      if (createErr || !newPool) {
-        reportError(
-          new Error(
-            `[logBBJCollection] BBJ pool auto-create FAILED for club ${clubId} - fee of ${bbjAmount} collected but not banked: ${createErr?.message}`
-          ),
-          'logBBJCollection.pool_autocreate_failed'
-        );
-        return false;
-      }
-      console.log(
-        `[logBBJCollection] Auto-created BBJ pool ${newPool.id} for ${clubRow?.union_id ? `union ${clubRow.union_id}` : `club ${clubId}`}`
-      );
-      pool = newPool;
-      bbjPoolCache.set(clubId, {
-        poolId: newPool.id,
-        expiresAt: Date.now() + BBJ_POOL_CACHE_TTL_MS,
-      });
-    }
-
-    // FIX 140: Determine allocation ratios based on current pool size
-    const currentMainBalance = pool.main_balance ?? 0;
-    const ratios =
-      currentMainBalance >= BBJ_PIVOT_THRESHOLD ? BBJ_ALLOCATION.PIVOT : BBJ_ALLOCATION.STANDARD;
-
-    const mainPortion = Math.round(bbjAmount * ratios.MAIN * 100) / 100;
-    const backupPortion = Math.round(bbjAmount * ratios.BACKUP * 100) / 100;
-    // Promo takes the remainder so the three portions always re-sum to the fee.
-    // ROUND IT: in binary floating point the subtraction can land a hair below
-    // zero (measured -1.7e-18), which would bank a negative promo portion —
-    // harmless arithmetically, but it is a negative money value written to the
-    // ledger, and that is the kind of thing a CHECK constraint or an invariant
-    // trips over later.
-    const promoPortion =
-      Math.round((Math.round(bbjAmount * 100) / 100 - mainPortion - backupPortion) * 100) / 100;
-
-    // Use bbj_record_contribution RPC — atomically updates pool balances + logs contribution
-    // hand_id is nullable (migration 20260325) since server uses hand_history not hands table
-    // FIX 205: Try with club_id first (requires migration), fall back to without
-    //
-    // A5 FIX (2026-08-08): this RPC is NOT optional bookkeeping. The comment that
-    // used to sit below it — "Non-critical: BBJ fee already deducted from pot,
-    // this is just the ledger entry" — was WRONG, and the bug was live.
-    // atomic_distribute_rake computes v_net := p_rake - v_bbj and credits the club
-    // wallet only v_net, deliberately withholding the BBJ slice precisely because
-    // bbj_record_contribution is what banks it into the jackpot pool. So when this
-    // call fails the chips are in NEITHER place: they left the pot and ceased to
-    // exist.
-    //
-    // On the evidence, this has NOT yet bitten: an audit joining rake_records to
-    // bbj_contributions on hand_id across the 20,000 most recent raked hands found
-    // zero hands missing a pool row. (A windowed sum comparison appears to show a
-    // 0.50 gap, but that is a boundary artifact — the two rows are written moments
-    // apart, so one straddles the window edge. It reverses sign depending on the
-    // window, which is the tell.) What was wrong was that a failure here would have
-    // been unobservable: swallowed, and logged on one hand in a hundred.
-    // Retry, then report every single failure, and hand the caller the truth about
-    // where the fee actually is.
-    const BBJ_RPC_MAX_ATTEMPTS = 3;
-    const BBJ_RPC_RETRY_BASE_MS = 100;
-    let rpcError: any = null;
-
-    for (let attempt = 1; attempt <= BBJ_RPC_MAX_ATTEMPTS; attempt++) {
-      const { error: errWithClub } = await supabase.rpc('bbj_record_contribution', {
-        p_pool_id: pool.id,
-        p_hand_id: handId,
-        p_table_id: tableId,
-        p_amount: bbjAmount,
-        p_main_portion: mainPortion,
-        p_backup_portion: backupPortion,
-        p_promo_portion: promoPortion,
-        p_big_blind: bigBlind,
-        p_hand_number: handNumber,
-        p_club_id: clubId,
-      });
-
-      if (errWithClub && errWithClub.code === 'PGRST202') {
-        // Migration not yet applied — fall back to old signature without club_id
-        const { error: errNoClub } = await supabase.rpc('bbj_record_contribution', {
-          p_pool_id: pool.id,
-          p_hand_id: handId,
-          p_table_id: tableId,
-          p_amount: bbjAmount,
-          p_main_portion: mainPortion,
-          p_backup_portion: backupPortion,
-          p_promo_portion: promoPortion,
-          p_big_blind: bigBlind,
-          p_hand_number: handNumber,
-        });
-        rpcError = errNoClub;
-      } else {
-        rpcError = errWithClub;
-      }
-
-      if (!rpcError) break;
-
-      if (attempt < BBJ_RPC_MAX_ATTEMPTS) {
-        console.warn(
-          `[logBBJCollection] bbj_record_contribution attempt ${attempt}/${BBJ_RPC_MAX_ATTEMPTS} ` +
-            `failed for hand #${handNumber} - retrying:`,
-          rpcError.message
-        );
-        // Short linear backoff (100ms, 200ms) — this runs on the settlement path,
-        // so it must not stall the table for long.
-        await new Promise((resolve) => setTimeout(resolve, BBJ_RPC_RETRY_BASE_MS * attempt));
-      }
-    }
-
-    if (rpcError) {
-      // Report EVERY failure — the old `handNumber % 100 === 1` sampling hid 99%
-      // of them. A destroyed fee is not noise.
-      reportError(
-        new Error(
-          `[logBBJCollection] BBJ contribution FAILED after ${BBJ_RPC_MAX_ATTEMPTS} attempts ` +
-            `for hand #${handNumber} (table ${tableId}, club ${clubId}) - ${bbjAmount} chips ` +
-            `were deducted from the pot and banked NOWHERE: ${rpcError.message}`
-        ),
-        'logBBJCollection.contribution_failed'
-      );
-      return false;
-    }
-
-    return true;
-  } catch (e) {
-    console.warn(`[logBBJCollection] BBJ logging failed for hand #${handNumber}:`, e);
-    // The fee left the pot and was never banked — the caller must treat this as
-    // a failed contribution, not a silent success.
-    return false;
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
   }
+  reportError(
+    new Error(
+      '[logBBJCollection] Cannot confirm BBJ payment for table ' +
+        tableId +
+        ', hand ' +
+        handNumber +
+        ': ' +
+        failure
+    ),
+    'logBBJCollection.contribution_failed'
+  );
+  return false;
 }
 
 /**

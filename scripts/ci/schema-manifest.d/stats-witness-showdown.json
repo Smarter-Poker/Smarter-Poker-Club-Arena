@@ -1,0 +1,4 @@
+{
+  "_owner": "codex-realtime-continuation-sep08; applied function-only stats witness migration 2026-09-08 about 20:59 UTC. Verified live prosrc MD5 d1ee7bee735eef0e644b285d03648d9e; service_role execute only.",
+  "functions": ["ca_stats_witness_audit"]
+}

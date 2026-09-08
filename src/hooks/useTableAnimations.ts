@@ -17,21 +17,33 @@ import { isThrowableEventId } from '../throwables/identity';
 
 interface ThrowPlaybackState {
   events: ThrowEvent[];
+  pending: ThrowEvent[];
   receipts: string[];
 }
+
+const MAX_ACTIVE_THROWS = 12;
 
 // Receipt identity only deduplicates delivery; it does not authorize a throw.
 // Keep the history after animation completion, and bound it for long-lived tables.
 function appendThrow(
   state: ThrowPlaybackState,
   event: ThrowEvent,
-  receipt?: string,
-  limit = Infinity
+  receipt?: string
 ): ThrowPlaybackState {
   const key = isThrowableEventId(receipt) ? receipt.toLowerCase() : undefined;
-  if ((key && state.receipts.includes(key)) || state.events.length >= limit) return state;
+  if (
+    key &&
+    (state.receipts.includes(key) ||
+      state.events.some((queued) => queued.id.toLowerCase() === key) ||
+      state.pending.some((queued) => queued.id.toLowerCase() === key))
+  )
+    return state;
+  // Rendering capacity must not discard a delivered throw. Pending events
+  // mount only after a slot opens, so their animation and sound start together.
+  const canPlay = state.events.length < MAX_ACTIVE_THROWS;
   return {
-    events: [...state.events, event],
+    events: canPlay ? [...state.events, event] : state.events,
+    pending: canPlay ? state.pending : [...state.pending, event],
     receipts: key ? [...state.receipts.slice(-511), key] : state.receipts,
   };
 }
@@ -72,12 +84,13 @@ export function useTableAnimations(
   const [throwTargetSeat, setThrowTargetSeat] = useState<number | null>(null);
   const [throwPlayback, setThrowPlayback] = useState<ThrowPlaybackState>({
     events: [],
+    pending: [],
     receipts: [],
   });
   const activeThrows = throwPlayback.events;
 
   useEffect(() => {
-    setThrowPlayback({ events: [], receipts: [] });
+    setThrowPlayback({ events: [], pending: [], receipts: [] });
     setShowThrowableSelector(false);
     setThrowTargetSeat(null);
   }, [tableId, userId]);
@@ -133,14 +146,24 @@ export function useTableAnimations(
     (fromSeat: number, toSeat: number, throwableId: string, eventId?: string) => {
       const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId, eventId);
       if (!event) return;
-      setThrowPlayback((prev) => appendThrow(prev, event, eventId, 12));
+      setThrowPlayback((prev) => appendThrow(prev, event, eventId));
       // Audio handled by ThrowAnimation (launch + per-item impact), see above.
     },
     []
   );
 
   const handleThrowComplete = useCallback((eventId: string) => {
-    setThrowPlayback((prev) => ({ ...prev, events: prev.events.filter((e) => e.id !== eventId) }));
+    setThrowPlayback((prev) => {
+      const events = prev.events.filter((event) => event.id !== eventId);
+      // Duplicate/stale completion callbacks must not advance the queue.
+      if (events.length === prev.events.length) return prev;
+      const available = MAX_ACTIVE_THROWS - events.length;
+      return {
+        ...prev,
+        events: [...events, ...prev.pending.slice(0, available)],
+        pending: prev.pending.slice(available),
+      };
+    });
   }, []);
 
   /* `getSeatPositions` is GONE (2026-08-28). It was deprecated on 2026-08-15

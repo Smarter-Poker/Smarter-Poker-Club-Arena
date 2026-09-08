@@ -85,8 +85,10 @@ interface CommissionRow {
   source_type: string;
   notes: string | null;
   created_at: string;
-  /** Stamped by fn_agent_claim_commission when the agent claims it. */
+  /** From v_agent_commissions: COALESCE(own stamp, the settlement's paid_at). */
   settled_at: string | null;
+  /** 'claim' | 'round2' | null - which payer settled it. */
+  settled_via?: string | null;
 }
 interface AuditLogRow {
   id: string;
@@ -650,12 +652,21 @@ function SettlementsTab({ clubId }: { clubId: string }) {
          one the phase 8 append-only guard permits to move (NULL -> a time,
          once). Reading it is what lets this screen tell "owed" from "claimed"
          instead of offering a button that pretended to change it. */
+      /* READ THE VIEW, NOT THE TABLE (2026-09-08, phase 7). The comment above is
+         right that settled_at is what tells owed from claimed - it was, until
+         20260908025653. Round 2 now pays a whole period and records it in
+         agent_commission_settlements instead of stamping every row, so a row
+         the union close has ALREADY PAID still has settled_at NULL and the
+         bare table reports it as awaiting a claim. v_agent_commissions is the
+         reader that knows both payers: settled_at is COALESCE(own stamp, the
+         settlement's paid_at) and settled_via says which one. It is
+         security_invoker, so the same RLS decides the same rows. */
       let commissions: CommissionRow[] = [];
       if (currentPeriod) {
         const { data: comms } = await supabase
-          .from('agent_commissions')
+          .from('v_agent_commissions')
           .select(
-            'id, user_id, amount, commission_rate, source_type, notes, created_at, settled_at'
+            'id, user_id, amount, commission_rate, source_type, notes, created_at, settled_at, settled_via'
           )
           .eq('club_id', uuid)
           .gte('created_at', currentPeriod.start_at)
@@ -916,7 +927,9 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     {c.settled_at ? (
-                      <span className="admin-badge admin-badge-green">Claimed</span>
+                      <span className="admin-badge admin-badge-green">
+                        {c.settled_via === 'round2' ? 'Settled' : 'Claimed'}
+                      </span>
                     ) : (
                       <span className="admin-badge">Awaiting Claim</span>
                     )}

@@ -193,11 +193,20 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       // row, so this tab said "No Commission Records Yet" to agents with tens of
       // thousands of them. agent_commissions is the ledger: one row per piece of
       // rake, keyed by the auth user id, and RLS lets the agent read their own
-      // and nobody else's. settled_at is what says whether it has been claimed;
-      // there is no status column and there does not need to be.
+      // and nobody else's.
+      //
+      // IT READS v_agent_commissions, NOT THE TABLE. Since 20260908025653 a row
+      // can be paid without its own settled_at ever being written: round 2
+      // records the period it covered in agent_commission_settlements instead
+      // of stamping two million rows. The view is the reader that knows both
+      // mechanisms - settled_at is COALESCE(own stamp, the settlement's paid_at)
+      // and settled_via says which one paid it. Reading the bare table here
+      // showed money the agent HAS been paid as 'unclaimed'.
       let recordsQuery = supabase
-        .from('agent_commissions')
-        .select('id, club_id, amount, source_type, source_id, notes, created_at, settled_at')
+        .from('v_agent_commissions')
+        .select(
+          'id, club_id, amount, source_type, source_id, notes, created_at, settled_at, settled_via'
+        )
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -211,7 +220,11 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
           recordsData.map((r: any) => ({
             id: r.id,
             playerId: r.source_id || '',
-            playerName: r.settled_at ? 'claimed' : 'unclaimed',
+            playerName: r.settled_at
+              ? r.settled_via === 'round2'
+                ? 'settled'
+                : 'claimed'
+              : 'unclaimed',
             amount: Number(r.amount) || 0,
             rakeAmount: 0,
             commissionRate: 0,

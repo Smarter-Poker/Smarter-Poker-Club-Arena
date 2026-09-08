@@ -35,8 +35,18 @@ const SRC = readFileSync(join(__dirname, '..', 'src', 'pages', 'AdminDashboardPa
 const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('the settlements tab does not write to the commission ledger', () => {
-  it('never deletes from agent_commissions', () => {
-    expect(CODE).not.toMatch(/from\('agent_commissions'\)[\s\S]{0,200}\.delete\(\)/);
+  /* THE LEDGER IS REACHED BY THREE NAMES (2026-09-08, phase 7). The table
+     itself, and the two views over it - v_agent_commissions (which resolves
+     settled_at across both payers) and agent_commissions_unsettled (still
+     owed). Round 2 stopped stamping settled_at on 20260908025653, so this
+     screen reads the view; a law that only knew the table's name would have
+     gone vacuously green the moment it did. */
+  const LEDGER = /from\('(?:v_)?agent_commissions(?:_unsettled)?'\)/g;
+
+  it('never deletes from the commission ledger', () => {
+    expect(CODE).not.toMatch(
+      /from\('(?:v_)?agent_commissions(?:_unsettled)?'\)[\s\S]{0,200}\.delete\(\)/
+    );
   });
 
   it('has no pay or pay_all action left to call', () => {
@@ -53,7 +63,9 @@ describe('the settlements tab does not write to the commission ledger', () => {
 
   it('writes nothing at all to agent_commissions from the browser', () => {
     // Read-only: RLS would refuse anything else, silently.
-    const calls = [...CODE.matchAll(/from\('agent_commissions'\)([\s\S]{0,160})/g)];
+    const calls = [
+      ...CODE.matchAll(/from\('(?:v_)?agent_commissions(?:_unsettled)?'\)([\s\S]{0,160})/g),
+    ];
     expect(calls.length).toBeGreaterThan(0);
     for (const [, tail] of calls) {
       expect(tail).toMatch(/\.select\(/);
@@ -63,8 +75,16 @@ describe('the settlements tab does not write to the commission ledger', () => {
 });
 
 describe('it tells the truth about what is owed instead', () => {
-  it('reads settled_at, the column the claim actually stamps', () => {
+  it('reads settled_at through the view that resolves BOTH payers', () => {
+    // settled_at on the bare table is only what fn_agent_claim_commission
+    // stamps. Since 20260908025653 round 2 pays a period and records it in
+    // agent_commission_settlements without stamping a single row, so the bare
+    // column reports money the union close already paid as still owed.
+    // v_agent_commissions resolves it: COALESCE(own stamp, settlement paid_at),
+    // plus settled_via naming which one paid.
     expect(CODE).toMatch(/settled_at/);
+    expect(CODE).toMatch(/v_agent_commissions/);
+    expect(CODE).toMatch(/settled_via/);
   });
 
   it('shows a status rather than an action', () => {

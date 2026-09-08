@@ -589,54 +589,153 @@ it('Spin cancellation covers both active aggregate fee writers', () => {
   ).toBe(true);
 });
 
-
 it('union periods require verified zero recipient shortfalls before settlement', () => {
- const sql = read('supabase/migrations/20260907224856_union_periods_settle_only_after_zero_recipient_shortfalls.sql');
- expect(sql).toContain("'error','recipient_shortfalls_remaining'");
- expect(sql).toContain("OR jsonb_typeof(v_r3->'shortfalls') IS DISTINCT FROM 'number'");
- expect(has('scripts/ci/probes/union-recipient-shortfalls.sql','FAIL unpaid recipient marked period settled')).toBe(true);
+  const sql = read(
+    'supabase/migrations/20260907224856_union_periods_settle_only_after_zero_recipient_shortfalls.sql'
+  );
+  expect(sql).toContain("'error','recipient_shortfalls_remaining'");
+  expect(sql).toContain("OR jsonb_typeof(v_r3->'shortfalls') IS DISTINCT FROM 'number'");
+  expect(
+    has(
+      'scripts/ci/probes/union-recipient-shortfalls.sql',
+      'FAIL unpaid recipient marked period settled'
+    )
+  ).toBe(true);
 });
 
 it('final guarantee funding follows recorded tournament scope', () => {
- const sql = read('supabase/migrations/20260907221633_guarantee_funding_follows_tournament_ownership.sql');
- expect(sql).toContain('v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END');
- expect(sql).not.toContain('select c.union_id into v_union from public.clubs');
- expect(has('scripts/ci/probes/guarantee-funding-scope.sql','FAIL guarantee follows current club union instead of event union')).toBe(true);
+  const sql = read(
+    'supabase/migrations/20260907221633_guarantee_funding_follows_tournament_ownership.sql'
+  );
+  expect(sql).toContain('v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END');
+  expect(sql).not.toContain('select c.union_id into v_union from public.clubs');
+  expect(
+    has(
+      'scripts/ci/probes/guarantee-funding-scope.sql',
+      'FAIL guarantee follows current club union instead of event union'
+    )
+  ).toBe(true);
 });
 
 it('guarantee overlays require a real bank debit before pool finalization', () => {
-  const sql = read('supabase/migrations/20260907230617_guarantee_overlay_requires_an_actual_funding_bank.sql');
+  const sql = read(
+    'supabase/migrations/20260907230617_guarantee_overlay_requires_an_actual_funding_bank.sql'
+  );
   expect(sql).toContain('guarantee_funding_bank_missing:');
-  expect(sql.indexOf('if v_balance_after is null then', sql.indexOf('A missing bank'))).toBeLessThan(sql.indexOf('set treasury_after = v_balance_after'));
+  expect(
+    sql.indexOf('if v_balance_after is null then', sql.indexOf('A missing bank'))
+  ).toBeLessThan(sql.indexOf('set treasury_after = v_balance_after'));
+});
+
+describe('paid tournament obligation ownership', () => {
+  it('retains the installed SQL correction and its self-aborting regression probe', () => {
+    const sql = read(
+      'supabase/migrations/20260907233957_paid_obligation_owner_is_checked_before_its_amount_changes.sql'
+    );
+    const refusal = sql.indexOf("'refused_reason', 'place_paid_to_another_user'");
+    expect(refusal).toBeGreaterThan(0);
+    expect(sql.indexOf('SET amount_owed = v_amount')).toBeGreaterThan(refusal);
+    const probe = read('scripts/ci/probes/paid-obligation-owner-before-amount.sql');
+    expect(probe).toContain('pg_temp.fn_settle_tournament_obligation');
+    expect(probe).toContain("RAISE EXCEPTION 'AUDIT_TEST_PASS:");
+  });
 });
 
 it('guarantee funding rolls back when the matching journal cannot commit', () => {
-  const sql = read('supabase/migrations/20260907220945_guarantee_overlay_journal_and_bank_debit_are_atomic.sql');
+  const sql = read(
+    'supabase/migrations/20260907220945_guarantee_overlay_journal_and_bank_debit_are_atomic.sql'
+  );
   expect(sql).toContain('IF v_attempt = 3 THEN RAISE; END IF;');
   expect(sql).not.toContain('INSERT INTO public.ca_ledger_write_failures');
-  expect(has('scripts/ci/probes/guarantee-overlay-atomicity.sql', 'FAIL journal failure preserved bank debit or pool publication')).toBe(true);
+  expect(
+    has(
+      'scripts/ci/probes/guarantee-overlay-atomicity.sql',
+      'FAIL journal failure preserved bank debit or pool publication'
+    )
+  ).toBe(true);
 });
 
 it('final guarantee funding follows recorded tournament scope', () => {
- const sql = read('supabase/migrations/20260907221633_guarantee_funding_follows_tournament_ownership.sql');
- expect(sql).toContain('v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END');
- expect(sql).not.toContain('select c.union_id into v_union from public.clubs');
- expect(has('scripts/ci/probes/guarantee-funding-scope.sql','FAIL guarantee follows current club union instead of event union')).toBe(true);
+  const sql = read(
+    'supabase/migrations/20260907221633_guarantee_funding_follows_tournament_ownership.sql'
+  );
+  expect(sql).toContain('v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END');
+  expect(sql).not.toContain('select c.union_id into v_union from public.clubs');
+  expect(
+    has(
+      'scripts/ci/probes/guarantee-funding-scope.sql',
+      'FAIL guarantee follows current club union instead of event union'
+    )
+  ).toBe(true);
 });
 
 it('cancelled Spin draws return to the recorded reserve with an actual bank update', () => {
- const sql = read('supabase/migrations/20260907222512_spin_cancellation_returns_the_original_reserve_draw.sql');
- expect(sql).toContain('WHERE club_id = v_funding.club_id');
- expect(sql).toContain('GET DIAGNOSTICS v_updated = ROW_COUNT');
- expect(sql).toContain('IF v_updated <> 1 THEN');
- expect(has('scripts/ci/probes/spin-cancel-reserve-owner.sql','FAIL return journal failure kept reserve credit')).toBe(true);
+  const sql = read(
+    'supabase/migrations/20260907222512_spin_cancellation_returns_the_original_reserve_draw.sql'
+  );
+  expect(sql).toContain('WHERE club_id = v_funding.club_id');
+  expect(sql).toContain('GET DIAGNOSTICS v_updated = ROW_COUNT');
+  expect(sql).toContain('IF v_updated <> 1 THEN');
+  expect(
+    has(
+      'scripts/ci/probes/spin-cancel-reserve-owner.sql',
+      'FAIL return journal failure kept reserve credit'
+    )
+  ).toBe(true);
 });
 
 it('union periods require verified zero recipient shortfalls before settlement', () => {
- const sql = read('supabase/migrations/20260907224856_union_periods_settle_only_after_zero_recipient_shortfalls.sql');
- expect(sql).toContain("'error','recipient_shortfalls_remaining'");
- expect(sql).toContain("OR jsonb_typeof(v_r3->'shortfalls') IS DISTINCT FROM 'number'");
- expect(has('scripts/ci/probes/union-recipient-shortfalls.sql','FAIL unpaid recipient marked period settled')).toBe(true);
+  const sql = read(
+    'supabase/migrations/20260907224856_union_periods_settle_only_after_zero_recipient_shortfalls.sql'
+  );
+  expect(sql).toContain("'error','recipient_shortfalls_remaining'");
+  expect(sql).toContain("OR jsonb_typeof(v_r3->'shortfalls') IS DISTINCT FROM 'number'");
+  expect(
+    has(
+      'scripts/ci/probes/union-recipient-shortfalls.sql',
+      'FAIL unpaid recipient marked period settled'
+    )
+  ).toBe(true);
+});
+
+it('Spin cancellation reverses aggregate rake with its original attribution identity', () => {
+  const sql = read(
+    'supabase/migrations/20260907223105_spin_cancellation_reverses_original_aggregate_rake_rows.sql'
+  );
+  expect(sql).toContain("'original_rake_record_id',v_fee_row.id");
+  expect(sql).toContain("'atomic_cancel_tournament',v_fee_row.player_contributions");
+  expect(
+    has(
+      'scripts/ci/probes/spin-cancel-aggregate-fee.sql',
+      'FAIL fee reversal failure committed refunds or cancellation'
+    )
+  ).toBe(true);
+});
+
+it('reconciliation displays only actual payment instead of its requested top-up', () => {
+  const sql = read(
+    'supabase/migrations/20260908000459_reconciliation_displays_only_actual_settlement.sql'
+  );
+  expect(sql).toContain('v_paid_eff + v_settle_paid');
+  expect(sql).not.toContain('v_paid_eff + CASE WHEN v_delta > 0.005 THEN v_delta ELSE 0 END');
+  expect(
+    has(
+      'scripts/ci/probes/reconciliation-actual-settlement.sql',
+      'FAIL partial credit was displayed as full prize'
+    )
+  ).toBe(true);
+});
+
+it('weekly invoice payment acknowledges every cent and rejects malformed amounts', () => {
+  const sql = read(
+    'supabase/migrations/20260907210210_union_statement_payments_require_exact_cents.sql'
+  );
+  expect(sql).toContain('v_total >= v_owed THEN');
+  expect(sql).not.toContain('v_owed - 0.01');
+  expect(sql).toContain('payment amount must be positive finite whole cents');
+  expect(
+    has('tests/sql/union-statement-payment-rollback-probe.sql', 'FAIL one cent short marked paid')
+  ).toBe(true);
 });
 
 

@@ -140,47 +140,22 @@ describe('DiamondService', () => {
       expect(result.error).toBe('Invalid package');
     });
 
-    it('should accept valid package ID via legacy RPC', async () => {
-      const result = await DiamondService.purchaseDiamonds('user-1', 'starter');
-      // RPC mock returns success
-      expect(result.success).toBe(true);
-      expect(result.newBalance).toBe(500);
-    });
-
     /**
-     * `return { success: data?.success ?? true }` (Dan 2026-08-25 audit). A
-     * null payload with no PostgREST error — what a refusal that returns
-     * nothing looks like — resolved to SUCCESS with `newBalance: undefined`.
-     * The top-up modal toasted "20000 diamonds added" and set the displayed
-     * balance to 0. Nothing was credited and nothing went red.
+     * 2026-09-08 (store readiness, phase 3). The "legacy / dev" branch that
+     * credited a package through fn_add_diamonds with no payment is gone. A
+     * purchase is a store receipt (the app) or a Stripe Checkout session (the
+     * web); without a payment method this refuses, calls no RPC, and emits no
+     * balance change. The three pins that guarded that branch's "a null
+     * payload is not a credit" rule are subsumed: there is no payload at all.
      */
-    it('does NOT call a null payload a successful credit', async () => {
+    it('refuses a package with no payment, and never calls a credit RPC', async () => {
       const { supabase } = await import('../../src/lib/supabase');
-      vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: null } as never);
+      vi.mocked(supabase.rpc).mockClear();
       const result = await DiamondService.purchaseDiamonds('user-1', 'starter');
       expect(result.success).toBe(false);
       expect(result.newBalance).toBeUndefined();
-    });
-
-    it('does NOT call a credit successful when no balance came back', async () => {
-      const { supabase } = await import('../../src/lib/supabase');
-      vi.mocked(supabase.rpc).mockResolvedValueOnce({
-        data: { success: true },
-        error: null,
-      } as never);
-      const result = await DiamondService.purchaseDiamonds('user-1', 'starter');
-      expect(result.success).toBe(false);
-    });
-
-    it('surfaces a payload refusal instead of swallowing it', async () => {
-      const { supabase } = await import('../../src/lib/supabase');
-      vi.mocked(supabase.rpc).mockResolvedValueOnce({
-        data: { success: false, error: 'permission denied for function fn_add_diamonds' },
-        error: null,
-      } as never);
-      const result = await DiamondService.purchaseDiamonds('user-1', 'starter');
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('permission denied');
+      expect(result.error).toContain('Store Or Stripe Checkout');
+      expect(supabase.rpc).not.toHaveBeenCalled();
     });
   });
 

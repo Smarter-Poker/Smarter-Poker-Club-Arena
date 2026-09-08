@@ -77,6 +77,7 @@ import {
   clubArenaPathFromHubUrl,
   isOffSite,
 } from '../../utils/hubTab';
+import { openInBrowser } from '../../lib/openExternal';
 
 /** The container's swipe handlers, on the shape a native TouchEvent satisfies. */
 export interface HubFrameSwipeHandlers {
@@ -217,7 +218,7 @@ export function HubFrame({
           // Off-site: a real browser tab, never the frame (see 5 above).
           e.preventDefault();
           e.stopPropagation();
-          window.open(url.href, '_blank', 'noopener,noreferrer');
+          openInBrowser(url.href);
           return;
         }
         const caPath = clubArenaPathFromHubUrl(url.pathname + url.search);

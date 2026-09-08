@@ -13,6 +13,7 @@ import { AgentService } from '../../services/AgentService';
 import styles from './PlayerInviteModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
+import { publicOrigin } from '../../lib/appBase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -196,7 +197,7 @@ export default function PlayerInviteModal({
         .maybeSingle();
 
       const ref = profile?.player_number || agentUserId;
-      const link = `${window.location.origin}/hub/club-arena/invite/${resolvedClubId}?ref=${ref}`;
+      const link = `${publicOrigin()}/hub/club-arena/invite/${resolvedClubId}?ref=${ref}`;
 
       if (isMounted.current) {
         setInviteCode(link);

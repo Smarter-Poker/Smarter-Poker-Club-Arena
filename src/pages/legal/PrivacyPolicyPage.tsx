@@ -100,6 +100,40 @@ const SECTIONS: LegalDocumentSection[] = [
     ),
   },
   {
+    id: 'third-party-services',
+    title: 'Third-Party Services We Use',
+    content: (
+      <>
+        <p>These Services Process Data On Our Behalf, Each For One Purpose:</p>
+        <ul>
+          <li>
+            <strong>Supabase:</strong> Hosting, Database, Authentication And Real-Time Gameplay.
+            Your Account And Gameplay Data Live Here.
+          </li>
+          <li>
+            <strong>Sentry:</strong> Crash And Error Reporting. An Error Report Carries Your User ID
+            And Username, The Device And App Version, And What Went Wrong. It Does Not Carry Your
+            Email Address. In The Mobile App No Session Replay Is Recorded.
+          </li>
+          <li>
+            <strong>PostHog:</strong> Product Analytics (Which Screens And Features Are Used). In
+            The Mobile App This Runs Only If You Allow It, And You Can Change Your Answer In
+            Settings At Any Time. It Never Receives Hands, Chips Or Messages.
+          </li>
+          <li>
+            <strong>Apple App Store And Google Play:</strong> In The Mobile App, Diamonds And VIP
+            Are Purchased Through Your Store Account. We Receive A Purchase Record And Never Your
+            Payment Details. Stripe Handles Card Payments On The Website.
+          </li>
+          <li>
+            <strong>Firebase Cloud Messaging:</strong> Delivers Push Notifications To The Mobile App
+            If You Turn Them On. It Receives A Device Token, Not Your Identity.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: 'data-security',
     title: 'Data Security',
     content: (

@@ -1,0 +1,56 @@
+{
+  "normalizedSpeedChecks": [
+    {
+      "t": 150,
+      "rigs": [
+        {
+          "id": "fish",
+          "count": 10
+        }
+      ]
+    },
+    {
+      "t": 650,
+      "rigs": [
+        {
+          "id": "fish",
+          "count": 10
+        }
+      ]
+    },
+    {
+      "t": 1400,
+      "rigs": [
+        {
+          "id": "fish",
+          "count": 10
+        }
+      ]
+    },
+    {
+      "t": 2350,
+      "rigs": [
+        {
+          "id": "fish",
+          "count": 10
+        }
+      ]
+    },
+    {
+      "t": 3000,
+      "rigs": [
+        {
+          "id": "fish",
+          "count": 10
+        }
+      ]
+    }
+  ],
+  "reduced": [
+    {
+      "id": "fish",
+      "animations": 0
+    }
+  ],
+  "pageErrors": []
+}

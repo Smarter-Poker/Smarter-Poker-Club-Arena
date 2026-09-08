@@ -1,0 +1,24 @@
+{
+  "build": {
+    "ca_sha": "50806ae3e6b13edd4b3ebf024c831550eebc1630",
+    "built_at": "2026-09-08T18:30:09Z",
+    "built_by": "publish-club-arena.yml",
+    "run_id": "34263170870"
+  },
+  "entry": "/hub/club-arena/assets/index-DkG6XqP3-v6.js",
+  "wallet_helper": "AgentWalletIntent-BMuBR6OX-v6.js",
+  "helper_sha256": "ea14eb64b1ebec0a5e0ca45bdacd088eb884655b1771001c757fcf01cbe99f67",
+  "helper_checks": {
+    "sessionStorage": true,
+    "subtle": true,
+    "exclusive": true,
+    "operationId": true
+  },
+  "owner": "Codex",
+  "pr": 3846,
+  "audit_pr": 3848,
+  "ci_run": 34262509506,
+  "focused_tests_passed": 119,
+  "production_money_tested": false,
+  "status": "Phase 1 scoped acceptance complete"
+}

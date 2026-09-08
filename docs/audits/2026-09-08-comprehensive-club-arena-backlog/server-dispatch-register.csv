@@ -1,0 +1,29 @@
+file,line,condition,handlers,status
+server/src/router.ts,175,url === '/health' || url === '/',handleHealth,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,178,url === '/stable-hand',handleStableHand,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,179,url === '/ws-metrics' && method === 'GET',handleWsMetrics,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,183,url === '/metrics' && method === 'GET',handleMetrics,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,188,method === 'POST' && url === '/action',handleAction,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,189,method === 'POST' && url === '/timebank',handleTimebank,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,201,method === 'POST' && url === '/reject_rebuy',handleRejectRebuy,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,205,method === 'POST' && url === '/rabbit-hunt',handleRabbitHunt,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,207,method === 'POST' && url === '/heartbeat',handleHeartbeat,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,211,method === 'POST' && url === '/client-event',handleClientEvent,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,217,method === 'POST' && url === '/away',handleAway,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,218,method === 'POST' && url === '/preaction',handlePreaction,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,219,method === 'POST' && url === '/addchips',handleAddchips,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,220,method === 'POST' && url === '/leave',handleLeave,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,221,method === 'POST' && url === '/sitout',handleSitout,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,222,method === 'POST' && url === '/straddle',handleStraddle,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,223,method === 'POST' && url === '/rit',handleRit,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,224,method === 'POST' && url === '/insurance',handleInsurance,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,225,method === 'POST' && url === '/showhand',handleShowhand,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,226,method === 'POST' && url === '/discard',handleDiscard,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,227,method === 'POST' && url === '/admin/pause',handleAdminPause,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,229,method === 'POST' && url === '/admin/resume',handleAdminResume,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,232,method === 'POST' && url === '/admin/kick',handleAdminKick,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,234,method === 'POST' && url === '/post-bb',handlePostBB,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,241,method === 'GET' && url === '/voice/ice',handleVoiceIce,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,245,method === 'POST' && url === '/admin/inject-fault',handleInjectFault,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,248,method === 'GET' && url?.startsWith('/insurance-preview'),handleInsurancePreview,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required
+server/src/router.ts,308,method === 'POST' && url === '/channels/lobby/update',,Dispatch Candidate; Full Method/Auth/Body/Response Trace Required

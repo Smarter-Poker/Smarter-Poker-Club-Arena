@@ -368,39 +368,39 @@ async function attemptBBJPayoutOnce(
   params: BBJPayoutParams,
   fromQueue: boolean
 ): Promise<{ status: 'paid'; result: BBJPayoutResult } | { status: 'already_paid' }> {
-  // 1. Find the club's union (if any). A read error is a transport failure,
-  //    not "club not found" - the two used to be indistinguishable here, and
-  //    the second one silently ended the payout.
-  const { data: club, error: clubErr } = await supabase
-    .from('clubs')
-    .select('union_id')
-    .eq('id', params.clubId)
+  // Replay the recorded award before considering a new allocation. A club
+  // can move unions or retire its pool while an unpaid share is still owed.
+  const { data: prior, error: priorErr } = await supabase
+    .from('bbj_payouts')
+    .select('pool_id')
+    .eq('table_id', params.tableId)
+    .eq('hand_number', params.handNumber)
     .maybeSingle();
-  if (clubErr) throw new Error(`clubs read failed: ${clubErr.message}`);
-  if (!club) {
-    throw new BBJPayoutFinal(`Club ${params.clubId} not found`, 'club_not_found');
+  if (priorErr) throw new Error(`bbj_payouts destination read failed: ${priorErr.message}`);
+  let poolId = prior?.pool_id;
+  if (!prior) {
+    // Contribution posting owns private/union routing. Never substitute the
+    // club's current pool when the original receipt is missing or unreadable.
+    const { data: contribution, error: contributionErr } = await supabase
+      .from('bbj_contributions')
+      .select('pool_id')
+      .eq('table_id', params.tableId)
+      .eq('hand_number', params.handNumber)
+      .maybeSingle();
+    if (contributionErr) {
+      throw new Error(`bbj_contributions destination read failed: ${contributionErr.message}`);
+    }
+    poolId = contribution?.pool_id;
   }
+  if (!poolId) throw new Error('BBJ hand has no confirmed payout destination');
 
-  // 2. Find the BBJ pool (union-level first, then club-level)
-  // HARDEN 2026-08-18: only an active pool can pay (matches collection path).
-  let poolQuery = supabase
-    .from('bbj_pools')
-    .select('id, main_balance, backup_balance')
-    .eq('status', 'active');
-  if (club.union_id) {
-    poolQuery = poolQuery.eq('union_id', club.union_id);
-  } else {
-    poolQuery = poolQuery.eq('club_id', params.clubId);
-  }
+  let poolQuery = supabase.from('bbj_pools').select('id').eq('id', poolId);
+  // New allocations require an active bank. Existing obligations must remain
+  // redeemable from their original retired pool, which retains parked funding.
+  if (!prior) poolQuery = poolQuery.eq('status', 'active');
   const { data: pool, error: poolErr } = await poolQuery.maybeSingle();
   if (poolErr) throw new Error(`bbj_pools read failed: ${poolErr.message}`);
-
-  if (!pool) {
-    throw new BBJPayoutFinal(
-      `No BBJ pool or zero balance for club ${params.clubId}`,
-      'no_pool_or_empty'
-    );
-  }
+  if (!pool) throw new Error('BBJ original payout destination is unavailable');
 
   // 3-5. FIX-A4 2026-07-19: atomic + idempotent payout via RPC. The RPC locks
   // the pool row, computes the payout from the LOCKED balance (no stale-read

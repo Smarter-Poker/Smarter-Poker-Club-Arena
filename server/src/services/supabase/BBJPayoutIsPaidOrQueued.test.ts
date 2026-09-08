@@ -87,6 +87,7 @@ beforeEach(() => {
   setBBJPayoutQueue(null);
   from.mockImplementation((name: string) => {
     if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
+    if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
     if (name === 'bbj_pools')
       return table({
         data: { id: POOL, main_balance: 104396.75, backup_balance: 32081.72 },
@@ -156,6 +157,7 @@ describe('a transient failure is retried, and the second attempt pays', () => {
     let poolReads = 0;
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
+      if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
       if (name === 'bbj_pools') {
         poolReads++;
         return poolReads === 1
@@ -263,6 +265,7 @@ describe('when every attempt fails, the hit is queued and alarmed, never dropped
     rpc.mockResolvedValue({ data: [{ applied: false, already_paid: false }], error: null });
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: null }, error: null });
+      if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 0, backup_balance: 500 }, error: null });
       return table({ data: null, error: null });
@@ -295,6 +298,7 @@ describe('every recipient is told, seated or not (phase 1), and the note says wh
     const inserted: unknown[] = [];
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
+      if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 1000, backup_balance: 0 }, error: null });
       if (name === 'notifications') {
@@ -318,6 +322,7 @@ describe('every recipient is told, seated or not (phase 1), and the note says wh
     const inserted: Array<{ user_id: string; message: string; metadata: { placed: string } }> = [];
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
+      if (name === 'bbj_contributions') return table({ data: { pool_id: POOL }, error: null });
       if (name === 'bbj_pools')
         return table({ data: { id: POOL, main_balance: 1000, backup_balance: 0 }, error: null });
       if (name === 'notifications') {
@@ -429,8 +434,8 @@ describe('Mini payouts retain the original durable jackpot operation', () => {
   });
   it('lets the RPC replay an existing hand even when the current Main bank is empty', async () => {
     from.mockImplementation((name: string) =>
-      name === 'clubs'
-        ? table({ data: { union_id: null }, error: null })
+      name === 'bbj_payouts'
+        ? table({ data: { pool_id: POOL }, error: null })
         : table({ data: { id: POOL, main_balance: 0, backup_balance: 1000 }, error: null })
     );
     rpc.mockResolvedValue({

@@ -36,7 +36,8 @@ const build = new Function(
 type Stage = 'survivor' | 'topup' | 'complete';
 async function run(
   stage: Stage,
-  receipt: { count?: number | null; error?: { message: string } } = { count: 1 }
+  receipt: { count?: number | null; error?: { message: string } } = { count: 1 },
+  reads: Partial<Record<'deal' | 'field' | 'players', any>> = {}
 ) {
   const updates: Array<{ table: string; value: any; options: any }> = [];
   const report = vi.fn();
@@ -120,10 +121,12 @@ async function run(
               ],
               error: null,
             };
-          else if (table === 'tournament_payouts') result = { data: [], error: null };
+          else if (table === 'tournament_payouts') result = reads.deal ?? { data: [], error: null };
           else if (table === 'hand_history') result = { data: { id: 'hand' }, error: null };
           else
-            result = countRead ? { count: rows.length, error: null } : { data: rows, error: null };
+            result = countRead
+              ? (reads.field ?? { count: rows.length, error: null })
+              : (reads.players ?? { data: rows, error: null });
           return Promise.resolve(result).then(resolve, reject);
         },
       };
@@ -173,4 +176,26 @@ describe('recovery confirms paid-player stamps and completion before progressing
       expect(r.log.mock.calls.some((x) => String(x[0]).includes('Recovered stuck'))).toBe(true);
     });
   }
+});
+
+describe('recovery needs confirmed pricing and roster reads before payment', () => {
+  it.each([
+    ['deal', { data: null, error: null }],
+    ['deal', { data: {}, error: null }],
+    ['deal', { data: [], error: { message: 'unreadable' } }],
+    ['field', { count: null, error: null }],
+    ['field', { count: 0, error: null }],
+    ['field', { count: -1, error: null }],
+    ['field', { count: 1.5, error: null }],
+    ['field', { count: 1, error: { message: 'unreadable' } }],
+    ['players', { data: null, error: null }],
+    ['players', { data: {}, error: null }],
+    ['players', { data: [], error: { message: 'unreadable' } }],
+  ])('does not pay or complete after unknown %s: %j', async (key, value) => {
+    const r = await run('survivor', { count: 1 }, { [key as string]: value });
+    expect(r.settle).not.toHaveBeenCalled();
+    expect(r.updates).toEqual([]);
+    expect(r.report).toHaveBeenCalled();
+    expect(r.log).not.toHaveBeenCalled();
+  });
 });

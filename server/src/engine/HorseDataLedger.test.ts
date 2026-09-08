@@ -1,7 +1,7 @@
 /**
  * The Horse Data Ledger is a contract, and this test is what makes it one.
  * It reads the engine SOURCE (not the runtime) and fails when:
- *   - a HorseDecideOpts flag is read in the brain but not registered, or
+ *   - a HorseDecideOpts control is read in the brain but not registered, or
  *     registered but no longer read anywhere;
  *   - a telemetry key is fired but not registered (exact or family), or
  *     registered but never fired by any source;
@@ -134,7 +134,7 @@ describe('HorseDataLedger - the contract holds against the source', () => {
     expect(new Set(rows.map((r) => r.key)).size).toBe(rows.length);
   });
 
-  it('registers every HorseDecideOpts flag the brain reads, and reads every flag it registers', () => {
+  it('registers every HorseDecideOpts control the brain reads, and reads every control it registers', () => {
     const used = new Set<string>();
     for (const m of BRAIN_SOURCE.matchAll(/\bopts\.([A-Za-z0-9]+)/g)) used.add(m[1]);
     // the league passes flags by name as well
@@ -143,8 +143,8 @@ describe('HorseDataLedger - the contract holds against the source', () => {
     const registered = new Set(ledgerByKind('flag').map((e) => e.key));
     const unregistered = [...used].filter((k) => !registered.has(k)).sort();
     const dead = [...registered].filter((k) => !used.has(k)).sort();
-    expect(unregistered, 'flags read by the brain but missing from the ledger').toEqual([]);
-    expect(dead, 'flags in the ledger that nothing reads any more').toEqual([]);
+    expect(unregistered, 'controls read by the brain but missing from the ledger').toEqual([]);
+    expect(dead, 'controls in the ledger that nothing reads any more').toEqual([]);
   });
 
   it('registers every telemetry key the brain fires (exact or family), and every registered receipt is fired', () => {

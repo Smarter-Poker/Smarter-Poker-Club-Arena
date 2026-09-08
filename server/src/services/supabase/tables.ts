@@ -583,3 +583,42 @@ export async function updateTableStatus(
     .eq('id', tableId)
     .or(tableCountChangedFilter({ current_players: playerCount, status }));
 }
+
+/**
+ * Read the active seats and stored summary in one database snapshot. A stable
+ * table needs no second HTTP request. Changed summaries still use the database
+ * comparison filter; missing/failed reads never manufacture an empty table.
+ */
+export async function reconcileTableSeatCount(tableId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('tables')
+    .select('current_players,status,seats:table_seats!table_seats_table_id_fkey(user_id)')
+    .eq('id', tableId)
+    .is('seats.left_at', null)
+    .maybeSingle();
+  if (error || !data || !Array.isArray(data.seats)) {
+    reportError(
+      new Error(
+        `table_unlock: seat count unavailable (${error?.message ?? 'missing seat relation'}); table status left unchanged`
+      ),
+      'ServerTableEngine.table_unlock_count_unavailable'
+    );
+    return null;
+  }
+  const count = data.seats.length;
+  const status = count >= 2 ? 'running' : 'waiting';
+  if (data.current_players !== count || data.status !== status) {
+    const { error: updateError } = await supabase
+      .from('tables')
+      .update({ current_players: count, status })
+      .eq('id', tableId)
+      .or(tableCountChangedFilter({ current_players: count, status }));
+    if (updateError) {
+      reportError(
+        new Error(`table_unlock: summary update failed (${updateError.message})`),
+        'ServerTableEngine.table_unlock_update_failed'
+      );
+    }
+  }
+  return count;
+}

@@ -3827,14 +3827,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       .eq('status', 'playing')
       .neq('user_id', winnerId);
 
-    if (stillPlayingErr) {
+    if (stillPlayingErr || !Array.isArray(stillPlaying)) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] could not read unresolved players at finish: ${stillPlayingErr.message}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] could not read unresolved players at finish: ${stillPlayingErr?.message ?? 'invalid roster'}`
         ),
         'Tournament.unresolved_players_read_failed'
       );
-    } else if (stillPlaying && stillPlaying.length > 0) {
+      return;
+    } else if (stillPlaying.length > 0) {
       console.warn(
         `[Tournament:${this.tournamentId.slice(0, 8)}] finishing with ${stillPlaying.length} unresolved player(s) - assigning places 2..${stillPlaying.length + 1}`
       );
@@ -3843,13 +3844,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // below it was taken — with a single unresolved player it ALWAYS wrote
       // place 2, occupied or not, paying a second 2nd-place prize. Same
       // free-place walk as the bust sweep.
-      const { data: finishTaken } = await supabase
+      const { data: finishTaken, error: finishTakenErr } = await supabase
         .from('tournament_players')
         .select('position')
         .eq('tournament_id', this.tournamentId)
         .not('position', 'is', null);
+      if (
+        finishTakenErr ||
+        !Array.isArray(finishTaken) ||
+        finishTaken.some((r) => !Number.isInteger(Number(r.position)) || Number(r.position) < 1) ||
+        new Set(finishTaken.map((r) => Number(r.position))).size !== finishTaken.length
+      ) {
+        reportError(
+          new Error(
+            'Cannot assign finishing places from an unreadable or inconsistent position list.'
+          ),
+          'Tournament.finish_positions_unconfirmed'
+        );
+        return;
+      }
       const finishTakenPositions = new Set<number>(
-        (finishTaken || [])
+        finishTaken
           .map((r) => Number((r as { position: unknown }).position))
           .filter((n) => Number.isFinite(n))
       );
@@ -3863,11 +3878,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             ),
             'TournamentManager.no_free_finishing_place_at_finish'
           );
-          break;
+          return;
         }
         await this.eliminatePlayer(ordered[i].user_id, finishNext);
         finishTakenPositions.add(finishNext);
         finishNext--;
+      }
+      // eliminatePlayer can return without claiming a stale bust or failed
+      // status write. Its return is not proof that the assigned player is out.
+      const { data: remainingPlayers, error: remainingPlayersErr } = await supabase
+        .from('tournament_players')
+        .select('user_id')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'playing')
+        .neq('user_id', winnerId);
+      if (remainingPlayersErr || !Array.isArray(remainingPlayers) || remainingPlayers.length > 0) {
+        reportError(
+          new Error('Tournament finish cannot confirm that every remaining player was resolved.'),
+          'Tournament.finish_players_unresolved'
+        );
+        return;
       }
     }
 

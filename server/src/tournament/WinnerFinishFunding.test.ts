@@ -18,7 +18,8 @@ async function run(
   guarantee = 100,
   receipt?: Record<string, unknown>,
   awardRead?: { data: unknown; error: unknown },
-  format: Record<string, unknown> = {}
+  format: Record<string, unknown> = {},
+  playerReads: Record<string, { data: unknown; error: unknown }> = {}
 ) {
   const updates: Array<{ table: string; value: any }> = [];
   const alerts = vi.fn(async () => undefined);
@@ -69,6 +70,8 @@ async function run(
           return q;
         },
         then(resolve: any, reject: any) {
+          if (table === 'tournament_players' && !value && playerReads[columns])
+            return Promise.resolve(playerReads[columns]).then(resolve, reject);
           if (table === 'tournament_players' && columns === 'prize' && awardRead)
             return Promise.resolve(awardRead).then(resolve, reject);
           let data: unknown = [];
@@ -92,6 +95,7 @@ async function run(
   const owner = {
     tournamentId: 'event',
     tournamentFinished: false,
+    eliminatePlayer: vi.fn(async () => undefined),
     applyPrizeGuarantee: vi.fn(async () => {
       if (funded instanceof Error) throw funded;
       return funded;
@@ -202,6 +206,103 @@ describe('all satellite identities take the seat award path', () => {
     const r = await run(null, 0, undefined, undefined, format);
     expect(r.settle).not.toHaveBeenCalled();
     expect(r.owner.processSatelliteAwards).toHaveBeenCalledOnce();
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(true);
+  });
+});
+
+describe('finishing needs a readable unresolved-player roster', () => {
+  it.each([
+    { data: null, error: { message: 'unavailable' } },
+    { data: null, error: null },
+    { data: {}, error: null },
+  ])('does not stamp or complete after an unknown roster: %j', async (roster) => {
+    const r = await run(20, 0, undefined, undefined, {}, { 'user_id, chips': roster });
+    expect(
+      r.updates.some((x) => x.value.status === 'winner' || x.value.status === 'COMPLETED')
+    ).toBe(false);
+    expect(r.owner.broadcast).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalled();
+  });
+
+  it.each([
+    { data: null, error: { message: 'positions unavailable' } },
+    { data: null, error: null },
+    { data: [{ position: 'bad' }], error: null },
+    { data: [{ position: 0 }], error: null },
+    { data: [{ position: 2 }, { position: 2 }], error: null },
+  ])(
+    'does not allocate places from an unknown or inconsistent position list: %j',
+    async (positions) => {
+      const r = await run(
+        20,
+        0,
+        undefined,
+        undefined,
+        {},
+        {
+          'user_id, chips': { data: [{ user_id: 'loser', chips: 0 }], error: null },
+          position: positions,
+        }
+      );
+      expect(
+        r.updates.some((x) => x.value.status === 'winner' || x.value.status === 'COMPLETED')
+      ).toBe(false);
+      expect(r.owner.broadcast).not.toHaveBeenCalled();
+      expect(r.report).toHaveBeenCalled();
+    }
+  );
+});
+
+describe('finish verifies that unresolved players were actually eliminated', () => {
+  it('does not complete when the recorded positions leave no free place', async () => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {
+        'user_id, chips': { data: [{ user_id: 'loser', chips: 0 }], error: null },
+        position: { data: [{ position: 2 }], error: null },
+      }
+    );
+    expect(r.owner.eliminatePlayer).not.toHaveBeenCalled();
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(false);
+  });
+  it.each([
+    { data: [{ user_id: 'loser' }], error: null },
+    { data: null, error: { message: 'verification unavailable' } },
+    { data: null, error: null },
+  ])('does not complete after an unconfirmed elimination: %j', async (verification) => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {
+        'user_id, chips': { data: [{ user_id: 'loser', chips: 0 }], error: null },
+        position: { data: [], error: null },
+        user_id: verification,
+      }
+    );
+    expect(r.owner.eliminatePlayer).toHaveBeenCalledWith('loser', 2);
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(false);
+  });
+  it('completes after the assigned player is confirmed resolved', async () => {
+    const r = await run(
+      20,
+      0,
+      undefined,
+      undefined,
+      {},
+      {
+        'user_id, chips': { data: [{ user_id: 'loser', chips: 0 }], error: null },
+        position: { data: [], error: null },
+        user_id: { data: [], error: null },
+      }
+    );
+    expect(r.owner.eliminatePlayer).toHaveBeenCalledWith('loser', 2);
     expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(true);
   });
 });

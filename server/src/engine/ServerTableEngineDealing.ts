@@ -755,7 +755,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
             this.stopIfClusterTableClosed()
           );
-          if (!this.running) break;
+          if (!this.lifecycleCanMutate()) return;
+          // A completed short-handed sweep is real progress just like the
+          // startup waiting sweep. Stamp after all awaited idle work so a
+          // hung read or move remains visible to the existing watchdog.
+          this.markProgress();
           await this.sleep(3000);
           continue;
         }

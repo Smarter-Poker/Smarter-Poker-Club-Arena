@@ -103,6 +103,61 @@ describe('engine.ready', () => {
     expect(engine.tableFSM.state).toBe('closed');
   });
 
+  it.each([null, '11111111-1111-1111-1111-111111111111'])(
+    'records completed one-player waiting work without starting a hand (%s)',
+    async (tournamentId) => {
+      let now = Date.now();
+      vi.spyOn(Date, 'now').mockImplementation(() => now);
+      loadTable.mockResolvedValue({ ...TABLE_ROW, tournament_id: tournamentId });
+      loadSeatedPlayers.mockResolvedValue([seat(1)]);
+      const engine = startable();
+      const progress = vi.spyOn(engine, 'markProgress');
+      let passes = 0;
+      engine.sleep = async () => {
+        expect(engine.msSinceProgress()).toBe(0);
+        expect(engine.dealingLoop).not.toHaveBeenCalled();
+        passes++;
+        now += 181_000;
+        if (passes === 2) engine.running = false;
+      };
+      try {
+        await engine.start();
+        expect(passes).toBe(2);
+        expect(progress).toHaveBeenCalledTimes(2);
+      } finally {
+        await engine.stop();
+      }
+    }
+  );
+
+  it('does not refresh progress while the waiting roster read is unresolved', async () => {
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    loadTable.mockResolvedValue({
+      ...TABLE_ROW,
+      tournament_id: '11111111-1111-1111-1111-111111111111',
+    });
+    let release!: (value: ReturnType<typeof seat>[]) => void;
+    const held = new Promise<ReturnType<typeof seat>[]>((resolve) => {
+      release = resolve;
+    });
+    loadSeatedPlayers.mockResolvedValueOnce([seat(1)]).mockReturnValue(held);
+    const engine = startable();
+    const progress = vi.spyOn(engine, 'markProgress');
+    const started = engine.start();
+    try {
+      expect(await engine.ready).toBe(true);
+      now += 181_000;
+      expect(engine.msSinceProgress()).toBeGreaterThan(180_000);
+      expect(progress).not.toHaveBeenCalled();
+    } finally {
+      engine.running = false;
+      release([seat(1)]);
+      await started;
+      await engine.stop();
+    }
+  });
+
   it('resolves false when start() fails before `waiting`', async () => {
     loadTable.mockRejectedValue(new Error('row is gone')); // not transient: no retry
     const engine = startable();

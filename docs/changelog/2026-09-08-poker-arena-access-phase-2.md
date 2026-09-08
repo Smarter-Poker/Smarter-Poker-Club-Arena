@@ -34,3 +34,11 @@ The aggregate get_club_home RPC now authorizes before returning member content. 
 The updated isolated SQL fixture passes 32 assertions, including direct aggregate RPC access and platform-staff versus club-owner permissions. Eight component behavior tests cover entry, required joins, Diamond recognition, stale responses, sign-out, unknown identity, retries and revalidation failure. The legacy dependency inventory is docs/audits/2026-09-08-diamond-phase-2-access-and-legacy-inventory.md.
 
 Automatic approval review rejected apply_migration(poker_arena_identity_and_access): the concrete live RLS, trigger, access-function, lobby and historical membership changes could deny production service. General permission to proceed with Phase 2 was not accepted as explicit approval for that exact mutation. No workaround, alternate mutation tool or push/publication was attempted. The prepared migration is 20260908135547_poker_arena_identity_and_access.sql, with lock_timeout 5 seconds and statement_timeout 30 seconds. Application, full live trigger-chain verification and release gates remain open. Phase 2 is not complete.
+
+## Recovered In Continuation Chat
+
+Recovered the Phase 2 worktree during an unfinished merge with main. Resolved TableViewerAccess and its tests by preserving authoritative Diamond identity checks together with union-aware observer authorization and seat-first reconnect access. Retained the pending explicit union-only chip scope in the table loader and the migration's cross-asset reassignment guard. Added seven table-scope regressions covering valid union-only chips, missing identity, mismatched clubs, and Diamond/union contamination.
+
+Continuation verification: 35 server tests and 18 frontend tests passed. Both server and frontend TypeScript completed with exit 0. No conflict markers or diff whitespace errors remain. These checks certify the recovered code paths, not the complete production schema or a deployed Diamond game.
+
+The recorded automatic approval rejection still blocks production application of 20260908135547_poker_arena_identity_and_access.sql. No production mutation or publication has been attempted in this continuation. Phase 2 remains incomplete pending approved schema application, complete trigger-chain/live verification, and release gates.

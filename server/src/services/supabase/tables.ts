@@ -10,7 +10,7 @@
  */
 
 import { supabase } from './client.js';
-import { parseArenaIdentity, assertChipFundingArena } from '../../domain/ArenaContext.js';
+import { parseTableArenaIdentity, assertChipFundingArena } from '../../domain/ArenaContext.js';
 import { reportError } from '../errorReporter.js';
 import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
 import { drainPendingWrites, enqueuePendingWrite } from './pendingWrites.js';
@@ -29,7 +29,7 @@ export async function loadTable(tableId: string) {
       // RAKE-AUDIT 2026-07-24: bbj_percent added — the FIX-A2 BBJ gate reads
       // tableInfo.bbj_percent, but this select never fetched it, so the gate
       // saw `undefined ?? 0` and disabled the BBJ fee on every table.
-      'id, club_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle'
+      'id, club_id, union_id, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id), small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, rake_percent, rake_cap_bb, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, auto_utg_straddle, voluntary_straddle, run_it_twice_enabled, run_it_twice, allow_run_it_twice, insurance_enabled, auto_muck_enabled, show_hand_enabled, allow_rabbit_hunt, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_next_due_at, bomb_pot_sched_state, bomb_pot_button_policy, bomb_pot_announce_seconds, wait_for_big_blind, seven_deuce_enabled, seven_deuce_amount, name, min_buy_in, max_buy_in, bbj_percent, all_in_or_fold, auto_start_players, run_it_mode, is_anonymous, ban_chat, restrict_observers, cap_enabled, cap_bb, pineapple_holdem, nit_game, maintain_percent_min, maintain_hands, career_percent_min, cluster_id, role, main_index, lifecycle'
     )
     .eq('id', tableId)
     .maybeSingle();
@@ -39,8 +39,7 @@ export async function loadTable(tableId: string) {
     throw new Error(`Failed to load table ${tableId}: ${msg}`);
   }
   if (!data) throw new Error(`Table ${tableId} not found`);
-  const arena = parseArenaIdentity(data.arena);
-  if (arena.id !== data.club_id) throw new Error('Arena Identity Mismatch');
+  const arena = parseTableArenaIdentity(data);
   // This engine currently settles through chip RPCs. Never open a Diamond
   // table on that financial path; dedicated custody is the next build phase.
   assertChipFundingArena(arena);
@@ -266,8 +265,8 @@ export async function syncStacks(
   }[],
   handNumber?: number,
   options: StackWriteOptions = {}
-): Promise<void> {
-  if (players.length === 0) return;
+): Promise<boolean> {
+  if (players.length === 0) return true;
   if (handNumber === undefined || handNumber === null) {
     /* Every hand result names its hand (settlement step 8 reads the snapshot).
        A write with no hand number used to take the unchecked per-seat loop -
@@ -278,7 +277,7 @@ export async function syncStacks(
       new Error(`[DB] syncStacks called for table ${tableId} without a hand number - refused`),
       'DB.sync_stacks_without_hand'
     );
-    return;
+    return false;
   }
 
   /* ZERO-DRIFT phase 5 (2026-08-31) + chip standard (2026-09-04): the stack
@@ -422,7 +421,8 @@ export async function syncStacks(
   let lastError = '';
   for (let attempt = 1; attempt <= STACK_WRITE_ATTEMPTS; attempt++) {
     const verdict = await attemptStackWrite();
-    if (verdict.kind === 'landed' || verdict.kind === 'refused') return;
+    if (verdict.kind === 'landed') return true;
+    if (verdict.kind === 'refused') return false;
     lastError = verdict.error;
     if (attempt < STACK_WRITE_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, STACK_WRITE_BACKOFF_MS(attempt)));
@@ -486,6 +486,7 @@ export async function syncStacks(
       `[DB] hand-stack write for table ${tableId} hand ${handNumber} is already queued off-path`
     );
   }
+  return false;
 }
 
 /**
@@ -513,7 +514,7 @@ function timeBankWritePayload(p: {
   return payload;
 }
 
-async function persistTimeBanks(
+export async function persistTimeBanks(
   tableId: string,
   players: {
     user_id: string;
@@ -545,14 +546,28 @@ async function persistTimeBanks(
 /**
  * Sync tournament player chips from table_seats to tournament_players
  */
-export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<void> {
-  const { data: seats } = await supabase
+export async function syncTournamentChips(tableId: string, tournamentId: string): Promise<boolean> {
+  const { data: seats, error: seatsError } = await supabase
     .from('table_seats')
     .select('user_id, stack')
     .eq('table_id', tableId)
     .is('left_at', null);
 
-  if (!seats || seats.length === 0) return;
+  /* This result gates the tournament elimination wake. Unknown input must not
+     be reported as a successful mirror: otherwise a sweep can run while
+     tournament_players still carries the pre-hand positive chip count and
+     miss a bust until the safety pass. */
+  if (seatsError) {
+    reportError(seatsError, 'supabase.syncTournamentChips.seats_read');
+    return false;
+  }
+  if (!seats || seats.length === 0) {
+    reportError(
+      new Error(`[DB] tournament chip sync for ${tournamentId}/${tableId} found no active seats`),
+      'supabase.syncTournamentChips.empty_seats'
+    );
+    return false;
+  }
 
   // ONE bulk statement, not one UPDATE per seat.
   //
@@ -588,7 +603,11 @@ export async function syncTournamentChips(tableId: string, tournamentId: string)
     p_tournament_id: tournamentId,
     p_updates: chipUpdates,
   });
-  if (error) reportError(error, 'supabase.syncTournamentChips');
+  if (error) {
+    reportError(error, 'supabase.syncTournamentChips');
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -674,7 +693,10 @@ export async function updateTableStatus(
  * table needs no second HTTP request. Changed summaries still use the database
  * comparison filter; missing/failed reads never manufacture an empty table.
  */
-export async function reconcileTableSeatCount(tableId: string): Promise<number | null> {
+export async function reconcileTableSeatCount(
+  tableId: string,
+  canMutate: () => boolean = () => true
+): Promise<number | null> {
   const { data, error } = await supabase
     .from('tables')
     .select('current_players,status,seats:table_seats!table_seats_table_id_fkey(user_id)')
@@ -693,6 +715,7 @@ export async function reconcileTableSeatCount(tableId: string): Promise<number |
   const count = data.seats.length;
   const status = count >= 2 ? 'running' : 'waiting';
   if (data.current_players !== count || data.status !== status) {
+    if (!canMutate()) return null;
     const { error: updateError } = await supabase
       .from('tables')
       .update({ current_players: count, status })

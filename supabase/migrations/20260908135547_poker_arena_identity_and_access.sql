@@ -114,7 +114,8 @@ BEGIN
   END IF;
   IF TG_TABLE_NAME IN ('tables','tournaments') AND TG_OP='UPDATE'
      AND NEW.club_id IS DISTINCT FROM OLD.club_id
-     AND EXISTS (SELECT 1 FROM public.clubs WHERE id=OLD.club_id AND asset IS DISTINCT FROM v_asset) THEN
+     AND (EXISTS (SELECT 1 FROM public.clubs WHERE id=OLD.club_id AND asset IS DISTINCT FROM v_asset)
+       OR (OLD.club_id IS NULL AND OLD.union_id IS NOT NULL AND v_asset='diamonds')) THEN
     RAISE EXCEPTION 'Game Asset Is Immutable' USING ERRCODE='23514';
   END IF;
   IF v_asset='diamonds' THEN

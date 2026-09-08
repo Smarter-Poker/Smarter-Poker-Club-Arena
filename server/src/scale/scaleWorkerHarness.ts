@@ -47,6 +47,7 @@ async function main(): Promise<void> {
 
   const runtime = new ShardWorkerRuntime({
     workerId: data.workerId,
+    workerGeneration: data.workerGeneration,
     host,
     heartbeatMs: data.heartbeatMs,
     send: (msg: WorkerToManager) => port.postMessage(msg),
@@ -63,6 +64,13 @@ void main().catch((err) => {
   // Surface fatal boot errors to the manager if we can, else crash the worker.
   const message = err instanceof Error ? err.message : String(err);
   const id = (workerData as ShardWorkerData | undefined)?.workerId ?? 'unknown';
-  parentPort?.postMessage({ type: 'ERROR', workerId: id, message } satisfies WorkerToManager);
+  const workerGeneration =
+    (workerData as ShardWorkerData | undefined)?.workerGeneration ?? 'unknown';
+  parentPort?.postMessage({
+    type: 'ERROR',
+    workerId: id,
+    workerGeneration,
+    message,
+  } satisfies WorkerToManager);
   throw err;
 });

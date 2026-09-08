@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-import { parseArenaIdentity } from '../domain/ArenaContext.js';
+import { parseTableArenaIdentity } from '../domain/ArenaContext.js';
 
 export type TableViewerAccessReason =
   | 'diamond_member'
@@ -32,7 +32,7 @@ export async function authorizeTableViewer(
     supabase
       .from('tables')
       .select(
-        'club_id, restrict_observers, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)'
+        'club_id, union_id, restrict_observers, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)'
       )
       .eq('id', tableId)
       .maybeSingle(),
@@ -50,16 +50,18 @@ export async function authorizeTableViewer(
   if (!table) return { allowed: false, reason: 'table_not_found', clubId: null };
 
   const clubId = typeof table.club_id === 'string' ? table.club_id : null;
-  if (!clubId) return { allowed: false, reason: 'check_failed', clubId: null };
+  const unionId = typeof table.union_id === 'string' ? table.union_id : null;
+  const accessScopeId = unionId || clubId;
+  if (!accessScopeId) return { allowed: false, reason: 'check_failed', clubId: null };
   let arena;
   try {
-    arena = parseArenaIdentity(table.arena);
-    if (arena.id !== clubId || !userId) throw new Error('Arena Identity Mismatch');
+    arena = parseTableArenaIdentity(table);
+    if (!userId) throw new Error('Authentication Required');
   } catch {
-    return { allowed: false, reason: 'check_failed', clubId };
+    return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
   }
-  if (seatResult.error) return { allowed: false, reason: 'check_failed', clubId };
-  if (seatResult.data) return { allowed: true, reason: 'seated', clubId };
+  if (seatResult.error) return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
+  if (seatResult.data) return { allowed: true, reason: 'seated', clubId: accessScopeId };
 
   if (arena.kind === 'diamond_arena') {
     return table.restrict_observers === true
@@ -67,19 +69,37 @@ export async function authorizeTableViewer(
       : { allowed: true, reason: 'diamond_member', clubId };
   }
 
-  const memberResult = await supabase
-    .from('club_members')
-    .select('user_id')
-    .eq('club_id', clubId)
-    .eq('user_id', userId)
-    .in('status', ['active', 'approved'])
-    .limit(1)
-    .maybeSingle();
+  /*
+   * The lobby's ownership rule is union-aware: a member of Shark can see a
+   * Midway-owned table even though that durable row names Midway's shell club
+   * as club_id. Resolve the table owner's authoritative scope and the viewer's
+   * complete active membership set only after proving the viewer is not
+   * seated. That keeps a seated reconnect independent from both observer
+   * lookups while retaining fail-closed, uncached authorization for observers.
+   */
+  const [membershipsResult, scopeResult] = await Promise.all([
+    supabase
+      .from('club_members')
+      .select('club_id')
+      .eq('user_id', userId)
+      .in('status', ['active', 'approved']),
+    supabase.rpc('fn_club_scope_ids', { p_club_id: accessScopeId }),
+  ]);
 
-  if (memberResult.error) return { allowed: false, reason: 'check_failed', clubId };
-  if (memberResult.data && table.restrict_observers === true) {
-    return { allowed: false, reason: 'observers_restricted', clubId };
+  if (membershipsResult.error || scopeResult.error) {
+    return { allowed: false, reason: 'check_failed', clubId: accessScopeId };
   }
-  if (memberResult.data) return { allowed: true, reason: 'club_member', clubId };
-  return { allowed: false, reason: 'membership_required', clubId };
+  const scopeIds = new Set(
+    Array.isArray(scopeResult.data)
+      ? scopeResult.data.filter((id): id is string => typeof id === 'string')
+      : []
+  );
+  const isMember = (membershipsResult.data ?? []).some(
+    (membership) => typeof membership.club_id === 'string' && scopeIds.has(membership.club_id)
+  );
+  if (isMember && table.restrict_observers === true) {
+    return { allowed: false, reason: 'observers_restricted', clubId: accessScopeId };
+  }
+  if (isMember) return { allowed: true, reason: 'club_member', clubId: accessScopeId };
+  return { allowed: false, reason: 'membership_required', clubId: accessScopeId };
 }

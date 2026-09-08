@@ -1,6 +1,7 @@
 /** Pure arena contract shared by the browser and engine. No network or wallet access. */
 export type ArenaIdentity =
   | { id: string; kind: 'chip_club'; asset: 'chips' }
+  | { id: string; kind: 'chip_union'; asset: 'chips' }
   | { id: string; kind: 'diamond_arena'; asset: 'diamonds' };
 
 export interface ArenaAccessContext {
@@ -30,4 +31,24 @@ export function parseArenaIdentity(value: unknown): ArenaIdentity {
 
 export function assertChipFundingArena(arena: ArenaIdentity): void {
   if (arena.asset !== 'chips') throw new Error('Diamond Funding Cannot Use Chip Wallets');
+}
+
+/** Union-only tables are an explicit chip scope, not a missing-asset fallback. */
+export function parseTableArenaIdentity(table: {
+  club_id?: unknown;
+  union_id?: unknown;
+  arena?: unknown;
+}): ArenaIdentity {
+  if (
+    table.club_id == null &&
+    typeof table.union_id === 'string' &&
+    table.union_id &&
+    table.arena == null
+  )
+    return { id: table.union_id, kind: 'chip_union', asset: 'chips' };
+  const arena = parseArenaIdentity(table.arena);
+  if (arena.id !== table.club_id) throw new Error('Arena Identity Mismatch');
+  if (arena.asset === 'diamonds' && table.union_id != null)
+    throw new Error('Diamond Games Cannot Belong To A Union');
+  return arena;
 }

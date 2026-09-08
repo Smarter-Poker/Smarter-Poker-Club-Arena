@@ -82,14 +82,15 @@ describe('all three conditions must hold', () => {
 });
 
 describe('it settles, and never cancels', () => {
-  it('claims the row with a CAS so a live engine always wins', () => {
-    expect(SWEEP).toMatch(/\.update\(\{ status: 'COMPLETING' \}\)/);
-    expect(SWEEP).toMatch(/\.eq\('status', 'RUNNING'\)/);
-    expect(SWEEP).toMatch(/if \(!claim \|\| claim\.length === 0\) continue;/);
+  it('hands the result to the manager that owns the immutable finish claim', () => {
+    expect(SWEEP).toContain("requestEliminationSweep('seat_first_terminal_stack')");
+    expect(SWEEP).toContain('await this.ensureTournamentManagerAdmission(');
+    expect(SWEEP).not.toMatch(/\.update\(\{ status: 'COMPLETING' \}\)/);
   });
 
-  it('hands off to the recovery that ranks by chips and pays the places', () => {
-    expect(SWEEP).toContain("recoverStuckCompletingTournaments('seat-first-finish-sweep', id)");
+  it('never ranks or pays from a watchdog snapshot', () => {
+    expect(SWEEP).not.toContain('recoverStuckCompletingTournaments(');
+    expect(SWEEP).not.toContain('settleTournamentPlacesAtomically(');
   });
 
   it('never writes CANCELLED - tournaments run, they do not cancel', () => {
@@ -111,7 +112,7 @@ describe('it is scoped and bounded', () => {
   });
 
   it('every read is error-bound, and a failure reports rather than settling blind', () => {
-    for (const bound of ['runningErr', 'tablesErr', 'handErr', 'seatsErr', 'claimErr']) {
+    for (const bound of ['runningErr', 'tablesErr', 'handErr', 'seatsErr']) {
       expect(SWEEP, `${bound} must be bound`).toContain(bound);
     }
     expect(SWEEP).toContain('GameServer.seat_first_finish_sweep_failed');

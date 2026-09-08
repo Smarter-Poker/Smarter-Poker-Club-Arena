@@ -17074,3 +17074,7 @@ Applied: service-only table-scoped pool resolution and contribution commit; regi
 ## 20260908052322: Insurance Payment Scope And Journal Identity
 
 Applied: game-scoped insurance bank, canonical cents, bound replay, explicit journal, service-only access. Forty-one PostgreSQL cases pass; see docs/changelog/2026-09-08-insurance-payment-identity.md.
+
+## 2026-09-08: Hand settlement retries retain their accepted facts
+
+The shared hand commit caller snapshots its entire request before awaiting and verifies a receipt against the requested hand UUID. Two reproduced failures now pass; 40 hand-history cases and server TypeScript pass. Details: docs/changelog/2026-09-08-hand-settlement-retries-retain-their-facts.md.

@@ -55,7 +55,9 @@ escalate_in_app() {
   RECIPS=$(curl -fsS --max-time 20 \
     "${SUPABASE_URL}/rest/v1/ca_incident_recipients?scope=eq.platform&active=eq.true&select=user_id" \
     -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-    -H "authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" 2>/dev/null \
+    -H "authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+    -H 'x-smarter-data-actor: service' \
+    -H 'x-smarter-data-protocol: 1' 2>/dev/null \
     | jq -r '.[].user_id' 2>/dev/null | sort -u || echo "")
   [ -n "$RECIPS" ] || { say "no active platform recipients - in-app escalation has nobody to reach."; return 0; }
 
@@ -68,6 +70,8 @@ escalate_in_app() {
     if curl -fsS --max-time 20 -X POST "${SUPABASE_URL}/rest/v1/rpc/fn_raise_notification" \
         -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
         -H "authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+        -H 'x-smarter-data-actor: service' \
+        -H 'x-smarter-data-protocol: 1' \
         -H 'content-type: application/json' \
         -d "$(jq -n --arg u "$RECIP" --arg m "$1" '{
               p_user_id:$u,

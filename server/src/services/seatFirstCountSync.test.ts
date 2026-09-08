@@ -5,7 +5,7 @@
  * come from the seat rows. `current_players` is a stored column that a seat
  * row does not touch, so every path that seats a horse has to sync it.
  *
- * createOpenSeatTable was the one that did not. Measured live: 16 open Spins
+ * seedOpenSeatTable was the one that did not. Measured live: 16 open Spins
  * advertising "0/3" while holding 32 paid seats between them - two of three
  * sold, one seat from dealing, and the lobby said empty. The fourteen that
  * read correctly had all been through topUpWithHorses, which syncs.
@@ -22,9 +22,9 @@ import { join } from 'path';
 
 const src = readFileSync(join(process.cwd(), 'src/services/TournamentRecurringService.ts'), 'utf8');
 
-/** The body of createOpenSeatTable, so assertions cannot pass on a neighbour. */
-function createOpenSeatTableBody(): string {
-  const start = src.indexOf('createOpenSeatTable');
+/** The body of seedOpenSeatTable, so assertions cannot pass on a neighbour. */
+function seedOpenSeatTableBody(): string {
+  const start = src.indexOf('private async seedOpenSeatTable');
   expect(start).toBeGreaterThan(-1);
   // Up to the next method at the same indent level.
   const rest = src.slice(start);
@@ -33,14 +33,14 @@ function createOpenSeatTableBody(): string {
 }
 
 describe('seat-first lobby counts', () => {
-  it('createOpenSeatTable syncs the count after seating its opening horses', () => {
-    const body = createOpenSeatTableBody();
+  it('seedOpenSeatTable syncs the count after seating its opening horses', () => {
+    const body = seedOpenSeatTableBody();
     expect(body).toContain('fn_seat_horse_in_seat_first_game');
     expect(body).toContain('fn_sync_seat_first_player_count');
   });
 
   it('the sync comes AFTER the seating, not before it', () => {
-    const body = createOpenSeatTableBody();
+    const body = seedOpenSeatTableBody();
     const seatAt = body.indexOf('fn_seat_horse_in_seat_first_game');
     const syncAt = body.indexOf('fn_sync_seat_first_player_count');
     expect(seatAt).toBeGreaterThan(-1);
@@ -48,7 +48,7 @@ describe('seat-first lobby counts', () => {
   });
 
   it('a failed sync does not fail table creation — the seats are real either way', () => {
-    const body = createOpenSeatTableBody();
+    const body = seedOpenSeatTableBody();
     const syncAt = body.indexOf('fn_sync_seat_first_player_count');
     const after = body.slice(syncAt, syncAt + 600);
     // Reported, not thrown, and the function still returns the table id.
@@ -85,7 +85,7 @@ describe('seat-first lobby counts', () => {
     // that counts registrations is what had spins reading 3/3 on two bought
     // seats and 0/3 on three.
     const syncCalls = src.split('fn_sync_seat_first_player_count').length - 1;
-    expect(syncCalls).toBeGreaterThanOrEqual(2); // createOpenSeatTable + topUpWithHorses
+    expect(syncCalls).toBeGreaterThanOrEqual(2); // seedOpenSeatTable + topUpWithHorses
     expect(src).not.toMatch(/current_players:\s*seated\b/);
   });
 });
@@ -97,7 +97,7 @@ describe('nothing writes a seat-first count the application invented', () => {
    * createSpin seats two horses in real seats, then its very next statement
    * used to write `current_players: registered` where `registered` is a
    * hardcoded 0 - a leftover from when a Spin pre-registered nobody. Both the
-   * sync inside createOpenSeatTable and the trigger on table_seats set the
+   * sync inside seedOpenSeatTable and the trigger on table_seats set the
    * number correctly, and this overwrote it microseconds later. 16 open Spins
    * advertised "0/3" on 32 paid seats because of one stale constant.
    */
@@ -118,7 +118,7 @@ describe('nothing writes a seat-first count the application invented', () => {
 
   it('createSpin sets status only, never the player count', () => {
     const body = bodyOf('async createSpin', 'return { tournamentId: spin.id');
-    expect(body).toContain('createOpenSeatTable');
+    expect(body).toContain('seedOpenSeatTable');
     // The clobber, in any spacing.
     expect(body).not.toMatch(/current_players:\s*registered/);
   });

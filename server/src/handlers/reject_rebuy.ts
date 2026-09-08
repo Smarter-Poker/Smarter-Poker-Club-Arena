@@ -23,7 +23,7 @@ export interface RejectRebuyDeps {
      */
     getTableEngine(
       tableId: string
-    ): { rejectRebuy?: (userId: string) => void } | null | undefined;
+    ): { rejectRebuy?: (userId: string) => void | Promise<void> } | null | undefined;
   };
 }
 
@@ -50,7 +50,7 @@ export async function handleRejectRebuy(
 
     const engine = deps.gameServer.getTableEngine(tableId);
     if (engine && typeof engine.rejectRebuy === 'function') {
-      engine.rejectRebuy(user.userId);
+      await engine.rejectRebuy(user.userId);
     }
 
     sendJSON(res, 200, { success: true });

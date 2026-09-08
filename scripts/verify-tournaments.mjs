@@ -42,7 +42,15 @@ if (!SERVICE_KEY) {
   process.exit(2);
 }
 
-const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
+  auth: { persistSession: false },
+  global: {
+    headers: {
+      'x-smarter-data-actor': 'service',
+      'x-smarter-data-protocol': '1',
+    },
+  },
+});
 
 const BOUNTY_FAMILY = new Set(['satellite', 'bounty', 'pko', 'progressive_ko', 'mystery', 'mystery_bounty']);
 const SPIN_TYPES = new Set(['spin', 'lottery', 'spin_and_go', 'spingo']);

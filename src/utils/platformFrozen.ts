@@ -17,10 +17,17 @@ export const PLATFORM_FROZEN_MESSAGE =
 
 export function isPlatformFrozenError(err: unknown): boolean {
   if (!err) return false;
-  const e = err as { code?: string; message?: string; details?: string; hint?: string };
+  const e = err as {
+    code?: string;
+    reason?: string;
+    message?: string;
+    details?: string;
+    hint?: string;
+  };
   if (e.code === '55006') return true;
-  const text = `${e.message ?? ''} ${e.details ?? ''} ${e.hint ?? ''}`;
-  return text.includes('PLATFORM_FROZEN');
+  if (e.reason === 'platform_frozen') return true;
+  const text = `${e.reason ?? ''} ${e.message ?? ''} ${e.details ?? ''} ${e.hint ?? ''}`;
+  return /PLATFORM_FROZEN/i.test(text);
 }
 
 /** The message a player should see for `err`, or null when it is not the freeze. */

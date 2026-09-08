@@ -10,7 +10,7 @@
  * spec names, on a mock seat drawn to SeatSlot.css's proportions, at the four
  * `--seat-avatar-base` rungs the app retunes at (56 / 66 / 84 / 104 px).
  *
- * It always writes `<outDir>/harness.html`, a single self-contained file that
+ * It always writes `<outDir>/harness.html`, an HTML file with an adjacent assets folder that
  * opens in any browser. That is deliberate and is what the knockout darkroom
  * learned: a sandboxed agent frequently cannot launch a browser, but can
  * always write a file. If Playwright IS available the script also screenshots
@@ -27,7 +27,15 @@
  *   node scripts/dev/preview-throwable.mjs [outDir] [--only beer,tomato | --items=beer,tomato] [--shots | --html-only]
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -68,6 +76,7 @@ const only =
 if (only && !only.length) throw new Error('The item list must not be empty');
 
 mkdirSync(OUT, { recursive: true });
+const copiedAtlases = new Set();
 
 /* ── 1. Bundle the registry (rigs + specs) so node can import it ──────────────
    The bundle lives INSIDE the repo, not in outDir: node resolves `react` and
@@ -133,7 +142,7 @@ if (!ids.length) {
   process.exit(1);
 }
 
-/* ── 2. The stylesheets, inlined so harness.html is one file ──────────────── */
+/* ── 2. The stylesheets, inlined so the harness needs no stylesheet server ──────────────── */
 const css = [readFileSync(join(repo, 'src/components/table/ThrowablePlayer.css'), 'utf8')];
 for (const id of ids) {
   const p = join(repo, `src/throwables/rigs/${id}.css`);
@@ -151,7 +160,15 @@ function layer(r, at, unit) {
   const uid = `dk${tileId++}`;
   const markup = renderToStaticMarkup(
     React.createElement(payload ? r.rig.Payload : r.rig.Projectile, { uid })
-  );
+  ).replace(/\/images\/throwables\/animated\/([a-z0-9_-]+)\.webp/g, (_, id) => {
+    mkdirSync(join(OUT, 'assets'), { recursive: true });
+    const target = join(OUT, 'assets', `${id}.webp`);
+    if (!copiedAtlases.has(id)) {
+      copyFileSync(join(repo, 'public/images/throwables/animated', `${id}.webp`), target);
+      copiedAtlases.add(id);
+    }
+    return `assets/${id}.webp`;
+  });
   const phase = at >= landing + r.spec.payload.ms ? 'residue' : 'payload';
   const cls = payload
     ? `thr__payload thr__payload--${r.spec.arrival} thr__payload--${phase}${r.spec.residue?.fade === 'fade' ? ' thr__payload--fades' : ''}`
@@ -254,12 +271,43 @@ ${rendered
         ? ` &middot; ref video ${r.spec.reference.video} ${r.spec.reference.throw} launch f${r.spec.reference.launchFrame}`
         : ''
     }</h2>
+    <button type="button" data-replay="${r.id}">Replay ${r.spec.name} at target</button>
+    <div data-live="${r.id}" data-duration="${r.spec.payload.ms}" style="position:relative;overflow:hidden;background:#165940;width:320px;height:320px;--u:104px;">
+      ${seatMarkup}
+      <div data-performance hidden>${layer(r, landing, 104)}</div>
+    </div>
     <div class="row">${tiles}</div>
     <h2 style="opacity:.7">${r.id}: the four seat rungs</h2>
     <div class="row">${rungs}</div>`;
   })
   .join('\n')}
 <script>
+  // Replay the actual payload components. One controllable clock; repeated
+  // clicks cancel the previous frame loop and the final beat cuts cleanly.
+  const liveFrames = new Map();
+  document.querySelectorAll('[data-replay]').forEach(button => {
+    button.addEventListener('click', () => {
+      const host = document.querySelector('[data-live="' + button.dataset.replay + '"]');
+      const performance = host.querySelector('[data-performance]');
+      cancelAnimationFrame(liveFrames.get(host));
+      performance.hidden = false;
+      const animations = performance.getAnimations({subtree:true});
+      animations.forEach(a => { a.pause(); a.currentTime = 0; });
+      const start = window.performance.now();
+      const duration = Number(host.dataset.duration);
+      const tick = now => {
+        const elapsed = now - start;
+        if (elapsed >= duration) {
+          performance.hidden = true;
+          liveFrames.delete(host);
+          return;
+        }
+        animations.forEach(a => { a.currentTime = elapsed; });
+        liveFrames.set(host, requestAnimationFrame(tick));
+      };
+      liveFrames.set(host, requestAnimationFrame(tick));
+    });
+  });
   // Freeze every animation at the beat its tile names. The payload's own
   // animations start at LANDING, so its currentTime is (at - landing).
   function freeze() {
@@ -283,6 +331,14 @@ ${rendered
 </script>
 </body></html>`;
 
+writeFileSync(
+  join(OUT, 'specs.json'),
+  JSON.stringify(
+    rendered.map(({ id, spec }) => ({ id, spec })),
+    null,
+    2
+  )
+);
 const harness = join(OUT, 'harness.html');
 writeFileSync(harness, page);
 console.log(`harness: ${harness}`);
@@ -298,6 +354,26 @@ if (!values['html-only'])
     await pageCtx.goto(pathToFileURL(harness).href);
     await pageCtx.waitForFunction(() => document.documentElement.dataset.frozen === '1', {
       timeout: 5000,
+    });
+    // CSS backgrounds do not emit pageerror when absent. Decode every atlas
+    // before recording so a blank sprite cannot be mistaken for a valid beat.
+    await pageCtx.evaluate(async () => {
+      const assets = new Map();
+      for (const el of document.querySelectorAll('[data-atlas-width]')) {
+        const url = el.style.backgroundImage.slice(4, -1).replace(/^['"]|['"]$/g, '');
+        const width = Number(el.dataset.atlasWidth);
+        const height = Number(el.dataset.atlasHeight);
+        assets.set(`${url}:${width}:${height}`, { url, width, height });
+      }
+      await Promise.all(
+        [...assets.values()].map(async ({ url, width, height }) => {
+          const image = new Image();
+          image.src = url;
+          await image.decode();
+          if (image.naturalWidth !== width || image.naturalHeight !== height)
+            throw new Error(`Atlas dimensions mismatch: ${url}, expected ${width}x${height}`);
+        })
+      );
     });
     const shots = join(OUT, 'shots');
     mkdirSync(shots, { recursive: true });

@@ -37,6 +37,7 @@ import type { ThrowableSpec } from '../spec';
 import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import { preloadThrowableCues } from '../cues';
 import './tomato.css';
+import { AtlasSprite } from '../AtlasSprite';
 
 export const tomatoSpec: ThrowableSpec = {
   id: 'tomato',
@@ -63,157 +64,6 @@ export const tomatoSpec: ThrowableSpec = {
 
 preloadThrowableCues(tomatoSpec.audio.map((c) => c.sample));
 
-/** The measured reds: the intact fruit and the settled splat. */
-const TOMATO_RED = '#c61110';
-const SPLAT_RED = '#c22124';
-const LEAF_GREEN = '#5aa53b';
-const LEAF_EDGE = '#3c7a24';
-const STEM_GREEN = '#4a8a2c';
-
-/**
- * The calyx: a short stem stub pointing up-left and two sepal leaves, drawn
- * with its base at (0,0). The projectile wears it at the top of the fruit;
- * the payload lays it flat on the splat's centre-top.
- */
-function Calyx() {
-  return (
-    <g>
-      {/* left leaf, pointing left and a little down */}
-      <path
-        d="M -1 0 C -6 -5, -15 -4, -19 2 C -13 4, -5 3, -1 0 Z"
-        fill={LEAF_GREEN}
-        stroke={LEAF_EDGE}
-        strokeWidth="0.8"
-        strokeLinejoin="round"
-      />
-      {/* right leaf, pointing up-right */}
-      <path
-        d="M 1 0 C 6 -6, 14 -7, 18 -3 C 13 1, 6 2, 1 0 Z"
-        fill={LEAF_GREEN}
-        stroke={LEAF_EDGE}
-        strokeWidth="0.8"
-        strokeLinejoin="round"
-      />
-      {/* the stem stub, up-left */}
-      <path
-        d="M -1.8 1.2 L -6.6 -8.4 Q -6 -10.2 -4 -9.8 L 1.6 0.2 Z"
-        fill={STEM_GREEN}
-        stroke={LEAF_EDGE}
-        strokeWidth="0.7"
-        strokeLinejoin="round"
-      />
-      <circle cx="0" cy="0.4" r="1.6" fill={LEAF_EDGE} />
-      <path
-        d="M -2 0 L -15 1 M -7 0 L -10 -2 M 2 0 L 14 -3 M 7 -1 L 9 -4"
-        fill="none"
-        stroke="#a0cf65"
-        strokeWidth="0.65"
-        strokeLinecap="round"
-      />
-      <path d="M -1 -1 L -5 -8" stroke="#90b959" strokeWidth="0.6" />
-    </g>
-  );
-}
-
-/**
- * The intact tomato, drawn around (0,0), 40 units across (0.4 u, the
- * measured 16 px on a 40 px avatar). A slightly wide ball with a radial
- * gradient: a soft top-left highlight, the measured red across the body, a
- * darker shade to the lower-right; two faint lobe creases; the calyx at the
- * top, stem up-left.
- */
-function Tomato({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-tomato-${n}-${uid}-${k}`;
-  return (
-    <g>
-      <defs>
-        <radialGradient id={g('body')} cx="0.36" cy="0.32" r="0.8" fx="0.3" fy="0.27">
-          <stop offset="0%" stopColor="#ff8a7a" />
-          <stop offset="22%" stopColor="#ea3b31" />
-          <stop offset="55%" stopColor={TOMATO_RED} />
-          <stop offset="100%" stopColor="#7d0b0c" />
-        </radialGradient>
-      </defs>
-      <path
-        d="M 0 -16 C 8 -21 19 -12 20 -2 C 23 9 11 20 1 19 C -10 21 -22 10 -20 -1 C -20 -12 -9 -21 0 -16 Z"
-        fill={`url(#${g('body')})`}
-      />
-      <path
-        d="M -17 -2 C -19 6 -13 13 -7 15"
-        fill="none"
-        stroke="#ff8974"
-        strokeWidth="0.75"
-        opacity="0.8"
-        strokeLinecap="round"
-      />
-      <path d="M 16 3 Q 14 13 6 16" fill="none" stroke="#4a0d13" strokeWidth="0.9" opacity="0.55" />
-      {/* two shallow lobe creases */}
-      <path
-        d="M -6 -16 q -3 9 -1 17"
-        fill="none"
-        stroke="#000000"
-        strokeWidth="1.2"
-        opacity="0.1"
-        strokeLinecap="round"
-      />
-      <path
-        d="M 7 -15 q 3 8 2 15"
-        fill="none"
-        stroke="#000000"
-        strokeWidth="1"
-        opacity="0.08"
-        strokeLinecap="round"
-      />
-      {/* the top-left highlight */}
-      <ellipse
-        cx="-7"
-        cy="-8"
-        rx="6"
-        ry="3.4"
-        transform="rotate(-35 -7 -8)"
-        fill="#ffffff"
-        opacity="0.42"
-      />
-      <circle cx="-10.5" cy="-11" r="1.4" fill="#ffffff" opacity="0.7" />
-      <g transform="translate(-2.5 -17.5)">
-        <Calyx />
-      </g>
-    </g>
-  );
-}
-
-function Projectile({ uid }: RigProps) {
-  return (
-    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
-      <Tomato uid={uid} k="p" />
-    </svg>
-  );
-}
-
-/**
- * The splat, centred on (0,-20): twelve lobes alternating rounded and spiked,
- * 83 units across and 85 tall (0.85 u, the measured 34 px at 333-433).
- * Hand-authored; the numbers are fixed so every throw is the same splat.
- */
-const SPLAT_PATH =
-  'M -7 -48.1 ' +
-  'C -9.9 -71 6.3 -71.5 6.8 -47.2 ' +
-  'L 18.5 -52 Q 19.3 -41.4 21.9 -41.9 ' +
-  'C 42.2 -54.2 50.7 -39.5 25.3 -25.8 ' +
-  'L 39.9 -17.2 Q 30 -11.4 28.5 -10.7 ' +
-  'C 39.1 -3.4 32.1 7.9 20.5 0.5 ' +
-  'L 23.8 18.2 Q 12 13 7 6.1 ' +
-  'C 5.9 28 -9.2 27.5 -9.9 10.4 ' +
-  'L -26.3 19 Q -26.4 5.5 -20.8 -1.3 ' +
-  'C -34.9 6.3 -41.3 -5.8 -29.3 -13.8 ' +
-  'L -42.9 -23 Q -32.2 -29.2 -24.7 -28 ' +
-  'C -42.4 -38 -34.7 -50.2 -20.7 -43 ' +
-  'L -20.2 -61.3 Q -8.7 -54.8 -7 -48.1 Z';
-
-/** Eight chunks: [dx, dy, r], the FINAL offset from the splat's centre in
- *  units (radius 46-58, so 0.15-0.25 u past the rim). Each starts at 62% of
- *  its offset, on the rim, and flies the rest between 300 and 433. Fixed,
- *  never random. */
 const CHUNKS: ReadonlyArray<readonly [number, number, number]> = [
   [-10, -57, 4.0],
   [31, -44, 3.0],
@@ -225,164 +75,91 @@ const CHUNKS: ReadonlyArray<readonly [number, number, number]> = [
   [-43, -30, 3.0],
 ];
 
-/** Three drips: paths whose TOP sits inside the splat's lower edge and whose
- *  bulb reaches the chin. Each grows by scaleY from its top between 467 and
- *  733: [d, delay s, duration s] from landing. */
-const DRIPS: ReadonlyArray<readonly [string, string, string]> = [
-  ['M -20 10 L -12 10 L -13.4 46 A 3.4 3.4 0 1 1 -18.6 46 Z', '0.234', '0.266'],
-  ['M 1.5 12 L 8.5 12 L 7.2 38 A 3 3 0 1 1 2.8 38 Z', '0.267', '0.233'],
-  ['M 18 10 L 24 10 L 23 42 A 2.6 2.6 0 1 1 19 42 Z', '0.3', '0.2'],
-];
-
-function Payload({ uid }: RigProps) {
-  const g = (n: string) => `thr-tomato-${n}-${uid}`;
+function Tomato() {
+  return (
+    <AtlasSprite src="tomato" rect={[5, 140, 420, 430]} x={-25} y={-25} width={50} height={50} />
+  );
+}
+function Projectile(_: RigProps) {
   return (
     <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
-      <defs>
-        <radialGradient id={g('splat')} cx="0.5" cy="0.5" r="0.55">
-          <stop offset="0%" stopColor="#e8524b" />
-          <stop offset="45%" stopColor="#d13530" />
-          <stop offset="78%" stopColor={SPLAT_RED} />
-          <stop offset="100%" stopColor="#8f111f" />
-        </radialGradient>
-      </defs>
-      {/* THE SQUASH: the intact fruit at contact (233), drawn flat and
-          semi-transparent for one frame (267), gone at the burst (300). */}
+      <Tomato />
+    </svg>
+  );
+}
+function Payload(_: RigProps) {
+  return (
+    <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       <g className="thr-tomato__squash">
-        <Tomato uid={uid} k="s" />
+        <Tomato />
       </g>
-      {/* THE SPLAT: pops at 300 (0.6 -> 1.13 -> 1.0), static from 433. */}
       <g className="thr-tomato__splat">
-        <path
-          d={SPLAT_PATH}
-          fill={`url(#${g('splat')})`}
-          stroke="#a5161a"
-          strokeWidth="1.2"
-          strokeLinejoin="round"
-          opacity="0.98"
-        />
-        {/* pulp: darker pools and a few pale seeds, static */}
-        <path
-          d="M -24 -36 Q -16 -43 -9 -37 M -18 -20 Q -10 -25 -6 -21 M 8 -12 Q 14 -15 19 -10 M 4 -34 Q 11 -40 17 -36"
-          fill="none"
-          stroke="#ffb08b"
-          strokeWidth="1.1"
-          strokeLinecap="round"
-          opacity="0.7"
-        />
-        <path
-          d="M -12 -30 C -18 -23 -12 -17 -6 -21 M 8 -38 Q 16 -33 11 -28"
-          fill="none"
-          stroke="#79151b"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          opacity="0.4"
-        />
-        <circle cx="-9" cy="-31" r="5.5" fill="#8c1014" opacity="0.2" />
-        <circle cx="13" cy="-9" r="4.5" fill="#8c1014" opacity="0.18" />
-        <circle cx="4" cy="-38" r="3" fill="#8c1014" opacity="0.14" />
-        <ellipse
-          cx="-14"
-          cy="-14"
-          rx="2.2"
-          ry="1.3"
-          transform="rotate(-30 -14 -14)"
-          fill="#f2d98a"
-          opacity="0.8"
-        />
-        <ellipse
-          cx="9"
-          cy="-24"
-          rx="2.1"
-          ry="1.2"
-          transform="rotate(25 9 -24)"
-          fill="#f2d98a"
-          opacity="0.8"
-        />
-        <ellipse
-          cx="18"
-          cy="-31"
-          rx="1.8"
-          ry="1.1"
-          transform="rotate(-60 18 -31)"
-          fill="#f2d98a"
-          opacity="0.75"
-        />
-        <ellipse
-          cx="-4"
-          cy="3"
-          rx="2"
-          ry="1.2"
-          transform="rotate(10 -4 3)"
-          fill="#f2d98a"
-          opacity="0.75"
-        />
-        <ellipse
-          cx="-24"
-          cy="-32"
-          rx="1.6"
-          ry="1"
-          transform="rotate(40 -24 -32)"
-          fill="#f2d98a"
-          opacity="0.7"
-        />
-        {/* a wet glint at the core */}
-        <ellipse
-          cx="-8"
-          cy="-30"
-          rx="7"
-          ry="3.5"
-          transform="rotate(-25 -8 -30)"
-          fill="#ffffff"
-          opacity="0.14"
-        />
-      </g>
-      {/* THE DRIPS: grow down from the splat's lower edge to the chin, 467-733. */}
-      {DRIPS.map(([d, delay, dur], i) => (
-        <path
-          key={i}
-          className="thr-tomato__drip"
-          d={d}
-          fill={SPLAT_RED}
-          stroke="#a5161a"
-          strokeWidth="0.8"
-          strokeLinejoin="round"
-          style={
-            {
-              animationDelay: `calc(${delay}s * var(--animation-speed, 1))`,
-              animationDuration: `calc(${dur}s * var(--animation-speed, 1))`,
-            } as React.CSSProperties
-          }
-        />
-      ))}
-      {/* THE STEM AND LEAVES: lie flat on the splat's centre-top from the burst. */}
-      <g className="thr-tomato__stem">
-        <g transform="translate(1 -47) rotate(-8) scale(1.35)">
-          <Calyx />
+        <g className="thr-tomato__burst-pose">
+          <AtlasSprite
+            src="tomato"
+            rect={[830, 155, 424, 435]}
+            x={-43}
+            y={-63}
+            width={86}
+            height={86}
+          />
+        </g>
+        <g className="thr-tomato__settled-pose">
+          <AtlasSprite
+            src="tomato"
+            rect={[4, 680, 440, 425]}
+            x={-43}
+            y={-63}
+            width={86}
+            height={86}
+          />
         </g>
       </g>
-      {/* THE CHUNKS: fly out from the rim 300-433 and freeze where they land. */}
+      {([-20, 1, 18] as const).map((x, i) => (
+        <g
+          key={x}
+          className="thr-tomato__drip"
+          style={
+            {
+              animationDelay: `calc(${0.234 + i * 0.033}s * var(--animation-speed, 1))`,
+              animationDuration: `calc(${0.266 - i * 0.033}s * var(--animation-speed, 1))`,
+            } as React.CSSProperties
+          }
+        >
+          <AtlasSprite
+            src="tomato"
+            rect={[518, 871, 76, 195]}
+            fit="none"
+            x={x}
+            y={9}
+            width={10}
+            height={40 - i * 3}
+          />
+        </g>
+      ))}
       {CHUNKS.map(([dx, dy, r], i) => (
-        <circle
+        <g
           key={i}
           className="thr-tomato__chunk"
-          cx="0"
-          cy="-20"
-          r={r}
-          fill={SPLAT_RED}
-          stroke="#a5161a"
-          strokeWidth="0.6"
           style={
             {
               '--dx': `${dx}px`,
               '--dy': `${dy}px`,
-              animationDelay: `calc((0.067s + ${((i % 3) * 0.01).toFixed(2)}s) * var(--animation-speed, 1))`,
+              animationDelay: `calc(${0.067 + (i % 3) * 0.01}s * var(--animation-speed, 1))`,
             } as React.CSSProperties
           }
-        />
+        >
+          <AtlasSprite
+            src="tomato"
+            rect={[912, 764, 334, 312]}
+            x={-r}
+            y={-20 - r}
+            width={r * 2}
+            height={r * 2}
+          />
+        </g>
       ))}
     </svg>
   );
 }
-
 export const tomatoRig: ThrowableRig = { Projectile, Payload };

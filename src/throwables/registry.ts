@@ -1,3 +1,24 @@
+import { spec as chickenSpec, rig as chickenRig } from './rigs/chicken';
+import { spec as dogeSpec, rig as dogeRig } from './rigs/doge';
+import { spec as cryingemojiSpec, rig as cryingemojiRig } from './rigs/crying_emoji';
+import { spec as laughingemojiSpec, rig as laughingemojiRig } from './rigs/laughing_emoji';
+import { spec as angryemojiSpec, rig as angryemojiRig } from './rigs/angry_emoji';
+import { spec as heartSpec, rig as heartRig } from './rigs/heart';
+import {
+  spec as coolsunglassesemojiSpec,
+  rig as coolsunglassesemojiRig,
+} from './rigs/cool_sunglasses_emoji';
+import { spec as magnetSpec, rig as magnetRig } from './rigs/magnet';
+import { spec as coffeeSpec, rig as coffeeRig } from './rigs/coffee';
+import { spec as bowlingballSpec, rig as bowlingballRig } from './rigs/bowling_ball';
+import { spec as tennisballSpec, rig as tennisballRig } from './rigs/tennis_ball';
+import { spec as footballSpec, rig as footballRig } from './rigs/football';
+import { spec as basketballSpec, rig as basketballRig } from './rigs/basketball';
+import { spec as diamondSpec, rig as diamondRig } from './rigs/diamond';
+import { spec as starSpec, rig as starRig } from './rigs/star';
+import { spec as thumbsdownSpec, rig as thumbsdownRig } from './rigs/thumbs_down';
+import { spec as thumbsupSpec, rig as thumbsupRig } from './rigs/thumbs_up';
+import { rubberDuckSpec, rubberDuckRig } from './rigs/rubber_duck';
 /**
  * THE RIG REGISTRY — which throwables play through ThrowablePlayer.
  *
@@ -8,6 +29,8 @@
  * registry never renames.
  */
 
+import { alienSpec, alienRig } from './rigs/alien';
+import { robotSpec, robotRig } from './rigs/robot';
 import type { ThrowableSpec } from './spec';
 import type { ThrowableRig } from './rig';
 import { bananaPeelSpec, bananaPeelRig } from './rigs/banana_peel';
@@ -35,6 +58,26 @@ export interface RiggedThrowable {
 }
 
 const RIGGED: Record<string, RiggedThrowable> = {
+  chicken: { spec: chickenSpec, rig: chickenRig },
+  doge: { spec: dogeSpec, rig: dogeRig },
+  crying_emoji: { spec: cryingemojiSpec, rig: cryingemojiRig },
+  laughing_emoji: { spec: laughingemojiSpec, rig: laughingemojiRig },
+  angry_emoji: { spec: angryemojiSpec, rig: angryemojiRig },
+  heart: { spec: heartSpec, rig: heartRig },
+  cool_sunglasses_emoji: { spec: coolsunglassesemojiSpec, rig: coolsunglassesemojiRig },
+  rubber_duck: { spec: rubberDuckSpec, rig: rubberDuckRig },
+  thumbs_up: { spec: thumbsupSpec, rig: thumbsupRig },
+  thumbs_down: { spec: thumbsdownSpec, rig: thumbsdownRig },
+  star: { spec: starSpec, rig: starRig },
+  diamond: { spec: diamondSpec, rig: diamondRig },
+  basketball: { spec: basketballSpec, rig: basketballRig },
+  football: { spec: footballSpec, rig: footballRig },
+  tennis_ball: { spec: tennisballSpec, rig: tennisballRig },
+  bowling_ball: { spec: bowlingballSpec, rig: bowlingballRig },
+  coffee: { spec: coffeeSpec, rig: coffeeRig },
+  magnet: { spec: magnetSpec, rig: magnetRig },
+  alien: { spec: alienSpec, rig: alienRig },
+  robot: { spec: robotSpec, rig: robotRig },
   banana_peel: { spec: bananaPeelSpec, rig: bananaPeelRig },
   beer: { spec: beerSpec, rig: beerRig },
   bomb: { spec: bombSpec, rig: bombRig },

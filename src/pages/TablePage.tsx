@@ -89,6 +89,7 @@ function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
 }
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
@@ -24300,7 +24301,10 @@ export default function TablePage({
         <>
           <div className="menu-overlay" onClick={toggleSideMenu} />
           <nav className="side-menu">
-            <button className="menu-item" onClick={() => navigate('/cashier')}>
+            <button
+              className="menu-item"
+              onClick={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
+            >
               <span className="menu-item-icon">◉</span>
               <span className="menu-item-label">Cashier</span>
               <span className="menu-item-arrow">›</span>
@@ -24424,7 +24428,7 @@ export default function TablePage({
               className="menu-item"
               onClick={() => {
                 setIsSideMenuOpen(false);
-                navigate('/vip');
+                navigate(withClubContext('/vip', lobbyClubIdRef.current));
               }}
             >
               <span className="menu-item-icon">★</span>
@@ -24762,7 +24766,7 @@ export default function TablePage({
         waitListPlayers={waitListPlayers}
         onCloseWaitList={() => setShowWaitList(false)}
         onWaitListError={(m) => toast?.error?.(m)}
-        onTopUpAccount={() => navigate('/cashier')}
+        onTopUpAccount={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
         // Insurance
         showInsurance={showInsurance}
         insuranceOffer={insuranceOffer}

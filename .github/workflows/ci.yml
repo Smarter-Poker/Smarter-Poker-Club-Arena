@@ -263,17 +263,6 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript Check
-    services:
-      journal-postgres:
-        image: postgres:17.11
-        env:
-          POSTGRES_PASSWORD: isolated_ci_only
-          POSTGRES_DB: journal_atomicity
-        options: >-
-          --health-cmd "pg_isready -U postgres -d journal_atomicity"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 15
     # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
     # when set; unset it is ubuntu-latest exactly as before.
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
@@ -313,9 +302,7 @@ jobs:
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
       - name: Chip journal transactions survive failures and replays
-        env:
-          PGCONTAINER: ${{ job.services.journal-postgres.id }}
-        run: python3 scripts/ci/probes/chip-journal-atomicity/test_atomicity.py fixed --bootstrap
+        run: bash scripts/ci/probes/chip-journal-atomicity/run-isolated.sh
 
       - name: TypeScript Check
         run: npx tsc --noEmit

@@ -269,4 +269,11 @@ $function$
 ;
 REVOKE ALL ON FUNCTION public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer) TO service_role;
+DO $admission_boundary$
+BEGIN
+  IF position('COALESCE(v_t.current_level, 0) >= v_cap' IN
+      pg_get_functiondef('public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)'::regprocedure)) = 0 THEN
+    RAISE EXCEPTION 'the off-by-one level guard survived the rewrite';
+  END IF;
+END $admission_boundary$;
 COMMIT;

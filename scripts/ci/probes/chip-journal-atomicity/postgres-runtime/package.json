@@ -1,0 +1,8 @@
+{
+  "name": "chip-journal-postgres-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "optionalDependencies": {
+    "@embedded-postgres/linux-x64": "17.10.0-beta.17"
+  }
+}

@@ -28,6 +28,7 @@ import { initMasterBus } from './core/MasterBus';
 import { initIdentityDNA } from './core/IdentityDNA';
 import { initSentry } from './core/SentryInit';
 import { initWebVitals } from './core/WebVitals';
+import { ROUTER_BASENAME } from './lib/appBase';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 import { reportError } from './utils/errorReporter';
@@ -85,7 +86,7 @@ export default function ClubArenaRoot() {
   // Render immediately — no spinner, no intermediate state
   return (
     <ErrorBoundary>
-      <BrowserRouter basename="/hub/club-arena">
+      <BrowserRouter basename={ROUTER_BASENAME}>
         <App />
       </BrowserRouter>
     </ErrorBoundary>

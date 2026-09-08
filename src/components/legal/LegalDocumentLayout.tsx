@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import styles from './LegalDocumentLayout.module.css';
+import { mediaUrl } from '../../utils/mediaBase';
 
 export interface LegalDocumentSection {
   id: string;
@@ -68,7 +69,7 @@ export default function LegalDocumentLayout({
           </dl>
         </div>
         <div className={styles.heroArt} aria-hidden="true">
-          <img src="/hub/club-arena/images/bg-vault.jpg" alt="" />
+          <img src={mediaUrl('images/bg-vault.jpg')} alt="" />
           <span className={styles.seal}>{documentCode}</span>
         </div>
       </header>

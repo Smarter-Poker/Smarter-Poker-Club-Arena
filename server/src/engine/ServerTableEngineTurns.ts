@@ -2116,6 +2116,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       console.warn(
         `[ServerTableEngine:${this.tableId}] Pre-action ${preResult.action} REJECTED at seat ${seat} - falling through to the turn timer`
       );
+      // The engine's copy is already gone (single-shot); the client's arm is
+      // not, and it is holding every "your turn" surface down on the strength
+      // of it. Say so, with the reason, so the bar clears and the player is
+      // prompted now rather than at the end of the client's grace window.
+      this.pushPreActionToPlayer(player.user_id, { reason: 'rejected' });
     }
 
     // Step 2: Check disconnect state before starting timer (applies to ALL players)

@@ -1,3 +1,4 @@
+import { isThrowableEventId } from '../throwables/identity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THROWABLE SERVICE — 49-Item Dynamic Throwables (2026-08-20 rebuild)
@@ -994,7 +995,7 @@ class ThrowableServiceClass {
   async useThrowable(
     userId: string,
     throwableId: string
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; requestId?: string }> {
     const throwable = THROWABLE_MAP.get(throwableId);
     if (!throwable) {
       return { success: false, error: 'Throwable not found' };
@@ -1019,7 +1020,7 @@ class ThrowableServiceClass {
       });
       if (!atomicErr && atomic && typeof (atomic as any).success === 'boolean') {
         this.finishUse(requestKey, requestId);
-        if ((atomic as any).success === true) return { success: true };
+        if ((atomic as any).success === true) return { success: true, requestId };
         return {
           success: false,
           error: (atomic as any).error || 'Throw failed',
@@ -1038,12 +1039,17 @@ class ThrowableServiceClass {
    * Create throw event for WebSocket broadcast / local render.
    * Accepts legacy (pre-2026-08-20) ids from old clients and bridges them.
    */
-  createThrowEvent(fromSeat: number, toSeat: number, throwableId: string): ThrowEvent | null {
+  createThrowEvent(
+    fromSeat: number,
+    toSeat: number,
+    throwableId: string,
+    eventId?: string
+  ): ThrowEvent | null {
     const throwable = this.getThrowableById(throwableId);
     if (!throwable) return null;
 
     return {
-      id: crypto.randomUUID(),
+      id: isThrowableEventId(eventId) ? eventId.toLowerCase() : crypto.randomUUID(),
       fromSeat,
       toSeat,
       throwableId: throwable.id,

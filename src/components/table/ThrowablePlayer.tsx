@@ -270,7 +270,7 @@ export function ThrowablePlayer({
           style={{ left: anchorX, top: anchorY } as React.CSSProperties}
           data-motion="keep"
         >
-          <Payload uid={`${uid}q`} targetAvatar={targetAvatar} />
+          <Payload uid={`${uid}q`} targetAvatar={targetAvatar} throwId={event.id} />
         </div>
       )}
     </div>

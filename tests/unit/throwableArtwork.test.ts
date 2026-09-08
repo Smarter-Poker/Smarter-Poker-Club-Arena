@@ -36,6 +36,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  vi.doUnmock('../../src/throwables/artwork.generated.json');
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -110,7 +111,10 @@ describe('throwable artwork readiness', () => {
   });
 });
 
-it('waits for a static premium image before allowing a legacy item to consume inventory', async () => {
+it('waits for static artwork when a catalogue item has no integrated rig', async () => {
+  vi.doMock('../../src/throwables/artwork.generated.json', () => ({
+    default: { ...manifest, rigs: {} },
+  }));
   const { prepareThrowableArtwork } = await import('../../src/throwables/artwork');
   const ready = vi.fn();
   const task = prepareThrowableArtwork('magic_8_ball').then(ready);

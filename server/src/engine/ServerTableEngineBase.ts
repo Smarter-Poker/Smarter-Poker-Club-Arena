@@ -54,7 +54,6 @@ import {
   loadPresenceFromPark,
   supabase,
   atomicCashout,
-  markSeatAsLeft,
 } from '../services/supabase.js';
 import {
   collectNitEvictions,
@@ -5178,6 +5177,7 @@ export abstract class ServerTableEngineBase {
     // would not know that. leaveTable() refuses the same case explicitly.
     const evictHand = this.handController?.getState();
 
+    const departed = new Set<string>();
     for (const userId of evictable) {
       const seated = this.seatedPlayers.find((p) => p.user_id === userId);
       if (!seated) continue;
@@ -5204,21 +5204,6 @@ export abstract class ServerTableEngineBase {
               ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
               : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
       );
-      this.hub?.emitEvent(this.tableId, {
-        type: 'seat_left',
-        table_id: this.tableId,
-        seat: seated.seat_number,
-        user_id: userId,
-        mid_hand: false,
-        reason: awayBlindEvict
-          ? 'away_blind_cap'
-          : nitEvict
-            ? 'nit_game_vpip'
-            : abandonedEvict
-              ? 'abandoned_seat'
-              : 'sit_out_timeout',
-        timestamp: Date.now(),
-      });
       try {
         // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
         // database writes the bar from this leave mode; every other eviction
@@ -5229,6 +5214,22 @@ export abstract class ServerTableEngineBase {
           seated.seat_number,
           nitEvict ? { leaveMode: 'vpip_evicted' } : undefined
         );
+        departed.add(userId);
+        this.hub?.emitEvent(this.tableId, {
+          type: 'seat_left',
+          table_id: this.tableId,
+          seat: seated.seat_number,
+          user_id: userId,
+          mid_hand: false,
+          reason: awayBlindEvict
+            ? 'away_blind_cap'
+            : nitEvict
+              ? 'nit_game_vpip'
+              : abandonedEvict
+                ? 'abandoned_seat'
+                : 'sit_out_timeout',
+          timestamp: Date.now(),
+        });
         this.disconnectEngine.unregisterPlayer(this.tableId, userId);
         this.timeBankEngine.removePlayer(this.tableId, userId);
         this.straddleEngine.removePlayer(this.tableId, userId);
@@ -5237,17 +5238,11 @@ export abstract class ServerTableEngineBase {
         this.chipContinuity.forget(userId);
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
-        /* The fallback's own failure is reported too. `seat_left` has already
-           gone out, so a silent failure here means every client has cleared a
-           seat whose row is still occupied — the player is told they were
-           removed and the seat stays blocked, with nothing anywhere to say so.
-           A cleanup that cannot complete is precisely the case worth an alert. */
-        await markSeatAsLeft(this.tableId, userId, seated.seat_number).catch((err2) =>
-          reportError(err2, 'ServerTableEngine.' + this.tableId + '.sitout_evict_mark_left')
-        );
+        // Keep the roster and tracking until the next pass confirms departure.
+        // Retrying through a different helper would discard the eviction mode.
       }
     }
-    this.seatedPlayers = this.seatedPlayers.filter((p) => !evictable.includes(p.user_id));
+    this.seatedPlayers = this.seatedPlayers.filter((p) => !departed.has(p.user_id));
   }
 
   /**

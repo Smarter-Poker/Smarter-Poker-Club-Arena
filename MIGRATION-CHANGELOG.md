@@ -8,6 +8,12 @@ Agent sends and take-backs now restore the surrounding transaction ledger settin
 82 isolated database cases pass after reproducing the original context leak.
 See docs/changelog/2026-09-08-agent-wallet-ledger-context-is-scoped.md.
 
+## 2026-09-08: Ticket Escrow Keeps Its Identity
+
+New ticket funding and release now share the ticket escrow ID and restore ledger context.
+67 isolated database cases passed, including rollback and competing release requests.
+See docs/changelog/2026-09-08-ticket-escrow-keeps-its-identity.md.
+
 ## 2026-09-08: Cashouts Await The Complete Settlement Chain
 
 Voluntary and forced leave now follow appended settlement promises before cashout,

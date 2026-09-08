@@ -152,3 +152,7 @@ if mode=="fixed":
 if mode=='fixed':
  from test_agent_context import verify_agent_context
  verify_agent_context(run)
+
+if mode=="fixed":
+ from test_tickets import verify_tickets
+ verify_tickets(run)

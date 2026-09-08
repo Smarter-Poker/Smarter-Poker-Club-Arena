@@ -85,6 +85,10 @@ interface CommissionRow {
   source_type: string;
   notes: string | null;
   created_at: string;
+  /** From v_agent_commissions: COALESCE(own stamp, the settlement's paid_at). */
+  settled_at: string | null;
+  /** 'claim' | 'round2' | null - which payer settled it. */
+  settled_via?: string | null;
 }
 interface AuditLogRow {
   id: string;
@@ -618,6 +622,8 @@ function SettlementsTab({ clubId }: { clubId: string }) {
   const [data, setData] = useState<{
     currentPeriod: Record<string, string | number | null> | null;
     pendingCommissions: CommissionRow[];
+    /** null when the balance could not be read - never silently 0. */
+    bankBalance: number | null;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -641,18 +647,27 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       if (pErr) throw pErr;
       const currentPeriod = periods?.[0] || null;
 
-      // THE TABLE SAYS "PENDING", SO IT HAS TO MEAN IT (2026-09-08, phase 7).
-      // This read had no settled filter of any kind: it listed every commission
-      // accrued in the period, paid or not. agent_commissions_unsettled is the
-      // one definition of "still owed" that round 2, the agent claim and the
-      // rollup all share - a row drops out of it when its own settled_at is set
-      // OR a settlement row covers its period, which is how round 2 pays now.
-      // It is security_invoker, so RLS still decides which rows this admin sees.
+      /* agent_commissions has no period_id and no status, but it DOES have
+         settled_at - the column fn_agent_claim_commission stamps, and the only
+         one the phase 8 append-only guard permits to move (NULL -> a time,
+         once). Reading it is what lets this screen tell "owed" from "claimed"
+         instead of offering a button that pretended to change it. */
+      /* READ THE VIEW, NOT THE TABLE (2026-09-08, phase 7). The comment above is
+         right that settled_at is what tells owed from claimed - it was, until
+         20260908025653. Round 2 now pays a whole period and records it in
+         agent_commission_settlements instead of stamping every row, so a row
+         the union close has ALREADY PAID still has settled_at NULL and the
+         bare table reports it as awaiting a claim. v_agent_commissions is the
+         reader that knows both payers: settled_at is COALESCE(own stamp, the
+         settlement's paid_at) and settled_via says which one. It is
+         security_invoker, so the same RLS decides the same rows. */
       let commissions: CommissionRow[] = [];
       if (currentPeriod) {
         const { data: comms } = await supabase
-          .from('agent_commissions_unsettled')
-          .select('id, user_id, amount, commission_rate, source_type, notes, created_at')
+          .from('v_agent_commissions')
+          .select(
+            'id, user_id, amount, commission_rate, source_type, notes, created_at, settled_at, settled_via'
+          )
           .eq('club_id', uuid)
           .gte('created_at', currentPeriod.start_at)
           .order('created_at', { ascending: false })
@@ -660,7 +675,32 @@ function SettlementsTab({ clubId }: { clubId: string }) {
         commissions = comms || [];
       }
 
-      if (isMounted.current) setData({ currentPeriod, pendingCommissions: commissions });
+      /* What the club bank actually holds. An agent's claim is refused when
+         the treasury cannot cover it, and funding the bank is the one part of
+         this that belongs to an operator - so it is the number this screen
+         owes them. Read-only; nothing here writes it.
+
+         THE ERROR IS BOUND, AND null IS NOT ZERO. A read that failed says
+         nothing about the balance, and treating it as 0 would put "the bank
+         cannot cover what agents are owed" on the screen because we could not
+         ask - the same false alarm this platform raised 23 times on
+         2026-09-08 when a check could not reach the database. Unknown is
+         rendered as unknown. */
+      const { data: clubRow, error: bankErr } = await supabase
+        .from('clubs')
+        .select('chip_treasury')
+        .eq('id', uuid)
+        .maybeSingle();
+      if (bankErr) {
+        console.warn('[AdminDashboard] club bank balance unavailable:', bankErr.message);
+      }
+
+      if (isMounted.current)
+        setData({
+          currentPeriod,
+          pendingCommissions: commissions,
+          bankBalance: bankErr || clubRow == null ? null : Number(clubRow.chip_treasury ?? 0),
+        });
     } catch (err: unknown) {
       if (isMounted.current) setError(safeErrorMessage(err));
     } finally {
@@ -702,27 +742,35 @@ function SettlementsTab({ clubId }: { clubId: string }) {
         const r = res as { success?: boolean; error?: string } | null;
         if (r && r.success === false) throw new Error(r.error || 'Failed to close period');
       }
-      /* THERE IS NO 'pay' OR 'pay_all' HERE ANY MORE, AND DELETING WAS NEVER
-         PAYING. Both branches used to DELETE from agent_commissions to
-         "acknowledge payment": they moved no chips to any agent, and they
-         destroyed the ledger rows that every total, the nightly
-         reconciliation and fn_ca_currency_meter are computed from. pay_all
-         additionally deleted every agent's rows for the club since the period
-         start, not just the one on screen.
+      /* THERE IS NO 'pay' OR 'pay_all' ANY MORE, AND THERE SHOULD NEVER HAVE
+         BEEN (2026-09-08).
 
-         Neither ever worked. agent_commissions has RLS with SELECT-only
-         policies for authenticated and writes reserved to service_role, so the
-         DELETE matched zero rows and returned success - the button reported
-         payment, changed nothing, and the row was still there after the
-         refresh. 20260908035532 revoked the table-level write grants as well,
-         which would have turned that silent lie into a visible 403.
+         Both branches DELETED rows from `agent_commissions` - the commission
+         ledger - to mean "paid". Three things were wrong with that, in
+         increasing order of seriousness:
 
-         An agent is paid by exactly two paths, neither of which is a button on
-         this screen: fn_agent_claim_commission (the agent claims their own,
-         paid from the club bank) and fn_settle_round2_club_to_agents (the
-         union close). Both debit a real treasury and record the period they
-         covered. Wiring an admin-initiated payment to either one decides what
-         somebody is owed, so it is Dan's call, not a repair. */
+         1. It never ran. RLS on agent_commissions grants writes to
+            `service_role` only; `authenticated` has read policies and nothing
+            else. A browser DELETE therefore matched zero rows, PostgREST
+            returned no error, and the operator was told it worked. `n_tup_del`
+            on that table is 1, ever - and `pay_all` would have deleted EVERY
+            commission row in the club for the period.
+         2. Deleting a ledger row is not a payment. It destroys the evidence of
+            what was owed instead of recording that it was settled. Since the
+            phase 8 append-only guard the table would refuse the DELETE outright.
+         3. **An admin does not pay an agent's commission at all.** The real
+            path is `fn_agent_claim_commission`, and it deliberately takes no
+            p_user_id: "a parameter naming somebody else would make this a way
+            to move another person's earnings, and Dan's rule is that agents
+            handle their own payouts." It debits the club bank, credits the
+            agent's own wallet, writes the settlement row and the chip
+            transaction, and is idempotent on an op_id.
+
+         So this screen no longer offers an action the platform does not have.
+         It shows what is owed, what has been claimed, and the one thing an
+         operator genuinely controls: whether the club bank can cover it -
+         which is the exact refusal the claim returns ("Ask An Owner To Fund
+         The Bank, Then Claim Again"). */
       load();
     } catch (err: unknown) {
       if (isMounted.current) setError(safeErrorMessage(err));
@@ -812,15 +860,47 @@ function SettlementsTab({ clubId }: { clubId: string }) {
         )}
       </div>
 
-      {/* Pending Commissions */}
+      {/* Commissions this period */}
       <h3 className="admin-section-title">
-        <span>Pending Commissions</span>
+        <span>Commissions This Period</span>
       </h3>
+
+      {/* WHAT AN OPERATOR CAN ACTUALLY DO. Agents claim their own commission
+          (fn_agent_claim_commission); the claim is refused when the club bank
+          cannot cover it. So the useful thing this screen can say is whether
+          the bank covers what is owed - and, when it does not, the same
+          sentence the claim itself returns. */}
+      {(() => {
+        const owed = (data.pendingCommissions || [])
+          .filter((c) => !c.settled_at)
+          .reduce((sum, c) => sum + Number(c.amount || 0), 0);
+        if (owed <= 0) return null;
+        const bank = data.bankBalance;
+        const short = bank != null && bank < owed;
+        return (
+          <div
+            className={short ? 'admin-error-banner' : 'admin-card'}
+            style={{ marginBottom: '16px' }}
+          >
+            <div className="admin-text-secondary">
+              Unclaimed This Period {fmtChips(owed)} · Club Bank{' '}
+              {bank == null ? 'Unavailable' : fmtChips(bank)}
+            </div>
+            <div style={{ marginTop: '6px' }}>
+              {bank == null
+                ? 'The Club Bank Balance Could Not Be Read, So Whether It Covers This Is Unknown. Reload To Try Again.'
+                : short
+                  ? 'The Club Bank Cannot Cover What Agents Are Owed. Fund The Bank So Their Claims Go Through.'
+                  : 'The Club Bank Covers What Agents Are Owed. Agents Claim From Their Own Agent Page.'}
+            </div>
+          </div>
+        );
+      })()}
 
       {(data.pendingCommissions || []).length === 0 ? (
         <div className="admin-empty-state">
           <span className="admin-empty-icon">→</span>
-          <span>No Pending Commissions To Pay.</span>
+          <span>No Commissions Recorded This Period.</span>
         </div>
       ) : (
         <div className="admin-table-scroll">
@@ -831,6 +911,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                 <th style={{ textAlign: 'right' }}>Source</th>
                 <th style={{ textAlign: 'center' }}>Rate</th>
                 <th style={{ textAlign: 'right' }}>Payout</th>
+                <th style={{ textAlign: 'center' }}>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -843,6 +924,15 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                   </td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: '#F7C52A' }}>
                     {fmtChips(c.amount)}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {c.settled_at ? (
+                      <span className="admin-badge admin-badge-green">
+                        {c.settled_via === 'round2' ? 'Settled' : 'Claimed'}
+                      </span>
+                    ) : (
+                      <span className="admin-badge">Awaiting Claim</span>
+                    )}
                   </td>
                 </tr>
               ))}

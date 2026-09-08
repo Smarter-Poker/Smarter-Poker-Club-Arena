@@ -161,6 +161,26 @@ This is the same table whose two buttons were removed in defect 3. With the
 buttons gone it is purely informational, which is exactly why the number on it
 has to be true.
 
+### A second agent found the buttons at the same time, and their version won
+
+Merging `main` before the final push produced a conflict in
+`AdminDashboardPage.tsx`: another agent had removed the same two buttons the
+same day, independently. Their work is better than mine and it is what is on
+`main` now - they measured `n_tup_del` on `agent_commissions` at 1 ever
+(proving the DELETE never ran), they cite the phase 8 append-only guard that
+would refuse it outright, and instead of hiding the table they renamed it
+"Commissions This Period", added a Status column, and wrote down that an admin
+does not pay an agent's commission at all because
+`fn_agent_claim_commission` deliberately takes no `p_user_id`.
+
+The conflict was resolved by taking THEIR side on all five hunks and re-applying
+only the one thing they could not have known: their Status column reads
+`settled_at` from the bare table, so a row the union close has already paid
+would show "Awaiting Claim". It now reads `v_agent_commissions` and says
+"Settled" for `settled_via = 'round2'`, "Claimed" for a claim, "Awaiting Claim"
+otherwise. My own narrower fix - filtering the list to unsettled rows and
+keeping the "Pending Commissions" title - was dropped in favour of theirs.
+
 ## Defect 4: the filename version and the recorded version were not the same number
 
 `apply_migration` stamps the migration with **its own** timestamp, taken when

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const channel = vi.hoisted(() => ({
   send: vi.fn(),
+  resetSession: vi.fn(),
   events: {
     club: new Set<(m: Record<string, unknown>) => void>(),
     tournament: new Set<(m: Record<string, unknown>) => void>(),
@@ -10,6 +11,7 @@ const channel = vi.hoisted(() => ({
 vi.mock('../../src/services/EngineStateClient', () => ({
   engineChannelClient: {
     send: channel.send,
+    resetSession: channel.resetSession,
     onClubPresence: () => () => {},
     onClubEvent: (fn: (m: Record<string, unknown>) => void) => {
       channel.events.club.add(fn);
@@ -44,6 +46,7 @@ function emit(kind: Kind) {
 }
 beforeEach(() => {
   channel.send.mockClear();
+  channel.resetSession.mockClear();
   Object.values(channel.events).forEach((s) => s.clear());
 });
 describe('shared channel consumers', () => {
@@ -85,4 +88,36 @@ describe('shared channel consumers', () => {
     expect(channel.send).not.toHaveBeenCalled();
     release();
   });
+});
+
+describe('subscriptions belong to an authenticated account', () => {
+  it.each<Kind>(['club', 'tournament', 'lobby'])(
+    '%s survives refresh but is released on account change',
+    (kind) => {
+      const service = new RealtimeChannelService();
+      service.handleIdentityChange('a');
+      channel.resetSession.mockClear();
+      const previous = vi.fn();
+      const releasePrevious = subscribe(service, kind, previous);
+      service.handleIdentityChange('a');
+      emit(kind);
+      expect(previous).toHaveBeenCalledOnce();
+      expect(channel.resetSession).not.toHaveBeenCalled();
+      service.handleIdentityChange('b');
+      expect(channel.resetSession).toHaveBeenLastCalledWith(true);
+      expect(service.getActiveSubscriptions()).toHaveLength(0);
+      const current = vi.fn();
+      const releaseCurrent = subscribe(service, kind, current);
+      releasePrevious();
+      emit(kind);
+      expect(previous).toHaveBeenCalledOnce();
+      expect(current).toHaveBeenCalledOnce();
+      service.handleIdentityChange(null);
+      expect(channel.resetSession).toHaveBeenLastCalledWith(false);
+      expect(service.getActiveSubscriptions()).toHaveLength(0);
+      emit(kind);
+      expect(current).toHaveBeenCalledOnce();
+      releaseCurrent();
+    }
+  );
 });

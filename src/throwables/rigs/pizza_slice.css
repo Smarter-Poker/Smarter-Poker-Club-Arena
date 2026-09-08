@@ -1,0 +1,106 @@
+.thr-pizza_slice__slice,
+.thr-pizza_slice__smear,
+.thr-pizza_slice__tether,
+.thr-pizza_slice__drip {
+  transform-box: fill-box;
+  transform-origin: center top;
+}
+.thr-pizza_slice__slice {
+  animation: thr-pizza_slice-slide calc(2.567s * var(--animation-speed, 1)) linear 1 forwards;
+}
+@keyframes thr-pizza_slice-slide {
+  0% {
+    transform: scale(1.07, 0.9);
+  }
+  8% {
+    transform: scale(1);
+  }
+  45% {
+    transform: translateY(16px);
+  }
+  72.73% {
+    transform: translateY(29px) rotate(0deg);
+  }
+  83% {
+    transform: translate(8px, 44px) rotate(24deg) scale(0.85, 1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(22px, 190px) rotate(48deg) scale(0.7, 1);
+    opacity: 0;
+  }
+}
+.thr-pizza_slice__smear {
+  animation: thr-pizza_slice-smear calc(1.467s * var(--animation-speed, 1)) ease-out 1 forwards;
+}
+@keyframes thr-pizza_slice-smear {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.1);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+.thr-pizza_slice__tether {
+  opacity: 0;
+  animation: thr-pizza_slice-stretch calc(1.2s * var(--animation-speed, 1)) linear
+    calc(1.1s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-pizza_slice-stretch {
+  0% {
+    opacity: 1;
+    transform: scaleY(0.2);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(0.7, 1);
+  }
+  88% {
+    opacity: 1;
+    transform: scale(0.3, 1.3);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.1, 1.4);
+  }
+}
+.thr-pizza_slice__drip {
+  opacity: 0;
+  animation: thr-pizza_slice-drip calc(0.7s * var(--animation-speed, 1)) ease-in
+    calc(2.15s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-pizza_slice-drip {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(120px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-pizza_slice__slice,
+  .thr-pizza_slice__smear,
+  .thr-pizza_slice__tether,
+  .thr-pizza_slice__drip {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-pizza_slice__slice,
+  .thr-pizza_slice__tether,
+  .thr-pizza_slice__drip {
+    opacity: 0 !important;
+  }
+  .thr-pizza_slice__smear {
+    opacity: 1 !important;
+  }
+}

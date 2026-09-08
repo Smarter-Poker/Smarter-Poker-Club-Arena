@@ -169,6 +169,43 @@ try {
     assert.equal(rs.filter(r=>r.success).length,1); assert.equal(rs.filter(r=>r.code==='RATE_LIMITED').length,3);
     assert.equal(await balance(id),10); assert.equal(await count('throw_usage',id),30);
   });
+  await check('Reproduce: transaction-start time accepts an expired pack', async () => {
+    const id=await user({used:30}); const credit=await pack(id,2); const c=await connect(id);
+    await c.query('begin');
+    await db.query("update feature_purchases set expires_at=clock_timestamp()+interval '100 milliseconds' where id=$1",[credit]);
+    await c.query('select pg_sleep(0.2)');
+    assert.equal((await use(c)).source,'purchased'); await c.query('commit');
+  });
+  await db.query(fs.readFileSync(path.resolve(root, '../../supabase/migrations/20260908045142_throwable_recheck_pack_expiry.sql'), 'utf8'));
+  await check('An expired pack is not consumed by a delayed transaction', async () => {
+    const id=await user({used:30}); const credit=await pack(id,2); const c=await connect(id);
+    await c.query('begin');
+    await db.query("update feature_purchases set expires_at=clock_timestamp()+interval '100 milliseconds' where id=$1",[credit]);
+    await c.query('select pg_sleep(0.2)');
+    assert.equal((await use(c)).source,'diamonds'); await c.query('commit');
+    assert.equal(await balance(id),9);
+    assert.equal((await db.query('select uses_remaining from feature_purchases where id=$1',[credit])).rows[0].uses_remaining,2);
+  });
+  await check('A pack expiring during a row-lock wait yields to the next valid pack', async () => {
+    const id=await user({used:30}); const first=await pack(id,2,2); const second=await pack(id,3,1);
+    await db.query("update feature_purchases set expires_at=clock_timestamp()+interval '500 milliseconds' where id=$1",[first]);
+    const locker=await connect(id); const c=await connect(id);
+    await locker.query('begin'); await locker.query('select id from feature_purchases where id=$1 for update',[first]);
+    const pending=use(c);
+    try {
+      const deadline=Date.now()+3000;let blocked=false;
+      while(Date.now()<deadline) {
+        blocked=(await db.query('select wait_event_type from pg_stat_activity where pid=$1',[c.processID])).rows[0]?.wait_event_type==='Lock';
+        if(blocked)break;
+        await new Promise(r=>setTimeout(r,10));
+      }
+      assert(blocked,'The candidate must have been selected before expiry');
+      await db.query('select pg_sleep(0.6)'); await locker.query('commit');
+      assert.equal((await pending).source,'purchased'); assert.equal(await balance(id),10);
+      assert.equal((await db.query('select uses_remaining from feature_purchases where id=$1',[first])).rows[0].uses_remaining,2);
+      assert.equal((await db.query('select uses_remaining from feature_purchases where id=$1',[second])).rows[0].uses_remaining,2);
+    } finally { await locker.query('rollback'); }
+  });
   fs.writeFileSync(path.join(root,'local-postgres-results.json'),JSON.stringify({postgres:(await db.query('select version()')).rows[0].version,scope:'Exported production functions on synthetic local tables; not production RLS, triggers, HTTP auth, or browser verification.',results,observedBug,candidateAppliedToThisLocalDatabase:true},null,2)+'\n');
   console.log(`${results.length} PostgreSQL contract checks passed. Locked-pack charge and delayed-transaction cooldown bugs reproduced; exact local migrations verified.`);
 } finally {

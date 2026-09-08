@@ -2,6 +2,7 @@
   "rigs": {
     "alien": ["alien", "alien-effects"],
     "angry_emoji": ["angry_emoji"],
+    "anvil": ["anvil"],
     "banana_peel": ["banana_peel"],
     "basketball": ["basketball"],
     "bear": ["bear", "star"],
@@ -21,6 +22,7 @@
     "doge": ["doge"],
     "fireworks": ["fireworks"],
     "football": ["football"],
+    "ghost": ["ghost", "rubber_duck"],
     "heart": ["heart"],
     "horseshoe": ["horseshoe"],
     "laughing_emoji": ["laughing_emoji"],
@@ -40,12 +42,14 @@
     "tomato": ["tomato"],
     "trash_can": ["trash_can"],
     "trophy": ["trophy"],
+    "ufo": ["ufo"],
     "water_gun": ["water_gun"]
   },
   "sizes": {
     "alien": [1254, 1254],
     "alien-effects": [1254, 1254],
     "angry_emoji": [1254, 1254],
+    "anvil": [1254, 1254],
     "banana_peel": [1254, 1254],
     "basketball": [1254, 1254],
     "bear": [1254, 1254],
@@ -68,6 +72,7 @@
     "doge": [1254, 1254],
     "fireworks": [1254, 1254],
     "football": [1254, 1254],
+    "ghost": [1254, 1254],
     "heart": [1254, 1254],
     "horseshoe": [1254, 1254],
     "laughing_emoji": [1254, 1254],
@@ -85,6 +90,7 @@
     "tomato": [1254, 1254],
     "trash_can": [1254, 1254],
     "trophy": [1254, 1254],
+    "ufo": [1254, 1254],
     "water_gun": [1254, 1254]
   }
 }

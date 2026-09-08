@@ -4,13 +4,10 @@
   "additional": 32,
   "enabledPicker": 48,
   "premiumStills": 47,
-  "integratedAtlasRigs": 41,
+  "integratedAtlasRigs": 44,
   "note": "Source inventory only. Glove uses a separate player. No row is fully accepted by file presence; sound, gates, multiplayer, device and publication need separate evidence.",
   "missingAtlasRigs": [
-    "anvil",
     "magic_8_ball",
-    "ufo",
-    "ghost",
     "skull",
     "lightning_bolt",
     "rat_card",
@@ -179,7 +176,7 @@
       "id": "anvil",
       "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },
@@ -347,7 +344,7 @@
       "id": "ufo",
       "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },
@@ -371,7 +368,7 @@
       "id": "ghost",
       "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },

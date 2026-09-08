@@ -159,7 +159,10 @@ function layer(r, at, unit) {
   const payload = at >= landing;
   const uid = `dk${tileId++}`;
   const markup = renderToStaticMarkup(
-    React.createElement(payload ? r.rig.Payload : r.rig.Projectile, { uid })
+    React.createElement(payload ? r.rig.Payload : r.rig.Projectile, {
+      uid,
+      targetAvatar: r.rig.needsTargetAvatar ? { initial: 'S' } : undefined,
+    })
   ).replace(/\/images\/throwables\/animated\/([a-z0-9_-]+)\.webp/g, (_, id) => {
     mkdirSync(join(OUT, 'assets'), { recursive: true });
     const target = join(OUT, 'assets', `${id}.webp`);

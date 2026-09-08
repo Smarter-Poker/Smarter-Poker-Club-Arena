@@ -46,7 +46,8 @@ async function authorizeTableAdmin(
   req: IncomingMessage,
   tableId: string | undefined
 ): Promise<
-  { ok: true; userId: string; clubId: string } | { ok: false; status: number; error: string }
+  | { ok: true; userId: string; clubId: string; tournamentId: string | null }
+  | { ok: false; status: number; error: string }
 > {
   const auth = await authenticateRequest(req);
   if (!auth) return { ok: false, status: 401, error: 'Authentication required' };
@@ -54,7 +55,7 @@ async function authorizeTableAdmin(
 
   const { data: tableRow, error: tErr } = await supabase
     .from('tables')
-    .select('club_id, union_id')
+    .select('club_id, union_id, tournament_id')
     .eq('id', tableId)
     .maybeSingle();
   if (tErr || !tableRow?.club_id) {
@@ -73,7 +74,12 @@ async function authorizeTableAdmin(
       .eq('id', tableRow.union_id)
       .maybeSingle();
     if (unionRow?.owner_id === auth.userId) {
-      return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
+      return {
+        ok: true,
+        userId: auth.userId,
+        clubId: tableRow.club_id,
+        tournamentId: tableRow.tournament_id ?? null,
+      };
     }
     const { data: unionAdmin } = await supabase
       .from('union_admins')
@@ -82,7 +88,12 @@ async function authorizeTableAdmin(
       .eq('user_id', auth.userId)
       .maybeSingle();
     if (unionAdmin) {
-      return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
+      return {
+        ok: true,
+        userId: auth.userId,
+        clubId: tableRow.club_id,
+        tournamentId: tableRow.tournament_id ?? null,
+      };
     }
     /* THIS IS AN AUTHORIZATION READ, AND IT WAS CAPPED (fixed 2026-08-27).
        It lists the clubs in a union so the caller's role in one of them can
@@ -124,7 +135,12 @@ async function authorizeTableAdmin(
         ['owner', 'co_owner', 'admin', 'super_agent'].includes(String(r.role))
       );
       if (adminRow) {
-        return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
+        return {
+          ok: true,
+          userId: auth.userId,
+          clubId: tableRow.club_id,
+          tournamentId: tableRow.tournament_id ?? null,
+        };
       }
     }
     return { ok: false, status: 403, error: 'Union admin role required' };
@@ -146,7 +162,12 @@ async function authorizeTableAdmin(
   if (!['owner', 'co_owner', 'admin', 'super_agent'].includes(String(membership.role))) {
     return { ok: false, status: 403, error: 'Admin role required' };
   }
-  return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
+  return {
+    ok: true,
+    userId: auth.userId,
+    clubId: tableRow.club_id,
+    tournamentId: tableRow.tournament_id ?? null,
+  };
 }
 
 export async function handleAdminPause(
@@ -193,9 +214,11 @@ export async function handleAdminResume(
  *  1. Caller's JWT is valid
  *  2. Caller is an owner / admin / manager in the club that owns the table
  *
- * Side effect: calls engine.leaveTable(targetUserId) which mid-hand auto-folds
- * + cashout-pending, between-hand atomic-cashouts, and writes the seat_left
- * event so all clients re-render.
+ * Cash-table side effect: calls engine.leaveTable(targetUserId), which
+ * auto-folds mid-hand, cashes out between hands, and writes the seat_left
+ * event so all clients re-render. Tournament entries are deliberately refused:
+ * before start they leave through the exact unregister/ticket-return authority,
+ * and after start they remain in the field and blind out.
  *
  * Audit: caller, target, table, reason go into anti_cheat_events via the
  * dashboard's existing logging path AFTER this returns success.
@@ -221,6 +244,14 @@ export async function handleAdminKick(
     if (!authz.ok) return sendJSON(res, authz.status, { success: false, error: authz.error });
     const callerUserId = authz.userId;
     const clubId = authz.clubId;
+
+    if (authz.tournamentId) {
+      return sendJSON(res, 409, {
+        success: false,
+        error:
+          'Tournament Players Can Only Be Removed Before The Tournament Starts Through Tournament Registration Management.',
+      });
+    }
 
     const engine = deps.gameServer.getTableEngine(tableId);
     if (!engine) {

@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { isClubStaff } from '../types/clubRoles';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { tournamentService } from '../services/TournamentService';
+import { tournamentService, tournamentUnregisterSuccessText } from '../services/TournamentService';
 import type { Tournament } from '../types/database.types';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import './TournamentPage.css';
@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { tableService } from '../services/TableService';
-// Tournament registration/refunds handled via TournamentService → Player Wallet RPCs
+// Tournament registration and exact wallet-or-ticket returns use TournamentService.
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -494,21 +494,6 @@ export default function TournamentPage() {
     };
   }, [selectedTournament?.id, currentUser.id]);
 
-  // Helper to notify of a balance change
-  const notifyWalletChange = (amount: number, isDeduction: boolean) => {
-    try {
-      masterBus.emit('BALANCE_UPDATED', {
-        source: 'tournament',
-        userId: currentUser.id,
-        amount: amount,
-        isDeduction: isDeduction,
-        timestamp: Date.now(),
-      });
-    } catch (e) {
-      reportError(e, 'TournamentPage.Failed_to_notify_of_wallet_change');
-    }
-  };
-
   // Register for tournament
   const handleRegister = () => {
     if (!selectedTournament) return;
@@ -649,42 +634,16 @@ export default function TournamentPage() {
       return;
     }
     try {
-      // unregisterPlayer handles the full refund to Player Wallet via credit_player_wallet RPC
-      await tournamentService.unregisterPlayer(selectedTournament.id, currentUser.id);
+      const result = await tournamentService.unregisterPlayer(
+        selectedTournament.id,
+        currentUser.id
+      );
 
       setIsRegistered(false);
-
-      // Mirror of the registration debit: the pool gives back the prize half,
-      // the wallet gets the whole total back. Same integers both directions.
-      const prizeContribution = Math.round(Number(selectedTournament.buy_in_amount) || 0);
-      const refundedTotal = totalBuyIn(
-        selectedTournament.buy_in_amount,
-        selectedTournament.buy_in_fee
-      );
-      setTournaments((prev) =>
-        prev.map((t) =>
-          t.id === selectedTournament.id
-            ? {
-                ...t,
-                current_players: Math.max(0, t.current_players - 1),
-                prize_pool: Math.max(0, t.prize_pool - prizeContribution),
-              }
-            : t
-        )
-      );
-      setSelectedTournament((prev) =>
-        prev
-          ? {
-              ...prev,
-              current_players: Math.max(0, prev.current_players - 1),
-              prize_pool: Math.max(0, prev.prize_pool - prizeContribution),
-            }
-          : null
-      );
-
-      notifyWalletChange(refundedTotal, false);
-
-      toast.success(`Unregistered! ${money(refundedTotal)} chips refunded.`);
+      // The database owns the exact pool, bounty, fee and wallet/ticket split.
+      // Realtime refreshes the tournament row; this page must not reconstruct
+      // financial state from a mutable buy-in display value.
+      toast.success(tournamentUnregisterSuccessText(result));
     } catch (error) {
       toast.error('Unregister failed: ' + (error as Error).message);
     }

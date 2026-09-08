@@ -2250,7 +2250,6 @@
     "fn_credit_and_log",
     "fn_credit_chips",
     "fn_credit_player_wallet_once",
-    "fn_credit_stalled_seat_first_stacks",
     "fn_credit_treasury",
     "fn_credit_treasury_zd4core",
     "fn_cron_field",

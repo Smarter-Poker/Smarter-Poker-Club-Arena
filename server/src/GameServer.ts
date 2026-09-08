@@ -1425,8 +1425,6 @@ export class GameServer {
   private lastPlaceOverpayChargeAt = 0;
   /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
   private lastRakeAttributionRepairAt = 0;
-  /** Last fn_backpay_spin_unpaid_winners pass (2026-08-28 spin deep dive). */
-  private lastSpinBackpayAt = 0;
   /** Last fn_spin_expire_unfilled pass (2026-08-31 phase 2 review). */
   private lastSpinExpireAt = 0;
   /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
@@ -5715,48 +5713,6 @@ export class GameServer {
             }
           } catch (bpEx) {
             reportError(bpEx, 'GameServer.rake_attribution_backpay_threw');
-          }
-        }
-
-        // ── SPIN WINNER BACK-PAY (2026-08-28) ──
-        // v_spin_unpaid_settlements compares what the reserve pool DREW for a
-        // Spin against what reached a player's wallet. 52 events had already
-        // diverged when it was built, every one of them with exactly one
-        // player at position 1 - the prize left the bank and landed nowhere.
-        // Spin is excluded from fn_tournament_money_conservation entirely
-        // (`variant NOT IN ('spin','satellite')`), so nothing else on the
-        // platform was ever going to notice. Its own timer, for the reason
-        // written above the HU back-pay: a repair gated on another job's clock
-        // runs at boot and then effectively never.
-        if (Date.now() - this.lastSpinBackpayAt > 10 * 60 * 1000) {
-          this.lastSpinBackpayAt = Date.now();
-          try {
-            const { data: sbp, error: sbpErr } = await supabase.rpc(
-              'fn_backpay_spin_unpaid_winners',
-              // p_since_hours EXPLICIT (2026-08-31). This call had been
-              // failing on EVERY invocation with 57014 statement timeout:
-              // the RPC read the unbounded v_spin_unpaid_settlements three
-              // times, ~2.4s each, against an 8s service_role limit, so the
-              // safety net under "a prize left the bank and landed nowhere"
-              // had not run in production. It now sweeps a window it can
-              // finish. Six hours covers thirty-six passes of this ten-minute
-              // loop; anything older than that is not a repair, it is an
-              // audit, and an audit passes its own window.
-              { p_apply: true, p_limit: 200, p_since_hours: 6 }
-            );
-            if (sbpErr) {
-              reportError(
-                new Error(`[GameServer] spin winner back-pay failed: ${sbpErr.message}`),
-                'GameServer.spin_backpay_failed'
-              );
-            } else if (Number(sbp?.winners_paid) > 0) {
-              console.log(
-                `[GameServer] Spin winner back-pay: ${sbp.winners_paid} winner(s), ${sbp.chips} chips ` +
-                  `(owed ${sbp.owed_before} -> ${sbp.owed_after})`
-              );
-            }
-          } catch (sbpEx) {
-            reportError(sbpEx, 'GameServer.spin_backpay_threw');
           }
         }
 

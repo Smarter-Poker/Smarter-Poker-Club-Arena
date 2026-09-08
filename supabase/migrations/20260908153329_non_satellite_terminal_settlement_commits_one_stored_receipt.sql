@@ -1,4 +1,4 @@
--- 20260908065324_non_satellite_terminal_settlement_commits_one_stored_receipt.sql
+-- 20260908153329_non_satellite_terminal_settlement_commits_one_stored_receipt.sql
 --
 -- A tournament used to cross five independently retryable finish doors:
 -- cash places or a deal, mystery chests, bounty residual, rake and finally the
@@ -186,20 +186,15 @@ INSERT INTO public.ca_settle_sources(source,note) VALUES
    'Platform revealed mystery chest authority, invoked by fn_mystery_bounty_settle.')
 ON CONFLICT (source) DO UPDATE SET note=EXCLUDED.note;
 
--- A terminal receipt cannot remain true if a delayed hand settlement can
--- write `running` over the just-closed table. A durable terminal marker lives
--- on the table row itself, so PostgreSQL's concurrent UPDATE recheck observes
--- it after waiting for this transaction. The guard reads tournament state
--- without taking a tournament lock: table writers already hold the table row,
--- and taking the locks in reverse would create table -> tournament deadlocks.
-ALTER TABLE public.tables
-  ADD COLUMN terminal_closed_at timestamptz;
+-- The satellite authority introduced terminal_closed_at and stamps it in the
+-- same transaction as its money receipt. Enforce the shared table shape before
+-- installing the irreversible guard for every terminal tournament path.
 ALTER TABLE public.tables
   ADD CONSTRAINT tables_terminal_closed_shape
   CHECK (terminal_closed_at IS NULL OR (
     lower(COALESCE(status::text,'')) = 'closed'
     AND lower(COALESCE(lifecycle,'')) = 'closed'
-    AND COALESCE(current_players,0) = 0
+    AND current_players IS NOT DISTINCT FROM 0
   )) NOT VALID;
 ALTER TABLE public.tables VALIDATE CONSTRAINT tables_terminal_closed_shape;
 
@@ -226,6 +221,10 @@ BEGIN
   END IF;
 
   IF TG_OP = 'INSERT' THEN
+    IF NEW.terminal_closed_at IS NOT NULL THEN
+      RAISE EXCEPTION 'new table % cannot supply a terminal marker',NEW.id
+        USING ERRCODE = '55000';
+    END IF;
     IF NEW.tournament_id IS NOT NULL THEN
       -- INSERT has no child row to lock yet, so taking the parent first is
       -- deadlock-safe. If terminal owns it, this waits and then sees COMPLETED;
@@ -233,13 +232,18 @@ BEGIN
       SELECT upper(COALESCE(t.status::text,'')) INTO v_new_status
         FROM public.tournaments t
        WHERE t.id = NEW.tournament_id
-       FOR KEY SHARE;
+       FOR SHARE;
       IF v_new_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
         RAISE EXCEPTION 'cannot add table % to terminal tournament %',
           NEW.id,NEW.tournament_id USING ERRCODE = '55000';
       END IF;
     END IF;
     RETURN NEW;
+  END IF;
+
+  IF NEW.id IS DISTINCT FROM OLD.id THEN
+    RAISE EXCEPTION 'table identity % is immutable',OLD.id
+      USING ERRCODE = '55000';
   END IF;
 
   -- Reassociation would be a child-row-first parent transition and would also
@@ -255,7 +259,7 @@ BEGIN
        OR NEW.terminal_closed_at IS DISTINCT FROM OLD.terminal_closed_at
        OR lower(COALESCE(NEW.status::text,'')) <> 'closed'
        OR lower(COALESCE(NEW.lifecycle,'')) <> 'closed'
-       OR COALESCE(NEW.current_players,0) <> 0 THEN
+       OR NEW.current_players IS DISTINCT FROM 0 THEN
       RAISE EXCEPTION 'terminal tournament table % cannot reopen or move',OLD.id
         USING ERRCODE = '55000';
     END IF;
@@ -267,7 +271,7 @@ BEGIN
       INTO v_new_status,v_ended_at
       FROM public.tournaments t WHERE t.id = NEW.tournament_id;
     IF v_new_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
-      IF COALESCE(NEW.current_players,0) <> 0 THEN
+      IF NEW.current_players IS DISTINCT FROM 0 THEN
         RAISE EXCEPTION 'table % cannot reopen terminal tournament %',
           NEW.id,NEW.tournament_id USING ERRCODE = '55000';
       END IF;
@@ -277,7 +281,13 @@ BEGIN
       NEW.status := 'closed';
       NEW.lifecycle := 'closed';
       NEW.terminal_closed_at := COALESCE(v_ended_at,transaction_timestamp());
+    ELSIF NEW.terminal_closed_at IS NOT NULL THEN
+      RAISE EXCEPTION 'live tournament table % cannot supply a terminal marker',NEW.id
+        USING ERRCODE = '55000';
     END IF;
+  ELSIF NEW.terminal_closed_at IS NOT NULL THEN
+    RAISE EXCEPTION 'unscoped table % cannot supply a terminal marker',NEW.id
+      USING ERRCODE = '55000';
   END IF;
   RETURN NEW;
 END;
@@ -287,7 +297,7 @@ REVOKE ALL ON FUNCTION public.fn_tournament_table_terminal_close_is_irreversible
   FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE TRIGGER tournament_table_terminal_close_is_irreversible
-  BEFORE INSERT OR DELETE OR UPDATE OF tournament_id,status,current_players,
+  BEFORE INSERT OR DELETE OR UPDATE OF id,tournament_id,status,current_players,
     lifecycle,terminal_closed_at ON public.tables
   FOR EACH ROW EXECUTE FUNCTION
     public.fn_tournament_table_terminal_close_is_irreversible();
@@ -677,14 +687,20 @@ REVOKE ALL ON FUNCTION public.fn_mystery_bounty_reserve(
 GRANT EXECUTE ON FUNCTION public.fn_mystery_bounty_reserve(
   uuid,uuid,jsonb,uuid,text,uuid,integer) TO service_role;
 
+-- Drain every older tournament writer before the cutover inventory is taken.
+-- A timestamp cannot classify a transaction that began before this migration
+-- and committed while DDL waited. Identity captured behind the write barrier
+-- makes every later COMPLETED row receipt-required without clock inference.
+LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE;
+
 CREATE TABLE public.tournament_terminal_settlement_cutover (
   authority                         text PRIMARY KEY
     CHECK (authority = 'fn_complete_tournament_terminal:v1'),
   migration_version                 text NOT NULL
-    CHECK (migration_version = '20260908065324'),
+    CHECK (migration_version = '20260908153329'),
   installed_at                      timestamptz NOT NULL,
-  preexisting_non_satellite_count   bigint NOT NULL CHECK (
-    preexisting_non_satellite_count >= 0)
+  preexisting_completed_ids         uuid[] NOT NULL,
+  CHECK (array_position(preexisting_completed_ids, NULL) IS NULL)
 );
 
 ALTER TABLE public.tournament_terminal_settlement_cutover
@@ -694,15 +710,22 @@ REVOKE ALL ON TABLE public.tournament_terminal_settlement_cutover
 
 INSERT INTO public.tournament_terminal_settlement_cutover
   (authority, migration_version, installed_at,
-   preexisting_non_satellite_count)
-SELECT 'fn_complete_tournament_terminal:v1', '20260908065324',
-       transaction_timestamp(), count(*)
-  FROM public.tournaments t
- WHERE NOT (
-       lower(COALESCE(t.variant::text, '')) = 'satellite'
-    OR upper(COALESCE(t.tournament_type::text, '')) = 'SATELLITE'
-    OR t.satellite_target_id IS NOT NULL
-    OR t.satellite_target IS NOT NULL);
+   preexisting_completed_ids)
+SELECT 'fn_complete_tournament_terminal:v1', '20260908153329',
+       clock_timestamp(), ARRAY(
+         SELECT t.id
+           FROM public.tournaments t
+          WHERE upper(COALESCE(t.status::text, '')) = 'COMPLETED'
+            AND NOT (
+                 lower(COALESCE(t.variant::text, '')) = 'satellite'
+              OR upper(COALESCE(t.tournament_type::text, '')) = 'SATELLITE'
+              OR t.satellite_target_id IS NOT NULL
+              OR t.satellite_target IS NOT NULL)
+          ORDER BY t.id
+       );
+
+COMMENT ON TABLE public.tournament_terminal_settlement_cutover IS
+  'Owner-only terminal cutover watermark captured behind a tournament write barrier. Every completed non-satellite outside the immutable preexisting inventory must carry an exact terminal receipt.';
 
 CREATE TABLE public.tournament_terminal_settlements (
   tournament_id          uuid PRIMARY KEY
@@ -728,6 +751,8 @@ CREATE TABLE public.tournament_terminal_settlements (
   bounty_receipt         jsonb NOT NULL CHECK (jsonb_typeof(bounty_receipt) = 'object'),
   closed_table_count     integer NOT NULL CHECK (closed_table_count >= 0),
   closed_table_ids       uuid[] NOT NULL,
+  source_seat_count      integer NOT NULL CHECK (source_seat_count >= 0),
+  source_seat_ids        uuid[] NOT NULL,
   released_seat_count    integer NOT NULL CHECK (released_seat_count >= 0),
   released_seat_ids      uuid[] NOT NULL,
   rake_amount            numeric(15,2) NOT NULL
@@ -736,6 +761,8 @@ CREATE TABLE public.tournament_terminal_settlements (
   rake_settled_at        timestamptz NOT NULL,
   rake_attributed_at     timestamptz NOT NULL,
   rake_attributed_users  integer NOT NULL CHECK (rake_attributed_users >= 0),
+  escrow_closed_at       timestamptz NOT NULL,
+  escrow_close_note      text NOT NULL CHECK (length(btrim(escrow_close_note)) > 0),
   completed_at           timestamptz NOT NULL,
   settled_at             timestamptz NOT NULL DEFAULT transaction_timestamp(),
   receipt_version        integer NOT NULL DEFAULT 1 CHECK (receipt_version = 1),
@@ -744,10 +771,14 @@ CREATE TABLE public.tournament_terminal_settlements (
   CHECK ((mystery_was_active AND mystery_pool_cents > 0)
       OR (NOT mystery_was_active AND mystery_pool_cents = 0)),
   CHECK (closed_table_count = cardinality(closed_table_ids)),
+  CHECK (source_seat_count = cardinality(source_seat_ids)),
   CHECK (released_seat_count = cardinality(released_seat_ids)),
   CHECK (array_position(closed_table_ids, NULL) IS NULL),
+  CHECK (array_position(source_seat_ids, NULL) IS NULL),
   CHECK (array_position(released_seat_ids, NULL) IS NULL),
+  CHECK (released_seat_ids <@ source_seat_ids),
   CHECK (rake_settled_at <= settled_at AND rake_attributed_at <= settled_at),
+  CHECK (escrow_closed_at <= settled_at),
   CHECK (completed_at <= settled_at)
 );
 
@@ -777,6 +808,1117 @@ CREATE TRIGGER tournament_terminal_settlements_append_only
   BEFORE UPDATE OR DELETE ON public.tournament_terminal_settlements
   FOR EACH ROW EXECUTE FUNCTION
     public.fn_tournament_terminal_receipts_are_append_only();
+
+-- A plain parent/receipt lookup in a row trigger is not enough after a writer
+-- has waited for a child tuple: READ COMMITTED keeps the command snapshot that
+-- existed before the wait. Give every mutable receipt-owned child its own
+-- one-way marker instead. These nullable, no-default columns are an expand-only
+-- catalog change; existing rows are neither rewritten nor guessed. A
+-- synchronous parent-status trigger stamps every child in the same transaction
+-- as COMPLETED/CANCELLED. A queued UPDATE/DELETE then resumes on the newest
+-- tuple version and sees OLD.terminal_closed_at without consulting a stale
+-- snapshot.
+ALTER TABLE public.tournament_players
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.tournament_obligations
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.tournament_payouts
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.tournament_rake_settlements
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.rake_records
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.tournament_bounty_chests
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.tournament_bounty_awards
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.tournament_guarantee_overlays
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.table_seats
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.wallet_transactions
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.tournament_bounty_award_recipients
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.tournament_escrow
+  ADD COLUMN terminal_closed_at timestamptz;
+ALTER TABLE public.spin_reserve_ledger
+  ADD COLUMN terminal_closed_at timestamptz;
+
+CREATE OR REPLACE FUNCTION public.fn_ca_terminal_marker_transition_is_exact(
+  p_old jsonb,
+  p_new jsonb,
+  p_tournament_id uuid
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $terminal_marker_transition$
+  SELECT COALESCE(
+    p_old ? 'terminal_closed_at'
+    AND p_new ? 'terminal_closed_at'
+    AND NULLIF(p_old->>'terminal_closed_at','') IS NULL
+    AND NULLIF(p_new->>'terminal_closed_at','') IS NOT NULL
+    AND (p_new - 'terminal_closed_at') IS NOT DISTINCT FROM
+        (p_old - 'terminal_closed_at')
+    AND EXISTS (
+      SELECT 1
+        FROM public.tournaments t
+       WHERE t.id = p_tournament_id
+         AND upper(COALESCE(t.status::text,'')) IN
+             ('COMPLETED','CANCELLED','CANCELED')
+         AND t.ended_at IS NOT NULL
+         AND isfinite(t.ended_at)
+         AND NULLIF(p_new->>'terminal_closed_at','')::timestamptz
+               IS NOT DISTINCT FROM t.ended_at
+    ),false)
+$terminal_marker_transition$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_terminal_marker_transition_is_exact(
+  jsonb,jsonb,uuid) FROM PUBLIC, anon, authenticated, service_role;
+
+-- A terminal receipt is not immutable if a service caller can append a new
+-- payout, obligation, roster row or other tournament-owned evidence after the
+-- close. INSERT takes a parent share lock before creating a row. Unlike key
+-- share, this conflicts with terminal's non-key status change. The insert either
+-- commits before terminal owns the tournament, so the terminal verifier sees
+-- it, or waits behind terminal and is refused. UPDATE and DELETE never take a
+-- child-to-parent lock. Their row-owned marker is the race-free terminal fact;
+-- the parent/receipt read remains only the compatibility fence for terminal
+-- receipts committed before these marker columns existed.
+CREATE OR REPLACE FUNCTION public.fn_terminal_tournament_evidence_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $terminal_evidence_guard$
+DECLARE
+  v_tournament_id uuid;
+  v_status text;
+  v_receipted boolean := false;
+  v_old_marker timestamptz;
+  v_new_marker timestamptz;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    v_tournament_id := NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid;
+  ELSIF TG_OP = 'UPDATE' THEN
+    IF NULLIF(to_jsonb(NEW)->>'tournament_id','')::uuid IS DISTINCT FROM
+       NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid THEN
+      RAISE EXCEPTION '% rows cannot move between tournaments',TG_TABLE_NAME
+        USING ERRCODE = '55000';
+    END IF;
+    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;
+  ELSE
+    v_tournament_id := NULLIF(to_jsonb(OLD)->>'tournament_id','')::uuid;
+  END IF;
+
+  IF v_tournament_id IS NULL THEN
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+  END IF;
+  IF TG_OP <> 'INSERT' AND to_jsonb(OLD) ? 'terminal_closed_at' THEN
+    v_old_marker := NULLIF(to_jsonb(OLD)->>'terminal_closed_at','')::timestamptz;
+  END IF;
+  IF TG_OP <> 'DELETE' AND to_jsonb(NEW) ? 'terminal_closed_at' THEN
+    v_new_marker := NULLIF(to_jsonb(NEW)->>'terminal_closed_at','')::timestamptz;
+  END IF;
+  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN
+    RAISE EXCEPTION '% rows cannot supply a terminal marker',TG_TABLE_NAME
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN
+    RAISE EXCEPTION 'terminal tournament % has immutable % evidence',
+      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN
+    IF public.fn_ca_terminal_marker_transition_is_exact(
+         to_jsonb(OLD),to_jsonb(NEW),v_tournament_id) THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION '% terminal marker transition is not canonical',TG_TABLE_NAME
+      USING ERRCODE = '55000';
+  END IF;
+  -- A journal row is durable testimony from the instant it names a
+  -- tournament. Refuse its UPDATE/DELETE without taking a child-to-parent
+  -- lock; a row trigger already owns the child tuple at this point. INSERT is
+  -- the only operation that takes the root lock, which preserves the
+  -- parent-to-child order used by both terminal authorities.
+  IF TG_TABLE_NAME = 'chip_ledger' AND TG_OP <> 'INSERT' THEN
+    RAISE EXCEPTION 'tournament chip ledger evidence is append-only'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'INSERT' THEN
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+      FROM public.tournaments t
+     WHERE t.id = v_tournament_id
+     FOR SHARE;
+  ELSE
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+      FROM public.tournaments t
+     WHERE t.id = v_tournament_id;
+  END IF;
+  SELECT EXISTS (
+           SELECT 1 FROM public.tournament_terminal_settlements h
+            WHERE h.tournament_id = v_tournament_id)
+      OR EXISTS (
+           SELECT 1 FROM public.tournament_satellite_settlements h
+            WHERE h.tournament_id = v_tournament_id)
+      OR EXISTS (
+           SELECT 1 FROM public.tournament_cancellation_receipts h
+            WHERE h.tournament_id = v_tournament_id)
+    INTO v_receipted;
+  IF v_status IN ('COMPLETED','CANCELLED','CANCELED')
+     AND (TG_OP = 'INSERT' OR v_receipted) THEN
+    RAISE EXCEPTION
+      'terminal tournament % has immutable % evidence',
+      v_tournament_id,TG_TABLE_NAME USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$terminal_evidence_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_terminal_tournament_evidence_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+DO $install_terminal_evidence_guards$
+DECLARE
+  v_table text;
+BEGIN
+  FOREACH v_table IN ARRAY ARRAY[
+    'tournament_players',
+    'tournament_obligations',
+    'tournament_payouts',
+    'chip_ledger',
+    'tournament_rake_settlements',
+    'rake_records',
+    'tournament_bounty_chests',
+    'tournament_bounty_awards',
+    'tournament_guarantee_overlays',
+    'tournament_satellite_awards',
+    'tournament_satellite_remainders',
+    'tournament_refund_entitlements',
+    'tournament_refund_tranches',
+    'spin_reserve_ledger',
+    'tournament_spin_cancellation_unwinds'
+  ] LOOP
+    EXECUTE format(
+      'DROP TRIGGER IF EXISTS terminal_tournament_evidence_is_immutable ON public.%I',
+      v_table);
+    EXECUTE format(
+      'CREATE TRIGGER terminal_tournament_evidence_is_immutable '
+      || 'BEFORE INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW '
+      || 'EXECUTE FUNCTION public.fn_terminal_tournament_evidence_is_immutable()',
+      v_table);
+  END LOOP;
+END;
+$install_terminal_evidence_guards$;
+
+-- A seat has no tournament_id of its own, so bind it through its table. New
+-- membership locks the parent first and cannot cross a terminal boundary.
+-- Existing rows are already frozen by terminal's source-seat prelock; after a
+-- waiter resumes, any mutation or deletion of a terminal seat is refused.
+CREATE OR REPLACE FUNCTION public.fn_terminal_tournament_seat_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $terminal_seat_guard$
+DECLARE
+  v_old_tournament_id uuid;
+  v_new_tournament_id uuid;
+  v_status text;
+  v_marker timestamptz;
+  v_receipted boolean := false;
+  v_old_marker timestamptz;
+  v_new_marker timestamptz;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    SELECT tb.tournament_id INTO v_old_tournament_id
+      FROM public.tables tb WHERE tb.id = OLD.table_id;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    SELECT tb.tournament_id INTO v_new_tournament_id
+      FROM public.tables tb WHERE tb.id = NEW.table_id;
+  END IF;
+  IF TG_OP = 'UPDATE'
+     AND v_new_tournament_id IS DISTINCT FROM v_old_tournament_id THEN
+    RAISE EXCEPTION 'seat % cannot move between tournament owners',OLD.id
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' THEN v_old_marker := OLD.terminal_closed_at; END IF;
+  IF TG_OP <> 'DELETE' THEN v_new_marker := NEW.terminal_closed_at; END IF;
+  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN
+    RAISE EXCEPTION 'new tournament seat % cannot supply a terminal marker',NEW.id
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN
+    RAISE EXCEPTION 'terminal tournament seat % is immutable',OLD.id
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN
+    IF public.fn_ca_terminal_marker_transition_is_exact(
+         to_jsonb(OLD),to_jsonb(NEW),v_old_tournament_id) THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'seat % terminal marker transition is not canonical',OLD.id
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF TG_OP = 'INSERT' AND v_new_tournament_id IS NOT NULL THEN
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+      FROM public.tournaments t
+     WHERE t.id = v_new_tournament_id
+     FOR SHARE;
+    SELECT tb.terminal_closed_at INTO v_marker
+      FROM public.tables tb
+     WHERE tb.id = NEW.table_id
+       AND tb.tournament_id = v_new_tournament_id
+     FOR SHARE;
+  ELSE
+    SELECT upper(COALESCE(t.status::text,'')),tb.terminal_closed_at
+      INTO v_status,v_marker
+      FROM public.tables tb
+      LEFT JOIN public.tournaments t ON t.id = tb.tournament_id
+     WHERE tb.id = CASE WHEN TG_OP = 'DELETE' THEN OLD.table_id ELSE NEW.table_id END;
+  END IF;
+  SELECT EXISTS (
+           SELECT 1 FROM public.tournament_terminal_settlements h
+            WHERE h.tournament_id = COALESCE(v_new_tournament_id,v_old_tournament_id))
+      OR EXISTS (
+           SELECT 1 FROM public.tournament_satellite_settlements h
+            WHERE h.tournament_id = COALESCE(v_new_tournament_id,v_old_tournament_id))
+      OR EXISTS (
+           SELECT 1 FROM public.tournament_cancellation_receipts h
+            WHERE h.tournament_id = COALESCE(v_new_tournament_id,v_old_tournament_id))
+    INTO v_receipted;
+  IF v_status IN ('COMPLETED','CANCELLED','CANCELED')
+     AND (TG_OP = 'INSERT' OR v_receipted) THEN
+    RAISE EXCEPTION 'terminal tournament seat % is immutable',
+      CASE WHEN TG_OP = 'INSERT' THEN NEW.id ELSE OLD.id END
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$terminal_seat_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_terminal_tournament_seat_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS terminal_tournament_seat_is_immutable ON public.table_seats;
+CREATE TRIGGER terminal_tournament_seat_is_immutable
+  BEFORE INSERT OR UPDATE OR DELETE ON public.table_seats
+  FOR EACH ROW EXECUTE FUNCTION public.fn_terminal_tournament_seat_is_immutable();
+
+-- The parent tuple is its own race-free lifecycle fact. Once OLD is terminal,
+-- reject before any receipt lookup: a writer queued before terminal commit
+-- resumes with the newest OLD tuple even though its statement snapshot cannot
+-- see the just-committed receipt. The initial live -> terminal transition is
+-- allowed because OLD is not terminal; the deferred verifier still requires
+-- one exact receipt before that transaction can commit.
+CREATE OR REPLACE FUNCTION public.fn_receipted_tournament_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $receipted_tournament_guard$
+BEGIN
+  IF upper(COALESCE(OLD.status::text,'')) IN
+       ('COMPLETED','CANCELLED','CANCELED') THEN
+    RAISE EXCEPTION 'terminal tournament % is immutable after closure',OLD.id
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$receipted_tournament_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_receipted_tournament_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS receipted_tournament_is_immutable ON public.tournaments;
+CREATE TRIGGER receipted_tournament_is_immutable
+  BEFORE DELETE OR UPDATE OF status,variant,tournament_type,
+    satellite_target_id,satellite_target,satellite_seats,
+    prize_pool,prize_pool_finalized,bounty_pool,bounty_pool_paid,
+    is_bounty,is_pko,is_mystery_bounty,mystery_bounty_stage,
+    mystery_bounty_pool_cents,club_id,ended_at,current_players,on_break,
+    break_started_at,break_ends_at
+  ON public.tournaments
+  FOR EACH ROW EXECUTE FUNCTION public.fn_receipted_tournament_is_immutable();
+
+CREATE OR REPLACE FUNCTION public.fn_ca_has_committed_tournament_receipt(
+  p_tournament_id uuid
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $has_terminal_receipt$
+  SELECT COALESCE((
+    SELECT (upper(COALESCE(t.status::text,'')) = 'COMPLETED'
+       AND (EXISTS (
+              SELECT 1 FROM public.tournament_terminal_settlements h
+               WHERE h.tournament_id = t.id)
+         OR EXISTS (
+              SELECT 1 FROM public.tournament_satellite_settlements h
+               WHERE h.tournament_id = t.id)))
+       OR (upper(COALESCE(t.status::text,'')) IN ('CANCELLED','CANCELED')
+       AND EXISTS (
+              SELECT 1 FROM public.tournament_cancellation_receipts h
+               WHERE h.tournament_id = t.id))
+      FROM public.tournaments t
+     WHERE t.id = p_tournament_id
+  ),false)
+$has_terminal_receipt$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_has_committed_tournament_receipt(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+-- Recipient rows do not carry tournament_id. Bind them through their award so
+-- a completed mystery receipt cannot later gain, lose or rewrite a payee.
+CREATE OR REPLACE FUNCTION public.fn_terminal_bounty_recipient_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $terminal_bounty_recipient_guard$
+DECLARE
+  v_old_tournament_id uuid;
+  v_new_tournament_id uuid;
+  v_old_marker timestamptz;
+  v_new_marker timestamptz;
+  v_new_status text;
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.award_id IS DISTINCT FROM OLD.award_id THEN
+    RAISE EXCEPTION 'bounty recipient award ownership is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' THEN
+    SELECT a.tournament_id INTO v_old_tournament_id
+      FROM public.tournament_bounty_awards a WHERE a.id = OLD.award_id;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    SELECT a.tournament_id INTO v_new_tournament_id
+      FROM public.tournament_bounty_awards a WHERE a.id = NEW.award_id;
+  END IF;
+  IF TG_OP <> 'INSERT' THEN v_old_marker := OLD.terminal_closed_at; END IF;
+  IF TG_OP <> 'DELETE' THEN v_new_marker := NEW.terminal_closed_at; END IF;
+  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN
+    RAISE EXCEPTION 'new bounty recipient cannot supply a terminal marker'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN
+    RAISE EXCEPTION 'terminal bounty recipient evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN
+    IF public.fn_ca_terminal_marker_transition_is_exact(
+         to_jsonb(OLD),to_jsonb(NEW),v_old_tournament_id) THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'bounty recipient terminal marker transition is not canonical'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'INSERT' AND v_new_tournament_id IS NOT NULL THEN
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_new_status
+      FROM public.tournaments t
+     WHERE t.id = v_new_tournament_id FOR SHARE;
+    IF v_new_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+      RAISE EXCEPTION 'terminal bounty recipient evidence is immutable'
+        USING ERRCODE = '55000';
+    END IF;
+  END IF;
+  IF public.fn_ca_has_committed_tournament_receipt(v_old_tournament_id)
+     OR public.fn_ca_has_committed_tournament_receipt(v_new_tournament_id) THEN
+    RAISE EXCEPTION 'terminal bounty recipient evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$terminal_bounty_recipient_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_terminal_bounty_recipient_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS terminal_bounty_recipient_is_immutable
+  ON public.tournament_bounty_award_recipients;
+CREATE TRIGGER terminal_bounty_recipient_is_immutable
+  BEFORE INSERT OR UPDATE OR DELETE
+  ON public.tournament_bounty_award_recipients
+  FOR EACH ROW EXECUTE FUNCTION
+    public.fn_terminal_bounty_recipient_is_immutable();
+
+-- Bounty receipt verification reads wallet_transactions by related_entity_id.
+-- Evaluate OLD and NEW ownership so a privileged update cannot move a row
+-- into or out of a completed receipt after the close.
+CREATE OR REPLACE FUNCTION public.fn_terminal_wallet_transaction_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $terminal_wallet_transaction_guard$
+DECLARE
+  v_old_tournament_id uuid;
+  v_new_tournament_id uuid;
+  v_old_marker timestamptz;
+  v_new_marker timestamptz;
+  v_new_status text;
+BEGIN
+  IF TG_OP = 'UPDATE'
+     AND NEW.related_entity_id IS DISTINCT FROM OLD.related_entity_id THEN
+    RAISE EXCEPTION 'wallet transaction ownership is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' THEN
+    SELECT t.id INTO v_old_tournament_id FROM public.tournaments t
+     WHERE t.id = OLD.related_entity_id;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    SELECT t.id INTO v_new_tournament_id FROM public.tournaments t
+     WHERE t.id = NEW.related_entity_id;
+  END IF;
+  IF TG_OP <> 'INSERT' THEN v_old_marker := OLD.terminal_closed_at; END IF;
+  IF TG_OP <> 'DELETE' THEN v_new_marker := NEW.terminal_closed_at; END IF;
+  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN
+    RAISE EXCEPTION 'new wallet transaction cannot supply a terminal marker'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN
+    RAISE EXCEPTION 'terminal wallet transaction evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN
+    IF public.fn_ca_terminal_marker_transition_is_exact(
+         to_jsonb(OLD),to_jsonb(NEW),v_old_tournament_id) THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'wallet transaction terminal marker transition is not canonical'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'INSERT' AND v_new_tournament_id IS NOT NULL THEN
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_new_status
+      FROM public.tournaments t
+     WHERE t.id = v_new_tournament_id FOR SHARE;
+    IF v_new_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+      RAISE EXCEPTION 'terminal wallet transaction evidence is immutable'
+        USING ERRCODE = '55000';
+    END IF;
+  END IF;
+  IF public.fn_ca_has_committed_tournament_receipt(v_old_tournament_id)
+     OR public.fn_ca_has_committed_tournament_receipt(v_new_tournament_id) THEN
+    RAISE EXCEPTION 'terminal wallet transaction evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$terminal_wallet_transaction_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_terminal_wallet_transaction_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS terminal_wallet_transaction_is_immutable
+  ON public.wallet_transactions;
+CREATE TRIGGER terminal_wallet_transaction_is_immutable
+  BEFORE INSERT OR UPDATE OR DELETE ON public.wallet_transactions
+  FOR EACH ROW EXECUTE FUNCTION
+    public.fn_terminal_wallet_transaction_is_immutable();
+
+-- Credit keys are polymorphic text. Resolve only the three tournament receipt
+-- namespaces and freeze both sides of an UPDATE. Unrelated wallet keys retain
+-- their existing lifecycle.
+CREATE OR REPLACE FUNCTION public.fn_ca_tournament_id_from_credit_key(p_key text)
+RETURNS uuid
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $tournament_from_credit_key$
+DECLARE
+  v_id_text text;
+  v_id uuid;
+BEGIN
+  IF p_key LIKE 'tourney:%' OR p_key LIKE 'mb-residual:%' THEN
+    v_id_text := split_part(p_key,':',2);
+    IF v_id_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      RETURN v_id_text::uuid;
+    END IF;
+  ELSIF p_key LIKE 'mb:%' THEN
+    v_id_text := split_part(p_key,':',2);
+    IF v_id_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      SELECT a.tournament_id INTO v_id
+        FROM public.tournament_bounty_awards a WHERE a.id = v_id_text::uuid;
+      RETURN v_id;
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$tournament_from_credit_key$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_tournament_id_from_credit_key(text)
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_terminal_credit_key_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $terminal_credit_key_guard$
+DECLARE
+  v_old_tournament_id uuid;
+  v_new_tournament_id uuid;
+  v_new_status text;
+BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.key IS DISTINCT FROM OLD.key THEN
+    RAISE EXCEPTION 'wallet credit idempotency keys are immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' THEN
+    v_old_tournament_id := public.fn_ca_tournament_id_from_credit_key(OLD.key);
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    v_new_tournament_id := public.fn_ca_tournament_id_from_credit_key(NEW.key);
+  END IF;
+  -- Recognized payout claims are append-only financial evidence. An existing
+  -- row is already locked before this row trigger runs, so UPDATE/DELETE must
+  -- refuse immediately instead of reversing the terminal root lock order.
+  IF TG_OP <> 'INSERT'
+     AND COALESCE(v_old_tournament_id,v_new_tournament_id) IS NOT NULL THEN
+    RAISE EXCEPTION 'tournament wallet credit claims are append-only'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'INSERT' AND v_new_tournament_id IS NOT NULL THEN
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_new_status
+      FROM public.tournaments t
+     WHERE t.id = v_new_tournament_id FOR SHARE;
+    IF v_new_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+      RAISE EXCEPTION 'terminal wallet credit key evidence is immutable'
+        USING ERRCODE = '55000';
+    END IF;
+  END IF;
+  IF v_new_tournament_id IS NOT NULL
+     AND v_new_tournament_id IS DISTINCT FROM v_old_tournament_id THEN
+    PERFORM 1 FROM public.tournaments t
+     WHERE t.id = v_new_tournament_id FOR SHARE;
+  END IF;
+  IF public.fn_ca_has_committed_tournament_receipt(v_old_tournament_id)
+     OR public.fn_ca_has_committed_tournament_receipt(v_new_tournament_id) THEN
+    RAISE EXCEPTION 'terminal wallet credit key evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$terminal_credit_key_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_terminal_credit_key_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS terminal_credit_key_is_immutable
+  ON public.wallet_credit_idempotency;
+CREATE TRIGGER terminal_credit_key_is_immutable
+  BEFORE INSERT OR UPDATE OR DELETE ON public.wallet_credit_idempotency
+  FOR EACH ROW EXECUTE FUNCTION public.fn_terminal_credit_key_is_immutable();
+
+-- Both atomic completion authorities have already stamped exact-zero escrow
+-- before lifecycle. The old after-status observer would rewrite that proof,
+-- so detach it now and freeze the source bank once its receipt is committed.
+DROP TRIGGER IF EXISTS zz_ca_escrow_close ON public.tournaments;
+
+CREATE OR REPLACE FUNCTION public.fn_terminal_tournament_escrow_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $terminal_escrow_guard$
+DECLARE
+  v_old_tournament_id uuid;
+  v_new_tournament_id uuid;
+  v_old_marker timestamptz;
+  v_new_marker timestamptz;
+  v_new_status text;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN v_old_tournament_id := OLD.tournament_id; END IF;
+  IF TG_OP <> 'DELETE' THEN v_new_tournament_id := NEW.tournament_id; END IF;
+  IF TG_OP = 'UPDATE'
+     AND v_new_tournament_id IS DISTINCT FROM v_old_tournament_id THEN
+    RAISE EXCEPTION 'tournament escrow ownership is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' THEN v_old_marker := OLD.terminal_closed_at; END IF;
+  IF TG_OP <> 'DELETE' THEN v_new_marker := NEW.terminal_closed_at; END IF;
+  IF TG_OP = 'INSERT' AND v_new_marker IS NOT NULL THEN
+    RAISE EXCEPTION 'new tournament escrow cannot supply a terminal marker'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' AND v_old_marker IS NOT NULL THEN
+    RAISE EXCEPTION 'terminal tournament escrow evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker THEN
+    IF public.fn_ca_terminal_marker_transition_is_exact(
+         to_jsonb(OLD),to_jsonb(NEW),v_old_tournament_id) THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'tournament escrow terminal marker transition is not canonical'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'INSERT' AND v_new_tournament_id IS NOT NULL THEN
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_new_status
+      FROM public.tournaments t
+     WHERE t.id = v_new_tournament_id FOR SHARE;
+    IF v_new_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+      RAISE EXCEPTION 'terminal tournament escrow evidence is immutable'
+        USING ERRCODE = '55000';
+    END IF;
+  END IF;
+  IF public.fn_ca_has_committed_tournament_receipt(v_old_tournament_id)
+     OR public.fn_ca_has_committed_tournament_receipt(v_new_tournament_id) THEN
+    RAISE EXCEPTION 'terminal tournament escrow evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$terminal_escrow_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_terminal_tournament_escrow_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS terminal_tournament_escrow_is_immutable
+  ON public.tournament_escrow;
+CREATE TRIGGER terminal_tournament_escrow_is_immutable
+  BEFORE INSERT OR UPDATE OR DELETE ON public.tournament_escrow
+  FOR EACH ROW EXECUTE FUNCTION
+    public.fn_terminal_tournament_escrow_is_immutable();
+
+-- This is a synchronous ownership transition, not a watcher or reconciler.
+-- It runs inside the one status-changing transaction after the parent row is
+-- terminal and stamps every mutable row that a terminal receipt will verify.
+-- Tables use their pre-existing terminal_closed_at invariant and are closed by
+-- each authority immediately after the parent transition. Append-only journal,
+-- idempotency, refund, satellite and original Spin receipt rows need no marker
+-- because their own guards already refuse every UPDATE/DELETE. Mutable Spin
+-- cancellation reversal rows are stamped below; every INSERT guard still takes
+-- the parent lock.
+CREATE OR REPLACE FUNCTION public.fn_stamp_tournament_terminal_evidence_markers()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $stamp_terminal_evidence_markers$
+DECLARE
+  v_terminal_at timestamptz;
+BEGIN
+  IF upper(COALESCE(NEW.status::text,'')) NOT IN
+       ('COMPLETED','CANCELLED','CANCELED')
+     OR (TG_OP = 'UPDATE' AND upper(COALESCE(OLD.status::text,'')) IN
+       ('COMPLETED','CANCELLED','CANCELED')) THEN
+    RETURN NEW;
+  END IF;
+  v_terminal_at := NEW.ended_at;
+  IF v_terminal_at IS NULL OR NOT isfinite(v_terminal_at) THEN
+    RAISE EXCEPTION 'terminal tournament % requires one finite close marker',NEW.id
+      USING ERRCODE = '55000';
+  END IF;
+
+  UPDATE public.tournament_players
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id AND terminal_closed_at IS NULL;
+  UPDATE public.tournament_obligations
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id AND terminal_closed_at IS NULL;
+  UPDATE public.tournament_payouts
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id AND terminal_closed_at IS NULL;
+  UPDATE public.tournament_rake_settlements
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id AND terminal_closed_at IS NULL;
+  UPDATE public.rake_records
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id AND terminal_closed_at IS NULL;
+  UPDATE public.tournament_bounty_chests
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id AND terminal_closed_at IS NULL;
+  UPDATE public.tournament_bounty_awards
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id AND terminal_closed_at IS NULL;
+  UPDATE public.tournament_guarantee_overlays
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id AND terminal_closed_at IS NULL;
+  UPDATE public.table_seats s
+     SET terminal_closed_at = v_terminal_at
+    FROM public.tables tb
+   WHERE tb.id = s.table_id AND tb.tournament_id = NEW.id
+     AND s.terminal_closed_at IS NULL;
+  UPDATE public.wallet_transactions
+     SET terminal_closed_at = v_terminal_at
+   WHERE related_entity_id = NEW.id AND terminal_closed_at IS NULL;
+  UPDATE public.tournament_bounty_award_recipients r
+     SET terminal_closed_at = v_terminal_at
+    FROM public.tournament_bounty_awards a
+   WHERE a.id = r.award_id AND a.tournament_id = NEW.id
+     AND r.terminal_closed_at IS NULL;
+  UPDATE public.tournament_escrow
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id AND terminal_closed_at IS NULL;
+  -- Contribution and jackpot-draw rows already have an unconditional
+  -- append-only guard. Cancellation reversal/surplus rows intentionally do
+  -- not, so give precisely those mutable Spin rows the terminal tuple marker.
+  UPDATE public.spin_reserve_ledger
+     SET terminal_closed_at = v_terminal_at
+   WHERE tournament_id = NEW.id
+     AND kind NOT IN ('contribution','jackpot_draw')
+     AND terminal_closed_at IS NULL;
+
+  IF EXISTS (SELECT 1 FROM public.tournament_players x
+              WHERE x.tournament_id=NEW.id
+                AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_obligations x
+                 WHERE x.tournament_id=NEW.id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_payouts x
+                 WHERE x.tournament_id=NEW.id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_rake_settlements x
+                 WHERE x.tournament_id=NEW.id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.rake_records x
+                 WHERE x.tournament_id=NEW.id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_bounty_chests x
+                 WHERE x.tournament_id=NEW.id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_bounty_awards x
+                 WHERE x.tournament_id=NEW.id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_guarantee_overlays x
+                 WHERE x.tournament_id=NEW.id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (
+       SELECT 1 FROM public.table_seats s
+       JOIN public.tables tb ON tb.id=s.table_id
+        WHERE tb.tournament_id=NEW.id
+          AND s.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.wallet_transactions x
+                 WHERE x.related_entity_id=NEW.id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (
+       SELECT 1 FROM public.tournament_bounty_award_recipients r
+       JOIN public.tournament_bounty_awards a ON a.id=r.award_id
+        WHERE a.tournament_id=NEW.id
+          AND r.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_escrow x
+                 WHERE x.tournament_id=NEW.id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at)
+     OR EXISTS (SELECT 1 FROM public.spin_reserve_ledger x
+                 WHERE x.tournament_id=NEW.id
+                   AND x.kind NOT IN ('contribution','jackpot_draw')
+                   AND x.terminal_closed_at IS DISTINCT FROM v_terminal_at) THEN
+    RAISE EXCEPTION 'terminal tournament % did not stamp every mutable evidence row',
+      NEW.id USING ERRCODE = '40001';
+  END IF;
+  RETURN NEW;
+END;
+$stamp_terminal_evidence_markers$;
+
+REVOKE ALL ON FUNCTION public.fn_stamp_tournament_terminal_evidence_markers()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS stamp_tournament_terminal_evidence_markers
+  ON public.tournaments;
+CREATE TRIGGER stamp_tournament_terminal_evidence_markers
+  AFTER INSERT OR UPDATE OF status ON public.tournaments
+  FOR EACH ROW EXECUTE FUNCTION
+    public.fn_stamp_tournament_terminal_evidence_markers();
+
+-- A delivered target registration remains live gameplay state, so chips and
+-- status may continue changing. Its identity and satellite provenance cannot.
+-- New provenance rows and target fee evidence tied to a completed source are
+-- also refused, while writes during the source's COMPLETING transaction pass.
+CREATE OR REPLACE FUNCTION public.fn_satellite_target_player_provenance_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $satellite_target_player_guard$
+DECLARE
+  v_source_ids uuid[] := ARRAY[]::uuid[];
+  v_source_id uuid;
+  v_status text;
+BEGIN
+  IF TG_OP = 'UPDATE'
+     AND (NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.tournament_id IS DISTINCT FROM OLD.tournament_id
+       OR NEW.user_id IS DISTINCT FROM OLD.user_id
+       OR NEW.is_satellite_qualifier IS DISTINCT FROM OLD.is_satellite_qualifier
+       OR NEW.source_satellite_id IS DISTINCT FROM OLD.source_satellite_id) THEN
+    RAISE EXCEPTION 'tournament player ownership and entry provenance are immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' AND OLD.source_satellite_id IS NOT NULL THEN
+    v_source_ids := array_append(v_source_ids,OLD.source_satellite_id);
+  END IF;
+  IF TG_OP <> 'DELETE' AND NEW.source_satellite_id IS NOT NULL THEN
+    v_source_ids := array_append(v_source_ids,NEW.source_satellite_id);
+  END IF;
+  IF TG_OP <> 'INSERT' THEN
+    SELECT a.tournament_id INTO v_source_id
+      FROM public.tournament_satellite_awards a
+     WHERE a.registration_id = OLD.id;
+    IF v_source_id IS NOT NULL THEN
+      v_source_ids := array_append(v_source_ids,v_source_id);
+    END IF;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    SELECT a.tournament_id INTO v_source_id
+      FROM public.tournament_satellite_awards a
+     WHERE a.registration_id = NEW.id;
+    IF v_source_id IS NOT NULL THEN
+      v_source_ids := array_append(v_source_ids,v_source_id);
+    END IF;
+  END IF;
+  IF TG_OP = 'INSERT' AND NEW.tournament_id IS NOT NULL THEN
+    -- The rolling satellite authority owns target before source. Take both
+    -- roots in that same order so a direct provenance insert cannot invert
+    -- the pair across its specialized and generic guards.
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+      FROM public.tournaments t
+     WHERE t.id = NEW.tournament_id FOR SHARE;
+    IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+      RAISE EXCEPTION 'terminal target tournament cannot gain satellite provenance'
+        USING ERRCODE = '55000';
+    END IF;
+  END IF;
+  IF TG_OP = 'INSERT' THEN
+    FOREACH v_source_id IN ARRAY v_source_ids LOOP
+      IF v_source_id IS DISTINCT FROM NEW.tournament_id THEN
+        SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+          FROM public.tournaments t
+         WHERE t.id = v_source_id FOR SHARE;
+        IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+          RAISE EXCEPTION 'completed satellite target provenance is immutable'
+            USING ERRCODE = '55000';
+        END IF;
+      END IF;
+    END LOOP;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM unnest(v_source_ids) source(id)
+     WHERE public.fn_ca_has_committed_tournament_receipt(source.id)
+  ) THEN
+    RAISE EXCEPTION 'completed satellite target provenance is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$satellite_target_player_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_satellite_target_player_provenance_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS satellite_target_player_provenance_is_immutable
+  ON public.tournament_players;
+CREATE TRIGGER satellite_target_player_provenance_is_immutable
+  BEFORE INSERT OR DELETE OR UPDATE OF id,tournament_id,user_id,
+    is_satellite_qualifier,source_satellite_id
+  ON public.tournament_players
+  FOR EACH ROW EXECUTE FUNCTION
+    public.fn_satellite_target_player_provenance_is_immutable();
+
+CREATE OR REPLACE FUNCTION public.fn_satellite_target_rake_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $satellite_target_rake_guard$
+DECLARE
+  v_old_source_id uuid;
+  v_new_source_id uuid;
+  v_text text;
+  v_old_marker timestamptz;
+  v_new_marker timestamptz;
+  v_status text;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    v_text := OLD.metadata->>'satellite_id';
+    IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      v_old_source_id := v_text::uuid;
+    END IF;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    v_text := NEW.metadata->>'satellite_id';
+    IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      v_new_source_id := v_text::uuid;
+    END IF;
+  END IF;
+  IF TG_OP = 'UPDATE'
+     AND (NEW.metadata->>'satellite_id') IS DISTINCT FROM
+         (OLD.metadata->>'satellite_id') THEN
+    RAISE EXCEPTION 'satellite target rake ownership is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP <> 'INSERT' THEN v_old_marker := OLD.terminal_closed_at; END IF;
+  IF TG_OP <> 'DELETE' THEN v_new_marker := NEW.terminal_closed_at; END IF;
+  IF TG_OP = 'UPDATE' AND v_new_marker IS DISTINCT FROM v_old_marker
+     AND public.fn_ca_terminal_marker_transition_is_exact(
+           to_jsonb(OLD),to_jsonb(NEW),OLD.tournament_id) THEN
+    RETURN NEW;
+  END IF;
+  -- A recognized satellite fee row is append-only. Refusing an already-locked
+  -- UPDATE/DELETE before any parent lookup removes the child-to-source lock
+  -- edge. INSERT locks the target first, then the source, matching the
+  -- canonical satellite authority.
+  IF TG_OP <> 'INSERT'
+     AND COALESCE(v_old_source_id,v_new_source_id) IS NOT NULL THEN
+    RAISE EXCEPTION 'satellite target rake rows are append-only'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'INSERT' AND NEW.tournament_id IS NOT NULL THEN
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+      FROM public.tournaments t
+     WHERE t.id = NEW.tournament_id FOR SHARE;
+    IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+      RAISE EXCEPTION 'terminal target tournament cannot gain satellite rake evidence'
+        USING ERRCODE = '55000';
+    END IF;
+  END IF;
+  IF TG_OP = 'INSERT' AND v_new_source_id IS NOT NULL
+     AND v_new_source_id IS DISTINCT FROM NEW.tournament_id THEN
+    SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+      FROM public.tournaments t
+     WHERE t.id = v_new_source_id FOR SHARE;
+    IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+      RAISE EXCEPTION 'completed satellite target rake evidence is immutable'
+        USING ERRCODE = '55000';
+    END IF;
+  END IF;
+  IF v_new_source_id IS NOT NULL
+     AND v_new_source_id IS DISTINCT FROM v_old_source_id THEN
+    PERFORM 1 FROM public.tournaments t
+     WHERE t.id = v_new_source_id FOR SHARE;
+  END IF;
+  IF public.fn_ca_has_committed_tournament_receipt(v_old_source_id)
+     OR public.fn_ca_has_committed_tournament_receipt(v_new_source_id) THEN
+    RAISE EXCEPTION 'completed satellite target rake evidence is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$satellite_target_rake_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_satellite_target_rake_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS satellite_target_rake_is_immutable
+  ON public.rake_records;
+CREATE TRIGGER satellite_target_rake_is_immutable
+  BEFORE INSERT OR UPDATE OR DELETE ON public.rake_records
+  FOR EACH ROW EXECUTE FUNCTION public.fn_satellite_target_rake_is_immutable();
+
+-- The seat transfer journal is queried by source liability and key, not only
+-- by chip_ledger.tournament_id. Resolve every ownership witness and take the
+-- source root lock on every operation. Terminal completion never waits on a
+-- journal row, so a concurrent maintenance rewrite safely waits and is then
+-- refused instead of slipping in after receipt verification.
+CREATE OR REPLACE FUNCTION public.fn_satellite_transfer_ledger_is_immutable()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $satellite_transfer_ledger_guard$
+DECLARE
+  v_source_ids uuid[] := ARRAY[]::uuid[];
+  v_source_id uuid;
+  v_target_id uuid;
+  v_text text;
+  v_row jsonb;
+  v_status text;
+BEGIN
+  IF TG_OP = 'UPDATE'
+     AND (NEW.tournament_id IS DISTINCT FROM OLD.tournament_id
+       OR NEW.from_entity_id IS DISTINCT FROM OLD.from_entity_id
+       OR NEW.to_entity_id IS DISTINCT FROM OLD.to_entity_id
+       OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key
+       OR (NEW.metadata->>'satellite_id') IS DISTINCT FROM
+          (OLD.metadata->>'satellite_id')) THEN
+    RAISE EXCEPTION 'satellite transfer journal ownership is immutable'
+      USING ERRCODE = '55000';
+  END IF;
+  FOREACH v_row IN ARRAY ARRAY[
+    CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END,
+    CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE to_jsonb(NEW) END
+  ] LOOP
+    IF v_row IS NULL THEN CONTINUE; END IF;
+    v_text := v_row->>'tournament_id';
+    IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      v_source_ids := array_append(v_source_ids,v_text::uuid);
+    END IF;
+    IF v_row->>'from_type' = 'prize_liability' THEN
+      v_text := v_row->>'from_entity_id';
+      IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+        v_source_ids := array_append(v_source_ids,v_text::uuid);
+      END IF;
+    END IF;
+    v_text := split_part(COALESCE(v_row->>'idempotency_key',''),':',2);
+    IF COALESCE(v_row->>'idempotency_key','') LIKE 'tourney:%:seat:%:pool_transfer'
+       AND v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      v_source_ids := array_append(v_source_ids,v_text::uuid);
+    END IF;
+    v_text := v_row->'metadata'->>'satellite_id';
+    IF v_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+      v_source_ids := array_append(v_source_ids,v_text::uuid);
+    END IF;
+  END LOOP;
+  IF TG_OP <> 'INSERT' AND cardinality(v_source_ids) > 0 THEN
+    RAISE EXCEPTION 'satellite transfer journal is append-only'
+      USING ERRCODE = '55000';
+  END IF;
+  IF TG_OP = 'INSERT' AND NEW.to_type = 'prize_liability' THEN
+    SELECT t.id INTO v_target_id FROM public.tournaments t
+     WHERE t.id = NEW.to_entity_id;
+    IF v_target_id IS NOT NULL THEN
+      -- The transfer's AFTER trigger writes target escrow, so own the target
+      -- before any source root exactly as fn_settle_satellite_tournament does.
+      SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+        FROM public.tournaments t
+       WHERE t.id = v_target_id FOR SHARE;
+      IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+        RAISE EXCEPTION 'terminal target cannot accept a satellite transfer journal'
+          USING ERRCODE = '55000';
+      END IF;
+    END IF;
+  END IF;
+  FOR v_source_id IN
+    SELECT DISTINCT source.id FROM unnest(v_source_ids) source(id)
+     WHERE source.id IS NOT NULL ORDER BY source.id
+  LOOP
+    IF TG_OP = 'INSERT' AND v_source_id IS DISTINCT FROM v_target_id THEN
+      SELECT upper(COALESCE(t.status::text,'')) INTO v_status
+        FROM public.tournaments t
+       WHERE t.id = v_source_id FOR SHARE;
+      IF v_status IN ('COMPLETED','CANCELLED','CANCELED') THEN
+        RAISE EXCEPTION 'completed satellite transfer journal is immutable'
+          USING ERRCODE = '55000';
+      END IF;
+    END IF;
+    IF public.fn_ca_has_committed_tournament_receipt(v_source_id) THEN
+      RAISE EXCEPTION 'completed satellite transfer journal is immutable'
+        USING ERRCODE = '55000';
+    END IF;
+  END LOOP;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$satellite_transfer_ledger_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_satellite_transfer_ledger_is_immutable()
+  FROM PUBLIC, anon, authenticated, service_role;
+DROP TRIGGER IF EXISTS satellite_transfer_ledger_is_immutable
+  ON public.chip_ledger;
+CREATE TRIGGER satellite_transfer_ledger_is_immutable
+  BEFORE INSERT OR UPDATE OR DELETE ON public.chip_ledger
+  FOR EACH ROW EXECUTE FUNCTION
+    public.fn_satellite_transfer_ledger_is_immutable();
 
 -- Mystery payouts crossed the obligation cutover while long-running events
 -- were still live. Credits before 2026-09-02 are proved by their immutable
@@ -1146,6 +2288,8 @@ DECLARE
   v_durable_bubble jsonb;
   v_durable_table_ids uuid[];
   v_durable_table_count integer;
+  v_durable_seat_ids uuid[];
+  v_durable_seat_count integer;
   v_durable_released_count integer;
   v_mystery_evidence jsonb;
 BEGIN
@@ -1195,6 +2339,58 @@ BEGIN
       p_tournament_id USING ERRCODE = '55000';
   END IF;
 
+  -- Every mutable child carries the same tuple-owned close fact. This makes a
+  -- replay prove the synchronous marker transition itself, while queued
+  -- writers can reject from OLD after a row-lock wait without relying on a
+  -- pre-wait statement snapshot of the parent or receipt.
+  IF EXISTS (SELECT 1 FROM public.tournament_players x
+              WHERE x.tournament_id=p_tournament_id
+                AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_obligations x
+                 WHERE x.tournament_id=p_tournament_id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_payouts x
+                 WHERE x.tournament_id=p_tournament_id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_rake_settlements x
+                 WHERE x.tournament_id=p_tournament_id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.rake_records x
+                 WHERE x.tournament_id=p_tournament_id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_bounty_chests x
+                 WHERE x.tournament_id=p_tournament_id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_bounty_awards x
+                 WHERE x.tournament_id=p_tournament_id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_guarantee_overlays x
+                 WHERE x.tournament_id=p_tournament_id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (
+       SELECT 1 FROM public.table_seats s
+       JOIN public.tables tb ON tb.id=s.table_id
+        WHERE tb.tournament_id=p_tournament_id
+          AND s.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.wallet_transactions x
+                 WHERE x.related_entity_id=p_tournament_id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (
+       SELECT 1 FROM public.tournament_bounty_award_recipients r
+       JOIN public.tournament_bounty_awards a ON a.id=r.award_id
+        WHERE a.tournament_id=p_tournament_id
+          AND r.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.tournament_escrow x
+                 WHERE x.tournament_id=p_tournament_id
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at)
+     OR EXISTS (SELECT 1 FROM public.spin_reserve_ledger x
+                 WHERE x.tournament_id=p_tournament_id
+                   AND x.kind NOT IN ('contribution','jackpot_draw')
+                   AND x.terminal_closed_at IS DISTINCT FROM v_h.completed_at) THEN
+    RAISE EXCEPTION 'tournament % mutable evidence lacks its exact terminal marker',
+      p_tournament_id USING ERRCODE = 'P0404';
+  END IF;
+
   -- Table closure is money-adjacent terminal state, not an asynchronous UI
   -- cleanup. The immutable identities prove that no tournament table vanished,
   -- appeared or reopened after this receipt and that every seat released by
@@ -1202,6 +2398,11 @@ BEGIN
   SELECT COALESCE(array_agg(tb.id ORDER BY tb.id),ARRAY[]::uuid[]),count(*)
     INTO v_durable_table_ids,v_durable_table_count
     FROM public.tables tb
+   WHERE tb.tournament_id = p_tournament_id;
+  SELECT COALESCE(array_agg(s.id ORDER BY s.id),ARRAY[]::uuid[]),count(*)
+    INTO v_durable_seat_ids,v_durable_seat_count
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id = s.table_id
    WHERE tb.tournament_id = p_tournament_id;
   SELECT count(*) INTO v_durable_released_count
     FROM public.table_seats s
@@ -1214,20 +2415,29 @@ BEGIN
      AND COALESCE(s.is_sitting_out,false) IS FALSE;
   IF v_durable_table_ids IS DISTINCT FROM v_h.closed_table_ids
      OR v_durable_table_count IS DISTINCT FROM v_h.closed_table_count
+     OR v_durable_seat_ids IS DISTINCT FROM v_h.source_seat_ids
+     OR v_durable_seat_count IS DISTINCT FROM v_h.source_seat_count
      OR v_durable_released_count IS DISTINCT FROM v_h.released_seat_count
      OR EXISTS (
        SELECT 1 FROM public.tables tb
         WHERE tb.tournament_id = p_tournament_id
           AND (lower(COALESCE(tb.status::text,'')) <> 'closed'
             OR lower(COALESCE(tb.lifecycle,'')) <> 'closed'
-            OR COALESCE(tb.current_players,0) <> 0
+            OR tb.current_players IS DISTINCT FROM 0
             OR tb.terminal_closed_at IS DISTINCT FROM v_h.completed_at))
      OR EXISTS (
        SELECT 1
          FROM public.table_seats s
          JOIN public.tables tb ON tb.id = s.table_id
         WHERE tb.tournament_id = p_tournament_id
-          AND s.left_at IS NULL) THEN
+          AND (s.left_at IS NULL
+            OR s.status IS DISTINCT FROM 'left'
+            OR s.terminal_closed_at IS DISTINCT FROM v_h.completed_at
+            OR s.leave_pending IS DISTINCT FROM false
+            OR s.is_sitting_out IS DISTINCT FROM false
+            OR s.is_away IS DISTINCT FROM false
+            OR s.sit_out_at IS NOT NULL
+            OR s.scheduled_leave_hands IS NOT NULL)) THEN
     RAISE EXCEPTION 'tournament % table or seat closure differs from its immutable receipt',
       p_tournament_id USING ERRCODE = 'P0404';
   END IF;
@@ -1252,7 +2462,9 @@ BEGIN
        SELECT 1 FROM public.tournament_players tp
         WHERE tp.tournament_id = p_tournament_id
           AND tp.user_id = v_h.winner_id
-          AND tp.status::text = 'winner' AND tp.position = 1)
+          AND tp.status::text = 'winner' AND tp.position = 1
+          AND tp.eliminated_at IS NULL
+          AND tp.elimination_sequence IS NULL)
      OR (SELECT count(tp.position) FROM public.tournament_players tp
           WHERE tp.tournament_id = p_tournament_id) <> v_roster_count
      OR (SELECT count(DISTINCT tp.position) FROM public.tournament_players tp
@@ -1549,8 +2761,8 @@ BEGIN
      OR v_e.prize_balance IS DISTINCT FROM 0::numeric
      OR v_e.bounty_balance IS DISTINCT FROM 0::numeric
      OR v_e.fee_balance IS DISTINCT FROM 0::numeric
-     OR v_e.closed_at IS NULL
-     OR v_e.close_note IS NULL THEN
+     OR v_e.closed_at IS DISTINCT FROM v_h.escrow_closed_at
+     OR v_e.close_note IS DISTINCT FROM v_h.escrow_close_note THEN
     RAISE EXCEPTION 'tournament % escrow is not an exact durable zero close',
       p_tournament_id USING ERRCODE = 'P0404';
   END IF;
@@ -1598,10 +2810,13 @@ BEGIN
     'mystery_bounty',v_h.mystery_receipt,
     'bounty',v_h.bounty_receipt,
     'closed_table_count',v_h.closed_table_count,
+    'source_seat_count',v_h.source_seat_count,
     'released_seat_count',v_h.released_seat_count,
     'table_closure',jsonb_build_object(
       'closed_table_count',v_h.closed_table_count,
       'closed_table_ids',to_jsonb(v_h.closed_table_ids),
+      'source_seat_count',v_h.source_seat_count,
+      'source_seat_ids',to_jsonb(v_h.source_seat_ids),
       'released_seat_count',v_h.released_seat_count,
       'released_seat_ids',to_jsonb(v_h.released_seat_ids)),
     'rake',jsonb_build_object(
@@ -1614,7 +2829,9 @@ BEGIN
     'escrow',jsonb_build_object(
       'prize_balance',v_e.prize_balance,
       'bounty_balance',v_e.bounty_balance,
-      'fee_balance',v_e.fee_balance),
+      'fee_balance',v_e.fee_balance,
+      'closed_at',v_h.escrow_closed_at,
+      'close_note',v_h.escrow_close_note),
     'cash_payout_total',v_h.cash_payout_total,
     'bounty_payout_total',v_h.bounty_payout_total,
     'receipt_version',v_h.receipt_version,
@@ -1709,8 +2926,10 @@ DECLARE
   v_completed_at timestamptz;
   v_rows integer;
   v_closed_table_ids uuid[] := ARRAY[]::uuid[];
+  v_source_seat_ids uuid[] := ARRAY[]::uuid[];
   v_released_seat_ids uuid[] := ARRAY[]::uuid[];
   v_closed_table_count integer := 0;
+  v_source_seat_count integer := 0;
   v_released_seat_count integer := 0;
   v_event_union_id uuid;
   v_current_union_id uuid;
@@ -1832,6 +3051,9 @@ BEGIN
    ORDER BY o.kind,o.place NULLS LAST,o.id FOR UPDATE;
   PERFORM 1 FROM public.tournament_payouts p
    WHERE p.tournament_id = p_tournament_id ORDER BY p.id FOR SHARE;
+  PERFORM 1 FROM public.tournament_guarantee_overlays g
+   WHERE g.tournament_id = p_tournament_id
+   ORDER BY g.tournament_id FOR UPDATE;
   -- The final-table deal authority uses this same order after its money sets.
   -- Holding these locks before any bounty or rake row prevents a reversed
   -- terminal lock chain while retaining the tournament row as the root lock.
@@ -1847,6 +3069,12 @@ BEGIN
     FROM public.tables tb
    WHERE tb.tournament_id = p_tournament_id;
   v_closed_table_count := cardinality(v_closed_table_ids);
+  SELECT COALESCE(array_agg(s.id ORDER BY s.id),ARRAY[]::uuid[])
+    INTO v_source_seat_ids
+    FROM public.table_seats s
+    JOIN public.tables tb ON tb.id = s.table_id
+   WHERE tb.tournament_id = p_tournament_id;
+  v_source_seat_count := cardinality(v_source_seat_ids);
   PERFORM 1 FROM public.wallet_transactions w
    WHERE w.related_entity_id = p_tournament_id
    ORDER BY w.id FOR SHARE;
@@ -2010,7 +3238,9 @@ BEGIN
      OR v_e.bounty_balance IS DISTINCT FROM round(v_t.bounty_pool-v_bounty_before,2)
      OR v_e.fee_balance IS DISTINCT FROM v_expected_fee
      OR v_e.prize_balance < 0 OR v_e.bounty_balance < 0
-     OR v_e.fee_balance < 0 THEN
+     OR v_e.fee_balance < 0
+     OR v_e.closed_at IS NOT NULL
+     OR v_e.close_note IS NOT NULL THEN
     RAISE EXCEPTION 'tournament % escrow does not exactly fund its remaining obligations',
       p_tournament_id USING ERRCODE = 'P0404';
   END IF;
@@ -2059,6 +3289,12 @@ BEGIN
    WHERE tp.tournament_id = p_tournament_id
      AND tp.status::text = 'winner' AND tp.position = 1;
   IF v_winner_count <> 1 OR v_winner_id IS NULL
+     OR EXISTS (
+       SELECT 1 FROM public.tournament_players tp
+        WHERE tp.tournament_id = p_tournament_id
+          AND tp.user_id = v_winner_id
+          AND (tp.eliminated_at IS NOT NULL
+            OR tp.elimination_sequence IS NOT NULL))
      OR (p_observed_winner_id IS NOT NULL
          AND v_winner_id IS DISTINCT FROM p_observed_winner_id)
      OR (SELECT count(*) FROM jsonb_array_elements(v_cash->'payouts') p
@@ -2330,14 +3566,12 @@ BEGIN
   END IF;
 
   v_completed_at := COALESCE(v_t.ended_at,transaction_timestamp());
-  -- The historic close trigger deliberately ignores unenforced Spin escrows
-  -- and runs only after COMPLETED. The terminal authority has already proved
-  -- all three banks are exact zero, so persist that proof for every format
-  -- before the lifecycle transition. The existing close trigger may replace
-  -- the note for an enforced escrow with its equivalent `closed at zero`.
+  -- Persist the exact-zero proof before lifecycle. The historical after-status
+  -- observer was detached above; this authority is now the only owner of the
+  -- terminal escrow marker.
   UPDATE public.tournament_escrow
-     SET closed_at = COALESCE(closed_at,v_completed_at),
-         close_note = COALESCE(close_note,'terminal receipt: exact zero'),
+     SET closed_at = v_completed_at,
+         close_note = 'terminal receipt: exact zero',
          updated_at = now()
    WHERE tournament_id = p_tournament_id
      AND prize_balance = 0 AND bounty_balance = 0 AND fee_balance = 0;
@@ -2355,7 +3589,10 @@ BEGIN
        SET left_at = v_completed_at,
            status = 'left',
            leave_pending = false,
-           is_sitting_out = false
+           is_sitting_out = false,
+           is_away = false,
+           sit_out_at = NULL,
+           scheduled_leave_hands = NULL
       FROM public.tables tb
      WHERE tb.id = s.table_id
        AND tb.tournament_id = p_tournament_id
@@ -2366,6 +3603,24 @@ BEGIN
     INTO v_released_seat_ids
     FROM released r;
   v_released_seat_count := cardinality(v_released_seat_ids);
+
+  -- Preserve an earlier departure time, but canonicalize every other mutable
+  -- occupancy flag before the immutable source-seat snapshot is committed.
+  UPDATE public.table_seats s
+     SET status = 'left',
+         leave_pending = false,
+         is_sitting_out = false,
+         is_away = false,
+         sit_out_at = NULL,
+         scheduled_leave_hands = NULL
+   WHERE s.id = ANY(v_source_seat_ids)
+     AND s.left_at IS NOT NULL
+     AND (s.status IS DISTINCT FROM 'left'
+       OR s.leave_pending IS DISTINCT FROM false
+       OR s.is_sitting_out IS DISTINCT FROM false
+       OR s.is_away IS DISTINCT FROM false
+       OR s.sit_out_at IS NOT NULL
+       OR s.scheduled_leave_hands IS NOT NULL);
 
   -- Publish terminal lifecycle after every seat is released but before table
   -- rows close. The managed table-status observer therefore sees a genuinely
@@ -2401,14 +3656,20 @@ BEGIN
         WHERE tb.tournament_id = p_tournament_id
           AND (lower(COALESCE(tb.status::text,'')) <> 'closed'
             OR lower(COALESCE(tb.lifecycle,'')) <> 'closed'
-            OR COALESCE(tb.current_players,0) <> 0
+            OR tb.current_players IS DISTINCT FROM 0
             OR tb.terminal_closed_at IS DISTINCT FROM v_completed_at))
      OR EXISTS (
        SELECT 1
          FROM public.table_seats s
          JOIN public.tables tb ON tb.id = s.table_id
         WHERE tb.tournament_id = p_tournament_id
-          AND s.left_at IS NULL) THEN
+          AND (s.left_at IS NULL
+            OR s.status IS DISTINCT FROM 'left'
+            OR s.leave_pending IS DISTINCT FROM false
+            OR s.is_sitting_out IS DISTINCT FROM false
+            OR s.is_away IS DISTINCT FROM false
+            OR s.sit_out_at IS NOT NULL
+            OR s.scheduled_leave_hands IS NOT NULL)) THEN
     RAISE EXCEPTION 'tournament % did not durably release every seat and close every table',
       p_tournament_id USING ERRCODE = '40001';
   END IF;
@@ -2418,18 +3679,22 @@ BEGIN
      prize_pool,bounty_pool,cash_payout_count,cash_payout_total,
      bounty_payout_total,mystery_was_active,mystery_pool_cents,
      cash_receipt,mystery_receipt,bounty_receipt,
-     closed_table_count,closed_table_ids,released_seat_count,released_seat_ids,
+     closed_table_count,closed_table_ids,source_seat_count,source_seat_ids,
+     released_seat_count,released_seat_ids,
      rake_amount,rake_destination,rake_settled_at,rake_attributed_at,
-     rake_attributed_users,completed_at,settled_at,receipt_version)
+     rake_attributed_users,escrow_closed_at,escrow_close_note,
+     completed_at,settled_at,receipt_version)
   VALUES
     (p_tournament_id,v_winner_id,v_mode,v_started_status,
      v_t.prize_pool,v_t.bounty_pool,v_cash_count,v_cash_total,
      v_bounty_total,v_mystery_active,v_mystery_pool_cents,
      v_cash,v_mystery,v_bounty,
      v_closed_table_count,v_closed_table_ids,
+     v_source_seat_count,v_source_seat_ids,
      v_released_seat_count,v_released_seat_ids,
      v_rake.amount,v_rake.destination,v_rake.settled_at,v_rake.attributed_at,
-     v_rake.attributed_users,v_completed_at,transaction_timestamp(),1);
+     v_rake.attributed_users,v_completed_at,'terminal receipt: exact zero',
+     v_completed_at,transaction_timestamp(),1);
 
   RETURN public.fn_ca_tournament_terminal_receipt(
     p_tournament_id,p_observed_winner_id);
@@ -2565,6 +3830,11 @@ DECLARE
   v_collect_bounty_source text;
   v_satellite_award_source text;
   v_mystery_evidence_source text;
+  v_satellite_receipt_source text;
+  v_terminal_marker_source text;
+  v_terminal_stamp_source text;
+  v_terminal_evidence_guard_source text;
+  v_terminal_parent_guard_source text;
 BEGIN
   SELECT prosrc INTO v_source FROM pg_proc
    WHERE oid = 'public.fn_complete_tournament_terminal(uuid,uuid,text)'::regprocedure;
@@ -2589,7 +3859,22 @@ BEGIN
      'public.fn_collect_bounty(uuid,uuid,uuid,jsonb)'::regprocedure;
   SELECT prosrc INTO v_mystery_evidence_source FROM pg_proc
    WHERE oid =
-     'public.fn_ca_mystery_bounty_completion_evidence(uuid,uuid)'::regprocedure;
+            'public.fn_ca_mystery_bounty_completion_evidence(uuid,uuid)'::regprocedure;
+  SELECT prosrc INTO v_satellite_receipt_source FROM pg_proc
+   WHERE oid =
+     'public.fn_ca_satellite_settlement_receipt(uuid,uuid)'::regprocedure;
+  SELECT prosrc INTO v_terminal_marker_source FROM pg_proc
+   WHERE oid =
+     'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)'::regprocedure;
+  SELECT prosrc INTO v_terminal_stamp_source FROM pg_proc
+   WHERE oid =
+     'public.fn_stamp_tournament_terminal_evidence_markers()'::regprocedure;
+  SELECT prosrc INTO v_terminal_evidence_guard_source FROM pg_proc
+   WHERE oid =
+     'public.fn_terminal_tournament_evidence_is_immutable()'::regprocedure;
+  SELECT prosrc INTO v_terminal_parent_guard_source FROM pg_proc
+   WHERE oid =
+     'public.fn_receipted_tournament_is_immutable()'::regprocedure;
   IF v_collect_bounty_source IS NULL
      OR position('ca:tournament-terminal-settlement:v1'
                    IN v_collect_bounty_source) = 0
@@ -2654,6 +3939,7 @@ BEGIN
      OR position('UPDATE public.tables' IN v_source) = 0
      OR position('terminal_closed_at = v_completed_at' IN v_source) = 0
      OR position('ORDER BY tp.user_id,tp.id FOR UPDATE' IN v_source) = 0
+     OR position('ORDER BY g.tournament_id FOR UPDATE' IN v_source) = 0
      OR position('PERFORM 1 FROM public.club_wallets' IN v_source) = 0
      OR position('PERFORM 1 FROM public.union_wallets' IN v_source) <
           position('PERFORM 1 FROM public.club_wallets' IN v_source)
@@ -2721,9 +4007,24 @@ BEGIN
   END IF;
   IF v_table_guard_source IS NULL
      OR position('TG_OP = ''INSERT''' IN v_table_guard_source) = 0
-     OR position('FOR KEY SHARE' IN v_table_guard_source) = 0
+     OR position('FOR SHARE' IN v_table_guard_source) = 0
      OR position('TG_OP = ''DELETE''' IN v_table_guard_source) = 0
      OR position('terminal_closed_at' IN v_table_guard_source) = 0
+     OR position('NEW.id IS DISTINCT FROM OLD.id' IN v_table_guard_source) = 0
+     OR position('new table % cannot supply a terminal marker'
+                   IN v_table_guard_source) = 0
+     OR position('live tournament table % cannot supply a terminal marker'
+                   IN v_table_guard_source) = 0
+     OR position('unscoped table % cannot supply a terminal marker'
+                   IN v_table_guard_source) = 0
+     OR position('NEW.current_players IS DISTINCT FROM 0'
+                   IN v_table_guard_source) = 0
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_constraint c
+        WHERE c.conrelid = 'public.tables'::regclass
+          AND c.conname = 'tables_terminal_closed_shape'
+          AND pg_get_constraintdef(c.oid) LIKE
+            '%current_players IS NOT DISTINCT FROM 0%')
      OR NOT EXISTS (
        SELECT 1 FROM pg_trigger g
         WHERE g.tgrelid = 'public.tournaments'::regclass
@@ -2734,6 +4035,90 @@ BEGIN
         WHERE g.tgrelid = 'public.tables'::regclass
           AND g.tgname = 'tournament_table_terminal_close_is_irreversible') THEN
     RAISE EXCEPTION 'terminal lifecycle or table membership guard is absent';
+  END IF;
+  IF v_terminal_marker_source IS NULL
+     OR position('p_new - ''terminal_closed_at'''
+                   IN v_terminal_marker_source) = 0
+     OR position('p_old - ''terminal_closed_at'''
+                   IN v_terminal_marker_source) = 0
+     OR position('isfinite(t.ended_at)' IN v_terminal_marker_source) = 0
+     OR position('IS NOT DISTINCT FROM t.ended_at'
+                   IN v_terminal_marker_source) = 0
+     OR v_terminal_stamp_source IS NULL
+     OR position('UPDATE public.tournament_players'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.tournament_obligations'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.tournament_payouts'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.tournament_rake_settlements'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.rake_records'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.tournament_bounty_chests'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.tournament_bounty_awards'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.tournament_guarantee_overlays'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.table_seats'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.wallet_transactions'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.tournament_bounty_award_recipients'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.tournament_escrow'
+                   IN v_terminal_stamp_source) = 0
+     OR position('UPDATE public.spin_reserve_ledger'
+                   IN v_terminal_stamp_source) = 0
+     OR position('terminal_closed_at IS DISTINCT FROM v_terminal_at'
+                   IN v_terminal_stamp_source) = 0
+     OR v_terminal_stamp_source LIKE '%EXCEPTION WHEN%'
+     OR v_terminal_evidence_guard_source IS NULL
+     OR position('v_old_marker IS NOT NULL'
+                   IN v_terminal_evidence_guard_source) = 0
+     OR position('fn_ca_terminal_marker_transition_is_exact('
+                   IN v_terminal_evidence_guard_source) = 0
+     OR position('v_old_marker IS NOT NULL'
+                   IN v_terminal_evidence_guard_source) >
+        position('SELECT upper(COALESCE(t.status::text,''''))'
+                   IN v_terminal_evidence_guard_source)
+     OR v_terminal_parent_guard_source IS NULL
+     OR position('upper(COALESCE(OLD.status::text,'''')) IN'
+                   IN v_terminal_parent_guard_source) = 0
+     OR position('tournament_terminal_settlements'
+                   IN v_terminal_parent_guard_source) <> 0 THEN
+    RAISE EXCEPTION
+      'terminal tuple-marker transition, stamp or immediate guard is incomplete';
+  END IF;
+  IF v_receipt_source IS NULL
+     OR position('mutable evidence lacks its exact terminal marker'
+                   IN v_receipt_source) = 0
+     OR position('s.terminal_closed_at IS DISTINCT FROM v_h.completed_at'
+                   IN v_receipt_source) = 0
+     OR position('x.kind NOT IN (''contribution'',''jackpot_draw'')'
+                   IN v_receipt_source) = 0 THEN
+    RAISE EXCEPTION
+      'terminal replay no longer proves every mutable child marker';
+  END IF;
+  IF v_satellite_receipt_source IS NULL
+     OR position('v_source.ended_at IS DISTINCT FROM v_h.source_closed_at'
+                   IN v_satellite_receipt_source) = 0
+     OR position('tb.terminal_closed_at IS DISTINCT FROM v_h.source_closed_at'
+                   IN v_satellite_receipt_source) = 0
+     OR has_function_privilege('service_role',
+          'public.fn_ca_satellite_settlement_receipt(uuid,uuid)','EXECUTE')
+     OR EXISTS (
+       SELECT 1
+         FROM public.tournament_satellite_settlements s
+         JOIN public.tournaments t ON t.id = s.tournament_id
+         CROSS JOIN LATERAL unnest(s.source_table_ids)
+           AS source_tables(source_table_id)
+         JOIN public.tables tb ON tb.id = source_tables.source_table_id
+        WHERE tb.terminal_closed_at IS DISTINCT FROM t.ended_at
+     ) THEN
+    RAISE EXCEPTION
+      'satellite receipt or historical terminal marker is not exact';
   END IF;
   IF v_outcome_source IS NULL
      OR position('pg_advisory_xact_lock(' IN v_outcome_source) = 0
@@ -2756,6 +4141,21 @@ BEGIN
         'public.fn_ca_tournament_terminal_receipt(uuid,uuid)','EXECUTE')
       OR has_function_privilege('service_role',
         'public.fn_ca_mystery_bounty_completion_evidence(uuid,uuid)','EXECUTE')
+     OR has_function_privilege('anon',
+       'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)',
+       'EXECUTE')
+     OR has_function_privilege('authenticated',
+       'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)',
+       'EXECUTE')
+     OR has_function_privilege('service_role',
+       'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)',
+       'EXECUTE')
+     OR has_function_privilege('anon',
+       'public.fn_stamp_tournament_terminal_evidence_markers()','EXECUTE')
+     OR has_function_privilege('authenticated',
+       'public.fn_stamp_tournament_terminal_evidence_markers()','EXECUTE')
+     OR has_function_privilege('service_role',
+       'public.fn_stamp_tournament_terminal_evidence_markers()','EXECUTE')
      OR NOT has_function_privilege('service_role',
        'public.fn_resolve_tournament_terminal_outcome(uuid,uuid,text)','EXECUTE')
      OR has_function_privilege('anon',
@@ -2770,9 +4170,175 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM public.tournament_terminal_settlement_cutover c
        WHERE c.authority = 'fn_complete_tournament_terminal:v1'
-         AND c.migration_version = '20260908065324'
-         AND c.installed_at = transaction_timestamp()) <> 1 THEN
+         AND c.migration_version = '20260908153329'
+         AND c.installed_at >= transaction_timestamp()
+         AND c.installed_at <= clock_timestamp()
+         AND array_position(c.preexisting_completed_ids, NULL) IS NULL
+         AND cardinality(c.preexisting_completed_ids) =
+             (SELECT count(DISTINCT captured.id)
+                FROM unnest(c.preexisting_completed_ids) captured(id))) <> 1 THEN
     RAISE EXCEPTION 'terminal settlement cutover watermark is not exact';
+  END IF;
+  IF EXISTS (
+       SELECT 1
+         FROM (VALUES
+           ('public.fn_terminal_tournament_evidence_is_immutable()'),
+           ('public.fn_terminal_tournament_seat_is_immutable()'),
+           ('public.fn_receipted_tournament_is_immutable()'),
+           ('public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)'),
+           ('public.fn_stamp_tournament_terminal_evidence_markers()'),
+           ('public.fn_ca_has_committed_tournament_receipt(uuid)'),
+           ('public.fn_terminal_bounty_recipient_is_immutable()'),
+           ('public.fn_terminal_wallet_transaction_is_immutable()'),
+           ('public.fn_ca_tournament_id_from_credit_key(text)'),
+           ('public.fn_terminal_credit_key_is_immutable()'),
+           ('public.fn_terminal_tournament_escrow_is_immutable()'),
+           ('public.fn_satellite_target_player_provenance_is_immutable()'),
+           ('public.fn_satellite_target_rake_is_immutable()'),
+           ('public.fn_satellite_transfer_ledger_is_immutable()')
+         ) required(signature)
+        WHERE to_regprocedure(required.signature) IS NULL
+     ) OR EXISTS (
+       SELECT 1
+         FROM (VALUES
+           ('tournament_players'),
+           ('tournament_obligations'),
+           ('tournament_payouts'),
+           ('tournament_rake_settlements'),
+           ('rake_records'),
+           ('tournament_bounty_chests'),
+           ('tournament_bounty_awards'),
+           ('tournament_guarantee_overlays'),
+           ('table_seats'),
+           ('wallet_transactions'),
+           ('tournament_bounty_award_recipients'),
+           ('tournament_escrow'),
+           ('spin_reserve_ledger')
+         ) required(relname)
+        WHERE NOT EXISTS (
+          SELECT 1
+            FROM pg_attribute a
+           WHERE a.attrelid = format('public.%I',required.relname)::regclass
+             AND a.attname = 'terminal_closed_at'
+             AND a.atttypid = 'timestamptz'::regtype
+             AND a.attnum > 0
+             AND NOT a.attisdropped
+             AND NOT a.attnotnull
+             AND a.attidentity = ''
+             AND a.attgenerated = ''
+             AND a.attacl IS NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM pg_attrdef d
+                WHERE d.adrelid=a.attrelid AND d.adnum=a.attnum))
+     ) OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid =
+          'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)'::regprocedure
+          AND p.prosecdef AND p.provolatile = 's'
+     ) OR NOT EXISTS (
+       SELECT 1
+         FROM pg_proc p
+        WHERE p.oid =
+          'public.fn_stamp_tournament_terminal_evidence_markers()'::regprocedure
+          AND p.prosecdef
+     ) OR EXISTS (
+       SELECT 1
+         FROM pg_proc p
+         CROSS JOIN LATERAL aclexplode(
+           COALESCE(p.proacl,acldefault('f',p.proowner))) privilege
+        WHERE p.oid IN (
+          'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)'::regprocedure,
+          'public.fn_stamp_tournament_terminal_evidence_markers()'::regprocedure)
+          AND privilege.privilege_type='EXECUTE'
+          AND privilege.grantee<>p.proowner
+     ) OR NOT EXISTS (
+       SELECT 1
+         FROM pg_trigger g
+         JOIN pg_attribute a
+           ON a.attrelid=g.tgrelid AND a.attname='status'
+        WHERE g.tgrelid='public.tournaments'::regclass
+          AND g.tgname='stamp_tournament_terminal_evidence_markers'
+          AND g.tgfoid=
+            'public.fn_stamp_tournament_terminal_evidence_markers()'::regprocedure
+          AND NOT g.tgisinternal AND g.tgenabled='O'
+          AND g.tgtype=21
+          AND g.tgattr::text=a.attnum::text
+     ) OR EXISTS (
+       SELECT 1
+         FROM (VALUES
+           ('tables','tournament_table_terminal_close_is_irreversible',
+             'public.fn_tournament_table_terminal_close_is_irreversible()',31),
+           ('table_seats','terminal_tournament_seat_is_immutable',
+             'public.fn_terminal_tournament_seat_is_immutable()',31),
+           ('tournaments','receipted_tournament_is_immutable',
+             'public.fn_receipted_tournament_is_immutable()',27),
+           ('tournament_bounty_award_recipients',
+             'terminal_bounty_recipient_is_immutable',
+             'public.fn_terminal_bounty_recipient_is_immutable()',31),
+           ('wallet_transactions','terminal_wallet_transaction_is_immutable',
+             'public.fn_terminal_wallet_transaction_is_immutable()',31),
+           ('wallet_credit_idempotency','terminal_credit_key_is_immutable',
+             'public.fn_terminal_credit_key_is_immutable()',31),
+           ('tournament_escrow','terminal_tournament_escrow_is_immutable',
+             'public.fn_terminal_tournament_escrow_is_immutable()',31),
+           ('tournament_players','satellite_target_player_provenance_is_immutable',
+             'public.fn_satellite_target_player_provenance_is_immutable()',31),
+           ('rake_records','satellite_target_rake_is_immutable',
+             'public.fn_satellite_target_rake_is_immutable()',31),
+           ('chip_ledger','satellite_transfer_ledger_is_immutable',
+             'public.fn_satellite_transfer_ledger_is_immutable()',31)
+         ) required(relname,trigger_name,function_signature,expected_tgtype)
+        WHERE NOT EXISTS (
+          SELECT 1
+            FROM pg_trigger g
+           WHERE g.tgrelid = format('public.%I',required.relname)::regclass
+             AND g.tgname = required.trigger_name
+             AND g.tgfoid = to_regprocedure(required.function_signature)
+             AND NOT g.tgisinternal AND g.tgenabled = 'O'
+             AND g.tgtype=required.expected_tgtype)
+     ) OR EXISTS (
+       SELECT 1
+         FROM (VALUES
+           ('tournament_players'),
+           ('tournament_obligations'),
+           ('tournament_payouts'),
+           ('chip_ledger'),
+           ('tournament_rake_settlements'),
+           ('rake_records'),
+           ('tournament_bounty_chests'),
+           ('tournament_bounty_awards'),
+           ('tournament_guarantee_overlays'),
+           ('tournament_satellite_awards'),
+           ('tournament_satellite_remainders'),
+           ('tournament_refund_entitlements'),
+           ('tournament_refund_tranches'),
+           ('spin_reserve_ledger'),
+           ('tournament_spin_cancellation_unwinds')
+         ) required(relname)
+        WHERE NOT EXISTS (
+          SELECT 1
+            FROM pg_trigger g
+           WHERE g.tgrelid=format('public.%I',required.relname)::regclass
+             AND g.tgname='terminal_tournament_evidence_is_immutable'
+             AND g.tgfoid=
+               'public.fn_terminal_tournament_evidence_is_immutable()'::regprocedure
+             AND NOT g.tgisinternal AND g.tgenabled='O'
+             AND g.tgtype=31 AND g.tgattr::text='')
+     ) OR (SELECT count(*)
+             FROM pg_trigger g
+            WHERE g.tgname = 'terminal_tournament_evidence_is_immutable'
+              AND g.tgfoid =
+                'public.fn_terminal_tournament_evidence_is_immutable()'::regprocedure
+              AND NOT g.tgisinternal AND g.tgenabled='O'
+              AND g.tgtype=31 AND g.tgattr::text='') <> 15
+       OR EXISTS (
+         SELECT 1 FROM pg_trigger g
+          WHERE g.tgrelid = 'public.tournaments'::regclass
+            AND g.tgname = 'zz_ca_escrow_close'
+            AND NOT g.tgisinternal AND g.tgenabled IN ('O','A')) THEN
+    RAISE EXCEPTION
+      'terminal evidence immutability guards or escrow watcher retirement are incomplete';
   END IF;
 END;
 $verify_terminal_authority$;

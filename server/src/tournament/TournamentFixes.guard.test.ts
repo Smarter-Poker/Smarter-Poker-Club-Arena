@@ -168,7 +168,7 @@ describe('every tournament settles against its own prize pool', () => {
     // domain transaction. The manager must never recreate either status edge.
     expect(finish).toMatch(/claimTournamentFinish\(/);
     expect(finish).toMatch(/settleTournamentPlacesAtomically\(/);
-    expect(finish).toMatch(/settleSatelliteFinishAtomically\(/);
+    expect(finish).toMatch(/processSatelliteAwards\(tournament, winnerId\)/);
     expect(finish).not.toMatch(/\.from\('tournaments'\)\s*\.update\(\{[\s\S]*?status:/);
     expect(finish).not.toMatch(/status:\s*'(?:COMPLETING|COMPLETED)'/);
     expect(finish).not.toMatch(/settleTournamentObligation\(/);

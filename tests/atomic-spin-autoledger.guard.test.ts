@@ -6,7 +6,7 @@ const sql = readFileSync(
   resolve(
     __dirname,
     '..',
-    'supabase/migrations/20260908065237_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+    'supabase/migrations/20260908153223_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );

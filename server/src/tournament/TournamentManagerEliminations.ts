@@ -47,6 +47,10 @@ import {
   reconcileTournamentManagerWakeAcknowledgement,
   type TournamentManagerWakeReceipt,
 } from './TournamentManagerWakeProtocol.js';
+import {
+  SatelliteSettlementOutcomeUnknownError,
+  SatelliteSettlementRefusedError,
+} from './satelliteSettlementRpc.js';
 
 interface QueuedBountyReveal {
   awardId: string;
@@ -519,14 +523,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          *  A ZERO-CHIP FIELD IS NEVER A RESULT (2026-08-23)
          * ═══════════════════════════════════════════════════════════════════
          *
-         * Two guards, because the absence of them cost 276 Spins in one day.
-         *
-         * GUARD 1 — the credit is still pending. A Spin seats its field as
-         * reservations at zero chips and writes the real stacks only once the
-         * wheel stops. `bustingArmedAt` is the instant that credit is due; a
-         * sweep before it is reading placeholders, not a poker result.
-         *
-         * GUARD 2 — the whole field reads zero. Chips are conserved: every
+         * THE INVARIANT — the whole field reads zero. Chips are conserved: every
          * chip one player loses another player gains, so the sum of live
          * stacks is a constant and cannot be zero while anybody is still
          * playing. "every remaining player has <= 0" is therefore not a state
@@ -538,19 +535,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
          * zeroes, eliminate the rest, and hand that player first prize. Buy-ins
          * collected, prize paid, not one card dealt.
          *
-         * GUARD 2 is deliberately independent of GUARD 1 rather than folded
-         * into it — a process restart inside the reveal window rearms nothing,
-         * and a broken seat sync is not on a timer at all.
+         * Paid seats are now required to hold their exact positive starting
+         * stack in the database transaction that creates them. This check is
+         * defence in depth against corruption; it is not a delayed-credit gate.
          */
-        if (busted && busted.length > 0 && Date.now() < this.bustingArmedAt) {
-          console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Bust sweep held - stacks not credited yet (${Math.ceil(
-              (this.bustingArmedAt - Date.now()) / 1000
-            )}s)`
-          );
-          return; // the finally block clears isProcessingEliminations
-        }
-
         if (busted && busted.length > 0) {
           const { count: liveCount, error: liveErr } = await supabase
             .from('tournament_players')
@@ -4449,6 +4437,59 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       String((tournament as any)?.variant ?? '').toLowerCase() === 'satellite' ||
       ((tournament as any)?.tournament_type || '').toUpperCase() === 'SATELLITE' ||
       Boolean((tournament as any)?.satellite_target_id);
+
+    /*
+     * A satellite has one format-owned terminal transaction. It derives the
+     * full-ticket awards and sole bubble remainder from locked database state,
+     * settles rake/bounty/seat/cash rails, closes its source tables and writes
+     * COMPLETED with one immutable receipt. Entering any shared finish work
+     * below would duplicate those writes or mutate evidence before the atomic
+     * authority freezes it.
+     */
+    if (isSatelliteFinish) {
+      const releaseFinishGuard = (): void => {
+        this.tournamentFinished = false;
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      };
+      try {
+        await this.processSatelliteAwards(tournament, winnerId);
+      } catch (satErr) {
+        const provenRefusal = satErr instanceof SatelliteSettlementRefusedError;
+        const outcomeUnknown =
+          satErr instanceof SatelliteSettlementOutcomeUnknownError || !provenRefusal;
+        const message = `[Satellite:${this.tournamentId.slice(0, 8)}] atomic terminal settlement ${provenRefusal ? 'refused' : 'has an unresolved outcome'}: ${satErr instanceof Error ? satErr.message : String(satErr)}`;
+        reportError(
+          satErr instanceof Error ? satErr : new Error(message),
+          outcomeUnknown
+            ? 'Tournament.atomic_satellite_finish_outcome_unknown'
+            : 'Tournament.atomic_satellite_finish_refused'
+        );
+        try {
+          await raiseFinancialAlert(
+            'critical',
+            outcomeUnknown
+              ? 'Tournament.atomic_satellite_finish_outcome_unknown'
+              : 'Tournament.atomic_satellite_finish_refused',
+            message,
+            {
+              tournament_id: this.tournamentId,
+              winner_id: winnerId,
+              outcome_unknown: outcomeUnknown,
+              proven_refusal: provenRefusal,
+            }
+          );
+        } catch (alertErr) {
+          reportError(alertErr, 'Tournament.atomic_satellite_finish_alert_failed');
+        }
+        if (provenRefusal) releaseFinishGuard();
+        if (!provenRefusal) await this.stopAndWait();
+        return;
+      }
+
+      if (!(await this.cleanupCommittedTournament())) this.tournamentFinished = false;
+      return;
+    }
+
     let refreshedPool = Number(tournament.prize_pool || 0);
     /**
      * THE GUARANTEE IS FUNDED HERE OR IT IS NEVER FUNDED (2026-08-31, phase 6).
@@ -4875,61 +4916,53 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return;
     }
 
-    if (isSatelliteFinish) {
-      if (!(await this.settleSatelliteFinishAtomically(tournament))) {
-        this.tournamentFinished = false;
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
-        return;
-      }
-    } else {
-      /* This RPC owns both place money and the terminal status. Its prepare
-         call has already committed the complete obligation fingerprint; the
-         settle call either pays every place and completes, or rolls all new
-         place credits back and leaves the event COMPLETING for replay. */
-      if (isMaintenanceFrozen()) {
-        this.tournamentFinished = false;
-        return;
-      }
-      const settlement = await settleTournamentPlacesAtomically(
-        supabase,
-        this.tournamentId,
-        'engine.finishTournament'
-      );
-      if (!settlement.ok || !settlement.completed) {
-        // A transport error is not proof of rollback. If the atomic database
-        // transaction committed and every response was lost, the durable row
-        // is our receipt and only the non-money cleanup tail may run.
-        const committed = await this.readDurableTournamentStatus();
-        if (committed.status === 'COMPLETED') {
-          console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] atomic place response was lost after commit; resuming cleanup from durable COMPLETED`
-          );
-          if (!(await this.cleanupCommittedTournament())) this.tournamentFinished = false;
-          return;
-        }
-
-        const failureMessage = `[Tournament:${this.tournamentId.slice(0, 8)}] atomic place settlement refused: ${settlement.reason ?? 'success response omitted completion proof'}${settlement.detail ? ` (${settlement.detail})` : ''}${settlement.transport_error ? ` (${settlement.transport_error})` : ''}${committed.error ? `; completion proof read failed: ${committed.error}` : ''}; no atomic completion is durably proven and the event remains COMPLETING`;
-        reportError(new Error(failureMessage), 'Tournament.atomic_place_settlement_failed');
-        // The SQL settler raises its own durable alert after an attempted
-        // transaction abort. This application-level alarm also covers a
-        // prepare refusal or transport failure, before settlement was entered.
-        await raiseFinancialAlert(
-          'critical',
-          'Tournament.atomic_place_settlement_failed',
-          failureMessage,
-          {
-            tournament_id: this.tournamentId,
-            reason: settlement.reason,
-            detail: settlement.detail,
-            transport_error: settlement.transport_error ?? null,
-            retryable: settlement.retryable,
-            places: settlement.places,
-          }
+    /* This RPC owns both place money and the terminal status. Its prepare
+       call has already committed the complete obligation fingerprint; the
+       settle call either pays every place and completes, or rolls all new
+       place credits back and leaves the event COMPLETING for replay. */
+    if (isMaintenanceFrozen()) {
+      this.tournamentFinished = false;
+      return;
+    }
+    const settlement = await settleTournamentPlacesAtomically(
+      supabase,
+      this.tournamentId,
+      'engine.finishTournament'
+    );
+    if (!settlement.ok || !settlement.completed) {
+      // A transport error is not proof of rollback. If the atomic database
+      // transaction committed and every response was lost, the durable row
+      // is our receipt and only the non-money cleanup tail may run.
+      const committed = await this.readDurableTournamentStatus();
+      if (committed.status === 'COMPLETED') {
+        console.warn(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] atomic place response was lost after commit; resuming cleanup from durable COMPLETED`
         );
-        this.tournamentFinished = false;
-        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+        if (!(await this.cleanupCommittedTournament())) this.tournamentFinished = false;
         return;
       }
+
+      const failureMessage = `[Tournament:${this.tournamentId.slice(0, 8)}] atomic place settlement refused: ${settlement.reason ?? 'success response omitted completion proof'}${settlement.detail ? ` (${settlement.detail})` : ''}${settlement.transport_error ? ` (${settlement.transport_error})` : ''}${committed.error ? `; completion proof read failed: ${committed.error}` : ''}; no atomic completion is durably proven and the event remains COMPLETING`;
+      reportError(new Error(failureMessage), 'Tournament.atomic_place_settlement_failed');
+      // The SQL settler raises its own durable alert after an attempted
+      // transaction abort. This application-level alarm also covers a
+      // prepare refusal or transport failure, before settlement was entered.
+      await raiseFinancialAlert(
+        'critical',
+        'Tournament.atomic_place_settlement_failed',
+        failureMessage,
+        {
+          tournament_id: this.tournamentId,
+          reason: settlement.reason,
+          detail: settlement.detail,
+          transport_error: settlement.transport_error ?? null,
+          retryable: settlement.retryable,
+          places: settlement.places,
+        }
+      );
+      this.tournamentFinished = false;
+      this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+      return;
     }
 
     // Success receipts and lost receipts converge here. The helper contains
@@ -4938,26 +4971,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (!(await this.cleanupCommittedTournament())) this.tournamentFinished = false;
   }
 
-  /**
-   * Keep satellite completion behind its format-owned all-or-none database
-   * door. A lost RPC response is resolved only from durable COMPLETED truth;
-   * no application-side status flip or reconstructed payout is permitted.
-   */
-  private async settleSatelliteFinishAtomically(tournament: any): Promise<boolean> {
-    if (await this.processSatelliteAwards(tournament)) return true;
-    const committed = await this.readDurableTournamentStatus();
-    if (committed.status === 'COMPLETED') {
-      console.warn(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] satellite settlement response was lost after durable COMPLETED`
-      );
-      return true;
-    }
-    return false;
-  }
-
   // ── Implemented by TournamentManager (layer 3/3) ──
   protected abstract checkTableBalance(): Promise<void>;
-  protected abstract processSatelliteAwards(tournament: any): Promise<boolean>;
+  protected abstract processSatelliteAwards(tournament: any, winnerId: string): Promise<number>;
   protected abstract ensureLateRegSeated(): Promise<void>;
   protected abstract checkDynamicTableExpansion(): Promise<boolean>;
 }

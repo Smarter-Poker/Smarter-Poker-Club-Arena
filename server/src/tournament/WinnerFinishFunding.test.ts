@@ -135,12 +135,17 @@ describe('all satellite identities take the seat-award path', () => {
   });
 
   it('routes satellites to the atomic seat finalizer and normal events to place settlement', () => {
-    const settlementBranch = sliceEnclosingBlock(finish, 'if (isSatelliteFinish)');
+    const satelliteStart = finish.indexOf('if (isSatelliteFinish)');
+    const settlementBranch = finish.slice(
+      satelliteStart,
+      finish.indexOf('let refreshedPool', satelliteStart)
+    );
 
-    expect(settlementBranch).toContain('settleSatelliteFinishAtomically(tournament)');
-    expect(settlementBranch).toContain('settleTournamentPlacesAtomically(');
-    expect(settlementBranch.indexOf('settleSatelliteFinishAtomically(tournament)')).toBeLessThan(
-      settlementBranch.indexOf('settleTournamentPlacesAtomically(')
+    expect(settlementBranch).toContain('processSatelliteAwards(tournament, winnerId)');
+    expect(settlementBranch).toContain('return;');
+    expect(settlementBranch).not.toContain('settleTournamentPlacesAtomically(');
+    expect(finish.indexOf('if (isSatelliteFinish)')).toBeLessThan(
+      finish.indexOf('settleTournamentPlacesAtomically(')
     );
   });
 });

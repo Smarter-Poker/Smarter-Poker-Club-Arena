@@ -307,7 +307,11 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
 import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
-import { tournamentService } from '../services/TournamentService';
+import {
+  tournamentService,
+  tournamentUnregisterSuccessText,
+  tournamentUnregisterWasAlreadyStarted,
+} from '../services/TournamentService';
 // [MIGRATION] All engine imports removed — server-authoritative (Steps 1-7 complete)
 import { handHistoryService } from '../services/HandHistoryService';
 // Dan 2026-08-15: the real rake schedule (byte-identical mirror of the
@@ -9114,40 +9118,27 @@ export default function TablePage({
       // toast lands over the lobby.
       showLobbyNow();
       try {
-        const { data, error } = await supabase.rpc('fn_leave_seat_and_refund', {
-          p_table_id: tableId,
-        });
-        const res = (data ?? {}) as { ok?: boolean; reason?: string; refunded?: number };
-        if (error || !res.ok) {
-          const reason = error?.message || res.reason || '';
-          if (!/already_started/.test(reason)) {
-            reportError(
-              new Error(`leave_seat_refund refused: ${reason || 'unknown'}`),
-              'TablePage.leave_table_seat_first_refused',
-              { tableId, tournamentId: tableState.tournamentId, reason }
-            );
-          }
-          goToLobbyKeepingSeat(
-            /already_started/.test(reason)
-              ? 'The Game Has Started, Your Seat Is In Play. Tap The Table Tab To Return.'
-              : 'Could Not Release That Seat Yet. It Is Still Yours, Tap The Table Tab To Try Again.'
-          );
-          return;
-        }
+        const result = await tournamentService.leaveTournamentSeatAndRefund(tableId, userId);
         heroSeatRef.current = 0;
         setPendingSeat(null);
         setSeatFirstConfirm(null);
         setTableState((prev) => ({ ...prev, heroSeat: 0 }));
-        toast?.success?.(
-          `Seat Released, ${Number(res.refunded ?? 0).toLocaleString()} Chips Refunded`
-        );
+        toast?.success?.(`Seat Released. ${tournamentUnregisterSuccessText(result)}`);
         masterBus.emit('SESSION_ENDED', { tableId, userId });
         playerStatusService.clearPlayingAt(userId);
         showLobbyNow();
       } catch (err) {
-        reportError(err as Error, 'TablePage.leave_table_seat_first');
+        const alreadyStarted = tournamentUnregisterWasAlreadyStarted(err);
+        if (!alreadyStarted) {
+          reportError(err as Error, 'TablePage.leave_table_seat_first', {
+            tableId,
+            tournamentId: tableState.tournamentId,
+          });
+        }
         goToLobbyKeepingSeat(
-          'Could Not Release That Seat Yet. It Is Still Yours, Tap The Table Tab To Try Again.'
+          alreadyStarted
+            ? 'The Game Has Started, Your Seat Is In Play. Tap The Table Tab To Return.'
+            : 'Could Not Confirm That Seat Release. Refresh The Table Before Trying Again.'
         );
       }
       return;
@@ -13522,37 +13513,6 @@ export default function TablePage({
           }
           const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
 
-          // BUG-09 FIX: Merged heroSeat update into same setTableState callback
-          // (was previously calling setTableState inside setTableState which causes React warnings)
-          // CRITICAL: Detect and clean up duplicate seats for the same user
-          const heroSeats = existingSeats.filter((s) => s.user_id === userId);
-          if (heroSeats.length > 1) {
-            reportError('- cleaning up extras', 'TablePage.DUPLICATE_SEATS_DETECTED_for_user');
-            // Keep the first seat, remove the rest from DB
-            const [keepSeat, ...extraSeats] = heroSeats;
-            for (const extra of extraSeats) {
-              Promise.resolve(
-                supabase
-                  .from('table_seats')
-                  .update({ left_at: new Date().toISOString() })
-                  .eq('table_id', table.id)
-                  .eq('seat_number', extra.seat_number)
-                  .eq('user_id', userId)
-              )
-                .then(({ error }) => {
-                  if (error) reportError(error, 'TablePage.Failed_to_remove_duplicate_seat');
-                  else console.debug('[Seat] Removed duplicate seat', extra.seat_number);
-                })
-                .catch((e) => reportError(e, 'TablePage.Duplicate_seat_cleanup_error'));
-            }
-            // Filter existingSeats to exclude duplicates for local state
-            const cleanedSeats = existingSeats.filter(
-              (s) => s.user_id !== userId || s.seat_number === keepSeat.seat_number
-            );
-            existingSeats.length = 0;
-            existingSeats.push(...cleanedSeats);
-          }
-
           setTableState((prev) => {
             // FIX: Start from CLEAN slate — DB is the source of truth for seated players.
             // This prevents ghost players from stale engine broadcasts or failed buy-ins.
@@ -13573,7 +13533,6 @@ export default function TablePage({
               null
             ) as any;
             let resolvedHeroSeat = 0; // Reset — only set if hero is in DB
-            let heroAlreadyAssigned = false;
 
             // Build a set of DB seat numbers for validation
             const dbSeatNums = new Set(existingSeats.map((s) => s.seat_number));
@@ -13605,9 +13564,10 @@ export default function TablePage({
                 sittingOutIdsRef.current.add(seat.user_id);
               } else sittingOutIdsRef.current.delete(seat.user_id);
               const profile = profileMap.get(seat.user_id);
-              // Only the FIRST matching seat gets isHero — prevents duplicates
-              const isHero = seat.user_id === userId && !heroAlreadyAssigned;
-              if (isHero) heroAlreadyAssigned = true;
+              // The database's partial unique index owns one active seat per
+              // user and table. The client renders that row; it never repairs
+              // seat ownership with a raw write during bootstrap.
+              const isHero = seat.user_id === userId;
 
               updatedPlayers[seatIdx] = {
                 id: seat.user_id,
@@ -24031,41 +23991,10 @@ export default function TablePage({
                 setSeatFirstPending(true);
                 void (async () => {
                   try {
-                    const { data, error } = await supabase.rpc('fn_leave_seat_and_refund', {
-                      p_table_id: tableId,
-                    });
-                    const res = (data ?? {}) as {
-                      ok?: boolean;
-                      reason?: string;
-                      refunded?: number;
-                    };
-                    if (error || !res.ok) {
-                      const reason = error?.message || res.reason || '';
-                      /* OUTAGE VISIBILITY, the refund half (2026-08-28). The
-                         BUY-IN path was hardened for exactly this on
-                         2026-08-25 — "the next unknown refusal is a
-                         searchable event instead of a dead end" — and the
-                         refund path never got the same treatment. This is a
-                         MONEY path: `not_seated`, `table_not_found`, an RLS
-                         denial and a 500 all collapsed into one generic
-                         toast and vanished, which is how a seat that cannot
-                         be released runs for a day with nobody able to name
-                         it. `already_started` is the one expected refusal
-                         and stays quiet. */
-                      if (!/already_started/.test(reason)) {
-                        reportError(
-                          new Error(`leave_seat_refund refused: ${reason || 'unknown'}`),
-                          'TablePage.leave_seat_refund_refused',
-                          { tableId, tournamentId: tableState.tournamentId, reason }
-                        );
-                      }
-                      toast?.error?.(
-                        /already_started/.test(reason)
-                          ? 'The Game Has Started, Your Seat Is In Play'
-                          : 'Could Not Release That Seat, Please Try Again'
-                      );
-                      return;
-                    }
+                    const result = await tournamentService.leaveTournamentSeatAndRefund(
+                      tableId,
+                      userId!
+                    );
                     heroSeatRef.current = 0;
                     /* THE SEAT IS RELEASED, SO NOTHING MAY STILL CLAIM IT
                        (2026-08-28). `pendingSeat` is set by the successful
@@ -24082,17 +24011,25 @@ export default function TablePage({
                     setPendingSeat(null);
                     setSeatFirstConfirm(null);
                     setTableState((prev) => ({ ...prev, heroSeat: 0 }));
-                    toast?.success?.(
-                      `Seat Released, ${Number(res.refunded ?? 0).toLocaleString()} Chips Refunded`
-                    );
+                    toast?.success?.(`Seat Released. ${tournamentUnregisterSuccessText(result)}`);
                     // UNION LAW (Dan 2026-08-23): the union-filtered lobby club,
                     // not actualClubIdRef — that is the union's hub club on a
                     // union game and must never be a player destination.
                     const backTo = lobbyClubIdRef.current;
                     if (backTo) navigate(`/clubs/${backTo}`);
                   } catch (err) {
-                    reportError(err as Error, 'TablePage.leave_seat_refund');
-                    toast?.error?.('Could Not Release That Seat, Please Try Again');
+                    const alreadyStarted = tournamentUnregisterWasAlreadyStarted(err);
+                    if (!alreadyStarted) {
+                      reportError(err as Error, 'TablePage.leave_seat_refund', {
+                        tableId,
+                        tournamentId: tableState.tournamentId,
+                      });
+                    }
+                    toast?.error?.(
+                      alreadyStarted
+                        ? 'The Game Has Started, Your Seat Is In Play'
+                        : 'Could Not Confirm That Seat Release. Refresh The Table Before Trying Again.'
+                    );
                   } finally {
                     setSeatFirstPending(false);
                   }

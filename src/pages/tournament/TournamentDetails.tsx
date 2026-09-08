@@ -44,7 +44,10 @@ import { useParams, useLocation, useSearchParams, Link } from 'react-router-dom'
    untouched - useAppNavigate deliberately only rewrites /tournaments/:id.
    See InTabLobbyContext.tsx. */
 import { useAppNavigate } from '../../context/InTabLobbyContext';
-import { tournamentService } from '../../services/TournamentService';
+import {
+  tournamentService,
+  tournamentUnregisterSuccessText,
+} from '../../services/TournamentService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -1059,10 +1062,9 @@ export default function TournamentDetails({
         status: tournament.status,
         /* `undefined`, not `false`. The hook does
            `t.is_late_registration ?? isLateStatus(t.status)`, and `false ?? x`
-           is `false` — so passing the boolean from a pre-start Register button
-           OVERRODE the derivation and told a LATE_REG entrant "Cannot Unregister
-           Within 1 Minute Of The Start Time", which is the untrue copy that
-           derivation exists to prevent. Only ever force it to TRUE. */
+           is `false`, so passing the boolean from a pre-start Register button
+           overrode the derivation and gave a late entrant pre-start guidance.
+           Only ever force it to TRUE. */
         is_late_registration: isLate || undefined,
       },
       () => {
@@ -1272,9 +1274,9 @@ export default function TournamentDetails({
     setIsProcessing(true);
 
     try {
-      await tournamentService.unregisterPlayer(tournament.id, user.id);
+      const result = await tournamentService.unregisterPlayer(tournament.id, user.id);
       setIsRegistered(false);
-      toast.success('Unregistered - buy-in refunded to your wallet');
+      toast.success(tournamentUnregisterSuccessText(result));
       // Defer reload so the UI updates instantly (fixes INP)
       setTimeout(() => loadTournament(), 50);
     } catch (error) {

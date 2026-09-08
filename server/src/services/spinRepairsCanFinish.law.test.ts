@@ -16,7 +16,7 @@ const executableGameServer = gameServer
 const stageOne = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260908065237_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
+    '../../../supabase/migrations/20260908153223_spin_reserve_settlement_commits_its_journal_or_nothing.sql'
   ),
   'utf8'
 );
@@ -69,9 +69,21 @@ describe('the Spin payout repair fleet has one stage-one replacement', () => {
       );
     }
     expect(stageOne).toContain('ROLLING CUTOVER, STAGE 1');
-    expect(stageOne).toContain('stage-2 migration owns every');
+    expect(stageOne).toContain('lower-level Spin RPC revocations');
     expect(stageOne).not.toMatch(/DROP FUNCTION IF EXISTS public\.fn_spin_sweep_unbooked/);
-    expect(stageOne).not.toMatch(/cron\.unschedule/);
+    expect(stageOne).not.toMatch(/DROP FUNCTION IF EXISTS public\.fn_backpay_spin_unpaid_winners/);
+    expect(stageOne).toContain('cron.unschedule(v_job.jobid)');
+    const creditorLock = stageOne.indexOf(
+      "pg_advisory_xact_lock(hashtext('credit-stalled-seat-first-stacks'))"
+    );
+    const cronLock = stageOne.indexOf('LOCK TABLE cron.job IN SHARE MODE', creditorLock);
+    const unschedule = stageOne.indexOf('cron.unschedule(v_job.jobid)', cronLock);
+    expect(creditorLock).toBeGreaterThan(-1);
+    expect(cronLock).toBeGreaterThan(creditorLock);
+    expect(unschedule).toBeGreaterThan(cronLock);
+    expect(stageOne).toContain(
+      'DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT'
+    );
   });
 
   it('preserves observability and the unfilled-game refund lifecycle in stage one', () => {

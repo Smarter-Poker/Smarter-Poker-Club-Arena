@@ -21,6 +21,7 @@ const PLACE_SQL = readFileSync(
 );
 const MANAGER = readFileSync(join(here, 'TournamentManager.ts'), 'utf8');
 const ELIMINATIONS = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
+const SETTLEMENT_RPC = readFileSync(join(here, 'satelliteSettlementRpc.ts'), 'utf8');
 const MANIFEST = readFileSync(
   join(root, 'scripts/ci/schema-manifest.d/tournament-finish-certificate.json'),
   'utf8'
@@ -121,19 +122,20 @@ describe('the engine and ACL expose only the atomic doors', () => {
     );
   });
 
-  it('calls the atomic RPC after bounty and rake, and fails closed', () => {
-    expect(MANAGER).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
+  it('calls the receipt-verified atomic RPC before legacy finish work, and fails closed', () => {
+    expect(MANAGER).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
+    expect(SETTLEMENT_RPC).toContain("supabase.rpc('fn_settle_satellite_tournament'");
     expect(MANAGER).not.toContain("supabase.rpc('fn_award_satellite_seat'");
     const finish = ELIMINATIONS.slice(ELIMINATIONS.indexOf('protected async finishTournament'));
-    expect(finish.indexOf('recoverPendingBountyObligations')).toBeLessThan(
-      finish.indexOf('settleTournamentRake(tournament)')
+    const satellite = finish.indexOf('if (isSatelliteFinish) {');
+    const legacyRake = finish.indexOf('settleTournamentRake(tournament)');
+    expect(satellite).toBeGreaterThan(-1);
+    expect(satellite).toBeLessThan(legacyRake);
+    expect(finish.slice(satellite, legacyRake)).toContain(
+      'await this.processSatelliteAwards(tournament, winnerId)'
     );
-    expect(finish.indexOf('settleTournamentRake(tournament)')).toBeLessThan(
-      finish.indexOf('settleSatelliteFinishAtomically(tournament)')
-    );
-    expect(finish).toMatch(
-      /if \(isSatelliteFinish\) \{[\s\S]*?!\(await this\.settleSatelliteFinishAtomically\(tournament\)\)/
-    );
+    expect(finish.slice(satellite, legacyRake)).toContain('await this.stopAndWait()');
+    expect(finish.slice(satellite, legacyRake)).toContain('return;');
   });
 
   it('keeps browser roles out and gives service no table mutation grants', () => {

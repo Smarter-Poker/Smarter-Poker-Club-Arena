@@ -11,7 +11,7 @@ or replay the original closeout.
 
 ## Root Repair
 
-Migration `20260908065250_tournament_cancellation_commits_one_stored_receipt`
+Migration `20260908153239_tournament_cancellation_commits_one_stored_receipt`
 turns the existing `atomic_cancel_tournament(tournament_id, actor_id)` door
 into the sole transaction boundary for cancellation:
 
@@ -26,6 +26,17 @@ into the sole transaction boundary for cancellation:
 - Tournament, player, and table rows become terminal before one immutable
   receipt is inserted. A retry returns that stored receipt without moving
   money again.
+- The managed-game close wrapper no longer writes `CANCELLED` directly when a
+  tournament has no registrations. Both the wrapper and its exactly-once
+  command gateway take the global terminal settlement lock before their first
+  tournament row lock, then the wrapper calls `atomic_cancel_tournament` and
+  returns `{ok:true}` only after validating its exact terminal receipt.
+- Cancellation authorization now uses the same fail-closed,
+  union-aware `fn_can_create_games` authority as game management. An
+  affiliated club owner cannot bypass its union, while a union owner or union
+  administrator is no longer rejected by the older club-admin-only check.
+- The cash-table close branch is unchanged and remains pinned byte for byte to
+  the Phase 1 recertified definition.
 
 The game server keeps its fail-closed survivor-list preflight, makes one RPC,
 and validates the receipt's identity, actor, terminal state, exact-cent totals,
@@ -54,4 +65,8 @@ not been applied or deployed as part of this change.
 - A disposable PostgreSQL 17 fixture compiled the migration and exercised
   first execution, byte-identical replay, append-only receipt refusal, and
   rollback after an intentionally partial obligation result.
+- `managed-tournament-cancellation-authority.sql` runs the installed command
+  path for a synthetic union administrator, forces the deferred receipt check,
+  proves exactly-once replay, proves the registered-player refusal, proves an
+  affiliated club owner is rejected, and rolls every fixture row back.
 - The server TypeScript build passes.

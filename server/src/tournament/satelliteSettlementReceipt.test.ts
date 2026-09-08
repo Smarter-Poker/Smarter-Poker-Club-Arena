@@ -92,6 +92,184 @@ describe('atomic satellite settlement receipt', () => {
     });
   });
 
+  it('accepts finite decimal numeric strings returned by the database transport', () => {
+    const transported = receipt();
+    const result = verifySatelliteSettlementReceipt(
+      {
+        ...transported,
+        field_size: '4',
+        pool: '485.00',
+        ticket_cost: '200',
+        ticket_award_count: '2',
+        seat_count: '1',
+        cash_ticket_count: '1',
+        awards: transported.awards.map((award) => ({
+          ...award,
+          position: String(award.position),
+          amount: String(award.amount),
+        })),
+        seats: transported.seats.map((seat) => ({
+          ...seat,
+          position: String(seat.position),
+          amount: String(seat.amount),
+        })),
+        remainder: {
+          ...transported.remainder,
+          position: String(transported.remainder.position),
+          amount: String(transported.remainder.amount),
+        },
+        winner_amount: '200.0',
+        source_table_count: '1',
+        source_seat_count: '2',
+        released_seat_count: '2',
+        source_closeout: {
+          ...transported.source_closeout,
+          source_table_count: '1',
+          source_seat_count: '2',
+          released_seat_count: '2',
+        },
+      },
+      TOURNAMENT,
+      WINNER
+    );
+
+    expect(result).not.toBeNull();
+  });
+
+  it.each([
+    ['null', null, 0],
+    ['blank string', '', 0],
+    ['whitespace string', '   ', 0],
+    ['space-padded string', ' 85 ', 85],
+    ['hexadecimal string', '0x55', 85],
+    ['exponent string', '8.5e1', 85],
+    ['true', true, 1],
+    ['false', false, 0],
+    ['array', [85], 85],
+    ['object', { value: 85 }, null],
+  ])(
+    'refuses %s for an exact-money field before numeric conversion',
+    (_name, value, coercedAmount) => {
+      const expectedAmount = coercedAmount ?? 0;
+      const noTicketReceipt = {
+        ...receipt(),
+        field_size: 1,
+        pool: value,
+        ticket_award_count: 0,
+        seat_count: 0,
+        cash_ticket_count: 0,
+        awards: [],
+        seats: [],
+        remainder:
+          expectedAmount === 0 ? null : { user_id: WINNER, position: 1, amount: expectedAmount },
+        winner_amount: expectedAmount,
+      };
+
+      expect(verifySatelliteSettlementReceipt(noTicketReceipt, TOURNAMENT, WINNER)).toBeNull();
+    }
+  );
+
+  it.each([
+    ['null', null, 0],
+    ['blank string', '', 0],
+    ['whitespace string', '   ', 0],
+    ['space-padded string', ' 2 ', 2],
+    ['hexadecimal string', '0x2', 2],
+    ['exponent string', '2e0', 2],
+    ['true', true, 1],
+    ['false', false, 0],
+    ['array', [2], 2],
+    ['object', { value: 2 }, null],
+  ])('refuses %s for an integer field before numeric conversion', (_name, value, coercedCount) => {
+    const expectedCount = coercedCount ?? 2;
+    const releasedSeatIds = [SOURCE_SEAT_ONE, SOURCE_SEAT_TWO].slice(0, expectedCount);
+    expect(
+      verifySatelliteSettlementReceipt(
+        {
+          ...receipt(),
+          released_seat_count: value,
+          source_closeout: {
+            ...receipt().source_closeout,
+            released_seat_count: expectedCount,
+            released_seat_ids: releasedSeatIds,
+          },
+        },
+        TOURNAMENT,
+        WINNER
+      )
+    ).toBeNull();
+  });
+
+  it('accepts zero as a numeric string for a non-negative integer field', () => {
+    expect(
+      verifySatelliteSettlementReceipt(
+        {
+          ...receipt(),
+          released_seat_count: '0',
+          source_closeout: {
+            ...receipt().source_closeout,
+            released_seat_count: '0',
+            released_seat_ids: [],
+          },
+        },
+        TOURNAMENT,
+        WINNER
+      )
+    ).not.toBeNull();
+  });
+
+  it.each([
+    ['numeric-looking zero', '0'],
+    ['date only', '2026-09-08'],
+    ['space separator', '2026-09-08 04:00:00Z'],
+    ['missing timezone', '2026-09-08T04:00:00'],
+    ['lowercase separators', '2026-09-08t04:00:00z'],
+  ])('refuses a %s settlement timestamp', (_name, timestamp) => {
+    expect(
+      verifySatelliteSettlementReceipt(
+        {
+          ...receipt(),
+          source_closeout: { ...receipt().source_closeout, closed_at: timestamp },
+          settled_at: timestamp,
+        },
+        TOURNAMENT,
+        WINNER
+      )
+    ).toBeNull();
+  });
+
+  it('accepts canonical RFC3339 timestamps with a numeric timezone offset', () => {
+    const timestamp = '2026-09-08T04:00:00.123456+00:00';
+    expect(
+      verifySatelliteSettlementReceipt(
+        {
+          ...receipt(),
+          source_closeout: { ...receipt().source_closeout, closed_at: timestamp },
+          settled_at: timestamp,
+        },
+        TOURNAMENT,
+        WINNER
+      )
+    ).not.toBeNull();
+  });
+
+  it('accepts a historical source close that predates the immutable adoption receipt', () => {
+    expect(
+      verifySatelliteSettlementReceipt(
+        {
+          ...receipt(),
+          source_closeout: {
+            ...receipt().source_closeout,
+            closed_at: '2026-09-07T04:00:00.000Z',
+          },
+          settled_at: '2026-09-08T04:00:00.000Z',
+        },
+        TOURNAMENT,
+        WINNER
+      )
+    ).not.toBeNull();
+  });
+
   it('accepts an all-cash ticket receipt when the target is definitively unavailable', () => {
     const allCash = {
       ...receipt(),
@@ -217,7 +395,7 @@ describe('atomic satellite settlement receipt', () => {
       },
     ],
     [
-      'closeout from a different transaction',
+      'source closeout after its settlement receipt',
       {
         source_closeout: {
           ...receipt().source_closeout,

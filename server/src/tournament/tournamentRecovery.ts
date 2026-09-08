@@ -20,6 +20,11 @@ import { claimTournamentFinish } from './tournamentFinishContract.js';
 import { settleTournamentPlacesAtomically } from './atomicPlaceSettlement.js';
 import { IN_LIST_CHUNK } from '../services/supabase/chunkedIn.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import {
+  requestSatelliteSettlementReceipt,
+  SatelliteSettlementOutcomeUnknownError,
+  SatelliteSettlementRefusedError,
+} from './satelliteSettlementRpc.js';
 
 /**
  * TOURNEY-AUDIT 2026-07-24: Recover tournaments stuck in COMPLETING by PAYING
@@ -632,13 +637,6 @@ export async function recoverStuckCompletingTournaments(
           }
 
           let proposedWinnerId: string | null = null;
-          let survivorToStamp: {
-            id: string;
-            user_id: string;
-            status: string;
-            position: number | null;
-          } | null = null;
-
           if (liveRows.length === 1) {
             const survivor = liveRows[0];
             if (survivor.status !== 'playing') {
@@ -742,7 +740,6 @@ export async function recoverStuckCompletingTournaments(
               continue;
             }
             proposedWinnerId = survivor.user_id;
-            survivorToStamp = survivor;
           } else {
             /**
              * With no live entrant, recovery may only reuse the champion
@@ -817,23 +814,9 @@ export async function recoverStuckCompletingTournaments(
             'engine.recoverStuckCompletingSatellite'
           );
           if (!satClaim.ok || !satClaim.winnerUserId) {
-            const { data: committed, error: committedError } = await supabase
-              .from('tournaments')
-              .select('status')
-              .eq('id', t.id)
-              .maybeSingle();
-            if (!committedError && committed?.status === 'COMPLETED') {
-              const cleanupComplete = await closeRecoveredTournamentTablesAndSeats(t.id);
-              if (!cleanupComplete) {
-                throw new Error(
-                  `durably completed satellite ${t.id.slice(0, 8)} could not prove table and seat cleanup after a lost finish-claim receipt`
-                );
-              }
-              continue;
-            }
             reportError(
               new Error(
-                `satellite finish claim refused: ${satClaim.reason}${satClaim.transportError ? ` (${satClaim.transportError})` : ''}${committedError ? `; completion proof read failed (${committedError.message})` : ''}`
+                `satellite finish claim refused: ${satClaim.reason}${satClaim.transportError ? ` (${satClaim.transportError})` : ''}`
               ),
               'GameServer.recoverStuckCompleting_satellite_claim_failed'
             );
@@ -849,192 +832,36 @@ export async function recoverStuckCompletingTournaments(
             continue;
           }
 
-          if (satClaim.alreadyCompleted || satClaim.status === 'COMPLETED') {
-            const cleanupComplete = await closeRecoveredTournamentTablesAndSeats(t.id);
-            if (!cleanupComplete) {
-              throw new Error(
-                `durably completed satellite ${t.id.slice(0, 8)} could not prove table and seat cleanup`
-              );
-            }
-            continue;
-          }
-
-          if (survivorToStamp) {
-            if (isMaintenanceFrozen()) continue;
-            // The claim transaction has already frozen the exact champion.
-            // Stamp only that one result row, guarded by its previous live
-            // state and position. This moves no chips and never changes the
-            // tournament lifecycle state; a lost response is resolved only by
-            // re-reading the exact winner/place-1 fact.
-            let winnerStampQuery = supabase
-              .from('tournament_players')
-              .update({ status: 'winner', position: 1 })
-              .eq('id', survivorToStamp.id)
-              .eq('user_id', proposedWinnerId)
-              .eq('status', 'playing');
-            winnerStampQuery =
-              survivorToStamp.position === null
-                ? winnerStampQuery.is('position', null)
-                : winnerStampQuery.eq('position', 1);
-            const { data: winnerStamp, error: winnerStampErr } =
-              await winnerStampQuery.select('id');
-            if (winnerStampErr || !winnerStamp || winnerStamp.length !== 1) {
-              const { data: winnerProof, error: winnerProofErr } = await supabase
-                .from('tournament_players')
-                .select('id, user_id')
-                .eq('tournament_id', t.id)
-                .eq('status', 'winner')
-                .eq('position', 1)
-                .limit(2);
-              const exactWinnerPersisted =
-                !winnerProofErr &&
-                winnerProof?.length === 1 &&
-                winnerProof[0]?.id === survivorToStamp.id &&
-                winnerProof[0]?.user_id === proposedWinnerId;
-              if (!exactWinnerPersisted) {
-                reportError(
-                  new Error(
-                    `satellite winner stamp was not proven for ${proposedWinnerId.slice(0, 8)}: ${winnerStampErr?.message ?? `${winnerStamp?.length ?? 0} row(s) changed`}${winnerProofErr ? `; proof failed (${winnerProofErr.message})` : ''}`
-                  ),
-                  'GameServer.recoverStuckCompleting_satellite_winner_stamp_failed'
-                );
-                continue;
-              }
-            }
-          }
-
-          // No separately committed bounty or rake action may start until the
-          // complete result is re-proven. fn_settle_satellite_finish_atomic
-          // repeats this invariant under its own tournament lock before it
-          // delivers a seat or cash entitlement.
-          const { data: terminalRows, error: terminalRowsErr } = await supabase
-            .from('tournament_players')
-            .select('user_id, status, position')
-            .eq('tournament_id', t.id);
-          const terminalPositions = (terminalRows ?? [])
-            .map((row) => Number(row.position))
-            .sort((a, b) => a - b);
-          const exactTerminalField =
-            !terminalRowsErr &&
-            Boolean(terminalRows?.length) &&
-            terminalRows!.every(
-              (row) =>
-                (row.status === 'winner' || row.status === 'eliminated') &&
-                Number.isInteger(Number(row.position))
-            ) &&
-            terminalPositions.every((position, index) => position === index + 1) &&
-            terminalRows!.filter((row) => row.status === 'winner' && Number(row.position) === 1)
-              .length === 1 &&
-            terminalRows!.find((row) => row.status === 'winner' && Number(row.position) === 1)
-              ?.user_id === proposedWinnerId;
-          if (!exactTerminalField) {
+          if (isMaintenanceFrozen()) continue;
+          try {
+            await requestSatelliteSettlementReceipt(t.id, proposedWinnerId);
+          } catch (settlementErr) {
+            const outcomeUnknown = settlementErr instanceof SatelliteSettlementOutcomeUnknownError;
+            const provenRefusal = settlementErr instanceof SatelliteSettlementRefusedError;
             reportError(
-              new Error(
-                `satellite terminal standings are not a unique exact 1..N result for ${proposedWinnerId.slice(0, 8)}: ${terminalRowsErr?.message ?? `${terminalRows?.length ?? 0} row(s) read`}`
-              ),
-              'GameServer.recoverStuckCompleting_satellite_terminal_field_unproved'
+              settlementErr,
+              outcomeUnknown
+                ? 'GameServer.recoverStuckCompleting_satellite_outcome_unknown'
+                : 'GameServer.recoverStuckCompleting_satellite_completion_refused'
             );
-            continue;
-          }
-
-          if (isMaintenanceFrozen()) continue;
-          if (t.is_bounty || t.is_pko || t.is_mystery_bounty) {
-            const swept = await drainTournamentBountyObligations(t.id);
-            if (swept.ok === false) {
-              reportError(
-                swept.error,
-                'GameServer.recoverStuckCompleting_satellite_bounty_pending'
-              );
-              continue;
-            }
-            if (t.is_mystery_bounty && t.mystery_bounty_stage !== 'pending') {
-              const { data: mystery, error: mysteryErr } = await supabase.rpc(
-                'fn_mystery_bounty_settle',
-                {
-                  p_tournament_id: t.id,
-                  p_winner_user_id: proposedWinnerId,
-                }
-              );
-              if (mysteryErr || mystery?.ok !== true || mystery?.balanced === false) {
-                reportError(
-                  mysteryErr ?? new Error(mystery?.reason ?? 'mystery settlement refused'),
-                  'GameServer.recoverStuckCompleting_satellite_mystery_failed'
+            if (!provenRefusal) {
+              try {
+                await raiseFinancialAlert(
+                  'critical',
+                  'Satellite.recovery_settlement_outcome_unknown',
+                  'A recovered satellite settlement has no verified immutable receipt after the serialized durable outcome check. Recovery stopped without any fallback payout or lifecycle write.',
+                  {
+                    tournament_id: t.id,
+                    winner_id: proposedWinnerId,
+                    reason,
+                    outcome_unknown: outcomeUnknown,
+                  }
                 );
-                continue;
+              } catch (alertErr) {
+                reportError(alertErr, 'GameServer.recoverStuckCompleting_satellite_alert_failed');
               }
             }
-            const { data: bountyFinal, error: bountyFinalErr } = await supabase.rpc(
-              'fn_finalize_bounty_pool',
-              {
-                p_tournament_id: t.id,
-                p_winner_user_id: proposedWinnerId,
-              }
-            );
-            if (bountyFinalErr || bountyFinal?.ok !== true) {
-              reportError(
-                bountyFinalErr ?? new Error(bountyFinal?.reason ?? 'bounty finalizer refused'),
-                'GameServer.recoverStuckCompleting_satellite_bounty_finalize_failed'
-              );
-              continue;
-            }
-          }
-
-          if (isMaintenanceFrozen()) continue;
-          const { data: rake, error: rakeErr } = await supabase.rpc('fn_settle_tournament_rake', {
-            p_tournament_id: t.id,
-            p_source: 'recovery_satellite',
-          });
-          if (rakeErr || rake?.ok !== true) {
-            reportError(
-              rakeErr ?? new Error(rake?.reason ?? 'satellite rake settlement refused'),
-              'GameServer.recoverStuckCompleting_satellite_rake_failed'
-            );
             continue;
-          }
-
-          if (isMaintenanceFrozen()) continue;
-          const { data: satelliteData, error: satelliteError } = await supabase.rpc(
-            'fn_settle_satellite_finish_atomic',
-            {
-              p_tournament_id: t.id,
-              p_source: 'engine.recoverStuckCompletingSatellite',
-            }
-          );
-          const satelliteSettlement = (
-            Array.isArray(satelliteData) ? satelliteData[0] : satelliteData
-          ) as {
-            ok?: boolean;
-            settled?: boolean;
-            already_settled?: boolean;
-            award_depth?: number;
-            amount_settled?: number;
-            reason?: string;
-            detail?: string;
-          } | null;
-          let acceptedDurableCompletion = false;
-          if (
-            satelliteError ||
-            satelliteSettlement?.ok !== true ||
-            satelliteSettlement?.settled !== true
-          ) {
-            // A lost RPC response is not proof of rollback. COMPLETED is
-            // accepted only because the database transition guard proves the
-            // exact atomic satellite batch before permitting that state.
-            const { data: committed, error: committedError } = await supabase
-              .from('tournaments')
-              .select('status')
-              .eq('id', t.id)
-              .maybeSingle();
-            if (committedError || committed?.status !== 'COMPLETED') {
-              reportError(
-                new Error(
-                  `atomic satellite settlement refused: ${satelliteError?.message ?? satelliteSettlement?.reason ?? 'unknown'}${satelliteSettlement?.detail ? ` (${satelliteSettlement.detail})` : ''}${committedError ? `; completion proof read failed (${committedError.message})` : ''}`
-                ),
-                'GameServer.recoverStuckCompleting_satellite_completion_failed'
-              );
-              continue;
-            }
-            acceptedDurableCompletion = true;
           }
 
           const cleanupComplete = await closeRecoveredTournamentTablesAndSeats(t.id);
@@ -1044,7 +871,7 @@ export async function recoverStuckCompletingTournaments(
             );
           }
           console.log(
-            `[GameServer] Recovered satellite ${t.id.slice(0, 8)} with its atomic award plan${acceptedDurableCompletion ? ' after a lost RPC receipt' : ''} (${recordCount ?? 'unreadable'} prior payout record(s), ${seatCount ?? 'unreadable'} prior seat(s), already awarded evidence: ${String(alreadyAwarded)})`
+            `[GameServer] Recovered satellite ${t.id.slice(0, 8)} from its verified immutable settlement receipt (${recordCount ?? 'unreadable'} prior payout record(s), ${seatCount ?? 'unreadable'} prior seat(s), already awarded evidence: ${String(alreadyAwarded)})`
           );
           continue;
         }

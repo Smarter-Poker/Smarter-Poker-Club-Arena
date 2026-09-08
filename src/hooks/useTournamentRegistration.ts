@@ -5,7 +5,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
    of unmounting the container. See InTabLobbyContext.tsx. */
 import { useAppNavigate } from '../context/InTabLobbyContext';
 import { useUserStore } from '../stores/useUserStore';
-import { tournamentService } from '../services/TournamentService';
+import { tournamentService, type TournamentEntryTicket } from '../services/TournamentService';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { signUpDialog } from '../components/tournament/signUpDialog';
@@ -53,10 +53,10 @@ export interface RegisterTournamentParams {
    * 2026-08-25, second audit: every caller was computing
    * `is_late_registration: status === 'RUNNING'` by hand, and every one of them
    * missed `LATE_REG` — a real status in `TournamentStatus`. A LATE_REG entry
-   * therefore got the "Sign Up" heading and the note "Cannot Unregister Within
-   * 1 Minute Of The Start Time", which is false for an event that has already
-   * started. One caller (ClubHomePage) passed nothing at all. Deriving it here
-   * means no surface can get it wrong, and no new surface has to remember.
+   * therefore got the pre-start "Sign Up" treatment, which is false for an
+   * event that has already started. One caller (ClubHomePage) passed nothing
+   * at all. Deriving it here means no surface can get it wrong, and no new
+   * surface has to remember.
    */
   status?: string | null;
   /** Explicit override. Leave unset and let `status` decide. */
@@ -107,6 +107,26 @@ export function useTournamentRegistration() {
       if (registeringRef.current) return;
       registeringRef.current = true;
 
+      // Every human registration surface funnels through this hook. Resolve
+      // an exact entry-only ticket before showing the confirmation so a failed
+      // selector can never be mistaken for "no ticket" and fall through to a
+      // wallet charge.
+      let entryTicket: TournamentEntryTicket | null;
+      try {
+        entryTicket = await tournamentService.findTournamentEntryTicket(t.id);
+      } catch (e) {
+        reportError(e, 'useTournamentRegistration.findTournamentEntryTicket', {
+          tournamentId: t.id,
+        });
+        toast.error(
+          e instanceof Error
+            ? e.message
+            : 'Could Not Check For A Tournament Ticket. No Chips Were Charged.'
+        );
+        registeringRef.current = false;
+        return;
+      }
+
       /**
        * ONE CONFIRMATION, AND THIS IS IT (Dan 2026-08-25, binding).
        *
@@ -138,6 +158,7 @@ export function useTournamentRegistration() {
         userId: currentUserId,
         clubId: t.club_id ?? null,
         isLateRegistration: t.is_late_registration ?? isLateStatus(t.status),
+        tournamentTicketId: entryTicket?.id ?? null,
       });
       if (!confirmed) {
         registeringRef.current = false;
@@ -146,7 +167,12 @@ export function useTournamentRegistration() {
 
       setIsRegistering(true);
       try {
-        const registration = await tournamentService.registerPlayer(t.id, currentUserId, username);
+        const registration = await tournamentService.registerPlayer(
+          t.id,
+          currentUserId,
+          username,
+          entryTicket?.id ?? null
+        );
         toast.success(`You Are Registered For ${t.name}`);
 
         /* 2026-08-25, second audit: chips just left this player's wallet and
@@ -156,11 +182,13 @@ export function useTournamentRegistration() {
            showing the pre-buy-in figure until something else happened to
            refresh them. Emitted HERE rather than in six onSuccess callbacks,
            for the same reason the dialog lives here. */
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'tournament_buy_in',
-          userId: currentUserId,
-          tournamentId: t.id,
-        });
+        if (!entryTicket) {
+          masterBus.emit('BALANCE_UPDATED', {
+            source: 'tournament_buy_in',
+            userId: currentUserId,
+            tournamentId: t.id,
+          });
+        }
 
         if (onSuccess) {
           onSuccess();
@@ -225,9 +253,7 @@ export function useTournamentRegistration() {
          * created roster row was read back.
          */
         type SeatLookup =
-          | { state: 'seated'; tableId: string }
-          | { state: 'pending' }
-          | { state: 'unknown' };
+          { state: 'seated'; tableId: string } | { state: 'pending' } | { state: 'unknown' };
 
         const findMySeat = async (): Promise<SeatLookup> => {
           const { data: tp, error } = await supabase

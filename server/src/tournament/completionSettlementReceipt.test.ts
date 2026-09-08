@@ -52,10 +52,13 @@ function receipt(): any {
       reason: 'not_a_bounty_tournament',
     },
     closed_table_count: 1,
+    source_seat_count: 2,
     released_seat_count: 2,
     table_closure: {
       closed_table_count: 1,
       closed_table_ids: [TABLE_ID],
+      source_seat_count: 2,
+      source_seat_ids: [SEAT_A_ID, SEAT_B_ID],
       released_seat_count: 2,
       released_seat_ids: [SEAT_A_ID, SEAT_B_ID],
     },
@@ -99,6 +102,8 @@ describe('verifyTournamentCompletionReceipt', () => {
     expect(verified?.tableClosure).toEqual({
       closedTableCount: 1,
       closedTableIds: [TABLE_ID],
+      sourceSeatCount: 2,
+      sourceSeatIds: [SEAT_A_ID, SEAT_B_ID],
       releasedSeatCount: 2,
       releasedSeatIds: [SEAT_A_ID, SEAT_B_ID],
     });
@@ -129,6 +134,11 @@ describe('verifyTournamentCompletionReceipt', () => {
     ['missing attribution timestamp', (value: any) => (value.rake.attributed_at = null)],
     ['missing closure proof', (value: any) => (value.table_closure = null)],
     ['closure count mismatch', (value: any) => (value.closed_table_count = 2)],
+    ['source seat count mismatch', (value: any) => (value.source_seat_count = 1)],
+    [
+      'source seat identity mismatch',
+      (value: any) => (value.table_closure.source_seat_ids[1] = TABLE_ID),
+    ],
     [
       'released seat identity mismatch',
       (value: any) => (value.table_closure.released_seat_ids[1] = TABLE_ID),

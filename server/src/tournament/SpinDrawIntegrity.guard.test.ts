@@ -45,53 +45,67 @@ const BASE = fs.readFileSync(
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const CODE = code(BASE);
 
-describe('a spin draw that could not be read is UNKNOWN, not the lowest tier', () => {
+describe('an atomic Spin receipt that cannot be proven is UNKNOWN', () => {
   it('never assigns a multiplier from the tier table as a fallback', () => {
     // The exact line that made the wheel lie: `spinMultiplier = SPIN_TIERS[0].multiplier`.
     expect(CODE).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
   });
 
-  it('reads the RPC error instead of destructuring only `data`', () => {
-    const call = CODE.slice(CODE.indexOf('fn_spin_draw_multiplier') - 400);
-    expect(call).toMatch(/error:\s*drawErr/);
-    expect(CODE).toMatch(/if\s*\(\s*drawErr\s*\)\s*throw/);
+  it('reads the combined RPC error and validates its complete receipt', () => {
+    const call = CODE.slice(CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle'") - 400);
+    expect(call).toMatch(/error:\s*settlementError/);
+    expect(CODE).toMatch(/if\s*\(\s*settlementError\s*\)\s*\{/);
+    expect(CODE).toMatch(/parseSpinSettlementReceipt\(rawReceipt/);
+    expect(CODE).not.toMatch(/supabase\.rpc\('fn_spin_(?:draw_multiplier|settle_game)'/);
   });
 
   it('has no empty catch around the draw', () => {
     // `catch { }` / `catch (e) { }` with nothing in it is what swallowed it.
     const drawBlock = CODE.slice(
-      CODE.indexOf('fn_spin_draw_multiplier'),
-      CODE.indexOf('spin_draw_unavailable')
+      CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle'"),
+      CODE.indexOf('Tournament.spin_settle_failed')
     );
     expect(drawBlock).not.toMatch(/catch\s*(\([^)]*\))?\s*\{\s*\}/);
   });
 
   it('stands the start down rather than resolving to a value', () => {
-    expect(CODE).toMatch(/spin_draw_unavailable/);
-    const failure = sliceEnclosingBlock(CODE, 'spin_draw_unavailable');
+    expect(CODE).toMatch(/Tournament\.spin_settle_failed/);
+    const failure = sliceEnclosingBlock(CODE, 'if (!spinReceipt)');
     // The stand-down pattern the short-field and unpaid-seat gates already use.
     expect(failure).toMatch(/this\.running\s*=\s*false/);
     // And the old error tag, which named a state that no longer exists, is gone.
     expect(CODE).not.toMatch(/spin_draw_rpc_down/);
   });
 
-  it('rejects a response it cannot read a positive multiplier out of', () => {
-    expect(CODE).toMatch(/no usable multiplier/);
+  it('takes the multiplier only from the parsed immutable receipt', () => {
+    expect(CODE).toMatch(/const spinMultiplier = spinReceipt\.multiplier/);
+    expect(CODE).not.toMatch(/spinMultiplier\s*=\s*Number\(rawReceipt/);
   });
 });
 
-describe('the drawn multiplier reaches the row before RUNNING', () => {
-  it('proves the exact patch by read-back', () => {
-    expect(CODE).toContain('const spinRowProjection = Object.keys(spinRowPatch).join');
+describe('the committed draw and presentation reach memory before RUNNING', () => {
+  it('proves the exact presentation patch by read-back', () => {
+    expect(CODE).toContain(
+      'const spinPresentationProjection = Object.keys(spinPresentationPatch).join'
+    );
     expect(CODE).toContain('this.launchRowMatchesPatch(');
   });
 
-  it('stands down on an unproven row instead of scheduling a repair', () => {
-    const failure = sliceEnclosingBlock(CODE, 'if (!spinRowWritten)');
+  it('stands down on unproven presentation instead of scheduling a repair', () => {
+    const failure = sliceEnclosingBlock(CODE, 'if (!spinPresentationWritten)');
     expect(failure).toMatch(/this\.running\s*=\s*false/);
     expect(failure).toMatch(/return/);
     expect(CODE).not.toContain('scheduleSpinRowRepair');
     expect(CODE).not.toContain('spin_row_repair_exhausted');
+  });
+
+  it('never writes the immutable money contract from the process', () => {
+    const patch = CODE.slice(
+      CODE.indexOf('const spinPresentationPatch = {'),
+      CODE.indexOf('let spinPresentationWritten')
+    );
+    expect(patch).not.toMatch(/prize_pool|spin_multiplier|spin_locked_tiers|starting_chips/);
+    expect(CODE).toMatch(/const spinMemoryPatch = \{[\s\S]*prize_pool:[\s\S]*spin_multiplier:/);
   });
 });
 
@@ -174,7 +188,7 @@ describe('the draw reaches memory WHOLE (2026-08-31)', () => {
     const window = CODE.slice(from, CODE.indexOf("from('tournament_players')", from));
 
     // Both in-memory copies are targets of the same call.
-    expect(window).toMatch(/spinRowPatch/);
+    expect(window).toMatch(/spinMemoryPatch/);
     expect(window).toMatch(/this\.tournamentCache/);
 
     // And nothing here re-copies a field by name - the shape that dropped
@@ -186,8 +200,8 @@ describe('the draw reaches memory WHOLE (2026-08-31)', () => {
 
   it('the patch itself still carries the payout structure that was drawn', () => {
     const patch = CODE.slice(
-      CODE.indexOf('const spinRowPatch = {'),
-      CODE.indexOf('let spinRowWritten')
+      CODE.indexOf('const spinPresentationPatch = {'),
+      CODE.indexOf('let spinPresentationWritten')
     );
     expect(patch).toMatch(/payout_structure:/);
     // Derived from the drawn tier, never a literal winner-take-all.

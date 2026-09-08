@@ -29,6 +29,7 @@ import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
 import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
+import { uuid } from '../utils/uuid';
 
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
@@ -36,8 +37,18 @@ import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 const UNREGISTER_REASON_TEXT: Record<string, string> = {
   tournament_not_found: 'That tournament no longer exists',
   registration_closed:
-    'Registration has closed for this tournament. Tournaments that have started cannot be refunded.',
-  too_close_to_start: 'You cannot unregister within a minute of the start time',
+    'Registration has closed for this tournament. You can only unregister before it starts.',
+  registration_schedule_unset:
+    'This tournament has no scheduled start time, so it cannot be unregistered from.',
+  tournament_started: 'This tournament has started. You can only unregister before it starts.',
+  already_started: 'This game has started. You can only unregister before it starts.',
+  not_registered: 'You are not registered for this tournament.',
+  not_seated: 'Your tournament seat could not be found. No chips were changed.',
+  spin_entry_already_booked: 'This Spin entry has already started and cannot be unregistered.',
+  // Legacy servers briefly returned this code for a pre-start lockout that no
+  // longer exists. Keep the code human-readable without repeating that false
+  // one-minute rule.
+  too_close_to_start: 'The tournament could not be unregistered. No chips were changed.',
   not_registered_or_seated:
     'You are not registered, or you have already been seated at a table. Tournaments that have started cannot be refunded.',
 };
@@ -59,6 +70,21 @@ const REGISTER_REASON_TEXT: Record<string, string> = {
   // The four-table cap, surfaced as a rule rather than a raw trigger message.
   table_limit_reached: 'You are already in four games. Leave one to join another.',
   platform_frozen: PLATFORM_FROZEN_MESSAGE,
+  ticket_not_found: 'That Tournament Ticket no longer exists.',
+  ticket_not_owned: 'That Tournament Ticket does not belong to you.',
+  ticket_is_wallet_only: 'That ticket can only be redeemed for wallet chips.',
+  ticket_already_used: 'That Tournament Ticket has already been used.',
+  ticket_not_available: 'That Tournament Ticket is no longer available.',
+  target_pool_finalized: 'Registration is closed because this tournament prize pool is final.',
+  ticket_club_membership_inactive: 'Your membership in the Tournament Ticket club is not active.',
+  ticket_club_mismatch: 'That Tournament Ticket belongs to a different club.',
+  ticket_union_mismatch: 'That Tournament Ticket does not belong to this union.',
+  ticket_source_club_unavailable:
+    'The club wallet behind that Tournament Ticket is not available for this event.',
+  ticket_entry_contract_mismatch:
+    'That Tournament Ticket does not match this tournament entry fee.',
+  matching_tournament_ticket_unavailable:
+    'Your Matching Tournament Ticket Could Not Be Verified. No Chips Were Charged.',
 };
 
 /**
@@ -82,6 +108,160 @@ function unregisterReasonText(reason: string | undefined): string {
 export interface PayoutStructure {
   place: number;
   percentage: number;
+}
+
+/** An exact, noncash tournament-entry instrument selected by the server. */
+export interface TournamentEntryTicket {
+  id: string;
+  value: number;
+}
+
+export interface TournamentUnregisterResult {
+  refundedChips: number;
+  returnedTicketValue: number;
+}
+
+/** A committed refusal is different from an unknown transport outcome. */
+export class TournamentUnregisterRefusalError extends Error {
+  readonly reason: string;
+
+  constructor(reason: string | undefined) {
+    super(unregisterReasonText(reason));
+    this.name = 'TournamentUnregisterRefusalError';
+    this.reason = reason ?? 'unknown';
+  }
+}
+
+/** The pre-start exit controls need one truthful response to a started game. */
+export function tournamentUnregisterWasAlreadyStarted(error: unknown): boolean {
+  if (!(error instanceof TournamentUnregisterRefusalError)) return false;
+  return [
+    'already_started',
+    'tournament_started',
+    'registration_closed',
+    'spin_entry_already_booked',
+  ].includes(error.reason);
+}
+
+type TournamentUnregisterRpcResponse = {
+  ok?: unknown;
+  reason?: unknown;
+  request_id?: unknown;
+  registration_id?: unknown;
+  refunded_chips?: unknown;
+  returned_ticket_value?: unknown;
+  wallet_chips_from_satellite_entitlements?: unknown;
+};
+
+function unregisterNumber(value: unknown): number | null {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/**
+ * Parse only the immutable receipt returned by the atomic database owner.
+ * Missing amounts are not zero, `refunded` is not an alias, and a response for
+ * another request can never be mistaken for this button press.
+ */
+export function parseTournamentUnregisterResult(
+  payload: unknown,
+  expectedRequestId: string
+): TournamentUnregisterResult {
+  const response = payload as TournamentUnregisterRpcResponse | null;
+  const refundedChips = unregisterNumber(response?.refunded_chips);
+  const returnedTicketValue = unregisterNumber(response?.returned_ticket_value);
+  const satelliteWalletChips = unregisterNumber(response?.wallet_chips_from_satellite_entitlements);
+  if (
+    response?.ok !== true ||
+    response.request_id !== expectedRequestId ||
+    typeof response.registration_id !== 'string' ||
+    response.registration_id.length === 0 ||
+    refundedChips === null ||
+    returnedTicketValue === null ||
+    satelliteWalletChips !== 0
+  ) {
+    throw new Error('Tournament unregistration returned an invalid settlement receipt');
+  }
+  return { refundedChips, returnedTicketValue };
+}
+
+type TournamentUnregisterRpcCall = () => Promise<{ data: unknown; error: unknown }>;
+
+async function invokeTournamentUnregisterRpc(
+  invoke: TournamentUnregisterRpcCall
+): Promise<{ data: unknown; error: unknown }> {
+  try {
+    return await invoke();
+  } catch (error) {
+    // Supabase normally resolves transport failures as `{ error }`, but a
+    // rejected fetch is the same unknown-outcome class. Normalize both forms
+    // so the caller performs the one permitted exact-request replay and never
+    // escapes into a second, legacy refund path.
+    return { data: null, error };
+  }
+}
+
+async function executeTournamentUnregisterRpc(
+  invoke: TournamentUnregisterRpcCall,
+  requestId: string,
+  errorContext: string,
+  metadata: Record<string, string>
+): Promise<TournamentUnregisterResult> {
+  // The database stores an immutable receipt by request_id. Repeating this
+  // exact request once is therefore the only safe answer to a response that
+  // may have been lost after commit. Never mint a second id for the retry.
+  let rpcCall = await invokeTournamentUnregisterRpc(invoke);
+  if (rpcCall.error) rpcCall = await invokeTournamentUnregisterRpc(invoke);
+  const { data, error } = rpcCall;
+
+  if (error) {
+    reportError(error, errorContext, { ...metadata, requestId });
+    throw new Error(
+      'Could Not Confirm Tournament Unregistration. Please Refresh Before Trying Again.'
+    );
+  }
+
+  const response = data as TournamentUnregisterRpcResponse | null;
+  if (response?.ok === false) {
+    throw new TournamentUnregisterRefusalError(
+      typeof response.reason === 'string' ? response.reason : undefined
+    );
+  }
+
+  try {
+    return parseTournamentUnregisterResult(response, requestId);
+  } catch (error) {
+    reportError(error as Error, `${errorContext}_receipt_invalid`, {
+      ...metadata,
+      requestId,
+      responseRequestId: typeof response?.request_id === 'string' ? response.request_id : 'missing',
+    });
+    throw new Error(
+      'Could Not Confirm Tournament Unregistration. Please Refresh Before Trying Again.'
+    );
+  }
+}
+
+const unregisterAmount = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 2,
+});
+
+/** Player-facing confirmation derived only from the committed refund rails. */
+export function tournamentUnregisterSuccessText(result: TournamentUnregisterResult): string {
+  const chips = unregisterAmount.format(result.refundedChips);
+  const ticket = unregisterAmount.format(result.returnedTicketValue);
+  if (result.refundedChips > 0 && result.returnedTicketValue > 0) {
+    return `${chips} Chips Were Refunded To Your Wallet. A Tournament Ticket For A ${ticket} Chip Entry Was Issued.`;
+  }
+  if (result.returnedTicketValue > 0) {
+    return `A Tournament Ticket For A ${ticket} Chip Entry Was Issued. No Chips Were Added To Your Wallet.`;
+  }
+  if (result.refundedChips > 0) {
+    return `${chips} Chips Were Refunded To Your Wallet.`;
+  }
+  return 'You Are No Longer Registered.';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1037,15 +1217,73 @@ class TournamentService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
+   * Ask the server whether this player owns an exact entry-only ticket for the
+   * tournament. A failed or malformed selector is an error, never "no ticket":
+   * callers must not silently fall through to a wallet charge when ticket
+   * ownership could not be checked.
+   */
+  async findTournamentEntryTicket(tournamentId: string): Promise<TournamentEntryTicket | null> {
+    const { data, error } = await supabase.rpc('fn_find_tournament_entry_ticket', {
+      p_tournament_id: tournamentId,
+    });
+    if (error) {
+      reportError(error, 'TournamentService.findTournamentEntryTicket', { tournamentId });
+      throw new Error('Could Not Check For A Tournament Ticket. No Chips Were Charged.');
+    }
+
+    const res = data as {
+      ok?: boolean;
+      reason?: string;
+      ticket_id?: string | null;
+      ticket_value?: number | string | null;
+    } | null;
+    if (
+      !res ||
+      typeof res.ok !== 'boolean' ||
+      !Object.prototype.hasOwnProperty.call(res, 'ticket_id')
+    ) {
+      reportError(
+        new Error('Malformed tournament-entry ticket selector response'),
+        'TournamentService.findTournamentEntryTicket',
+        { tournamentId }
+      );
+      throw new Error('Could Not Check For A Tournament Ticket. No Chips Were Charged.');
+    }
+    if (!res.ok) throw new Error(registerReasonText(res.reason));
+    if (res.ticket_id === null) return null;
+
+    const ticketId = typeof res.ticket_id === 'string' ? res.ticket_id.trim() : '';
+    const ticketValue = res.ticket_value == null ? Number.NaN : Number(res.ticket_value);
+    if (!ticketId || !Number.isFinite(ticketValue) || ticketValue <= 0) {
+      reportError(
+        new Error('Malformed tournament-entry ticket selector payload'),
+        'TournamentService.findTournamentEntryTicket',
+        { tournamentId }
+      );
+      throw new Error('Could Not Check For A Tournament Ticket. No Chips Were Charged.');
+    }
+    return { id: ticketId, value: ticketValue };
+  }
+
+  /**
    * Register a player for a tournament
    */
   async registerPlayer(
     tournamentId: string,
     userId: string,
-    username: string
+    username: string,
+    tournamentTicketId?: string | null
   ): Promise<TournamentPlayer> {
     const tournament = await this.getTournament(tournamentId);
     if (!tournament) throw new Error('Tournament not found');
+
+    // Presence, not truthiness, selects the noncash rail. If a caller says it
+    // found a ticket but hands us a malformed id, fail closed instead of
+    // silently charging the wallet.
+    const usesTournamentTicket = tournamentTicketId !== undefined && tournamentTicketId !== null;
+    if (usesTournamentTicket && !tournamentTicketId?.trim()) {
+      throw new Error('Could Not Use The Tournament Ticket. No Chips Were Charged.');
+    }
 
     // ═══ AUDIT 2026-08-15: registration is SERVER-AUTHORITATIVE ═══
     // The old path called atomic_tournament_register directly — a
@@ -1062,22 +1300,52 @@ class TournamentService {
     // the entry FEE to the rake_records fee ledger (what the finalize
     // settlement actually credits to the club/union), and bumps
     // current_players + prize_pool.
-    /* Registration debits a wallet and creates a seat. It is not safe to
-       replay without an idempotency key, so make one mutation attempt. If the
-       response is lost after commit, reconcile by reading the authoritative
-       registration row instead of charging again. */
-    const { data: rpcResult, error: rpcError } = await supabase.rpc('fn_register_for_tournament', {
-      p_tournament_id: tournamentId,
-    });
+    /* Wallet registration is not safe to replay without an idempotency key,
+       so its lost response is reconciled by reading the roster. Ticket
+       admission is keyed by one immutable ticket and has an exact replay
+       receipt, so the same request can safely resolve an ambiguous response. */
+    const invokeTicketAdmission = async () => {
+      try {
+        return await supabase.rpc('fn_register_for_tournament_with_ticket', {
+          p_tournament_id: tournamentId,
+          p_ticket_id: tournamentTicketId,
+        });
+      } catch (error) {
+        // A rejected fetch and Supabase's resolved `{ error }` both leave the
+        // commit outcome unknown. Normalize them so the only retry is the
+        // same immutable ticket, never a wallet fallback or a new request.
+        return { data: null, error };
+      }
+    };
+    let rpcCall = usesTournamentTicket
+      ? await invokeTicketAdmission()
+      : await supabase.rpc('fn_register_for_tournament', {
+          p_tournament_id: tournamentId,
+        });
+    if (usesTournamentTicket && rpcCall.error) {
+      rpcCall = await invokeTicketAdmission();
+    }
+    const { data: rpcResult, error: rpcError } = rpcCall;
     const res = rpcResult as {
       ok: boolean;
       reason?: string;
       registration_id?: string;
+      ticket_id?: string;
       cost?: number;
       mystery_bounty?: number | null;
     } | null;
     let registrationId = res?.registration_id;
     if (rpcError) {
+      if (usesTournamentTicket) {
+        reportError(rpcError, 'TournamentService.ticket_registration_result_unconfirmed', {
+          tournamentId,
+          userId,
+          tournamentTicketId,
+        });
+        throw new Error(
+          'Could Not Confirm Tournament Ticket Registration. Please Refresh Before Trying Again.'
+        );
+      }
       const { data: reconciled, error: reconcileError } = await supabase
         .from('tournament_players')
         .select('id')
@@ -1098,6 +1366,16 @@ class TournamentService {
     } else if (!res?.ok || !registrationId) {
       throw new Error(registerReasonText(res?.reason));
     }
+    if (usesTournamentTicket && res?.ticket_id !== tournamentTicketId) {
+      reportError(
+        new Error('Tournament ticket admission returned a mismatched receipt'),
+        'TournamentService.ticket_registration_receipt_mismatch',
+        { tournamentId, userId, tournamentTicketId, receiptTicketId: res?.ticket_id }
+      );
+      throw new Error(
+        'Could Not Confirm Tournament Ticket Registration. Please Refresh Before Trying Again.'
+      );
+    }
 
     // Re-fetch the player row the server created (the RPC returns only ids)
     const { data, error } = await supabase
@@ -1112,7 +1390,11 @@ class TournamentService {
       throw new Error('Registration succeeded but player data could not be retrieved');
     }
 
-    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
+    // Entry-only tickets move escrow into tournament liability; they do not
+    // debit or credit the player's Club Arena wallet.
+    if (!usesTournamentTicket) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
+    }
     masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, userId, clubId: tournament.club_id });
     masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: tournament.status });
 
@@ -1178,35 +1460,61 @@ class TournamentService {
    * `fn_unregister_from_tournament` does the whole thing in one transaction. It
    * takes no user id (a player may only unregister themselves, and the way to
    * guarantee that is to never accept a target) and no amount (the refund is
-   * read from the tournaments row). It also enforces the one-minute pre-start
-   * lockout that the old code documented but could not implement - the comment
-   * there admitted that nothing enforced it and players could yank their entry
-   * at the exact start instant and race the seating flow - because the server
-   * takes a row lock the seating flow cannot interleave with.
+   * derived from immutable entry entitlements). It permits unregistration at
+   * any time before the scheduled start and refuses it at or after the start;
+   * the server row lock keeps that boundary atomic with seating.
    *
    * The compensating re-INSERT is gone because it is no longer needed: a failed
    * refund rolls the delete back with it, so the player is simply still
    * registered.
    */
-  async unregisterPlayer(tournamentId: string, userId: string): Promise<void> {
-    const { data, error } = await supabase.rpc('fn_unregister_from_tournament', {
-      p_tournament_id: tournamentId,
-    });
+  async unregisterPlayer(
+    tournamentId: string,
+    userId: string
+  ): Promise<TournamentUnregisterResult> {
+    const requestId = uuid();
+    const result = await executeTournamentUnregisterRpc(
+      async () =>
+        supabase.rpc('fn_unregister_from_tournament', {
+          p_tournament_id: tournamentId,
+          p_request_id: requestId,
+        }),
+      requestId,
+      'TournamentService.unregisterPlayer_result_unconfirmed',
+      { tournamentId, userId }
+    );
 
-    if (error) {
-      reportError(error, 'TournamentService.unregisterPlayer', { tournamentId, userId });
-      throw new Error('Could not unregister - please try again');
-    }
-
-    const res = data as { ok: boolean; reason?: string; refunded?: number } | null;
-
-    if (!res?.ok) {
-      throw new Error(unregisterReasonText(res?.reason));
-    }
-
-    if ((res.refunded ?? 0) > 0) {
+    if (result.refundedChips > 0) {
       masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
     }
+    return result;
+  }
+
+  /**
+   * Release a reserved pre-start table seat through the same exact refund
+   * owner. The stable request id makes the one retry an exact receipt replay,
+   * including when the first response disappeared after commit.
+   */
+  async leaveTournamentSeatAndRefund(
+    tableId: string,
+    userId: string
+  ): Promise<TournamentUnregisterResult> {
+    const requestId = uuid();
+    const result = await executeTournamentUnregisterRpc(
+      async () =>
+        supabase.rpc('fn_leave_seat_and_refund', {
+          p_table_id: tableId,
+          p_request_id: requestId,
+        }),
+      requestId,
+      'TournamentService.leaveTournamentSeatAndRefund_result_unconfirmed',
+      { tableId, userId }
+    );
+
+    if (result.refundedChips > 0) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_unregister_refund', userId });
+    }
+    return result;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

@@ -49,7 +49,10 @@ describe('the reveal is emitted from the committed atomic draw receipt', () => {
   it('waits for the combined money receipt, then emits before presentation writes', () => {
     const emit = CODE.indexOf('spin_reveal_early_emit');
     const settle = CODE.indexOf("supabase.rpc('fn_spin_draw_and_settle'");
-    const presentation = CODE.indexOf(".from('tournaments')", CODE.indexOf('const spinRowPatch'));
+    const presentation = CODE.indexOf(
+      ".from('tournaments')",
+      CODE.indexOf('const spinPresentationPatch')
+    );
     expect(emit, 'the early emit is missing').toBeGreaterThan(-1);
     expect(settle, 'the atomic settlement call moved - re-check this pin').toBeGreaterThan(-1);
     expect(settle, 'uncommitted money may never be revealed').toBeLessThan(emit);

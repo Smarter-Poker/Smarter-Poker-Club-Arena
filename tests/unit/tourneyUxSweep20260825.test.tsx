@@ -768,7 +768,9 @@ describe('Audit - the dialog cannot confirm a buy-in nobody was shown', () => {
        funded player whose read failed saw "Insufficient Balance" with Confirm
        disabled. Assert the property at BOTH ends: the gate treats null as
        unknown, AND the reader it calls can actually produce a null. */
-    expect(src).toMatch(/const short = balance !== null && balance < cost;/);
+    expect(src).toMatch(
+      /const short = !usesTournamentTicket && balance !== null && balance < cost;/
+    );
     expect(src).not.toMatch(/getPlayerBalance\(/);
     const wallet = code(read('src/services/WalletService.ts'));
     expect(wallet).toMatch(/async readPlayerBalance\(/);

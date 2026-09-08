@@ -1,4 +1,4 @@
--- Run after the stage-one atomic satellite authority is installed and before
+-- Run after the complete stage-one atomic authority set is installed and before
 -- the separately gated legacy-door retirement. The final PASS exception is
 -- intentional: it releases every lock and makes this safe in production.
 DO $probe$
@@ -15,7 +15,8 @@ BEGIN
      OR to_regprocedure(
           'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)') IS NULL
      OR to_regclass('public.tournament_satellite_settlements') IS NULL
-     OR to_regclass('public.tournament_satellite_awards') IS NULL THEN
+     OR to_regclass('public.tournament_satellite_awards') IS NULL
+     OR to_regclass('public.tournament_satellite_remainders') IS NULL THEN
     RAISE EXCEPTION 'FAIL atomic satellite authority or immutable evidence tables are absent';
   END IF;
 
@@ -37,11 +38,44 @@ BEGIN
      OR v_settle !~ 'UPDATE public.table_seats'
      OR v_settle !~ 'UPDATE public.tables'
      OR v_settle !~ 'v_rows IS DISTINCT FROM v_released_seat_count'
+     OR v_settle !~ 'ts.is_away IS DISTINCT FROM false'
+     OR v_settle !~ 'ts.sit_out_at IS NOT NULL'
+     OR v_settle !~ 'ts.scheduled_leave_hands IS NOT NULL'
+     OR v_settle !~ 'v_target_escrow_after.satellite_in IS DISTINCT FROM'
+     OR v_settle !~ 'v_target_escrow_after.satellite_fee_in IS DISTINCT FROM'
+     OR v_settle !~ 'v_target_escrow_after.prize_balance IS DISTINCT FROM'
+     OR v_settle !~ 'v_target_escrow_after.fee_balance IS DISTINCT FROM'
+     OR v_settle !~ 'SET current_players = v_target.current_players \+ v_seat_count'
+     OR v_settle !~ 'v_target.is_bounty IS DISTINCT FROM false'
+     OR v_settle !~ 'v_target_escrow.prize_balance < 0'
+     OR v_settle !~ 'v_target_escrow.bounty_balance IS DISTINCT FROM 0'
+     OR v_settle !~ 'v_source_escrow.reserve_out IS DISTINCT FROM 0'
+     OR v_settle !~ 'v_source_escrow.bounty_in IS DISTINCT FROM 0'
+     OR v_settle !~ 'v_source_escrow.closed_at IS NOT NULL'
+     OR v_settle !~ 'v_source_escrow.close_note IS NOT NULL'
+     OR v_settle !~ 'v_target.current_players IS DISTINCT FROM v_target_counter_before'
+     OR v_settle !~ 'v_target_counter_before := CASE'
+     OR v_settle !~ 'THEN v_target_live_count_before'
+     OR v_settle !~ 'ELSE v_target_count_before'
+     OR v_settle !~ 'v_target_counter_after := CASE'
+     OR v_settle !~ 'v_target_after.current_players IS DISTINCT FROM v_target_counter_after'
+     OR v_settle !~ 'v_target.prize_pool IS DISTINCT FROM v_target_escrow.prize_balance'
+     OR v_settle !~ 'v_target.total_rake IS DISTINCT FROM v_target_escrow.fee_balance'
+     OR v_settle !~ 'absence cannot authorize cash substitution'
+     OR v_settle ~ 'FROM public.managed_game_contract_versions'
      OR v_receipt !~ 'v_amount IS DISTINCT FROM v_h.pool'
+     OR v_receipt !~ 'v_h.receipt_version IS DISTINCT FROM 2'
      OR v_receipt !~ 'v_source_table_ids IS DISTINCT FROM v_h.source_table_ids'
      OR v_receipt !~ 'v_source_seat_ids IS DISTINCT FROM v_h.source_seat_ids'
      OR v_receipt !~ 'v_durable_released_ids IS DISTINCT FROM v_h.released_seat_ids'
      OR v_receipt !~ 'v_durable_released_count IS DISTINCT FROM v_h.released_seat_count'
+     OR v_receipt !~ 'v_source_escrow.closed_at IS DISTINCT FROM v_h.source_escrow_closed_at'
+     OR v_receipt !~ 'v_source_escrow.close_note IS DISTINCT FROM v_h.source_escrow_close_note'
+     OR v_receipt !~ 'v_source_escrow.prize_out IS DISTINCT FROM v_h.pool'
+     OR v_receipt !~ 'v_h.target_was_missing IS DISTINCT FROM false'
+     OR v_receipt !~ 'v_source.ended_at IS DISTINCT FROM v_h.source_closed_at'
+     OR v_receipt !~ 'tb.terminal_closed_at IS DISTINCT FROM v_h.source_closed_at'
+     OR v_receipt !~ '''closed_at'', v_h.source_closed_at'
      OR position('ca:tournament-terminal-settlement:v1' IN v_legacy_award) = 0
      OR position('pg_advisory_xact_lock(' IN v_legacy_award) = 0
      OR position('pg_advisory_xact_lock(' IN v_legacy_award) >
@@ -70,6 +104,47 @@ BEGIN
        'service_role',
        'public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer)', 'EXECUTE') THEN
     RAISE EXCEPTION 'FAIL rolling compatibility door was retired before the engine cutover';
+  END IF;
+  IF EXISTS (
+       SELECT 1
+         FROM (VALUES
+           ('public.tournament_satellite_settlement_cutover'::regclass),
+           ('public.tournament_satellite_settlements'::regclass),
+           ('public.tournament_satellite_awards'::regclass),
+           ('public.tournament_satellite_remainders'::regclass)
+         ) evidence(relid)
+         CROSS JOIN (VALUES ('anon'),('authenticated'),('service_role')) app(role_name)
+         CROSS JOIN (VALUES
+           ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),
+           ('REFERENCES'),('TRIGGER')
+         ) access(privilege_name)
+        WHERE has_table_privilege(
+                app.role_name, evidence.relid, access.privilege_name)
+     ) OR EXISTS (
+       SELECT 1
+         FROM (VALUES
+           ('public.tournament_satellite_settlement_cutover'::regclass),
+           ('public.tournament_satellite_settlements'::regclass),
+           ('public.tournament_satellite_awards'::regclass),
+           ('public.tournament_satellite_remainders'::regclass)
+         ) evidence(relid)
+         JOIN pg_class c ON c.oid = evidence.relid
+        WHERE c.relrowsecurity IS DISTINCT FROM true
+           OR EXISTS (SELECT 1 FROM pg_policy pol WHERE pol.polrelid = c.oid)
+     ) THEN
+    RAISE EXCEPTION 'FAIL immutable satellite evidence is not owner-only RLS';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint c
+      JOIN pg_attribute a
+        ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+     WHERE c.conrelid = 'public.tournament_satellite_settlements'::regclass
+       AND c.confrelid = 'public.tournaments'::regclass
+       AND c.contype = 'f' AND c.confdeltype = 'r'
+       AND cardinality(c.conkey) = 1 AND a.attname = 'target_id'
+  ) THEN
+    RAISE EXCEPTION 'FAIL immutable satellite header target is not delete-restricted';
   END IF;
 
   CREATE TEMP TABLE probe_satellite_matrix(
@@ -132,16 +207,27 @@ BEGIN
        OR v_result->>'ok' IS DISTINCT FROM 'true'
        OR (v_result->>'pool')::numeric IS DISTINCT FROM 285.00::numeric
        OR (v_result->>'ticket_cost')::numeric IS DISTINCT FROM 200.00::numeric
-       OR (v_result->>'ticket_award_count')::integer <> 1
-       OR (v_result->>'seat_count')::integer <> 0
-       OR (v_result->>'cash_ticket_count')::integer <> 1
-       OR (v_result->'remainder'->>'position')::integer <> 2
+       OR (v_result->>'ticket_award_count')::integer IS DISTINCT FROM 1
+       OR (v_result->>'seat_count')::integer IS DISTINCT FROM 0
+       OR (v_result->>'cash_ticket_count')::integer IS DISTINCT FROM 1
+       OR (v_result->'remainder'->>'position')::integer IS DISTINCT FROM 2
        OR (v_result->'remainder'->>'amount')::numeric IS DISTINCT FROM 85.00::numeric
-       OR (v_result->>'source_table_count')::integer <> 1
-       OR (v_result->>'source_seat_count')::integer <> 2
-       OR (v_result->>'released_seat_count')::integer <> 0
-       OR jsonb_array_length(v_result->'source_closeout'->'source_table_ids') <> 1
-       OR jsonb_array_length(v_result->'source_closeout'->'source_seat_ids') <> 2 THEN
+       OR (v_result->>'source_table_count')::integer IS DISTINCT FROM 1
+       OR (v_result->>'source_seat_count')::integer IS DISTINCT FROM 2
+       OR (v_result->>'released_seat_count')::integer IS DISTINCT FROM 0
+       OR jsonb_array_length(v_result->'source_closeout'->'source_table_ids')
+            IS DISTINCT FROM 1
+       OR jsonb_array_length(v_result->'source_closeout'->'source_seat_ids')
+            IS DISTINCT FROM 2
+       OR (v_result->'source_closeout'->>'closed_at')::timestamptz IS DISTINCT FROM
+            (SELECT t.ended_at FROM public.tournaments t
+              WHERE t.id = 'b066f432-2aae-4994-85c8-f9bfbfa4cd2f'::uuid)
+       OR NOT EXISTS (
+         SELECT 1 FROM public.tables tb
+         JOIN public.tournaments t ON t.id = tb.tournament_id
+          WHERE tb.id = 'f2ab8f6c-cb2b-4585-b4b4-90cb5e775d99'::uuid
+            AND t.id = 'b066f432-2aae-4994-85c8-f9bfbfa4cd2f'::uuid
+            AND tb.terminal_closed_at = t.ended_at) THEN
       RAISE EXCEPTION 'FAIL b066 exact adoption receipt is absent or malformed: %', v_result;
     END IF;
 
@@ -157,7 +243,59 @@ BEGIN
     END IF;
   END IF;
 
+  IF EXISTS (
+    SELECT 1 FROM public.tournaments t
+     WHERE t.id = '682045c5-cb07-47ed-ad0e-adbff9cb41af'::uuid
+  ) THEN
+    SELECT public.fn_ca_satellite_settlement_receipt(
+             '682045c5-cb07-47ed-ad0e-adbff9cb41af'::uuid,
+             s.winner_id)
+      INTO v_result
+      FROM public.tournament_satellite_settlements s
+     WHERE s.tournament_id = '682045c5-cb07-47ed-ad0e-adbff9cb41af'::uuid;
+    IF v_result IS NULL
+       OR v_result->>'ok' IS DISTINCT FROM 'true'
+       OR v_result->>'winner_id' IS DISTINCT FROM
+            '22af2652-f8ae-4b84-8f3d-d2894f435d79'
+       OR v_result->>'target_id' IS DISTINCT FROM
+            '13dd6b98-b882-4690-a479-3a6f77783ad6'
+       OR (v_result->>'pool')::numeric IS DISTINCT FROM 285.00::numeric
+       OR (v_result->>'ticket_cost')::numeric IS DISTINCT FROM 200.00::numeric
+       OR (v_result->>'ticket_award_count')::integer IS DISTINCT FROM 1
+       OR (v_result->>'seat_count')::integer IS DISTINCT FROM 1
+       OR (v_result->>'cash_ticket_count')::integer IS DISTINCT FROM 0
+       OR v_result->'awards'->0->>'user_id' IS DISTINCT FROM
+            '22af2652-f8ae-4b84-8f3d-d2894f435d79'
+       OR v_result->'awards'->0->>'registration_id' IS DISTINCT FROM
+            '324aedef-7f12-4935-8530-dde405ea6351'
+       OR v_result->'remainder'->>'user_id' IS DISTINCT FROM
+            '146cf7a5-7f99-4dd3-858d-26dae69d9c80'
+       OR (v_result->'remainder'->>'position')::integer IS DISTINCT FROM 2
+       OR (v_result->'remainder'->>'amount')::numeric IS DISTINCT FROM 85.00::numeric
+       OR (v_result->>'source_table_count')::integer IS DISTINCT FROM 1
+       OR (v_result->>'source_seat_count')::integer IS DISTINCT FROM 2
+       OR (v_result->>'released_seat_count')::integer IS DISTINCT FROM 0
+       OR (v_result->'source_closeout'->>'closed_at')::timestamptz IS DISTINCT FROM
+            (SELECT t.ended_at FROM public.tournaments t
+              WHERE t.id = '682045c5-cb07-47ed-ad0e-adbff9cb41af'::uuid)
+       OR NOT EXISTS (
+         SELECT 1 FROM public.tournament_satellite_remainders r
+          WHERE r.tournament_id =
+                  '682045c5-cb07-47ed-ad0e-adbff9cb41af'::uuid
+            AND r.user_id = '146cf7a5-7f99-4dd3-858d-26dae69d9c80'::uuid
+            AND r.place = 2 AND r.amount = 85.00
+            AND r.evidence_kind = 'legacy_20260908_682')
+       OR NOT EXISTS (
+         SELECT 1 FROM public.tables tb
+         JOIN public.tournaments t ON t.id = tb.tournament_id
+          WHERE tb.id = 'ae520859-1727-4576-9b4a-98f0e0392ace'::uuid
+            AND t.id = '682045c5-cb07-47ed-ad0e-adbff9cb41af'::uuid
+            AND tb.terminal_closed_at = t.ended_at) THEN
+      RAISE EXCEPTION 'FAIL 682 exact adoption receipt is absent or malformed: %', v_result;
+    END IF;
+  END IF;
+
   RAISE EXCEPTION
-    'AUDIT_TEST_PASS: stage-one whole-pool authority, rolling compatibility, ACLs, floor tickets, one next-finisher residual, exact source-felt closeout, short-field refusal, conservation, immutable replay and exact b066 adoption pass; all locks and temp state rolled back';
+    'AUDIT_TEST_PASS: stage-one whole-pool authority, rolling compatibility, owner-only ACLs, floor tickets, one next-finisher residual, exact source-close times and terminal markers, status-aware target entrant counters and escrow deltas, short-field refusal, conservation, immutable replay and exact b066/682 adoptions pass; all locks and temp state rolled back';
 END
 $probe$;

@@ -162,7 +162,7 @@ describe('the only completion door is atomic, retryable and lock bounded', () =>
     expect(ELIMINATIONS).not.toContain('certifyTournamentFinish(');
     expect(ELIMINATIONS).toContain('settleTournamentPlacesAtomically(');
     expect(ELIMINATIONS).toContain('settleFinalTableDealAtomically(');
-    expect(ELIMINATIONS).toContain('settleSatelliteFinishAtomically(');
+    expect(ELIMINATIONS).toContain('processSatelliteAwards(tournament, winnerId)');
     expect(RECOVERY).not.toContain('certifyTournamentFinish(');
     expect(`${ELIMINATIONS}\n${RECOVERY}`).not.toMatch(/\.update\(\{\s*status:\s*'COMPLETED'/);
   });
@@ -176,6 +176,7 @@ describe('the only completion door is atomic, retryable and lock bounded', () =>
     expect(drain).not.toContain('for (;;)');
     expect(drain).not.toContain('backfill_may_have_more');
     expect(drain).not.toContain('setImmediate(resolve)');
-    expect(RECOVERY.match(/drainTournamentBountyObligations\(t\.id\)/g)).toHaveLength(2);
+    expect(RECOVERY.match(/drainTournamentBountyObligations\(t\.id\)/g)).toHaveLength(1);
+    expect(RECOVERY).toContain('requestSatelliteSettlementReceipt(t.id, proposedWinnerId)');
   });
 });

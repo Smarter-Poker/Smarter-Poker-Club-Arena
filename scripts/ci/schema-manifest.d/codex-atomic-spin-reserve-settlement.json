@@ -1,6 +1,6 @@
 {
   "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
-  "_comment": "One three-seat Spin authority books the paid entry, retains the reserve lock through its funded draw, settles the draw, stamps the tournament contract, and returns exact reserve, journal, and escrow evidence. Immutable reserve receipts and structural triggers reject split or rewritten money state.",
+  "_comment": "One three-seat Spin authority requires three exact paid starting stacks, books the paid entry, retains the reserve lock through its funded draw, settles the draw, stamps the tournament contract, and returns exact reserve, journal, and escrow evidence. Paid-seat triggers reject zero or wrong starting stacks before every caller bypass; the old per-minute stack creditor is absent from the schema.",
   "tables": ["tournament_spin_settlement_cutover"],
   "functions": [
     "fn_spin_draw_and_settle",

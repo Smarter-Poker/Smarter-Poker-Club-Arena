@@ -20,7 +20,12 @@ BEGIN
      OR to_regprocedure(
        'public.fn_ca_tournament_terminal_receipt(uuid,uuid)') IS NULL
      OR to_regclass('public.tournament_terminal_settlements') IS NULL
-     OR to_regclass('public.tournament_terminal_settlement_cutover') IS NULL THEN
+     OR to_regclass('public.tournament_terminal_settlement_cutover') IS NULL
+     OR to_regprocedure(
+       'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)')
+          IS NULL
+     OR to_regprocedure(
+       'public.fn_stamp_tournament_terminal_evidence_markers()') IS NULL THEN
     RAISE EXCEPTION 'FAIL atomic terminal authority or immutable evidence is absent';
   END IF;
 
@@ -48,6 +53,71 @@ BEGIN
           WHERE oid = 'public.fn_ca_tournament_terminal_receipt(uuid,uuid)'::regprocedure)
           <> 's' THEN
     RAISE EXCEPTION 'FAIL terminal replay verifier is not read-only STABLE code';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1
+         FROM (VALUES
+           ('tournament_players'),('tournament_obligations'),
+           ('tournament_payouts'),('tournament_rake_settlements'),
+           ('rake_records'),('tournament_bounty_chests'),
+           ('tournament_bounty_awards'),('tournament_guarantee_overlays'),
+           ('table_seats'),('wallet_transactions'),
+           ('tournament_bounty_award_recipients'),('tournament_escrow'),
+           ('spin_reserve_ledger')
+         ) required(relname)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM pg_attribute a
+           WHERE a.attrelid=format('public.%I',required.relname)::regclass
+             AND a.attname='terminal_closed_at'
+             AND a.atttypid='timestamptz'::regtype
+             AND a.attnum>0 AND NOT a.attisdropped AND NOT a.attnotnull
+             AND a.attidentity='' AND a.attgenerated='' AND a.attacl IS NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM pg_attrdef d
+                WHERE d.adrelid=a.attrelid AND d.adnum=a.attnum))
+     ) OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger g
+       JOIN pg_attribute a ON a.attrelid=g.tgrelid AND a.attname='status'
+        WHERE g.tgrelid='public.tournaments'::regclass
+          AND g.tgname='stamp_tournament_terminal_evidence_markers'
+          AND g.tgfoid=
+            'public.fn_stamp_tournament_terminal_evidence_markers()'::regprocedure
+          AND NOT g.tgisinternal AND g.tgenabled='O' AND g.tgtype=21
+          AND g.tgattr::text=a.attnum::text
+     ) OR (SELECT count(*) FROM pg_trigger g
+            WHERE g.tgname='terminal_tournament_evidence_is_immutable'
+              AND g.tgfoid=
+                'public.fn_terminal_tournament_evidence_is_immutable()'::regprocedure
+              AND NOT g.tgisinternal AND g.tgenabled='O'
+              AND g.tgtype=31 AND g.tgattr::text='')<>15
+     OR has_function_privilege(
+          'service_role',
+          'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)',
+          'EXECUTE')
+     OR has_function_privilege(
+          'service_role',
+          'public.fn_stamp_tournament_terminal_evidence_markers()',
+          'EXECUTE')
+     OR EXISTS (
+       SELECT 1
+         FROM pg_proc p
+         CROSS JOIN LATERAL aclexplode(
+           COALESCE(p.proacl,acldefault('f',p.proowner))) privilege
+        WHERE p.oid IN (
+          'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)'::regprocedure,
+          'public.fn_stamp_tournament_terminal_evidence_markers()'::regprocedure)
+          AND privilege.privilege_type='EXECUTE'
+          AND privilege.grantee<>p.proowner)
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_trigger g
+        WHERE g.tgrelid='public.tables'::regclass
+          AND g.tgname='tournament_table_terminal_close_is_irreversible'
+          AND g.tgfoid=
+            'public.fn_tournament_table_terminal_close_is_irreversible()'::regprocedure
+          AND NOT g.tgisinternal AND g.tgenabled='O' AND g.tgtype=31) THEN
+    RAISE EXCEPTION
+      'FAIL terminal child marker columns, trigger shape or owner-only ACL changed';
   END IF;
 
   IF NOT has_function_privilege(
@@ -83,7 +153,7 @@ BEGIN
   SELECT count(*) INTO v_count
     FROM public.tournament_terminal_settlement_cutover c
    WHERE c.authority = 'fn_complete_tournament_terminal:v1'
-     AND c.migration_version = '20260908065324';
+     AND c.migration_version = '20260908153329';
   IF v_count <> 1 THEN
     RAISE EXCEPTION 'FAIL terminal cutover watermark is not exact';
   END IF;
@@ -117,6 +187,59 @@ BEGIN
        OR (v_result->'escrow'->>'bounty_balance')::numeric <> 0
        OR (v_result->'escrow'->>'fee_balance')::numeric <> 0 THEN
       RAISE EXCEPTION 'FAIL terminal receipt does not verify: %',v_result;
+    END IF;
+    IF EXISTS (
+      SELECT 1
+        FROM (
+          SELECT x.terminal_closed_at AS marker
+            FROM public.tournament_players x
+           WHERE x.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.tournament_obligations x
+           WHERE x.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.tournament_payouts x
+           WHERE x.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.tournament_rake_settlements x
+           WHERE x.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.rake_records x
+           WHERE x.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.tournament_bounty_chests x
+           WHERE x.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.tournament_bounty_awards x
+           WHERE x.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.tournament_guarantee_overlays x
+           WHERE x.tournament_id=v_row.tournament_id
+          UNION ALL SELECT s.terminal_closed_at
+            FROM public.table_seats s
+            JOIN public.tables tb ON tb.id=s.table_id
+           WHERE tb.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.wallet_transactions x
+           WHERE x.related_entity_id=v_row.tournament_id
+          UNION ALL SELECT r.terminal_closed_at
+            FROM public.tournament_bounty_award_recipients r
+            JOIN public.tournament_bounty_awards a ON a.id=r.award_id
+           WHERE a.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.tournament_escrow x
+           WHERE x.tournament_id=v_row.tournament_id
+          UNION ALL SELECT x.terminal_closed_at
+            FROM public.spin_reserve_ledger x
+           WHERE x.tournament_id=v_row.tournament_id
+             AND x.kind NOT IN ('contribution','jackpot_draw')
+        ) mutable_evidence
+        JOIN public.tournament_terminal_settlements h
+          ON h.tournament_id=v_row.tournament_id
+       WHERE mutable_evidence.marker IS DISTINCT FROM h.completed_at
+    ) THEN
+      RAISE EXCEPTION
+        'FAIL terminal receipt has a mutable child without its exact tuple marker';
     END IF;
   END LOOP;
 

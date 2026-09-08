@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 const ROOT = resolve(__dirname, '../..');
 const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const RECERTIFICATION = '20260906091511_phase_1_table_management_authority_recertified.sql';
+const CANCELLATION = '20260908153239_tournament_cancellation_commits_one_stored_receipt.sql';
 const recertification = readFileSync(resolve(MIGRATIONS, RECERTIFICATION), 'utf8');
+const cancellation = readFileSync(resolve(MIGRATIONS, CANCELLATION), 'utf8');
 const migrationSources = readdirSync(MIGRATIONS)
   .filter((name) => name.endsWith('.sql'))
   .sort()
@@ -59,7 +61,7 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
   it('counts every active seat when the current close helper decides', () => {
     const latest = latestDefinition('fn_close_managed_game(');
 
-    expect(latest.file).toBe(RECERTIFICATION);
+    expect(latest.file).toBe(CANCELLATION);
     expect(latest.source).toContain('FROM public.table_seats ts');
     expect(latest.source).toContain('AND ts.left_at IS NULL');
     expect(latest.source).not.toContain('ts.user_id IS NOT NULL');
@@ -71,7 +73,7 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
     const close = latestDefinition('fn_close_managed_game(');
 
     expect(update.file).toBe(RECERTIFICATION);
-    expect(close.file).toBe(RECERTIFICATION);
+    expect(close.file).toBe(CANCELLATION);
     for (const definition of [update.source, close.source]) {
       expect(definition).toContain('FROM public.tournament_players tp');
       expect(definition).not.toContain('tp.user_id IS NOT NULL');
@@ -83,10 +85,10 @@ describe('Table Management Phase 1 remains authoritative after later migrations'
     expect(recertification).toContain(
       'REVOKE ALL ON FUNCTION public.fn_update_managed_game(text, uuid, jsonb)\n  FROM PUBLIC, anon, authenticated;'
     );
-    expect(recertification).toContain(
+    expect(cancellation).toContain(
       'REVOKE ALL ON FUNCTION public.fn_close_managed_game(text, uuid)\n  FROM PUBLIC, anon, authenticated;'
     );
-    expect(recertification).not.toContain(
+    expect(cancellation).not.toContain(
       'GRANT EXECUTE ON FUNCTION public.fn_close_managed_game(text, uuid)\n  TO authenticated'
     );
   });

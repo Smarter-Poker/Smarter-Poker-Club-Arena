@@ -17,6 +17,7 @@ import { tableStateHub } from '../transport/TableStateHub.js';
 import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { mayTakeSeat } from './seatClaim.js';
+import { requestSatelliteSettlementReceipt } from './satelliteSettlementRpc.js';
 import {
   planOrphanReseats,
   describeUnmovableOrphans,
@@ -821,53 +822,17 @@ export class TournamentManager extends TournamentManagerEliminations {
    * Idempotent per cycle; the unique (table_id, user_id) WHERE left_at IS NULL
    * index makes double-seating impossible even under races.
    */
-  /** TOURNEY-AUDIT 2026-07-24 (sweep 6): satellite seat distribution. */
   /**
-   * Settle a satellite's entire frozen entitlement plan in one database
-   * transaction. The RPC is the sole authority for seat delivery, cash
-   * fallback, prize stamps, its immutable batch receipt, and COMPLETED.
-   * A refusal is causal retry work; this caller never guesses through it.
+   * Ask the one database authority to settle and certify the complete
+   * satellite result. TypeScript neither derives an award nor infers success
+   * from tournament status; only the exact immutable receipt is accepted.
    */
-  protected async processSatelliteAwards(_tournament: any): Promise<boolean> {
-    type AtomicSatelliteFinishResult = {
-      ok?: boolean;
-      settled?: boolean;
-      already_settled?: boolean;
-      rows_updated?: number;
-      award_depth?: number;
-      amount_settled?: number;
-      reason?: string;
-      sqlstate?: string;
-      detail?: string;
-      retryable?: boolean;
-    };
-
-    try {
-      const { data, error } = await supabase.rpc('fn_settle_satellite_finish_atomic', {
-        p_tournament_id: this.tournamentId,
-        p_source: 'engine.finishTournament',
-      });
-      const result = data as AtomicSatelliteFinishResult | null;
-      if (error || result?.ok !== true || result?.settled !== true) {
-        const reason = error?.message ?? result?.reason ?? 'satellite_settlement_refused';
-        const detail = result?.detail ? `: ${result.detail}` : '';
-        reportError(
-          new Error(
-            `[Satellite:${this.tournamentId.slice(0, 8)}] atomic settlement refused (${reason}${detail}); event remains COMPLETING and re-drivable`
-          ),
-          'Tournament.atomic_satellite_finish_failed'
-        );
-        return false;
-      }
-
-      console.log(
-        `[Satellite:${this.tournamentId.slice(0, 8)}] atomic settlement ${result.already_settled ? 'replayed' : 'committed'}: ${Number(result.award_depth ?? 0)} award place(s), ${Number(result.amount_settled ?? 0)} total value`
-      );
-      return true;
-    } catch (error) {
-      reportError(error, 'Tournament.atomic_satellite_finish_threw');
-      return false;
-    }
+  protected async processSatelliteAwards(_tournament: any, winnerId: string): Promise<number> {
+    const verified = await requestSatelliteSettlementReceipt(this.tournamentId, winnerId);
+    console.log(
+      `[Satellite:${this.tournamentId.slice(0, 8)}] atomic settlement certified: ${verified.ticketAwardCount} full ticket(s), ${verified.cashTicketCount} cash substitute(s), winner value ${verified.winnerAmount}`
+    );
+    return verified.winnerAmount;
   }
 
   protected async ensureLateRegSeated(): Promise<void> {

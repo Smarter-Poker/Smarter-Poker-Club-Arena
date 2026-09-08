@@ -215,12 +215,12 @@ describe('the runtime is only a thin caller of the atomic domain finish', () => 
   it('contains no manual seat, cash, prize or status mutation path', () => {
     const runtime = sliceMethod(
       MANAGER,
-      'processSatelliteAwards(_tournament: any): Promise<boolean>'
+      'processSatelliteAwards(_tournament: any, winnerId: string): Promise<number>'
     );
-    expect(runtime.match(/fn_settle_satellite_finish_atomic/g)).toHaveLength(1);
-    expect(runtime).toMatch(/result\?\.ok !== true \|\| result\?\.settled !== true/);
+    expect(runtime).toContain('requestSatelliteSettlementReceipt(this.tournamentId, winnerId)');
+    expect(runtime).toContain('return verified.winnerAmount');
     expect(runtime).not.toMatch(
-      /\.from\(|fn_award_satellite_seat|fn_settle_tournament_obligation|status:\s*'COMPLETED'|\.update\(/
+      /supabase|\.from\(|fn_award_satellite_seat|fn_settle_tournament_obligation|status:\s*'COMPLETED'|\.update\(/
     );
   });
 });
@@ -234,6 +234,7 @@ describe('a stuck satellite preserves its immutable finish claim', () => {
     // A zero-survivor field still refuses structure cash without a canonical
     // winner, while one proven survivor resumes the atomic satellite path.
     expect(recovery).toMatch(/recoverStuckCompleting_satellite_skipped/);
-    expect(recovery).toMatch(/fn_settle_satellite_finish_atomic/);
+    expect(recovery).toMatch(/requestSatelliteSettlementReceipt\(t\.id, proposedWinnerId\)/);
+    expect(recovery).not.toMatch(/fn_settle_satellite_finish_atomic/);
   });
 });

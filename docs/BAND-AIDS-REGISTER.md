@@ -325,31 +325,71 @@ must be one transaction, asserted at commit.
 
 ---
 
-### 8. `credit-stalled-seat-first-stacks` — **runs every minute, 10,069 times in 7 days**
+### 8. `credit-stalled-seat-first-stacks` — **RETIRED 2026-09-08**
 
-**What it is.** A cron that credits a seat's first stack when the seat exists
-and the chips never arrived. Money, every minute, for ever.
+**What it was.** A cron that credited a seat's first stack when the seat existed
+and the chips never arrived. It moved game-deciding chips every minute forever.
 
-**Root cause.** Seating and funding the seat are separate writes.
+**Root cause fixed.** Migration
+`20260908153223_spin_reserve_settlement_commits_its_journal_or_nothing` makes a
+live tournament seat's positive stack a BEFORE-trigger invariant, before every
+engine or money-path bypass. A canonical seat-first seat must equal the board's
+positive `tournaments.starting_chips`. The paid-third-seat AFTER hook now
+propagates count or Spin-booking failure into the seat transaction rather than
+catching it and committing a half-built field.
 
-**The hard fix.** `atomic_table_buyin` already exists. A seat row must not be
-creatable without its stack in the same transaction — a `CHECK`/trigger, not a
-sweep.
+**Retirement proof.** The migration takes the cron job's advisory lock, holds
+the scheduler roster plus all five source tables against writers, proves the
+old function's exact candidate set is empty, proves every active pre-deal
+tournament seat is positive, and proves exact seat/roster stack parity for
+canonical seat-first games. It then unschedules every normalized name/command
+match and drops `fn_credit_stalled_seat_first_stacks()` with `RESTRICT`, all in
+that transaction. The scheduler lock prevents a concurrent reschedule between
+the final scan and commit.
 
-**Delete when:** the job reports zero credits for 30 days.
+The production snapshot at 2026-09-08 07:18 UTC found **0** old-job candidates,
+**114** active pre-deal canonical seat-first games, **194** live seats, **0**
+wrong seat stacks, **0** roster-status mismatches, **0** roster-chip mismatches,
+and **0** paid active roster entrants without a live seat. The earlier “zero
+credits for 30 days” gate was not measurable: `cron.job_run_details` retained
+about 15 days and every successful invocation recorded only `1 row`, not the
+function's returned credit count. The locked structural proof is stronger and
+is the actual deletion gate.
 
 ---
 
-### 9. `fn_spin_sweep_unbooked` (5-minutely) and `spin_repair_missing_multiplier` (15-minutely)
+### 9. Spin booking, multiplier and winner-backpay fleet — **ROOT FIX BUILT; RETIREMENT STAGED**
 
-**What it is.** Spins whose entry was never booked into the reserve, and spins
-whose multiplier was never written. **2,014 and 671 runs in 7 days.**
+**What it was.** `fn_spin_sweep_unbooked` repaired entries never booked into
+the reserve, `fn_spin_repair_missing_multiplier` reconstructed multiplier
+state, and `fn_backpay_spin_unpaid_winners` paid a winner after a split draw,
+journal or payout path. The first two schedules ran **2,014 and 671 times in 7
+days**; GameServer called winner-backpay every ten minutes.
 
-**Root cause.** `fn_spin_book_entry` runs when the last seat is paid, in a
-different transaction from the seat payment, and can be lost to a deadlock —
-the code comments record 1–3 deadlocks a day from exactly this.
+**Root cause fixed.** The paid-third-seat hook now propagates booking failure
+into the seat transaction, so the paid seat, roster, count and reserve entry
+cannot split. `fn_spin_draw_and_settle` then locks the tournament and reserve,
+books/replays that entry, selects only a funded tier, commits its draw, journal,
+escrow and tournament contract, and returns one exact receipt. The server calls
+only this authority and refuses to reveal or deal without validating the whole
+receipt. Its separate draw, settle and ledger-adoption paths are gone.
 
-**The hard fix.** Book the entry in the transaction that fills the last seat.
+The recurring GameServer winner-backpay timer/caller is removed. The two known
+historical incidents are handled by exact asserted migration blocks rather
+than by an open-ended payer.
+
+**Retirement gate.** The staged post-publish cleanup does not trust deployment
+order or elapsed time. In production it requires a complete atomic receipt for
+a new Spin outside the audited historical cohort, proves the full unpaid view
+has no positive shortfall, proves every relevant reserve/journal/escrow and
+tournament contract is exact, and checks that no repair invocation is running.
+It owns both reconstruction-job advisory locks, freezes the scheduler roster,
+and recreates plus verifies all three receipt/contract enforcement triggers.
+Only then does it unschedule every active or disabled spelling, drop the sweep,
+reconstruction, winner-backpay and old draw functions, and revoke service-role
+access to the raw settle/book primitives. Until that receipt exists, the
+database functions remain rolling-cutover compatibility doors, not live server
+callers.
 
 **Related and already fixed today:** the escrow could not see a Spin's reserve
 draw because the derived `chip_ledger` leg went missing (1 of 18,318). It now

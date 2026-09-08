@@ -3,8 +3,12 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = (path: string) => resolve(__dirname, '..', path);
-const migration = '20260908065324_non_satellite_terminal_settlement_commits_one_stored_receipt.sql';
+const migration = '20260908153329_non_satellite_terminal_settlement_commits_one_stored_receipt.sql';
 const sql = readFileSync(root(`supabase/migrations/${migration}`), 'utf8');
+const satelliteSql = readFileSync(
+  root('supabase/migrations/20260908153207_satellite_settlement_has_one_atomic_authority.sql'),
+  'utf8'
+);
 
 function taggedBody(tag: string): string {
   const delimiter = `$${tag}$`;
@@ -22,6 +26,10 @@ const handHardening = taggedBody('harden_hand_stack_lock_order');
 const rollingComponents = taggedBody('serialize_rolling_terminal_components');
 const collectBounty = taggedBody('harden_collect_bounty_terminal_lock');
 const mysteryEvidence = taggedBody('mystery_completion_evidence');
+const terminalMarker = taggedBody('terminal_marker_transition');
+const terminalStamp = taggedBody('stamp_terminal_evidence_markers');
+const terminalEvidenceGuard = taggedBody('terminal_evidence_guard');
+const terminalParentGuard = taggedBody('receipted_tournament_guard');
 
 describe('non-satellite terminal completion is one database transaction', () => {
   it('calls exactly one selected cash authority and has no catch-and-continue', () => {
@@ -89,6 +97,8 @@ describe('non-satellite terminal completion is one database transaction', () => 
     expect(settle).toContain('v_e.prize_balance IS DISTINCT FROM 0::numeric');
     expect(settle).toContain('v_e.bounty_balance IS DISTINCT FROM 0::numeric');
     expect(settle).toContain('v_e.fee_balance IS DISTINCT FROM 0::numeric');
+    expect(settle).toContain('FROM public.tournament_guarantee_overlays g');
+    expect(settle).toContain('ORDER BY g.tournament_id FOR UPDATE');
   });
 
   it('makes replay cross the immutable verifier before any payer', () => {
@@ -187,6 +197,94 @@ describe('the stored terminal receipt is immutable and exact', () => {
     expect(receipt).toContain('v_t.ended_at IS DISTINCT FROM v_h.completed_at');
     expect(receipt).toContain('v_r.attributed_at IS DISTINCT FROM v_h.rake_attributed_at');
     expect(receipt).toContain('v_r.attribution_error IS NOT NULL');
+    expect(receipt).toContain('v_e.closed_at IS DISTINCT FROM v_h.escrow_closed_at');
+    expect(receipt).toContain('v_e.close_note IS DISTINCT FROM v_h.escrow_close_note');
+  });
+
+  it('captures the cutover behind a write barrier and never classifies history by clock', () => {
+    expect(sql).toContain('LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE');
+    expect(sql).toContain('preexisting_completed_ids         uuid[] NOT NULL');
+    expect(sql).toContain('array_position(preexisting_completed_ids, NULL) IS NULL');
+    expect(sql).toContain('clock_timestamp(), ARRAY(');
+    expect(sql).not.toContain('preexisting_non_satellite_count');
+  });
+
+  it('freezes every receipt-owned evidence surface and retires the escrow close watcher', () => {
+    for (const fn of [
+      'fn_terminal_tournament_evidence_is_immutable',
+      'fn_terminal_tournament_seat_is_immutable',
+      'fn_receipted_tournament_is_immutable',
+      'fn_terminal_bounty_recipient_is_immutable',
+      'fn_terminal_wallet_transaction_is_immutable',
+      'fn_terminal_credit_key_is_immutable',
+      'fn_terminal_tournament_escrow_is_immutable',
+      'fn_satellite_target_player_provenance_is_immutable',
+      'fn_satellite_target_rake_is_immutable',
+      'fn_satellite_transfer_ledger_is_immutable',
+    ]) {
+      expect(sql).toContain(`CREATE OR REPLACE FUNCTION public.${fn}()`);
+    }
+    expect(sql).toContain('DROP TRIGGER IF EXISTS zz_ca_escrow_close ON public.tournaments');
+    expect(sql).toContain("g.tgname = 'zz_ca_escrow_close'");
+    expect(sql).toContain("g.tgname = 'terminal_tournament_evidence_is_immutable'");
+    expect(sql).toContain('NEW.id IS DISTINCT FROM OLD.id');
+    expect(sql).toContain('UPDATE OF id,tournament_id,status,current_players');
+  });
+
+  it('uses row-owned terminal markers to close queued child and parent snapshot races', () => {
+    expect(sql.match(/ADD COLUMN terminal_closed_at timestamptz;/g)).toHaveLength(13);
+    expect(terminalMarker).toContain("p_new - 'terminal_closed_at'");
+    expect(terminalMarker).toContain("p_old - 'terminal_closed_at'");
+    expect(terminalMarker).toContain('isfinite(t.ended_at)');
+    expect(terminalMarker).toContain('IS NOT DISTINCT FROM t.ended_at');
+
+    for (const evidence of [
+      'tournament_players',
+      'tournament_obligations',
+      'tournament_payouts',
+      'tournament_rake_settlements',
+      'rake_records',
+      'tournament_bounty_chests',
+      'tournament_bounty_awards',
+      'tournament_guarantee_overlays',
+      'table_seats',
+      'wallet_transactions',
+      'tournament_bounty_award_recipients',
+      'tournament_escrow',
+      'spin_reserve_ledger',
+    ]) {
+      expect(terminalStamp).toContain(`UPDATE public.${evidence}`);
+    }
+    expect(terminalStamp).toContain("kind NOT IN ('contribution','jackpot_draw')");
+    expect(terminalStamp).toContain('terminal_closed_at IS DISTINCT FROM v_terminal_at');
+    expect(terminalStamp).not.toMatch(/EXCEPTION\s+WHEN/i);
+
+    const oldMarker = terminalEvidenceGuard.indexOf('v_old_marker IS NOT NULL');
+    const parentLookup = terminalEvidenceGuard.indexOf("SELECT upper(COALESCE(t.status::text,''))");
+    expect(oldMarker).toBeGreaterThan(-1);
+    expect(parentLookup).toBeGreaterThan(oldMarker);
+    expect(terminalEvidenceGuard).toContain('fn_ca_terminal_marker_transition_is_exact(');
+    expect(terminalEvidenceGuard).toContain("AND (TG_OP = 'INSERT' OR v_receipted)");
+    expect(terminalEvidenceGuard).toContain('FOR SHARE');
+    expect(terminalEvidenceGuard).not.toContain('FOR KEY SHARE');
+    expect(terminalParentGuard).toContain("upper(COALESCE(OLD.status::text,'')) IN");
+    expect(terminalParentGuard).not.toContain('tournament_terminal_settlements');
+
+    expect(receipt).toContain('mutable evidence lacks its exact terminal marker');
+    expect(receipt).toContain('s.terminal_closed_at IS DISTINCT FROM v_h.completed_at');
+    expect(sql).toContain("g.tgname='stamp_tournament_terminal_evidence_markers'");
+    expect(sql).toContain('AND g.tgtype=21');
+    expect(sql).toContain("AND g.tgtype=31 AND g.tgattr::text=''");
+    expect(sql).toContain("g.tgenabled='O'");
+    expect(sql).toContain("a.atttypid = 'timestamptz'::regtype");
+    expect(sql).toContain('a.attacl IS NULL');
+    expect(sql).toContain('aclexplode(');
+    expect(sql).toContain('privilege.grantee<>p.proowner');
+    expect(sql).toContain("'public.fn_ca_terminal_marker_transition_is_exact(jsonb,jsonb,uuid)'");
+    expect(sql).toContain("'public.fn_stamp_tournament_terminal_evidence_markers()'");
+    expect(sql).toContain('g.tgattr::text=a.attnum::text');
+    expect(sql).toContain("g.tgattr::text='') <> 15");
+    expect(sql).toContain("('tables','tournament_table_terminal_close_is_irreversible'");
   });
 
   it('returns the explicit caller contract from only stored and verified evidence', () => {
@@ -206,6 +304,7 @@ describe('the stored terminal receipt is immutable and exact', () => {
       'mystery_bounty',
       'bounty',
       'closed_table_count',
+      'source_seat_count',
       'released_seat_count',
       'table_closure',
       'rake',
@@ -221,14 +320,21 @@ describe('the stored terminal receipt is immutable and exact', () => {
   });
 
   it('stores and re-proves exact table membership and seat closure', () => {
-    expect(sql).toContain('terminal_closed_at timestamptz');
+    expect(satelliteSql).toContain('ADD COLUMN terminal_closed_at timestamptz');
     expect(sql).toContain('closed_table_ids uuid[]');
+    expect(sql).toContain('source_seat_ids uuid[]');
     expect(sql).toContain('released_seat_ids uuid[]');
+    expect(sql).toContain('CHECK (released_seat_ids <@ source_seat_ids)');
     expect(receipt).toContain('public.tables tb');
     expect(receipt).toContain('public.table_seats s');
     expect(receipt).toContain('tb.terminal_closed_at IS DISTINCT FROM v_h.completed_at');
     expect(receipt).toContain("'closed_table_ids',to_jsonb(v_h.closed_table_ids)");
+    expect(receipt).toContain("'source_seat_ids',to_jsonb(v_h.source_seat_ids)");
     expect(receipt).toContain("'released_seat_ids',to_jsonb(v_h.released_seat_ids)");
+    expect(receipt).toContain('v_durable_seat_ids IS DISTINCT FROM v_h.source_seat_ids');
+    expect(receipt).toContain('s.is_away IS DISTINCT FROM false');
+    expect(receipt).toContain('s.sit_out_at IS NOT NULL');
+    expect(receipt).toContain('s.scheduled_leave_hands IS NOT NULL');
   });
 
   it('resolves an ambiguous transport result only after the same serialized lock', () => {
@@ -276,6 +382,10 @@ describe('real database probes pin late rollback and hand-boundary replay', () =
     root('scripts/ci/probes/atomic-satellite-outcome-serialization.sql'),
     'utf8'
   );
+  const terminalMarkerRaceProbe = readFileSync(
+    root('scripts/ci/probes/atomic-terminal-evidence-marker-race.sql'),
+    'utf8'
+  );
 
   it('covers a positive overlay, active mystery, nonzero rake and exact replay', () => {
     expect(closureProbe).toContain("'guaranteed_prize',40");
@@ -284,6 +394,24 @@ describe('real database probes pin late rollback and hand-boundary replay', () =
     expect(closureProbe).toContain('v_first::text IS DISTINCT FROM v_replay::text');
     expect(closureProbe).toContain('g.amount=10');
     expect(closureProbe).toContain('e.overlay_in IS DISTINCT FROM 10::numeric');
+    expect(closureProbe).toContain(
+      'live table accepted a caller-supplied terminal marker through a forged closed update'
+    );
+    expect(closureProbe).toContain(
+      'live tournament accepted a forged terminal-marker table or changed its original table'
+    );
+    expect(closureProbe).toContain(
+      'live tournament player accepted a caller-supplied terminal marker'
+    );
+    expect(closureProbe).toContain(
+      'terminal table current_players changed from exact zero to NULL'
+    );
+    expect(closureProbe).toContain('terminal table marker changed after successful completion');
+    expect(closureProbe).toContain('terminal table identity changed after successful completion');
+    expect(closureProbe).toContain(
+      'terminal guarantee evidence changed after successful completion'
+    );
+    expect(closureProbe).toContain('x.terminal_closed_at IS DISTINCT FROM v_completed_at');
     expect(closureProbe).toContain(
       "(v_first->'rake'->>'amount')::numeric IS DISTINCT FROM 2::numeric"
     );
@@ -312,5 +440,20 @@ describe('real database probes pin late rollback and hand-boundary replay', () =
     expect(satelliteOutcomeWaitProbe).toContain('fn_resolve_satellite_settlement_outcome(');
     expect(satelliteOutcomeWaitProbe).toContain('ca:tournament-terminal-settlement:v1');
     expect(satelliteOutcomeWaitProbe).toContain('dblink_is_busy');
+  });
+
+  it('proves queued child update and delete see the committed tuple marker', () => {
+    expect(terminalMarkerRaceProbe).toContain("a.wait_event='PgSleep'");
+    expect(terminalMarkerRaceProbe).toContain("public.dblink_send_query('terminal_marker_update'");
+    expect(terminalMarkerRaceProbe).toContain("public.dblink_send_query('terminal_marker_delete'");
+    expect(terminalMarkerRaceProbe).toContain("public.dblink_is_busy('terminal_marker_update')");
+    expect(terminalMarkerRaceProbe).toContain("public.dblink_is_busy('terminal_marker_delete')");
+    expect(terminalMarkerRaceProbe).toContain("a.wait_event_type='Lock'");
+    expect(terminalMarkerRaceProbe).toContain('v_blocked_waiters<>2');
+    expect(terminalMarkerRaceProbe).toContain("IF v_state='55000'");
+    expect(terminalMarkerRaceProbe).toContain('v_total<>2 OR v_marked<>2 OR v_pristine<>2');
+    expect(terminalMarkerRaceProbe).toContain(
+      'queued child UPDATE and DELETE both waited behind committed tuple markers'
+    );
   });
 });

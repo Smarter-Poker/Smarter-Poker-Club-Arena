@@ -1,16 +1,53 @@
 {
   "_owner": "agent/codex-atomic-prize/fix/atomic-tournament-settlement",
-  "_comment": "One immutable whole-pool satellite settlement: every funded full ticket is one seat-or-cash award line, all sub-ticket residual goes to exactly one next finisher, and every source table and seat closes in the same transaction under an exact replayable identity snapshot. The legacy per-seat service door stays live during the rolling deployment; retirement is deferred to a separately gated stage two.",
+  "_comment": "One immutable whole-pool satellite settlement, exact source-bound refunds, and noncash tournament-entry tickets. Every funded full ticket is one seat-or-cash award line, all sub-ticket residual goes to exactly one next finisher, and a satellite or ticket-funded unregistration can return only another tournament-entry ticket.",
   "tables": [
+    "tournament_refund_authorizations",
+    "tournament_refund_entitlements",
+    "tournament_refund_tranches",
     "tournament_satellite_awards",
+    "tournament_satellite_remainders",
     "tournament_satellite_settlement_cutover",
-    "tournament_satellite_settlements"
+    "tournament_satellite_settlements",
+    "tournament_ticket_admission_authorizations",
+    "tournament_unregistration_receipts"
   ],
   "functions": [
+    "fn_ca_capture_satellite_seat_entitlement",
+    "fn_ca_capture_tournament_charge_entitlement",
+    "fn_ca_escrow_apply_exact_refund",
+    "fn_ca_find_tournament_entry_ticket_for",
+    "fn_ca_lock_tournament_contract_from_entitlement",
+    "fn_ca_refund_entitlement_commit_valid",
+    "fn_ca_register_for_tournament_with_ticket_for",
+    "fn_ca_return_satellite_entitlement_as_ticket",
+    "fn_ca_satellite_entry_ticket_is_guarded",
     "fn_ca_satellite_settlement_receipt",
+    "fn_ca_tournament_charge_split",
+    "fn_ca_tournament_refund_plan",
+    "fn_ca_tournament_unregistration_receipt",
+    "fn_ca_unregister_tournament_player_exact",
+    "fn_find_tournament_entry_ticket",
+    "fn_horse_tournament_entry_ticket_hints",
+    "fn_register_for_tournament_with_ticket",
+    "fn_register_horse_for_tournament",
     "fn_resolve_satellite_settlement_outcome",
     "fn_satellite_settlement_receipts_are_append_only",
-    "fn_settle_satellite_tournament"
+    "fn_satellite_target_contract_is_immutable",
+    "fn_settle_satellite_tournament",
+    "fn_settle_tournament_refund_exact"
   ],
-  "columns": {}
+  "columns": {
+    "tables": ["terminal_closed_at"],
+    "tournament_tickets": [
+      "entry_bounty",
+      "entry_fee",
+      "entry_prize",
+      "redemption_mode",
+      "source_refund_entitlement_id",
+      "source_satellite_id",
+      "source_tournament_id"
+    ],
+    "tournaments": ["entry_contract_locked"]
+  }
 }

@@ -76,6 +76,8 @@ export interface VerifiedTournamentCompletionReceipt {
   tableClosure: {
     closedTableCount: number;
     closedTableIds: string[];
+    sourceSeatCount: number;
+    sourceSeatIds: string[];
     releasedSeatCount: number;
     releasedSeatIds: string[];
   };
@@ -280,20 +282,28 @@ export function verifyTournamentCompletionReceipt(
 
   const tableClosure = parseObject(receipt.table_closure);
   const closedTableCount = nonNegativeInteger(receipt.closed_table_count);
+  const sourceSeatCount = nonNegativeInteger(receipt.source_seat_count);
   const releasedSeatCount = nonNegativeInteger(receipt.released_seat_count);
   const nestedClosedTableCount = nonNegativeInteger(tableClosure.closed_table_count);
+  const nestedSourceSeatCount = nonNegativeInteger(tableClosure.source_seat_count);
   const nestedReleasedSeatCount = nonNegativeInteger(tableClosure.released_seat_count);
   const closedTableIds = canonicalUuidArray(tableClosure.closed_table_ids);
+  const sourceSeatIds = canonicalUuidArray(tableClosure.source_seat_ids);
   const releasedSeatIds = canonicalUuidArray(tableClosure.released_seat_ids);
   if (
     closedTableCount === null ||
+    sourceSeatCount === null ||
     releasedSeatCount === null ||
     nestedClosedTableCount !== closedTableCount ||
+    nestedSourceSeatCount !== sourceSeatCount ||
     nestedReleasedSeatCount !== releasedSeatCount ||
     closedTableIds === null ||
+    sourceSeatIds === null ||
     releasedSeatIds === null ||
     closedTableIds.length !== closedTableCount ||
-    releasedSeatIds.length !== releasedSeatCount
+    sourceSeatIds.length !== sourceSeatCount ||
+    releasedSeatIds.length !== releasedSeatCount ||
+    releasedSeatIds.some((id) => !sourceSeatIds.includes(id))
   ) {
     return null;
   }
@@ -365,6 +375,8 @@ export function verifyTournamentCompletionReceipt(
     tableClosure: {
       closedTableCount,
       closedTableIds,
+      sourceSeatCount,
+      sourceSeatIds,
       releasedSeatCount,
       releasedSeatIds,
     },

@@ -117,21 +117,48 @@ export function parseSatelliteSettlementReceipt(value: unknown): SatelliteSettle
   return value && typeof value === 'object' ? (value as SatelliteSettlementReceipt) : {};
 }
 
+function finiteNumericTransport(value: unknown): number | null {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function exactCents(value: unknown): number | null {
-  const amount = Number(value);
-  if (!Number.isFinite(amount) || amount < 0) return null;
+  const amount = finiteNumericTransport(value);
+  if (amount === null || amount < 0) return null;
   const cents = Math.round(amount * 100);
-  return Math.abs(amount * 100 - cents) < 1e-7 ? cents : null;
+  return Number.isSafeInteger(cents) && Math.abs(amount * 100 - cents) < 1e-7 ? cents : null;
 }
 
 function positiveInteger(value: unknown): number | null {
-  const number = Number(value);
+  const number = finiteNumericTransport(value);
+  if (number === null) return null;
   return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
 function nonNegativeInteger(value: unknown): number | null {
-  const number = Number(value);
+  const number = finiteNumericTransport(value);
+  if (number === null) return null;
   return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
+const RFC3339_TIMESTAMPTZ =
+  /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+
+function canonicalTimestamptz(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const match = RFC3339_TIMESTAMPTZ.exec(value);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) return null;
+
+  return Number.isFinite(Date.parse(value)) ? value : null;
 }
 
 function uuid(value: unknown): string | null {
@@ -175,7 +202,7 @@ export function verifySatelliteSettlementReceipt(
   const sourceTableCount = positiveInteger(receipt.source_table_count);
   const sourceSeatCount = nonNegativeInteger(receipt.source_seat_count);
   const releasedSeatCount = nonNegativeInteger(receipt.released_seat_count);
-  const settledAt = typeof receipt.settled_at === 'string' ? receipt.settled_at : '';
+  const settledAt = canonicalTimestamptz(receipt.settled_at);
   const rawCloseout =
     receipt.source_closeout && typeof receipt.source_closeout === 'object'
       ? (receipt.source_closeout as SatelliteSourceCloseout)
@@ -186,7 +213,7 @@ export function verifySatelliteSettlementReceipt(
   const closeoutTableCount = positiveInteger(rawCloseout?.source_table_count);
   const closeoutSeatCount = nonNegativeInteger(rawCloseout?.source_seat_count);
   const closeoutReleasedCount = nonNegativeInteger(rawCloseout?.released_seat_count);
-  const closedAt = typeof rawCloseout?.closed_at === 'string' ? rawCloseout.closed_at : '';
+  const closedAt = canonicalTimestamptz(rawCloseout?.closed_at);
 
   if (
     receipt.receipt_version !== 2 ||
@@ -219,11 +246,9 @@ export function verifySatelliteSettlementReceipt(
     releasedSeatIds === null ||
     releasedSeatIds.length !== releasedSeatCount ||
     releasedSeatIds.some((id) => !sourceSeatIds.includes(id)) ||
-    !closedAt ||
-    closedAt !== settledAt ||
-    !Number.isFinite(Date.parse(closedAt)) ||
-    !settledAt ||
-    !Number.isFinite(Date.parse(settledAt)) ||
+    closedAt === null ||
+    settledAt === null ||
+    Date.parse(closedAt) > Date.parse(settledAt) ||
     !Array.isArray(receipt.awards) ||
     receipt.awards.length !== ticketAwardCount ||
     !Array.isArray(receipt.seats) ||

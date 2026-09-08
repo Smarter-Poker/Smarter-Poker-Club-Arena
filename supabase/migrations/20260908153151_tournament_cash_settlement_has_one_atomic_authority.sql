@@ -1,4 +1,4 @@
--- 20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql
+-- 20260908153151_tournament_cash_settlement_has_one_atomic_authority.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
@@ -124,11 +124,37 @@ DECLARE
       or v_escrow_after.tournament_id = p_tournament_id,
     'escrow_overlay_in', v_escrow_after.overlay_in,
     'escrow_prize_balance', v_escrow_after.prize_balance);$replacement$;
+  v_current_return_needle text := $needle$    'escrow_after', CASE WHEN v_escrow_after_found THEN v_escrow_after ELSE NULL END,
+    'already_finalized',$needle$;
+  v_current_return_replacement text := $replacement$    'escrow_after', CASE WHEN v_escrow_after_found THEN v_escrow_after ELSE NULL END,
+    'overlay_journaled', v_overlay = 0 OR
+      (v_ledger_inserted = 1 AND v_escrow_after_found AND v_escrow_enforced),
+    'already_finalized',$replacement$;
 BEGIN
   SELECT pg_get_functiondef(p.oid) INTO v_definition
     FROM pg_proc p
    WHERE p.oid =
      'public.fn_apply_prize_guarantee(uuid,text)'::regprocedure;
+  -- A later production hardening already owns the bank, explicit ledger leg,
+  -- escrow delta and failure rollback. Preserve that stronger authority and
+  -- add only the explicit receipt field consumed by the settlement callers.
+  IF v_definition LIKE '%fn_apply_prize_guarantee_before_atomic_proof%'
+     AND v_definition LIKE '%guarantee bank did not debit the exact overlay%'
+     AND v_definition LIKE '%guarantee overlay journal key already exists unexpectedly%'
+     AND v_definition LIKE '%guarantee bank debit did not credit live escrow exactly%'
+     AND v_definition LIKE '%atomic_guarantee_funding_aborted%' THEN
+    IF v_definition NOT LIKE '%''overlay_journaled''%' THEN
+      IF length(v_definition)-length(replace(
+           v_definition,v_current_return_needle,'')) <> length(v_current_return_needle) THEN
+        RAISE EXCEPTION
+          'current guarantee receipt insertion point did not match once';
+      END IF;
+      v_hardened:=replace(
+        v_definition,v_current_return_needle,v_current_return_replacement);
+      EXECUTE v_hardened;
+    END IF;
+    RETURN;
+  END IF;
   IF v_definition IS NULL
      OR md5(v_definition) <> '6c758a4b130d057c49c7e941461ce74c'
      OR (length(v_definition)-length(replace(
@@ -266,6 +292,12 @@ BEGIN
         AND NEW.status::text = 'eliminated' THEN
     NEW.elimination_sequence := nextval(
       'public.tournament_player_elimination_sequence'::regclass);
+  ELSIF OLD.status::text = 'eliminated'
+        AND NEW.status::text IS DISTINCT FROM 'eliminated' THEN
+    -- Leaving the eliminated state is also database-owned. Atomic settlement
+    -- may promote the final all-in casualty to winner, and no historical
+    -- elimination witness may remain attached to that live row.
+    NEW.elimination_sequence := NULL;
   ELSIF NEW.elimination_sequence IS DISTINCT FROM OLD.elimination_sequence THEN
     RAISE EXCEPTION 'elimination_sequence is database-owned'
       USING ERRCODE = '42501';
@@ -1325,6 +1357,16 @@ BEGIN
     IF FOUND AND EXISTS (
       SELECT 1 FROM public.tournament_players tp
        WHERE tp.tournament_id = p_tournament_id
+         AND tp.id <> v_winner.id
+         AND tp.elimination_sequence = v_winner.elimination_sequence
+    ) THEN
+      RAISE EXCEPTION
+        'tournament % has an ambiguous final elimination witness',
+        p_tournament_id USING ERRCODE = '23505';
+    END IF;
+    IF FOUND AND EXISTS (
+      SELECT 1 FROM public.tournament_players tp
+       WHERE tp.tournament_id = p_tournament_id
          AND tp.status::text = 'eliminated'
          AND (tp.elimination_sequence IS NULL
               OR tp.elimination_sequence > v_winner.elimination_sequence)
@@ -1381,7 +1423,8 @@ BEGIN
         USING ERRCODE = '55000';
     END IF;
     UPDATE public.tournament_players
-       SET status = 'winner', position = 1
+       SET status = 'winner', position = 1,
+           eliminated_at = NULL, elimination_sequence = NULL
      WHERE id = v_winner.id;
     GET DIAGNOSTICS v_rows = ROW_COUNT;
     IF v_rows <> 1 THEN
@@ -3740,16 +3783,26 @@ BEGIN
    WHERE p.oid =
      'public.fn_apply_prize_guarantee(uuid,text)'::regprocedure;
   IF v_guarantee IS NULL
-     OR v_guarantee NOT LIKE '%fn_ca_escrow_apply(%'
-     OR v_guarantee NOT LIKE '%p_overlay_in => v_overlay%'
-     OR v_guarantee NOT LIKE '%guarantee_overlay_identity_conflict%'
-     OR v_guarantee NOT LIKE '%guarantee_escrow_mismatch%'
      OR v_guarantee NOT LIKE '%overlay_journaled%'
-     OR position('update public.clubs' IN v_guarantee) = 0
-     OR position('fn_ca_escrow_apply(' IN v_guarantee)
-          <= position('update public.clubs' IN v_guarantee)
-     OR position('set prize_pool = v_final' IN v_guarantee)
-          <= position('fn_ca_escrow_apply(' IN v_guarantee) THEN
+     OR NOT (
+       (
+         v_guarantee LIKE '%fn_ca_escrow_apply(%'
+         AND v_guarantee LIKE '%p_overlay_in => v_overlay%'
+         AND v_guarantee LIKE '%guarantee_overlay_identity_conflict%'
+         AND v_guarantee LIKE '%guarantee_escrow_mismatch%'
+         AND position('update public.clubs' IN v_guarantee)>0
+         AND position('fn_ca_escrow_apply(' IN v_guarantee)
+              >position('update public.clubs' IN v_guarantee)
+         AND position('set prize_pool = v_final' IN v_guarantee)
+              >position('fn_ca_escrow_apply(' IN v_guarantee)
+       ) OR (
+         v_guarantee LIKE '%fn_apply_prize_guarantee_before_atomic_proof%'
+         AND v_guarantee LIKE '%guarantee bank did not debit the exact overlay%'
+         AND v_guarantee LIKE '%guarantee overlay journal key already exists unexpectedly%'
+         AND v_guarantee LIKE '%guarantee bank debit did not credit live escrow exactly%'
+         AND v_guarantee LIKE '%atomic_guarantee_funding_aborted%'
+       )
+     ) THEN
     RAISE EXCEPTION
       'fn_apply_prize_guarantee lost its atomic escrow journal ordering';
   END IF;

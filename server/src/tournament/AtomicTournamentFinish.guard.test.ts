@@ -15,7 +15,7 @@ const SOURCE = readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'),
 const SETTLEMENT = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql'
+    '../../../supabase/migrations/20260908153151_tournament_cash_settlement_has_one_atomic_authority.sql'
   ),
   'utf8'
 );

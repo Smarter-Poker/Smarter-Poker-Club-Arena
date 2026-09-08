@@ -30,7 +30,7 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 const PAYERS = read('supabase/migrations/20260902201000_db_payers_settle_through_obligations.sql');
 const R3 = read('supabase/migrations/20260902201500_r3_money_path_log_only.sql');
 const AUTHORITATIVE = read(
-  'supabase/migrations/20260908065210_tournament_cash_settlement_has_one_atomic_authority.sql'
+  'supabase/migrations/20260908153151_tournament_cash_settlement_has_one_atomic_authority.sql'
 );
 
 const SIX = [

@@ -10,114 +10,201 @@ import { resolve } from 'node:path';
 const MIGRATION = readFileSync(
   resolve(
     __dirname,
-    '../../../supabase/migrations/20260908065250_tournament_cancellation_commits_one_stored_receipt.sql'
+    '../../../supabase/migrations/20260908153239_tournament_cancellation_commits_one_stored_receipt.sql'
   ),
   'utf8'
 );
-const RECOVERY = readFileSync(resolve(__dirname, './tournamentRecovery.ts'), 'utf8');
-
+const PHASE_ONE_MANAGEMENT = readFileSync(
+  resolve(
+    __dirname,
+    '../../../supabase/migrations/20260906091511_phase_1_table_management_authority_recertified.sql'
+  ),
+  'utf8'
+);
 function executable(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*--.*$/gm, '');
 }
 
+const SQL = executable(MIGRATION);
+const ATOMIC = SQL.slice(
+  SQL.indexOf('CREATE OR REPLACE FUNCTION public.atomic_cancel_tournament'),
+  SQL.indexOf(
+    '$cancel$;',
+    SQL.indexOf('CREATE OR REPLACE FUNCTION public.atomic_cancel_tournament')
+  )
+);
+const REPLAY = SQL.slice(
+  SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_tournament_cancellation_receipt'),
+  SQL.indexOf(
+    '$cancellation_receipt_v2$;',
+    SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_tournament_cancellation_receipt')
+  )
+);
+const MANAGED_CLOSE = SQL.slice(
+  SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_close_managed_game'),
+  SQL.indexOf(
+    '$managed_close$;',
+    SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_close_managed_game')
+  )
+);
+const MANAGED_TOURNAMENT = MANAGED_CLOSE.slice(
+  MANAGED_CLOSE.indexOf("ELSIF p_kind = 'tournament' THEN")
+);
+const MANAGED_GATEWAY = SQL.slice(
+  SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_execute_managed_game_command'),
+  SQL.indexOf(
+    '$managed_command$;',
+    SQL.indexOf('CREATE OR REPLACE FUNCTION public.fn_execute_managed_game_command')
+  )
+);
+
+function cashTableBranch(source: string, functionStart: number): string {
+  const start = source.indexOf("  IF p_kind = 'table' THEN", functionStart);
+  const end = source.indexOf("  ELSIF p_kind = 'tournament' THEN", start);
+  if (start < 0 || end < 0) throw new Error('managed close cash-table branch is absent');
+  return source.slice(start, end);
+}
+
 describe('tournament cancellation has one replayable database owner', () => {
-  it('persists an append-only receipt keyed by tournament', () => {
+  it('persists one append-only receipt for chip and ticket dispositions', () => {
     expect(MIGRATION).toMatch(/CREATE TABLE public\.tournament_cancellation_receipts/);
     expect(MIGRATION).toMatch(/tournament_id\s+uuid\s+PRIMARY KEY/);
+    expect(MIGRATION).toMatch(/refund_line_count integer NOT NULL/);
+    expect(MIGRATION).toMatch(/ticket_return_count integer NOT NULL/);
+    expect(MIGRATION).toMatch(/ticket_return_ids uuid\[\] NOT NULL/);
+    expect(MIGRATION).toMatch(/total_ticket_returned numeric\(15,2\) NOT NULL/);
     expect(MIGRATION).toMatch(/tournament_cancellation_receipts_append_only/);
     expect(MIGRATION).toMatch(/BEFORE UPDATE OR DELETE/);
   });
 
-  it('locks first and returns the stored receipt on replay', () => {
-    const wholeSql = executable(MIGRATION);
-    const sql = wholeSql.slice(
-      wholeSql.indexOf('CREATE OR REPLACE FUNCTION public.atomic_cancel_tournament')
-    );
-    const lockAt = sql.indexOf('FOR UPDATE;');
-    const replayAt = sql.indexOf('RETURN v_stored.receipt;');
-    const moneyAt = sql.indexOf('fn_settle_tournament_obligation(');
-    expect(lockAt).toBeGreaterThan(-1);
-    expect(replayAt).toBeGreaterThan(lockAt);
-    expect(moneyAt).toBeGreaterThan(replayAt);
+  it('takes the global terminal lock before rows and verifies stored replay', () => {
+    const globalAt = ATOMIC.indexOf('pg_advisory_xact_lock');
+    const tournamentAt = ATOMIC.indexOf('FOR UPDATE;');
+    const replayAt = ATOMIC.indexOf('fn_ca_tournament_cancellation_receipt');
+    const chipAt = ATOMIC.indexOf('fn_settle_tournament_refund_exact');
+    expect(globalAt).toBeGreaterThan(-1);
+    expect(tournamentAt).toBeGreaterThan(globalAt);
+    expect(replayAt).toBeGreaterThan(tournamentAt);
+    expect(chipAt).toBeGreaterThan(replayAt);
   });
 
-  it('replays only while every stored refund still has exact durable backing', () => {
-    const sql = executable(MIGRATION);
-    const replay = sql.slice(
-      sql.indexOf('SELECT * INTO v_stored'),
-      sql.indexOf('RETURN v_stored.receipt;')
-    );
-    expect(replay).toMatch(/jsonb_to_recordset/);
-    expect(replay).toMatch(/tournament_obligations/);
-    expect(replay).toMatch(/wallet_credit_idempotency/);
-    expect(replay).toMatch(/wallet_transactions/);
-    expect(replay).toMatch(/tournament_fee_refund/);
-    expect(replay).toMatch(/spin_rake_refund/);
-    expect(replay).toMatch(/original_rake_record_id/);
-    expect(replay).toMatch(/v_stored\.fees_reversed/);
-    expect(replay).toMatch(/refund_rows IS DISTINCT FROM/);
-    expect(replay).toMatch(/contains orphan fee evidence/);
-    expect(replay).toMatch(/amount_owed IS DISTINCT FROM line\.gross_paid/);
-    expect(replay).toMatch(/amount_paid IS DISTINCT FROM line\.amount_refunded/);
-    expect(replay).toMatch(/entry_payment\.gross/);
-    expect(replay).toMatch(/'tournament_buyin','rebuy','addon'/);
+  it('replay verifies every immutable money and ticket identity', () => {
+    expect(REPLAY).toMatch(/jsonb_to_recordset\(v_h\.receipt->'refunds'\)/);
+    expect(REPLAY).toMatch(/jsonb_to_recordset\(v_h\.receipt->'ticket_returns'\)/);
+    expect(REPLAY).toMatch(/tournament_refund_entitlements/);
+    expect(REPLAY).toMatch(/tournament_refund_tranches/);
+    expect(REPLAY).toMatch(/wallet_credit_idempotency/);
+    expect(REPLAY).toMatch(/tournament_tickets/);
+    expect(REPLAY).toMatch(/tournament_entry_only/);
+    expect(REPLAY).toMatch(/source_satellite_id/);
+    expect(REPLAY).toMatch(/chip_ledger/);
+    expect(REPLAY).toMatch(/chip_transactions/);
+    expect(REPLAY).toMatch(/tournament_spin_cancellation_unwinds/);
+    expect(REPLAY).toMatch(/RETURN v_h\.receipt/);
   });
 
-  it('derives refund totals from entry-payment evidence and requires every obligation paid', () => {
-    const sql = executable(MIGRATION);
-    expect(sql).toMatch(/wallet_transactions/);
-    expect(sql).toMatch(/tournament_buyin','rebuy','addon/);
-    expect(sql).toMatch(/fn_settle_tournament_obligation\(/);
-    expect(sql).toMatch(/fully_settled/);
-    expect(sql).toMatch(/amount_paid/);
-    expect(sql).toMatch(/RAISE EXCEPTION[\s\S]*refund obligation/);
+  it('returns wallet charges through only the nine-argument exact payer', () => {
+    expect(ATOMIC).toMatch(/entitlement_kind='wallet_charge'/);
+    expect(ATOMIC).toMatch(
+      /fn_settle_tournament_refund_exact\(\s*p_tournament_id,v_player\.user_id,\s*v_entitlement\.refund_wallet_club_id,v_total_owed,\s*v_entitlement\.refund_prize,v_entitlement\.refund_bounty,\s*v_entitlement\.refund_fee,'atomic_cancel_tournament'/
+    );
+    expect(ATOMIC).toMatch(/fully_settled/);
+    expect(ATOMIC).toMatch(/entitlement_id/);
+    expect(ATOMIC).not.toMatch(/fn_settle_tournament_obligation\s*\(/);
+  });
+
+  it('returns both noncash entitlement kinds as entry-only tickets', () => {
+    expect(ATOMIC).toMatch(
+      /entitlement_kind IN \(\s*'satellite_seat','tournament_ticket'\)[\s\S]*?fn_ca_return_satellite_entitlement_as_ticket/
+    );
+    expect(ATOMIC).toMatch(/'entitlement_kind',v_entitlement\.entitlement_kind/);
+    expect(ATOMIC).toMatch(/'source_satellite_id',v_entitlement\.source_satellite_id/);
+    expect(REPLAY).toMatch(/e\.entitlement_kind NOT IN \('satellite_seat','tournament_ticket'\)/);
+    expect(REPLAY).toMatch(/e\.entitlement_kind IS DISTINCT FROM line\.entitlement_kind/);
   });
 
   it('reverses fees and closes tournament, player, and table rows before storing proof', () => {
-    const sql = executable(MIGRATION);
-    const feeAt = sql.indexOf('INSERT INTO public.rake_records');
-    const playersAt = sql.indexOf('UPDATE public.tournament_players');
-    const tablesAt = sql.indexOf('UPDATE public.tables');
-    const receiptAt = sql.indexOf('INSERT INTO public.tournament_cancellation_receipts');
+    const feeAt = ATOMIC.indexOf('INSERT INTO public.rake_records');
+    const playersAt = ATOMIC.indexOf('UPDATE public.tournament_players');
+    const tablesAt = ATOMIC.indexOf('UPDATE public.tables');
+    const receiptAt = ATOMIC.indexOf('INSERT INTO public.tournament_cancellation_receipts');
     expect(feeAt).toBeGreaterThan(-1);
     expect(playersAt).toBeGreaterThan(feeAt);
     expect(tablesAt).toBeGreaterThan(playersAt);
     expect(receiptAt).toBeGreaterThan(tablesAt);
-    expect(sql).toMatch(/UPDATE public\.tournaments[\s\S]*status\s*=\s*'CANCELLED'/);
+    expect(ATOMIC).toMatch(/UPDATE public\.tournaments[\s\S]*status='CANCELLED'/);
   });
 
-  it('fails closed when prior fee reversals exceed their positive fee evidence', () => {
-    const sql = executable(MIGRATION);
-    expect(sql).toMatch(/v_fee_net[\s\S]{0,160}< 0[\s\S]{0,220}invalid fee evidence/);
+  it('fails closed unless fee cache, evidence, and reversals close to zero', () => {
+    expect(ATOMIC).toMatch(/total_rake[\s\S]*v_total_rake_before/);
+    expect(ATOMIC).toMatch(/unreceipted cancellation rake evidence already exists/);
+    expect(ATOMIC).toMatch(/v_total_rake_after IS DISTINCT FROM 0::numeric/);
+    expect(ATOMIC).toMatch(/v_fees_reversed IS DISTINCT FROM v_total_rake_before/);
+    expect(REPLAY).toMatch(/original_rake_record_ids/);
+    expect(REPLAY).toMatch(/original_rake_record_id/);
   });
 
-  it('fails closed when the aggregate Spin fee row net would go negative', () => {
-    const sql = executable(MIGRATION);
-    expect(sql).toMatch(/invalid fee evidence for Spin fee row/);
-    expect(sql.match(/invalid fee evidence for Spin fee row/g) ?? []).toHaveLength(1);
+  it('uses the union-aware governed authority and retains terminal safeguards', () => {
+    expect(ATOMIC).toMatch(/fn_can_create_games\(v_t\.club_id,v_uid\)/);
+    expect(ATOMIC).not.toMatch(/is_club_admin\(v_t\.club_id,v_uid\)/);
+    expect(ATOMIC).toMatch(/'COMPLETED','CANCELLED','CANCELED','COMPLETING'/);
+    expect(ATOMIC).toMatch(/fn_ca_tournament_refund_plan/);
+    expect(ATOMIC).toMatch(/source_satellite_id/);
+    expect(ATOMIC).toMatch(/draw_reversal/);
+    expect(ATOMIC).toMatch(/contribution_reversal/);
+    expect(ATOMIC).toMatch(/tournament_spin_cancellation_unwinds/);
   });
 
-  it('retains terminal-status, admin, satellite-seat, and aggregate Spin safeguards', () => {
-    expect(MIGRATION).toMatch(/is_club_admin/);
-    expect(MIGRATION).toMatch(/'COMPLETED','CANCELLED','CANCELED','COMPLETING'/);
-    expect(MIGRATION).toMatch(/tp\.status IN \('registered', 'playing'\)/);
-    expect(MIGRATION).toMatch(/COALESCE\(tp\.prize, 0\) <= 0/);
-    expect(MIGRATION).toMatch(/is_satellite_qualifier/);
-    expect(MIGRATION).toMatch(/source_satellite_id/);
-    expect(MIGRATION).toMatch(/fn_spin_book_entry/);
-    expect(MIGRATION).toMatch(/fn_spin_settle_game/);
-  });
-
-  it('leaves process-side survivor inspection read-only and issues one RPC', () => {
-    const helper = executable(RECOVERY).slice(
-      executable(RECOVERY).indexOf('export async function refundAndCloseCancelledTournament'),
-      executable(RECOVERY).indexOf('export async function recoverStuckCompletingTournaments')
+  it('routes an empty managed tournament through cancellation receipt authority', () => {
+    const globalAt = MANAGED_TOURNAMENT.indexOf('pg_advisory_xact_lock');
+    const tournamentAt = MANAGED_TOURNAMENT.indexOf('FROM public.tournaments');
+    expect(globalAt).toBeGreaterThan(-1);
+    expect(tournamentAt).toBeGreaterThan(globalAt);
+    expect(MANAGED_TOURNAMENT).toMatch(/fn_can_create_games\(v_club, v_uid\)/);
+    expect(MANAGED_TOURNAMENT).toMatch(/FROM public\.tournament_players tp[\s\S]*FOR UPDATE/);
+    expect(MANAGED_TOURNAMENT).toMatch(/'reason', 'players_registered'/);
+    expect(MANAGED_TOURNAMENT).toMatch(
+      /v_cancel := public\.atomic_cancel_tournament\(p_game_id, v_uid\)/
     );
-    expect(helper).toMatch(/cancel_refund_open_rows_unreadable/);
-    expect(helper).toMatch(/atomic_cancel_tournament/);
-    expect(helper).not.toMatch(/settleTournamentObligation/);
-    expect(helper).not.toMatch(/\.update\(/);
-    expect(helper).not.toMatch(/\.insert\(/);
+    expect(MANAGED_TOURNAMENT).toMatch(
+      /set_config\('app\.managed_game_lifecycle', 'on', true\)[\s\S]*atomic_cancel_tournament[\s\S]*set_config\('app\.managed_game_lifecycle', '', true\)/
+    );
+    expect(MANAGED_TOURNAMENT).toMatch(/v_cancel->>'fully_settled'/);
+    expect(MANAGED_TOURNAMENT).toMatch(/RETURN jsonb_build_object\('ok', true\)/);
+    expect(MANAGED_TOURNAMENT).not.toMatch(/UPDATE public\.tournaments/i);
+  });
+
+  it('preserves the current cash-table close branch exactly', () => {
+    const historicStart = PHASE_ONE_MANAGEMENT.lastIndexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_close_managed_game'
+    );
+    const currentStart = MIGRATION.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_close_managed_game'
+    );
+    expect(cashTableBranch(MIGRATION, currentStart)).toBe(
+      cashTableBranch(PHASE_ONE_MANAGEMENT, historicStart)
+    );
+  });
+
+  it('takes the terminal lock in the public command path before its row lock', () => {
+    const globalAt = MANAGED_GATEWAY.indexOf('ca:tournament-terminal-settlement:v1');
+    const tournamentAt = MANAGED_GATEWAY.indexOf('FROM public.tournaments');
+    expect(MANAGED_GATEWAY).toMatch(
+      /p_kind = 'tournament' AND p_action = 'close'[\s\S]*pg_advisory_xact_lock/
+    );
+    expect(globalAt).toBeGreaterThan(-1);
+    expect(tournamentAt).toBeGreaterThan(globalAt);
+    expect(MANAGED_GATEWAY).toMatch(/fn_close_managed_game\(p_kind, p_game_id\)/);
+  });
+
+  it('freezes all receipt evidence and requires it at commit', () => {
+    expect(SQL).toMatch(/cancelled_tournament_evidence_is_immutable/);
+    expect(SQL).toMatch(/tournament_refund_entitlements','tournament_refund_tranches/);
+    expect(SQL).toMatch(/cancelled_tournament_seat_is_immutable/);
+    expect(SQL).toMatch(/cancelled_tournament_wallet_is_immutable/);
+    expect(SQL).toMatch(/cancelled_tournament_parent_is_immutable/);
+    expect(SQL).toMatch(/CREATE CONSTRAINT TRIGGER tournaments_cancel_must_refund/);
+    expect(SQL).toMatch(/DEFERRABLE INITIALLY DEFERRED/);
   });
 
   it('is one migration transaction and exposes only the service-role door', () => {
@@ -129,16 +216,21 @@ describe('tournament cancellation has one replayable database owner', () => {
     expect(MIGRATION).toMatch(
       /GRANT EXECUTE ON FUNCTION public\.atomic_cancel_tournament\(uuid,uuid\)\s+TO service_role;/
     );
+    expect(MIGRATION).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_close_managed_game\(text,\s*uuid\)\s+FROM PUBLIC,\s*anon,\s*authenticated;/
+    );
+    expect(MIGRATION).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_close_managed_game\(text,\s*uuid\)\s+TO service_role;/
+    );
   });
 
-  it('keeps the live legacy doors available during the database-first cutover', () => {
-    const sql = executable(MIGRATION);
-    expect(sql).not.toMatch(/DROP FUNCTION[\s\S]*atomic_cancel_tournament/i);
-    expect(sql).not.toMatch(
-      /REVOKE[\s\S]{0,160}fn_settle_tournament_obligation[\s\S]{0,160}service_role/i
-    );
-    expect(sql).toMatch(
-      /GRANT EXECUTE ON FUNCTION public\.atomic_cancel_tournament\(uuid,uuid\)\s+TO service_role;/
-    );
+  it('contains one cancellation and one replay implementation without stubs', () => {
+    expect(
+      MIGRATION.match(/CREATE OR REPLACE FUNCTION public\.atomic_cancel_tournament\(/g)
+    ).toHaveLength(1);
+    expect(
+      MIGRATION.match(/CREATE OR REPLACE FUNCTION public\.fn_ca_tournament_cancellation_receipt\(/g)
+    ).toHaveLength(1);
+    expect(MIGRATION).not.toMatch(/TODO|FIXME|stub/i);
   });
 });

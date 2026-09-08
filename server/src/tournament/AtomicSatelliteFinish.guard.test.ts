@@ -17,6 +17,14 @@ const MANAGER = readFileSync(join(HERE, 'TournamentManager.ts'), 'utf8');
 const ELIMINATIONS = readFileSync(join(HERE, 'TournamentManagerEliminations.ts'), 'utf8');
 const RECEIPT_VERIFIER = readFileSync(join(HERE, 'satelliteSettlementReceipt.ts'), 'utf8');
 const SETTLEMENT_RPC = readFileSync(join(HERE, 'satelliteSettlementRpc.ts'), 'utf8');
+const ROLLBACK_PROBE = readFileSync(
+  join(HERE, '..', '..', '..', 'scripts', 'ci', 'probes', 'atomic-satellite-closeout-rollback.sql'),
+  'utf8'
+);
+const CATALOG_PROBE = readFileSync(
+  join(HERE, '..', '..', '..', 'scripts', 'ci', 'probes', 'atomic-satellite-settlement.sql'),
+  'utf8'
+);
 const MANIFEST = readFileSync(
   join(
     MIGRATIONS,
@@ -42,6 +50,10 @@ function latestMigrationContaining(needle: string): string {
 const SQL = latestMigrationContaining(
   'CREATE OR REPLACE FUNCTION public.fn_settle_satellite_tournament('
 );
+const CASH_SQL = readFileSync(
+  join(MIGRATIONS, '20260908153151_tournament_cash_settlement_has_one_atomic_authority.sql'),
+  'utf8'
+);
 const TERMINAL_SQL = latestMigrationContaining(
   'CREATE OR REPLACE FUNCTION public.fn_complete_tournament_terminal('
 );
@@ -57,6 +69,7 @@ function taggedBody(tag: string): string {
 const SETTLE = taggedBody('settle_satellite');
 const RECEIPT = taggedBody('satellite_receipt');
 const ADOPTION = taggedBody('adopt_b066');
+const ADOPTION_682 = taggedBody('adopt_exact_682_completion');
 
 describe('the finalized source pool is the complete allocation authority', () => {
   it('buys floor(pool / ticket) tickets and gives all sub-ticket residual to place N+1', () => {
@@ -91,6 +104,34 @@ describe('the finalized source pool is the complete allocation authority', () =>
     expect(RECEIPT).toContain(
       'floor(v_h.pool / v_h.ticket_cost)::integer IS DISTINCT FROM v_h.ticket_award_count'
     );
+    expect(SQL).toContain('bubble_position <= field_size)\n  ) IS TRUE)');
+    expect(SQL).toContain("payout_source <> 'satellite_seat')\n  ) IS TRUE)");
+    expect(SETTLE).toContain('tp.status IS NULL');
+    expect(RECEIPT).toContain("tp.status::text IS DISTINCT FROM 'eliminated'");
+    expect(SETTLE).toContain('v_source_escrow.reserve_out IS DISTINCT FROM 0');
+    expect(SETTLE).toContain('v_source_escrow.bounty_in IS DISTINCT FROM 0');
+    expect(RECEIPT).toContain('v_source_escrow.prize_out IS DISTINCT FROM v_h.pool');
+    expect(RECEIPT).toContain('v_source_escrow.refund_bounty IS DISTINCT FROM 0');
+    expect(ROLLBACK_PROBE).toContain(
+      'malformed source escrow history was not refused before any write'
+    );
+  });
+
+  it('stores the next-finisher residual as immutable first-class evidence', () => {
+    expect(SQL).toContain('CREATE TABLE public.tournament_satellite_remainders');
+    expect(SQL).toContain('tournament_satellite_remainders_append_only');
+    expect(SQL).toContain(
+      'ALTER TABLE public.tournament_satellite_remainders ENABLE ROW LEVEL SECURITY'
+    );
+    expect(SQL).toContain('payout_position IS NOT DISTINCT FROM place');
+    expect(SQL).toContain('obligation_place IS NOT DISTINCT FROM place');
+    expect(SQL).toMatch(
+      /REVOKE ALL ON public\.tournament_satellite_settlements,[\s\S]*?public\.tournament_satellite_remainders[\s\S]*?service_role;/
+    );
+    expect(SETTLE).toContain('INSERT INTO public.tournament_satellite_remainders');
+    expect(SETTLE).toContain("'satellite_remainder', v_bubble_position, 'atomic'");
+    expect(RECEIPT).toContain('public.tournament_satellite_remainders');
+    expect(RECEIPT).toContain("r.evidence_kind = 'atomic'");
   });
 });
 
@@ -113,12 +154,101 @@ describe('every full ticket has one immutable delivery line', () => {
     expect(RECEIPT).toContain('malformed target-entry evidence');
   });
 
-  it('cash-substitutes a definitive unavailable target or independent existing seat', () => {
+  it('fails closed before seating into a bounty or Spin target', () => {
+    for (const flag of [
+      'v_target.is_bounty IS DISTINCT FROM false',
+      'v_target.is_pko IS DISTINCT FROM false',
+      'v_target.is_mystery_bounty IS DISTINCT FROM false',
+      'v_target.is_premium_spin IS DISTINCT FROM false',
+    ]) {
+      expect(SETTLE).toContain(flag);
+    }
+    expect(SETTLE).toContain("lower(COALESCE(v_target.variant,'')) = 'spin'");
+    expect(SETTLE).toContain("upper(COALESCE(v_target.tournament_type,'')) = 'SPIN'");
+    expect(SETTLE).toContain('uses an unsupported bounty or Spin entry split');
+    expect(ROLLBACK_PROBE).toContain('bounty target split was not refused before any write');
+  });
+
+  it('proves the exact target aggregate and escrow transition before success', () => {
+    expect(SETTLE).toContain('v_target_count_before + v_seat_count');
+    expect(SETTLE).toContain('SET current_players = v_target.current_players + v_seat_count');
+    expect(SETTLE).toContain(
+      'v_target_after.current_players IS DISTINCT FROM\n            v_target.current_players + v_seat_count'
+    );
+    expect(SETTLE).not.toContain('SET current_players = v_target_count,');
+    expect(SETTLE).toContain('v_target_after.prize_pool IS DISTINCT FROM');
+    expect(SETTLE).toContain('v_target_after.total_rake IS DISTINCT FROM');
+    for (const component of ['satellite_in', 'satellite_fee_in', 'prize_balance', 'fee_balance']) {
+      expect(SETTLE).toContain(`v_target_escrow_after.${component} IS DISTINCT FROM`);
+    }
+    expect(SETTLE).toContain(
+      'target aggregate or escrow delta is not the exact delivered seat value'
+    );
+    expect(SETTLE).toContain('v_target_escrow.prize_balance < 0');
+    expect(SETTLE).toContain('v_target_escrow.fee_balance < 0');
+    expect(SETTLE).toContain('v_target_escrow.bounty_balance IS DISTINCT FROM 0');
+    expect(SETTLE).toContain('v_source_escrow.closed_at IS NOT NULL');
+    expect(SETTLE).toContain('v_source_escrow.close_note IS NOT NULL');
+    expect(SETTLE).toContain('v_target_escrow.close_note IS NOT NULL');
+    expect(SETTLE).toContain('v_target.current_players IS DISTINCT FROM v_target_counter_before');
+    expect(SETTLE).toContain('v_target.prize_pool IS DISTINCT FROM v_target_escrow.prize_balance');
+    expect(SETTLE).toContain('v_target.total_rake IS DISTINCT FROM v_target_escrow.fee_balance');
+    expect(SETTLE).toContain(
+      'v_target_after.current_players IS DISTINCT FROM v_target_counter_after'
+    );
+    expect(SETTLE).toContain("upper(COALESCE(v_target.status, '')) IN ('ANNOUNCED','REGISTERING')");
+    expect(SETTLE).toContain('THEN v_target_live_count_before');
+    expect(SETTLE).toContain('ELSE v_target_count_before');
+    expect(SETTLE).toContain("'reserve_out','reserve_in'");
+    expect(ROLLBACK_PROBE).toContain(
+      'ALTER TABLE pg_temp.rake_records DISABLE TRIGGER probe_target_fee_reclassifies'
+    );
+    expect(ROLLBACK_PROBE).toContain('negative target escrow was not refused before any write');
+    expect(ROLLBACK_PROBE).toContain('missing target was not refused before any write');
+    expect(ROLLBACK_PROBE).toContain(
+      'missing target fee rail was not caught and fully rolled back'
+    );
+    expect(ROLLBACK_PROBE).toContain('stale status-aware target entrant counter was not refused');
+    expect(ROLLBACK_PROBE).toContain(
+      'RUNNING late-registration target preserved its total entrant counter'
+    );
+    expect(CATALOG_PROBE).toContain(
+      'v_target.current_players IS DISTINCT FROM v_target_counter_before'
+    );
+    expect(CATALOG_PROBE).toContain(
+      'v_target_after.current_players IS DISTINCT FROM v_target_counter_after'
+    );
+    expect(CATALOG_PROBE).not.toContain(
+      'v_target.current_players IS DISTINCT FROM v_target_live_count_before'
+    );
+    expect(ROLLBACK_PROBE).toContain('target prize aggregate/escrow mismatch was not refused');
+    expect(ROLLBACK_PROBE).toContain('target fee aggregate/escrow mismatch was not refused');
+    expect(ROLLBACK_PROBE).toContain('pre-closed source escrow was not refused');
+    expect(ROLLBACK_PROBE).toContain('orphan target escrow close marker was not refused');
+    expect(ROLLBACK_PROBE).toContain('rollback successful zero-fee matrix case');
+    expect(ROLLBACK_PROBE).toContain('rollback successful multi-seat matrix case');
+    expect(ROLLBACK_PROBE).toContain('a NULL RUNNING target level was not refused');
+    expect(ROLLBACK_PROBE).toContain('a negative RUNNING target level was not refused');
+    expect(ROLLBACK_PROBE).toContain('a negative target capacity was not refused');
+    expect(ROLLBACK_PROBE).toContain('a negative target late-registration bound was not refused');
+    expect(ROLLBACK_PROBE).toContain('a negative target rebuy bound was not refused');
+    expect(ROLLBACK_PROBE).toContain(
+      'later target repricing changed the immutable settlement receipt'
+    );
+    expect(ROLLBACK_PROBE).toContain(
+      'duplicate target fee registration passed exact receipt verification'
+    );
+  });
+
+  it('cash-substitutes a locked closed or full target or independent existing seat', () => {
     expect(SETTLE).toMatch(
       /\('COMPLETING','COMPLETED','CANCELLED','CANCELED'\)[\s\S]*?v_target_open := false/
     );
     expect(SETTLE).toContain('v_target_count >= v_target.max_players');
-    expect(SETTLE).toContain('target % is missing without a published contract');
+    expect(SETTLE).toContain('target % is missing; absence cannot authorize cash substitution');
+    expect(SETTLE).toMatch(/WHERE t\.id = v_target_id\s+FOR UPDATE;\s+IF v_target\.id IS NULL/);
+    expect(SETTLE).not.toContain('FROM public.managed_game_contract_versions');
+    expect(SETTLE).not.toContain('v_target_was_missing := true');
     expect(SETTLE).toContain(
       'IF COALESCE(v_existing_target.is_satellite_qualifier, false) IS NOT TRUE'
     );
@@ -137,6 +267,7 @@ describe('every full ticket has one immutable delivery line', () => {
     expect(replay).toContain('FROM public.tournament_satellite_settlements');
     expect(replay).toContain('RETURN public.fn_ca_satellite_settlement_receipt');
     expect(RECEIPT).toContain('Target lifecycle state is intentionally absent from replay');
+    expect(RECEIPT).toContain('v_h.receipt_version IS DISTINCT FROM 2');
   });
 });
 
@@ -192,6 +323,9 @@ describe('all financial effects share one database transaction', () => {
       expect(SQL).toContain(column);
     }
     expect(SQL).toContain('CHECK (released_seat_ids <@ source_seat_ids)');
+    expect(SQL).toMatch(
+      /target_id\s+uuid NOT NULL\s+REFERENCES public\.tournaments\(id\) ON DELETE RESTRICT/
+    );
     expect(SETTLE).toMatch(
       /FROM public\.tables tb[\s\S]*?ORDER BY tb\.id FOR UPDATE;[\s\S]*?FROM public\.table_seats ts[\s\S]*?ORDER BY ts\.table_id, ts\.id FOR UPDATE OF ts;/
     );
@@ -206,9 +340,31 @@ describe('all financial effects share one database transaction', () => {
     expect(close).toBeGreaterThan(completed);
     expect(receipt).toBeGreaterThan(close);
     expect(SETTLE.slice(release, receipt)).toContain('left_at = v_closeout_at');
+    expect(SETTLE.slice(release, receipt)).toContain('ts.id = ANY(v_source_seat_ids)');
+    expect(SETTLE.slice(release, receipt)).toContain("ts.status IS DISTINCT FROM 'left'");
+    expect(SETTLE.slice(release, receipt)).toContain('ts.leave_pending IS DISTINCT FROM false');
+    expect(SETTLE.slice(release, receipt)).toContain('ts.is_sitting_out IS DISTINCT FROM false');
+    expect(SETTLE.slice(release, receipt)).toContain('ts.is_away IS DISTINCT FROM false');
+    expect(SETTLE.slice(release, receipt)).toContain('ts.sit_out_at IS NOT NULL');
+    expect(SETTLE.slice(release, receipt)).toContain('ts.scheduled_leave_hands IS NOT NULL');
+    expect(SETTLE.slice(release, receipt)).not.toContain(
+      'left_at = COALESCE(ts.left_at, v_closeout_at)'
+    );
     expect(SETTLE.slice(completed, receipt)).toContain("lifecycle = 'closed'");
     expect(SETTLE.slice(completed, receipt)).toContain('current_players = 0');
     expect(SETTLE.slice(release, close)).toContain('table-status trigger');
+    expect(SQL).toContain('ADD COLUMN terminal_closed_at timestamptz');
+    expect(SETTLE).toContain('terminal_closed_at = v_closeout_at');
+    expect(RECEIPT).toContain('tb.terminal_closed_at IS DISTINCT FROM v_h.source_closed_at');
+    expect(RECEIPT).toContain('v_source.ended_at IS DISTINCT FROM v_h.source_closed_at');
+    expect(RECEIPT).toContain("'closed_at', v_h.source_closed_at");
+    expect(TERMINAL_SQL).toContain('ADD CONSTRAINT tables_terminal_closed_shape');
+    expect(TERMINAL_SQL).toContain('current_players IS NOT DISTINCT FROM 0');
+    expect(TERMINAL_SQL).toContain('live tournament table % cannot supply a terminal marker');
+    expect(TERMINAL_SQL).toContain('unscoped table % cannot supply a terminal marker');
+    expect(TERMINAL_SQL).not.toContain('$harden_satellite_receipt_terminal_marker$');
+    expect(ROLLBACK_PROBE).toContain('v_null_marker_caught');
+    expect(ROLLBACK_PROBE).toContain('v_mismatch_marker_caught');
   });
 
   it('replay proves exact source table, source seat and released-seat identities', () => {
@@ -217,6 +373,18 @@ describe('all financial effects share one database transaction', () => {
     expect(RECEIPT).toContain('v_durable_released_ids IS DISTINCT FROM v_h.released_seat_ids');
     expect(RECEIPT).toContain('v_durable_released_count IS DISTINCT FROM v_h.released_seat_count');
     expect(RECEIPT).toContain('ts.left_at IS NULL');
+    expect(RECEIPT).toContain("ts.status IS DISTINCT FROM 'left'");
+    expect(RECEIPT).toContain('ts.leave_pending IS DISTINCT FROM false');
+    expect(RECEIPT).toContain('ts.is_sitting_out IS DISTINCT FROM false');
+    expect(RECEIPT).toContain('ts.is_away IS DISTINCT FROM false');
+    expect(RECEIPT).toContain('ts.sit_out_at IS NOT NULL');
+    expect(RECEIPT).toContain('ts.scheduled_leave_hands IS NOT NULL');
+    expect(RECEIPT).toContain(
+      'v_source_escrow.closed_at IS DISTINCT FROM v_h.source_escrow_closed_at'
+    );
+    expect(RECEIPT).toContain(
+      'v_source_escrow.close_note IS DISTINCT FROM v_h.source_escrow_close_note'
+    );
     expect(RECEIPT).toContain("lower(COALESCE(tb.lifecycle, '')) <> 'closed'");
     expect(RECEIPT).toContain('source_closeout');
     expect(RECEIPT_VERIFIER).toContain('uniqueUuidArray');
@@ -234,7 +402,10 @@ describe('all financial effects share one database transaction', () => {
 
   it('records an exact stage-one watermark and every audited production id', () => {
     expect(SQL).toContain('CREATE TABLE public.tournament_satellite_settlement_cutover');
-    expect(SQL).toContain('transaction_timestamp()');
+    expect(SQL).toContain('LOCK TABLE public.tournaments IN SHARE ROW EXCLUSIVE MODE');
+    expect(SQL).toContain('preexisting_completed_ids uuid[] NOT NULL');
+    expect(SQL).toContain('clock_timestamp()');
+    expect(SQL).toContain('array_position(preexisting_completed_ids, NULL) IS NULL');
     expect(SQL).toContain('audited_tournament_ids uuid[] NOT NULL');
     expect(SQL).toMatch(
       /REVOKE ALL ON public\.tournament_satellite_settlement_cutover[\s\S]*?service_role;/
@@ -245,9 +416,48 @@ describe('all financial effects share one database transaction', () => {
       'e3570642-2e39-42ae-a8f6-164055ffd6e6',
       'eddd8116-5792-47fd-b570-790c67581e9f',
       '6b0c3243-75fb-487f-8da2-245b2426dbbe',
+      '682045c5-cb07-47ed-ad0e-adbff9cb41af',
+      'ed78a8ac-d869-469f-a4da-c04b67429064',
+      'fe8dc50c-8995-4441-b289-43993975f74f',
     ]) {
       expect(SQL).toContain(`'${id}'::uuid`);
     }
+  });
+
+  it('keeps the database-owned elimination witness valid across all-busted promotion and rebuy revival', () => {
+    for (const source of [CASH_SQL, SQL]) {
+      expect(source).toContain("OLD.status::text = 'eliminated'");
+      expect(source).toContain("NEW.status::text IS DISTINCT FROM 'eliminated'");
+      expect(source).toContain('NEW.elimination_sequence := NULL');
+      expect(source).toContain('elimination_sequence is database-owned');
+    }
+    expect(SETTLE).toContain("SET status = 'winner', position = 1,");
+    expect(SETTLE).toContain('eliminated_at = NULL, elimination_sequence = NULL');
+    expect(RECEIPT).toContain('tp.eliminated_at IS NULL');
+    expect(RECEIPT).toContain('tp.elimination_sequence IS NULL');
+    expect(ROLLBACK_PROBE).toContain('all-busted promotion retained an elimination witness');
+    expect(ROLLBACK_PROBE).toContain('rebuy revival retained a stale elimination witness');
+    expect(ROLLBACK_PROBE).toContain('an eliminated witness accepted a caller rewrite');
+  });
+
+  it('requires the exact origin-capable escrow rails and owner-only evidence ACLs', () => {
+    for (const trigger of [
+      'zz_ca_escrow_wallet_tx',
+      'zz_ca_escrow_rake_record',
+      'zz_ca_escrow_seat_payout',
+      'zz_ca_escrow_rake_settlement',
+      'zz_ca_escrow_close',
+      'zz_ca_escrow_seat_transfer_leg',
+    ]) {
+      expect(SQL).toContain(`'${trigger}'`);
+    }
+    expect(SQL).toContain("tg.tgenabled IN ('O','A')");
+    expect(SQL).toContain('tg.tgtype = required.trigger_type');
+    expect(SQL).toContain('pg_get_triggerdef(tg.oid) = required.trigger_definition');
+    expect(SQL).toContain('has_table_privilege(');
+    expect(SQL).toContain("('REFERENCES'),('TRIGGER')");
+    expect(SQL).toContain('c.relrowsecurity IS DISTINCT FROM true');
+    expect(SQL).toContain('EXISTS (SELECT 1 FROM pg_policy pol WHERE pol.polrelid = c.oid)');
   });
 
   it('describes the deferred legacy-door retirement honestly in the manifest fragment', () => {
@@ -290,25 +500,29 @@ describe('the server treats the atomic receipt as the only success signal', () =
 
   it('reopens only a proven refusal and stops all engines on an unknown outcome', () => {
     const start = ELIMINATIONS.indexOf('if (isSatelliteFinish) {');
-    const end = ELIMINATIONS.indexOf('} else {', start);
+    const end = ELIMINATIONS.indexOf('let refreshedPool', start);
     const branch = ELIMINATIONS.slice(start, end);
     expect(branch).toContain('await this.processSatelliteAwards(tournament, winnerId)');
     expect(branch).toContain('satErr instanceof SatelliteSettlementOutcomeUnknownError');
-    expect(branch).toContain('if (!outcomeUnknown) releaseFinishGuard();');
-    expect(branch).toContain('if (outcomeUnknown) await this.stopAndWait();');
+    expect(branch).toContain('satErr instanceof SatelliteSettlementRefusedError');
+    expect(branch).toContain('if (provenRefusal) releaseFinishGuard();');
+    expect(branch).toContain('if (!provenRefusal) await this.stopAndWait();');
     expect(branch).toContain('await raiseFinancialAlert(');
     expect(branch).toContain('return;');
     expect(branch).not.toContain("status: 'COMPLETING'");
+    expect(branch).not.toContain('readDurableTournamentStatus');
   });
 
   it('does not run rake or a second COMPLETED transition after atomic satellite success', () => {
-    const start = ELIMINATIONS.indexOf('protected async finishTournament');
-    const end = ELIMINATIONS.indexOf('protected abstract checkTableBalance', start);
-    const finish = ELIMINATIONS.slice(start, end);
-    expect(finish).not.toContain("rpc('fn_settle_tournament_rake'");
-    expect(finish).not.toContain("rpc('fn_finalize_bounty_pool'");
-    expect(finish).not.toContain("status: 'COMPLETED'");
-    expect(finish).toContain('requestTournamentTerminalReceipt(');
+    const start = ELIMINATIONS.indexOf('if (isSatelliteFinish) {');
+    const end = ELIMINATIONS.indexOf('let refreshedPool', start);
+    const branch = ELIMINATIONS.slice(start, end);
+    expect(branch).not.toContain("rpc('fn_settle_tournament_rake'");
+    expect(branch).not.toContain("rpc('fn_finalize_bounty_pool'");
+    expect(branch).not.toContain("status: 'COMPLETED'");
+    expect(branch).not.toContain('settleTournamentRake(');
+    expect(branch).not.toContain('settleTournamentPlacesAtomically(');
+    expect(branch).toContain('cleanupCommittedTournament()');
     expect(ELIMINATIONS).toContain(
       'protected abstract processSatelliteAwards(tournament: any, winnerId: string): Promise<number>'
     );
@@ -317,16 +531,97 @@ describe('the server treats the atomic receipt as the only success signal', () =
 
 describe('the one audited production miss is adopted exactly once', () => {
   it('accepts only b066 with one existing 200 cash ticket and pays place two exactly 85', () => {
-    expect(ADOPTION).toContain("'b066f432-2aae-4994-85c8-f9bfbfa4cd2f'");
+    for (const identity of [
+      'b066f432-2aae-4994-85c8-f9bfbfa4cd2f',
+      '13dd6b98-b882-4690-a479-3a6f77783ad6',
+      '3d15bbe7-f752-4a49-be3a-079232d23b0f',
+      'ed3f0662-8da7-4c24-b8d7-a1000d60cb1f',
+      '73a2e426-9c82-4674-a267-d73502cd2df8',
+      '438045e8-d7d3-4a05-b8ba-c7b25f8e9b03',
+      'bbcb41fc-dfa4-4a56-a6e6-00601279a1ce',
+      'ce188179-6b89-45aa-b0d0-94c5441ca2a2',
+      'f2ab8f6c-cb2b-4585-b4b4-90cb5e775d99',
+      '4c67b481-22e6-4edd-887a-cdb665b2257f',
+      '5a771fcc-2d5c-4fcf-a126-64abd9377125',
+    ]) {
+      expect(ADOPTION).toContain(`'${identity}'`);
+    }
+    const globalLock = ADOPTION.indexOf(
+      "hashtextextended('ca:tournament-terminal-settlement:v1',0)"
+    );
+    expect(globalLock).toBeGreaterThan(-1);
+    expect(ADOPTION.indexOf('FOR UPDATE')).toBeGreaterThan(globalLock);
     expect(ADOPTION).toContain('v_rows <> 1 OR v_paid IS DISTINCT FROM 200.00');
+    expect(ADOPTION).toContain("v_existing_payout.source IS DISTINCT FROM 'structure'");
+    expect(ADOPTION).toContain('exact append-only ledger evidence changed');
+    expect(ADOPTION).toContain('exact entry-fee evidence changed');
+    expect(ADOPTION).toContain('exact terminal rake settlement changed');
+    expect(ADOPTION).toContain('exact wallet movement evidence changed');
     expect(ADOPTION).toContain('v_source_escrow.prize_balance IS DISTINCT FROM 85.00');
     expect(ADOPTION).toContain('p_amount => 85.00');
     expect(ADOPTION).toContain('p_payout_position => 2');
     expect(ADOPTION).toContain("p_payout_source => 'satellite_remainder'");
     expect(ADOPTION).toContain('v_paid IS DISTINCT FROM 285.00');
+    expect(ADOPTION).toContain('immutable whole-pool receipt did not verify');
+    expect(ADOPTION).not.toContain('public.fn_settle_tournament_rake(');
+    expect(ADOPTION).not.toContain('UPDATE public.tournament_players SET prize = 0');
   });
 
   it('drops the owner-only adoption function before commit', () => {
     expect(SQL).toContain('DROP FUNCTION public.fn_ca_adopt_b066_satellite_remainder()');
+  });
+});
+
+describe('the completed 682 legacy split is adopted without moving money again', () => {
+  it('accepts only the exact fully paid event and preserves its append-only evidence', () => {
+    expect(ADOPTION_682).toContain("'682045c5-cb07-47ed-ad0e-adbff9cb41af'");
+    expect(ADOPTION_682).toContain("'57b96759-2acd-4142-bc4e-37b273cd3542'");
+    expect(ADOPTION_682).toContain("'0de0bc80-dd26-4631-b7f5-3baf0fb4a9da'");
+    expect(ADOPTION_682).toContain("'a15db36e-6684-4edd-be48-277bfb3113ba'");
+    expect(ADOPTION_682).toContain('v_rows <> 2 OR v_amount IS DISTINCT FROM 285.00');
+    expect(ADOPTION_682).toContain('v_escrow.prize_out IS DISTINCT FROM 285.00');
+    expect(ADOPTION_682).toContain('v_source.is_pko IS DISTINCT FROM false');
+    expect(ADOPTION_682).toContain('v_source.is_premium_spin IS DISTINCT FROM false');
+    expect(ADOPTION_682).toContain('v_source.buy_in_amount IS DISTINCT FROM 142.50');
+    expect(ADOPTION_682).toContain("'2026-09-08 11:17:39.702118+00'");
+    expect(ADOPTION_682).toContain('v_winner.chip_count IS DISTINCT FROM 0');
+    expect(ADOPTION_682).toContain('v_bubble.eliminated_at IS DISTINCT FROM');
+    expect(ADOPTION_682).toContain('v_registration.seat_number IS NOT NULL');
+    expect(ADOPTION_682).toContain("tb.name = 'Sunday $200 Deep Stack Satellite Heads-Up'");
+    expect(ADOPTION_682).toContain('ts.horse_id = v_winner_id');
+    expect(ADOPTION_682).toContain('ts.horse_id = v_bubble_id');
+    expect(ADOPTION_682).toContain('v_winner.chips IS DISTINCT FROM 600.00');
+    expect(ADOPTION_682).toContain('v_bubble.chips IS DISTINCT FROM 0');
+    expect(ADOPTION_682).toContain(
+      'v_target_escrow.prize_balance IS DISTINCT FROM v_target.prize_pool'
+    );
+    expect(ADOPTION_682).not.toContain('fn_credit_and_log');
+
+    const mutations = [
+      ...ADOPTION_682.matchAll(/\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+public\.([a-z_]+)/gi),
+    ].map((match) => `${match[1].toUpperCase().replace(/\s+/g, ' ')} public.${match[2]}`);
+    expect(mutations).toEqual([
+      'UPDATE public.tournaments',
+      'UPDATE public.tournament_players',
+      'UPDATE public.tables',
+      'UPDATE public.table_seats',
+      'INSERT INTO public.tournament_satellite_settlements',
+      'INSERT INTO public.tournament_satellite_awards',
+      'INSERT INTO public.tournament_satellite_remainders',
+    ]);
+  });
+
+  it('normalizes only stale caches and writes an exact immutable receipt', () => {
+    expect(ADOPTION_682).toContain('SET prize_pool = 285.00');
+    expect(ADOPTION_682).toContain('UPDATE public.tournament_players SET prize = 85.00');
+    expect(ADOPTION_682).toMatch(
+      /UPDATE public\.tables\s+SET lifecycle = 'closed', terminal_closed_at = v_source\.ended_at/
+    );
+    expect(ADOPTION_682).toContain("SET status = 'left'");
+    expect(ADOPTION_682).toContain('INSERT INTO public.tournament_satellite_settlements');
+    expect(ADOPTION_682).toContain('INSERT INTO public.tournament_satellite_awards');
+    expect(ADOPTION_682).toContain('INSERT INTO public.tournament_satellite_remainders');
+    expect(ADOPTION_682).toContain("'legacy_20260908_682'");
+    expect(ADOPTION_682).toContain('public.fn_ca_satellite_settlement_receipt');
   });
 });

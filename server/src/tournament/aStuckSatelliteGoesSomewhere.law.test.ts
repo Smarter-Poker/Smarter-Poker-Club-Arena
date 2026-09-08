@@ -85,33 +85,22 @@ describe('one survivor resumes the same proven atomic finish', () => {
     expect(branch).toContain('recoverStuckCompleting_satellite_standings_unproved');
   });
 
-  it('claims before stamping and compare-and-sets only the proven survivor', () => {
+  it('claims the proven survivor before handing everything to the receipt authority', () => {
     const claim = CODE.indexOf('const satClaim = await claimTournamentFinish');
-    const stamp = CODE.indexOf(".update({ status: 'winner', position: 1 })");
-    const stampWindow = CODE.slice(stamp, CODE.indexOf('const { data: terminalRows', stamp));
+    const settle = CODE.indexOf('requestSatelliteSettlementReceipt(t.id, proposedWinnerId)');
 
     expect(claim).toBeGreaterThan(-1);
-    expect(stamp).toBeGreaterThan(claim);
-    expect(stampWindow).toContain(".eq('id', survivorToStamp.id)");
-    expect(stampWindow).toContain(".eq('user_id', proposedWinnerId)");
-    expect(stampWindow).toContain(".eq('status', 'playing')");
-    expect(stampWindow).toContain(".eq('status', 'winner')");
-    expect(stampWindow).toContain(".eq('position', 1)");
-    expect(stampWindow).toContain('exactWinnerPersisted');
+    expect(settle).toBeGreaterThan(claim);
+    expect(CODE.slice(claim, settle)).not.toMatch(/\.update\(|fn_finalize_bounty_pool/);
   });
 
-  it('re-proves a unique, contiguous terminal field before any money RPC', () => {
-    const proof = CODE.indexOf('const exactTerminalField');
-    const bounty = CODE.indexOf('drainTournamentBountyObligations', proof);
-    const rake = CODE.indexOf("supabase.rpc('fn_settle_tournament_rake'", proof);
-    const settle = CODE.indexOf("'fn_settle_satellite_finish_atomic'", proof);
+  it('does not pre-settle rake, bounty, standings, or cash before the receipt request', () => {
+    const settle = CODE.indexOf('requestSatelliteSettlementReceipt(t.id, proposedWinnerId)');
 
-    expect(proof).toBeGreaterThan(-1);
-    expect(bounty).toBeGreaterThan(proof);
-    expect(rake).toBeGreaterThan(bounty);
-    expect(settle).toBeGreaterThan(rake);
-    expect(CODE.slice(proof, bounty)).toContain('position === index + 1');
-    expect(CODE.slice(proof, bounty)).toContain('proposedWinnerId');
+    expect(settle).toBeGreaterThan(-1);
+    expect(CODE).not.toMatch(
+      /fn_finalize_bounty_pool|fn_settle_tournament_rake|fn_mystery_bounty_settle|\.update\(\{ status: 'winner'/
+    );
   });
 });
 
@@ -141,14 +130,13 @@ describe('zero survivors never authorizes a guessed champion', () => {
 });
 
 describe('the satellite branch has one terminal money door', () => {
-  it('uses the atomic satellite finalizer and accepts a lost receipt only from COMPLETED', () => {
-    expect(CODE).toContain("'fn_settle_satellite_finish_atomic'");
-    const failed = CODE.slice(
-      CODE.indexOf('satelliteSettlement?.ok !== true'),
-      CODE.indexOf('acceptedDurableCompletion = true')
-    );
-    expect(failed).toContain("committed?.status !== 'COMPLETED'");
-    expect(failed).toContain('satellite_completion_failed');
+  it('uses the verified receipt helper and classifies its serialized outcome', () => {
+    expect(CODE).toContain('requestSatelliteSettlementReceipt(t.id, proposedWinnerId)');
+    expect(CODE).toContain('SatelliteSettlementOutcomeUnknownError');
+    expect(CODE).toContain('SatelliteSettlementRefusedError');
+    expect(CODE).toContain('Satellite.recovery_settlement_outcome_unknown');
+    expect(CODE).not.toContain("'fn_settle_satellite_finish_atomic'");
+    expect(CODE).not.toContain("committed?.status !== 'COMPLETED'");
   });
 
   it('does not certify, directly complete, or fall through to structure cash', () => {

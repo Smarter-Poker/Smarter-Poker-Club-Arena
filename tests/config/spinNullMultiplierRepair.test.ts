@@ -137,22 +137,32 @@ describe('v_spin_reserve_health', () => {
 describe('the engine no longer starts a Spin on an unchecked write', () => {
   const engine = tsCode(read('server/src/tournament/TournamentManagerBase.ts'));
 
-  it('checks both the error and exact read-back on the row that carries the whole draw', () => {
-    const writeLoop = sliceBlockAfter(
+  it('validates the combined money receipt, then reads back presentation separately', () => {
+    const settlementLoop = sliceBlockAfter(
       engine,
-      'for (let attempt = 1; attempt <= 3 && !spinRowWritten; attempt++)'
+      'for (let attempt = 1; attempt <= 3 && !spinReceipt; attempt++)'
     );
-    expect(writeLoop).toMatch(/const \{ data: writtenRow, error: spinRowErr \} = await supabase/);
-    expect(writeLoop).toMatch(
-      /!spinRowErr[\s\S]*spin_multiplier[\s\S]*prize_pool[\s\S]*lockedMatches/
+    expect(settlementLoop).toMatch(/supabase\.rpc\('fn_spin_draw_and_settle'/);
+    expect(settlementLoop).toMatch(/error:\s*settlementError/);
+    expect(settlementLoop).toMatch(/parseSpinSettlementReceipt\(rawReceipt/);
+
+    const presentationLoop = sliceBlockAfter(
+      engine,
+      'for (let attempt = 1; attempt <= 3 && !spinPresentationWritten; attempt++)'
     );
-    expect(writeLoop).toMatch(/if \(attempt === 3\)[\s\S]*Tournament\.spin_draw_row_write_failed/);
+    expect(presentationLoop).toMatch(/error:\s*spinPresentationErr/);
+    expect(presentationLoop).toMatch(/this\.launchRowMatchesPatch/);
+    expect(presentationLoop).toMatch(
+      /if \(attempt === 3\)[\s\S]*Tournament\.spin_presentation_write_failed/
+    );
   });
 
-  it('stands down before cards when the durable draw row cannot be verified', () => {
-    const standDown = sliceBlockAfter(engine, 'if (!spinRowWritten)');
-    expect(standDown).toMatch(/this\.running = false/);
-    expect(standDown).toMatch(/return;/);
-    expect(standDown).not.toMatch(/dealHand|startTableEngines/);
+  it('stands down before cards when money or presentation cannot be proven', () => {
+    for (const anchor of ['if (!spinReceipt)', 'if (!spinPresentationWritten)']) {
+      const standDown = sliceBlockAfter(engine, anchor);
+      expect(standDown).toMatch(/this\.running = false/);
+      expect(standDown).toMatch(/return;/);
+      expect(standDown).not.toMatch(/dealHand|startTableEngines/);
+    }
   });
 });

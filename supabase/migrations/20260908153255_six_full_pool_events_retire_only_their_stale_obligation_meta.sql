@@ -1,3 +1,4 @@
+-- 20260908153255_six_full_pool_events_retire_only_their_stale_obligation_meta.sql
 -- Six completed tournaments already distributed every chip in their locked
 -- prize pools. Legacy repair arithmetic nevertheless left six place
 -- obligations above the amount each finisher actually received: three
@@ -290,7 +291,7 @@ BEGIN
            root_cause =
              'A legacy calculator left an obligation tail after the complete locked pool had already been distributed.',
            correction_ref =
-             'migration 20260908065302_six_full_pool_events_retire_only_their_stale_obligation_metadata; obligation '
+             'migration 20260908153255_six_full_pool_events_retire_only_their_stale_obligation_metadata; obligation '
              || v_expected.obligation_id::text,
            resolution =
              'Exact payout and wallet totals equal the locked pool. The stale obligation metadata was retired; no chips moved and no house bank was charged.'
@@ -357,7 +358,7 @@ BEGIN
          auto_repair_status = 'not_applicable',
          correction_ref = COALESCE(
            i.correction_ref,
-           'migration 20260908065302_six_full_pool_events_retire_only_their_stale_obligation_metadata; canonical final-table payout evidence'),
+           'migration 20260908153255_six_full_pool_events_retire_only_their_stale_obligation_metadata; canonical final-table payout evidence'),
          root_cause = COALESCE(
            i.root_cause,
            'A historical repair inserted duplicate payout evidence after the platform credit path had already written the canonical rows.')

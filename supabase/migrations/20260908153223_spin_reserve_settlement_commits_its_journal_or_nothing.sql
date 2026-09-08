@@ -1,4 +1,4 @@
--- 20260908065237_spin_reserve_settlement_commits_its_journal_or_nothing.sql
+-- 20260908153223_spin_reserve_settlement_commits_its_journal_or_nothing.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
@@ -46,7 +46,15 @@ BEGIN
      OR to_regclass('public.club_members') IS NULL
      OR to_regclass('public.financial_alerts') IS NULL
      OR to_regclass('public.ca_drift_incidents') IS NULL
+     OR to_regclass('public.tables') IS NULL
+     OR to_regclass('public.table_seats') IS NULL
+     OR to_regclass('public.tournament_players') IS NULL
+     OR to_regclass('public.hand_history') IS NULL
+     OR to_regclass('cron.job') IS NULL
      OR to_regprocedure('public.fn_ca_autoledger()') IS NULL
+     OR to_regprocedure('public.fn_ca_guard_seat_creation()') IS NULL
+     OR to_regprocedure('public.fn_seat_change_syncs_seat_first_count()') IS NULL
+     OR to_regprocedure('public.fn_credit_stalled_seat_first_stacks()') IS NULL
      OR to_regprocedure('public.fn_spin_book_entry(uuid)') IS NULL
      OR to_regprocedure('public.fn_spin_settle_game(uuid,uuid,numeric,integer,numeric,numeric)') IS NULL
      OR to_regprocedure('public.fn_spin_rake_rate(numeric)') IS NULL
@@ -111,7 +119,7 @@ CREATE TABLE public.tournament_spin_settlement_cutover (
   authority                  text PRIMARY KEY
                                   CHECK (authority = 'fn_spin_draw_and_settle:v1'),
   migration_version          text NOT NULL
-                                  CHECK (migration_version = '20260908065237'),
+                                  CHECK (migration_version = '20260908153223'),
   installed_at               timestamptz NOT NULL,
   audited_tournament_ids     uuid[] NOT NULL,
   production_requires_receipt boolean GENERATED ALWAYS AS
@@ -131,7 +139,7 @@ INSERT INTO public.tournament_spin_settlement_cutover (
   authority, migration_version, installed_at, audited_tournament_ids)
 SELECT
   'fn_spin_draw_and_settle:v1',
-  '20260908065237',
+  '20260908153223',
   transaction_timestamp(),
   ARRAY(
     SELECT expected.id
@@ -152,6 +160,99 @@ COMMENT ON TABLE public.tournament_spin_settlement_cutover IS
 -- catch-and-continue implementation would reopen unjournaled movement for
 -- every bank, not just Spin.
 
+-- A paid tournament seat is valid at birth or the statement is refused. The
+-- old guard asked who the caller was before asking whether a tournament seat
+-- carried real chips, so service_role, pg_cron and migrations could insert a
+-- zero placeholder and leave a later timer to repair it. Caller identity can
+-- authorize a funded write; it can never waive the data invariant.
+CREATE OR REPLACE FUNCTION public.fn_ca_guard_seat_creation()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $seat_guard$
+DECLARE
+  v_path text;
+  v_creating boolean;
+  v_tournament_id uuid;
+  v_variant text;
+  v_max_players integer;
+  v_starting_chips numeric;
+BEGIN
+  v_creating := (TG_OP = 'INSERT' AND NEW.left_at IS NULL)
+             OR (TG_OP = 'UPDATE' AND OLD.left_at IS NOT NULL AND NEW.left_at IS NULL);
+  IF NOT v_creating THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT tb.tournament_id, t.variant, t.max_players, t.starting_chips
+    INTO v_tournament_id, v_variant, v_max_players, v_starting_chips
+    FROM public.tables tb
+    LEFT JOIN public.tournaments t ON t.id = tb.tournament_id
+   WHERE tb.id = NEW.table_id;
+
+  IF v_tournament_id IS NOT NULL THEN
+    IF NEW.stack IS NULL
+       OR NEW.stack::text IN ('NaN','Infinity','-Infinity')
+       OR NEW.stack <= 0 THEN
+      RAISE EXCEPTION
+        'TOURNAMENT_SEAT_REQUIRES_POSITIVE_STACK: tournament %, table %, seat %, stack %',
+        v_tournament_id, NEW.table_id, NEW.seat_number, NEW.stack
+        USING ERRCODE = 'check_violation',
+              HINT = 'Create or revive the seat with its paid positive stack in the same database transaction.';
+    END IF;
+
+    IF lower(COALESCE(v_variant,'')) = 'spin'
+       OR COALESCE(v_max_players,0) <= 2 THEN
+      IF v_starting_chips IS NULL
+         OR v_starting_chips::text IN ('NaN','Infinity','-Infinity')
+         OR v_starting_chips <= 0 THEN
+        RAISE EXCEPTION
+          'SEAT_FIRST_STARTING_CHIPS_INVALID: tournament %, starting_chips %',
+          v_tournament_id, v_starting_chips
+          USING ERRCODE = 'check_violation';
+      END IF;
+      IF NEW.stack IS DISTINCT FROM v_starting_chips THEN
+        RAISE EXCEPTION
+          'SEAT_FIRST_STACK_MUST_EQUAL_STARTING_CHIPS: tournament %, table %, seat %, stack %, expected %',
+          v_tournament_id, NEW.table_id, NEW.seat_number, NEW.stack, v_starting_chips
+          USING ERRCODE = 'check_violation',
+                HINT = 'The paid seat transaction is the only starting-stack authority; no later top-up exists.';
+      END IF;
+    END IF;
+  END IF;
+
+  -- Cash seats with no funded stack preserve their existing reservation path.
+  IF COALESCE(NEW.stack,0) <= 0 THEN
+    RETURN NEW;
+  END IF;
+
+  IF public.fn_caller_is_engine() THEN
+    RETURN NEW;
+  END IF;
+
+  v_path := current_setting('app.money_path', true);
+  IF v_path IN ('atomic_table_buyin', 'fn_take_seat_and_buy_in',
+                'fn_seat_horse_in_seat_first_game', 'fn_seat_late_registrant',
+                'fn_horse_seat_from_treasury') THEN
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION 'SEAT_NOT_FUNDED: chips may only reach a seat through the engine or a declared money path (path=%, jwt_role=%, app=%, table=%, seat=%, stack=%)',
+    COALESCE(NULLIF(v_path, ''), 'none'),
+    COALESCE(auth.role(), 'none'),
+    COALESCE(NULLIF(current_setting('application_name', true), ''), 'none'),
+    NEW.table_id, NEW.seat_number, NEW.stack
+    USING ERRCODE = 'check_violation',
+          HINT = 'The caller must debit a wallet or treasury and declare app.money_path, or be the engine.';
+END;
+$seat_guard$;
+
+REVOKE ALL ON FUNCTION public.fn_ca_guard_seat_creation()
+  FROM PUBLIC, anon, authenticated, service_role;
+COMMENT ON FUNCTION public.fn_ca_guard_seat_creation() IS
+  'BEFORE-seat authority. Every live tournament seat is positive; every canonical seat-first seat exactly equals tournaments.starting_chips before any caller authorization is considered.';
+
 -- The third paid seat is the entry authority. This is still a private helper
 -- because fn_sync_seat_first_player_count invokes it inside the transaction
 -- that fills that seat. It refuses anything except one exact three-user roster,
@@ -170,6 +271,7 @@ DECLARE
   v_table_id uuid;
   v_live_seats integer;
   v_seat_users integer;
+  v_exact_seat_stacks integer;
   v_roster_users integer;
   v_paid_users integer;
   v_buyin_debits integer;
@@ -187,6 +289,7 @@ DECLARE
   v_key text := 'spin:' || p_tournament_id::text || ':entry';
 BEGIN
   SELECT t.id, t.club_id, t.buy_in_amount, t.max_players, t.variant,
+         t.starting_chips,
          t.tournament_type, t.status
     INTO v_t
     FROM public.tournaments t
@@ -199,13 +302,20 @@ BEGIN
   END IF;
   IF v_t.club_id IS NULL OR COALESCE(v_t.buy_in_amount,0) <= 0
      OR COALESCE(v_t.max_players,0) <> 3
+     OR v_t.starting_chips IS NULL
+     OR v_t.starting_chips::text IN ('NaN','Infinity','-Infinity')
+     OR v_t.starting_chips <= 0
      OR upper(COALESCE(v_t.status::text,'')) IN ('COMPLETED','CANCELLED','CANCELED') THEN
     RETURN jsonb_build_object('ok',false,'reason','invalid_spin_contract');
   END IF;
 
   v_table_id := public.fn_tournament_primary_table(p_tournament_id);
-  SELECT count(*), count(DISTINCT s.user_id)
-    INTO v_live_seats, v_seat_users
+  SELECT count(*), count(DISTINCT s.user_id),
+         count(*) FILTER (
+           WHERE s.stack IS NOT DISTINCT FROM v_t.starting_chips
+             AND s.stack::text NOT IN ('NaN','Infinity','-Infinity')
+             AND s.stack > 0)
+    INTO v_live_seats, v_seat_users, v_exact_seat_stacks
     FROM public.table_seats s
    WHERE s.table_id = v_table_id AND s.left_at IS NULL;
   SELECT count(DISTINCT tp.user_id)
@@ -232,6 +342,7 @@ BEGIN
      AND w.type = 'debit'
      AND w.category = 'tournament_buyin';
   IF v_table_id IS NULL OR v_live_seats <> 3 OR v_seat_users <> 3
+     OR v_exact_seat_stacks <> 3
      OR v_roster_users <> 3 OR v_paid_users <> 3
      OR v_buyin_debits <> 3
      OR v_buyin_total <> round(v_t.buy_in_amount * 3,2)
@@ -245,6 +356,7 @@ BEGIN
     RETURN jsonb_build_object(
       'ok',false,'reason','three_paid_seats_required',
       'seats',v_live_seats,'seat_users',v_seat_users,
+      'exact_seat_stacks',v_exact_seat_stacks,
       'roster_users',v_roster_users,'paid_users',v_paid_users,
       'buyin_debits',v_buyin_debits,'buyin_total',v_buyin_total);
   END IF;
@@ -420,9 +532,9 @@ DECLARE
   v_attempt    integer := 0;
   v_book       jsonb;
 BEGIN
-  SELECT (COALESCE(t.variant, '') IN ('spin', 'sng')
+  SELECT (lower(COALESCE(t.variant, '')) = 'spin'
           OR COALESCE(t.max_players, 0) <= 2),
-         COALESCE(t.variant, '') = 'spin',
+         lower(COALESCE(t.variant, '')) = 'spin',
          COALESCE(t.max_players, 0),
          COALESCE(t.variant, '')
     INTO v_seat_first, v_is_spin, v_cap, v_variant
@@ -512,6 +624,53 @@ GRANT EXECUTE ON FUNCTION public.fn_sync_seat_first_player_count(uuid)
   TO service_role;
 COMMENT ON FUNCTION public.fn_sync_seat_first_player_count(uuid) IS
   'Seat-first count sync. A paid third Spin seat books its exact reserve contribution in the same transaction; booking refusal propagates. Realtime announcement alone is best-effort.';
+
+-- The AFTER-seat hook is part of the purchase transaction, not a storefront
+-- counter updater. The historical body caught every error, committed the paid
+-- third seat anyway and left the reserve booking to a repair sweep. A refusal
+-- now aborts the seat statement, and the canonical predicate never sweeps a
+-- larger SNG merely because its variant is `sng`.
+CREATE OR REPLACE FUNCTION public.fn_seat_change_syncs_seat_first_count()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $seat_change$
+DECLARE
+  v_table_id uuid;
+  v_tid uuid;
+BEGIN
+  v_table_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.table_id ELSE NEW.table_id END;
+  IF v_table_id IS NULL THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  SELECT tournament_id INTO v_tid
+    FROM public.tables
+   WHERE id = v_table_id;
+  IF v_tid IS NULL THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+     WHERE t.id = v_tid
+       AND (lower(COALESCE(t.variant,'')) = 'spin'
+            OR COALESCE(t.max_players,0) <= 2)
+  ) THEN
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+
+  PERFORM public.fn_sync_seat_first_player_count(v_tid);
+  RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END;
+$seat_change$;
+
+REVOKE ALL ON FUNCTION public.fn_seat_change_syncs_seat_first_count()
+  FROM PUBLIC, anon, authenticated, service_role;
+COMMENT ON FUNCTION public.fn_seat_change_syncs_seat_first_count() IS
+  'Strict canonical seat-first AFTER-seat hook. Count and paid-third-seat reserve booking succeed in the seat transaction or the seat mutation rolls back.';
 
 -- A second structural assertion sits on the authoritative reserve receipt.
 -- The balance trigger writes chip_ledger first; the operational function then
@@ -710,8 +869,10 @@ DECLARE
   v_table_id uuid;
   v_paid_seats integer;
   v_seat_users integer;
+  v_exact_seat_stacks integer;
   v_paid_users integer;
   v_roster_users integer;
+  v_exact_roster_stacks integer;
   v_buyin_debits integer;
   v_buyin_total numeric;
   v_book jsonb;
@@ -758,7 +919,7 @@ BEGIN
 
   SELECT t.id, t.club_id, t.buy_in_amount, t.max_players, t.variant,
          t.tournament_type, t.status, t.spin_multiplier, t.prize_pool,
-         t.spin_locked_tiers
+         t.spin_locked_tiers, t.starting_chips
     INTO v_t
     FROM public.tournaments t
    WHERE t.id = p_tournament_id
@@ -775,8 +936,11 @@ BEGIN
   IF COALESCE(v_t.club_id, '00000000-0000-0000-0000-000000000000'::uuid)
        = '00000000-0000-0000-0000-000000000000'::uuid
      OR COALESCE(v_t.buy_in_amount,0) <= 0
-     OR COALESCE(v_t.max_players,0) <> 3 THEN
-    RAISE EXCEPTION 'Spin % has invalid club, buy-in or seat contract',
+     OR COALESCE(v_t.max_players,0) <> 3
+     OR v_t.starting_chips IS NULL
+     OR v_t.starting_chips::text IN ('NaN','Infinity','-Infinity')
+     OR v_t.starting_chips <= 0 THEN
+    RAISE EXCEPTION 'Spin % has invalid club, buy-in, seat or starting-stack contract',
       p_tournament_id USING ERRCODE = '23514';
   END IF;
   IF upper(COALESCE(v_t.status::text,'')) IN
@@ -786,12 +950,29 @@ BEGIN
   END IF;
 
   v_table_id := public.fn_tournament_primary_table(p_tournament_id);
-  SELECT count(*), count(DISTINCT s.user_id)
-    INTO v_paid_seats, v_seat_users
+  SELECT count(*), count(DISTINCT s.user_id),
+         count(*) FILTER (
+           WHERE s.stack IS NOT DISTINCT FROM v_t.starting_chips
+             AND s.stack::text NOT IN ('NaN','Infinity','-Infinity')
+             AND s.stack > 0)
+    INTO v_paid_seats, v_seat_users, v_exact_seat_stacks
     FROM public.table_seats s
    WHERE s.table_id = v_table_id AND s.left_at IS NULL;
-  SELECT count(DISTINCT tp.user_id) INTO v_roster_users
+  SELECT count(DISTINCT tp.user_id),
+         count(*) FILTER (
+           WHERE tp.status = 'playing'
+             AND tp.chips IS NOT DISTINCT FROM v_t.starting_chips
+             AND tp.chips::text NOT IN ('NaN','Infinity','-Infinity')
+             AND tp.chips > 0
+             AND s.user_id IS NOT NULL
+             AND tp.table_id IS NOT DISTINCT FROM s.table_id
+             AND tp.seat_number IS NOT DISTINCT FROM s.seat_number)
+    INTO v_roster_users, v_exact_roster_stacks
     FROM public.tournament_players tp
+    LEFT JOIN public.table_seats s
+      ON s.table_id = v_table_id
+     AND s.user_id = tp.user_id
+     AND s.left_at IS NULL
    WHERE tp.tournament_id = p_tournament_id;
   SELECT count(*) INTO v_paid_users
     FROM (
@@ -813,7 +994,9 @@ BEGIN
      AND w.type = 'debit'
      AND w.category = 'tournament_buyin';
   IF v_table_id IS NULL OR v_paid_seats <> 3 OR v_seat_users <> 3
+     OR v_exact_seat_stacks <> 3
      OR v_roster_users <> 3
+     OR v_exact_roster_stacks <> 3
      OR v_paid_users <> 3
      OR v_buyin_debits <> 3
      OR v_buyin_total <> round(v_t.buy_in_amount * 3,2)
@@ -829,9 +1012,9 @@ BEGIN
           )
      ) THEN
     RAISE EXCEPTION
-      'Spin % is not exactly three paid rostered seats (% seats, % seat users, % roster users, % paid users, % debits, % total)',
-      p_tournament_id, v_paid_seats, v_seat_users, v_roster_users, v_paid_users,
-      v_buyin_debits,v_buyin_total
+      'Spin % is not exactly three paid rostered starting stacks (% seats, % exact seat stacks, % seat users, % roster users, % exact roster stacks, % paid users, % debits, % total)',
+      p_tournament_id, v_paid_seats, v_exact_seat_stacks, v_seat_users,
+      v_roster_users, v_exact_roster_stacks, v_paid_users, v_buyin_debits,v_buyin_total
       USING ERRCODE = '55000';
   END IF;
 
@@ -1234,7 +1417,7 @@ BEGIN
        'Authoritative missing Spin draw journal for 781cc0ee; reserve row d6eba15c already moved exactly 3.00 and no suspense leg or payout existed.',
        v_balance_after + 3,v_balance_after,v_tid,
        'spin:' || v_tid::text || ':draw',
-       jsonb_build_object('migration','20260908065237',
+       jsonb_build_object('migration','20260908153223',
                           'reserve_draw_id',v_draw_id,
                           'historical_correction',true));
 
@@ -1371,7 +1554,7 @@ BEGIN
      SET resolved = true,
          resolved_at = COALESCE(f.resolved_at,now()),
          resolution = COALESCE(NULLIF(f.resolution,'') || ' | ','')
-           || 'Accepted historical Spin payout: immutable reserve draw and total payout are both 10.00. Legacy prize_pool remained 3.00; winner 9.40 plus runner-up 0.60 is final. No clawback and no further 0.60 payment. Root fixed by fn_spin_draw_and_settle (20260908065237).'
+           || 'Accepted historical Spin payout: immutable reserve draw and total payout are both 10.00. Legacy prize_pool remained 3.00; winner 9.40 plus runner-up 0.60 is final. No clawback and no further 0.60 payment. Root fixed by fn_spin_draw_and_settle (20260908153223).'
    WHERE f.context->>'tournament_id' = v_tid::text
       OR f.context#>>'{rows,0,tournament_id}' = v_tid::text
       OR f.message ILIKE '%' || v_tid::text || '%'
@@ -1382,7 +1565,7 @@ BEGIN
          resolved_at = COALESCE(i.resolved_at,now()),
          auto_repair_status = 'not_applicable',
          root_cause = 'Legacy Spin row retained prize_pool 3.00 after an exact 10.00 reserve draw and 10.00 total payout.',
-         correction_ref = '20260908065237:accepted-no-clawback-no-further-payment',
+         correction_ref = '20260908153223:accepted-no-clawback-no-further-payment',
          resolution = 'Accepted historical payout; no chips moved. Winner obligation normalized from 10.00 owed / 9.40 paid to its final 9.40 receipt; runner-up remains paid 0.60.'
    WHERE i.tournament_id = v_tid
       OR i.metadata->>'tournament_id' = v_tid::text;
@@ -1403,11 +1586,202 @@ BEGIN
 END;
 $accept_6d688095$;
 
+-- RETIRE THE STACK REPAIR, WITHOUT A GAP.
+--
+-- The job's session advisory lock is taken first. That waits for a running
+-- invocation to finish and makes every newly-started tick take its `-1` branch.
+-- SHARE locks then hold all writers behind this transaction while the durable
+-- seat invariants and the exact old-job candidate set are proven. Only a clean
+-- database may lose the fallback; no row is changed to manufacture that proof.
+DO $retire_stack_repair$
+DECLARE
+  v_source text;
+  v_job record;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('credit-stalled-seat-first-stacks'));
+
+  -- Keep a scheduler writer from recreating the job after the final scan but
+  -- before COMMIT. SHARE conflicts with cron.schedule/unschedule's row writes;
+  -- this transaction can still delete the rows it has proved and owns.
+  LOCK TABLE cron.job IN SHARE MODE;
+  LOCK TABLE public.tournaments IN SHARE MODE;
+  LOCK TABLE public.tables IN SHARE MODE;
+  LOCK TABLE public.table_seats IN SHARE MODE;
+  LOCK TABLE public.tournament_players IN SHARE MODE;
+  LOCK TABLE public.hand_history IN SHARE MODE;
+
+  SELECT p.prosrc INTO v_source
+    FROM pg_proc p
+   WHERE p.oid = 'public.fn_ca_guard_seat_creation()'::regprocedure;
+  IF v_source NOT LIKE '%TOURNAMENT_SEAT_REQUIRES_POSITIVE_STACK%'
+     OR v_source NOT LIKE '%SEAT_FIRST_STACK_MUST_EQUAL_STARTING_CHIPS%'
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_trigger tr
+        WHERE tr.tgrelid = 'public.table_seats'::regclass
+          AND tr.tgname = 'trg_ca_guard_seat_creation'
+          AND tr.tgfoid = 'public.fn_ca_guard_seat_creation()'::regprocedure
+          AND NOT tr.tgisinternal
+          AND tr.tgenabled <> 'D'
+     ) THEN
+    RAISE EXCEPTION 'the paid-seat root invariant is not armed';
+  END IF;
+
+  SELECT p.prosrc INTO v_source
+    FROM pg_proc p
+   WHERE p.oid = 'public.fn_seat_change_syncs_seat_first_count()'::regprocedure;
+  IF v_source LIKE '%EXCEPTION WHEN OTHERS%'
+     OR v_source LIKE '%IN (''spin'', ''sng'')%'
+     OR v_source NOT LIKE '%PERFORM public.fn_sync_seat_first_player_count(v_tid)%'
+     OR NOT EXISTS (
+       SELECT 1
+         FROM pg_trigger tr
+        WHERE tr.tgrelid = 'public.table_seats'::regclass
+          AND tr.tgname = 'trg_seat_change_syncs_seat_first_count'
+          AND tr.tgfoid = 'public.fn_seat_change_syncs_seat_first_count()'::regprocedure
+          AND NOT tr.tgisinternal
+          AND tr.tgenabled <> 'D'
+     ) THEN
+    RAISE EXCEPTION 'the strict paid-third-seat authority is not armed';
+  END IF;
+
+  -- Byte-for-byte predicate of the retiring function. Production evidence on
+  -- 2026-09-08 found zero candidates; this locked check makes that observation
+  -- a commit precondition rather than a deployment note.
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+     WHERE upper(COALESCE(t.status::text,'')) = 'RUNNING'
+       AND COALESCE(t.starting_chips,0) > 0
+       AND t.started_at IS NOT NULL
+       AND t.started_at < now() - interval '60 seconds'
+       AND NOT EXISTS (
+         SELECT 1
+           FROM public.tables tb
+           JOIN public.hand_history hh ON hh.table_id = tb.id
+          WHERE tb.tournament_id = t.id)
+       AND EXISTS (
+         SELECT 1
+           FROM public.table_seats s
+           JOIN public.tables tb ON tb.id = s.table_id
+          WHERE tb.tournament_id = t.id AND s.left_at IS NULL)
+       AND NOT EXISTS (
+         SELECT 1
+           FROM public.table_seats s
+           JOIN public.tables tb ON tb.id = s.table_id
+          WHERE tb.tournament_id = t.id
+            AND s.left_at IS NULL
+            AND COALESCE(s.stack,0) > 0)
+  ) THEN
+    RAISE EXCEPTION 'stack repair backlog is not zero';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+      JOIN public.tables tb ON tb.tournament_id = t.id
+      JOIN public.table_seats s ON s.table_id = tb.id AND s.left_at IS NULL
+     WHERE upper(COALESCE(t.status::text,'')) IN ('ANNOUNCED','REGISTERING','RUNNING')
+       AND NOT EXISTS (
+         SELECT 1 FROM public.hand_history hh WHERE hh.table_id = tb.id)
+       AND (s.stack IS NULL
+            OR s.stack::text IN ('NaN','Infinity','-Infinity')
+            OR s.stack <= 0)
+  ) THEN
+    RAISE EXCEPTION 'a live pre-deal tournament seat is not positive';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+      JOIN public.tables tb ON tb.tournament_id = t.id
+      JOIN public.table_seats s ON s.table_id = tb.id AND s.left_at IS NULL
+     WHERE upper(COALESCE(t.status::text,'')) IN ('ANNOUNCED','REGISTERING','RUNNING')
+       AND (lower(COALESCE(t.variant,'')) = 'spin'
+            OR COALESCE(t.max_players,0) <= 2)
+       AND NOT EXISTS (
+         SELECT 1 FROM public.hand_history hh WHERE hh.table_id = tb.id)
+       AND (t.starting_chips IS NULL
+            OR t.starting_chips::text IN ('NaN','Infinity','-Infinity')
+            OR t.starting_chips <= 0
+            OR s.stack IS DISTINCT FROM t.starting_chips)
+  ) THEN
+    RAISE EXCEPTION 'seat-first stack invariant is not clean';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+      JOIN public.tables tb ON tb.tournament_id = t.id
+      JOIN public.table_seats s ON s.table_id = tb.id AND s.left_at IS NULL
+      LEFT JOIN public.tournament_players tp
+        ON tp.tournament_id = t.id AND tp.user_id = s.user_id
+     WHERE upper(COALESCE(t.status::text,'')) IN ('ANNOUNCED','REGISTERING','RUNNING')
+       AND (lower(COALESCE(t.variant,'')) = 'spin'
+            OR COALESCE(t.max_players,0) <= 2)
+       AND NOT EXISTS (
+         SELECT 1 FROM public.hand_history hh WHERE hh.table_id = tb.id)
+       AND (tp.user_id IS NULL
+            OR tp.status IS DISTINCT FROM 'playing'
+            OR tp.chips IS DISTINCT FROM t.starting_chips
+            OR tp.table_id IS DISTINCT FROM s.table_id
+            OR tp.seat_number IS DISTINCT FROM s.seat_number)
+  ) OR EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+      JOIN public.tournament_players tp ON tp.tournament_id = t.id
+     WHERE upper(COALESCE(t.status::text,'')) IN ('ANNOUNCED','REGISTERING','RUNNING')
+       AND (lower(COALESCE(t.variant,'')) = 'spin'
+            OR COALESCE(t.max_players,0) <= 2)
+       AND tp.status IN ('registered','playing')
+       AND NOT EXISTS (
+         SELECT 1
+           FROM public.table_seats s
+           JOIN public.tables tb ON tb.id = s.table_id
+          WHERE tb.tournament_id = t.id
+            AND s.user_id = tp.user_id
+            AND s.left_at IS NULL)
+  ) THEN
+    RAISE EXCEPTION 'seat-first seat and roster authority are not in exact parity';
+  END IF;
+
+  FOR v_job IN
+    SELECT j.jobid
+      FROM cron.job j
+     WHERE regexp_replace(lower(COALESCE(j.jobname,'')),'[^a-z0-9]+','','g')
+             = 'creditstalledseatfirststacks'
+        OR lower(COALESCE(j.command,'')) LIKE '%fn_credit_stalled_seat_first_stacks%'
+     ORDER BY j.jobid
+  LOOP
+    IF NOT cron.unschedule(v_job.jobid) THEN
+      RAISE EXCEPTION 'could not unschedule stack repair job %', v_job.jobid;
+    END IF;
+  END LOOP;
+
+  IF EXISTS (
+    SELECT 1
+      FROM cron.job j
+     WHERE regexp_replace(lower(COALESCE(j.jobname,'')),'[^a-z0-9]+','','g')
+             = 'creditstalledseatfirststacks'
+        OR lower(COALESCE(j.command,'')) LIKE '%fn_credit_stalled_seat_first_stacks%'
+  ) THEN
+    RAISE EXCEPTION 'stack repair cron remains scheduled';
+  END IF;
+
+  EXECUTE 'DROP FUNCTION public.fn_credit_stalled_seat_first_stacks() RESTRICT';
+  IF to_regprocedure('public.fn_credit_stalled_seat_first_stacks()') IS NOT NULL THEN
+    RAISE EXCEPTION 'stack repair function remains executable';
+  END IF;
+END;
+$retire_stack_repair$;
+
 -- ROLLING CUTOVER, STAGE 1. The database migration lands before the new
 -- server. Keep the old engine's three service-role RPC grants intact until
 -- that server has published, called the combined authority successfully and
--- been independently verified. The separable stage-2 migration owns every
--- revocation, function drop and cron retirement. Browser roles remain barred.
+-- been independently verified. The separable stage-2 migration owns the
+-- lower-level Spin RPC revocations; the unrelated stack-credit cron is safely
+-- retired above because its root seat invariant lands in this transaction.
+-- Browser roles remain barred.
 REVOKE ALL ON FUNCTION public.fn_spin_draw_multiplier(
   uuid,numeric,jsonb,numeric,integer)
   FROM PUBLIC, anon, authenticated;
@@ -1454,7 +1828,7 @@ BEGIN
   IF (SELECT count(*)
         FROM public.tournament_spin_settlement_cutover c
        WHERE c.authority = 'fn_spin_draw_and_settle:v1'
-         AND c.migration_version = '20260908065237'
+         AND c.migration_version = '20260908153223'
          AND c.installed_at = transaction_timestamp()
          AND c.audited_tournament_ids <@ ARRAY[
            '781cc0ee-6a1d-4e31-acaf-4e737661bba1'::uuid,
@@ -1485,6 +1859,8 @@ BEGIN
   IF v_source NOT LIKE '%fn_spin_book_entry%'
      OR v_source NOT LIKE '%FOR UPDATE%'
      OR v_source NOT LIKE '%fn_spin_settle_game%'
+     OR v_source NOT LIKE '%v_exact_seat_stacks%'
+     OR v_source NOT LIKE '%v_exact_roster_stacks%'
      OR v_source NOT LIKE '%operator_shortfall%'
      OR v_source ~* 'EXCEPTION[[:space:]]+WHEN[[:space:]]+OTHERS[[:space:]]+THEN[[:space:]]+NULL([[:space:]]|;)'
      OR v_source LIKE '%v_available + v_reserve_in%' THEN
@@ -1510,9 +1886,27 @@ BEGIN
    WHERE oid = 'public.fn_sync_seat_first_player_count(uuid)'::regprocedure;
   IF v_source NOT LIKE '%v_book := public.fn_spin_book_entry%'
      OR v_source NOT LIKE '%paid third seat could not book Spin%'
+     OR v_source LIKE '%IN (''spin'', ''sng'')%'
      OR v_source LIKE '%spin_entry_refused:%'
      OR v_source LIKE '%spin_entry_threw:%' THEN
     RAISE EXCEPTION 'paid-third-seat booking still catches and continues';
+  END IF;
+  SELECT prosrc INTO v_source FROM pg_proc
+   WHERE oid = 'public.fn_ca_guard_seat_creation()'::regprocedure;
+  IF v_source NOT LIKE '%TOURNAMENT_SEAT_REQUIRES_POSITIVE_STACK%'
+     OR v_source NOT LIKE '%SEAT_FIRST_STACK_MUST_EQUAL_STARTING_CHIPS%'
+     OR position('TOURNAMENT_SEAT_REQUIRES_POSITIVE_STACK' IN v_source)
+          > position('public.fn_caller_is_engine()' IN v_source) THEN
+    RAISE EXCEPTION 'paid-seat stack invariant is missing or follows a caller bypass';
+  END IF;
+  IF to_regprocedure('public.fn_credit_stalled_seat_first_stacks()') IS NOT NULL
+     OR EXISTS (
+       SELECT 1 FROM cron.job j
+        WHERE regexp_replace(lower(COALESCE(j.jobname,'')),'[^a-z0-9]+','','g')
+                = 'creditstalledseatfirststacks'
+           OR lower(COALESCE(j.command,'')) LIKE '%fn_credit_stalled_seat_first_stacks%'
+     ) THEN
+    RAISE EXCEPTION 'the retired stack repair remains installed or scheduled';
   END IF;
 END;
 $verify_authority$;

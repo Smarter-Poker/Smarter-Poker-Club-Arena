@@ -2307,6 +2307,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       let obligationsApplied = false;
       let lastObligationError: unknown = null;
       let attempt = 0;
+      /* How many frozen add-on rows the envelope resolved, from the RPC's
+         own receipt. Undefined until it answers; the announcer treats an
+         absent count as "read to find out". */
+      let resolvedAddOnCount: number | undefined;
       this.setLoopPhase('settlement_post_commit_obligations');
       while (!obligationsApplied && this.lifecycleCanMutate()) {
         attempt++;
@@ -2315,6 +2319,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (outcome.ok !== true) {
             throw new Error(`post-commit obligations refused (${outcome.reason ?? 'unknown'})`);
           }
+          resolvedAddOnCount =
+            typeof outcome.pending_addons === 'number' && Number.isFinite(outcome.pending_addons)
+              ? outcome.pending_addons
+              : undefined;
           obligationsApplied = true;
         } catch (err) {
           lastObligationError = err;
@@ -2395,7 +2403,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           /* The envelope resolved the frozen add-ons silently. Say what it
              did (the add_on_applied bubble, the private add_on_adjusted
              frame) and rebuild the cap cache - see announceEnvelopeResolvedAddOns. */
-          await this.announceEnvelopeResolvedAddOns(v_handHistoryId, players);
+          await this.announceEnvelopeResolvedAddOns(v_handHistoryId, players, resolvedAddOnCount);
           if (!this.lifecycleCanMutate()) postCommitStateCanReflect = false;
         }
       }

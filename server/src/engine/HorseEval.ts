@@ -23,6 +23,7 @@
  */
 
 import type { Card } from '../types.js';
+import { scoreFiveCards } from './HorseFiveCardScore.js';
 import { SUITS, RANKS, RANK_VALUES } from './PokerEngine.js';
 import {
   holeCardCount,
@@ -474,7 +475,7 @@ export function scoreOmahaHi(hole: Card[], board: Card[]): number {
       omahaScratch[2] = board[x];
       omahaScratch[3] = board[y];
       omahaScratch[4] = board[z];
-      const s = scoreHoldem(omahaScratch, 5, false);
+      const s = scoreFiveCards(omahaScratch);
       if (s > best) best = s;
     }
   }
@@ -505,7 +506,7 @@ export function scoreOmahaHiPartial(hole: Card[], board: Card[]): number {
       omahaScratch[2] = board[x];
       omahaScratch[3] = board[y];
       omahaScratch[4] = board[z];
-      const s = scoreHoldem(omahaScratch, 5, false);
+      const s = scoreFiveCards(omahaScratch);
       if (s > best) best = s;
     }
   }

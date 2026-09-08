@@ -5,9 +5,10 @@
  *
  * `computeEquity` is a PURE function (no I/O, no shared state) that runs a seeded
  * Monte-Carlo simulation of the remaining board against a set of KNOWN hands and
- * returns each hand's pot-win equity as a fraction [0,1] (ties split). It is used
- * BOTH inside the worker thread AND as the synchronous fallback in
- * EquityWorkerPool when no worker is available.
+ * returns each hand's pot-win equity as a fraction [0,1] (ties split). The pure
+ * functions are exported for parity tests, but every live-table invocation is
+ * made through EquityWorkerPool; the authoritative process never computes an
+ * escape-path result on its own event loop.
  *
  * When loaded as a worker (worker_threads), the parentPort handler at the bottom
  * runs jobs off the main event loop. When imported on the main thread
@@ -17,6 +18,7 @@
 import { parentPort, isMainThread } from 'node:worker_threads';
 import type { Card } from '../../types.js';
 import { evaluateHand, evaluateOmahaHand, compareHands, SUITS, RANKS } from '../PokerEngine.js';
+import { isOmahaVariant, isShortDeckVariant } from '../VariantRules.js';
 import { SeededRandom, hashSeed } from './SeededRandom.js';
 
 const FULL_DECK: Card[] = [];
@@ -32,6 +34,17 @@ const SHORT_DECK_REMOVED = new Set(['2', '3', '4', '5']);
 export interface EquityOptions {
   shortDeck?: boolean;
   omaha?: boolean;
+}
+
+export interface InsuranceEquityComponents {
+  /** Pot-share equity percentage, including split-pot shares. */
+  equity: number;
+  /** Percentage of runouts on which this hand is strictly beaten. */
+  strictLossPct: number;
+  /** Percentage of runouts on which this hand ties for best. */
+  pushPct: number;
+  exact: boolean;
+  runouts: number;
 }
 
 type EvalFn = (hole: Card[], board: Card[]) => ReturnType<typeof evaluateHand>;
@@ -57,6 +70,126 @@ function award(equities: number[], hands: Card[][], board: Card[], evalFn: EvalF
   }
   const share = 1 / winners.length;
   for (const w of winners) equities[w] += share;
+}
+
+/** Number of k-combinations of n items (bounded; used to select exact/sample). */
+function countCombos(n: number, k: number): number {
+  if (k < 0 || k > n) return 0;
+  let c = 1;
+  for (let i = 0; i < k; i++) c = (c * (n - i)) / (i + 1);
+  return Math.round(c);
+}
+
+/** Visit every k-combination without materialising the complete runout set. */
+function visitCombinations<T>(arr: T[], k: number, visit: (items: T[]) => void): void {
+  const selected: T[] = [];
+  const walk = (start: number): void => {
+    if (selected.length === k) {
+      visit(selected);
+      return;
+    }
+    for (let i = start; i <= arr.length - (k - selected.length); i++) {
+      selected.push(arr[i]);
+      walk(i + 1);
+      selected.pop();
+    }
+  };
+  walk(0);
+}
+
+/**
+ * Price every known hand from ONE shared runout pass. Besides removing the
+ * former N+1 repeated enumerations, using one board stream guarantees every
+ * player is compared against precisely the same sampled universe preflop.
+ */
+export function computeInsuranceComponentsForHands(
+  hands: Card[][],
+  board: Card[],
+  variant: string,
+  shortDeck = false
+): InsuranceEquityComponents[] {
+  if (hands.length === 0) return [];
+
+  const isOmaha = isOmahaVariant(variant);
+  const useShortDeck = shortDeck || isShortDeckVariant(variant);
+  const evalFn: EvalFn = isOmaha
+    ? (h, b) => evaluateOmahaHand(h, b)
+    : (h, b) => evaluateHand(h, b, useShortDeck);
+  const equities = new Array<number>(hands.length).fill(0);
+  const losses = new Array<number>(hands.length).fill(0);
+  const pushes = new Array<number>(hands.length).fill(0);
+  let runoutCount = 0;
+
+  const score = (runout: Card[]): void => {
+    const fullBoard = board.length >= 5 ? board : board.concat(runout);
+    const evaluations = hands.map((hand) => evalFn(hand, fullBoard));
+    let winners = [0];
+    for (let i = 1; i < evaluations.length; i++) {
+      const comparison = compareHands(evaluations[i], evaluations[winners[0]]);
+      if (comparison > 0) winners = [i];
+      else if (comparison === 0) winners.push(i);
+    }
+    const winnerSet = new Set(winners);
+    const share = 1 / winners.length;
+    for (let i = 0; i < hands.length; i++) {
+      if (!winnerSet.has(i)) losses[i] += 1;
+      else {
+        equities[i] += share;
+        if (winners.length > 1) pushes[i] += 1;
+      }
+    }
+    runoutCount += 1;
+  };
+
+  if (board.length >= 5) {
+    score([]);
+    return equities.map((equity, i) => ({
+      equity: equity * 100,
+      strictLossPct: losses[i] * 100,
+      pushPct: pushes[i] * 100,
+      exact: true,
+      runouts: 1,
+    }));
+  }
+
+  const known = new Set<string>();
+  for (const hand of hands) for (const card of hand) known.add(cardKey(card));
+  for (const card of board) known.add(cardKey(card));
+  const baseDeck = useShortDeck
+    ? FULL_DECK.filter((c) => !SHORT_DECK_REMOVED.has(c.rank))
+    : FULL_DECK;
+  const remaining = baseDeck.filter((c) => !known.has(cardKey(c)));
+  const cardsToCome = 5 - board.length;
+  if (remaining.length < cardsToCome) {
+    throw new Error('Not enough unseen cards to complete insurance runout');
+  }
+
+  const exact = countCombos(remaining.length, cardsToCome) <= 20_000;
+  if (exact) {
+    visitCombinations(remaining, cardsToCome, score);
+  } else {
+    const rng = new SeededRandom(hashSeed(...Array.from(known).sort(), cardsToCome));
+    for (let iteration = 0; iteration < 6_000; iteration++) {
+      const pick: Card[] = [];
+      const pickedIndices = new Set<number>();
+      while (pick.length < cardsToCome) {
+        const index = rng.nextInt(remaining.length);
+        if (!pickedIndices.has(index)) {
+          pickedIndices.add(index);
+          pick.push(remaining[index]);
+        }
+      }
+      score(pick);
+    }
+  }
+
+  return equities.map((equity, i) => ({
+    equity: Math.round((equity / runoutCount) * 1000) / 10,
+    strictLossPct: Math.round((losses[i] / runoutCount) * 1000) / 10,
+    pushPct: Math.round((pushes[i] / runoutCount) * 1000) / 10,
+    exact,
+    runouts: runoutCount,
+  }));
 }
 
 /**
@@ -128,19 +261,32 @@ export function computeEquity(
 // ── worker_threads entrypoint (skipped on the main thread) ──────────────────────
 if (!isMainThread && parentPort) {
   const port = parentPort;
+  port.postMessage({ type: 'READY' });
   port.on('message', (msg: any) => {
     try {
-      const equities = computeEquity(
-        msg.hands,
-        msg.board,
-        msg.deadCards ?? [],
-        msg.iters ?? 1000,
-        msg.opts ?? {},
-        msg.seed
-      );
-      port.postMessage({ id: msg.id, equities });
+      if (msg?.type === 'INSURANCE_ALL') {
+        const components = computeInsuranceComponentsForHands(
+          msg.hands,
+          msg.board,
+          msg.variant,
+          msg.shortDeck ?? false
+        );
+        port.postMessage({ type: 'INSURANCE_RESULT', id: msg.id, components });
+      } else if (msg?.type === 'EQUITY') {
+        const equities = computeEquity(
+          msg.hands,
+          msg.board,
+          msg.deadCards ?? [],
+          msg.iters ?? 1000,
+          msg.opts ?? {},
+          msg.seed
+        );
+        port.postMessage({ type: 'EQUITY_RESULT', id: msg.id, equities });
+      } else {
+        throw new Error(`Unsupported equity worker operation: ${String(msg?.type)}`);
+      }
     } catch (e: any) {
-      port.postMessage({ id: msg?.id, error: String(e?.message ?? e) });
+      port.postMessage({ type: 'ERROR', id: msg?.id, error: String(e?.message ?? e) });
     }
   });
 }

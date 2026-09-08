@@ -62,7 +62,7 @@ describe('a horse leaves the same evidence a human does', () => {
 
   it('the engine passes the real table setting through', () => {
     expect(read('server/src/engine/ServerTableEngineSettlement.ts')).toMatch(
-      /nitGame: this\.tableInfo\.nit_game === true/
+      /nitGame: tableInfo\.nit_game === true/
     );
     expect(read('server/src/services/supabase/handHistory.ts')).toMatch(/nitGame: params\.nitGame/);
   });

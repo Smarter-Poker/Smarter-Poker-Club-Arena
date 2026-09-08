@@ -51,7 +51,12 @@ if (!URL_BASE || !KEY) {
   console.error('server/.env must carry SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
   process.exit(2);
 }
-const H = { apikey: KEY, Authorization: `Bearer ${KEY}` };
+const H = {
+  apikey: KEY,
+  Authorization: `Bearer ${KEY}`,
+  'x-smarter-data-actor': 'service',
+  'x-smarter-data-protocol': '1',
+};
 
 async function rest(path, init = {}) {
   const res = await fetch(`${URL_BASE}${path}`, {

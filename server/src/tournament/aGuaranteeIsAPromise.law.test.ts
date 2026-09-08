@@ -20,9 +20,11 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const ELIM = fs.readFileSync(path.join(HERE, 'TournamentManagerEliminations.ts'), 'utf8');
+const RECOVERY = fs.readFileSync(path.join(HERE, 'tournamentRecovery.ts'), 'utf8');
 const RECONCILER = fs.readFileSync(path.join(HERE, '../services/FeeReconciler.ts'), 'utf8');
 const GAMESERVER = fs.readFileSync(path.join(HERE, '../GameServer.ts'), 'utf8');
 
@@ -37,6 +39,10 @@ function executable(src: string): string {
     .join('\n');
 }
 const CODE = executable(ELIM);
+const RECOVERY_CODE = sliceMethod(
+  executable(RECOVERY),
+  'export async function recoverStuckCompletingTournaments('
+);
 
 describe('the finish path funds the guarantee', () => {
   it('calls applyPrizeGuarantee with a finish-specific source', () => {
@@ -54,9 +60,10 @@ describe('the finish path funds the guarantee', () => {
   it('uses the validated funding receipt instead of the stale local snapshot', () => {
     const tail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
     const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
-    expect(window).toContain('tournament.prize_pool = funded;');
-    expect(window).toContain('funded === null');
-    expect(window).toContain('funded < Number(tournament.guaranteed_prize)');
+    expect(window).toMatch(/from\('tournaments'\)/);
+    expect(window).toMatch(/select\('prize_pool, guaranteed_prize, prize_pool_finalized'\)/);
+    expect(window).toMatch(/prize_pool_finalized !== true/);
+    expect(window).toMatch(/refreshedPool \+ 0\.005 < refreshedGuarantee/);
   });
 
   it('is NOT gated on prize_pool or buy_in_amount - the two filters that hid the freerolls', () => {
@@ -72,11 +79,84 @@ describe('the finish path funds the guarantee', () => {
     expect(window).toMatch(/!isSatelliteFinish/);
   });
 
-  it('a funding exception is reported and cannot authorize pricing', () => {
+  it('a funding failure leaves the tournament COMPLETING instead of paying below the promise', () => {
     const tail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
     const window = tail.slice(0, tail.indexOf('let winnerPrize = 0;'));
     expect(window).toMatch(/catch/);
     expect(window).toMatch(/guarantee_finish_fallback_failed/);
+    expect(window).toMatch(/funded === null[\s\S]*?tournamentFinished = false;[\s\S]*?return;/);
+    expect(window).toMatch(
+      /guarantee_finish_fallback_failed[\s\S]*?tournamentFinished = false;[\s\S]*?return;/
+    );
+  });
+
+  it('re-prices zero-recorded finishers after a late guarantee arrives', () => {
+    const recalcStart = CODE.indexOf('recalculateEliminatedPrizes(finalPrizePool: number)');
+    const recalcEnd = CODE.indexOf('protected tournamentFinished', recalcStart);
+    const recalc = CODE.slice(recalcStart, recalcEnd);
+    const finishTail = CODE.slice(CODE.indexOf("applyPrizeGuarantee('finish_fallback')"));
+    const finishWindow = finishTail.slice(
+      0,
+      finishTail.indexOf('settleTournamentPlacesAtomically(')
+    );
+
+    expect(recalc).not.toMatch(/\.gt\('prize',\s*0\)/);
+    expect(recalc).toMatch(/payouts\.find/);
+    expect(finishWindow).toMatch(/recalculateEliminatedPrizes\(refreshedPool\)/);
+    expect(finishWindow.indexOf('fn_normalize_tournament_final_standings')).toBeLessThan(
+      finishWindow.indexOf('recalculateEliminatedPrizes(refreshedPool)')
+    );
+  });
+});
+
+describe('the recovery path proves a result before it funds the guarantee', () => {
+  it('keeps satellite and final-table-deal exits ahead of normal guarantee funding', () => {
+    const satelliteExit = RECOVERY_CODE.indexOf(
+      'GameServer.recoverStuckCompleting_satellite_skipped'
+    );
+    const dealExit = RECOVERY_CODE.indexOf('GameServer.recoverStuckCompleting_chopped_skipped');
+    const funding = RECOVERY_CODE.indexOf("'fn_apply_prize_guarantee'");
+
+    expect(satelliteExit).toBeGreaterThan(-1);
+    expect(dealExit).toBeGreaterThan(satelliteExit);
+    expect(funding).toBeGreaterThan(dealExit);
+  });
+
+  it('runs every read-only ranking and result gate before the money-moving RPC', () => {
+    const funding = RECOVERY_CODE.indexOf("'fn_apply_prize_guarantee'");
+    const readOnlyProofs = [
+      RECOVERY_CODE.indexOf(".select('id, user_id, status, position, prize, chips')"),
+      RECOVERY_CODE.indexOf('if (playersErr || !Array.isArray(players))'),
+      RECOVERY_CODE.indexOf('resolvePayoutStructure('),
+      RECOVERY_CODE.indexOf('fieldIsStillLive({ livePlayers, paidPlaces })'),
+      RECOVERY_CODE.indexOf('if (alive.length > 1)'),
+      RECOVERY_CODE.indexOf('if (alive.length > 0 && !anyDealtIn)'),
+      RECOVERY_CODE.indexOf('if (chipsCannotRank(alive))'),
+      RECOVERY_CODE.indexOf('if (handErr)'),
+      RECOVERY_CODE.indexOf('noHandWasEverDealt({'),
+      RECOVERY_CODE.indexOf('if (collisions.length > 0)'),
+    ];
+
+    expect(funding).toBeGreaterThan(-1);
+    for (const proof of readOnlyProofs) {
+      expect(proof).toBeGreaterThan(-1);
+      expect(proof).toBeLessThan(funding);
+    }
+  });
+
+  it('proves the funded row before amount-dependent pricing, result writes and settlement', () => {
+    const funding = RECOVERY_CODE.indexOf("'fn_apply_prize_guarantee'");
+    const finalProof = RECOVERY_CODE.indexOf('fundedRow.prize_pool_finalized !== true', funding);
+    const floorProof = RECOVERY_CODE.indexOf('fundedPool + 0.005 < fundedGuarantee', finalProof);
+    const pricing = RECOVERY_CODE.indexOf('const prizeFor =', floorProof);
+    const resultWrite = RECOVERY_CODE.indexOf('const owed = prizeFor(place)', pricing);
+    const settlement = RECOVERY_CODE.indexOf('settleTournamentPlacesAtomically(', resultWrite);
+
+    expect(finalProof).toBeGreaterThan(funding);
+    expect(floorProof).toBeGreaterThan(finalProof);
+    expect(pricing).toBeGreaterThan(floorProof);
+    expect(resultWrite).toBeGreaterThan(pricing);
+    expect(settlement).toBeGreaterThan(resultWrite);
   });
 });
 
@@ -86,16 +166,16 @@ describe('a winner paid nothing says so', () => {
     expect(CODE).toMatch(/Tournament\.winner_paid_nothing/);
   });
 
-  it('the alert sits OUTSIDE the `winnerPrize > 0` block, which is the whole point', () => {
+  it('the alert is emitted before the atomic batch is asked to settle', () => {
     const zero = CODE.indexOf('winnerPrize <= 0 && !isSatelliteFinish');
-    const positive = CODE.indexOf('if (winnerPrize > 0) {');
+    const settle = CODE.indexOf('settleTournamentPlacesAtomically(');
     expect(zero).toBeGreaterThan(-1);
-    expect(positive).toBeGreaterThan(zero);
+    expect(settle).toBeGreaterThan(zero);
   });
 
   it('an unfunded guarantee is critical; a genuinely poolless event is a warning', () => {
     const tail = CODE.slice(CODE.indexOf('winnerPrize <= 0 && !isSatelliteFinish'));
-    const window = tail.slice(0, tail.indexOf('if (winnerPrize > 0) {'));
+    const window = tail.slice(0, tail.indexOf('settleTournamentPlacesAtomically('));
     expect(window).toMatch(/gtd > 0 \? 'critical' : 'warning'/);
   });
 });

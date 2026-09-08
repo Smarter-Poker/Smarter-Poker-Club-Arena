@@ -82,6 +82,9 @@ function harness(opts: {
   const e = engine as any;
 
   e.running = true;
+  // The harness drives the protected watchdog without start(); explicitly
+  // model the process-ownership CAS which start() must win in production.
+  e.isCurrentEngine = () => true;
   e.handCount = 7;
   e.tableInfo = { action_time_seconds: 15, game_variant: 'nlh' };
   e.seatedPlayers = seats.map((s) => ({

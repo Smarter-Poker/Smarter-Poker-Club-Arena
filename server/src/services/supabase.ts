@@ -24,6 +24,7 @@ export * from './supabase/wallets.js';
 export * from './supabase/rake.js';
 export * from './supabase/bbj.js';
 export * from './supabase/handHistory.js';
+export * from './supabase/handProjection.js';
 export * from './supabase/snapshots.js';
 export * from './supabase/cashSessions.js';
 export * from './supabase/seatMoves.js';

@@ -16,6 +16,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { InsuranceEngine } from './InsuranceEngine.js';
+import { insuranceEquity } from './InsuranceEquity.js';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import type { DeadlineScheduler } from './DeadlineScheduler.js';
 import type { Card, CardRank, CardSuit } from '../types.js';
@@ -50,6 +51,16 @@ const allIn = [
   { playerId: VILLAIN, holeCards: villainCards, atRisk: 100 },
 ];
 
+function pricing(leaderId: string, liveBoard: Card[]) {
+  const leader = allIn.find((player) => player.playerId === leaderId)!;
+  return insuranceEquity(
+    leader.holeCards,
+    allIn.filter((player) => player.playerId !== leaderId).map((player) => player.holeCards),
+    liveBoard,
+    'nlh'
+  );
+}
+
 function mkEngine() {
   const e = new InsuranceEngine(undefined, stubScheduler);
   e.configure(TABLE, { enabled: true, houseMargin: 1.2, maxInsurablePercent: 100 });
@@ -61,7 +72,17 @@ describe('leader handoff - a decline by one player never blocks the other', () =
     const e = mkEngine();
 
     // Street 1 (flop): hero leads and is offered.
-    const flopOffers = e.createOffers(TABLE, 't:1', HERO, allIn, flop, 200, 'nlh');
+    const flopOffers = e.createOffers(
+      TABLE,
+      't:1',
+      HERO,
+      allIn,
+      flop,
+      200,
+      'nlh',
+      false,
+      pricing(HERO, flop)
+    );
     expect(flopOffers).toHaveLength(1);
     expect(flopOffers[0].playerId).toBe(HERO);
 
@@ -72,7 +93,17 @@ describe('leader handoff - a decline by one player never blocks the other', () =
     // Street 2 (turn): the flush came in, villain leads now. The flow guard
     // clears pending offers then re-offers the NEW leader.
     e.clearPendingOffers(TABLE);
-    const turnOffers = e.createOffers(TABLE, 't:1', VILLAIN, allIn, turn, 200, 'nlh');
+    const turnOffers = e.createOffers(
+      TABLE,
+      't:1',
+      VILLAIN,
+      allIn,
+      turn,
+      200,
+      'nlh',
+      false,
+      pricing(VILLAIN, turn)
+    );
     expect(turnOffers).toHaveLength(1);
     expect(turnOffers[0].playerId).toBe(VILLAIN);
 
@@ -84,11 +115,21 @@ describe('leader handoff - a decline by one player never blocks the other', () =
 
   it('a player who ACCEPTED keeps coverage and is not re-offered, but is not "declined" either', () => {
     const e = mkEngine();
-    e.createOffers(TABLE, 't:1', HERO, allIn, flop, 200, 'nlh');
+    e.createOffers(TABLE, 't:1', HERO, allIn, flop, 200, 'nlh', false, pricing(HERO, flop));
     expect(e.accept(TABLE, HERO)).toBe(true);
 
     // Re-running the offer step for the same leader must not duplicate or wipe.
-    const reoffer = e.createOffers(TABLE, 't:1', HERO, allIn, turn, 200, 'nlh');
+    const reoffer = e.createOffers(
+      TABLE,
+      't:1',
+      HERO,
+      allIn,
+      turn,
+      200,
+      'nlh',
+      false,
+      pricing(HERO, turn)
+    );
     expect(reoffer).toHaveLength(0);
     const kept = e.getOffers(TABLE);
     expect(kept).toHaveLength(1);
@@ -119,7 +160,17 @@ describe('insurancePauseStillLive - the per-street pause survives a leader decli
 
   it('leader declined, villain never offered: pause LIVES - the 2026-08-26 fix', () => {
     const engine = mkTableEngine();
-    engine.insuranceEngine.createOffers(TABLE, 't:1', HERO, allIn, flop, 200, 'nlh');
+    engine.insuranceEngine.createOffers(
+      TABLE,
+      't:1',
+      HERO,
+      allIn,
+      flop,
+      200,
+      'nlh',
+      false,
+      pricing(HERO, flop)
+    );
     engine.insuranceEngine.decline(TABLE, HERO, true);
     // Before the fix this returned false (anyEligibleForInsurance saw only
     // the declined entry) and the villain never got their turn offer.
@@ -128,17 +179,47 @@ describe('insurancePauseStillLive - the per-street pause survives a leader decli
 
   it('EVERY all-in player has finally declined: pause collapses to the paced runout', () => {
     const engine = mkTableEngine();
-    engine.insuranceEngine.createOffers(TABLE, 't:1', HERO, allIn, flop, 200, 'nlh');
+    engine.insuranceEngine.createOffers(
+      TABLE,
+      't:1',
+      HERO,
+      allIn,
+      flop,
+      200,
+      'nlh',
+      false,
+      pricing(HERO, flop)
+    );
     engine.insuranceEngine.decline(TABLE, HERO, true);
     engine.insuranceEngine.clearPendingOffers(TABLE);
-    engine.insuranceEngine.createOffers(TABLE, 't:1', VILLAIN, allIn, turn, 200, 'nlh');
+    engine.insuranceEngine.createOffers(
+      TABLE,
+      't:1',
+      VILLAIN,
+      allIn,
+      turn,
+      200,
+      'nlh',
+      false,
+      pricing(VILLAIN, turn)
+    );
     engine.insuranceEngine.decline(TABLE, VILLAIN, true);
     expect(engine.insurancePauseStillLive(bothPlayers)).toBe(false);
   });
 
   it('a leader who accepted keeps the pause alive (coverage rides to settlement)', () => {
     const engine = mkTableEngine();
-    engine.insuranceEngine.createOffers(TABLE, 't:1', HERO, allIn, flop, 200, 'nlh');
+    engine.insuranceEngine.createOffers(
+      TABLE,
+      't:1',
+      HERO,
+      allIn,
+      flop,
+      200,
+      'nlh',
+      false,
+      pricing(HERO, flop)
+    );
     engine.insuranceEngine.accept(TABLE, HERO);
     expect(engine.insurancePauseStillLive(bothPlayers)).toBe(true);
   });

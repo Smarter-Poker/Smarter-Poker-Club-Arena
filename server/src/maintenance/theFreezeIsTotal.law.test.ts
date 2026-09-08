@@ -56,7 +56,10 @@ const firstIo = (body: string): number => {
 
 describe('the break is adopted before anything that can seat a player (GameServer boot order)', () => {
   const gs = read('GameServer.ts');
-  const startBody = sliceMethod(gs, 'async start(): Promise<void> {');
+  const startBody = sliceMethod(
+    gs,
+    'private async performStart(generation: number): Promise<void> {'
+  );
 
   it('maintenanceBreak.start() is awaited before cash-table discovery begins', () => {
     const brk = at(startBody, 'await this.maintenanceBreak.start();', 'break adoption');
@@ -70,7 +73,7 @@ describe('the break is adopted before anything that can seat a player (GameServe
   it('maintenanceBreak.start() is awaited before the horse fleet, the launcher and the scheduler start', () => {
     const brk = at(startBody, 'await this.maintenanceBreak.start();', 'break adoption');
     for (const svc of [
-      'void this.horseFleet',
+      'this.launchServerLifecycleJob(this.horseFleet.start()',
       'this.tournamentRecurring.start()',
       'this.scheduledTournaments.start()',
     ]) {
@@ -100,7 +103,11 @@ describe('every tournament start and top-up decision is gated on the freeze (Gam
     for (const i of loops) {
       const body = loopBodyAt(gs, i, header);
       const gate = at(body, 'if (isMaintenanceFrozen()) break;', `freeze gate in loop at ${i}`);
-      const start = at(body, 'new TournamentManager(', `start in loop at ${i}`);
+      const start = at(
+        body,
+        'this.ensureTournamentManagerAdmission(',
+        `leased manager admission in loop at ${i}`
+      );
       expect(gate).toBeLessThan(start);
     }
   });
@@ -150,7 +157,10 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
 
   it('HorseFleetManager: the seeding cycle and the seat itself are gated', () => {
     const src = read('services/HorseFleetManager.ts');
-    const seed = sliceMethod(src, 'private async seedAllTables(): Promise<void> {');
+    const seed = sliceMethod(
+      src,
+      'private async seedAllTables(generation?: number): Promise<void> {'
+    );
     const seedGate = seed.search(GATE_RETURN);
     expect(seedGate, 'seedAllTables does not gate itself').toBeGreaterThan(-1);
     expect(seedGate).toBeLessThan(firstIo(seed));
@@ -176,8 +186,8 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
     // which a break cannot move - and the yield fires on the first cycle after
     // the thaw.
     const src = read('services/StableHandExecutor.ts');
-    const cycle = sliceMethod(src, 'async cycle(): Promise<number> {');
-    const gate = cycle.search(/isMaintenanceFrozen\(\)\)\s*return 0;/);
+    const cycle = sliceMethod(src, 'async cycle(');
+    const gate = cycle.search(/if\s*\(\s*isMaintenanceFrozen\(\)[^;\n]*\)\s*return 0;/);
     expect(gate, 'StableHandExecutor.cycle does not gate itself').toBeGreaterThan(-1);
     expect(gate, 'the gate comes after the first I/O').toBeLessThan(firstIo(cycle));
     /* And re-checked PER SEAT: a break can begin between the snapshot and the
@@ -185,11 +195,8 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
        arrived and both order types were routed through one `stand` helper -
        every path to leaveTable now passes this single gate, which is why the
        loop-level check it replaces is gone rather than missing. */
-    const stand = sliceMethod(
-      src,
-      'private async stand(order: StandOrder, nowMs: number, why: string): Promise<boolean> {'
-    );
-    const seatGate = stand.search(/isMaintenanceFrozen\(\)\)\s*return false;/);
+    const stand = sliceMethod(src, 'private async stand(');
+    const seatGate = stand.search(/if\s*\(\s*isMaintenanceFrozen\(\)[^;\n]*\)\s*return false;/);
     /* And the stand is AWAITED. leaveTable became async on 2026-09-04 with
        chip continuity; an un-awaited call would return a pending promise,
        which is truthy, and every refused stand would have been counted as a
@@ -207,7 +214,7 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
 
   it('ScheduledTournamentService: the poll gates itself', () => {
     const src = read('services/ScheduledTournamentService.ts');
-    const poll = sliceMethod(src, 'private async poll(): Promise<void> {');
+    const poll = sliceMethod(src, 'private async poll(generation: number): Promise<void> {');
     const gate = poll.search(GATE_RETURN);
     expect(gate, 'poll does not gate itself').toBeGreaterThan(-1);
     expect(gate).toBeLessThan(poll.indexOf('this.polling = true;'));
@@ -221,18 +228,37 @@ describe('the tournament balancer does not move players during the break', () =>
   it('checkTableBalance and checkDynamicTableExpansion run only when not frozen', () => {
     const src = read('tournament/TournamentManagerEliminations.ts');
     const balance = at(src, 'await this.checkTableBalance();', 'balance call');
-    const expand = at(src, 'await this.checkDynamicTableExpansion();', 'expansion call');
-    const block = sliceEnclosingBlock(src, 'await this.checkTableBalance();', 0, 1);
-    expect(block, 'the balance call is not inside an isMaintenanceFrozen() guard').toMatch(
+    const expansionCall = 'await this.checkDynamicTableExpansion()';
+    const expand = at(src, expansionCall, 'expansion call');
+    const balanceBlock = sliceEnclosingBlock(src, 'await this.checkTableBalance();', 0, 1);
+    const expansionBlock = sliceEnclosingBlock(src, expansionCall, 0, 1);
+    expect(balanceBlock, 'the balance call is not inside an isMaintenanceFrozen() guard').toMatch(
       /^\{\s*await this\.checkTableBalance\(\);/
     );
-    const guardStart = src.lastIndexOf('if (!isMaintenanceFrozen())', balance);
-    expect(guardStart, 'no isMaintenanceFrozen() guard before the balance call').toBeGreaterThan(
+    expect(
+      expansionBlock,
+      'the expansion call is not controlled by an isMaintenanceFrozen() guard'
+    ).toContain(
+      'if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;'
+    );
+
+    const balanceGuard = src.lastIndexOf('if (!isMaintenanceFrozen())', balance);
+    expect(balanceGuard, 'no isMaintenanceFrozen() guard before the balance call').toBeGreaterThan(
       -1
     );
-    expect(balance - guardStart).toBeLessThan(block.length + 40);
+    expect(balance - balanceGuard).toBeLessThan(balanceBlock.length + 40);
+
+    const expansionGuard = src.lastIndexOf('if (!isMaintenanceFrozen()', expand);
+    expect(
+      expansionGuard,
+      'no isMaintenanceFrozen() guard immediately controlling expansion'
+    ).toBeGreaterThan(-1);
+    expect(expand - expansionGuard).toBeLessThan(expansionBlock.length + 40);
+
+    // Balancing and expansion are deliberately separate resumable sweep
+    // stages now. Each stage owns its own freeze gate, so a break beginning
+    // after balance cannot leak through the later expansion boundary.
     expect(expand).toBeGreaterThan(balance);
-    expect(expand - balance).toBeLessThan(block.length);
   });
 });
 

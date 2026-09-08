@@ -116,6 +116,8 @@ def verify_bbj(run):
  print("TOTAL fixed BBJ routing: 7 passing cases",flush=True)
 
  print("TOTAL fixed BBJ sequential: 28 passing cases",flush=True)
+ from test_bbj_accepted_replay import verify_accepted_replay
+ verify_accepted_replay(run, ddl, setup, call, state, extract, root)
  if os.environ.get("PGNODE"):
   for hand in [H,"NULL"]:
    for conflict in [False,True]:

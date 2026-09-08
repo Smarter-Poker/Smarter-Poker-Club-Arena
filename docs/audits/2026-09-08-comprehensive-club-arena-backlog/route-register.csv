@@ -1,0 +1,974 @@
+file,line,path,element,status,file_kind,suggested_phases
+src/App.tsx,605,/auth,"{
+                  <GuestGuard>
+                    <AuthPage />
+                  </GuestGuard>
+                }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,615,/share/hand/:handId,{<HandReplayerPage />},"Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,616,/replay,{<SharedHandReplayPage />},"Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,619,/sim,{<SimPage />},"Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,623,/dev/footer,{<ClubFooterShowcasePage />},"Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,627,/dev/customization,"{
+                  customizationHarnessEnabled ? (
+                    <CustomizationStudioShowcasePage />
+                  ) : (
+                    <Navigate to=""/"" replace />
+                  )
+                }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,641,/dev/financial-decisions,"{
+                  financialDecisionHarnessEnabled ? (
+                    <FinancialDecisionShowcasePage />
+                  ) : (
+                    <Navigate to=""/"" replace />
+                  )
+                }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,657,/,"{
+                  <AuthGuard>
+                    <RouteErrorBoundary>
+                      <HomePage />
+                    </RouteErrorBoundary>
+                  </AuthGuard>
+                }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,671,table/:tableId,"{
+                  <AuthGuard>
+                    <PageErrorBoundary pageName=""Table"">
+                      <TableRouteSurface />
+                    </PageErrorBoundary>
+                  </AuthGuard>
+                }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,683,[layout/index],{<AppLayout />},"Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,709,clubs,"{<Navigate to=""/"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,717,clubs/create,"{<Navigate to=""/?create=club"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,719,clubs/:clubId,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Home"">
+                          <ClubHomePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,731,clubs/:clubId/agents,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Agent Management"">
+                          <AgentManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,743,clubs/:clubId/create-table,"{
+                    <AuthGuard>
+                      <GameCreationGuard>
+                        <PageErrorBoundary pageName=""Create Table"">
+                          <CreateTablePage />
+                        </PageErrorBoundary>
+                      </GameCreationGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,755,clubs/:clubId/table-management,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Table Management"">
+                          <GameManagementPage scope=""club"" />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,767,clubs/:clubId/create-table/:gameType,"{
+                    <AuthGuard>
+                      <GameCreationGuard>
+                        <PageErrorBoundary pageName=""Table Config"">
+                          <TableConfigPage />
+                        </PageErrorBoundary>
+                      </GameCreationGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,779,clubs/:clubId/dashboard,"{<Navigate to=""../data"" relative=""path"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,790,clubs/:clubId/operations,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Operations"">
+                          <ClubOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,802,clubs/:clubId/finance,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Finance And Risk"">
+                          <ClubFinanceWorkspacePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,814,clubs/:clubId/control,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Control"">
+                          <ClubControlWorkspacePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,826,clubs/:clubId/dashboard-full,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Dashboard"">
+                          <ClubDashboard />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,850,clubs/:clubId/lobby,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Lobby"">
+                          <ClubHomePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,862,clubs/:clubId/tournaments,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Tournaments"">
+                          <TournamentPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,874,clubs/:clubId/messages,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Messages"">
+                          <NavigateToMessenger />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,886,tournaments/:tournamentId,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Tournament Details"">
+                        <TournamentDetails />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,896,tournament-lobby,"{<Navigate to=""/tournaments"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,897,tournaments,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Tournament Lobby"">
+                        <TournamentLobbyPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,907,tournament-results,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Tournament Results"">
+                        <TournamentResultsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,917,hand-history,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Hand History"">
+                        <HandHistoryPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,927,agent-management,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Agent Management"">
+                        <LegacyClubToolRedirect destination=""agents"" toolName=""Agent Management"" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,939,unions,"{
+                    <AuthGuard>
+                      <UnionNetworkGuard>
+                        <PageErrorBoundary pageName=""Unions"">
+                          <UnionsPage />
+                        </PageErrorBoundary>
+                      </UnionNetworkGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,951,unions/create,"{
+                    <AuthGuard>
+                      <UnionCreationGuard>
+                        <PageErrorBoundary pageName=""Create Union"">
+                          <CreateUnionPage />
+                        </PageErrorBoundary>
+                      </UnionCreationGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,963,unions/:unionId,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Union Details"">
+                        <UnionDetailPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,973,unions/:unionId/operations,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Union Operations"">
+                        <UnionDashboardPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,983,unions/:unionId/table-management,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Union Table Management"">
+                        <GameManagementPage scope=""union"" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1004,unions/:unionId/data,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Union Data"">
+                        <UnionDataPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1021,unions/:unionId/statements,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Union Statements"">
+                        <UnionStatementsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1031,unions/:unionId/settlement,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Settlement"">
+                        <SettlementPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1041,clubs/:clubId/settlement,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Settlement"">
+                          <SettlementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1055,challenges/:cycle?,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Daily Challenges"">
+                        <DailyChallengesPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1065,profile,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Profile"">
+                        <ProfilePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1075,profile/:userId,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Public Profile"">
+                        <PublicProfilePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1085,settings,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Settings"">
+                        <SettingsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1097,play,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Play And Review"">
+                        <PlayWorkspacePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1107,leaderboard,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Leaderboard"">
+                        <LeaderboardPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1117,history,"{<Navigate to=""/hand-history"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1118,rewards,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Rewards Center"">
+                        <RewardsWorkspacePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1128,wallet,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Wallet"">
+                        <PlayerWalletPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1138,notifications,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Notifications"">
+                        <NotificationsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1148,community,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Community Center"">
+                        <CommunityWorkspacePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1158,messages,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Messages"">
+                        <NavigateToMessenger />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1168,messages/new,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""New Message"">
+                        <NavigateToMessenger />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1178,messages/:conversationId,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Messages"">
+                        <NavigateToMessenger />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1188,messages/clubs,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Club Messages"">
+                        <NavigateToMessenger />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1198,messages/clubs/:conversationId,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Club Messages"">
+                        <NavigateToMessenger />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1208,search,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Search"">
+                        <SearchPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1218,help,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Help"">
+                        <HelpPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1228,cashier,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Cashier"">
+                        <CashierPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1239,players,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Club Members"">
+                        <LegacyClubToolRedirect destination=""members"" toolName=""Players"" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1252,data,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Club Data"">
+                        <LegacyClubToolRedirect destination=""data"" toolName=""Club Data"" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1262,clubs/:clubId/data,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Data"">
+                          <ClubDataPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1274,admin,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Admin Dashboard"">
+                        <AdminDashboardPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1284,player-sessions,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Players"">
+                        <LegacyClubToolRedirect destination=""members"" toolName=""Players"" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1300,agent-dashboard,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Agent Dashboard"">
+                        <AgentDashboardPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1314,clubs/:clubId/cashier,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Cashier"">
+                          <CashierTradePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1326,clubs/:clubId/cashier-classic,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Cashier"">
+                          <CashierPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1338,hands,"{<Navigate to=""/hand-history"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1339,clubs/:clubId/agent-dashboard,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Super Agent Dashboard"">
+                          <SuperAgentDashboard />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1351,achievements,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Achievements"">
+                        <AchievementsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1361,clubs/:clubId/members,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Members"">
+                          <ClubMembersPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1373,clubs/:clubId/promo-vault,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Promo Vault"">
+                          <PromoVaultPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1385,clubs/:clubId/members/:userId,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Member Management"">
+                          <MemberManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1397,clubs/:clubId/members/:userId/statistics,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Player Statistics"">
+                          <PlayerStatisticsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1409,friends,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Friends"">
+                        <FriendsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1419,rakeback,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Rakeback"">
+                        <RakebackPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1429,clubs/:clubId/jackpot,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Bad Beat Jackpot"">
+                          <BadBeatJackpotPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1441,stats,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Player Stats"">
+                        <PlayerStatsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1451,stats/:userId,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Player Stats"">
+                        <PlayerStatsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1461,promotions,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Promotions"">
+                        <PromotionsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1471,clubs/:clubId/promotions,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Promotions"">
+                          <PromotionsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1483,clubs/:clubId/settings,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Settings"">
+                          <ClubSettingsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1495,transactions,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Transaction History"">
+                        <TransactionHistoryPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1505,invite/:clubId,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Invite"">
+                        <InvitePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1515,invite,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Invite"">
+                        <LegacyClubToolRedirect destination=""invite"" toolName=""Club Invite"" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1525,report/:playerId,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Report Player"">
+                        <ReportPlayerPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1535,clubs/:clubId/reports,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Report Review"">
+                          <ReportReviewPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1547,clubs/:clubId/hand-review,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Hand Review"">
+                          <ClubHandReviewPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1559,clubs/:clubId/insurance-report,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Insurance Report"">
+                          <ClubInsuranceReportPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1571,clubs/:clubId/tables/:tableId/bomb-settings,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Table Bomb Settings"">
+                          <TableBombSettingsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1583,clubs/:clubId/bomb-pot-report,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Bomb Pot Report"">
+                          <ClubBombPotReportPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1595,clubs/:clubId/announcements,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Announcements"">
+                          <ClubAnnouncementsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1607,vip,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""VIP"">
+                        <VIPPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1617,clubs/:clubId/financials,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Financials"">
+                          <ClubFinancialsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1629,financial-alerts,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Financial Alerts"">
+                        <FinancialAlertsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1639,financial-incidents,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Drift Incidents"">
+                        <DriftIncidentsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1649,disputes,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Disputes"">
+                        <DisputeManagementPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1659,clubs/:clubId/disputes,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Disputes"">
+                          <DisputeManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1671,financial-health,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Financial Health"">
+                        <FinancialHealthPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1681,financial-admin,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Financial Admin Hub"">
+                        <FinancialAdminHub />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1691,rate-audit,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Rate Audit"">
+                        <RateAuditPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1701,settlement-dashboard,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Settlement Dashboard"">
+                        <SettlementDashboardPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1711,agent-portal,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Agent Portal"">
+                        <AgentPortalPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1721,rakeback-dashboard,"{<Navigate to=""/rakeback"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1730,credit-admin,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Credit Admin"">
+                        <CreditAdminPanel />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1740,settlement-history,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Settlement History"">
+                        <SettlementHistoryPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1750,flash-pool,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Flash Pool"">
+                        <FlashPoolPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1760,session-history,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Session History"">
+                        <SessionHistoryPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1772,bonuses,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Daily Bonus"">
+                        <DailyBonusPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1782,waitlist,"{<Navigate to=""/"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1792,clubs/:clubId/blacklist,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Blacklist Manager"">
+                          <BlacklistManagerPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1804,clubs/:clubId/rules,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Club Rules"">
+                          <ClubRulesPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1816,notification-center,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Notification Center"">
+                        <NotificationCenter />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1826,clubs-list,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Clubs List"">
+                        <ClubsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1838,anti-cheat,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Anti-Cheat"">
+                        <LegacyClubToolRedirect destination=""anti-cheat"" toolName=""Anti-Cheat"" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1852,clubs/:clubId/anti-cheat,"{
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName=""Anti-Cheat"">
+                          <AntiCheatPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1864,xmtt,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""XMTT"">
+                        <XMTTPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1874,union-dashboard,"{<Navigate to=""/unions"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1883,marketplace,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Marketplace"">
+                        <MarketplacePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1893,unions/:unionId/games,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Union Games"">
+                        <UnionGamesPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1903,union-games,"{<Navigate to=""/unions"" replace />}","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1913,dev/bus,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Bus DevTools"">
+                        <BusDevToolsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1923,dev/club-ui,"{
+                    clubButtonsPreviewEnabled ? (
+                      <PageErrorBoundary pageName=""Club Wallet Preview"">
+                        <ClubWalletPreviewPage />
+                      </PageErrorBoundary>
+                    ) : (
+                      <AuthGuard>
+                        <PageErrorBoundary pageName=""ClubButtons UI Laboratory"">
+                          <ClubButtonsShowcasePage />
+                        </PageErrorBoundary>
+                      </AuthGuard>
+                    )
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1939,dev/game-cards,"{
+                    clubButtonsPreviewEnabled ? (
+                      <PageErrorBoundary pageName=""Arena Game Card Preview"">
+                        <ArenaGameCardsShowcasePage />
+                      </PageErrorBoundary>
+                    ) : (
+                      <AuthGuard>
+                        <PageErrorBoundary pageName=""Arena Game Card Laboratory"">
+                          <ArenaGameCardsShowcasePage />
+                        </PageErrorBoundary>
+                      </AuthGuard>
+                    )
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1957,health,"{
+                    <PageErrorBoundary pageName=""HealthCheck"">
+                      <HealthCheckPage />
+                    </PageErrorBoundary>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1967,legal,"{
+                    <PageErrorBoundary pageName=""Legal Center"">
+                      <LegalWorkspacePage />
+                    </PageErrorBoundary>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1975,legal/tos,"{
+                    <PageErrorBoundary pageName=""TermsOfService"">
+                      <TermsOfServicePage />
+                    </PageErrorBoundary>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1983,legal/promotions,"{
+                    <PageErrorBoundary pageName=""ClubPromotionRules"">
+                      <ClubPromotionRulesPage />
+                    </PageErrorBoundary>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1991,legal/fair-gaming,"{
+                    <PageErrorBoundary pageName=""FairGaming"">
+                      <FairGamingPage />
+                    </PageErrorBoundary>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,1999,legal/privacy,"{
+                    <PageErrorBoundary pageName=""PrivacyPolicy"">
+                      <PrivacyPolicyPage />
+                    </PageErrorBoundary>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,2009,house-ads,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""House Ads"">
+                        <HouseAdsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,2019,engine,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Engine Dashboard"">
+                        <EngineDashboard />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,2029,analytics,"{
+                    <AuthGuard>
+                      <PageErrorBoundary pageName=""Analytics Dashboard"">
+                        <AnalyticsDashboard />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }","Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+src/App.tsx,2041,*,{<NotFoundPage />},"Requires Reachability, Scope And Interaction Verification",runtime-or-tooling-source,12
+tests/cashier-club-load-order.test.tsx,134,/clubs/:clubId/cashier,"{
+              <>
+                <CashierTradePage />
+                <LocationProbe />
+              </>
+            }","Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,143,*,{<LocationProbe />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,236,/clubs/:clubId/cashier,{<CashierTradePage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,326,/clubs/:clubId/cashier,{<CashierTradePage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,412,/clubs/:clubId/cashier,{<CashierTradePage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,481,/clubs/:clubId/cashier,{<CashierTradePage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,541,/clubs/:clubId/cashier,{<CashierTradePage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,649,/clubs/:clubId/cashier,{<CashierTradePage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,734,/clubs/:clubId/cashier,{<CashierTradePage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,826,/clubs/:clubId/cashier,{<CashierTradePage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/cashier-club-load-order.test.tsx,911,/clubs/:clubId/cashier,{<CashierTradePage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,4;10;12
+tests/components/club-operations-page.test.tsx,160,/clubs/:clubId/operations,{<ClubOperationsPage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/components/club-operations-surfaces.test.tsx,170,*,{<ClubOperationsRail />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/components/club-operations-surfaces.test.tsx,216,{`/clubs/:clubId/${kind}`},{<Page />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/union-dashboard-route-race.test.tsx,134,/unions/:unionId/operations,{<UnionDashboardPage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/union-dashboard-route-race.test.tsx,157,/unions/:unionId/operations,{<UnionDashboardPage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/union-dashboard-route-race.test.tsx,186,/unions/:unionId/operations,{<UnionDashboardPage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/union-dashboard-route-race.test.tsx,203,/unions/:unionId/operations,{<UnionDashboardPage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/union-dashboard-route-race.test.tsx,220,/unions/:unionId/operations,{<UnionDashboardPage />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/unit/clubWorkspaceGuards.test.tsx,69,/clubs/:clubId/finance,"{
+              <ClubCapabilityGuard>
+                <div>finance surface</div>
+              </ClubCapabilityGuard>
+            }","Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/unit/clubWorkspaceGuards.test.tsx,98,/clubs/:clubId/finance,"{
+              <ClubCapabilityGuard>
+                <div>finance surface</div>
+              </ClubCapabilityGuard>
+            }","Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/unit/clubWorkspaceGuards.test.tsx,126,/clubs/:clubId/finance,"{
+              <ClubCapabilityGuard>
+                <div>finance surface</div>
+              </ClubCapabilityGuard>
+            }","Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/unit/clubWorkspaceGuards.test.tsx,191,/clubs/:clubId/finance,"{
+              <ClubMemberGuard>
+                <div>Finance</div>
+              </ClubMemberGuard>
+            }","Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/unit/clubWorkspaceGuards.test.tsx,199,/invite/:clubId,{<div>Invite Route</div>},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/unit/clubWorkspaceGuards.test.tsx,219,/clubs/:clubId,"{
+              <ClubMemberGuard>
+                <div>Club</div>
+              </ClubMemberGuard>
+            }","Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/unit/clubWorkspaceGuards.test.tsx,227,/invite/:clubId,{<div>Invite Route</div>},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12
+tests/unit/tableManagementBoardBuckets.test.tsx,169,/clubs/:clubId/table-management,"{<GameManagementPage scope=""club"" />}","Requires Reachability, Scope And Interaction Verification",test-or-fixture,12
+tests/unit/tableManagementHealthIsNotAssumed.test.tsx,127,/clubs/:clubId/table-management,"{<GameManagementPage scope=""club"" />}","Requires Reachability, Scope And Interaction Verification",test-or-fixture,12
+tests/unit/tableManagementHealthIsNotAssumed.test.tsx,217,/clubs/:clubId/table-management,"{<GameManagementPage scope=""club"" />}","Requires Reachability, Scope And Interaction Verification",test-or-fixture,12
+tests/unit/tableManagementRefreshStorm.test.tsx,160,/clubs/:clubId/table-management,"{<GameManagementPage scope=""club"" />}","Requires Reachability, Scope And Interaction Verification",test-or-fixture,12
+tests/unit/tableManagementRefreshStorm.test.tsx,182,/clubs/:clubId/table-management,"{<GameManagementPage scope=""club"" />}","Requires Reachability, Scope And Interaction Verification",test-or-fixture,12
+tests/unit/theTotalCountsWhatTheBoardCanReach.test.tsx,132,/clubs/:clubId/table-management,"{<GameManagementPage scope=""club"" />}","Requires Reachability, Scope And Interaction Verification",test-or-fixture,12
+tests/unit/theTotalCountsWhatTheBoardCanReach.test.tsx,241,/clubs/:clubId/table-management,"{<GameManagementPage scope=""club"" />}","Requires Reachability, Scope And Interaction Verification",test-or-fixture,12
+tests/unit/useUnionRouteId.test.tsx,59,/unions/:unionId,{<Harness />},"Requires Reachability, Scope And Interaction Verification",test-or-fixture,10;12

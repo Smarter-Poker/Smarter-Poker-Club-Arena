@@ -93,9 +93,10 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
 
           <h3>4. Virtual Currency</h3>
           <p>
-            The Service Uses Virtual Chips And Diamonds For Gameplay Purposes. Virtual Currency Has
-            No Real-World Monetary Value And Cannot Be Exchanged For Real Money, Goods, Or Services
-            Outside The Platform.
+            Chips Are Club Play Credits. Smarter.Poker Does Not Sell, Redeem Or Pay Out Chips And
+            Assigns Them No Monetary Value; Any Arrangement Between A Member And Their Club's Agent
+            Is Private And Off-Platform. Diamonds Are A Virtual Currency Sold By Smarter.Poker For
+            Use Inside The Platform Only.
           </p>
 
           <h3>5. Prohibited Activities</h3>

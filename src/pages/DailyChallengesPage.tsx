@@ -69,6 +69,7 @@ import {
   dailyMissionReasonCode,
   recordDailyMissionOperation,
 } from '../services/DailyMissionTelemetryService';
+import { signInUrl } from '../lib/signIn';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -1905,7 +1906,7 @@ export default function DailyChallengesPage() {
               className={styles.playButton}
               onClick={() => {
                 const returnUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-                window.location.assign(`/auth/login?redirect=${encodeURIComponent(returnUrl)}`);
+                window.location.assign(signInUrl(returnUrl));
               }}
             >
               <CasinoControlIcon variant="sign-in" state="active" size="sm" />

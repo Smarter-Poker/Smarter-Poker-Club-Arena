@@ -30,6 +30,13 @@ describe('Daily Challenge cycle deep links', () => {
 
   it('preserves path, query, and hash through the signed-out login handoff', () => {
     expect(authGuard).toContain('location.pathname + location.search + location.hash');
-    expect(authGuard).toContain('encodeURIComponent(redirectUrl)');
+    // 2026-09-07: the redirect is built by src/lib/signIn.ts (same web URL,
+    // path + search + hash preserved; the in-app AuthPage on native).
+    expect(authGuard).toContain(
+      'const back = location.pathname + location.search + location.hash;'
+    );
+    expect(authGuard).toContain('window.location.href = signInUrl(back);');
+    const signIn = readFileSync(resolve(__dirname, '../src/lib/signIn.ts'), 'utf8');
+    expect(signIn).toContain('redirect=${encodeURIComponent(toWebPath(returnTo))}');
   });
 });

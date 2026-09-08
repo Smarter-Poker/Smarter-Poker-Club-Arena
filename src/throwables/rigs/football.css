@@ -1,0 +1,87 @@
+.thr-football__posts {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: thr-football-posts calc(0.2s * var(--animation-speed, 1)) ease-out forwards;
+}
+@keyframes thr-football-posts {
+  0% {
+    transform: scaleY(0.4);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+.thr-football__ball {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-football-ball calc(0.9s * var(--animation-speed, 1)) linear forwards;
+}
+@keyframes thr-football-ball {
+  0% {
+    opacity: 1;
+    transform: translate(-90px, 35px) rotate(0) scale(1);
+  }
+  20% {
+    transform: translate(-63px, 4px) rotate(140deg) scale(0.9, 0.6);
+  }
+  40% {
+    transform: translate(-36px, -27px) rotate(280deg) scale(0.8);
+  }
+  66.67% {
+    opacity: 1;
+    transform: translate(0, -68px) rotate(420deg) scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(30px, -100px) rotate(620deg) scale(0.2);
+  }
+}
+.thr-football__flash {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-football-flash calc(0.55s * var(--animation-speed, 1)) ease-out
+    calc(0.6s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-football-flash {
+  0% {
+    opacity: 1;
+    transform: scale(0.3);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2);
+  }
+}
+.thr-football__caption {
+  opacity: 0;
+  animation: thr-football-caption calc(0.2s * var(--animation-speed, 1)) linear
+    calc(0.9s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-football-caption {
+  0% {
+    opacity: 1;
+    transform: translateY(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-football__posts,
+  .thr-football__caption {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .thr-football__ball,
+  .thr-football__flash {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}

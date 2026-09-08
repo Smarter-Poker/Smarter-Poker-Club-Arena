@@ -186,7 +186,9 @@ describe('the rigs themselves', () => {
       const src = code(read(`src/throwables/rigs/${id}.tsx`));
       const literalIds = src.match(/\bid="(?!\$\{)[^"]+"/g) || [];
       expect(literalIds, `${id} has a hardcoded def id: ${literalIds.join(', ')}`).toEqual([]);
-      expect(src, `${id} builds ids from uid`).toMatch(/uid/);
+      // Raster-only rigs have no defs. Any rig that declares an id still
+      // must scope it to its instance so simultaneous throws stay isolated.
+      if (/\bid=/.test(src)) expect(src, `${id} builds ids from uid`).toMatch(/uid/);
     }
   });
 
@@ -243,10 +245,11 @@ describe('the rigs themselves', () => {
     }
   });
 
-  it('use no raster and no emoji: the art is drawn, not fetched', () => {
+  it('use approved local atlas art without remote assets or emoji', () => {
     for (const id of RIGGED_IDS) {
       const src = read(`src/throwables/rigs/${id}.tsx`);
-      expect(src, `${id} loads a raster`).not.toMatch(/<img\b|<image\b/);
+      // Raw images bypass authored atlas bounds; use AtlasSprite for approved art.
+      expect(src, `${id} bypasses atlas bounds`).not.toMatch(/<img\b|<image\b/);
       // `url(#thr-...)` is how SVG paint references its own defs and is
       // correct; a url() that leaves the document is a fetch and is not.
       expect(src, `${id} fetches a remote or embedded asset`).not.toMatch(

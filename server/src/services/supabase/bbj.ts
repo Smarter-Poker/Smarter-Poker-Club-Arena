@@ -443,8 +443,17 @@ async function attemptBBJPayoutOnce(
     throw new Error(`${rpcName} failed: ${rpcErr.message}`);
   }
 
-  const rpc = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
-  if (!rpc) throw new Error(`${rpcName} returned no settlement result`);
+  const rpc = Array.isArray(rpcRows) ? (rpcRows.length === 1 ? rpcRows[0] : null) : rpcRows;
+  if (!rpc) throw new Error(`${rpcName} returned no single settlement result`);
+  // Only the database's explicit boolean outcome can close a pending claim.
+  // Unknown, contradictory or partial receipts must remain eligible for re-drive.
+  if (
+    typeof rpc.applied !== 'boolean' ||
+    typeof rpc.already_paid !== 'boolean' ||
+    (rpc.applied && rpc.already_paid)
+  ) {
+    throw new Error(`${rpcName} returned an invalid settlement outcome`);
+  }
   if (!rpc.applied) {
     // already_paid (retry / concurrent / restart) or empty/zero pool. v2 has
     // already RE-DRIVEN any missing recipient credit inside the RPC (money is

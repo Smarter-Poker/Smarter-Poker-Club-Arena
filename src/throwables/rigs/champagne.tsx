@@ -59,6 +59,7 @@ import type { ThrowableSpec } from '../spec';
 import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import { preloadThrowableCues } from '../cues';
 import './champagne.css';
+import { AtlasSprite } from '../AtlasSprite';
 
 export const champagneSpec: ThrowableSpec = {
   id: 'champagne',
@@ -95,149 +96,31 @@ export const champagneSpec: ThrowableSpec = {
 
 preloadThrowableCues(champagneSpec.audio.map((c) => c.sample));
 
-const GLASS_GREEN = '#14401f';
-const FOIL_GOLD = '#d9ab3c';
-const WINE = '#f2ce67';
-
 /**
  * The bottle, drawn around (0,0): 33 units wide at the body and 105 tall
  * (0.33 x 1.05 u, the measured 10 x 32 px on a 30 px avatar), base at +52 and
  * the neck tip at -53. Always upright; nothing here ever rotates. Dark green
  * glass with a left highlight, a gold foil collar, a cream-and-gold label.
  */
-function Bottle({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-champagne-${n}-${uid}-${k}`;
+function Bottle(_: { uid: string; k: string }) {
   return (
-    <g>
-      <defs>
-        <linearGradient id={g('glass')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#0a2411" />
-          <stop offset="22%" stopColor="#2a6c37" />
-          <stop offset="45%" stopColor={GLASS_GREEN} />
-          <stop offset="80%" stopColor="#0c2d15" />
-          <stop offset="100%" stopColor="#061b0c" />
-        </linearGradient>
-        <linearGradient id={g('foil')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#9d6f16" />
-          <stop offset="30%" stopColor="#f6dd8c" />
-          <stop offset="60%" stopColor={FOIL_GOLD} />
-          <stop offset="100%" stopColor="#8a5f12" />
-        </linearGradient>
-        <linearGradient id={g('label')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#cbb47c" />
-          <stop offset="35%" stopColor="#f7ecd0" />
-          <stop offset="100%" stopColor="#c3a86e" />
-        </linearGradient>
-      </defs>
-      {/* the body: shoulders sweeping out of the neck into a straight barrel */}
-      <path
-        d="M -6 -53 L 6 -53 L 6 -18 C 6 -10, 16.5 -4, 16.5 8 L 16.5 47 Q 16.5 52 11 52 L -11 52 Q -16.5 52 -16.5 47 L -16.5 8 C -16.5 -4, -6 -10, -6 -18 Z"
-        fill={`url(#${g('glass')})`}
-        stroke="#05170a"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
-      {/* the gold foil over the neck, and the wire-cage band under it */}
-      <path d="M -6.6 -53 L 6.6 -53 L 6.6 -26 L -6.6 -26 Z" fill={`url(#${g('foil')})`} />
-      <rect x="-7.2" y="-30.6" width="14.4" height="3.4" fill="#8a5f12" opacity="0.85" />
-      <rect x="-7" y="-45" width="14" height="2.2" fill="#f6dd8c" opacity="0.7" />
-      <path
-        d="M -5 -49 l 3 5 l -2 5 l 3 6 M 4 -51 l -2 8 l 3 6 l -2 6"
-        fill="none"
-        stroke="#8d611f"
-        strokeWidth="0.55"
-      />
-      <path
-        d="M -6 -27 Q 0 -24 6 -27 M -5 -52 Q 0 -50 5 -52"
-        fill="none"
-        stroke="#fff0bb"
-        strokeWidth="0.9"
-      />
-      {/* the label */}
-      <rect x="-14" y="12" width="28" height="26" rx="1.5" fill={`url(#${g('label')})`} />
-      <rect x="-14" y="16.5" width="28" height="2" fill={FOIL_GOLD} opacity="0.9" />
-      <rect x="-14" y="33" width="28" height="1.6" fill={FOIL_GOLD} opacity="0.9" />
-      <ellipse cx="0" cy="25" rx="5.4" ry="4.4" fill={FOIL_GOLD} opacity="0.85" />
-      <ellipse cx="0" cy="25" rx="4.3" ry="3.4" fill="none" stroke="#775524" strokeWidth="0.5" />
-      <path
-        d="M 0 22 C -1 23 -3 24 -2 25 Q -1 26 0 25 Q 1 26 2 25 C 3 24 1 23 0 22 Z M 0 25 L -1 27 L 1 27 Z"
-        fill="#5b481f"
-      />
-      <path
-        d="M -10 19 h 6 M 4 19 h 6 M -9 30 h 18 M -7 31.5 h 14"
-        fill="none"
-        stroke="#8a713e"
-        strokeWidth="0.55"
-      />
-      <path
-        d="M 11 -2 Q 14 5 14 10 M 14 40 L 14 45 Q 12 49 8 49"
-        fill="none"
-        stroke="#5fac68"
-        strokeWidth="0.8"
-        opacity="0.7"
-      />
-      <path
-        d="M -8 -17 Q -8 -6 -14 3"
-        fill="none"
-        stroke="#d0ffd1"
-        strokeWidth="0.75"
-        opacity="0.5"
-      />
-      {/* the highlight down the left of the glass */}
-      <path
-        d="M -11 -14 C -12 -4, -12.5 14, -12 44"
-        fill="none"
-        stroke="#a9e6bb"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        opacity="0.42"
-      />
-      <path
-        d="M -3.5 -50 L -3.5 -32"
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        opacity="0.4"
-      />
-      {/* the punt shadow at the base */}
-      <path
-        d="M -16.5 45 Q 0 41 16.5 45 L 16.5 47 Q 16.5 52 11 52 L -11 52 Q -16.5 52 -16.5 47 Z"
-        fill="#031207"
-        opacity="0.55"
+    <g transform="rotate(-17)">
+      <AtlasSprite
+        src="champagne"
+        rect={[65, 10, 340, 600]}
+        x={-33}
+        y={-60}
+        width={66}
+        height={116}
       />
     </g>
   );
 }
 
 /** The cork, drawn around its own centre. Invented; see the header. */
-function Cork({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-champagne-${n}-${uid}-${k}`;
+function Cork(_: { uid: string; k: string }) {
   return (
-    <g>
-      <defs>
-        <linearGradient id={g('cork')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#c99a5c" />
-          <stop offset="45%" stopColor="#e8c48c" />
-          <stop offset="100%" stopColor="#a97838" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M -5.5 5 L -5.5 -3 Q -5.5 -8 0 -8 Q 5.5 -8 5.5 -3 L 5.5 5 Z"
-        fill={`url(#${g('cork')})`}
-        stroke="#8a6029"
-        strokeWidth="0.8"
-        strokeLinejoin="round"
-      />
-      <rect x="-5.5" y="3.6" width="11" height="2.6" rx="1.3" fill="#8a6029" opacity="0.75" />
-      <ellipse cx="0" cy="-5.5" rx="5" ry="2.3" fill="#edd0a0" stroke="#c69961" strokeWidth="0.5" />
-      <path
-        d="M -3 -4 h 1 M 1 -6 h 1.5 M -4 0 h 2 M 1 -1 h 1 M 2 2 h 2 M -2 3 h 1"
-        stroke="#94632e"
-        strokeWidth="0.6"
-        strokeLinecap="round"
-      />
-    </g>
+    <AtlasSprite src="champagne" rect={[530, 157, 240, 292]} x={-7} y={-9} width={14} height={18} />
   );
 }
 
@@ -246,63 +129,17 @@ function Cork({ uid, k }: { uid: string; k: string }) {
  * (0.26 x 0.67 u, the measured 8 x 20 px). A tapered bowl of pale glass with
  * champagne in its lower two thirds, three rising bubbles, a stem and a foot.
  */
-function Flute({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-champagne-${n}-${uid}-${k}`;
+function Flute({ k }: { uid: string; k: string }) {
   return (
-    <g>
-      <defs>
-        <linearGradient id={g('wine')} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#ffeba8" />
-          <stop offset="60%" stopColor={WINE} />
-          <stop offset="100%" stopColor="#d9a52f" />
-        </linearGradient>
-        <linearGradient id={g('bowl')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.5" />
-          <stop offset="30%" stopColor="#ffffff" stopOpacity="0.1" />
-          <stop offset="78%" stopColor="#ffffff" stopOpacity="0.08" />
-          <stop offset="100%" stopColor="#ffffff" stopOpacity="0.42" />
-        </linearGradient>
-      </defs>
-      {/* the champagne, inside the bowl */}
-      <path
-        d="M -11.2 -25 L 11.2 -25 L 7 -11 Q 3.6 -4.5 0 -4.5 Q -3.6 -4.5 -7 -11 Z"
-        fill={`url(#${g('wine')})`}
+    <g transform="rotate(-15)">
+      <AtlasSprite
+        src="champagne"
+        rect={k === 'b' ? [49, 634, 285, 604] : [855, 20, 287, 597]}
+        x={-24}
+        y={-56}
+        width={48}
+        height={102}
       />
-      <ellipse
-        cx="0"
-        cy="-25"
-        rx="11.2"
-        ry="2.2"
-        fill="#fff2bb"
-        stroke="#c89c34"
-        strokeWidth="0.6"
-      />
-      <circle cx="-3.5" cy="-15" r="1.3" fill="#fff6d4" opacity="0.9" />
-      <circle cx="2.5" cy="-19" r="1" fill="#fff6d4" opacity="0.85" />
-      <circle cx="0.5" cy="-9" r="0.9" fill="#fff6d4" opacity="0.8" />
-      {/* the bowl over it */}
-      <path
-        d="M -13 -33 L 13 -33 L 8 -11 Q 4 -4 0 -4 Q -4 -4 -8 -11 Z"
-        fill={`url(#${g('bowl')})`}
-        stroke="#e9f2f6"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-      <ellipse cx="0" cy="-33" rx="13" ry="2" fill="none" stroke="#eaf9ff" strokeWidth="0.8" />
-      <path
-        d="M -10 -30 L -6 -12 Q -4 -8 -2 -7"
-        fill="none"
-        stroke="#fff"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        opacity="0.85"
-      />
-      <path d="M 10 -28 L 6 -13" fill="none" stroke="#91b0b7" strokeWidth="0.7" opacity="0.8" />
-      {/* stem and foot */}
-      <rect x="-1.6" y="-5" width="3.2" height="27" fill="#e9f2f6" opacity="0.85" />
-      <path d="M -0.8 -2 L -0.8 20" stroke="#fff" strokeWidth="0.65" />
-      <ellipse cx="0" cy="23.5" rx="9" ry="2.8" fill="#e9f2f6" opacity="0.9" />
-      <ellipse cx="0" cy="22.6" rx="6.5" ry="1.6" fill="#ffffff" opacity="0.5" />
     </g>
   );
 }
@@ -351,14 +188,6 @@ function Payload({ uid }: RigProps) {
   const g = (n: string) => `thr-champagne-${n}-${uid}`;
   return (
     <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id={g('jet')} x1="0" y1="1" x2="0" y2="0">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
-          <stop offset="55%" stopColor="#fbfdff" stopOpacity="0.85" />
-          <stop offset="100%" stopColor="#eaf6ff" stopOpacity="0.35" />
-        </linearGradient>
-      </defs>
-
       {/* THE BOTTLE: stands from the landing, base at +0.40 u, neck tip at
           -0.65 u. Cross-fades out over the morph (2300-2467). */}
       <g className="thr-champagne__bottle">
@@ -377,40 +206,35 @@ function Payload({ uid }: RigProps) {
       {/* THE PUFF at the neck tip, 800-933: the reference's first white ball
           before the stream takes over. */}
       <g className="thr-champagne__puff">
-        <circle cx="0" cy="-72" r="9" fill="#ffffff" />
-        <circle cx="-7" cy="-66" r="5.5" fill="#f6fbff" />
-        <circle cx="7" cy="-67" r="5" fill="#f6fbff" />
+        <AtlasSprite
+          src="champagne"
+          rect={[990, 816, 180, 214]}
+          x={-12}
+          y={-84}
+          width={24}
+          height={24}
+        />
       </g>
 
       {/* THE JET, 933-1600: a ribbon from the neck arcing right, grown by
           scaleY off its base so the root never leaves the neck. */}
       <g className="thr-champagne__jet">
-        <path
-          d="M -6.5 -62 C -10 -88, -6 -110, 2 -132 C 5 -140, 9 -145, 12.5 -147 C 14 -142, 12.5 -134, 10.5 -126 C 6.5 -106, 5.5 -84, 5 -62 Z"
-          fill={`url(#${g('jet')})`}
+        <AtlasSprite
+          src="champagne"
+          rect={[480, 620, 315, 634]}
+          x={-17}
+          y={-148}
+          width={42}
+          height={86}
         />
-        <path
-          d="M -2 -66 C -4 -88, -1 -108, 5 -128"
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          opacity="0.7"
-        />
-        <ellipse cx="9" cy="-142" rx="8" ry="6" fill="#ffffff" opacity="0.85" />
-        <ellipse cx="0" cy="-134" rx="5.5" ry="4.5" fill="#ffffff" opacity="0.7" />
       </g>
 
       {/* THE SIDE SPRAY: droplets thrown off the jet's crown while it runs. */}
       <g className="thr-champagne__jet-spray">
         {SPRAY.map(([dx, dy, r, step], i) => (
-          <circle
+          <g
             key={i}
             className="thr-champagne__speck"
-            cx="4"
-            cy="-140"
-            r={r}
-            fill="#ffffff"
             style={
               {
                 '--dx': `${dx}px`,
@@ -418,22 +242,30 @@ function Payload({ uid }: RigProps) {
                 animationDelay: `calc((0.767s + ${(step * 0.03).toFixed(2)}s) * var(--animation-speed, 1))`,
               } as React.CSSProperties
             }
-          />
+          >
+            <AtlasSprite
+              src="champagne"
+              rect={[1146, 724, 42, 44]}
+              x={-3}
+              y={-143}
+              width={6}
+              height={6}
+            />
+          </g>
         ))}
       </g>
 
       {/* THE THREAD, 1567-1900: the stream lifts off the neck as a wiggly
           filament, rises and fades. */}
       <g className="thr-champagne__thread">
-        <path
-          d="M 0 -78 C -5 -92, 4 -102, -1 -116 C -5 -126, 3 -134, 1 -144"
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth="4"
-          strokeLinecap="round"
-          opacity="0.9"
+        <AtlasSprite
+          src="champagne"
+          rect={[955, 717, 250, 480]}
+          x={-9}
+          y={-148}
+          width={20}
+          height={72}
         />
-        <circle cx="1" cy="-146" r="4" fill="#ffffff" opacity="0.85" />
       </g>
 
       {/* FLUTE 1: cross-fades in where the bottle was (2300-2467), swings into
@@ -459,13 +291,9 @@ function Payload({ uid }: RigProps) {
           drawn last so they read over both glasses. */}
       <g className="thr-champagne__clink">
         {CLINK_DROPS.map(([dx, dy, r, step], i) => (
-          <circle
+          <g
             key={i}
             className="thr-champagne__drop"
-            cx="0"
-            cy="-32"
-            r={r}
-            fill={WINE}
             style={
               {
                 '--dx': `${dx}px`,
@@ -473,7 +301,16 @@ function Payload({ uid }: RigProps) {
                 animationDelay: `calc((2.967s + ${(step * 0.02).toFixed(2)}s) * var(--animation-speed, 1))`,
               } as React.CSSProperties
             }
-          />
+          >
+            <AtlasSprite
+              src="champagne"
+              rect={[1146, 724, 42, 44]}
+              x={-3}
+              y={-35}
+              width={6}
+              height={6}
+            />
+          </g>
         ))}
       </g>
 
@@ -485,13 +322,27 @@ function Payload({ uid }: RigProps) {
         className="thr-champagne__glint"
         style={{ animationDelay: `calc(3.7s * var(--animation-speed, 1))` } as React.CSSProperties}
       >
-        <path d="M -47 -28 l 3 -8 l 3 8 l 8 3 l -8 3 l -3 8 l -3 -8 l -8 -3 Z" fill="#fff6d4" />
+        <AtlasSprite
+          src="champagne"
+          rect={[1146, 724, 42, 44]}
+          x={-50}
+          y={-34}
+          width={14}
+          height={14}
+        />
       </g>
       <g
         className="thr-champagne__glint"
         style={{ animationDelay: `calc(3.9s * var(--animation-speed, 1))` } as React.CSSProperties}
       >
-        <path d="M 47 -28 l 3 -8 l 3 8 l 8 3 l -8 3 l -3 8 l -3 -8 l -8 -3 Z" fill="#fff6d4" />
+        <AtlasSprite
+          src="champagne"
+          rect={[1146, 724, 42, 44]}
+          x={44}
+          y={-34}
+          width={14}
+          height={14}
+        />
       </g>
     </svg>
   );

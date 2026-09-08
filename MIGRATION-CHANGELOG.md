@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-08: Voluntary Card Reveals Survive Resync
+
+HTTP table state now retains selected card reveals after the hand ends, matching live snapshots while hiding unselected cards. 49 tests and server TypeScript pass; stored-card RLS read checks pass in production. Normal CI and adoption pending. Evidence: docs/audits/2026-09-08-phase2-card-visibility.md.
+
 ## 2026-09-08: Individual Ante Caps And Inactive Blind Seats
 
 Individual antes now precede live blinds and retain matched-contribution pot caps. Heads-up skips an inactive old button; stale queued dead blinds cannot debit sitting-out seats. BBA remains shared and BB-first. The forced-bet event has an explicit type. 211 related tests and server TypeScript pass; CI and engine adoption remain pending. Evidence: docs/audits/2026-09-08-phase2-partial-antes.md.

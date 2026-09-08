@@ -363,6 +363,17 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             // table was never shown.
             showCards = true;
           }
+          // A voluntary per-card show survives HTTP resync just as it does
+          // the live snapshot. Unselected cards remain null, and no pick is
+          // public before the hand ends. Owners still receive their own hand.
+          const picked = this.showHandCards?.get(p.user_id);
+          const handIsOver = state.stage === 'showdown' || this.currentHandWinnerIds.length > 0;
+          const partialReveal = !showCards && handIsOver && !!picked && picked.size > 0;
+          const cardsOut = showCards
+            ? (p.cards ?? [])
+            : partialReveal
+              ? (p.cards ?? []).map((card, index) => (picked!.has(index) ? card : null))
+              : [];
           return {
             seat: p.seat,
             user_id: p.user_id,
@@ -370,7 +381,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             stack: p.stack,
             bet: p.bet ?? 0,
             totalInvested: p.totalInvested ?? 0,
-            cards: showCards ? (p.cards ?? []) : [],
+            cards: cardsOut,
             is_folded: p.is_folded ?? false,
             is_all_in: p.is_all_in ?? false,
             /* THE ENGINE, NOT THE ROSTER (2026-08-28). `p.is_sitting_out` is the

@@ -13,7 +13,13 @@ if (!method?.body) throw new Error('Actual deal method missing');
 const compiled = ts.transpileModule('return async function(alive) ' + method.body.getText(ast), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;
-const build = new Function('supabase', 'reportError', 'settleTournamentObligation', compiled);
+const build = new Function(
+  'supabase',
+  'reportError',
+  'settleTournamentObligation',
+  'raiseFinancialAlert',
+  compiled
+);
 async function run(
   receipt: Record<string, unknown>,
   rows: Array<{ user_id: string; amount: unknown }> = [
@@ -23,6 +29,7 @@ async function run(
 ) {
   const updates: Array<{ table: string; value: any }> = [];
   const report = vi.fn();
+  const alert = vi.fn(async () => undefined);
   const settle = vi.fn(async (_db, input) =>
     input.userId === 'first'
       ? receipt
@@ -67,11 +74,11 @@ async function run(
     cleanupBroadcastChannel: vi.fn(),
     stop: vi.fn(),
   };
-  await build(db, report, settle).call(owner, [
+  await build(db, report, settle, alert).call(owner, [
     { user_id: 'first', chips: 200 },
     { user_id: 'second', chips: 100 },
   ]);
-  return { updates, owner, settle, report };
+  return { updates, owner, settle, report, alert };
 }
 describe('a final table deal completes only after every share settles', () => {
   it.each([
@@ -114,6 +121,12 @@ describe('deal payout roster validation before any settlement', () => {
   ])('rejects invalid roster %# without paying or completing', async (...rows) => {
     const r = await run({ ok: true, fully_settled: true, amount_paid: 100 }, rows);
     expect(r.settle).not.toHaveBeenCalled();
+    expect(r.alert).toHaveBeenCalledWith(
+      'critical',
+      'Tournament.final_table_deal_payout_roster_invalid',
+      expect.stringContaining('previous payment status is unconfirmed'),
+      expect.objectContaining({ tournament_id: 'event' })
+    );
     expect(r.updates).toEqual([]);
     expect(r.owner.stop).not.toHaveBeenCalled();
     expect(r.report).toHaveBeenCalled();

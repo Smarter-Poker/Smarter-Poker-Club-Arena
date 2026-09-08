@@ -3289,6 +3289,16 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         return true;
       });
     if (!validRoster) {
+      await raiseFinancialAlert(
+        'critical',
+        'Tournament.final_table_deal_payout_roster_invalid',
+        'The recorded final table deal has invalid amounts or does not match its participants. Settlement was not attempted by this invocation; previous payment status is unconfirmed.',
+        {
+          tournament_id: this.tournamentId,
+          expected_recipients: [...expectedRecipients],
+          recorded_row_count: payoutRows.length,
+        }
+      );
       reportError(
         new Error(
           `[Tournament:${this.tournamentId.slice(0, 8)}] Invalid or incomplete final table deal payout roster`

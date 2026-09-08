@@ -8,6 +8,6 @@ The 17 new PNG atlases and their runtime WebP files passed exact alpha and visib
 
 The first browser pass exposed padded sprite bounds. The corrected pass fixes narrow stanchions, thermometer scale, bandage strips, the heart arrow, and slot reel alignment. Standing Ovation alternates open and closed hand poses rather than scaling one static pose.
 
-Validation before the final sound additions: 96 focused tests passed and TypeScript passed. Final build, sound encoding, branch freshness, and publication evidence are recorded in the completion changelog after their gates finish.
+Final local validation: 96 focused tests passed after the sound additions and merge of current main. TypeScript and the production build passed with behind-main=0. All six new cues encoded in both formats with measured audible peaks. Publication remains a separate gate.
 
 This is implementation and browser evidence. The broader programme still requires independent evidence for server-side per-item ownership and seasonal gates, store purchase flows, real two-client play, real-device frame rate, and the remaining specialist voice/audio acceptance. An 80/80 catalogue count does not certify those separate requirements.

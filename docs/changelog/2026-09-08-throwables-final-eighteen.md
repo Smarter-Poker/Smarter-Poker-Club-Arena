@@ -11,3 +11,5 @@ Validation: 189 timed browser captures at four seat rungs; 1,555 component anima
 Review evidence: docs/throwables/reviews/2026-09-08-final-18/.
 
 The 80-item implementation milestone does not certify the separate programme requirements for per-item server entitlements, seasonal access windows, store ownership purchases, real two-client/device acceptance, or the remaining specialist voice recordings. Those remain explicitly tracked in the premium animation plan and coverage note.
+
+Final local gate: 96 tests passed across 10 files after the six sound additions and main-branch merge; TypeScript and the production build passed. The build recorded behind-main=0 at source commit 3369542370. Six new cues encoded to both AAC and Opus, with measured peaks from -8.6 to -16.7 dBFS.

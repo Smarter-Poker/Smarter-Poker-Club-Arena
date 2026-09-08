@@ -531,6 +531,113 @@ export class MaintenanceBreak {
     return null;
   }
 
+  /**
+   * THE CLOCK IS THE LAST WITNESS (2026-09-08, from the 14:00 and 15:00 breaks
+   * that both "did not pass").
+   *
+   * `restoreFromStore` decided whether this process stood inside a break by
+   * reading one row, and when that row was missing or unreadable it returned
+   * and the fleet dealt. On 2026-09-08 the deploy cut the engine over INSIDE
+   * two consecutive breaks - `engine_leader.acquired_at` 13:55:48 and
+   * 14:56:33, both mid-window - and both replacements came up with nothing to
+   * read. Play resumed at 13:56:01 and at 14:57, four and three minutes before
+   * the hour the countdown on every screen was pointing at. 945 hands went out
+   * inside the first one across 111 tables, no thaw ran in either, and
+   * `engine_maintenance_break_log` recorded neither break - so the only thing
+   * that ever noticed was the scorecard, twelve minutes later.
+   *
+   * The row was never the only evidence available. CLAUDE.md 13's timeline is
+   * fixed and carries no time zone - announce at :53, park at :55, resume at
+   * :00 - so a process booting at 14:56:33 can tell from the wall clock alone
+   * that it is standing in the middle of a break. `msUntilNextAnnouncement`
+   * has always derived the NEXT window this way. This derives the CURRENT one.
+   *
+   * It returns null everywhere outside [:53, :00), and the window it returns
+   * can never be longer than LAST_HAND_LEAD_MS + BREAK_DURATION_MS because
+   * both ends are anchored to the CURRENT hour's :53. That is deliberate, and
+   * it is why this does not ask for "the next :00": the deleted
+   * `nextHourBoundary()` did exactly that and would have parked the whole
+   * fleet for sixty minutes on a boot at :00:00.000. A false positive here is
+   * a fleet-wide freeze, so the derivation has to have no boundary case at
+   * all, and anchoring to the announcement has none.
+   */
+  private scheduledBreakWindowAt(at: number): { announcedAt: number; endsAt: number } | null {
+    const announceMinute =
+      MaintenanceBreak.BREAK_START_MINUTE - MaintenanceBreak.LAST_HAND_LEAD_MS / 60000;
+    const announced = new Date(at);
+    announced.setSeconds(0, 0);
+    announced.setMinutes(announceMinute);
+    const announcedAt = announced.getTime();
+    const endsAt =
+      announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS;
+    if (at < announcedAt || at >= endsAt) return null;
+    return { announcedAt, endsAt };
+  }
+
+  /**
+   * Hold the fleet for the rest of a break the clock says is running, when
+   * there was no durable row to adopt.
+   *
+   * NEVER FAIL OPEN ON THE CLOCK. Failing open on the ROW is still right - see
+   * the retry loop in restoreFromStore - because an unreadable database must
+   * not become a platform outage. Failing open on the SCHEDULE is what dealt
+   * 945 hands under a break screen, and there is no blip to blame for that
+   * one: the engine knew what time it was.
+   *
+   * `breakStartedAt` is `now()`, NOT the scheduled :55, and that is the single
+   * place this deliberately differs from the adoption path. An adopted row is
+   * evidence that a break was declared and the platform held from :55; a
+   * derived break has no such evidence - the engine may simply have been down
+   * across the announcement, in which case nothing was ever frozen.
+   * `fn_thaw_platform` shifts every in-flight deadline by the duration it is
+   * handed, so claiming a freeze that cannot be evidenced would move every
+   * clock on the platform on an assumption, on every cold boot inside the
+   * window. This claims only what this process actually held. The END is still
+   * the scheduled hour, so nothing resumes early either way.
+   */
+  private async enterBreakFromTheClock(generation: number, because: string): Promise<void> {
+    if (this.isActive()) return;
+    const window = this.scheduledBreakWindowAt(this.now());
+    if (!window) return;
+    const remaining = window.endsAt - this.now();
+    if (remaining <= 1000) return;
+
+    this.announcedAt = window.announcedAt;
+    this.phase = 'counting_down';
+    this.breakStartedAt = this.now();
+    this.breakEndsAt = window.endsAt;
+    this.resumeWaves = null;
+    setMaintenanceFrozen(true);
+
+    console.warn(
+      `[MaintenanceBreak] ${because}, but the clock says a break is running - ` +
+        `parking every table until the hour on the schedule alone. ` +
+        `${Math.round(remaining / 1000)}s remaining.`
+    );
+
+    this.parkEveryEngine();
+
+    const derived = this.persistedState();
+    try {
+      await this.persist(derived);
+    } catch (error) {
+      /* The same call beginCountdown makes, for the same reason: a break
+         nobody else can see is worse than no break, because the database half
+         stays disarmed - fn_platform_frozen reads this row - while the engine
+         half holds. Resume, and let the next hour try. */
+      console.error(
+        '[MaintenanceBreak] could not durably declare the clock-derived break; cancelling it',
+        error
+      );
+      await this.cancelBreakAfterPersistenceFailure(false, derived);
+      return;
+    }
+    if (!this.lifecycleIsCurrent(generation)) return;
+
+    this.broadcast('counting_down');
+    this.armEndTimer();
+  }
+
   private async restoreFromStore(generation: number): Promise<void> {
     let saved: PersistedMaintenanceBreak | null = null;
     let lastErr: unknown = null;
@@ -560,11 +667,15 @@ export class MaintenanceBreak {
       console.warn(
         `[MaintenanceBreak] could not read the persisted break after ${
           MaintenanceBreak.RESTORE_ATTEMPTS
-        } attempts, starting unpaused: ${(lastErr as Error)?.message ?? lastErr}`
+        } attempts: ${(lastErr as Error)?.message ?? lastErr}`
       );
+      await this.enterBreakFromTheClock(generation, 'the persisted break could not be read');
       return;
     }
-    if (!saved) return;
+    if (!saved) {
+      await this.enterBreakFromTheClock(generation, 'there was no persisted break to adopt');
+      return;
+    }
     if (!this.lifecycleIsCurrent(generation)) return;
 
     // ── AN ADOPTED BREAK ENDS ON THE HOUR, NOT ON A BOOT INSTANT ───────────
@@ -654,6 +765,10 @@ export class MaintenanceBreak {
         return;
       }
       await this.safeClear(claimed);
+      await this.enterBreakFromTheClock(
+        generation,
+        'the persisted break belonged to an hour that has already passed'
+      );
       return;
     }
 
@@ -669,6 +784,7 @@ export class MaintenanceBreak {
         return;
       }
       await this.safeClear(claimed);
+      await this.enterBreakFromTheClock(generation, 'the persisted break had already expired');
       return;
     }
 

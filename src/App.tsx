@@ -249,6 +249,7 @@ function TableRouteSurface() {
 import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
+import RouterBridge from './components/common/RouterBridge';
 import { IS_NATIVE_BUILD } from './lib/appBase';
 
 function ClubFooterMount() {
@@ -579,6 +580,9 @@ function FullApp() {
             }
           >
             <SlugEnforcer />
+            {/* Hands navigate() to src/lib/routerBridge for deep links and
+                plugin listeners (native). Renders nothing. */}
+            <RouterBridge />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)

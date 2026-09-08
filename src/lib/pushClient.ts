@@ -83,6 +83,7 @@
  */
 
 import { readLocalSession } from './authUtils';
+import { isNativePlatform } from './appBase';
 
 /* ═══════════════════════════════════════════════════════════════════════
    TIMEOUTS
@@ -135,6 +136,9 @@ function withTimeout<T2>(promise: Promise<T2> | T2, ms: number, label: string): 
    ═══════════════════════════════════════════════════════════════════════ */
 
 export function isWebPushSupported(): boolean {
+  // Inside the native app there is no Web Push: no push service behind the
+  // webview, and no root service worker (phase 4 adds the FCM/APNs path).
+  if (isNativePlatform()) return false;
   if (typeof window === 'undefined') return false;
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 }

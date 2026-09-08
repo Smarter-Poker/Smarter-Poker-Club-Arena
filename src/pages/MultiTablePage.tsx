@@ -76,6 +76,7 @@ import { useUserStore } from '../stores/useUserStore';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 import { betSliderStep, sliderUnitFor } from '../components/table/ActionPanel';
 import { publishInTabLobbyActive } from '../components/club/inTabLobbySurface';
+import { openInBrowser } from '../lib/openExternal';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -1871,7 +1872,7 @@ export default function MultiTablePage() {
         }
         case 'open-browser': {
           const t = tablesRef.current.find((x) => x.id === tabId);
-          if (t && isHubTab(t)) window.open(t.hubUrl ?? '/hub', '_blank', 'noopener,noreferrer');
+          if (t && isHubTab(t)) openInBrowser(t.hubUrl ?? '/hub');
           break;
         }
         case 'mute':

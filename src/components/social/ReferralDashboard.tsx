@@ -15,6 +15,7 @@ import {
 import { useToast } from '../common/Toast';
 import './ReferralDashboard.css';
 import { reportError } from '../../utils/errorReporter';
+import { publicOrigin } from '../../lib/appBase';
 
 interface ReferralDashboardProps {
   userId: string;
@@ -104,10 +105,9 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
    * hardcoded link in a preview build sends testers to production.
    */
   const referralUrl = () => {
-    const origin =
-      typeof window !== 'undefined' && window.location?.origin
-        ? window.location.origin
-        : 'https://smarter.poker';
+    // publicOrigin(): the current origin on the web (a preview build keeps
+    // sending testers to itself), smarter.poker inside the native app.
+    const origin = publicOrigin();
     const base = `${origin}/hub/club-arena/invite`;
     return stats.code ? `${base}?ref=${encodeURIComponent(stats.code)}` : base;
   };

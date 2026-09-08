@@ -389,7 +389,16 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
             position: positionLabels.get(p.seat) ?? '',
-            is_horse: p.is_horse ?? false, // Bible V8 §2.3
+            /* NO is_horse ON THE WIRE (Dan 2026-09-02: "NOBODY SHOULD EVER EVER
+               EVER BE ABLE TO LOOK AT OUR CODE OR USE A DEVELOPER TOOL AND FIND
+               THIS OUT"). All three client payloads - this resync, the hand
+               broadcast and the between-hands roster - used to carry
+               `is_horse: p.is_horse ?? false` on every seat, so the WebSocket
+               frame in any player's Network tab labelled every horse at the
+               table. The flag stays on the engine's own Player record for the
+               horse's input device (HorseLogic, autoRebuyHorse); it is never
+               serialised to a client. Pinned by
+               TheEngineNeverSaysHorseOnTheWire.law.test.ts. */
             // CHIP CONTINUITY: the stay clock, identical in all three payloads.
             // Judged on the ROSTER stack (what the seat holds outside the
             // hand), not the live hand stack net of bets - a bet is not a loss
@@ -676,7 +685,6 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id), // Bible V8 §2.3
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id), // Bible V8 §2.3
             position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
-            is_horse: p.is_horse ?? false, // Bible V8 §2.3
             // CHIP CONTINUITY: the stay clock, identical in all three payloads.
             // Roster stack, not the live hand stack - see getTableState().
             ...this.chipContinuity.seatFields(p.user_id, this.continuityStack(p.user_id, p.stack)),
@@ -794,7 +802,6 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
         time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
         position: '',
-        is_horse: p.is_horse ?? false,
         is_waiting_for_bb: this.waitingForBB.has(p.user_id),
         hand_name: '',
         // CHIP CONTINUITY: the stay clock keeps counting between hands, so the

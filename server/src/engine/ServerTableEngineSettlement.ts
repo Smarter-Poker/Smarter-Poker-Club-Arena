@@ -234,19 +234,24 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // created for this path and never wired. Do not use the obsolete
     // `rabbit_hunt_offers` table: it has a `cards` column, and persisting the
     // unseen runout would recreate the private-card leak this endpoint removed.
-    // A ledger outage must not strand a player after a successful charge, so
-    // report it and still return the cards they bought.
-    try {
-      const { error: revealLogError } = await supabase.from('rabbit_hunt_reveals').insert({
-        user_id: userId,
-        table_id: this.tableId,
-        hand_number: hand,
-        charged: Number(charge.diamonds_spent ?? 0),
-      });
-      if (revealLogError) throw revealLogError;
-    } catch (err) {
-      reportError(err, 'ServerTableEngine.rabbit_hunt_reveal_log_error');
-    }
+    // Payment has already committed its durable receipt in the consumption
+    // RPC. This metadata write is not a payment gate: even a stalled insert
+    // must not hold back cards the player has bought. Start it immediately,
+    // capture this hand's fields before yielding, and report both returned
+    // errors and rejected requests. It never joins the next-hand barrier.
+    void (async () => {
+      try {
+        const { error: revealLogError } = await supabase.from('rabbit_hunt_reveals').insert({
+          user_id: userId,
+          table_id: this.tableId,
+          hand_number: hand,
+          charged: Number(charge.diamonds_spent ?? 0),
+        });
+        if (revealLogError) throw revealLogError;
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.rabbit_hunt_reveal_log_error');
+      }
+    })();
 
     return {
       success: true,

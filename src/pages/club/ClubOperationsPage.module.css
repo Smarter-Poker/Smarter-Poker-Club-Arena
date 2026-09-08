@@ -173,8 +173,7 @@
   overflow: hidden;
   background:
     linear-gradient(90deg, #05090d 0%, transparent 26%),
-    url('/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png') center / cover
-      no-repeat;
+    url('/assets/club-buttons/lobby/lobby-command-chassis-v2.png') center / cover no-repeat;
   filter: saturate(0.84) contrast(1.08);
 }
 

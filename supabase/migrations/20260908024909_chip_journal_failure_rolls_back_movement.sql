@@ -880,4 +880,12 @@ END;
 $function$
 ;
 
+-- Preserve the verified production server-only execution permissions.
+REVOKE ALL ON FUNCTION public.atomic_distribute_rake(uuid, uuid, uuid, integer, numeric, numeric, numeric, integer, jsonb, uuid, jsonb, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.atomic_distribute_rake(uuid, uuid, uuid, integer, numeric, numeric, numeric, integer, jsonb, uuid, jsonb, text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_fund_from_treasury(uuid, uuid, numeric, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_horse_fund_from_treasury(uuid, uuid, numeric, uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_seat_from_treasury(uuid, uuid, integer, numeric, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_horse_seat_from_treasury(uuid, uuid, integer, numeric, uuid) TO service_role;
+
 COMMIT;

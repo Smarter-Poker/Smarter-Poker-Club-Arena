@@ -47,8 +47,9 @@ export interface EnginePublicPlayer {
      THAT THIS IS A 'HORSE' AND NOT A 'HUMAN'"). Nothing in the client ever
      mapped it into a rendered value, but declaring it told every future
      author that a per-seat horse flag is a legitimate thing to receive and
-     read. If the engine still emits the field, that is a SERVER fix — this
-     type no longer invites anyone to consume it. */
+     read. The engine stopped emitting it on 2026-09-08
+     (TheEngineNeverSaysHorseOnTheWire.law), so nothing sends it and nothing
+     declares it. */
   hand_name?: string;
   /**
    * SHOWDOWN SYSTEM 2026-08-25: the engine ruled this hand muckable at

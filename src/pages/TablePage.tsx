@@ -89,6 +89,7 @@ function sameStamps(a: Map<string, number>, b: Map<string, number>): boolean {
 }
 import { setShownCards } from '../services/ShowCardsService';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
@@ -107,6 +108,7 @@ import type { BoardStage } from '../components/table/CommunityCards';
 import {
   boardForRabbitReveal,
   retainedBoardShows,
+  retainedGhostsShow,
   RABBIT_REVEAL_MIN_VISIBLE_MS,
   type RetainedRabbitBoard,
 } from '../components/table/retainedRabbitBoard';
@@ -7391,6 +7393,13 @@ export default function TablePage({
     []
   );
   const showRetainedRabbitBoard = retainedBoardShows(retainedRabbitBoard, {
+    handNumber: tableState.handNumber ?? 0,
+    cardCount: tableState.communityCards.length,
+  });
+  /* DISPLAY AND MOVE ON (Dan 2026-09-07): a newer hand owns the board from
+     its first frame; only the reveal's ghost cards ride its empty preflop
+     slots, and only until its flop. See retainedGhostsShow. */
+  const showRetainedRabbitGhosts = retainedGhostsShow(retainedRabbitBoard, {
     handNumber: tableState.handNumber ?? 0,
     cardCount: tableState.communityCards.length,
   });
@@ -21623,10 +21632,13 @@ export default function TablePage({
                 completion hold; the button's entire visible life was
                 boardClearMs, half a second on a fold. Dan, 2026-09-05: "IT
                 CURRENTLY DOESN'T REALLY HAVE ENOUGH TIME TO CLICK AND USE."
-                The fix is HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS - 1750ms of
-                rest AFTER the board clear, so the time is given where this
+                The fix is HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS - a rest
+                AFTER the hand-free broadcast, so the time is given where this
                 gate is already open and where a snapshot freeze has no live
                 hand to starve. Nothing here had to become hand-unsafe.
+                (2026-09-07: the window is the whole two-second rest before
+                the next deal, NEXT_HAND_REST_MS, and the engine's next-hand
+                bookkeeping runs under it rather than after it.)
 
                 `body.ca-raising` (TablePage.css) hides everything in this
                 corner while the raise overlay is open - checked, and it cannot
@@ -22153,7 +22165,9 @@ export default function TablePage({
                            around it. See retainedBoardShows. */
                         cards={showRetainedRabbitBoard ? retainedCards : tableState.communityCards}
                         rabbitCards={
-                          showRetainedRabbitBoard ? retainedRabbitCards : liveRabbitCards
+                          showRetainedRabbitBoard || showRetainedRabbitGhosts
+                            ? retainedRabbitCards
+                            : liveRabbitCards
                         }
                         stage={
                           showRetainedRabbitBoard
@@ -24270,7 +24284,10 @@ export default function TablePage({
         <>
           <div className="menu-overlay" onClick={toggleSideMenu} />
           <nav className="side-menu">
-            <button className="menu-item" onClick={() => navigate('/cashier')}>
+            <button
+              className="menu-item"
+              onClick={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
+            >
               <span className="menu-item-icon">◉</span>
               <span className="menu-item-label">Cashier</span>
               <span className="menu-item-arrow">›</span>
@@ -24394,7 +24411,7 @@ export default function TablePage({
               className="menu-item"
               onClick={() => {
                 setIsSideMenuOpen(false);
-                navigate('/vip');
+                navigate(withClubContext('/vip', lobbyClubIdRef.current));
               }}
             >
               <span className="menu-item-icon">★</span>
@@ -24732,7 +24749,7 @@ export default function TablePage({
         waitListPlayers={waitListPlayers}
         onCloseWaitList={() => setShowWaitList(false)}
         onWaitListError={(m) => toast?.error?.(m)}
-        onTopUpAccount={() => navigate('/cashier')}
+        onTopUpAccount={() => navigate(withClubContext('/cashier', lobbyClubIdRef.current))}
         // Insurance
         showInsurance={showInsurance}
         insuranceOffer={insuranceOffer}

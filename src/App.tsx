@@ -57,6 +57,13 @@ import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
 import ClubMemberGuard from './components/auth/ClubMemberGuard';
 import GameCreationGuard from './components/auth/GameCreationGuard';
 import TOSGuard from './components/legal/TOSGuard';
+/* THE APP ONLY (store readiness, phase 3). Both load through a dynamic import
+   behind the compile-time constant, so the web bundle carries neither the age
+   gate, the consent sheet nor their stylesheets. They render as OVERLAYS
+   beside the app (not wrappers around it) so the route tree below keeps its
+   shape: a wrapper here re-indents 1,500 lines and every text pin on them. */
+const AgeGate = lazyWithRetry(() => import('./components/legal/AgeGate'));
+const ConsentPrompt = lazyWithRetry(() => import('./components/legal/ConsentPrompt'));
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Pages (lazy loaded for performance)
@@ -538,6 +545,12 @@ function FullApp() {
         )}
 
         <TOSGuard>
+          {IS_NATIVE_BUILD && (
+            <Suspense fallback={null}>
+              <AgeGate />
+              <ConsentPrompt />
+            </Suspense>
+          )}
           <GlobalWaitlistListener />
           <WaitlistBanner />
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false.

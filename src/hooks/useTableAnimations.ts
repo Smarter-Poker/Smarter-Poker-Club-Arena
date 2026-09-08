@@ -21,9 +21,9 @@ export interface UseTableAnimationsReturn {
   throwTargetSeat: number | null;
   setThrowTargetSeat: React.Dispatch<React.SetStateAction<number | null>>;
   activeThrows: ThrowEvent[];
-  handleThrowableSelect: (throwable: Throwable) => void;
+  handleThrowableSelect: (throwable: Throwable, requestId?: string) => void;
   handleThrowComplete: (eventId: string) => void;
-  receiveThrow: (fromSeat: number, toSeat: number, throwableId: string) => void;
+  receiveThrow: (fromSeat: number, toSeat: number, throwableId: string, eventId?: string) => void;
   // Chip animations
   chipAnimations: ChipAnimationEvent[];
   setChipAnimations: React.Dispatch<React.SetStateAction<ChipAnimationEvent[]>>;
@@ -57,7 +57,7 @@ export function useTableAnimations(
   const [showConfetti, setShowConfetti] = useState(false);
 
   const handleThrowableSelect = useCallback(
-    async (throwable: Throwable) => {
+    async (throwable: Throwable, requestId?: string) => {
       if (!tableId || !userId || throwTargetSeat === null) return;
 
       // The selector has already consumed inventory through the server RPC,
@@ -65,7 +65,12 @@ export function useTableAnimations(
       // here measures response arrival, not charge time: variable latency
       // could discard an already-paid throw. Every approved selection plays.
 
-      const event = throwableService.createThrowEvent(heroSeat, throwTargetSeat, throwable.id);
+      const event = throwableService.createThrowEvent(
+        heroSeat,
+        throwTargetSeat,
+        throwable.id,
+        requestId
+      );
 
       if (event) {
         setActiveThrows((prev) => [...prev, event]);
@@ -73,7 +78,12 @@ export function useTableAnimations(
         // launch whoosh at flight start and the item-specific SFX exactly on
         // landing (both sender and receivers). Playing the old generic thud
         // here fired at SEND time, before anything had hit.
-        roomService.sendChat(tableId, userId, `[THROW:${throwable.id}:${throwTargetSeat}]`);
+        roomService.sendChat(
+          tableId,
+          userId,
+          `[THROW:${throwable.id}:${throwTargetSeat}]`,
+          event.id
+        );
       }
 
       setShowThrowableSelector(false);
@@ -87,12 +97,15 @@ export function useTableAnimations(
    * parses the `[THROW:id:seat]` broadcast. Without this the receiving client
    * dropped the message and showed nothing.
    */
-  const receiveThrow = useCallback((fromSeat: number, toSeat: number, throwableId: string) => {
-    const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId);
-    if (!event) return;
-    setActiveThrows((prev) => (prev.length >= 12 ? prev : [...prev, event]));
-    // Audio handled by ThrowAnimation (launch + per-item impact), see above.
-  }, []);
+  const receiveThrow = useCallback(
+    (fromSeat: number, toSeat: number, throwableId: string, eventId?: string) => {
+      const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId, eventId);
+      if (!event) return;
+      setActiveThrows((prev) => (prev.length >= 12 ? prev : [...prev, event]));
+      // Audio handled by ThrowAnimation (launch + per-item impact), see above.
+    },
+    []
+  );
 
   const handleThrowComplete = useCallback((eventId: string) => {
     setActiveThrows((prev) => prev.filter((e) => e.id !== eventId));

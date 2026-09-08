@@ -490,9 +490,13 @@ export default function UnionDashboardPage() {
     let loadedAgents: UnionAgent[] = [];
     const clubIds = enrichedClubs.map((c) => c.id).filter(Boolean);
     if (clubIds.length > 0) {
+      /* Named columns, not `*`. club_members is moving to column-level grants
+         (is_bot mirrors profiles.is_horse and must not reach a player), and
+         PostgREST expands `*` to every column, withheld ones included - which
+         fails the whole read with 42501. This page uses exactly these. */
       const { data: agentRows } = await supabase
         .from('club_members')
-        .select('*')
+        .select('user_id, club_id, role, status, commission_rate')
         .in('club_id', clubIds)
         .in('role', ['agent', 'sub_agent', 'super_agent']);
 

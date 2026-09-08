@@ -12,6 +12,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { serverNow } from '../../utils/serverClock';
+import { supabase } from '../../lib/supabase';
+import { reportError } from '../../utils/errorReporter';
 import './TournamentBreakScreen.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -68,14 +70,28 @@ export interface TournamentBreakScreenProps {
    */
   breakEndsAtMs?: number | null;
   tournamentName: string;
-  currentLevel: number;
+  /**
+   * THE SCREEN READS ITS OWN FACTS (final sweep 2026-09-08). TableModalsLayer
+   * used to hand this `currentLevel={0}`, `topPlayers={[]}`, `prizePool={0}`
+   * and no `myPlayer`, so every break announced "Coming Next: Level 1", a
+   * prize pool of 0, an empty leader board and no hero line - on every
+   * tournament, all the way to the final table. Given the tournament id the
+   * screen reads the level, the pool, the field and the top stacks from the
+   * same rows the HUD and the info panel read, once when it opens. Every prop
+   * below stays as an override for a caller that already knows better.
+   */
+  tournamentId?: string | null;
+  /** The hero, to mark their line in the leaders and fill "Your Status". */
+  heroUserId?: string | null;
+  /** 0-based array index, as `tournaments.current_level` is stored. */
+  currentLevel?: number;
   nextLevel: BlindLevel;
-  playersRemaining: number;
-  totalPlayers: number;
-  averageStack: number;
-  topPlayers: TournamentPlayer[];
+  playersRemaining?: number;
+  totalPlayers?: number;
+  averageStack?: number;
+  topPlayers?: TournamentPlayer[];
   myPlayer?: TournamentPlayer;
-  prizePool: number;
+  prizePool?: number;
   currency?: string;
   onDismiss?: () => void;
 }
@@ -110,18 +126,105 @@ export function TournamentBreakScreen({
   phase = 'counting_down',
   breakEndsAtMs = null,
   tournamentName,
-  currentLevel,
+  tournamentId = null,
+  heroUserId = null,
+  currentLevel: currentLevelProp,
   nextLevel,
-  playersRemaining,
-  totalPlayers,
-  averageStack,
-  topPlayers,
-  myPlayer,
-  prizePool,
+  playersRemaining: playersRemainingProp,
+  totalPlayers: totalPlayersProp,
+  averageStack: averageStackProp,
+  topPlayers: topPlayersProp,
+  myPlayer: myPlayerProp,
+  prizePool: prizePoolProp,
   currency = '',
   onDismiss,
 }: TournamentBreakScreenProps) {
   const [minimized, setMinimized] = useState(false);
+
+  /* What the rows say, read when the screen opens for a tournament. */
+  const [facts, setFacts] = useState<{
+    currentLevel: number;
+    prizePool: number;
+    playersRemaining: number;
+    totalPlayers: number;
+    averageStack: number;
+    topPlayers: TournamentPlayer[];
+    myPlayer?: TournamentPlayer;
+  } | null>(null);
+  useEffect(() => {
+    if (!isVisible || !tournamentId) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const [tRes, pRes] = await Promise.all([
+          supabase
+            .from('tournaments')
+            .select('current_level, prize_pool, current_players, max_players')
+            .eq('id', tournamentId)
+            .maybeSingle(),
+          supabase
+            .from('tournament_players')
+            .select('user_id, username, chips, status')
+            .eq('tournament_id', tournamentId)
+            .in('status', ['playing', 'registered'])
+            .limit(500),
+        ]);
+        if (!mounted) return;
+        if (tRes.error || pRes.error) {
+          reportError(tRes.error ?? pRes.error, 'TournamentBreakScreen.load', { tournamentId });
+          return;
+        }
+        const t = (tRes.data ?? {}) as {
+          current_level?: number | null;
+          prize_pool?: number | string | null;
+          current_players?: number | null;
+          max_players?: number | null;
+        };
+        const active = (
+          (pRes.data ?? []) as Array<{
+            user_id?: string;
+            username?: string | null;
+            chips?: number | null;
+          }>
+        ).map((r) => ({
+          playerId: String(r.user_id ?? ''),
+          playerName: String(r.username ?? 'Player'),
+          stack: Number(r.chips) || 0,
+        }));
+        const sorted = [...active].sort((a, b) => b.stack - a.stack);
+        /* Rank = 1 + players with strictly more chips; ties share the better
+           rank, as every tournament lobby counts it. */
+        const ranked: TournamentPlayer[] = sorted.map((r) => ({
+          ...r,
+          rank: 1 + sorted.filter((o) => o.stack > r.stack).length,
+          isCurrentUser: !!heroUserId && r.playerId === heroUserId,
+        }));
+        const totalChips = active.reduce((sum, r) => sum + r.stack, 0);
+        setFacts({
+          currentLevel: Math.max(0, Number(t.current_level) || 0),
+          prizePool: Number(t.prize_pool) || 0,
+          playersRemaining: active.length,
+          totalPlayers: Math.max(Number(t.current_players) || 0, active.length),
+          averageStack: active.length ? Math.trunc(totalChips / active.length) : 0,
+          topPlayers: ranked.slice(0, 5),
+          myPlayer: ranked.find((r) => r.isCurrentUser),
+        });
+      } catch (err) {
+        if (mounted) reportError(err, 'TournamentBreakScreen.load', { tournamentId });
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [isVisible, tournamentId, heroUserId]);
+
+  const currentLevel = currentLevelProp ?? facts?.currentLevel ?? 0;
+  const playersRemaining = playersRemainingProp ?? facts?.playersRemaining ?? 0;
+  const totalPlayers = totalPlayersProp ?? facts?.totalPlayers ?? playersRemaining;
+  const averageStack = averageStackProp ?? facts?.averageStack ?? 0;
+  const topPlayers = topPlayersProp ?? facts?.topPlayers ?? [];
+  const myPlayer = myPlayerProp ?? facts?.myPlayer;
+  const prizePool = prizePoolProp ?? facts?.prizePool ?? 0;
   const countingDown = phase === 'counting_down';
   const [displayTime, setDisplayTime] = useState(() =>
     breakEndsAtMs

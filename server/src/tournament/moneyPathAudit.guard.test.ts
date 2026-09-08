@@ -92,32 +92,78 @@ describe('no money path writes a ledger row it did not earn', () => {
    * row only when the credit actually landed.
    */
   const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
-  const cutoverFile = fs
-    .readdirSync(MIGRATIONS)
-    .filter((name) => name.endsWith('_tournament_manager_request_fencing_is_strict.sql'))
-    .sort()
-    .at(-1);
-  if (!cutoverFile) throw new Error('strict Stage-B tournament cutover migration is missing');
-  const CUTOVER = sql(fs.readFileSync(path.join(MIGRATIONS, cutoverFile), 'utf8'));
+  /**
+   * A migration REDEFINES the reconciler only when it carries a CREATE OR
+   * REPLACE for it. A GRANT or REVOKE names the function too
+   * (20260902203500_db_payers_state_their_grants.sql states who may call it
+   * and defines nothing), and a grants-only file sorted last made this guard
+   * read an empty body and report that exact-cent pricing had been dropped.
+   * The question is "what does production RUN", so only definitions count.
+   */
+  const REDEFINES =
+    /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_tournament_payout_reconcile\s*\(/i;
 
-  it('the deferred reconciler is dropped, not retained as a detector', () => {
-    const drop =
-      'DROP FUNCTION IF EXISTS public.fn_tournament_payout_reconcile(uuid, boolean) RESTRICT;';
-    expect(CUTOVER).toContain(drop);
-    expect(CUTOVER.indexOf(drop)).toBeLessThan(CUTOVER.lastIndexOf('COMMIT;'));
-    expect(CUTOVER).not.toMatch(
-      /CREATE OR REPLACE (?:FUNCTION|PROCEDURE) public\.(?:fn_tournament_payout_reconcile|fn_pay_backed_payout_shortfalls|fn_ca_backpay_guarantee_shortfalls|fn_tournament_payout_sweep|sp_ca_reconcile_backpaid_events|fn_backpay_hu_winner_shortfalls)\s*\(/
+  it('the reconciler credits through fn_credit_and_log', () => {
+    const files = fs
+      .readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+    // The LAST migration that redefines the reconciler is what production runs.
+    const owning = files.filter((f) =>
+      REDEFINES.test(sql(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
     );
-    expect(CUTOVER).toMatch(
-      /p\.proname IN \([\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?deferred tournament payout reconciliation routine remains installed/
+    expect(owning.length, 'no migration defines the reconciler').toBeGreaterThan(0);
+
+    const latest = sql(fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8'));
+    // The original reconciler now delegates to the obligation writer. Verify
+    // both executable calls so a money_path label or comment cannot pass.
+    expect(latest).toMatch(/v_settle\s*:=\s*public\.fn_settle_tournament_obligation\s*\(/i);
+    const settlementDefinitions = files.filter((file) =>
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_settle_tournament_obligation\s*\(/i.test(
+        sql(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'))
+      )
     );
+    expect(settlementDefinitions.length, 'no obligation writer definition').toBeGreaterThan(1);
+    const rollingWrapper = sql(
+      fs.readFileSync(path.join(MIGRATIONS, settlementDefinitions.at(-1)!), 'utf8')
+    );
+    const coreDefinition = sql(
+      fs.readFileSync(path.join(MIGRATIONS, settlementDefinitions.at(-2)!), 'utf8')
+    );
+    expect(rollingWrapper).toMatch(
+      /RETURN public\.fn_settle_tournament_obligation_before_atomic_batch_gate\s*\(/
+    );
+    expect(coreDefinition).toMatch(/v_credited\s*:=\s*public\.fn_credit_and_log\s*\(/i);
+    for (const body of [latest, rollingWrapper, coreDefinition]) {
+      expect(body, 'bare credit can leave an unearned ledger row').not.toMatch(
+        /(?:PERFORM|SELECT)\s+(?:public\.)?credit_player_wallet\s*\(/i
+      );
+    }
   });
 
-  it('its registry and scheduler paths are removed in the same transaction', () => {
-    expect(CUTOVER).toMatch(
-      /DELETE FROM public\.ca_money_rpc_registry[\s\S]*?'fn_tournament_payout_reconcile'/
+  it('the last-written reconciler keeps the exact-cent pricing', () => {
+    /**
+     * Two migrations written on 2026-08-29 both redefined this function -- one
+     * added exact integer-cent pricing, the other added the prize stamp -- and
+     * the second sorted AFTER the first, so a replay would have silently
+     * reverted exactness. That is the regression this guard exists to catch:
+     * whoever redefines the reconciler next must carry every fix forward.
+     */
+    const files = fs
+      .readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+    const owning = files.filter((f) =>
+      REDEFINES.test(sql(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
     );
-    expect(CUTOVER).toMatch(/cron\.unschedule\(j\.jobid\)[\s\S]*?fn_tournament_payout_reconcile/);
+    const latest = sql(fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8'));
+
+    expect(latest, 'exact-cent pricing was dropped by a later redefinition').toMatch(
+      /v_pool_cents/
+    );
+    expect(latest, 'the prize stamp was dropped by a later redefinition').toMatch(
+      /SET prize = v_expected/
+    );
   });
 });
 

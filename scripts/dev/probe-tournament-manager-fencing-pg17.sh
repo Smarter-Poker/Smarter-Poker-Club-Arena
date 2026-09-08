@@ -16,18 +16,35 @@ migration_by_suffix() {
   printf '%s\n' "${matches[0]}"
 }
 
+optional_migration_by_suffix() {
+  local suffix="$1"
+  local matches=()
+  while IFS= read -r match; do
+    matches+=("$match")
+  done < <(find "$repo_dir/supabase/migrations" -maxdepth 1 -type f -name "*_${suffix}" -print)
+  if [[ "${#matches[@]}" -gt 1 ]]; then
+    echo "Expected at most one migration ending in ${suffix}; found ${#matches[@]}." >&2
+    return 1
+  fi
+  if [[ "${#matches[@]}" -eq 1 ]]; then
+    printf '%s\n' "${matches[0]}"
+  fi
+}
+
 tournament_lease_migration="$(migration_by_suffix tournament_leases_have_fencing_generations.sql)"
 launch_child_migration="$(migration_by_suffix tournament_launch_children_share_the_transition_lock.sql)"
 table_lease_migration="$(migration_by_suffix table_leases_and_hand_commits_have_generations.sql)"
 stage_a_request_migration="$(migration_by_suffix tournament_manager_requests_carry_lease_authority.sql)"
 seat_first_atomic_migration="$(migration_by_suffix seat_first_board_creation_is_one_transaction.sql)"
 post_commit_migration="$(migration_by_suffix post_commit_obligations_are_atomic_and_resumable.sql)"
-stage_b_migration="$(migration_by_suffix tournament_manager_request_fencing_is_strict.sql)"
+seat_first_retirement_migration="$(migration_by_suffix seat_first_inventory_is_created_atomically.sql)"
+stage_b_migration="$(optional_migration_by_suffix tournament_manager_request_fencing_is_strict.sql)"
 
 if [[ "$stage_a_request_migration" > "$seat_first_atomic_migration" ]] ||
   [[ "$seat_first_atomic_migration" > "$post_commit_migration" ]] ||
-  [[ "$post_commit_migration" > "$stage_b_migration" ]]; then
-  echo 'Migration order must be Stage A request authority, atomic seat-first creation, post-commit obligations, then Stage B.' >&2
+  [[ "$post_commit_migration" > "$seat_first_retirement_migration" ]] ||
+  [[ -n "$stage_b_migration" && "$seat_first_retirement_migration" > "$stage_b_migration" ]]; then
+  echo 'Migration order must be Stage A request authority, atomic seat-first creation, post-commit obligations, seat-first repair retirement, then Stage B.' >&2
   exit 1
 fi
 
@@ -111,6 +128,21 @@ if [[ "$("${psql_cmd[@]}" -Atc \
   "SELECT count(*) FROM public.tables WHERE id='20000000-0000-4000-8000-000000000004'")" != '0' ]]; then
   echo 'Rejected Stage-A browser table survived its failed transaction.' >&2
   exit 1
+fi
+
+"${psql_cmd[@]}" -f \
+  "$seat_first_retirement_migration" >/dev/null
+"${psql_cmd[@]}" -f \
+  "$seat_first_retirement_migration" >/dev/null
+if [[ "$("${psql_cmd[@]}" -Atc \
+  "SELECT to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NULL AND to_regprocedure('public.fn_repair_seat_first_games_before_maintenance_gate(integer)') IS NULL")" != 't' ]]; then
+  echo 'Stage A left a timer-driven seat-first repair function installed.' >&2
+  exit 1
+fi
+
+if [[ -z "$stage_b_migration" ]]; then
+  echo 'PostgreSQL 17 Stage-A authority, capacity and seat-first retirement probes passed.'
+  exit 0
 fi
 
 legacy_session_log="${probe_root}/legacy-capacity-session-a.log"

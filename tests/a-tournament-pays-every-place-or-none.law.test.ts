@@ -9,9 +9,9 @@
  * commit, one immutable exact-cent plan, one settlement subtransaction, a
  * post-read after every child payment, and a database gate on COMPLETED. It
  * also pins the negative space: browser roles cannot enter the money door,
- * satellites and final-table deals keep their own contracts, and the entire
- * deferred payout-reconciliation graph is removed rather than preserved as a
- * dormant detector, cron, registry entry or callable wrapper.
+ * satellites and final-table deals keep their own contracts. During rolling
+ * Stage A, old-engine database doors remain callable while every new-engine
+ * caller already uses the atomic contract.
  *
  * Registry: docs/laws.d/a-tournament-pays-every-place-or-none.md
  */
@@ -27,16 +27,11 @@ const migrationFiles = readdirSync(MIGRATIONS)
   .sort();
 const migration = migrationFiles.at(-1);
 const SQL = migration ? readFileSync(join(MIGRATIONS, migration), 'utf8') : '';
-const strictMigration = '20260908043500_tournament_manager_request_fencing_is_strict.sql';
-const STRICT_SQL = readFileSync(join(MIGRATIONS, strictMigration), 'utf8');
 
 /** Comments describe the old failure in detail; they cannot satisfy a pin. */
 const executableSql = SQL.replace(/^\s*--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-const strictExecutableSql = STRICT_SQL.replace(/^\s*--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 const sqlStatement = (anchor: string): string =>
   executableSql ? sliceSqlStatement(executableSql, anchor) : '';
-const strictSqlStatement = (anchor: string): string =>
-  strictExecutableSql ? sliceSqlStatement(strictExecutableSql, anchor) : '';
 
 const TABLE = sqlStatement('CREATE TABLE IF NOT EXISTS public.tournament_place_settlement_batches');
 const PREPARE = sqlStatement(
@@ -80,28 +75,10 @@ const REBUY_GATE = sqlStatement('CREATE OR REPLACE FUNCTION public.process_tourn
 const ROLLING_SINGLE_OBLIGATION = sqlStatement(
   'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_obligation('
 );
-const SINGLE_OBLIGATION = strictSqlStatement(
-  'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_obligation('
-);
-const SATELLITE_CASH_HELPER = sqlStatement(
-  'CREATE OR REPLACE FUNCTION public.fn_settle_satellite_cash_entitlement_exact('
-);
 const COMPLETED_INSERT_GUARD = sqlStatement(
   'CREATE OR REPLACE FUNCTION public.trg_refuse_normal_tournament_completed_insert()'
 );
 const STAGE_A_ASSERT = sliceDollarQuoted(executableSql, '$assert$');
-const STAGE_B_ASSERT = sliceDollarQuoted(
-  strictExecutableSql,
-  '$assert_strict_manager_request_fence$'
-);
-const RETIRED_RECONCILIATION_ROUTINES = [
-  'fn_tournament_payout_reconcile',
-  'fn_pay_backed_payout_shortfalls',
-  'fn_ca_backpay_guarantee_shortfalls',
-  'fn_tournament_payout_sweep',
-  'sp_ca_reconcile_backpaid_events',
-  'fn_backpay_hu_winner_shortfalls',
-] as const;
 
 const stripTsComments = (source: string): string =>
   source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -145,9 +122,6 @@ const RECOVERY = stripTsComments(
   readFileSync(join(ROOT, 'server/src/tournament/tournamentRecovery.ts'), 'utf8')
 );
 const RECOVER = sliceMethod(RECOVERY, 'export async function recoverStuckCompletingTournaments(');
-const RAKEBACK = stripTsComments(
-  readFileSync(join(ROOT, 'server/src/services/RakebackSettlerService.ts'), 'utf8')
-);
 const RECOGNIZED_PAYOUT_SOURCES = [
   'structure',
   'reconcile',
@@ -159,13 +133,11 @@ const RECOGNIZED_PAYOUT_SOURCES = [
 ];
 
 describe('a tournament pays every place or none', () => {
-  it('has exactly one reserved migration carrying the whole contract', () => {
+  it('has exactly one reserved Stage-A migration carrying the rolling contract', () => {
     expect(migrationFiles).toHaveLength(1);
     expect(migration).toBeTruthy();
     expect(executableSql.trimStart()).toMatch(/^BEGIN;/);
     expect(executableSql.trimEnd()).toMatch(/COMMIT;$/);
-    expect(strictExecutableSql.trimStart()).toMatch(/^BEGIN;/);
-    expect(strictExecutableSql.trimEnd()).toMatch(/COMMIT;$/);
   });
 
   it('keeps the old single-obligation finish path valid only during Stage A', () => {
@@ -177,9 +149,6 @@ describe('a tournament pays every place or none', () => {
     expect(executableSql).toMatch(
       /CREATE TRIGGER zzzz_tournaments_atomic_place_completion_guard[\s\S]*?ALTER TABLE public\.tournaments\s+DISABLE TRIGGER zzzz_tournaments_atomic_place_completion_guard/
     );
-    expect(strictExecutableSql).toMatch(
-      /ALTER TABLE public\.tournaments\s+ENABLE TRIGGER zzzz_tournaments_atomic_place_completion_guard/
-    );
     expect(STAGE_A_ASSERT).toMatch(
       /tgname = 'zzzz_tournaments_atomic_place_completion_guard'[\s\S]*?tgenabled = 'D'/
     );
@@ -188,12 +157,6 @@ describe('a tournament pays every place or none', () => {
     );
     expect(STAGE_A_ASSERT).toMatch(
       /fn_tournament_payout_reconcile\(uuid,boolean\)[\s\S]*?fn_pay_backed_payout_shortfalls\(boolean,integer\)[\s\S]*?fn_tournament_payout_sweep\(integer,boolean,integer\)[\s\S]*?fn_backpay_hu_winner_shortfalls\(integer\)[\s\S]*?Stage-A old-engine tournament payout RPC compatibility is incomplete/
-    );
-    expect(STAGE_B_ASSERT).toMatch(
-      /position\('atomic_batch_required' IN v_single_obligation_source\) = 0/
-    );
-    expect(STAGE_B_ASSERT).toMatch(
-      /tgname IN \([\s\S]*?'aaa_guard_atomic_satellite_completion'[\s\S]*?'aa_guard_tournament_completing_claim'[\s\S]*?'zzzz_tournaments_atomic_place_completion_guard'[\s\S]*?'zzzzz_tournaments_atomic_final_table_deal_completion_guard'[\s\S]*?'zzzzzz_tournaments_financial_certificate'[\s\S]*?'zzzz_tournament_pool_finalization_window_guard'[\s\S]*?'zzzz_freeze_finalized_tournament_prize_pool'[\s\S]*?tgenabled <> 'D'[\s\S]*?\) <> 7/
     );
   });
 
@@ -354,9 +317,6 @@ describe('a tournament pays every place or none', () => {
     );
     expect(executableSql).toMatch(
       /CREATE TRIGGER zzzz_freeze_finalized_tournament_prize_pool[\s\S]*?ALTER TABLE public\.tournaments\s+DISABLE TRIGGER zzzz_freeze_finalized_tournament_prize_pool/
-    );
-    expect(strictExecutableSql).toMatch(
-      /ALTER TABLE public\.tournaments\s+ENABLE TRIGGER zzzz_freeze_finalized_tournament_prize_pool/
     );
   });
 
@@ -577,9 +537,6 @@ describe('a tournament pays every place or none', () => {
     expect(executableSql).toMatch(
       /CREATE TRIGGER zzzz_tournament_pool_finalization_window_guard[\s\S]*?ALTER TABLE public\.tournaments\s+DISABLE TRIGGER zzzz_tournament_pool_finalization_window_guard/
     );
-    expect(strictExecutableSql).toMatch(
-      /ALTER TABLE public\.tournaments\s+ENABLE TRIGGER zzzz_tournament_pool_finalization_window_guard/
-    );
     expect(REBUY_GATE).toMatch(
       /v_addon_open := COALESCE\(v_t\.add_on_available, false\)[\s\S]*?COALESCE\(v_t\.addon_period_triggered, false\)[\s\S]*?IF p_rebuy_type = 'addon' THEN[\s\S]*?IF NOT v_addon_open THEN/
     );
@@ -700,9 +657,6 @@ describe('a tournament pays every place or none', () => {
     expect(executableSql).toMatch(
       /CREATE TRIGGER zzzz_tournaments_atomic_place_completion_guard[\s\S]*?BEFORE UPDATE ON public\.tournaments[\s\S]*?WHEN \(NEW\.status = 'COMPLETED' AND OLD\.status IS DISTINCT FROM 'COMPLETED'\)[\s\S]*?EXECUTE FUNCTION public\.trg_tournament_atomic_place_completion_guard\(\)/
     );
-    expect(strictExecutableSql).toMatch(
-      /ALTER TABLE public\.tournaments\s+ENABLE TRIGGER zzzz_tournaments_atomic_place_completion_guard/
-    );
     expect(GUARD).toMatch(/v_batch\.settled_at IS NULL/);
     expect(GUARD).toMatch(/v_open <> 0/);
     expect(GUARD).toMatch(/v_fingerprint <> v_batch\.plan_fingerprint/);
@@ -726,36 +680,7 @@ describe('a tournament pays every place or none', () => {
     );
   });
 
-  it('makes the public single-obligation payer incapable of structure settlement in every format', () => {
-    expect(SINGLE_OBLIGATION).toMatch(/v_atomic_kinds CONSTANT text\[\] := ARRAY\[/);
-    for (const kind of [
-      'place',
-      'late_reg_adjustment',
-      'bubble_protection',
-      'final_table_deal',
-      'satellite_remainder',
-      'seat',
-    ]) {
-      expect(SINGLE_OBLIGATION).toContain(`'${kind}'`);
-    }
-    expect(SINGLE_OBLIGATION).toMatch(
-      /OR NOT \(v_kind = ANY\(v_atomic_kinds\)\) THEN[\s\S]*?RETURN public\.fn_settle_tournament_obligation_before_atomic_batch_gate\(/
-    );
-    expect(SINGLE_OBLIGATION).not.toContain('v_is_satellite');
-    expect(SINGLE_OBLIGATION).not.toContain('FOR UPDATE');
-    expect(SINGLE_OBLIGATION).toContain("'refused_reason', 'atomic_batch_required'");
-    expect(SATELLITE_CASH_HELPER).toContain(
-      'fn_settle_tournament_obligation_before_atomic_batch_gate('
-    );
-    expect(SATELLITE_CASH_HELPER).not.toContain('public.fn_settle_tournament_obligation(');
-    expect(SETTLE).toContain('fn_settle_tournament_obligation_before_atomic_batch_gate(');
-    expect(SETTLE).not.toContain('public.fn_settle_tournament_obligation(');
-    expect(executableSql).toMatch(
-      /REVOKE ALL ON FUNCTION[\s\S]*?fn_settle_tournament_obligation_before_atomic_batch_gate\([\s\S]*?PUBLIC, anon, authenticated, service_role/
-    );
-  });
-
-  it('retires the applying Heads-Up single-place loop at both scheduler and database doors', () => {
+  it('retires the applying Heads-Up single-place loop from every engine caller', () => {
     expect(ENGINE_BASE).not.toContain('fn_backpay_hu_winner_shortfalls');
     const gameServer = stripTsComments(
       readFileSync(join(ROOT, 'server/src/GameServer.ts'), 'utf8')
@@ -764,9 +689,6 @@ describe('a tournament pays every place or none', () => {
     expect(gameServer).not.toContain('lastHuBackpayAt');
     expect(executableSql).not.toContain('$retire_applying_rpc_authority$');
     expect(executableSql).not.toMatch(
-      /DROP FUNCTION IF EXISTS public\.fn_backpay_hu_winner_shortfalls\(integer\) RESTRICT;/
-    );
-    expect(strictExecutableSql).toMatch(
       /DROP FUNCTION IF EXISTS public\.fn_backpay_hu_winner_shortfalls\(integer\) RESTRICT;/
     );
   });
@@ -896,54 +818,5 @@ describe('a tournament pays every place or none', () => {
       expect(path).not.toMatch(/fn_settle_tournament_obligation/);
       expect(path).not.toMatch(/settleTournamentObligation\(/);
     }
-  });
-
-  it('retires the applying cron and roster entry without creating a replacement worker', () => {
-    const retirement = sliceDollarQuoted(strictExecutableSql, '$retire_applying_sweep$');
-    expect(retirement).toMatch(/cron\.unschedule\(j\.jobid\)/);
-    expect(retirement).toMatch(/j\.jobname = 'ca-payout-sweep-hourly'/);
-    expect(strictExecutableSql).toMatch(
-      /to_regclass\('public\.ca_expected_cron_jobs'\) IS NOT NULL[\s\S]*?DELETE FROM public\.ca_expected_cron_jobs WHERE jobname = \$1[\s\S]*?USING 'ca-payout-sweep-hourly'/
-    );
-    expect(strictExecutableSql).not.toMatch(/cron\.schedule\s*\(/);
-    expect(RAKEBACK).not.toMatch(/runTournamentPayoutSweep|fn_tournament_payout_sweep/);
-  });
-
-  it('drops the complete deferred reconciliation graph and every dispatch route', () => {
-    for (const name of RETIRED_RECONCILIATION_ROUTINES) {
-      expect(strictExecutableSql).toContain(`'${name}'`);
-    }
-    expect(strictExecutableSql).not.toMatch(
-      /CREATE OR REPLACE (?:FUNCTION|PROCEDURE) public\.(?:fn_tournament_payout_reconcile|fn_pay_backed_payout_shortfalls|fn_ca_backpay_guarantee_shortfalls|fn_tournament_payout_sweep|sp_ca_reconcile_backpaid_events|fn_backpay_hu_winner_shortfalls)\s*\(/
-    );
-    expect(strictExecutableSql).toMatch(
-      /DROP PROCEDURE IF EXISTS public\.sp_ca_reconcile_backpaid_events\(boolean\) RESTRICT;/
-    );
-    for (const signature of [
-      'fn_tournament_payout_sweep\\(integer, boolean, integer\\)',
-      'fn_pay_backed_payout_shortfalls\\(boolean, integer\\)',
-      'fn_ca_backpay_guarantee_shortfalls\\(boolean, integer\\)',
-      'fn_backpay_hu_winner_shortfalls\\(integer\\)',
-      'fn_tournament_payout_reconcile\\(uuid, boolean\\)',
-    ]) {
-      expect(strictExecutableSql).toMatch(
-        new RegExp(`DROP FUNCTION IF EXISTS public\\.${signature} RESTRICT;`)
-      );
-    }
-    expect(strictExecutableSql).toMatch(
-      /DELETE FROM public\.ca_money_rpc_registry[\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'fn_backpay_hu_winner_shortfalls'/
-    );
-    expect(strictExecutableSql).toMatch(
-      /DELETE FROM public\.ca_settle_sources WHERE lower\(source\) = ANY\(\$1\)[\s\S]*?USING ARRAY\[[\s\S]*?'reconcile'[\s\S]*?'fn_backpay_hu_winner_shortfalls'/
-    );
-    expect(strictExecutableSql).toMatch(
-      /cron\.unschedule\(j\.jobid\)[\s\S]*?j\.command ~\* '\(fn_tournament_payout_sweep\|fn_tournament_payout_reconcile[\s\S]*?fn_backpay_hu_winner_shortfalls\)'/
-    );
-    expect(strictExecutableSql).toMatch(
-      /FROM pg_proc p[\s\S]*?p\.proname IN \([\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'fn_backpay_hu_winner_shortfalls'[\s\S]*?deferred tournament payout reconciliation routine remains installed/
-    );
-    expect(strictExecutableSql).toMatch(
-      /FROM public\.ca_money_rpc_registry[\s\S]*?a retired tournament payout reconciliation route remains registered/
-    );
   });
 });

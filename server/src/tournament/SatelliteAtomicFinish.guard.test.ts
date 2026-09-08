@@ -19,10 +19,6 @@ const PLACE_SQL = readFileSync(
   ),
   'utf8'
 );
-const STRICT_SQL = readFileSync(
-  join(root, 'supabase/migrations/20260908043500_tournament_manager_request_fencing_is_strict.sql'),
-  'utf8'
-);
 const MANAGER = readFileSync(join(here, 'TournamentManager.ts'), 'utf8');
 const ELIMINATIONS = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
 const MANIFEST = readFileSync(
@@ -116,20 +112,12 @@ describe('the atomic finalizer cannot certify partial money', () => {
 });
 
 describe('the engine and ACL expose only the atomic doors', () => {
-  it('contracts satellite cash to the private core before the public payer becomes strict', () => {
+  it('contracts satellite cash to the private core during rolling compatibility', () => {
     const cash = bodyFrom(PLACE_SQL, 'fn_settle_satellite_cash_entitlement_exact');
-    const strictPayer = bodyFrom(STRICT_SQL, 'fn_settle_tournament_obligation');
     expect(cash).toContain('fn_settle_tournament_obligation_before_atomic_batch_gate(');
     expect(cash).not.toContain('public.fn_settle_tournament_obligation(');
-    expect(strictPayer).toContain("'satellite_remainder'");
-    expect(strictPayer).toContain("'seat'");
-    expect(strictPayer).toContain('v_kind = ANY(v_atomic_kinds)');
-    expect(strictPayer).toContain("'refused_reason', 'atomic_batch_required'");
     expect(SQL).toMatch(
       /CREATE TRIGGER aaa_guard_atomic_satellite_completion[\s\S]*?ALTER TABLE public\.tournaments\s+DISABLE TRIGGER aaa_guard_atomic_satellite_completion/
-    );
-    expect(STRICT_SQL).toMatch(
-      /ALTER TABLE public\.tournaments\s+ENABLE TRIGGER aaa_guard_atomic_satellite_completion/
     );
   });
 

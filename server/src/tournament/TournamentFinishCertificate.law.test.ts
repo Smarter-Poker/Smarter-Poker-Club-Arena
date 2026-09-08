@@ -20,11 +20,6 @@ if (!migrationName) throw new Error('financial completion migration is missing')
 
 const SQL = readFileSync(join(migrations, migrationName), 'utf8');
 const CODE = SQL.replace(/^\s*--.*$/gm, '');
-const STRICT_SQL = readFileSync(
-  join(migrations, '20260908043500_tournament_manager_request_fencing_is_strict.sql'),
-  'utf8'
-);
-const STRICT_CODE = STRICT_SQL.replace(/^\s*--.*$/gm, '');
 const ELIMINATIONS = readFileSync(join(here, 'TournamentManagerEliminations.ts'), 'utf8');
 const RECOVERY = readFileSync(join(here, 'tournamentRecovery.ts'), 'utf8');
 
@@ -110,7 +105,7 @@ describe('the certificate proves every terminal obligation', () => {
 });
 
 describe('the only completion door is atomic, retryable and lock bounded', () => {
-  it('keeps both finish guards dormant for Stage A and activates both in Stage B', () => {
+  it('keeps both finish guards dormant during rolling Stage A compatibility', () => {
     for (const trigger of [
       'aa_guard_tournament_completing_claim',
       'zzzzzz_tournaments_financial_certificate',
@@ -120,18 +115,10 @@ describe('the only completion door is atomic, retryable and lock bounded', () =>
           `CREATE TRIGGER ${trigger}[\\s\\S]*?ALTER TABLE public\\.tournaments\\s+DISABLE TRIGGER ${trigger}`
         )
       );
-      expect(STRICT_CODE).toMatch(
-        new RegExp(`ALTER TABLE public\\.tournaments\\s+ENABLE TRIGGER ${trigger}`)
-      );
     }
     expect(CODE).toMatch(
       /tgname IN \([\s\S]*?'aa_guard_tournament_completing_claim'[\s\S]*?'zzzzzz_tournaments_financial_certificate'[\s\S]*?tgenabled = 'D'[\s\S]*?\) <> 2/
     );
-    expect(STRICT_CODE).toMatch(
-      /tgname IN \([\s\S]*?'aaa_guard_atomic_satellite_completion'[\s\S]*?'aa_guard_tournament_completing_claim'[\s\S]*?'zzzz_tournaments_atomic_place_completion_guard'[\s\S]*?'zzzzz_tournaments_atomic_final_table_deal_completion_guard'[\s\S]*?'zzzzzz_tournaments_financial_certificate'[\s\S]*?'zzzz_tournament_pool_finalization_window_guard'[\s\S]*?'zzzz_freeze_finalized_tournament_prize_pool'[\s\S]*?tgenabled <> 'D'[\s\S]*?\) <> 7/
-    );
-    expect(STRICT_CODE).toContain('DO $certificate_atomic_stage_b_window$');
-    expect(STRICT_CODE).toContain("'certificate_stage_b_backfill'");
   });
 
   it('keeps the certificate RPC read-only and accepts only the durable domain receipt', () => {

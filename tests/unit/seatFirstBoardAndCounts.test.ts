@@ -46,7 +46,7 @@ const sqlNamed = (needle: string) =>
 
 const seatFirstSql = sqlNamed('seat_first_games_that_can_never_be_joined');
 const atomicSeatFirstSql = sqlNamed('seat_first_board_creation_is_one_transaction');
-const strictStageBSql = sqlNamed('tournament_manager_request_fencing_is_strict');
+const seatFirstRetirementSql = sqlNamed('seat_first_inventory_is_created_atomically');
 const countsSql = sqlNamed('club_home_own_members_and_live_players');
 
 describe('a listing only counts if a player could sit at it', () => {
@@ -68,12 +68,12 @@ describe('a listing only counts if a player could sit at it', () => {
     expect(atomicSeatFirstSql).not.toContain(
       'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer)'
     );
-    expect(strictStageBSql).toContain('SELECT public.fn_repair_seat_first_games(1000)');
-    expect(strictStageBSql).toContain('unjoinable legacy listing remains');
-    expect(strictStageBSql).toContain(
-      'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer)'
+    expect(seatFirstRetirementSql).toContain('SELECT public.fn_repair_seat_first_games(1000)');
+    expect(seatFirstRetirementSql).toContain('unjoinable legacy listing remains');
+    expect(seatFirstRetirementSql).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer) RESTRICT'
     );
-    expect(strictStageBSql).toContain(
+    expect(seatFirstRetirementSql).toContain(
       'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games_before_maintenance_gate(integer)'
     );
     expect(service).not.toContain("supabase.rpc('fn_repair_seat_first_games'");

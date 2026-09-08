@@ -28,7 +28,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { HEADS_UP_SEATS, HEADS_UP_STACKS } from '../../src/config/headsUpSpec';
 
@@ -41,16 +41,6 @@ const recurringCode = stripComments(recurring);
 const scheduled = stripComments(read('server/src/services/ScheduledTournamentService.ts'));
 const settler = stripComments(read('server/src/services/RakebackSettlerService.ts'));
 const brain = stripComments(read('server/src/services/TournamentBrainContext.ts'));
-const atomicSettlementMigrationFile = readdirSync(resolve(__dirname, '../../supabase/migrations'))
-  .filter((name) => name.endsWith('_tournament_places_settle_and_complete_atomically.sql'))
-  .sort()
-  .at(-1);
-if (!atomicSettlementMigrationFile) {
-  throw new Error('atomic tournament place-settlement migration not found');
-}
-const atomicSettlementMigration = stripComments(
-  read(`supabase/migrations/${atomicSettlementMigrationFile}`)
-);
 
 describe('1. the Heads-Up board offers BOTH bands', () => {
   const shapes = recurringCode.slice(
@@ -214,14 +204,5 @@ describe('4. the applying payout sweep stays retired after the root fix', () => 
   it('keeps the read-only conservation detectors', () => {
     expect(settler).toContain('runTournamentSentinel');
     expect(settler).toContain('runTournamentChipConservation');
-  });
-
-  it('the cutover removes the applying cron and its expected-roster entry', () => {
-    expect(atomicSettlementMigration).toMatch(
-      /cron\.unschedule\(j\.jobid\)[\s\S]*j\.jobname = 'ca-payout-sweep-hourly'/
-    );
-    expect(atomicSettlementMigration).toMatch(
-      /DELETE FROM public\.ca_expected_cron_jobs[\s\S]*ca-payout-sweep-hourly/
-    );
   });
 });

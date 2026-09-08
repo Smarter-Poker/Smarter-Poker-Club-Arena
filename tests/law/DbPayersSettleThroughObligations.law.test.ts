@@ -11,9 +11,8 @@
  * its own idea of what was owed - which is how 5,330 chips were paid twice in
  * 36 hours (2.2, item 3).
  *
- * This law pins the migration that re-pointed them and the later atomic
- * cutover that removed the entire deferred reconciler graph. Active payer
- * bodies settle through fn_settle_tournament_obligation and none of them
+ * This law pins the migration that re-pointed them: every one of the six
+ * bodies settles through fn_settle_tournament_obligation and none of them
  * credits a wallet on its own. It also pins the one-line fix to the settle
  * function's key (it must start with 'tourney:<tournament_id>:' so the club
  * wallet resolver credits the club the player bought in from) and the R3
@@ -27,22 +26,18 @@ import fs from 'fs';
 import path from 'path';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
-const readLatestMigration = (suffix: string): string => {
-  const migrations = path.join(process.cwd(), 'supabase', 'migrations');
-  const file = fs
-    .readdirSync(migrations)
-    .filter((name) => name.endsWith(suffix))
-    .sort()
-    .at(-1);
-  if (!file) throw new Error(`migration ending in ${suffix} not found`);
-  return fs.readFileSync(path.join(migrations, file), 'utf8');
-};
 
 const PAYERS = read('supabase/migrations/20260902201000_db_payers_settle_through_obligations.sql');
 const R3 = read('supabase/migrations/20260902201500_r3_money_path_log_only.sql');
-const CUTOVER = readLatestMigration('_tournament_places_settle_and_complete_atomically.sql');
 
-const ACTIVE_DIRECT_PAYERS = ['fn_backpay_spin_unpaid_winners', 'fn_final_table_deal'] as const;
+const SIX = [
+  'fn_tournament_payout_reconcile',
+  'fn_pay_backed_payout_shortfalls',
+  'fn_ca_backpay_guarantee_shortfalls',
+  'fn_backpay_spin_unpaid_winners',
+  'fn_backpay_hu_winner_shortfalls',
+  'fn_final_table_deal',
+] as const;
 
 /** The body of one CREATE OR REPLACE FUNCTION in a migration file. */
 function bodyOf(sql: string, name: string): string {
@@ -52,58 +47,44 @@ function bodyOf(sql: string, name: string): string {
   return end < 0 ? sql.slice(start) : sql.slice(start, end);
 }
 
-/** The predicate the law enforces, so the negative control tests the SAME rule. */
+/** The predicate the law enforces, so the negative control tests the SAME rule.
+ *  A payer settles through the obligation ledger either by calling the settle
+ *  function itself or by handing distribution to the reconciler in apply mode
+ *  (the two guarantee sweeps), and in neither case may it credit a wallet. */
+const DELEGATES_TO_RECONCILER = /fn_tournament_payout_reconcile\([^)]*,\s*true\)/;
 function settlesThroughObligations(body: string): boolean {
   return (
-    body.includes('fn_settle_tournament_obligation(') &&
+    (body.includes('fn_settle_tournament_obligation(') || DELEGATES_TO_RECONCILER.test(body)) &&
     !body.includes('fn_credit_and_log(') &&
     !body.includes('credit_player_wallet(')
   );
 }
 
 describe('every DB-side tournament payer settles through fn_settle_tournament_obligation', () => {
-  it.each(ACTIVE_DIRECT_PAYERS)('%s is redefined by the Lane A3 migration', (name) => {
+  it.each(SIX)('%s is redefined by the Lane A3 migration', (name) => {
     expect(bodyOf(PAYERS, name).length).toBeGreaterThan(0);
   });
 
-  it.each(ACTIVE_DIRECT_PAYERS)(
+  it.each(SIX)(
     '%s calls the settle function and never fn_credit_and_log / credit_player_wallet',
     (name) => {
       expect(settlesThroughObligations(bodyOf(PAYERS, name))).toBe(true);
     }
   );
 
-  it('legacy guarantee wrappers are removed with the applying reconciler', () => {
+  it('the two guarantee sweeps distribute through the reconciler, which is the settle path', () => {
     for (const name of ['fn_pay_backed_payout_shortfalls', 'fn_ca_backpay_guarantee_shortfalls']) {
       expect(bodyOf(PAYERS, name)).toMatch(/fn_tournament_payout_reconcile\([^)]*,\s*true\)/);
     }
-    expect(CUTOVER).toMatch(
-      /DROP FUNCTION IF EXISTS public\.fn_pay_backed_payout_shortfalls\(boolean, integer\) RESTRICT;/
-    );
-    expect(CUTOVER).toMatch(
-      /DROP FUNCTION IF EXISTS public\.fn_ca_backpay_guarantee_shortfalls\(boolean, integer\) RESTRICT;/
-    );
-    expect(CUTOVER).toMatch(
-      /DROP FUNCTION IF EXISTS public\.fn_tournament_payout_reconcile\(uuid, boolean\) RESTRICT;/
-    );
-    expect(CUTOVER).not.toMatch(
-      /CREATE OR REPLACE (?:FUNCTION|PROCEDURE) public\.(?:fn_tournament_payout_reconcile|fn_pay_backed_payout_shortfalls|fn_ca_backpay_guarantee_shortfalls|fn_tournament_payout_sweep|sp_ca_reconcile_backpaid_events|fn_backpay_hu_winner_shortfalls)\s*\(/
-    );
   });
 
-  it('the cutover proves that no deferred reconciliation routine remains installed', () => {
-    expect(CUTOVER).toMatch(
-      /FROM pg_proc p[\s\S]*?p\.proname IN \([\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'fn_pay_backed_payout_shortfalls'[\s\S]*?'fn_backpay_hu_winner_shortfalls'[\s\S]*?deferred tournament payout reconciliation routine remains installed/
+  it('the reconciler settles a place with its FULL entitlement, source reconcile', () => {
+    const body = bodyOf(PAYERS, 'fn_tournament_payout_reconcile');
+    expect(body).toMatch(
+      /fn_settle_tournament_obligation\(\s*p_tournament_id, 'place', r\.place, v_holder, v_expected, 'reconcile'/
     );
-  });
-
-  it('retires the Heads-Up single-place backpay instead of looping on atomic refusals', () => {
-    expect(CUTOVER).toMatch(
-      /DROP FUNCTION IF EXISTS public\.fn_backpay_hu_winner_shortfalls\(integer\) RESTRICT;/
-    );
-    const gameServer = read('server/src/GameServer.ts');
-    expect(gameServer).not.toContain("'fn_backpay_hu_winner_shortfalls'");
-    expect(gameServer).not.toContain('lastHuBackpayAt');
+    // A wallet paid with no payout record is reported, never settled again.
+    expect(body).toContain("'paid_without_payout_record'");
   });
 
   it('the final-table deal is user-keyed and no longer writes tournament_payouts itself', () => {
@@ -124,8 +105,14 @@ describe('every DB-side tournament payer settles through fn_settle_tournament_ob
     expect(settlesThroughObligations(mutated)).toBe(false);
     const stripped = good.split('fn_settle_tournament_obligation(').join('fn_something_else(');
     expect(settlesThroughObligations(stripped)).toBe(false);
-    const legacySweep = bodyOf(PAYERS, 'fn_pay_backed_payout_shortfalls');
-    expect(settlesThroughObligations(legacySweep)).toBe(false);
+    // A sweep that only DRY-RUNS the reconciler and then pays on its own key.
+    const sweep = bodyOf(PAYERS, 'fn_pay_backed_payout_shortfalls');
+    expect(settlesThroughObligations(sweep)).toBe(true);
+    const dryOnly = sweep.replace(
+      /fn_tournament_payout_reconcile\(r\.id, true\)/g,
+      'fn_tournament_payout_reconcile(r.id, false)'
+    );
+    expect(settlesThroughObligations(dryOnly)).toBe(false);
   });
 });
 
@@ -139,7 +126,7 @@ describe('the settle key names the tournament so the wallet resolver picks the r
     expect(body).not.toContain("v_key := 'obl:' ||");
   });
 
-  it('the historical reconciler counted settle-path rows before the cutover removed it', () => {
+  it('the reconciler counts settle-path rows as prize-pool money whatever their source label', () => {
     expect(bodyOf(PAYERS, 'fn_tournament_payout_reconcile')).toContain(
       "tpo.idempotency_key LIKE 'tourney:%:obl:%'"
     );

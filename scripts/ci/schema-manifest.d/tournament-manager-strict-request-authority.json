@@ -1,5 +1,0 @@
-{
-  "_owner": "fix/live-table-realtime-continuity",
-  "_comment": "Estate-safe Stage-B authority: ordinary shared-project service traffic remains valid, exact engine-private RPCs require an identified actor, manager writes consume one fresh generation proof, legacy tournament/table authority doors plus the 9- and 11-argument settlement overloads are removed, and only the obligations-aware 12-argument settlement remains. Deployment is intentionally deferred until the exact Stage-A engine is the sole live process.",
-  "functions": ["fn_assert_tournament_manager_write_scope", "trg_tournament_manager_write_scope"]
-}

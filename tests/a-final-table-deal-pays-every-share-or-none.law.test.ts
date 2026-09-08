@@ -21,10 +21,6 @@ const migrationFiles = readdirSync(MIGRATIONS)
 const migration = migrationFiles.at(-1);
 const SQL = migration ? readFileSync(join(MIGRATIONS, migration), 'utf8') : '';
 const executableSql = SQL.replace(/^\s*--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-const strictSql = readFileSync(
-  join(MIGRATIONS, '20260908043500_tournament_manager_request_fencing_is_strict.sql'),
-  'utf8'
-);
 const sqlStatement = (anchor: string): string =>
   executableSql ? sliceSqlStatement(executableSql, anchor) : '';
 
@@ -315,7 +311,7 @@ describe('a final-table deal pays every share or none', () => {
     );
   });
 
-  it('freezes the deal lines and refuses a legacy or incomplete terminal transition', () => {
+  it('freezes the deal lines and installs the terminal guard dormant for rolling compatibility', () => {
     expect(executableSql).toMatch(
       /REVOKE ALL ON public\.tournament_obligations FROM service_role[\s\S]*?GRANT SELECT ON public\.tournament_obligations TO service_role/
     );
@@ -366,15 +362,6 @@ describe('a final-table deal pays every share or none', () => {
     );
     expect(executableSql).toMatch(
       /CREATE TRIGGER zzzzz_tournaments_atomic_final_table_deal_completion_guard[\s\S]*?ALTER TABLE public\.tournaments\s+DISABLE TRIGGER zzzzz_tournaments_atomic_final_table_deal_completion_guard/
-    );
-    expect(strictSql).toMatch(
-      /ALTER TABLE public\.tournaments\s+ENABLE TRIGGER zzzzz_tournaments_atomic_final_table_deal_completion_guard/
-    );
-    expect(strictSql).toMatch(
-      /LOCK TABLE public\.tournaments IN SHARE ROW EXCLUSIVE MODE;[\s\S]*?LOCK TABLE public\.tournament_obligations IN SHARE ROW EXCLUSIVE MODE;[\s\S]*?LOCK TABLE public\.tournament_payouts IN SHARE ROW EXCLUSIVE MODE;[\s\S]*?LOCK TABLE public\.tournament_final_table_deal_batches IN SHARE ROW EXCLUSIVE MODE;[\s\S]*?LOCK TABLE public\.tournament_final_table_deal_receipts IN SHARE ROW EXCLUSIVE MODE;[\s\S]*?DO \$refuse_inflight_legacy_final_table_deal\$[\s\S]*?status, ''\)\) IN \('RUNNING', 'COMPLETING'\)[\s\S]*?tournament_final_table_deal_batches[\s\S]*?tournament_final_table_deal_receipts[\s\S]*?o\.kind = 'final_table_deal'[\s\S]*?p\.source = 'final_table_deal'[\s\S]*?batch or payment evidence that cannot replay/
-    );
-    expect(strictSql.indexOf('$refuse_inflight_legacy_final_table_deal$')).toBeLessThan(
-      strictSql.indexOf('ENABLE TRIGGER zzzzz_tournaments_atomic_final_table_deal_completion_guard')
     );
     expect(GUARD).toMatch(/o\.kind = 'final_table_deal'/);
     expect(GUARD).toMatch(/p\.source = 'final_table_deal'/);

@@ -1,0 +1,13 @@
+{
+  "commit": "28e81ca4e496aacc7792a97390e460f8ce269733",
+  "fullClientFiles": 1188,
+  "fullClientTests": 16346,
+  "suiteScope": "Before clean merge of origin/main; full TypeScript and production build passed after merge",
+  "typescript": "passed",
+  "productionBuild": "passed; behind-main=0; clean",
+  "thumbnailFiles": 141,
+  "thumbnailHashesAndBuiltBytesMatch": true,
+  "atlasFiles": 39,
+  "builtAtlasBytesMatch": true,
+  "published": false
+}

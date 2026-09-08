@@ -52,6 +52,7 @@ import type { ThrowableSpec } from '../spec';
 import { RIG_VIEWBOX, type RigProps, type ThrowableRig } from '../rig';
 import { preloadThrowableCues } from '../cues';
 import './trash_can.css';
+import { AtlasSprite } from '../AtlasSprite';
 
 export const trashCanSpec: ThrowableSpec = {
   id: 'trash_can',
@@ -90,273 +91,60 @@ export const trashCanSpec: ThrowableSpec = {
 
 preloadThrowableCues(trashCanSpec.audio.map((c) => c.sample));
 
-const CAN_LIGHT = '#c3c9cf';
-const CAN_MID = '#9198a1';
-const CAN_DARK = '#5f6570';
-const LID_MID = '#a6adb5';
-const RECYCLE_GREEN_DARK = '#2f6f38';
-const CARD_WHITE = '#fbfbf8';
-const CARD_EDGE = '#cfcfc9';
-const HEART_RED = '#c11d1d';
-const SPADE_BLACK = '#232326';
-const BUBBLE_WHITE = '#fdfdfb';
-const BUBBLE_EDGE = '#c6c6c2';
-const GRAWLIX_BLACK = '#2b2b2b';
-const FLY_DARK = '#39352c';
-
-/**
- * The recycling triangle: three curved arrows, drawn small and flat so it
- * reads as a badge rather than three separate glyphs.
- */
-function RecycleMark({ fill }: { fill: string }) {
+/** Body and lid are independent parts; the lid remains inside the returning can. */
+function CanBody() {
   return (
-    <g fill="none" stroke={fill} strokeWidth="1.6" strokeLinecap="round">
-      <path d="M -6 6 L 0 -6 L 6 6" />
-      <path d="M -3 0 L -6 6 L -1 6" />
-      <path d="M 3 0 L 6 6 L 1 6" />
-    </g>
-  );
-}
-
-/**
- * The can BODY, drawn around (0,0): a tapered cylinder 84 units wide at the
- * rim and 96 tall (the measured 22x26 px on a 30 px avatar), no lid. The rim
- * is a dark ellipse so an open top reads as open even before the lid moves.
- */
-function CanBody({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-trash_can-${n}-${uid}-${k}`;
-  return (
-    <g>
-      <defs>
-        <linearGradient id={g('body')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={CAN_DARK} />
-          <stop offset="18%" stopColor={CAN_LIGHT} />
-          <stop offset="30%" stopColor="#e5eaef" />
-          <stop offset="45%" stopColor={CAN_MID} />
-          <stop offset="77%" stopColor="#737d8c" />
-          <stop offset="90%" stopColor="#b9c4ce" />
-          <stop offset="100%" stopColor={CAN_DARK} />
-        </linearGradient>
-      </defs>
-      <path
-        d="M -36 -40 L 36 -40 L 30 44 Q 0 52 -30 44 Z"
-        fill={`url(#${g('body')})`}
-        stroke={CAN_DARK}
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-      {/* three vertical ribs */}
-      <path
-        d="M -32 -30 L -27 39 Q 0 46 27 39 L 32 -30"
-        fill="none"
-        stroke="#eaf2f7"
-        strokeWidth="0.8"
-        opacity="0.8"
-      />
-      <path d="M -29 43 Q 0 50 29 43" fill="none" stroke="#303a49" strokeWidth="1.6" />
-      <path
-        d="M -15 -34 L -13 38 M 1 -35 L 1 40 M 17 -34 L 15 38"
-        stroke="#e5edf2"
-        strokeWidth="0.9"
-        opacity="0.75"
-      />
-      <path
-        d="M -33 -27 l 2 0 M 30 -27 l 2 0 M -28 35 l 2 0 M 26 35 l 2 0"
-        stroke="#46505e"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-      />
-      <path d="M -16 -36 L -14 40" stroke={CAN_DARK} strokeWidth="1.4" opacity="0.35" />
-      <path d="M 0 -37 L 0 43" stroke={CAN_DARK} strokeWidth="1.4" opacity="0.35" />
-      <path d="M 16 -36 L 14 40" stroke={CAN_DARK} strokeWidth="1.4" opacity="0.35" />
-      <g transform="translate(0 4)">
-        <RecycleMark fill={RECYCLE_GREEN_DARK} />
-      </g>
-      {/* the open rim, dark, so a missing lid reads immediately */}
-      <ellipse cx="0" cy="-40" rx="36" ry="7" fill="#2c2f34" />
-      <ellipse cx="0" cy="-40" rx="35" ry="6" fill="none" stroke="#d2dce5" strokeWidth="1.2" />
-    </g>
-  );
-}
-
-/** The can, whole, lid on: used for the projectile and for the one landed
- *  frame that vanishes whole (it never opens). */
-function CanClosed({ uid, k }: { uid: string; k: string }) {
-  return (
-    <g>
-      <CanBody uid={uid} k={k} />
-      <Lid uid={uid} k={k} />
-    </g>
-  );
-}
-
-/** The lid alone, drawn to sit at the SAME place CanClosed's lid sits (rim
- *  (0,-40)), so the payload can swap a static can for a body+lid pair without
- *  a visible jump. */
-function Lid({ uid, k }: { uid: string; k: string }) {
-  const g = (n: string) => `thr-trash_can-${n}-${uid}-${k}`;
-  return (
-    <g>
-      <defs>
-        <linearGradient id={g('lid2')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={CAN_DARK} />
-          <stop offset="25%" stopColor="#e4ebf0" />
-          <stop offset="60%" stopColor={LID_MID} />
-          <stop offset="100%" stopColor={CAN_MID} />
-        </linearGradient>
-      </defs>
-      <ellipse
-        cx="0"
-        cy="-40"
-        rx="38"
-        ry="8"
-        fill={`url(#${g('lid2')})`}
-        stroke={CAN_DARK}
-        strokeWidth="1.6"
-      />
-      <ellipse cx="0" cy="-40" rx="32" ry="5.5" fill="none" stroke="#e1e9ee" strokeWidth="0.8" />
-      <path
-        d="M -7 -43 L -7 -48 Q 0 -54 7 -48 L 7 -43"
-        fill="none"
-        stroke="#404956"
-        strokeWidth="3.5"
-        strokeLinecap="round"
-      />
-      <path d="M -6 -48 Q 0 -52 6 -48" fill="none" stroke="#dae3eb" strokeWidth="1.1" />
-    </g>
-  );
-}
-
-/** A stencil "2", built as one open stroke path so it never risks being read
- *  as a DOM text node: top bar, upper-right vertical, middle bar, lower-left
- *  vertical, bottom bar. */
-function Digit2({ color }: { color: string }) {
-  return (
-    <path
-      d="M -6 -12 L 6 -12 L 6 0 L -6 0 L -6 12 L 6 12"
-      fill="none"
-      stroke={color}
-      strokeWidth="3.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <AtlasSprite
+      src="trash_can"
+      rect={[0, 90, 470, 550]}
+      clipPath="polygon(0 0,100% 0,100% 40%,88% 40%,88% 100%,0 100%)"
+      x={-42}
+      y={-49}
+      width={84}
+      height={98}
     />
   );
 }
-
-/** A stencil "7": top bar, full right vertical. */
-function Digit7({ color }: { color: string }) {
+function Lid() {
   return (
-    <path
-      d="M -6 -12 L 6 -12 L 6 12"
-      fill="none"
-      stroke={color}
-      strokeWidth="3.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <AtlasSprite
+      src="trash_can"
+      rect={[415, 290, 470, 290]}
+      clipPath="polygon(12% 0,100% 0,100% 100%,0 100%,0 20%,12% 20%)"
+      x={-40}
+      y={-65}
+      width={80}
+      height={49}
     />
   );
 }
-
-const HEART_PATH =
-  'M 0 3.4 C -5 -1.6 -9 -4.6 -5 -7.8 C -2 -10 0 -8 0 -6 C 0 -8 2 -10 5 -7.8 C 9 -4.6 5 -1.6 0 3.4 Z';
-const SPADE_PATH =
-  'M 0 -8 C 4.2 -3 9 -1 6 4 C 4 7 1 5.6 0.6 3 C 0.9 6 2 8 3.4 9 L -3.4 9 C -2 8 -0.9 6 -0.6 3 C -1 5.6 -4 7 -6 4 C -9 -1 -4.2 -3 0 -8 Z';
-
-/**
- * A playing card, 46 wide x 64 tall (the measured 14x20 px), drawn around
- * (0,0). Rank is shown by a big stencil digit plus a big pip below it AND a
- * small corner index (digit + pip) top-left and its mirror bottom-right - a
- * card reads by pip shape/colour, never by a DOM text glyph.
- */
-function PlayingCard({
-  digit,
-  pip,
-  color,
-}: {
-  digit: 'two' | 'seven';
-  pip: string;
-  color: string;
-}) {
-  const Digit = digit === 'two' ? Digit2 : Digit7;
+function CanClosed() {
   return (
     <g>
-      <rect
-        x={-23}
-        y={-32}
-        width={46}
-        height={64}
-        rx={4}
-        fill={CARD_WHITE}
-        stroke={CARD_EDGE}
-        strokeWidth="1.6"
-      />
-      {/* corner index, top-left */}
-      <g transform="translate(-15 -22) scale(0.42)">
-        <Digit color={color} />
-      </g>
-      <g transform="translate(-15 -12) scale(0.55)">
-        <path d={pip} fill={color} />
-      </g>
-      {/* the big centre pip and rank, the joke's own punchline */}
-      <g transform="translate(0 8)">
-        <path d={pip} fill={color} transform="scale(1.9) translate(0 -4)" opacity="0.9" />
-      </g>
-      <g transform="translate(0 -10) scale(0.85)">
-        <Digit color={color} />
-      </g>
-      {/* corner index, bottom-right, rotated to match a real card */}
-      <g transform="translate(15 22) rotate(180) scale(0.42)">
-        <Digit color={color} />
-      </g>
-      <g transform="translate(15 12) rotate(180) scale(0.55)">
-        <path d={pip} fill={color} />
-      </g>
+      <CanBody />
+      <Lid />
     </g>
   );
 }
-
-/** A grawlix mark: a star, a coil and a jagged bolt, NEVER letters (Dan's own
- *  "em bars" ruling is about punctuation in copy; this is a step further -
- *  the build sheet is explicit the bubble carries symbols, not words). */
-function Grawlix() {
+function PlayingCard({ digit }: { digit: 'two' | 'seven' }) {
+  const rect = digit === 'two' ? ([880, 105, 345, 530] as const) : ([40, 655, 350, 515] as const);
+  // Upright source cards let the animation own their orientation.
   return (
-    <g
-      fill="none"
-      stroke={GRAWLIX_BLACK}
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {/* a five-point starburst */}
-      <path
-        d="M -13 -3 L -11.5 -7 L -9.5 -3.3 L -6 -5.5 L -8 -1.8 L -4.5 -0.5 L -8.5 0.3 L -7 4 L -10.5 1.5 L -12.5 5 L -13 1 L -17 1.5 L -13.8 -1 Z"
-        fill={GRAWLIX_BLACK}
-        stroke="none"
-      />
-      {/* a coil */}
-      <path d="M -1 4 C -5 4 -5 -2 -1 -2 C 3 -2 3 2.5 0 2.5 C -2 2.5 -2 0.5 0 0.5" />
-      {/* a jagged bolt */}
-      <path d="M 6 -6 L 3 0 L 6.5 0.5 L 3.5 6" />
+    <g>
+      <AtlasSprite src="trash_can" rect={rect} x={-26} y={-36} width={52} height={72} />
     </g>
   );
 }
-
-/** The speech bubble: a rounded body 34 units wide (the measured ~10 px) with
- *  a small tail pointing down-left toward the can. */
 function Bubble() {
   return (
-    <g>
-      <path
-        d="M -17 -14 Q -17 -22 -9 -22 L 9 -22 Q 17 -22 17 -14 Q 17 -6 9 -6 L -3 -6 L -10 1 L -8 -6 L -9 -6 Q -17 -6 -17 -14 Z"
-        fill={BUBBLE_WHITE}
-        stroke={BUBBLE_EDGE}
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-      <g transform="translate(0 -14)">
-        <Grawlix />
-      </g>
-    </g>
+    <AtlasSprite
+      src="trash_can"
+      rect={[825, 765, 425, 365]}
+      x={-22}
+      y={-30}
+      width={44}
+      height={38}
+    />
   );
 }
 
@@ -381,39 +169,45 @@ function Fly({ jitterStep }: { jitterStep: number }) {
         } as React.CSSProperties
       }
     >
-      <ellipse cx="0" cy="0" rx="2.2" ry="1.4" fill={FLY_DARK} />
-      <path d="M -1.5 -0.5 L -4 -2 M 1.5 -0.5 L 4 -2" stroke={FLY_DARK} strokeWidth="0.7" />
+      <AtlasSprite
+        src="trash_can"
+        rect={[392, 703, 411, 449]}
+        x={-6}
+        y={-6}
+        width={12}
+        height={12}
+      />
     </g>
   );
 }
 
-function Projectile({ uid }: RigProps) {
+function Projectile(_props: RigProps) {
   return (
     <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
-      <CanClosed uid={uid} k="p" />
+      <CanClosed />
     </svg>
   );
 }
 
-function Payload({ uid }: RigProps) {
+function Payload(_props: RigProps) {
   return (
     <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
       {/* 333 (+0): the can, whole, where the flight left it. Visible one
           frame, then gone entirely at 533 (+200). */}
       <g className="thr-trash_can__landed">
-        <CanClosed uid={uid} k="landed" />
+        <CanClosed />
       </g>
 
       {/* 833 (+500): the "2" pops upper-left, grows and slides to the lower-
           left, later shifts right, later rises and falls into the can. ONE
           continuous life, like the rose's kiss. */}
       <g className="thr-trash_can__card2">
-        <PlayingCard digit="two" pip={HEART_PATH} color={HEART_RED} />
+        <PlayingCard digit="two" />
       </g>
 
       {/* 1000 (+667): the "7" pops upper-right, mirrors the 2 a beat later. */}
       <g className="thr-trash_can__card7">
-        <PlayingCard digit="seven" pip={SPADE_PATH} color={SPADE_BLACK} />
+        <PlayingCard digit="seven" />
       </g>
 
       {/* 1267 (+934): the swear bubble, upper-right of the avatar. */}
@@ -428,10 +222,10 @@ function Payload({ uid }: RigProps) {
           can (103,95) -> (-7,+3) px -> (-23,+10) u). */}
       <g transform="translate(-23 10)">
         <g className="thr-trash_can__can-return">
-          <CanBody uid={uid} k="ret" />
+          <CanBody />
           {/* The lid rides the same rise/scale as the body before opening. */}
           <g className="thr-trash_can__lid">
-            <Lid uid={uid} k="ret" />
+            <Lid />
           </g>
         </g>
       </g>

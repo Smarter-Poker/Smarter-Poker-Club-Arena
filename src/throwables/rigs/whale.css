@@ -1,0 +1,131 @@
+.thr-whale__water {
+  transform-origin: 0 0;
+  animation: thr-whale-water calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-whale-water {
+  0.00000% {
+    opacity: 0;
+    transform: scaleX(0.1);
+  }
+  7.28116% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  80.91083% {
+    opacity: 1;
+  }
+  95.90946% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-whale__surface {
+  transform-origin: 0 0;
+  animation: thr-whale-surface calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-whale-surface {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(70px);
+  }
+  7.28116% {
+    opacity: 0;
+    transform: translateY(70px);
+  }
+  12.73521% {
+    opacity: 1;
+    transform: none;
+  }
+  61.82165% {
+    opacity: 1;
+  }
+  67.27570% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-whale__dive {
+  transform-origin: 0 0;
+  animation: thr-whale-dive calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-whale-dive {
+  0.00000% {
+    opacity: 0;
+  }
+  63.18516% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  67.27570% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80.91083% {
+    opacity: 0;
+    transform: translateY(65px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(65px);
+  }
+}
+.thr-whale__spray {
+  transform-origin: 0 0;
+  animation: thr-whale-spray calc(3.667s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-whale-spray {
+  0.00000% {
+    opacity: 0;
+    transform: scaleY(0.05);
+  }
+  23.64331% {
+    opacity: 0;
+    transform: scaleY(0.05);
+  }
+  30.46087% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  42.73248% {
+    opacity: 1;
+    transform: scale(0.94, 1.08);
+  }
+  56.36760% {
+    opacity: 1;
+    transform: scale(1.05, 0.92);
+  }
+  63.18516% {
+    opacity: 0;
+    transform: scaleY(0.05);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(0.05);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-whale__water {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-whale__surface {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-whale__dive {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-whale__spray {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+}

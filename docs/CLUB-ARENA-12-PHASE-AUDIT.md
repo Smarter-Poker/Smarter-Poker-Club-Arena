@@ -42,3 +42,15 @@ Regression baseline: 16 failures with 28 passing tests before the correction. Af
 ## Required Phase Summary
 
 Only after all exit evidence is satisfied: Phase N Of 12 Is Done, followed by concrete changes, tests and deployment evidence, remaining limitations outside that phase, then Ready To Start Phase N+1 Of 12. If a gate is pending, say Phase N Of 12 Is Not Complete and identify the missing evidence. Never use a partial pass to advance the phase counter.
+
+### Phase 1 Follow-up: Zero-stack Departure
+
+The zero-stack no-rebuy sweep also emitted departure before cashout confirmation and attempted a different fallback after failure. Two behavioral tests reproduced premature events. The sweep now waits for the same atomic cashout receipt before its event and cleanup, retaining seat and grace tracking for retry on failure. Pending-ledger rebuy, prompt grace and live all-in protections remain in place.
+
+September 8 verification: 74 focused tests across receipt, eviction, rebuy-ledger and sit-out safeguards passed; server TypeScript passed. PR #3818 merged as ab0f53926ac53c7b8b3d0d7be1278e9fd08e7500. This follow-up still requires its own push gates, merge and engine adoption evidence. Phase 1 remains incomplete.
+
+## Original Requirement Register Reconciliation
+
+The original 216 requirement IDs and control text are preserved in docs/audits/2026-09-08-platform-coverage/phase-requirements.json, extracted from Smarter-Poker-Club-Arena-Audit.docx version 22 (SHA256 recorded in the JSON). Extraction verified 216 rows and 216 unique IDs. Every original requirement has a primary phase or explicit user exclusion; cross-phase scope notes prevent partial evidence being mistaken for a full requirement pass. G07 is retained as excluded, G06 excludes the real-time assistance clause, and World Hub portions of cross-repository requirements remain deferred. All included rows remain pending full requirement verification. This is a scope reconciliation, not 216 completed audits.
+
+Primary-phase assignment counts: 1:4, 2:18, 3:58, 4:26, 5:52, 6:9, 7:13, 8:3, 9:9, 10:6, 11:10, 12:7; one excluded row. The 7,038-file inventory adds implementation coverage beyond these controls. Phase 1's engine/service integration adds eight passing tests with isolated database transport; live adoption and behavior remain separate gates.

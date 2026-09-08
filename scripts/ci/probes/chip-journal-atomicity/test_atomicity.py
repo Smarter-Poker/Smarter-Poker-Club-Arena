@@ -156,3 +156,7 @@ if mode=='fixed':
 if mode=="fixed":
  from test_tickets import verify_tickets
  verify_tickets(run)
+
+if mode=='fixed':
+ from test_rebuy_receipts import verify_rebuy_receipts
+ verify_rebuy_receipts(run)

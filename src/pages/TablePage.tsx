@@ -8747,9 +8747,10 @@ export default function TablePage({
           p_amount: amount,
           p_idempotency_key: idempotencyKey,
         };
-        const { error } = await supabase.rpc('atomic_table_rebuy', payload);
-        if (error) {
-          if (error.message?.includes('FetchError') || !navigator.onLine) {
+        const { data, error } = await supabase.rpc('atomic_table_rebuy', payload);
+        if (error || typeof data !== 'number' || !Number.isFinite(data) || data < 0) {
+          const failure = error ?? new Error('Rebuy Purchase Receipt Was Not Confirmed');
+          if (failure.message?.includes('FetchError') || !navigator.onLine) {
             // A rebuy is a debit against a live wallet. It is not queued for
             // later: nothing on the client can prove, at replay time, that the
             // player still wants it or that the seat still exists. Fail here,
@@ -8760,8 +8761,8 @@ export default function TablePage({
                Postgres error went to a toast and nowhere else, so "rebuy
                silently fails, then boots you" shipped without a single Sentry
                event. Report it, and show a message a player can act on. */
-            reportError(error, 'TablePage.confirmBustRebuy', { tableId, amount });
-            toast?.error('Rebuy Failed. Your Chips Were Not Taken. Try Again.');
+            reportError(failure, 'TablePage.confirmBustRebuy', { tableId, amount });
+            toast?.error('Rebuy Not Confirmed. Retry The Same Purchase.');
           }
           setBustRebuyProcessing(false);
           return;

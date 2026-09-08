@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/the-budget-stops-being-one-row",
+  "tables": ["ca_diamond_engine_spend"],
+  "functions": [
+    "fn_ca_diamond_engine_spent",
+    "fn_ca_diamond_earn_ledger",
+    "fn_ca_diamond_trial_balance"
+  ]
+}

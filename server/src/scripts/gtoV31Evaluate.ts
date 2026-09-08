@@ -174,8 +174,11 @@ async function persistEvaluation(args: {
         candidate_benchmark_components: snakeComponents(result),
       })
       .select('id')
-      .single();
+      .maybeSingle();
     if (error) throw new Error(error.message);
+    if (!data) {
+      throw new Error(`${args.kind}/${args.family} insert returned no evaluation receipt`);
+    }
     resultId = Number((data as { id: number }).id);
     console.log(
       `[gto-v31-evaluate] ${args.kind}/${args.family}: ${result.bb100.toFixed(4)} bb/100 ` +

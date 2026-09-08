@@ -36,9 +36,11 @@ PSQL=("$PG_BIN/psql" -X -v ON_ERROR_STOP=1 -d "$DB")
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908182030_the_certified_solver_foreign_keys_have_indexes.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908185700_certified_solver_receipts_match_pio_and_require_sizing_evidence.sql"
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908190825_gto_v31_holdout_boards_are_disjoint.sql"
+"${PSQL[@]}" -f "$ROOT/supabase/migrations/20260908193700_phase4_operator_reads_verify_the_direct_caller.sql"
 "${PSQL[@]}" -f "$HERE/certified-v31.sql"
 "${PSQL[@]}" -f "$HERE/solver-agreement.sql"
 "${PSQL[@]}" -f "$HERE/pipeline-liveness.sql"
+"${PSQL[@]}" -f "$HERE/operator-read-authorization.sql"
 STATUS=$("${PSQL[@]}" -Atc "select ca_gto_v31_certification_status(null)->>'contract';")
 [[ "$STATUS" == 'smarter-poker.gto-v31-certification-status.v1' ]]
 INDEX_COUNT=$("${PSQL[@]}" -Atc "select count(*) from pg_indexes where schemaname='public' and indexname in ('gto_v31_datasets_input_bundle_id_idx','gto_v31_release_evaluations_source_result_id_idx');")

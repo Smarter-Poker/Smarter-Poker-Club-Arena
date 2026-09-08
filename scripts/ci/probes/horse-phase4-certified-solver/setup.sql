@@ -63,6 +63,31 @@ CREATE TABLE public.horse_league_results (
  UNIQUE(run_date,matchup)
 );
 CREATE OR REPLACE FUNCTION public.fn_is_horse_admin() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT true $$;
+CREATE TABLE public.ca_browser_definer_allowlist (
+ proname text PRIMARY KEY,
+ reason text NOT NULL CHECK (length(btrim(reason)) >= 20)
+);
+CREATE OR REPLACE FUNCTION public.fn_ca_browser_reachable_telemetry()
+RETURNS TABLE(proname text,args text,reached_by text,volatility text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public,pg_catalog,pg_temp AS $$
+ SELECT p.proname::text,pg_get_function_identity_arguments(p.oid)::text,
+        concat_ws(' + ',CASE WHEN has_function_privilege('anon',p.oid,'EXECUTE') THEN 'anon' END,
+                         CASE WHEN has_function_privilege('authenticated',p.oid,'EXECUTE') THEN 'authenticated' END)::text,
+        CASE p.provolatile WHEN 'v' THEN 'volatile' WHEN 's' THEN 'stable' ELSE 'immutable' END::text
+   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+  WHERE n.nspname='public' AND p.prosecdef
+    AND (has_function_privilege('anon',p.oid,'EXECUTE') OR has_function_privilege('authenticated',p.oid,'EXECUTE'))
+    AND p.prorettype <> 'pg_catalog.trigger'::regtype
+    AND p.prosrc NOT ILIKE '%auth.uid()%' AND p.prosrc NOT ILIKE '%auth.role()%'
+    AND p.prosrc NOT ILIKE '%auth.jwt()%' AND p.prosrc NOT ILIKE '%current_setting%request%'
+    AND COALESCE(pg_get_function_identity_arguments(p.oid),'') !~*
+        '(club|user|union|table|pool|tournament|group|member|owner|horse|author|sender|recipient|agent|payout|promotion|profile|seat|hand)'
+    AND p.proname !~ '^(st_|_st_|postgis_)'
+    AND NOT EXISTS (SELECT 1 FROM public.ca_browser_definer_allowlist a WHERE a.proname=p.proname)
+  ORDER BY p.proname;
+$$;
+REVOKE ALL ON FUNCTION public.fn_ca_browser_reachable_telemetry() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_browser_reachable_telemetry() TO service_role;
 CREATE OR REPLACE FUNCTION public.fn_run_horse_daily_audit(p_day date) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $fn$
 DECLARE v_findings jsonb := '[]'::jsonb;

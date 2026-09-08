@@ -20,11 +20,12 @@
  * not to change; the stores review the app. Flipping AGE_GATE_ON_WEB below
  * turns it on for the web in one line, and that is Dan's call.
  *
- * Like TOSGuard: 'unknown' (the read failed) renders the app and re-checks on
- * the next navigation. A blip must not lock the whole app.
+ * Like TOSGuard: 'unknown' (the read failed) shows nothing and re-checks on
+ * the next navigation. A blip must not lock the whole app. And like TOSGuard,
+ * the UI is not the enforcement boundary; the server is.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
@@ -71,11 +72,12 @@ export function latestAdultBirthday(today: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-interface AgeGateProps {
-  children: ReactNode;
-}
-
-export default function AgeGate({ children }: AgeGateProps) {
+/**
+ * Renders NOTHING until a signed-in player is found without a birthday, then
+ * a full-screen modal over the app. An overlay beside the route tree rather
+ * than a wrapper around it, so App.tsx keeps its shape (see the note there).
+ */
+export default function AgeGate() {
   const { user, isHydrating } = useAuthUser();
   const location = useLocation();
   const [state, setState] = useState<GateState>('checking');
@@ -112,11 +114,11 @@ export default function AgeGate({ children }: AgeGateProps) {
     };
   }, [enabled, user?.id, location.pathname]);
 
-  if (!enabled) return <>{children}</>;
-  if (isHydrating || !user?.id) return <>{children}</>;
-  if (isAlwaysReachable(location.pathname)) return <>{children}</>;
+  if (!enabled) return null;
+  if (isHydrating || !user?.id) return null;
+  if (isAlwaysReachable(location.pathname)) return null;
   if (state === 'missing') return <AgeGateModal onVerified={() => setState('verified')} />;
-  return <>{children}</>;
+  return null;
 }
 
 function AgeGateModal({ onVerified }: { onVerified: () => void }) {

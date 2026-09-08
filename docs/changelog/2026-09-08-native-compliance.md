@@ -36,8 +36,9 @@ Probed as an `authenticated` caller in a rolled-back transaction: 17y11m ->
 `under_18`, nothing written; 1990-05-04 -> written, `age_verified` true; a
 different date -> `already_set`; the same date -> no-op success.
 
-`AgeGate` (`src/components/legal/AgeGate.tsx`) wraps the app inside
-`TOSGuard`: a signed-in player with no birthday is asked once, with a native
+`AgeGate` (`src/components/legal/AgeGate.tsx`) renders as a full-screen
+overlay beside the route tree inside `TOSGuard` (a wrapper would re-indent
+1,500 lines of App.tsx and every text pin on them): a signed-in player with no birthday is asked once, with a native
 date picker; under 18 is refused on the client before anything is sent, and
 the account is signed out with a plain message. `/legal`, `/auth` and `/help`
 stay reachable; a failed read renders the app and re-checks on navigation, as

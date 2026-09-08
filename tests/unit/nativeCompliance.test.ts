@@ -55,8 +55,8 @@ describe('the age gate', () => {
     // under 18 never reaches the server
     expect(gate).toMatch(/age < MINIMUM_AGE\s*\?\s*\{ ok: false, reason: 'under_18' \}/);
     const app = read('src/App.tsx');
-    expect(app.indexOf('<AgeGate>')).toBeGreaterThan(app.indexOf('<TOSGuard>'));
-    expect(app.indexOf('</AgeGate>')).toBeLessThan(app.indexOf('</TOSGuard>'));
+    expect(app.indexOf('<AgeGate />')).toBeGreaterThan(app.indexOf('<TOSGuard>'));
+    expect(app.indexOf('<AgeGate />')).toBeLessThan(app.indexOf('</TOSGuard>'));
   });
   it('the RPC refuses under 18 with nothing written, is once-only, and asks auth.uid()', () => {
     const sql = read(

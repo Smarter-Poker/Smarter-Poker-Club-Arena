@@ -584,7 +584,7 @@ async function attemptBBJPayoutOnce(
       );
     }
   } catch (parkErr) {
-    console.warn('[processBBJPayout] could not read parked shares (money is placed):', parkErr);
+    reportError(parkErr, 'processBBJPayout.parked_share_read_failed');
   }
 
   // EVERY RECIPIENT IS TOLD (BBJ build plan phase 1, 2026-09-05).
@@ -684,10 +684,7 @@ async function attemptBBJPayoutOnce(
     if (rows.length > 0) {
       const { error: notifyErr } = await supabase.from('notifications').insert(rows);
       if (notifyErr) {
-        console.warn(
-          `[processBBJPayout] recipient notifications failed (money already placed):`,
-          notifyErr.message
-        );
+        throw new Error(`Jackpot recipient notifications failed: ${notifyErr.message}`);
       } else {
         console.log(`[processBBJPayout] Notified ${rows.length} recipient(s) of their credit`);
       }

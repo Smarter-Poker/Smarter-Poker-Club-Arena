@@ -1141,3 +1141,79 @@ describe('foreground recovery does not wait for an online event', () => {
     });
   }
 });
+
+describe('foreground channel liveness probe', () => {
+  async function openChannel() {
+    const c = new EngineChannelClient({
+      baseUrl: 'https://engine.example',
+      getToken: async () => 'tok',
+    });
+    c.send({ type: 'JOIN_CLUB', clubId: 'c1' });
+    c.send({ type: 'JOIN_LOBBY' });
+    await flush();
+    const ws = live();
+    ws._open();
+    return { c, ws };
+  }
+
+  it.each(['online', 'pageshow', 'visibilitychange'])(
+    'recovers a half-open channel on %s',
+    async (event) => {
+      const { c, ws } = await openChannel();
+      try {
+        (event === 'visibilitychange' ? document : window).dispatchEvent(new Event(event));
+        expect(ws.sent.map((raw) => JSON.parse(raw).type)).toContain('CHANNEL_PING');
+        await vi.advanceTimersByTimeAsync(6500);
+        expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+        expect(live()).not.toBe(ws);
+        live()._open();
+        expect(live().sent.map((raw) => JSON.parse(raw).type)).toEqual(['JOIN_CLUB', 'JOIN_LOBBY']);
+      } finally {
+        c.disconnect();
+      }
+    }
+  );
+
+  it('keeps a responsive channel and reasserts current subscriptions once', async () => {
+    const { c, ws } = await openChannel();
+    try {
+      ws.sent = [];
+      window.dispatchEvent(new Event('pageshow'));
+      window.dispatchEvent(new Event('pageshow'));
+      expect(ws.sent.map((raw) => JSON.parse(raw).type)).toEqual([
+        'CHANNEL_PING',
+        'JOIN_CLUB',
+        'JOIN_LOBBY',
+      ]);
+      await vi.advanceTimersByTimeAsync(4000);
+      ws._frame({ type: 'CHANNEL_PONG' });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(ws.closedWith).toHaveLength(0);
+      expect(c.getStatus()).toBe('connected');
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('cannot extend the first probe by repeated wake events', async () => {
+    const { c, ws } = await openChannel();
+    try {
+      for (let i = 0; i < 5; i++) {
+        window.dispatchEvent(new Event('pageshow'));
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it('cancels a stale probe when the client is disposed', async () => {
+    const { c } = await openChannel();
+    window.dispatchEvent(new Event('online'));
+    c.disconnect();
+    await vi.advanceTimersByTimeAsync(6500);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(c.getStatus()).toBe('idle');
+  });
+});

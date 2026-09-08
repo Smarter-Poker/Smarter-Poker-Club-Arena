@@ -1884,16 +1884,12 @@ class TournamentService {
     // Emit AFTER confirmed success — never optimistically before RPC
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy', userId });
 
-    // Broadcast rebuy event
-    try {
-      const { realtimeChannelService } = await import('./RealtimeChannelService');
-      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-        type: 'player_registered', // Using existing event type
-        payload: { type: 'rebuy', userId, chips: rebuyChips },
-      });
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_broadcast_rebuy_event');
-    }
+    /* The browser-side "broadcast rebuy event" that used to sit here was
+       removed in the final sweep of 2026-09-08: /channels/tournament/:id/event
+       accepts only INTERNAL_API_KEY, the browser sent a player JWT, and every
+       rebuy ended with a guaranteed 401 reported to Sentry. Nothing consumed
+       the event. The engine's own tournament manager announces what a table
+       needs to know. */
 
     return { success: true, newStack: data?.new_stack || rebuyChips };
   }
@@ -2003,16 +1999,9 @@ class TournamentService {
     // Emit AFTER confirmed success — never optimistically before RPC
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_addon', userId });
 
-    // Broadcast add-on event
-    try {
-      const { realtimeChannelService } = await import('./RealtimeChannelService');
-      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-        type: 'player_registered',
-        payload: { type: 'addon', userId, chips: addonChips },
-      });
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_broadcast_addon_event');
-    }
+    /* The browser-side add-on broadcast was removed with the rebuy one
+       (final sweep 2026-09-08): an INTERNAL_API_KEY route called with a player
+       JWT, a 401 on every add-on, no consumer. */
 
     return { success: true, newStack: data?.new_stack };
   }
@@ -2208,45 +2197,14 @@ class TournamentService {
       }
     }
 
-    if (finalTable) {
-      // Broadcast final table event
-      try {
-        const { realtimeChannelService } = await import('./RealtimeChannelService');
-        await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-          type: 'final_table',
-          payload: { tableId: finalTable.id, playerCount: count },
-        });
-      } catch (e: unknown) {
-        reportError(e, 'TournamentService.Failed_to_broadcast_final_table_event');
-      }
-    }
-
+    /* The browser-side final-table broadcast was removed (final sweep
+       2026-09-08): an INTERNAL_API_KEY route called with a player JWT. */
     return { finalTableId: finalTable?.id || null };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Tournament Lifecycle Events
   // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Broadcast level up event
-   */
-  async broadcastLevelUp(tournamentId: string, newLevel: BlindLevel): Promise<void> {
-    try {
-      const { realtimeChannelService } = await import('./RealtimeChannelService');
-      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-        type: 'level_up',
-        payload: {
-          level: newLevel.level,
-          smallBlind: newLevel.smallBlind,
-          bigBlind: newLevel.bigBlind,
-          ante: newLevel.ante,
-        },
-      });
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_broadcast_level_up');
-    }
-  }
 
   /* AUDIT 2026-08-22: `broadcastElimination` and `broadcastWinner` were
      removed from here. Neither had a caller, and neither ever could have been

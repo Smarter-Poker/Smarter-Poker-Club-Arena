@@ -13,6 +13,7 @@ import { useToast } from '../common/Toast';
 import styles from './DepositWithdrawModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { fireVibration } from '../../utils/vibrationGate';
+import { uuid } from '../../utils/uuid';
 
 // Haptic feedback utility for mobile-first financial interactions
 const triggerHaptic = (pattern: number | number[] = 10) => {
@@ -429,7 +430,7 @@ export default function DepositWithdrawModal({
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'X-Idempotency-Key': crypto.randomUUID(),
+          'X-Idempotency-Key': uuid(),
         },
         body: JSON.stringify({
           userId,

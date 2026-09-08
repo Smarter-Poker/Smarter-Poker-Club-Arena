@@ -24,6 +24,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { ClubIcon } from '../club-buttons/ClubButtons';
 import { useToast } from '../common/Toast';
 import { triggerHaptic } from '../../services/HapticService';
@@ -411,11 +412,17 @@ export default function DailyBonusSheet({
   );
 
   if (mode === 'inline') return sheet;
-  return (
+  // Portaled to <body>: the hub home's container carries `perspective`, which
+  // makes it the containing block for a fixed overlay rendered inside it, and
+  // focusing the close control then scrolled that overflow-hidden container
+  // and dragged the sheet off-screen (seen live 2026-09-08). Outside it, the
+  // backdrop is the viewport.
+  return createPortal(
     <div className="dbs-overlay" onClick={onClose}>
       <div className="dbs-overlay__center" onClick={(e) => e.stopPropagation()}>
         {sheet}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

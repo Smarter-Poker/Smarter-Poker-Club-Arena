@@ -313,3 +313,7 @@ BEGIN
     'unbacked', v_short);
 END;
 $function$;
+
+-- Pin the existing production service-only permissions for clean installations.
+REVOKE ALL ON FUNCTION public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_award_satellite_seat(uuid,uuid,uuid,text,integer) TO service_role;

@@ -7,17 +7,37 @@
 -- or trailing whitespace, control characters, and oversized identity text at
 -- the database authority as well as at both gateway clients.
 
-ALTER TABLE public.gto_v31_datasets
-  ADD CONSTRAINT gto_v31_datasets_solver_version_canonical_chk CHECK (
-    length(solver_version) BETWEEN 1 AND 120
-    AND solver_version !~ '^[[:space:]]|[[:space:]]$'
-    AND solver_version !~ '[[:cntrl:]]'
-  ),
-  ADD CONSTRAINT gto_v31_datasets_manifest_version_canonical_chk CHECK (
-    length(manifest_version) BETWEEN 1 AND 160
-    AND manifest_version !~ '^[[:space:]]|[[:space:]]$'
-    AND manifest_version !~ '[[:cntrl:]]'
-  );
+DO $migration$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conrelid='public.gto_v31_datasets'::regclass
+       AND conname='gto_v31_datasets_solver_version_canonical_chk'
+  ) THEN
+    ALTER TABLE public.gto_v31_datasets
+      ADD CONSTRAINT gto_v31_datasets_solver_version_canonical_chk CHECK (
+        length(solver_version) BETWEEN 1 AND 120
+        AND solver_version !~ '^[[:space:]]|[[:space:]]$'
+        AND solver_version !~ '[[:cntrl:]]'
+      );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conrelid='public.gto_v31_datasets'::regclass
+       AND conname='gto_v31_datasets_manifest_version_canonical_chk'
+  ) THEN
+    ALTER TABLE public.gto_v31_datasets
+      ADD CONSTRAINT gto_v31_datasets_manifest_version_canonical_chk CHECK (
+        length(manifest_version) BETWEEN 1 AND 160
+        AND manifest_version !~ '^[[:space:]]|[[:space:]]$'
+        AND manifest_version !~ '[[:cntrl:]]'
+      );
+  END IF;
+END;
+$migration$;
 
 DO $assert$
 DECLARE

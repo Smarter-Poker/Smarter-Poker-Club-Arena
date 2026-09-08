@@ -28,37 +28,34 @@ const ARENA = process.env.ARENA_BASE_URL || 'https://smarter.poker/hub/club-aren
 test.use({ ...devices['iPhone 13'] });
 
 async function loadLiveCss(page: Page) {
-  await page.goto(`${ARENA}/index.html`, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(async (base: string) => {
-    const html = await fetch(base + 'index.html').then((r) => r.text());
-    const entry = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/)?.[0];
-    const js = entry ? await fetch(base + entry).then((r) => r.text()) : '';
-    const names = new Set<string>();
-    for (const m of js.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
-    for (const m of html.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(m[0]);
-    document.body.innerHTML = '';
-    const styles = await Promise.all(
-      [...names].map(async (n) => {
-        try {
-          return await fetch(base + n).then((r) => {
-            if (!r.ok) throw new Error(String(r.status));
-            return r.text();
-          });
-        } catch {
-          /* a chunk that 404s is not this test's problem */
-          return '';
-        }
-      })
-    );
-    for (const css of styles) {
-      if (css) {
-        const s = document.createElement('style');
-        s.textContent = css;
-        document.head.appendChild(s);
-      }
-    }
-    document.documentElement.style.setProperty('--animation-speed', '1');
-  }, `${ARENA}/`);
+  // Read the deployed assets without mounting the application. Its async
+  // hydration and route effects can otherwise replace this fixture mid-test.
+  const htmlResponse = await page.request.get(`${ARENA}/index.html`);
+  expect(htmlResponse.ok(), 'the built entry document must load').toBe(true);
+  const html = await htmlResponse.text();
+  const entry = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/)?.[0];
+  expect(entry, 'the built entry script must be discoverable').toBeTruthy();
+  const scriptResponse = await page.request.get(`${ARENA}/${entry}`);
+  expect(scriptResponse.ok(), 'the built entry script must load').toBe(true);
+  const js = await scriptResponse.text();
+  const names = new Set<string>();
+  for (const text of [html, js]) {
+    for (const match of text.matchAll(/assets\/[A-Za-z0-9_.-]+\.css/g)) names.add(match[0]);
+  }
+  expect(names.size, 'the build must expose its stylesheets').toBeGreaterThan(0);
+  const styles = await Promise.all(
+    [...names].map(async (name) => {
+      const response = await page.request.get(`${ARENA}/${name}`);
+      expect(response.ok(), `stylesheet ${name} must load`).toBe(true);
+      return response.text();
+    })
+  );
+  await page.goto('about:blank');
+  await page.setContent(
+    '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body></body></html>'
+  );
+  for (const content of styles) await page.addStyleTag({ content });
+  await page.evaluate(() => document.documentElement.style.setProperty('--animation-speed', '1'));
 }
 
 /** The felt board at a phone width, with the river mid-squeeze. */

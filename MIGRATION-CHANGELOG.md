@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-08: Horse Funding Receipts And Unknown Outcomes
+
+Migration 20260908121053 applied and body-verified. Both engine rebuy paths now use stable operation identities and matching receipts; uncertain transport outcomes cannot authorize seat removal. 260 database checks and 6,815 engine tests pass; TypeScript passes. Engine adoption pending. Details: docs/changelog/2026-09-08-horse-funding-receipts-and-unknown-outcomes.md.
+
 ## Cowork session 2026-09-01 - ONE UNPAYABLE PLAYER STOPPED EVERY PAYOUT IN THE PASS
 
 `fn_tournament_payout_sweep` loops over completed tournaments calling

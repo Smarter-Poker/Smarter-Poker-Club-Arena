@@ -124,6 +124,10 @@ END $verify$;ROLLBACK;""")
 print(f"TOTAL {mode}: {passed} passing cases",flush=True)
 
 if mode=="fixed":
+ from test_horse import verify_horse
+ verify_horse(run)
+
+if mode=="fixed":
  from test_satellite import verify_satellite
  verify_satellite(run)
 

@@ -49,10 +49,14 @@ ca-static.smarter.poker {
 		# can keep serving WITHOUT us: revalidated every 60s, and served stale
 		# for a day if this origin is unreachable or erroring. A player mid-
 		# session is unaffected by a reboot here; only a publish is delayed,
-		# by at most a minute. Old asset chunks stay fetchable because the
+		# by at most two minutes while healthy (60s fresh + 60s stale).
+		# A day of stale-while-revalidate made the FIRST reload after a fix
+		# return yesterday's bundle even when the origin was healthy. Keep
+		# the full day only for actual origin errors. Old asset chunks stay
+		# fetchable because the
 		# pool is additive, so a stale shell is a working shell.
 		@shell not path /cards/* /images/* /club-logos/* /videos/* /game-card-icons/*
-		header @shell Cache-Control "public, max-age=0, s-maxage=60, stale-while-revalidate=86400, stale-if-error=86400"
+		header @shell Cache-Control "public, max-age=0, s-maxage=60, stale-while-revalidate=60, stale-if-error=86400"
 		# build-info.json is the deploy's own proof and both watchdogs read it.
 		# It must never be answered from a cache, or "production is serving X"
 		# becomes "an edge node remembers X".

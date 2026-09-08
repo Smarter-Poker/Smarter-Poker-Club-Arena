@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/only-a-user-budget-refuses",
+  "functions": ["fn_ca_diamond_earn_ledger", "award_diamonds_v2"]
+}

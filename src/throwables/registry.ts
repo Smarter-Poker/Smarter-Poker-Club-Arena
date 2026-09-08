@@ -1,3 +1,4 @@
+import { spec as thinkingSpec, rig as thinkingRig } from './rigs/thinking';
 import { spec as ratCardSpec, rig as ratCardRig } from './rigs/rat_card';
 import { spec as partyFaceSpec, rig as partyFaceRig } from './rigs/party_face';
 import { spec as fishSpec, rig as fishRig } from './rigs/fish';
@@ -70,6 +71,7 @@ export interface RiggedThrowable {
 }
 
 const RIGGED: Record<string, RiggedThrowable> = {
+  thinking: { spec: thinkingSpec, rig: thinkingRig },
   rat_card: { spec: ratCardSpec, rig: ratCardRig },
   party_face: { spec: partyFaceSpec, rig: partyFaceRig },
   fish: { spec: fishSpec, rig: fishRig },

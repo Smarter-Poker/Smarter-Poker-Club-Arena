@@ -9,6 +9,11 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('../../src/lib/authToken', () => ({
+  getFreshAccessToken: async () =>
+    JSON.parse(localStorage.getItem('smarter-poker-auth')!).access_token,
+}));
+
 // ─── Mock fetch ───────────────────────────────────────────────────────────
 
 const mockFetch = vi.fn();
@@ -34,6 +39,12 @@ import {
 describe('GameServerAPI', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.setItem(
+      'smarter-poker-auth',
+      JSON.stringify({
+        access_token: `e30.${btoa(JSON.stringify({ sub: 'user-1', session_id: 'login-1', exp: 4102444800 }))}.sig`,
+      })
+    );
   });
 
   describe('submitAction', () => {

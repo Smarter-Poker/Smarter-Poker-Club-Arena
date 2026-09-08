@@ -1348,5 +1348,32 @@
     "width": 640,
     "height": 640,
     "sha256": "5bc7d34c717f9eb7272ea6b1f3476bcd92b54a9fdc22fe2b19731fb77c5cd42e"
+  },
+  {
+    "id": "thinking",
+    "bucket": 192,
+    "filename": "thinking-192-9cbb19695bb1.webp",
+    "bytes": 6806,
+    "width": 192,
+    "height": 192,
+    "sha256": "9cbb19695bb15b85e8650b812f4f4e785d8d1a91e084871fd928ce7b3084e0dc"
+  },
+  {
+    "id": "thinking",
+    "bucket": 320,
+    "filename": "thinking-320-877857176660.webp",
+    "bytes": 12146,
+    "width": 320,
+    "height": 320,
+    "sha256": "8778571766603ad872f6446fd9d2413ce873d24448674efd416ec5a2d0fa5686"
+  },
+  {
+    "id": "thinking",
+    "bucket": 640,
+    "filename": "thinking-640-cd5f0f744985.webp",
+    "bytes": 30328,
+    "width": 640,
+    "height": 640,
+    "sha256": "cd5f0f744985b09112c9ffbb8dc5f1c483162cd35562aec84c93c1af85d22cc6"
   }
 ]

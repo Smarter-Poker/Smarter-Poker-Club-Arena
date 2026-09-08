@@ -7,7 +7,7 @@
  *
  * These drive the real HandController and assert both the advertised action menu
  * (TURN_CHANGE.availableActions) and the authoritative server enforcement
- * (performAction rejects an illegal raise, still accepts call/all_in).
+ * (performAction rejects an illegal raise/shove, still accepts a legal call).
  */
 import { describe, it, expect } from 'vitest';
 import { HandController } from './HandController.js';
@@ -104,7 +104,9 @@ describe('REOPENING RULE - sub-full-raise all-in does not reopen betting', () =>
     expect(h.cur()).toBe(1);
     expect(h.menu(1)).not.toContain('raise');
     expect(h.actSeat(1, 'raise', 20)).toBe(false);
-    expect(h.actSeat(1, 'all_in')).toBe(true); // may still shove own stack
+    expect(h.menu(1)).not.toContain('all_in');
+    expect(h.actSeat(1, 'all_in')).toBe(false); // a shove is still a raise
+    expect(h.actSeat(1, 'call', 8)).toBe(true);
   });
 });
 
@@ -133,4 +135,77 @@ describe('REOPENING RULE - a FULL raise still reopens betting normally', () => {
     expect(h.menu(3)).toContain('raise');
     expect(h.actSeat(3, 'raise', 8)).toBe(true);
   });
+});
+
+describe('reopening follows the wager faced by this player', () => {
+  it('cumulative short all-ins reopen after a full increment without changing that increment', () => {
+    const h = harness(mkConfig(), mkPlayers([200, 8, 10, 200, 200]), 1);
+    h.hc.start();
+    expect(h.actSeat(4, 'raise', 6)).toBe(true);
+    expect(h.actSeat(5, 'call', 6)).toBe(true);
+    expect(h.actSeat(1, 'call', 6)).toBe(true);
+    expect(h.actSeat(2, 'all_in')).toBe(true);
+    expect(h.actSeat(3, 'all_in')).toBe(true);
+    expect(h.cur()).toBe(4);
+    expect(h.st().lastRaise).toBe(4);
+    expect(h.menu(4)).toContain('raise');
+    expect(h.actSeat(4, 'raise', 14)).toBe(true);
+  });
+  it('an intervening caller does not inherit another player cumulative reopening', () => {
+    const h = harness(mkConfig(), mkPlayers([10, 200, 200, 200, 8, 200]), 1);
+    h.hc.start();
+    expect(h.actSeat(4, 'raise', 6)).toBe(true);
+    expect(h.actSeat(5, 'all_in')).toBe(true);
+    expect(h.actSeat(6, 'call', 8)).toBe(true);
+    expect(h.actSeat(1, 'all_in')).toBe(true);
+    expect(h.actSeat(2, 'fold')).toBe(true);
+    expect(h.actSeat(3, 'fold')).toBe(true);
+    expect(h.actSeat(4, 'call', 10)).toBe(true);
+    expect(h.cur()).toBe(6);
+    expect(h.menu(6)).not.toContain('raise');
+    expect(h.menu(6)).not.toContain('all_in');
+    expect(h.actSeat(6, 'all_in')).toBe(false);
+    expect(h.actSeat(6, 'call', 10)).toBe(true);
+  });
+  it('a short all-in expressed as raise does not become a full raise', () => {
+    const h = harness(mkConfig(), mkPlayers([200, 8, 200, 200]), 1);
+    h.hc.start();
+    expect(h.actSeat(4, 'raise', 6)).toBe(true);
+    expect(h.actSeat(1, 'call', 6)).toBe(true);
+    expect(h.actSeat(2, 'raise', 8)).toBe(true);
+    expect(h.st().actionHistory.at(-1).isFullRaise).toBe(false);
+    expect(h.actSeat(3, 'call', 8)).toBe(true);
+    expect(h.menu(4)).not.toContain('raise');
+    expect(h.actSeat(4, 'raise', 20)).toBe(false);
+  });
+});
+
+describe.each(['nlh', 'plo4'])('closed %s betting and short stacks', (variant) => {
+  it.each([8, 9])(
+    'only permits an all-in that does not raise the standing bet (stack %s)',
+    (stack) => {
+      const h = harness(
+        mkConfig({ gameVariant: variant as HandConfig['gameVariant'] }),
+        mkPlayers([stack, 8, 200, 200]),
+        1
+      );
+      h.hc.start();
+      expect(h.actSeat(4, 'raise', 6)).toBe(true);
+      expect(h.actSeat(1, 'call', 6)).toBe(true);
+      expect(h.actSeat(2, 'all_in')).toBe(true);
+      expect(h.actSeat(3, 'call', 8)).toBe(true);
+      expect(h.actSeat(4, 'call', 8)).toBe(true);
+      expect(h.cur()).toBe(1);
+      if (stack === 8) {
+        expect(h.menu(1)).toContain('all_in');
+        expect(h.actSeat(1, 'all_in')).toBe(true);
+      } else {
+        expect(h.menu(1)).not.toContain('all_in');
+        const pot = h.st().pot;
+        expect(h.actSeat(1, 'all_in')).toBe(false);
+        expect(h.st().pot).toBe(pot);
+        expect(h.actSeat(1, 'call', 8)).toBe(true);
+      }
+    }
+  );
 });

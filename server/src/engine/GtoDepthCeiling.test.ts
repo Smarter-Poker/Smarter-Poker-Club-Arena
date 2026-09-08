@@ -82,11 +82,12 @@ describe('the wiring in HorseLogic', () => {
     'utf8'
   );
 
-  it('both consults are gated, and the flag defaults on', () => {
+  it('all three consults are gated, and the flag defaults on', () => {
     expect(src).toContain('(opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling');
-    // Once for the open-node consult (V29/V30/V31), once for V32 facing.
+    // Once for certified V31, once for V32 facing, and once for the legacy
+    // V29/V30 open-node fallback.
     const gates = src.match(/beyondGtoDepthCeiling\(/g) ?? [];
-    expect(gates.length).toBe(2);
+    expect(gates.length).toBe(3);
   });
 
   it('a skip for depth is not counted as a coverage miss', () => {
@@ -99,7 +100,7 @@ describe('the wiring in HorseLogic', () => {
   });
 
   it('misses are recorded against a depth band and a street', () => {
-    expect(src).toContain("noteGtoMiss('v31', street, stackBB29)");
+    expect(src).toContain("noteGtoMiss('v31', street, stackBB31)");
     expect(src).toContain("noteGtoMiss('v32', street, stackBB32)");
   });
 

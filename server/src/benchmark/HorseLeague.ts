@@ -79,6 +79,24 @@ export interface LeagueResult {
   illegalActions: number;
   /** streets cut short by the action cap (must be 0; see runStreet) */
   truncatedStreets: number;
+  /** Candidate-policy decisions actually consumed during an offline gate. */
+  candidatePolicyHits: number;
+  /** Exact solver node roles reached by those decisions. */
+  candidateNodeRoles: string[];
+  /** Per-scenario evidence retained when several utility contexts are gated. */
+  benchmarkComponents: LeagueBenchmarkComponent[];
+}
+
+export interface LeagueBenchmarkComponent {
+  scenario: string;
+  hands: number;
+  bb100: number;
+  stderr: number;
+  durationMs: number;
+  illegalActions: number;
+  truncatedStreets: number;
+  candidatePolicyHits: number;
+  candidateNodeRoles: string[];
 }
 
 export interface LeagueMatchup {
@@ -92,6 +110,8 @@ export interface LeagueMatchup {
   /** V16: starting stack in big blinds (default 100). 40 exercises the
    *  short-stack push/fold and reshove tiers the 100bb card never touches. */
   stackBB?: number;
+  /** Exact format/utility context used by Phase 4 promotion matchups. */
+  context?: LeagueGameContext;
   /** V16: duplicate pairs for this matchup (default PAIRS_PER_MATCHUP).
    *  Newer exploratory matchups run fewer pairs so the whole card still
    *  fits the wall-clock budget; stderr scales as 1/sqrt(pairs). */
@@ -107,6 +127,19 @@ export interface LeagueMatchup {
    *  config object still type-checks. */
   mind?: 'sandbox';
 }
+
+export interface LeagueGameContext {
+  gameMode: 'cash' | 'tournament';
+  format: 'cash' | 'mtt' | 'spin' | 'hu_sng';
+  ante?: number;
+  tournament?: HorseGameStateV2['tournament'];
+}
+
+const CASH_LEAGUE_CONTEXT: LeagueGameContext = {
+  gameMode: 'cash',
+  format: 'cash',
+  ante: 0,
+};
 
 const DEFAULT_SEATS = 6;
 const BB = 2;
@@ -160,7 +193,9 @@ export function playHand(
   /** V16: seats at the table (default 6; 2 = heads-up). */
   numSeats: number = 6,
   /** V16: starting stack in big blinds (default 100). */
-  stackBB: number = 100
+  stackBB: number = 100,
+  /** Phase 4: exact cash/tournament utility family. */
+  gameContext: LeagueGameContext = CASH_LEAGUE_CONTEXT
 ): number[] {
   const SEATS = numSeats;
   const START_STACK = stackBB * BB;
@@ -282,9 +317,10 @@ export function playHand(
         bigBlind: BB,
         dealerSeat,
         actionHistory: history,
-        gameMode: 'cash',
-        ante: 0,
-        format: 'cash',
+        gameMode: gameContext.gameMode,
+        ante: gameContext.ante ?? 0,
+        format: gameContext.format,
+        ...(gameContext.tournament ? { tournament: structuredClone(gameContext.tournament) } : {}),
       } as HorseGameStateV2;
 
       const d = sandbox
@@ -549,6 +585,8 @@ export async function runMatchup(
   const SEATS = matchup.seats ?? DEFAULT_SEATS;
   const t0 = Date.now();
   const counters = { illegal: 0, truncated: 0 };
+  let candidatePolicyHits = 0;
+  const candidateNodeRoles = new Set<string>();
   const perPairDiff: number[] = [];
   // V12.3: before compute isolation this ran inside the dealer process, where
   // HorseEval's module-global RNG was shared with every live decision.
@@ -571,8 +609,19 @@ export async function runMatchup(
     if (p > 0 && (p & 0x0f) === 0) await new Promise((res) => setImmediate(res));
     const handSeed = (runSeed ^ (p * 2654435761)) >>> 0 || 1;
     const dealerSeat = (p % SEATS) + 1;
-    const evenIsA = (s: number) => (s % 2 === 0 ? matchup.a : matchup.b);
-    const evenIsB = (s: number) => (s % 2 === 0 ? matchup.b : matchup.a);
+    const withEvidence = (opts: HorseDecideOpts): HorseDecideOpts => {
+      if (!opts.gtoV31DatasetChecksum) return opts;
+      return {
+        ...opts,
+        onGtoV31Decision: (receipt) => {
+          candidatePolicyHits++;
+          candidateNodeRoles.add(receipt.nodeRole);
+          opts.onGtoV31Decision?.(receipt);
+        },
+      };
+    };
+    const evenIsA = (s: number) => withEvidence(s % 2 === 0 ? matchup.a : matchup.b);
+    const evenIsB = (s: number) => withEvidence(s % 2 === 0 ? matchup.b : matchup.a);
 
     const net1 = playHand(
       handSeed,
@@ -582,7 +631,8 @@ export async function runMatchup(
       sb1,
       matchup.variant ?? 'nlh',
       SEATS,
-      matchup.stackBB ?? 100
+      matchup.stackBB ?? 100,
+      matchup.context ?? CASH_LEAGUE_CONTEXT
     );
     const net2 = playHand(
       handSeed,
@@ -592,7 +642,8 @@ export async function runMatchup(
       sb2,
       matchup.variant ?? 'nlh',
       SEATS,
-      matchup.stackBB ?? 100
+      matchup.stackBB ?? 100,
+      matchup.context ?? CASH_LEAGUE_CONTEXT
     );
 
     let aNet = 0;
@@ -625,6 +676,9 @@ export async function runMatchup(
     durationMs: Date.now() - t0,
     illegalActions: counters.illegal,
     truncatedStreets: counters.truncated,
+    candidatePolicyHits,
+    candidateNodeRoles: [...candidateNodeRoles].sort(),
+    benchmarkComponents: [],
   };
 }
 
@@ -1488,6 +1542,50 @@ export async function runLeague(
               spots: agreement.spots,
               agreement: round4(agreement.agreement),
               pure_misses: agreement.pureMisses,
+              eligible_spots: agreement.eligibleSpots,
+              reconciled_spots: agreement.reconciledSpots,
+              action_regret_bb: agreement.actionRegretBb,
+              regret_eligible_spots: agreement.regretEligibleSpots,
+              decision_checksum: agreement.decisionChecksum,
+              decisions: agreement.decisions.map((decision) => ({
+                state_key: decision.stateKey,
+                decision_state: {
+                  schema_version: decision.decisionState.schemaVersion,
+                  stage: decision.decisionState.stage,
+                  game_variant: decision.decisionState.gameVariant,
+                  game_type: decision.decisionState.gameType,
+                  format: decision.decisionState.format,
+                  kind: decision.decisionState.kind,
+                  position: decision.decisionState.position,
+                  stack_bb: decision.decisionState.stackBb,
+                  hand: decision.decisionState.hand,
+                  chart: decision.decisionState.chart,
+                  villain_action: decision.decisionState.villainAction,
+                  legal_actions: decision.decisionState.legalActions,
+                },
+                kind: decision.kind,
+                game_type: decision.gameType,
+                position: decision.position,
+                stack_bb: decision.stackBb,
+                hand: decision.hand,
+                final_action: decision.finalAction,
+                reference_distribution: decision.referenceDistribution,
+                chosen_probability: decision.chosenProbability,
+                action_regret_bb: decision.actionRegretBb,
+                regret_eligible: decision.regretEligible,
+                pure_miss: decision.pureMiss,
+                source_seal: {
+                  quality_seal: decision.sourceSeal.qualitySeal,
+                  policy_version: decision.sourceSeal.policyVersion,
+                  policy_checksum: decision.sourceSeal.policyChecksum,
+                  system: decision.sourceSeal.system,
+                  artifact_id: decision.sourceSeal.artifactId,
+                  scenario_hash: decision.sourceSeal.scenarioHash,
+                  source_artifact_checksum: decision.sourceSeal.sourceArtifactChecksum,
+                  provenance_complete: decision.sourceSeal.provenanceComplete,
+                  audited_at: decision.sourceSeal.auditedAt,
+                },
+              })),
             },
           ],
         });
@@ -1541,6 +1639,10 @@ export async function runLeague(
             config_b: m.b as never,
             duration_ms: r.durationMs,
             illegal_actions: r.illegalActions + r.truncatedStreets,
+            truncated_streets: r.truncatedStreets,
+            candidate_policy_hits: r.candidatePolicyHits,
+            candidate_node_roles: r.candidateNodeRoles,
+            candidate_benchmark_components: r.benchmarkComponents,
           },
           { onConflict: 'run_date,matchup' }
         );

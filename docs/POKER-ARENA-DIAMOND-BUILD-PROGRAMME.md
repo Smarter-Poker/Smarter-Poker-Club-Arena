@@ -16,6 +16,8 @@ The user explicitly approved:
 - Diamond Arena contains players only. No union structure, agents, subagents, downlines, commissions, agent wallets or private-club ownership flow.
 - Player-to-player diamond transfers ARE allowed through the platform wallet and from inside Diamond Arena.
 - Diamond Arena gameplay, available balances, custody, fees, prizes, refunds, house funding and reporting are diamond-only. Never convert them to chips or include them in chip balances, journals, treasury totals or supply.
+- Preserve the original Diamond Arena card artwork supplied by Dan on September 8, 2026 as the Diamond club image inside Poker Arena. This approved artwork is explicitly exempt from legacy code cleanup. Use the original asset without redesigning it.
+- Remove the standalone Diamond Arena card from the World Hub; Poker Arena is the shared entry point.
 - Reuse Club Arena code and approved assets extensively. Treat the old independent Diamond Arena application as zero: no reuse and no completion credit. Remove all old Diamond Arena runtime code and legacy paths, not merely hide or disable them.
 - Preserve active tables when switching lobbies; never automatically switch the player's active table.
 - Platform operations remain staff-authorized. A staff permission is not an agent hierarchy.
@@ -145,7 +147,7 @@ Purchased-lot provenance, refunds, debts, chargeback handling and existing settl
 - [x] Update conflicting current specification sections while preserving historical evidence.
 - [x] Prepare the verified specification and changelog for branch publication; actual commit/push status is reported separately.
 
-Exit: reviewable programme and reconciled policy in a protected branch; no claim of live gameplay.
+Exit: reviewable programme and reconciled policy, required checks passed, merged source content verified on main, and publication evidence recorded before Phase 2. Phase 1 adds no runtime gameplay. See the Phase 1 verification changelog; branch push alone does not satisfy the publication gate.
 
 ### Phase 2 Of 12: Arena Identity, Access And Asset Boundaries
 
@@ -187,6 +189,8 @@ Exit: authorized test users can transfer available diamonds once; reserved game 
 ### Phase 5 Of 12: Poker Arena Shell And Diamond Skin
 
 - [ ] Rename visible umbrella/header/World Hub tile to Poker Arena.
+- [ ] Locate and preserve the original approved Diamond Arena card asset before cleanup (World Hub candidate: public/cards/diamond-arena.png; visually match Dan's supplied September 8 screenshot); reuse it for the Diamond club card inside Poker Arena.
+- [ ] Remove the standalone Diamond Arena card and navigation target from the World Hub on desktop and mobile, including alternate card lists and cached navigation configurations.
 - [ ] Reuse current selector: Shark default, Diamond adjacent, joined clubs included.
 - [ ] Shark nonmember sees Join, not member content; Diamond never shows Join.
 - [ ] Reuse shared lobby sections and approved game-card designs.

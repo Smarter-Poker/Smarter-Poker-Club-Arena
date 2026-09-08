@@ -28,11 +28,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceStatement } from './testHelpers/sourceWindow.js';
+import { sliceMethod } from './testHelpers/sourceWindow.js';
 
 const SRC = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
 const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-const start = code.slice(code.indexOf('async start('), code.indexOf('private async discoverCashTables'));
+const start = sliceMethod(code, 'private async performStart(');
 
 describe('boot order: nothing housekeeping may gate dealing', () => {
   it('starts the cash discovery loop before the horse fleet bootstrap', () => {
@@ -44,20 +44,24 @@ describe('boot order: nothing housekeeping may gate dealing', () => {
   });
 
   it('starts the tournament discovery loop before the horse fleet bootstrap', () => {
-    expect(start.indexOf('this.discoverTournaments()')).toBeLessThan(start.indexOf('this.horseFleet'));
+    expect(start.indexOf('this.discoverTournaments()')).toBeLessThan(
+      start.indexOf('this.horseFleet')
+    );
   });
 
   it('never awaits the horse fleet bootstrap', () => {
     // THE DEFECT, exactly: `await this.horseFleet.start()`. A housekeeping step
     // that retries a timing-out query must not be able to hold the boot.
     expect(start).not.toMatch(/await\s+this\.horseFleet\.start\(\)/);
-    expect(start).toMatch(/void\s+this\.horseFleet[\s\S]{0,40}\.start\(\)/);
+    expect(start).toMatch(/this\.launchServerLifecycleJob\(this\.horseFleet\.start\(\)/);
   });
 
   it('reports a fleet bootstrap failure instead of swallowing it', () => {
-    const seg = sliceStatement(start, 'this.horseFleet');
-    expect(seg).toMatch(/\.catch\(/);
-    expect(seg).toMatch(/reportError/);
+    expect(start).toContain("'GameServer.horse_fleet_start_failed'");
+    const launcher = sliceMethod(code, 'private launchServerLifecycleJob(');
+    expect(launcher).toMatch(
+      /\.catch\(\(error\) => reportError\(error, errorContext, metadata\)\)/
+    );
   });
 
   it('still awaits stale-data cleanup, which IS a prerequisite', () => {
@@ -70,7 +74,11 @@ describe('boot order: nothing housekeeping may gate dealing', () => {
   });
 
   it('leaves the discovery loops fire-and-forget with error reporting', () => {
-    expect(start).toMatch(/this\.discoverCashTables\(\)\.catch\(/);
-    expect(start).toMatch(/this\.discoverTournaments\(\)\.catch\(/);
+    expect(start).toMatch(
+      /this\.launchDiscoveryJob\(\s*this\.discoverCashTables\(\),\s*'GameServer\.Cash_table_discovery_fatal_err'/
+    );
+    expect(start).toMatch(
+      /this\.launchDiscoveryJob\(\s*this\.discoverTournaments\(\),\s*'GameServer\.Tournament_discovery_fatal_err'/
+    );
   });
 });

@@ -292,3 +292,34 @@ describe('the guarantee is a floor, not a cap (2026-08-30)', () => {
     expect(p.remainder).toBe(0);
   });
 });
+
+describe('cent-denominated seat funding', () => {
+  it.each([
+    [0.3, 0.1, 3],
+    [4.1, 0.41, 10],
+    [8.2, 0.82, 10],
+  ])('%s funds exactly %s per ticket without losing a seat', (pool, ticketCost, seats) => {
+    const plan = planSatelliteAwards({ pool, ticketCost, configuredSeats: 0, finisherCount: 100 });
+    expect(plan.awardCount).toBe(seats);
+    expect(plan.remainder).toBe(0);
+    expect(plan.overlay).toBe(0);
+  });
+  it('conserves integer cents at ticket boundaries and short fields', () => {
+    for (const ticketCents of [1, 7, 10, 29, 41, 82, 199, 1001]) {
+      for (const offset of [-1, 0, 1]) {
+        for (const finishers of [3, 20]) {
+          const poolCents = ticketCents * 10 + offset;
+          const plan = planSatelliteAwards({
+            pool: poolCents / 100,
+            ticketCost: ticketCents / 100,
+            configuredSeats: 0,
+            finisherCount: finishers,
+          });
+          expect(plan.awardCount).toBe(Math.min(Math.floor(poolCents / ticketCents), finishers));
+          expect(plan.awardCount * ticketCents + Math.round(plan.remainder * 100)).toBe(poolCents);
+          expect(plan.overlay).toBe(0);
+        }
+      }
+    }
+  });
+});

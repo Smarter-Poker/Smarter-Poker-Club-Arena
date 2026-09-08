@@ -39,8 +39,11 @@ describe('SPIN_SEATS', () => {
 function insertBlock(src: string, tournamentType: string): string {
   const start = src.indexOf(`tournament_type: '${tournamentType}'`);
   expect(start, `no ${tournamentType} insert`).toBeGreaterThan(-1);
-  const end = src.indexOf('.select()', start);
-  expect(end, `${tournamentType} insert does not end in .select()`).toBeGreaterThan(start);
+  const ends = [src.indexOf('\n      };', start), src.indexOf('.select()', start)].filter(
+    (candidate) => candidate > start
+  );
+  expect(ends, `${tournamentType} creation payload has no boundary`).not.toHaveLength(0);
+  const end = Math.min(...ends);
   return src.slice(start, end);
 }
 

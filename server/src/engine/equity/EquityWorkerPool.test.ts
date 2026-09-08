@@ -1,11 +1,56 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Card, CardRank, CardSuit } from '../../types.js';
 import { EquityWorkerPool } from './EquityWorkerPool.js';
 import { computeEquity } from './equityWorker.js';
 
 const C = (rank: CardRank, suit: CardSuit): Card => ({ rank, suit });
 
-const pool = new EquityWorkerPool();
+class LoopbackEquityWorker {
+  private readonly listeners = new Map<string, Array<(...args: any[]) => void>>();
+
+  constructor() {
+    queueMicrotask(() => this.emit('message', { type: 'READY' }));
+  }
+
+  on(event: string, listener: (...args: any[]) => void): this {
+    this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
+    return this;
+  }
+
+  postMessage(message: any): void {
+    queueMicrotask(() => {
+      try {
+        this.emit('message', {
+          type: 'EQUITY_RESULT',
+          id: message.id,
+          equities: computeEquity(
+            message.hands,
+            message.board,
+            message.deadCards,
+            message.iters,
+            message.opts,
+            message.seed
+          ),
+        });
+      } catch (error) {
+        this.emit('message', { type: 'ERROR', id: message.id, error: String(error) });
+      }
+    });
+  }
+
+  unref(): void {}
+  async terminate(): Promise<number> {
+    return 0;
+  }
+  private emit(event: string, value: unknown): void {
+    for (const listener of this.listeners.get(event) ?? []) listener(value);
+  }
+}
+
+const pool = new EquityWorkerPool({ size: 1, workerFactory: () => new LoopbackEquityWorker() });
+beforeAll(async () => {
+  await pool.ready();
+});
 afterAll(async () => {
   await pool.shutdown();
 });

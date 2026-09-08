@@ -438,5 +438,131 @@
     "checkpointSource": "art-source/static/sloth.png",
     "sha256": "cf9150ad33281a8188322939325e063b223d5d578e1aa78b9c39596dbb586198",
     "status": "Original transparent artwork and choreographed rig integrated. Dedicated audio and full multiplayer/device acceptance pending."
+  },
+  {
+    "id": "crown",
+    "integrated": true,
+    "source": "art-source/animated/crown.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/crown.png"
+  },
+  {
+    "id": "chip_rain",
+    "integrated": true,
+    "source": "art-source/animated/chip_rain.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/chip_rain.png"
+  },
+  {
+    "id": "diamond_shower",
+    "integrated": true,
+    "source": "art-source/animated/diamond_shower.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/diamond_shower.png"
+  },
+  {
+    "id": "velvet_rope",
+    "integrated": true,
+    "source": "art-source/animated/velvet_rope.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/velvet_rope.png"
+  },
+  {
+    "id": "champagne_tower",
+    "integrated": true,
+    "source": "art-source/animated/champagne_tower.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/champagne_tower.png"
+  },
+  {
+    "id": "standing_ovation",
+    "integrated": true,
+    "source": "art-source/animated/standing_ovation.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/standing_ovation.png"
+  },
+  {
+    "id": "whale",
+    "integrated": true,
+    "source": "art-source/animated/whale.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/whale.png"
+  },
+  {
+    "id": "to_the_moon",
+    "integrated": true,
+    "source": "art-source/animated/to_the_moon.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/to_the_moon.png"
+  },
+  {
+    "id": "missile",
+    "integrated": true,
+    "source": "art-source/animated/rocket.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/missile.png"
+  },
+  {
+    "id": "donkey",
+    "integrated": true,
+    "source": "art-source/animated/donkey.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/donkey.png"
+  },
+  {
+    "id": "tilt_meter",
+    "integrated": true,
+    "source": "art-source/animated/tilt_meter.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/tilt_meter.png"
+  },
+  {
+    "id": "bad_beat_bandage",
+    "integrated": true,
+    "source": "art-source/animated/bad_beat_bandage.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/bad_beat_bandage.png"
+  },
+  {
+    "id": "bubble_boy",
+    "integrated": true,
+    "source": "art-source/animated/bubble_boy.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/bubble_boy.png"
+  },
+  {
+    "id": "slot_machine",
+    "integrated": true,
+    "source": "art-source/animated/slot_machine.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/slot_machine.png"
+  },
+  {
+    "id": "pumpkin",
+    "integrated": true,
+    "source": "art-source/animated/pumpkin.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/pumpkin.png"
+  },
+  {
+    "id": "snowball",
+    "integrated": true,
+    "source": "art-source/animated/snowball.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/snowball.png"
+  },
+  {
+    "id": "party_popper",
+    "integrated": true,
+    "source": "art-source/animated/party_popper.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/party_popper.png"
+  },
+  {
+    "id": "heart_arrow",
+    "integrated": true,
+    "source": "art-source/animated/heart_arrow.png",
+    "status": "Integrated and browser rendered; publication and final acceptance tracked separately.",
+    "checkpointSource": "art-source/static/heart_arrow.png"
   }
 ]

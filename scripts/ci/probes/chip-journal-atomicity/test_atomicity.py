@@ -633,3 +633,7 @@ if mode=='fixed':
 if mode=="fixed":
  from test_bbj_source_correction import verify_bbj_source_correction
  verify_bbj_source_correction(run)
+
+if mode=="fixed":
+ from test_stats_witness_showdown import verify_stats_witness_showdown
+ verify_stats_witness_showdown(run)

@@ -183,3 +183,20 @@ The new cash buy-in receipt function was applied at catalog version
 still awaiting branch publication and CI at this checkpoint. Physical iPad
 home-screen and offline/reconnect testing remain unverified because the browser
 connection tool times out. No production buy-in or financial test was performed.
+
+## Publication verification around 21:00 UTC
+
+Cash recovery PR #3860 merged as 61df0dc0e0a5e06d7319d42cae801a477eaab057.
+CI 34274558668 passed; Hetzner publication 34275395230 served the same SHA from
+both public and origin build-info (built 20:34:54 UTC). The later public build
+is ba8804f916cc3b057d076e0c6a83a42d2ffca66d, built 20:51:56 UTC, run 34277055749. The scheduled engine cutover now reports version 61df0dc0;
+its next-hand sample set was still empty during the maintenance window.
+
+Settlement alert PR #3861 merged as e36633be204e546aead6836bca778bfbf4f41297.
+Monitoring deploy 34275598564 succeeded. Prometheus evaluated the installed
+PokerSettlementBlocked rule at 20:47:52 UTC with health ok, state inactive and
+the expected 60-second hold and maintenance exclusion. No synthetic alert sent.
+
+The physical iPad home-screen/offline flow and a paid join remain unverified.
+Browser CDP refresh is unavailable. Publication proof is not end-to-end gameplay
+proof, and hand-gap outliers remain under investigation.

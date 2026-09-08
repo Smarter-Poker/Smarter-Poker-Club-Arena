@@ -107,3 +107,48 @@ hand-gap outlier correlation after #3765's normal engine adoption; HTTP
 mutation response deadlines; session-revocation identity ownership; durable
 maintenance thaw/resume-wave compensation; physical network-switch testing.
 The observed healthy browser is not a substitute for these verifications.
+
+## 19:08 UTC delivery reconciliation
+
+This later snapshot supersedes delivery status above, without rewriting the
+historical incident evidence. Public and origin `build-info.json` both served
+`95b11188d7ce4e9b33b71bb0a218e3544724920c`, built 18:47:49 UTC, run 34264938814. Cache-busted engine health served `6f11ed3f` with maintenance
+idle and all 251 tables resumed across eight waves.
+
+Engine deployment 34264479798 / job 102190302161 succeeded through the normal
+Hetzner workflow. Its exact target was
+`6f11ed3f7337766543ed68e87de58e4f17e4f6c8`. Logs prove the new image started
+at 18:55:48, the public hostname served it at 18:56:20, and `engine_leader`
+reported the changed version at 18:56:22. The duplicate queued run
+34264499597 was cancelled by the existing workflow, not by this agent.
+
+Each cell below was recomputed with `git merge-base --is-ancestor` against
+fresh `origin/main`, the actual public artifact SHA and actual engine SHA.
+Repository inclusion in the frontend does not execute server code.
+
+| PR    | On main | In public artifact commit | In running engine commit |
+| ----- | ------- | ------------------------- | ------------------------ |
+| #3810 | Yes     | Yes                       | Yes                      |
+| #3816 | Yes     | Yes                       | Yes                      |
+| #3817 | Yes     | Yes                       | Yes                      |
+| #3820 | Yes     | Yes                       | Yes                      |
+| #3824 | Yes     | Yes                       | Yes                      |
+| #3827 | Yes     | Yes                       | Yes                      |
+| #3833 | Yes     | Yes                       | Yes                      |
+| #3835 | Yes     | Yes                       | Yes                      |
+| #3839 | Yes     | Yes                       | Yes                      |
+| #3843 | Yes     | Yes                       | Yes                      |
+| #3845 | Yes     | Yes                       | Yes                      |
+| #3850 | Yes     | Yes                       | Pending                  |
+| #3854 | Yes     | Yes                       | Pending                  |
+
+#3839's BBJ receipt function migration and #3845's resolved-add-on replay
+migration were also separately applied and verified in production; see their
+incident audits for exact function digests and natural settlement recovery.
+Neither application manually completed a hand or changed a balance.
+
+#3850 (maintenance reconnect wave clock) and #3854 (Spin draw readback)
+remain **not running in the engine** at this snapshot, despite being merged
+and present in the public repository artifact. The next engine adoption must
+be verified before claiming either server behavior is live. The new settlement
+blockage telemetry is likewise tracked separately from already served code.

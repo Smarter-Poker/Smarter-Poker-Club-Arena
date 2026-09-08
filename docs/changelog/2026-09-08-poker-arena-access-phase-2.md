@@ -1,6 +1,6 @@
 # Poker Arena Access, Phase 2 Work In Progress
 
-Status: database rollout applied and verified on September 8, 2026; application publication is being verified. Phase 2 is not yet claimed complete. Earlier sections below preserve the investigation history.
+Status as of September 8, 2026, 18:08 UTC: database rollout and frontend/engine adoption are verified. The publication monitor remains open for the UI acceptance discrepancy recorded below. Phase 3 is explicitly authorized to proceed concurrently. Earlier sections preserve historical checkpoints and their superseded blockers.
 
 The Diamond identity is a player-only platform entitlement, independent of club membership rows. Chip clubs retain their join/approval requirement. The new migration adds caller-bound access RPCs, restrictive game-read policies, immutable asset identity, and rejection of Diamond chip wallets, hierarchy, and generic chip seats. It preserves the zero-balance historical membership row as player/automatic. Existing chip engine loading explicitly rejects Diamond funding until dedicated custody exists.
 
@@ -45,7 +45,7 @@ The recorded automatic approval rejection still blocks production application of
 
 ## Production Database Rollout And Deep Audit
 
-Dan explicitly authorized pushing and publishing Phase 2 in the continuation chat. The production migration authorization blocker is resolved. Phase 3 remains on hold until publication verification completes.
+Dan explicitly authorized pushing and publishing Phase 2 in the continuation chat. The production migration authorization blocker is resolved. The later user override authorizes Phase 3 during publication verification.
 
 The audit found and fixed three concrete defects: duplicate Diamond identities were not prevented; union-only game rows bypassed membership restrictions; and the shared trigger tried to resolve union_id on membership rows. A fresh isolated PostgreSQL 17 run executes all six actual migration files and passes 39 assertions. Union membership uses the same fn_club_scope_ids scope as the observer boundary.
 
@@ -70,7 +70,7 @@ Wiring: ClubHomePage mounts ArenaAccessBoundary before member content; ClubJoinS
 
 Live browser verification exposed a remaining outer ClubMemberGuard redirect to the private-club invitation page before the inner Diamond boundary could run. The outer guard now checks authoritative arena context before mounting private-club capabilities. Diamond lobby, finance, and agent deep links all stop at the access-only screen. Routed ClubHome avoids duplicate context checks; embedded ClubHome keeps its own boundary. Stale Diamond invitation links replace the current history entry with the guarded arena destination without membership queries or referral writes, for both signed-in and signed-out visitors.
 
-Behavioral checks passed: 40 route/invite/access tests, followed by 26 service/access/guard checks after moving arena imports off the global startup path. Frontend TypeScript passed. The first PR production build compiled but its entry-module gate correctly rejected eager ArenaContext imports; these are now dynamically loaded. Publication is still pending the corrected commit and release verification. Phase 3 remains blocked until that succeeds.
+Behavioral checks passed: 40 route/invite/access tests, followed by 26 service/access/guard checks after moving arena imports off the global startup path. Frontend TypeScript passed. The first PR production build compiled but its entry-module gate correctly rejected eager ArenaContext imports; these are now dynamically loaded. Publication is still pending the corrected commit and release verification. Phase 3 may proceed under the later explicit user override.
 
 ### Final CI And Merge Evidence (16:47 UTC)
 
@@ -78,4 +78,14 @@ PR #3814 merged as ea30980397158749d0d91c1726c9f8e004e83e56. Corrected source he
 
 The final committed six-file SQL fixture was executed again through the isolated Unix-socket PostgreSQL instance and passed all 39 assertions. A bounded production identity census found all 199,430 table records (178 active-status rows) classified as valid chip-club identities; no existing table falls outside the new identity parser. The joined Shark Club live lobby continued to load games after migration.
 
-Release gate remains OPEN. At this checkpoint production frontend still serves 79b1c71433d3ebf15d4e5fcdba4d4ee106e2dc2a. Publisher run 34251926329 is processing an older release; latest queued descendants include the Phase 2 merge. The active engine deploy run 34251020300 targets an earlier commit and waits for the announced maintenance break. Neither an older successful deployment nor a branch/main merge is proof that Phase 2 server code is active. Verify frontend build-info ancestry and live Diamond lobby/invite/finance/agent routes, then engine health version ancestry, before closing this gate. Phase 3 has NOT started.
+At the historical 16:47 UTC checkpoint, the release gate remained OPEN. Production at that checkpoint production frontend still serves 79b1c71433d3ebf15d4e5fcdba4d4ee106e2dc2a. Publisher run 34251926329 is processing an older release; latest queued descendants include the Phase 2 merge. The active engine deploy run 34251020300 targets an earlier commit and waits for the announced maintenance break. Neither an older successful deployment nor a branch/main merge is proof that Phase 2 server code is active. Verify frontend build-info ancestry and live Diamond lobby/invite/finance/agent routes, then engine health version ancestry, before closing this gate. This historical rollout checkpoint does not block Phase 3 under the later explicit user override.
+
+## Live Publication Evidence, September 8, 2026, 18:00 To 18:08 UTC
+
+Both https://smarter.poker/hub/club-arena/build-info.json and https://ca-static.smarter.poker/build-info.json returned ca_sha 4932f6f91ad9b08300cf20afbeb9576b6559770f, built_at 2026-09-08T17:39:49Z, run_id 34257700085, built_by publish-club-arena.yml. https://engine.smarter.poker/health returned status ok and version 4932f6f9. Git resolves that version to the same full commit. git merge-base --is-ancestor ea30980397158749d0d91c1726c9f8e004e83e56 4932f6f91ad9b08300cf20afbeb9576b6559770f succeeded. This proves frontend and engine adoption, not merely HTTP availability. Earlier engine deployment checkpoints are superseded.
+
+The original audit documentation PR #3836 merged as 9445e02d611e32790b02d25b9704299e51e98756; its ancestry into fetched origin/main was verified.
+
+A new authenticated verification tab preserved existing table tabs. The Diamond UUID lobby, /finance and /agents main regions each displayed You Are Already A Member. and Diamond Games Are Not Open For Play Yet. No Join control, chip balances, financial forms or agent-management content mounted inside those main regions. The stale /hub/club-arena/invite/diamond-arena route automatically redirected to /hub/club-arena/clubs/diamond-arena and showed the same access-only screen. Joined /hub/club-arena/clubs/shark-club rendered its live game lobby and game rows. Browser error logs contained extension metadata errors only, with no application-origin errors in this verification tab. No funding, seating or player-balance mutations were performed.
+
+The home-entry check did NOT pass: /hub/club-arena displayed joined chip clubs and a union, with no Diamond automatic-entry card. Diamond routes also retain outer club-management navigation, even though their main content is guarded. The programme assigns selector placement and shared skin to Phase 5, while the publication monitor requests these UI conditions now. These are recorded as unresolved acceptance discrepancies, not passing tests or completed later phases. Runtime publication is verified; the monitor remains open. This does not block authorized Phase 3 work.

@@ -1806,7 +1806,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               'Tournament.bubble_protection_credit_failed'
             );
           }
-          if (bp.fully_settled === true) {
+          if (bp.ok && bp.fully_settled === true && (bp.amount_paid ?? 0) >= refund) {
             this.bubbleProtectionPaid = true;
             await this.broadcast('bubble_protection_paid', {
               userId,
@@ -1817,6 +1817,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
               `[Tournament:${this.tournamentId.slice(0, 8)}] BUBBLE PROTECTION: ${userId.slice(0, 8)} refunded ${refund} at position ${position}`
             );
           } else {
+            if (bp.ok && bp.fully_settled === true) {
+              await raiseFinancialAlert(
+                'critical',
+                'Tournament.bubble_protection_amount_unconfirmed',
+                'The settled bubble-protection obligation does not confirm the requested refund.',
+                {
+                  tournament_id: this.tournamentId,
+                  user_id: userId,
+                  requested_refund: refund,
+                  amount_paid: bp.amount_paid ?? null,
+                  obligation_id: bp.obligation_id,
+                }
+              );
+            }
             await this.broadcast('bubble_protection_pending', {
               userId,
               position,

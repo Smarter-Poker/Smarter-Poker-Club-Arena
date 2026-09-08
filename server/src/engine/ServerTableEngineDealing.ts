@@ -2506,7 +2506,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           dbConsumedSeconds: 0,
         });
       }
-      this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
+      this.disconnectEngine.registerPlayer(
+        this.tableId,
+        p.user_id,
+        this.seatedPlayers.find((seat) => seat.user_id === p.user_id)?.reconnect_membership
+      );
     }
 
     // Step 5: Wire disconnect auto-action callback into HandController

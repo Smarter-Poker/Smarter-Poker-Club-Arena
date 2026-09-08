@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/diamond-rule-modes (Diamond Accounting Standard, rulings 1, 2, 8, 15, 17, 18; 2026-09-08). Applied to production as 20260908021452_diamond_rules_wired_for_refusal_and_the_money_paths_finished: the rule-mode table and its two functions, FIFO lot consumption, and apply-time patches of fourteen existing functions (no new names among them).",
+  "tables": ["ca_diamond_rule_modes"],
+  "functions": ["fn_ca_diamond_rule_mode", "fn_ca_diamond_rule_flip", "fn_ca_consume_purchase_lots"]
+}

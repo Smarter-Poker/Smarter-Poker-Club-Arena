@@ -38,6 +38,8 @@ export interface UserClub {
   is_owner?: boolean;
   last_active_at?: string;
   entity_type?: 'club' | 'union';
+  /** Automatic platform entry, not a mutable chip-club membership. */
+  automatic_entry?: boolean;
   [key: string]: unknown;
 }
 
@@ -229,10 +231,10 @@ export default function CarouselSection({
              tap or a drag, and whether a tap on an off-centre card should open
              it or bring it to the middle. Handling onClick here as well would
              open a club the player was only swiping past. */
-          onContextMenu={(e) => handleContextMenu(e, club)}
-          onTouchStart={(e) => handleLongPressStart(club, e)}
-          onTouchEnd={handleLongPressEnd}
-          onTouchCancel={handleLongPressEnd}
+          onContextMenu={club.automatic_entry ? undefined : (e) => handleContextMenu(e, club)}
+          onTouchStart={club.automatic_entry ? undefined : (e) => handleLongPressStart(club, e)}
+          onTouchEnd={club.automatic_entry ? undefined : handleLongPressEnd}
+          onTouchCancel={club.automatic_entry ? undefined : handleLongPressEnd}
           /* HTML5 drag-to-reorder is GONE from these cards, deliberately.
              Native dragstart fires within a few pixels of pointer movement, so
              it and a swipe are the same gesture and the browser hands it to
@@ -249,7 +251,11 @@ export default function CarouselSection({
              the feeder was left running, so this was pure cost - a reflow per
              pointer move, per card - buying a value no stylesheet consumes. */
           role="button"
-          aria-label={`${club.name || 'Club'} - Click To Enter Lobby`}
+          aria-label={
+            club.automatic_entry
+              ? `${club.name || 'Arena'} - Automatic Entry`
+              : `${club.name || 'Club'} - Click To Enter Lobby`
+          }
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {

@@ -213,7 +213,14 @@ async function main() {
 
   const res = await fetch(`${url}/rest/v1/rpc/fn_ca_second_writer_check`, {
     method: 'POST',
-    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'x-smarter-data-actor': 'service',
+      'x-smarter-data-protocol': '1',
+    },
     body: JSON.stringify({ p_calls: sent }),
   });
   if (!res.ok) {

@@ -228,18 +228,37 @@ describe('the tournament balancer does not move players during the break', () =>
   it('checkTableBalance and checkDynamicTableExpansion run only when not frozen', () => {
     const src = read('tournament/TournamentManagerEliminations.ts');
     const balance = at(src, 'await this.checkTableBalance();', 'balance call');
-    const expand = at(src, 'await this.checkDynamicTableExpansion();', 'expansion call');
-    const block = sliceEnclosingBlock(src, 'await this.checkTableBalance();', 0, 1);
-    expect(block, 'the balance call is not inside an isMaintenanceFrozen() guard').toMatch(
+    const expansionCall = 'await this.checkDynamicTableExpansion()';
+    const expand = at(src, expansionCall, 'expansion call');
+    const balanceBlock = sliceEnclosingBlock(src, 'await this.checkTableBalance();', 0, 1);
+    const expansionBlock = sliceEnclosingBlock(src, expansionCall, 0, 1);
+    expect(balanceBlock, 'the balance call is not inside an isMaintenanceFrozen() guard').toMatch(
       /^\{\s*await this\.checkTableBalance\(\);/
     );
-    const guardStart = src.lastIndexOf('if (!isMaintenanceFrozen())', balance);
-    expect(guardStart, 'no isMaintenanceFrozen() guard before the balance call').toBeGreaterThan(
+    expect(
+      expansionBlock,
+      'the expansion call is not controlled by an isMaintenanceFrozen() guard'
+    ).toContain(
+      'if (!isMaintenanceFrozen() && !(await this.checkDynamicTableExpansion())) return;'
+    );
+
+    const balanceGuard = src.lastIndexOf('if (!isMaintenanceFrozen())', balance);
+    expect(balanceGuard, 'no isMaintenanceFrozen() guard before the balance call').toBeGreaterThan(
       -1
     );
-    expect(balance - guardStart).toBeLessThan(block.length + 40);
+    expect(balance - balanceGuard).toBeLessThan(balanceBlock.length + 40);
+
+    const expansionGuard = src.lastIndexOf('if (!isMaintenanceFrozen()', expand);
+    expect(
+      expansionGuard,
+      'no isMaintenanceFrozen() guard immediately controlling expansion'
+    ).toBeGreaterThan(-1);
+    expect(expand - expansionGuard).toBeLessThan(expansionBlock.length + 40);
+
+    // Balancing and expansion are deliberately separate resumable sweep
+    // stages now. Each stage owns its own freeze gate, so a break beginning
+    // after balance cannot leak through the later expansion boundary.
     expect(expand).toBeGreaterThan(balance);
-    expect(expand - balance).toBeLessThan(block.length);
   });
 });
 

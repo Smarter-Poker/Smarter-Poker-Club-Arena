@@ -318,5 +318,13 @@
     "sourceBytes": 1108754,
     "runtimeBytes": 872202,
     "visiblePixelsIdentical": true
+  },
+  {
+    "file": "thinking.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 722382,
+    "runtimeBytes": 457974,
+    "visiblePixelsIdentical": true
   }
 ]

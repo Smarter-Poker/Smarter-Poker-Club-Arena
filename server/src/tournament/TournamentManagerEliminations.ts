@@ -3263,6 +3263,51 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return; // handled stays true; the record exists for manual recovery
     }
 
+    // Validate the entire recorded deal before paying anyone. A missing,
+    // duplicate or foreign recipient is not evidence of a complete chop.
+    const expectedRecipients = new Set(alive.map((p) => p.user_id));
+    const seenRecipients = new Set<string>();
+    const validRoster =
+      expectedRecipients.size === alive.length &&
+      payoutRows.length === expectedRecipients.size &&
+      payoutRows.every((p: { user_id: string; amount: unknown }) => {
+        const raw = p.amount;
+        const amount = Number(raw);
+        const cents = amount * 100;
+        if (
+          !expectedRecipients.has(p.user_id) ||
+          seenRecipients.has(p.user_id) ||
+          (typeof raw !== 'number' && typeof raw !== 'string') ||
+          (typeof raw === 'string' && !/^[0-9]+(?:[.][0-9]+)?$/.test(raw)) ||
+          !Number.isFinite(amount) ||
+          amount < 0 ||
+          !Number.isSafeInteger(Math.round(cents)) ||
+          Math.round(cents) / 100 !== amount
+        )
+          return false;
+        seenRecipients.add(p.user_id);
+        return true;
+      });
+    if (!validRoster) {
+      await raiseFinancialAlert(
+        'critical',
+        'Tournament.final_table_deal_payout_roster_invalid',
+        'The recorded final table deal has invalid amounts or does not match its participants. Settlement was not attempted by this invocation; previous payment status is unconfirmed.',
+        {
+          tournament_id: this.tournamentId,
+          expected_recipients: [...expectedRecipients],
+          recorded_row_count: payoutRows.length,
+        }
+      );
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Invalid or incomplete final table deal payout roster`
+        ),
+        'Tournament.final_table_deal_payout_roster_invalid'
+      );
+      return;
+    }
+
     let allSharesSettled = true;
     for (const p of payoutRows as Array<{ user_id: string; amount: number }>) {
       const amount = Math.max(0, Number(p.amount) || 0);

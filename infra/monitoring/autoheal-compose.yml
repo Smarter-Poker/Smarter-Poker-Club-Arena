@@ -19,7 +19,10 @@ services:
     environment:
       AUTOHEAL_CONTAINER_LABEL: autoheal
       AUTOHEAL_INTERVAL: 15          # check every 15s
-      AUTOHEAL_START_PERIOD: 120     # ignore health for 2m after a restart
+      # This image sleeps once when the SIDECAR starts; it is not a per-engine
+      # restart grace. The engine's Docker HEALTHCHECK start-period is the
+      # protection that resets after every engine restart.
+      AUTOHEAL_START_PERIOD: 120
       AUTOHEAL_DEFAULT_STOP_TIMEOUT: 45  # match the engine drain window
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -18,45 +18,81 @@
  *   3. a DB detector alerts on overlapping   — pages/api/cron/spin-sweep.js
  *      hands per table (World Hub cron)        in the World Hub repo
  *
- * If someone needs enforcement off in an emergency, ENGINE_LEASE_ENFORCE=off
- * exists — as a deliberate, environment-level act, never a quiet code edit.
+ * There is no runtime off switch. An emergency must stop admissions or roll
+ * back through an audited release; it may not authorize a second dealer.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
+import { sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const LEASE = readFileSync(path.join(process.cwd(), 'src/services/tableLease.ts'), 'utf8');
+const TOURNAMENT_LEASE = readFileSync(
+  path.join(process.cwd(), 'src/services/tournamentLease.ts'),
+  'utf8'
+);
 const GAME_SERVER = code(readFileSync(path.join(process.cwd(), 'src/GameServer.ts'), 'utf8'));
 
 describe('two dealers at one table can never happen again', () => {
-  it('enforcement is opt-OUT, not opt-in', () => {
-    // The exact expression matters: `!== 'off'` is on-by-default;
-    // `=== 'on'` was the four-day evidence mode that let 23:48Z happen.
-    expect(code(LEASE)).toMatch(
-      /LEASE_ENFORCED\s*:\s*boolean\s*=\s*process\.env\.ENGINE_LEASE_ENFORCE\s*!==\s*'off'/
+  it('cash and tournament enforcement cannot be disabled at runtime', () => {
+    expect(code(LEASE)).toMatch(/LEASE_ENFORCED\s*:\s*true\s*=\s*true/);
+    expect(code(TOURNAMENT_LEASE)).toMatch(/TOURNAMENT_LEASE_ENFORCED\s*:\s*true\s*=\s*true/);
+    expect(code(LEASE)).not.toContain('process.env.ENGINE_LEASE_ENFORCE');
+    expect(code(TOURNAMENT_LEASE)).not.toContain('process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE');
+    expect(code(LEASE)).not.toContain('verified: false');
+    expect(code(TOURNAMENT_LEASE)).not.toContain('verified: false');
+    expect(GAME_SERVER).not.toContain('verified: false');
+    expect(GAME_SERVER).not.toContain('possibleLeaseGeneration');
+
+    const tournamentAdmission = sliceMethod(
+      GAME_SERVER,
+      'private async performTournamentManagerAdmission('
     );
-    expect(code(LEASE)).not.toMatch(/ENGINE_LEASE_ENFORCE\s*===\s*'on'/);
+    expect(tournamentAdmission).toMatch(
+      /new TournamentManager\([\s\S]{0,180}lease\.leaseGeneration,[\s\S]{0,80}lease\.proofDeadlineMonotonicMs/
+    );
+    expect(tournamentAdmission).toContain(
+      '{ tournamentId, leaseGeneration: lease.leaseGeneration }'
+    );
   });
 
   it('a lost lease tears the engine down, not just logs', () => {
-    // The discovery loop must stop() the engine and drop it from the map for
-    // every table heartbeatTables() reports lost.
-    const i = GAME_SERVER.indexOf('heartbeatTables([...this.tableEngines.keys()])');
+    // The dedicated ownership lifecycle must synchronously fence every
+    // verified cash dealer the typed heartbeat cannot prove, then route the
+    // exact object through the shared stop/release/CAS recovery primitive.
+    const i = GAME_SERVER.indexOf('this.renewVerifiedCashTableLeaseProofs()');
     expect(i, 'lease renewal missing from discovery loop').toBeGreaterThan(-1);
-    const block = sliceEnclosingBlock(GAME_SERVER, 'heartbeatTables([...this.tableEngines.keys()])');
-    expect(block).toMatch(/engine\.stop\(\)/);
-    expect(block).toMatch(/this\.tableEngines\.delete\(/);
+    const block = sliceEnclosingBlock(GAME_SERVER, 'this.renewVerifiedCashTableLeaseProofs()');
+    expect(block).toMatch(/engine\.fenceForEngineLeaseLoss\(/);
+    expect(block).toMatch(/this\.recoverDirectTableEngine\(tableId, engine/);
+    const recovery = sliceMethod(GAME_SERVER, 'private async performDirectTableEngineRecovery(');
+    expect(recovery).toMatch(/await engine\.stop\(\)/);
+    expect(recovery).toMatch(/await releaseTables\(\[/);
+    expect(recovery).toMatch(/this\.tableEngines\.delete\(tableId\)/);
   });
 
   it('starting a table asks for the lease first', () => {
-    expect(GAME_SERVER).toMatch(/if \(!\(await claimTable\(row\.table_id\)\)\) continue;/);
+    const start = GAME_SERVER.indexOf('private async performCashTableEngineAdmission(');
+    const admission = GAME_SERVER.slice(
+      start,
+      GAME_SERVER.indexOf('/**\n   * Get a table engine by ID', start)
+    );
+    expect(admission).toContain(
+      'const lease = await claimTableLease(tableId, requestedLeaseGeneration);'
+    );
+    expect(admission).toContain('const engine = new ServerTableEngine(');
+    expect(admission).toContain('generation: lease.leaseGeneration');
+    expect(admission).toContain('proofDeadlineMonotonicMs: lease.proofDeadlineMonotonicMs');
+    expect(admission.indexOf('const engine = new ServerTableEngine(')).toBeGreaterThan(
+      admission.indexOf('await claimTableLease(tableId, requestedLeaseGeneration)')
+    );
   });
 
   it('shutdown hands the leases back, so the next deploy does not wait out staleness', () => {
-    expect(GAME_SERVER).toMatch(/await releaseTables\(\)/);
+    expect(GAME_SERVER).toContain('await releaseTables(cashLeaseClaims)');
+    expect(GAME_SERVER).toContain("authority?.scope === 'cash' && authority.verified");
   });
 });

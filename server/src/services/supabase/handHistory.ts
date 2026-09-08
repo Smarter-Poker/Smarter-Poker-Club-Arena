@@ -13,7 +13,65 @@ import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { writeHandFacts } from './handFacts.js';
 import { recordHorseHandReviews } from '../HorseHandReview.js';
-import { HorseMind, readScopeOf } from '../../engine/HorseMind.js';
+import { readScopeOf } from '../../engine/HorseMind.js';
+import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
+import { wakeHandProjection } from './handProjection.js';
+
+export interface AtomicHandCommitInput {
+  stacks: Array<{
+    user_id: string;
+    stack: number;
+    stack_before: number;
+  }>;
+  rake: number;
+  bbj: number;
+  ref?: string | null;
+  inflow?: number | null;
+  /**
+   * Exact protocol-2 database authority. Both fields are present together for
+   * verified cash and tournament engines; omitting both selects only the
+   * rolling-upgrade protocol-1 wrapper.
+   */
+  leaseInstanceId?: string;
+  leaseGeneration?: string;
+  /**
+   * Immutable work which must survive the exact dealer after the accepted
+   * hand transaction returns. Presence selects the 12-argument protocol-2
+   * RPC; the database hashes and stores it on the atomic hand receipt before
+   * either becomes visible.
+   */
+  postCommitObligations?: {
+    version: 1;
+    time_banks: Array<{
+      user_id: string;
+      uses_remaining: number;
+      seconds_remaining: number;
+    }>;
+    rake: Record<string, unknown> | null;
+    bbj_contribution: Record<string, unknown> | null;
+    promo_playthrough: Array<Record<string, unknown>>;
+    insurance: Array<Record<string, unknown>>;
+    pending_addons: { enabled: true; max_buy_in: number | null } | null;
+  };
+  /**
+   * Canonical facts independently carried by the accepted-hand payload. The
+   * 12-argument database door binds its obligation narrative to these values
+   * before storing either one. The extra JSON key is intentionally ignored by
+   * the hand_history row inserter but remains covered by the atomic hand hash.
+   */
+  acceptedPostCommitFacts?: {
+    contributions: Record<string, number>;
+    returned_uncalled: Record<string, number>;
+    insurance: Array<Record<string, unknown>>;
+  };
+  /**
+   * Local distributed-lease fence, invoked immediately before every retry of
+   * the authoritative PostgreSQL transaction. It is deliberately not part of
+   * the RPC payload's generation. Together they close both a persistent-
+   * UNKNOWN local retry and a stale continuation running after DB takeover.
+   */
+  assertLeaseAuthority?: () => void;
+}
 
 /**
  * Log hand history — every hand documented for audit and replay.
@@ -249,7 +307,19 @@ export async function logHandHistory(params: {
     hand_name?: string;
     hand_description?: string;
   }>;
-}): Promise<{ handId: string | null; wroteAwardUnits: boolean }> {
+  /**
+   * The authoritative hand commit.  When supplied, the hand row is not an
+   * independent best-effort insert: stacks, the row, tournament chip mirror,
+   * bomb units, immutable bust generation and projection outbox all go through
+   * fn_ca_commit_hand_settlement in one PostgreSQL transaction.
+   */
+  atomicCommit?: AtomicHandCommitInput;
+}): Promise<{
+  handId: string | null;
+  wroteAwardUnits: boolean;
+  settlementCommitted: boolean;
+  stackResult?: Record<string, unknown>;
+}> {
   // Round 38 fix: stamp started_at/ended_at + RETURNING id so the caller
   // can FK rake_records.hand_id back to this hand_history row.
   const startedAtIso = params.startedAt
@@ -350,36 +420,48 @@ export async function logHandHistory(params: {
     amount: u.amount,
     hand_name: u.hand_name ?? null,
   }));
-  const inserted = await insertHandHistoryRow(row, 'settlement', bombUnits);
+  const inserted = await insertHandHistoryRow(row, 'settlement', bombUnits, params.atomicCommit);
   const handId = inserted.id;
   const wroteUnitsAtomically = inserted.wroteUnits;
-  if (handId === null) {
+  if (handId === null && !params.atomicCommit) {
     // Every in-line attempt failed. Hand it to the background queue rather
     // than losing the hand — see enqueueHandHistory().
     enqueueHandHistory(row, bombUnits);
   }
 
-  // V28 AUDIT FIX (2026-08-29): the opponent-model observation used to sit
-  // INSIDE the `if (handId ...)` block below, coupling an in-memory read to a
-  // database write it does not need. During any DB incident (596 supabase
-  // timeouts in one hour on the day this was found), every hand that fell to
-  // the background queue silently skipped observeHandComplete — the
-  // fold-to-c-bet, fold-to-3-bet and big-bet tells went dark exactly when
-  // nothing else was watching either. The observation is memory-only and
-  // idempotent (handFlags dedupe); it runs whether or not the row landed.
+  // V28 AUDIT FIX (2026-08-29): observe regardless of whether the history row
+  // landed. ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
+  // HorseLogic in the sole worker FIFO. Enqueueing establishes the ordering:
+  // this observation is ahead of every decision the table can request next.
+  // Waiting for its ACK here would instead hold this table's settlement behind
+  // older work from every other table in the process. Graceful worker shutdown
+  // drains every accepted entry, so the durable hand commit can return as soon
+  // as the observation has been accepted into the FIFO.
   try {
-    HorseMind.observeHandComplete(
-      `${params.tableId}:${params.handNumber}`,
-      params.actions,
-      params.bigBlind,
-      params.showdownReveal ?? null,
+    const handKey = `${params.tableId}:${params.handNumber}`;
+    const observation = getLiveHorseDecisionWorker().observeCompletedHand({
+      generation: params.handNumber,
+      fence: [
+        params.tableId,
+        params.handNumber,
+        params.atomicCommit?.leaseGeneration ?? 'legacy',
+        'observe',
+      ].join(':'),
+      handKey,
+      actions: params.actions,
+      bigBlind: params.bigBlind,
+      showdown: params.showdownReveal ?? null,
       // V45: the hand's scope - card family and how many were dealt in.
-      readScopeOf(
+      scope: readScopeOf(
         params.gameVariant,
         params.holeCardsAll?.size ?? params.roster?.length ?? params.players?.length ?? 0
-      )
+      ),
+    });
+    void observation.catch((error) =>
+      reportError(error, 'HandHistory.horse_mind_observation_failed')
     );
-  } catch {
+  } catch (error) {
+    reportError(error, 'HandHistory.horse_mind_observation_failed');
     /* observation must never endanger settlement */
   }
 
@@ -454,7 +536,12 @@ export async function logHandHistory(params: {
      inside insertHandHistoryRow returns an EXISTING hand id after its RPC
      rolled back, so the units in this call were never written - reporting true
      there would skip the caller's fallback and lose them. */
-  return { handId, wroteAwardUnits: wroteUnitsAtomically };
+  return {
+    handId,
+    wroteAwardUnits: wroteUnitsAtomically,
+    settlementCommitted: inserted.settlementCommitted,
+    stackResult: inserted.stackResult,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -562,8 +649,127 @@ async function findExistingHandId(row: HandHistoryRow): Promise<string | null> {
 async function insertHandHistoryRow(
   row: HandHistoryRow,
   origin: 'settlement' | 'retry-queue',
-  bombAwardUnits: Record<string, unknown>[] = []
-): Promise<{ id: string | null; wroteUnits: boolean }> {
+  bombAwardUnits: Record<string, unknown>[] = [],
+  atomicCommit?: AtomicHandCommitInput
+): Promise<{
+  id: string | null;
+  wroteUnits: boolean;
+  settlementCommitted: boolean;
+  stackResult?: Record<string, unknown>;
+}> {
+  if (atomicCommit) {
+    type AtomicCommitResult = Record<string, unknown> & {
+      success?: boolean;
+      atomic_hand_commit?: boolean;
+      history_id?: string;
+      reason?: string;
+      error?: unknown;
+    };
+    const hasLeaseInstance = typeof atomicCommit.leaseInstanceId === 'string';
+    const hasLeaseGeneration = typeof atomicCommit.leaseGeneration === 'string';
+    const hasPostCommitObligations = atomicCommit.postCommitObligations !== undefined;
+    if (hasLeaseInstance !== hasLeaseGeneration) {
+      throw new Error('atomic hand commit refused (incomplete_lease_authority)');
+    }
+    if (
+      hasLeaseInstance &&
+      (atomicCommit.leaseInstanceId!.trim().length === 0 ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          atomicCommit.leaseGeneration!
+        ))
+    ) {
+      throw new Error('atomic hand commit refused (invalid_lease_authority)');
+    }
+    if (hasPostCommitObligations && !hasLeaseInstance) {
+      throw new Error('atomic hand commit refused (post_commit_requires_exact_lease)');
+    }
+    if (hasPostCommitObligations && !atomicCommit.acceptedPostCommitFacts) {
+      throw new Error('atomic hand commit refused (post_commit_facts_missing)');
+    }
+    const payload = {
+      p_table_id: row.table_id,
+      p_hand_number: row.hand_number,
+      p_stacks: atomicCommit.stacks,
+      p_rake: atomicCommit.rake,
+      p_bbj: atomicCommit.bbj,
+      p_ref: atomicCommit.ref ?? null,
+      p_inflow: atomicCommit.inflow ?? null,
+      p_hand_row: atomicCommit.acceptedPostCommitFacts
+        ? {
+            ...row,
+            _accepted_post_commit_facts: atomicCommit.acceptedPostCommitFacts,
+          }
+        : row,
+      p_units: bombAwardUnits,
+      ...(hasLeaseInstance
+        ? {
+            p_instance_id: atomicCommit.leaseInstanceId!,
+            p_lease_generation: atomicCommit.leaseGeneration!,
+          }
+        : {}),
+      ...(hasPostCommitObligations
+        ? { p_post_commit_obligations: atomicCommit.postCommitObligations! }
+        : {}),
+    };
+    let lastError = 'no response';
+
+    // Every retry is the same idempotent transaction.  This loop exists only
+    // for the ambiguous transport case: a lost HTTP response may follow a
+    // committed hand.  There is no alternate writer and no per-seat fallback.
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        atomicCommit.assertLeaseAuthority?.();
+        const { data, error } = await supabase.rpc('fn_ca_commit_hand_settlement', payload);
+        const result = (data ?? {}) as AtomicCommitResult;
+        if (!error && result.success === true && result.atomic_hand_commit === true) {
+          if (hasPostCommitObligations && result.post_commit_obligations !== true) {
+            throw new Error('atomic hand commit refused (missing_post_commit_receipt)');
+          }
+          const historyId = typeof result.history_id === 'string' ? result.history_id : '';
+          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(historyId)) {
+            throw new Error(
+              `atomic hand commit refused (invalid_receipt): ${JSON.stringify(result)}`
+            );
+          }
+          // The authoritative transaction is already committed. Projection
+          // is work-triggered and deliberately outside the dealing barrier;
+          // its outbox row remains the crash/lost-notification authority.
+          void wakeHandProjection().catch((err) =>
+            reportError(err, 'HandProjection.commit_wake_failed', {
+              handId: historyId,
+              handNumber: row.hand_number,
+            })
+          );
+          return {
+            id: historyId,
+            wroteUnits: bombAwardUnits.length > 0,
+            settlementCommitted: true,
+            stackResult: result,
+          };
+        }
+        if (!error && result.success === false && result.reason !== 'in_flight') {
+          throw new Error(
+            `atomic hand commit refused (${result.reason ?? 'unknown'}): ${String(result.error ?? JSON.stringify(result))}`
+          );
+        }
+        lastError = error?.message ?? String(result.reason ?? result.error ?? 'in_flight');
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        // A semantic refusal is deterministic. Retrying it would only hide a
+        // broken invariant behind delay.
+        if (/atomic hand commit refused/.test(lastError)) throw err;
+      }
+
+      if (attempt < 5) {
+        await new Promise((resolve) => setTimeout(resolve, 200 * 2 ** (attempt - 1)));
+      }
+    }
+
+    throw new Error(
+      `[DB] authoritative hand commit failed for table ${row.table_id} hand #${row.hand_number} after 5 identical attempts: ${lastError}`
+    );
+  }
+
   /* ONE TRANSACTION WHEN THERE IS A BREAKDOWN TO KEEP (2026-09-06).
      fn_ca_insert_hand_with_awards writes the hand row and its bomb award units
      together or writes neither. Still exactly ONE request, so the amplification
@@ -584,13 +790,19 @@ async function insertHandHistoryRow(
       p_row: row,
       p_units: bombAwardUnits,
     });
-    if (!error) return { id: (data as string | null) ?? minted, wroteUnits: true };
+    if (!error)
+      return {
+        id: (data as string | null) ?? minted,
+        wroteUnits: true,
+        settlementCommitted: true,
+      };
     if (error.code === '23505') {
       /* An earlier attempt landed and its response was lost. Its units went in
          with it - but THIS call's did not, because the RPC rolled back whole,
          so wroteUnits stays false and the caller's fallback still runs. */
       const existing = await findExistingHandId(row);
-      if (existing || minted) return { id: existing ?? minted, wroteUnits: false };
+      if (existing || minted)
+        return { id: existing ?? minted, wroteUnits: false, settlementCommitted: true };
     }
     if (origin === 'settlement') {
       reportError(
@@ -602,7 +814,7 @@ async function insertHandHistoryRow(
         'logHandHistory.insert_with_awards_failed'
       );
     }
-    return { id: null, wroteUnits: false };
+    return { id: null, wroteUnits: false, settlementCommitted: false };
   }
 
   const { data, error } = await supabase
@@ -611,7 +823,7 @@ async function insertHandHistoryRow(
     .select('id')
     .maybeSingle();
 
-  if (!error) return { id: data?.id ?? minted, wroteUnits: false };
+  if (!error) return { id: data?.id ?? minted, wroteUnits: false, settlementCommitted: true };
 
   // A duplicate means an earlier attempt landed after all (its response was
   // lost). PostgREST returns the Postgres SQLSTATE verbatim in the body.
@@ -619,7 +831,8 @@ async function insertHandHistoryRow(
   // same good news said a different way.
   if (error.code === '23505') {
     const existing = await findExistingHandId(row);
-    if (existing || minted) return { id: existing ?? minted, wroteUnits: false };
+    if (existing || minted)
+      return { id: existing ?? minted, wroteUnits: false, settlementCommitted: true };
   }
 
   if (origin === 'settlement') {
@@ -632,7 +845,7 @@ async function insertHandHistoryRow(
       'logHandHistory.insert_failed'
     );
   }
-  return { id: null, wroteUnits: false };
+  return { id: null, wroteUnits: false, settlementCommitted: false };
 }
 
 // ── Background retry queue ────────────────────────────────────────────────────

@@ -6,7 +6,7 @@
  * Phase 2 (2026-05-18): Migrated from Supabase Realtime to the Hetzner
  * engine WebSocket at wss://engine.smarter.poker/ws/channel.
  *
- * Public interface is IDENTICAL to the previous Supabase-backed version:
+ * The active subscription and broadcast surface remains transport-compatible:
  *   subscribeToClub / unsubscribeFromClub
  *   subscribeToTournament / unsubscribeFromTournament
  *   subscribeToLobby / unsubscribeFromLobby
@@ -40,7 +40,7 @@ import { reportError } from '../utils/errorReporter';
 import { readLocalSession } from '../lib/authUtils';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TYPES  (unchanged public API)
+// TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type ChannelType = 'club' | 'tournament' | 'table' | 'hand' | 'lobby';
@@ -81,10 +81,10 @@ export interface TournamentEvent {
        eliminatePlayer is never called with place 1 anyway — the bust sweep
        reserves it for the winner. See TournamentManagerEliminations. */
     | 'tournament_winner'
+    | 'final_table_deal'
     | 'level_up'
     | 'final_table'
     | 'heads_up'
-    | 'winner'
     | 'payout'
     | 'hand_for_hand'
     | 'prize_pool_finalized'
@@ -289,7 +289,6 @@ class RealtimeChannelService {
       onPlayerRegistered?: (player: unknown) => void;
       onPlayerEliminated?: (elimination: unknown) => void;
       onLevelUp?: (level: unknown) => void;
-      onWinner?: (winner: unknown) => void;
     }
   ): () => void {
     const channelName = `tournament:${tournamentId}`;
@@ -310,9 +309,6 @@ class RealtimeChannelService {
           break;
         case 'level_up':
           callbacks.onLevelUp?.(event.payload);
-          break;
-        case 'winner':
-          callbacks.onWinner?.(event.payload);
           break;
       }
     });

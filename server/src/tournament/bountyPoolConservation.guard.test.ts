@@ -45,8 +45,18 @@ function definitions(): string[] {
     .filter((f) => f.endsWith('.sql'))
     .sort()
     .map((f) => fs.readFileSync(path.join(MIGRATIONS, f), 'utf8'))
-    .filter((b) => b.includes('FUNCTION public.fn_finalize_bounty_pool'));
+    .filter((b) => b.includes('FUNCTION public.fn_finalize_bounty_pool'))
+    .map((body) => {
+      const start = body.indexOf('CREATE OR REPLACE FUNCTION public.fn_finalize_bounty_pool');
+      if (start < 0) return '';
+      const next = body.indexOf('CREATE OR REPLACE FUNCTION', start + 1);
+      return body.slice(start, next < 0 ? undefined : next);
+    })
+    .filter(Boolean);
 }
+
+const implementationDefinitions = (): string[] =>
+  definitions().filter((body) => body.includes('v_residual :=') && body.includes('v_paid'));
 
 /** Strip SQL comments so a guard cannot pass on prose describing the old code. */
 const sql = (s: string) => s.replace(/^\s*--.*$/gm, '');
@@ -57,7 +67,7 @@ describe('fn_finalize_bounty_pool', () => {
   });
 
   it('measures the residual from the ledger, not from bounty_pool_paid', () => {
-    const defs = definitions();
+    const defs = implementationDefinitions();
     const latest = sql(defs[defs.length - 1]);
 
     // It must read the ledger...
@@ -77,15 +87,21 @@ describe('fn_finalize_bounty_pool', () => {
   });
 
   it('signs the ledger off type, because a debit is not a payment', () => {
-    const defs = definitions();
+    const defs = implementationDefinitions();
     const latest = sql(defs[defs.length - 1]);
     expect(latest).toMatch(/lower\(wt\.type\) = 'debit'/);
   });
 
   it('never pays a negative or unfunded residual', () => {
-    const defs = definitions();
+    const defs = implementationDefinitions();
     const latest = sql(defs[defs.length - 1]);
     expect(latest).toMatch(/IF v_residual <= 0/);
+  });
+
+  it('the recoverability wrapper delegates to the private ledger implementation', () => {
+    const wrapper = sql(definitions()[definitions().length - 1]);
+    expect(wrapper).toContain('fn_finalize_bounty_pool_unguarded_20260907');
+    expect(wrapper).toMatch(/v_result\s*:=\s*public\.fn_finalize_bounty_pool_unguarded_20260907/);
   });
 });
 

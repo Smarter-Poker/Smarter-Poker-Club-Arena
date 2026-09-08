@@ -140,19 +140,23 @@ describe('the call sites whose id list grows with the room', () => {
   it('late-reg seating never reads a failed seat query as an empty room', () => {
     const manager = src('src/tournament/TournamentManager.ts');
     expect(manager).toMatch(/Tournament\.lateRegSeated/);
-    expect(manager).toMatch(/if \(!seatRead\.complete\) return;/);
+    expect(manager).toMatch(
+      /if \(!seatRead\.complete\) \{[\s\S]*?requestUrgentEliminationSweepAfter\(TournamentManagerBase\.LATE_REG_REDRIVE_MS\);[\s\S]*?return;[\s\S]*?\}/
+    );
   });
 
   it('the busted seat release is chunked, and reaches the error reporter', () => {
     const elim = src('src/tournament/TournamentManagerEliminations.ts');
-    expect(elim).toMatch(/tournamentTableIds\.slice\(i, i \+ IN_LIST_CHUNK\)/);
-    expect(elim).toMatch(/'Tournament\.seat_release_failed'/);
+    expect(elim).toMatch(/tableIds\.slice\(offset, offset \+ IN_LIST_CHUNK\)/);
+    expect(elim).toMatch(/'Tournament\.committed_cleanup_seat_release_failed'/);
   });
 
   it('fleet add-ons read the field in chunks', () => {
     const base = src('src/tournament/TournamentManagerBase.ts');
     expect(base).toMatch(/Tournament\.addOnHorses/);
-    expect(base).toMatch(/if \(!horseRead\.complete\) return;/);
+    expect(base).toMatch(
+      /if \(!horseRead\.complete\) \{[\s\S]*?requestUrgentEliminationSweepAfter\(TournamentManagerBase\.ADD_ON_RETRY_MS\);[\s\S]*?return;[\s\S]*?\}/
+    );
     expect(base).not.toMatch(/\.in\('id', candidates\)/);
   });
 });

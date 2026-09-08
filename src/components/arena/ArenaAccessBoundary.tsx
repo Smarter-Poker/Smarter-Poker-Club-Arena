@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { getArenaContext } from '../../services/ArenaContextService';
 import type { ArenaAccessContext } from '../../../server/src/domain/ArenaContext';
@@ -16,9 +16,11 @@ interface AccessState {
 export default function ArenaAccessBoundary({
   clubKey,
   children,
+  redirectToJoin = false,
 }: {
   clubKey?: string;
   children: ReactNode;
+  redirectToJoin?: boolean;
 }) {
   const key = clubKey?.trim() || '';
   const [retry, setRetry] = useState(0);
@@ -101,6 +103,8 @@ export default function ArenaAccessBoundary({
         <p>Diamond Games Are Not Open For Play Yet.</p>
       </section>
     );
+  if (!state.context.member && redirectToJoin)
+    return <Navigate to={`/invite/${encodeURIComponent(key)}`} replace />;
   if (!state.context.member)
     return (
       <section className="club-home error">

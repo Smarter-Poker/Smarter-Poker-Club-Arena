@@ -1,4 +1,3 @@
-import { getArenaContext } from './ArenaContextService';
 import type { ArenaAccessContext } from '../../server/src/domain/ArenaContext';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -114,6 +113,7 @@ export async function joinClubByIdentifier(options: {
     requestId: options.requestId || crypto.randomUUID(),
     createdAt: Date.now(),
   };
+  const { getArenaContext } = await import('./ArenaContextService');
   const context = await getArenaContext(pending.identifier);
   if (context?.automaticMembership) {
     const preview = await previewClubJoin(context.arena.id);

@@ -616,12 +616,17 @@ import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
 import { publicOrigin } from '../lib/appBase';
 
 export default function ClubHomePage({ clubIdOverride }: { clubIdOverride?: string } = {}) {
-  const { clubId } = useParams<{ clubId: string }>();
+  // Routed entry is checked by ClubMemberGuard. Embedded table lobbies need
+  // the same boundary because they do not mount that route guard.
   return (
     <PageErrorBoundary pageName="ClubHomePage">
-      <ArenaAccessBoundary clubKey={clubIdOverride || clubId}>
-        <ClubHomePageContent clubIdOverride={clubIdOverride} />
-      </ArenaAccessBoundary>
+      {clubIdOverride ? (
+        <ArenaAccessBoundary clubKey={clubIdOverride}>
+          <ClubHomePageContent clubIdOverride={clubIdOverride} />
+        </ArenaAccessBoundary>
+      ) : (
+        <ClubHomePageContent />
+      )}
     </PageErrorBoundary>
   );
 }

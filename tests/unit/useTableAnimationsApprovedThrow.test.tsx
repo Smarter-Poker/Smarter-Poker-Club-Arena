@@ -198,3 +198,48 @@ it('retains pending receipt identity after the completed-history window rolls ov
   expect(played).toHaveLength(526);
   expect(played.filter((id) => id.toLowerCase() === receipt)).toHaveLength(1);
 });
+
+it('remembers a just-completed receipt even after a large backlog displaced its arrival', () => {
+  const receipt = 'aa110000-0000-4000-8000-000000000001';
+  const { result } = renderHook(() => useTableAnimations('table-a', 'receiver', 2));
+  act(() => {
+    result.current.receiveThrow(1, 2, 'beer', receipt);
+    for (let i = 100000; i < 100513; i++) {
+      result.current.receiveThrow(1, 2, 'beer', `bb110000-0000-4000-8000-000000${i}`);
+    }
+  });
+  act(() => result.current.handleThrowComplete(receipt));
+  act(() => result.current.receiveThrow(1, 2, 'beer', receipt));
+  const played: string[] = [];
+  while (result.current.activeThrows.length) {
+    const batch = result.current.activeThrows.map((event) => event.id);
+    played.push(...batch);
+    act(() => batch.forEach((id) => result.current.handleThrowComplete(id)));
+  }
+  expect(played).toHaveLength(513);
+  expect(played).not.toContain(receipt);
+});
+
+it('rejects callbacks retained from a previous table visit or account', () => {
+  const receipt = 'aa110000-0000-4000-8000-000000000001';
+  const { result, rerender } = renderHook(({ table, user }) => useTableAnimations(table, user, 2), {
+    initialProps: { table: 'table-a', user: 'receiver' },
+    wrapper: StrictMode,
+  });
+  const oldReceive = result.current.receiveThrow;
+  const oldComplete = result.current.handleThrowComplete;
+  rerender({ table: 'table-b', user: 'receiver' });
+  act(() => oldReceive(1, 2, 'beer', receipt));
+  expect(result.current.activeThrows).toHaveLength(0);
+  rerender({ table: 'table-a', user: 'receiver' });
+  act(() => {
+    result.current.receiveThrow(1, 2, 'beer', receipt);
+    oldComplete(receipt);
+    oldReceive(1, 2, 'beer');
+  });
+  expect(result.current.activeThrows.map((event) => event.id)).toEqual([receipt]);
+  const previousAccountReceive = result.current.receiveThrow;
+  rerender({ table: 'table-a', user: 'another-user' });
+  act(() => previousAccountReceive(1, 2, 'beer', receipt));
+  expect(result.current.activeThrows).toHaveLength(0);
+});

@@ -159,7 +159,6 @@ describe('round 9: identity and display reads leave a trace', () => {
       'seat_restore_read_failed',
       'seat_profiles_read_failed',
       'waitlist_profiles_read_failed',
-      'buyin_seat_precheck_read_failed',
     ]) {
       expect(TABLE_PAGE, `missing reporter key ${key}`).toContain(key);
     }

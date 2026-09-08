@@ -15,6 +15,7 @@
  */
 
 import { reconnectProtectionSeconds, type ReconnectMembership } from './reconnectProtection.js';
+import { thawReconnectClock } from '../maintenance/reconnectFreeze.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { sitOutAutoActionDelayMs } from './sitOutBeat.js';
 import { reportError } from '../services/errorReporter.js';
@@ -40,6 +41,8 @@ export interface PlayerConnectionState {
   tableId: string;
   reconnectMembership?: ReconnectMembership;
   reconnectDeadlineMs?: number;
+  reconnectGrantedAtMs?: number;
+  reconnectThawedAtMs?: number;
   isConnected: boolean;
   lastHeartbeat: number;
   consecutiveTimeouts: number;
@@ -142,6 +145,8 @@ export interface DisconnectFsmEntry {
   sinceMs: number;
   graceDeadlineMs: number | null;
   reconnectDeadlineMs?: number;
+  reconnectGrantedAtMs?: number;
+  reconnectThawedAtMs?: number;
   /* ═══ 2026-09-04 (disconnect audit items 2, 3, 4): THE ENTRY CARRIES WHAT
      THE RESTORE NEEDS. Until today it was three fields, `sinceMs` was
      `lastHeartbeat` for a sat-out player (so a restore reset their 5-minute
@@ -424,8 +429,11 @@ export class DisconnectEngine {
     state.isConnected = false;
     state.disconnectedAt = Date.now();
     // A heartbeat alone does not replenish the allowance. A voluntary action does.
-    state.reconnectDeadlineMs ??=
-      state.disconnectedAt + reconnectProtectionSeconds(state.reconnectMembership ?? {}) * 1000;
+    if (state.reconnectDeadlineMs === undefined) {
+      state.reconnectGrantedAtMs = state.disconnectedAt;
+      state.reconnectDeadlineMs =
+        state.disconnectedAt + reconnectProtectionSeconds(state.reconnectMembership ?? {}) * 1000;
+    }
 
     this.emitEvent({
       type: 'PLAYER_DISCONNECTED',
@@ -592,6 +600,7 @@ export class DisconnectEngine {
     if (!state) return;
     state.consecutiveTimeouts = 0;
     state.reconnectDeadlineMs = undefined;
+    state.reconnectGrantedAtMs = undefined;
     // A deliberate action is the strongest possible proof of presence — it
     // outranks a missing heartbeat. Clear the away-blind budget with it.
     state.awayBlindSbCharged = false;
@@ -1041,6 +1050,7 @@ export class DisconnectEngine {
     const key = `${tableId}:${playerId}`;
     const s = this.playerStates.get(key);
     if (!s) return null;
+    thawReconnectClock(s);
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
 
     // Everything a restore needs to continue rather than restart (item 2/4).
@@ -1053,6 +1063,8 @@ export class DisconnectEngine {
       awayBlindBbCharged: s.awayBlindBbCharged === true,
       pageLeftAtMs: s.pageLeftAt ?? null,
       reconnectDeadlineMs: s.reconnectDeadlineMs,
+      reconnectGrantedAtMs: s.reconnectGrantedAtMs,
+      reconnectThawedAtMs: s.reconnectThawedAtMs,
     };
     if (s.isSittingOut) {
       // sinceMs is the sit-out's own start (item 4). It used to be
@@ -1133,6 +1145,8 @@ export class DisconnectEngine {
           : !connected && !sittingOut && Number.isFinite(entry.graceDeadlineMs)
             ? entry.graceDeadlineMs!
             : undefined,
+        reconnectGrantedAtMs: entry.reconnectGrantedAtMs,
+        reconnectThawedAtMs: entry.reconnectThawedAtMs,
         lastHeartbeat: entry.sinceMs || Date.now(),
         // 2026-09-04 (item 2): strikes, the blind budget, the sit-out reason
         // and the /away stamp survive a restart when the snapshot carries
@@ -1193,6 +1207,8 @@ export class DisconnectEngine {
     const key = `${tableId}:${playerId}`;
     const state = this.playerStates.get(key);
     if (!state) return;
+
+    thawReconnectClock(state);
 
     this.emitEvent({
       type: 'DISCONNECT_TIMER_STARTED',

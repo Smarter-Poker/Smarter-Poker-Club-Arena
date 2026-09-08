@@ -43,6 +43,8 @@ const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 const MIGRATION = read(
   'supabase/migrations/20260908113416_a_commission_payment_is_two_legs_on_the_journal.sql'
 );
+/** Part 2 of the same sweep: the third payer. */
+const ROUND3 = read('supabase/migrations/20260908121659_round_3_is_on_the_journal_too.sql');
 
 /** The leg each payer gains, as the migration splices it in. */
 const round2Leg = MIGRATION.slice(
@@ -117,5 +119,42 @@ describe('the rewrite refuses to guess', () => {
   it('and it asserts the payers kept everything else they did', () => {
     expect(MIGRATION).toMatch(/lost its settlement row or its treasury debit/);
     expect(MIGRATION).toMatch(/lost its settlement row or its transaction record/);
+  });
+});
+
+describe('round 3 is on the journal too', () => {
+  /* Found by sweeping every remaining union money path after the first two
+     payers landed. fn_settle_round3_agents_to_players moves the agent's
+     club_members.chip_balance to the player's and recorded it in one
+     wallet_transactions row. It has run: 559 rows / 43,990.40 on 2026-08-20.
+
+     No reader caught it because BOTH sides are member wallets, which
+     fn_ca_trial_balance reports as the single player_wallets account - the
+     debit and the credit cancel and the account total never moves. Only
+     fn_ca_ledger_replay, which is per account owner, can see it. */
+  it('posts the agent-to-player movement to chip_ledger', () => {
+    expect(ROUND3).toMatch(/INSERT INTO public\.chip_ledger/);
+  });
+
+  it('names member wallets on both sides, because that is what they are', () => {
+    const leg = ROUND3.slice(ROUND3.indexOf('$leg$'), ROUND3.lastIndexOf('$leg$'));
+    expect(leg).toMatch(/'player_wallet', r\.agent_user, 'player_wallet', r\.player_id/);
+  });
+
+  it('is rakeback, not commission, so the two obligations stay apart', () => {
+    const leg = ROUND3.slice(ROUND3.indexOf('$leg$'), ROUND3.lastIndexOf('$leg$'));
+    expect(leg).toMatch(/'rakeback'/);
+    expect(leg).not.toMatch(/'commission'/);
+  });
+
+  it('is keyed so a replayed close cannot double-post', () => {
+    expect(ROUND3).toMatch(/'round3:'/);
+    expect(ROUND3).toMatch(/ON CONFLICT DO NOTHING/);
+  });
+
+  it('refuses to guess, and keeps every step round 3 already had', () => {
+    expect(ROUND3).toMatch(/anchor expected exactly once, found %/);
+    expect(ROUND3).toMatch(/already writes a journal leg; nothing to do/);
+    expect(ROUND3).toMatch(/lost a step it had before/);
   });
 });

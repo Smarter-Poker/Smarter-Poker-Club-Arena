@@ -821,6 +821,7 @@ import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
+import { publicOrigin } from '../lib/appBase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
@@ -7359,6 +7360,7 @@ export default function TablePage({
   const [isRabbitAvailable, setIsRabbitAvailable] = useState(false);
   const [rabbitCardsAvailable, setRabbitCardsAvailable] = useState(0);
   const [rabbitRevealedCards, setRabbitRevealedCards] = useState<Card[]>([]);
+  const [rabbitRevealedHandNumber, setRabbitRevealedHandNumber] = useState<number | null>(null);
   /**
    * P1 2026-09-05: the board a reveal was bought against, kept so the felt
    * can go on showing it under the ghost cards while the NEXT hand's preflop
@@ -7415,7 +7417,9 @@ export default function TablePage({
     retainedRabbitBoard !== null &&
     retainedRabbitBoard.handNumber === (tableState.handNumber ?? 0)
       ? retainedRabbitCards
-      : rabbitRevealedCards;
+      : rabbitRevealedHandNumber === (tableState.handNumber ?? 0)
+        ? rabbitRevealedCards
+        : [];
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
@@ -7498,10 +7502,11 @@ export default function TablePage({
     async (handNumber?: number): Promise<RabbitHuntRevealResult> => {
       if (!tableId) return { success: false, error: 'Table Not Ready' };
 
-      const result = await requestRabbitHunt(
-        tableId,
-        handNumber ?? rabbitHandNumberRef.current ?? undefined
-      );
+      // Payment may finish after HAND_STARTED has cleared or replaced these refs.
+      const requestedHandNumber =
+        handNumber ?? rabbitHandNumberRef.current ?? liveHandNumberRef.current;
+      const boardAtRequest = lastBoardOfHandRef.current;
+      const result = await requestRabbitHunt(tableId, requestedHandNumber);
       if (!result.success || !result.cards?.length) {
         // Leave the offer up: a refusal for "Not Enough Diamonds" should not also
         // remove the button, or topping up cannot be followed by a retry.
@@ -7523,30 +7528,31 @@ export default function TablePage({
         rank: String(c.rank) as any,
         suit: suitMap[String(c.suit)] || 'h',
       }));
-      setRabbitRevealedCards(parsedCards);
-      // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
-      // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
-      // without freezing anything. It yields the moment a newer hand has cards.
-      setRetainedRabbitBoard(
-        boardForRabbitReveal(
-          lastBoardOfHandRef.current,
-          rabbitHandNumberRef.current ?? liveHandNumberRef.current,
-          parsedCards
-        )
-      );
-      if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
-      retainedRabbitTimerRef.current = window.setTimeout(() => {
-        retainedRabbitTimerRef.current = null;
-        setRetainedRabbitBoard(null);
-      }, RABBIT_REVEAL_MIN_VISIBLE_MS);
-      // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
-      // this, a reveal on a table that never deals another hand stayed on the
-      // board forever (the only other clears are hand-boundary resets).
-      if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
-      rabbitRevealClearTimerRef.current = window.setTimeout(() => {
-        rabbitRevealClearTimerRef.current = null;
-        setRabbitRevealedCards([]);
-      }, 8000);
+      // Explicit hand requests belong to the replayer, which renders its own
+      // result. A replayer purchase must never replace the live felt.
+      if (handNumber === undefined) {
+        setRabbitRevealedCards(parsedCards);
+        setRabbitRevealedHandNumber(requestedHandNumber);
+        // P1 2026-09-05: keep a copy of the board this reveal belongs to, so the
+        // felt can show it for RABBIT_REVEAL_MIN_VISIBLE_MS across a hand boundary
+        // without freezing anything. It yields the moment a newer hand has cards.
+        setRetainedRabbitBoard(
+          boardForRabbitReveal(boardAtRequest, requestedHandNumber, parsedCards)
+        );
+        if (retainedRabbitTimerRef.current) clearTimeout(retainedRabbitTimerRef.current);
+        retainedRabbitTimerRef.current = window.setTimeout(() => {
+          retainedRabbitTimerRef.current = null;
+          setRetainedRabbitBoard(null);
+        }, RABBIT_REVEAL_MIN_VISIBLE_MS);
+        // Unconditional dismissal: 3s guaranteed + 5s visible, then gone. Without
+        // this, a reveal on a table that never deals another hand stayed on the
+        // board forever (the only other clears are hand-boundary resets).
+        if (rabbitRevealClearTimerRef.current) clearTimeout(rabbitRevealClearTimerRef.current);
+        rabbitRevealClearTimerRef.current = window.setTimeout(() => {
+          rabbitRevealClearTimerRef.current = null;
+          setRabbitRevealedCards([]);
+        }, 8000);
+      }
       return {
         success: true,
         cards: parsedCards,
@@ -22137,7 +22143,7 @@ export default function TablePage({
                             every street exactly like a live board. */}
                         <CommunityCards
                           cards={board.cards.slice(0, board.visibleCount)}
-                          rabbitCards={board.revealed ? rabbitRevealedCards : []}
+                          rabbitCards={board.revealed ? liveRabbitCards : []}
                           stage={
                             board.visibleCount >= 5
                               ? 'river'
@@ -24397,7 +24403,7 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                const shareUrl = `${window.location.origin}/hub/club-arena/table/${tableId}`;
+                const shareUrl = `${publicOrigin()}/hub/club-arena/table/${tableId}`;
                 navigator.clipboard
                   ?.writeText(shareUrl)
                   .then(() => {

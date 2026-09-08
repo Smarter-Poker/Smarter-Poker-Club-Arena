@@ -71,7 +71,9 @@ interface FinancialSummary {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function statementMoney(value: number | null): string {
-  return value === null ? 'Unavailable' : value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return value === null
+    ? 'Unavailable'
+    : value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export default function UnionDetailPage() {
@@ -340,27 +342,32 @@ export default function UnionDetailPage() {
             unionRevenue: settlementReport.netUnionRevenue,
             pendingSettlements: settlementReport.pendingSettlements,
             overdueAmount: settlementReport.overdueAmount,
-            periodLabel: settlementReport.periodStart && settlementReport.periodEnd
-              ? `${settlementReport.periodStart} To ${settlementReport.periodEnd}` : 'No Issued Statement Period',
+            periodLabel:
+              settlementReport.periodStart && settlementReport.periodEnd
+                ? `${settlementReport.periodStart} To ${settlementReport.periodEnd}`
+                : 'No Issued Statement Period',
             coverageLabel: `${settlementReport.issuedClubs} Of ${settlementReport.totalClubs} Clubs Have Active Statements. Totals Cover Issued Statements Only.`,
           });
-          setSettlements(settlementReport.clubBreakdowns.map(cb => ({
-            id: cb.invoiceId ?? `missing-${cb.clubId}`,
-            periodStart: settlementReport.periodStart,
-            periodEnd: settlementReport.periodEnd,
-            clubId: cb.clubId,
-            clubName: cb.clubName,
-            rakeGenerated: cb.rakeCollected,
-            unionShare: cb.unionShare,
-            status: cb.status,
-          })));
-
+          setSettlements(
+            settlementReport.clubBreakdowns.map((cb) => ({
+              id: cb.invoiceId ?? `missing-${cb.clubId}`,
+              periodStart: settlementReport.periodStart,
+              periodEnd: settlementReport.periodEnd,
+              clubId: cb.clubId,
+              clubName: cb.clubName,
+              rakeGenerated: cb.rakeCollected,
+              unionShare: cb.unionShare,
+              status: cb.status,
+            }))
+          );
         } catch (e) {
           reportError(e, 'UnionDetailPage.map');
           if (isMounted) {
             setFinancialSummary(null);
             setSettlements([]);
-            setFinancialError('Statement Data Is Unavailable. Open Weekly Statements To Check Access Or Try Again.');
+            setFinancialError(
+              'Statement Data Is Unavailable. Open Weekly Statements To Check Access Or Try Again.'
+            );
           }
         }
       } catch (err) {
@@ -1461,101 +1468,103 @@ export default function UnionDetailPage() {
             </button>
 
             {financialError && <p role="alert">{financialError}</p>}
-            {financialSummary && <>
-            <p>{financialSummary.periodLabel}</p>
-            <p>{financialSummary.coverageLabel}</p>
-            {/* Summary Cards */}
-            <div className={styles.financialCards}>
-              <div className={styles.financialCard}>
-                <span className={styles.financialIcon}>%</span>
-                <div>
-                  <span className={styles.financialValue}>
-                    {statementMoney(financialSummary.totalRakeThisPeriod)}
-                  </span>
-                  <span className={styles.financialLabel}>Recorded Statement Rake</span>
-                </div>
-              </div>
-              <div className={styles.financialCard}>
-                <span className={styles.financialIcon}>◉</span>
-                <div>
-                  <span className={`${styles.financialValue} ${styles.positive}`}>
-                    {statementMoney(financialSummary.unionRevenue)}
-                  </span>
-                  <span className={styles.financialLabel}>
-                    Recorded Union Share
-                  </span>
-                </div>
-              </div>
-              <div className={styles.financialCard}>
-                <span className={styles.financialIcon}>◷</span>
-                <div>
-                  <span className={styles.financialValue}>
-                    {financialSummary.pendingSettlements}
-                  </span>
-                  <span className={styles.financialLabel}>Pending Settlements</span>
-                </div>
-              </div>
-              {financialSummary.overdueAmount > 0 && (
-                <div className={`${styles.financialCard} ${styles.overdue}`}>
-                  <span className={styles.financialIcon}>!</span>
-                  <div>
-                    <span className={`${styles.financialValue} ${styles.negative}`}>
-                      {financialSummary.overdueAmount.toLocaleString()}
-                    </span>
-                    <span className={styles.financialLabel}>Overdue</span>
+            {financialSummary && (
+              <>
+                <p>{financialSummary.periodLabel}</p>
+                <p>{financialSummary.coverageLabel}</p>
+                {/* Summary Cards */}
+                <div className={styles.financialCards}>
+                  <div className={styles.financialCard}>
+                    <span className={styles.financialIcon}>%</span>
+                    <div>
+                      <span className={styles.financialValue}>
+                        {statementMoney(financialSummary.totalRakeThisPeriod)}
+                      </span>
+                      <span className={styles.financialLabel}>Recorded Statement Rake</span>
+                    </div>
                   </div>
+                  <div className={styles.financialCard}>
+                    <span className={styles.financialIcon}>◉</span>
+                    <div>
+                      <span className={`${styles.financialValue} ${styles.positive}`}>
+                        {statementMoney(financialSummary.unionRevenue)}
+                      </span>
+                      <span className={styles.financialLabel}>Recorded Union Share</span>
+                    </div>
+                  </div>
+                  <div className={styles.financialCard}>
+                    <span className={styles.financialIcon}>◷</span>
+                    <div>
+                      <span className={styles.financialValue}>
+                        {financialSummary.pendingSettlements}
+                      </span>
+                      <span className={styles.financialLabel}>Pending Settlements</span>
+                    </div>
+                  </div>
+                  {financialSummary.overdueAmount > 0 && (
+                    <div className={`${styles.financialCard} ${styles.overdue}`}>
+                      <span className={styles.financialIcon}>!</span>
+                      <div>
+                        <span className={`${styles.financialValue} ${styles.negative}`}>
+                          {financialSummary.overdueAmount.toLocaleString()}
+                        </span>
+                        <span className={styles.financialLabel}>Overdue</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* Settlement History */}
-            <div className={styles.settlementSection}>
-              <h3> Statements For Selected Period</h3>
-              {/* 2026-08-19: /union-dashboard had NO link anywhere in the app —
+                {/* Settlement History */}
+                <div className={styles.settlementSection}>
+                  <h3> Statements For Selected Period</h3>
+                  {/* 2026-08-19: /union-dashboard had NO link anywhere in the app —
                   it was reachable only by typing the URL. That is where the
                   union wallet, the treasury and the weekly player win/loss
                   settlement live, so in practice none of it was visible to the
                   people who own it. */}
-              <p style={{ margin: '0 0 12px', fontSize: 13, opacity: 0.75 }}>
-                Weekly Player Win/Loss Settlement, Wallet And Treasury Live On The{' '}
-                <Link
-                  to={`/unions/${unionRef}/operations`}
-                  style={{ color: '#1877F2', fontWeight: 600 }}
-                >
-                  Union Dashboard
-                </Link>
-                .
-              </p>
-              <table className={styles.settlementTable}>
-                <thead>
-                  <tr>
-                    <th>Period</th>
-                    <th>Club</th>
-                    <th>Rake</th>
-                    <th>Union Share</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {settlements.map((s) => (
-                    <tr key={s.id}>
-                      <td>
-                        {s.periodStart && s.periodEnd ? `${s.periodStart} To ${s.periodEnd}` : 'No Issued Period'}
-                      </td>
-                      <td>{s.clubName}</td>
-                      <td>{statementMoney(s.rakeGenerated)}</td>
-                      <td className={styles.positive}>{statementMoney(s.unionShare)}</td>
-                      <td>
-                        <span className={`${styles.statusBadge} ${styles[s.status]}`}>
-                          {s.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            </>}
+                  <p style={{ margin: '0 0 12px', fontSize: 13, opacity: 0.75 }}>
+                    Weekly Player Win/Loss Settlement, Wallet And Treasury Live On The{' '}
+                    <Link
+                      to={`/unions/${unionRef}/operations`}
+                      style={{ color: '#1877F2', fontWeight: 600 }}
+                    >
+                      Union Dashboard
+                    </Link>
+                    .
+                  </p>
+                  <table className={styles.settlementTable}>
+                    <thead>
+                      <tr>
+                        <th>Period</th>
+                        <th>Club</th>
+                        <th>Rake</th>
+                        <th>Union Share</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {settlements.map((s) => (
+                        <tr key={s.id}>
+                          <td>
+                            {s.periodStart && s.periodEnd
+                              ? `${s.periodStart} To ${s.periodEnd}`
+                              : 'No Issued Period'}
+                          </td>
+                          <td>{s.clubName}</td>
+                          <td>{statementMoney(s.rakeGenerated)}</td>
+                          <td className={styles.positive}>{statementMoney(s.unionShare)}</td>
+                          <td>
+                            <span className={`${styles.statusBadge} ${styles[s.status]}`}>
+                              {s.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         )}
 

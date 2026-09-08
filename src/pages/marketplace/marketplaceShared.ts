@@ -20,6 +20,9 @@ import { reportError } from '../../utils/errorReporter';
 import { normalizeThemePresetId } from '../../lib/tableTheme';
 import { ALL_COSMETICS, normalizeCosmeticToken } from '../../cosmetics/avatarCosmetics';
 import { uuid } from '../../utils/uuid';
+import { leaveForHub } from '../../lib/openExternal';
+import { isNativePlatform } from '../../lib/appBase';
+import { appNavigate } from '../../lib/routerBridge';
 
 /* ═══ Types ═══ */
 
@@ -551,6 +554,22 @@ export async function loadWalletInfo(): Promise<WalletInfo> {
   };
 }
 
+/** What the app asks the store for, from the same items the web sends Stripe. */
+export function nativePurchaseRequestFor(
+  type: 'diamonds' | 'subscription',
+  items: Record<string, unknown>[]
+): import('../../lib/native/purchases').NativePurchaseRequest | null {
+  const first = items[0] || {};
+  if (type === 'diamonds') {
+    const packageKey = typeof first.packageId === 'string' ? first.packageId : null;
+    return packageKey ? { kind: 'diamonds', packageKey } : null;
+  }
+  const plan = typeof first.plan === 'string' ? first.plan : '';
+  if (plan === 'vip-monthly') return { kind: 'vip', tier: 'monthly' };
+  if (plan === 'vip-yearly' || plan === 'vip-annual') return { kind: 'vip', tier: 'yearly' };
+  return null; // lifetime is not a store product (audit: monthly and annual)
+}
+
 /**
  * Start a Stripe Checkout session and redirect. type 'diamonds' | 'subscription'.
  * The server only honours return URLs on its own origin; anything else falls
@@ -562,6 +581,40 @@ export async function startCheckout(
   returnParams: string,
   idempotencyKey: string = uuid()
 ): Promise<void> {
+  // THE APP (2026-09-08, store readiness phase 3c): the store's own billing.
+  // Apple 3.1.1 / Play Payments: diamonds and VIP bought inside the app go
+  // through StoreKit / Play Billing (RevenueCat), never Stripe Checkout. The
+  // store sheet opens over the marketplace; the credit lands through the
+  // webhook, so on success the page is sent to the same ?purchase=success
+  // return it already handles for Stripe (it polls the wallet for the credit).
+  if (isNativePlatform()) {
+    const { data: sess, error: sessError } = await supabase.auth.getSession();
+    if (sessError) reportError(sessError, 'marketplace.startCheckout_native_session_read_failed');
+    const userId = sess?.session?.user?.id;
+    if (!userId) throw new Error('Not authenticated');
+    const req = nativePurchaseRequestFor(type, items);
+    if (!req) throw new Error('This Item Is Not Available In The App Store Yet.');
+    const { purchaseNative } = await import('../../lib/native/purchases');
+    const result = await purchaseNative(userId, req);
+    if (result.cancelled) {
+      appNavigate(`${window.location.pathname}?${returnParams}&purchase=canceled`, {
+        replace: true,
+      });
+      return;
+    }
+    if (!result.ok) {
+      if (result.error === 'store_not_configured') {
+        throw new Error('Purchases Are Not Set Up On This Build Yet.');
+      }
+      if (result.error === 'product_not_in_store') {
+        throw new Error('This Item Is Not Available In The Store Yet.');
+      }
+      throw new Error('The Purchase Could Not Be Completed.');
+    }
+    appNavigate(`${window.location.pathname}?${returnParams}&purchase=success`, { replace: true });
+    return;
+  }
+
   const base = `${window.location.origin}${window.location.pathname}`;
   const data = await storeFetch<{ success: true; data: { url: string } }>(
     '/api/store/create-checkout-session',
@@ -577,7 +630,9 @@ export async function startCheckout(
   );
   const url = data?.data?.url;
   if (!url) throw new Error('Checkout session did not return a URL');
-  window.location.assign(url);
+  // Web: Stripe Checkout takes over the tab. Native: it opens in the in-app
+  // browser for now; phase 3 replaces this path with StoreKit / Play Billing.
+  leaveForHub(url);
 }
 
 /* ═══ Server catalog — the marketplace's single source of truth ═══ */

@@ -14,15 +14,24 @@ beforeEach(() => {
     frames.set(++sequence, callback);
     return sequence;
   });
-  vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id); });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    frames.delete(id);
+  });
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 function tick(time: number) {
   const first = frames.entries().next().value;
   expect(first).toBeDefined();
   const [id, callback] = first!;
   frames.delete(id);
-  act(() => { vi.setSystemTime(time); callback(time); });
+  act(() => {
+    vi.setSystemTime(time);
+    callback(time);
+  });
 }
 const props = { isWinner: true, prize: 100, tournamentName: 'Test Event', onDismiss: vi.fn() };
 

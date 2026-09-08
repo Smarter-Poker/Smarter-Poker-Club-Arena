@@ -31,3 +31,9 @@ PokerEngine accepts an explicit fixed-limit completion increment for its matchin
 ## Additional Stored-Card Review
 
 Read-only installed-function review also traced ca_player_hands_v2 and ca_player_stats_overview_v2. Both call ca_assert_self before the internal reader. The assertion requires matching authenticated identity except for the service role. The internal hand reader suppresses another user's hole cards and is not directly executable by authenticated callers. This extends the direct-reader evidence in phase2-card-visibility; it does not certify all authentication/session policy or the Phase 6/9 aggregate-statistics follow-up.
+
+## Push-Gate Follow-up
+
+The first push was blocked: 2 failures, 4,328 passes and 18 skips. Both failures were the randomized driver's old fixed-limit wager generator, which still offered a full increment instead of a completion (fixed seed 1463 and fresh seed 54412486). HandFuzzer now generates the shared legal completion amount and checks the counted-wager cap. The independent exact-amount regressions and all chip-conservation/action-legality assertions remain unchanged. The failed push is retained in /tmp/phase2-limit-push.log.
+
+After correcting wager generation, the full 10,000-hand fixed corpus and 1,000-hand fresh exploration passed, alongside 43 completion/pot-limit cases: 47 tests across three files.

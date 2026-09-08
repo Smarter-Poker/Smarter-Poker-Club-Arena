@@ -53,6 +53,7 @@ import {
   isFixedLimitVariant,
   isFixedLimitCapped,
   fixedLimitBetSize,
+  fixedLimitStreetBounds,
 } from './BettingStructure.js';
 
 import type { ActionType, GameVariant, HandConfig, SeatPlayer } from '../types.js';
@@ -540,8 +541,14 @@ function amountFor(
   // cover the fixed bet; the caller then picks a different action, which is the
   // same escape it already uses for a pot-limit cap below a full raise.
   if (isFixedLimitVariant(cfg.gameVariant)) {
-    if (isFixedLimitCapped(st.actionHistory, st.stage)) return null;
-    const betSize = fixedLimitBetSize(cfg.bigBlind, st.stage);
+    const streetBet = fixedLimitBetSize(cfg.bigBlind, st.stage);
+    if (isFixedLimitCapped(st.actionHistory, st.stage, streetBet)) return null;
+    const betSize = fixedLimitStreetBounds(
+      st.actionHistory,
+      st.stage,
+      streetBet,
+      st.currentBet
+    ).raiseSize;
     if (action === 'bet') {
       return player.stack + EPS < betSize ? null : cents(betSize);
     }

@@ -88,7 +88,10 @@ describe('throwable purchase failures stay handled without telemetry', () => {
       error: 'Throw unavailable, please try again',
     });
     expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith('fn_use_throwable', { p_throwable_id: 'beer' });
+    expect(rpc).toHaveBeenCalledWith('fn_use_throwable_v2', {
+      p_throwable_id: 'beer',
+      p_request_id: expect.any(String),
+    });
   });
 
   it('returns a rejected request as an error result', async () => {
@@ -98,5 +101,77 @@ describe('throwable purchase failures stay handled without telemetry', () => {
       error: 'Unexpected error',
     });
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('uncertain throw receipts', () => {
+  beforeEach(() => vi.clearAllMocks());
+  it('retains the request for a malformed success response', async () => {
+    const rpc = vi
+      .spyOn(supabase, 'rpc')
+      .mockResolvedValue({ data: { status: 'unknown' }, error: null } as never);
+    await throwableService.useThrowable('malformed-user', 'beer');
+    await throwableService.useThrowable('malformed-user', 'beer');
+    expect(rpc.mock.calls[0][1]).toEqual(rpc.mock.calls[1][1]);
+  });
+  it('retains an in-memory retry identity when session storage is disabled', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('disabled');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('disabled');
+    });
+    const rpc = vi.spyOn(supabase, 'rpc').mockRejectedValue(new Error('lost'));
+    await throwableService.useThrowable('no-storage-user', 'beer');
+    await throwableService.useThrowable('no-storage-user', 'beer');
+    expect(rpc.mock.calls[0][1]).toEqual(rpc.mock.calls[1][1]);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+  it('reuses the request after a lost response and starts a new intent after success', async () => {
+    const rpc = vi
+      .spyOn(supabase, 'rpc')
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValue({ data: { success: true, idempotent: true }, error: null } as never);
+    await throwableService.useThrowable('receipt-retry-user', 'beer');
+    const first = rpc.mock.calls[0][1] as { p_request_id: string };
+    expect(sessionStorage.getItem('throwable-pending:receipt-retry-user:beer')).toBe(
+      first.p_request_id
+    );
+    await expect(throwableService.useThrowable('receipt-retry-user', 'beer')).resolves.toEqual({
+      success: true,
+    });
+    expect(rpc.mock.calls[1][1]).toEqual(rpc.mock.calls[0][1]);
+    expect(sessionStorage.getItem('throwable-pending:receipt-retry-user:beer')).toBeNull();
+    await throwableService.useThrowable('receipt-retry-user', 'beer');
+    expect((rpc.mock.calls[2][1] as { p_request_id: string }).p_request_id).not.toBe(
+      first.p_request_id
+    );
+  });
+  it('recovers a persisted request and clears a definite server rejection', async () => {
+    const key = 'throwable-pending:receipt-restored-user:beer';
+    const id = '00000000-0000-4000-8000-000000000055';
+    sessionStorage.setItem(key, id);
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValue({
+      data: { success: false, error: 'Insufficient Diamonds' },
+      error: null,
+    } as never);
+    await expect(throwableService.useThrowable('receipt-restored-user', 'beer')).resolves.toEqual({
+      success: false,
+      error: 'Insufficient Diamonds',
+    });
+    expect(rpc).toHaveBeenCalledWith('fn_use_throwable_v2', {
+      p_throwable_id: 'beer',
+      p_request_id: id,
+    });
+    expect(sessionStorage.getItem(key)).toBeNull();
+  });
+  it('does not reuse a request across users or items', async () => {
+    const rpc = vi.spyOn(supabase, 'rpc').mockRejectedValue(new Error('offline'));
+    await throwableService.useThrowable('scope-user-a', 'beer');
+    await throwableService.useThrowable('scope-user-a', 'tomato');
+    await throwableService.useThrowable('scope-user-b', 'beer');
+    const ids = rpc.mock.calls.map((c) => (c[1] as { p_request_id: string }).p_request_id);
+    expect(new Set(ids).size).toBe(3);
   });
 });

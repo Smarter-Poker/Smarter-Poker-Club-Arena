@@ -1,3 +1,4 @@
+import { AtlasSprite } from '../AtlasSprite';
 /**
  * ===============================================================================
  *  TROPHY - vanish, a wisp, a spotlight beam, a golden reform (phase 2, 2026-09-07)
@@ -99,14 +100,6 @@ export const trophySpec: ThrowableSpec = {
 preloadThrowableCues(trophySpec.audio.map((c) => c.sample));
 
 /** The measured golds, the bronze base and the wisp/beam neutrals. */
-const GOLD_HIGH = '#fff4c2';
-const GOLD_MID = '#eebd1f';
-const GOLD_DEEP = '#a9760a';
-const BRONZE_BASE = '#6b4413';
-const SILHOUETTE = '#241a10';
-const WISP_GREY = '#c7c7c7';
-const BEAM_WHITE = '#fffdf3';
-const BEAM_GOLD = '#ffd76b';
 
 /**
  * The trophy statuette: a small chalice on a plinth, ~28 units wide and
@@ -116,120 +109,10 @@ const BEAM_GOLD = '#ffd76b';
  * beam before the gold takes over). `k` keeps the three copies' gradient
  * ids apart - all three can be in the DOM at once during the crossfade.
  */
-function Trophy({ uid, k, tone }: { uid: string; k: string; tone: 'gold' | 'dark' }) {
-  const g = (n: string) => `thr-trophy-${n}-${uid}-${k}`;
-  const bowl = tone === 'gold' ? `url(#${g('bowl')})` : SILHOUETTE;
-  const base = tone === 'gold' ? BRONZE_BASE : SILHOUETTE;
+function Trophy({ tone }: { uid: string; k: string; tone: 'gold' | 'dark' }) {
   return (
-    <g>
-      {tone === 'gold' && (
-        <defs>
-          <linearGradient id={g('bowl')} x1="0" y1="0" x2="1" y2="0.15">
-            <stop offset="0%" stopColor="#765008" />
-            <stop offset="17%" stopColor={GOLD_MID} />
-            <stop offset="29%" stopColor={GOLD_HIGH} />
-            <stop offset="37%" stopColor="#ffffff" />
-            <stop offset="47%" stopColor={GOLD_MID} />
-            <stop offset="74%" stopColor={GOLD_DEEP} />
-            <stop offset="91%" stopColor={GOLD_HIGH} />
-            <stop offset="100%" stopColor="#78520c" />
-          </linearGradient>
-          <linearGradient id={g('plinth')} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#bd9253" />
-            <stop offset="35%" stopColor={BRONZE_BASE} />
-            <stop offset="100%" stopColor="#301e10" />
-          </linearGradient>
-          <radialGradient id={g('contact')}>
-            <stop offset="0%" stopColor="#0c0804" stopOpacity="0.5" />
-            <stop offset="100%" stopColor="#0c0804" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-      )}
-      {tone === 'gold' && <ellipse cx="1" cy="46" rx="19" ry="4" fill={`url(#${g('contact')})`} />}
-      {/* the plinth */}
-      <rect
-        x="-14"
-        y="34"
-        width="28"
-        height="11"
-        rx="1.6"
-        fill={tone === 'gold' ? `url(#${g('plinth')})` : base}
-      />
-      {/* the stem */}
-      <rect x="-3.2" y="16" width="6.4" height="18" fill={base} />
-      {/* the bowl, a chalice tapering down to the stem */}
-      <path
-        d="M -15 -40 C -15 -20, -13 -2, -3 16 L 3 16 C 13 -2, 15 -20, 15 -40 C 9 -36, -9 -36, -15 -40 Z"
-        fill={bowl}
-      />
-      {/* two handles */}
-      <path
-        d="M -15 -30 C -24 -30, -24 -12, -15 -8"
-        fill="none"
-        stroke={bowl}
-        strokeWidth="3.4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M 15 -30 C 24 -30, 24 -12, 15 -8"
-        fill="none"
-        stroke={bowl}
-        strokeWidth="3.4"
-        strokeLinecap="round"
-      />
-      {/* rim */}
-      <ellipse cx="0" cy="-39" rx="14" ry="3" fill={tone === 'gold' ? GOLD_HIGH : SILHOUETTE} />
-      {tone === 'gold' && (
-        <g>
-          {/* A recessed mouth, rolled rim, fluted stem and inset plaque. */}
-          <ellipse cx="0" cy="-39.3" rx="11.7" ry="1.7" fill="#825311" />
-          <path d="M -13 -37.8 Q 0 -33.8 13 -37.8" fill="none" stroke="#fff6cc" strokeWidth="1.3" />
-          <path
-            d="M -11 -30 C -10 -11 -7 2 -2 12"
-            fill="none"
-            stroke="#fff8de"
-            strokeWidth="1.2"
-            opacity="0.72"
-          />
-          <path
-            d="M 9 -28 C 8 -10 6 0 2 10"
-            fill="none"
-            stroke="#80510c"
-            strokeWidth="1.1"
-            opacity="0.7"
-          />
-          <path d="M -1.4 18 L -1.4 32" stroke="#fff1aa" strokeWidth="1.1" />
-          <ellipse cx="0" cy="32" rx="6" ry="1.7" fill={bowl} />
-          <path d="M -12 35 L 12 35 M -12 43.5 L 12 43.5" stroke="#d0a963" strokeWidth="0.9" />
-          <rect
-            x="-6.5"
-            y="37"
-            width="13"
-            height="5"
-            rx="0.6"
-            fill={bowl}
-            stroke="#3e2811"
-            strokeWidth="0.7"
-          />
-          <path
-            d="M 0 -19 L 1.7 -15.2 L 5.8 -14.8 L 2.7 -12 L 3.5 -8 L 0 -10 L -3.5 -8 L -2.7 -12 L -5.8 -14.8 L -1.7 -15.2 Z"
-            fill="#fff0ac"
-            stroke="#a87518"
-            strokeWidth="0.65"
-          />
-        </g>
-      )}
-      {tone === 'gold' && (
-        <ellipse
-          cx="-5"
-          cy="-28"
-          rx="3.2"
-          ry="9"
-          transform="rotate(-15 -5 -28)"
-          fill="#ffffff"
-          opacity="0.32"
-        />
-      )}
+    <g opacity={tone === 'dark' ? 0.35 : 1}>
+      <AtlasSprite src="trophy" rect={[20, 50, 590, 570]} x={-44} y={-45} width={88} height={90} />
     </g>
   );
 }
@@ -238,14 +121,7 @@ function Trophy({ uid, k, tone }: { uid: string; k: string; tone: 'gold' | 'dark
  *  vanished. Its own group animates the rise and fade; the path is static. */
 function Wisp() {
   return (
-    <path
-      d="M -2.4 40 C -4 22, 2.4 8, -0.6 -10 C -2.6 -22, 1.6 -30, -1 -42"
-      fill="none"
-      stroke={WISP_GREY}
-      strokeWidth="3"
-      strokeLinecap="round"
-      opacity="0.6"
-    />
+    <AtlasSprite src="trophy" rect={[640, 5, 590, 630]} x={-38} y={-45} width={76} height={90} />
   );
 }
 
@@ -254,35 +130,16 @@ function Wisp() {
  * gradient) behind a narrower bright core (soft TOP fade via a vertical
  * gradient), base at y +42 near the plinth, tip at y -96. No filter anywhere.
  */
-function Beam({ uid }: { uid: string }) {
-  const g = (n: string) => `thr-trophy-${n}-${uid}`;
+function Beam(_: { uid: string }) {
   return (
-    <g>
-      <defs>
-        <linearGradient id={g('halo')} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor={BEAM_GOLD} stopOpacity="0" />
-          <stop offset="50%" stopColor={BEAM_WHITE} stopOpacity="0.5" />
-          <stop offset="100%" stopColor={BEAM_GOLD} stopOpacity="0" />
-        </linearGradient>
-        <linearGradient id={g('core')} x1="0" y1="1" x2="0" y2="0">
-          <stop offset="0%" stopColor={BEAM_GOLD} stopOpacity="0.85" />
-          <stop offset="55%" stopColor={BEAM_WHITE} stopOpacity="1" />
-          <stop offset="100%" stopColor={BEAM_WHITE} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points="-22,42 22,42 12,-96 -12,-96" fill={`url(#${g('halo')})`} />
-      <polygon points="-11,42 11,42 5,-96 -5,-96" fill={`url(#${g('core')})`} />
-    </g>
+    <AtlasSprite src="trophy" rect={[20, 635, 575, 619]} x={-55} y={-96} width={110} height={138} />
   );
 }
 
 /** A small four-point sparkle glint, drawn around (0,0). */
 function SparkleGlint() {
   return (
-    <path
-      d="M 0 -6.5 L 1.3 -1.3 L 6.5 0 L 1.3 1.3 L 0 6.5 L -1.3 1.3 L -6.5 0 L -1.3 -1.3 Z"
-      fill="#fff6d8"
-    />
+    <AtlasSprite src="trophy" rect={[700, 660, 485, 545]} x={-8} y={-8} width={16} height={16} />
   );
 }
 

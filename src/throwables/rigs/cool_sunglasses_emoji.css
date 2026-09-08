@@ -1,0 +1,79 @@
+.thr-cool_sunglasses_emoji__glasses {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-cool_sunglasses_emoji-glasses calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(0.2s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-cool_sunglasses_emoji-glasses {
+  0% {
+    opacity: 1;
+    transform: translateY(-110px) rotate(-12deg);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(4px) rotate(2deg);
+  }
+  82% {
+    transform: translateY(-7px) rotate(-1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-cool_sunglasses_emoji__tilt {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: thr-cool_sunglasses_emoji-tilt calc(3.9s * var(--animation-speed, 1)) ease-in-out
+    calc(0s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-cool_sunglasses_emoji-tilt {
+  0%,
+  25% {
+    transform: rotate(0);
+  }
+  45%,
+  85% {
+    transform: rotate(-10deg);
+  }
+  100% {
+    transform: rotate(-6deg);
+  }
+}
+.thr-cool_sunglasses_emoji__glint {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-cool_sunglasses_emoji-glint calc(0.65s * var(--animation-speed, 1)) ease-out
+    calc(1.3s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-cool_sunglasses_emoji-glint {
+  0% {
+    opacity: 1;
+    transform: scale(0.15) rotate(-30deg);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.1) rotate(70deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-cool_sunglasses_emoji__tilt,
+  .thr-cool_sunglasses_emoji__glasses,
+  .thr-cool_sunglasses_emoji__glint {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-cool_sunglasses_emoji__tilt,
+  .thr-cool_sunglasses_emoji__glasses {
+    opacity: 1 !important;
+  }
+  .thr-cool_sunglasses_emoji__glint {
+    opacity: 0 !important;
+  }
+}

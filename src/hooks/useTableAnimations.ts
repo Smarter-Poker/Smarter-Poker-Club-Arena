@@ -13,6 +13,28 @@ import { throwableService, type Throwable, type ThrowEvent } from '../services/T
 import { roomService } from '../services/RoomService';
 import type { ChipAnimationEvent } from '../components/table/ChipAnimation';
 import { preloadThrowableImages } from '../components/table/ThrowableImage';
+import { isThrowableEventId } from '../throwables/identity';
+
+interface ThrowPlaybackState {
+  events: ThrowEvent[];
+  receipts: string[];
+}
+
+// Receipt identity only deduplicates delivery; it does not authorize a throw.
+// Keep the history after animation completion, and bound it for long-lived tables.
+function appendThrow(
+  state: ThrowPlaybackState,
+  event: ThrowEvent,
+  receipt?: string,
+  limit = Infinity
+): ThrowPlaybackState {
+  const key = isThrowableEventId(receipt) ? receipt.toLowerCase() : undefined;
+  if ((key && state.receipts.includes(key)) || state.events.length >= limit) return state;
+  return {
+    events: [...state.events, event],
+    receipts: key ? [...state.receipts.slice(-511), key] : state.receipts,
+  };
+}
 
 export interface UseTableAnimationsReturn {
   // Throwables
@@ -48,7 +70,17 @@ export function useTableAnimations(
   // Throwable state
   const [showThrowableSelector, setShowThrowableSelector] = useState(false);
   const [throwTargetSeat, setThrowTargetSeat] = useState<number | null>(null);
-  const [activeThrows, setActiveThrows] = useState<ThrowEvent[]>([]);
+  const [throwPlayback, setThrowPlayback] = useState<ThrowPlaybackState>({
+    events: [],
+    receipts: [],
+  });
+  const activeThrows = throwPlayback.events;
+
+  useEffect(() => {
+    setThrowPlayback({ events: [], receipts: [] });
+    setShowThrowableSelector(false);
+    setThrowTargetSeat(null);
+  }, [tableId, userId]);
 
   // Chip animation state
   const [chipAnimations, setChipAnimations] = useState<ChipAnimationEvent[]>([]);
@@ -73,7 +105,7 @@ export function useTableAnimations(
       );
 
       if (event) {
-        setActiveThrows((prev) => [...prev, event]);
+        setThrowPlayback((prev) => appendThrow(prev, event, requestId));
         // 2026-08-20: impact audio moved INTO ThrowAnimation, which now plays a
         // launch whoosh at flight start and the item-specific SFX exactly on
         // landing (both sender and receivers). Playing the old generic thud
@@ -101,14 +133,14 @@ export function useTableAnimations(
     (fromSeat: number, toSeat: number, throwableId: string, eventId?: string) => {
       const event = throwableService.createThrowEvent(fromSeat, toSeat, throwableId, eventId);
       if (!event) return;
-      setActiveThrows((prev) => (prev.length >= 12 ? prev : [...prev, event]));
+      setThrowPlayback((prev) => appendThrow(prev, event, eventId, 12));
       // Audio handled by ThrowAnimation (launch + per-item impact), see above.
     },
     []
   );
 
   const handleThrowComplete = useCallback((eventId: string) => {
-    setActiveThrows((prev) => prev.filter((e) => e.id !== eventId));
+    setThrowPlayback((prev) => ({ ...prev, events: prev.events.filter((e) => e.id !== eventId) }));
   }, []);
 
   /* `getSeatPositions` is GONE (2026-08-28). It was deprecated on 2026-08-15

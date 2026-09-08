@@ -1,3 +1,4 @@
+import { AsyncResource } from 'node:async_hooks';
 /**
  * Process-wide tournament elimination scheduler.
  *
@@ -141,6 +142,15 @@ export class TournamentEliminationScheduler {
 
     const entry: Entry = {
       ...registration,
+      // A process-wide scheduler is invoked by many manager contexts. Its
+      // timers and promise continuations inherit whichever manager woke it.
+      // Restore each callback's registration context before invoking the
+      // manager's own immutable authority binder. Never rebind or weaken the
+      // data authority guard to make cross-tournament dispatch succeed.
+      run: AsyncResource.bind(registration.run, 'TournamentElimination.run'),
+      isActive: registration.isActive
+        ? AsyncResource.bind(registration.isActive, 'TournamentElimination.isActive')
+        : undefined,
       registered: true,
       queuedAs: null,
       dirtyAs: null,

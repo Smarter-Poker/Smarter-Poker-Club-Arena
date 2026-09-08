@@ -1,4 +1,9 @@
-# The PioSolver Database — What Actually Exists (verified against production 2026-08-29)
+# The PioSolver Database — What Actually Exists
+
+The schema boundary and small-table row counts were re-verified against
+production on 2026-09-08. The `solved_spots_gold` row and size figures below are
+the 2026-08-29 snapshot; deliberately do not refresh them with a live full-table
+count because that exact operation has already starved the production database.
 
 A description of this system has circulated naming tables `gto_solutions`,
 `gto_solve_queue` and `preflop_ranges`, with columns `gto_action`,
@@ -10,12 +15,12 @@ from memory.
 
 ## The real tables
 
-| table                                                                    | rows           | size      | what it is                                          |
-| ------------------------------------------------------------------------ | -------------- | --------- | --------------------------------------------------- |
-| `solved_spots_gold`                                                      | **8,843,737**  | **79 GB** | The warehouse. Pio CFR output per scenario.         |
-| `memory_charts_gold`                                                     | 240            | 328 kB    | Preflop push/fold charts, 2–25bb.                   |
-| `gto_scenarios`                                                          | 1              | —         | vestigial                                           |
-| `solver_queue` / `solver_manifest` / `solver_pipeline` / `solver_status` | 0 / 5 / 13 / 2 | —         | dispatch plumbing for the Windows PioSolver workers |
+| table                                                                    | rows           | size      | what it is                                  |
+| ------------------------------------------------------------------------ | -------------- | --------- | ------------------------------------------- |
+| `solved_spots_gold`                                                      | **8,843,737**  | **79 GB** | The warehouse. Pio CFR output per scenario. |
+| `memory_charts_gold`                                                     | 240            | 328 kB    | Preflop push/fold charts, 2–25bb.           |
+| `gto_scenarios`                                                          | 1              | —         | vestigial                                   |
+| `solver_queue` / `solver_manifest` / `solver_pipeline` / `solver_status` | 0 / 5 / 13 / 2 | —         | legacy queue schema; not the V31 producer   |
 
 ## `solved_spots_gold`
 
@@ -62,7 +67,7 @@ job that merely **counted rows** in `solved_spots_gold` ran 53s average, failed
 `liveness: dead` — every 10 minutes. Reads of this table must be planned,
 indexed, and never on a hot path.
 
-## How the brain uses it (V27, 2026-08-29)
+## How the brain uses it
 
 `HorseLogic.decide()` is synchronous with zero I/O (live latency 0.007–17ms —
 see `horse_decision_latency`). Solver data therefore reaches it **preloaded,
@@ -74,14 +79,30 @@ never queried per decision**:
   jam at ≤25bb. Telemetry: `v27_gto_open_jam`, `v27_gto_bb_defend`. Empty
   store → null → heuristics decide (a loader failure cannot lobotomize the
   brain — pinned by an ablation-equality test).
-- **Stage 2 (planned):** one offline aggregation pass over `solved_spots_gold`
-  into a compact `(game_type, street, position, depth bucket, board texture
-class, hand class) → frequencies` table, small enough to preload the same
-  way. Never a live read of the 79 GB table.
+- **Stage 2 (V31 control plane installed, corpus not yet active):** the Phase 4
+  pipeline accepts only independently solved, suit-aware Pio artifacts from M1
+  and M2 through a signed gateway. PostgreSQL validates source provenance,
+  disjoint holdout boards, complete policy/action EV matrices, coverage,
+  evaluation receipts, and promotion before creating an active dataset. The
+  engine preloads only promoted `gto_v31_runtime_cells`; it never reads the
+  warehouse or calls a solver on the action clock. On 2026-09-08 production had
+  zero approved input bundles, datasets, source artifacts, runtime cells, or
+  release evaluations, so V31 correctly remained fail-closed.
 
-## The distributed solve pipeline (unchanged)
+## The certified distributed solve pipeline
 
-Producer on the Mac (`scripts/seed_gto_scenarios.py`) seeds pending scenarios;
-Windows workers (`scripts/windows_piosolver/`, `piosolver_batch_runner.py`)
-lock a task, run `PioSOLVER3-pro.exe`, parse, upsert with the service key, mark
-complete. Coordination through the queue tables above.
+The canonical producer lives in the World Hub repository under
+`scripts/horse-solver-v31/`. A human-approved immutable input bundle binds the
+range files, exact 1,326-combo order emitted by the licensed Pio binary, ICM
+models, scenario manifest, solver version, binary checksum, and pipeline commit.
+M1 and M2 own disjoint declared targets and separate HMAC keys; a third HMAC key
+belongs to the compactor. All writes cross the signed gateway and database
+certification functions. No solver host receives a Supabase credential.
+
+The former Club scripts `scripts/piosolver_batch.py`,
+`scripts/seed_gto_scenarios.py`, and
+`scripts/windows_piosolver/piosolver_batch_runner.py` were retired. They queried
+`gto_solutions` and `gto_solve_queue`, which do not exist in production, and
+instructed operators to install a production `service_role` key on every solver
+host. `scripts/windows_piosolver/README.md` is a permanent tombstone, and a law
+test prevents those direct-database workers from returning.

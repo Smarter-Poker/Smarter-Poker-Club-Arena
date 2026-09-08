@@ -425,10 +425,14 @@ class TableService {
       // cash table", so a transient timeout routed a tournament seat down the
       // cash path. The RPC would refuse it, but a money-path fork must never
       // be decided by a guess: refuse the leave and let the player retry.
-      if (tableCtxErr) {
-        reportError(tableCtxErr, 'TableService.leaveTable_table_context_read_failed', {
-          tableId,
-        });
+      if (tableCtxErr || !tableData) {
+        reportError(
+          tableCtxErr || new Error('Table context missing'),
+          'TableService.leaveTable_table_context_read_failed',
+          {
+            tableId,
+          }
+        );
         return { success: false, chipsReturned: 0 };
       }
 

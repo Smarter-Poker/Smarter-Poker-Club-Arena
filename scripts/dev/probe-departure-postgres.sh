@@ -34,6 +34,12 @@ PY
   -d postgres -f "$departure_tmp/functions.sql" >/dev/null
 "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -f "$repo/scripts/dev/fixtures/departure-credit-function.sql" >/dev/null
+# Execute the complete migration, including permissions and baseline guards,
+# twice to prove replay safety, rather than only extracting its function body.
+for departure_apply in 1 2; do
+  "$PGBIN/psql" -X -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
+    -d postgres -f "$repo/supabase/migrations/20260908211251_cashout_rejects_invalid_money_before_any_write.sql" >/dev/null
+done
 "$PGBIN/postgres" --version
 "$PGBIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$departure_tmp/socket" -p 55443 -U departure_test \
   -d postgres -c "SELECT proname, md5(pg_get_functiondef(oid)) FROM pg_proc WHERE proname IN ('atomic_seat_cashout_locked','atomic_credit_wallet_and_log') ORDER BY proname"

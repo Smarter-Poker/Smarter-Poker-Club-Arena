@@ -637,3 +637,7 @@ if mode=="fixed":
 if mode=="fixed":
  from test_stats_witness_showdown import verify_stats_witness_showdown
  verify_stats_witness_showdown(run)
+
+if mode == "fixed":
+    from test_stats_runout_index import verify_stats_runout_index
+    verify_stats_runout_index(run)

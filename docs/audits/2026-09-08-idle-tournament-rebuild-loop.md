@@ -27,3 +27,19 @@ stamp. 44 focused tests across five files pass; server TypeScript passes.
 Release and live rebuild-rate verification remain required after the scheduled
 engine cutover. Separate ghost-seat, launch-proof, lease-fencing and knockout
 candidate conflicts were observed and are not fixed by this liveness change.
+
+## The second waiting path
+
+PR #3871 merged at 21:23:32 UTC as 858f156b9855b2bd83bd3195e2ddf382da64b059
+and its push hook passed 479 tests, six skipped. That change covers startup
+waiting. The follow-up audit found the identical omission after a table has
+already played: dealingLoop's short-handed branch completed its authoritative
+reads and idle moves, then slept without stamping progress. This branch now
+stamps only after all idle work and a final lifecycle ownership check.
+
+The real dealingLoop regression failed before the change with completed-sweep
+ages [0,181000]. It passes with [0,0]; an unresolved idle move still ages beyond
+180 seconds without a progress stamp. Both paths now have behavioral coverage.
+131 focused tests across five files pass, including pending add-ons, must-move,
+teardown and waiting readiness. Server TypeScript passes. Neither patch changes
+minimum players, starts a hand early or releases a financial barrier.

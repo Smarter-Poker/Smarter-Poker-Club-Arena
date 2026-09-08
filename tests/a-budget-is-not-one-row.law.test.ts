@@ -118,6 +118,7 @@ describe('a guard never fails open', () => {
 
 describe('the report and the rule read one number', () => {
   const body = code(read('the_budget_stops_being_one_row'));
+  const boundary = code(read('diamond_engine_spend_report_is_private_by_construction'));
 
   it('points the trial balance at the same function', () => {
     expect(body).toContain('SUM(public.fn_ca_diamond_engine_spent(b.period, b.engine))');
@@ -134,5 +135,20 @@ describe('the report and the rule read one number', () => {
   it('creates nothing scheduled to repair it again', () => {
     expect(body).not.toMatch(/cron\.schedule/i);
     expect(body).not.toMatch(/fn_\w*_(repair|backpay|redrive|sweep|catchup|heal)\w*/i);
+  });
+
+  it('retains its read-only STABLE contract', () => {
+    expect(boundary).toContain("v_volatility <> 's'");
+    expect(boundary).toContain('lost its read-only STABLE contract');
+  });
+
+  it('does not elevate a caller and is not a browser RPC', () => {
+    expect(boundary).toContain(
+      'ALTER FUNCTION public.fn_ca_diamond_engine_spent(text, text) SECURITY INVOKER'
+    );
+    expect(boundary).toContain('FROM PUBLIC, anon, authenticated');
+    expect(boundary).toContain("has_function_privilege('anon'");
+    expect(boundary).toContain("has_function_privilege('authenticated'");
+    expect(boundary).toContain('diamond engine spend report is browser-executable');
   });
 });

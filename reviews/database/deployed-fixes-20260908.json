@@ -3,9 +3,10 @@
   "migrations": [
     "20260908021633_throwable_wait_for_owned_pack_credit",
     "20260908023324_throwable_record_actual_consumption_time",
-    "20260908040103_throwable_member_monthly_allowance"
+    "20260908040103_throwable_member_monthly_allowance",
+    "20260908045142_throwable_recheck_pack_expiry"
   ],
-  "liveFunctionMD5": "8772c2ff647fc93dc5dcdb0c21b4f26d",
+  "liveFunctionMD5": "9db52098a228a7be9f9c89ed5bf122a0",
   "stampedInsertPaths": 4,
   "anonymousExecute": false,
   "authenticatedExecute": true,
@@ -13,5 +14,6 @@
   "memberMonthlyLimit": 30,
   "vipMonthlyLimit": 500,
   "lifetimeUnlimited": true,
-  "securityAdvisors": "Only existing intentional authenticated SECURITY DEFINER warnings for v1/v2; anonymous execution remains denied."
+  "securityAdvisors": "Only existing intentional authenticated SECURITY DEFINER warnings for v1/v2; anonymous execution remains denied.",
+  "localContractChecks": 28
 }

@@ -53,6 +53,7 @@ import { mediaUrl } from '../utils/mediaBase';
 import { reportError } from '../utils/errorReporter';
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
 import './PlayerWalletPage.css';
+import { publicOrigin } from '../lib/appBase';
 
 type WalletTab = 'overview' | 'send' | 'receive' | 'earn' | 'history';
 type WalletType = 'BUSINESS' | 'PLAYER' | 'PROMO';
@@ -745,9 +746,9 @@ export default function PlayerWalletPage() {
 
   const profileLink = useMemo(() => {
     if (!user?.id) return '';
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-    return `${origin}${base}/profile/${user.id}`;
+    // A profile link is a WEB link on every target: the public origin, never
+    // the webview's own (capacitor://localhost), with the web sub-path.
+    return `${publicOrigin()}/hub/club-arena/profile/${user.id}`;
   }, [user?.id]);
 
   const copyText = async (text: string, which: 'id' | 'link') => {
@@ -1416,7 +1417,7 @@ export default function PlayerWalletPage() {
                 <button type="button" className="earn-door" onClick={() => navigate('/bonuses')}>
                   <span className="earn-door__title">Bonuses</span>
                   <span className="earn-door__sub">
-                    Spin The Daily Wheel And Unlock Deposit Bonuses.
+                    Your Daily Club Arena Bonus And Club Promotions.
                   </span>
                 </button>
                 <button type="button" className="earn-door" onClick={() => navigate('/promotions')}>

@@ -13,6 +13,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { readLocalSession as readLocalSessionShared, AUTH_STORAGE_KEY } from './authUtils';
 import { reportError } from '../utils/errorReporter';
+import { IS_NATIVE_BUILD } from './appBase';
 
 // Environment validation - follows VITE_ prefix law
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -192,7 +193,9 @@ export type SupabaseClient = typeof supabase;
 // Since Club Arena is now served at smarter.poker/hub/club-arena (same origin),
 // it automatically shares the 'smarter-poker-auth' localStorage key with the Hub.
 // No postMessage or iframe handshake needed - just use the same storageKey above.
-if (typeof window !== 'undefined') {
+// NATIVE: skipped. No player ever signed in to the app under the old default
+// key, and the reload below would restart the app for nothing.
+if (typeof window !== 'undefined' && !IS_NATIVE_BUILD) {
   // ══════════════════════════════════════════════════════════════════════════
   // SESSION MIGRATION — Move sessions from old default key to shared key
   // ══════════════════════════════════════════════════════════════════════════

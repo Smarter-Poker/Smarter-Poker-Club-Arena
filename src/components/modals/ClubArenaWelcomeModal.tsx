@@ -69,8 +69,9 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
                 This Is A <strong>Social Gaming Platform</strong> For Entertainment Purposes Only.
               </li>
               <li>
-                All Chips And Currencies Are <strong>Virtual</strong> With No Real-World Monetary
-                Value.
+                Chips Are <strong>Club Play Credits</strong>. Smarter.Poker Does Not Sell, Redeem Or
+                Pay Out Chips And Assigns Them No Monetary Value; Any Arrangement Between A Member
+                And Their Club's Agent Is Private And Off-Platform.
               </li>
               <li>
                 You Are <strong>18 Years Of Age Or Older</strong> (Or The Legal Age In Your

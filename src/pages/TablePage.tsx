@@ -5012,7 +5012,7 @@ export default function TablePage({
   // is declared before useTableAnimations. Bridge them through a ref so an
   // incoming throw reaches the animation layer instead of being dropped.
   const receiveThrowRef = useRef<
-    ((fromSeat: number, toSeat: number, throwableId: string) => void) | null
+    ((fromSeat: number, toSeat: number, throwableId: string, throwId?: string) => void) | null
   >(null);
   const {
     chatMessages,
@@ -5033,8 +5033,8 @@ export default function TablePage({
     parseIncomingMessage,
     unreadCount,
     clearUnread,
-  } = useTableChat(tableId, userId, tableState.players, (fromSeat, toSeat, throwableId) =>
-    receiveThrowRef.current?.(fromSeat, toSeat, throwableId)
+  } = useTableChat(tableId, userId, tableState.players, (fromSeat, toSeat, throwableId, throwId) =>
+    receiveThrowRef.current?.(fromSeat, toSeat, throwableId, throwId)
   );
 
   // ═══════════════════════════════════════════════════════════════════════

@@ -663,3 +663,46 @@ describe('applied BBJ shares require valid cent amounts before confirmation', ()
     expect((await run()).status).toBe('paid');
   });
 });
+
+it.each(['returned_error', 'rejected_request'])(
+  'reports a %s notification failure without retrying payment',
+  async (failure) => {
+    const { reportError } = await import('../errorReporter.js');
+    const original = from.getMockImplementation()!;
+    from.mockImplementation((name: string) =>
+      name === 'notifications'
+        ? {
+            insert: () =>
+              failure === 'returned_error'
+                ? Promise.resolve({ error: { message: 'notification unavailable' } })
+                : Promise.reject(new Error('notification unavailable')),
+          }
+        : original(name)
+    );
+    rpc.mockResolvedValue({ data: [appliedRow()], error: null });
+    expect((await run()).status).toBe('paid');
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(reportError).toHaveBeenCalledWith(
+      expect.anything(),
+      'processBBJPayout.recipient_notification_failed'
+    );
+  }
+);
+
+it('reports unreadable parked shares at their source without retrying payment', async () => {
+  const { reportError } = await import('../errorReporter.js');
+  const original = from.getMockImplementation()!;
+  from.mockImplementation((name: string) =>
+    name === 'bbj_unclaimed_shares'
+      ? table({ data: null, error: { message: 'read unavailable' } })
+      : original(name)
+  );
+  rpc.mockResolvedValue({ data: [appliedRow()], error: null });
+  expect((await run()).status).toBe('paid');
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(reportError).toHaveBeenCalledWith(
+    expect.anything(),
+    'processBBJPayout.parked_share_read_failed'
+  );
+  expect(from.mock.calls.some(([name]) => name === 'notifications')).toBe(false);
+});

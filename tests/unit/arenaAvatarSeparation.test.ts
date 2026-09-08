@@ -135,7 +135,9 @@ describe('Club Arena never touches the social media photo column', () => {
     // client's live profile sync name the same column by construction.
     // tests/the-felt-reads-one-avatar-column.law.test.ts imports both copies.
     const engine = readFileSync(join(ROOT, 'server/src/services/supabase/tables.ts'), 'utf8');
-    expect(engine).toMatch(/\.select\(SEATED_PROFILE_SELECT\)/);
+    expect(engine).toMatch(
+      /\.select\(`\$\{SEATED_PROFILE_SELECT\}, is_vip, vip_tier, vip_expires_at`\)/
+    );
     const mirror = readFileSync(join(ROOT, 'server/src/services/supabase/tableAvatar.ts'), 'utf8');
     expect(mirror).toMatch(/avatar_url\s*:\s*\$\{TABLE_AVATAR_COLUMN\}/);
     expect(mirror).toMatch(/TABLE_AVATAR_COLUMN = 'arena_avatar_url'/);

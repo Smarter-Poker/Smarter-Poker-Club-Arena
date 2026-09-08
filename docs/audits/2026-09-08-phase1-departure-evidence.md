@@ -57,3 +57,15 @@ The credit fixture is a pinned read-only export including later dynamic migratio
 The normal containing engine rollout and this evidence branch's push/CI/merge still require verification. Phase 1 remains open until those gates are satisfied.
 
 PR #3840 initial CI caught a portability defect in the probe's safety check: a hardcoded temporary-directory prefix. The runner and test now share the OS temporary directory, resolve its real path, and still require the private departure fixture directory and socket. This corrects the fixture rather than exempting it from the portability gate. Separate PostgreSQL execution remains required for the six opt-in cases.
+
+## Containing Deployment Verified (18:01 UTC)
+
+Normal Hetzner workflow 34258578581, job 102170524208, passed its server tests and deployed the explicitly selected 4932f6f91ad9b08300cf20afbeb9576b6559770f. Cutover began inside the scheduled break; the container started at 17:55:33 UTC. Public version and container health passed at 17:56:01, current was promoted, and engine_leader independently reported the new version at 17:56:03. Deployment truth attempt 241 records shipped=true. No forced restart was used.
+
+Read-only inspection inside the running image confirms receipt validation, unhandled cashout failure propagation, eviction and busted departure after awaited cashout, bootstrap shutdown context binding, and absolute reconnect deadline handoff. All six affected production files in main matched their verified #3837 merge before deployment. The deployed commit contains #3809, #3818, #3823 and #3837.
+
+At 18:01:05 UTC, cache-busted engine health returned HTTP 200, status ok, version4932f6f9, maintenance idle, all eight resume waves complete, 242/242 tables resumed and zero stalled tables. Both frontend endpoints independently returned4932f6f91ad9b08300cf20afbeb9576b6559770f, built17:39:49 by publisher34257700085. A transient503 was observed during announced cutover; subsequent health and thaw checks passed.
+
+The scoped Phase1 implementation, isolated engine/service/database recovery and deployed runtime gates are now evidenced. PR#3840 carries the reproducible probe and this record; its latest required CI and merge must pass before the phase completion announcement. This test/documentation branch changes no production behavior, so it does not require another engine restart.
+
+Full requirement rows remain pending for their later scopes: A02 financial animations, O01 parity on every later repaired path, O02 full operation-specific triggers and policies, and O12 later release records. The broader216-requirement audit and7038-file review are not completed by this phase.

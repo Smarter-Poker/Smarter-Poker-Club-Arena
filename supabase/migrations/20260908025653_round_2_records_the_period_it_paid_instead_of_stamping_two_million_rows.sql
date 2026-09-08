@@ -368,7 +368,7 @@ BEGIN
   -- Nothing may write the ledger between the count and the commit.
   LOCK TABLE public.agent_commissions IN SHARE ROW EXCLUSIVE MODE;
 
-  DELETE FROM public.agent_commission_unsettled_rollup;
+  DELETE FROM public.agent_commission_unsettled_rollup WHERE true;
   INSERT INTO public.agent_commission_unsettled_rollup
          (club_id, user_id, owed, rows_behind, oldest_unsettled, updated_at)
   SELECT ac.club_id, ac.user_id, sum(ac.amount), count(*), min(ac.created_at), now()

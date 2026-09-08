@@ -164,6 +164,66 @@ not shipping it. It is half of shipping it. `apply_migration` returning
 `{"success": true}` says the database changed, and says nothing whatever about
 whether anyone will ever be able to read that change again.
 
+## What the gates found when this finally met them
+
+The four recovered migrations were applied through the MCP and never opened as
+a pull request, so they had never run `.husky/pre-push`. Committing them here
+ran those gates against them for the first time, an hour after the SQL started
+serving. Two fired, and both were right.
+
+**The rollup rebuild could not run through the API.**
+`fn_rebuild_agent_commission_rollup` contained `DELETE FROM
+public.agent_commission_unsettled_rollup;` with no `WHERE`. That is legal SQL
+and it worked every time the migration ran it, because a migration runs as
+`postgres`. PostgREST connects as `authenticator`, which carries
+`session_preload_libraries = safeupdate`, and safeupdate raises "DELETE
+requires a WHERE clause"; `SET ROLE service_role` does not unload it. The
+function is SECURITY INVOKER and `service_role` holds EXECUTE, so it is an RPC
+the engine and the operator dashboard can call, and every such call would have
+raised. The same shape silently stopped the GTO aggregation driver for an hour
+on 2026-09-06. The intent really is every row, so this is the gate's own first
+remedy: `WHERE true`, semantically identical and accepted by safeupdate.
+
+The live refusal was reasoned about rather than executed (section 11.5, rule
+5): safeupdate is preloaded onto `authenticator`, not onto the `postgres` role
+the MCP connects as, so it cannot be reproduced from here, and calling the real
+rebuild on production to watch it fail would take SHARE ROW EXCLUSIVE on a
+2.6 GB ledger to demonstrate a mechanism the gate already documents.
+
+**The owed reader never named the roles it meant to serve.**
+`fn_agent_unsettled_commission` is SECURITY DEFINER, owned by `postgres`, and
+never calls `auth.uid()`: it trusts the club and user it is handed. Neither
+migration issued a GRANT or a REVOKE for it, and a function created with no
+grant statement is EXECUTE-to-PUBLIC by default, which `anon` inherits.
+
+Production was never exposed, and it is worth being precise about why:
+`has_function_privilege('anon', ..., 'EXECUTE')` is false because the function
+predates phase 7 and **`CREATE OR REPLACE` preserves the privileges of the
+function it replaces**. The hole existed only in the files, and it is the kind
+that appears when somebody rebuilds from them: a restore, a branch database, a
+fresh environment, where the CREATE is a create rather than a replace and the
+default takes effect. That environment would have handed every (club, agent)
+commission figure to an unauthenticated caller. It backs no RLS policy
+(`pg_policy` holds nothing referencing it), so naming the roles denies nobody a
+row.
+
+Both are fixed forward in `20260908040611`, applied to production and verified:
+the rebuild's DELETE is now qualified, and `anon` cannot execute the reader
+while `authenticated` and `service_role` still can.
+
+One recovered file was edited, and it is called out rather than left for
+`git blame`: `20260908025653` line 371 gains the two words `WHERE true`. The
+unqualified-write gate reads one file at a time and its only escape hatch is an
+in-file declaration that the write is unreachable, which would have been false
+here. Both forms delete every row, so nothing about the migration's behaviour
+differs, and the byte-exact record of what production executed is still in
+`supabase_migrations.schema_migrations.statements`.
+
+This is the clearest possible argument for the process point above. Applying
+through the MCP skipped six gates. Two of them had something true to say, and
+one of those was a function that could never have run through the API it was
+written to be called from.
+
 ## Files
 
 | Migration                                                                                    | What it does                          |

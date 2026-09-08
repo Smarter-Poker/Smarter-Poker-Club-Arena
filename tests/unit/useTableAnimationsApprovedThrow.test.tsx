@@ -1,4 +1,5 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useTableAnimations } from '../../src/hooks/useTableAnimations';
 import type { Throwable } from '../../src/services/ThrowableService';
@@ -53,4 +54,63 @@ it('carries the approved receipt identity to the local event and the receiving p
   act(() => receiver.result.current.receiveThrow(1, 2, 'magic_8_ball', receipt));
   expect(sender.result.current.activeThrows[0].id).toBe(receipt);
   expect(receiver.result.current.activeThrows[0].id).toBe(receipt);
+});
+
+it('plays a delivered receipt once, including replays after completion and UUID case changes', () => {
+  const receipt = 'aa110000-0000-4000-8000-000000000001';
+  const { result } = renderHook(() => useTableAnimations('table-a', 'receiver', 2), {
+    wrapper: StrictMode,
+  });
+  act(() => {
+    result.current.receiveThrow(1, 2, 'beer', receipt);
+    result.current.receiveThrow(1, 2, 'beer', receipt.toUpperCase());
+  });
+  expect(result.current.activeThrows).toHaveLength(1);
+  act(() => result.current.handleThrowComplete(receipt));
+  act(() => result.current.receiveThrow(1, 2, 'beer', receipt));
+  expect(result.current.activeThrows).toHaveLength(0);
+});
+
+it('keeps distinct receipts and legacy throws even when their contents are identical', () => {
+  const { result } = renderHook(() => useTableAnimations('table-a', 'receiver', 2));
+  act(() => {
+    result.current.receiveThrow(1, 2, 'beer', 'aa110000-0000-4000-8000-000000000001');
+    result.current.receiveThrow(1, 2, 'beer', 'aa110000-0000-4000-8000-000000000002');
+    result.current.receiveThrow(1, 2, 'beer');
+    result.current.receiveThrow(1, 2, 'beer');
+  });
+  expect(result.current.activeThrows).toHaveLength(4);
+});
+
+it('clears the prior table and account playback scope', () => {
+  const receipt = 'aa110000-0000-4000-8000-000000000001';
+  const { result, rerender } = renderHook(({ table, user }) => useTableAnimations(table, user, 2), {
+    initialProps: { table: 'table-a', user: 'receiver' },
+  });
+  act(() => {
+    result.current.receiveThrow(1, 2, 'beer', receipt);
+    result.current.setThrowTargetSeat(3);
+    result.current.setShowThrowableSelector(true);
+  });
+  rerender({ table: 'table-b', user: 'receiver' });
+  expect(result.current.activeThrows).toHaveLength(0);
+  expect(result.current.throwTargetSeat).toBeNull();
+  expect(result.current.showThrowableSelector).toBe(false);
+  act(() => result.current.receiveThrow(1, 2, 'beer', receipt));
+  expect(result.current.activeThrows).toHaveLength(1);
+  rerender({ table: 'table-b', user: 'other-account' });
+  expect(result.current.activeThrows).toHaveLength(0);
+});
+
+it('does not mark a capacity-rejected receipt as already played', () => {
+  const receipt = 'aa110000-0000-4000-8000-000000000001';
+  const { result } = renderHook(() => useTableAnimations('table-a', 'receiver', 2));
+  act(() => {
+    for (let i = 0; i < 12; i++) result.current.receiveThrow(1, 2, 'beer');
+  });
+  act(() => result.current.receiveThrow(1, 2, 'beer', receipt));
+  expect(result.current.activeThrows).toHaveLength(12);
+  act(() => result.current.handleThrowComplete(result.current.activeThrows[0].id));
+  act(() => result.current.receiveThrow(1, 2, 'beer', receipt));
+  expect(result.current.activeThrows.some((event) => event.id === receipt)).toBe(true);
 });

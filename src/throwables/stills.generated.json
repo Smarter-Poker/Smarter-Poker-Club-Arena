@@ -243,5 +243,10 @@
     "192": "images/throwables/stylized/rat_card-192-372de23ccd62.webp",
     "320": "images/throwables/stylized/rat_card-320-ce3558dfc664.webp",
     "640": "images/throwables/stylized/rat_card-640-afe84dd7abbf.webp"
+  },
+  "party_face": {
+    "192": "images/throwables/stylized/party_face-192-f419c0766bdc.webp",
+    "320": "images/throwables/stylized/party_face-320-685c34757398.webp",
+    "640": "images/throwables/stylized/party_face-640-5bc7d34c717f.webp"
   }
 }

@@ -46,7 +46,6 @@ interface CashierRecoveryEnvelope {
 }
 
 /** Account-scoped financial intent; its prefix is shared with the sign-out purge. */
-const CASHIER_RECOVERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const CASHIER_RECOVERY_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const CASHIER_RECOVERY_MAX_BATCHES = 20;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -75,8 +74,7 @@ const isValidRecovery = (
   value: unknown,
   userId: string,
   clubId: string,
-  now: number,
-  allowExpired = false
+  now: number
 ): value is CashierTransferRecovery => {
   if (!value || typeof value !== 'object') return false;
   const row = value as Partial<CashierTransferRecovery>;
@@ -94,7 +92,6 @@ const isValidRecovery = (
     !UUID_PATTERN.test(String(row.submissionId || '')) ||
     !Number.isFinite(row.createdAt) ||
     Number(row.createdAt) > now + CASHIER_RECOVERY_FUTURE_SKEW_MS ||
-    (!allowExpired && now - Number(row.createdAt) > CASHIER_RECOVERY_MAX_AGE_MS) ||
     !Array.isArray(row.targetIds) ||
     row.targetIds.length === 0 ||
     row.targetIds.length > 10_000 ||
@@ -157,7 +154,7 @@ function readLegacyCashierRecoveries(
 
   let recoveries: CashierTransferRecovery[];
   if ((parsed as Partial<CashierTransferRecovery> | null)?.version === 1) {
-    if (!isValidRecovery(parsed, userId, clubId, now, true)) return undefined;
+    if (!isValidRecovery(parsed, userId, clubId, now)) return undefined;
     recoveries = [parsed];
   } else {
     const envelope = parsed as Partial<CashierRecoveryEnvelope> | null;
@@ -168,9 +165,7 @@ function readLegacyCashierRecoveries(
       envelope.clubId !== clubId ||
       !Array.isArray(envelope.recoveries) ||
       envelope.recoveries.length > CASHIER_RECOVERY_MAX_BATCHES ||
-      envelope.recoveries.some(
-        (recovery) => !isValidRecovery(recovery, userId, clubId, now, true)
-      ) ||
+      envelope.recoveries.some((recovery) => !isValidRecovery(recovery, userId, clubId, now)) ||
       new Set(envelope.recoveries.map((recovery) => recovery.submissionId)).size !==
         envelope.recoveries.length
     ) {
@@ -227,7 +222,6 @@ function collectCashierTransferRecoveries(
     if (removeInvalid) storage.removeItem(baseKey);
   } else {
     for (const recovery of legacy || []) {
-      if (now - recovery.createdAt > CASHIER_RECOVERY_MAX_AGE_MS) continue;
       bySubmission.set(recovery.submissionId, recovery);
     }
   }
@@ -249,15 +243,8 @@ function collectCashierTransferRecoveries(
       parsed = null;
     }
     const submissionId = key.slice(prefix.length);
-    if (
-      !isValidRecovery(parsed, userId, clubId, now, true) ||
-      parsed.submissionId !== submissionId
-    ) {
+    if (!isValidRecovery(parsed, userId, clubId, now) || parsed.submissionId !== submissionId) {
       malformed = true;
-      if (removeInvalid) storage.removeItem(key);
-      continue;
-    }
-    if (now - parsed.createdAt > CASHIER_RECOVERY_MAX_AGE_MS) {
       if (removeInvalid) storage.removeItem(key);
       continue;
     }
@@ -296,7 +283,7 @@ export function readCashierTransferRecoveries(
 /**
  * Keep one unresolved batch intent across a refresh without trusting arbitrary
  * localStorage input. Recovery is scoped to the signed-in user and club,
- * expires after 24 hours, and contains idempotency identifiers rather than
+ * retains unresolved intents until explicitly cleared, and contains idempotency identifiers rather than
  * credentials or balances.
  */
 export function readCashierTransferRecovery(
@@ -362,7 +349,7 @@ export function writeCashierTransferRecovery(
     const verifiedRaw = storage.getItem(key);
     const verified = verifiedRaw ? (JSON.parse(verifiedRaw) as unknown) : null;
     return (
-      isValidRecovery(verified, recovery.userId, recovery.clubId, now, true) &&
+      isValidRecovery(verified, recovery.userId, recovery.clubId, now) &&
       sameRecoveryIntent(verified, persisted)
     );
   } catch {

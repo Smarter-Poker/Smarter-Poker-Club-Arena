@@ -396,14 +396,19 @@ export async function recoverStuckCompletingTournaments(
             );
           }
           if (!aliveErr && typeof aliveCount === 'number' && aliveCount >= 2) {
-            const { error: reviveErr } = await supabase
+            const { error: reviveErr, count: reviveCount } = await supabase
               .from('tournaments')
-              .update({ status: 'RUNNING' })
+              .update({ status: 'RUNNING' }, { count: 'exact' })
               .eq('id', t.id)
               .eq('status', 'COMPLETING');
+            if (reviveErr || reviveCount !== 1) {
+              throw new Error(
+                `satellite revive unconfirmed for ${t.id}: ${reviveErr?.message ?? `affected rows: ${reviveCount ?? 'unknown'}`}`
+              );
+            }
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is an UNDECIDED satellite (${aliveCount} alive) stuck in COMPLETING - ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING for discovery to resume'}`
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is an UNDECIDED satellite (${aliveCount} alive) stuck in COMPLETING - flipped back to RUNNING for discovery to resume`
               ),
               'GameServer.recoverStuckCompleting_satellite_revived'
             );
@@ -483,14 +488,22 @@ export async function recoverStuckCompletingTournaments(
           const alreadyAwarded = (recordCount ?? 0) > 0 || (seatCount ?? 0) > 0;
 
           if (alreadyAwarded) {
-            const { error: closeErr } = await supabase
+            const { error: closeErr, count: closeCount } = await supabase
               .from('tournaments')
-              .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
+              .update(
+                { status: 'COMPLETED', ended_at: new Date().toISOString() },
+                { count: 'exact' }
+              )
               .eq('id', t.id)
               .eq('status', 'COMPLETING');
+            if (closeErr || closeCount !== 1) {
+              throw new Error(
+                `satellite close unconfirmed for ${t.id}: ${closeErr?.message ?? `affected rows: ${closeCount ?? 'unknown'}`}`
+              );
+            }
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite that ALREADY AWARDED (${recordCount ?? 0} payout record(s), ${seatCount ?? 0} seat(s)) - ${closeErr ? `close failed: ${closeErr.message}` : 'closed COMPLETING -> COMPLETED'}`
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite that ALREADY AWARDED (${recordCount ?? 0} payout record(s), ${seatCount ?? 0} seat(s)) - closed COMPLETING -> COMPLETED`
               ),
               'GameServer.recoverStuckCompleting_satellite_closed'
             );
@@ -498,14 +511,19 @@ export async function recoverStuckCompletingTournaments(
           }
 
           if (typeof aliveCount === 'number' && aliveCount === 1) {
-            const { error: reviveErr } = await supabase
+            const { error: reviveErr, count: reviveCount } = await supabase
               .from('tournaments')
-              .update({ status: 'RUNNING' })
+              .update({ status: 'RUNNING' }, { count: 'exact' })
               .eq('id', t.id)
               .eq('status', 'COMPLETING');
+            if (reviveErr || reviveCount !== 1) {
+              throw new Error(
+                `satellite revive unconfirmed for ${t.id}: ${reviveErr?.message ?? `affected rows: ${reviveCount ?? 'unknown'}`}`
+              );
+            }
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite with ONE SURVIVOR and no awards - ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING so its manager can run processSatelliteAwards'}`
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite with ONE SURVIVOR and no awards - flipped back to RUNNING so its manager can run processSatelliteAwards`
               ),
               'GameServer.recoverStuckCompleting_satellite_revived_decided'
             );

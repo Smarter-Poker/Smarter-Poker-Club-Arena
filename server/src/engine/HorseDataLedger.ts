@@ -810,6 +810,49 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     { dayColumn: 'run_date', freshnessDays: 2 }
   ),
   table(
+    'horse_solver_agreement_decisions',
+    'nightly',
+    'fn_audit_solver_agreement; ca_horse_solver_agreement_decisions',
+    'reconciled per-decision evidence behind the nightly chart-agreement summary, including the final action, reference mix, regret availability, and source seal',
+    'Phase4',
+    { dayColumn: 'run_date', freshnessDays: 2 }
+  ),
+  table(
+    'gto_v31_runtime_cells',
+    'boot',
+    'GtoPostflopV31Loader via fn_gto_v31_active_cells',
+    'the only certified postflop policy cells the live action path may load',
+    'Phase4'
+  ),
+  table(
+    'gto_v31_datasets',
+    'nightly',
+    'fn_audit_gto_v31_certified',
+    'candidate and active corpus release seals, held-out metrics, replay gate, and league gate',
+    'Phase4'
+  ),
+  table(
+    'gto_v31_cell_source_receipts',
+    'nightly',
+    'fn_gto_v31_mark_candidate',
+    'immutable lineage from each compact cell to its independently attributed source nodes',
+    'Phase4'
+  ),
+  table(
+    'solver_worker_liveness',
+    'minute',
+    'fn_audit_solver_pipeline_liveness',
+    'latest monotonic M1 and M2 progress, provenance, rate, ETA, invalid rows, and artifact receipt',
+    'Phase4'
+  ),
+  table(
+    'solver_compact_liveness',
+    'minute',
+    'fn_audit_solver_pipeline_liveness',
+    'latest certified compact-build state and source lag',
+    'Phase4'
+  ),
+  table(
     'horse_league_results',
     'nightly',
     'fn_run_horse_daily_audit (league_layer_negative); the panel',

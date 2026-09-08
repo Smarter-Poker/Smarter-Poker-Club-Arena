@@ -209,3 +209,70 @@ describe.each(['nlh', 'plo4'])('closed %s betting and short stacks', (variant) =
     }
   );
 });
+
+describe('fixed-limit reopening uses half the street bet', () => {
+  for (const gameVariant of ['flh', 'flo8'] as const) {
+    for (const [shortTotal, reopens] of [
+      [2.99, false],
+      [3, true],
+      [3.01, true],
+    ] as const) {
+      it(`${gameVariant}: a prior caller facing ${shortTotal - 2} more has reopen=${reopens}`, () => {
+        const h = harness(mkConfig({ gameVariant }), mkPlayers([200, shortTotal, 200, 200]), 1);
+        h.hc.start();
+        expect(h.actSeat(4, 'call')).toBe(true);
+        expect(h.actSeat(1, 'call')).toBe(true);
+        expect(h.actSeat(2, 'all_in')).toBe(true);
+        expect(h.menu(3)).toContain('raise');
+        expect(h.actSeat(3, 'call')).toBe(true);
+        expect(h.cur()).toBe(4);
+        expect(h.menu(4).includes('raise')).toBe(reopens);
+        expect(h.actSeat(4, 'raise', shortTotal + 2)).toBe(reopens);
+        if (!reopens) expect(h.actSeat(4, 'call')).toBe(true);
+      });
+    }
+  }
+});
+
+describe('fixed-limit reopening tracks street size and individual action', () => {
+  for (const gameVariant of ['flh', 'flo8'] as const) {
+    for (const [total, reopens] of [
+      [5.99, false],
+      [6, true],
+      [6.01, true],
+    ] as const) {
+      it(`${gameVariant}: turn all-in to ${total} uses half the big bet`, () => {
+        const h = harness(mkConfig({ gameVariant }), mkPlayers([200, 200, 2 + total, 200]), 1);
+        h.hc.start();
+        for (const seat of [4, 1, 2]) expect(h.actSeat(seat, 'call')).toBe(true);
+        expect(h.actSeat(3, 'check')).toBe(true);
+        expect(h.st().stage).toBe('flop');
+        for (const seat of [2, 3, 4, 1]) expect(h.actSeat(seat, 'check')).toBe(true);
+        expect(h.st().stage).toBe('turn');
+        expect(h.actSeat(2, 'bet', 4)).toBe(true);
+        expect(h.actSeat(3, 'all_in')).toBe(true);
+        expect(h.actSeat(4, 'call')).toBe(true);
+        expect(h.actSeat(1, 'call')).toBe(true);
+        expect(h.cur()).toBe(2);
+        expect(h.menu(2).includes('raise')).toBe(reopens);
+        expect(h.actSeat(2, 'raise', total + 4)).toBe(reopens);
+        if (!reopens) expect(h.actSeat(2, 'call')).toBe(true);
+      });
+    }
+    it(`${gameVariant}: intervening callers do not inherit earlier reopening rights`, () => {
+      const h = harness(mkConfig({ gameVariant }), mkPlayers([200, 3, 200, 200, 2.5]), 1);
+      h.hc.start();
+      expect(h.actSeat(4, 'call')).toBe(true);
+      expect(h.actSeat(5, 'all_in')).toBe(true);
+      expect(h.actSeat(1, 'call')).toBe(true);
+      expect(h.actSeat(2, 'all_in')).toBe(true);
+      expect(h.actSeat(3, 'call')).toBe(true);
+      expect(h.menu(4)).toContain('raise');
+      expect(h.actSeat(4, 'call')).toBe(true);
+      expect(h.cur()).toBe(1);
+      expect(h.menu(1)).not.toContain('raise');
+      expect(h.actSeat(1, 'raise', 5)).toBe(false);
+      expect(h.actSeat(1, 'call')).toBe(true);
+    });
+  }
+});

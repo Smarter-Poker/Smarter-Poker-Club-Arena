@@ -5191,8 +5191,16 @@ export abstract class TournamentManagerBase {
         );
         return null;
       }
+      const rawPool = res.prize_pool;
       const pool = Number(res.prize_pool);
-      if (!Number.isFinite(pool)) {
+      if (
+        (typeof rawPool !== 'number' && typeof rawPool !== 'string') ||
+        (typeof rawPool === 'string' && !/^[0-9]+(?:[.][0-9]+)?$/.test(rawPool)) ||
+        !Number.isFinite(pool) ||
+        pool < 0 ||
+        !Number.isSafeInteger(Math.round(pool * 100)) ||
+        Math.round(pool * 100) / 100 !== pool
+      ) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] fn_apply_prize_guarantee returned no readable prize_pool (${JSON.stringify(data ?? null).slice(0, 160)})`

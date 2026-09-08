@@ -55,6 +55,7 @@ import type { ThrowableRig } from '../../throwables/rig';
 import { cueUrl, isPlaceholderCue, placeholderRecipe } from '../../throwables/cues';
 import './ThrowablePlayer.css';
 import { hasThrowableArtwork, prepareThrowableArtwork } from '../../throwables/artwork';
+import { captureThrowableAvatar, type AvatarSnapshot } from '../../throwables/avatarSnapshot';
 
 export interface ThrowablePlayerProps {
   event: ThrowEvent;
@@ -124,6 +125,7 @@ export function ThrowablePlayer({
         : 'spawn'
   );
   const [unit, setUnit] = useState<number>(84);
+  const [targetAvatar, setTargetAvatar] = useState<AvatarSnapshot>();
 
   useEffect(() => {
     if (!toPos) {
@@ -136,6 +138,7 @@ export function ThrowablePlayer({
     if (!toPos || !fromPos) return;
     const root = rootRef.current;
     setUnit(measureAvatarUnit(root, event.toSeat));
+    if (rig.needsTargetAvatar) setTargetAvatar(captureThrowableAvatar(root, event.toSeat));
 
     const timers: ReturnType<typeof setTimeout>[] = [];
     const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, Math.max(0, ms * speed)));
@@ -267,7 +270,7 @@ export function ThrowablePlayer({
           style={{ left: anchorX, top: anchorY } as React.CSSProperties}
           data-motion="keep"
         >
-          <Payload uid={`${uid}q`} />
+          <Payload uid={`${uid}q`} targetAvatar={targetAvatar} />
         </div>
       )}
     </div>

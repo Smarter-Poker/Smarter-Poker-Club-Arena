@@ -3187,15 +3187,14 @@ export class HandController {
       }
     }
 
-    // TDA 47A: multiple short all-ins can together face this player with a
-    // full increment. An intervening caller's bet is higher, so that caller
-    // does not inherit another player's reopening rights.
-    if (
-      playerLastIdx !== -1 &&
-      !isFixedLimitVariant(this.config.gameVariant) &&
-      this.state.currentBet - player.bet >=
-        Math.max(this.config.bigBlind, this.state.lastRaise) - 0.005
-    ) {
+    // TDA 47: reopening is measured from this player's last wager. No-limit
+    // and pot-limit require a full increment; fixed-limit requires half the
+    // street's fixed bet. An intervening caller does not inherit another
+    // player's rights, and turn/river use the big bet rather than the blind.
+    const reopenIncrement = isFixedLimitVariant(this.config.gameVariant)
+      ? fixedLimitBetSize(this.config.bigBlind, this.state.stage) / 2
+      : Math.max(this.config.bigBlind, this.state.lastRaise);
+    if (playerLastIdx !== -1 && this.state.currentBet - player.bet >= reopenIncrement - 0.005) {
       return true;
     }
 

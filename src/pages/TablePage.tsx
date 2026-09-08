@@ -2886,6 +2886,19 @@ export default function TablePage({
      removed so there is one. */
   /** FIX 185: Bible V8 §4.15 — Added 'call' (auto_call) distinct from 'callAny' (auto_call_any) */
   const [preAction, setPreAction] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
+  /**
+   * Mirror of `preAction` for event handlers (the TURN_CHANGE bell), which
+   * run outside render and must read the arm as it stands at the event, not
+   * as it stood when the handler closed over it.
+   */
+  const preActionArmedRef = useRef<typeof preAction>(null);
+  useEffect(() => {
+    preActionArmedRef.current = preAction;
+  }, [preAction]);
+  /** A hero-turn alert the TURN_CHANGE handler held back because a
+   *  pre-action was armed; rung by the heroPromptedToAct effect, or dropped
+   *  when the engine takes the turn. */
+  const deferredTurnAlertRef = useRef(false);
   // P2-1 FIX: only send a server 'clear' if a pre-action was actually armed
   // before — prevents a junk serverSetPreAction(clear) firing on every mount
   // (preAction starts null).
@@ -7240,6 +7253,9 @@ export default function TablePage({
   // Returns TRUE only when the engine actually credited the stack. The cashier
   // uses this to decide whether to close; before 2026-08-20 it resolved void on
   // every rejection path, so a refused top-up closed the modal looking successful.
+  /** What the last add-on request actually did, for callers that only get
+   *  the boolean (the auto top-up's toast). */
+  const lastAddChipsResultRef = useRef<{ applied: number; queued: boolean } | null>(null);
   const handleAddChips = async (amount: number, opId?: string): Promise<boolean> => {
     if (!userId || userId === 'guest' || !tableId) {
       reportError(
@@ -7288,6 +7304,7 @@ export default function TablePage({
          5,000 with 1,200 of room and the session figures drifted by 3,800
          for the rest of the session. Every tracker now uses `applied`. */
       const applied = typeof res.applied === 'number' ? res.applied : amount;
+      lastAddChipsResultRef.current = { applied, queued: res.queued === true };
       if (typeof window !== 'undefined') {
         if (applied < amount) {
           toast.info(
@@ -7295,7 +7312,14 @@ export default function TablePage({
           );
         }
         if (res.queued) {
-          toast.info('Your Chips Land When This Hand Ends.');
+          /* Dan 2026-09-04: the queued add-on is sized AGAIN when it lands,
+             against the stack after the pot, and the difference comes back.
+             Say so now, in the amount that was taken, so the later
+             "Add-On Adjusted" notice (add_on_adjusted frame) is a resolution
+             of something the player was told to expect, not a surprise. */
+          toast.info(
+            `${applied.toFixed(2)} Lands When This Hand Ends. If The Pot Puts You Over The Table Maximum, The Difference Returns To Your Wallet.`
+          );
         }
       }
       // Engine ack'd the single debit -- reflect it locally + in session trackers.
@@ -9725,6 +9749,34 @@ export default function TablePage({
       handleHoleCardPayload({ new: ev.row });
       return;
     }
+    if (ev.kind === 'add_on_adjusted') {
+      /* THE ADD-ON ADJUSTED ITSELF, AND THE PLAYER IS TOLD (Dan 2026-09-04).
+         "I ADDED ON FOR $49.95 BUT THEN WON THE VERY SMALL POT, MY ADD ON
+         NEEDS TO ADJUST TO ONLY ALLOW FOR $49.95 - REMAINING CHIPS." The
+         engine's ledger resolve caps the landing at the table maximum less
+         the stack after the pot and returns the rest to the wallet; this
+         frame is that decision, for this player only. Three things the
+         client had wrong until now, all keyed on the REQUESTED amount at
+         request time: the balance it shows, the session buy-in total (so
+         P&L read low by the refund for the rest of the session), and the
+         absence of any word to the player. All three corrected here from
+         the numbers that actually moved. */
+      const applied = Number(ev.applied) || 0;
+      const refunded = Number(ev.refunded) || 0;
+      if (refunded > 0) {
+        applyBalanceDelta((prev) => (prev === null ? null : prev + refunded));
+        totalBuyInRef.current = Math.max(0, totalBuyInRef.current - refunded);
+        if (tableId) sessionStatsService.recordRebuy(tableId, -refunded);
+        if (typeof window !== 'undefined') {
+          toast.info(
+            applied > 0
+              ? `Add-On Adjusted: ${applied.toFixed(2)} Added, ${refunded.toFixed(2)} Returned To Your Wallet. Your Stack Is At The Table Maximum.`
+              : `Add-On Returned: ${refunded.toFixed(2)} Is Back In Your Wallet. Your Stack Is Already At The Table Maximum.`
+          );
+        }
+      }
+      return;
+    }
     if (ev.kind === 'pre_action') {
       const a = typeof ev.action === 'string' ? ev.action : null;
       const mapped =
@@ -9743,6 +9795,8 @@ export default function TablePage({
       if (mapped === null) hadPreActionRef.current = false;
       setPreAction((cur) => (cur === mapped ? cur : mapped));
     }
+    // tableId and the trackers are refs / stable; the frame is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineLastUserEvent, handleHoleCardPayload]);
 
   /* ═══ HOLE CARDS COME DOWN THE SOCKET, NOT THROUGH THE WAL (2026-09-06) ═══
@@ -15673,6 +15727,35 @@ export default function TablePage({
         }
         break;
       }
+      case 'ANTES_POSTED': {
+        // THE ANTE IS SEEN LEAVING THE PLAYER (Dan 2026-09-04): "IF THERE IS
+        // AN ANTE, THAT NEEDS TO BE TAKEN FROM THE PLAYER AND ADDED TO THE
+        // POT PRE FLOP." The engine has always put a regular ante straight
+        // into the pot (HandController.postBlinds), so the pill counted it
+        // from the first snapshot - but unlike the blinds (which sit in
+        // front of the seats until the flop sweeps them) and the bomb ante
+        // (which flies at the blast), a plain ante had no presentation at
+        // all: stacks shrank, the pot grew, nothing moved. This is the same
+        // chip flight the bomb ante gets, fired the moment the antes post.
+        // Presentation only: the pot total is already settled server-side.
+        {
+          const postings =
+            ((evt.data as any).postings as Array<{ seat: number; amount: number }>) || [];
+          if (postings.length > 0) {
+            const potPos = seatPctToViewportPx(tableScalerRef.current, POT_ANCHOR_PCT);
+            const events: ChipAnimationEvent[] = [];
+            for (const post of postings) {
+              if (!(post.seat > 0) || !(post.amount > 0)) continue;
+              const seatPct = seatPositions[post.seat - 1] || { x: 50, y: 50 };
+              const seatPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
+              events.push(...createChipToPotEvent(seatPos, potPos, post.amount));
+            }
+            if (events.length > 0) setChipAnimations((prev) => [...prev, ...events]);
+            if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playChips();
+          }
+        }
+        break;
+      }
       case 'TURN_CHANGE': {
         // Discrete-event update of currentPlayerSeat — beats waiting for
         // the snapshot to arrive. The snapshot still self-corrects later.
@@ -15690,13 +15773,24 @@ export default function TablePage({
             // hero's panel dimmed (and formerly inert) for every remaining
             // street. If hero can act, the panel is fully lit and fully live.
             setIsAllInMode(false);
-            import('../services/HapticService').then(({ haptic }) => haptic.medium());
-            // Bible V8 §5.3: turn alert sound for hero.
-            // Batch 2 tiering: the BELL is the active table's sound; a
-            // background table's turn start gets the softer ping from
-            // MultiTablePage instead, so four tables never ring four bells.
-            if (soundService.isEnabled() && (isActive || !isMultiTable) && !muted) {
-              soundService.playTurnAlert();
+            // Dan 2026-09-04: with a pre-action armed, the bell and the buzz
+            // are DEFERRED to the effect beside heroPromptedToAct, which rings
+            // only if the hero ends up genuinely prompted (engine refused the
+            // arm, or missed the grace window). A turn the engine takes for
+            // the player is not announced to the player. This event lands
+            // before the snapshot, so the arm is read from the ref the
+            // mirror effect keeps, not from render state.
+            if (preActionArmedRef.current !== null) {
+              deferredTurnAlertRef.current = true;
+            } else {
+              import('../services/HapticService').then(({ haptic }) => haptic.medium());
+              // Bible V8 §5.3: turn alert sound for hero.
+              // Batch 2 tiering: the BELL is the active table's sound; a
+              // background table's turn start gets the softer ping from
+              // MultiTablePage instead, so four tables never ring four bells.
+              if (soundService.isEnabled() && (isActive || !isMultiTable) && !muted) {
+                soundService.playTurnAlert();
+              }
             }
           }
         }
@@ -19798,6 +19892,57 @@ export default function TablePage({
   const suppressPanelForPreAction = awaitingPreActionExec && !preActionOverdue;
 
   /**
+   * ═══ ONE BOOLEAN FOR "YOU ARE PROMPTED TO ACT" (Dan 2026-09-04) ═══════════
+   *
+   * Dan, verbatim: "WHEN YOU CLICK THE FOLD BUTTON WHEN USING THE PRE ACTION
+   * BAR, TO CLICK FOLD, CHECK CALL WHAT EVER, IT STILL 'PROMPTS YOU' AND
+   * STARTS THE CLOCK FOR A SPLIT SECOND INSTEAD OF JUST EXECUTING THE PRE
+   * TURN ACTION YOU'VE SELECTED. THIS IS A GLITCH THAT NEEDS TO BE FIXED."
+   *
+   * The 2026-08-29 fix above (suppressPanelForPreAction) hid ONE of the seven
+   * surfaces that announce the hero's turn - the ActionPanel - and left the
+   * other six reading `currentPlayerSeat === heroSeat` on their own: the
+   * bell and the haptic (TURN_CHANGE handler), the countdown ring on the
+   * hero's seat, the control strip's time-bank button and ticking numeral,
+   * the time-bank tile in the HUD corner, the `table-page--hero-turn` pulse,
+   * the bottom-bar reserve (`heroActionState`), and the ActionClockWarning.
+   * The engine stamps a full deadline and broadcasts it BEFORE its 900ms
+   * pre-action beat (ServerTableEngineTurns.handleTurnChange), so every one
+   * of those surfaces lit for the beat plus a round trip, and then the fold
+   * landed. That is the prompt-and-clock Dan sees.
+   *
+   * There is now exactly one answer to "is the hero being asked to act", and
+   * every surface reads it. The suppression is still bounded by the same
+   * grace window (PRE_ACTION_EXEC_GRACE_MS) and the same honorability rule,
+   * so a refused or lost pre-action still prompts the player before the
+   * clock costs them anything - it just never prompts them for a turn the
+   * engine is already taking on their behalf.
+   */
+  const heroPromptedToAct = isHeroTurnContext && !suppressPanelForPreAction;
+
+  /**
+   * The bell and the buzz follow the SAME boolean. The TURN_CHANGE handler
+   * rings on the discrete event (which lands before the snapshot, so the
+   * alert is early) only when no pre-action is armed; when one is, it defers
+   * here, and this rings only if the hero ends up genuinely prompted - the
+   * engine refused the arm, or did not act inside the grace window. A turn
+   * the engine takes for the player never rings.
+   */
+  useEffect(() => {
+    if (!isHeroTurnContext) {
+      deferredTurnAlertRef.current = false;
+      return;
+    }
+    if (heroPromptedToAct && deferredTurnAlertRef.current) {
+      deferredTurnAlertRef.current = false;
+      import('../services/HapticService').then(({ haptic }) => haptic.medium());
+      if (soundService.isEnabled() && (isActive || !isMultiTable) && !muted) {
+        soundService.playTurnAlert();
+      }
+    }
+  }, [isHeroTurnContext, heroPromptedToAct, isActive, isMultiTable, muted]);
+
+  /**
    * ═══ THE DISARM THAT CANNOT UNMOUNT (2026-08-29 hardening pass) ═══════════
    *
    * PreActionBar clears an armed pre-action the moment it stops being
@@ -19917,7 +20062,7 @@ export default function TablePage({
    * player's preference would change everybody's pace and leak, from rhythm
    * alone, that the deck still had cards in it (CLAUDE.md 10.5).
    */
-  const hudSlotControl: 'timebank' | 'rabbit' | null = isHeroTurnContext
+  const hudSlotControl: 'timebank' | 'rabbit' | null = heroPromptedToAct
     ? 'timebank'
     : !tableState.isHandInProgress && isRabbitAvailable && v8Settings.rabbit_hunt_button
       ? 'rabbit'
@@ -21258,7 +21403,12 @@ export default function TablePage({
   // clock, is a hand in progress, are the sound switches on — is passed down as
   // the `armed` and `soundEnabled` props.
   const isHeroOnTheClock =
-    tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
+    tableState.currentPlayerSeat === tableState.heroSeat &&
+    tableState.isHandInProgress &&
+    // Dan 2026-09-04: a turn the engine is taking for the player (armed
+    // pre-action) is not a turn the player is on the clock for. One boolean,
+    // see heroPromptedToAct.
+    !suppressPanelForPreAction;
 
   // Guards the auto top-up against re-entry while a debit is still in flight.
   const autoTopUpInFlightRef = useRef(false);
@@ -21378,7 +21528,18 @@ export default function TablePage({
                   // Spent: a later shortfall is a new purchase and needs a new
                   // key, or a second top-up would replay the first one's.
                   autoTopUpKeyRef.current = null;
-                  toast?.success?.(`Auto Top Up: Added ${topUpAmount.toLocaleString()} Chips`);
+                  /* Dan 2026-09-04: `applied` and `queued`, not the amount
+                     that was asked for. "Added 0.85" was printed for a
+                     request the engine had capped or queued to land after
+                     the hand, alongside "Your Chips Land When This Hand
+                     Ends" for the same request. */
+                  const r = lastAddChipsResultRef.current;
+                  const landed = r?.applied ?? topUpAmount;
+                  toast?.success?.(
+                    r?.queued
+                      ? `Auto Top Up: ${landed.toFixed(2)} Lands When This Hand Ends`
+                      : `Auto Top Up: Added ${landed.toFixed(2)} Chips`
+                  );
                 }
               })
               .catch((err) => {
@@ -21434,7 +21595,11 @@ export default function TablePage({
       tableState.currentPlayerSeat > 0 &&
       tableState.currentPlayerSeat === tableState.heroSeat &&
       tableState.isHandInProgress &&
-      !dealInFlight
+      !dealInFlight &&
+      /* Dan 2026-09-04: the ActionPanel branch carries this clause, so this
+         one does too - the two had drifted apart, and the bottom-bar reserve
+         stood up for a turn the engine was taking on the player's behalf. */
+      !suppressPanelForPreAction
     ) {
       return 'active';
     }
@@ -21455,6 +21620,7 @@ export default function TablePage({
     tableState.isHandInProgress,
     tableState.players,
     dealInFlight,
+    suppressPanelForPreAction,
     getPlayerAtSeat,
   ]);
 
@@ -21477,7 +21643,7 @@ export default function TablePage({
 
          Embedded instances now fill their slot instead of the viewport; the
          route case is untouched. */
-      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
+      className={`table-page${tableState.isTournament ? ' table-page--tournament' : ''}${embeddedTableId ? ' table-page--embedded' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${heroPromptedToAct ? ' table-page--hero-turn' : ''}${winnerBandActive ? ' table-page--winner-flash' : ''}`}
       /* Dan 2026-08-24: a spectator has no hero plate hanging below the
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
@@ -23373,17 +23539,28 @@ export default function TablePage({
                   /* Always on: the acting seat is always marked active. The
                      v8Settings.highlight_active_players gate is gone — see the
                      spotlight note above. */
-                  isActive={seatNumber === tableState.currentPlayerSeat}
+                  isActive={
+                    seatNumber === tableState.currentPlayerSeat &&
+                    /* Dan 2026-09-04: on the HERO'S OWN screen, a turn the
+                       engine is taking for them (armed pre-action) does not
+                       light their seat or start their ring - see
+                       heroPromptedToAct. Every other player's screen still
+                       shows the seat on the clock for the engine's beat,
+                       which is what keeps a pre-action from being a tell. */
+                    !(displayPlayer?.isHero && suppressPanelForPreAction)
+                  }
                   lastAction={tableState.lastActions[idx] || null}
                   lastBetAmount={tableState.lastBetAmounts[idx] || 0}
                   isCollectingChips={collectingChipSeats[idx] || false}
                   turnDeadlineMs={
-                    seatNumber === tableState.currentPlayerSeat
+                    seatNumber === tableState.currentPlayerSeat &&
+                    !(displayPlayer?.isHero && suppressPanelForPreAction)
                       ? tableState.actionTimerDeadline
                       : undefined
                   }
                   turnStartTimeMs={
-                    seatNumber === tableState.currentPlayerSeat
+                    seatNumber === tableState.currentPlayerSeat &&
+                    !(displayPlayer?.isHero && suppressPanelForPreAction)
                       ? tableState.actionTimerStartTime
                       : undefined
                   }
@@ -24223,41 +24400,44 @@ export default function TablePage({
              a phone to repeat it. */ ? null : (
           <>
             {/* ─── CONTROL STRIP — Minimal: Time Bank + Timer during hand, Rabbit Hunt after hand ─── */}
-            {tableState.isHandInProgress &&
-              tableState.currentPlayerSeat === tableState.heroSeat && (
-                <div className="control-strip control-strip--transparent">
-                  {/* Time Bank */}
-                  <button
-                    className="control-strip__btn control-strip__btn--icon-img"
-                    title="Time Bank"
-                    onClick={handleActivateTimeBank}
-                    disabled={(timeBanksRemaining ?? 0) <= 0 || timeBankActive}
-                  >
-                    <span className="control-strip__icon-wrap" aria-hidden="true">
-                      <img
-                        src={timebankIconPage}
-                        className="control-strip__timebank-img"
-                        alt=""
-                        draggable={false}
-                      />
-                      {/* Resolved 2026-08-26: main's stopwatch image is kept; the only thing
+            {/* Dan 2026-09-04: not for a turn the engine is taking on the
+                player's behalf - see heroPromptedToAct. The strip used to
+                stand up (time-bank button, ticking numeral) for the engine's
+                pre-action beat and then vanish with the fold. */}
+            {heroPromptedToAct && (
+              <div className="control-strip control-strip--transparent">
+                {/* Time Bank */}
+                <button
+                  className="control-strip__btn control-strip__btn--icon-img"
+                  title="Time Bank"
+                  onClick={handleActivateTimeBank}
+                  disabled={(timeBanksRemaining ?? 0) <= 0 || timeBankActive}
+                >
+                  <span className="control-strip__icon-wrap" aria-hidden="true">
+                    <img
+                      src={timebankIconPage}
+                      className="control-strip__timebank-img"
+                      alt=""
+                      draggable={false}
+                    />
+                    {/* Resolved 2026-08-26: main's stopwatch image is kept; the only thing
                           carried across is the null case — the count is null until the
                           TRUE balance loads and must not render a fabricated number. */}
-                      <span className="control-strip__count-overlay">
-                        {timeBanksRemaining ?? '-'}
-                      </span>
+                    <span className="control-strip__count-overlay">
+                      {timeBanksRemaining ?? '-'}
                     </span>
-                  </button>
+                  </span>
+                </button>
 
-                  {/* Timer Display. PERF 2026-08-25: a leaf that subscribes to
+                {/* Timer Display. PERF 2026-08-25: a leaf that subscribes to
                       the clock, so the numeral can tick without this component
                       rendering. Same output as the inline expression it
                       replaced, `|| 0` included. */}
-                  <div className="control-strip__timer">
-                    <ActionClockSeconds clock={actionClock} className="control-strip__timer-val" />
-                  </div>
+                <div className="control-strip__timer">
+                  <ActionClockSeconds clock={actionClock} className="control-strip__timer-val" />
                 </div>
-              )}
+              </div>
+            )}
 
             {/* Rabbit Hunt lives in the bottom-left HUD corner, in the slot it
                 shares with the time-bank tile (`hudSlotControl`, above). It has

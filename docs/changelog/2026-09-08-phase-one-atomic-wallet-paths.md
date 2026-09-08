@@ -1,6 +1,6 @@
 # Phase One Atomic Wallet Paths
 
-Status: in progress, not deployed or complete.
+Status: Phase 1 of 12 complete for the canonical agent wallet paths and financial entrypoint baseline defined below. Published and verified September 8, 2026.
 
 User authorized a dependency-ordered build of the 109-item audit plus nine explicit acceptance requirements. The original report remains on codex/club-arena-comprehensive-audit-backlog; the user explicitly approved its publication, the normal Hetzner pipeline and Sentry uploads in the latest request.
 
@@ -12,7 +12,7 @@ Before changes: WalletService.ts:425 routes agentSelfTransfer through fn_wallet_
 
 Implementation: connect both self-stake screens to the canonical club RPC and canonical destination balance; retain one verified operation ID before submission and across response loss/reload; require literal matching receipt before clearing intent or emitting success. The pending record contains an opaque scope digest and random ID, no balances, credentials, recipient names or raw payload. It has no automatic expiry. Concurrent browser tabs reserve through Web Locks. Unavailable/corrupt storage refuses only that unidentifiable request before any debit.
 
-Phase 1 exit remains pending until all implementation, tests, indirect financial entrypoint baseline and release evidence are recorded below.
+Phase 1 exit evidence is recorded below. Candidate inventories do not close the later semantic accounting audit.
 
 ## Verification Checkpoint
 
@@ -26,7 +26,7 @@ Expanded read-only baseline: 3,716 public/private functions, 1,312 lexical write
 
 An earlier build was blocked on Sentry upload authorization. The user subsequently approved it explicitly; the normal production build and Sentry source-map upload passed on September 8.
 
-Publication is authorized. Phase 1 remains incomplete until normal merge/publication and the scoped release acceptance evidence are satisfied. Phase 2 review has begun as requested while publication proceeds; no Phase 2 completion is claimed.
+Publication was authorized and the scoped release acceptance evidence is now satisfied. Phase 2 review began as requested while publication proceeded; no Phase 2 completion is claimed.
 
 Real-time behavior: verified receipts emit BALANCE_UPDATED; portal reads use club_members.chip_balance. No polling, watcher, reconciler or repair job was added.
 
@@ -38,6 +38,20 @@ The normal pre-push gate caught an obsolete law test that required a fresh UUID 
 
 A new full-service concurrency test reproduced a real race in both self-stake and agent-send: twenty overlapping calls with immediate acknowledgements produced twenty operation IDs. Submission now coalesces the entire request through acknowledgement. Each tab also persists its own opaque retry identity so another tab's acknowledgement cannot erase an uncertain request. Neither change introduces a watcher, reconciler, timeout expiry or financial repair.
 
-Verification and deployment of this follow-up remain pending.
+The follow-up is included in the verified release recorded below.
 
 Follow-up verification: 119 focused tests passed across seven files; normal push related-test gate passed 311 tests; TypeScript passed. Real Chromium verified twenty overlapping submissions invoke one callback, a subsequent completed gesture gets a new ID, another tab's shared-record cleanup preserves the uncertain tab identity, and reload retains that identity. The normal production build and Sentry upload passed. CI's entry-chunk gate identified the new helper as an unnecessary eager startup dependency; both services now dynamically import it at the transfer boundary. The budget and module gates remain unchanged.
+
+## Final Release Acceptance
+
+Owner: Codex. PR #3846 merged as 50806ae3e6b13edd4b3ebf024c831550eebc1630. The complete audit report separately merged in PR #3848 as 47b828c2f617f09c60765f2702428b8b6b93b760 and is an ancestor of the wallet release.
+
+Required CI run 34262509506 passed: all four client-test shards, TypeScript, journal transaction probes, source/stub/route/bus/database invariant gates, production build, startup module budget, route performance and browser component gates. Server-only changes were absent in this phase; its server job was correctly skipped. Live-production E2E was not enabled by that workflow and is not represented as a pass.
+
+Hetzner publisher run 34263170870 succeeded. The public Club Arena build-info endpoint returned ca_sha 50806ae3e6b13edd4b3ebf024c831550eebc1630, built_at 2026-09-08T18:30:09Z and built_by publish-club-arena.yml. The served entry references AgentWalletIntent-BMuBR6OX-v6.js; that served helper was fetched and its SHA256 is ea14eb64b1ebec0a5e0ca45bdacd088eb884655b1771001c757fcf01cbe99f67. It includes the tab-specific persistence, Web Lock reservation and operation identity code.
+
+Verification joins actual React component tests with authenticated fixture identities, actual service-path tests, browser-native storage/lock/reload checks, and isolated PostgreSQL atomicity/rollback/replay probes. No production chips were moved merely to test a release. No live-account end-to-end transfer or independent certification is claimed.
+
+Final local startup budget: 316 kB gzip against 320 kB; total JavaScript 2578 kB against 2600 kB. No new module is downloaded before first paint. Normal Sentry uploads passed.
+
+Phase 1 Of 12 Is Done. Ready To Start Phase 2 Of 12; its cash-game review is already underway under the user's background-publication instruction.

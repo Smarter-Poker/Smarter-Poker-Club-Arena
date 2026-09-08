@@ -64,7 +64,11 @@ import PushEnableBanner from '../components/notifications/PushEnableBanner';
 import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
 import './NotificationsPage.css';
 
-/** Club Arena's router basename. Paths under it are handled in-SPA. */
+/** The WEB path Club Arena lives under. A notification's destination is
+    written by the server as a web URL, so this is the prefix to strip before
+    handing the rest to react-router - on every target. It is deliberately NOT
+    the router basename: inside the native app the basename is '/', but the
+    destinations the server writes still say /hub/club-arena/... */
 const CA_BASE = '/hub/club-arena';
 
 /* The placeholder portrait lives in THIS bundle's public/. A bare

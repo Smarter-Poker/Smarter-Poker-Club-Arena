@@ -2124,9 +2124,20 @@
      card visibly wobbled before settling.
 
      The hole cards now simply arrive: a short rise and fade, no rotation to be
-     edge-on in, no overshoot to wobble out of. */
+     edge-on in, no overshoot to wobble out of.
+
+     `transform-style: preserve-3d` was declared here from 2026-03-10 to
+     2026-09-07 and is gone: it was a compositing trigger with no 3D content
+     under it. Nothing inside a hero card rotates out of its plane - the face
+     is a flat image, the squeeze box carries its own `perspective()` inside
+     its own transform, and the showdown flip rotates the card element itself,
+     which needs no 3D context from its parent. What the declaration DID do
+     was hold the card on its own compositor layer for the whole hand, which
+     is how a card dealt mid-animation on an iPad stayed rasterised at the
+     wrong scale and read as blurry (Dan 2026-09-07). The full account is on
+     the retired mobile `will-change` hint in TablePage.css; the law is
+     tests/hero-cards-are-crisp-at-rest.law.test.ts. */
   animation: heroCardDeal 0.26s var(--ease-out, cubic-bezier(0.22, 0.61, 0.36, 1)) backwards;
-  transform-style: preserve-3d;
   transform-origin: bottom center;
   box-shadow:
     0 5px 12px rgba(0, 0, 0, 0.6),

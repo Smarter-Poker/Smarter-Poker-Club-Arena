@@ -73,7 +73,7 @@ const BASELINE = new Map<string, number>([
   // 10 -> 8: union route/account authorization now reports both canonical
   // operator lookup failures instead of discarding them during a stale load.
   ['src/pages/UnionDashboardPage.tsx', 8],
-  ['src/services/UnionService.ts', 12],
+  ['src/services/UnionService.ts', 11],
   ['src/pages/AdminDashboardPage.tsx', 7],
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],
@@ -100,7 +100,7 @@ const BASELINE = new Map<string, number>([
   // touched the file, so its three reads were fixed under the ratchet's own
   // rule: shrink what you touch).
   ['src/pages/tournament/TournamentLobbyPage.tsx', 3],
-  ['src/pages/VIPPage.tsx', 3],
+  ['src/pages/VIPPage.tsx', 2],
   ['src/pages/RakebackDashboard.tsx', 3],
   ['src/pages/PlayerSessionsPage.tsx', 2],
   ['src/pages/NotificationsPage.tsx', 3],
@@ -164,7 +164,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/AvatarService.ts', 1],
   ['src/services/AdService.ts', 1],
   ['src/services/AchievementService.ts', 1],
-  ['src/pages/admin/AnalyticsDashboard.tsx', 1],
+  ['src/pages/admin/AnalyticsDashboard.tsx', 0],
   ['src/pages/XMTTPage.tsx', 1],
   ['src/pages/UnionStatementsPage.tsx', 1],
   ['src/pages/TournamentPage.tsx', 1],

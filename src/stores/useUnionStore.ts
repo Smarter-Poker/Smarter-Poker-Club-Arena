@@ -233,9 +233,11 @@ export const useUnionStore = create<UnionState>()(
       },
 
       loadConsolidatedReport: async (unionId, periodId) => {
-        set({ isLoadingSettlement: true });
+        set({ isLoadingSettlement: true, consolidatedReport: null });
         try {
-          const report = await UnionService.getSettlementReport(unionId, periodId);
+          const report = periodId
+            ? await UnionService.getSettlementReportForPeriod(unionId, periodId)
+            : await UnionService.getSettlementReport(unionId);
           set({ consolidatedReport: report });
         } catch (error) {
           reportError(error, 'useUnionStore.Load_consolidated_report_failed');

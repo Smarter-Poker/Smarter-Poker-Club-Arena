@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
+import { isPlatformStaffRole } from '../utils/platformRoles';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -249,7 +250,7 @@ export const PermissionService = {
         console.warn('[PermissionService] Failed to fetch profile role:', profileErr.message);
       }
 
-      if (profile?.role === 'super_admin' || profile?.role === 'admin') {
+      if (isPlatformStaffRole(profile?.role)) {
         return {
           userId,
           level: 'PLATFORM_ADMIN',

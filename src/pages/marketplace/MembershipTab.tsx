@@ -309,7 +309,7 @@ export default function MembershipTab({
           <button type="button" className={styles.inlineLink} onClick={manageSubscription}>
             Manage Subscription
           </button>
-          {' or '}
+          {' Or '}
           <button
             type="button"
             className={styles.inlineLink}

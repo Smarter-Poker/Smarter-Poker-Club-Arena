@@ -588,7 +588,8 @@ export async function startCheckout(
   // webhook, so on success the page is sent to the same ?purchase=success
   // return it already handles for Stripe (it polls the wallet for the credit).
   if (isNativePlatform()) {
-    const { data: sess } = await supabase.auth.getSession();
+    const { data: sess, error: sessError } = await supabase.auth.getSession();
+    if (sessError) reportError(sessError, 'marketplace.startCheckout_native_session_read_failed');
     const userId = sess?.session?.user?.id;
     if (!userId) throw new Error('Not authenticated');
     const req = nativePurchaseRequestFor(type, items);

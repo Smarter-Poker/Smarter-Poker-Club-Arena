@@ -1,0 +1,9 @@
+# Premium picker delivery and monthly allowance preparation
+
+The picker still used old artwork, and background keying erased dark props. All 47 approved non-glove stills now have versioned 192/320/640 WebP delivery thumbnails. Original sources stay outside public assets. The production media optimizer preserves the hashed delivery bytes. Narrow clean-matte keying preserves black materials; a cache sizing fix prevents small icons from fetching larger thumbnails. Unavailable artwork retains accessible layout without a generic glyph.
+
+Allowance responses now belong to the current account and newest request. A stale account load or older entitlement refresh cannot overwrite current balances. A draft migration and matching frontend prepare 30 monthly throws for ordinary members, 500 for VIP, and unlimited Lifetime access, then owned packs before diamonds. The member policy migration is NOT applied live and must release with its frontend.
+
+Validation: full isolated-checkout TypeScript passed and all 16,346 client tests across 1,188 files passed. Synthetic local PostgreSQL checks total 25, covering the two already-applied production fixes and seven draft-member-policy cases. The actual image component rendered all 47 stills on both dark and light surfaces, with 94 decoded cutouts and no page errors. Small-thumbnail sphere opacity has a real-asset regression test. Production build reached the provenance gate, which correctly rejected a branch 15 commits behind main; a merge and fresh build remain required.
+
+No premium frontend changes have been pushed or published. Recorded voices, remaining rigs, expanded catalogue, server item entitlements, receipt transport, authenticated purchase/multiplayer tests and device verification remain open. See MOVING-PARTS-STATUS.md for the publication approval rejection.

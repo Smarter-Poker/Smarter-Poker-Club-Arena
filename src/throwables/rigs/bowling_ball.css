@@ -1,0 +1,91 @@
+.thr-bowling_ball__ball {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-bowling_ball-ball calc(1.2s * var(--animation-speed, 1)) linear forwards;
+}
+@keyframes thr-bowling_ball-ball {
+  0% {
+    opacity: 1;
+    transform: translate(-110px, 45px) rotate(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(0, 20px) rotate(300deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(105px, -10px) rotate(620deg);
+  }
+}
+.thr-bowling_ball__pin {
+  transform-box: fill-box;
+  transform-origin: 50% 95%;
+  animation: thr-bowling_ball-pin calc(1.1s * var(--animation-speed, 1)) ease-out
+    calc(0.6s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-bowling_ball-pin {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) rotate(var(--spin));
+  }
+}
+.thr-bowling_ball__dust {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-bowling_ball-dust calc(0.7s * var(--animation-speed, 1)) ease-out
+    calc(0.6s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-bowling_ball-dust {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.3);
+  }
+  25% {
+    opacity: 0.8;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+}
+.thr-bowling_ball__caption {
+  opacity: 0;
+  animation: thr-bowling_ball-caption calc(0.2s * var(--animation-speed, 1)) ease-out
+    calc(0.6s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-bowling_ball-caption {
+  0% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-bowling_ball__pin,
+  .thr-bowling_ball__caption {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .thr-bowling_ball__ball {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translate(-55px, 40px) !important;
+  }
+  .thr-bowling_ball__dust {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}

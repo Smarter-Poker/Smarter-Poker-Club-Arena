@@ -1,0 +1,120 @@
+.thr-laughing_emoji__smug {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: thr-laughing_emoji-smug calc(0.567s * var(--animation-speed, 1)) linear
+    calc(0s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-laughing_emoji-smug {
+  0%,
+  99% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-laughing_emoji__laugh {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-laughing_emoji-laugh calc(0.8s * var(--animation-speed, 1)) linear
+    calc(0.567s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-laughing_emoji-laugh {
+  0%,
+  99% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-laughing_emoji__tears {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-laughing_emoji-tears calc(2.533s * var(--animation-speed, 1)) linear
+    calc(1.367s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-laughing_emoji-tears {
+  0%,
+  100% {
+    opacity: 1;
+  }
+}
+.thr-laughing_emoji__rock {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: thr-laughing_emoji-rock calc(0.4s * var(--animation-speed, 1)) ease-in-out
+    calc(0.567s * var(--animation-speed, 1)) 8 forwards;
+}
+@keyframes thr-laughing_emoji-rock {
+  0%,
+  100% {
+    transform: rotate(-7deg) scale(1, 0.98);
+  }
+  50% {
+    transform: rotate(7deg) scale(1.02, 1.04);
+  }
+}
+.thr-laughing_emoji__left {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-laughing_emoji-left calc(0.4s * var(--animation-speed, 1)) ease-out
+    calc(0.567s * var(--animation-speed, 1)) 8 forwards;
+}
+@keyframes thr-laughing_emoji-left {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.3);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-32px, 40px) rotate(-30deg) scale(0.75);
+  }
+}
+.thr-laughing_emoji__right {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: thr-laughing_emoji-right calc(0.4s * var(--animation-speed, 1)) ease-out
+    calc(0.567s * var(--animation-speed, 1)) 8 forwards;
+}
+@keyframes thr-laughing_emoji-right {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.3);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(32px, 40px) rotate(30deg) scale(0.75);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-laughing_emoji__rock,
+  .thr-laughing_emoji__laugh,
+  .thr-laughing_emoji__smug,
+  .thr-laughing_emoji__tears,
+  .thr-laughing_emoji__left,
+  .thr-laughing_emoji__right {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-laughing_emoji__rock,
+  .thr-laughing_emoji__laugh {
+    opacity: 1 !important;
+  }
+  .thr-laughing_emoji__smug,
+  .thr-laughing_emoji__tears,
+  .thr-laughing_emoji__left,
+  .thr-laughing_emoji__right {
+    opacity: 0 !important;
+  }
+}

@@ -1,0 +1,154 @@
+.thr-skull__grave,
+.thr-skull__whole,
+.thr-skull__left,
+.thr-skull__right {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.thr-skull__whole {
+  animation: thr-skull-whole calc(2.1s * var(--animation-speed, 1)) linear 1 forwards;
+}
+@keyframes thr-skull-whole {
+  0% {
+    opacity: 1;
+    transform: scale(0.05);
+  }
+  8% {
+    transform: scale(1.15);
+  }
+  13%,
+  99.99% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+.thr-skull__closed {
+  animation: thr-skull-closed calc(0.1s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.3s * var(--animation-speed, 1)) 8 forwards;
+}
+@keyframes thr-skull-closed {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.thr-skull__open {
+  opacity: 0;
+  animation: thr-skull-open calc(0.1s * var(--animation-speed, 1)) steps(1, end)
+    calc(0.3s * var(--animation-speed, 1)) 8 forwards;
+}
+@keyframes thr-skull-open {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.thr-skull__red {
+  opacity: 0;
+  animation: thr-skull-red calc(0.15s * var(--animation-speed, 1)) linear
+    calc(1.3s * var(--animation-speed, 1)) 4 forwards;
+}
+@keyframes thr-skull-red {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.thr-skull__left,
+.thr-skull__right {
+  opacity: 0;
+  animation-duration: calc(0.55s * var(--animation-speed, 1));
+  animation-delay: calc(2.1s * var(--animation-speed, 1));
+  animation-timing-function: ease-in;
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+}
+.thr-skull__left {
+  animation-name: thr-skull-left;
+}
+.thr-skull__right {
+  animation-name: thr-skull-right;
+}
+@keyframes thr-skull-left {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-14px, 4px) rotate(-8deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-85px, 140px) rotate(-35deg);
+  }
+}
+@keyframes thr-skull-right {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(14px, 4px) rotate(8deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(85px, 140px) rotate(35deg);
+  }
+}
+.thr-skull__grave {
+  opacity: 0;
+  animation: thr-skull-grave calc(0.3s * var(--animation-speed, 1)) ease-out
+    calc(2.3s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-skull-grave {
+  0% {
+    opacity: 1;
+    transform: translateY(30px) scale(0.3);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-skull__grave,
+  .thr-skull__whole,
+  .thr-skull__closed,
+  .thr-skull__open,
+  .thr-skull__red,
+  .thr-skull__left,
+  .thr-skull__right {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-skull__grave,
+  .thr-skull__open,
+  .thr-skull__red,
+  .thr-skull__left,
+  .thr-skull__right {
+    opacity: 0 !important;
+  }
+  .thr-skull__whole,
+  .thr-skull__closed {
+    opacity: 1 !important;
+  }
+}

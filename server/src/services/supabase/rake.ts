@@ -161,13 +161,49 @@ export type InsuranceLedgerResult =
 
 const INSURANCE_LEDGER_MAX_ATTEMPTS = 3;
 
-function extractInsuranceTxId(data: unknown): string | null {
-  const row = Array.isArray(data) ? data[0] : data;
-  if (row && typeof row === 'object' && 'id' in row) {
-    const id = (row as { id?: unknown }).id;
-    if (typeof id === 'string' && id.length > 0) return id;
+type InsuranceSettlementParams = {
+  tableId: string;
+  clubId: string;
+  handNumber: number;
+  playerId: string;
+  equityPercent: number;
+  premium: number;
+  insuredAmount: number;
+  payout: number;
+  playerWon: boolean;
+  /**
+   * EV CASHOUT 2026-08-28: 'ev_cashout' rows log the redirected winnings in
+   * `premium` (bank in) and the locked cashout in `payout` (bank out); the
+   * RPC's bank_delta = premium − payout is unchanged. Default 'insurance'.
+   */
+  kind?: 'insurance' | 'ev_cashout';
+};
+const insuranceCents = (value: number): number => Math.round(value * 100) / 100;
+
+function extractInsuranceTxId(data: unknown, params: InsuranceSettlementParams): string | null {
+  const row = Array.isArray(data) ? (data.length === 1 ? data[0] : null) : data;
+  if (!row || typeof row !== 'object') return null;
+  const receipt = row as Record<string, unknown>;
+  if (
+    typeof receipt.id !== 'string' ||
+    receipt.id.length === 0 ||
+    receipt.table_id !== params.tableId ||
+    receipt.club_id !== params.clubId ||
+    receipt.player_id !== params.playerId ||
+    receipt.hand_number !== params.handNumber ||
+    receipt.player_won !== params.playerWon ||
+    receipt.kind !== (params.kind ?? 'insurance')
+  )
+    return null;
+  for (const [key, expected] of [
+    ['equity_percent', params.equityPercent],
+    ['premium', params.premium],
+    ['insured_amount', params.insuredAmount],
+    ['payout', params.payout],
+  ] as const) {
+    if (receipt[key] == null || Number(receipt[key]) !== insuranceCents(expected)) return null;
   }
-  return null;
+  return receipt.id;
 }
 
 function insuranceDataHasContent(data: unknown): boolean {
@@ -177,21 +213,19 @@ function insuranceDataHasContent(data: unknown): boolean {
   return true;
 }
 
-async function confirmInsuranceTx(params: {
-  tableId: string;
-  handNumber: number;
-  playerId: string;
-}): Promise<string | null> {
+async function confirmInsuranceTx(params: InsuranceSettlementParams): Promise<string | null> {
   try {
     const { data, error } = await supabase
       .from('insurance_transactions')
-      .select('id')
+      .select(
+        'id,table_id,club_id,hand_number,player_id,equity_percent,premium,insured_amount,payout,player_won,kind'
+      )
       .eq('table_id', params.tableId)
       .eq('hand_number', params.handNumber)
       .eq('player_id', params.playerId)
       .maybeSingle();
     if (error) return null;
-    return extractInsuranceTxId(data);
+    return extractInsuranceTxId(data, params);
   } catch {
     return null;
   }
@@ -215,32 +249,18 @@ async function confirmInsuranceTx(params: {
  * Regressed to a `Promise<void>` stub during the 2026-08-08 supabase.ts split;
  * this restores the contract `insuranceLedger.test.ts` still encodes.
  */
-export async function logInsuranceSettlement(params: {
-  tableId: string;
-  clubId: string;
-  handNumber: number;
-  playerId: string;
-  equityPercent: number;
-  premium: number;
-  insuredAmount: number;
-  payout: number;
-  playerWon: boolean;
-  /**
-   * EV CASHOUT 2026-08-28: 'ev_cashout' rows log the redirected winnings in
-   * `premium` (bank in) and the locked cashout in `payout` (bank out); the
-   * RPC's bank_delta = premium − payout is unchanged. Default 'insurance'.
-   */
-  kind?: 'insurance' | 'ev_cashout';
-}): Promise<InsuranceLedgerResult> {
+export async function logInsuranceSettlement(
+  params: InsuranceSettlementParams
+): Promise<InsuranceLedgerResult> {
   const rpcArgs = {
     p_table_id: params.tableId,
     p_club_id: params.clubId,
     p_hand_number: params.handNumber,
     p_player_id: params.playerId,
-    p_equity_percent: params.equityPercent,
-    p_premium: params.premium,
-    p_insured_amount: params.insuredAmount,
-    p_payout: params.payout,
+    p_equity_percent: insuranceCents(params.equityPercent),
+    p_premium: insuranceCents(params.premium),
+    p_insured_amount: insuranceCents(params.insuredAmount),
+    p_payout: insuranceCents(params.payout),
     p_player_won: params.playerWon,
     p_kind: params.kind ?? 'insurance',
   };
@@ -272,7 +292,7 @@ export async function logInsuranceSettlement(params: {
       continue; // retry — idempotent on (table_id, hand_number, player_id)
     }
 
-    const id = extractInsuranceTxId(data);
+    const id = extractInsuranceTxId(data, params);
     if (id) {
       return { ok: true, transactionId: id, attempts };
     }
@@ -293,8 +313,8 @@ export async function logInsuranceSettlement(params: {
     return { ok: true, transactionId: confirmedId, attempts };
   }
 
-  // Definitive failure: the offsetting bank entry never landed, so the table
-  // stack was moved with nothing on the other side.
+  // The payment could not be confirmed. A lost response is not proof that
+  // the bank transaction failed to commit.
   reportError(
     lastError instanceof Error
       ? lastError
@@ -324,8 +344,8 @@ export async function logInsuranceSettlement(params: {
     await raiseFinancialAlert(
       'critical',
       'logInsuranceSettlement.insurance_ledger_write_failed',
-      `Insurance ledger write failed after ${attempts} attempts (${reason}); ` +
-        `table stack moved with no offsetting bank entry`,
+      `Insurance payment could not be confirmed after ${attempts} attempts (${reason}); ` +
+        `no matching committed bank receipt was confirmed`,
       {
         table_id: params.tableId,
         club_id: params.clubId,

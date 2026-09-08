@@ -257,7 +257,7 @@
    the whole point of a showcase. See the header of ClubIdentityCard.css. */
 
 .agc-mobile-page .lobby-wallets-trigger__icon {
-  background: url('/hub/club-arena/assets/club-buttons/wallets/square/wallet-player-wallet-square-v1.webp')
+  background: url('/assets/club-buttons/wallets/square/wallet-player-wallet-square-v1.webp')
     center / contain no-repeat;
 }
 
@@ -283,7 +283,7 @@
   padding: 0 18px;
   border: 1px solid #38546a;
   background:
-    url('/hub/club-arena/assets/club-buttons/wallet-row-shell.webp') center / 100% 100% no-repeat,
+    url('/assets/club-buttons/wallet-row-shell.webp') center / 100% 100% no-repeat,
     #030608;
   color: #c8d1d8;
   font:

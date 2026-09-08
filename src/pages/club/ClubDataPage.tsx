@@ -64,6 +64,7 @@ import { EmptyState, LoadingState, PermissionState } from '../../components/comm
 import RakeSnapshotPanel from '../../components/club/RakeSnapshotPanel';
 import type { RakeScope } from '../../services/ClubRakeSnapshotService';
 import styles from './ClubDataPage.module.css';
+import { mediaUrl } from '../../utils/mediaBase';
 
 /**
  * The ledger presets. 90 is the ceiling because ca_club_data_snapshot clamps
@@ -2120,7 +2121,7 @@ export default function ClubDataPage() {
       <section className={styles.hero} aria-labelledby="club-data-title">
         <img
           className={styles.heroArt}
-          src="/hub/club-arena/images/club-data/data-vault-hero-v1.webp"
+          src={mediaUrl('images/club-data/data-vault-hero-v1.webp')}
           alt=""
           width="1600"
           height="901"

@@ -3263,6 +3263,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       return; // handled stays true; the record exists for manual recovery
     }
 
+    let allSharesSettled = true;
     for (const p of payoutRows as Array<{ user_id: string; amount: number }>) {
       const amount = Math.max(0, Number(p.amount) || 0);
       if (amount <= 0) continue;
@@ -3278,16 +3279,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         source: 'engine.settleFinalTableDeal',
         memo: 'Final table deal (even chip chop)',
       });
-      if (!share.ok) {
+      if (!share.ok || share.fully_settled !== true || (share.amount_paid ?? 0) < amount) {
+        allSharesSettled = false;
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal credit FAILED for ${p.user_id.slice(0, 8)}: ${share.refused_reason}${share.transport_error ? ` (${share.transport_error})` : ''}`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal credit FAILED for ${p.user_id.slice(0, 8)}: ${share.refused_reason ?? 'incomplete_settlement'}${share.transport_error ? ` (${share.transport_error})` : ''}`
           ),
           'Tournament.final_table_deal_credit_failed'
         );
         continue;
       }
     }
+
+    // The recorded deal remains pending until every original share is confirmed paid.
+    if (!allSharesSettled) return;
 
     // Final standings by chip count: chip leader takes 1st, the rest 2..N.
     // Prize columns were already stamped by fn_final_table_deal — only status

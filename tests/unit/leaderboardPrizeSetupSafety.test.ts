@@ -44,7 +44,12 @@ describe('leaderboard prize setup safety contract', () => {
     expect(menu).toContain('Owner Prize Tools');
     expect(menu).toContain('/leaderboard?setup=prizes&club=${rewardContextClubId}');
     expect(page).toContain("params.get('setup') !== 'prizes'");
-    expect(page).toContain('settings?.club_id === requestedClubId');
+    /* The stale-settings guard compares the owner record against the club the
+       URL RESOLVED to (`requestedClub.id`), not the raw param - a slug in the
+       URL is not a uuid in `settings.club_id`, so the raw comparison would
+       have been false for every slug link and the guard would have looked
+       armed while never opening the wizard (the-menu-stays-in-the-club). */
+    expect(page).toContain('settings?.club_id === requestedClub.id');
     expect(page).toContain('openedSetupLinkRef.current !== requestKey');
     expect(page).toContain('<LeaderboardPrizeWizard');
   });

@@ -161,6 +161,18 @@ const THROWABLES: Throwable[] = [
     '#E7AF34',
     0
   ),
+  T(
+    'thinking',
+    'Thinking Face',
+    'reactions',
+    'fastball',
+    'thud',
+    'pop_up',
+    'light',
+    false,
+    '#FFD93D',
+    0
+  ),
   T('fish', 'Fish', 'throws', 'fastball', 'splash', 'fish_flop', 'light', false, '#58BDEB', 0),
   // ── REACTIONS (8) — floaty emoji, sparkle finishes ────────────────────────────
   T(

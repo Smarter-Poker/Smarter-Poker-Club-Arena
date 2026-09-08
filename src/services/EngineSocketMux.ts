@@ -57,6 +57,12 @@ const SUBSCRIBE_TIMEOUT_MS = 15_000;
 /** Server pings every 25s; an OPEN physical socket silent this long is dead. */
 const STALE_HARD_MS = 60_000;
 const WATCHDOG_TICK_MS = 10_000;
+const WARM_STATE_PROBE_MS = 5_000;
+interface MuxStateProbe {
+  startedAt: number;
+  deadline: number;
+  minimumSeq: number;
+}
 /**
  * 2026-08-22: close code for "a newer client claimed this table's facade".
  * EngineStateClient treats it as terminal for that instance — reconnecting
@@ -164,12 +170,57 @@ export class MuxTableSocket {
     if (this.readyState !== 0) return;
     this.readyState = 1;
     this.onopen?.();
+    // SUBSCRIBED alone is not a prepared table: initial warm-up also needs state.
+    this.probeWarmState();
   }
 
   private warmFrames: string[] | null = null;
   private warmSeq = -1;
   private warmBytes = 0;
   private warmStateAt = 0;
+  private stateProbe: MuxStateProbe | null = null;
+  private stateProbeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** An OPEN lobby facade must answer renewed intent with current state. */
+  probeWarmState(): void {
+    if (!this.isWarmSubscription()) return;
+    this._probeState(this._stateProofForAdoption());
+  }
+
+  /** @internal Preserve the first deadline through a warm-to-live handoff. */
+  _stateProofForAdoption(): MuxStateProbe {
+    return (
+      this.stateProbe ?? {
+        startedAt: Date.now(),
+        deadline: Date.now() + WARM_STATE_PROBE_MS,
+        minimumSeq: this.warmFrames?.length ? this.warmSeq : -1,
+      }
+    );
+  }
+
+  /** @internal Arm AFTER cached frames are replayed, so cache is not proof. */
+  _probeState(probe: MuxStateProbe): void {
+    if (this.stateProbe || this.readyState !== 1 || !this.mux.canProbeState()) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    this.stateProbe = { ...probe };
+    this.stateProbeTimer = setTimeout(
+      () => {
+        this._clearStateProbe();
+        if (this.readyState !== 1 || !this.mux.canProbeState()) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        this.recoverAfterUnansweredProbe(probe.startedAt);
+      },
+      Math.max(0, probe.deadline - Date.now())
+    );
+    this.send(JSON.stringify({ type: 'RESYNC' }));
+  }
+
+  /** @internal A retired facade owns no delayed work. */
+  _clearStateProbe(): void {
+    if (this.stateProbeTimer !== null) clearTimeout(this.stateProbeTimer);
+    this.stateProbeTimer = null;
+    this.stateProbe = null;
+  }
 
   /** Retain only state for a speculative lobby subscription, never private events. */
   retainWarmState(): void {
@@ -191,6 +242,26 @@ export class MuxTableSocket {
 
   /** @internal */
   _message(raw: string): void {
+    if (this.stateProbe) {
+      try {
+        const frame = JSON.parse(raw);
+        if (frame.type === 'EVENT' && frame.payload?.type === 'engine_restarting') {
+          // A rebuilt table starts a new sequence space on this same socket.
+          this.stateProbe.minimumSeq = -1;
+        } else if (
+          frame.type === 'SNAPSHOT' &&
+          Number.isFinite(frame.seq) &&
+          frame.seq >= this.stateProbe.minimumSeq &&
+          frame.state &&
+          typeof frame.state === 'object' &&
+          !Array.isArray(frame.state)
+        ) {
+          this._clearStateProbe();
+        }
+      } catch {
+        /* malformed traffic is not proof */
+      }
+    }
     if (this.warmFrames !== null) {
       try {
         const frame = JSON.parse(raw);
@@ -228,6 +299,7 @@ export class MuxTableSocket {
 
   /** @internal */
   _close(code?: number, reason?: string): void {
+    this._clearStateProbe();
     if (this._subTimer) {
       clearTimeout(this._subTimer);
       this._subTimer = null;
@@ -249,6 +321,12 @@ class EngineSocketMuxImpl {
   private lastInboundAt = 0;
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private stateProbeResumeAt = 0;
+
+  /** @internal Scheduled downtime is not a failed foreground state request. */
+  canProbeState(): boolean {
+    return Date.now() >= this.stateProbeResumeAt;
+  }
 
   /**
    * Get a facade for a table, (re)establishing the shared socket as needed.
@@ -294,6 +372,7 @@ class EngineSocketMuxImpl {
       !!this.ws &&
       this.ws.readyState === WebSocket.OPEN &&
       Date.now() - this.lastInboundAt <= STALE_HARD_MS;
+    const adoptionProbe = adoptWarmSubscription ? prior!._stateProofForAdoption() : null;
     const warmFrames =
       adoptWarmSubscription && this.token === token && this.baseUrl === baseUrl
         ? prior!.takeWarmState()
@@ -330,8 +409,8 @@ class EngineSocketMuxImpl {
        `new WebSocket()` never fires onopen inside its own constructor either.
        The SUBSCRIBE above still goes out and is idempotent server-side, so a
        subscription that turns out to be gone is re-established anyway and the
-       normal ERROR/close path still applies. No watchdog is armed here: there
-       is nothing to wait for. */
+       normal ERROR/close path still applies. Cached state paints immediately,
+       but a bounded probe still requires a fresh server snapshot. */
     if (adoptWarmSubscription) {
       queueMicrotask(() => {
         if (this.facades.get(tableId) !== facade || facade.readyState !== 0) return;
@@ -339,6 +418,9 @@ class EngineSocketMuxImpl {
         for (const raw of warmFrames) {
           if (this.facades.get(tableId) !== facade || Number(facade.readyState) !== 1) break;
           facade._message(raw);
+        }
+        if (this.facades.get(tableId) === facade && adoptionProbe) {
+          facade._probeState(adoptionProbe);
         }
       });
       return facade;
@@ -587,6 +669,24 @@ class EngineSocketMuxImpl {
         return;
       }
       if (!msg || typeof msg.type !== 'string') return;
+
+      if (msg.type === 'EVENT') {
+        const payload = (msg as { payload?: { type?: string; resume_expected_at?: number } })
+          .payload;
+        const resumeAt = payload?.resume_expected_at;
+        if (
+          payload?.type === 'maintenance_break' &&
+          typeof resumeAt === 'number' &&
+          Number.isFinite(resumeAt) &&
+          resumeAt > Date.now()
+        ) {
+          this.stateProbeResumeAt = Math.max(
+            this.stateProbeResumeAt,
+            Math.min(resumeAt, Date.now() + 10 * 60_000)
+          );
+          for (const facade of this.facades.values()) facade._clearStateProbe();
+        }
+      }
 
       if (msg.type === 'PING') {
         /* ═══ THE SOCKET ANSWERS ITS OWN PINGS (2026-09-04) ═══════════════

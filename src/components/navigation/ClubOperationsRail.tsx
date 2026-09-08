@@ -19,10 +19,10 @@ export default function ClubOperationsRail() {
   const location = useLocation();
   const clubId = getClubOperationContext(location.pathname);
   const isDiamondArena = isDiamondArenaClubKey(clubId);
-  const access = useClubNavigationAccess(isDiamondArena ? null : clubId);
+  const access = useClubNavigationAccess(clubId);
 
-  if (isDiamondArena || !clubId || access.loading || access.error || !access.isClubStaff)
-    return null;
+  if (isDiamondArena) return null;
+  if (!clubId || access.loading || access.error || !access.isClubStaff) return null;
 
   /* No fallback: a rail that flashes an empty chassis and then fills is worse
      than one that arrives complete a beat later. */

@@ -328,7 +328,7 @@ export async function claimTableLease(
 }
 
 /** What the database says is true of one id we asked to renew. */
-export type LeaseState = 'kept' | 'taken' | 'stale' | 'missing';
+export type LeaseState = 'kept' | 'taken' | 'stale' | 'missing' | 'busy';
 
 export interface TableLeaseHeartbeatProof {
   tableId: string;
@@ -355,7 +355,8 @@ let reclaimableHeartbeats = 0;
  *
  * A transport failure is UNKNOWN: it extends nothing, and each engine keeps
  * running only until its previously proven local deadline. A successful RPC
- * must prove one exact `kept` row for every requested id. `taken`, `stale`,
+ * proves a renewal only for an exact `kept` row. An exact `busy` row extends
+ * nothing and retains only the prior deadline. `taken`, `stale`,
  * `missing`, duplicate, omitted, or malformed rows all mean the old engine no
  * longer has a current proof and must fail-stop before a database takeover is
  * possible. That is deliberately stricter than the pre-deadline behavior,
@@ -381,7 +382,7 @@ export async function heartbeatTables(
   }
   const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('heartbeat_table_leases_v3', {
+    const { data, error } = await supabase.rpc('heartbeat_table_leases_v4', {
       p_instance_id: INSTANCE_ID,
       p_claims: claims.map((claim) => ({
         table_id: claim.tableId,
@@ -416,7 +417,7 @@ export async function heartbeatTables(
       if (
         typeof row.table_id !== 'string' ||
         !expectedIds.has(row.table_id) ||
-        !['kept', 'taken', 'stale', 'missing'].includes(String(row.state)) ||
+        !['kept', 'taken', 'stale', 'missing', 'busy'].includes(String(row.state)) ||
         rowsById.has(row.table_id)
       ) {
         malformed = true;
@@ -452,6 +453,11 @@ export async function heartbeatTables(
         proofs.push({ ...claim, proofDeadlineMonotonicMs });
         continue;
       }
+
+      // A locked exact generation is UNKNOWN, never a renewal. GameServer
+      // checks the existing monotonic deadline after this response and its
+      // ordinary expiry timer remains armed throughout repeated busy replies.
+      if (row.state === 'busy' && exactGeneration) continue;
 
       lostTableIds.push(claim.tableId);
       if (row.state === 'taken' || (row.state === 'kept' && !exactGeneration)) {

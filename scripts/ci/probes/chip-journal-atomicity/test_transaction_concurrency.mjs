@@ -10,7 +10,7 @@ try {
  await b.query('BEGIN');
  const pid=(await b.query('SELECT pg_backend_pid() pid')).rows[0].pid;
  await a.query(input.actor);
- await b.query(input.actor);
+ await b.query(input.secondActor ?? input.actor);
  const first=(await a.query('SELECT '+input.first+' receipt')).rows[0].receipt;
  if(input.compositeReceipt) assert.ok(first.id);
  else assert.equal(first.success,true);
@@ -39,6 +39,12 @@ try {
   assert.equal(second.error,undefined);
   if(input.expectDistinctReceipts) assert.notEqual(second.receipt?.id,first.id);
   else assert.equal(second.receipt?.id,first.id);
+  await b.query('COMMIT');
+ } else if(input.ticketReceipt){
+  assert.equal(second.error,undefined);
+  assert.equal(second.receipt?.success,true);
+  assert.equal(second.receipt?.replayed,true);
+  assert.equal(second.receipt?.transaction_id,first.transaction_id);
   await b.query('COMMIT');
  } else {
   assert.equal(second.receipt?.success,true);

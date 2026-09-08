@@ -30,3 +30,9 @@ At 16:08 UTC, engine health returned HTTP 200, status ok, version c3821317, zero
 ## Still Required Before Phase Closure
 
 Confirm follow-up PR and required CI jobs; verify merged source includes each correction; verify the scheduled Hetzner engine rollout adopts a containing version; validate departure/retry behavior through an authorized isolated end-to-end scenario. Skipped browser checks are not passes. Reconcile the original 216-requirement register with the coverage baseline. No forced restart, wallet edit, hook bypass or F30 gate bypass is authorized by this evidence.
+
+### Engine And Service Integration
+
+Eight additional tests in CashoutDepartureIntegration.test.ts execute the real engine departure methods and the real cashout service through its normal module exports. Only the database transport is substituted. Both eviction and zero-stack paths retain tracking after a lost response, malformed receipt or rejected outcome, then emit exactly one departure on a subsequent confirmed no-active-seat receipt. Waitlist offers and departure events wait for a complete receipt. All eight tests and server TypeScript passed. These tests close the engine/service wiring gap, but do not assert a live database commit, browser rendering or deployed runtime adoption.
+
+The latest CI run for #3818, 34248426139, completed successfully. Server tests, TypeScript, client shards and structural checks passed. Live production E2E, post-deploy verification, production build and animation checks were skipped. Follow-up PR #3823 is open and retains separate CI and deployment obligations.

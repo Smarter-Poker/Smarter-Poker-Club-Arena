@@ -7,7 +7,15 @@ import { createClient } from '@supabase/supabase-js';
 const supabase = createClient(
     'https://kuklfnapbkmacvwxktbh.supabase.co',
     process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { persistSession: false } }
+    {
+        auth: { persistSession: false },
+        global: {
+            headers: {
+                'x-smarter-data-actor': 'service',
+                'x-smarter-data-protocol': '1'
+            }
+        }
+    }
 );
 
 const NOW = new Date();

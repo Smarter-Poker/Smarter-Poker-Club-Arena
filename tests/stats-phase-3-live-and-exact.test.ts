@@ -239,7 +239,7 @@ describe('phase 3 engine: EV coverage watched', () => {
     expect(MONITOR).toMatch(/export const STATS_EV_COVERAGE_MIN_RATIO = 0\.99;/);
     expect(MONITOR).toMatch(/export const STATS_EV_COVERAGE_MIN_SAMPLE = 50;/);
     expect(MONITOR).toMatch(
-      /ev\.allInShowdowns >= STATS_EV_COVERAGE_MIN_SAMPLE &&\s+ev\.ratio < STATS_EV_COVERAGE_MIN_RATIO/
+      /allInShowdowns >= STATS_EV_COVERAGE_MIN_SAMPLE && ratio < STATS_EV_COVERAGE_MIN_RATIO/
     );
   });
 

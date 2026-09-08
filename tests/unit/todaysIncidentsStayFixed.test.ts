@@ -107,12 +107,9 @@ describe('an untouched filter deleted every MTT in the club', () => {
 });
 
 describe('44 of 50 Spins and Heads-Ups could never be joined', () => {
-  it('repairs table-less seat-first games BEFORE deciding what is missing', () => {
-    const spinTick = recurring.indexOf("withBoardTick('spin'");
-    const repair = recurring.indexOf('this.repairSeatFirstGames()', spinTick);
-    const budget = recurring.indexOf('const share = boardBudgetShares(', spinTick);
-    expect(repair).toBeGreaterThan(spinTick);
-    expect(repair).toBeLessThan(budget);
+  it('creates the listing and table through the atomic database door', () => {
+    expect(recurring).toContain("supabase.rpc('fn_create_seat_first_game_atomic'");
+    expect(recurring).not.toContain("supabase.rpc('fn_repair_seat_first_games'");
   });
 
   it('will not count a game without a joinable table as covering its price point', () => {

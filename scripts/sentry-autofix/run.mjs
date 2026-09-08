@@ -27,7 +27,15 @@ function log(o) { console.log(JSON.stringify({ ts: new Date().toISOString(), ...
 function sb() {
   const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  return createClient(url, key, { auth: { persistSession: false } });
+  return createClient(url, key, {
+    auth: { persistSession: false },
+    global: {
+      headers: {
+        'x-smarter-data-actor': 'service',
+        'x-smarter-data-protocol': '1',
+      },
+    },
+  });
 }
 
 async function updateAttempt(attemptId, fields) {

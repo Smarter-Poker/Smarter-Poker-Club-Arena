@@ -73,6 +73,7 @@ import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
+import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
 
 /**
  * Two stamp maps hold the same answer.
@@ -92,6 +93,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { withClubContext } from '../utils/clubScopedPath';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
+import { shouldRecoverMissedHandStartPresentation } from '../services/EngineStateClient';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
 import type { CardPresentationMode } from '../presentation/cardPresentation';
@@ -455,9 +457,10 @@ import { MysteryBountyService, playerTotalsFromAwards } from '../services/Myster
  * `prize` the payout, `bounty_winnings` / `bounties_collected` the PKO side.
  * Field size comes from the tournament row.
  *
- * Never throws and never blocks the leave: on any failure it returns a result
- * with nulls, so the summary shows "\u2014" for the place rather than falling back
- * to a chip panel that would be actively wrong.
+ * Never throws: on any reported failure it returns a result with nulls, so the
+ * summary shows "\u2014" for the place rather than falling back to a chip panel
+ * that would be actively wrong. The exit caller also gives this optional read
+ * a deadline because a stalled browser transport may never report a failure.
  */
 async function fetchTournamentResult(
   tournamentId: string,
@@ -3641,8 +3644,6 @@ export default function TablePage({
      actually opens: an auth refusal followed by nine 1006s is still an auth
      outage, and reading only the most recent close would forget that. */
   const [engineRefusedAuth, setEngineRefusedAuth] = useState(false);
-  const engineRefusedAuthRef = useRef(false);
-  engineRefusedAuthRef.current = engineRefusedAuth;
   useEffect(() => {
     if (!engineLastError) return;
     // Same predicate as lib/sessionRevoked.isEngineAuthClose. Inlined rather
@@ -3722,74 +3723,15 @@ export default function TablePage({
     }
   }, [engineWsStatus, tableId]);
 
-  useEffect(() => {
-    if (engineWsStatus !== 'failed') return;
-    const t = window.setTimeout(() => {
-      if (document.visibilityState !== 'visible') return;
-      if (!isActive) return; // Do not forcefully reload the app for a backgrounded table
-      // A repeatedly-404ing table is closed, not wedged — a reload cannot
-      // help and used to loop the browser every 2 minutes indefinitely.
-      if (notFoundCountRef.current >= 3) return;
-      // A pre-start seat-first table has no engine WS to restore. Reloading
-      // it every ~30s yanked the page out from under players choosing a seat
-      // (observed live 2026-08-28). The socket connects when the game starts.
-      if (seatFirstOpenRef.current) return;
-      /* DO NO HARM (Realtime Phase 3, 2026-09-05). The socket died for auth,
-         so a fresh page would present the same token to the same refusal and
-         land here again in twenty seconds - having discarded the felt, the
-         overlays and any armed pre-action on the way. Whichever of the two
-         auth cases this is, the reload is the wrong move: a dead session is
-         already being prompted and redirected by lib/sessionRevoked, and a
-         live session refused by the engine is recovered by the reconnect
-         ladder that is still running underneath.
-
-         Not silent, on either side. The player has the banner, which says
-         this is a sign-in problem rather than a lost connection, and the
-         platform gets `reload_suppressed` - the series that tells an on-call
-         engineer "these players cannot authenticate to a table", which is
-         the sentence nobody could say for twenty-two hours on 2026-09-03. */
-      if (engineRefusedAuthRef.current) {
-        void import('../services/clientConnectionBeacon')
-          .then((m) => m.reportConnectionEvent('reload_suppressed'))
-          .catch(() => {
-            /* telemetry never disturbs the table */
-          });
-        return;
-      }
-      /* THE SCHEDULED BREAK IS NOT A WEDGED SOCKET (Realtime Phase 4,
-         2026-09-05). The engine is deliberately down for two or three minutes
-         of every hour, and reloading the page under a player who was just
-         promised their seat would survive is the exact opposite of what the
-         break is for - it discards the felt, the overlays and any armed
-         pre-action, then arrives at a box that is still booting.
-
-         EngineStateClient already declines to reach 'failed' while it is
-         inside an announced restart, so this timer usually never fires during
-         a break. This is the case its signal cannot reach: a browser that
-         LOADED during the outage never received the maintenance frame,
-         because there was no socket to receive it on. `useMaintenanceBreak`
-         reads the break from the database for exactly that reader, and this
-         is the one guard that works with no engine at all. */
-      if (maintenanceBreakRef.current.active) return;
-      const KEY = 'ca_ws_autoreload_at';
-      const last = Number(sessionStorage.getItem(KEY) || 0);
-      if (Date.now() - last < 120_000) return;
-      sessionStorage.setItem(KEY, String(Date.now()));
-      reportError(
-        new Error('engine WS failed >20s - auto-refresh failsafe'),
-        'TablePage.wsAutoReload'
-      );
-      // Phase 2 (2026-09-05): this failsafe fired all night on 2026-09-03 and
-      // the platform never knew. Tell the server before the page goes.
-      void import('../services/clientConnectionBeacon')
-        .then((m) => m.reportConnectionEvent('auto_reload'))
-        .catch(() => {
-          /* the page is leaving; telemetry must not hold it up */
-        });
-      window.location.reload();
-    }, 20_000);
-    return () => window.clearTimeout(t);
-  }, [engineWsStatus, isActive]);
+  /* ROOT-CAUSE CONNECTION RECOVERY (2026-09-07). A failed socket is owned by
+     EngineStateClient's bounded reconnect/session/upgrade state machine. The
+     former twenty-second page reload was not recovery: it discarded the live
+     felt and pre-actions, then presented the same browser, token and network
+     to the same failure. It also turned a sustained engine stall into a reload
+     loop. There is deliberately no generic `window.location.reload()` here.
+     The sole reload that remains is `reloadForNewBundle()` in
+     EngineStateClient, reached only when the server explicitly closes with
+     CLOSE_UPGRADE_REQUIRED because the bytes really are incompatible. */
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   // Guards the entry-post overlay against a double tap billing two big blinds.
@@ -4351,6 +4293,19 @@ export default function TablePage({
     tournamentWinner,
     setTournamentWinner,
   } = useTableTournament();
+  /**
+   * Orders asynchronous add-on presentations. A bootstrap read can be waiting
+   * on the wallet while a thaw broadcast carries a later deadline, or while
+   * ADDON_PERIOD_END closes the window. Only the newest request may paint.
+   */
+  const addOnPresentationEpochRef = useRef(0);
+  /**
+   * Replays the authoritative persisted add-on window after an engine socket
+   * replacement or maintenance thaw. Realtime/engine broadcasts are not
+   * replayable, so those lifecycle edges must be able to ask the tournament
+   * row instead of hoping the original ADDON_PERIOD_START frame survived.
+   */
+  const refreshPersistedAddOnOfferRef = useRef<(() => Promise<void>) | null>(null);
 
   /**
    * Sit out for real.
@@ -6482,6 +6437,77 @@ export default function TablePage({
   );
   // CA-19 BUG FIX: seatDealTimerRef tracks the 700ms setIsSeatDealing(false) timer.
   const seatDealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Last hand whose button-then-deal presentation was armed. */
+  const lastDealPresentationHandRef = useRef(0);
+  /**
+   * A transport continuity boundary arms snapshot-based recovery. It is never
+   * armed by ordinary snapshot hydration, so joining a running hand stays
+   * visually still as before.
+   */
+  const pendingHandStartRecoveryRef = useRef<{
+    reason: 'reconnect' | 'event_sequence_gap';
+    reportedAt: number;
+  } | null>(null);
+  /**
+   * A hand transition that arrived without its deal presentation. Kept only
+   * briefly so a following EVENT-sequence notice can repair server frame order
+   * (snapshot first, gap discovered on the next event) without dealing midway
+   * through a hand.
+   */
+  const unpresentedHandTransitionRef = useRef<{
+    previousHandNumber: number;
+    handNumber: number;
+    observedAt: number;
+    engineStage: string;
+    communityCards: readonly Card[];
+    communityCards2: readonly Card[];
+    communityCards3: readonly Card[];
+    lastActions: readonly LastAction[];
+  } | null>(null);
+  const dealSoundsAllowedRef = useRef(ambientSoundsAllowed);
+  dealSoundsAllowedRef.current = ambientSoundsAllowed;
+
+  /**
+   * One implementation of the mandated button beat and card deal. Both the
+   * normal HAND_STARTED event and a proven transport-gap recovery pass through
+   * here, so recovery cannot invent a shorter animation law.
+   */
+  const scheduleDealPresentation = useCallback(
+    (handNumber: number): boolean => {
+      if (handNumber > 0 && lastDealPresentationHandRef.current === handNumber) return false;
+      if (handNumber > 0) {
+        lastDealPresentationHandRef.current = handNumber;
+        if (unpresentedHandTransitionRef.current?.handNumber === handNumber) {
+          unpresentedHandTransitionRef.current = null;
+        }
+      }
+
+      // Hold the action panel from this instant - the button beat is part of
+      // the deal, and a player must not act into it.
+      beginDealHold();
+      if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
+      const heardHere = dealSoundsAllowedRef.current;
+      dealStartTimerRef.current = setTimeout(
+        () => {
+          dealStartTimerRef.current = null;
+          setDealAnimationKey((k) => k + 1);
+          setIsSeatDealing(true);
+          if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
+          seatDealTimerRef.current = setTimeout(() => {
+            seatDealTimerRef.current = null;
+            setIsSeatDealing(false);
+          }, 700 * getAnimationSpeed());
+          if (soundService.isEnabled() && heardHere) {
+            soundService.playShuffle();
+            setTimeout(() => soundService.playNewHand(), 260);
+          }
+        },
+        Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed())
+      );
+      return true;
+    },
+    [beginDealHold]
+  );
   // CA-20 BUG FIX: handRevealTimerRef tracks the 6s setShowHandRevealModal(false) timer.
   const handRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // AUDIT FIX 2026-07-19: hand-aware hero hole-card fetch. heroHandRef tracks the
@@ -8747,9 +8773,10 @@ export default function TablePage({
           p_amount: amount,
           p_idempotency_key: idempotencyKey,
         };
-        const { error } = await supabase.rpc('atomic_table_rebuy', payload);
-        if (error) {
-          if (error.message?.includes('FetchError') || !navigator.onLine) {
+        const { data, error } = await supabase.rpc('atomic_table_rebuy', payload);
+        if (error || typeof data !== 'number' || !Number.isFinite(data) || data < 0) {
+          const failure = error ?? new Error('Rebuy Purchase Receipt Was Not Confirmed');
+          if (failure.message?.includes('FetchError') || !navigator.onLine) {
             // A rebuy is a debit against a live wallet. It is not queued for
             // later: nothing on the client can prove, at replay time, that the
             // player still wants it or that the seat still exists. Fail here,
@@ -8760,8 +8787,8 @@ export default function TablePage({
                Postgres error went to a toast and nowhere else, so "rebuy
                silently fails, then boots you" shipped without a single Sentry
                event. Report it, and show a message a player can act on. */
-            reportError(error, 'TablePage.confirmBustRebuy', { tableId, amount });
-            toast?.error('Rebuy Failed. Your Chips Were Not Taken. Try Again.');
+            reportError(failure, 'TablePage.confirmBustRebuy', { tableId, amount });
+            toast?.error('Rebuy Not Confirmed. Retry The Same Purchase.');
           }
           setBustRebuyProcessing(false);
           return;
@@ -11221,6 +11248,9 @@ export default function TablePage({
   // Load table info from Supabase on mount
   useEffect(() => {
     let isMounted = true;
+    let durableCompletionRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let durableCompletionRetryCycle = 0;
+    let durableCompletionFailureReported = false;
     async function loadTableInfo() {
       if (!tableId) return;
 
@@ -11337,6 +11367,7 @@ export default function TablePage({
       if (isMounted) setTableLoadFailure(null);
 
       if (table && !error) {
+        let loadedTournamentStatus: string | null = null;
         setTableState((prev) => ({
           ...prev,
           tableId: table.id,
@@ -11487,6 +11518,163 @@ export default function TablePage({
             : null
         );
 
+        /** One presentation path for both a live ADDON_PERIOD_START frame and
+         * the persisted tournament row read on mount/reconnect. The latter is
+         * essential because Realtime broadcasts are not replayed: a player
+         * who refreshed during an open window previously lost the offer even
+         * though the server and database still accepted it. */
+        const presentAddOnOffer = async (addonData: Record<string, unknown>) => {
+          const presentationEpoch = ++addOnPresentationEpochRef.current;
+          try {
+            // Tournament broadcasts are visible to rails as well as players.
+            // Prove the viewer still owns an eligible result row and a live
+            // seat before painting a purchase control. Run all three reads in
+            // parallel so reconnect recovery adds no serial network waterfall.
+            if (!userId || userId === 'guest' || !table.tournament_id || !tableId) return;
+            const [balance, playerProof, seatProof] = await Promise.all([
+              WalletService.readPlayerBalance(userId, { tableId }),
+              supabase
+                .from('tournament_players')
+                .select('status, add_on')
+                .eq('tournament_id', table.tournament_id)
+                .eq('user_id', userId)
+                .maybeSingle(),
+              supabase
+                .from('table_seats')
+                .select('seat_number')
+                .eq('table_id', tableId)
+                .eq('user_id', userId)
+                .is('left_at', null)
+                .maybeSingle(),
+            ]);
+            if (playerProof.error || seatProof.error) {
+              reportError(
+                playerProof.error || seatProof.error || new Error('add-on eligibility is unknown'),
+                'TablePage.addOnEligibility',
+                { userId, tableId, tournamentId: table.tournament_id }
+              );
+              return;
+            }
+            if (
+              !playerProof.data ||
+              playerProof.data.status !== 'playing' ||
+              playerProof.data.add_on === true ||
+              !seatProof.data
+            ) {
+              return;
+            }
+            if (balance.balance === null) {
+              reportError(
+                new Error('add-on affordability read failed; treating as unknown'),
+                'TablePage.addOnBalance',
+                { userId, tableId }
+              );
+            }
+            const walletBalance = balance.balance ?? 0;
+
+            let cost = Math.round(Number(addonData.addOnCost)) || 0;
+            let chips = Number(addonData.addOnChips) || 0;
+            const rawFee = Number(addonData.addOnFee);
+            let fee = Number.isFinite(rawFee) ? Math.max(0, Math.round(rawFee)) : NaN;
+            if (!cost || !chips || !Number.isFinite(fee)) {
+              const quote = await tournamentService.getChipPurchaseQuote(
+                table.tournament_id as string,
+                'addon'
+              );
+              if (quote) {
+                if (!cost) cost = quote.baseCost;
+                if (!chips) chips = quote.chips;
+                if (!Number.isFinite(fee)) fee = quote.fee;
+              }
+            }
+            if (!cost || !chips || !Number.isFinite(fee)) {
+              reportError(
+                new Error('ADDON_PERIOD_START has no complete authoritative quote'),
+                'TablePage.Addon_period_missing_quote'
+              );
+              return;
+            }
+
+            const resolvedEndMs = Date.parse(String(addonData.endsAt ?? ''));
+            const remainingSeconds = Number.isFinite(resolvedEndMs)
+              ? Math.max(0, Math.ceil((resolvedEndMs - Date.now()) / 1000))
+              : 0;
+            if (remainingSeconds <= 0) {
+              reportError(
+                new Error('ADDON_PERIOD_START has no live persisted deadline'),
+                'TablePage.Addon_period_missing_deadline'
+              );
+              return;
+            }
+            if (!isMounted || presentationEpoch !== addOnPresentationEpochRef.current) return;
+            setAddOnPeriod({
+              active: true,
+              addOnCost: cost,
+              addOnFee: fee,
+              addOnChips: chips,
+              walletBalance,
+              endsAtMs: resolvedEndMs,
+              timeRemaining: remainingSeconds,
+            });
+          } catch (error) {
+            reportError(error, 'TablePage.Addon_period_wallet_fetch_error');
+          }
+        };
+
+        const presentPersistedAddOnOffer = async (
+          tournamentRow: Record<string, unknown> | null
+        ) => {
+          const startsAt = Date.parse(String(tournamentRow?.addon_period_started_at ?? ''));
+          const endsAt = Date.parse(String(tournamentRow?.addon_period_ends_at ?? ''));
+          const windowIsOpen =
+            tournamentRow?.addon_period_triggered === true &&
+            tournamentRow.add_on_available === true &&
+            tournamentRow.prize_pool_finalized !== true &&
+            ['REGISTERING', 'RUNNING'].includes(String(tournamentRow.status)) &&
+            Number.isFinite(startsAt) &&
+            Number.isFinite(endsAt) &&
+            startsAt <= Date.now() &&
+            endsAt > Date.now();
+
+          if (!windowIsOpen) {
+            // Invalidate an affordability/eligibility read already in flight.
+            // A stale async completion must never repaint a window the durable
+            // tournament row now proves is closed.
+            addOnPresentationEpochRef.current += 1;
+            if (isMounted) setAddOnPeriod((prev) => ({ ...prev, active: false }));
+            return;
+          }
+
+          await presentAddOnOffer({
+            addOnCost: tournamentRow?.addon_cost ?? tournamentRow?.buy_in_amount,
+            addOnChips: tournamentRow?.addon_chips ?? tournamentRow?.starting_chips,
+            addOnFee: 0,
+            endsAt: tournamentRow?.addon_period_ends_at,
+            recoveredFromPersistedState: true,
+          });
+        };
+
+        const refreshPersistedAddOnOffer = async () => {
+          if (!table.tournament_id || !isMounted) return;
+          const { data, error } = await supabase
+            .from('tournaments')
+            .select(
+              'add_on_available, addon_cost, addon_chips, buy_in_amount, starting_chips, status, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized'
+            )
+            .eq('id', table.tournament_id)
+            .maybeSingle();
+          if (!isMounted) return;
+          if (error) {
+            reportError(error, 'TablePage.refreshPersistedAddOnOffer', {
+              tournamentId: table.tournament_id,
+              tableId,
+            });
+            return;
+          }
+          await presentPersistedAddOnOffer((data as Record<string, unknown> | null) ?? null);
+        };
+        refreshPersistedAddOnOfferRef.current = refreshPersistedAddOnOffer;
+
         // Store actual club_id for persistence and rake
         actualClubIdRef.current = table.club_id || '';
         setActualClubIdLoaded(true); // Signal observer chat permission check
@@ -11610,7 +11798,7 @@ export default function TablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -11619,6 +11807,7 @@ export default function TablePage({
               tournamentId: table.tournament_id,
             });
           }
+          loadedTournamentStatus = typeof tournData?.status === 'string' ? tournData.status : null;
 
           /**
            * FINAL TABLE IS ASKED FOR, NOT INFERRED (Dan 2026-08-28, bug 7).
@@ -11637,6 +11826,11 @@ export default function TablePage({
           if (tournData?.final_table_triggered) {
             setTableState((prev) => (prev.isFinalTable ? prev : { ...prev, isFinalTable: true }));
           }
+
+          /* Rehydrate an offer missed during refresh, reconnect, or engine
+             replacement from the same absolute deadline the purchase RPC
+             enforces. No local minute is invented. */
+          void presentPersistedAddOnOffer((tournData as Record<string, unknown> | null) ?? null);
 
           // ─── Resolve initial tournament blind level ───
           // Tournament tables don't have static small_blind/big_blind columns —
@@ -12020,7 +12214,9 @@ export default function TablePage({
 
         // Subscribe to tournament break + add-on events via Realtime
         if (table.tournament_id) {
-          const breakChanKey = `t-break-${table.tournament_id}`;
+          const durableTournamentId = table.tournament_id;
+          const durableTournamentName = table.name;
+          const breakChanKey = `t-break-${durableTournamentId}`;
 
           if (!isMounted) return;
 
@@ -12083,7 +12279,17 @@ export default function TablePage({
                which, in multi-table, is somebody else's live table. */
             tournamentExitTimerRef.current = setTimeout(() => {
               void (async () => {
-                const full = tid ? await fetchTournamentResult(tid, userId) : undefined;
+                /* Result detail is optional enrichment, not permission to
+                   leave a table the settlement has already closed. A browser
+                   transport can produce a promise that neither resolves nor
+                   rejects; awaiting it directly after `exitStarted = true`
+                   stranded the player forever and made every retried outcome
+                   a no-op. The bounded fallback preserves the broadcast's
+                   authoritative position/prize and always reaches the card,
+                   close signals and navigation below. */
+                const full = tid
+                  ? await awaitTournamentResultEnrichment(fetchTournamentResult(tid, userId))
+                  : undefined;
                 publishSessionSummary({
                   duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
                   handsPlayed: handsPlayedRef.current,
@@ -12218,8 +12424,148 @@ export default function TablePage({
            */
           goToLobbyWithResultRef.current = goToLobbyWithResult;
 
+          /* A TERMINAL ROW IS THE RESULT-CARD BACKSTOP (2026-09-07).
+             The engine retries its winner/deal broadcast, but Realtime REST
+             can still be unavailable for every bounded attempt. Settlement is
+             already durable at that point, so a client must not depend on the
+             one-shot signal to leave a closed table. Re-read this viewer's
+             authoritative result on initial load and whenever the tournament
+             row becomes COMPLETED. `goToLobbyWithResult` is already one-shot,
+             so this safely races the normal broadcast without two exits. */
+          let durableCompletionLookupInFlight = false;
+          let durableCompletionHandled = false;
+          function scheduleDurableCompletionRetry(): void {
+            if (!isMounted || durableCompletionHandled || durableCompletionRetryTimer) return;
+            const delayMs = Math.min(30_000, 1_000 * 2 ** Math.min(durableCompletionRetryCycle, 5));
+            durableCompletionRetryCycle += 1;
+            durableCompletionRetryTimer = setTimeout(() => {
+              durableCompletionRetryTimer = null;
+              void verifyDurableCompletion();
+            }, delayMs);
+          }
+          async function exitFromDurableCompletion(): Promise<void> {
+            if (
+              durableCompletionLookupInFlight ||
+              durableCompletionHandled ||
+              !isMounted ||
+              !userId ||
+              userId === 'guest'
+            ) {
+              return;
+            }
+            durableCompletionLookupInFlight = true;
+            let result: {
+              status?: string | null;
+              position?: number | null;
+              prize?: number | null;
+            } | null = null;
+            let lastError: unknown = null;
+            try {
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                const { data, error: resultError } = await supabase
+                  .from('tournament_players')
+                  .select('status, position, prize')
+                  .eq('tournament_id', durableTournamentId)
+                  .eq('user_id', userId)
+                  .maybeSingle();
+                if (!resultError && data) {
+                  result = data;
+                  lastError = null;
+                  break;
+                }
+                lastError = resultError ?? new Error('Tournament result row is unavailable');
+                if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+              }
+            } finally {
+              durableCompletionLookupInFlight = false;
+            }
+            if (!isMounted) return;
+            if (lastError || !result) {
+              if (!durableCompletionFailureReported) {
+                durableCompletionFailureReported = true;
+                reportError(lastError, 'TablePage.durable_tournament_result_unreadable', {
+                  tournamentId: durableTournamentId,
+                  userId,
+                });
+              }
+              scheduleDurableCompletionRetry();
+              return;
+            }
+            if (!['winner', 'eliminated'].includes(String(result.status))) {
+              scheduleDurableCompletionRetry();
+              return;
+            }
+            const position = Number(result.position);
+            if (!Number.isInteger(position) || position < 1) {
+              scheduleDurableCompletionRetry();
+              return;
+            }
+            const prize = Number(result.prize) || 0;
+            durableCompletionHandled = true;
+            if (durableCompletionRetryTimer) {
+              clearTimeout(durableCompletionRetryTimer);
+              durableCompletionRetryTimer = null;
+            }
+            if (position === 1) {
+              setTournamentWinner({
+                prize,
+                name: formatGameTitle(durableTournamentName) || 'Tournament',
+              });
+            }
+            goToLobbyWithResult(position, prize, position === 1 ? 7000 : 2500);
+          }
+
+          async function verifyDurableCompletion(): Promise<void> {
+            if (!isMounted || durableCompletionHandled) return;
+            const { data: terminal, error: terminalError } = await supabase
+              .from('tournaments')
+              .select('status')
+              .eq('id', durableTournamentId)
+              .maybeSingle();
+            if (!isMounted) return;
+            if (terminalError || !terminal) {
+              if (!durableCompletionFailureReported) {
+                durableCompletionFailureReported = true;
+                reportError(
+                  terminalError ?? new Error('Tournament completion row is unavailable'),
+                  'TablePage.durable_tournament_completion_unreadable',
+                  { tournamentId: durableTournamentId }
+                );
+              }
+              scheduleDurableCompletionRetry();
+              return;
+            }
+            if (terminal.status === 'COMPLETED') {
+              await exitFromDurableCompletion();
+              return;
+            }
+            // Realtime is the fast path, not the only path. Keep one bounded
+            // database poll armed while the event is live so a channel that
+            // drops after SUBSCRIBED cannot strand this player when both the
+            // terminal UPDATE and the server's bounded REST broadcasts miss.
+            scheduleDurableCompletionRetry();
+          }
+
+          if (loadedTournamentStatus === 'COMPLETED') {
+            void exitFromDurableCompletion();
+          }
+
           const breakChan = masterBus.getOrCreateChannel(breakChanKey);
           breakChan
+            .on(
+              'postgres_changes',
+              {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'tournaments',
+                filter: `id=eq.${table.tournament_id}`,
+              },
+              (payload: any) => {
+                if (payload.new?.status === 'COMPLETED') {
+                  void exitFromDurableCompletion();
+                }
+              }
+            )
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
               const data = payload.payload;
               /* Relay the breaks onto MasterBus. TournamentClock (rendered on
@@ -12272,72 +12618,10 @@ export default function TablePage({
                   breakEndsAtMs: null,
                 });
               } else if (data?.type === 'ADDON_PERIOD_START') {
-                // Add-on period: 60 seconds, show popup to all players
-                const addonData = data.payload || {};
-                // Fetch fresh wallet balance
-                (async () => {
-                  try {
-                    /* 2026-08-27: was getPlayerBalance, which turns a refused
-                       read into 0 - and a 0 here reads as "cannot afford the
-                       add-on" for a funded player. Unknown is left as the
-                       existing 0 ONLY because the affordability check below
-                       fails closed to the server, which refuses an underfunded
-                       add-on anyway; the reportError makes the failed read
-                       visible instead of silent. */
-                    let walBal = 0;
-                    if (userId && userId !== 'guest') {
-                      const rb = await WalletService.readPlayerBalance(userId, { tableId });
-                      if (rb.balance === null) {
-                        reportError(
-                          new Error('add-on affordability read failed; treating as unknown'),
-                          'TablePage.addOnBalance',
-                          { userId, tableId }
-                        );
-                      }
-                      walBal = rb.balance ?? 0;
-                    }
-                    // 2026-08-20: `addonData.addOnCost || 0` silently priced the
-                    // add-on at ZERO whenever the broadcast omitted the field --
-                    // which made canAfford unconditionally true and let players
-                    // buy at a price the modal had never shown them. Fall back to
-                    // the authoritative tournament row, and include the house fee
-                    // that processAddOn charges on top.
-                    let cost = Math.round(Number(addonData.addOnCost)) || 0;
-                    let chips = Number(addonData.addOnChips) || 0;
-                    let fee = Math.round(Number(addonData.addOnFee)) || 0;
-                    if (!cost || !chips || !fee) {
-                      const quote = await tournamentService.getChipPurchaseQuote(
-                        table.tournament_id as string,
-                        'addon'
-                      );
-                      if (quote) {
-                        if (!cost) cost = quote.baseCost;
-                        if (!chips) chips = quote.chips;
-                        fee = quote.fee;
-                      }
-                    }
-                    if (!cost) {
-                      // Still no price. Opening the modal here would show
-                      // "0 chips" over a live Accept button. Don't.
-                      reportError(
-                        new Error('ADDON_PERIOD_START with no resolvable add-on cost'),
-                        'TablePage.Addon_period_missing_cost'
-                      );
-                      return;
-                    }
-                    setAddOnPeriod({
-                      active: true,
-                      addOnCost: cost,
-                      addOnFee: fee,
-                      addOnChips: chips,
-                      walletBalance: walBal,
-                      timeRemaining: 60,
-                    });
-                  } catch (e) {
-                    reportError(e, 'TablePage.Addon_period_wallet_fetch_error');
-                  }
-                })();
+                // Both live frames and reconnect recovery use one quote/deadline path.
+                void presentAddOnOffer((data.payload || {}) as Record<string, unknown>);
               } else if (data?.type === 'ADDON_PERIOD_END') {
+                addOnPresentationEpochRef.current += 1;
                 setAddOnPeriod((prev) => ({ ...prev, active: false }));
               } else if (data?.type === 'hand_for_hand') {
                 // Bubble mode — hand-for-hand play activated
@@ -12725,6 +13009,13 @@ export default function TablePage({
                     ),
                   }));
                 }
+              } else if (data?.type === 'final_table_deal') {
+                // The deal broadcast describes the whole chop, but this
+                // viewer's authoritative position and prize are the committed
+                // tournament_players row. Reuse the durable terminal reader so
+                // every player exits with their own result card, and so a
+                // duplicate announcement remains one-shot.
+                void exitFromDurableCompletion();
               } else if (data?.type === 'tournament_winner') {
                 /* ── The champion's exit (2026-08-22) ─────────────────────
                    Dan 2026-08-20: "winners should be auto removed at the end
@@ -13120,14 +13411,26 @@ export default function TablePage({
               }
             })
             .subscribe((status: string, err?: Error) => {
+              // Close the read -> subscribe race: a completion committed after
+              // bootstrap but before this channel joined has no future UPDATE
+              // left to deliver, so re-read terminal truth once subscribed.
+              if (status === 'SUBSCRIBED') {
+                void verifyDurableCompletion();
+              }
               if (status === 'CHANNEL_ERROR') {
                 console.debug('[TablePage] Realtime channel error:', err?.message || err);
+                scheduleDurableCompletionRetry();
               }
               if (status === 'TIMED_OUT') {
                 console.debug('[TablePage] Realtime channel timed out');
+                scheduleDurableCompletionRetry();
               }
             });
           breakChannelRef.current = breakChan;
+          // Bootstrap the durable backstop independently of Realtime status.
+          // A channel can time out before ever reporting SUBSCRIBED, and a
+          // successful non-terminal read below keeps the capped poll alive.
+          void verifyDurableCompletion();
 
           // NOTE: Add-on events handled via break channel above (ADDON_PERIOD_START/END)
           // No duplicate add-on channel needed — prevents race condition from dual subscriptions
@@ -13416,6 +13719,12 @@ export default function TablePage({
 
     return () => {
       isMounted = false;
+      if (durableCompletionRetryTimer) {
+        clearTimeout(durableCompletionRetryTimer);
+        durableCompletionRetryTimer = null;
+      }
+      addOnPresentationEpochRef.current += 1;
+      refreshPersistedAddOnOfferRef.current = null;
       // P1-4 FIX: tear down the tournament channels in the SAME effect that
       // creates them (deps [tableId, userId]), so a hero-seat change no longer
       // destroys them without recreation. (Previously this teardown lived in
@@ -13451,6 +13760,15 @@ export default function TablePage({
       }
     };
   }, [tableId, userId]);
+
+  // The engine socket is replaceable. Its broadcasts are not. Whenever a
+  // replacement becomes authoritative, recover any still-open add-on window
+  // from the tournament row. Initial load already performs the same recovery;
+  // this effect owns subsequent reconnects.
+  useEffect(() => {
+    if (engineWsStatus !== 'connected') return;
+    void refreshPersistedAddOnOfferRef.current?.();
+  }, [engineWsStatus]);
 
   // ANIMATION AUDIT 2026-08-27: the room-message handler below is registered
   // with deps [tableId, userId], so everything else it touches is frozen at
@@ -14336,6 +14654,39 @@ export default function TablePage({
     void engineLastEvent;
 
     switch (evt.type) {
+      case 'ENGINE_EVENT_GAP': {
+        const reason = String((evt.data as { reason?: unknown }).reason || '');
+        if (reason !== 'reconnect' && reason !== 'event_sequence_gap') break;
+        pendingHandStartRecoveryRef.current = {
+          reason,
+          reportedAt: Number((evt.data as { timestamp?: unknown }).timestamp) || Date.now(),
+        };
+
+        // A full snapshot may have arrived immediately before the NEXT event
+        // exposed its sequence gap. Repair that just-observed hand transition
+        // now; older transitions are intentionally left alone so reconnecting
+        // mid-hand can never launch a late deal animation.
+        const unpresented = unpresentedHandTransitionRef.current;
+        if (
+          unpresented &&
+          shouldRecoverMissedHandStartPresentation({
+            previousHandNumber: unpresented.previousHandNumber,
+            handNumber: unpresented.handNumber,
+            continuityReportedAt: pendingHandStartRecoveryRef.current.reportedAt,
+            transitionObservedAt: unpresented.observedAt,
+            now: Date.now(),
+            engineStage: unpresented.engineStage,
+            communityCards: unpresented.communityCards,
+            communityCards2: unpresented.communityCards2,
+            communityCards3: unpresented.communityCards3,
+            lastActions: unpresented.lastActions,
+          })
+        ) {
+          scheduleDealPresentation(unpresented.handNumber);
+          pendingHandStartRecoveryRef.current = null;
+        }
+        break;
+      }
       /**
        * THE SHARED SPIN REVEAL (Dan 2026-08-21).
        *
@@ -14895,10 +15246,12 @@ export default function TablePage({
         // AUDIT FIX 2026-07-19: track the new hand number and CLEAR hero hole
         // cards so a dropped card-insert can't leave the previous hand's cards
         // showing; then re-arm the hand-aware fetch to recover the new cards.
-        {
-          const hn = Number((evt.data as any)?.hand_number) || 0;
-          if (hn > 0) heroHandRef.current = hn;
-        }
+        const startedHandNumber = Number((evt.data as any)?.hand_number) || 0;
+        if (startedHandNumber > 0) heroHandRef.current = startedHandNumber;
+        // The authoritative discrete event arrived, so any transport-gap arm
+        // has done its job. The shared scheduler below records this hand and
+        // prevents a following resync snapshot from double-dealing it.
+        pendingHandStartRecoveryRef.current = null;
         // BOMB POT 2026-08-20: the previous hand's bomb-pot state ends with
         // the hand. If THIS hand is a bomb pot, its own BOMB_POT_TRIGGERED
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
@@ -15161,51 +15514,9 @@ export default function TablePage({
         setIsAllInMode(false);
         setAllInEquities([]);
         handHadAllInRef.current = false;
-        // Hold the action panel from this instant — the button beat below is
-        // part of the deal, and a player must not act into it.
-        beginDealHold();
-        // THE BUTTON BEAT (Dan 2026-08-27, see dealStartTimerRef): the puck's
-        // CSS glide to its new seat (0.6s x speed) plays FIRST, alone. Only
-        // then do the cards fly. The snapshot that carries the new dealerSeat
-        // landed in this same frame, so the glide is already running.
-        if (dealStartTimerRef.current) clearTimeout(dealStartTimerRef.current);
-        const heardHere = ambientSoundsAllowed;
-        dealStartTimerRef.current = setTimeout(
-          () => {
-            dealStartTimerRef.current = null;
-            // Trigger deal animation (legacy DealAnimation already wired to
-            // dealAnimationKey; bump it so the cards fly from the dealer).
-            setDealAnimationKey((k) => k + 1);
-            // Bible V8 §10.1: per-seat card slide-in animation
-            setIsSeatDealing(true);
-            // CA-19: track so unmount can cancel — prevents setIsSeatDealing on dead page
-            if (seatDealTimerRef.current) clearTimeout(seatDealTimerRef.current);
-            seatDealTimerRef.current = setTimeout(
-              () => {
-                seatDealTimerRef.current = null;
-                setIsSeatDealing(false);
-              },
-              // IMPROVEMENT PASS 2026-08-19: scales with --animation-speed like
-              // the cardDealIn keyframe it gates.
-              700 * getAnimationSpeed()
-            );
-            // Bible V8 §5.3: new hand indicator + card dealing sound
-            // #175 gated for multi-table: only play on the active tab
-            if (soundService.isEnabled() && heardHere) {
-              // COMPETITOR-PARITY 2026-08-19: shuffle riffle before the deal —
-              // every major room marks the fresh hand with a shuffle.
-              soundService.playShuffle();
-              setTimeout(() => soundService.playNewHand(), 260);
-              // DealAnimation owns the per-card deal sounds (staggered with its
-              // visuals). Only when the card-slide animation is disabled does the
-              // page play a single deal slide as the audio fallback.
-              /* The single-deal audio fallback for `card_slide: false` is gone with
-                 the branch that could disable the animation: DealAnimation always
-                 runs now and owns the per-card deal sounds. */
-            }
-          },
-          Math.round(HAND_COMPLETION.BUTTON_MOVE_MS * getAnimationSpeed())
-        );
+        // THE BUTTON BEAT (Dan 2026-08-27): the puck glides first, then cards
+        // fly. Gap recovery uses this exact same timing law.
+        scheduleDealPresentation(startedHandNumber);
         break;
       }
       case 'BOMB_POT_TRIGGERED': {
@@ -17384,6 +17695,11 @@ export default function TablePage({
       case 'MAINTENANCE_BREAK':
       case 'MAINTENANCE_BREAK_ENDED': {
         ingestMaintenanceEvent(evt.type, (evt.data ?? {}) as Record<string, unknown>);
+        if (evt.type === 'MAINTENANCE_BREAK_ENDED') {
+          // The old engine can disappear before its thaw broadcast reaches
+          // every client. The persisted deadline is the replayable source.
+          void refreshPersistedAddOnOfferRef.current?.();
+        }
         break;
       }
       case 'TABLE_BALANCE_EXECUTED': {
@@ -17538,7 +17854,7 @@ export default function TablePage({
     }
     // ingestMaintenanceEvent is a stable useCallback; listed so the exhaustive
     // deps rule does not have to be suppressed for it.
-  }, [engineLastEvent, ingestMaintenanceEvent]);
+  }, [engineLastEvent, ingestMaintenanceEvent, scheduleDealPresentation]);
 
   // Supabase Realtime fallback: process lastEvent if engine WS is not connected.
   // When engine WS IS connected, it handles all events above; this block is
@@ -17638,16 +17954,17 @@ export default function TablePage({
   // Detect hand number change → capture previous hand result
   useEffect(() => {
     const handNum = tableState.handNumber ?? 0;
+    const previousHandNumber = prevHandNumberRef.current;
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
     const heroStack = heroPlayer?.stack || 0;
 
-    if (handNum > 0 && handNum !== prevHandNumberRef.current) {
+    if (handNum > 0 && handNum !== previousHandNumber) {
       // Hand number changed — the previous hand just completed
-      if (prevHandNumberRef.current > 0 && heroPlayer) {
+      if (previousHandNumber > 0 && heroPlayer) {
         const stackChange = heroStack - prevHandStackRef.current;
         const heroDidWin = stackChange > 0;
         setPrevHandResult({
-          handNumber: prevHandNumberRef.current,
+          handNumber: previousHandNumber,
           result: stackChange,
           didWin: heroDidWin,
           didFold: heroFoldedInCurrentHandRef.current,
@@ -17671,6 +17988,53 @@ export default function TablePage({
             heroPfrThisHandRef.current
           );
         }
+      }
+      if (previousHandNumber > 0 && lastDealPresentationHandRef.current !== handNum) {
+        // This is a real in-session hand transition, never first-load
+        // hydration. Normally HAND_STARTED presents it. If the transport has
+        // already declared a continuity gap, recover now; otherwise retain a
+        // brief marker because the next EVENT may be the frame that reveals
+        // the sequence jump.
+        const transitionObservedAt = Date.now();
+        const unpresented = {
+          previousHandNumber,
+          handNumber: handNum,
+          observedAt: transitionObservedAt,
+          engineStage: tableState.engineStage,
+          communityCards: tableState.communityCards,
+          communityCards2: tableState.communityCards2,
+          communityCards3: tableState.communityCards3,
+          lastActions: tableState.lastActions,
+        };
+        unpresentedHandTransitionRef.current = unpresented;
+        const pendingRecovery = pendingHandStartRecoveryRef.current;
+        if (
+          pendingRecovery &&
+          shouldRecoverMissedHandStartPresentation({
+            previousHandNumber,
+            handNumber: handNum,
+            continuityReportedAt: pendingRecovery.reportedAt,
+            transitionObservedAt,
+            now: transitionObservedAt,
+            engineStage: unpresented.engineStage,
+            communityCards: unpresented.communityCards,
+            communityCards2: unpresented.communityCards2,
+            communityCards3: unpresented.communityCards3,
+            lastActions: unpresented.lastActions,
+          })
+        ) {
+          scheduleDealPresentation(handNum);
+          pendingHandStartRecoveryRef.current = null;
+        } else if (pendingRecovery) {
+          // A continuity boundary is evidence about the resync immediately
+          // around it, not permission to animate an unrelated hand minutes
+          // later. Expire a boundary that never exposed a hand transition.
+          pendingHandStartRecoveryRef.current = null;
+        }
+      } else if (previousHandNumber === 0) {
+        // Joining or refreshing into a running hand establishes a baseline;
+        // it is intentionally not a deal-animation trigger.
+        unpresentedHandTransitionRef.current = null;
       }
       // Reset per-hand voluntary-action flags for the hand just starting.
       heroVpipThisHandRef.current = false;
@@ -17696,13 +18060,21 @@ export default function TablePage({
         clearTimeout(rabbitRevealClearTimerRef.current);
         rabbitRevealClearTimerRef.current = null;
       }
-      // NOTE: the deal animation is triggered by the discrete HAND_STARTED
-      // handler (single source). AUDIT FIX 2026-07-19: the redundant bump that
-      // used to live here was removed — now that handNumber advances via the
-      // snapshot merge, this effect fires per hand too, and a second bump here
-      // double-triggered the deal animation.
+      // No unconditional animation lives here. A snapshot transition can only
+      // reach the shared deal scheduler while a reconnect/event-sequence gap
+      // is armed; ordinary hydration and healthy snapshots remain inert.
     }
-  }, [tableState.handNumber, tableState.heroSeat, tableState.players]);
+  }, [
+    tableState.handNumber,
+    tableState.heroSeat,
+    tableState.players,
+    tableState.engineStage,
+    tableState.communityCards,
+    tableState.communityCards2,
+    tableState.communityCards3,
+    tableState.lastActions,
+    scheduleDealPresentation,
+  ]);
 
   // Update players from presence state
   // 2026-08-22: GHOST-SEAT GUARD. Once the engine snapshot has arrived, the
@@ -18317,7 +18689,13 @@ export default function TablePage({
              Postgres by the freeze guard. Showing a player the raw refusal
              would read as something broken; the truth is a break they were
              told about, and a seat they can take in a few minutes. */
-          const frozenMsg = platformFrozenMessage(error);
+          /* Some entry RPCs return the ordinary refusal as structured JSON
+             (`{ ok: false, reason: 'platform_frozen' }`) while trigger-level
+             refusals arrive in PostgREST's `error`. Recognise both shapes so
+             the durable maintenance boundary never degrades into a generic
+             red error toast merely because it refused before reaching the
+             row trigger. */
+          const frozenMsg = platformFrozenMessage(error ?? res);
           if (frozenMsg) {
             toast?.info?.(frozenMsg);
             return;
@@ -25266,6 +25644,7 @@ export default function TablePage({
           try {
             await tournamentService.processAddOn(tableState.tournamentId, userId);
             toast?.success('Add-on accepted - chips added to your stack');
+            addOnPresentationEpochRef.current += 1;
             setAddOnPeriod((prev) => ({ ...prev, active: false }));
             return true;
           } catch (err: any) {
@@ -25275,7 +25654,10 @@ export default function TablePage({
             setRebuyProcessing(false);
           }
         }}
-        onAddOnDecline={() => setAddOnPeriod((prev) => ({ ...prev, active: false }))}
+        onAddOnDecline={() => {
+          addOnPresentationEpochRef.current += 1;
+          setAddOnPeriod((prev) => ({ ...prev, active: false }));
+        }}
         // Rebuy
         showRebuyModal={showRebuyModal}
         rebuyData={rebuyData}

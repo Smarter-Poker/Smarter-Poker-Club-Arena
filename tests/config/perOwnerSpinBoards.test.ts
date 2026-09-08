@@ -38,6 +38,13 @@ const src = readFileSync(
   resolve(__dirname, '../../server/src/services/TournamentRecurringService.ts'),
   'utf8'
 );
+const atomicCreatorSql = readFileSync(
+  resolve(
+    __dirname,
+    '../../supabase/migrations/20260908043250_seat_first_board_creation_is_one_transaction.sql'
+  ),
+  'utf8'
+);
 const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('a board knows whose it is', () => {
@@ -64,7 +71,11 @@ describe('a board knows whose it is', () => {
   });
 
   it('the seat-first table inherits the tournament, so it cannot drift', () => {
-    expect(code).toMatch(/club_id: tournament\.club_id \?\? this\.ownerClubId/);
+    expect(code).toMatch(/createSeatFirstGameAtomic\(spinRow, 'spin'\)/);
+    expect(code).toMatch(/createSeatFirstGameAtomic\(sngRow, 'sng'\)/);
+    expect(atomicCreatorSql).toMatch(/p_tournament_id, v_club_id, v_union_id/);
+    expect(atomicCreatorSql).toMatch(/v_existing_table\.club_id IS DISTINCT FROM v_club_id/);
+    expect(atomicCreatorSql).toMatch(/v_club_id,\s*p_tournament_id/);
   });
 });
 

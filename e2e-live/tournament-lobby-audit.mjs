@@ -64,7 +64,14 @@ async function mintSession() {
 
 async function pickTournament() {
   const q = `${SUPABASE_URL}/rest/v1/tournaments?tournament_type=eq.MTT&status=in.(RUNNING,LATE_REG,REGISTERING)&select=id,name,status,current_level,level_started_at,current_players&order=started_at.desc.nullslast&limit=10`;
-  const r = await fetch(q, { headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` } });
+  const r = await fetch(q, {
+    headers: {
+      apikey: SERVICE,
+      Authorization: `Bearer ${SERVICE}`,
+      'x-smarter-data-actor': 'service',
+      'x-smarter-data-protocol': '1',
+    },
+  });
   const rows = await r.json();
   if (!Array.isArray(rows) || rows.length === 0) throw new Error('no live MTT found');
   // Prefer a RUNNING event with a live level clock; else anything.

@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const builder = {
   select: vi.fn(),
   in: vi.fn(),
+  eq: vi.fn(),
   gt: vi.fn(),
 };
 const from = vi.fn((_table: string) => builder);
@@ -26,6 +27,7 @@ const { DealRateVerifier } = await import('./DealRateVerifier.js');
 function answers(result: { count?: number | null; error?: unknown } | Error) {
   builder.select.mockReturnValue(builder);
   builder.in.mockReturnValue(builder);
+  builder.eq.mockReturnValue(builder);
   if (result instanceof Error) {
     builder.gt.mockRejectedValue(result);
   } else {
@@ -39,6 +41,7 @@ beforeEach(() => {
   from.mockClear();
   builder.select.mockReset();
   builder.in.mockReset();
+  builder.eq.mockReset();
   builder.gt.mockReset();
 });
 

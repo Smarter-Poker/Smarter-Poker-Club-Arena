@@ -9,12 +9,9 @@
  * MTTs stranded heads-up-won, blinds escalating past level 100, first prize
  * never paid.
  *
- * Two mechanisms, both pinned here:
- *  (1) the dealing engine zeroes tournament_players.chips in the same breath
- *      as the seat vacate;
- *  (2) the sweep carries a seatless-phantom backstop that zeroes any
- *      'playing' player with stale chips and no open seat after a strike
- *      window, so a lost write or restart still converges.
+ * The dealing engine persists zero and emits an event wake. The sweep is
+ * deliberately forbidden from guessing that an absent seat is a knockout:
+ * a legitimate player can be seatless while a table move is in flight.
  *
  * If you deliberately replace either mechanism, move the pin to the new one
  * IN THE SAME COMMIT.
@@ -32,19 +29,15 @@ describe('busted-vacate stays visible to the elimination sweep', () => {
     expect(vacateAt).toBeGreaterThan(-1);
     // The chips-zero write lives in the same successful-vacate branch.
     const branch = src.slice(Math.max(0, vacateAt - 4000), vacateAt);
-    expect(branch).toContain(".update({ chips: 0 })");
+    expect(branch).toContain('.update({ chips: 0 })');
     expect(branch).toContain(".eq('status', 'playing')");
   });
 
-  it('the sweep has a seatless-phantom backstop that fires on >= strikes', () => {
+  it('the sweep never manufactures a bust from elapsed seatlessness', () => {
     const src = read('./TournamentManagerEliminations.ts');
-    expect(src).toContain('SEATLESS_PHANTOM_STRIKES');
-    expect(src).toContain('seatlessPlayingStrikes');
-    expect(src).toMatch(/strikes >= TournamentManagerEliminations\.SEATLESS_PHANTOM_STRIKES/);
-    // The backstop feeds the ordinary sync path, not a bespoke money write.
-    const guardAt = src.indexOf('A PHANTOM IS NOT A PLAYER');
-    expect(guardAt).toBeGreaterThan(-1);
-    const syncAt = src.indexOf('fn_sync_tournament_chips', guardAt);
-    expect(syncAt).toBeGreaterThan(guardAt);
+    expect(src).not.toContain('SEATLESS_PHANTOM_MS');
+    expect(src).not.toContain('seatlessPlayingSince');
+    expect(src).toContain('Never infer a knockout from a player');
+    expect(src).toContain('accepted hand-settlement record');
   });
 });

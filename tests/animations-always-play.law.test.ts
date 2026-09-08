@@ -262,7 +262,9 @@ describe('LAW: no animation may be skipped by state plumbing', () => {
   it('the room-message handler reads live refs, not first-commit closures', () => {
     // The pinned parseIncomingMessage held an EMPTY roster — every incoming
     // throw launched from off-screen instead of the thrower's seat.
-    expect(TABLE_PAGE).toContain('parseIncomingMessageRef.current(content, senderId)');
+    expect(TABLE_PAGE).toContain(
+      'parseIncomingMessageRef.current(content, senderId, chatPayload?.throwId)'
+    );
     expect(TABLE_PAGE).toContain('ambientSoundsAllowedRef');
   });
 

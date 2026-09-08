@@ -1,3 +1,4 @@
+import { isThrowableEventId } from '../throwables/identity';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  useTableChat — Chat State & Handlers
@@ -73,7 +74,7 @@ export interface UseTableChatReturn {
   isChatBanned: boolean;
   // Reaction parsing
   activeReactions: ReactionEvent[];
-  parseIncomingMessage: (content: string, senderId: string) => boolean;
+  parseIncomingMessage: (content: string, senderId: string, throwId?: unknown) => boolean;
   // Unread tracking
   unreadCount: number;
   clearUnread: () => void;
@@ -88,7 +89,12 @@ export function useTableChat(
   // consumer matched the message and dropped it, so nobody else ever saw the
   // throw they had just paid a diamond for. This callback hands a parsed throw
   // to the animation layer.
-  onThrowReceived?: (fromSeat: number, toSeat: number, throwableId: string) => void
+  onThrowReceived?: (
+    fromSeat: number,
+    toSeat: number,
+    throwableId: string,
+    throwId?: string
+  ) => void
 ): UseTableChatReturn {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatBanned, setIsChatBanned] = useState(false);
@@ -400,7 +406,7 @@ export function useTableChat(
 
   // Parse incoming messages — returns true if message was a special command (reaction/throw)
   const parseIncomingMessage = useCallback(
-    (content: string, senderId: string): boolean => {
+    (content: string, senderId: string, throwId?: unknown): boolean => {
       // Check for reaction messages
       const reactionMatch = content.match(REACTION_MSG_REGEX);
       if (reactionMatch) {
@@ -440,7 +446,12 @@ export function useTableChat(
             const fromIdx = players.findIndex((pl) => pl && pl.id === senderId);
             const fromSeat = fromIdx >= 0 ? fromIdx + 1 : 0;
             if (Number.isFinite(toSeat) && toSeat > 0) {
-              onThrowReceivedRef.current?.(fromSeat, toSeat, throwableId);
+              onThrowReceivedRef.current?.(
+                fromSeat,
+                toSeat,
+                throwableId,
+                isThrowableEventId(throwId) ? throwId.toLowerCase() : undefined
+              );
             }
           }
         }

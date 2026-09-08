@@ -45,8 +45,13 @@ payload.ms` (the specs test enforces this). If your last beat is a "cut",
    is rendered more than once, as `Mug` does). Four of these mount at once in a
    multi-table view; a bare `id="grad"` makes them fight.
 
-5. **No raster.** No `url(http...)`, no `url(data:...)`, no `<image>`. Hand-drawn
-   SVG only. `url(#gradientId)` is fine and expected.
+5. **Approved premium raster artwork is permitted**, per Dan's subsequent
+   explicit art-direction request. Use local versioned atlases via AtlasSprite
+   with reviewed source rectangles. No remote/data URLs for effect art or emoji
+   substitutes. The specified anvil/ghost/UFO/lightning avatar-copy gags may reuse
+   only the target's already-visible avatar (including a safe canvas snapshot),
+   scoped to that table; they never mutate the seat or introduce a substitute identity.
+   The timing, reduced-motion, instance isolation and overlay rules still apply.
 
 6. **No `will-change`.** No `filter: blur()` on anything that animates every
    frame (a blurred 2 u box on eight simultaneous throws is the phase-6

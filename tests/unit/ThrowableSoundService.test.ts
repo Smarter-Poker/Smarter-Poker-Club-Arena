@@ -104,6 +104,19 @@ describe('recorded throwable cue lifecycle', () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
+  it('recovers on the first throw after an offline preload', async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: false });
+    vi.stubGlobal('fetch', fetcher);
+    const { service, start } = await fixture();
+    service.preloadCues(['clink'], opts.urlFor);
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    fetcher.mockImplementation(async () => response());
+    service.scheduleCues(cue, opts);
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(service.droppedCues.no_buffer).toBe(0);
+  });
+
   it('stops an already scheduled cue on cancellation', async () => {
     vi.stubGlobal(
       'fetch',

@@ -5,6 +5,8 @@ npm ci --prefix "$probe_dir/postgres-runtime" --ignore-scripts --no-audit --no-f
 if [[ -z "${PGBIN:-}" ]]; then
   # All PostgreSQL server and client dependencies are private to this test.
   PGBIN="$probe_dir/postgres-runtime/node_modules/@embedded-postgres/linux-x64/native/bin"
+  # npm tarballs omit symlinks. Run only the reviewed, pinned package hydrator.
+  (cd "$PGBIN/../.." && node scripts/hydrate-symlinks.js)
   export LD_LIBRARY_PATH="$PGBIN/../lib:${LD_LIBRARY_PATH:-}"
 fi
 PGNODE="$(command -v node)"

@@ -1,0 +1,49 @@
+.thr-star__pulse {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-star-pulse calc(3.2s * var(--animation-speed, 1)) ease-in-out forwards;
+}
+@keyframes thr-star-pulse {
+  0%,
+  25%,
+  50%,
+  80%,
+  100% {
+    transform: scale(1);
+  }
+  12.5%,
+  62.5% {
+    transform: scale(1.24);
+  }
+}
+.thr-star__orbit {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 50% 42%;
+  animation: thr-star-orbit calc(2.4s * var(--animation-speed, 1)) linear
+    calc(0.8s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-star-orbit {
+  0% {
+    opacity: 1;
+    transform: rotate(0);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(300deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-star__pulse {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-star__orbit {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

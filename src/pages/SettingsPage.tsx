@@ -53,6 +53,8 @@ import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
 import { ThemeSettingsModal } from '../components/table/ThemeSettingsModal';
 import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
+import { IS_NATIVE_BUILD, isNativePlatform } from '../lib/appBase';
+import { getAnalyticsConsent, setAnalyticsConsent } from '../lib/consent';
 
 const settingsSectionAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -452,6 +454,8 @@ export default function SettingsPage() {
     setActionLoading(false);
   };
 
+  const [analyticsConsent, setAnalyticsConsentState] = useState(() => getAnalyticsConsent());
+
   const handleExportData = async () => {
     setActionLoading(true);
     try {
@@ -528,10 +532,19 @@ export default function SettingsPage() {
 
       // Download as JSON
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const exportName = `club-arena-export-${new Date().toISOString().split('T')[0]}.json`;
+      // THE APP (2026-09-08): a webview honours no <a download>; the share
+      // sheet on the written file (src/lib/native/share.ts).
+      if (isNativePlatform()) {
+        const { nativeShareBlob } = await import('../lib/native/share');
+        await nativeShareBlob(blob, exportName, 'Club Arena Data Export');
+        toast.success('Data exported successfully!');
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `club-arena-export-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = exportName;
       a.click();
       URL.revokeObjectURL(url);
       toast.success('Data exported successfully!');
@@ -1381,6 +1394,27 @@ export default function SettingsPage() {
         {/* Danger Zone */}
         <section ref={dangerRef} className={`${styles.section} ${styles.dangerZone}`}>
           <h2>Account Data &amp; Closure</h2>
+
+          {/* THE APP: product analytics is opt-in (src/lib/consent.ts). The
+              web's analytics are unchanged, so the switch only exists here. */}
+          {IS_NATIVE_BUILD && (
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <span className={styles.settingLabel}>Share Usage Analytics</span>
+                <span className={styles.settingDesc}>
+                  Anonymous Usage Data To Improve Club Arena. Never Hands, Chips Or Messages.
+                </span>
+              </div>
+              <Toggle
+                checked={analyticsConsent === 'granted'}
+                onChange={(v) => {
+                  setAnalyticsConsent(v ? 'granted' : 'denied');
+                  setAnalyticsConsentState(v ? 'granted' : 'denied');
+                }}
+                label="Share Usage Analytics"
+              />
+            </div>
+          )}
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>

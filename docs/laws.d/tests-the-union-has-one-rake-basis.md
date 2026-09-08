@@ -1,0 +1,3 @@
+# tests/the-union-has-one-rake-basis.law.test.ts
+
+`fn_union_club_rake_basis` is the one computation of what each member club is owed (Dan 2026-09-03: the rake ITS PLAYERS generated, per game type). Round 1 calls it live and stores the rows it paid from; the statement, ECO adjustment, reconciliation report and money report read the same function (closed period from the settlement record, open week from the hourly snapshot). No migration may carry a second copy of the arithmetic; the statement function guards floor, gate and closed-period itself; the ghost-twin rule is one function requiring a global hand number.

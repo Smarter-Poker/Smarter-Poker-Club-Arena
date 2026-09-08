@@ -5,9 +5,26 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 import path from 'path';
 import { writeFileSync } from 'fs';
 
+/**
+ * NATIVE BUILD TARGET (2026-09-07, docs/changelog/2026-09-07-capacitor-shell.md)
+ *
+ * `VITE_NATIVE=1` (`npm run build:native`) produces the bundle the Capacitor
+ * shell copies into the iOS and Android apps. Inside that shell the bundle IS
+ * the document root, so the base is '/' rather than the web sub-path, and it
+ * lands in dist-native/ so it can never be mistaken for, or published as, the
+ * web bundle. Without VITE_NATIVE every value below is exactly what it was:
+ * the web build is byte-for-byte unaffected by the native target existing.
+ *
+ * The router basename, the service-worker path and every media address are
+ * derived from BASE_URL (src/lib/appBase.ts), so this one switch is the only
+ * place the two targets differ at build time.
+ */
+const NATIVE = process.env.VITE_NATIVE === '1';
+const WEB_BASE = '/hub/club-arena/';
+
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/hub/club-arena/',
+  base: NATIVE ? '/' : WEB_BASE,
   plugins: [
     react(),
 
@@ -151,7 +168,12 @@ export default defineConfig({
       process.env.NODE_ENV === 'production' ? ['console.log', 'console.debug', 'console.info'] : [],
   },
   build: {
-    sourcemap: true, // Enabled — Sentry source maps are uploaded for readable production stack traces
+    outDir: NATIVE ? 'dist-native' : 'dist',
+    // Web: enabled — Sentry source maps are uploaded for readable production
+    // stack traces, then stripped by the publisher (never served to players).
+    // Native: off. The binary has no publisher to strip them, so a map here
+    // is ~3 MB of source shipped inside the app to every player.
+    sourcemap: !NATIVE,
     // BUILD CONCURRENCY CAP, for the same reason vitest.config.ts caps its
     // thread pool: on CI this build does not own the machine.
     //

@@ -438,6 +438,7 @@ jobs:
             tests/e2e/tournament-buy-in-dialog.spec.ts \
             tests/e2e/tournament-watch.spec.ts \
             tests/e2e/footer-route.spec.ts \
+            tests/e2e/header-portrait-frame.spec.ts \
             tests/e2e/routes \
             --reporter=line,json --workers=2 --retries=0
           sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc

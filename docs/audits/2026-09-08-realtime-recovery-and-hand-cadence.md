@@ -7,7 +7,7 @@ all cash games, MTTs, Spins and Sit & Gos, including heads-up, use the same
 disconnect protection. VIP members receive exactly 50 percent longer.
 The implementation keeps the existing 30-second base, giving active VIPs
 45 seconds. Ordinary paid decision time banks remain separately accounted.
-Membership is read by the server; lifetime and unexpired memberships qualify.
+Membership is read by the server; lifetime, unexpired and explicitly non-expiring memberships qualify, matching the production entitlement rule.
 
 ## Current Changes
 

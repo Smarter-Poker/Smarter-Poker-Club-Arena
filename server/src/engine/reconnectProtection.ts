@@ -13,6 +13,7 @@ export function reconnectProtectionSeconds(member: ReconnectMembership, now = Da
   const active =
     member.is_vip === true &&
     (member.vip_tier === 'lifetime' ||
+      member.vip_expires_at === null ||
       (typeof member.vip_expires_at === 'string' && Date.parse(member.vip_expires_at) > now));
   return RECONNECT_BASE_SECONDS * (active ? RECONNECT_VIP_MULTIPLIER : 1);
 }

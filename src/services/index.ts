@@ -117,10 +117,6 @@ export type { HandRecord, HandPlayer, HandAction } from './HandHistoryService';
 // Avatar Management
 export { avatarService } from './AvatarService';
 
-// Bonus & Rewards
-export { bonusService } from './BonusService';
-export type { DailyBonus, SpecialBonus, BonusStatus } from './BonusService';
-
 // Messaging & Notifications
 export { messagingService } from './MessagingService';
 export { notificationService } from './NotificationService';

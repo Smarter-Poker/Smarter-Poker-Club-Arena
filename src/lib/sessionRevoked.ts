@@ -59,6 +59,7 @@
  * link.
  */
 import { AUTH_STORAGE_KEY } from './authUtils';
+import { signInUrl } from './signIn';
 
 export type SessionVerdict = 'alive' | 'revoked' | 'unknown';
 
@@ -231,9 +232,9 @@ export function _resetSessionRevokedStateForTests(): void {
 export function loginRedirectUrl(pathname: string, search: string): string {
   // window.location.pathname already carries the SPA base (/hub/club-arena);
   // a react-router location would not. Accept either and never double it.
-  const p = pathname.startsWith('/') ? pathname : '/' + pathname;
-  const back = (p.startsWith('/hub/club-arena') ? p : '/hub/club-arena' + p) + (search || '');
-  return `${LOGIN_PATH}?authError=no_session&redirect=${encodeURIComponent(back)}`;
+  // src/lib/signIn.ts normalises either form and picks the target's login
+  // page (the Hub's on the web, the in-app AuthPage in the native build).
+  return signInUrl(pathname + (search || ''), { authError: 'no_session' });
 }
 
 /**

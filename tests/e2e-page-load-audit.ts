@@ -58,7 +58,7 @@ const ALL_PAGES: PageTest[] = [
   { route: '/stats/:userId', importPath: '../src/pages/PlayerStatsPage' },
   { route: '/vip', importPath: '../src/pages/VIPPage' },
   { route: '/transactions', importPath: '../src/pages/TransactionHistoryPage' },
-  { route: '/bonuses', importPath: '../src/pages/BonusPage' },
+  { route: '/bonuses', importPath: '../src/pages/DailyBonusPage' },
   { route: '/flash-pool', importPath: '../src/pages/FlashPoolPage' },
   { route: '/session-history', importPath: '../src/pages/SessionHistoryPage' },
 

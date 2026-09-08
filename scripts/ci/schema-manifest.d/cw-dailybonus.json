@@ -1,0 +1,19 @@
+{
+  "_owner": "agent/cw-dailybonus1/fix/daily-club-arena-bonus-phase1",
+  "tables": [
+    "ca_daily_bonus_calendar",
+    "ca_daily_bonus_calendar_history",
+    "ca_daily_bonus_days",
+    "ca_daily_bonus_claims"
+  ],
+  "functions": [
+    "fn_ca_daily_bonus_status",
+    "fn_ca_daily_bonus_claim",
+    "fn_ca_daily_bonus_open_day",
+    "fn_ca_daily_bonus_eligibility",
+    "fn_ca_daily_bonus_caps",
+    "fn_ca_daily_bonus_calendar_history",
+    "fn_ca_daily_bonus_claims_append_only"
+  ],
+  "columns": { "feature_purchases": ["source"] }
+}

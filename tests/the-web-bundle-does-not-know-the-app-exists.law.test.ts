@@ -74,6 +74,49 @@ describe('the web bundle does not know the native app exists', () => {
     expect(offenders, 'Capacitor code must stay behind IS_NATIVE_BUILD').toEqual([]);
   });
 
+  it('leaving the bundle goes through one seam: no window.open, no bare /auth/login, outside src/lib', () => {
+    // Phase 2 (2026-09-07). Inside the app, window.open goes nowhere and
+    // /auth/login is a World Hub page that is not in the bundle. Every site
+    // that used to do either now calls src/lib/openExternal.ts or
+    // src/lib/signIn.ts, which do the same thing on the web and the right
+    // thing on native. A new bare call is a dead end for every app player.
+    const opens: string[] = [];
+    const logins: string[] = [];
+    for (const file of walk(join(root, 'src'))) {
+      const rel = file.slice(root.length + 1);
+      const src = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^[ \t]*\/\/.*$/gm, '');
+      if (/\bwindow\.open\(/.test(src) && rel !== 'src/lib/openExternal.ts') opens.push(rel);
+      if (
+        /['"`]\/auth\/login/.test(src) &&
+        rel !== 'src/lib/signIn.ts' &&
+        rel !== 'src/lib/sessionRevoked.ts'
+      ) {
+        logins.push(rel);
+      }
+    }
+    expect(opens, 'window.open outside src/lib/openExternal.ts').toEqual([]);
+    expect(logins, "a literal '/auth/login' outside src/lib/signIn.ts").toEqual([]);
+  });
+
+  it('AuthGuard and AuthPage keep the player inside the app on native', () => {
+    const guard = read('src/components/auth/AuthGuard.tsx');
+    expect(guard).toContain('return <Navigate to={signInUrl(back)} replace />;');
+    const page = read('src/pages/AuthPage.tsx');
+    expect(page).toContain('} else if (!IS_NATIVE_BUILD) {');
+    expect(page).toContain("emailRedirectTo: authReturnUrl('auth')");
+    expect(page).toContain("redirectTo: authReturnUrl('auth?mode=update')");
+    expect(page).toContain("if (event === 'PASSWORD_RECOVERY' && isMounted.current)");
+  });
+
+  it('the native shells register the clubarena:// scheme', () => {
+    expect(read('ios/App/App/Info.plist')).toContain('<string>clubarena</string>');
+    expect(read('android/app/src/main/AndroidManifest.xml')).toContain(
+      'android:scheme="clubarena"'
+    );
+  });
+
   it('the native shell is loaded behind the compile-time constant', () => {
     const main = read('src/main.tsx');
     expect(main).toContain('if (IS_NATIVE_BUILD) {');

@@ -233,12 +233,6 @@ export async function settleTournamentObligation(
   const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? 3));
   const delayFor = options.retryDelayMs ?? ((attempt: number) => attempt * 1000);
 
-  const place =
-    input.place === undefined || input.place === null || !Number.isFinite(Number(input.place))
-      ? null
-      : Math.trunc(Number(input.place));
-  const amount = Math.round((Number(input.amount) || 0) * 100) / 100;
-
   const base: SettleTournamentObligationResult = {
     ok: false,
     fully_settled: false,
@@ -251,6 +245,33 @@ export async function settleTournamentObligation(
     obligation_id: null,
     idempotency_key: null,
   };
+
+  // Reject malformed input before coercion can turn it into a zero payment
+  // or a different finishing place. Keep existing positive-amount rounding.
+  const amountIsValid =
+    typeof input.amount === 'number' &&
+    Number.isFinite(input.amount) &&
+    input.amount >= 0 &&
+    Number.isSafeInteger(Math.round(input.amount * 100));
+  const placeIsRequired = input.kind === 'place' || input.kind === 'late_reg_adjustment';
+  const placeIsValid =
+    input.place === undefined || input.place === null
+      ? !placeIsRequired
+      : typeof input.place === 'number' &&
+        Number.isInteger(input.place) &&
+        input.place > 0 &&
+        input.place <= 2147483647;
+  if (!amountIsValid || !placeIsValid) {
+    reportError(
+      new Error(
+        'Tournament settlement input has an invalid amount or finishing place; no payment RPC was sent.'
+      ),
+      'Tournament.settle_obligation_invalid_input'
+    );
+    return { ...base, refused_reason: 'invalid_input' };
+  }
+  const place = input.place ?? null;
+  const amount = Math.round(input.amount * 100) / 100;
 
   // Nothing is owed. Not an error and not a call: the RPC would only record a
   // zero obligation, and every caller already guards `amount > 0`.

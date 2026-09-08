@@ -1491,6 +1491,7 @@ export abstract class ServerTableEngineBase {
   // 2026-09-06: the drain's view of the same fact, cleared by the promise
   // rather than by the next hand. See trackSettlementInFlight().
   protected settlementInFlight: Promise<void> | null = null;
+  private settlementStartedAtMs: number | null = null;
 
   /**
    * The one dealing-loop generation owned by this engine instance.
@@ -3488,6 +3489,12 @@ export abstract class ServerTableEngineBase {
     return this.settlementInFlight !== null;
   }
 
+  /** Continuous age of the owned settlement; null after completion. */
+  settlementAgeMs(): number | null {
+    if (!this.settlementInFlight || this.settlementStartedAtMs === null) return null;
+    return Math.max(0, Date.now() - this.settlementStartedAtMs);
+  }
+
   /**
    * Follow one settlement promise to its end.
    *
@@ -3503,6 +3510,10 @@ export abstract class ServerTableEngineBase {
    * newer one.
    */
   protected trackSettlementInFlight(p: Promise<void> | null): void {
+    // Extending a hand's barrier must retain its original age. Retry
+    // heartbeats prove the process runs, not that this settlement completed.
+    if (!p) this.settlementStartedAtMs = null;
+    else if (!this.settlementInFlight) this.settlementStartedAtMs = Date.now();
     this.settlementInFlight = p;
     if (!p) return;
     const tracked = p;

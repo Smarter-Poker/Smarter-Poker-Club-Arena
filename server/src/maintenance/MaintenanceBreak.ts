@@ -99,7 +99,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { completeReconnectFreeze } from './reconnectFreeze.js';
+import { completeReconnectFreeze, completeTableReconnectFreeze } from './reconnectFreeze.js';
 import { setMaintenanceFrozen } from './freezeState.js';
 
 /**
@@ -1222,11 +1222,11 @@ export class MaintenanceBreak {
      * minutes of clock drift is a wrong that heals, a platform that stays
      * frozen is not.
      */
+    const reconnectFreezeStartedAt = this.breakStartedAt;
+    completeReconnectFreeze(reconnectFreezeStartedAt, this.now() - reconnectFreezeStartedAt);
     let thawOk: boolean | null = null;
     if (this.deps.thaw && this.breakStartedAt > 0) {
       const frozenSeconds = Math.max(1, Math.round((this.now() - this.breakStartedAt) / 1000));
-      // Retain the same interval for engines restored before OR after the DB thaw.
-      completeReconnectFreeze(this.breakStartedAt, frozenSeconds * 1000);
       try {
         await this.deps.thaw(this.breakStartedAt, frozenSeconds);
         if (!this.lifecycleIsCurrent(generation)) {
@@ -1247,6 +1247,8 @@ export class MaintenanceBreak {
       this.ending = false;
       return;
     }
+    // The database wait is still frozen time for every reconnect allowance.
+    completeReconnectFreeze(reconnectFreezeStartedAt, this.now() - reconnectFreezeStartedAt);
     const outcome: MaintenanceBreakOutcome = {
       breakStartedAtMs: this.breakStartedAt,
       breakEndedAtMs: this.now(),
@@ -1282,7 +1284,7 @@ export class MaintenanceBreak {
     this.ending = false;
     setMaintenanceFrozen(false);
 
-    const resumed = this.resumeEveryEngine();
+    const resumed = this.resumeEveryEngine(reconnectFreezeStartedAt);
     outcome.tablesResumed = resumed;
     // The break's own scorecard line. Never allowed to delay or fail the
     // resume: wave 0 has already fired and the rest are scheduled by the
@@ -1327,7 +1329,7 @@ export class MaintenanceBreak {
     return n;
   }
 
-  private resumeEveryEngine(): number {
+  private resumeEveryEngine(reconnectFreezeStartedAt?: number): number {
     // Collect the tables this break is responsible for resuming.
     // EVERY table gets resumeFromMaintenance(), including one another
     // authority is still holding. This used to `continue` past those, and
@@ -1383,6 +1385,9 @@ export class MaintenanceBreak {
     const fireWave = (index: number): void => {
       for (const [tableId, engine] of waves[index]) {
         try {
+          if (reconnectFreezeStartedAt !== undefined) {
+            completeTableReconnectFreeze(tableId, reconnectFreezeStartedAt, this.now());
+          }
           engine.resumeFromMaintenance();
         } catch (err) {
           // One table that refuses to resume must not strand the rest of its

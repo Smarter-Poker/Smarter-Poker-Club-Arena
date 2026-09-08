@@ -345,8 +345,8 @@ function fail(ctx: Ctx, invariant: string, detail: string): never {
  * NOT caught at all: zero invariant failures over 10,000 hands.
  *
  * This rebuilds the partition from the stated rules:
- *   - side-pot LEVELS come from LIVE investment only (totalInvested minus dead
- *     money: antes, a Big Blind Ante the BB fronts, dead small blinds)
+ *   - side-pot LEVELS include live investment and individual antes, while
+ *     shared BBA and dead-small-blind money stay outside contribution caps
  *   - a level's amount is (level - previousLevel) x everyone who reached it,
  *     folded contributors included — their chips stay in the pot
  *   - only NON-FOLDED players may be eligible to win it
@@ -358,11 +358,19 @@ function fail(ctx: Ctx, invariant: string, detail: string): never {
  */
 function expectedPots(players: SeatPlayer[]): { amount: number; eligiblePlayers: string[] }[] {
   const r = (n: number) => Math.round(n * 100) / 100;
-  const live = (p: SeatPlayer) => Math.max(0, r((p.totalInvested ?? 0) - (p.deadInvested ?? 0)));
+  // Reference model counts the FULL individual ante in contribution levels.
+  // Matched-contribution cap tests independently bound each player's maximum.
+  const live = (p: SeatPlayer) =>
+    Math.max(
+      0,
+      r((p.totalInvested ?? 0) - (p.deadInvested ?? 0) + (p.individualAnteInvested ?? 0))
+    );
   const active = players.filter((p) => !p.is_folded);
   if (active.length === 0) return [];
 
-  const deadTotal = r(players.reduce((sum, p) => sum + (p.deadInvested ?? 0), 0));
+  const deadTotal = r(
+    players.reduce((sum, p) => sum + (p.deadInvested ?? 0) - (p.individualAnteInvested ?? 0), 0)
+  );
   const contributors = players.filter((p) => live(p) > 0);
   if (contributors.length === 0) {
     return deadTotal > 0

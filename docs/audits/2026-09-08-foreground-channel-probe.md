@@ -39,3 +39,12 @@ seat action was used to test this change.
 
 At this checkpoint the code is local. Publication, physical iPad Home Screen
 and live network-switch acceptance remain to be verified.
+
+## Integration with table recovery
+
+PR #3884 merged as 276f66a220f0cd2147e90b66b92a6e50f4e3ee4e.
+Its table recovery tests and this change both appended to the recovery suite.
+The merge retains both complete suites, including the table snapshot deadline
+and the channel ping deadline. Combined recovery and mux tests pass all 101
+cases, and root TypeScript compilation passes. This is integration evidence;
+the physical iPad home-screen flow remains unverified.

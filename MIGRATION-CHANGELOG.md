@@ -2,6 +2,10 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## 2026-09-08: Individual Ante Caps And Inactive Blind Seats
+
+Individual antes now precede live blinds and retain matched-contribution pot caps. Heads-up skips an inactive old button; stale queued dead blinds cannot debit sitting-out seats. BBA remains shared and BB-first. The forced-bet event has an explicit type. 211 related tests and server TypeScript pass; CI and engine adoption remain pending. Evidence: docs/audits/2026-09-08-phase2-partial-antes.md.
+
 ## 2026-09-08: Horse Funding Receipts And Unknown Outcomes
 
 Migration 20260908121053 applied and body-verified. Both engine rebuy paths now use stable operation identities and matching receipts; uncertain transport outcomes cannot authorize seat removal. 260 database checks and 6,815 engine tests pass; TypeScript passes. Engine adoption pending. Details: docs/changelog/2026-09-08-horse-funding-receipts-and-unknown-outcomes.md.

@@ -106,26 +106,49 @@ served by the World Hub at `/.well-known/`, both blocked on Dan's accounts:
   `[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"poker.smarter.clubarena","sha256_cert_fingerprints":["<RELEASE SHA-256>"]}}]`
   (the intent filter with `autoVerify` is already in `AndroidManifest.xml`).
 
-## Artwork (phase 6)
+## Artwork (phase 6) - DONE 2026-09-08
 
-There is one PNG today (`public/poker-chip-logo.png`). `@capacitor/assets`
-generates the whole icon and splash tree from `resources/icon.png` (1024x1024,
-no transparency for iOS) and `resources/splash.png` (2732x2732, logo centred,
-background `#0a0a1a`), plus dark variants if wanted. `npm run cap:assets`
-writes every size into `ios/` and `android/`. The Play listing also needs a
-512x512 icon and a 1024x500 feature graphic; both stores need screenshots
-(iPhone 6.7" and 6.5", iPad 12.9" if iPad is offered; Play phone + 7" + 10").
+`resources/icon.png` (1024x1024, opaque) and `resources/splash.png`
+(2732x2732, the chip logo centred on `#0a0a1a`) are generated from the one
+logo the app already ships by `node scripts/native/make-resources.mjs`, and
+`npm run cap:assets` (pinned to `--ios --android` so it never touches the web
+manifest or `public/`) writes every icon and splash size into `ios/` and
+`android/`. All of it is committed, so a binary is cut from a clean checkout.
+When the logo changes, run both again and commit the result.
 
-## OTA (phase 6, Capgo)
+Still needed for the LISTINGS, not the binary: a 512x512 Play icon and a
+1024x500 feature graphic (both can be exported from `resources/icon.png`),
+and screenshots (iPhone 6.7" and 6.5", iPad 12.9" if iPad is offered; Play
+phone + 7" + 10") - taken from a device once one exists.
 
-`@capgo/capacitor-updater` is installed and `nativeShell.ts` calls
-`notifyAppReady()` on every launch - Capgo REQUIRES that call or it rolls the
-bundle back as broken. Publishing a web change to installed apps is
-`npx @capgo/cli bundle upload --channel production` from a `build:native`
-output; wire it into `publish-club-arena.yml` behind `CAPGO_TOKEN` once the
-account exists. Guideline 3.3.2: OTA JavaScript must not change the app's
-primary purpose or add features that skip review; CSS, copy and fixes are
-fine, a new plugin or permission is a new binary.
+## Versions
+
+`native.version` (`1.0`) is the binary's marketing version and is pinned by
+`tests/unit/nativeAssetsAndOta.test.ts` to iOS `MARKETING_VERSION` and
+Android `versionName`. Bump all three together when a new binary is cut. OTA
+bundles are versioned `<native.version>.<publish run number>`, so they are
+unique, ordered, and never below the binary that installs them.
+
+## OTA (phase 6, Capgo) - WIRED 2026-09-08, waiting on the account
+
+`@capgo/capacitor-updater` is installed, `capacitor.config.ts` has
+`autoUpdate: true`, and `nativeShell.ts` calls `notifyAppReady()` on every
+launch - Capgo REQUIRES that call or it rolls the bundle back as broken.
+
+`publish-club-arena.yml` has a `publish-to-app` job: after the origin is
+verified serving a merge, it builds `dist-native` (`npm run build:native`)
+and runs `npx @capgo/cli bundle upload --channel production`. It is gated on
+the `CAPGO_TOKEN` repository secret: absent, it says so and exits green, so
+the web publish is never held by a store account that does not exist. To
+turn it on: create the Capgo app with id `poker.smarter.clubarena`, a
+`production` channel, an API key with upload rights, and set `CAPGO_TOKEN`
+(and optionally the `CAPGO_CHANNEL` repository variable). The RevenueCat
+public SDK keys go in as `VITE_REVENUECAT_IOS_KEY` /
+`VITE_REVENUECAT_ANDROID_KEY` secrets so the OTA bundle carries them.
+
+Guideline 3.3.2: OTA JavaScript must not change the app's primary purpose or
+add features that skip review; CSS, copy and fixes are fine, a new plugin or
+permission is a new binary.
 
 ## Privacy answers (phase 3)
 

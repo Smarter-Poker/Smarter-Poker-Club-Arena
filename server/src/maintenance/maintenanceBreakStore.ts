@@ -8,7 +8,7 @@
  * table instead of pausing it).
  */
 
-import { supabase } from '../services/supabase.js';
+import { maintenanceSupabase, supabase } from '../services/supabase.js';
 import type { MaintenanceBreakStore, PersistedMaintenanceBreak } from './MaintenanceBreak.js';
 
 const TABLE = 'engine_maintenance_break';
@@ -21,7 +21,7 @@ export function createSupabaseMaintenanceBreakStore(version?: string): Maintenan
       // would make every ordinary boot log an error.
       const { data, error } = await supabase
         .from(TABLE)
-        .select('phase, announced_at, break_started_at, break_ends_at, reason')
+        .select('phase, announced_at, break_started_at, break_ends_at, reason, ownership_token')
         .eq('id', true)
         .maybeSingle();
 
@@ -34,42 +34,64 @@ export function createSupabaseMaintenanceBreakStore(version?: string): Maintenan
         breakStartedAt: data.break_started_at ? Date.parse(data.break_started_at) : null,
         breakEndsAt: data.break_ends_at ? Date.parse(data.break_ends_at) : null,
         reason: data.reason,
+        ownershipToken: data.ownership_token,
+      };
+    },
+
+    async claim(
+      expectedOwnershipToken: string,
+      newOwnershipToken: string
+    ): Promise<PersistedMaintenanceBreak | null> {
+      const { data, error } = await maintenanceSupabase.rpc('fn_claim_engine_maintenance_break', {
+        p_expected_ownership_token: expectedOwnershipToken,
+        p_new_ownership_token: newOwnershipToken,
+        p_declared_by: version ?? null,
+      });
+      if (error) throw new Error(error.message);
+      if (!data?.ok) return null;
+      return {
+        phase: data.phase as PersistedMaintenanceBreak['phase'],
+        announcedAt: Date.parse(data.announced_at),
+        breakStartedAt: data.break_started_at ? Date.parse(data.break_started_at) : null,
+        breakEndsAt: data.break_ends_at ? Date.parse(data.break_ends_at) : null,
+        reason: data.reason,
+        ownershipToken: data.ownership_token,
       };
     },
 
     async save(state: PersistedMaintenanceBreak): Promise<void> {
-      // Upsert on the pinned primary key: the announcement INSERTs, and the
-      // countdown five minutes later UPDATEs the same row in place. Two rows
-      // would mean two contradictory breaks, which the boolean primary key
-      // makes impossible by construction.
-      const { error } = await supabase.from(TABLE).upsert(
-        {
-          id: true,
-          phase: state.phase,
-          announced_at: new Date(state.announcedAt).toISOString(),
-          // The REAL countdown start, not "now": an engine adopting a break
-          // half-way through must not shrink the frozen duration the thaw
-          // will later measure from this instant.
-          break_started_at: state.breakStartedAt
-            ? new Date(state.breakStartedAt).toISOString()
-            : null,
-          // Arms the Postgres-side freeze (zz_freeze_guard triggers and the
-          // pg_cron early returns). Only this engine build writes it, which
-          // is what keeps the freeze inert while an older engine - one that
-          // could still deal a hand mid-break - is the one declaring breaks.
-          enforce_freeze: true,
-          break_ends_at: state.breakEndsAt ? new Date(state.breakEndsAt).toISOString() : null,
-          reason: state.reason,
-          declared_by: version ?? null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+      /* This RPC takes the exclusive maintenance advisory lock as its first
+         database statement and has a 45-second database ceiling. Its dedicated
+         client waits 50 seconds, so an already-admitted 30-second purchase can
+         commit before the announcement without making the hour disappear. */
+      const { error } = await maintenanceSupabase.rpc('fn_save_engine_maintenance_break', {
+        p_phase: state.phase,
+        p_announced_at: new Date(state.announcedAt).toISOString(),
+        // The REAL countdown start, not "now": an engine adopting a break
+        // half-way through must not shrink the frozen duration the thaw
+        // will later measure from this instant.
+        p_break_started_at: state.breakStartedAt
+          ? new Date(state.breakStartedAt).toISOString()
+          : null,
+        p_break_ends_at: state.breakEndsAt ? new Date(state.breakEndsAt).toISOString() : null,
+        p_reason: state.reason,
+        p_declared_by: version ?? null,
+        p_ownership_token: state.ownershipToken,
+      });
       if (error) throw new Error(error.message);
     },
 
-    async clear(): Promise<void> {
-      const { error } = await supabase.from(TABLE).delete().eq('id', true);
+    async clear(expected: PersistedMaintenanceBreak): Promise<void> {
+      const { error } = await maintenanceSupabase.rpc('fn_clear_engine_maintenance_break', {
+        p_phase: expected.phase,
+        p_announced_at: new Date(expected.announcedAt).toISOString(),
+        p_break_started_at: expected.breakStartedAt
+          ? new Date(expected.breakStartedAt).toISOString()
+          : null,
+        p_break_ends_at: expected.breakEndsAt ? new Date(expected.breakEndsAt).toISOString() : null,
+        p_reason: expected.reason,
+        p_ownership_token: expected.ownershipToken,
+      });
       if (error) throw new Error(error.message);
     },
   };

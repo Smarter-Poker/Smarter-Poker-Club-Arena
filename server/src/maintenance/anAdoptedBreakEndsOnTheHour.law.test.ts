@@ -79,9 +79,18 @@ class FakeStore implements MaintenanceBreakStore {
     return this.row;
   }
   async save(s: PersistedMaintenanceBreak) {
+    if (this.row && this.row.ownershipToken !== s.ownershipToken) {
+      throw new Error('MAINTENANCE_OWNERSHIP_LOST');
+    }
     this.row = { ...s };
   }
-  async clear() {
+  async claim(expectedOwnershipToken: string, newOwnershipToken: string) {
+    if (!this.row || this.row.ownershipToken !== expectedOwnershipToken) return null;
+    this.row = { ...this.row, ownershipToken: newOwnershipToken };
+    return this.row;
+  }
+  async clear(expected: PersistedMaintenanceBreak) {
+    if (this.row?.ownershipToken !== expected.ownershipToken) return;
     this.row = null;
     this.clears++;
   }
@@ -132,6 +141,7 @@ describe('an adopted last-hand break', () => {
       breakStartedAt: null,
       breakEndsAt: null,
       reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-restart',
     } as PersistedMaintenanceBreak;
 
     await mb.start();
@@ -189,6 +199,7 @@ describe('an adopted last-hand break', () => {
         breakStartedAt: null,
         breakEndsAt: null,
         reason: 'Scheduled Engine Maintenance',
+        ownershipToken: 'owner-before-restart',
       } as PersistedMaintenanceBreak;
 
       await mb.start();
@@ -219,6 +230,7 @@ describe('an adopted last-hand break', () => {
       breakStartedAt: null,
       breakEndsAt: null,
       reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'stale-owner',
     } as PersistedMaintenanceBreak;
 
     await mb.start();
@@ -243,6 +255,7 @@ describe('an adopted last-hand break', () => {
       breakStartedAt: null,
       breakEndsAt: null,
       reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-restart',
     } as PersistedMaintenanceBreak;
 
     await mb.start();
@@ -273,6 +286,7 @@ describe('a counting-down break the previous engine already timed', () => {
       breakStartedAt: new Date('2026-09-06T18:55:01.000Z').getTime(),
       breakEndsAt: endsAt,
       reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-restart',
     };
 
     await mb.start();

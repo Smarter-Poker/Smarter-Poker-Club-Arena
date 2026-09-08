@@ -47,6 +47,8 @@ import {
 export const RAKE_SPEC_RECHECK_MS = 60_000;
 
 let recheckTimer: NodeJS.Timeout | null = null;
+let lifecycleGeneration = 0;
+const lifecycleJobs = new Set<Promise<void>>();
 /** The dedupe: the drift alert is filed at most once per process. */
 let driftAlertedThisBoot = false;
 
@@ -100,12 +102,12 @@ export async function verifyRakeSpecAgainstDatabase(
       detail: 'fn_rake_spec_checksum() unavailable; last verdict kept',
       checkedAt: Date.now(),
     });
-    void raiseFinancialAlert(
+    await raiseFinancialAlert(
       'warning',
       'RakeSpec.checksum_unavailable',
       'The engine could not read fn_rake_spec_checksum(); the rake spec is unverified this tick',
       { compiledChecksum: compiled, previouslyDrifted: before.drifted }
-    );
+    ).catch((err) => reportError(err, 'rakeSpecGuard.unavailable_alert_failed'));
     return 'unavailable';
   }
 
@@ -118,12 +120,12 @@ export async function verifyRakeSpecAgainstDatabase(
     });
     if (before.drifted) {
       console.log(`[RakeSpec] drift resolved: database and engine agree on ${compiled}`);
-      void raiseFinancialAlert(
+      await raiseFinancialAlert(
         'info',
         'RakeSpec.drift_resolved',
         'The rake spec in the database matches the engine again',
         { checksum: compiled }
-      );
+      ).catch((err) => reportError(err, 'rakeSpecGuard.resolved_alert_failed'));
     }
     return 'match';
   }
@@ -179,20 +181,31 @@ export async function startRakeSpecGuard(
   client: RakeSpecRpcClient = supabase as unknown as RakeSpecRpcClient,
   intervalMs: number = RAKE_SPEC_RECHECK_MS
 ): Promise<RakeSpecVerdict> {
+  const generation = ++lifecycleGeneration;
   const verdict = await verifyRakeSpecAgainstDatabase(client);
   const s = rakeSpecDriftState();
   console.log(
     `[RakeSpec] ${verdict}: engine ${s.compiledChecksum} database ${s.databaseChecksum ?? 'n/a'}`
   );
+  if (generation !== lifecycleGeneration) return verdict;
   if (recheckTimer) clearInterval(recheckTimer);
   recheckTimer = setInterval(() => {
-    void verifyRakeSpecAgainstDatabase(client);
+    let tracked!: Promise<void>;
+    tracked = verifyRakeSpecAgainstDatabase(client)
+      .then(() => undefined)
+      .catch((err) => reportError(err, 'rakeSpecGuard.interval_check_failed'))
+      .finally(() => lifecycleJobs.delete(tracked));
+    lifecycleJobs.add(tracked);
   }, intervalMs);
   recheckTimer.unref?.();
   return verdict;
 }
 
-export function stopRakeSpecGuard(): void {
+export async function stopRakeSpecGuard(): Promise<void> {
+  lifecycleGeneration += 1;
   if (recheckTimer) clearInterval(recheckTimer);
   recheckTimer = null;
+  while (lifecycleJobs.size > 0) {
+    await Promise.allSettled([...lifecycleJobs]);
+  }
 }

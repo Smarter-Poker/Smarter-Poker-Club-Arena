@@ -69,7 +69,7 @@ describe('the client asks for the final table instead of inferring it', () => {
 
   it('selects final_table_triggered from the tournament row', () => {
     expect(C).toMatch(/final_table_triggered/);
-    expect(C).toMatch(/tournament_type, final_table_triggered'/);
+    expect(C).toMatch(/\.select\(\s*'[^']*tournament_type[^']*final_table_triggered[^']*'\s*\)/);
   });
 
   it('turns the theme on when the tournament says so', () => {

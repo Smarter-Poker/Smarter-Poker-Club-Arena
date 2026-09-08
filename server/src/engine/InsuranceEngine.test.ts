@@ -41,7 +41,9 @@ function offerLeader(e: InsuranceEngine, atRisk = 100, pot = 300) {
     ],
     board,
     pot,
-    'nlh'
+    'nlh',
+    false,
+    insuranceEquity(leaderCards, [oppCards], board, 'nlh')
   );
 }
 
@@ -159,17 +161,22 @@ describe('InsuranceEngine pricing - chop-aware (PRICING FIX 2026-08-18)', () => 
     const e = new InsuranceEngine();
     e.configure('t1', { enabled: true, houseMargin: 1.2, offerTimeoutSeconds: 15 });
     // Identical rank hole cards on a board neither can beat: every runout chops.
+    const hero = [c('2', 'clubs'), c('3', 'clubs')];
+    const villain = [c('2', 'diamonds'), c('3', 'diamonds')];
+    const liveBoard = [c('K', 'spades'), c('Q', 'spades'), c('J', 'hearts'), c('T', 'hearts')];
     const offers = e.createOffers(
       't1',
       't1:1',
       'L',
       [
-        { playerId: 'L', holeCards: [c('2', 'clubs'), c('3', 'clubs')], atRisk: 100 },
-        { playerId: 'O', holeCards: [c('2', 'diamonds'), c('3', 'diamonds')], atRisk: 100 },
+        { playerId: 'L', holeCards: hero, atRisk: 100 },
+        { playerId: 'O', holeCards: villain, atRisk: 100 },
       ],
-      [c('K', 'spades'), c('Q', 'spades'), c('J', 'hearts'), c('T', 'hearts')],
+      liveBoard,
       200,
-      'nlh'
+      'nlh',
+      false,
+      insuranceEquity(hero, [villain], liveBoard, 'nlh')
     );
     expect(offers).toHaveLength(0);
   });
@@ -203,7 +210,9 @@ describe('InsuranceEngine pricing - chop-aware (PRICING FIX 2026-08-18)', () => 
       ],
       board,
       200,
-      'nlh'
+      'nlh',
+      false,
+      r
     );
     // POKERBROS PARITY 2026-08-28: with the fee collected only on a WIN,
     // pricing this coinflip-given-live spot gives fee = insured * 0.5/0.5 *
@@ -219,17 +228,22 @@ describe('InsuranceEngine pricing - chop-aware (PRICING FIX 2026-08-18)', () => 
     // everything else - strict loss probability is exactly zero.
     const e = new InsuranceEngine();
     e.configure('t1', { enabled: true, houseMargin: 1.2, offerTimeoutSeconds: 15 });
+    const hero = [c('A', 'hearts'), c('Q', 'hearts')];
+    const villain = [c('A', 'spades'), c('Q', 'clubs')];
+    const liveBoard = [c('2', 'hearts'), c('7', 'hearts'), c('9', 'diamonds')];
     const offers = e.createOffers(
       't1',
       't1:1',
       'L',
       [
-        { playerId: 'L', holeCards: [c('A', 'hearts'), c('Q', 'hearts')], atRisk: 100 },
-        { playerId: 'O', holeCards: [c('A', 'spades'), c('Q', 'clubs')], atRisk: 100 },
+        { playerId: 'L', holeCards: hero, atRisk: 100 },
+        { playerId: 'O', holeCards: villain, atRisk: 100 },
       ],
-      [c('2', 'hearts'), c('7', 'hearts'), c('9', 'diamonds')],
+      liveBoard,
       200,
-      'nlh'
+      'nlh',
+      false,
+      insuranceEquity(hero, [villain], liveBoard, 'nlh')
     );
     expect(offers).toHaveLength(0);
   });
@@ -304,7 +318,9 @@ describe('settlement - chop shapes (Dan: chopped pot voids insurance)', () => {
       ],
       board,
       300,
-      'nlh'
+      'nlh',
+      false,
+      insuranceEquity(leaderCards, [oppCards], board, 'nlh')
     );
     expect(fired).toHaveLength(1);
     fired[0](); // the offer window expires

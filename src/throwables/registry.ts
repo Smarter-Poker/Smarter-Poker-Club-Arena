@@ -1,3 +1,13 @@
+import { spec as slothSpec, rig as slothRig } from './rigs/sloth';
+import { spec as energy_ballSpec, rig as energy_ballRig } from './rigs/energy_ball';
+import { spec as surrenderSpec, rig as surrenderRig } from './rigs/surrender';
+import { spec as vomit_rainbowSpec, rig as vomit_rainbowRig } from './rigs/vomit_rainbow';
+import { spec as screamingSpec, rig as screamingRig } from './rigs/screaming';
+import { spec as facepalmSpec, rig as facepalmRig } from './rigs/facepalm';
+import { spec as sleepingSpec, rig as sleepingRig } from './rigs/sleeping';
+import { spec as ok_smugSpec, rig as ok_smugRig } from './rigs/ok_smug';
+import { spec as blushSpec, rig as blushRig } from './rigs/blush';
+import { spec as loser_handSpec, rig as loser_handRig } from './rigs/loser_hand';
 import { spec as thinkingSpec, rig as thinkingRig } from './rigs/thinking';
 import { spec as ratCardSpec, rig as ratCardRig } from './rigs/rat_card';
 import { spec as partyFaceSpec, rig as partyFaceRig } from './rigs/party_face';
@@ -71,6 +81,16 @@ export interface RiggedThrowable {
 }
 
 const RIGGED: Record<string, RiggedThrowable> = {
+  loser_hand: { spec: loser_handSpec, rig: loser_handRig },
+  blush: { spec: blushSpec, rig: blushRig },
+  ok_smug: { spec: ok_smugSpec, rig: ok_smugRig },
+  sleeping: { spec: sleepingSpec, rig: sleepingRig },
+  facepalm: { spec: facepalmSpec, rig: facepalmRig },
+  screaming: { spec: screamingSpec, rig: screamingRig },
+  vomit_rainbow: { spec: vomit_rainbowSpec, rig: vomit_rainbowRig },
+  surrender: { spec: surrenderSpec, rig: surrenderRig },
+  energy_ball: { spec: energy_ballSpec, rig: energy_ballRig },
+  sloth: { spec: slothSpec, rig: slothRig },
   thinking: { spec: thinkingSpec, rig: thinkingRig },
   rat_card: { spec: ratCardSpec, rig: ratCardRig },
   party_face: { spec: partyFaceSpec, rig: partyFaceRig },

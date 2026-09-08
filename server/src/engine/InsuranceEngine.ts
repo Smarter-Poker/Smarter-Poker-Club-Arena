@@ -25,7 +25,6 @@
  * FIX 78: House margin 5%→20%, partial coverage slider, per-street recalc
  */
 
-import { insuranceEquity } from './InsuranceEquity.js';
 import type { Card } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.js';
@@ -117,6 +116,17 @@ export interface InsuranceSettlement {
   kind: 'insurance' | 'ev_cashout';
 }
 
+/**
+ * Contract probabilities must be produced by the worker-only pricing pass.
+ * Keeping this structured (rather than accepting a bare pot-share percentage)
+ * prevents a caller from silently pricing pushes as losses.
+ */
+export interface InsurancePricingComponents {
+  equity: number;
+  strictLossPct: number;
+  pushPct: number;
+}
+
 export type InsuranceEventType =
   | 'INSURANCE_OFFERED'
   | 'INSURANCE_ACCEPTED'
@@ -202,12 +212,10 @@ export class InsuranceEngine {
     board: Card[],
     pot: number,
     variant: string,
-    shortDeck: boolean = false,
-    // PRICING FIX 2026-08-18: callers may pass the full outcome components
-    // (pot-share equity + strict-loss + push probabilities). A bare number is
-    // still accepted for backward compatibility and treated as pot-share
-    // equity with no push information.
-    precomputed?: number | { equity: number; strictLossPct: number; pushPct: number }
+    shortDeck: boolean,
+    // Mandatory worker-authored contract outcomes. There is intentionally no
+    // synchronous or bare-equity fallback on the authoritative table thread.
+    precomputed: InsurancePricingComponents
   ): InsuranceOffer[] {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     if (!config.enabled || pot < config.minPotForInsurance) return [];
@@ -253,16 +261,7 @@ export class InsuranceEngine {
     // loss even though a chop refunds the premium - overcharging every
     // chop-prone spot on top of the house margin. Fair premium under the
     // real terms is insured x P(strict loss | not push), then the margin.
-    let components: { equity: number; strictLossPct: number; pushPct: number };
-    if (typeof precomputed === 'object' && precomputed !== null) {
-      components = precomputed;
-    } else {
-      const r = insuranceEquity(leader.holeCards, opponentHands, board, variant, shortDeck);
-      components =
-        typeof precomputed === 'number'
-          ? { equity: precomputed, strictLossPct: r.strictLossPct, pushPct: r.pushPct }
-          : { equity: r.equity, strictLossPct: r.strictLossPct, pushPct: r.pushPct };
-    }
+    const components = precomputed;
     const equity = components.equity;
     const pushFrac = Math.max(0, Math.min(1, components.pushPct / 100));
     const lossFrac = Math.max(0, Math.min(1, components.strictLossPct / 100));

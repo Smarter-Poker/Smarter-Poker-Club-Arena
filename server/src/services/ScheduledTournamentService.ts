@@ -483,6 +483,10 @@ export class ScheduledTournamentService {
   private isRunning = false;
   /** Re-entrancy guard: a slow poll must never overlap the next tick. */
   private polling = false;
+  /** Polls already admitted before the timer fence, joined before stop resolves. */
+  private readonly lifecycleJobs = new Set<Promise<unknown>>();
+  private lifecycleGeneration = 0;
+  private stopOperation: Promise<void> | null = null;
   /**
    * Horse seeding + count repair, reused rather than re-implemented:
    * topUpWithHorses registers through fn_register_horse_for_tournament (real
@@ -499,12 +503,40 @@ export class ScheduledTournamentService {
    */
   private readonly refusedSeatFirstSchedules = new Set<string>();
 
+  private lifecycleIsCurrent(generation: number): boolean {
+    return this.isRunning && this.lifecycleGeneration === generation;
+  }
+
+  private trackLifecycleJob<T>(job: Promise<T>): Promise<T> {
+    const tracked = job.finally(() => this.lifecycleJobs.delete(tracked));
+    this.lifecycleJobs.add(tracked);
+    return tracked;
+  }
+
+  private launchPoll(generation: number): void {
+    if (!this.lifecycleIsCurrent(generation)) return;
+    void this.trackLifecycleJob(this.poll(generation)).catch((error) =>
+      reportError(error, 'ScheduledTournaments.detached_poll_failed')
+    );
+  }
+
+  private async drainLifecycleJobs(): Promise<void> {
+    while (this.lifecycleJobs.size > 0) {
+      await Promise.allSettled([...this.lifecycleJobs]);
+    }
+  }
+
   start(): void {
+    if (this.stopOperation) {
+      console.warn('[ScheduledTournaments] Start refused while the prior generation is stopping');
+      return;
+    }
     if (this.isRunning) {
       console.log('[ScheduledTournaments] Already running');
       return;
     }
     this.isRunning = true;
+    const generation = ++this.lifecycleGeneration;
     console.log('[ScheduledTournaments] Service started - polling every 60s');
     // THE FREEZE (Dan 2026-09-01): starting a scheduled event registers and
     // seats its field. An event whose start time falls inside the break
@@ -512,27 +544,39 @@ export class ScheduledTournamentService {
     // also exactly when its players are back at the felt to see it.
     this.pollTimer = setInterval(() => {
       if (isMaintenanceFrozen()) return;
-      void this.poll();
+      this.launchPoll(generation);
     }, POLL_INTERVAL_MS);
-    void this.poll();
+    this.launchPoll(generation);
   }
 
-  stop(): void {
-    if (!this.isRunning) return;
+  stop(): Promise<void> {
+    if (this.stopOperation) return this.stopOperation;
+
+    // Synchronous ownership fence: no new poll can be admitted after here.
+    this.isRunning = false;
+    this.lifecycleGeneration++;
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = null;
-    this.isRunning = false;
-    console.log('[ScheduledTournaments] Stopped');
+
+    const drain = (async () => {
+      await this.drainLifecycleJobs();
+      console.log('[ScheduledTournaments] Stopped');
+    })();
+    const trackedStop = drain.finally(() => {
+      if (this.stopOperation === trackedStop) this.stopOperation = null;
+    });
+    this.stopOperation = trackedStop;
+    return trackedStop;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // POLL
   // ─────────────────────────────────────────────────────────────────────────
 
-  private async poll(): Promise<void> {
+  private async poll(generation: number): Promise<void> {
     // THE FREEZE IS TOTAL (Dan 2026-09-03): start() polls once immediately; gate
     // the poll itself, not only the interval that schedules it.
-    if (isMaintenanceFrozen()) return;
+    if (!this.lifecycleIsCurrent(generation) || isMaintenanceFrozen()) return;
     if (this.polling) return;
     this.polling = true;
     try {
@@ -540,6 +584,7 @@ export class ScheduledTournamentService {
         .from('tournament_schedules')
         .select('*')
         .eq('active', true);
+      if (!this.lifecycleIsCurrent(generation)) return;
       if (error) {
         reportError(
           new Error(`[ScheduledTournaments] schedule read failed: ${error.message}`),
@@ -547,9 +592,11 @@ export class ScheduledTournamentService {
         );
       } else {
         for (const schedule of (schedules ?? []) as TournamentScheduleRow[]) {
+          if (!this.lifecycleIsCurrent(generation)) return;
           // A failed schedule NEVER breaks the loop for its neighbours.
           try {
             await this.processSchedule(schedule);
+            if (!this.lifecycleIsCurrent(generation)) return;
           } catch (err: unknown) {
             reportError(
               new Error(
@@ -562,7 +609,9 @@ export class ScheduledTournamentService {
       }
 
       try {
+        if (!this.lifecycleIsCurrent(generation)) return;
         await this.processRestartEvery();
+        if (!this.lifecycleIsCurrent(generation)) return;
       } catch (err: unknown) {
         reportError(
           new Error(

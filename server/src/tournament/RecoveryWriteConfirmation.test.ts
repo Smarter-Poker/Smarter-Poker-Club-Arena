@@ -1,201 +1,76 @@
-import { describe, expect, it, vi } from 'vitest';
+/**
+ * Recovery is allowed to publish success only from readable evidence and
+ * confirmed database writes. Normal place money and COMPLETED now belong to
+ * one atomic database function, so this guard pins the current architecture
+ * instead of recreating the retired per-player payment loop in a fake client.
+ */
+import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import ts from 'typescript';
-import { computePlacePrize } from './payoutMath.js';
-import { resolvePayoutStructure } from './payoutStructure.js';
-import { fieldIsStillLive } from './recoveryFieldGuard.js';
-import { chipsCannotRank, noHandWasEverDealt } from './recoveryRankEvidence.js';
 
-const source = readFileSync('src/tournament/tournamentRecovery.ts', 'utf8');
-const ast = ts.createSourceFile('recovery.ts', source, ts.ScriptTarget.Latest, true);
-const fn = ast.statements.find(
-  (n): n is ts.FunctionDeclaration =>
-    ts.isFunctionDeclaration(n) && n.name?.text === 'recoverStuckCompletingTournaments'
-);
-if (!fn) throw new Error('Actual recovery function missing');
-const compiled = ts.transpileModule(
-  fn.getText(ast).replace(/^export /, '') + '\nreturn recoverStuckCompletingTournaments;',
-  {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
-  }
-).outputText;
-const build = new Function(
-  'supabase',
-  'reportError',
-  'raiseFinancialAlert',
-  'settleTournamentObligation',
-  'computePlacePrize',
-  'resolvePayoutStructure',
-  'fieldIsStillLive',
-  'chipsCannotRank',
-  'noHandWasEverDealt',
-  'console',
-  compiled
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
+
+const SOURCE = readFileSync('src/tournament/tournamentRecovery.ts', 'utf8');
+const RECOVERY = sliceMethod(SOURCE, 'export async function recoverStuckCompletingTournaments(');
+const CLEANUP = SOURCE.slice(
+  SOURCE.indexOf('async function closeRecoveredTournamentTablesAndSeats('),
+  SOURCE.indexOf('export async function recoverStuckCompletingTournaments(')
 );
 
-type Stage = 'survivor' | 'topup' | 'complete';
-async function run(
-  stage: Stage,
-  receipt: { count?: number | null; error?: { message: string } } = { count: 1 },
-  reads: Partial<Record<'deal' | 'field' | 'players', any>> = {}
-) {
-  const updates: Array<{ table: string; value: any; options: any }> = [];
-  const report = vi.fn();
-  const log = vi.fn();
-  const settle = vi.fn(async (_db, args) => ({
-    ok: true,
-    fully_settled: true,
-    amount_paid: args.amount,
-    paid: args.amount,
-  }));
-  const rows =
-    stage === 'topup'
-      ? [{ id: 'p1', user_id: 'player-one', status: 'eliminated', position: 1, prize: 0, chips: 0 }]
-      : [
-          {
-            id: 'p1',
-            user_id: 'player-one',
-            status: 'playing',
-            position: null,
-            prize: 0,
-            chips: 1000,
-          },
-        ];
-  const db = {
-    rpc: vi.fn(async () => ({ data: { ok: true, already_settled: true }, error: null })),
-    from(table: string) {
-      let write: any;
-      let options: any;
-      let countRead = false;
-      const query = {
-        select(_columns?: string, opts?: any) {
-          countRead = opts?.count === 'exact';
-          return query;
-        },
-        eq() {
-          return query;
-        },
-        in() {
-          return query;
-        },
-        neq() {
-          return query;
-        },
-        limit() {
-          return query;
-        },
-        maybeSingle() {
-          return query;
-        },
-        update(value: any, opts?: any) {
-          write = value;
-          options = opts;
-          updates.push({ table, value, options });
-          return query;
-        },
-        then(resolve: (value: any) => unknown, reject: (e: unknown) => unknown) {
-          let result: any;
-          if (write) {
-            const current =
-              table === 'tournaments'
-                ? 'complete'
-                : table === 'tournament_players'
-                  ? 'status' in write
-                    ? 'survivor'
-                    : 'topup'
-                  : 'tables';
-            const response = current === stage ? receipt : { count: 1 };
-            result = {
-              error: response.error ?? null,
-              count: options?.count === 'exact' ? response.count : null,
-            };
-          } else if (table === 'tournaments')
-            result = {
-              data: [
-                {
-                  id: 'event',
-                  name: 'Audit',
-                  prize_pool: 100,
-                  payout_structure: [{ place: 1, percentage: 100 }],
-                },
-              ],
-              error: null,
-            };
-          else if (table === 'tournament_payouts') result = reads.deal ?? { data: [], error: null };
-          else if (table === 'hand_history') result = { data: { id: 'hand' }, error: null };
-          else
-            result = countRead
-              ? (reads.field ?? { count: rows.length, error: null })
-              : (reads.players ?? { data: rows, error: null });
-          return Promise.resolve(result).then(resolve, reject);
-        },
-      };
-      return query;
-    },
-  };
-  await build(
-    db,
-    report,
-    vi.fn(),
-    settle,
-    computePlacePrize,
-    resolvePayoutStructure,
-    fieldIsStillLive,
-    chipsCannotRank,
-    noHandWasEverDealt,
-    { log, warn: vi.fn() }
-  )('audit');
-  return { updates, report, log, settle };
-}
+describe('recovery proves every read that can authorize money', () => {
+  it('treats either final-table-deal evidence query as unknown unless it returns an array', () => {
+    expect(RECOVERY).toMatch(
+      /const \[dealPayouts, dealObligations\] = await Promise\.all\([\s\S]*?!Array\.isArray\(dealPayouts\.data\)[\s\S]*?!Array\.isArray\(dealObligations\.data\)/
+    );
+    const refusal = RECOVERY.indexOf('GameServer.recoverStuckCompleting_deal_check_failed');
+    const evidenceUse = RECOVERY.indexOf('dealPayouts.data?.length');
+    expect(refusal).toBeGreaterThan(-1);
+    expect(evidenceUse).toBeGreaterThan(refusal);
+  });
 
-describe('recovery confirms paid-player stamps and completion before progressing', () => {
-  for (const stage of ['survivor', 'topup', 'complete'] as const) {
-    it.each([
-      { count: 0 },
-      { count: null },
-      {},
-      { count: 2 },
-      { count: 1, error: { message: 'write failed' } },
-    ])(`${stage} does not claim recovery after an unconfirmed write: %j`, async (receipt) => {
-      const r = await run(stage, receipt);
-      expect(r.settle).toHaveBeenCalledTimes(1);
-      expect(r.report).toHaveBeenCalledWith(
-        expect.any(Error),
-        'GameServer.recoverStuckCompleting_per_tournament'
-      );
-      expect(r.updates.some((x) => x.table === 'tables')).toBe(false);
-      expect(r.log.mock.calls.some((x) => String(x[0]).includes('Recovered stuck'))).toBe(false);
-      if (stage !== 'complete')
-        expect(r.updates.some((x) => x.table === 'tournaments')).toBe(false);
-    });
-    it(`${stage} preserves completion with confirmed writes`, async () => {
-      const r = await run(stage);
-      expect(r.settle).toHaveBeenCalledTimes(1);
-      expect(r.report).not.toHaveBeenCalled();
-      expect(r.updates.some((x) => x.table === 'tables')).toBe(true);
-      expect(r.log.mock.calls.some((x) => String(x[0]).includes('Recovered stuck'))).toBe(true);
-    });
-  }
+  it('uses one checked player-field result for both roster and field size', () => {
+    expect(RECOVERY).toMatch(
+      /const \{ data: players, error: playersErr \}[\s\S]*?if \(playersErr \|\| !Array\.isArray\(players\)\)[\s\S]*?const rows = players \?\? \[\];[\s\S]*?const fieldCount = rows\.length/
+    );
+  });
 });
 
-describe('recovery needs confirmed pricing and roster reads before payment', () => {
-  it.each([
-    ['deal', { data: null, error: null }],
-    ['deal', { data: {}, error: null }],
-    ['deal', { data: [], error: { message: 'unreadable' } }],
-    ['field', { count: null, error: null }],
-    ['field', { count: 0, error: null }],
-    ['field', { count: -1, error: null }],
-    ['field', { count: 1.5, error: null }],
-    ['field', { count: 1, error: { message: 'unreadable' } }],
-    ['players', { data: null, error: null }],
-    ['players', { data: {}, error: null }],
-    ['players', { data: [], error: { message: 'unreadable' } }],
-  ])('does not pay or complete after unknown %s: %j', async (key, value) => {
-    const r = await run('survivor', { count: 1 }, { [key as string]: value });
-    expect(r.settle).not.toHaveBeenCalled();
-    expect(r.updates).toEqual([]);
-    expect(r.report).toHaveBeenCalled();
-    expect(r.log).not.toHaveBeenCalled();
+describe('recovery confirms every result write before atomic settlement', () => {
+  it('reads back the survivor stamp and the normalized entitlement update', () => {
+    expect(RECOVERY).toMatch(
+      /\.update\(\{[\s\S]*?status: place === 1 \? 'winner' : 'eliminated'[\s\S]*?prize: 0,[\s\S]*?\.select\('id'\)[\s\S]*?\.maybeSingle\(\)[\s\S]*?if \(stampErr \|\| !stamped\)/
+    );
+    expect(RECOVERY).toMatch(
+      /\.update\(\{ prize: owed \}\)[\s\S]*?\.select\('id'\)[\s\S]*?\.maybeSingle\(\)[\s\S]*?if \(entitlementErr \|\| !updated\)/
+    );
+  });
+
+  it('never pays a place or marks COMPLETED through a client-side loop', () => {
+    expect(RECOVERY).toContain('await settleTournamentPlacesAtomically(');
+    expect(RECOVERY).not.toContain('settleTournamentObligation(');
+    expect(RECOVERY).not.toMatch(/\.update\(\{\s*status:\s*'COMPLETED'/);
+  });
+
+  it('accepts a lost atomic response only after durable COMPLETED is read back', () => {
+    expect(RECOVERY).toMatch(
+      /if \(!settlement\.ok \|\| !settlement\.completed\)[\s\S]*?\.select\('status'\)[\s\S]*?committed\?\.status !== 'COMPLETED'[\s\S]*?durableCompletionAcceptedAfterLostReceipt = true/
+    );
+  });
+});
+
+describe('terminal cleanup is itself proven', () => {
+  it('checks seat release and table closure before returning success', () => {
+    expect(CLEANUP).toMatch(
+      /\.from\('table_seats'\)[\s\S]*?\.update\(\{ left_at: leftAt \}\)[\s\S]*?if \(error\)[\s\S]*?return false/
+    );
+    expect(CLEANUP).toMatch(
+      /\.from\('tables'\)[\s\S]*?\.update\(\{ status: 'closed', current_players: 0 \}\)[\s\S]*?terminalTables[\s\S]*?seatProof\.count !== 0[\s\S]*?return false/
+    );
+  });
+
+  it('logs recovery only after the cleanup proof succeeds', () => {
+    const cleanup = RECOVERY.lastIndexOf('closeRecoveredTournamentTablesAndSeats(t.id)');
+    const success = RECOVERY.lastIndexOf('[GameServer] Recovered stuck COMPLETING tournament');
+    expect(cleanup).toBeGreaterThan(-1);
+    expect(success).toBeGreaterThan(cleanup);
   });
 });

@@ -197,7 +197,7 @@ describe('a disabled or paused fleet seats nobody and removes nobody', () => {
        new eviction mechanism". A stopped fleet drains through the rotator, the
        human-waiting release and bust-outs, all of which already existed. The
        manager's only reference to a seat row is the read it has always done. */
-    expect(SRC).not.toMatch(/\.delete\(/);
+    expect(SRC).not.toMatch(/\.from\('table_seats'\)[\s\S]{0,120}\.delete\(/);
     expect(SRC).not.toContain('leaveTable');
     expect(SRC.match(/from\('table_seats'\)/g)?.length ?? 0).toBe(1);
     expect(SRC.match(/left_at/g)?.length ?? 0).toBe(1);

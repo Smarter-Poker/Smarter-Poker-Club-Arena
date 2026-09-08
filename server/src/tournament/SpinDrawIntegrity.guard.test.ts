@@ -80,29 +80,18 @@ describe('a spin draw that could not be read is UNKNOWN, not the lowest tier', (
   });
 });
 
-describe('the drawn multiplier reaches the row, or keeps trying', () => {
-  it('schedules a bounded background repair when the write never lands', () => {
-    expect(CODE).toMatch(/scheduleSpinRowRepair/);
-    expect(CODE).toMatch(/spin_row_repair_exhausted/);
+describe('the drawn multiplier reaches the row before RUNNING', () => {
+  it('proves the exact patch by read-back', () => {
+    expect(CODE).toContain('const spinRowProjection = Object.keys(spinRowPatch).join');
+    expect(CODE).toContain('this.launchRowMatchesPatch(');
   });
 
-  it('the repair only ever fills an empty column', () => {
-    const repair = CODE.slice(CODE.indexOf('private scheduleSpinRowRepair'));
-    expect(repair).toMatch(/spin_multiplier\.is\.null,spin_multiplier\.eq\.0/);
-  });
-
-  it('the repair confirms by re-reading, not by the absence of an error', () => {
-    const repair = CODE.slice(
-      CODE.indexOf('private scheduleSpinRowRepair'),
-      CODE.indexOf('spin_row_repair_exhausted')
-    );
-    expect(repair).toMatch(/Number\(after\?\.spin_multiplier\)\s*>\s*0/);
-  });
-
-  it('the repair re-applies the patch this start drew, not a fresh draw', () => {
-    const repair = CODE.slice(CODE.indexOf('private scheduleSpinRowRepair'));
-    const body = repair.slice(0, repair.indexOf('spin_row_repair_exhausted'));
-    expect(body).not.toMatch(/fn_spin_draw_multiplier/);
+  it('stands down on an unproven row instead of scheduling a repair', () => {
+    const failure = sliceEnclosingBlock(CODE, 'if (!spinRowWritten)');
+    expect(failure).toMatch(/this\.running\s*=\s*false/);
+    expect(failure).toMatch(/return/);
+    expect(CODE).not.toContain('scheduleSpinRowRepair');
+    expect(CODE).not.toContain('spin_row_repair_exhausted');
   });
 });
 

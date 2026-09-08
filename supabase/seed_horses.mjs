@@ -11,7 +11,13 @@ const SUPABASE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+        headers: {
+            'x-smarter-data-actor': 'service',
+            'x-smarter-data-protocol': '1'
+        }
+    }
 });
 
 // Profile distribution: Fish 40, Reg 30, Nit 15, Lag 10, Maniac 5

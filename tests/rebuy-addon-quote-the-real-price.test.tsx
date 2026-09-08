@@ -13,7 +13,7 @@
  * failed add-on was reported to the player as a success.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import RebuyModal from '../src/components/table/RebuyModal';
 import AddOnModal from '../src/components/table/AddOnModal';
 
@@ -164,5 +164,30 @@ describe('AddOnModal charges what it advertises', () => {
     expect(onAccept).toHaveBeenCalledTimes(1);
     resolve(true);
     await waitFor(() => expect(screen.getByText(/Add-On Accepted/)).toBeTruthy());
+  });
+
+  it('counts down from the persisted deadline instead of resetting to 60 seconds', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-07T12:00:00.000Z'));
+    const onDecline = vi.fn();
+    render(
+      <AddOnModal
+        {...base}
+        timeRemaining={60}
+        endsAtMs={Date.now() + 3_600_000}
+        walletBalance={5000}
+        onAccept={vi.fn()}
+        onDecline={onDecline}
+      />
+    );
+
+    expect(screen.getByText('3600s')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(3_599_000));
+    expect(screen.getByText('1s')).toBeTruthy();
+    expect(onDecline).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(screen.getByText('0s')).toBeTruthy();
+    expect(onDecline).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

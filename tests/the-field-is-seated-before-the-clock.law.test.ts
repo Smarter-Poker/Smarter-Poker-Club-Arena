@@ -58,8 +58,7 @@ const ET_CSS = read('src/components/tournament/details/EntriesTab.css');
 /** Strip block and line comments so a pin cannot pass on prose that merely
     mentions the thing it is asserting — including this file's own commentary
     about what was removed. */
-const code = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('ITEM 2 — the field is seated a minute before the event starts', () => {
   it('GameServer declares a one-minute pre-seat lead', () => {
@@ -85,13 +84,15 @@ describe('ITEM 2 — the field is seated a minute before the event starts', () =
 });
 
 describe('ITEM 2 — seating moves, the poker does not', () => {
-  const start = code(TM_BASE).slice(
-    code(TM_BASE).indexOf('createTablesAndSeatPlayers(tournament)')
+  const baseCode = code(TM_BASE);
+  const start = baseCode.slice(
+    baseCode.indexOf('async start(): Promise<void>'),
+    baseCode.indexOf('async resume(): Promise<void>')
   );
 
   it('every table holds its deal until the advertised start_time', () => {
     expect(TM_BASE).toContain('preStartLeadMs');
-    expect(start).toMatch(/holdDealingUntil\(scheduledStartMs\)/);
+    expect(start).toMatch(/holdDealingUntil\(launchStartMs\)/);
     expect(start).toMatch(/Date\.parse\(String\(tournament\.start_time/);
   });
 
@@ -100,15 +101,16 @@ describe('ITEM 2 — seating moves, the poker does not', () => {
     // held felt, and every level after it runs a minute out of step with the
     // structure the lobby printed.
     expect(start).toMatch(
-      /if\s*\(this\.preStartLeadMs\s*>\s*0\)[\s\S]{0,400}?setTimeout\([\s\S]{0,200}?startBlindTimer\(/
+      /if\s*\(this\.preStartLeadMs\s*>\s*0\)\s*\{\s*const structure[\s\S]{0,200}?setLifecycleTimeout\([\s\S]{0,160}?startBlindTimer\(/
     );
   });
 
   it('started_at is the advertised start, not the seating instant', () => {
     // late_reg_mins is measured from started_at on both sides; stamping the
     // seating instant would close a 30-minute window 29 minutes in.
-    expect(start).toMatch(/const startedAtIso\s*=[\s\S]{0,140}?preStartLeadMs/);
-    expect(start).toMatch(/started_at:\s*startedAtIso/);
+    expect(start).toMatch(/const requestedStartedAtIso\s*=[\s\S]{0,240}?scheduledStartMs/);
+    expect(start).toMatch(/const \{ launchId, startedAtIso \} = launchClaim/);
+    expect(start).toMatch(/tournament\.started_at\s*=\s*startedAtIso/);
     expect(start).not.toMatch(/started_at:\s*new Date\(\)\.toISOString\(\)/);
   });
 

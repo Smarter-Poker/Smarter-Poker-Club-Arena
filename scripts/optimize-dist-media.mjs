@@ -79,7 +79,9 @@ import { fileURLToPath } from 'node:url';
 import { loadSharp } from './lib/sharp-loader.mjs';
 
 const ROOT = process.argv[2] || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DIST = path.join(ROOT, 'dist');
+// CA_DIST: the native build (npm run build:native) writes dist-native/ so the
+// two bundles can never be confused. Unset means 'dist', exactly as before.
+const DIST = path.join(ROOT, process.env.CA_DIST || 'dist');
 
 /**
  * Bump this whenever the encoder settings below change. It is part of every

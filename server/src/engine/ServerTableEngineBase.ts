@@ -1815,9 +1815,29 @@ export abstract class ServerTableEngineBase {
     });
 
     // Step 6: Initialize advanced modules
-    this.straddleEngine = new StraddleEngine((event) => {
-      console.log(`[ServerTableEngine:${tableId}] Straddle: ${event.type}`);
-    });
+    /* ONTO THE HUB, NOT INTO A CONSOLE.LOG (final sweep 2026-09-08). Three
+       engines here still reported their events to a console line and nowhere
+       else, the same defect class InsuranceEngine (above) and TableBalancer
+       (below) were repaired for on 2026-08-28. A straddle is real chips
+       posted, a chip race is a chip transfer, a table break is a seat path:
+       each now goes out on the table's hub in the snake_case the wire uses,
+       so a client - and the shadow recorder - can see it. Unknown types are
+       ignored by the client, so nothing changes on screen until a handler
+       exists; what changes is that the fact is no longer lost. */
+    const bridgeToHub = (label: string, event: { type: string }) => {
+      console.log(`[ServerTableEngine:${tableId}] ${label}: ${event.type}`);
+      try {
+        this.hub?.emitEvent(this.tableId, {
+          ...(event as unknown as Record<string, unknown>),
+          type: event.type.toLowerCase(),
+          table_id: this.tableId,
+          timestamp: Date.now(),
+        });
+      } catch {
+        /* broadcast failure is non-fatal */
+      }
+    };
+    this.straddleEngine = new StraddleEngine((event) => bridgeToHub('Straddle', event));
     this.runItTwiceEngine = new RunItTwiceEngine((event) => {
       console.log(`[ServerTableEngine:${tableId}] RIT: ${event.type}`);
     });
@@ -1900,9 +1920,7 @@ export abstract class ServerTableEngineBase {
      */
 
     // Step 7: Initialize tournament & extras modules
-    this.chipRaceEngine = new ChipRaceEngine((event) => {
-      console.log(`[ServerTableEngine:${tableId}] ChipRace: ${event.type}`);
-    });
+    this.chipRaceEngine = new ChipRaceEngine((event) => bridgeToHub('ChipRace', event));
     this.tableBalancer = new TableBalancer((event) => {
       console.log(`[ServerTableEngine:${tableId}] TableBalancer: ${event.type}`);
       if (event.type === 'TABLE_BALANCE_EXECUTED') {
@@ -1917,9 +1935,7 @@ export abstract class ServerTableEngineBase {
         }
       }
     });
-    this.tableBreakEngine = new TableBreakEngine((event) => {
-      console.log(`[ServerTableEngine:${tableId}] TableBreak: ${event.type}`);
-    });
+    this.tableBreakEngine = new TableBreakEngine((event) => bridgeToHub('TableBreak', event));
     this.engineTelemetry = new EngineTelemetry((event) => {
       console.log(
         `[ServerTableEngine:${tableId}] Telemetry: activeTables=${(event as any).activeTables}`
@@ -2193,15 +2209,26 @@ export abstract class ServerTableEngineBase {
   }
 
   async start(): Promise<void> {
+    /* A REFUSAL TO START SETTLES `ready` (final sweep, 2026-09-08). These three
+       throws sit BEFORE the try whose catch settles `ready` false, so an engine
+       refused here left `ready` pending for ever - and GameServer's readiness
+       tracker, `GET /state`, `GET /actions`, the tournament manager and the
+       cluster controller's wake job all await that promise with no deadline.
+       The refusal is still a throw for the caller; it is just no longer a
+       promise nobody can collect. `stop()` and `killForRestart()` settle it
+       too, so a second settle is a no-op. */
     if (this.terminal || this.teardownPromise) {
+      this.settleReady(false);
       throw new Error(`Table engine ${this.tableId} is terminal and cannot be restarted`);
     }
     if (this.running) return;
     if (!this.engineLeaseAuthorityIsCurrent()) {
       this.expireEngineLeaseAuthority();
+      this.settleReady(false);
       throw new Error(`Table engine ${this.tableId} has no current distributed lease proof`);
     }
     if (!this.claimProcessOwnership()) {
+      this.settleReady(false);
       throw new Error(`Table engine ${this.tableId} already has another process-local generation`);
     }
     this.running = true;
@@ -5122,8 +5149,80 @@ export abstract class ServerTableEngineBase {
    * Cash tables only: a tournament sit-out is blinded off by design and must
    * never be stood up.
    */
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  ONE DOOR OUT FOR A BUSTED SEAT (final sweep, 2026-09-08)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * A busted player who is not coming back leaves through THIS, whether they
+   * are a human who let the rebuy prompt lapse or a horse at its stop-loss or
+   * with no treasury behind it. Before this helper there were five copies of
+   * the exit and they disagreed in three ways the felt can see:
+   *
+   *   - the human copy went through atomicCashout (the money path, so the exit
+   *     is on the ledger's books) and emitted `seat_left` AFTER the write
+   *     confirmed; the four horse copies called markSeatAsLeft by hand;
+   *   - three of the four horse copies emitted no `seat_left` at all, so a
+   *     busted horse's seat cleared on every client only when a snapshot
+   *     happened to be diffed - the exact tell the 10.5 comment on the fourth
+   *     copy was written to remove;
+   *   - the fourth emitted `seat_left` BEFORE the write, so a failed write
+   *     left every client showing an empty chair with the row still occupied.
+   *
+   * Same door, same order, same event, same reason, for everyone (CLAUDE.md
+   * 10.5). Returns true when the seat is confirmed released. On any failure it
+   * reports, leaves the roster and every tracker exactly as they were, and
+   * returns false: an unknown outcome is not a leave, and the next sweep asks
+   * the same cashout again under the same idempotency key.
+   */
+  protected async releaseBustedSeat(
+    player: { user_id: string; seat_number: number; username?: string },
+    reason: 'busted_no_rebuy' | 'busted_stop_loss' | 'busted_unfunded'
+  ): Promise<boolean> {
+    try {
+      /* atomicCashout, not markSeatAsLeft-by-hand: it takes the seat lock,
+         credits any residual stack through atomic_credit_wallet_and_log under
+         an idempotency key, and stamps left_at - all in one RPC. The stack is
+         zero here by definition, so no chips move, but the exit is on the
+         money path's books either way (CLAUDE.md 11.5). */
+      await atomicCashout(player.user_id, this.tableId, player.seat_number, {
+        leaveMode: 'forced',
+      });
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_release_cashout', {
+        userId: player.user_id,
+        seat: player.seat_number,
+        reason,
+      });
+      return false;
+    }
+    // The event goes out only once the row says the chair is empty.
+    this.hub?.emitEvent(this.tableId, {
+      type: 'seat_left',
+      table_id: this.tableId,
+      seat: player.seat_number,
+      user_id: player.user_id,
+      mid_hand: false,
+      reason,
+      timestamp: Date.now(),
+    });
+    this.chipContinuity.forget(player.user_id);
+    this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
+    this.timeBankEngine.removePlayer(this.tableId, player.user_id);
+    this.straddleEngine.removePlayer(this.tableId, player.user_id);
+    this.preActionEngine.removePlayer(this.tableId, player.user_id);
+    return true;
+  }
+
   protected async evictExpiredSitOuts(opts: { countOrbit: boolean }): Promise<void> {
     if (this.isTournamentTable()) return;
+    // THE FREEZE (CLAUDE.md 13.5): this sweep stands players up and cashes
+    // them out. The wait loop and the dealing loop both park on
+    // `maintenancePaused` before reaching it, but that flag is this engine's
+    // memory and the freeze is the platform's; an engine booted mid-break has
+    // the one and not the other. The gate the law names, here, so it holds
+    // from every call site.
+    if (isMaintenanceFrozen()) return;
     const seatedIds = this.seatedPlayers.map((p) => p.user_id);
     if (seatedIds.length === 0) return;
 

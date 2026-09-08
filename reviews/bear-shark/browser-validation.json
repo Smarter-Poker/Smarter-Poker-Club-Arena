@@ -1,0 +1,80 @@
+{
+  "normalizedSpeedChecks": [
+    {
+      "t": 150,
+      "rigs": [
+        {
+          "id": "bear",
+          "count": 9
+        },
+        {
+          "id": "shark",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "t": 650,
+      "rigs": [
+        {
+          "id": "bear",
+          "count": 9
+        },
+        {
+          "id": "shark",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "t": 1400,
+      "rigs": [
+        {
+          "id": "bear",
+          "count": 9
+        },
+        {
+          "id": "shark",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "t": 2350,
+      "rigs": [
+        {
+          "id": "bear",
+          "count": 9
+        },
+        {
+          "id": "shark",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "t": 3000,
+      "rigs": [
+        {
+          "id": "bear",
+          "count": 9
+        },
+        {
+          "id": "shark",
+          "count": 7
+        }
+      ]
+    }
+  ],
+  "reduced": [
+    {
+      "id": "bear",
+      "animations": 0
+    },
+    {
+      "id": "shark",
+      "animations": 0
+    }
+  ],
+  "pageErrors": []
+}

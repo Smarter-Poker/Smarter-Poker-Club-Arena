@@ -437,22 +437,21 @@ export function useTableChat(
       const throwMatch = content.match(THROW_MSG_REGEX);
       if (throwMatch) {
         if (senderId && senderId !== userId) {
-          // DoS guard, same ceiling as reactions.
-          if (pendingTimersRef.current.size < 20) {
-            const throwableId = throwMatch[1];
-            const toSeat = parseInt(throwMatch[2], 10);
-            // players[] is seat-ordered (index 0 = seat 1), matching the rest of
-            // the table; resolve the thrower's seat from their id.
-            const fromIdx = players.findIndex((pl) => pl && pl.id === senderId);
-            const fromSeat = fromIdx >= 0 ? fromIdx + 1 : 0;
-            if (Number.isFinite(toSeat) && toSeat > 0) {
-              onThrowReceivedRef.current?.(
-                fromSeat,
-                toSeat,
-                throwableId,
-                isThrowableEventId(throwId) ? throwId.toLowerCase() : undefined
-              );
-            }
+          // Throw playback has its own active limit and FIFO backlog.
+          // Reaction timers must never discard an incoming throw.
+          const throwableId = throwMatch[1];
+          const toSeat = parseInt(throwMatch[2], 10);
+          // players[] is seat-ordered (index 0 = seat 1), matching the rest of
+          // the table; resolve the thrower's seat from their id.
+          const fromIdx = players.findIndex((pl) => pl && pl.id === senderId);
+          const fromSeat = fromIdx >= 0 ? fromIdx + 1 : 0;
+          if (Number.isFinite(toSeat) && toSeat > 0) {
+            onThrowReceivedRef.current?.(
+              fromSeat,
+              toSeat,
+              throwableId,
+              isThrowableEventId(throwId) ? throwId.toLowerCase() : undefined
+            );
           }
         }
         return true; // Don't add to chat

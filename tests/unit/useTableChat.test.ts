@@ -3,7 +3,9 @@
  *  UNIT TESTS — useTableChat
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+afterEach(cleanup);
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
@@ -30,4 +32,22 @@ describe('useTableChat', () => {
   it('should export useTableChat as a function', () => {
     expect(typeof useTableChat).toBe('function');
   });
+});
+
+it('delivers throws with receipt identity while every reaction slot is occupied', () => {
+  const received = vi.fn();
+  const receipt = 'AA110000-0000-4000-8000-000000000001';
+  const { result } = renderHook(() =>
+    useTableChat(undefined, 'receiver', [{ id: 'sender' }], received)
+  );
+  act(() => {
+    for (let i = 0; i < 20; i++)
+      result.current.parseIncomingMessage('[REACTION:smile:1]', 'sender');
+  });
+  expect(result.current.activeReactions).toHaveLength(20);
+  act(() => {
+    result.current.parseIncomingMessage('[THROW:beer:2]', 'sender', receipt);
+    result.current.parseIncomingMessage('[THROW:beer:2]', 'receiver', receipt);
+  });
+  expect(received).toHaveBeenCalledExactlyOnceWith(1, 2, 'beer', receipt.toLowerCase());
 });

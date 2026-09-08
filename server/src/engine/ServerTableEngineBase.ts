@@ -67,6 +67,7 @@ import {
   executePendingSeatMoves,
   pendingSeatMoves,
   seatMoveNotice,
+  type PendingSeatMove,
 } from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { wakeCluster } from '../cluster/ClusterController.js';
@@ -2964,10 +2965,11 @@ export abstract class ServerTableEngineBase {
    * that has none.
    */
   protected async executePendingSeatMoves(
-    opts: { announcedOnly: boolean } = { announcedOnly: false }
+    opts: { announcedOnly: boolean } = { announcedOnly: false },
+    prefetched?: readonly PendingSeatMove[]
   ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
-    const { done, held } = await executePendingSeatMoves(this.tableId, opts);
+    const { done, held } = await executePendingSeatMoves(this.tableId, opts, prefetched);
     // The SQL move is durable and idempotent, but this process's mirrors and
     // broadcasts belong only to the exact engine generation that requested it.
     if (!this.lifecycleCanMutate()) return [];

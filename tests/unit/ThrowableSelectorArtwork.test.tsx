@@ -140,3 +140,33 @@ describe('allowance response ownership', () => {
     expect(view.queryByText('3 Pack')).not.toBeInTheDocument();
   });
 });
+
+describe('use response ownership', () => {
+  it.each([true, false])(
+    'ignores old account result (success=%s) after consumption starts',
+    async (success) => {
+      state.prepare.mockResolvedValue(undefined);
+      let finish!: (value: unknown) => void;
+      state.use.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+      );
+      const oldSelected = vi.fn();
+      const newSelected = vi.fn();
+      const closed = vi.fn();
+      const view = render(
+        <ThrowableSelector userId="old" onSelect={oldSelected} onClose={closed} />
+      );
+      fireEvent.click(await view.findByTitle('Beer'));
+      await waitFor(() => expect(state.use).toHaveBeenCalledExactlyOnceWith('old', 'beer'));
+      view.rerender(<ThrowableSelector userId="new" onSelect={newSelected} onClose={closed} />);
+      await view.findByTitle('Beer');
+      await act(async () => finish({ success, error: 'Old Account Failure' }));
+      expect(oldSelected).not.toHaveBeenCalled();
+      expect(newSelected).not.toHaveBeenCalled();
+      expect(closed).not.toHaveBeenCalled();
+      expect(state.error).not.toHaveBeenCalled();
+    }
+  );
+});

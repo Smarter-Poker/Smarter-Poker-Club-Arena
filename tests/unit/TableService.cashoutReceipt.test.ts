@@ -21,9 +21,11 @@ const receipt = {
   tournament_table: false,
 };
 let seats: unknown[];
+let tableContext: { club_id: string; tournament_id: string | null } | null;
 beforeEach(() => {
   vi.clearAllMocks();
   seats = [{ seat_number: 2, stack: 100, status: 'seated' }];
+  tableContext = { club_id: 'club', tournament_id: null };
   mocks.leave.mockResolvedValue({ success: true, immediate: true, clientCashout: true });
   mocks.rpc.mockResolvedValue({ data: receipt, error: null });
   mocks.from.mockImplementation((table: string) => {
@@ -35,7 +37,7 @@ beforeEach(() => {
       return chain;
     });
     const result = () => ({
-      data: table === 'table_seats' ? seats : { club_id: 'club', tournament_id: null },
+      data: table === 'table_seats' ? seats : tableContext,
       error: null,
     });
     chain.maybeSingle = vi.fn(async () => result());
@@ -131,4 +133,12 @@ it('records an engine-owned cashout as pending without inventing the final amoun
       metadata: { chips_cashed_out: null, cashout_pending: true },
     })
   );
+});
+
+it('refuses an unknown table context before selecting a financial path', async () => {
+  tableContext = null;
+  expect((await tableService.leaveTable('table', 2, 'player')).success).toBe(false);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+  expect(mocks.activity).not.toHaveBeenCalled();
+  expect(mocks.emit).not.toHaveBeenCalled();
 });

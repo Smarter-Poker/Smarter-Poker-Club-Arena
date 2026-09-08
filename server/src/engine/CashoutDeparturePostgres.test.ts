@@ -61,6 +61,41 @@ describe.skipIf(!host)('engine/service/PostgreSQL departure recovery', () => {
       'TRUNCATE tables,table_seats,club_members,wallets,wallet_transactions,chip_transactions,wallet_credit_idempotency,session_closes'
     );
   });
+  it('keeps anonymous cashout forbidden and authorized roles executable', () => {
+    expect(
+      sql(`SELECT json_build_object(
+      'anon',has_function_privilege('anon','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'),
+      'authenticated',has_function_privilege('authenticated','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'),
+      'service_role',has_function_privilege('service_role','public.atomic_seat_cashout_locked(uuid,uuid,integer,text)','EXECUTE'))`)
+    ).toEqual({ anon: false, authenticated: true, service_role: true });
+  });
+  it.each([
+    'NULL',
+    '-1',
+    '0.001',
+    '25.001',
+    "'NaN'::numeric",
+    "'Infinity'::numeric",
+    "'-Infinity'::numeric",
+  ])('rejects invalid cash stack %s before credit, seat exit or session close', (invalidStack) => {
+    sql(`INSERT INTO tables VALUES('${TABLE}',NULL,1);
+        INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
+        INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
+        ${invalidStack},now(),NULL,false,'${CLUB}')`);
+    expect(() => sql(`SELECT atomic_seat_cashout_locked('${USER}','${TABLE}',2,NULL)`)).toThrow(
+      /CASHOUT_INVALID_STACK/
+    );
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
+  it('refuses a missing table context without consuming an orphaned seat', () => {
+    sql(`INSERT INTO club_members VALUES('${USER}','${CLUB}',100,NULL);
+      INSERT INTO table_seats VALUES(gen_random_uuid(),'${TABLE}','${USER}',2,
+      25,now(),NULL,false,'${CLUB}')`);
+    expect(() => sql(`SELECT atomic_seat_cashout_locked('${USER}','${TABLE}',2,NULL)`)).toThrow(
+      /CASHOUT_TABLE_NOT_FOUND/
+    );
+    expect(snapshot()).toEqual({ balance: 100, active: 1, credits: 0, keys: 0, closes: 0 });
+  });
   for (const path of ['eviction', 'busted'] as const) {
     it.each(['normal', 'lost_after_commit', 'rollback'] as const)(
       `${path}: %s retains or releases the seat according to the database outcome`,

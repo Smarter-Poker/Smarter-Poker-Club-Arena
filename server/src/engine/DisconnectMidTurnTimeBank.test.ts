@@ -183,6 +183,7 @@ describe('unified outage allowance on a live turn', () => {
       engine.disconnectEngine.registerPlayer(TABLE, 'u1', {
         is_vip: vip,
         vip_tier: vip ? 'lifetime' : null,
+        vip_expires_at: null,
       });
       engine.startTurnTimer('u1', SEAT, 15);
       engine.disconnectEngine.markDisconnected(TABLE, 'u1');
@@ -200,7 +201,11 @@ describe('unified outage allowance on a live turn', () => {
 it('a paid bank finishes its accounting before handing the turn to remaining VIP protection', async () => {
   const engine = harness();
   engine.running = true;
-  engine.disconnectEngine.registerPlayer(TABLE, 'u1', { is_vip: true, vip_tier: 'lifetime' });
+  engine.disconnectEngine.registerPlayer(TABLE, 'u1', {
+    is_vip: true,
+    vip_tier: 'lifetime',
+    vip_expires_at: null,
+  });
   engine.playerTurnStartTime = Date.now() - 15001;
   expect((await engine.activateTimeBank('u1')).success).toBe(true);
   engine.disconnectEngine.markDisconnected(TABLE, 'u1');

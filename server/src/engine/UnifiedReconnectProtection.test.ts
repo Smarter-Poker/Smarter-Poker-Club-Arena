@@ -34,7 +34,11 @@ describe('uniform reconnect protection uses one absolute allowance', () => {
         preferCheckOverFold: false,
       });
       h.engine.registerPlayer(format, 'regular', { is_vip: false });
-      h.engine.registerPlayer(format, 'vip', { is_vip: true, vip_tier: 'lifetime' });
+      h.engine.registerPlayer(format, 'vip', {
+        is_vip: true,
+        vip_tier: 'lifetime',
+        vip_expires_at: null,
+      });
       for (const [id, seconds] of [
         ['regular', 30],
         ['vip', 45],
@@ -50,7 +54,7 @@ describe('uniform reconnect protection uses one absolute allowance', () => {
   );
   it('heartbeat flapping cannot replenish an allowance, but a voluntary action can', () => {
     const h = setup();
-    h.engine.registerPlayer('t', 'u', { is_vip: true, vip_tier: 'lifetime' });
+    h.engine.registerPlayer('t', 'u', { is_vip: true, vip_tier: 'lifetime', vip_expires_at: null });
     h.engine.markDisconnected('t', 'u');
     const first = h.engine.getFsmState('t', 'u')!.graceDeadlineMs;
     h.advance(10000);
@@ -64,7 +68,7 @@ describe('uniform reconnect protection uses one absolute allowance', () => {
   });
   it('a restart retains a VIP deadline while offline and after a heartbeat', () => {
     const h = setup();
-    h.engine.registerPlayer('t', 'u', { is_vip: true, vip_tier: 'lifetime' });
+    h.engine.registerPlayer('t', 'u', { is_vip: true, vip_tier: 'lifetime', vip_expires_at: null });
     h.engine.markDisconnected('t', 'u');
     const deadline = h.engine.getFsmState('t', 'u')!.graceDeadlineMs;
     h.engine.heartbeat('t', 'u');

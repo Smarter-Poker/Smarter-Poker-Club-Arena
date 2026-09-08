@@ -43,11 +43,13 @@
  * NEVER refer to the horses as "bots" - they are HORSES only.
  */
 
+import { createHash } from 'node:crypto';
 import { GTO_BB_DEFEND_MAX_BB, GTO_OPEN_JAM_MAX_BB, snapDepth } from '../engine/GtoCharts.js';
 import {
   lookupChartPolicyAdvice,
   solverPolicyArtifactStatus,
 } from '../gto/SolverPolicyArtifactLoader.js';
+import { stableSolverPolicyJson } from '../gto/SolverPolicyContract.js';
 import { HorseLogic, type HorseGameStateV2 } from '../engine/HorseLogic.js';
 import { HorseMind } from '../engine/HorseMind.js';
 import { seedFastRandom, saveFastRandom, restoreFastRandom } from '../engine/HorseEval.js';
@@ -73,6 +75,61 @@ export interface AgreementResult {
   pureMisses: number;
   /** null when the chart store is empty - no reference, so no score */
   reference: 'gto_charts' | null;
+  /** reference-covered decisions before any scoring aggregate */
+  eligibleSpots: number;
+  /** decisions included in `decisions`; must equal eligibleSpots */
+  reconciledSpots: number;
+  /** mean measured EV regret where the reference has per-action EVs */
+  actionRegretBb: number | null;
+  regretEligibleSpots: number;
+  /** checksum over the canonical ordered decision evidence */
+  decisionChecksum: string | null;
+  decisions: AgreementDecision[];
+}
+
+export interface AgreementSourceSeal {
+  qualitySeal: string;
+  policyVersion: string;
+  policyChecksum: string;
+  system: string;
+  artifactId: string | null;
+  scenarioHash: string | null;
+  sourceArtifactChecksum: string | null;
+  provenanceComplete: boolean;
+  auditedAt: string | null;
+}
+
+export interface AgreementDecisionState {
+  schemaVersion: 1;
+  stage: 'preflop';
+  gameVariant: 'nlh';
+  gameType: 'Cash' | 'Tournament';
+  format: 'cash' | 'mtt';
+  kind: AgreementSpot['kind'];
+  position: string;
+  stackBb: number;
+  hand: string;
+  chart: string;
+  villainAction: 'fold_to_hero' | 'sb_push';
+  legalActions: ['push', 'fold'] | ['call', 'fold'];
+}
+
+export interface AgreementDecision {
+  stateKey: string;
+  /** Complete canonical input receipt used to recreate this deterministic probe. */
+  decisionState: AgreementDecisionState;
+  kind: AgreementSpot['kind'];
+  gameType: 'Cash' | 'Tournament';
+  position: string;
+  stackBb: number;
+  hand: string;
+  finalAction: string;
+  referenceDistribution: Record<string, number>;
+  chosenProbability: number;
+  actionRegretBb: number | null;
+  regretEligible: boolean;
+  pureMiss: boolean;
+  sourceSeal: AgreementSourceSeal;
 }
 
 const SUITS_4 = ['spades', 'hearts', 'diamonds', 'clubs'] as const;
@@ -216,9 +273,14 @@ export function stateForSpot(spot: AgreementSpot): { hero: SeatPlayer; gs: Horse
 }
 
 /** What the solver says about this spot, or null when it has no cell. */
-export function solverAdvice(
-  spot: AgreementSpot
-): { action: string; freq: number; chart: string } | null {
+export function solverAdvice(spot: AgreementSpot): {
+  action: string;
+  freq: number;
+  chart: string;
+  distribution: Record<string, number>;
+  sourceSeal: AgreementSourceSeal;
+  actionEvBb: Record<string, number | null>;
+} | null {
   if (!(spot.stackBB > 0)) return null;
   if (spot.kind === 'open_jam' && spot.stackBB > GTO_OPEN_JAM_MAX_BB) return null;
   if (spot.kind === 'bb_defend' && spot.stackBB > GTO_BB_DEFEND_MAX_BB) return null;
@@ -229,18 +291,44 @@ export function solverAdvice(
     depth: snapDepth(spot.stackBB),
     hand: spot.hand,
   });
-  return advice
-    ? {
-        action: advice.action,
-        freq: advice.freq,
-        chart: [
-          spot.isTournament ? 'Tournament' : 'Cash',
-          spot.kind === 'open_jam' ? 'fold_to_hero' : 'sb_push',
-          spot.position,
-          String(snapDepth(spot.stackBB)),
-        ].join('|'),
-      }
-    : null;
+  if (!advice) return null;
+  const yes = spot.kind === 'open_jam' ? 'push' : 'call';
+  const policyYes = spot.kind === 'open_jam' ? 'all_in' : 'call';
+  const policyMix = advice.policy.rangeDistribution?.[spot.hand];
+  if (!policyMix) return null;
+  const distribution = {
+    [yes]: Number(policyMix[policyYes]) || 0,
+    fold: Number(policyMix.fold) || 0,
+  };
+  const source = advice.policy.sourceArtifact;
+  return {
+    action: advice.action,
+    freq: advice.freq,
+    chart: [
+      spot.isTournament ? 'Tournament' : 'Cash',
+      spot.kind === 'open_jam' ? 'fold_to_hero' : 'sb_push',
+      spot.position,
+      String(snapDepth(spot.stackBB)),
+    ].join('|'),
+    distribution,
+    sourceSeal: {
+      qualitySeal: advice.policy.qualitySeal,
+      policyVersion: advice.policy.policyVersion,
+      policyChecksum: createHash('sha256')
+        .update(stableSolverPolicyJson(advice.policy))
+        .digest('hex'),
+      system: source.system,
+      artifactId: source.artifactId,
+      scenarioHash: source.scenarioHash,
+      sourceArtifactChecksum: source.sourceArtifactChecksum,
+      provenanceComplete: source.provenanceComplete,
+      auditedAt: source.auditedAt,
+    },
+    actionEvBb: {
+      [yes]: advice.policy.chipEv.byAction[policyYes] ?? null,
+      fold: advice.policy.chipEv.byAction.fold ?? null,
+    },
+  };
 }
 
 /** Map a horse decision onto the solver's vocabulary. */
@@ -257,7 +345,18 @@ export function actionLabel(kind: AgreementSpot['kind'], action: string): string
  */
 export function scoreSolverAgreement(maxSpots = 600): AgreementResult {
   if (solverPolicyArtifactStatus().charts.count === 0) {
-    return { spots: 0, agreement: 0, pureMisses: 0, reference: null };
+    return {
+      spots: 0,
+      agreement: 0,
+      pureMisses: 0,
+      reference: null,
+      eligibleSpots: 0,
+      reconciledSpots: 0,
+      actionRegretBb: null,
+      regretEligibleSpots: 0,
+      decisionChecksum: null,
+      decisions: [],
+    };
   }
   const all = buildSpots();
   const step = Math.max(1, Math.floor(all.length / maxSpots));
@@ -266,6 +365,9 @@ export function scoreSolverAgreement(maxSpots = 600): AgreementResult {
   let scored = 0;
   let total = 0;
   let pureMisses = 0;
+  let regretTotal = 0;
+  let regretEligibleSpots = 0;
+  const decisions: AgreementDecision[] = [];
   try {
     for (let i = 0; i < all.length; i += step) {
       const spot = all[i];
@@ -277,20 +379,74 @@ export function scoreSolverAgreement(maxSpots = 600): AgreementResult {
         HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false, telemetry: false })
       );
       const chose = actionLabel(spot.kind, decision.action);
-      // The solver row gives the frequency of ITS named action; the other
-      // side of a two-action node is the remainder.
-      const freqOfChosen = chose === advice.action ? advice.freq : 1 - advice.freq;
+      const freqOfChosen = advice.distribution[chose] ?? 0;
+      const evs = Object.values(advice.actionEvBb).filter(
+        (value): value is number => typeof value === 'number' && Number.isFinite(value)
+      );
+      const chosenEv = advice.actionEvBb[chose];
+      const actionRegretBb =
+        evs.length === Object.keys(advice.distribution).length &&
+        typeof chosenEv === 'number' &&
+        Number.isFinite(chosenEv)
+          ? Math.max(0, Math.max(...evs) - chosenEv)
+          : null;
+      if (actionRegretBb !== null) {
+        regretTotal += actionRegretBb;
+        regretEligibleSpots++;
+      }
       total += freqOfChosen;
       scored++;
-      if (advice.freq >= 0.9 && chose !== advice.action) pureMisses++;
+      const pureMiss = advice.freq >= 0.9 && chose !== advice.action;
+      if (pureMiss) pureMisses++;
+      const gameType = spot.isTournament ? 'Tournament' : 'Cash';
+      const stackBb = snapDepth(spot.stackBB);
+      decisions.push({
+        stateKey: [gameType, spot.kind, spot.position, String(stackBb), spot.hand].join('|'),
+        decisionState: {
+          schemaVersion: 1,
+          stage: 'preflop',
+          gameVariant: 'nlh',
+          gameType,
+          format: spot.isTournament ? 'mtt' : 'cash',
+          kind: spot.kind,
+          position: spot.position,
+          stackBb,
+          hand: spot.hand,
+          chart: advice.chart,
+          villainAction: spot.kind === 'open_jam' ? 'fold_to_hero' : 'sb_push',
+          legalActions: spot.kind === 'open_jam' ? ['push', 'fold'] : ['call', 'fold'],
+        },
+        kind: spot.kind,
+        gameType,
+        position: spot.position,
+        stackBb,
+        hand: spot.hand,
+        finalAction: chose,
+        referenceDistribution: advice.distribution,
+        chosenProbability: freqOfChosen,
+        actionRegretBb,
+        regretEligible: actionRegretBb !== null,
+        pureMiss,
+        sourceSeal: advice.sourceSeal,
+      });
     }
   } finally {
     restoreFastRandom(rngBefore);
   }
+  const decisionChecksum =
+    decisions.length > 0
+      ? createHash('sha256').update(stableSolverPolicyJson(decisions)).digest('hex')
+      : null;
   return {
     spots: scored,
     agreement: scored > 0 ? total / scored : 0,
     pureMisses,
     reference: 'gto_charts',
+    eligibleSpots: scored,
+    reconciledSpots: decisions.length,
+    actionRegretBb: regretEligibleSpots > 0 ? regretTotal / regretEligibleSpots : null,
+    regretEligibleSpots,
+    decisionChecksum,
+    decisions,
   };
 }

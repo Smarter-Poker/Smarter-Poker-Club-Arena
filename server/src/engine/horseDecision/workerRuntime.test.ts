@@ -192,6 +192,24 @@ describe('HorseDecisionWorkerRuntime', () => {
     expect(h.latency).toEqual([{ scope: 'plo4', ms: 6 }]);
   });
 
+  it('rejects offline candidate selectors at the live worker boundary', async () => {
+    const h = harness();
+    h.runtime.receive({
+      ...fastRequest(),
+      opts: { gtoV31DatasetChecksum: 'a'.repeat(64) },
+    } as unknown as FastHorseDecisionRequest);
+    await h.runtime.drain();
+
+    expect(h.decisionOpts).toEqual([]);
+    expect(h.messages.at(-1)).toMatchObject({
+      type: 'ERROR',
+      requestId: 1,
+      generation: 4,
+      fence: 'table:hand:turn',
+      message: 'offline V31 candidate controls are forbidden in live decision requests',
+    });
+  });
+
   it('replays deep work from rngBefore and always restores canonical worker RNG', async () => {
     const h = harness();
     h.setCapturedEffects([

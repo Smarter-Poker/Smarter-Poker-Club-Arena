@@ -11,6 +11,11 @@ import { randomUUID } from 'node:crypto';
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
+import {
+  liveHorseDecisionWorkerStatus,
+  startLiveHorseDecisionWorker,
+  stopLiveHorseDecisionWorker,
+} from './engine/horseDecision/client.js';
 import { nextHandGap } from './engine/nextHandGapRecorder.js';
 import { EngineTelemetry } from './engine/EngineTelemetry.js';
 import { evaluateEngineLiveness } from './engine/EngineLivenessVerdict.js';
@@ -55,6 +60,16 @@ import {
   equityGovernorSamplerLateMs,
   eventLoopDelayP50,
   eventLoopDelayP99,
+  horseDecisionWorkerActiveJobAgeMs,
+  horseDecisionWorkerEventLoopDelayP50,
+  horseDecisionWorkerEventLoopDelayP99,
+  horseDecisionWorkerLastCompletionAgeMs,
+  horseDecisionWorkerLastComputeMs,
+  horseDecisionWorkerOldestQueuedAgeMs,
+  horseDecisionWorkerQueueDepth,
+  horseDecisionWorkerReady,
+  mainEventLoopGovernorSamplerLateMs,
+  mainEventLoopGovernorScale,
 } from './observability/engineInstruments.js';
 import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
@@ -130,7 +145,6 @@ import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
-import { solverPolicyArtifactStatus } from './gto/SolverPolicyArtifactLoader.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -170,6 +184,12 @@ const OWNERSHIP_LEASE_RENEWAL_CADENCE_MS = Math.floor(
  */
 type DirectTableAdmission = 'ready' | 'not_wakeable' | 'owned_elsewhere' | 'retryable_failure';
 type TournamentManagerStartMode = 'start' | 'resume';
+type DealerPrerequisiteGate = {
+  generation: number;
+  promise: Promise<boolean>;
+  resolve: (ready: boolean) => void;
+  settled: boolean;
+};
 type ExternalShutdownOwnershipResult =
   | { status: 'fulfilled' }
   | { status: 'rejected'; reason: unknown };
@@ -284,6 +304,13 @@ export class GameServer {
   private directTablePendingLeaseReleases = new Map<string, string>();
   /** Fences admissions that were awaiting I/O when this server generation stopped. */
   private lifecycleGeneration = 0;
+  /**
+   * A process can answer HTTP while leader election, worker hydration and stale
+   * cleanup are still running. Direct WebSocket admission must wait for the
+   * entire dealer boot contract instead of treating `running` as `ready`.
+   */
+  private dealerPrerequisitesReady = false;
+  private dealerPrerequisiteGate: DealerPrerequisiteGate | null = null;
   /**
    * Infinite discovery loops and the exact asynchronous work they launch.
    * Shutdown drains this set to a fixed point before taking its final dealer
@@ -1661,8 +1688,16 @@ export class GameServer {
     this.lifecycleGeneration = generation;
     this.running = true;
     this.leaderBootComplete = false;
-    this.startOperation = this.performStart(generation);
-    return this.startOperation;
+    this.resetDealerPrerequisiteGate(generation);
+    const operation = this.performStart(generation);
+    this.startOperation = operation;
+    void operation
+      .then(
+        () => this.settleDealerPrerequisiteGate(generation, false),
+        () => this.settleDealerPrerequisiteGate(generation, false)
+      )
+      .catch(() => undefined);
+    return operation;
   }
 
   private async performStart(generation: number): Promise<void> {
@@ -1771,6 +1806,24 @@ export class GameServer {
       // /health answers 503 so Caddy keeps traffic on the leader.
       return;
     }
+
+    /**
+     * LIVE HORSE COMPUTE HAS ONE OWNER (2026-09-08).
+     *
+     * HorseLogic, its RNG, learned opponent memory and solver lookup stores
+     * live together in one FIFO worker. READY is a boot prerequisite: table
+     * discovery cannot admit a live horse turn until that authority exists.
+     * A standby returns above and therefore never starts a competing copy.
+     * Unexpected worker loss is process-fatal because silently replacing it
+     * would reset RNG and learned-memory ordering inside active hands.
+     */
+    await startLiveHorseDecisionWorker({
+      onFatal: (error) => {
+        this.revokeDealerPrerequisites(generation);
+        throw error;
+      },
+    });
+    if (!this.directAdmissionIsCurrent(generation)) return;
 
     // Step 1: Clean up stale data from previous runs.
     // Test mode passes the protected id so cleanup spares it.
@@ -1995,6 +2048,7 @@ export class GameServer {
         }
       });
 
+      if (!this.publishDealerPrerequisitesReady(generation)) return;
       this.leaderBootComplete = true;
       console.log('[GameServer] Running. All services started.');
     } else if (testTableId) {
@@ -2002,6 +2056,7 @@ export class GameServer {
       // No other services run — no horse seeding, no tournament expansion,
       // no discovery sweeps, no break timer. Just one table for hand testing.
       try {
+        if (!this.publishDealerPrerequisitesReady(generation)) return;
         await this.startTableEngineForTesting(testTableId);
         if (!this.directAdmissionIsCurrent(generation)) return;
         console.log(`[GameServer] E2E test table ${testTableId.slice(0, 8)} engine started.`);
@@ -2068,8 +2123,10 @@ export class GameServer {
     // leak - but a stopped engine should not keep reading a loop it no
     // longer drives.
     equityGovernor.stopSampling();
+    const stoppingGeneration = this.lifecycleGeneration;
     this.running = false;
     this.leaderBootComplete = false;
+    this.revokeDealerPrerequisites(stoppingGeneration);
     this.lifecycleGeneration += 1;
     console.log('[GameServer] Shutting down...');
 
@@ -2398,6 +2455,23 @@ export class GameServer {
         );
       }
     }
+
+    // The worker FIFO can contain the last completed-hand observation or a
+    // decision already accepted before its table was fenced. Dealers and
+    // managers must stop first; then this drain flushes the worker-owned mind,
+    // telemetry and solver clocks before any distributed lease is released.
+    const horseDecisionStop = await beginOwnedStop(
+      'LiveHorseDecisionWorker',
+      stopLiveHorseDecisionWorker
+    );
+    if (horseDecisionStop.status === 'rejected') {
+      const error = new AggregateError(
+        [horseDecisionStop.reason],
+        'LiveHorseDecisionWorker did not certify shutdown ownership'
+      );
+      reportError(error, 'GameServer.horse_decision_worker_shutdown_failed');
+      ownershipFailures.push(error);
+    }
     await stopHandProjectionWorker();
 
     // ── Flush the hand_history retry queue ──────────────────────────────────
@@ -2517,6 +2591,7 @@ export class GameServer {
 
   getStatus() {
     const now = Date.now();
+    const liveHorseDecision = liveHorseDecisionWorkerStatus();
     // Per-table liveness first — everything below is aggregate telemetry that
     // cannot distinguish a dealing table from a frozen one.
     const tableLiveness = this.tableLivenessSnapshot();
@@ -2807,9 +2882,22 @@ export class GameServer {
       deadStalledCount,
       dealableTableCount,
       wholeFleetStalled,
-      // 2026-09-04: is horse Monte Carlo being throttled to protect the loop?
-      // scale < 1 means the core is saturated; see EquityLoadGovernor.ts.
-      equityGovernor: equityGovernor.snapshot(),
+      // Horse Monte Carlo executes in the worker, so this canonical governor
+      // must come from that core. Publishing the main-thread singleton here
+      // made healthy isolation look like an idle horse solver even while its
+      // FIFO was saturated.
+      equityGovernor: liveHorseDecision.governor,
+      // Still useful, but a different question: can the realtime table loop
+      // service sockets, clocks, leases and state broadcasts without delay?
+      mainEventLoopGovernor: equityGovernor.snapshot(),
+      // The one process-wide FIFO that owns live HorseLogic state. Queue depth
+      // and phase distinguish worker pressure/failure from main-loop pressure;
+      // solver store counts prove the worker reached an authoritative READY.
+      liveHorseDecision,
+      // HTTP and WebSocket handlers are reachable before the leader boot has
+      // finished. This is the exact admission gate they await before any table
+      // lookup, lease claim or dealer construction is allowed to begin.
+      dealerPrerequisitesReady: this.dealerPrerequisitesReady,
       // THE REST, MEASURED (Dan 2026-09-07): completion -> next deal, fleet-wide,
       // last ten minutes. `over` is the number that means the bookkeeping did
       // not fit inside the rest. See engine/NextHandGap.ts.
@@ -2850,13 +2938,17 @@ export class GameServer {
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
-      // Public liveness for the cross-repository solver contract. Counts and
-      // versions only; no ranges or private decision data leave the process.
-      solverPolicyArtifact: solverPolicyArtifactStatus(),
+      // Public liveness comes from the worker-owned store. The main thread no
+      // longer hydrates a second solver artifact whose status could look healthy
+      // while the live action path was empty or failed.
+      solverPolicyArtifact: liveHorseDecision.solverPolicyArtifact,
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
-      status: this.running ? 'ok' : 'degraded',
+      status:
+        this.running && this.dealerPrerequisitesReady && liveHorseDecision.phase === 'ready'
+          ? 'ok'
+          : 'degraded',
       version: process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
       // ── PROCESS IDENTITY (2026-08-16) ───────────────────────────────
       // On 2026-08-16 two engine containers served this hostname at once and
@@ -3099,14 +3191,46 @@ export class GameServer {
       // reading onto the gauges the scrape renders, so /metrics can never
       // show a number older than the last sample.
       ...(() => {
-        const g = equityGovernor.snapshot();
-        eventLoopDelayP50.set(Number.isFinite(g.p50Ms) ? g.p50Ms : 0);
-        eventLoopDelayP99.set(Number.isFinite(g.p99Ms) ? g.p99Ms : 0);
-        equityGovernorScale.set(Number.isFinite(g.scale) ? g.scale : 1);
-        // The reading that cannot be starved by the load it measures - see
-        // the gauge's own comment. Published even when it is zero, because a
-        // flat zero here beside a rising p50 is itself the diagnosis.
-        equityGovernorSamplerLateMs.set(Number.isFinite(g.timerLateMs) ? g.timerLateMs : 0);
+        const main = equityGovernor.snapshot();
+        const worker = liveHorseDecisionWorkerStatus();
+        const workerGovernor = worker.governor;
+
+        // Existing event-loop series retain their realtime-main-thread
+        // meaning. The explicitly named companion series makes that ownership
+        // impossible to confuse with the worker core.
+        eventLoopDelayP50.set(Number.isFinite(main.p50Ms) ? main.p50Ms : 0);
+        eventLoopDelayP99.set(Number.isFinite(main.p99Ms) ? main.p99Ms : 0);
+        mainEventLoopGovernorScale.set(Number.isFinite(main.scale) ? main.scale : 1);
+        mainEventLoopGovernorSamplerLateMs.set(
+          Number.isFinite(main.timerLateMs) ? main.timerLateMs : 0
+        );
+
+        // These are the authoritative HorseLogic/Monte Carlo readings. Never
+        // substitute the main-thread module singleton when the worker has not
+        // sampled yet: absence is represented by worker_ready=0, not a fake
+        // healthy scale.
+        horseDecisionWorkerReady.set(worker.phase === 'ready' ? 1 : 0);
+        horseDecisionWorkerQueueDepth.set(worker.queueDepth);
+        horseDecisionWorkerActiveJobAgeMs.set(worker.activeJobAgeMs ?? 0);
+        horseDecisionWorkerOldestQueuedAgeMs.set(worker.oldestQueuedAgeMs ?? 0);
+        horseDecisionWorkerLastCompletionAgeMs.set(
+          worker.lastCompletedAt === null ? -1 : Math.max(0, Date.now() - worker.lastCompletedAt)
+        );
+        horseDecisionWorkerLastComputeMs.set(worker.lastComputeMs ?? 0);
+        horseDecisionWorkerEventLoopDelayP50.set(
+          workerGovernor && Number.isFinite(workerGovernor.p50Ms) ? workerGovernor.p50Ms : 0
+        );
+        horseDecisionWorkerEventLoopDelayP99.set(
+          workerGovernor && Number.isFinite(workerGovernor.p99Ms) ? workerGovernor.p99Ms : 0
+        );
+        equityGovernorScale.set(
+          workerGovernor && Number.isFinite(workerGovernor.scale) ? workerGovernor.scale : 0
+        );
+        equityGovernorSamplerLateMs.set(
+          workerGovernor && Number.isFinite(workerGovernor.timerLateMs)
+            ? workerGovernor.timerLateMs
+            : 0
+        );
         return [];
       })(),
       ...alwaysOnPrometheusLines(),
@@ -7366,7 +7490,9 @@ export class GameServer {
     if (existingAdmission) return existingAdmission;
 
     const generation = this.lifecycleGeneration;
-    const operation = this.performCashTableEngineAdmission(tableId, generation);
+    const operation = this.awaitDealerPrerequisites(generation).then((ready) =>
+      ready ? this.performCashTableEngineAdmission(tableId, generation) : 'not_wakeable'
+    );
     const tracked = operation.finally(() => {
       if (this.directTableAdmissionOperations.get(tableId) === tracked) {
         this.directTableAdmissionOperations.delete(tableId);
@@ -7380,11 +7506,56 @@ export class GameServer {
     return this.running && this.lifecycleGeneration === generation;
   }
 
+  private resetDealerPrerequisiteGate(generation: number): void {
+    let resolve!: (ready: boolean) => void;
+    const promise = new Promise<boolean>((settle) => {
+      resolve = settle;
+    });
+    this.dealerPrerequisitesReady = false;
+    this.dealerPrerequisiteGate = { generation, promise, resolve, settled: false };
+  }
+
+  private settleDealerPrerequisiteGate(generation: number, ready: boolean): void {
+    const gate = this.dealerPrerequisiteGate;
+    if (!gate || gate.generation !== generation || gate.settled) return;
+    gate.settled = true;
+    gate.resolve(ready);
+  }
+
+  private publishDealerPrerequisitesReady(generation: number): boolean {
+    if (!this.directAdmissionIsCurrent(generation)) return false;
+    const gate = this.dealerPrerequisiteGate;
+    if (!gate || gate.generation !== generation || gate.settled) return false;
+    this.dealerPrerequisitesReady = true;
+    this.settleDealerPrerequisiteGate(generation, true);
+    return true;
+  }
+
+  private revokeDealerPrerequisites(generation: number): void {
+    const gate = this.dealerPrerequisiteGate;
+    if (!gate || gate.generation !== generation) return;
+    this.dealerPrerequisitesReady = false;
+    this.settleDealerPrerequisiteGate(generation, false);
+  }
+
+  private dealerAdmissionIsCurrent(generation: number): boolean {
+    return this.directAdmissionIsCurrent(generation) && this.dealerPrerequisitesReady;
+  }
+
+  private async awaitDealerPrerequisites(generation: number): Promise<boolean> {
+    if (!this.directAdmissionIsCurrent(generation)) return false;
+    if (this.dealerAdmissionIsCurrent(generation)) return true;
+    const gate = this.dealerPrerequisiteGate;
+    if (!gate || gate.generation !== generation) return false;
+    const ready = await gate.promise;
+    return ready && this.dealerAdmissionIsCurrent(generation);
+  }
+
   private async performCashTableEngineAdmission(
     tableId: string,
     generation: number
   ): Promise<DirectTableAdmission> {
-    if (!this.directAdmissionIsCurrent(generation)) return 'not_wakeable';
+    if (!(await this.awaitDealerPrerequisites(generation))) return 'not_wakeable';
     const existingStart = this.tableEngineStartPromises.get(tableId);
     if (existingStart) return existingStart;
     const existingEngine = this.tableEngines.get(tableId);
@@ -7403,7 +7574,7 @@ export class GameServer {
     }
 
     await this.awaitDirectTableLeaseRelease(tableId);
-    if (!this.directAdmissionIsCurrent(generation)) return 'not_wakeable';
+    if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
 
     let table: Parameters<typeof isWakeableCashTable>[0];
     let error: { message: string } | null = null;
@@ -7420,7 +7591,7 @@ export class GameServer {
       return 'retryable_failure';
     }
 
-    if (!this.directAdmissionIsCurrent(generation)) return 'not_wakeable';
+    if (!this.dealerAdmissionIsCurrent(generation)) return 'not_wakeable';
 
     if (error) {
       reportError(
@@ -7462,7 +7633,7 @@ export class GameServer {
     if (lease.status === 'owned_elsewhere') return 'owned_elsewhere';
     if (lease.status !== 'granted') return 'retryable_failure';
     const grantedLeaseGeneration = lease.leaseGeneration;
-    if (!this.directAdmissionIsCurrent(generation)) {
+    if (!this.dealerAdmissionIsCurrent(generation)) {
       // Shutdown won while the lease RPC was in flight. Hand the exact lease
       // back before resolving so no post-snapshot dealer can escape stop().
       const staleGeneration = lease.leaseGeneration;
@@ -7566,7 +7737,7 @@ export class GameServer {
        caller gets has changed. `ready` settles false when start fails before
        `waiting`, and true means the engine is in the map and publishing. */
     const readiness = await readyPromise;
-    return this.directAdmissionIsCurrent(generation) ? readiness : 'not_wakeable';
+    return this.dealerAdmissionIsCurrent(generation) ? readiness : 'not_wakeable';
   }
 
   /**

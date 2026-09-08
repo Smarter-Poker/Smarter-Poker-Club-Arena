@@ -8,6 +8,8 @@ function bareServer(): any {
   server.running = true;
   server.lifecycleGeneration = 7;
   server.leaderBootComplete = true;
+  server.dealerPrerequisitesReady = true;
+  server.dealerPrerequisiteGate = null;
   server.startOperation = null;
   server.teardownPromise = null;
   server.tournamentEngines = new Map();
@@ -38,6 +40,84 @@ afterEach(() => {
 });
 
 describe('direct table admission lifecycle', () => {
+  it('holds concurrent table admissions outside all lookup and lease work until dealer boot is ready', async () => {
+    const server = bareServer();
+    server.resetDealerPrerequisiteGate(7);
+    const enterAdmission = vi.fn(async (): Promise<Admission> => 'ready');
+    server.performCashTableEngineAdmission = enterAdmission;
+
+    const first = server.ensureCashTableEngineAdmission('table-before-ready') as Promise<Admission>;
+    const concurrent = server.ensureCashTableEngineAdmission(
+      'table-before-ready'
+    ) as Promise<Admission>;
+    await Promise.resolve();
+
+    expect(enterAdmission).not.toHaveBeenCalled();
+    expect(server.directTableAdmissionOperations.size).toBe(1);
+
+    expect(server.publishDealerPrerequisitesReady(7)).toBe(true);
+    await expect(first).resolves.toBe('ready');
+    await expect(concurrent).resolves.toBe('ready');
+    expect(enterAdmission).toHaveBeenCalledTimes(1);
+  });
+
+  it('never admits a table when standby or failed boot closes the prerequisite gate', async () => {
+    {
+      const server = bareServer();
+      server.running = false;
+      server.performStart = vi.fn().mockResolvedValue(undefined);
+      const enterAdmission = vi.fn(async (): Promise<Admission> => 'ready');
+      server.performCashTableEngineAdmission = enterAdmission;
+
+      const starting = server.start() as Promise<void>;
+      const admission = server.ensureCashTableEngineAdmission(
+        'table-standby'
+      ) as Promise<Admission>;
+      await starting;
+
+      await expect(admission).resolves.toBe('not_wakeable');
+      expect(enterAdmission).not.toHaveBeenCalled();
+      expect(server.directTableAdmissionOperations.size).toBe(0);
+    }
+
+    {
+      const server = bareServer();
+      server.running = false;
+      const bootError = new Error('worker READY failed');
+      server.performStart = vi.fn().mockRejectedValue(bootError);
+      const enterAdmission = vi.fn(async (): Promise<Admission> => 'ready');
+      server.performCashTableEngineAdmission = enterAdmission;
+
+      const starting = server.start() as Promise<void>;
+      const admission = server.ensureCashTableEngineAdmission('table-failed') as Promise<Admission>;
+      await expect(starting).rejects.toBe(bootError);
+
+      await expect(admission).resolves.toBe('not_wakeable');
+      expect(enterAdmission).not.toHaveBeenCalled();
+      expect(server.directTableAdmissionOperations.size).toBe(0);
+    }
+  });
+
+  it('synchronously closes the prerequisite gate when shutdown wins during boot', async () => {
+    const server = bareServer();
+    server.running = false;
+    const boot = deferred();
+    server.performStart = vi.fn(async () => boot.promise);
+    server.performStop = vi.fn().mockResolvedValue(undefined);
+    const enterAdmission = vi.fn(async (): Promise<Admission> => 'ready');
+    server.performCashTableEngineAdmission = enterAdmission;
+
+    const starting = server.start() as Promise<void>;
+    const admission = server.ensureCashTableEngineAdmission('table-stopping') as Promise<Admission>;
+    const stopping = server.stop() as Promise<void>;
+
+    await expect(admission).resolves.toBe('not_wakeable');
+    expect(enterAdmission).not.toHaveBeenCalled();
+    boot.resolve();
+    await starting;
+    await stopping;
+  });
+
   it('publishes one boot operation and rejects a second lifecycle generation', async () => {
     const server = bareServer();
     server.running = false;
@@ -120,6 +200,7 @@ describe('direct table admission lifecycle', () => {
 
     const first = server.ensureCashTableEngineAdmission('table-1') as Promise<Admission>;
     const second = server.ensureCashTableEngineAdmission('table-1') as Promise<Admission>;
+    await Promise.resolve();
     expect(server.performCashTableEngineAdmission).toHaveBeenCalledTimes(1);
 
     // This is stop()'s synchronous ownership fence while the lookup is still

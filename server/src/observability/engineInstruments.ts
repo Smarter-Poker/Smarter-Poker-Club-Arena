@@ -184,23 +184,16 @@ export const actToBroadcastFleet: Histogram = alwaysOnRegistry.histogram(
 );
 
 /**
- * THE CORE THAT LIMITS EVERYTHING, AS A NUMBER (2026-09-06).
+ * THE TWO CORES, AS NUMBERS (2026-09-08).
  *
- * The engine is ONE Node core and CLAUDE.md calls that the ceiling. Until
- * today the only measurement of it was `equityGovernor.snapshot()` inside the
- * `/health` JSON - no time series, no chart, no alert, nothing to correlate a
- * slow controller pass or a laggy table against. `HorseDataLedger` said so
- * itself: "the ONLY visibility the governor has outside the GameServer status
- * payload".
+ * The delay gauges below measure the main realtime thread that owns sockets,
+ * clocks and authoritative table mutation. Horse Monte Carlo now executes on
+ * a dedicated worker; `poker_equity_governor_scale` therefore comes from that
+ * worker and describes its precision/load tradeoff. They are deliberately not
+ * treated as one self-checking signal anymore.
  *
- * These are gauges, not a histogram: the governor already keeps the
- * percentiles (perf_hooks maintains the underlying histogram), so re-bucketing
- * them here would cost work to say the same thing less precisely.
- *
- * The scale is published beside the delay on purpose. A p50 over 40 ms and a
- * scale of 1 means the governor is not reacting; a scale below 1 with a low
- * p50 means it is throttling on a reading nobody can see. Together they are
- * self-checking; apart, each can lie.
+ * These are gauges rather than histograms because each governor already keeps
+ * the relevant percentiles in perf_hooks.
  */
 export const eventLoopDelayP50: Gauge = alwaysOnRegistry.gauge(
   'poker_event_loop_delay_p50_ms',
@@ -212,30 +205,63 @@ export const eventLoopDelayP99: Gauge = alwaysOnRegistry.gauge(
 );
 export const equityGovernorScale: Gauge = alwaysOnRegistry.gauge(
   'poker_equity_governor_scale',
-  'Horse Monte Carlo iteration scale the governor is applying (1 = full precision, 0.2 = floor). Below 1 means the core is shedding load.'
+  'Horse Monte Carlo iteration scale the live decision worker governor is applying (1 = full precision). Below 1 means the worker core is shedding load.'
 );
-/**
- * HOW LATE THE GOVERNOR'S OWN ONE-SECOND TICK RAN (2026-09-07).
- *
- * The three gauges above all come from `monitorEventLoopDelay`, and on
- * 2026-09-07 that went blind exactly when it mattered: the histogram is only
- * written when the loop TURNS, so a loop pegged by one long synchronous run
- * records FEWER samples the more saturated it is, and an empty histogram
- * reports 0.000511 ms - which read as enormous headroom. `/health` served
- * `scale: 1, p50Ms: 0.000511` through a twenty-minute outage.
- *
- * This one cannot go blind, because it is not a sample of the loop - it is the
- * loop refusing to run us. A one-second interval that fires at 1,800 ms has
- * measured 800 ms of saturation, and the worse of the two readings is what the
- * scale is now decided on.
- *
- * Read it beside `poker_event_loop_delay_p50_ms`: the two agreeing is a
- * healthy measurement, this one alone rising is the histogram being starved,
- * and both flat while hands stop is the case to escalate.
- */
+/** Worker sampler lateness survives when its event-loop histogram is starved. */
 export const equityGovernorSamplerLateMs: Gauge = alwaysOnRegistry.gauge(
   'poker_equity_governor_sampler_late_ms',
-  "How late the governor's own one-second sampler last ran (ms). Event-loop saturation measured directly, and the reading that survives when the delay histogram is starved."
+  "How late the live horse-compute worker governor's one-second sampler last ran (ms). This is sampled on the core where Monte Carlo executes."
+);
+
+/**
+ * LIVE HORSE COMPUTE IS A DIFFERENT CORE (2026-09-08).
+ *
+ * HorseLogic and its Monte Carlo governor now live in one process-wide worker.
+ * Keep its pressure visible independently from the main realtime event loop:
+ * conflating these two cores recreates the false diagnosis this isolation was
+ * built to eliminate.
+ */
+export const horseDecisionWorkerReady: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_ready',
+  '1 only while the sole live HorseLogic worker is READY; 0 while starting, stopping, stopped, or failed.'
+);
+export const horseDecisionWorkerQueueDepth: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_queue_depth',
+  'Accepted live horse-decision operations either queued or actively computing in the process-wide FIFO.'
+);
+export const horseDecisionWorkerActiveJobAgeMs: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_active_job_age_ms',
+  'Age of the currently executing horse-decision worker operation in milliseconds; 0 when idle.'
+);
+export const horseDecisionWorkerOldestQueuedAgeMs: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_oldest_queued_age_ms',
+  'Age of the oldest queued, not-yet-executing horse-decision worker operation in milliseconds; 0 when empty.'
+);
+export const horseDecisionWorkerLastCompletionAgeMs: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_last_completion_age_ms',
+  'Milliseconds since the sole live HorseLogic worker last completed an operation; -1 before its first completion.'
+);
+export const horseDecisionWorkerLastComputeMs: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_last_compute_ms',
+  'Compute duration reported by the last completed HorseLogic decision or discard operation in milliseconds; 0 before the first decision.'
+);
+export const horseDecisionWorkerEventLoopDelayP50: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_event_loop_delay_p50_ms',
+  'Event-loop delay p50 inside the sole live HorseLogic worker over its latest status sample (ms).'
+);
+export const horseDecisionWorkerEventLoopDelayP99: Gauge = alwaysOnRegistry.gauge(
+  'poker_horse_decision_worker_event_loop_delay_p99_ms',
+  'Event-loop delay p99 inside the sole live HorseLogic worker over its latest status sample (ms).'
+);
+
+/** Main-thread governor diagnostics remain a realtime-loop signal only. */
+export const mainEventLoopGovernorScale: Gauge = alwaysOnRegistry.gauge(
+  'poker_main_event_loop_governor_scale',
+  'Governor scale implied by the main realtime event loop. It no longer controls horse Monte Carlo work.'
+);
+export const mainEventLoopGovernorSamplerLateMs: Gauge = alwaysOnRegistry.gauge(
+  'poker_main_event_loop_governor_sampler_late_ms',
+  "How late the main realtime event loop governor's one-second sampler last ran (ms)."
 );
 
 /**

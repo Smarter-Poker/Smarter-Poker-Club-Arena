@@ -909,11 +909,11 @@ groups:
   # pass, a laggy table and a stalled discovery loop all looked like Postgres
   # and none of them could be correlated with the thing they share.
   #
-  # THRESHOLDS ARE THE GOVERNOR'S OWN, not guesses. EquityLoadGovernor's table
-  # is: effective delay < 40 ms -> full precision; < 120 ms -> 0.6; < 300 ms
-  # -> 0.35; < 1,000 ms -> 0.2; otherwise -> 0.08 with a 30-iteration deep
-  # floor. So 40 ms is where the platform starts shedding, 300 ms is critical
-  # saturation, and 1,000 ms is where the final safety tier must engage.
+  # THRESHOLDS ARE THE MAIN LOOP GOVERNOR'S OWN, not guesses. Its table is:
+  # effective delay < 40 ms -> 1; < 120 ms -> 0.6; < 300 ms -> 0.35;
+  # < 1,000 ms -> 0.2; otherwise -> 0.08. Since 2026-09-08 this is a
+  # diagnostic scale only: horse Monte Carlo and its independently sampled
+  # governor run on the live decision worker.
   # Measured on engine-01 2026-09-06 while writing this: cluster pass p50
   # 0.86 s at steady state against 26.8 s in the minutes after a restart, so
   # `for:` is long enough that the hourly cutover cannot raise either of these.
@@ -924,7 +924,7 @@ groups:
         expr: |
           (
             poker_event_loop_delay_p50_ms > 40
-            or poker_equity_governor_sampler_late_ms > 40
+            or poker_main_event_loop_governor_sampler_late_ms > 40
           )
           unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
@@ -934,13 +934,12 @@ groups:
         annotations:
           summary: 'Engine event loop delay {{ $value | printf "%.0f" }} ms - the core is out of headroom'
           description: |
-            The engine's event loop has been delayed past the point where
-            EquityLoadGovernor starts shedding horse Monte Carlo precision,
-            for ten minutes. Everything on this process shares that loop: a
-            human's action, their timer, the broadcast that shows it, the
-            cluster controller's pass and the discovery sweep. Check
-            poker_equity_governor_scale beside this - if it is still 1 the
-            governor is not reacting, which is its own defect.
+            The main realtime event loop has been delayed past its first
+            capacity threshold for ten minutes. Human actions, timers, state
+            broadcasts, the cluster controller and discovery share this loop.
+            Check poker_main_event_loop_governor_scale beside it. Horse compute
+            runs on another core; poker_equity_governor_scale reports that
+            worker independently.
           runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
 
       # Both gauges have the same scrape-target labels and no intrinsic
@@ -950,7 +949,7 @@ groups:
         expr: |
           (
             poker_event_loop_delay_p50_ms > 300
-            or poker_equity_governor_sampler_late_ms > 300
+            or poker_main_event_loop_governor_sampler_late_ms > 300
           )
           unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
@@ -960,13 +959,13 @@ groups:
         annotations:
           summary: 'Engine event loop delay {{ $value | printf "%.0f" }} ms - the core is saturated'
           description: |
-            Critical one-core saturation: the governor should be at its 0.2
-            tier or lower, yet tables are still laggy for every seat, human
-            included. At an effective delay of 1,000 ms or more it must reach
-            the 0.08 scale and 30-iteration deep floor. Inspect the scale; if
-            it disagrees, the governor is itself unhealthy. Reduce work on the
-            process rather than raising timeouts. Direct sampler lateness is
-            included because a synchronous turn can starve the histogram.
+            Critical main realtime-loop saturation: tables can lag for every
+            seat, human included, even though horse compute is isolated on a
+            worker. Inspect poker_main_event_loop_governor_scale; if it
+            disagrees with the delay, the sampler is unhealthy. Reduce work on
+            the main process rather than raising timeouts. Direct sampler
+            lateness is included because synchronous work can starve the
+            histogram.
           runbook: 'https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/blob/main/docs/runbooks/tournament-scheduler-and-engine-saturation.md'
 
       # The governor throttling is not itself a fault - it is the mechanism

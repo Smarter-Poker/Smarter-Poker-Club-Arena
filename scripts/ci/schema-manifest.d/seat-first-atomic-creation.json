@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/live-table-realtime-continuity",
+  "_comment": "Branch declaration for transaction-atomic seat-first tournament and table creation. Production deployment is not claimed by this fragment.",
+  "functions": ["fn_create_seat_first_game_atomic"]
+}

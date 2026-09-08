@@ -19,16 +19,58 @@ BEGIN
 END;
 $roles$;
 
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.role()
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $function$
+  SELECT COALESCE(
+    NULLIF(current_setting('request.jwt.claim.role', true), ''),
+    NULLIF(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'
+  )
+$function$;
+
 CREATE TABLE public.tournaments (
   id uuid PRIMARY KEY,
+  club_id uuid,
+  union_id uuid,
   name text NOT NULL,
+  game_type text,
+  variant text,
+  tournament_type text,
+  buy_in_amount numeric NOT NULL DEFAULT 0,
+  buy_in_fee numeric NOT NULL DEFAULT 0,
+  guaranteed_prize numeric NOT NULL DEFAULT 0,
+  starting_chips integer,
+  max_players integer,
+  min_players integer,
+  table_size integer,
+  current_players integer NOT NULL DEFAULT 0,
   status text NOT NULL,
+  blind_structure text,
+  payout_structure text,
+  start_time timestamptz,
+  late_reg_levels integer NOT NULL DEFAULT 0,
+  late_reg_mins integer NOT NULL DEFAULT 0,
+  satellite_target_id uuid,
+  satellite_seats integer,
+  short_description text,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
 CREATE TABLE public.tables (
-  id uuid PRIMARY KEY,
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  club_id uuid,
   tournament_id uuid REFERENCES public.tournaments(id) ON DELETE CASCADE,
+  name text,
+  game_type text,
+  game_variant text,
+  stakes text,
+  small_blind numeric,
+  big_blind numeric,
+  min_buy_in numeric,
+  max_buy_in numeric,
   status text NOT NULL,
   current_players integer NOT NULL DEFAULT 0,
   max_players integer NOT NULL DEFAULT 9,
@@ -36,6 +78,30 @@ CREATE TABLE public.tables (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
+
+CREATE OR REPLACE FUNCTION public.fn_entry_purchases_frozen()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+AS $function$ SELECT false $function$;
+
+/* Stage B must exercise the real compatibility-door retirement, even though
+   this narrow fixture does not need the historical repair implementation. */
+CREATE OR REPLACE FUNCTION public.fn_repair_seat_first_games(integer)
+RETURNS jsonb
+LANGUAGE sql
+SECURITY DEFINER
+AS $function$
+  SELECT jsonb_build_object('repaired', 0, 'horses_seated', 0)
+$function$;
+
+CREATE OR REPLACE FUNCTION public.fn_repair_seat_first_games_before_maintenance_gate(integer)
+RETURNS jsonb
+LANGUAGE sql
+SECURITY DEFINER
+AS $function$
+  SELECT jsonb_build_object('repaired', 0, 'horses_seated', 0)
+$function$;
 
 CREATE TABLE public.tournament_players (
   tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE CASCADE,

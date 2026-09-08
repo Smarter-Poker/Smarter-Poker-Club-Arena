@@ -194,6 +194,27 @@ BEGIN
 END;
 $function$;
 
+/* Rolling compatibility is an engine-only surface. PostgreSQL grants new
+   functions to PUBLIC by default, so close every generation-blind door to
+   browser roles while preserving old service-role pods until Stage B drops
+   these overloads after the exact-generation engine is the sole live build. */
+REVOKE ALL ON FUNCTION public.claim_tournament_lease(uuid, text, text, integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_tournament_lease(uuid, text, text, integer)
+  TO service_role;
+REVOKE ALL ON FUNCTION public.heartbeat_tournament_leases_v2(text, uuid[], integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.heartbeat_tournament_leases_v2(text, uuid[], integer)
+  TO service_role;
+REVOKE ALL ON FUNCTION public.heartbeat_tournament_leases(text, uuid[])
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.heartbeat_tournament_leases(text, uuid[])
+  TO service_role;
+REVOKE ALL ON FUNCTION public.release_tournament_leases(text, uuid[])
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.release_tournament_leases(text, uuid[])
+  TO service_role;
+
 /* A new admission chooses a UUID before its first RPC and reuses it across
    causal retries. A genuinely new admission supplies a new UUID, but may take
    authority only after the old exact generation was released or became stale.

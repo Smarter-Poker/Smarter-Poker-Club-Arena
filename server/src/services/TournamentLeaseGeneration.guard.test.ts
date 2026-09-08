@@ -67,6 +67,22 @@ describe('one tournament manager carries one database fencing generation', () =>
     expect(legacyClaim).toContain("interval '30 seconds'");
   });
 
+  it('keeps rolling legacy RPCs engine-only until Stage B removes them', () => {
+    for (const signature of [
+      'claim_tournament_lease(uuid, text, text, integer)',
+      'heartbeat_tournament_leases_v2(text, uuid[], integer)',
+      'heartbeat_tournament_leases(text, uuid[])',
+      'release_tournament_leases(text, uuid[])',
+    ]) {
+      expect(migration).toContain(
+        `REVOKE ALL ON FUNCTION public.${signature}\n  FROM PUBLIC, anon, authenticated;`
+      );
+      expect(migration).toContain(
+        `GRANT EXECUTE ON FUNCTION public.${signature}\n  TO service_role;`
+      );
+    }
+  });
+
   it('heartbeats an exact tournament and generation pair', () => {
     const heartbeat = sqlFunction(
       'CREATE OR REPLACE FUNCTION public.heartbeat_tournament_leases_v3(',

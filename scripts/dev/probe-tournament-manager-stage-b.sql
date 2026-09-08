@@ -2,6 +2,70 @@
 
 BEGIN;
 
+/* PostgREST invokes the configured hook after switching to the request role.
+   Prove the three API roles can execute the private hook without publishing a
+   public RPC spelling. */
+SELECT set_config('request.headers', '{}', true);
+SELECT set_config('request.jwt.claims', '{"role":"anon"}', true);
+SELECT set_config('request.method', 'GET', true);
+SELECT set_config('request.path', '/tournaments', true);
+SET LOCAL ROLE anon;
+SELECT smarter_private.fn_smarter_data_api_pre_request();
+RESET ROLE;
+
+DO $anon_hook_execution$
+BEGIN
+  IF current_setting('app.smarter_data_actor', true) <> 'browser' THEN
+    RAISE EXCEPTION 'anon could not execute the private PostgREST hook';
+  END IF;
+END;
+$anon_hook_execution$;
+
+SELECT set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+SELECT smarter_private.fn_smarter_data_api_pre_request();
+RESET ROLE;
+
+DO $authenticated_hook_execution$
+BEGIN
+  IF current_setting('app.smarter_data_actor', true) <> 'browser' THEN
+    RAISE EXCEPTION 'authenticated could not execute the private PostgREST hook';
+  END IF;
+END;
+$authenticated_hook_execution$;
+
+SELECT set_config(
+  'request.headers',
+  '{"x-smarter-data-actor":"service","x-smarter-data-protocol":"1"}',
+  true
+);
+SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
+SET LOCAL ROLE service_role;
+SELECT smarter_private.fn_smarter_data_api_pre_request();
+RESET ROLE;
+
+DO $service_hook_execution_and_private_surface$
+BEGIN
+  IF current_setting('app.smarter_data_actor', true) <> 'service' THEN
+    RAISE EXCEPTION 'service_role could not execute the private PostgREST hook';
+  END IF;
+  IF to_regprocedure('public.fn_smarter_data_api_pre_request()') IS NOT NULL THEN
+    RAISE EXCEPTION 'request hook still has a public RPC spelling';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_db_role_setting s
+      JOIN pg_roles r ON r.oid = s.setrole
+      CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) AS setting(value)
+     WHERE r.rolname = 'authenticator'
+       AND setting.value =
+           'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
+  ) THEN
+    RAISE EXCEPTION 'PostgREST is not configured for the private request hook';
+  END IF;
+END;
+$service_hook_execution_and_private_surface$;
+
 DO $probe$
 DECLARE
   v_denied boolean;
@@ -11,7 +75,7 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '{"role":"authenticated"}', true);
   PERFORM set_config('request.method', 'GET', true);
   PERFORM set_config('request.path', '/tournaments', true);
-  PERFORM public.fn_smarter_data_api_pre_request();
+  PERFORM smarter_private.fn_smarter_data_api_pre_request();
   IF current_setting('app.smarter_data_actor', true) <> 'browser' THEN
     RAISE EXCEPTION 'headerless authenticated request was not admitted as browser';
   END IF;
@@ -22,7 +86,7 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
   PERFORM set_config('request.method', 'PATCH', true);
   PERFORM set_config('request.path', '/tournaments', true);
-  PERFORM public.fn_smarter_data_api_pre_request();
+  PERFORM smarter_private.fn_smarter_data_api_pre_request();
   IF current_setting('app.smarter_data_actor', true) <>
        'shared-estate-service' THEN
     RAISE EXCEPTION 'headerless shared-estate service request was misclassified';
@@ -37,7 +101,7 @@ BEGIN
   v_denied := false;
   PERFORM set_config('request.path', '/rest/v1/rpc/claim_table_lease_v2', true);
   BEGIN
-    PERFORM public.fn_smarter_data_api_pre_request();
+    PERFORM smarter_private.fn_smarter_data_api_pre_request();
   EXCEPTION WHEN insufficient_privilege THEN
     v_denied := true;
   END;
@@ -55,7 +119,7 @@ BEGIN
   );
   PERFORM set_config('request.path', '/rpc/fn_begin_tournament_launch_atomic', true);
   BEGIN
-    PERFORM public.fn_smarter_data_api_pre_request();
+    PERFORM smarter_private.fn_smarter_data_api_pre_request();
   EXCEPTION WHEN insufficient_privilege THEN
     v_denied := true;
   END;
@@ -66,7 +130,7 @@ BEGIN
   /* Marked recovery/coordination service work is admitted on engine-private
      routes that legitimately run outside a manager object. */
   PERFORM set_config('request.path', '/rpc/fn_sweep_pending_tournament_bounties', true);
-  PERFORM public.fn_smarter_data_api_pre_request();
+  PERFORM smarter_private.fn_smarter_data_api_pre_request();
   IF current_setting('app.smarter_data_actor', true) <> 'service' THEN
     RAISE EXCEPTION 'marked engine service route lost its service identity';
   END IF;
@@ -80,7 +144,7 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
   PERFORM set_config('request.method', 'PATCH', true);
   PERFORM set_config('request.path', '/tournaments', true);
-  PERFORM public.fn_smarter_data_api_pre_request();
+  PERFORM smarter_private.fn_smarter_data_api_pre_request();
   UPDATE public.tournaments SET name = 'ordinary-service'
    WHERE id = '10000000-0000-4000-8000-000000000002';
 
@@ -95,7 +159,7 @@ BEGIN
   );
   PERFORM set_config('request.method', 'POST', true);
   PERFORM set_config('request.path', '/rpc/fn_begin_tournament_launch_atomic', true);
-  PERFORM public.fn_smarter_data_api_pre_request();
+  PERFORM smarter_private.fn_smarter_data_api_pre_request();
   IF current_setting('app.smarter_manager_request_fenced', true) <> 'protocol-2' THEN
     RAISE EXCEPTION 'fresh exact manager did not acquire request proof';
   END IF;
@@ -104,7 +168,7 @@ BEGIN
      this probe. */
   PERFORM set_config('request.method', 'PATCH', true);
   PERFORM set_config('request.path', '/tournaments', true);
-  PERFORM public.fn_smarter_data_api_pre_request();
+  PERFORM smarter_private.fn_smarter_data_api_pre_request();
   UPDATE public.tournaments SET name = 'exact-manager'
    WHERE id = '10000000-0000-4000-8000-000000000001';
 
@@ -133,7 +197,7 @@ BEGIN
   );
   PERFORM set_config('request.method', 'DELETE', true);
   PERFORM set_config('request.path', '/tables', true);
-  PERFORM public.fn_smarter_data_api_pre_request();
+  PERFORM smarter_private.fn_smarter_data_api_pre_request();
   DELETE FROM public.tables
    WHERE id = '20000000-0000-4000-8000-000000000001';
   IF EXISTS (
@@ -154,7 +218,7 @@ BEGIN
     true
   );
   BEGIN
-    PERFORM public.fn_smarter_data_api_pre_request();
+    PERFORM smarter_private.fn_smarter_data_api_pre_request();
   EXCEPTION WHEN insufficient_privilege THEN
     v_denied := true;
   END;
@@ -176,7 +240,7 @@ BEGIN
     true
   );
   BEGIN
-    PERFORM public.fn_smarter_data_api_pre_request();
+    PERFORM smarter_private.fn_smarter_data_api_pre_request();
   EXCEPTION WHEN insufficient_privilege THEN
     v_denied := true;
   END;

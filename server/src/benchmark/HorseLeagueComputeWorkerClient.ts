@@ -10,9 +10,7 @@
 
 import { Worker } from 'node:worker_threads';
 
-import { gtoChartCount } from '../engine/GtoCharts.js';
-import { gtoPostflopCount } from '../engine/GtoPostflop.js';
-import { gtoPostflopV31Count } from '../engine/GtoPostflopV31.js';
+import { liveHorseDecisionWorkerStatus } from '../engine/horseDecision/client.js';
 import type { LeagueMatchup, LeagueResult } from './HorseLeague.js';
 import type { AgreementResult } from './HorseSolverAgreement.js';
 import type {
@@ -73,11 +71,13 @@ function defaultWorkerFactory(hydrateSolverStores: boolean): () => WorkerLike {
 }
 
 function currentSolverStores(): SolverStoreCounts {
-  return {
-    charts: gtoChartCount(),
-    postflop: gtoPostflopCount(),
-    postflopV31: gtoPostflopV31Count(),
-  };
+  const live = liveHorseDecisionWorkerStatus();
+  if (live.phase !== 'ready' || !live.solverStores) {
+    throw new Error(
+      `horse league cannot establish the live solver corpus while the decision worker is ${live.phase}`
+    );
+  }
+  return { ...live.solverStores };
 }
 
 export class HorseLeagueComputeWorkerClient implements HorseLeagueCompute {

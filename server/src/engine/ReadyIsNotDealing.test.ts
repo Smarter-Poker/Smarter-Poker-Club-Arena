@@ -148,7 +148,7 @@ describe('the on-demand door hands out `ready`, not `start()`', () => {
     );
     expect(body).toContain('const readiness = await readyPromise;');
     expect(body).toContain(
-      "return this.directAdmissionIsCurrent(generation) ? readiness : 'not_wakeable';"
+      "return this.dealerAdmissionIsCurrent(generation) ? readiness : 'not_wakeable';"
     );
     expect(body).not.toContain('return startPromise;');
     // The failure handling on the start chain stays: a failed start retires

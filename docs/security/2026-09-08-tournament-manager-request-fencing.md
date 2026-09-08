@@ -47,12 +47,18 @@ database-first, rolling-deploy stage:
 - Headerless requests remain admitted. This is mandatory while an old engine
   can still be serving.
 - Marked server actors require a PostgREST-verified `service_role` JWT claim.
+  The hook reads that identity through `auth.role()` and fails if it disagrees
+  with the transaction's parsed `request.jwt.claims` role.
 - Ordinary `service` requests remain unrelated to tournament authority.
 - A marked manager requires an exact protocol-2 lease generation whose
   heartbeat is no more than 30 seconds old.
 - `GET`/`HEAD` validate. Every possible write method validates and locks the
   lease row `FOR SHARE` in the same PostgREST transaction as the main query.
-- The hook refuses its own otherwise exposed RPC route.
+- The `SECURITY DEFINER` hook lives in `smarter_private`, a dedicated schema
+  outside PostgREST's exposed schemas. API roles receive only schema `USAGE`
+  and function `EXECUTE` so PostgREST can invoke it after role switching; there
+  is no public wrapper and therefore no RPC endpoint. The function also refuses
+  its own route if the private-schema deployment boundary is ever misconfigured.
 - Installation aborts instead of overwriting an unknown existing
   `pgrst.db_pre_request` hook.
 
@@ -306,6 +312,14 @@ direct database service session is not a tournament-manager transport and has
 no actor marker, so legitimate SQL administration remains outside this Data API
 boundary.
 
+The configured hook name is
+`smarter_private.fn_smarter_data_api_pre_request`. Both migration stages abort
+if `smarter_private` appears in an authenticator `pgrst.db_schemas` setting,
+and they assert that no public function with the hook name exists. Production
+activation must additionally verify the served Data API configuration/OpenAPI
+surface because an environment-level `PGRST_DB_SCHEMAS` override is outside the
+database catalog. `smarter_private` must remain absent from that served surface.
+
 ### Adversarial request matrix
 
 | Verified JWT / actor                                              | Route                                      | Stage-B result                                                                             |
@@ -352,7 +366,10 @@ to `service_role` through its private route.
    rehearsal remains separately required; this focused fixture does not
    simulate rake, BBJ, promotion, insurance, or add-on settlement.
 5. Apply Stage B once, then reload both PostgREST configuration and schema.
-6. Repeat the rollback probe and live engine/WebKit certification.
+6. Verify that a Data API request targeting the `smarter_private` schema is
+   rejected as unexposed and that the public OpenAPI surface contains no
+   `fn_smarter_data_api_pre_request` RPC.
+7. Repeat the rollback probe and live engine/WebKit certification.
 
 Emergency rollback is another audited migration: restore the Stage-A hook
 first, then restore legacy overloads only if an old engine is being deliberately

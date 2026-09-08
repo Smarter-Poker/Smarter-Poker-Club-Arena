@@ -39,11 +39,19 @@ BEGIN
 END;
 $require_protocol_two_tournament_leases$;
 
-CREATE OR REPLACE FUNCTION public.fn_smarter_data_api_pre_request()
+/* PostgREST accepts a schema-qualified pre-request function outside its exposed
+   API schemas. Keep this privileged hook in a dedicated namespace so the API
+   roles can execute it as infrastructure without creating an RPC endpoint. */
+CREATE SCHEMA IF NOT EXISTS smarter_private;
+REVOKE ALL ON SCHEMA smarter_private
+  FROM PUBLIC, anon, authenticated, service_role, authenticator;
+GRANT USAGE ON SCHEMA smarter_private TO anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION smarter_private.fn_smarter_data_api_pre_request()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $function$
 DECLARE
   v_headers jsonb;
@@ -78,12 +86,18 @@ BEGIN
   /* This function is SECURITY DEFINER, so current_user is its owner, not the
      impersonated API role. The transaction-scoped, PostgREST-verified JWT
      claims are the request identity inside this privileged function. */
-  v_request_role := btrim(COALESCE(v_claims ->> 'role', ''));
+  v_request_role := btrim(COALESCE(auth.role(), ''));
+  IF v_actor <> ''
+     AND v_request_role <> btrim(COALESCE(v_claims ->> 'role', '')) THEN
+    RAISE EXCEPTION 'DATA_ACTOR_INVALID: verified JWT role disagrees with request claims'
+      USING ERRCODE = '22023';
+  END IF;
   v_method := upper(btrim(COALESCE(current_setting('request.method', true), '')));
   v_path := lower(btrim(COALESCE(current_setting('request.path', true), ''), '/'));
 
-  /* The hook must be executable by each impersonated API role, but it is not
-     itself an application RPC. Refuse its otherwise auto-exposed route. */
+  /* This route cannot exist while smarter_private stays outside db-schemas.
+     Keep the refusal as fail-closed defence if that deployment boundary is
+     ever misconfigured. */
   IF v_path = 'rpc/fn_smarter_data_api_pre_request' THEN
     RAISE EXCEPTION 'DATA_ACTOR_FORBIDDEN: request hook is not an RPC'
       USING ERRCODE = '42501';
@@ -179,13 +193,18 @@ BEGIN
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION public.fn_smarter_data_api_pre_request()
-  FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.fn_smarter_data_api_pre_request()
+REVOKE ALL ON FUNCTION smarter_private.fn_smarter_data_api_pre_request()
+  FROM PUBLIC, anon, authenticated, service_role, authenticator;
+GRANT EXECUTE ON FUNCTION smarter_private.fn_smarter_data_api_pre_request()
   TO anon, authenticated, service_role;
 
-COMMENT ON FUNCTION public.fn_smarter_data_api_pre_request() IS
-  'Stage-A Data API actor boundary. Headerless legacy traffic remains allowed; marked protocol-2 tournament managers must prove and transaction-lock their exact current lease generation.';
+COMMENT ON FUNCTION smarter_private.fn_smarter_data_api_pre_request() IS
+  'Private, non-API Stage-A Data API actor boundary. Headerless legacy traffic remains allowed; marked protocol-2 tournament managers must prove and transaction-lock their exact current lease generation.';
+
+/* Remove the old exposed-schema spelling if an interrupted pre-release probe
+   installed it. The configured hook is switched to the private function in
+   this same transaction, so there is no mixed public/private boundary. */
+DROP FUNCTION IF EXISTS public.fn_smarter_data_api_pre_request();
 
 /* Prove the SECURITY DEFINER identity edge in executable SQL.  The migration
    owner is deliberately not service_role, yet a verified service-role claim
@@ -208,14 +227,14 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
   PERFORM set_config('request.method', 'GET', true);
   PERFORM set_config('request.path', '/tournaments', true);
-  PERFORM public.fn_smarter_data_api_pre_request();
+  PERFORM smarter_private.fn_smarter_data_api_pre_request();
   IF current_setting('app.smarter_data_actor', true) <> 'service' THEN
     RAISE EXCEPTION 'Verified service-role claims did not establish service actor context';
   END IF;
 
   PERFORM set_config('request.jwt.claims', '{"role":"authenticated"}', true);
   BEGIN
-    PERFORM public.fn_smarter_data_api_pre_request();
+    PERFORM smarter_private.fn_smarter_data_api_pre_request();
   EXCEPTION WHEN insufficient_privilege THEN
     v_denied := true;
   END;
@@ -248,8 +267,10 @@ BEGIN
        (SELECT d.oid FROM pg_database d WHERE d.datname = current_database())
      )
      AND setting.value LIKE 'pgrst.db_pre_request=%'
-     AND split_part(setting.value, '=', 2)
-         <> 'public.fn_smarter_data_api_pre_request'
+     AND split_part(setting.value, '=', 2) NOT IN (
+       'public.fn_smarter_data_api_pre_request',
+       'smarter_private.fn_smarter_data_api_pre_request'
+     )
    LIMIT 1;
 
   IF v_conflicting_setting IS NOT NULL THEN
@@ -261,7 +282,7 @@ END;
 $install_smarter_data_api_pre_request$;
 
 ALTER ROLE authenticator
-  SET pgrst.db_pre_request = 'public.fn_smarter_data_api_pre_request';
+  SET pgrst.db_pre_request = 'smarter_private.fn_smarter_data_api_pre_request';
 
 NOTIFY pgrst, 'reload config';
 
@@ -272,7 +293,8 @@ BEGIN
   SELECT p.prosrc
     INTO STRICT v_source
     FROM pg_proc p
-   WHERE p.oid = 'public.fn_smarter_data_api_pre_request()'::regprocedure
+   WHERE p.oid =
+         'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
      AND p.prosecdef;
 
   IF position($needle$v_actor = ''$needle$ IN v_source) = 0
@@ -283,21 +305,56 @@ BEGIN
      OR position('l.protocol_version = 2' IN v_source) = 0
      OR position('l.lease_generation = v_lease_generation' IN v_source) = 0
      OR position('l.heartbeat_at >=' IN v_source) = 0
+     OR position('auth.role()' IN v_source) = 0
+     OR position('verified JWT role disagrees with request claims' IN v_source) = 0
      OR position('FOR SHARE' IN v_source) = 0 THEN
     RAISE EXCEPTION 'Stage-A manager request fence is incomplete';
   END IF;
 
   IF NOT has_function_privilege(
        'service_role',
-       'public.fn_smarter_data_api_pre_request()',
+       'smarter_private.fn_smarter_data_api_pre_request()',
        'EXECUTE'
      )
      OR NOT has_function_privilege(
        'anon',
-       'public.fn_smarter_data_api_pre_request()',
+       'smarter_private.fn_smarter_data_api_pre_request()',
        'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'authenticated',
+       'smarter_private.fn_smarter_data_api_pre_request()',
+       'EXECUTE'
+     )
+     OR NOT has_schema_privilege('service_role', 'smarter_private', 'USAGE')
+     OR NOT has_schema_privilege('anon', 'smarter_private', 'USAGE')
+     OR NOT has_schema_privilege('authenticated', 'smarter_private', 'USAGE')
+     OR has_schema_privilege('service_role', 'smarter_private', 'CREATE')
+     OR has_schema_privilege('anon', 'smarter_private', 'CREATE')
+     OR has_schema_privilege('authenticated', 'smarter_private', 'CREATE')
+     OR has_function_privilege(
+       'authenticator',
+       'smarter_private.fn_smarter_data_api_pre_request()',
+       'EXECUTE'
+     )
+     OR EXISTS (
+       SELECT 1
+         FROM pg_proc p
+         CROSS JOIN LATERAL aclexplode(p.proacl) acl
+        WHERE p.oid =
+              'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
+          AND acl.grantee = 0
+          AND acl.privilege_type = 'EXECUTE'
+     )
+     OR EXISTS (
+       SELECT 1
+         FROM pg_namespace n
+         CROSS JOIN LATERAL aclexplode(n.nspacl) acl
+        WHERE n.nspname = 'smarter_private'
+          AND acl.grantee = 0
+          AND acl.privilege_type IN ('USAGE', 'CREATE')
      ) THEN
-    RAISE EXCEPTION 'PostgREST cannot execute the Stage-A request hook';
+    RAISE EXCEPTION 'Private Stage-A request hook ACL is not exact';
   END IF;
 
   IF NOT EXISTS (
@@ -307,9 +364,29 @@ BEGIN
       CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) AS setting(value)
      WHERE r.rolname = 'authenticator'
        AND setting.value =
-           'pgrst.db_pre_request=public.fn_smarter_data_api_pre_request'
+           'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
   ) THEN
     RAISE EXCEPTION 'PostgREST Stage-A request hook setting did not persist';
+  END IF;
+
+  IF to_regprocedure('public.fn_smarter_data_api_pre_request()') IS NOT NULL THEN
+    RAISE EXCEPTION 'Stage-A request hook remains callable from the exposed public schema';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM pg_db_role_setting s
+      JOIN pg_roles r ON r.oid = s.setrole
+      CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) AS setting(value)
+      CROSS JOIN LATERAL regexp_split_to_table(
+        split_part(setting.value, '=', 2),
+        '[[:space:]]*,[[:space:]]*'
+      ) AS exposed(schema_name)
+     WHERE r.rolname = 'authenticator'
+       AND setting.value LIKE 'pgrst.db_schemas=%'
+       AND exposed.schema_name = 'smarter_private'
+  ) THEN
+    RAISE EXCEPTION 'smarter_private must not be a PostgREST exposed schema';
   END IF;
 END;
 $assert_stage_a_manager_request_fence$;

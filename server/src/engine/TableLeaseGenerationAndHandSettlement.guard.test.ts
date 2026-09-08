@@ -242,6 +242,19 @@ describe('table leases and accepted hands carry exact generations', () => {
   });
 
   it('publishes both rollout doors, keeps browser roles out, and uses no watcher', () => {
+    for (const signature of [
+      'claim_table_lease(uuid, text, text, integer)',
+      'heartbeat_table_leases(text, uuid[])',
+      'heartbeat_table_leases_v2(text, uuid[], integer)',
+      'release_table_leases(text, uuid[])',
+    ]) {
+      expect(MIGRATION).toContain(
+        `REVOKE ALL ON FUNCTION public.${signature}\n  FROM PUBLIC, anon, authenticated;`
+      );
+      expect(MIGRATION).toContain(
+        `GRANT EXECUTE ON FUNCTION public.${signature}\n  TO service_role;`
+      );
+    }
     expect(MIGRATION).toContain(
       'GRANT EXECUTE ON FUNCTION public.fn_ca_commit_hand_settlement(\n  uuid, bigint, jsonb, numeric, numeric, text, numeric, jsonb, jsonb\n) TO service_role;'
     );

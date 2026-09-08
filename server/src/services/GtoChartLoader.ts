@@ -3,8 +3,9 @@
  *
  * Hydrates the PioSolver push/fold charts (memory_charts_gold, 240 rows,
  * ~330KB) into the in-memory store the horse brain reads synchronously.
- * Same shape as HorseLaneLoader: load shortly after boot, refresh on a slow
- * timer so a re-solved chart reaches the fleet without a deploy.
+ * The live worker explicitly awaits the authoritative initial load before it
+ * publishes READY. This module's start/stop pair owns only the slow periodic
+ * refresh, so boot can never schedule a second, overlapping initial query.
  *
  * The refresh is HOURLY and the table is 240 rows — this loader must never
  * become the 2026-08-15 incident (a dashboard count on the 79GB solver
@@ -27,10 +28,8 @@ import {
 import { assertCompleteGtoChartCorpus } from '../gto/GtoChartCorpus.js';
 
 const REFRESH_MS = 60 * 60_000;
-const BOOT_DELAY_MS = 15_000;
 
 let timer: NodeJS.Timeout | null = null;
-let bootTimer: NodeJS.Timeout | null = null;
 
 export async function loadGtoCharts(): Promise<number> {
   try {
@@ -61,8 +60,6 @@ export async function loadGtoCharts(): Promise<number> {
 
 export function startGtoChartLoader(): void {
   if (timer) return;
-  bootTimer = setTimeout(() => void loadGtoCharts(), BOOT_DELAY_MS);
-  bootTimer.unref?.();
   timer = setInterval(() => void loadGtoCharts(), REFRESH_MS);
   timer.unref?.();
 }
@@ -71,9 +68,5 @@ export function stopGtoChartLoader(): void {
   if (timer) {
     clearInterval(timer);
     timer = null;
-  }
-  if (bootTimer) {
-    clearTimeout(bootTimer);
-    bootTimer = null;
   }
 }

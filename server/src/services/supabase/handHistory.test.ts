@@ -104,6 +104,30 @@ vi.mock('../errorReporter.js', () => ({
   reportError: (...args: unknown[]) => mockReportError(...args),
 }));
 
+interface CompletedHandObservationPayload {
+  generation: number;
+  fence: string;
+  handKey: string;
+  actions: unknown;
+  bigBlind: number;
+  showdown: unknown;
+  scope: string | null | undefined;
+}
+
+const mockObserveCompletedHand = vi.fn(async (observation: CompletedHandObservationPayload) => ({
+  type: 'ACK' as const,
+  requestId: 1,
+  generation: observation.generation,
+  fence: observation.fence,
+  operation: 'OBSERVE_COMPLETED_HAND' as const,
+}));
+const mockGetLiveHorseDecisionWorker = vi.fn(() => ({
+  observeCompletedHand: mockObserveCompletedHand,
+}));
+vi.mock('../../engine/horseDecision/index.js', () => ({
+  getLiveHorseDecisionWorker: () => mockGetLiveHorseDecisionWorker(),
+}));
+
 import {
   logHandHistory,
   drainHandHistoryQueue,
@@ -139,6 +163,16 @@ function params(handNumber = GLOBAL_HAND) {
 
 const inserts = () => calls.filter((c) => c.op === 'insert' && c.table === 'hand_history');
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((accept, decline) => {
+    resolve = accept;
+    reject = decline;
+  });
+  return { promise, resolve, reject };
+}
+
 beforeEach(async () => {
   // Empty any queue left over from a previous test.
   for (let i = 0; i < 5 && handHistoryQueueDepth() > 0; i++) {
@@ -154,6 +188,102 @@ beforeEach(async () => {
   atomicRpcResults = [];
   mockReportError.mockReset();
   mockWakeHandProjection.mockClear();
+  mockGetLiveHorseDecisionWorker.mockClear();
+  mockObserveCompletedHand.mockReset();
+  mockObserveCompletedHand.mockImplementation(async (observation) => ({
+    type: 'ACK' as const,
+    requestId: 1,
+    generation: observation.generation,
+    fence: observation.fence,
+    operation: 'OBSERVE_COMPLETED_HAND' as const,
+  }));
+});
+
+describe('logHandHistory - worker-owned completed-hand observation', () => {
+  it('sends the exact immutable hand payload and legacy authority fence', async () => {
+    const showdownReveal = [
+      { user_id: 'u1', seat: 1, reveal_order: 0, mucked: false, hand_name: 'Pair' },
+    ];
+    const input = { ...params(GLOBAL_HAND + 800), showdownReveal };
+
+    await logHandHistory(input);
+
+    expect(mockGetLiveHorseDecisionWorker).toHaveBeenCalledTimes(1);
+    expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
+    expect(mockObserveCompletedHand).toHaveBeenCalledWith({
+      generation: input.handNumber,
+      fence: `${input.tableId}:${input.handNumber}:legacy:observe`,
+      handKey: `${input.tableId}:${input.handNumber}`,
+      actions: input.actions,
+      bigBlind: input.bigBlind,
+      showdown: showdownReveal,
+      scope: 'holdem:hu',
+    });
+  });
+
+  it('does not resolve settlement until the worker FIFO acknowledges observation', async () => {
+    const ack = deferred<{
+      type: 'ACK';
+      requestId: number;
+      generation: number;
+      fence: string;
+      operation: 'OBSERVE_COMPLETED_HAND';
+    }>();
+    mockObserveCompletedHand.mockReturnValueOnce(ack.promise);
+    const input = params(GLOBAL_HAND + 801);
+    let settled = false;
+
+    const pending = logHandHistory(input).then((result) => {
+      settled = true;
+      return result;
+    });
+    await vi.waitFor(() => expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1));
+
+    expect(inserts()).toHaveLength(1);
+    expect(settled).toBe(false);
+    ack.resolve({
+      type: 'ACK',
+      requestId: 91,
+      generation: input.handNumber,
+      fence: `${input.tableId}:${input.handNumber}:legacy:observe`,
+      operation: 'OBSERVE_COMPLETED_HAND',
+    });
+
+    await expect(pending).resolves.toMatchObject({ handId: 'inserted' });
+    expect(settled).toBe(true);
+  });
+
+  it('reports a rejected observation without endangering the committed hand', async () => {
+    const observationError = new Error('worker observation unavailable');
+    mockObserveCompletedHand.mockRejectedValueOnce(observationError);
+
+    const result = await logHandHistory(params(GLOBAL_HAND + 802));
+
+    expect(result).toMatchObject({ handId: 'inserted', settlementCommitted: true });
+    expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
+    expect(mockReportError).toHaveBeenCalledWith(
+      observationError,
+      'HandHistory.horse_mind_observation_failed'
+    );
+  });
+
+  it('observes a failed inline write once and never replays it during durable queue recovery', async () => {
+    insertResults = [{ data: null, error: { message: 'timeout' } }];
+    const input = params(GLOBAL_HAND + 803);
+
+    const result = await logHandHistory(input);
+
+    expect(result.handId).toBeNull();
+    expect(handHistoryQueueDepth()).toBe(1);
+    expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
+
+    calls.length = 0;
+    insertResults = [{ data: { id: 'late-id' }, error: null }];
+    await drainHandHistoryQueue();
+
+    expect(handHistoryQueueDepth()).toBe(0);
+    expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('logHandHistory - accepted-hand transaction', () => {
@@ -268,6 +398,16 @@ describe('logHandHistory - accepted-hand transaction', () => {
     expect(inserts()).toHaveLength(0);
     expect(calls).toHaveLength(0);
     expect(handHistoryQueueDepth()).toBe(0);
+    expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
+    expect(mockObserveCompletedHand).toHaveBeenCalledWith({
+      generation: input.handNumber,
+      fence: `${input.tableId}:${input.handNumber}:${leaseGeneration}:observe`,
+      handKey: `${input.tableId}:${input.handNumber}`,
+      actions: input.actions,
+      bigBlind: input.bigBlind,
+      showdown: null,
+      scope: 'holdem:hu',
+    });
     expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
   });
 
@@ -303,6 +443,7 @@ describe('logHandHistory - accepted-hand transaction', () => {
         },
       });
       expect(input.assertLeaseAuthority).toHaveBeenCalledTimes(2);
+      expect(mockObserveCompletedHand).toHaveBeenCalledTimes(1);
       expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();

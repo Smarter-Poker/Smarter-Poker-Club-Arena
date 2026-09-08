@@ -39,6 +39,8 @@
     "fn_receipt_mystery_activation",
     "fn_emit_tournament_manager_wake",
     "fn_ack_tournament_manager_wakes",
+    "fn_emit_manager_wake_for_settled_bounty",
+    "fn_retire_manager_wakes_after_terminal_status",
     "fn_cast_tournament_deal_vote"
   ],
   "columns": {

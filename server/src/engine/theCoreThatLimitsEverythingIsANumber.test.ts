@@ -106,7 +106,8 @@ describe('the number leaves the process', () => {
     expect(SERVER).toContain('eventLoopDelayP99.set(');
     expect(SERVER).toContain('equityGovernorScale.set(');
     // Non-finite readings render as a number, never as NaN.
-    expect(SERVER).toContain('Number.isFinite(g.p50Ms) ? g.p50Ms : 0');
+    expect(SERVER).toContain('Number.isFinite(main.p50Ms) ? main.p50Ms : 0');
+    expect(SERVER).toContain('Number.isFinite(workerGovernor.scale)');
   });
 
   it('the sampler starts at boot and stops with the server', () => {

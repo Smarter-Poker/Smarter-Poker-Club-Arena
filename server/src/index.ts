@@ -30,12 +30,6 @@ import { ChannelWebSocketServer } from './transport/ChannelWebSocketServer.js';
 import { channelHub } from './hub/ChannelHub.js';
 import { GameServer } from './GameServer.js';
 import { createRouter } from './router.js';
-import { hydrateHorseMind } from './services/HorseMindHydrator.js';
-import {
-  hydrateHorseMindFromDb,
-  startHorseMindPersistence,
-  stopHorseMindPersistence,
-} from './services/HorseMindPersistence.js';
 import { startHorseSelfTuner, stopHorseSelfTuner } from './services/HorseSelfTuner.js';
 import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague, stopHorseLeague } from './benchmark/HorseLeague.js';
@@ -49,16 +43,6 @@ import {
   stopHorseDataLedgerSync,
 } from './services/HorseDataLedgerSync.js';
 import { startHorseLaneLoader, stopHorseLaneLoader } from './services/HorseLaneLoader.js';
-import { startGtoChartLoader, stopGtoChartLoader } from './services/GtoChartLoader.js';
-import {
-  startSolverPolicyArtifactLoader,
-  stopSolverPolicyArtifactLoader,
-} from './gto/SolverPolicyArtifactLoader.js';
-import { startGtoPostflopLoader, stopGtoPostflopLoader } from './services/GtoPostflopLoader.js';
-import {
-  startGtoPostflopV31Loader,
-  stopGtoPostflopV31Loader,
-} from './services/GtoPostflopV31Loader.js';
 import {
   startGtoAggregationDriver,
   stopGtoAggregationDriver,
@@ -185,23 +169,10 @@ async function startLeaderOwnedServices(): Promise<void> {
   leaderStopOperation = null;
   const generation = leaderLifecycleGeneration;
 
-  // AUDIT V6 (2026-07-24) + V12 (2026-08-22): restore the horses' learned
-  // opponent memory. V12 hydrates the persisted stats table first (unlimited
-  // horizon), then replays only the un-flushed hand_history tail; if the
-  // table is empty or unreadable it falls back to the full-window replay.
-  // Fire-and-forget — never blocks boot, never throws (fail-safe inside).
-  // V12.3: start the flush loop FIRST. It used to sit behind both hydration
-  // awaits, so if either Supabase call hung (both are unbounded reads, and both
-  // swallow their errors) the loop never started and the process accumulated
-  // learning it never persisted — silently, because nothing reports it. The
-  // loop is idempotent and its first tick is five minutes out, so starting it
-  // early costs nothing and removes the dependency entirely.
-  startHorseMindPersistence();
-  void (async () => {
-    const lastFlush = await hydrateHorseMindFromDb();
-    if (!leaderLifecycleIsCurrent(generation)) return;
-    await hydrateHorseMind(lastFlush);
-  })().catch((err) => reportError(err, 'HorseMindPersistence.boot_hydration'));
+  // The sole live horse-decision worker owns HorseMind hydration/persistence
+  // and every solver lookup store. GameServer starts that worker before table
+  // adoption and drains it after every dealer stops. Keeping a second copy in
+  // this bootstrap would split learned state and publish stale health.
   // V12 (2026-08-22): nightly per-horse self-study — every horse reviews its
   // own week of play, diagnoses leaks vs winning benchmarks, and nudges its
   // own profile dials. See HorseSelfTuner.ts + horse_self_tune_log.
@@ -236,25 +207,6 @@ async function startLeaderOwnedServices(): Promise<void> {
   // Game lanes (Dan 2026-08-27): the exact 33/33/34 split lives in the
   // database; this hydrates it and re-balances when the fleet grows.
   startHorseLaneLoader();
-  // Phase 2 canonical solver contract: load any deployment artifact before
-  // chart hydration. Both paths publish immutable in-memory maps, so horse
-  // decisions never wait on a remote solver or database query.
-  startSolverPolicyArtifactLoader();
-  // V27 solver charts (Dan 2026-08-29): the PioSolver push/fold charts,
-  // hydrated so the synchronous decision reads them at zero I/O. Without
-  // this call the layer is inert and heuristics decide — which is the
-  // fallback, not the plan.
-  startGtoChartLoader();
-  // V29 solver flop cells (Dan 2026-08-29): the offline aggregation of the
-  // 8.8M-solution warehouse, preloaded so heads-up hold'em flops play the
-  // solver's mixes at zero I/O. Without this the layer is inert (heuristics
-  // decide) — which is the fallback, not the plan.
-  startGtoPostflopLoader();
-  // V31 (2026-08-30): the suit-aware cells from the SECOND solver export,
-  // which is disjoint from the one V29/V30 read. Consulted before V30 and
-  // carries the solver's real bet size, so it can play the 246%-pot turn
-  // overbet v1 cannot express. Empty table = inert, V30 answers as before.
-  startGtoPostflopV31Loader();
   // V30 (Dan 2026-08-29): the one-time turn/river aggregation, paced in
   // small batches off the deal path. Restart-safe (cursor in
   // gto_agg_progress); permanently silent once both streets are done.
@@ -298,7 +250,6 @@ function stopLeaderOwnedServices(): Promise<void> {
     ['HorseOverlayGuard', () => horseOverlayGuard?.stop()],
     ['HorseSessionRotator', () => horseSessionRotator?.stop()],
     ['StableHandExecutor', () => stableHandExecutor?.stop()],
-    ['HorseMindPersistence', stopHorseMindPersistence],
     ['HorseSelfTuner', stopHorseSelfTuner],
     ['HorseLeague', stopHorseLeague],
     ['HorseDailyAudit', stopHorseDailyAudit],
@@ -307,12 +258,6 @@ function stopLeaderOwnedServices(): Promise<void> {
     ['HorseLaneLoader', stopHorseLaneLoader],
     ['GtoAggregationDriver', stopGtoAggregationDriver],
     ['GtoAggregationDriverV31', stopGtoAggregationDriverV31],
-    // These loaders only replace immutable process-local lookup maps, but
-    // their clocks still belong to this process lifecycle.
-    ['GtoChartLoader', stopGtoChartLoader],
-    ['SolverPolicyArtifactLoader', stopSolverPolicyArtifactLoader],
-    ['GtoPostflopLoader', stopGtoPostflopLoader],
-    ['GtoPostflopV31Loader', stopGtoPostflopV31Loader],
     ['HorseOnboardingBootSweep', drainLeaderBootMutations],
   ];
 

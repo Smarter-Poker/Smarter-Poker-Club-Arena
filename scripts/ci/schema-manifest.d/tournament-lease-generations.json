@@ -10,8 +10,16 @@
     "fn_complete_tournament_launch_before_lease_generation",
     "fn_begin_tournament_launch_atomic",
     "fn_complete_tournament_launch_atomic",
-    "trg_tournament_launch_receipt_is_immutable"
+    "trg_tournament_launch_receipt_is_immutable",
+    "fn_lock_tournament_launch_proof_parents",
+    "trg_lock_tournament_player_launch_proof",
+    "trg_lock_and_validate_tournament_live_seat",
+    "trg_lock_and_classify_tournament_table",
+    "trg_validate_tournament_table_origin",
+    "trg_tournament_table_origin_is_immutable",
+    "trg_assert_live_tournament_seat_has_roster"
   ],
+  "tables": ["tournament_table_origins"],
   "columns": {
     "engine_tournament_leases": ["lease_generation", "protocol_version"],
     "tournament_launch_receipts": ["lease_generation"]

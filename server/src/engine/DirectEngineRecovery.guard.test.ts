@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceCall, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const GAME_SERVER = readFileSync(resolve(process.cwd(), 'src/GameServer.ts'), 'utf8');
 
@@ -88,7 +88,7 @@ describe('direct table-engine terminal recovery', () => {
 
     const admission = method('private async performCashTableEngineAdmission(');
     expect(admission).toContain('generation: lease.leaseGeneration');
-    expect(admission).toContain('this.directAdmissionIsCurrent(generation)');
+    expect(admission).toContain('this.dealerAdmissionIsCurrent(generation)');
     const claimAt = admission.indexOf('await claimTableLease(tableId, requestedLeaseGeneration)');
     const releaseAt = admission.indexOf(
       'await this.awaitDirectTableLeaseRelease(tableId)',
@@ -298,10 +298,9 @@ describe('direct table-engine terminal recovery', () => {
     expect(staleAt).toBeGreaterThan(claimAt);
     expect(releaseAt).toBeGreaterThan(staleAt);
     expect(constructAt).toBeGreaterThan(releaseAt);
-    expect(admission.slice(constructAt, constructAt + 240)).toContain('lease.leaseGeneration');
-    expect(admission.slice(constructAt, constructAt + 240)).toContain(
-      'lease.proofDeadlineMonotonicMs'
-    );
+    const construction = sliceCall(admission, 'new TournamentManager(');
+    expect(construction).toContain('lease.leaseGeneration');
+    expect(construction).toContain('lease.proofDeadlineMonotonicMs');
     expect(method('private async discoverTournaments()')).not.toContain('new TournamentManager(');
     expect(method('private async discoverSeatFirstStarts()')).not.toContain(
       'new TournamentManager('

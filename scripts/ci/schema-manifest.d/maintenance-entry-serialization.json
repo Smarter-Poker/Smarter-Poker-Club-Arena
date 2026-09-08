@@ -20,7 +20,6 @@
     "fn_take_seat_and_buy_in_before_maintenance_announcement_gate",
     "fn_seat_horse_in_seat_first_game_before_maintenance_gate",
     "fn_seat_late_registrant_before_maintenance_gate",
-    "fn_repair_seat_first_games_before_maintenance_gate",
     "fn_cash_seat_move_execute_before_maintenance_gate",
     "fn_cash_seat_swap_execute_before_maintenance_gate",
     "fn_cash_seat_move_execute",

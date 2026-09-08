@@ -20,12 +20,14 @@ tournament_lease_migration="$(migration_by_suffix tournament_leases_have_fencing
 launch_child_migration="$(migration_by_suffix tournament_launch_children_share_the_transition_lock.sql)"
 table_lease_migration="$(migration_by_suffix table_leases_and_hand_commits_have_generations.sql)"
 stage_a_request_migration="$(migration_by_suffix tournament_manager_requests_carry_lease_authority.sql)"
+seat_first_atomic_migration="$(migration_by_suffix seat_first_board_creation_is_one_transaction.sql)"
 post_commit_migration="$(migration_by_suffix post_commit_obligations_are_atomic_and_resumable.sql)"
 stage_b_migration="$(migration_by_suffix tournament_manager_request_fencing_is_strict.sql)"
 
-if [[ "$stage_a_request_migration" > "$post_commit_migration" ]] ||
+if [[ "$stage_a_request_migration" > "$seat_first_atomic_migration" ]] ||
+  [[ "$seat_first_atomic_migration" > "$post_commit_migration" ]] ||
   [[ "$post_commit_migration" > "$stage_b_migration" ]]; then
-  echo 'Migration order must be Stage A request authority, post-commit obligations, then Stage B.' >&2
+  echo 'Migration order must be Stage A request authority, atomic seat-first creation, post-commit obligations, then Stage B.' >&2
   exit 1
 fi
 
@@ -83,6 +85,12 @@ psql_cmd=("${pg17_bin}/psql" -X -v ON_ERROR_STOP=1 -h "$socket_dir" -p "$port" -
   "$stage_a_request_migration" >/dev/null
 "${psql_cmd[@]}" -f \
   "$stage_a_request_migration" >/dev/null
+"${psql_cmd[@]}" -f \
+  "$seat_first_atomic_migration" >/dev/null
+"${psql_cmd[@]}" -f \
+  "$seat_first_atomic_migration" >/dev/null
+"${psql_cmd[@]}" -f \
+  "$repo_dir/scripts/dev/probe-seat-first-atomic.sql"
 # The post-commit migration has a full money-path rehearsal of its own. This
 # minimal authority fixture declares its exact 12-argument settlement and
 # processor catalog doors; the ordering check above prevents Stage B from ever

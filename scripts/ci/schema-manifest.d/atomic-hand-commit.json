@@ -4,6 +4,7 @@
   "functions": [
     "fn_ca_commit_hand_settlement",
     "fn_project_hand_side_effects",
+    "trg_finish_hand_post_commit_obligations",
     "fn_after_tournament_rebuy",
     "fn_decline_tournament_rebuy",
     "fn_open_tournament_rebuy_decisions"

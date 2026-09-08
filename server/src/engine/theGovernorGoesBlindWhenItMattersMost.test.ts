@@ -153,7 +153,8 @@ describe('the reading that cannot be starved leaves the process too', () => {
     expect(SERVER).toContain('equityGovernorSamplerLateMs.set(');
     // Rendered as a number even when the reading is absent - a gap in the
     // series and a zero mean different things, and only one of them is true.
-    expect(SERVER).toContain('Number.isFinite(g.timerLateMs) ? g.timerLateMs : 0');
+    expect(SERVER).toContain('Number.isFinite(workerGovernor.timerLateMs)');
+    expect(SERVER).toContain('mainEventLoopGovernorSamplerLateMs.set(');
   });
 
   it('the snapshot carries both the staleness flag and the lateness', () => {

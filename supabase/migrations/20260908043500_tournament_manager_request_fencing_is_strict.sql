@@ -38,7 +38,9 @@ DO $require_stage_a_request_authority$
 DECLARE
   v_source text;
 BEGIN
-  IF to_regprocedure('public.fn_smarter_data_api_pre_request()') IS NULL THEN
+  IF to_regprocedure(
+       'smarter_private.fn_smarter_data_api_pre_request()'
+     ) IS NULL THEN
     RAISE EXCEPTION
       'Stage-B manager request fencing requires the Stage-A request hook first';
   END IF;
@@ -46,14 +48,17 @@ BEGIN
   SELECT p.prosrc
     INTO STRICT v_source
     FROM pg_proc p
-   WHERE p.oid = 'public.fn_smarter_data_api_pre_request()'::regprocedure
+   WHERE p.oid =
+         'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
      AND p.prosecdef;
 
   IF position('app.smarter_data_actor' IN v_source) = 0
      OR position('x-smarter-data-actor' IN v_source) = 0
      OR position('l.lease_generation = v_lease_generation' IN v_source) = 0
      OR position('FOR SHARE' IN v_source) = 0
-     OR position('request.jwt.claims' IN v_source) = 0 THEN
+     OR position('request.jwt.claims' IN v_source) = 0
+     OR position('auth.role()' IN v_source) = 0
+     OR position('verified JWT role disagrees with request claims' IN v_source) = 0 THEN
     RAISE EXCEPTION
       'Refusing Stage-B activation over an unknown or incomplete request hook';
   END IF;
@@ -100,11 +105,15 @@ BEGIN
 END;
 $require_stage_a_request_authority$;
 
-CREATE OR REPLACE FUNCTION public.fn_smarter_data_api_pre_request()
+REVOKE ALL ON SCHEMA smarter_private
+  FROM PUBLIC, anon, authenticated, service_role, authenticator;
+GRANT USAGE ON SCHEMA smarter_private TO anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION smarter_private.fn_smarter_data_api_pre_request()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $function$
 DECLARE
   v_headers jsonb;
@@ -187,7 +196,12 @@ BEGIN
   v_protocol := btrim(COALESCE(v_headers ->> 'x-smarter-data-protocol', ''));
   /* SECURITY DEFINER makes current_user the function owner.  The JWT claims
      supplied and verified by PostgREST are the request identity here. */
-  v_request_role := btrim(COALESCE(v_claims ->> 'role', ''));
+  v_request_role := btrim(COALESCE(auth.role(), ''));
+  IF v_actor <> ''
+     AND v_request_role <> btrim(COALESCE(v_claims ->> 'role', '')) THEN
+    RAISE EXCEPTION 'DATA_ACTOR_INVALID: verified JWT role disagrees with request claims'
+      USING ERRCODE = '22023';
+  END IF;
   v_method := upper(btrim(COALESCE(current_setting('request.method', true), '')));
   v_path := lower(btrim(COALESCE(current_setting('request.path', true), ''), '/'));
   /* Direct PostgREST reports `rpc/name`; Supabase gateways may retain the
@@ -320,13 +334,15 @@ BEGIN
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION public.fn_smarter_data_api_pre_request()
-  FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.fn_smarter_data_api_pre_request()
+REVOKE ALL ON FUNCTION smarter_private.fn_smarter_data_api_pre_request()
+  FROM PUBLIC, anon, authenticated, service_role, authenticator;
+GRANT EXECUTE ON FUNCTION smarter_private.fn_smarter_data_api_pre_request()
   TO anon, authenticated, service_role;
 
-COMMENT ON FUNCTION public.fn_smarter_data_api_pre_request() IS
-  'Stage-B shared-estate Data API boundary. Unrelated unmarked service_role traffic remains valid; engine-private routes require an identified actor; protocol-2 tournament managers must hold and transaction-lock one exact fresh generation.';
+COMMENT ON FUNCTION smarter_private.fn_smarter_data_api_pre_request() IS
+  'Private, non-API Stage-B shared-estate Data API boundary. Unrelated unmarked service_role traffic remains valid; engine-private routes require an identified actor; protocol-2 tournament managers must hold and transaction-lock one exact fresh generation.';
+
+DROP FUNCTION IF EXISTS public.fn_smarter_data_api_pre_request();
 
 /* A marked manager is not merely "some manager".  Every direct row it touches
    must resolve to the same tournament named by the transaction-local request
@@ -634,6 +650,64 @@ REVOKE ALL ON FUNCTION public.fn_ca_commit_hand_settlement_exact_before_obligati
   uuid, bigint, jsonb, numeric, numeric, text, numeric, jsonb, jsonb, text, uuid
 ) FROM PUBLIC, anon, authenticated, service_role;
 
+/* Stage A deliberately left the old seat-first repair callable while an older
+   engine could still be running its two-request creator. At this Stage-B
+   boundary only the exact new engine may remain. Run the legacy repair once,
+   in this transaction, and refuse to retire it unless every historical
+   REGISTERING seat-first listing now has a joinable table. A maintenance
+   freeze makes the repair return without writing; the remaining-row proof
+   below then aborts the cutover instead of silently dropping the only legacy
+   recovery door. */
+DO $finish_and_retire_seat_first_repair$
+DECLARE
+  v_cleanup_result jsonb;
+BEGIN
+  IF to_regprocedure(
+       'public.fn_create_seat_first_game_atomic(uuid,jsonb)'
+     ) IS NULL THEN
+    RAISE EXCEPTION
+      'Stage-B seat-first repair retirement requires the atomic creator first';
+  END IF;
+
+  IF to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NOT NULL THEN
+    SELECT public.fn_repair_seat_first_games(1000)
+      INTO v_cleanup_result;
+    RAISE NOTICE 'Final bounded seat-first cleanup result: %', v_cleanup_result;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.tournaments t
+     WHERE t.status = 'REGISTERING'
+       AND (COALESCE(t.variant, '') = 'spin' OR COALESCE(t.max_players, 0) <= 2)
+       AND NOT EXISTS (
+         SELECT 1
+           FROM public.tables tb
+          WHERE tb.tournament_id = t.id
+            AND COALESCE(tb.is_deleted, false) = false
+            AND tb.status IN ('waiting', 'running')
+       )
+  ) THEN
+    RAISE EXCEPTION
+      'Stage-B seat-first repair retirement refused: an unjoinable legacy listing remains';
+  END IF;
+END;
+$finish_and_retire_seat_first_repair$;
+
+DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer);
+DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games_before_maintenance_gate(integer);
+
+DO $assert_seat_first_repair_retired$
+BEGIN
+  IF to_regprocedure('public.fn_repair_seat_first_games(integer)') IS NOT NULL
+     OR to_regprocedure(
+          'public.fn_repair_seat_first_games_before_maintenance_gate(integer)'
+        ) IS NOT NULL THEN
+    RAISE EXCEPTION 'A legacy seat-first repair door survived Stage B';
+  END IF;
+END;
+$assert_seat_first_repair_retired$;
+
 DO $assert_strict_manager_request_fence$
 DECLARE
   v_hook_source text;
@@ -642,7 +716,8 @@ DECLARE
 BEGIN
   SELECT p.prosrc INTO STRICT v_hook_source
     FROM pg_proc p
-   WHERE p.oid = 'public.fn_smarter_data_api_pre_request()'::regprocedure
+   WHERE p.oid =
+         'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
      AND p.prosecdef;
   SELECT p.prosrc INTO STRICT v_scope_source
     FROM pg_proc p
@@ -662,6 +737,8 @@ BEGIN
      OR position('FOR SHARE' IN v_hook_source) = 0
      OR position('l.lease_generation = v_lease_generation' IN v_hook_source) = 0
      OR position('app.smarter_manager_request_fenced' IN v_hook_source) = 0
+     OR position('auth.role()' IN v_hook_source) = 0
+     OR position('verified JWT role disagrees with request claims' IN v_hook_source) = 0
      OR position($needle$left(v_path, 8) = 'rest/v1/'$needle$ IN v_hook_source) = 0
      OR position($needle$'protocol-2'$needle$ IN v_scope_source) = 0
      OR position('p_tournament_id IS DISTINCT FROM v_tournament_id' IN v_scope_source) = 0
@@ -794,9 +871,75 @@ BEGIN
       CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) setting(value)
      WHERE r.rolname = 'authenticator'
        AND setting.value =
-           'pgrst.db_pre_request=public.fn_smarter_data_api_pre_request'
+           'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
   ) THEN
     RAISE EXCEPTION 'PostgREST strict request hook setting is absent';
+  END IF;
+
+  IF to_regprocedure('public.fn_smarter_data_api_pre_request()') IS NOT NULL THEN
+    RAISE EXCEPTION 'Strict request hook remains callable from the exposed public schema';
+  END IF;
+
+  IF NOT has_function_privilege(
+       'service_role',
+       'smarter_private.fn_smarter_data_api_pre_request()',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'anon',
+       'smarter_private.fn_smarter_data_api_pre_request()',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'authenticated',
+       'smarter_private.fn_smarter_data_api_pre_request()',
+       'EXECUTE'
+     )
+     OR NOT has_schema_privilege('service_role', 'smarter_private', 'USAGE')
+     OR NOT has_schema_privilege('anon', 'smarter_private', 'USAGE')
+     OR NOT has_schema_privilege('authenticated', 'smarter_private', 'USAGE')
+     OR has_schema_privilege('service_role', 'smarter_private', 'CREATE')
+     OR has_schema_privilege('anon', 'smarter_private', 'CREATE')
+     OR has_schema_privilege('authenticated', 'smarter_private', 'CREATE')
+     OR has_function_privilege(
+       'authenticator',
+       'smarter_private.fn_smarter_data_api_pre_request()',
+       'EXECUTE'
+     )
+     OR EXISTS (
+       SELECT 1
+         FROM pg_proc p
+         CROSS JOIN LATERAL aclexplode(p.proacl) acl
+        WHERE p.oid =
+              'smarter_private.fn_smarter_data_api_pre_request()'::regprocedure
+          AND acl.grantee = 0
+          AND acl.privilege_type = 'EXECUTE'
+     )
+     OR EXISTS (
+       SELECT 1
+         FROM pg_namespace n
+         CROSS JOIN LATERAL aclexplode(n.nspacl) acl
+        WHERE n.nspname = 'smarter_private'
+          AND acl.grantee = 0
+          AND acl.privilege_type IN ('USAGE', 'CREATE')
+     ) THEN
+    RAISE EXCEPTION 'Private strict request hook ACL is not exact';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+      FROM pg_db_role_setting s
+      JOIN pg_roles r ON r.oid = s.setrole
+      CROSS JOIN LATERAL unnest(COALESCE(s.setconfig, '{}'::text[])) AS setting(value)
+      CROSS JOIN LATERAL regexp_split_to_table(
+        split_part(setting.value, '=', 2),
+        '[[:space:]]*,[[:space:]]*'
+      ) AS exposed(schema_name)
+     WHERE r.rolname = 'authenticator'
+       AND setting.value LIKE 'pgrst.db_schemas=%'
+       AND exposed.schema_name = 'smarter_private'
+  ) THEN
+    RAISE EXCEPTION 'smarter_private must not be a PostgREST exposed schema';
   END IF;
 END;
 $assert_strict_manager_request_fence$;

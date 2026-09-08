@@ -20,6 +20,26 @@ const SQL = readFileSync(
   ),
   'utf8'
 );
+const ATOMIC_SEAT_FIRST_SQL = readFileSync(
+  resolve(
+    process.cwd(),
+    '..',
+    'supabase',
+    'migrations',
+    '20260908043250_seat_first_board_creation_is_one_transaction.sql'
+  ),
+  'utf8'
+);
+const STRICT_STAGE_B_SQL = readFileSync(
+  resolve(
+    process.cwd(),
+    '..',
+    'supabase',
+    'migrations',
+    '20260908043500_tournament_manager_request_fencing_is_strict.sql'
+  ),
+  'utf8'
+);
 const STORE = readFileSync(
   resolve(process.cwd(), 'src', 'maintenance', 'maintenanceBreakStore.ts'),
   'utf8'
@@ -144,6 +164,18 @@ describe('maintenance and new entries share one transaction boundary', () => {
     );
     expect(SQL).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_repair_seat_first_games_before_maintenance_gate\(integer\)\s+FROM PUBLIC, anon, authenticated, service_role;/
+    );
+  });
+
+  it('uses that ordering once for old damage and then retires the repair door', () => {
+    expect(ATOMIC_SEAT_FIRST_SQL).not.toContain(
+      'DROP FUNCTION IF EXISTS public.fn_repair_seat_first_games(integer)'
+    );
+    expect(STRICT_STAGE_B_SQL).toMatch(
+      /SELECT public\.fn_repair_seat_first_games\(1000\)[\s\S]*?unjoinable legacy listing remains[\s\S]*?DROP FUNCTION IF EXISTS public\.fn_repair_seat_first_games\(integer\)[\s\S]*?DROP FUNCTION IF EXISTS public\.fn_repair_seat_first_games_before_maintenance_gate\(integer\)/
+    );
+    expect(ATOMIC_SEAT_FIRST_SQL).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.fn_create_seat_first_game_atomic[\s\S]*?pg_advisory_xact_lock_shared\(530090, 1\)[\s\S]*?INSERT INTO public\.tournaments[\s\S]*?INSERT INTO public\.tables/
     );
   });
 

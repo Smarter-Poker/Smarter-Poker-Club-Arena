@@ -268,6 +268,27 @@ BEGIN
 END;
 $function$;
 
+/* These generation-blind overloads exist only for a DB-first rolling deploy.
+   Explicitly remove PostgreSQL's default PUBLIC EXECUTE while the old engine
+   still needs service-role access. Stage B drops all four after the
+   exact-generation engine is the sole live build. */
+REVOKE ALL ON FUNCTION public.claim_table_lease(uuid, text, text, integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_table_lease(uuid, text, text, integer)
+  TO service_role;
+REVOKE ALL ON FUNCTION public.heartbeat_table_leases(text, uuid[])
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.heartbeat_table_leases(text, uuid[])
+  TO service_role;
+REVOKE ALL ON FUNCTION public.heartbeat_table_leases_v2(text, uuid[], integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.heartbeat_table_leases_v2(text, uuid[], integer)
+  TO service_role;
+REVOKE ALL ON FUNCTION public.release_table_leases(text, uuid[])
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.release_table_leases(text, uuid[])
+  TO service_role;
+
 /* The caller chooses one UUID before admission and retains it across causal
    retries.  UUIDs have no ordering, so a live protocol-2 row accepts only the
    exact current UUID.  Allowing an arbitrary same-instance rotation would let

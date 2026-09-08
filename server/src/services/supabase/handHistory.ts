@@ -13,7 +13,8 @@ import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { writeHandFacts } from './handFacts.js';
 import { recordHorseHandReviews } from '../HorseHandReview.js';
-import { HorseMind, readScopeOf } from '../../engine/HorseMind.js';
+import { readScopeOf } from '../../engine/HorseMind.js';
+import { getLiveHorseDecisionWorker } from '../../engine/horseDecision/index.js';
 import { wakeHandProjection } from './handProjection.js';
 
 export interface AtomicHandCommitInput {
@@ -428,27 +429,34 @@ export async function logHandHistory(params: {
     enqueueHandHistory(row, bombUnits);
   }
 
-  // V28 AUDIT FIX (2026-08-29): the opponent-model observation used to sit
-  // INSIDE the `if (handId ...)` block below, coupling an in-memory read to a
-  // database write it does not need. During any DB incident (596 supabase
-  // timeouts in one hour on the day this was found), every hand that fell to
-  // the background queue silently skipped observeHandComplete — the
-  // fold-to-c-bet, fold-to-3-bet and big-bet tells went dark exactly when
-  // nothing else was watching either. The observation is memory-only and
-  // idempotent (handFlags dedupe); it runs whether or not the row landed.
+  // V28 AUDIT FIX (2026-08-29): observe regardless of whether the history row
+  // landed. ROOT-CAUSE CAPACITY FIX (2026-09-08): HorseMind now lives beside
+  // HorseLogic in the sole worker FIFO. Awaiting this cheap observation before
+  // settlement returns guarantees the next hand cannot decide against stale
+  // opponent memory, while never splitting mutable HorseMind state across two
+  // threads. The durable hand commit above remains independent.
   try {
-    HorseMind.observeHandComplete(
-      `${params.tableId}:${params.handNumber}`,
-      params.actions,
-      params.bigBlind,
-      params.showdownReveal ?? null,
+    const handKey = `${params.tableId}:${params.handNumber}`;
+    await getLiveHorseDecisionWorker().observeCompletedHand({
+      generation: params.handNumber,
+      fence: [
+        params.tableId,
+        params.handNumber,
+        params.atomicCommit?.leaseGeneration ?? 'legacy',
+        'observe',
+      ].join(':'),
+      handKey,
+      actions: params.actions,
+      bigBlind: params.bigBlind,
+      showdown: params.showdownReveal ?? null,
       // V45: the hand's scope - card family and how many were dealt in.
-      readScopeOf(
+      scope: readScopeOf(
         params.gameVariant,
         params.holeCardsAll?.size ?? params.roster?.length ?? params.players?.length ?? 0
-      )
-    );
-  } catch {
+      ),
+    });
+  } catch (error) {
+    reportError(error, 'HandHistory.horse_mind_observation_failed');
     /* observation must never endanger settlement */
   }
 

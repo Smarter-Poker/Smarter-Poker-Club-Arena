@@ -146,6 +146,16 @@ interface SpinConfig {
   // own table is how three disagreeing tables happened.
 }
 
+interface AtomicSeatFirstCreation {
+  tournament: {
+    id: string;
+    club_id?: string | null;
+    name: string;
+    [key: string]: unknown;
+  };
+  tableId: string;
+}
+
 interface XMTTConfig {
   name: string;
   type: 'mtt' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
@@ -2868,7 +2878,6 @@ export class TournamentRecurringService {
     await this.withBoardTick('sng', async () => {
       // THE FREEZE IS TOTAL (Dan 2026-09-03) - see checkAndLaunchTournaments.
       if (isMaintenanceFrozen()) return;
-      await this.repairSeatFirstGames();
 
       /* Dan 2026-09-01 (Deep Stack Society directive): heads-up and SNG
        * boards for activated club owners, exactly the way the Spin pass
@@ -2984,14 +2993,12 @@ export class TournamentRecurringService {
       const startTime = new Date(Date.now() + seatFirstHumanWindowMs());
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createSatelliteHeadsUp');
 
-      const { data: sat, error } = await supabase
-        .from('tournaments')
-        .insert({
-          club_id: owner.clubId,
-          union_id: owner.unionId,
-          name: config.name,
-          game_type: dbGameType,
-          /* variant 'sng' + tournament_type 'SATELLITE', deliberately. Every
+      const satelliteRow = {
+        club_id: owner.clubId,
+        union_id: owner.unionId,
+        name: config.name,
+        game_type: dbGameType,
+        /* variant 'sng' + tournament_type 'SATELLITE', deliberately. Every
              seat-first reader (GameServer's fast start, fn_take_seat_and_buy_in,
              the stuck-finish sweep, the table sizing in TournamentManager) knows
              a heads-up as `variant === 'sng' && max_players <= 2`, and the
@@ -2999,46 +3006,34 @@ export class TournamentRecurringService {
              tournament_type === 'SATELLITE'` (TournamentManagerEliminations,
              fn_tournament_payout_reconcile). This row satisfies both without
              teaching either side a new spelling. */
-          variant: 'sng',
-          tournament_type: 'SATELLITE',
-          ...buyInColumns(
-            config.buyIn,
-            rakeRateFor({ tournamentType: 'SNG', maxPlayers: config.maxPlayers })
-          ),
-          guaranteed_prize: 0,
-          starting_chips: config.startingStack,
-          max_players: config.maxPlayers,
-          min_players: config.minPlayers,
-          table_size: config.maxPlayers,
-          current_players: 0,
-          status: 'REGISTERING',
-          blind_structure: config.blindStructure,
-          payout_structure: config.payoutStructure,
-          start_time: startTime.toISOString(),
-          late_reg_levels: 0,
-          late_reg_mins: 0,
-          satellite_target_id: config.targetId,
-          satellite_seats: 1,
-          short_description: `Win A Seat In ${config.targetName}. 1 Seat Guaranteed.`,
-        })
-        .select()
-        .maybeSingle();
-
-      if (error || !sat) {
-        reportError(
-          new Error(
-            `[TournamentRecurring] satellite heads-up creation failed: ${error?.message || JSON.stringify(error) || 'Unknown error'}`
-          ),
-          'TournamentRecurring.satellite_creation_failed'
-        );
+        variant: 'sng',
+        tournament_type: 'SATELLITE',
+        ...buyInColumns(
+          config.buyIn,
+          rakeRateFor({ tournamentType: 'SNG', maxPlayers: config.maxPlayers })
+        ),
+        guaranteed_prize: 0,
+        starting_chips: config.startingStack,
+        max_players: config.maxPlayers,
+        min_players: config.minPlayers,
+        table_size: config.maxPlayers,
+        current_players: 0,
+        status: 'REGISTERING',
+        blind_structure: config.blindStructure,
+        payout_structure: config.payoutStructure,
+        start_time: startTime.toISOString(),
+        late_reg_levels: 0,
+        late_reg_mins: 0,
+        satellite_target_id: config.targetId,
+        satellite_seats: 1,
+        short_description: `Win A Seat In ${config.targetName}. 1 Seat Guaranteed.`,
+      };
+      const created = await this.createSeatFirstGameAtomic(satelliteRow, 'satellite');
+      if (!created) {
         return { tournamentId: null, registered: 0 };
       }
-
-      const hu = (config.blindStructure?.[0] as { smallBlind: number; bigBlind: number }) ?? {
-        smallBlind: 10,
-        bigBlind: 20,
-      };
-      await this.createOpenSeatTable(sat, config.maxPlayers, dbGameType, hu);
+      const sat = created.tournament;
+      await this.seedOpenSeatTable(sat, config.maxPlayers, created.tableId);
       console.log(
         `[TournamentRecurring] satellite heads-up "${config.name}" opened for ${owner.kind} ${owner.clubId.slice(0, 8)}: ${config.buyIn} chips a seat, ticket ${config.ticketCost}`
       );
@@ -3102,52 +3097,42 @@ export class TournamentRecurringService {
   }
 
   /**
-   * ═══════════════════════════════════════════════════════════════════════
-   *  A SEAT-FIRST GAME WITH NO TABLE IS A LISTING NOBODY CAN EVER JOIN
-   * ═══════════════════════════════════════════════════════════════════════
-   *
-   * Measured on production 2026-08-23: of 33 REGISTERING Spins, THIRTY had no
-   * table row, and of 17 heads-ups, FOURTEEN. Oldest 15 hours old. A player
-   * clicking one found no seats, because there were none.
-   *
-   * AND IT IS SELF-SUSTAINING, which is what makes it worth a repair pass
-   * rather than a bug fix alone. ensureBoardOpen decides what to open by NAME:
-   * a husk is REGISTERING, so its name is "covered", so its price point is
-   * never reopened - and the husk can never leave REGISTERING, because a
-   * seat-first game starts when every SEAT is sold and it has no seats. One
-   * dead row wedges one price point forever. Exactly two of thirty-two Spin
-   * configs were still cycling.
-   *
-   * fn_repair_seat_first_games gives the husk the table it never got, seats
-   * its opening horses (seats-1) and restarts its human window at a fresh
-   * 60-180 seconds, rather than cancelling it - section 8 of this file is
-   * explicit that tournaments run, they do not cancel.
-   *
-   * Idempotent by construction: it only ever touches a REGISTERING seat-first
-   * game that has no table, so on a healthy board it does nothing and costs
-   * one indexed query.
+   * Create the listing and its joinable table inside one database transaction.
+   * The UUID is generated before the request, so an ambiguous response can be
+   * retried against the same identity without opening a second game.
    */
-  private async repairSeatFirstGames(): Promise<void> {
-    try {
-      const { data, error } = await supabase.rpc('fn_repair_seat_first_games', {
-        p_limit: 25,
-      });
-      if (error) {
-        reportError(
-          new Error(`[TournamentRecurring] seat-first repair failed: ${error.message}`),
-          'TournamentRecurring.seat_first_repair_failed'
-        );
-        return;
-      }
-      const res = data as { repaired?: number; horses_seated?: number } | null;
-      if (res?.repaired) {
-        console.log(
-          `[TournamentRecurring] repaired ${res.repaired} seat-first game(s) that had no table; seated ${res.horses_seated ?? 0} opening horse(s)`
-        );
-      }
-    } catch (err: any) {
-      reportError(err, 'TournamentRecurring.seat_first_repair_threw');
+  private async createSeatFirstGameAtomic(
+    row: Record<string, unknown>,
+    context: string
+  ): Promise<AtomicSeatFirstCreation | null> {
+    const tournamentId = nodeCrypto.randomUUID();
+    const { data, error } = await supabase.rpc('fn_create_seat_first_game_atomic', {
+      p_tournament_id: tournamentId,
+      p_config: row,
+    });
+    const result = data as {
+      ok?: boolean;
+      reason?: string;
+      tournament?: AtomicSeatFirstCreation['tournament'];
+      table_id?: string;
+    } | null;
+    if (error || result?.ok !== true || !result.tournament || !result.table_id) {
+      reportError(
+        new Error(
+          `[TournamentRecurring] ${context} atomic creation failed: ${error?.message ?? result?.reason ?? 'invalid response'}`
+        ),
+        `TournamentRecurring.${context}_atomic_creation_failed`
+      );
+      return null;
     }
+    if (result.tournament.id !== tournamentId) {
+      reportError(
+        new Error(`[TournamentRecurring] ${context} atomic creation returned another game`),
+        `TournamentRecurring.${context}_atomic_identity_mismatch`
+      );
+      return null;
+    }
+    return { tournament: result.tournament, tableId: result.table_id };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -3158,9 +3143,6 @@ export class TournamentRecurringService {
     await this.withBoardTick('spin', async () => {
       // THE FREEZE IS TOTAL (Dan 2026-09-03) - see checkAndLaunchTournaments.
       if (isMaintenanceFrozen()) return;
-      // Heal before opening. A husk still counts as "this price point is
-      // covered" below, so skipping this would leave the board wedged.
-      await this.repairSeatFirstGames();
 
       // ONE ceiling for the whole pass (BURST), split into a share per board
       // before anyone spends. The house board used to go first on a single
@@ -3276,10 +3258,9 @@ export class TournamentRecurringService {
        * thirty-two Spin price points were dead for fifteen hours: a
        * seat-first game with no table is REGISTERING forever, so its name
        * permanently satisfied the board and the config was never reopened.
-       * repairSeatFirstGames above should mean this never has anything to
-       * exclude - but a board that wedges itself when one repair fails is
-       * exactly the shape that produced the outage, so the rule is stated
-       * here too.
+       * The atomic creator means a new listing cannot exist without its table.
+       * This filter remains defense in depth for rows created by a pre-atomic
+       * binary during a rolling deployment.
        *
        * OWNING A TABLE IS NOT THE SAME AS BEING JOINABLE (2026-08-31). The
        * test used to be "does a table row exist", and that is how the entire
@@ -3892,60 +3873,74 @@ export class TournamentRecurringService {
             : OPEN_TABLE_WAIT_MS)
       );
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createSNG');
+      const seatFirstSng = isSeatFirstFormat('sng', config.maxPlayers);
 
-      const { data: sng, error } = await supabase
-        .from('tournaments')
-        .insert({
-          // Whose board this is. See BoardOwner: these two fields are the
-          // ONLY thing that decides which lobby the game appears in.
-          club_id: owner.clubId,
-          union_id: owner.unionId,
-          name: config.name,
-          game_type: dbGameType,
-          variant: 'sng',
-          tournament_type: 'SNG',
-          // ONE source of truth for the rate — see rakeRateFor in
-          // server/src/config/buyIn.ts. Keyed on the SEATS this config actually
-          // has rather than on the word "SNG", so a future field SNG prices
-          // itself correctly without anyone remembering to come back here.
-          ...buyInColumns(
-            config.buyIn,
-            rakeRateFor({ tournamentType: 'SNG', maxPlayers: config.maxPlayers })
-          ),
-          guaranteed_prize: 0,
-          starting_chips: config.startingStack,
-          max_players: config.maxPlayers,
-          min_players: config.minPlayers || 3,
-          /**
-           * SEATS AT THE TABLE (2026-08-27). This column was never written and
-           * is `NOT NULL DEFAULT 9`, so every Heads-Up game ever created by this
-           * service claimed a nine-handed table — 10,315 rows sitting at 9.
-           *
-           * That is not cosmetic. TournamentBrainContext resolves the format
-           * from `table_size ?? max_players ?? 9`, and `??` only falls through
-           * on NULL, so a defaulted 9 meant `max_players = 2` could never be
-           * reached and EVERY duel resolved to 'mtt'. The horses then played
-           * two-handed, one-spot-pays poker with ICM and bubble ranges.
-           *
-           * Clamped 2..10 to match every reader of this column
-           * (TournamentManagerBase, TournamentManager, the deal gate).
-           */
-          table_size: Math.min(10, Math.max(2, Number(config.maxPlayers) || 2)),
-          current_players: 0,
-          status: 'REGISTERING',
-          blind_structure: config.blindStructure,
-          payout_structure: config.payoutStructure || [],
-          start_time: startTime.toISOString(),
-          late_reg_levels: 0,
-          late_reg_mins: 0,
-        })
-        .select()
-        .maybeSingle(); // FIX 168
+      const sngRow = {
+        // Whose board this is. See BoardOwner: these two fields are the
+        // ONLY thing that decides which lobby the game appears in.
+        club_id: owner.clubId,
+        union_id: owner.unionId,
+        name: config.name,
+        game_type: dbGameType,
+        variant: 'sng',
+        tournament_type: 'SNG',
+        // ONE source of truth for the rate - see rakeRateFor in
+        // server/src/config/buyIn.ts. Keyed on the SEATS this config actually
+        // has rather than on the word "SNG", so a future field SNG prices
+        // itself correctly without anyone remembering to come back here.
+        ...buyInColumns(
+          config.buyIn,
+          rakeRateFor({ tournamentType: 'SNG', maxPlayers: config.maxPlayers })
+        ),
+        guaranteed_prize: 0,
+        starting_chips: config.startingStack,
+        max_players: config.maxPlayers,
+        min_players: config.minPlayers || 3,
+        /**
+         * SEATS AT THE TABLE (2026-08-27). This column was never written and
+         * is `NOT NULL DEFAULT 9`, so every Heads-Up game ever created by this
+         * service claimed a nine-handed table - 10,315 rows sitting at 9.
+         *
+         * That is not cosmetic. TournamentBrainContext resolves the format
+         * from `table_size ?? max_players ?? 9`, and `??` only falls through
+         * on NULL, so a defaulted 9 meant `max_players = 2` could never be
+         * reached and EVERY duel resolved to 'mtt'. The horses then played
+         * two-handed, one-spot-pays poker with ICM and bubble ranges.
+         *
+         * Clamped 2..10 to match every reader of this column
+         * (TournamentManagerBase, TournamentManager, the deal gate).
+         */
+        table_size: Math.min(10, Math.max(2, Number(config.maxPlayers) || 2)),
+        current_players: 0,
+        status: 'REGISTERING',
+        blind_structure: config.blindStructure,
+        payout_structure: config.payoutStructure || [],
+        start_time: startTime.toISOString(),
+        late_reg_levels: 0,
+        late_reg_mins: 0,
+      };
 
-      if (error || !sng) {
+      let sng: AtomicSeatFirstCreation['tournament'] | null = null;
+      let seatFirstTableId: string | null = null;
+      let creationError: { message?: string } | null = null;
+      if (seatFirstSng) {
+        const created = await this.createSeatFirstGameAtomic(sngRow, 'sng');
+        sng = created?.tournament ?? null;
+        seatFirstTableId = created?.tableId ?? null;
+      } else {
+        const { data, error } = await supabase
+          .from('tournaments')
+          .insert(sngRow)
+          .select()
+          .maybeSingle(); // FIX 168
+        sng = data as AtomicSeatFirstCreation['tournament'] | null;
+        creationError = error;
+      }
+
+      if (creationError || !sng) {
         reportError(
           new Error(
-            `[TournamentRecurring] SNG creation failed: ${error?.message || JSON.stringify(error) || 'Unknown error'}`
+            `[TournamentRecurring] SNG creation failed: ${creationError?.message || JSON.stringify(creationError) || 'Unknown error'}`
           ),
           'TournamentRecurring.SNG_creation_failed'
         );
@@ -3958,12 +3953,15 @@ export class TournamentRecurringService {
       // 6-max and 9-max SNGs are fields, not tables, and keep the
       // seat-held registration model.
       let registered = 0;
-      if (isSeatFirstFormat('sng', config.maxPlayers)) {
-        const hu = (config.blindStructure?.[0] as { smallBlind: number; bigBlind: number }) ?? {
-          smallBlind: 10,
-          bigBlind: 20,
-        };
-        await this.createOpenSeatTable(sng, config.maxPlayers, dbGameType, hu);
+      if (seatFirstSng) {
+        if (!seatFirstTableId) {
+          reportError(
+            new Error(`[TournamentRecurring] SNG ${sng.id} has no atomic table identity`),
+            'TournamentRecurring.SNG_atomic_table_missing'
+          );
+          return { tournamentId: null, registered: 0 };
+        }
+        await this.seedOpenSeatTable(sng, config.maxPlayers, seatFirstTableId);
       } else {
         // TOURNEY-AUDIT 2026-07-24 (sweep 6): hold one seat for a human (full
         // fill only on periodic verification games).
@@ -3974,7 +3972,7 @@ export class TournamentRecurringService {
       /**
        * Dan 2026-08-23: same trap as createSpin, one branch narrower.
        *
-       * A seat-first SNG goes down the createOpenSeatTable path above, which
+       * A seat-first SNG goes down the atomic creator path above, which
        * seats its horse without registering anybody, so `registered` is still
        * 0 here - and writing that zero erased the seat-derived count the
        * trigger had just set. A field SNG (6-max, 9-max) really does keep the
@@ -3990,7 +3988,6 @@ export class TournamentRecurringService {
       // ~230,561 chips retained over 30 days, repaid by
       // fn_backpay_hu_winner_shortfalls. The register RPCs are the only
       // writer of pool contributions now.
-      const seatFirstSng = isSeatFirstFormat('sng', config.maxPlayers);
       const sngStateUpdate: Record<string, unknown> = {
         status: 'REGISTERING',
       };
@@ -4019,10 +4016,9 @@ export class TournamentRecurringService {
   }
 
   /**
-   * Create the table a seat-first game is played at, with its seats EMPTY and
-   * waiting. This is the whole difference between "a tournament you register
-   * for" and "a table you sit down at": the table exists from the moment the
-   * game is listed, so the lobby can show 0/3 and a player can take seat 2.
+   * Seed the already-created table for a seat-first game. The database creates
+   * the listing and this table in one transaction before this method runs, so
+   * no application interruption can leave a tableless REGISTERING game.
    *
    * status 'waiting' (not 'running') — the engine has nothing to deal yet.
    * TournamentManagerBase.createTablesAndSeatPlayers already ADOPTS tables in
@@ -4033,41 +4029,12 @@ export class TournamentRecurringService {
    * Cash-table discovery cannot touch it: `cash_tables_with_players` filters
    * on `tournament_id IS NULL`.
    */
-  private async createOpenSeatTable(
+  private async seedOpenSeatTable(
     tournament: { id: string; club_id?: string | null; name: string },
     seats: number,
-    dbGameType: string,
-    firstLevel: { smallBlind: number; bigBlind: number }
+    tableId: string
   ): Promise<string | null> {
     try {
-      const { data: table, error } = await supabase
-        .from('tables')
-        .insert({
-          club_id: tournament.club_id ?? this.ownerClubId,
-          tournament_id: tournament.id,
-          name: tournament.name,
-          game_type: 'tournament',
-          game_variant: dbGameType.toLowerCase(),
-          stakes: `${firstLevel.smallBlind}/${firstLevel.bigBlind}`,
-          small_blind: firstLevel.smallBlind,
-          big_blind: firstLevel.bigBlind,
-          min_buy_in: 0,
-          max_buy_in: 0,
-          max_players: seats,
-          current_players: 0,
-          status: 'waiting',
-        })
-        .select('id')
-        .maybeSingle();
-      if (error || !table) {
-        reportError(
-          new Error(
-            `[TournamentRecurring] open-seat table creation failed for ${tournament.id.slice(0, 8)}: ${error?.message || 'unknown'}`
-          ),
-          'TournamentRecurring.open_seat_table_failed'
-        );
-        return null;
-      }
       /**
        * Open the table at seats-1: two horses on a Spin, one heads-up.
        *
@@ -4161,9 +4128,9 @@ export class TournamentRecurringService {
         }
       }
 
-      return table.id as string;
+      return tableId;
     } catch (err: any) {
-      reportError(err, 'TournamentRecurring.createOpenSeatTable_threw');
+      reportError(err, 'TournamentRecurring.seedOpenSeatTable_threw');
       return null;
     }
   }
@@ -4720,8 +4687,8 @@ export class TournamentRecurringService {
     tournamentId: string,
     primaryTableId: string | null
   ): Promise<string[]> {
-    // No table means there is no seat to give anybody; the RPC would answer
-    // 'no_table' for each one. Repair is fn_repair_seat_first_games' job.
+    // No table means there is no seat to give anybody. New seat-first games
+    // cannot reach this state because their listing and table commit together.
     if (!primaryTableId) return [];
     try {
       const { data: roster, error: rosterErr } = await supabase
@@ -4862,82 +4829,73 @@ export class TournamentRecurringService {
 
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createSpin');
 
-      const { data: spin, error } = await supabase
-        .from('tournaments')
-        .insert({
-          // Whose board this is. See BoardOwner: these two fields are the
-          // ONLY thing that decides which lobby the game appears in.
-          club_id: owner.clubId,
-          union_id: owner.unionId,
-          // THE NAME MUST NOT CARRY THE MULTIPLIER. It used to read
-          // "3 Chip Spin NLH (4x)", and that one string reached the lobby
-          // tile, the tournament list, the table masthead and the browser tab
-          // — so by the time the wheel span up to "reveal" the draw, the
-          // player had already read the answer in four places. The draw is the
-          // product; a reveal of a number you were shown on the way in is
-          // theatre. `spin_multiplier` carries the value for everything that
-          // legitimately needs it, and nothing anywhere parses the name for it
-          // (verified by grep across both projects).
-          name: config.name,
-          game_type: dbGameType,
-          variant: 'spin',
-          tournament_type: 'SPIN',
-          // Whole chips only (Dan 2026-08-20): "Sit and Go and any tournament
-          // buy-ins must never be decimal buy-ins, whole numbers only." A Spin
-          // carries no fee, so the buy-in IS the whole charge and is snapped to
-          // an integer here rather than trusting the config.
-          buy_in_amount: wholeChips(config.buyIn),
-          // A SPIN IS NOT PRICED LIKE AN MTT. Dan, 2026-08-20: "THEY ARE
-          // STRAIGHT JUST 10 BUY IN... NO ADDITIONAL RAKE IS ADDED." The rake
-          // is engineered into the multiplier distribution instead — the
-          // frequency table expects 2.7638, and (3 - 2.7638) / 3 = 7.87%,
-          // which IS the advertised 8%. Charging a fee on top as well would
-          // make the true edge 14.7%. See src/config/spinSpec.ts.
-          buy_in_fee: 0,
-          guaranteed_prize: 0,
-          // NULL until start. The draw happens in TournamentManagerBase at
-          // the moment the game begins — see the block comment above. A NULL
-          // here is what start's draw path keys on, and it is also the only
-          // value a lobby snoop can read before the wheel spins.
-          spin_multiplier: null,
-          // Likewise recorded at start, by the same draw. See migration
-          // 20260820n_spin_locked_tiers_column.sql.
-          spin_locked_tiers: null,
-          starting_chips: spinStack,
-          // Forced, not read from the config — a Spin is 3-handed by
-          // definition. See SPIN_SEATS.
-          max_players: SPIN_SEATS,
-          min_players: SPIN_SEATS,
-          // Same omission as createSNG carried until 2026-08-27: the column is
-          // NOT NULL DEFAULT 9, so every Spin claimed a nine-handed table
-          // (28,731 rows). The Spin format is resolved from tournament_type
-          // before table_size is ever consulted, so nothing misbehaved here —
-          // but a row that says 9 seats for a three-handed game is a lie
-          // waiting for the next reader.
-          table_size: SPIN_SEATS,
-          current_players: 0,
-          status: 'REGISTERING',
-          blind_structure: spinBlinds,
-          // Paid places scale with the multiplier: winner-take-all below 10x,
-          // 80/20 at 10x, 80/12/8 at 25x and up. A 100x where second place
-          // gets nothing is a worse story than one where all three cash.
-          payout_structure: spinPayouts,
-          start_time: startTime.toISOString(),
-          late_reg_levels: 0,
-          late_reg_mins: 0,
-        })
-        .select()
-        .maybeSingle(); // FIX 168
-
-      if (error || !spin) {
-        reportError(
-          new Error(
-            `[TournamentRecurring] Spin creation failed: ${error?.message || JSON.stringify(error) || 'Unknown error'}`
-          ),
-          'TournamentRecurring.Spin_creation_failed'
-        );
+      const spinRow = {
+        // Whose board this is. See BoardOwner: these two fields are the
+        // ONLY thing that decides which lobby the game appears in.
+        club_id: owner.clubId,
+        union_id: owner.unionId,
+        // THE NAME MUST NOT CARRY THE MULTIPLIER. It used to read
+        // "3 Chip Spin NLH (4x)", and that one string reached the lobby
+        // tile, the tournament list, the table masthead and the browser tab
+        // - so by the time the wheel span up to "reveal" the draw, the
+        // player had already read the answer in four places. The draw is the
+        // product; a reveal of a number you were shown on the way in is
+        // theatre. `spin_multiplier` carries the value for everything that
+        // legitimately needs it, and nothing anywhere parses the name for it
+        // (verified by grep across both projects).
+        name: config.name,
+        game_type: dbGameType,
+        variant: 'spin',
+        tournament_type: 'SPIN',
+        // Whole chips only (Dan 2026-08-20): "Sit and Go and any tournament
+        // buy-ins must never be decimal buy-ins, whole numbers only." A Spin
+        // carries no fee, so the buy-in IS the whole charge and is snapped to
+        // an integer here rather than trusting the config.
+        buy_in_amount: wholeChips(config.buyIn),
+        // A SPIN IS NOT PRICED LIKE AN MTT. Dan, 2026-08-20: "THEY ARE
+        // STRAIGHT JUST 10 BUY IN... NO ADDITIONAL RAKE IS ADDED." The rake
+        // is engineered into the multiplier distribution instead - the
+        // frequency table expects 2.7638, and (3 - 2.7638) / 3 = 7.87%,
+        // which IS the advertised 8%. Charging a fee on top as well would
+        // make the true edge 14.7%. See src/config/spinSpec.ts.
+        buy_in_fee: 0,
+        guaranteed_prize: 0,
+        // NULL until start. The draw happens in TournamentManagerBase at
+        // the moment the game begins - see the block comment above. A NULL
+        // here is what start's draw path keys on, and it is also the only
+        // value a lobby snoop can read before the wheel spins.
+        spin_multiplier: null,
+        // Likewise recorded at start, by the same draw. See migration
+        // 20260820n_spin_locked_tiers_column.sql.
+        spin_locked_tiers: null,
+        starting_chips: spinStack,
+        // Forced, not read from the config - a Spin is 3-handed by
+        // definition. See SPIN_SEATS.
+        max_players: SPIN_SEATS,
+        min_players: SPIN_SEATS,
+        // Same omission as createSNG carried until 2026-08-27: the column is
+        // NOT NULL DEFAULT 9, so every Spin claimed a nine-handed table
+        // (28,731 rows). The Spin format is resolved from tournament_type
+        // before table_size is ever consulted, so nothing misbehaved here -
+        // but a row that says 9 seats for a three-handed game is a lie
+        // waiting for the next reader.
+        table_size: SPIN_SEATS,
+        current_players: 0,
+        status: 'REGISTERING',
+        blind_structure: spinBlinds,
+        // Paid places scale with the multiplier: winner-take-all below 10x,
+        // 80/20 at 10x, 80/12/8 at 25x and up. A 100x where second place
+        // gets nothing is a worse story than one where all three cash.
+        payout_structure: spinPayouts,
+        start_time: startTime.toISOString(),
+        late_reg_levels: 0,
+        late_reg_mins: 0,
+      };
+      const created = await this.createSeatFirstGameAtomic(spinRow, 'spin');
+      if (!created) {
         return { tournamentId: null, registered: 0 };
       }
+      const spin = created.tournament;
 
       // SEAT-FIRST (Dan 2026-08-21): a Spin opens as a TABLE WITH THREE EMPTY
       // SEATS. No horse is pre-registered — that is what made it an MTT with
@@ -4947,7 +4905,7 @@ export class TournamentRecurringService {
       // bought. If nobody takes the seats before the open-table window
       // expires, GameServer's past-start top-up fills the field with horses so
       // the board still churns — open first, churn second.
-      await this.createOpenSeatTable(spin, SPIN_SEATS, dbGameType, spinBlinds[0]);
+      await this.seedOpenSeatTable(spin, SPIN_SEATS, created.tableId);
       const registered = 0;
       // prize_pool stays 0 until start. It used to be set to
       // buyIn x multiplier here, which was the arithmetic spoiler described
@@ -4959,13 +4917,13 @@ export class TournamentRecurringService {
        *
        * This update used to carry `current_players: registered`, and
        * `registered` is the hardcoded 0 above - a leftover from when a Spin
-       * pre-registered nobody. createOpenSeatTable has just seated two horses
+       * pre-registered nobody. seedOpenSeatTable has just seated two horses
        * in REAL SEATS one line earlier, so this wrote a zero straight over the
        * truth, every single time a Spin was created.
        *
        * That is the whole reason 16 open Spins were advertising "0/3" while
        * holding 32 paid seats between them. It also defeated both attempted
-       * fixes: the sync added inside createOpenSeatTable and the trigger on
+       * fixes: the sync added inside seedOpenSeatTable and the trigger on
        * table_seats each set the number correctly, and this statement
        * overwrote it microseconds later.
        *

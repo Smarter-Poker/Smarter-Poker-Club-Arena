@@ -1072,10 +1072,7 @@ export abstract class ServerTableEngineBase {
        down. Without it a superseded hand's beat could advance a stage on a
        controller nobody is reading any more. */
     this.handController?.cancelPineappleSettle?.();
-    if (this.horseActionTimer) {
-      clearTimeout(this.horseActionTimer);
-      this.horseActionTimer = null;
-    }
+    this.cancelHorseDecisionWork();
     if (this.pineappleDiscardTimer) {
       clearTimeout(this.pineappleDiscardTimer);
       this.pineappleDiscardTimer = null;
@@ -4314,6 +4311,31 @@ export abstract class ServerTableEngineBase {
    * to reproduce a genuine stall rather than one the horse papers over.
    */
   protected horseActionTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Worker request for the current horse turn, including any V44 replay. */
+  protected horseDecisionAbortController: AbortController | null = null;
+  /** Delay before the current turn submits its V44 replay to the worker FIFO. */
+  protected horseSecondLookTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Monotonic local fence for asynchronous horse work. A hand number and seat
+   * can repeat after an engine replacement; this token cannot repeat within
+   * the engine instance and is checked before any result can touch the table.
+   */
+  protected horseTurnToken = 0;
+
+  /** Cancel every asynchronous unit owned by the current horse turn. */
+  protected cancelHorseDecisionWork(): void {
+    this.horseTurnToken += 1;
+    this.horseDecisionAbortController?.abort();
+    this.horseDecisionAbortController = null;
+    if (this.horseSecondLookTimer) {
+      clearTimeout(this.horseSecondLookTimer);
+      this.horseSecondLookTimer = null;
+    }
+    if (this.horseActionTimer) {
+      clearTimeout(this.horseActionTimer);
+      this.horseActionTimer = null;
+    }
+  }
 
   /**
    * Bible V8 §2.3 — Calculate position labels for each seat (BTN, SB, BB, UTG, MP, CO, etc.)

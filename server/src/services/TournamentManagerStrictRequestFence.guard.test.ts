@@ -45,15 +45,15 @@ const managerSources = [
 ];
 const recoverySource = managerSources.at(-1) ?? '';
 
-const sqlFunction = (source: string, name: string): string => {
-  const start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+const sqlFunction = (source: string, name: string, schema = 'public'): string => {
+  const start = source.indexOf(`CREATE OR REPLACE FUNCTION ${schema}.${name}(`);
   const end = source.indexOf('$function$;', start);
   expect(start, `${name} is missing`).toBeGreaterThan(-1);
   expect(end, `${name} body is incomplete`).toBeGreaterThan(start);
   return source.slice(start, end);
 };
 
-const hook = sqlFunction(stageB, 'fn_smarter_data_api_pre_request');
+const hook = sqlFunction(stageB, 'fn_smarter_data_api_pre_request', 'smarter_private');
 const scope = sqlFunction(stageB, 'fn_assert_tournament_manager_write_scope');
 const rowGuard = sqlFunction(stageB, 'trg_tournament_manager_write_scope');
 
@@ -109,6 +109,23 @@ describe('Stage-B tournament-manager request fencing is a strict cutover', () =>
     );
     expect(stageB).toContain("NOTIFY pgrst, 'reload config'");
     expect(stageB).toContain("NOTIFY pgrst, 'reload schema'");
+    expect(stageB).toContain(
+      'pgrst.db_pre_request=smarter_private.fn_smarter_data_api_pre_request'
+    );
+    expect(stageB).toContain(
+      'REVOKE ALL ON SCHEMA smarter_private\n' +
+        '  FROM PUBLIC, anon, authenticated, service_role, authenticator;'
+    );
+    expect(stageB).toContain(
+      'GRANT USAGE ON SCHEMA smarter_private TO anon, authenticated, service_role;'
+    );
+    expect(stageB).toContain('DROP FUNCTION IF EXISTS public.fn_smarter_data_api_pre_request()');
+    expect(stageB).not.toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_smarter_data_api_pre_request()'
+    );
+    expect(stageB).toContain("setting.value LIKE 'pgrst.db_schemas=%'");
+    expect(stageB).toContain("exposed.schema_name = 'smarter_private'");
+    expect(stageB).toContain('smarter_private must not be a PostgREST exposed schema');
     expect(stageB).not.toMatch(/cron\.schedule|pg_cron|CREATE\s+(?:MATERIALIZED\s+)?VIEW/i);
   });
 
@@ -154,6 +171,11 @@ describe('Stage-B tournament-manager request fencing is a strict cutover', () =>
       expect(hook).toContain(`'${identifiedEngine}'`);
     }
     expect(hook).toContain("IF v_actor = 'service' THEN");
+    expect(hook).toContain("v_request_role := btrim(COALESCE(auth.role(), ''))");
+    expect(hook).toContain(
+      "v_actor <> ''\n     AND v_request_role <> btrim(COALESCE(v_claims ->> 'role', ''))"
+    );
+    expect(hook).toContain('verified JWT role disagrees with request claims');
     expect(hook).toContain("v_protocol <> '1'");
     expect(hook).toContain("v_actor <> 'tournament-manager'");
     expect(hook).toContain("v_protocol <> '2'");

@@ -256,9 +256,11 @@ describe('horse decision interleaving across 4 tables', () => {
   it('shipped source pin: the think timer is per-engine state, armed per table', () => {
     const src = readFileSync(join(process.cwd(), 'src/engine/ServerTableEngineTurns.ts'), 'utf8');
     expect(src).toContain('this.horseActionTimer = setTimeout(');
-    // The stale-controller identity check that keeps a slow timer from firing
-    // into the NEXT hand:
-    expect(src).toContain('if (handControllerRef !== this.handController) return;');
+    // The asynchronous worker result and timer carry controller, hand and
+    // lease identity, so a slow answer cannot fire into a successor hand.
+    expect(src).toContain('handControllerRef !== this.handController');
+    expect(src).toContain('this.handCount !== handNumber');
+    expect(src).toContain('currentLease.generation === leaseGeneration');
   });
 });
 

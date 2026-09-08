@@ -36,7 +36,7 @@ const runtimeTypescriptFiles = (directory: string): string[] =>
   });
 
 const sqlFunction = (name: string): string => {
-  const start = migration.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+  const start = migration.indexOf(`CREATE OR REPLACE FUNCTION smarter_private.${name}(`);
   const end = migration.indexOf('$function$;', start);
   expect(start, `${name} must exist`).toBeGreaterThan(-1);
   expect(end, `${name} must be complete`).toBeGreaterThan(start);
@@ -61,7 +61,11 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     expect(hook).toContain("v_request_role <> 'service_role'");
     expect(hook).toContain("v_protocol <> '2'");
     expect(hook).toContain("current_setting('request.jwt.claims', true)");
-    expect(hook).toContain("v_request_role := btrim(COALESCE(v_claims ->> 'role', ''))");
+    expect(hook).toContain("v_request_role := btrim(COALESCE(auth.role(), ''))");
+    expect(hook).toContain(
+      "v_actor <> ''\n     AND v_request_role <> btrim(COALESCE(v_claims ->> 'role', ''))"
+    );
+    expect(hook).toContain('verified JWT role disagrees with request claims');
     expect(hook).not.toContain('v_request_role := current_user::text');
     expect(migration).toContain('DO $prove_request_claims_not_function_owner$');
     expect(migration).toContain("current_user = 'service_role'");
@@ -93,12 +97,35 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     expect(migration).toContain("setting.value LIKE 'pgrst.db_pre_request=%'");
     expect(migration).toContain('Refusing to replace existing PostgREST hook');
     expect(migration).toContain(
-      "SET pgrst.db_pre_request = 'public.fn_smarter_data_api_pre_request'"
+      "SET pgrst.db_pre_request = 'smarter_private.fn_smarter_data_api_pre_request'"
     );
     expect(migration).toContain("NOTIFY pgrst, 'reload config'");
     expect(migration).toContain("v_path = 'rpc/fn_smarter_data_api_pre_request'");
     expect(migration).toContain('TO anon, authenticated, service_role');
     expect(migration).not.toContain('TO authenticator, anon, authenticated, service_role');
+    expect(migration).toContain('CREATE SCHEMA IF NOT EXISTS smarter_private');
+    expect(migration).toContain(
+      'REVOKE ALL ON SCHEMA smarter_private\n' +
+        '  FROM PUBLIC, anon, authenticated, service_role, authenticator;'
+    );
+    expect(migration).toContain(
+      'GRANT USAGE ON SCHEMA smarter_private TO anon, authenticated, service_role'
+    );
+    expect(migration).toContain(
+      'REVOKE ALL ON FUNCTION smarter_private.fn_smarter_data_api_pre_request()\n' +
+        '  FROM PUBLIC, anon, authenticated, service_role, authenticator;'
+    );
+    expect(migration).toContain(
+      'GRANT EXECUTE ON FUNCTION smarter_private.fn_smarter_data_api_pre_request()\n' +
+        '  TO anon, authenticated, service_role;'
+    );
+    expect(migration).toContain('DROP FUNCTION IF EXISTS public.fn_smarter_data_api_pre_request()');
+    expect(migration).not.toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_smarter_data_api_pre_request()'
+    );
+    expect(migration).toContain("setting.value LIKE 'pgrst.db_schemas=%'");
+    expect(migration).toContain("exposed.schema_name = 'smarter_private'");
+    expect(migration).toContain('smarter_private must not be a PostgREST exposed schema');
     expect(migration.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(migration.match(/^COMMIT;$/gm)).toHaveLength(1);
   });

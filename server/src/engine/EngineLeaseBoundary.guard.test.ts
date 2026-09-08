@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceCall, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (file: string): string => readFileSync(path.join(process.cwd(), file), 'utf8');
 const base = read('src/engine/ServerTableEngineBase.ts');
@@ -44,9 +44,11 @@ describe('every live dealer carries and re-checks distributed authority', () => 
     expect(human).toContain("code: 'TABLE_LEASE_EXPIRED'");
 
     const horse = sliceMethod(turns, '  protected scheduleHorseAction(');
-    expect(horse).toMatch(
-      /this\.horseActionTimer = setTimeout\(\(\) => \{[\s\S]{0,180}!this\.lifecycleCanMutate\(\)/
-    );
+    expect(horse).toContain('const fenceIsCurrent = (): boolean =>');
+    expect(horse).toContain('!this.lifecycleCanMutate()');
+    expect(horse).toContain('currentLease.generation === leaseGeneration');
+    const horseActionTimer = sliceCall(horse, 'this.horseActionTimer = setTimeout(');
+    expect(horseActionTimer).toContain('if (!fenceIsCurrent()) return;');
 
     const timer = sliceMethod(turns, '  protected startTurnTimer(');
     expect(timer).toMatch(

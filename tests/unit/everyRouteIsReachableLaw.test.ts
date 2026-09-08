@@ -190,6 +190,13 @@ function reachableTargets(): Set<string> {
   for (const f of walk(join(ROOT, 'src')).filter((f) => !f.endsWith('App.tsx'))) {
     const s = readFileSync(f, 'utf8');
     for (const m of s.matchAll(/navigate\(\s*[`'"]([^`'"]+)[`'"]/g)) targets.add(m[1]);
+    /* A link that carries its club is still a link. `withClubContext(path,
+       clubId)` returns `path` with `?club=` stamped on it (the outbound half
+       of the-menu-stays-in-the-club), so the destination is the FIRST
+       argument and this scanner must read it - otherwise wrapping an existing
+       `navigate('/cashier')` to keep the player's club makes /cashier look
+       orphaned, which is the opposite of what happened. */
+    for (const m of s.matchAll(/withClubContext\(\s*[`'"]([^`'"]+)[`'"]/g)) targets.add(m[1]);
     for (const m of s.matchAll(/\bto=[{]?\s*[`'"]([^`'"]+)[`'"]/g)) targets.add(m[1]);
     for (const m of s.matchAll(/\bhref=[{]?\s*[`'"](\/[^`'"]*)[`'"]/g)) targets.add(m[1]);
     for (const m of s.matchAll(/path:\s*[`'"]([^`'"]+)[`'"]/g)) targets.add(m[1]);

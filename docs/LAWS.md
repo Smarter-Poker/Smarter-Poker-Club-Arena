@@ -123,6 +123,25 @@ whichever test the next agent notices first.
   (`GLOBAL_HEADER_PROFILE_FRAME_LAW.md` in the World Hub repo). Do not show
   the ring; do not read "fix the profile image" as "show the ring".
 
+- **The next hand deals two seconds after completion (ruled 2026-09-07,
+  Dan):** "LOTS OF HANDS ARE NOT STARTING THE NEXT HAND 2 SECONDS AFTER THE
+  HAND IS COMPLETED ... SOME UP TO 10 SECONDS+." "Completed" keeps its
+  2026-08-21 meaning (winning hand shown, pot pushed with its total, cards
+  mucked - the end of `handCompletionHoldMs`); from there to the next deal is
+  `HAND_COMPLETION.NEXT_HAND_REST_MS`, 2000ms, and it is the whole gap. The
+  2026-09-05 ruling that the hand rests 1.75s for the Rabbit Hunt button is
+  not reversed but absorbed: the button's window IS the rest
+  (`RABBIT_HUNT_WINDOW_MS` is the same number), and a purchase "displays and
+  moves on" - it never touches the schedule. The loser is the shape in which
+  the engine slept the board clear and the window and only then went to wait
+  for settlement, reload the roster, sweep the leavers and allocate a hand
+  number, each a PostgREST round trip at 250-700ms from the engine box:
+  measured p50 11.2s / p90 20.6s between hands on 2026-09-07. All of that now
+  runs under the rest. The five-second rebuy pause (2026-08-24) is untouched
+  and remains its own beat. Pinned by
+  `the-next-hand-deals-two-seconds-after-completion.law.test.ts`; measured by
+  `/health.nextHandGap`.
+
 ## Registry
 
 **The registry is the directory `docs/laws.d/` - one file per law.** This

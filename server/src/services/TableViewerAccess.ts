@@ -1,6 +1,8 @@
 import { supabase } from './supabase.js';
+import { parseArenaIdentity } from '../domain/ArenaContext.js';
 
 export type TableViewerAccessReason =
+  | 'diamond_member'
   | 'seated'
   | 'club_member'
   | 'membership_required'
@@ -27,7 +29,13 @@ export async function authorizeTableViewer(
   // A verified current seat is already sufficient access; membership matters
   // only for observers and must not delay or reject a seated reconnect.
   const [{ data: table, error: tableError }, seatResult] = await Promise.all([
-    supabase.from('tables').select('club_id, restrict_observers').eq('id', tableId).maybeSingle(),
+    supabase
+      .from('tables')
+      .select(
+        'club_id, restrict_observers, arena:clubs!fk_tables_club_id(id, asset, is_platform, union_id)'
+      )
+      .eq('id', tableId)
+      .maybeSingle(),
     supabase
       .from('table_seats')
       .select('id')
@@ -43,8 +51,21 @@ export async function authorizeTableViewer(
 
   const clubId = typeof table.club_id === 'string' ? table.club_id : null;
   if (!clubId) return { allowed: false, reason: 'check_failed', clubId: null };
+  let arena;
+  try {
+    arena = parseArenaIdentity(table.arena);
+    if (arena.id !== clubId || !userId) throw new Error('Arena Identity Mismatch');
+  } catch {
+    return { allowed: false, reason: 'check_failed', clubId };
+  }
   if (seatResult.error) return { allowed: false, reason: 'check_failed', clubId };
   if (seatResult.data) return { allowed: true, reason: 'seated', clubId };
+
+  if (arena.kind === 'diamond_arena') {
+    return table.restrict_observers === true
+      ? { allowed: false, reason: 'observers_restricted', clubId }
+      : { allowed: true, reason: 'diamond_member', clubId };
+  }
 
   const memberResult = await supabase
     .from('club_members')

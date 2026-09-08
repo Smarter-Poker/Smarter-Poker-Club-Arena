@@ -22,6 +22,8 @@ describe('NextHandGapRecorder', () => {
       p90Ms: null,
       maxMs: null,
       over: 0,
+      slowest: [],
+      phaseP90Ms: {},
     });
   });
 
@@ -56,5 +58,43 @@ describe('NextHandGapRecorder', () => {
     r.record(sample(2100, { at: Date.now() - 11 * 60_000 }));
     r.record(sample(2200));
     expect(r.snapshot().samples).toBe(1);
+  });
+});
+
+describe('next-hand outlier diagnosis', () => {
+  it('retains each slow hand phase breakdown rather than combining unrelated medians', () => {
+    const r = new NextHandGapRecorder(2000);
+    r.record(sample(2000, { tableId: 'fast', phases: { await_post_hand_tasks: 50 } }));
+    r.record(
+      sample(9000, { tableId: 'slow', phases: { await_post_hand_tasks: 7000, load_seats: 2000 } })
+    );
+    const s = r.snapshot();
+    expect(s.slowest).toEqual([
+      expect.objectContaining({
+        tableId: 'slow',
+        gapMs: 9000,
+        phases: { await_post_hand_tasks: 7000, load_seats: 2000 },
+      }),
+    ]);
+    expect(s.phaseP90Ms.await_post_hand_tasks).toBe(7000);
+  });
+
+  it('bounds the response to five recent over-budget non-rebuy hands in descending order', () => {
+    const r = new NextHandGapRecorder(2000);
+    const now = Date.now();
+    for (let i = 0; i < 10; i++) r.record(sample(3000 + i * 100, { tableId: String(i), at: now }));
+    r.record(sample(2500));
+    r.record(sample(100_000, { tableId: 'rebuy', rebuyPaused: true }));
+    r.record(sample(200_000, { tableId: 'old', at: now - 11 * 60_000 }));
+    expect(r.snapshot(now).slowest.map((s) => s.tableId)).toEqual(['9', '8', '7', '6', '5']);
+    expect(r.snapshot(now + 11 * 60_000).slowest).toEqual([]);
+  });
+
+  it('does not let a diagnostic consumer mutate the retained phase sample', () => {
+    const r = new NextHandGapRecorder(2000);
+    r.record(sample(3000));
+    const first = r.snapshot();
+    (first.slowest[0].phases as Record<string, number>).await_post_hand_tasks = 999999;
+    expect(r.snapshot().slowest[0].phases.await_post_hand_tasks).toBe(1500);
   });
 });

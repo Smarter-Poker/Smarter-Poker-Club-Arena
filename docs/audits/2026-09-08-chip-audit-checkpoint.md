@@ -1,5 +1,7 @@
 # Chip audit checkpoint: linked BBJ incident and remaining boundaries
 
+Update, 2026-09-08: this is the historical 13:33 checkpoint, not current release or incident status. The original BBJ contribution and its missing main leg have since been identified exactly. See docs/changelog/2026-09-08-bbj-main-leg-source-correction.md for the source evidence and application status. The failure row's user_id does contain the pool identifier for this event; the earlier statement below that it contained no pool identifier was incorrect. Rebuy PR #3766 and horse PR #3737 subsequently merged; horse engine adoption was verified.
+
 Read-only evidence collected 2026-09-08, approximately 13:25-13:33 UTC.
 
 ## Linked incident

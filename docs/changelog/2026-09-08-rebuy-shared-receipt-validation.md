@@ -13,3 +13,5 @@ Validation: 46 isolated PostgreSQL cases against the shared wrapper/core/helpers
 No competing receipt table or new watcher/reconciler is introduced. Historical balances and ambiguous old keys are not guessed. The browser key still lives in memory, so reload persistence and the existing pending-addon delivery lifecycle remain open audit items; complete cash-hand crash recovery is also still outstanding.
 
 Production verification: migration 20260908131745 applied successfully, and the uncommitted filename was aligned to that authoritative record. Wrapper hash 2a05339c9329ce9fcbefbc1ab72901f5; private-core hash 7b987a8d9bc21645b5bf7ba1bde36f85. Shared receipt helpers are unchanged. Public wrapper permissions remain authenticated/service; private core remains owner-only.
+
+Registry wiring: migration 20260908133232 registers the audited private core without widening grants. The exact reviewed hash and owner-only access are checked before the insert and verified afterwards. The broader audit checkpoint is docs/audits/2026-09-08-chip-audit-checkpoint.md.

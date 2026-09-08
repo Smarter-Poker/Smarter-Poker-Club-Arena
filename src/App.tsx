@@ -110,6 +110,8 @@ const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
 const MemberManagementPage = lazyWithRetry(() => import('./pages/MemberManagementPage'));
 const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatisticsPage'));
 const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
+const DiamondWheelPage = lazyWithRetry(() => import('./pages/DiamondWheelPage'));
+const ClubWheelOperationsPage = lazyWithRetry(() => import('./pages/club/ClubWheelOperationsPage'));
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -1348,6 +1350,35 @@ function FullApp() {
                       <ClubMemberGuard>
                         <PageErrorBoundary pageName="Club Members">
                           <ClubMembersPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                {/* THE DIAMOND WHEEL (Dan 2026-09-07). A member spins diamonds for
+                    chips, diamonds or nothing at 80 percent return; the wheel never
+                    pays more than it takes in. Player route here, operator console
+                    at wheel-operations (finance access in the operations registry).
+                    docs/changelog/2026-09-07-diamond-wheel.md */}
+                <Route
+                  path="clubs/:clubId/wheel"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Wheel">
+                          <DiamondWheelPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/wheel-operations"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Diamond Wheel Operations">
+                          <ClubWheelOperationsPage />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>

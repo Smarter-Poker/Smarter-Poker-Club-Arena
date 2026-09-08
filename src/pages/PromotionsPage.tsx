@@ -42,6 +42,7 @@ interface Promotion {
 export default function PromotionsPage() {
   useVisibilityRefresh(() => loadPromotions());
   const { clubId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -345,6 +346,14 @@ export default function PromotionsPage() {
       <div className="daily-bonus-banner" onClick={() => setShowBonusWheel(true)}>
         <span className="bonus-icon">▦</span>
         <span className="bonus-text">Claim Your Daily Bonus!</span>
+        <span className="bonus-arrow">›</span>
+      </div>
+
+      {/* THE DIAMOND WHEEL (Dan 2026-09-07): the player's door to the wheel.
+          The page itself says whether this host has opened it. */}
+      <div className="diamond-wheel-banner" onClick={() => navigate(`/clubs/${clubId}/wheel`)}>
+        <span className="bonus-icon">◆</span>
+        <span className="bonus-text">Spin The Diamond Wheel For Chips!</span>
         <span className="bonus-arrow">›</span>
       </div>
 

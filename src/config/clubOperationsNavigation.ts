@@ -230,6 +230,18 @@ const DEFINITIONS: OperationDefinition[] = [
     signals: ['chip_requests_pending', 'cashouts_pending', 'credit_requests_pending'],
   },
   {
+    /* THE DIAMOND WHEEL (2026-09-07): open or close the host's wheel, set its
+       price and exposure allowance, and read its return against the 80
+       percent spec. Finance access: it moves the union bank. The player's
+       page is /wheel and is not an operations route. */
+    id: 'diamond-wheel',
+    label: 'Diamond Wheel',
+    description: 'Open The Wheel, Set Its Price, Watch Its Return',
+    suffix: 'wheel-operations',
+    group: 'finance',
+    access: 'finance',
+  },
+  {
     id: 'settlement',
     label: 'Settlement',
     description: 'Square Up Club Balances And Settlement Records',
@@ -428,6 +440,7 @@ const OPERATION_SUFFIXES = new Set([
   'cashier',
   'cashier-classic',
   'settlement',
+  'wheel-operations',
   'insurance-report',
   'bomb-pot-report',
   'table-management',
@@ -443,6 +456,7 @@ const FINANCE_SUFFIXES = new Set([
   'data',
   'financials',
   'settlement',
+  'wheel-operations',
   'insurance-report',
 ]);
 

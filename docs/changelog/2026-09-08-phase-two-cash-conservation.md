@@ -23,3 +23,13 @@ Four behavioral cases failed before correction: a prior caller could bypass clos
 After the first corrections, 101 focused tests passed, including the 11,000-hand randomized conservation corpus. Additional short-stack no-limit/pot-limit coverage and the full server suite remain part of the release gate. Fixed-limit half-bet policy, cashout occupancy identity and the other listed phase surfaces are not declared complete.
 
 Full server verification: 569 test files passed; 7,646 tests passed. The six opt-in departure PostgreSQL cases were run separately using the socket-only disposable database. Server TypeScript passed. These results validate this correction batch, not completion of all phase 2 acceptance items.
+
+## Browser Departure Follow-Up
+
+Continuation baseline ba8804f91. PR #3853 merged as 6f11ed3f7337766543ed68e87de58e4f17e4f6c8; the observed running engine version ad6342df is a descendant. This verifies adoption of the first correction batch, not all phase scope.
+
+Fifteen new browser-service cases failed before correction. The fallback ignored the cashout receipt's success and shape, returned and recorded the stale seat-read stack instead of the committed cashout amount, treated a seat already removed by the acknowledged engine as failure, and reported tournament sit-out chips as cashed out.
+
+The browser now requires a successful, correctly typed, matching-seat cash receipt or explicit confirmed absence. It reports the locked transaction's amount. An engine-owned amount remains null/pending in activity records, and a tournament sit-out records zero cash returned. An acknowledged departure with no remaining active seat returns deferred success without another debit or credit. The server receipt boundary also rejects fractional-smallest-unit amounts. Live schema verification confirmed table_activity.chips_cashed_out is nullable.
+
+The focused client set passed 78 tests; TypeScript passed. Server receipt and departure regressions are verified separately. Occupancy-bound request identity across seat reuse remains open and must not be mistaken for this receipt-validation fix.

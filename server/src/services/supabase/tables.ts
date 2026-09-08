@@ -104,7 +104,7 @@ export async function loadSeatedPlayers(tableId: string) {
        mirror of `src/lib/tableAvatar.ts`, so this read and the client's live
        profile sync name the SAME column by construction - a law test imports
        both and fails if they drift. */
-    .select(SEATED_PROFILE_SELECT)
+    .select(`${SEATED_PROFILE_SELECT}, is_vip, vip_tier, vip_expires_at`)
     .in('id', userIds);
   if (profileErr) {
     // The filter below drops every seat whose profile is missing, so a silent
@@ -135,6 +135,11 @@ export async function loadSeatedPlayers(tableId: string) {
         stack: seat.stack,
         seat_number: seat.seat_number || 1,
         is_horse: profile.is_horse || false,
+        reconnect_membership: {
+          is_vip: profile.is_vip,
+          vip_tier: profile.vip_tier,
+          vip_expires_at: profile.vip_expires_at,
+        },
         // AUDIT V2 (2026-07-23): pass the raw jsonb value through — it can be a
         // string OR an object ({"style":"tag",...}). resolveHorseStyle() in
         // HorseLogic handles both plus a deterministic per-horse fallback.

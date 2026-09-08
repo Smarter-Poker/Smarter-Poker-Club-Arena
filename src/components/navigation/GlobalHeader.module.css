@@ -165,16 +165,47 @@
   width: 12.9%;
 }
 
-/* A transparent hit region over the baked profile ornament, exactly like every
-   other control in this file. It used to paint an opaque black disc: 117.8
-   artwork-units across, against an ornament that measures 94, so the approved
-   chrome ring and its blue glow were painted out and all that survived was a
-   flat black circle with a photo in it. The rule above says it already - the
-   approved artwork IS the icon, and a shape drawn on top of it is a defect. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE PROFILE FRAME IS A 0.5px BLACK HAIRLINE. THE BAKED ORNAMENT IS MASKED.
+   (LAW - tests/the-header-portrait-frame-is-a-hairline.law.test.ts)
+
+   Dan, 2026-09-07, with a screenshot of the chrome ring showing around his
+   photo: "the profile pic is supposed to be a .5 pixel black frame that
+   'appears invisible' instead of this thick broken frame that exists now."
+   Dan, 2026-09-03: "THE FRAME IN THE GLOBAL HEADER AROUND THE PROFILE IMAGE
+   REGRESSED AND CHANGED (INSTEAD OF HAVING THE .50 PIXEL BLACK INVISIBLE
+   CIRCLE FRAME)." Dan, 2026-08-31: remove the profile ring (#2183, #2305).
+
+   The approved artwork bakes a silver ring with a blue glow around a blue
+   placeholder silhouette. That ring is the "thick broken frame": the live
+   photo and the baked ring are two circles that never agree to the pixel, so
+   wherever the ring shows it reads as a chipped bezel. It is never shown. This
+   button paints an opaque black disc over the whole ornament - ring, glow and
+   silhouette - and the only frame the photo has is the hairline on the slot.
+
+   HOW THIS REGRESSED, SO IT IS NOT DONE AGAIN. On 2026-09-01 (#2515) the
+   sentence "the profile image needs to be fixed" was read as "show the ring":
+   the disc was removed, the photo was seated in the ring's aperture, and the
+   tests were rewritten to FORBID the disc as "a shape drawn over approved
+   artwork". The 2026-09-03 fix (#2901) then obeyed those tests and restored
+   only the hairline, not the mask, so the ring stayed. The "NO BOXES OVER
+   HEADER ICONS" rule above is about focus rings on icons; this disc is the
+   mask Dan asked for and is its one deliberate exception.
+
+   GEOMETRY, measured off images/global-header/global-header-desktop.png
+   (1648 x 168, the file this header renders; the plane every % below is on).
+   Ornament centre (1159.75, 80.5). Ring r 40-48, glow fades out by r 52. The
+   silver rails of the header begin at r 62. So the disc is centred on the
+   ornament with radius 56: 112 units wide = 6.8% of the plane, left edge at
+   (1159.75 - 56) / 1648 = 66.98%, top edge at (80.5 - 56) / 168 = 14.58%.
+   That covers the glow with 4 units to spare and stops 6 units short of the
+   rails, so it is black on black - invisible - at every width. The law test
+   checks this arithmetic, not these literals: move the disc so the ring peeks
+   out, or onto a rail, and CI fails. */
 .profileBtn {
-  top: 15%;
-  left: 66.75%;
-  width: 7.15%;
+  top: 14.58%;
+  left: 66.98%;
+  width: 6.8%;
   height: auto;
   aspect-ratio: 1;
   position: absolute !important;
@@ -182,56 +213,45 @@
   overflow: hidden;
   contain: layout paint;
   isolation: isolate;
+  border: 0;
+  border-radius: 50%;
+  background: #000;
 }
 
-/* The live photo fills the ornament's APERTURE - the dark well inside the
-   chrome ring - so the ring and its blue glow frame it instead of being covered
-   by it.
-   MEASURED off images/global-header/global-header-desktop.png (1648x168, the
-   file this header renders): the ornament is a circle centred at
-   (1159.75, 80.5) with a 94-unit outer diameter and a ~6-unit chrome band,
-   leaving an 81-unit aperture. Against this button's own box (plane
-   x 1100.04-1217.87, y 25.2-143.03) that is a circle of 68.7% width centred at
-   50.7% / 46.9%.
+/* Keyboard focus keeps the mask. `.artButton:focus-visible` swaps the button's
+   background for the soft radial glow, which on this button would let the ring
+   show through for as long as it is focused; the glow is layered over the
+   black here instead. Every `.profileBtn` background must bottom out in #000. */
+.profileBtn:focus-visible {
+  background:
+    radial-gradient(closest-side, rgba(32, 169, 255, 0.3), rgba(32, 169, 255, 0) 78%), #000;
+}
 
-   It was 72% centred at 50%/50%, which is 84.8 units sitting 3.6 units low:
-   wider than the aperture and nearly as wide as the ring's OUTER edge, so the
-   photo overlapped the chrome band on three sides and hung past it at the
-   bottom. `aspect-ratio: 1` keeps the slot a true circle at every width because
-   the button is already square in pixels. */
+/* The live photo: a circle of 72% of the disc (80.6 units, the size of the
+   well the ornament used to show), centred on it, with the 0.5px hairline as
+   its ONLY frame. Half a pixel of near-black is invisible as a border and does
+   the whole job as an anti-alias mask on the photo's edge. This is the only
+   rule in the file allowed to declare the slot's border; the desktop override
+   below resizes the slot and inherits the hairline rather than restating it,
+   so there is exactly one copy to regress. */
 .profileAvatarSlot {
   position: absolute !important;
-  top: 46.9% !important;
-  left: 50.7% !important;
+  top: 50% !important;
+  left: 50% !important;
   z-index: 1;
   display: block;
-  width: 68.7%;
+  width: 72%;
   height: auto;
   aspect-ratio: 1;
   transform: translate(-50%, -50%) !important;
   overflow: hidden;
   box-sizing: border-box;
-  /* THE HAIRLINE IS THE FRAME (Dan, 2026-09-03: "instead of having the .50
-     pixel black invisible circle frame").
-
-     This edge has been 0.5px since #2366 on 2026-08-31, which narrowed it from
-     1px for exactly this job: the baked artwork's aperture and the photo are
-     two separate circles that never agree to the pixel, and without a hairline
-     the seam between them reads as a ragged edge on the portrait. Half a pixel
-     of near-black is invisible as a border and does the whole job as a mask.
-
-     It was dropped to `border: 0` in the mobile pass (#2674) while the desktop
-     override below kept its copy, so the frame survived on a laptop and
-     vanished on a phone - which is why this reads as "regressed and changed"
-     rather than "removed". Restored here so both paths carry the same edge;
-     the desktop rule still restates it because it also changes the slot's size
-     and position. */
   border: 0.5px solid rgba(0, 0, 0, 0.94);
   border-radius: 50%;
   background: transparent;
-  /* The button is `overflow: hidden`, so a slot even slightly taller than its
-     box is not merely off-centre - the portrait is SLICED, and a sliced circle
-     reads as a squashed one. Nothing may leave the frame. */
+  /* The button is `overflow: hidden`, so a slot taller than its box is not
+     merely off-centre - the portrait is SLICED, and a sliced circle reads as a
+     squashed one. Nothing may leave the disc. */
   max-width: 100%;
   max-height: 100%;
   pointer-events: none;
@@ -327,46 +347,33 @@
     aspect-ratio: auto;
   }
 
+  /* Desktop compresses the artwork into a 96px band with `object-fit: fill`,
+     so up here the ornament is an ellipse: the plane's y scales by 96/168.
+     Same law, same mask. The disc keeps its width from the base rule (it must
+     cover the ornament's full horizontal glow) and takes its height from the
+     band: ornament centre y is 80.5 * 96/168 = 46px, its glow reaches 29.7px,
+     the rails begin 35.4px out. A 69% band (66.2px, half 33.1) centred there
+     - top 46 - 33.1 = 12.9px = 13.4% - covers the glow with 3px spare and
+     stays 2px off both rails. A width-derived square would be taller than the
+     band and paint black over the lower rail; hence the explicit height. */
   .profileBtn {
-    /* Desktop deliberately compresses the artwork into a 96px chrome band with
-       `object-fit: fill`, so the baked ornament is a squashed ellipse up here
-       and cannot frame a round portrait. That is why desktop masks it instead:
-       the opaque disc and the 72% slot below are the pre-2026-09-01 treatment,
-       restored verbatim so this change stays the mobile-only one Dan asked for.
-       A width-derived square is taller than the band at common laptop widths
-       and paints black over the lower silver rail, hence the explicit height. */
-    top: 13%;
-    height: 74%;
+    top: 13.4%;
+    height: 69%;
     aspect-ratio: auto;
-    border: 0;
-    border-radius: 50%;
-    background: #000;
   }
 
-  /* THE PORTRAIT IS NOT IN ITS FRAME (Dan 2026-09-05: "THE PROFILE PIC IN THE
-     GLOBAL HEADER IS DISTORTED AND NOT IN ITS FRAME").
-
-     MEASURED: the rule above gives this button `width: 7.15%` of the header
-     and `height: 74%` of the 96px desktop band - at a 1680px viewport that is
-     120px by 71px, a box that is NOT square because `aspect-ratio` is
-     cancelled here while the width is inherited from the mobile rule. The slot
-     was then sized from the WIDTH (72% of 120px = 86px) and centred, so it
-     stood 15px taller than the button that contains it and the button's
-     `overflow: hidden` cut the portrait's top and bottom off. A circle with
-     its cap and chin sliced away is exactly what "distorted" looks like.
-
-     So the slot is sized from the button's HEIGHT here, which is the axis that
-     actually constrains it: 86% of 71px is a 61px circle that fits with room
-     on every axis at every laptop width. `aspect-ratio: 1` from the base rule
-     keeps it round; `width: auto` hands the sizing to the height. The black
-     disc stays width-derived on purpose - it has to cover the ornament, which
-     `object-fit: fill` squashes into a wide ellipse up here. */
+  /* THE PORTRAIT IS INSIDE THE FRAME (Dan 2026-09-05: "THE PROFILE PIC IN THE
+     GLOBAL HEADER IS DISTORTED AND NOT IN ITS FRAME"). The disc above is not
+     square here, and 72% of its WIDTH was a circle taller than the disc, which
+     `overflow: hidden` then sliced top and bottom. The slot is sized from the
+     disc's HEIGHT, the axis that constrains it; `aspect-ratio: 1` from the base
+     rule keeps it round. The hairline is inherited from the base rule - do not
+     restate it here. */
   .profileAvatarSlot {
     top: 50% !important;
     left: 50% !important;
     width: auto;
     height: 86%;
-    border: 0.5px solid rgba(0, 0, 0, 0.94);
   }
 }
 

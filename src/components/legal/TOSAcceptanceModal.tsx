@@ -17,6 +17,11 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
   const [isAccepting, setIsAccepting] = useState(false);
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [mounted, setMounted] = useState(false);
+  /* A failed acceptance used to be reported to Sentry and shown to the player
+     as nothing at all: the button flipped from "Accepting..." back to
+     "Accept & Continue" and the modal sat there. The player's only reading of
+     that is "the site is broken". The reason the server gave is shown here. */
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // BUG FIX (mount-timer): track timer so it cancels on unmount — prevents stale setState
@@ -32,10 +37,16 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
 
   const handleAccept = async () => {
     setIsAccepting(true);
+    setError(null);
     try {
       await onAccept();
     } catch (err) {
       reportError(err, 'TOSAcceptanceModal.onAccept_error');
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not record your acceptance. Please try again.'
+      );
     } finally {
       setIsAccepting(false);
     }
@@ -82,9 +93,10 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
 
           <h3>4. Virtual Currency</h3>
           <p>
-            The Service Uses Virtual Chips And Diamonds For Gameplay Purposes. Virtual Currency Has
-            No Real-World Monetary Value And Cannot Be Exchanged For Real Money, Goods, Or Services
-            Outside The Platform.
+            Chips Are Club Play Credits. Smarter.Poker Does Not Sell, Redeem Or Pay Out Chips And
+            Assigns Them No Monetary Value; Any Arrangement Between A Member And Their Club's Agent
+            Is Private And Off-Platform. Diamonds Are A Virtual Currency Sold By Smarter.Poker For
+            Use Inside The Platform Only.
           </p>
 
           <h3>5. Prohibited Activities</h3>
@@ -151,6 +163,12 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
             />
             I Have Read And Agree To The Terms Of Service And Privacy Policy
           </label>
+
+          {error && (
+            <p className="tos-error" role="alert">
+              {error}
+            </p>
+          )}
 
           <button
             className="tos-accept-btn"

@@ -161,8 +161,63 @@ export class MuxTableSocket {
     this.onopen?.();
   }
 
+  private warmFrames: string[] | null = null;
+  private warmSeq = -1;
+  private warmBytes = 0;
+  private warmStateAt = 0;
+
+  /** Retain only state for a speculative lobby subscription, never private events. */
+  retainWarmState(): void {
+    this.warmFrames = [];
+    this.warmBytes = 0;
+  }
+
+  /** An unclaimed lobby facade may yield its slot to a real table. */
+  isWarmSubscription(): boolean {
+    return this.warmFrames !== null;
+  }
+
+  /** @internal Transfer a bounded, contiguous state stream to the real client. */
+  takeWarmState(): string[] {
+    const frames = Date.now() - this.warmStateAt <= 15_000 ? (this.warmFrames ?? []) : [];
+    this.warmFrames = null;
+    return frames;
+  }
+
   /** @internal */
   _message(raw: string): void {
+    if (this.warmFrames !== null) {
+      try {
+        const frame = JSON.parse(raw);
+        if (frame.type === 'SNAPSHOT' && Number.isFinite(frame.seq) && frame.state) {
+          if (this.warmFrames.length > 0 && frame.seq < this.warmSeq) return;
+          this.warmFrames = raw.length <= 262_144 ? [raw] : [];
+          this.warmBytes = raw.length;
+          this.warmSeq = frame.seq;
+          this.warmStateAt = Date.now();
+        } else if (frame.type === 'DELTA') {
+          if (
+            this.warmFrames.length > 0 &&
+            frame.prev === this.warmSeq &&
+            Number.isFinite(frame.seq) &&
+            frame.seq > frame.prev &&
+            this.warmFrames.length < 128 &&
+            this.warmBytes + raw.length <= 262_144
+          ) {
+            this.warmFrames.push(raw);
+            this.warmBytes += raw.length;
+            this.warmSeq = frame.seq;
+            this.warmStateAt = Date.now();
+          } else {
+            this.warmFrames = [];
+          }
+        } else if (frame.type === 'EVENT' && frame.payload?.type === 'engine_restarting') {
+          this.warmFrames = [];
+        }
+      } catch {
+        this.warmFrames = [];
+      }
+    }
     this.onmessage?.({ data: raw });
   }
 
@@ -174,6 +229,7 @@ export class MuxTableSocket {
     }
     if (this.readyState === 3) return;
     this.readyState = 3;
+    this.warmFrames = null;
     this.onclose?.({ code, reason });
   }
 }
@@ -194,11 +250,19 @@ class EngineSocketMuxImpl {
    * A fresh facade is returned on every call — matching `new WebSocket()`
    * semantics so EngineStateClient's reconnect flow needs no special cases.
    */
-  acquire(baseUrl: string, tableId: string, token: string): MuxTableSocket {
+  acquire(baseUrl: string, tableId: string, token: string, speculative = false): MuxTableSocket {
+    // Speculation must never consume one of the four slots a real table needs.
+    if (!speculative) {
+      for (const [id, other] of this.facades) {
+        if (id !== tableId && other.isWarmSubscription())
+          other.close(1000, 'real table takes priority');
+      }
+    }
     if (this.lingerTimer) {
       clearTimeout(this.lingerTimer);
       this.lingerTimer = null;
     }
+    this.useTransportIdentity(baseUrl, token);
     // A stale facade for the same table (pre-reconnect) is superseded.
     // 2026-08-22: with a DEDICATED close code — closing it with 1000 made the
     // old owner's EngineStateClient schedule a reconnect, which re-acquired
@@ -225,10 +289,11 @@ class EngineSocketMuxImpl {
       !!this.ws &&
       this.ws.readyState === WebSocket.OPEN &&
       Date.now() - this.lastInboundAt <= STALE_HARD_MS;
+    const warmFrames =
+      adoptWarmSubscription && this.token === token && this.baseUrl === baseUrl
+        ? prior!.takeWarmState()
+        : [];
     if (prior) prior._close(CLOSE_MUX_SUPERSEDED, 'superseded by newer acquire');
-
-    this.baseUrl = baseUrl;
-    this.token = token;
 
     // 2026-08-22: a physical socket that is OPEN but has heard NOTHING for a
     // hard-stale interval is half-open — reusing it strands every facade
@@ -248,6 +313,7 @@ class EngineSocketMuxImpl {
     // the table stranded on a CLOSED facade with no reconnect scheduled.
     const facade = new MuxTableSocket(this, tableId);
     this.facades.set(tableId, facade);
+    if (speculative) facade.retainWarmState();
     this.ensureSocket();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.subscribe(tableId);
@@ -263,7 +329,12 @@ class EngineSocketMuxImpl {
        is nothing to wait for. */
     if (adoptWarmSubscription) {
       queueMicrotask(() => {
-        if (this.facades.get(tableId) === facade && facade.readyState === 0) facade._open();
+        if (this.facades.get(tableId) !== facade || facade.readyState !== 0) return;
+        facade._open();
+        for (const raw of warmFrames) {
+          if (this.facades.get(tableId) !== facade || Number(facade.readyState) !== 1) break;
+          facade._message(raw);
+        }
       });
       return facade;
     }
@@ -283,6 +354,18 @@ class EngineSocketMuxImpl {
     return facade;
   }
 
+  /** Use only spare subscription slots for lobby state; never evict a playing table. */
+  acquireWarm(baseUrl: string, tableId: string, token: string): MuxTableSocket | null {
+    this.useTransportIdentity(baseUrl, token);
+    if (this.isSubscribed(tableId)) return null;
+    if (this.facades.size >= 4) {
+      const oldestWarm = [...this.facades.values()].find((facade) => facade.isWarmSubscription());
+      if (!oldestWarm) return null;
+      oldestWarm.close(1000, 'new lobby intent');
+    }
+    return this.acquire(baseUrl, tableId, token, true);
+  }
+
   /**
    * LOBBY PRE-WARM (2026-08-24). Open the physical /ws/multi socket during app
    * boot, before any table is joined, so the first join pays only a SUBSCRIBE
@@ -299,9 +382,8 @@ class EngineSocketMuxImpl {
       clearTimeout(this.lingerTimer);
       this.lingerTimer = null;
     }
+    this.useTransportIdentity(baseUrl, token);
     if (this.ws && this.ws.readyState <= WebSocket.OPEN) return; // already warm
-    this.baseUrl = baseUrl;
-    this.token = token;
     this.ensureSocket();
   }
 
@@ -316,6 +398,17 @@ class EngineSocketMuxImpl {
   isSubscribed(tableId: string): boolean {
     const f = this.facades.get(tableId);
     return !!f && f.readyState !== 3 /* CLOSED */;
+  }
+
+  /** A socket is authenticated at its handshake, not by changing these fields. */
+  private useTransportIdentity(baseUrl: string, token: string): void {
+    if (this.baseUrl === baseUrl && this.token === token) return;
+    this.baseUrl = baseUrl;
+    this.token = token;
+    // Retire the old transport and its facades before checking adoption or
+    // registering the new caller. Otherwise SUBSCRIBE still runs under the
+    // old handshake and cached-state isolation alone does not isolate users.
+    this.teardownPhysical(4001, 'mux transport identity changed');
   }
 
   /** Force-close and detach the physical socket; surviving facades fail and

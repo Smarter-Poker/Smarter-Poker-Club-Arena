@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import FeedbackForm from '../components/support/FeedbackForm';
 import SystemStatus from '../components/support/SystemStatus';
 import styles from './HelpPage.module.css';
+import { mediaUrl } from '../utils/mediaBase';
 
 interface FAQItem {
   category: 'Account' | 'Clubs' | 'Play' | 'Rewards' | 'Safety';
@@ -144,10 +145,7 @@ export default function HelpPage() {
           </div>
         </div>
         <div className={styles.heroArt} aria-hidden="true">
-          <img
-            src="/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png"
-            alt=""
-          />
+          <img src={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.png')} alt="" />
           <span>Support Terminal / Online</span>
         </div>
       </header>

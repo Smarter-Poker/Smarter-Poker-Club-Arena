@@ -14,6 +14,7 @@ import { reportError } from '../../utils/errorReporter';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
 import { titleCase } from '../../utils/titleCase';
 import styles from './JoinClubModal.module.css';
+import { mediaUrl } from '../../utils/mediaBase';
 
 interface JoinClubModalProps {
   isOpen: boolean;
@@ -252,7 +253,7 @@ export default function JoinClubModal({
             <img src={preview.logo_url} alt="" />
           ) : (
             <img
-              src="/hub/club-arena/images/club-arena/vault-iris-emblem-v1-320.webp"
+              src={mediaUrl('images/club-arena/vault-iris-emblem-v1-320.webp')}
               alt=""
               width="320"
               height="296"

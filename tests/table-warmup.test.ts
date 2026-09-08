@@ -11,12 +11,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const acquire = vi.fn();
+const prewarm = vi.fn();
 const isSubscribed = vi.fn(() => false);
 const getSeatedPlayers = vi.fn();
 
+vi.mock('../src/utils/ChunkPreloader', () => ({ preloadRoute: vi.fn() }));
+
 vi.mock('../src/services/EngineSocketMux', () => ({
   engineSocketMux: {
-    acquire: (...a: unknown[]) => acquire(...a),
+    prewarm: (...a: unknown[]) => prewarm(...a),
+    acquireWarm: (...a: unknown[]) => acquire(...a),
     isSubscribed: (id: string) => isSubscribed(id),
   },
   isMuxEnabled: () => true,
@@ -31,7 +35,13 @@ vi.mock('../src/services/TableService', () => ({
 const T = 'aaaaaaaa-1111-4111-8111-111111111111';
 
 function fakeFacade() {
-  return { readyState: 0, onmessage: null as unknown, onclose: null as unknown, close: vi.fn() };
+  return {
+    retainWarmState: vi.fn(),
+    readyState: 0,
+    onmessage: null as unknown,
+    onclose: null as unknown,
+    close: vi.fn(),
+  };
 }
 
 let warm: typeof import('../src/services/tableWarmup');
@@ -115,4 +125,105 @@ describe('tableWarmup', () => {
     vi.advanceTimersByTime(warm.WARM_TTL_MS + 1);
     expect(facade.close).toHaveBeenCalled(); // UNSUBSCRIBE sent
   });
+});
+
+describe('visible lobby table preparation', () => {
+  it('warms before a click, limits speculation, and cancels work on unmount', async () => {
+    let intersect!: (entries: Array<{ target: Element; isIntersecting: boolean }>) => void;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: typeof intersect) {
+          intersect = callback;
+        }
+        observe = vi.fn();
+        disconnect = disconnect;
+      }
+    );
+    getSeatedPlayers.mockResolvedValue([]);
+    const root = document.createElement('div');
+    for (let i = 0; i < 6; i++) {
+      const row = document.createElement('div');
+      row.setAttribute('data-warm-table', `table-${i}`);
+      root.append(row);
+    }
+    const cleanup = warm.observeLobbyTableWarmups([root]);
+    intersect([...root.children].map((target) => ({ target, isIntersecting: true })));
+    await vi.advanceTimersByTimeAsync(150);
+    expect(prewarm).toHaveBeenCalled();
+    expect(getSeatedPlayers).toHaveBeenCalledTimes(3);
+    expect(getSeatedPlayers.mock.calls.map(([id]) => id)).toEqual([
+      'table-0',
+      'table-1',
+      'table-2',
+    ]);
+    cleanup();
+    expect(disconnect).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(getSeatedPlayers).toHaveBeenCalledTimes(3);
+    vi.unstubAllGlobals();
+  });
+});
+
+it('refreshes seats without discarding a healthy warmed table subscription', async () => {
+  const facade = fakeFacade();
+  facade.readyState = 1;
+  acquire.mockReturnValue(facade);
+  getSeatedPlayers.mockResolvedValue(ROWS);
+  warm.warmTable(T);
+  await vi.waitFor(() => expect(acquire).toHaveBeenCalledOnce());
+  isSubscribed.mockReturnValue(true);
+  await vi.advanceTimersByTimeAsync(warm.SEATS_FRESH_MS + 1);
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(getSeatedPlayers).toHaveBeenCalledTimes(2);
+  expect(acquire).toHaveBeenCalledOnce();
+  expect(facade.close).not.toHaveBeenCalled();
+});
+
+it('restarts an evicted warm connection immediately while reusing fresh seats', async () => {
+  getSeatedPlayers.mockResolvedValue(ROWS);
+  const first = fakeFacade();
+  acquire.mockReturnValueOnce(first);
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).toHaveBeenCalledTimes(1);
+  first.readyState = 3;
+  (first.onclose as () => void)();
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).toHaveBeenCalledTimes(2);
+  expect(getSeatedPlayers).toHaveBeenCalledTimes(1);
+  expect(warm.peekWarmSeats(T)).toEqual(ROWS);
+});
+
+it('retries a previously full mux when slots become available without rereading seats', async () => {
+  getSeatedPlayers.mockResolvedValue(ROWS);
+  acquire.mockReturnValueOnce(null);
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).toHaveBeenCalledTimes(2);
+  expect(getSeatedPlayers).toHaveBeenCalledTimes(1);
+});
+
+it('coalesces repeated intent while authentication is pending', async () => {
+  const { getFreshAccessToken } = await import('../src/lib/authToken');
+  let resolveToken!: (token: string) => void;
+  vi.mocked(getFreshAccessToken).mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolveToken = resolve;
+    })
+  );
+  getSeatedPlayers.mockResolvedValue(ROWS);
+  warm.warmTable(T);
+  warm.warmTable(T);
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).not.toHaveBeenCalled();
+  resolveToken('jwt-token');
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).toHaveBeenCalledTimes(1);
 });

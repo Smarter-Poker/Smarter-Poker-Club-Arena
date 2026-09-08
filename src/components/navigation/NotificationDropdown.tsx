@@ -13,6 +13,7 @@ import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import styles from './NotificationDropdown.module.css';
+import { leaveForHub } from '../../lib/openExternal';
 
 interface Notification {
   id: string;
@@ -215,9 +216,9 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
       if (url.startsWith('/hub/club-arena')) {
         const inner = url.slice('/hub/club-arena'.length) || '/';
         if (onNavigate) onNavigate(inner);
-        else window.location.href = url;
+        else leaveForHub(url);
       } else if (url.startsWith('/')) {
-        window.location.href = url;
+        leaveForHub(url);
       } else if (onNavigate) {
         onNavigate(url);
       }

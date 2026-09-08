@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { useAuthUser } from './useAuthUser';
+import { isPlatformStaffRole } from '../utils/platformRoles';
 
 export interface ClubNavigationAccess extends ClubNavigationCapabilities {
   clubRole: string | null;
@@ -66,8 +67,7 @@ export function useClubNavigationAccess(clubId: string | null | undefined): Club
         }
         setFallbackRole(membershipResult.data?.role || null);
         setFallbackPlatformStaff(
-          !profileResult.error &&
-            (profileResult.data?.role === 'admin' || profileResult.data?.role === 'super_admin')
+          !profileResult.error && isPlatformStaffRole(profileResult.data?.role)
         );
       } catch (loadError) {
         reportError(loadError, 'ClubNavigationAccess.Fallback_load_failed');

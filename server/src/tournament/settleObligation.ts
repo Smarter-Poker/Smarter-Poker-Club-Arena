@@ -101,6 +101,13 @@ export interface SettleTournamentObligationInput {
 
 export interface SettleTournamentObligationResult {
   ok: boolean;
+  /** True only when the database confirms the entire recorded obligation is paid. */
+  fully_settled?: boolean;
+  /** Authoritative outstanding debt; null when no complete status was returned. */
+  remaining?: number | null;
+  /** Authoritative cumulative obligation totals, not only this request. */
+  amount_owed?: number | null;
+  amount_paid?: number | null;
   /** Chips moved by THIS call. 0 on a replay. */
   paid: number;
   /** Chips this obligation had already paid before this call. */
@@ -142,13 +149,66 @@ function parseResult(data: unknown): Partial<SettleTournamentObligationResult> {
       raw = null;
     }
   }
-  if (!raw || typeof raw !== 'object') return {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, refused_reason: 'invalid_response' };
+  }
   const r = raw as Record<string, unknown>;
+  if (r.ok !== true && r.ok !== false) {
+    return { ok: false, refused_reason: 'invalid_response' };
+  }
+  // A successful partial credit is still money owed. Do not derive completion
+  // from the requested amount: a replay may name an older, smaller total.
+  const money = (value: unknown): number | null => {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    if (typeof value === 'string' && !/^[0-9]+(?:[.][0-9]+)?$/.test(value)) return null;
+    const n = Number(value);
+    return Number.isFinite(n) &&
+      n >= 0 &&
+      Number.isSafeInteger(Math.round(n * 100)) &&
+      Math.round(n * 100) / 100 === n
+      ? n
+      : null;
+  };
+  const owed = money(r.amount_owed);
+  const totalPaid = money(r.amount_paid);
+  const remaining = money(r.remaining);
+  const moved = money(r.paid);
+  const prior = money(r.already_paid);
+  const totalsAgree =
+    owed !== null &&
+    totalPaid !== null &&
+    remaining !== null &&
+    moved !== null &&
+    prior !== null &&
+    totalPaid <= owed &&
+    Math.round(totalPaid * 100) === Math.round(moved * 100) + Math.round(prior * 100) &&
+    Math.round(remaining * 100) ===
+      Math.max(0, Math.round(owed * 100) - Math.round(totalPaid * 100));
+  const hasTotals = ['amount_owed', 'amount_paid', 'remaining'].some((key) => key in r);
+  const invalidSuccess =
+    r.ok === true &&
+    (moved === null ||
+      prior === null ||
+      (hasTotals && !totalsAgree) ||
+      (r.fully_settled === true && (!totalsAgree || remaining !== 0)));
   return {
-    ok: r.ok === true,
-    paid: Number(r.paid ?? 0) || 0,
-    already_paid: Number(r.already_paid ?? 0) || 0,
-    refused_reason: typeof r.refused_reason === 'string' ? r.refused_reason : null,
+    fully_settled:
+      !invalidSuccess &&
+      r.ok === true &&
+      r.fully_settled === true &&
+      totalsAgree &&
+      remaining === 0,
+    remaining: totalsAgree ? remaining : null,
+    amount_owed: totalsAgree ? owed : null,
+    amount_paid: totalsAgree ? totalPaid : null,
+    ok: r.ok === true && !invalidSuccess,
+    paid: moved ?? 0,
+    already_paid: prior ?? 0,
+    refused_reason: invalidSuccess
+      ? 'invalid_response'
+      : typeof r.refused_reason === 'string'
+        ? r.refused_reason
+        : null,
     obligation_id: typeof r.obligation_id === 'string' ? r.obligation_id : null,
     idempotency_key: typeof r.idempotency_key === 'string' ? r.idempotency_key : null,
   };
@@ -181,6 +241,10 @@ export async function settleTournamentObligation(
 
   const base: SettleTournamentObligationResult = {
     ok: false,
+    fully_settled: false,
+    remaining: null,
+    amount_owed: null,
+    amount_paid: null,
     paid: 0,
     already_paid: 0,
     refused_reason: null,
@@ -221,8 +285,20 @@ export async function settleTournamentObligation(
       const result: SettleTournamentObligationResult = { ...base, ...parseResult(data) };
       if (result.ok) return result;
 
+      if (result.refused_reason === 'invalid_response') {
+        // The RPC may have committed. An invalid receipt proves neither payment
+        // nor nonpayment; never emit the ordinary "was NOT paid" refusal alert.
+        reportError(
+          new Error(
+            'Tournament settlement returned an invalid payment receipt; reconcile the recorded obligation before reporting completion.'
+          ),
+          'Tournament.settle_obligation_invalid_response'
+        );
+        return result;
+      }
+
       // The database answered and said NO. Never retried: the answer will not
-      // change, and a second ask is exactly the shape that double-paid.
+      // change within this retry loop. A later recovery uses the same obligation.
       result.refused_reason = result.refused_reason ?? 'unknown';
       await raiseRefusalAlert(input, place, amount, result);
       return result;

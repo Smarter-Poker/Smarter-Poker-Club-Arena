@@ -9,6 +9,7 @@ import {
   type TournamentEngineStats,
 } from '../../services/AdminStatsService';
 import { supabase } from '../../lib/supabase';
+import { reportError } from '../../utils/errorReporter';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../../components/common/Toast';
 import { SettlementCronStatus } from '../../components/SettlementCronStatus';
@@ -99,24 +100,26 @@ export default function EngineDashboard() {
   }, []);
 
   const loadHydraStats = async () => {
-    const { data: available, error: err1 } = await supabase
-      .from('profiles')
-      .select('id', { count: 'exact' })
-      .eq('is_horse', true)
-      .eq('horse_status', 'available');
-
-    const { data: seated, error: err2 } = await supabase
-      .from('profiles')
-      .select('id', { count: 'exact' })
-      .eq('is_horse', true)
-      .eq('horse_status', 'seated');
-
-    if (!err1 && !err2) {
-      setHydraStats({
-        available: available?.length || 0,
-        seated: seated?.length || 0,
-      });
+    /* One admin RPC, not two browser filters on `profiles.is_horse`. That
+       column has not been granted to a player since 2026-09-02
+       (docs/laws.d/horse-identity-is-not-readable.md) and PostgREST refuses
+       a filter on an ungranted column with 42501 - so this panel had shown
+       nothing to the admins it exists for, and the same request from any
+       other tab was a question a player must not be able to ask at all.
+       `fn_admin_horse_fleet_counts` counts as the owner, answers admins only
+       (fn_is_horse_admin), and returns sizes, never a roster. It also used
+       to read `.length` of a `count: 'exact'` page - the first 1,000 rows,
+       not the count. */
+    const { data, error } = await supabase.rpc('fn_admin_horse_fleet_counts');
+    if (error) {
+      reportError(error, 'EngineDashboard.loadHydraStats');
+      return;
     }
+    const counts = (data ?? {}) as { available?: number; seated?: number };
+    setHydraStats({
+      available: Number(counts.available) || 0,
+      seated: Number(counts.seated) || 0,
+    });
   };
 
   // Engine lifecycle is managed by Hetzner (`club-arena-engine` container via

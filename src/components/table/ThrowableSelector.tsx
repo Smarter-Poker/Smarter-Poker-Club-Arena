@@ -37,7 +37,7 @@ import { prepareThrowableArtwork } from '../../throwables/artwork';
 
 interface ThrowableSelectorProps {
   userId: string;
-  onSelect: (throwable: Throwable) => void;
+  onSelect: (throwable: Throwable, requestId?: string) => void;
   onClose: () => void;
 }
 
@@ -153,7 +153,7 @@ export function ThrowableSelector({ userId, onSelect, onClose }: ThrowableSelect
       }
       return;
     }
-    onSelect(throwable);
+    onSelect(throwable, result.requestId);
     onClose();
   };
 

@@ -1074,12 +1074,17 @@ export async function recoverStuckCompletingTournaments(
             .limit(1),
         ]);
 
-        if (dealPayouts.error || dealObligations.error) {
+        if (
+          dealPayouts.error ||
+          dealObligations.error ||
+          !Array.isArray(dealPayouts.data) ||
+          !Array.isArray(dealObligations.data)
+        ) {
           // Unreadable is UNKNOWN. Paying structure cash over a deal that may
           // exist is exactly the thing this guard is for.
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): could not tell whether ${t.id.slice(0, 8)} was chopped (${dealPayouts.error?.message ?? dealObligations.error?.message}) - skipped rather than risk paying over a deal`
+              `[GameServer] recoverStuckCompleting (${reason}): could not tell whether ${t.id.slice(0, 8)} was chopped (${dealPayouts.error?.message ?? dealObligations.error?.message ?? 'invalid result'}) - skipped rather than risk paying over a deal`
             ),
             'GameServer.recoverStuckCompleting_deal_check_failed'
           );
@@ -1151,9 +1156,9 @@ export async function recoverStuckCompletingTournaments(
          * stays COMPLETING for the next pass. Every step below is idempotent,
          * so retrying costs nothing.
          */
-        if (playersErr) {
+        if (playersErr || !Array.isArray(players)) {
           throw new Error(
-            `player field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr.message} - refusing to complete a tournament we cannot pay`
+            `player field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr?.message ?? 'invalid result'} - refusing to complete a tournament we cannot pay`
           );
         }
         const rows = players ?? [];

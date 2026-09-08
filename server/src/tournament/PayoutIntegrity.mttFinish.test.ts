@@ -254,7 +254,7 @@ describe('a failed query must never read as "nobody is left" - the money paths',
     // Reached, not merely present — `if (false) { throw ... }` passed a
     // string-only assertion during the sabotage run.
     expect(code(RECOVERY)).toMatch(
-      /if\s*\(\s*playersErr\s*\)\s*\{[\s\S]{0,400}?refusing to complete a tournament we cannot pay/
+      /if\s*\(\s*playersErr\s*\|\|\s*!Array\.isArray\(players\)\s*\)\s*\{[\s\S]{0,400}?refusing to complete a tournament we cannot pay/
     );
   });
 

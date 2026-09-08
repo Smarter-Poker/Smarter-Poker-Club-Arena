@@ -41,18 +41,43 @@ function body(source: string, name: string): string {
 }
 
 describe('fixture accounts are not players, and horses are players', () => {
-  const fixture = body(fix1, 'fn_ca_is_fixture_account');
+  // The predicate was redefined on 2026-09-08 (20260908024742). Read the LATEST migration that
+  // defines it, never the first: a pin that reads a superseded file stops guarding anything.
+  const fixtureSource = files
+    .filter((n) => n.endsWith('.sql'))
+    .sort()
+    .filter((n) =>
+      fs
+        .readFileSync(path.join(dir, n), 'utf8')
+        .includes('FUNCTION public.fn_ca_is_fixture_account(')
+    )
+    .pop() as string;
+  const fixture = body(
+    fs.readFileSync(path.join(dir, fixtureSource), 'utf8'),
+    'fn_ca_is_fixture_account'
+  );
   it('matches the sentinel uuid, the active cert register and .invalid emails', () => {
     expect(fixture).toContain(`LIKE '00000000-0000-0000-0000-%'`);
     expect(fixture).toContain('ca_cert_accounts');
     expect(fixture).toContain(`LIKE '%.invalid'`);
   });
-  it('NEVER matches a horse (CLAUDE.md 10.5): no horse email, no is_horse', () => {
+  it('NEVER matches a horse (CLAUDE.md 10.5), and says so by asking the profile', () => {
+    // This pin used to read `expect(fixture).not.toContain('is_horse')`, on the assumption that
+    // any mention of the flag would be an exclusion. It was the wrong shape and it hid a live
+    // defect for a day: an earlier sweep tagged 468 of the 1,000 horses into ca_cert_accounts,
+    // so the predicate matched them, and the earn ledger, the budgets and incident severity
+    // silently skipped nearly half the fleet. The predicate now EXCLUDES horses explicitly, and
+    // the pin asserts the guarantee the ruling actually made.
     expect(fixture).not.toContain('horses.smarter.poker');
-    expect(fixture).not.toContain('is_horse');
-    // negative control
-    const bad = fixture + ` OR u.email LIKE '%@horses.smarter.poker'`;
-    expect(bad).toContain('horses.smarter.poker');
+    expect(fixture.replace(/\s+/g, ' ')).toContain(
+      'NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = p_user_id AND COALESCE(p.is_horse, false))'
+    );
+    // negative control: a body that only tags by the certification register matches horses again
+    const bad = fixture.replace(
+      /AND NOT EXISTS \(SELECT 1 FROM public\.profiles p WHERE p\.id = p_user_id AND COALESCE\(p\.is_horse, false\)\)/,
+      ''
+    );
+    expect(bad.replace(/\s+/g, ' ')).not.toContain('COALESCE(p.is_horse, false))');
   });
 });
 

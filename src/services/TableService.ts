@@ -359,13 +359,10 @@ class TableService {
       const seat =
         (seatRows || []).find((s) => s.seat_number === seatNumber) || (seatRows || [])[0];
       if (!seat) {
-        // Genuinely not seated (already left, double-tap, etc.)
-        console.warn('[TableService] leaveTable: no active seat for user (may have already left)', {
-          tableId,
-          seatNumber,
-          userId,
-        });
-        return { success: false, chipsReturned: 0 };
+        // The engine acknowledged the leave and the database confirms absence.
+        // Its atomic cashout can finish before this read; do not report that
+        // completed departure as a failure or invent its amount from old UI state.
+        return { success: true, chipsReturned: 0, deferred: true };
       }
       // Authoritative seat number from the DB — used for every downstream op.
       const seatNo = seat.seat_number;
@@ -414,8 +411,6 @@ class TableService {
         // Same as above: cashout happens at settlement, not here.
         return { success: true, chipsReturned: 0, deferred: true };
       }
-
-      const chipsToReturn = seat.stack || 0;
 
       // Get table context (needed for tournament leave + transaction log)
       const { data: tableData, error: tableCtxErr } = await supabase
@@ -515,13 +510,29 @@ class TableService {
             };
           }
 
-          const cashout = (cashoutRes ?? null) as {
-            ok?: boolean;
-            stack?: number | string;
-            credited?: boolean;
-            reason?: string;
-          } | null;
-          returnedChips = cashout?.credited ? Number(cashout.stack ?? 0) || 0 : 0;
+          const cashout = cashoutRes as Record<string, unknown> | null;
+          const validAmount =
+            typeof cashout?.stack === 'number' &&
+            Number.isFinite(cashout.stack) &&
+            cashout.stack >= 0 &&
+            Math.round(cashout.stack * 100) / 100 === cashout.stack;
+          const absent =
+            cashout?.ok === true && cashout.reason === 'no_active_seat' && cashout.stack === 0;
+          const completed =
+            cashout?.ok === true &&
+            cashout.reason === undefined &&
+            cashout.seat_number === seatNo &&
+            typeof cashout.credited === 'boolean' &&
+            cashout.tournament_table === false &&
+            typeof cashout.idempotency_key === 'string' &&
+            cashout.idempotency_key.startsWith('cashout:') &&
+            cashout.idempotency_key.length > 'cashout:'.length;
+          if (!cashout || Array.isArray(cashout) || !validAmount || (!absent && !completed)) {
+            throw new Error('The Server Did Not Confirm The Cashout');
+          }
+          // This is the locked transaction's amount, including any add-on that
+          // committed after our seat read. A replay is still that same cashout.
+          returnedChips = cashout.stack as number;
           console.debug(
             `[TableService] Returned ${returnedChips} chips to Player Wallet for user ${userId}` +
               (cashout?.reason ? ` (${cashout.reason})` : '')
@@ -595,12 +606,16 @@ class TableService {
       // The columns are `action`, `metadata` and `chips_cashed_out`. Writing
       // `activity_type` and `data` was rejected on every leave, so the table
       // history recorded nobody leaving at all.
+      const confirmedAmount = engineOwnsCashout ? null : returnedChips;
       await supabase.from('table_activity').insert({
         table_id: tableId,
         user_id: userId,
         action: 'leave',
-        chips_cashed_out: chipsToReturn,
-        metadata: { chips_cashed_out: chipsToReturn },
+        chips_cashed_out: confirmedAmount,
+        metadata: {
+          chips_cashed_out: confirmedAmount,
+          cashout_pending: engineOwnsCashout,
+        },
       });
 
       // Note: Transaction already logged via WalletService.logTransaction above
@@ -611,7 +626,7 @@ class TableService {
       if (engineOwnsCashout) {
         return { success: true, chipsReturned: 0, deferred: true };
       }
-      return { success: true, chipsReturned: chipsToReturn };
+      return { success: true, chipsReturned: returnedChips };
     } catch (err: unknown) {
       reportError(err, 'TableService.leaveTable');
       return { success: false, chipsReturned: 0 };

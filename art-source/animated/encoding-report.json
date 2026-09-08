@@ -88,6 +88,14 @@
     "visiblePixelsIdentical": true
   },
   {
+    "file": "chicken.png",
+    "width": 1254,
+    "height": 1254,
+    "sourceBytes": 1731850,
+    "runtimeBytes": 1171058,
+    "visiblePixelsIdentical": true
+  },
+  {
     "file": "coffee.png",
     "width": 1254,
     "height": 1254,

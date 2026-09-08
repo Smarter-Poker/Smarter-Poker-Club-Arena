@@ -1,3 +1,4 @@
+import { spec as chickenSpec, rig as chickenRig } from './rigs/chicken';
 import { spec as dogeSpec, rig as dogeRig } from './rigs/doge';
 import { spec as cryingemojiSpec, rig as cryingemojiRig } from './rigs/crying_emoji';
 import { spec as laughingemojiSpec, rig as laughingemojiRig } from './rigs/laughing_emoji';
@@ -57,6 +58,7 @@ export interface RiggedThrowable {
 }
 
 const RIGGED: Record<string, RiggedThrowable> = {
+  chicken: { spec: chickenSpec, rig: chickenRig },
   doge: { spec: dogeSpec, rig: dogeRig },
   crying_emoji: { spec: cryingemojiSpec, rig: cryingemojiRig },
   laughing_emoji: { spec: laughingemojiSpec, rig: laughingemojiRig },

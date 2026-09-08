@@ -2,21 +2,25 @@
 
 ## Current state, 2026-09-08
 
-37/47 existing non-glove rigs now use premium moving artwork. The glove is separate. The expanded catalogue in the handoff plan includes additional items beyond these 47, so this fraction is not overall completion. Nothing in this premium frontend checkpoint has been pushed or published.
+38/47 existing non-glove rigs now use premium moving artwork. The glove is separate. The expanded catalogue in the handoff plan includes additional items beyond these 47, so this fraction is not overall completion. Nothing in this premium frontend checkpoint has been pushed or published.
 
 - Added heart, angry_emoji and cool_sunglasses_emoji. Independent heartbeat accents, progressive anger/shout/flames and dropping glasses/lens glint replace static landing-only behavior.
-- All 39 runtime atlases are lossless WebP: 39,514,002 bytes versus 55,159,091 source PNG bytes, 28.4% smaller. Both machines verified exact alpha and visible RGB preservation. Sources are under art-source/animated, outside the public deployment tree. Production media optimization preserves verified atlas bytes.
+- All 40 runtime atlases are lossless WebP: 40,685,060 bytes versus 56,890,941 source PNG bytes, 28.5% smaller. Linux verified exact alpha and visible RGB preservation for all 40; the earlier 39 also passed on Mac. Sources are under art-source/animated, outside the public deployment tree. Production media optimization preserves verified atlas bytes.
 - Selector waits for decoded, dimension-checked artwork before spending. Failed loads can retry; closing the picker cancels an uncharged intent. Player waits for cold artwork before starting its animation/audio clock. Immediate payloads no longer inherit flight audio delays.
 - Receipt retry protection and removal of the post-payment client cooldown are now present in the full isolated checkout as well as this snapshot. Authenticated event receipts and shared wire identity are still pending.
-- Full isolated-checkout TypeScript and all 16,346 client tests across 1,188 files pass after the picker, cutout, account-response ownership and draft-member-policy changes. The production provenance gate correctly rejected the build when main advanced by 15 commits; branch synchronization and a new build remain required.
+- Full isolated-checkout TypeScript and all 16,346 client tests across 1,188 files pass after the picker, cutout, account-response ownership and draft-member-policy changes. After a clean merge of origin/main, full TypeScript and the production build passed at 28e81ca4 with behind-main=0. All 141 built picker thumbnails match their hashed source bytes and all 39 then-integrated atlases are byte-identical. The new chicken rig needs its final full-checkout gate.
 - All 47 approved non-glove picker stills are wired locally as 141 versioned WebP thumbnails, about 4.61 MB. Actual component browser QA covers all 47 on dark/light backgrounds, 94 decoded cutouts and no page errors. Narrow matte thresholds preserve dark bodies and cuffs. Small icons now decode the correct 192px bucket, with a real black-sphere opacity regression test.
 - Live database pack-credit fix is migration 20260908021633; actual consumption timestamps are migration 20260908023324. Both were applied and live source/privileges verified. Synthetic local PostgreSQL checks total 25. The later 30-member monthly allowance migration 20260908025914 is draft only and must release with its matching frontend. VIP 500 and Lifetime unlimited behavior remain covered.
 
-Remaining original rigs: anvil, bear, chicken, ghost, lightning_bolt, magic_8_ball, pizza_slice, shark, skull, ufo. Also pending: added plan catalogue; final fringe/crop and organic/voice audio review; server item entitlements and release of the drafted free allowance; authenticated receipt transport; real purchase/multiplayer/device/Safari tests; final full-repository gates; CI/publication and deployed SHA verification.
+Remaining original rigs: anvil, bear, ghost, lightning_bolt, magic_8_ball, pizza_slice, shark, skull, ufo. Also pending: added plan catalogue; final fringe/crop and organic/voice audio review; server item entitlements and release of the drafted free allowance; authenticated receipt transport; real purchase/multiplayer/device/Safari tests; final full-repository gates; CI/publication and deployed SHA verification.
 
 Publication blocker: automatic approval review rejected private source upload to Smarter-Poker/Smarter-Poker-Club-Arena and required explicit named-destination confirmation. Generic continuation messages do not resolve that rejection. Do not bypass it using a different upload mechanism.
 
-## Latest three sequences
+## Latest visual sequence: Chicken
+
+Chicken uses four authored poses: landing pop, downward peck, four head-up bobs, wide-beak cluck and four half-open ending bobs. The source sheet is unchanged and losslessly encoded. Recorded cluck/bawk sounds remain pending; only the packaged landing pop plays. The four newest sequences together passed 60 normalized-speed samples at 0.5/1/2, 44 beat/scale captures, zero reduced-motion animations and zero page errors. The payload-and-cue preview decodes 12 audio containers. This is not an authenticated table-flow test.
+
+## Previous three sequences
 
 Laugh rocks through eight finite laugh cycles and emits independent tears. Cry moves from sad to trembling to sobbing, with descending drops and an expanding water puddle. Doge flies as glasses, pops as a bare head, slides glasses back on, and reveals a rotating sunburst. The existing transparent sheets are used; two new Doge extraction attempts produced opaque checkerboards and were rejected. Recorded laugh, cry and bespoke Doge music remain pending. These are visual integrations, not complete sound signoff. 58 specification/asset/darkroom tests pass; 33 beat/scale captures and 45 normalized speed samples pass, reduced-motion animations are zero.
 

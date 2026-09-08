@@ -144,3 +144,7 @@ if mode=="fixed":
 if mode=="fixed":
  from test_bbj import verify_bbj
  verify_bbj(run)
+
+if mode=="fixed":
+ from test_insurance import verify_insurance
+ verify_insurance(run)

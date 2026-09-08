@@ -99,6 +99,7 @@ import {
 } from './GtoPostflopV31.js';
 import {
   classifyGtoDecisionContext,
+  gtoV31FlopRootStack,
   gtoV31HasHeadsUpPostflopLine,
   gtoV31Position,
   gtoV31PotType,
@@ -3776,6 +3777,11 @@ export class HorseLogic {
       !vi.isOmaha &&
       !vi.isShortDeck &&
       opponents.length === 1 &&
+      // The certified V31 context has no straddle axis. A straddle-enabled
+      // hand can have a different root pot, preflop ranges, action order, and
+      // SPR, so a standard-pot cell is not evidence for it. V18/heuristics
+      // retain ownership until a separately keyed straddle corpus exists.
+      gs.straddleActive !== true &&
       gs.bombPot !== true &&
       !(gs.communityCards2 && gs.communityCards2.length > 0)
     ) {
@@ -3828,17 +3834,25 @@ export class HorseLogic {
             })
           : null;
 
-      const opponentTotal31 =
-        (Number.isFinite(opponent31.stack) ? opponent31.stack : 0) +
-        (Number.isFinite(opponent31.bet) ? opponent31.bet : 0);
-      const heroTotal31 =
-        (Number.isFinite(player.stack) ? player.stack : 0) +
-        (Number.isFinite(player.bet) ? player.bet : 0);
+      const opponentRootStack31 = gtoV31FlopRootStack({
+        street,
+        player: opponent31,
+        actionHistory: gs.actionHistory,
+      });
+      const heroRootStack31 = gtoV31FlopRootStack({
+        street,
+        player,
+        actionHistory: gs.actionHistory,
+      });
       const effective31 =
-        opponentTotal31 > 0 ? Math.min(heroTotal31, opponentTotal31) : heroTotal31;
-      const stackBB31 = gs.bigBlind > 0 ? effective31 / gs.bigBlind : 100;
+        opponentRootStack31 !== null && heroRootStack31 !== null
+          ? Math.min(heroRootStack31, opponentRootStack31)
+          : null;
+      const stackBB31 = effective31 !== null && gs.bigBlind > 0 ? effective31 / gs.bigBlind : null;
       const tooDeep31 =
-        (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB31);
+        stackBB31 !== null &&
+        (opts.v33DepthCeiling ?? true) !== false &&
+        beyondGtoDepthCeiling(stackBB31);
       if (tooDeep31 && tele15) noteFire('gto_skip_too_deep');
 
       const direct31 =
@@ -3848,6 +3862,7 @@ export class HorseLogic {
         utility31 &&
         heroSeat31 &&
         opponentSeat31 &&
+        stackBB31 !== null &&
         heroSeat31.tableSize === opponentSeat31.tableSize &&
         gtoV31HasHeadsUpPostflopLine(gs.actionHistory, player.seat, opponent31.seat) &&
         !tooDeep31
@@ -3870,7 +3885,7 @@ export class HorseLogic {
               datasetChecksum: opts.gtoV31DatasetChecksum,
             })
           : null;
-      if (direct31?.hit) {
+      if (direct31?.hit && stackBB31 !== null) {
         if (tele15 && !cellDepthIsPrimary(direct31.cell, stackBB31, direct31.depthBucket)) {
           noteFire('gto_depth_fallback');
         }
@@ -3928,13 +3943,15 @@ export class HorseLogic {
           }
         }
         if (tele15) noteFire('v31_certified_unusable_action');
-      } else if (direct31 && tele15) {
+      } else if (direct31 && !direct31.hit && stackBB31 !== null && tele15) {
         noteFire(`v31_certified_miss_${direct31.miss}`);
         noteGtoMiss('v31', street, stackBB31);
       } else if (tele15 && isTournamentMode(gs) && (!objective31 || !utility31)) {
         noteFire('v31_certified_skip_unknown_tournament_utility');
       } else if (tele15 && (!heroSeat31 || !opponentSeat31)) {
         noteFire('v31_certified_skip_unknown_position');
+      } else if (tele15 && stackBB31 === null) {
+        noteFire('v31_certified_skip_unknown_root_stack');
       } else if (
         tele15 &&
         !gtoV31HasHeadsUpPostflopLine(gs.actionHistory, player.seat, opponent31.seat)

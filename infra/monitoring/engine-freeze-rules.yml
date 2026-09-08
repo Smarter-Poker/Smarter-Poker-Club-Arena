@@ -35,7 +35,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "{{ $value }} poker table(s) frozen with players seated"
+          summary: '{{ $value }} poker table(s) frozen with players seated'
           description: |
             One or more tables have 2+ dealable seats and have made no progress
             for over 2 minutes. Players are sitting at a dead table right now.
@@ -43,6 +43,29 @@ groups:
             is firing, the watchdog did not. Check
             engine.smarter.poker/health -> stalledTables for the table ids.
           runbook: https://monitor.smarter.poker/runbooks/tables-frozen
+
+      # A settlement retry heartbeat can keep the existing progress watchdog
+      # healthy while the same accepted hand remains blocked indefinitely.
+      # Confirmed in the live Prometheus name catalog on 2026-09-08 after
+      # engine ad6342df deployed: poker_blocked_settlements counts continuous
+      # settlement ages >= 30s, independently of retry progress markers.
+      - alert: PokerSettlementBlocked
+        expr: |
+          poker_blocked_settlements > 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 1m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: '{{ $value }} table settlement(s) remain blocked'
+          description: |
+            Accepted hand settlement has remained blocked despite retry activity.
+            Check engine.smarter.poker/health -> blockedSettlements for table,
+            hand and continuous age, then inspect the matching durable receipt
+            and refusal. Do not bypass financial settlement or restart the fleet
+            to clear this alert. Normal announced maintenance is suppressed.
+          runbook: 'docs/audits/2026-09-08-settlement-blockage-health.md'
 
       # ── The engine cannot report on itself if it is gone ────────────────
       # Replaces the dead `up{job="engine_pm2"}` rule. This job label is the
@@ -65,7 +88,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "Poker engine /metrics unreachable on {{ $labels.instance }}"
+          summary: 'Poker engine /metrics unreachable on {{ $labels.instance }}'
           description: |
             The engine has not been scrapeable for >1 minute: process dead,
             container restarting, or the host is down. No table can tick.
@@ -78,7 +101,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "Cash-table discovery has not completed for {{ $value }}ms"
+          summary: 'Cash-table discovery has not completed for {{ $value }}ms'
           description: |
             discoverCashTables is the only path that starts a new table engine
             and the only path that reaps a dead one. If it has stalled, no table
@@ -96,7 +119,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "Engine reports itself NOT live"
+          summary: 'Engine reports itself NOT live'
           description: |
             Same signal the Docker HEALTHCHECK acts on. If this is firing for
             more than ~1 minute without the container restarting, the
@@ -147,7 +170,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "No hands dealt anywhere for 10 minutes with players seated"
+          summary: 'No hands dealt anywhere for 10 minutes with players seated'
           description: |
             Platform-wide dealing stop. Distinct from PokerTablesFrozen: this
             fires even if the per-table progress accounting is itself broken,
@@ -155,7 +178,7 @@ groups:
 
             This detects a TOTAL stop only. An engine that is merely crawling
             will not trip it — see EngineFleetThroughputCollapsed.
-          runbook: "docs/changelog/2026-09-07-the-core-the-break-and-the-metric-that-was-reading-one-table.md"
+          runbook: 'docs/changelog/2026-09-07-the-core-the-break-and-the-metric-that-was-reading-one-table.md'
 
       # ── AN ENGINE THAT IS ALIVE AND CRAWLING (added 2026-09-07) ──────────
       #
@@ -209,7 +232,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "Fleet is dealing under 1 hand per table per minute for 40 minutes"
+          summary: 'Fleet is dealing under 1 hand per table per minute for 40 minutes'
           description: |
             The engine is alive and tables are seated, but each one is dealing
             at roughly half the rate a healthy fleet sustains. Measured median
@@ -219,7 +242,7 @@ groups:
             poker_equity_governor_scale. A saturated single thread produces
             exactly this shape - normal table count, collapsed per-table rate -
             because every timer in the process runs late.
-          runbook: "docs/changelog/2026-09-07-the-core-the-break-and-the-metric-that-was-reading-one-table.md"
+          runbook: 'docs/changelog/2026-09-07-the-core-the-break-and-the-metric-that-was-reading-one-table.md'
 
       # ── EVERY RESTART IS ANNOUNCED, OR IT IS AN INCIDENT (2026-09-05) ────
       #
@@ -254,7 +277,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "The engine restarted with no maintenance break running"
+          summary: 'The engine restarted with no maintenance break running'
           description: |
             Production restarted outside the announced :55 break, so in-flight
             hands were voided and every player was dropped without warning.
@@ -287,7 +310,7 @@ groups:
           severity: warning
           component: engine
         annotations:
-          summary: "Engine process restarted more than 3 times in 30 minutes"
+          summary: 'Engine process restarted more than 3 times in 30 minutes'
           description: |
             Self-healing is firing repeatedly. It is doing its job, but a
             restart loop means an underlying defect is still present. Check
@@ -320,7 +343,7 @@ groups:
           severity: warning
           component: club-arena-stats
         annotations:
-          summary: "Stats hand index is {{ $value | humanizeDuration }} behind"
+          summary: 'Stats hand index is {{ $value | humanizeDuration }} behind'
           description: |
             ca_hand_player_idx has not been advanced for two or more Open Claw
             ticks; "Hands Played" on every stats page is stale by this much.
@@ -338,7 +361,7 @@ groups:
           severity: warning
           component: club-arena-stats
         annotations:
-          summary: "{{ $value }} recent hand(s) have no stat row"
+          summary: '{{ $value }} recent hand(s) have no stat row'
           description: |
             The live stats trigger is failing inside the hand insert (it WARNs
             and lets the hand land). Read the Postgres log for
@@ -356,7 +379,7 @@ groups:
           severity: warning
           component: club-arena-stats
         annotations:
-          summary: "The witness audit found {{ $value }} disagreement(s)"
+          summary: 'The witness audit found {{ $value }} disagreement(s)'
           description: |
             ca_stats_witness_audit() checks button_seat against the blind
             posts and the derived showdown flag against the engine's showdown
@@ -381,7 +404,7 @@ groups:
           severity: warning
           component: club-arena-stats
         annotations:
-          summary: "All-in equity coverage is {{ $value | humanizePercentage }} over 7 days"
+          summary: 'All-in equity coverage is {{ $value | humanizePercentage }} over 7 days'
           description: |
             Fewer than 99% of the week's all-in runouts carry an all-in
             equity figure, so EV Adjusted and the luck readouts are
@@ -403,7 +426,7 @@ groups:
           severity: warning
           component: club-arena-stats
         annotations:
-          summary: "Engine has not read ca_stats_health() for {{ $value | humanizeDuration }}"
+          summary: 'Engine has not read ca_stats_health() for {{ $value | humanizeDuration }}'
           description: |
             Every poker_stats_* gauge is stale. Usually a PostgREST or RPC
             grant problem; the engine logs "[StatsHealthMonitor] read failed".

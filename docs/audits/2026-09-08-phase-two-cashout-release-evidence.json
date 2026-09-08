@@ -1,0 +1,61 @@
+{
+  "scope": "Phase 2 cashout receipt and database amount corrections; phase remains open",
+  "receipt_pr": 3867,
+  "receipt_merge": "49ad56452a5d6efd708b0c57d475bc0543ebfeca",
+  "hetzner_run": 34279659263,
+  "served_built_at": "2026-09-08T21:18:51Z",
+  "amount_pr": 3872,
+  "migration_source_version": "20260908211251",
+  "migration_applied_version": "20260908212101",
+  "installed_function_md5": "9dba1ae69cb2c842c449ba90682dc3bc",
+  "grants": {
+    "anon": false,
+    "authenticated": true,
+    "service_role": true
+  },
+  "verification": {
+    "postgres_cases": 15,
+    "full_migration_applications_in_disposable_db": 2,
+    "client_cases": 91,
+    "client_types": "pass",
+    "server_types": "pass",
+    "new_database_cases_failed_before": 8
+  },
+  "open_defects": [
+    "An old unbound cashout request can close a new occupancy after rejoin. Browser, engine and installed SQL paths need an occupancy-bound request contract.",
+    "Closing-table/cluster wrapper lock ordering requires further concurrency review. The proved player_leave_table inversion is corrected and live."
+  ],
+  "limits": [
+    "Production synthetic financial transactions were not executed.",
+    "These fixes do not close all 13 Phase 2 acceptance items."
+  ],
+  "amount_merge": "54ed5bc1eb25dd5f1da213bb2cd0c99cb164eb37",
+  "amount_ci": 34281137223,
+  "served_context_guard": {
+    "sha": "243456f0231d4a2c5f4036f177604f3be6e2ccad",
+    "run": 34282845196,
+    "built_at": "2026-09-08T21:53:33Z",
+    "entry": "index-Czg2Izqj-v6.js",
+    "receipt_rejection": true,
+    "missing_context_rejection": true
+  },
+  "seat_expiry": {
+    "pr": 3878,
+    "source_version": "20260908214235",
+    "applied_version": "20260908215333",
+    "definition_md5": "cbab2d426b0ec091b5b09f3e76eec640",
+    "grants": {
+      "anon": false,
+      "authenticated": false,
+      "service_role": true
+    },
+    "postgres_cases": 18,
+    "concurrency_cases": ["user-advisory contention", "tournament-parent contention"]
+  },
+  "engine_observation": {
+    "version": "61df0dc0",
+    "wager_reopening_ancestor": true,
+    "receipt_merge_ancestor": false,
+    "receipt_adoption": "pending scheduled maintenance"
+  }
+}

@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { useLocation } from 'react-router-dom';
 import { getClubOperationContext } from '../../config/clubOperationsNavigation';
 import { useClubNavigationAccess } from '../../hooks/useClubNavigationAccess';
+import { isDiamondArenaClubKey } from '../../lib/diamondArenaIdentity';
 
 /**
  * The compact sibling rail for club staff pages. The fuller tool inventory
@@ -17,9 +18,11 @@ import { useClubNavigationAccess } from '../../hooks/useClubNavigationAccess';
 export default function ClubOperationsRail() {
   const location = useLocation();
   const clubId = getClubOperationContext(location.pathname);
-  const access = useClubNavigationAccess(clubId);
+  const isDiamondArena = isDiamondArenaClubKey(clubId);
+  const access = useClubNavigationAccess(isDiamondArena ? null : clubId);
 
-  if (!clubId || access.loading || access.error || !access.isClubStaff) return null;
+  if (isDiamondArena || !clubId || access.loading || access.error || !access.isClubStaff)
+    return null;
 
   /* No fallback: a rail that flashes an empty chassis and then fills is worse
      than one that arrives complete a beat later. */

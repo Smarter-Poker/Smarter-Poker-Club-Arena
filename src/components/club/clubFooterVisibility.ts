@@ -1,3 +1,5 @@
+import { isDiamondArenaClubPath } from '../../lib/diamondArenaIdentity';
+
 /** Routes whose own immersive or public chrome must not be covered by the
  * authenticated Club Arena navigation footer. Every other application route
  * receives the one global footer from App.tsx. */
@@ -16,6 +18,7 @@ const FOOTERLESS_ROUTE_PATTERNS: readonly RegExp[] = [
 ];
 
 export function shouldShowClubFooter(pathname: string): boolean {
+  if (isDiamondArenaClubPath(pathname)) return false;
   return !FOOTERLESS_ROUTE_PATTERNS.some((pattern) => pattern.test(pathname));
 }
 
@@ -27,5 +30,6 @@ export function shouldShowClubFooter(pathname: string): boolean {
  * is the multi-table container saying "the tab on screen is a lobby".
  */
 export function shouldShowClubFooterFor(pathname: string, inTabLobbyActive: boolean): boolean {
+  if (isDiamondArenaClubPath(pathname)) return false;
   return inTabLobbyActive || shouldShowClubFooter(pathname);
 }

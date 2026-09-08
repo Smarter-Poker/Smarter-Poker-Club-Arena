@@ -38,6 +38,7 @@ function fixture(
   options: { cashReceipt?: Record<string, unknown>; readError?: string } = {}
 ) {
   const writes: string[] = [];
+  const alerts: unknown[][] = [];
   const client = {
     from(table: string) {
       let op = 'read';
@@ -79,13 +80,16 @@ function fixture(
       return options.cashReceipt ?? { ok: true, paid: 10, amount_paid: 10, fully_settled: true };
     },
     () => {},
-    async () => {},
+    async (...args: unknown[]) => {
+      alerts.push(args);
+    },
     isSatelliteTargetOpen,
     satelliteTicketCost,
     planSatelliteAwards
   );
   return {
     writes,
+    alerts,
     run: () =>
       run.call(
         { tournamentId: 'satellite' },
@@ -105,6 +109,18 @@ describe('unknown seat outcome cannot become cash or a confirmed prize', () => {
     const f = fixture(seat, error);
     await expect(f.run()).rejects.toThrow();
     expect(f.writes).toEqual([]);
+    expect(f.alerts).toHaveLength(1);
+    expect(f.alerts[0]).toEqual([
+      'critical',
+      'Satellite.seat_outcome_unconfirmed',
+      expect.any(String),
+      expect.objectContaining({
+        tournament_id: 'satellite',
+        target_id: 'target',
+        user_id: 'winner',
+        position: 1,
+      }),
+    ]);
   });
   it('keeps cash fallback for an explicit target refusal', async () => {
     const f = fixture({ ok: false, reason: 'target_closed' });

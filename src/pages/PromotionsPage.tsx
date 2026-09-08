@@ -3,7 +3,8 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { readClubContextParam } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
@@ -41,7 +42,12 @@ interface Promotion {
 
 export default function PromotionsPage() {
   useVisibilityRefresh(() => loadPromotions());
-  const { clubId } = useParams();
+  const { clubId: routeClubId } = useParams();
+  const location = useLocation();
+  /* Inside a club the hamburger stamps `?club=` on this link, so the global
+     `/promotions` route opens on THAT club's offers rather than the arena's.
+     The path param still wins when both are present. */
+  const clubId = routeClubId || readClubContextParam(location.search) || undefined;
   const { user } = useAuthUser();
   const navigate = useNavigate();
   const toast = useToast();

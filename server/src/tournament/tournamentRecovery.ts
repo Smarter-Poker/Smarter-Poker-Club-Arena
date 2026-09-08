@@ -389,6 +389,12 @@ export async function recoverStuckCompletingTournaments(
             .select('id', { count: 'exact', head: true })
             .eq('tournament_id', t.id)
             .in('status', ['playing', 'registered']);
+          // A failed or missing count is unknown, never evidence for a status change.
+          if (aliveErr || !Number.isSafeInteger(aliveCount) || aliveCount! < 0) {
+            throw new Error(
+              `satellite survivor count unreadable for ${t.id}: ${aliveErr?.message ?? 'invalid count'}`
+            );
+          }
           if (!aliveErr && typeof aliveCount === 'number' && aliveCount >= 2) {
             const { error: reviveErr } = await supabase
               .from('tournaments')
@@ -451,16 +457,29 @@ export async function recoverStuckCompletingTournaments(
            * and the seat leg dedupes on the target's unique registration, so
            * a satellite that already paid pays nobody twice.
            */
-          const [{ count: recordCount }, { count: seatCount }] = await Promise.all([
-            supabase
-              .from('tournament_payouts')
-              .select('id', { count: 'exact', head: true })
-              .eq('tournament_id', t.id),
-            supabase
-              .from('tournament_players')
-              .select('id', { count: 'exact', head: true })
-              .eq('source_satellite_id', t.id),
-          ]);
+          const [{ count: recordCount, error: recordErr }, { count: seatCount, error: seatErr }] =
+            await Promise.all([
+              supabase
+                .from('tournament_payouts')
+                .select('id', { count: 'exact', head: true })
+                .eq('tournament_id', t.id),
+              supabase
+                .from('tournament_players')
+                .select('id', { count: 'exact', head: true })
+                .eq('source_satellite_id', t.id),
+            ]);
+          if (
+            recordErr ||
+            seatErr ||
+            !Number.isSafeInteger(recordCount) ||
+            recordCount! < 0 ||
+            !Number.isSafeInteger(seatCount) ||
+            seatCount! < 0
+          ) {
+            throw new Error(
+              `satellite award counts unreadable for ${t.id}: ${recordErr?.message ?? seatErr?.message ?? 'invalid count'}`
+            );
+          }
           const alreadyAwarded = (recordCount ?? 0) > 0 || (seatCount ?? 0) > 0;
 
           if (alreadyAwarded) {

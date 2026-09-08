@@ -2223,7 +2223,10 @@ export class HandController {
           potsByBoard[b],
           this.config.gameVariant,
           this.state.dealerSeat,
-          perPot
+          perPot,
+          undefined,
+          // A tournament chip does not divide (2026-09-08).
+          this.config.isTournament ? 1 : 0.01
         );
         winnersPerBoard.push(boardWinners);
         this.pendingPerPotAwards.push(
@@ -2282,7 +2285,9 @@ export class HandController {
                 `awarded to the contenders instead`
             ),
             'HandController.pot_eligibility_snapshot_stale'
-          )
+          ),
+        // A tournament chip does not divide (2026-09-08).
+        this.config.isTournament ? 1 : 0.01
       );
       this.pendingPerPotAwards = perPot;
     }
@@ -2345,7 +2350,10 @@ export class HandController {
           })),
           this.config.gameVariant,
           this.state.dealerSeat,
-          recoveredPerPot
+          recoveredPerPot,
+          undefined,
+          // A tournament chip does not divide (2026-09-08).
+          this.config.isTournament ? 1 : 0.01
         );
         if (winners.length > 0) this.pendingPerPotAwards = recoveredPerPot;
       }

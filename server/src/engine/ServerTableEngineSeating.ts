@@ -771,10 +771,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // same RPC and would fail for the same reason, and the old fallback then
       // tore down the player's engine registrations while they were still in
       // the chair.
-      if (this.postHandTasksPromise) {
-        // Settlement for the just-finished hand is still writing stacks — cash
-        // out only after it lands.
-        await this.postHandTasksPromise.catch(() => undefined);
+      while (this.postHandTasksPromise) {
+        // Settlement can append its stack/bank tasks while this leave is
+        // waiting. Re-read the barrier before spending the seat balance.
+        const pending = this.postHandTasksPromise;
+        await pending;
+        if (this.postHandTasksPromise === pending) break;
       }
 
       const teardown = () => {

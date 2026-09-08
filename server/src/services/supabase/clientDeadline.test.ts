@@ -122,6 +122,25 @@ describe('database transport compatibility', () => {
 
   it('bounds a real SDK query whose HTTP body stops after headers', async () => {
     vi.useRealTimers();
+
+    /* A REAL SOCKET NEEDS MORE THAN 100ms OF HEADROOM (2026-09-08).
+       Every other test in this file drives the wrapper with fake timers, so
+       the 100ms deadline from beforeEach costs nothing. This one is real: a
+       real loopback server, a real connect, real time. On 2026-09-08 it failed
+       CI with `expected +0 to be 1` - the server's handler had never run,
+       because the 100ms deadline fired before Node finished connecting to
+       127.0.0.1 on a box with 33 of 33 runners busy and 30 jobs queued.
+
+       Re-importing with a 2s deadline removes the race without touching what
+       is being proved: the body below still never completes, so the deadline
+       still fires and still produces the error asserted at the end. The
+       `requests` count stays a real assertion - it is what separates "the
+       deadline bounded a request that was SENT and stalled" from "the request
+       was cancelled before it left", which the test above this one covers. */
+    vi.resetModules();
+    vi.stubEnv('SUPABASE_TIMEOUT_MS', '2000');
+    await import('./client.js');
+
     vi.stubGlobal('fetch', nativeFetch);
     let requests = 0;
     const server = createServer((_request, response) => {
@@ -146,5 +165,5 @@ describe('database transport compatibility', () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-  }, 5000);
+  }, 15000);
 });

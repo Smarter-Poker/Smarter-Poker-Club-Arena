@@ -1,3 +1,5 @@
+import { spec as partyFaceSpec, rig as partyFaceRig } from './rigs/party_face';
+import { spec as fishSpec, rig as fishRig } from './rigs/fish';
 import { spec as magic_8_ballSpec, rig as magic_8_ballRig } from './rigs/magic_8_ball';
 import { spec as lightning_boltSpec, rig as lightning_boltRig } from './rigs/lightning_bolt';
 import { spec as skullSpec, rig as skullRig } from './rigs/skull';
@@ -67,6 +69,8 @@ export interface RiggedThrowable {
 }
 
 const RIGGED: Record<string, RiggedThrowable> = {
+  party_face: { spec: partyFaceSpec, rig: partyFaceRig },
+  fish: { spec: fishSpec, rig: fishRig },
   magic_8_ball: { spec: magic_8_ballSpec, rig: magic_8_ballRig },
   lightning_bolt: { spec: lightning_boltSpec, rig: lightning_boltRig },
   skull: { spec: skullSpec, rig: skullRig },

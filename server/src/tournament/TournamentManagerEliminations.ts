@@ -3014,14 +3014,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           memo: `Tournament prize adjustment (late reg pool finalized): position ${player.position}`,
         });
 
-        if (adj.ok) {
-          // Update the recorded prize.
-          // PAYOUT-INTEGRITY 2026-08-25: the idempotency key above is keyed on
-          // `correctPrize`, so an unrecorded top-up cannot be re-credited — but
-          // the row then under-reports what the player was actually paid, and
-          // `fn_tournament_payout_reconcile` reads that row. It would see a
-          // shortfall that no longer exists and top the player up AGAIN under
-          // its own key. Report the write failure instead of discarding it.
+        if (adj.fully_settled === true && (adj.amount_paid ?? 0) >= correctPrize) {
+          // A successful partial credit does not fund the full corrected prize.
+          // Only the authoritative cumulative receipt can justify this stamp.
           const { error: recordErr } = await supabase
             .from('tournament_players')
             .update({ prize: correctPrize })
@@ -3030,7 +3025,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           if (recordErr) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc CREDITED ${difference} to ${player.user_id.slice(0, 8)} but could not record prize=${correctPrize}: ${recordErr.message}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] prize recalc confirmed total ${adj.amount_paid} for ${player.user_id.slice(0, 8)} but could not record prize=${correctPrize}: ${recordErr.message}`
               ),
               'Tournament.prize_recalc_record_failed'
             );
@@ -3038,7 +3033,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         } else {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc credit FAILED for ${player.user_id.slice(0, 8)}: ${adj.refused_reason}${adj.transport_error ? ` (${adj.transport_error})` : ''}`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc payment remains unconfirmed or incomplete for ${player.user_id.slice(0, 8)}: ${adj.refused_reason ?? 'remaining obligation'}${adj.transport_error ? ` (${adj.transport_error})` : ''}`
             ),
             'TournamentthistournamentIdslic.Prize_recalc_credit_FAILED_for'
           );

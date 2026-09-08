@@ -8,6 +8,18 @@
 #       /runbooks/*    → Markdown runbook file server (public)
 # ═════════════════════════════════════════════════════════════════════════
 
+{
+    # WebSocket authentication is carried in Sec-WebSocket-Protocol. Upstream
+    # errors include request headers in Caddy's runtime log, so redact this
+    # credential carrier globally. This changes logging only; routing and the
+    # browser-to-engine upgrade remain untouched.
+    log {
+        format filter {
+            request>headers>Sec-Websocket-Protocol delete
+        }
+    }
+}
+
 engine.smarter.poker {
     @cors_preflight method OPTIONS
     handle @cors_preflight {

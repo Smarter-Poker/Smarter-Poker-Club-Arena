@@ -89,7 +89,7 @@ describe('the hand mints its own id at settlement', () => {
     // the award-unit ledger and the integrity feed read - those three need
     // the ROW, not just the identity.
     expect(settlement).toMatch(/let v_handHistoryId: string \| null = null;/);
-    expect(settlement).toMatch(/if \(v_handHistoryId\) \{/);
+    expect(settlement).toMatch(/if \(v_handHistoryId && this\.lifecycleCanMutate\(\)\) \{/);
     expect(settlement).toMatch(/hand_id: v_handHistoryId,/); // hand_history_saved
   });
 });
@@ -132,16 +132,16 @@ describe('logHandHistory honours the minted id', () => {
     // "the write succeeded and we could not read the answer" must not be
     // indistinguishable from "the write failed" - that is how the null got in.
     expect(handHistory).toMatch(/const minted = typeof row\.id === 'string' \? row\.id : null;/);
-    expect(handHistory).toMatch(/return \{ id: data\?\.id \?\? minted, wroteUnits: false \};/);
     expect(handHistory).toMatch(
-      /return \{ id: \(data as string \| null\) \?\? minted, wroteUnits: true \};/
+      /return \{ id: data\?\.id \?\? minted, wroteUnits: false, settlementCommitted: true \};/
     );
+    expect(handHistory).toMatch(/wroteUnits: true,[\s\S]*?settlementCommitted: true/);
     expect(handHistory).not.toMatch(/return \{ id: data\?\.id \?\? null/);
   });
 
   it('treats a duplicate-key answer as the same good news', () => {
     const dupes = handHistory.match(
-      /if \(existing \|\| minted\) return \{ id: existing \?\? minted/g
+      /if \(existing \|\| minted\)\s*return \{ id: existing \?\? minted, wroteUnits: false, settlementCommitted: true \};/g
     );
     expect(dupes).toHaveLength(2); // the plain insert and the bomb-pot RPC
   });

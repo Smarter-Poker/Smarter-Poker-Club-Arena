@@ -32,7 +32,10 @@ describe('nightly jobs - a restart must trigger the run, not prevent it', () => 
     // The boot check is the whole point: without it, an interval longer than
     // the gap between deploys never fires.
     expect(body).toContain('setTimeout');
-    expect(body).toContain('maybeRunLeague');
+    expect(body).toContain('launchMaybeRunLeague');
+    expect(leagueSrc).toMatch(
+      /function launchMaybeRunLeague\(\)[\s\S]*?maybeRunLeague\(generation\)/
+    );
   });
 
   it('the self-tuner checks at boot too', () => {
@@ -40,7 +43,10 @@ describe('nightly jobs - a restart must trigger the run, not prevent it', () => 
     const body = start.slice(0, start.indexOf('\n}\n') + 3);
     expect(body).toContain('setInterval');
     expect(body).toContain('setTimeout');
-    expect(body).toContain('maybeRunSelfTune');
+    expect(body).toContain('launchMaybeRunSelfTune');
+    expect(tunerSrc).toMatch(
+      /function launchMaybeRunSelfTune\(\)[\s\S]*?maybeRunSelfTune\(generation\)/
+    );
   });
 
   it('the "already ran" guard asks the database, not an in-memory flag', () => {

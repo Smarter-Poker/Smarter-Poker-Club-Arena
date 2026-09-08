@@ -436,8 +436,10 @@ describe('the stand-down latch - 2026-09-01', () => {
       ["claimNightlyJob('league', today)", 'lastLeagueDate'],
       ["claimNightlyJob('league_pm', today)", 'lastLeaguePmDate'],
     ] as const) {
-      const at = src.indexOf(`if (!(await ${job}))`);
-      expect(at, `stand-down branch for ${job} not found`).toBeGreaterThan(-1);
+      const claimAt = src.indexOf(`const claimed = await ${job}`);
+      expect(claimAt, `claim for ${job} not found`).toBeGreaterThan(-1);
+      const at = src.indexOf('if (!claimed)', claimAt);
+      expect(at, `stand-down branch for ${job} not found`).toBeGreaterThan(claimAt);
       // Comments stripped first: this asserts on CODE. The branch carries a
       // long note that necessarily quotes the assignment it is warning about,
       // and prose must not be able to fail - or pass - a wiring test.

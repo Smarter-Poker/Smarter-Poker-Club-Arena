@@ -17080,3 +17080,7 @@ Applied: game-scoped insurance bank, canonical cents, bound replay, explicit jou
 Rebuy amounts and keys are validated before the shared receipt claim; the private core restores ledger context. The browser requires a confirmed numeric result. 46 isolated database cases pass against the shared path, with 395 earlier cases passing. Details: docs/changelog/2026-09-08-rebuy-shared-receipt-validation.md.
 
 The audited private rebuy core is registered by migration 20260908133232 with exact-definition and owner-only permission guards. Linked BBJ evidence and remaining audit boundaries are recorded in docs/audits/2026-09-08-chip-audit-checkpoint.md.
+
+## 2026-09-08: Hand settlement retries retain their accepted facts
+
+The shared hand commit caller snapshots its entire request before awaiting and verifies a receipt against the requested hand UUID. Two reproduced failures now pass; 40 hand-history cases and server TypeScript pass. Details: docs/changelog/2026-09-08-hand-settlement-retries-retain-their-facts.md.

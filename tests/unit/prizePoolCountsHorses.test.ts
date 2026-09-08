@@ -31,50 +31,18 @@ import { join } from 'node:path';
 
 const SRC = readFileSync(join(process.cwd(), 'src/services/TournamentService.ts'), 'utf8');
 
-/** Just the body of recalculatePrizePool. */
-function recalcBody(): string {
-  const start = SRC.indexOf('async recalculatePrizePool(');
-  expect(start).toBeGreaterThan(-1);
-  // The next method declaration at the same indentation ends it.
-  const rest = SRC.slice(start + 10);
-  const end = rest.indexOf('\n  async ');
-  return rest.slice(0, end === -1 ? rest.length : end);
-}
-
-describe('recalculatePrizePool treats horses as players', () => {
-  it('never filters entries by is_horse', () => {
-    expect(recalcBody()).not.toMatch(/is_horse/);
+describe('the browser never reconstructs or finalizes a tournament prize pool', () => {
+  it('removes both duplicate client-side pool writers', () => {
+    expect(SRC).not.toContain('async recalculatePrizePool(');
+    expect(SRC).not.toContain('async finalizePrizePool(');
   });
 
-  it('does not reintroduce a horse-id exclusion set', () => {
-    const body = recalcBody();
-    expect(body).not.toMatch(/horseIds/);
-    expect(body).not.toMatch(/horseRows/);
+  it('leaves each purchase pool mutation inside process_tournament_rebuy', () => {
+    expect(SRC).toContain("supabase.rpc('process_tournament_rebuy'");
+    expect(SRC).not.toContain('await this.recalculatePrizePool(');
   });
 
-  it('counts every tournament_players row as an entry', () => {
-    // One row is one paid entry; re-entries create additional rows.
-    expect(recalcBody()).toMatch(/entryCount\s*=\s*entryRows\?\.length/);
-  });
-
-  it('the whole service no longer excludes horses anywhere', () => {
-    expect(SRC).not.toMatch(/is_horse/);
-  });
-});
-
-describe('recalculatePrizePool refuses to write on an unreadable input', () => {
-  it('destructures error on the entry, rebuy and fee reads', () => {
-    const body = recalcBody();
-    // supabase-js does not throw on a PostgREST error, so an undestructured
-    // `error` is invisible and the pool gets overwritten with a wrong number.
-    expect(body).toMatch(/error:\s*entryErr/);
-    expect(body).toMatch(/error:\s*rebuyErr/);
-    expect(body).toMatch(/error:\s*feeErr/);
-  });
-
-  it('returns the existing pool rather than writing a guessed one', () => {
-    const body = recalcBody();
-    const guards = body.match(/return tournament\.prize_pool \|\| 0;/g) ?? [];
-    expect(guards.length).toBeGreaterThanOrEqual(3);
+  it('never filters entries by horse identity anywhere in the service', () => {
+    expect(SRC).not.toMatch(/is_horse|horseIds|horseRows/);
   });
 });

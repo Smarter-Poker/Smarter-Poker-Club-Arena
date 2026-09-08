@@ -13,7 +13,7 @@ CREATE FUNCTION fn_seat_club_for_user(uuid,uuid,uuid) RETURNS uuid LANGUAGE sql 
 CREATE FUNCTION fn_ensure_club_wallet(uuid,uuid) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN;END $$;
 CREATE TRIGGER member_journal AFTER UPDATE OF chip_balance ON club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_ledger_writer();
 
-CREATE TABLE entry_purchase_idempotency_receipts(key_domain text NOT NULL,idempotency_key text NOT NULL,request jsonb NOT NULL,response jsonb,claimed_at timestamptz NOT NULL DEFAULT transaction_timestamp(),completed_at timestamptz,PRIMARY KEY(key_domain,idempotency_key));
+-- The shared base fixture owns entry_purchase_idempotency_receipts.
 CREATE FUNCTION fn_entry_purchases_frozen() RETURNS boolean LANGUAGE sql AS $$ SELECT coalesce(current_setting('test.frozen',true),'false')='true' $$;
 CREATE FUNCTION fn_assert_cash_chip_purchase_table(uuid) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN;END $$;
 CREATE FUNCTION trg_entry_purchase_receipt_is_immutable() RETURNS trigger LANGUAGE plpgsql AS $function$

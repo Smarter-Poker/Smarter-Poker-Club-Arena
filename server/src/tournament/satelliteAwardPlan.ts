@@ -99,9 +99,14 @@ export function planSatelliteAwards(input: SatelliteAwardInput): SatelliteAwardP
    * Guaranteed" event with 100 runners would seat 2 and cash 500 to 3rd.
    * A guarantee promises AT LEAST; a field that funds more seats gets them.
    */
-  const seats = ticketCost > 0 ? Math.max(configuredSeats, Math.floor(pool / ticketCost)) : 0;
+  // Divide whole cents: 0.30 / 0.10 is 2.9999999999999996 in binary floats.
+  // Flooring that quotient would replace a fully funded seat with cash.
+  const poolCents = Math.round(pool * 100);
+  const ticketCents = Math.round(ticketCost * 100);
+  const seats =
+    ticketCents > 0 ? Math.max(configuredSeats, Math.floor(poolCents / ticketCents)) : 0;
   const awardCount = Math.min(seats, finisherCount);
-  const remainder = round2(pool - awardCount * ticketCost);
+  const remainder = (poolCents - awardCount * ticketCents) / 100;
 
   return {
     awardCount,

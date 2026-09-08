@@ -50,7 +50,12 @@ if (!U || !K) {
   console.error('server/.env must carry SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
   process.exit(2);
 }
-const H = { apikey: K, Authorization: `Bearer ${K}` };
+const H = {
+  apikey: K,
+  Authorization: `Bearer ${K}`,
+  'x-smarter-data-actor': 'service',
+  'x-smarter-data-protocol': '1',
+};
 
 const q = async (path) => (await fetch(`${U}${path}`, { headers: H })).json();
 

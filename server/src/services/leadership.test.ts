@@ -35,17 +35,20 @@ beforeEach(() => {
   rpc.mockReset();
   exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
 });
-afterEach(() => exitSpy.mockRestore());
+afterEach(() => {
+  vi.useRealTimers();
+  exitSpy.mockRestore();
+});
 
 const load = async () => await import('./leadership.js');
 
 describe('a standby must NOT promote itself when it cannot reach the database', () => {
   /**
-   * "Always fail to leader" is wrong, and dangerously so, because claimTable()
-   * fails open too:
+   * "Always fail to leader" is wrong, and dangerously so. Before protocol-2
+   * enforcement, table admission could fail open too:
    *
    *   outage -> standby cannot reach the RPC -> promotes itself
-   *          -> claimTable() also answers true -> TWO engines on one table.
+   *          -> unverified table admission answers true -> TWO engines on one table.
    *
    * That is the corruption the leases exist to prevent, manufactured on every
    * outage. Live evidence it is not hypothetical: with the engine up 48
@@ -221,19 +224,39 @@ describe('election', () => {
 });
 
 describe('losing leadership while holding it', () => {
-  it('stands down hard rather than risk two leaders', async () => {
+  it('hands control to the one authoritative shutdown rather than exiting around it', async () => {
     vi.useFakeTimers();
     rpc.mockResolvedValue(granted);
-    const { renewLeadership } = await load();
+    const mod = await load();
+    const shutdown = vi.fn(async () => {});
+    mod.registerLeadershipShutdownHandler(shutdown);
+    const { renewLeadership } = mod;
     expect(await renewLeadership()).toBe('leader');
 
     // Our heartbeat lapsed past the staleness window and someone took over.
     rpc.mockResolvedValue(refused);
     expect(await renewLeadership()).toBe('standby');
 
-    vi.advanceTimersByTime(500);
-    expect(exitSpy).toHaveBeenCalledWith(0);
-    vi.useRealTimers();
+    expect(shutdown).toHaveBeenCalledOnce();
+    expect(shutdown).toHaveBeenCalledWith('lost leadership to other');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails nonzero when the authoritative shutdown rejects', async () => {
+    vi.useFakeTimers();
+    rpc.mockResolvedValue(granted);
+    const mod = await load();
+    mod.registerLeadershipShutdownHandler(async () => {
+      throw new Error('ownership release failed');
+    });
+    expect(await mod.renewLeadership()).toBe('leader');
+
+    rpc.mockResolvedValue(refused);
+    expect(await mod.renewLeadership()).toBe('standby');
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });
 
@@ -251,8 +274,9 @@ describe('losing leadership while holding it', () => {
  *   up=188s activeTables=0 liveness=dead discStall=188115ms
  * discStall equal to uptime is the tell: the loop never ran once.
  *
- * These are source guards. The promotion paths call process.exit, which cannot
- * be exercised in-process without killing the runner.
+ * Promotion still requires a complete process boot, but the leadership module
+ * no longer releases ownership or exits on its own. It asks the entrypoint's
+ * single shutdown coordinator to do that in the only safe order.
  */
 describe('a promoted standby restarts instead of leading in name only', () => {
   const SRC = readFileSync(join(process.cwd(), 'src/services/leadership.ts'), 'utf8');
@@ -292,29 +316,29 @@ describe('a promoted standby restarts instead of leading in name only', () => {
 /**
  * THE RESTART LOOP THE RESTART CREATED (2026-08-24, same day).
  *
- * restartIntoLeaderBoot() shipped exiting while HOLDING the lease it had just
- * been granted. The successor therefore booted as a standby (the row was not
- * stale), waited out the staleness window, won the lease while standby-booted,
- * and exited again — die/start every ~30s in production, activeTables pinned
- * at 0. The exit must hand the lease back first so the successor's boot-time
- * claim is granted immediately and it boots as a real leader.
+ * restartIntoLeaderBoot() first exited while HOLDING its lease, then learned
+ * to release it directly from this module. Both shapes bypassed GameServer's
+ * table/tournament teardown. Leadership now only requests the authoritative
+ * index shutdown; GameServer.stop() owns the one release path.
  */
-describe('a restarting standby hands the lease back on its way out', () => {
+describe('leadership changes cannot bypass authoritative ownership teardown', () => {
   const SRC2 = readFileSync(join(process.cwd(), 'src/services/leadership.ts'), 'utf8');
   const code2 = SRC2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
   const fn = code2.slice(code2.indexOf('function restartIntoLeaderBoot'));
   const body = fn.slice(0, fn.indexOf('export function isLeader'));
 
-  it('releases the lease before exiting', () => {
-    expect(body).toMatch(/releaseLeadership\(\)/);
+  it('promotion requests the registered coordinator', () => {
+    expect(body).toMatch(/requestAuthoritativeShutdown\(/);
   });
 
-  it('exits after the release resolves, not before', () => {
-    expect(body).toMatch(/releaseLeadership\(\)\.finally\(/);
+  it('never releases leadership or reports a clean exit itself', () => {
+    expect(body).not.toMatch(/releaseLeadership\(\)/);
+    expect(code2).not.toMatch(/process\.exit\(0\)/);
   });
 
-  it('still exits if the release hangs - a backstop timer exists', () => {
-    expect(body).toMatch(/setTimeout\(\(\) => process\.exit\(0\), 5000\)/);
+  it('has a nonzero hard failure when no coordinator can certify teardown', () => {
+    const fail = sliceMethod(code2, 'function hardExitAfterRejectedShutdown');
+    expect(fail).toMatch(/process\.exit\(1\)/);
   });
 });
 
@@ -326,30 +350,28 @@ describe('a restarting standby hands the lease back on its way out', () => {
  * an in-flight renewal to re-enter restartIntoLeaderBoot, release the lease a
  * second time and arm a second pair of exit timers.
  */
-describe('restartIntoLeaderBoot is idempotent', () => {
+describe('the authoritative shutdown request is idempotent', () => {
   const SRC = readFileSync(join(process.cwd(), 'src/services/leadership.ts'), 'utf8');
   const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-  const fn = code.slice(
-    code.indexOf('function restartIntoLeaderBoot'),
-    code.indexOf('export function isLeader')
-  );
+  const request = sliceMethod(code, 'function requestAuthoritativeShutdown');
+  const restart = sliceMethod(code, 'function restartIntoLeaderBoot');
 
-  it('returns early once a restart is already scheduled', () => {
-    expect(fn).toMatch(/if \(restartScheduled\) return;/);
+  it('returns early once shutdown is already scheduled', () => {
+    expect(request).toMatch(/if \(restartScheduled\) return;/);
   });
 
-  it('sets the guard before doing anything that can be repeated', () => {
-    const set = fn.indexOf('restartScheduled = true');
+  it('sets the guard before stopping renewal or invoking the coordinator', () => {
+    const set = request.indexOf('restartScheduled = true');
     expect(set).toBeGreaterThan(-1);
-    // Must precede both the release and the exit, or the guard is decorative.
-    expect(set).toBeLessThan(fn.indexOf('releaseLeadership()'));
-    expect(set).toBeLessThan(fn.indexOf('process.exit'));
+    expect(set).toBeLessThan(request.indexOf('stopLeadershipRenewal()'));
+    expect(set).toBeLessThan(request.indexOf('handler(reason)'));
   });
 
   it('still checks bootedAsStandby first', () => {
     // A process that booted as a leader must never take this path at all.
-    expect(fn.indexOf('if (!bootedAsStandby) return;')).toBeLessThan(
-      fn.indexOf('if (restartScheduled) return;')
+    expect(restart).toMatch(/if \(!bootedAsStandby\) return;/);
+    expect(restart.indexOf('if (!bootedAsStandby) return;')).toBeLessThan(
+      restart.indexOf('requestAuthoritativeShutdown(')
     );
   });
 

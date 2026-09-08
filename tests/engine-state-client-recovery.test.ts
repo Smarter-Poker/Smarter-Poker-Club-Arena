@@ -30,7 +30,10 @@ class FakeWebSocket {
   onerror: ((e: unknown) => void) | null = null;
   onclose: ((e: { code?: number; reason?: string }) => void) | null = null;
 
-  constructor(url: string) {
+  constructor(
+    url: string,
+    public protocols?: string | string[]
+  ) {
     this.url = url;
     FakeWebSocket.instances.push(this);
   }
@@ -675,5 +678,76 @@ describe('EngineChannelClient handshake recovery', () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
     expect(ws.closedWith).toHaveLength(1);
     expect(c.getStatus()).toBe('idle');
+  });
+});
+
+describe.each(['table', 'channel'] as const)('%s connection auth ownership', (kind) => {
+  function pendingToken() {
+    let resolve!: (token: string) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<string>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    return { promise, resolve, reject };
+  }
+
+  function make(getToken: () => Promise<string>, onStatus = (_status: string) => {}) {
+    return kind === 'table'
+      ? client({ getToken, onStatus }).c
+      : new EngineChannelClient({ baseUrl: 'https://engine.example', getToken, onStatus });
+  }
+
+  it('opens with fresh auth after reconnect while the old token is pending', async () => {
+    const old = pendingToken();
+    const fresh = pendingToken();
+    const getToken = vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
+    const c = make(getToken);
+    try {
+      const first = c.connect();
+      c.disconnect();
+      const second = c.connect();
+      expect(getToken).toHaveBeenCalledTimes(2);
+      old.resolve('old-token');
+      await first;
+      expect(FakeWebSocket.instances).toHaveLength(0);
+      // The obsolete attempt must not clear the new attempt's single-flight guard.
+      await c.connect();
+      expect(getToken).toHaveBeenCalledTimes(2);
+      fresh.resolve('fresh-token');
+      await second;
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      expect(live().protocols).toContain('fresh-token');
+    } finally {
+      old.resolve('old-token');
+      fresh.resolve('fresh-token');
+      c.disconnect();
+    }
+  });
+
+  it('ignores a rejected token request from a disconnected lifecycle', async () => {
+    const old = pendingToken();
+    const getToken = vi.fn().mockReturnValueOnce(old.promise).mockResolvedValue('fresh-token');
+    const statuses: string[] = [];
+    const c = make(getToken, (status) => statuses.push(status));
+    try {
+      const first = c.connect();
+      c.disconnect();
+      await c.connect();
+      const ws = live();
+      expect(ws).toBeDefined();
+      ws._open();
+      if (kind === 'table') ws._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+      expect(statuses.at(-1)).toBe('connected');
+      old.reject(new Error('obsolete token lookup'));
+      await first;
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(statuses.at(-1)).toBe('connected');
+      expect(getToken).toHaveBeenCalledTimes(2);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+    } finally {
+      old.resolve('old-token');
+      c.disconnect();
+    }
   });
 });

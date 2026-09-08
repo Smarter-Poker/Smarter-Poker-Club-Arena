@@ -1399,6 +1399,7 @@ export class EngineChannelClient {
   private handshakeFailures = 0;
   private reconnectTimer: number | null = null;
   private intentionalClose = false;
+  private sessionBlocked = false;
   private handshakeTimer: number | null = null;
   private static readonly HANDSHAKE_TIMEOUT_MS = 15_000;
 
@@ -1542,6 +1543,7 @@ export class EngineChannelClient {
 
   /** Open the channel connection. Safe to call multiple times (no-op if already connected). */
   async connect(): Promise<void> {
+    if (this.sessionBlocked) return;
     if (this.ws !== null && this.ws.readyState <= 1 /* OPEN or CONNECTING */) return;
     this.intentionalClose = false;
     this.retryCount = 0;
@@ -1594,6 +1596,19 @@ export class EngineChannelClient {
     this.setStatus('idle');
   }
 
+  /** Account changes discard intent; an ordinary disconnect retains it. */
+  resetSession(allowReconnect: boolean): void {
+    this.sessionBlocked = !allowReconnect;
+    this.disconnect();
+    this.sendQueue = [];
+    this.desiredClubs.clear();
+    this.desiredTournaments.clear();
+    this.desiredLobby = false;
+    this.lastPresence.clear();
+    for (const listeners of Object.values(this.listeners)) listeners.clear();
+    this.handshakeFailures = 0;
+  }
+
   /** Current connection status. */
   getStatus(): EngineConnectionStatus {
     return this.status;
@@ -1606,6 +1621,7 @@ export class EngineChannelClient {
    * If the socket isn't open yet, the message is queued and sent on connect.
    */
   send(msg: ChannelClientMessage): void {
+    if (this.sessionBlocked) return;
     // 2026-08-24: record the net desired subscription state FIRST, whether or
     // not the socket is currently open — this is what reconnect replays.
     const stateful = this.recordDesiredState(msg);
@@ -1882,7 +1898,11 @@ export class EngineChannelClient {
     // Use setTimeout(0) for same reason as EngineStateClient EVENT handler:
     // prevent React 18 batching from dropping rapid sequential messages
     // (e.g. FINANCIAL_UPDATE arriving back-to-back for wallet + ledger).
+    const generation = this.connectionGeneration;
+    const socket = this.ws;
     setTimeout(() => {
+      if (generation !== this.connectionGeneration || socket !== this.ws || this.intentionalClose)
+        return;
       (this.listeners[key] as Set<Listener<typeof msg>>).forEach((listener) => {
         try {
           listener(msg);

@@ -1055,7 +1055,14 @@ does not reopen it as a question; if one turns out wrong in the darkroom, the
 fix is a changelog under `docs/changelog/` that says what was measured, not a
 silent edit here.
 
-1. **Art direction: one 2D cartoon set, drawn for animation.** Every item,
+**Art-direction update from Dan:** the historical 2D ruling below is superseded
+by his explicit request for premium stylized 3D artwork matching the boxing
+gloves: near-realistic materials with a slight cartoon feel, not photorealism
+or flat icons. Local reviewed atlases implement that direction; see
+PHASE2-RIG-CONTRACT.md and the rig artwork pipeline. The named expanded
+catalogue remains in scope; COVERAGE-CATALOGUE.json enumerates all 80 IDs.
+
+1. **Historical art direction, superseded: one 2D cartoon set, drawn for animation.** Every item,
    objects included. A 3D still cannot wink, chew, pour or cry, and a set
    that mixes animated 2D characters with 3D-rendered objects reads as two
    products on one felt. The 48 approved renders are not thrown away: they

@@ -4,15 +4,9 @@
   "additional": 32,
   "enabledPicker": 48,
   "premiumStills": 47,
-  "integratedAtlasRigs": 41,
+  "integratedAtlasRigs": 47,
   "note": "Source inventory only. Glove uses a separate player. No row is fully accepted by file presence; sound, gates, multiplayer, device and publication need separate evidence.",
   "missingAtlasRigs": [
-    "anvil",
-    "magic_8_ball",
-    "ufo",
-    "ghost",
-    "skull",
-    "lightning_bolt",
     "rat_card",
     "donkey",
     "fish",
@@ -179,7 +173,7 @@
       "id": "anvil",
       "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },
@@ -259,7 +253,7 @@
       "id": "magic_8_ball",
       "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },
@@ -347,7 +341,7 @@
       "id": "ufo",
       "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },
@@ -371,7 +365,7 @@
       "id": "ghost",
       "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },
@@ -379,7 +373,7 @@
       "id": "skull",
       "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },
@@ -387,7 +381,7 @@
       "id": "lightning_bolt",
       "picker": true,
       "still": true,
-      "animation": false,
+      "animation": true,
       "separateGlovePlayer": false,
       "acceptance": "pending"
     },

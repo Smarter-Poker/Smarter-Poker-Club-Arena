@@ -1,4 +1,5 @@
 import manifest from './artwork.generated.json';
+import { throwableAtlasUrl } from './atlasUrl';
 import stillManifest from './stills.generated.json';
 const stills: Record<string, Record<string, string>> = stillManifest;
 
@@ -41,7 +42,7 @@ function prepareSheet(
     const timeout = setTimeout(() => finish(new Error('Artwork load timed out')), LOAD_TIMEOUT_MS);
     img.decoding = 'async';
     img.onerror = () => finish(new Error('Artwork could not load'));
-    img.src = delivery?.url ?? `${import.meta.env.BASE_URL}images/throwables/animated/${name}.webp`;
+    img.src = delivery?.url ?? throwableAtlasUrl(name);
     img.decode().then(
       () => {
         const size = delivery?.size ?? sizes[name];

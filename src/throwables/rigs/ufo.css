@@ -1,0 +1,136 @@
+.thr-ufo__swoop,
+.thr-ufo__beam,
+.thr-ufo__abduct,
+.thr-ufo__return,
+.thr-ufo__zip,
+.thr-ufo__hover {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+/* Only this ship has the handoff's S-shaped sway inside its travelling box. */
+.thr-ufo__swoop {
+  animation: thr-ufo-swoop calc(0.567s * var(--animation-speed, 1)) linear 1 forwards;
+}
+@keyframes thr-ufo-swoop {
+  0%,
+  29.45% {
+    transform: translateY(0) rotate(0);
+  }
+  47% {
+    transform: translateY(-24px) rotate(-8deg);
+  }
+  65% {
+    transform: translateY(0) rotate(0);
+  }
+  82% {
+    transform: translateY(24px) rotate(8deg);
+  }
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+}
+.thr-ufo__hover {
+  animation: thr-ufo-hover calc(0.4s * var(--animation-speed, 1)) ease-in-out 5 forwards;
+}
+@keyframes thr-ufo-hover {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.thr-ufo__beam {
+  animation: thr-ufo-beam calc(2.2s * var(--animation-speed, 1)) linear 1 forwards;
+  transform-origin: center top;
+}
+@keyframes thr-ufo-beam {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.05);
+  }
+  14%,
+  90% {
+    opacity: 0.8;
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(0.05);
+  }
+}
+.thr-ufo__abduct {
+  opacity: 0;
+  animation: thr-ufo-abduct calc(1s * var(--animation-speed, 1)) ease-in
+    calc(1s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-ufo-abduct {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-70px) scale(0.06);
+  }
+}
+.thr-ufo__zip {
+  animation: thr-ufo-zip calc(0.2s * var(--animation-speed, 1)) ease-in
+    calc(2s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-ufo-zip {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(130px, -90px) scale(0.1);
+  }
+}
+.thr-ufo__return {
+  opacity: 0;
+  animation: thr-ufo-return calc(0.6s * var(--animation-speed, 1)) ease-out
+    calc(2.2s * var(--animation-speed, 1)) 1 forwards;
+}
+@keyframes thr-ufo-return {
+  0% {
+    opacity: 1;
+    transform: scale(0.05);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-ufo__swoop,
+  .thr-ufo__beam,
+  .thr-ufo__abduct,
+  .thr-ufo__return,
+  .thr-ufo__zip,
+  .thr-ufo__hover {
+    animation: none !important;
+    transform: none !important;
+  }
+  .thr-ufo__beam,
+  .thr-ufo__abduct,
+  .thr-ufo__return {
+    opacity: 0 !important;
+  }
+  .thr-ufo__zip {
+    opacity: 1 !important;
+  }
+}

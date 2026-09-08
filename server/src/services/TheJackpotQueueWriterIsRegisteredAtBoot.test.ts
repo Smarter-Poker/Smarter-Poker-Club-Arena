@@ -77,6 +77,7 @@ beforeEach(() => {
   noteRefreshes = [];
   from.mockImplementation((name: string) => {
     if (name === 'clubs') return chain({ data: { union_id: 'union-1' }, error: null });
+    if (name === 'bbj_contributions') return chain({ data: { pool_id: POOL }, error: null });
     if (name === 'bbj_pools')
       return chain({ data: { id: POOL, main_balance: 100_000, backup_balance: 0 }, error: null });
     if (name === 'hand_history') return chain({ data: { id: 'hand-1' }, error: null });

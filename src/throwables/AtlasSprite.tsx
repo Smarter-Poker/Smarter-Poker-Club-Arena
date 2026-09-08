@@ -1,4 +1,5 @@
 import React from 'react';
+import { throwableAtlasUrl } from './atlasUrl';
 
 /** A bounded atlas viewport. foreignObject has the part's actual SVG bounds,
  * unlike a nested SVG image whose invisible sheet expands its parent's bbox
@@ -53,7 +54,7 @@ export function AtlasSprite({
             clipPath,
             width: drawnWidth,
             height: drawnHeight,
-            backgroundImage: `url(${import.meta.env.BASE_URL}images/throwables/animated/${src}.webp)`,
+            backgroundImage: `url(${throwableAtlasUrl(src)})`,
             backgroundSize: `${sheetSize[0] * dx}px ${sheetSize[1] * dy}px`,
             backgroundPosition: `${-sx * dx}px ${-sy * dy}px`,
             backgroundRepeat: 'no-repeat',

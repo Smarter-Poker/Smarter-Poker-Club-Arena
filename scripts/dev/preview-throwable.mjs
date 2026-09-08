@@ -33,6 +33,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -159,7 +160,10 @@ function layer(r, at, unit) {
   const payload = at >= landing;
   const uid = `dk${tileId++}`;
   const markup = renderToStaticMarkup(
-    React.createElement(payload ? r.rig.Payload : r.rig.Projectile, { uid })
+    React.createElement(payload ? r.rig.Payload : r.rig.Projectile, {
+      uid,
+      targetAvatar: r.rig.needsTargetAvatar ? { initial: 'S' } : undefined,
+    })
   ).replace(/\/images\/throwables\/animated\/([a-z0-9_-]+)\.webp/g, (_, id) => {
     mkdirSync(join(OUT, 'assets'), { recursive: true });
     const target = join(OUT, 'assets', `${id}.webp`);
@@ -379,12 +383,20 @@ if (!values['html-only'])
     mkdirSync(shots, { recursive: true });
     const cells = await pageCtx.$$('.cell[data-at]');
     let i = 0;
+    const writtenShots = new Set();
     for (const cell of cells) {
       const id = await cell.getAttribute('data-id');
       const at = await cell.getAttribute('data-at');
-      await cell.screenshot({
-        path: join(shots, `${String(i++).padStart(2, '0')}-${id}-${at}ms.png`),
-      });
+      const filename = `${String(i++).padStart(2, '0')}-${id}-${at}ms.png`;
+      await cell.screenshot({ path: join(shots, filename) });
+      writtenShots.add(filename);
+    }
+    // Only after successful capture, remove stale files owned by this generator.
+    // A changed beat list must not leave old frames masquerading as this run.
+    for (const file of readdirSync(shots)) {
+      if (/^\d+-[a-z0-9_]+-\d+ms\.png$/.test(file) && !writtenShots.has(file)) {
+        rmSync(join(shots, file));
+      }
     }
     console.log(`shots:   ${shots} (${cells.length})`);
   } catch (err) {

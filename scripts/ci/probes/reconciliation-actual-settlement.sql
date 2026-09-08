@@ -1,0 +1,38 @@
+DO $probe$
+DECLARE src text; r jsonb; event uuid:='00000000-0000-4000-8000-000000000101'; player uuid:='00000000-0000-4000-8000-000000000102';
+BEGIN
+CREATE TEMP TABLE tournaments(id uuid,prize_pool numeric,payout_structure text,status text,variant text,tournament_type text,name text) ON COMMIT DROP;
+CREATE TEMP TABLE tournament_players(tournament_id uuid,user_id uuid,position integer,prize numeric) ON COMMIT DROP;
+CREATE TEMP TABLE tournament_payouts(tournament_id uuid,user_id uuid,position integer,amount numeric,source text,idempotency_key text) ON COMMIT DROP;
+CREATE TEMP TABLE financial_alerts(severity text,source text,message text,context jsonb,resolved boolean) ON COMMIT DROP;
+CREATE TEMP TABLE fixture_receipt(receipt jsonb) ON COMMIT DROP;
+EXECUTE $stub$CREATE FUNCTION pg_temp.fn_settle_tournament_obligation(uuid,text,integer,uuid,numeric,text,text) RETURNS jsonb LANGUAGE sql AS 'SELECT receipt FROM pg_temp.fixture_receipt'$stub$;
+SELECT pg_get_functiondef('public.fn_tournament_payout_reconcile(uuid,boolean)'::regprocedure) INTO src;
+EXECUTE replace(src,'public.','pg_temp.');
+INSERT INTO pg_temp.tournaments VALUES(event,100,'[{"place":1,"percentage":100}]','COMPLETED','freezeout','MTT','audit fixture');
+INSERT INTO pg_temp.tournament_players VALUES(event,player,1,0);
+INSERT INTO pg_temp.tournament_payouts VALUES(event,player,1,0,'structure','fixture');
+INSERT INTO pg_temp.fixture_receipt VALUES('{"ok":true,"paid":40,"already_paid":0,"amount_owed":100,"amount_paid":40,"remaining":60,"fully_settled":false}');
+r:=pg_temp.fn_tournament_payout_reconcile(event,true);
+IF (SELECT prize FROM pg_temp.tournament_players) <> 0 THEN RAISE EXCEPTION 'FAIL partial credit was displayed as full prize'; END IF;
+UPDATE pg_temp.fixture_receipt SET receipt='{"ok":true,"paid":99.99,"fully_settled":false}';
+r:=pg_temp.fn_tournament_payout_reconcile(event,true);
+IF (SELECT prize FROM pg_temp.tournament_players) <> 0 THEN RAISE EXCEPTION 'FAIL one cent short was displayed as full prize'; END IF;
+UPDATE pg_temp.fixture_receipt SET receipt='{"ok":false,"paid":0,"refused_reason":"escrow_short"}';
+r:=pg_temp.fn_tournament_payout_reconcile(event,true);
+IF (SELECT prize FROM pg_temp.tournament_players) <> 0 THEN RAISE EXCEPTION 'FAIL refused credit was displayed as full prize'; END IF;
+UPDATE pg_temp.fixture_receipt SET receipt='{"ok":true,"paid":100,"fully_settled":true}';
+r:=pg_temp.fn_tournament_payout_reconcile(event,true);
+IF (SELECT prize FROM pg_temp.tournament_players) <> 100 THEN RAISE EXCEPTION 'FAIL full credit was not displayed'; END IF;
+UPDATE pg_temp.tournament_players SET prize=0;
+UPDATE pg_temp.tournament_payouts SET amount=60;
+UPDATE pg_temp.fixture_receipt SET receipt='{"ok":true,"paid":40,"already_paid":60,"fully_settled":true}';
+r:=pg_temp.fn_tournament_payout_reconcile(event,true);
+IF (SELECT prize FROM pg_temp.tournament_players) <> 100 THEN RAISE EXCEPTION 'FAIL prior payment plus actual topup was not displayed'; END IF;
+UPDATE pg_temp.tournament_players SET prize=0;
+UPDATE pg_temp.tournament_payouts SET amount=100;
+UPDATE pg_temp.fixture_receipt SET receipt='{"ok":false,"paid":0}';
+r:=pg_temp.fn_tournament_payout_reconcile(event,true);
+IF (SELECT prize FROM pg_temp.tournament_players) <> 100 THEN RAISE EXCEPTION 'FAIL recorded full payment was not displayed'; END IF;
+RAISE EXCEPTION 'AUDIT_TEST_PASS: six actual reconciliation display cases; all rolled back';
+END $probe$;

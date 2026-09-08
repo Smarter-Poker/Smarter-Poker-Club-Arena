@@ -28,6 +28,8 @@
  * fourth one can only be added by going through this file.
  */
 
+import { isNativePlatform } from '../lib/appBase';
+
 const SETTINGS_KEY = 'vibrationsEnabled'; // Settings / HamburgerMenu
 const IN_TABLE_KEY = 'ca_vibration_enabled'; // in-table toggle (useTableSound)
 
@@ -43,6 +45,8 @@ const IN_TABLE_KEY = 'ca_vibration_enabled'; // in-table toggle (useTableSound)
  * capability, so it belongs in the real capability check.
  */
 export function isVibrationCapable(): boolean {
+  // Inside the app there is a real haptic engine behind @capacitor/haptics.
+  if (isNativePlatform()) return true;
   if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') return true;
   return isIosHapticSupported();
 }
@@ -299,8 +303,9 @@ export function fireVibration(pattern: number | number[]): boolean {
      before the fallback below could be reached. Both switches are still
      honoured, and either being off still silences everything. */
   if (!isVibrationPreferred()) return false;
+  const inApp = isNativePlatform();
   const canNative = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
-  if (!canNative && !isIosHapticSupported()) return false;
+  if (!inApp && !canNative && !isIosHapticSupported()) return false;
 
   const now = Date.now();
   const weight = weigh(pattern);
@@ -312,6 +317,15 @@ export function fireVibration(pattern: number | number[]): boolean {
   lastWeight = weight;
 
   try {
+    // THE APP (2026-09-08): the phone's own haptic engine, through the plugin
+    // in src/lib/native/haptics.ts. Fire-and-forget; the coalescing above has
+    // already decided this buzz is owed.
+    if (inApp) {
+      void import('../lib/native/haptics')
+        .then(({ nativeHaptic }) => nativeHaptic(pattern))
+        .catch(() => {});
+      return true;
+    }
     // `vibrate()` returns false where the API exists but no motor does - every
     // desktop browser. Fall through to the iOS path only when the API is
     // genuinely absent, so a desktop never pays for a technique it cannot use.

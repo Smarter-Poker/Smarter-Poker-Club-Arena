@@ -57,6 +57,13 @@ import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
 import ClubMemberGuard from './components/auth/ClubMemberGuard';
 import GameCreationGuard from './components/auth/GameCreationGuard';
 import TOSGuard from './components/legal/TOSGuard';
+/* THE APP ONLY (store readiness, phase 3). Both load through a dynamic import
+   behind the compile-time constant, so the web bundle carries neither the age
+   gate, the consent sheet nor their stylesheets. They render as OVERLAYS
+   beside the app (not wrappers around it) so the route tree below keeps its
+   shape: a wrapper here re-indents 1,500 lines and every text pin on them. */
+const AgeGate = lazyWithRetry(() => import('./components/legal/AgeGate'));
+const ConsentPrompt = lazyWithRetry(() => import('./components/legal/ConsentPrompt'));
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Pages (lazy loaded for performance)
@@ -115,6 +122,7 @@ const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
 const PlayerStatsPage = lazyWithRetry(() => import('./pages/PlayerStatsPage'));
 const PromotionsPage = lazyWithRetry(() => import('./pages/PromotionsPage'));
+const DailyBonusPage = lazyWithRetry(() => import('./pages/DailyBonusPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
@@ -130,7 +138,6 @@ const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnounceme
 const ClubAdvertisePage = lazyWithRetry(() => import('./pages/ClubAdvertisePage'));
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
-const BonusPage = lazyWithRetry(() => import('./pages/BonusPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
@@ -250,6 +257,7 @@ function TableRouteSurface() {
 import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
 import SlugEnforcer from './components/common/SlugEnforcer';
+import RouterBridge from './components/common/RouterBridge';
 import { IS_NATIVE_BUILD } from './lib/appBase';
 
 function ClubFooterMount() {
@@ -538,6 +546,12 @@ function FullApp() {
         )}
 
         <TOSGuard>
+          {IS_NATIVE_BUILD && (
+            <Suspense fallback={null}>
+              <AgeGate />
+              <ConsentPrompt />
+            </Suspense>
+          )}
           <GlobalWaitlistListener />
           <WaitlistBanner />
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false.
@@ -580,6 +594,9 @@ function FullApp() {
             }
           >
             <SlugEnforcer />
+            {/* Hands navigate() to src/lib/routerBridge for deep links and
+                plugin listeners (native). Renders nothing. */}
+            <RouterBridge />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)
@@ -1765,12 +1782,14 @@ function FullApp() {
                     </AuthGuard>
                   }
                 />
+                {/* /bonuses: the Daily Club Arena Bonus sheet as a page. The
+                    chip ladder that lived here was retired on 2026-09-07. */}
                 <Route
                   path="bonuses"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Bonuses">
-                        <BonusPage />
+                      <PageErrorBoundary pageName="Daily Bonus">
+                        <DailyBonusPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

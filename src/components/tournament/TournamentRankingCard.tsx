@@ -42,6 +42,7 @@ import { formatGameTitle } from '../../utils/formatGameTitle';
 import type { TournamentResult } from '../../services/pendingSessionSummary';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import './TournamentRankingCard.css';
+import { publicOrigin } from '../../lib/appBase';
 
 export interface TournamentRankingCardProps {
   result: TournamentResult;
@@ -297,11 +298,11 @@ export default function TournamentRankingCard({
         await nav.share({
           title: 'Smarter.Poker',
           text,
-          url: `${window.location.origin}/hub/club-arena`,
+          url: `${publicOrigin()}/hub/club-arena`,
         });
         return;
       }
-      await navigator.clipboard.writeText(`${text} ${window.location.origin}/hub/club-arena`);
+      await navigator.clipboard.writeText(`${text} ${publicOrigin()}/hub/club-arena`);
       setShared(true);
       window.setTimeout(() => setShared(false), 2000);
     } catch {

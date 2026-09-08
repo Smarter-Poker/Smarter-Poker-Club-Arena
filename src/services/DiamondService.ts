@@ -191,8 +191,8 @@ export const DiamondService = {
    *   2. Client confirms payment (Stripe.js)
    *   3. Webhook / edge function verifies payment → credits diamonds
    *
-   * DEVELOPMENT FALLBACK:
-   *   Directly calls fn_add_diamonds RPC (no real Stripe in dev)
+   * There is NO development fallback (removed 2026-09-08): a credit without a
+   * payment is not a feature to keep around.
    */
   async purchaseDiamonds(
     userId: string,
@@ -252,43 +252,18 @@ export const DiamondService = {
       }
     }
 
-    // ── LEGACY / DEV FLOW: Direct RPC credit ──────────────────────────────
-    const { data, error } = await supabase.rpc('fn_add_diamonds', {
-      p_user_id: userId,
-      p_amount: totalDiamonds,
-    });
-
-    if (error) {
-      reportError(error, 'DiamondService.purchaseDiamonds.rpc', { userId, packageId });
-      return { success: false, error: error.message };
-    }
-
-    if (data?.success && data?.new_balance !== undefined) {
-      masterBus.emit('DIAMOND_BALANCE_CHANGED', {
-        newBalance: data.new_balance,
-        delta: totalDiamonds,
-        source: 'purchase',
-      });
-    }
-
-    /**
-     * `data?.success ?? true` (Dan 2026-08-25 audit). A `null` payload with no
-     * PostgREST error — which is exactly what a refusal returning nothing looks
-     * like — resolved to SUCCESS with `newBalance: undefined`. The top-up modal
-     * then toasted "20000 diamonds added" and set the displayed balance to 0.
-     * Nothing was credited and nothing went red.
-     *
-     * A credit is only a credit when the RPC says so AND names the resulting
-     * balance. Anything else is a refusal.
-     */
-    if (!data?.success || data?.new_balance === undefined) {
-      return {
-        success: false,
-        error: (data as { error?: string } | null)?.error || 'Diamond credit was not confirmed',
-      };
-    }
-
-    return { success: true, newBalance: data.new_balance };
+    // ── NO OTHER PATH (2026-09-08, store readiness phase 3) ─────────────────
+    // This used to fall through to `fn_add_diamonds`, a "development
+    // fallback" that credited the package with no payment at all. It was
+    // never reachable from a browser (the function is executable by
+    // service_role only - checked against production) and this method has no
+    // caller, but a credit path that exists in client code is a credit path
+    // someone will call one day. A purchase is a store receipt (the app) or a
+    // Stripe Checkout session (the web), and nothing else.
+    return {
+      success: false,
+      error: 'Purchases Are Made Through The Store Or Stripe Checkout.',
+    };
   },
 
   /**

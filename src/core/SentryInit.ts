@@ -21,6 +21,7 @@
 import React from 'react';
 import { reportError } from '../utils/errorReporter';
 import type { SentrySurface } from './sentryBundle';
+import { IS_NATIVE_BUILD } from '../lib/appBase';
 
 // ── Module-level state ──
 let SentryModule: SentrySurface | null = null;
@@ -117,23 +118,31 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
           createRoutesFromChildren,
           matchRoutes,
         }),
-        Sentry.replayIntegration({
-          maskAllText: true,
-          blockAllMedia: true,
-          maskAllInputs: true,
-          networkDetailAllowUrls: [
-            'https://kuklfnapbkmacvwxktbh.supabase.co',
-            'https://smarter.poker/api',
-          ],
-          networkCaptureBodies: true,
-          networkRequestHeaders: ['User-Agent', 'X-Request-ID'],
-          networkResponseHeaders: ['X-Response-Time'],
-        }),
+        // THE APP (2026-09-08): no session replay. It is not needed to see a
+        // crash, it is the one integration that records what a player does,
+        // and it is what the privacy labels would have to declare. Errors
+        // still report. Compile-time constant: the web keeps replay as is.
+        ...(IS_NATIVE_BUILD
+          ? []
+          : [
+              Sentry.replayIntegration({
+                maskAllText: true,
+                blockAllMedia: true,
+                maskAllInputs: true,
+                networkDetailAllowUrls: [
+                  'https://kuklfnapbkmacvwxktbh.supabase.co',
+                  'https://smarter.poker/api',
+                ],
+                networkCaptureBodies: true,
+                networkRequestHeaders: ['User-Agent', 'X-Request-ID'],
+                networkResponseHeaders: ['X-Response-Time'],
+              }),
+            ]),
       ],
 
       tracesSampleRate: environment === 'production' ? 0.1 : 1.0,
-      replaysSessionSampleRate: 0.1,
-      replaysOnErrorSampleRate: 1.0,
+      replaysSessionSampleRate: IS_NATIVE_BUILD ? 0 : 0.1,
+      replaysOnErrorSampleRate: IS_NATIVE_BUILD ? 0 : 1.0,
 
       // Only inject sentry-trace headers to our own domains (avoids CORS issues with third parties)
       tracePropagationTargets: [
@@ -256,9 +265,12 @@ export function setSentryUser(user: {
   [key: string]: any;
 }) {
   enqueue(() => {
+    // The email is deliberately NOT sent (2026-09-08, store readiness phase
+    // 3). The id and username are enough to find a player's events, and an
+    // address in every error event is the one thing the privacy labels would
+    // have to call "contact info linked to you" for crash data. Every target.
     SentryModule?.setUser({
       id: user.id,
-      email: user.email,
       username: user.username,
       ip_address: '{{auto}}',
     });

@@ -13,8 +13,36 @@ import { haptic } from '../services/HapticService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './WaitlistPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
-import { EmptyState, ErrorState } from '../components/common/EmptyState';
+import { ErrorState } from '../components/common/EmptyState';
 import { reportError } from '../utils/errorReporter';
+import { cashEntry, formatClock, type LobbyTableRow } from '../components/lobby/lobbyEntries';
+import { ArenaGameCard, arenaGameCardDataFromEntry } from '../components/lobby/game-cards';
+import type { WaitlistTableRow } from '../services/WaitlistService';
+import { SpadeConsole } from '../components/console/SpadeConsole';
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  MY WAITLISTS - the table's own card (2026-09-04)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The page a player lands on after JOIN WAITLIST on a full table, and until
+ * today the one surface on that path still drawn in CSS: rounded cards, a
+ * gradient progress bar, a ghost Leave button. Dan's rule for it: nothing
+ * assembled from parts, nothing copy-pasted, nothing stuck on. So the page
+ * draws exactly what the lobby draws for the same table - the approved
+ * premium card for its game (NLH, PLO, Short Deck...) - with the queue state
+ * printed in the card's own painted pill slot ("#3 In Line", "Next Up",
+ * "Seat Held 0:42") and the actions on the card's own painted plates
+ * (WATCH TABLE / LEAVE WAITLIST, or SIT NOW when a seat is being held).
+ *
+ * Two things that were wrong under the old paint are fixed with it:
+ *   - every row said "No Limit Hold'em" with an empty stakes string, because
+ *     the page hardcoded both; the service now resolves the table's row
+ *     (WaitlistService.getUserWaitlists) and the card prints the truth;
+ *   - a 'notified' row (position 0, seat offered, sixty-second hold) printed
+ *     "#0 In Line". It is now SEAT HELD with the live countdown, and its
+ *     blue plate takes the player to the table.
+ */
 
 const waitlistCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -31,6 +59,12 @@ interface WaitlistEntry {
   position: number;
   joined_at: string;
   estimated_wait: number; // minutes
+  /** 'notified' means a seat is being held for the player right now. */
+  status: 'waiting' | 'notified';
+  /** When the held seat lapses; null unless status is 'notified'. */
+  hold_expires_at: string | null;
+  /** The table's lobby row, so the page can draw its card. */
+  table: WaitlistTableRow | null;
 }
 
 export default function WaitlistPage() {
@@ -129,11 +163,14 @@ export default function WaitlistPage() {
           id: e.id,
           table_id: e.tableId,
           table_name: e.tableName,
-          stakes: '',
-          game_type: 'NLH',
+          stakes: e.tableStakes,
+          game_type: e.tableVariant || 'nlh',
           position: e.position,
           joined_at: e.joinedAt,
           estimated_wait: Math.min(120, Math.ceil(e.position * 3 + Math.log2(e.position + 1) * 2)),
+          status: e.status === 'notified' ? 'notified' : 'waiting',
+          hold_expires_at: e.holdExpiresAt,
+          table: e.table,
         }))
       );
     } catch (error) {
@@ -204,110 +241,124 @@ export default function WaitlistPage() {
     };
   }, [entries]);
 
-  // FIX 116: Updated to 9 approved variants — removed dead 'plo'
-  const getGameTypeLabel = (type: string): string => {
-    switch (type.toLowerCase()) {
-      case 'nlh':
-        return "No Limit Hold'em";
-      case 'plo4':
-        return 'PLO 4-Card';
-      case 'plo5':
-        return 'PLO 5-Card';
-      case 'plo6':
-        return 'PLO 6-Card';
-      case 'plo8':
-        return 'PLO Hi-Lo';
-      case 'pineapple':
-        return 'Crazy Pineapple';
-      case 'short_deck':
-        return 'Short Deck 6+';
-      default:
-        return type.toUpperCase();
-    }
+  /* The hold countdown ticks once a second while any seat is held. */
+  const [now, setNow] = useState(() => Date.now());
+  const anyHeld = entries.some((e) => e.status === 'notified' && e.hold_expires_at);
+  useEffect(() => {
+    if (!anyHeld) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [anyHeld]);
+
+  const heldFor = (entry: WaitlistEntry): string | null => {
+    if (entry.status !== 'notified' || !entry.hold_expires_at) return null;
+    const left = new Date(entry.hold_expires_at).getTime() - now;
+    return formatClock(Math.max(0, left));
   };
 
-  const formatWaitTime = (minutes: number): string => {
-    if (minutes < 1) return 'Next up!';
-    if (minutes >= 60) return `~${Math.round(minutes / 60)}h`;
-    return `~${minutes} min`;
+  const shown = (entry: WaitlistEntry) => positionCounts[entry.id] || entry.position;
+
+  /* The card is the lobby's card for this table, with the queue state in its
+     pill slot. A row whose table could not be resolved still gets a card,
+     built from what the queue knows. */
+  const cardFor = (entry: WaitlistEntry) => {
+    const row: LobbyTableRow = (entry.table as LobbyTableRow | null) ?? {
+      id: entry.table_id,
+      name: entry.table_name,
+      game_variant: entry.game_type,
+      small_blind: 0,
+      big_blind: 0,
+      min_buy_in: 0,
+      max_buy_in: 0,
+      current_players: 0,
+      max_players: 0,
+      status: 'full',
+    };
+    const data = arenaGameCardDataFromEntry(cashEntry(row));
+    const held = heldFor(entry);
+    const next = entry.status === 'waiting' && entry.position === 1;
+    const label = held ? `Seat Held ${held}` : next ? 'Next Up' : `#${shown(entry)} In Line`;
+    return {
+      ...data,
+      status: 'waitlist' as const,
+      statusLabel: label,
+      statusTone: held ? ('gold' as const) : next ? ('green' as const) : ('blue' as const),
+    };
   };
 
   return (
     <div className="waitlist-page">
-      {/* Real-time indicator */}
       {entries.length > 0 && (
-        <div className="realtime-indicator" role="status">
-          <span className="live-dot"></span>
-          <span>Live Updates Enabled</span>
-        </div>
+        <span className="sr-only" role="status">
+          Live Updates Enabled
+        </span>
       )}
 
-      <div className="waitlist-content">
-        {loading ? (
-          <PageSkeleton variant="list" />
-        ) : loadError ? (
-          <ErrorState message={loadError} onRetry={() => void loadWaitlist()} />
-        ) : entries.length === 0 ? (
-          <EmptyState
-            icon="QUEUE"
-            eyebrow="Table Queue"
-            title="No Active Waitlists"
-            description="Join A Full Table's Waitlist And Its Live Position Will Appear Here."
-            action={{ label: 'Browse Tables', onClick: () => navigate('/') }}
-          />
-        ) : (
-          <div className="waitlist-entries">
-            {entries.map((entry, idx) => (
-              <div
+      {loading ? (
+        <PageSkeleton variant="list" />
+      ) : loadError ? (
+        <ErrorState message={loadError} onRetry={() => void loadWaitlist()} />
+      ) : entries.length === 0 ? (
+        <SpadeConsole
+          className="waitlist-empty"
+          eyebrow="Table Queue"
+          title="My Waitlists"
+          pill="Empty"
+          pillInk="muted"
+          plates={{
+            secondary: {
+              label: 'Refresh',
+              onClick: () => void loadWaitlist(),
+            },
+            primary: {
+              label: 'Browse Tables',
+              ink: 'white',
+              onClick: () => navigate('/'),
+            },
+          }}
+        >
+          <p className="sc-copy sc-copy--center">
+            {"Join A Full Table's Waitlist And Its Live Position Will Appear Here."}
+          </p>
+        </SpadeConsole>
+      ) : (
+        <ul className="waitlist-entries">
+          {entries.map((entry, idx) => {
+            const held = heldFor(entry);
+            const leaving = leavingId === entry.id;
+            return (
+              <li
                 key={entry.id}
                 style={waitlistCardAnimationStyle(idx)}
-                className={`waitlist-card ${entry.position === 1 ? 'next-up' : ''}`}
+                className={`waitlist-card ${entry.position === 1 ? 'next-up' : ''} ${held ? 'seat-held' : ''}`}
+                aria-label={`${entry.table_name}, ${held ? 'Seat Held' : `Position ${shown(entry)}`}`}
               >
-                {entry.position === 1 && <div className="next-up-celebration">You're Next!</div>}
-                <div className="waitlist-info">
-                  <h4 className="table-name">{entry.table_name}</h4>
-                  <span className="table-details">
-                    {getGameTypeLabel(entry.game_type)} • {entry.stakes}
-                  </span>
-                </div>
-                <div className="waitlist-position">
-                  <span className={`position-number ${entry.position === 1 ? 'highlight' : ''}`}>
-                    #{positionCounts[entry.id] || entry.position}
-                  </span>
-                  <span className="position-label">
-                    {entry.position === 1 ? 'Next Up!' : 'In Line'}
-                  </span>
-                </div>
-                <div className="waitlist-actions">
-                  <span className="wait-time">{formatWaitTime(entry.estimated_wait)}</span>
-                  <button
-                    type="button"
-                    className={`btn btn-ghost btn-sm leave-btn ${leavingId === entry.id ? 'loading' : ''}`}
-                    onClick={() => {
+                <ArenaGameCard
+                  data={cardFor(entry)}
+                  presentation="mobile"
+                  actions={{
+                    primaryLabel: held ? 'Sit Now' : leaving ? 'Leaving' : 'Leave Waitlist',
+                    primaryTone: held ? 'green' : 'red',
+                    primaryDisabled: leaving,
+                    busy: leaving,
+                    onPrimary: () => {
                       haptic.medium();
-                      leaveWaitlist(entry.table_id, entry.id);
-                    }}
-                    disabled={leavingId === entry.id}
-                  >
-                    {leavingId === entry.id ? 'Leaving...' : 'Leave'}
-                  </button>
-                </div>
-
-                {/* Queue Progress Bar — replaces dot visual */}
-                <div className="queue-progress-bar">
-                  <div
-                    className="queue-progress-fill"
-                    style={{ width: `${Math.max(10, 100 - (entry.position - 1) * 15)}%` }}
-                  />
-                  <span className="queue-progress-label">
-                    Position #{positionCounts[entry.id] || entry.position}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                      if (held) navigate(`/table/${entry.table_id}`);
+                      else leaveWaitlist(entry.table_id, entry.id);
+                    },
+                    secondaryLabel: held ? 'Leave' : 'Watch Table',
+                    onSecondary: () => {
+                      haptic.light();
+                      if (held) leaveWaitlist(entry.table_id, entry.id);
+                      else navigate(`/table/${entry.table_id}`);
+                    },
+                  }}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

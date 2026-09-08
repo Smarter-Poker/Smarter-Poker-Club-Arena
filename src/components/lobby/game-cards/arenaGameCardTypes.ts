@@ -42,6 +42,12 @@ export interface ArenaGameCardData {
   format?: string;
   status: ArenaGameStatus;
   statusLabel: string;
+  /**
+   * When set, the pill prints `statusLabel` verbatim in this colour instead
+   * of the status's own word (2026-09-04: My Waitlists prints "#3 In Line",
+   * "Next Up" and "Seat Held 0:42" in the card's own pill slot).
+   */
+  statusTone?: 'blue' | 'green' | 'red' | 'gold' | 'neutral';
   featured?: boolean;
   registeredByViewer?: boolean;
   rules: RuleMedallion[];

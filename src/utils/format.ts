@@ -25,6 +25,29 @@ export const fmtChips = (n: number | null | undefined): string => {
 };
 
 /**
+ * The lobby's compact figure (Dan 2026-09-08: "once something hits over 1,000
+ * use 1K, if its 1200 use 1.2K, if its 10,000 use 10K"). Whole chips under a
+ * thousand, one decimal above it, trailing .0 dropped, always rounded DOWN so
+ * a printed figure never overstates what a player has or is spending. Cards,
+ * bays and popups use this; the felt keeps formatTableChips below.
+ * @example compactChips(80)      → "80"
+ * @example compactChips(1000)    → "1K"
+ * @example compactChips(1250)    → "1.2K"
+ * @example compactChips(10000)   → "10K"
+ * @example compactChips(2500000) → "2.5M"
+ */
+export const compactChips = (n: number | null | undefined): string => {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v)) return '0';
+  const sign = v < 0 ? '-' : '';
+  const abs = Math.abs(v);
+  const oneDecimalDown = (x: number) => (Math.floor(x * 10) / 10).toFixed(1).replace(/\.0$/, '');
+  if (abs >= 1_000_000) return `${sign}${oneDecimalDown(abs / 1_000_000)}M`;
+  if (abs >= 1_000) return `${sign}${oneDecimalDown(abs / 1_000)}K`;
+  return `${sign}${Math.floor(abs + 1e-9).toLocaleString('en-US')}`;
+};
+
+/**
  * CHIPS ON THE FELT ARE NEVER ABBREVIATED (Dan 2026-08-28, binding).
  *
  * `fmtChips` above renders 117000 as "117.0K" and 247100 as "247.1K". On a

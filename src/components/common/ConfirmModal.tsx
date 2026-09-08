@@ -12,6 +12,7 @@
 
 import React, { useEffect, useCallback, useRef } from 'react';
 import { formatPopupText } from '../../utils/popupStyle';
+import { SpadeConsole } from '../console/SpadeConsole';
 import './ConfirmModal.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -115,56 +116,59 @@ export function ConfirmModal({
 
   if (!isOpen) return null;
 
+  /* THE CONSOLE (2026-09-04). This was a rounded glass card with a circled
+     warning glyph and two pill buttons - the one popup a player meets most
+     often (Close Table, Leave, Remove) and the only surface between the lobby
+     and the felt that did not look like the machine around it. It is now the
+     spade console: the same master every Omaha card is drawn from, cut into
+     head, rails and foot. The title is engraved in the header well, the
+     eyebrow sits in the well's painted pill slot, the message prints on the
+     glass, and the two actions are the plates painted into the foot - CANCEL
+     on steel, the confirming action on the blue glass, or in red ink when it
+     is destructive. Nothing is drawn; nothing is stuck on. The focus trap
+     above is untouched: Cancel still takes focus on open. */
   return (
     <div className="confirm-modal-overlay" onClick={loading ? undefined : onCancel}>
       <div
         ref={dialogRef}
-        className={`confirm-modal ${variant === 'danger' ? 'confirm-modal--danger' : ''}`}
+        className={`confirm-modal ac-popup ${variant === 'danger' ? 'confirm-modal--danger' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
+        aria-describedby="confirm-modal-message"
+        aria-busy={loading || undefined}
       >
-        {/* Icon */}
-        <div className="confirm-modal__icon">
-          {variant === 'danger' ? (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 9v4m0 4h.01M12 3L2 21h20L12 3z" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 16v-4m0-4h.01" />
-            </svg>
-          )}
-        </div>
-
-        {/* Content */}
-        <h2 id="confirm-modal-title" className="confirm-modal__title">
-          {formatPopupText(title)}
-        </h2>
-        <p className="confirm-modal__message">{formatPopupText(message)}</p>
-
-        {/* Actions */}
-        <div className="confirm-modal__actions">
-          <button
-            ref={cancelRef}
-            className="confirm-modal__btn confirm-modal__btn--cancel"
-            onClick={onCancel}
-            disabled={loading}
-          >
-            {formatPopupText(cancelText)}
-          </button>
-          <button
-            className={`confirm-modal__btn confirm-modal__btn--confirm ${
-              variant === 'danger' ? 'confirm-modal__btn--danger' : ''
-            }`}
-            onClick={onConfirm}
-            disabled={loading}
-          >
-            {loading ? <span className="confirm-modal__spinner" /> : formatPopupText(confirmText)}
-          </button>
-        </div>
+        <SpadeConsole
+          as="div"
+          className="confirm-modal__console"
+          title={formatPopupText(title)}
+          titleId="confirm-modal-title"
+          pill={variant === 'danger' ? 'Sure?' : 'Confirm'}
+          pillInk={variant === 'danger' ? 'red' : 'blue'}
+          plates={{
+            secondary: {
+              label: formatPopupText(cancelText),
+              buttonRef: cancelRef,
+              className: 'confirm-modal__btn confirm-modal__btn--cancel',
+              onClick: onCancel,
+              disabled: loading,
+            },
+            primary: {
+              label: loading ? 'Working' : formatPopupText(confirmText),
+              ink: variant === 'danger' ? 'red' : 'white',
+              className: `confirm-modal__btn confirm-modal__btn--confirm ${
+                variant === 'danger' ? 'confirm-modal__btn--danger' : ''
+              }`,
+              onClick: onConfirm,
+              disabled: loading,
+            },
+          }}
+        >
+          <p id="confirm-modal-message" className="sc-copy sc-copy--center confirm-modal__message">
+            {formatPopupText(message)}
+          </p>
+        </SpadeConsole>
       </div>
     </div>
   );

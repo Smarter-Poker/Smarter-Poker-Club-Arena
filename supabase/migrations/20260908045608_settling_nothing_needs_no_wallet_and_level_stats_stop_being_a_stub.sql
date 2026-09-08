@@ -86,7 +86,7 @@ DECLARE
     '            CONTINUE;'                                                         || E'\n' ||
     '          END IF;'                                                             || E'\n';
 BEGIN
-  -- ── 1. the settlement function ────────────────────────────────────────────
+  -- 1. the settlement function
   SELECT pg_get_functiondef(p.oid) INTO v_src
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.proname = 'fn_ca_settle_hand_stacks_absolute';
@@ -94,7 +94,6 @@ BEGIN
     RAISE EXCEPTION 'fn_ca_settle_hand_stacks_absolute not found';
   END IF;
 
-  -- Already applied? Then this migration is a no-op for part 1.
   IF position('SETTLING NOTHING NEEDS NO WALLET' in v_src) > 0 THEN
     RAISE NOTICE 'part 1 already applied; skipping';
   ELSE
@@ -111,7 +110,7 @@ BEGIN
     EXECUTE v_new;
   END IF;
 
-  -- ── 2. level stats, computed instead of invented ──────────────────────────
+  -- 2. level stats, computed instead of invented
   EXECUTE $fn$
     CREATE OR REPLACE FUNCTION public.get_user_level_stats(p_user_id uuid, p_level_id integer)
     RETURNS TABLE (
@@ -145,7 +144,7 @@ BEGIN
       'Training accuracy for one player at one level, from training_answers. SECURITY INVOKER on purpose: RLS (training_answers_select_self) is what stops p_user_id reading somebody else''s record, so the check is not re-implemented here. The one-argument overload of this name is an unrelated stub returning fixed XP fields.'
   $c$;
 
-  -- ── 3. the meter states its edges ─────────────────────────────────────────
+  -- 3. the meter states its edges
   EXECUTE $c$
     COMMENT ON FUNCTION public.fn_ca_currency_meter() IS
       'Nightly conservation meter for the currencies that are not chips. ENFORCED: vip_points against vip_points_ledger, and agent_commission_unsettled_rollup against unsettled agent_commissions - both hold by construction because the journals are append-only and the balance moves only with a leg, so a drift is a CRITICAL incident meaning a guard was bypassed or dropped. NOT ENFORCED, and deliberately: rakeback (three sources disagree by design while fn_close_settlement_period is another lane''s live rebuild; the row carries not_enforced_because and raises a WARNING with the numbers). NOT COVERED AT ALL: vip_points_carry, the fractional remainder between awards, which no guard watches; and the commission rollup is COMPARED here rather than guarded, its correctness resting on the statement triggers that maintain it. Cost is O(journal) - 10.2s at 5.75M VIP legs, growing ~306k/day against job 286''s 600s budget.'

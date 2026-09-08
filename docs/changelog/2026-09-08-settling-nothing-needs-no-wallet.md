@@ -6,7 +6,7 @@ pair cost eighteen hands precisely because they were two reloads three minutes
 apart — and applied **inside the :55 maintenance break**, when every table is
 parked at a hand boundary and a reload cannot land on an in-flight hand at all.
 
-`20260908043714_settling_nothing_needs_no_wallet_and_level_stats_stop_being_`.
+`20260908045608_settling_nothing_needs_no_wallet_and_level_stats_stop_being_a_stub`.
 Probed in a transaction that was rolled back first (11.5); a rolled-back DDL
 transaction delivers no `NOTIFY`, so the probe itself started no reload.
 

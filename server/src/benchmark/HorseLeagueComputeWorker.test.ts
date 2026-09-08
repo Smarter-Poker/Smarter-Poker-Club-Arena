@@ -91,6 +91,9 @@ describe('Horse League compute isolation', () => {
         durationMs: 1,
         illegalActions: 0,
         truncatedStreets: 0,
+        candidatePolicyHits: 0,
+        candidateNodeRoles: [],
+        benchmarkComponents: [],
       },
     });
     await expect(pending).resolves.toMatchObject({ matchup: 'capacity', hands: 16 });
@@ -166,6 +169,9 @@ describe('Horse League compute isolation', () => {
         durationMs: 1,
         illegalActions: 0,
         truncatedStreets: 0,
+        candidatePolicyHits: 0,
+        candidateNodeRoles: [],
+        benchmarkComponents: [],
       },
     });
     await expect(pending).resolves.toMatchObject({ hands: 0 });

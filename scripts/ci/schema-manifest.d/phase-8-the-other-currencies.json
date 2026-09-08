@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/phase-8-the-other-currencies",
+  "tables": ["ca_currency_meter"],
+  "functions": ["fn_ca_currency_meter", "fn_vip_points_move_only_with_a_leg"]
+}

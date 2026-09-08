@@ -21,6 +21,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { isClubStaff, isAgentRole } from '../types/clubRoles';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
+import { withClubContext } from '../utils/clubScopedPath';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import {
@@ -1918,7 +1919,7 @@ export default function CashierPage() {
             // show one row and then pop three more in underneath. The skeleton
             // holds instead.
             roleReady={!loadingContext}
-            onBuyDiamonds={() => navigate(`/vip`)}
+            onBuyDiamonds={() => navigate(withClubContext('/vip', clubId))}
             // Dan 2026-08-23: clicking Club Bank opens the Club Bank Cashier.
             // It opens the SAME modal here as it does in the lobby - an earlier
             // version routed to this page's own distribute tab, which meant the

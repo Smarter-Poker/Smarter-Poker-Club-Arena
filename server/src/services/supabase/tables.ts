@@ -12,6 +12,7 @@
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { SEATED_PROFILE_SELECT } from './tableAvatar.js';
+import { drainPendingWrites, enqueuePendingWrite } from './pendingWrites.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATABASE HELPERS — Common queries used by the engine
@@ -212,8 +213,26 @@ export interface StackWriteOptions {
   inflow?: number | null;
 }
 
+/**
+ * The INLINE ladder, and it is deliberately short.
+ *
+ * The dealing loop awaits postHandTasks (and so this write) before dealing the
+ * next hand, under a 20s DEAL_STEP_BUDGET_MS. Five attempts over ~11.5s is what
+ * fits there. It survives a blip; it CANNOT survive a PostgREST schema-cache
+ * reload, which takes ~28s on this database and happens on every migration -
+ * measured, and the reason eighteen hands were lost on 2026-09-08.
+ *
+ * The patience for that lives off this path, in pendingWrites.ts. Do not grow
+ * these two numbers to cover a reload: that parks the table for the length of
+ * the reload. `tests/a-reload-window-cannot-lose-a-hand.law.test.ts` pins both
+ * halves - this ladder stays inside the dealing budget, and the off-path budget
+ * stays longer than a reload.
+ */
 const STACK_WRITE_ATTEMPTS = 5;
 const STACK_WRITE_BACKOFF_MS = (attempt: number): number => 200 * 2 ** (attempt - 1);
+/** Key prefix for this table's off-path pending stack writes. */
+const stackWriteKey = (tableId: string, handNumber: number): string =>
+  `stack:${tableId}:${handNumber}`;
 
 export async function syncStacks(
   tableId: string,
@@ -267,6 +286,15 @@ export async function syncStacks(
      is final; a transport failure is retried, bounded, and then reported with
      the whole payload so the hand can be re-driven by hand. Time banks are
      not money and keep their own writes. */
+  /* THE NEXT WRITE FOR THIS TABLE IS THE BEST MOMENT TO RETRY THE LAST ONE.
+     Reaching here means the dealing loop is running again, so any hand this
+     table still owes is retried now, ahead of this one, while the database has
+     just shown it is answering. Deltas commute, so the order is cosmetic; what
+     matters is that a quiet table's lost hand does not sit waiting on a timer
+     tick. Failures inside are swallowed by the queue - this never blocks the
+     hand in hand. */
+  await drainPendingWrites(`stack:${tableId}:`);
+
   const rounded = (n: number): number => Math.round(n * 100) / 100;
   const deltaMode = players.every(
     (p) => typeof p.stack_before === 'number' && Number.isFinite(p.stack_before)
@@ -305,8 +333,17 @@ export async function syncStacks(
     error?: unknown;
     rebased?: Record<string, number>;
   };
-  let lastError = '';
-  for (let attempt = 1; attempt <= STACK_WRITE_ATTEMPTS; attempt++) {
+  /* ONE ATTEMPT, SHARED BY BOTH LADDERS. The inline loop below runs it inside
+     the dealing budget; pendingWrites.ts runs the very same closure off the
+     dealing path afterwards, for as long as a schema reload can last. Returning
+     a verdict rather than a boolean is what lets the off-path retry tell a
+     refusal (final - stop) from an unreachable database (keep trying). */
+  type Verdict =
+    | { kind: 'landed' }
+    | { kind: 'refused'; detail: string }
+    | { kind: 'unreachable'; error: string };
+
+  const attemptStackWrite = async (): Promise<Verdict> => {
     let data: SettleResult | null = null;
     let error: { message?: string } | null = null;
     try {
@@ -333,7 +370,7 @@ export async function syncStacks(
         );
       }
       await persistTimeBanks(tableId, players);
-      return;
+      return { kind: 'landed' };
     }
 
     /* chip-std Lane F (2026-09-02) + 2026-09-04: a refusal is not a transport
@@ -362,35 +399,80 @@ export async function syncStacks(
           'DB.settle_hand_stacks_declined'
         );
       }
-      return;
+      return { kind: 'refused', detail: refusal || String(data.reason ?? 'unknown') };
     }
 
-    lastError = error ? String(error.message ?? error) : `in_flight (${JSON.stringify(data)})`;
+    return {
+      kind: 'unreachable',
+      error: error ? String(error.message ?? error) : `in_flight (${JSON.stringify(data)})`,
+    };
+  };
+
+  let lastError = '';
+  for (let attempt = 1; attempt <= STACK_WRITE_ATTEMPTS; attempt++) {
+    const verdict = await attemptStackWrite();
+    if (verdict.kind === 'landed' || verdict.kind === 'refused') return;
+    lastError = verdict.error;
     if (attempt < STACK_WRITE_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, STACK_WRITE_BACKOFF_MS(attempt)));
     }
   }
 
-  // The database could not be reached for this hand at all. The correct
-  // stacks exist only in this process; say so with the whole payload, so the
-  // write can be re-driven by hand (the RPC is idempotent on table + hand).
-  reportError(
-    new Error(
-      `[DB] hand-stack write UNREACHABLE for table ${tableId} hand ${handNumber} after ${STACK_WRITE_ATTEMPTS} attempts ` +
-        `- ${lastError} - payload ${JSON.stringify(payload)}`
-    ),
-    'DB.settle_hand_stacks_unreachable'
-  );
-  try {
-    const { raiseFinancialAlert } = await import('../financialAlerts.js');
-    await raiseFinancialAlert(
-      'critical',
-      'DB.settle_hand_stacks_unreachable',
-      `Hand #${handNumber} at table ${tableId}: stack write unreachable after ${STACK_WRITE_ATTEMPTS} attempts; re-drive fn_ca_settle_hand_stacks_absolute with the attached payload`,
-      { table_id: tableId, hand_number: handNumber, last_error: lastError, payload }
+  /* THE DEALING PATH IS OUT OF BUDGET; THE HAND IS NOT LOST (2026-09-08).
+     This used to alarm here and stop, and the alarm's own words - "recoverable
+     only by hand" - were true: eighteen hands died exactly this way when two
+     migrations made PostgREST reload its schema cache for ~28s while this
+     ladder could only wait ~11.5s.
+
+     The next hand at this table cannot wait for a reload, but nothing else has
+     to stop for it either. Hand the payload to the off-path retry, which owns a
+     budget six reloads long, and let the loop deal on. The RPC is idempotent on
+     (table, hand), so a retry that arrives after a silent commit writes nothing,
+     and the write applies DIFFERENCES, so landing late is still landing right. */
+  const enqueued = enqueuePendingWrite({
+    key: stackWriteKey(tableId, handNumber),
+    describedAs: `hand-stack write for table ${tableId} hand ${handNumber}`,
+    attempt: async () => {
+      const verdict = await attemptStackWrite();
+      // A refusal is the database's final word, not a transport failure: it has
+      // already been reported above. Stop retrying it.
+      if (verdict.kind === 'landed' || verdict.kind === 'refused') return { done: true };
+      return { done: false, error: verdict.error };
+    },
+    onGiveUp: async (finalError, elapsedMs, attempts) => {
+      reportError(
+        new Error(
+          `[DB] hand-stack write UNREACHABLE for table ${tableId} hand ${handNumber} after ` +
+            `${STACK_WRITE_ATTEMPTS} inline + ${attempts} off-path attempts over ` +
+            `${Math.round(elapsedMs / 1000)}s - ${finalError} - payload ${JSON.stringify(payload)}`
+        ),
+        'DB.settle_hand_stacks_unreachable'
+      );
+      try {
+        const { raiseFinancialAlert } = await import('../financialAlerts.js');
+        await raiseFinancialAlert(
+          'critical',
+          'DB.settle_hand_stacks_unreachable',
+          `Hand #${handNumber} at table ${tableId}: stack write unreachable after ${STACK_WRITE_ATTEMPTS} inline and ${attempts} off-path attempts over ${Math.round(elapsedMs / 1000)}s; re-drive fn_ca_settle_hand_stacks_absolute with the attached payload`,
+          {
+            table_id: tableId,
+            hand_number: handNumber,
+            last_error: finalError,
+            off_path_attempts: attempts,
+            elapsed_ms: elapsedMs,
+            payload,
+          }
+        );
+      } catch (err) {
+        reportError(err, 'DB.settle_hand_stacks_unreachable_alert_failed');
+      }
+    },
+  });
+  if (!enqueued) {
+    // Already owed for this exact hand; the queued entry is still trying.
+    console.warn(
+      `[DB] hand-stack write for table ${tableId} hand ${handNumber} is already queued off-path`
     );
-  } catch (err) {
-    reportError(err, 'DB.settle_hand_stacks_unreachable_alert_failed');
   }
 }
 
@@ -582,4 +664,43 @@ export async function updateTableStatus(
     .update({ current_players: playerCount, status })
     .eq('id', tableId)
     .or(tableCountChangedFilter({ current_players: playerCount, status }));
+}
+
+/**
+ * Read the active seats and stored summary in one database snapshot. A stable
+ * table needs no second HTTP request. Changed summaries still use the database
+ * comparison filter; missing/failed reads never manufacture an empty table.
+ */
+export async function reconcileTableSeatCount(tableId: string): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('tables')
+    .select('current_players,status,seats:table_seats!table_seats_table_id_fkey(user_id)')
+    .eq('id', tableId)
+    .is('seats.left_at', null)
+    .maybeSingle();
+  if (error || !data || !Array.isArray(data.seats)) {
+    reportError(
+      new Error(
+        `table_unlock: seat count unavailable (${error?.message ?? 'missing seat relation'}); table status left unchanged`
+      ),
+      'ServerTableEngine.table_unlock_count_unavailable'
+    );
+    return null;
+  }
+  const count = data.seats.length;
+  const status = count >= 2 ? 'running' : 'waiting';
+  if (data.current_players !== count || data.status !== status) {
+    const { error: updateError } = await supabase
+      .from('tables')
+      .update({ current_players: count, status })
+      .eq('id', tableId)
+      .or(tableCountChangedFilter({ current_players: count, status }));
+    if (updateError) {
+      reportError(
+        new Error(`table_unlock: summary update failed (${updateError.message})`),
+        'ServerTableEngine.table_unlock_update_failed'
+      );
+    }
+  }
+  return count;
 }

@@ -5229,13 +5229,9 @@ export abstract class TournamentManagerBase {
       `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD ENDED at level ${this.currentLevel} - finalizing prize pool`
     );
 
-    this.prizePoolFinalized = true;
-    await supabase
-      .from('tournaments')
-      .update({ prize_pool_finalized: true })
-      .eq('id', this.tournamentId);
-    // GUARANTEE (2026-08-27): same rule as the late-reg-close site — the pool
-    // is final now, so the advertised guarantee is FUNDED here (not declared).
+    // The funding RPC owns the database finalization flag. Setting it first
+    // makes that RPC return already_finalized without funding the guarantee.
+    // applyPrizeGuarantee updates the local flag only after funding succeeds.
     const finalPool = await this.applyPrizeGuarantee('addon_period_end');
     if (finalPool !== null) {
       await this.recalculateEliminatedPrizes(finalPool);

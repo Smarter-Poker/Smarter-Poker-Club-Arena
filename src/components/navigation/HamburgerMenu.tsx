@@ -54,6 +54,7 @@ import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDispla
 import styles from './HamburgerMenu.module.css';
 import { useCanCreateUnion, useCanOperateUnionNetwork } from '../../hooks/useCanCreateUnion';
 import { mediaUrl } from '../../utils/mediaBase';
+import { signInUrl } from '../../lib/signIn';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -840,8 +841,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         /* private mode */
       }
       onClose();
-      const redirectUrl = '/hub/club-arena' + location.pathname + location.search;
-      window.location.href = `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`;
+      // Web: the World Hub login. Native: the in-app AuthPage (src/lib/signIn).
+      window.location.href = signInUrl(location.pathname + location.search);
     }
   };
 

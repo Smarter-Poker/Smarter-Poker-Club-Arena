@@ -17,8 +17,9 @@
  *   - Capgo: notifyAppReady() MUST be called on every launch or the updater
  *     treats the bundle as broken and rolls back to the previous one.
  *   - Android hardware back: history.back() inside the app, minimise at root.
- *   - app URL opens (deep links) and foreground resumes are wired here in
- *     later phases; the listeners are registered once, at boot.
+ *   - deep links: appUrlOpen and the launch URL go to src/lib/native/deepLinks.
+ *   - the session mirror (src/lib/native/sessionMirror) is started after boot.
+ *   - foreground resumes are wired here in phase 5.
  *
  * CHANGELOG: docs/changelog/2026-09-07-capacitor-shell.md
  */
@@ -38,6 +39,8 @@ export async function initNativeShell(): Promise<void> {
     styleStatusBar(),
     markUpdaterReady(),
     wireBackButton(),
+    wireDeepLinks(),
+    mirrorSession(),
   ]);
 }
 
@@ -62,6 +65,25 @@ async function styleStatusBar(): Promise<void> {
 async function markUpdaterReady(): Promise<void> {
   const { CapacitorUpdater } = await import('@capgo/capacitor-updater');
   await CapacitorUpdater.notifyAppReady();
+}
+
+async function wireDeepLinks(): Promise<void> {
+  const [{ App }, { handleAppUrl }] = await Promise.all([
+    import('@capacitor/app'),
+    import('./native/deepLinks'),
+  ]);
+  await App.addListener('appUrlOpen', ({ url }) => {
+    void handleAppUrl(url);
+  });
+  // A cold start from a link: the event may have fired before this listener
+  // existed, so ask for the launch URL as well. handleAppUrl de-duplicates.
+  const launch = await App.getLaunchUrl();
+  if (launch?.url) void handleAppUrl(launch.url);
+}
+
+async function mirrorSession(): Promise<void> {
+  const { startSessionMirror } = await import('./native/sessionMirror');
+  await startSessionMirror();
 }
 
 async function wireBackButton(): Promise<void> {

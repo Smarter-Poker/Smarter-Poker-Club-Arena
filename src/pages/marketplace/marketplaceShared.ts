@@ -20,6 +20,7 @@ import { reportError } from '../../utils/errorReporter';
 import { normalizeThemePresetId } from '../../lib/tableTheme';
 import { ALL_COSMETICS, normalizeCosmeticToken } from '../../cosmetics/avatarCosmetics';
 import { uuid } from '../../utils/uuid';
+import { leaveForHub } from '../../lib/openExternal';
 
 /* ═══ Types ═══ */
 
@@ -577,7 +578,9 @@ export async function startCheckout(
   );
   const url = data?.data?.url;
   if (!url) throw new Error('Checkout session did not return a URL');
-  window.location.assign(url);
+  // Web: Stripe Checkout takes over the tab. Native: it opens in the in-app
+  // browser for now; phase 3 replaces this path with StoreKit / Play Billing.
+  leaveForHub(url);
 }
 
 /* ═══ Server catalog — the marketplace's single source of truth ═══ */

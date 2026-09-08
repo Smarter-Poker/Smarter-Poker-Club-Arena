@@ -821,6 +821,7 @@ import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
+import { publicOrigin } from '../lib/appBase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
@@ -24397,7 +24398,7 @@ export default function TablePage({
             <button
               className="menu-item"
               onClick={() => {
-                const shareUrl = `${window.location.origin}/hub/club-arena/table/${tableId}`;
+                const shareUrl = `${publicOrigin()}/hub/club-arena/table/${tableId}`;
                 navigator.clipboard
                   ?.writeText(shareUrl)
                   .then(() => {

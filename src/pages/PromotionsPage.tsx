@@ -25,6 +25,7 @@ import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { publicOrigin } from '../lib/appBase';
 
 interface Promotion {
   id: string;
@@ -98,7 +99,7 @@ export default function PromotionsPage() {
   const referralCode = playerNumber || '';
   const referralLink =
     clubId && referralCode
-      ? `${window.location.origin}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
+      ? `${publicOrigin()}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
       : '';
 
   // Load the user's existing claims so cards show Claimed vs claimable.

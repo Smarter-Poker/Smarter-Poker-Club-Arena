@@ -644,7 +644,7 @@ export async function reconcilePendingFees(): Promise<{
 
     try {
       if (row.kind === 'rake') {
-        const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
+        const { data: rdData, error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
           p_table_id: row.table_id,
           p_club_id: row.club_id,
           p_hand_id: resolvedHandId,
@@ -661,8 +661,15 @@ export async function reconcilePendingFees(): Promise<{
           p_returned_uncalled: row.returned_uncalled ?? null,
           p_rake_method: row.rake_method ?? 'DEALT_EQUAL',
         });
-        ok = !rdErr;
-        failureMessage = rdErr?.message ?? '';
+        const receipt = Array.isArray(rdData) ? (rdData.length === 1 ? rdData[0] : null) : rdData;
+        ok =
+          !rdErr &&
+          typeof receipt?.applied === 'boolean' &&
+          typeof receipt?.already_processed === 'boolean' &&
+          receipt.applied !== receipt.already_processed &&
+          typeof receipt.rake_record_id === 'string' &&
+          receipt.rake_record_id.trim() !== '';
+        failureMessage = rdErr?.message ?? (ok ? '' : 'Rake banking receipt was not confirmed');
       } else if (row.kind === 'bbj_payout') {
         // BBJ AUDIT 2026-09-05: re-drive a jackpot payout the live path could
         // not land. The parameter set was frozen at hit time (who was dealt
@@ -758,16 +765,20 @@ export async function reconcilePendingFees(): Promise<{
     };
     if (ok) patch.resolved_at = new Date().toISOString();
 
-    const { error: updErr } = await supabase
+    const { error: updErr, count: updatedCount } = await supabase
       .from('pending_fee_distributions')
-      .update(patch)
+      .update(patch, { count: 'exact' })
       .eq('id', row.id);
+    const marked = !updErr && updatedCount === 1;
 
-    if (updErr) {
+    if (!marked) {
       // The fee itself is banked (or not) regardless of this bookkeeping write.
       // Leaving the row open is the safe direction: the next cycle re-drives it,
       // and both underlying operations are idempotent.
-      reportError(updErr, 'FeeReconciler.mark_failed');
+      reportError(
+        updErr ?? new Error(`Expected one queue row acknowledgement, received ${updatedCount}`),
+        'FeeReconciler.mark_failed'
+      );
     }
 
     /* THE CELEBRATION STILL HAPPENS, LATE (BBJ phase 2.2). A jackpot the live
@@ -802,7 +813,9 @@ export async function reconcilePendingFees(): Promise<{
       }
     }
 
-    if (ok) {
+    if (!marked) {
+      summary.stillFailing++;
+    } else if (ok) {
       summary.resolved++;
     } else if (attempts >= MAX_RECONCILE_ATTEMPTS) {
       summary.exhausted++;

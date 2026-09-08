@@ -6,6 +6,24 @@ import ClubMemberGuard from '../../src/components/auth/ClubMemberGuard';
 import type { ClubWorkspaceValue } from '../../src/contexts/ClubWorkspaceContext';
 
 let workspace: ClubWorkspaceValue;
+const arenaMocks = vi.hoisted(() => ({ access: vi.fn() }));
+vi.mock('../../src/services/ArenaContextService', () => ({ getArenaContext: arenaMocks.access }));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    auth: {
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+    },
+  },
+}));
+beforeEach(() => {
+  arenaMocks.access.mockReset();
+  arenaMocks.access.mockImplementation(async () => ({
+    arena: { id: 'club-1', kind: 'chip_club', asset: 'chips' },
+    member: workspace.status !== 'denied',
+    automaticMembership: false,
+    role: 'player',
+  }));
+});
 
 vi.mock('../../src/contexts/ClubWorkspaceContext', async () => {
   const actual = await vi.importActual('../../src/contexts/ClubWorkspaceContext');
@@ -176,7 +194,7 @@ describe('club route guards', () => {
     expect(screen.getByText('This Tool Is Restricted')).toBeInTheDocument();
   });
 
-  it('shows a recoverable access error instead of redirecting to an invite', () => {
+  it('shows a recoverable access error instead of redirecting to an invite', async () => {
     workspace = makeWorkspace({
       status: 'error',
       isMember: false,
@@ -200,7 +218,7 @@ describe('club route guards', () => {
         </Routes>
       </MemoryRouter>
     );
-    expect(screen.getByText(/membership has not been changed/i)).toBeInTheDocument();
+    expect(await screen.findByText(/membership has not been changed/i)).toBeInTheDocument();
     expect(screen.queryByText('Invite Route')).not.toBeInTheDocument();
   });
 
@@ -230,4 +248,38 @@ describe('club route guards', () => {
     );
     await waitFor(() => expect(screen.getByText('Invite Route')).toBeInTheDocument());
   });
+});
+
+describe('Diamond entitlement precedes every private club guard', () => {
+  it.each(['/clubs/diamond', '/clubs/diamond/finance', '/clubs/diamond/agents'])(
+    'never redirects automatic Diamond members or mounts chip tools at %s',
+    async (path) => {
+      workspace = makeWorkspace({ status: 'denied', isMember: false, membershipStatus: null });
+      arenaMocks.access.mockResolvedValue({
+        arena: { id: 'diamond', kind: 'diamond_arena', asset: 'diamonds' },
+        member: true,
+        automaticMembership: true,
+        role: 'player',
+      });
+      render(
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route
+              path="/clubs/:clubId/*"
+              element={
+                <ClubMemberGuard>
+                  <div>Chip Tool</div>
+                </ClubMemberGuard>
+              }
+            />
+            <Route path="/invite/:clubId" element={<div>Invite Route</div>} />
+          </Routes>
+        </MemoryRouter>
+      );
+      expect(await screen.findByText('You Are Already A Member.')).toBeInTheDocument();
+      expect(screen.queryByText('Invite Route')).toBeNull();
+      expect(screen.queryByText('Chip Tool')).toBeNull();
+      expect(arenaMocks.access).toHaveBeenCalledTimes(1);
+    }
+  );
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TournamentEliminationScheduler } from './TournamentEliminationScheduler.js';
 import {
   bindTournamentDataAuthority,
@@ -80,6 +80,98 @@ describe('shared elimination scheduler preserves each registered authority', () 
     } finally {
       f.scheduler.stop();
       f.release();
+      await flush();
+    }
+  });
+});
+
+describe('production timer and manager cleanup entry points', () => {
+  it('a timer armed by A dispatches B in its registration context', async () => {
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      startTimers: false,
+      sweepWarnMs: 0,
+    });
+    const seen: string[] = [];
+    try {
+      for (const authority of [a, b]) {
+        runWithTournamentDataAuthority(authority, () =>
+          scheduler.register({
+            tournamentId: authority.tournamentId,
+            isActive: bindTournamentDataAuthority(authority, () => {
+              expect(currentTournamentDataAuthority()).toEqual(authority);
+              return true;
+            }),
+            run: bindTournamentDataAuthority(authority, async () => {
+              await Promise.resolve();
+              expect(currentTournamentDataAuthority()).toEqual(authority);
+              seen.push(authority.tournamentId);
+            }),
+          })
+        );
+      }
+      await flush();
+      expect(seen).toEqual([a.tournamentId, b.tournamentId]);
+      seen.length = 0;
+      // Real Node timer, not a fake clock that loses AsyncLocalStorage context.
+      runWithTournamentDataAuthority(a, () => scheduler.wakeAfter(b.tournamentId, 5));
+      await vi.waitFor(() => expect(seen).toEqual([b.tournamentId]));
+      expect(currentTournamentDataAuthority()).toBeNull();
+      expect(scheduler.snapshot()).toMatchObject({ running: 0, queued: 0, pendingWakes: 0 });
+    } finally {
+      scheduler.stop();
+    }
+  });
+
+  it('unregistering A inspects queued B under B and retains physical capacity', async () => {
+    const scheduler = new TournamentEliminationScheduler({
+      maxConcurrent: 1,
+      startTimers: false,
+      sweepWarnMs: 0,
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const seen: string[] = [];
+    let unregister!: () => void;
+    let bChecks = 0;
+    try {
+      runWithTournamentDataAuthority(a, () => {
+        unregister = scheduler.register({
+          tournamentId: a.tournamentId,
+          run: bindTournamentDataAuthority(a, async () => {
+            seen.push(a.tournamentId);
+            await held;
+          }),
+        });
+      });
+      runWithTournamentDataAuthority(b, () =>
+        scheduler.register({
+          tournamentId: b.tournamentId,
+          isActive: bindTournamentDataAuthority(b, () => {
+            bChecks++;
+            expect(currentTournamentDataAuthority()).toEqual(b);
+            return true;
+          }),
+          run: bindTournamentDataAuthority(b, async () => {
+            seen.push(b.tournamentId);
+          }),
+        })
+      );
+      await flush();
+      expect(seen).toEqual([a.tournamentId]);
+      expect(() => runWithTournamentDataAuthority(a, unregister)).not.toThrow();
+      // Removing the logical registration cannot release an unfinished promise's slot.
+      expect(scheduler.snapshot()).toMatchObject({ registered: 1, running: 1, queued: 1 });
+      release();
+      await flush();
+      expect(seen).toEqual([a.tournamentId, b.tournamentId]);
+      expect(bChecks).toBeGreaterThan(1);
+      expect(scheduler.snapshot()).toMatchObject({ registered: 1, running: 0, queued: 0 });
+    } finally {
+      scheduler.stop();
+      release();
       await flush();
     }
   });

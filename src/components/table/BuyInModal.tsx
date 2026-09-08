@@ -22,7 +22,7 @@ import { reportError } from '../../utils/errorReporter';
 export interface BuyInModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (amount: number, autoRebuy: boolean) => void | Promise<void>;
+  onConfirm: (amount: number, autoRebuy: boolean) => boolean | void | Promise<boolean | void>;
   tableName?: string;
   minBuyIn: number;
   maxBuyIn: number;
@@ -243,7 +243,10 @@ export function BuyInModal({
       } catch (audioError) {
         reportError(audioError, 'BuyInModal.confirm_sound_failed');
       }
-      await onConfirm(clampedBuyIn, autoRebuy);
+      const confirmed = await onConfirm(clampedBuyIn, autoRebuy);
+      if (confirmed === false) {
+        setConfirmError('Buy-In Not Confirmed. Check Your Stack And Balance Before Trying Again.');
+      }
     } catch (err) {
       reportError(err, 'BuyInModal.onConfirm_threw');
       setConfirmError('Unable To Confirm Your Buy-In. Please Check Your Connection And Try Again.');

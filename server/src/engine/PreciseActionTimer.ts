@@ -99,8 +99,25 @@ export class PreciseActionTimer {
    * Records the absolute deadline and registers it with the scheduler.
    */
   startTimer(tableId: string, playerId: string, durationMs: number, onExpiry?: () => void): void {
-    const key = this.key(tableId, playerId);
     const now = this.now();
+    this.armTimer(tableId, playerId, now + durationMs, durationMs, now, onExpiry);
+  }
+
+  /** Preserve an existing absolute deadline across timer ownership handoffs. */
+  startTimerAt(tableId: string, playerId: string, deadlineMs: number, onExpiry?: () => void): void {
+    const now = this.now();
+    this.armTimer(tableId, playerId, deadlineMs, Math.max(0, deadlineMs - now), now, onExpiry);
+  }
+
+  private armTimer(
+    tableId: string,
+    playerId: string,
+    deadlineMs: number,
+    durationMs: number,
+    now: number,
+    onExpiry?: () => void
+  ): void {
+    const key = this.key(tableId, playerId);
 
     // Cancel any existing timer for this player — idempotent re-schedule
     // is handled by DeadlineScheduler.schedule(), but we also need to clear
@@ -112,7 +129,7 @@ export class PreciseActionTimer {
     const deadline: ActionDeadline = {
       tableId,
       playerId,
-      deadline: now + durationMs,
+      deadline: deadlineMs,
       durationMs,
       startedAt: now,
       isPaused: false,

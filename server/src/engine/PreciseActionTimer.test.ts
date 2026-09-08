@@ -52,6 +52,25 @@ describe('PreciseActionTimer (DeadlineScheduler backend)', () => {
     expect(h.sched.nextDeadlineMs()).toBe(h.nowFn() + 500);
   });
 
+  it.each([0, 250, 501])('preserves an absolute deadline after %i ms of handoff delay', (delay) => {
+    const deadline = h.nowFn() + 500;
+    h.advance(delay);
+    let fired = 0;
+    timer.startTimerAt('t', 'p1', deadline, () => fired++);
+    expect(timer.getDeadline('t', 'p1')).toBe(deadline);
+    expect(h.sched.nextDeadlineMs()).toBe(deadline);
+    if (delay < 500) {
+      h.advance(499 - delay);
+      h.tick();
+      expect(fired).toBe(0);
+      h.advance(1);
+    }
+    h.tick();
+    expect(fired).toBe(1);
+    h.tick();
+    expect(fired).toBe(1);
+  });
+
   it('expiry fires onExpiry callback at the deadline tick', () => {
     let fired = false;
     timer.startTimer('t', 'p1', 500, () => {

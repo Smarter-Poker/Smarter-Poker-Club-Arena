@@ -259,10 +259,25 @@ export function observeLobbyTableWarmups(roots: HTMLElement[]): () => void {
   for (const root of roots) {
     for (const node of root.querySelectorAll('[data-warm-table]')) observer?.observe(node);
   }
+  // Safari can resume without another intersection or online event. The
+  // visible rows are still known, but their speculative sockets may have
+  // expired while hidden. Retry immediately, including slots previously
+  // unavailable; warmTable itself preserves fresh rows and healthy owners.
+  const resume = () => {
+    if (disposed || document.visibilityState === 'hidden') return;
+    recent.clear();
+    warmVisible();
+  };
+  document.addEventListener('visibilitychange', resume);
+  window.addEventListener('pageshow', resume);
+  window.addEventListener('online', resume);
   const refresh = setInterval(warmVisible, SEATS_FRESH_MS);
   return () => {
     disposed = true;
     observer?.disconnect();
+    document.removeEventListener('visibilitychange', resume);
+    window.removeEventListener('pageshow', resume);
+    window.removeEventListener('online', resume);
     if (timer !== null) clearTimeout(timer);
     clearInterval(refresh);
   };

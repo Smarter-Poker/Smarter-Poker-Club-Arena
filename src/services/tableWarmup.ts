@@ -74,6 +74,16 @@ interface WarmEntry {
 
 const entries = new Map<string, WarmEntry>();
 
+/** A speculative read must never strand the real table's shared prefetch. */
+function withWarmDeadline<T>(request: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('Table preparation timed out')), timeoutMs);
+    // Observe both eventual outcomes without cancelling the shared auth SDK.
+    request.then(resolve, reject);
+  }).finally(() => clearTimeout(timer));
+}
+
 /** Engine URL resolution shared with useEngineTableState (same env contract). */
 function engineBaseUrl(): string {
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
@@ -101,7 +111,7 @@ async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
   if (engineSocketMux.isSubscribed(tableId)) return; // a live table owns it
   entry.socketPending = true;
   try {
-    const token = await getFreshAccessToken();
+    const token = await withWarmDeadline(getFreshAccessToken(), 15_000);
     if (!token) return;
     // The entry may have expired or been claimed while the token resolved.
     if (entries.get(tableId) !== entry) return;
@@ -151,8 +161,7 @@ export function warmTable(tableId: string | null | undefined): void {
   entry.startedAt = Date.now();
   entry.seatsFailed = false;
   entry.ttl = setTimeout(() => dropEntry(tableId, entry, true), WARM_TTL_MS);
-  const request = tableService
-    .getSeatedPlayers(tableId)
+  const request = withWarmDeadline(tableService.getSeatedPlayers(tableId), 5_000)
     .then((seats) => {
       if (entries.get(tableId) === entry && entry.promise === request) {
         entry.seats = seats;
@@ -214,7 +223,7 @@ export function observeLobbyTableWarmups(roots: HTMLElement[]): () => void {
   const visible = new Set<Element>();
   const recent = new Map<string, number>();
   preloadRoute('/table/lobby-preview');
-  void getFreshAccessToken()
+  void withWarmDeadline(getFreshAccessToken(), 15_000)
     .then((token) => {
       if (!disposed && token && isMuxEnabled()) engineSocketMux.prewarm(engineBaseUrl(), token);
     })

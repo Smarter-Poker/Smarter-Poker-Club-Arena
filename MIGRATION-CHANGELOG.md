@@ -17040,3 +17040,7 @@ Applied 20260908042156_hand_settlement_roster_and_replay_identity.sql. Reproduce
 ## 2026-09-08: Union Close Period Boundaries
 
 Applied 20260908044150_union_close_period_boundaries_are_disjoint.sql. The weekly cursor aligns after the reset floor, uses Pacific calendar boundaries across DST, and the direct close refuses future/misaligned or overlapping periods. Eleven PostgreSQL boundary/concurrency cases pass. Rates, funding, reset floor and historical records remain unchanged. See docs/changelog/2026-09-08-union-close-period-boundaries.md.
+
+## 20260908045746: BBJ Contribution Identity
+
+Applied: serialize hand/table-hand retries before receipt and allocation; bind replay payload; preserve journal context. Original NULL-hand race reproduced, 32 new PostgreSQL cases pass. See docs/changelog/2026-09-08-bbj-contribution-identity.md.

@@ -140,3 +140,7 @@ if mode=="fixed":
 if mode=="fixed":
  from test_union_periods import verify_union_periods
  verify_union_periods(run)
+
+if mode=="fixed":
+ from test_bbj import verify_bbj
+ verify_bbj(run)

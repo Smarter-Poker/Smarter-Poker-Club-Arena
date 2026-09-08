@@ -29,3 +29,5 @@ The first production application was refused by the scheduled platform freeze (5
 Applied and read-verified as migration 20260908160032 after normal thaw. Appended leg 845feaac-9bd0-4d3e-852d-690cc5d1b1d8 has the main-bank label, a normal journal sequence and row hash, and an explicit recorded_at of 16:00:32.815419 UTC. The hand now has three BBJ entries totaling 0.50. The incident references that exact leg, is marked balanced/resolved, and retains its prior resolution. The uncommitted reservation was renamed to the database-assigned version before commit.
 
 This closes one proven historical omission. It does not certify every incident, pool, game, or economy.
+
+Post-application interval verification: for snapshot 249, the historical balance movement and journal total now match exactly for all three banks: main 264.06, backup 132.03, promo -0.65. The old snapshot is preserved as evidence; its incident links to the correction.

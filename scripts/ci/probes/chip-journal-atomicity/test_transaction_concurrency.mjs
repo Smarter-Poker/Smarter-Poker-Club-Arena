@@ -27,7 +27,11 @@ try {
  assert.equal(waited,true,'Second transaction must contend before the first commits');
  await a.query('COMMIT');
  const second=await pending;
- if(input.conflict){
+ if(input.receiptError){
+  assert.equal(second.receipt?.success,false);
+  assert.equal(second.receipt?.error,input.receiptError);
+  await b.query('COMMIT');
+ } else if(input.conflict){
   assert.equal(second.error?.code,'22023','Conflicting cashout must fail without moving money');
   await b.query('ROLLBACK');
  } else {
@@ -37,7 +41,7 @@ try {
   await b.query('COMMIT');
  }
  await a.query(input.verify);
- console.log('fixed: concurrent cashout '+input.name+' passed');
+ console.log('fixed: concurrent '+input.name+' passed');
 } finally {
  await a.query('ROLLBACK').catch(()=>{});
  await b.query('ROLLBACK').catch(()=>{});

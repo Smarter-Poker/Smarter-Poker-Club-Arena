@@ -945,7 +945,12 @@ export function determineWinners(
    * still in the hand were used instead. The award still happens; this exists
    * so a bad snapshot is visible rather than silent.
    */
-  onEligibilityFallback?: EligibilityFallback
+  onEligibilityFallback?: EligibilityFallback,
+  /**
+   * The indivisible chip unit for this hand: 0.01 for cash, 1 for a tournament.
+   * Defaults to a cent so existing callers are unchanged.
+   */
+  chipUnit: number = 0.01
 ): Winner[] {
   const winners: Winner[] = [];
   const activePlayers = players.filter((p) => !p.is_folded);
@@ -1051,7 +1056,7 @@ export function determineWinners(
     );
     // Bible V8 §2.7: Pass potIndex so Winner objects know which pot they won from
     // FIX 226: Pass dealerSeat so odd chip goes clockwise from dealer (not seat 0)
-    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx, dealerSeat, perPotOut);
+    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx, dealerSeat, perPotOut, chipUnit);
 
     // Low half
     if (loPotAmount > 0) {
@@ -1060,7 +1065,7 @@ export function determineWinners(
       const loWinners = qualifyingLowPlayers.filter(
         (ph) => JSON.stringify(ph.lowHand!.kickers) === JSON.stringify(bestLoKickers)
       );
-      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx, dealerSeat, perPotOut);
+      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx, dealerSeat, perPotOut, chipUnit);
     }
   }
 
@@ -1079,12 +1084,37 @@ function distributePot(
   half: 'High' | 'Low',
   potIndex: number = 0,
   dealerSeat: number = 0,
-  perPotOut?: PerPotAward[]
+  perPotOut?: PerPotAward[],
+  /**
+   * The indivisible unit this pot is paid in, in chips. Cash chips divide to
+   * the cent (0.01); TOURNAMENT CHIPS DO NOT DIVIDE AT ALL (1). Defaults to a
+   * cent, so every caller that does not pass it keeps its exact behaviour.
+   */
+  chipUnit: number = 0.01
 ): void {
   // FIX 179: Math.round prevents IEEE 754 truncation (e.g. 0.51*100 = 50.999... → 51)
   const totalCents = Math.round(amount * 100);
-  const shareCents = Math.trunc(totalCents / roundWinners.length);
-  const remainderCents = totalCents % roundWinners.length;
+  // A TOURNAMENT CHIP DOES NOT DIVIDE (2026-09-08). This split was always done
+  // in cents, so a 959-chip tournament pot chopped two ways paid 479.50 each -
+  // a stack a tournament cannot represent. Downstream that fraction was floored
+  // away in services/supabase/tables.ts, destroying chips, and the settlement
+  // guard refused the hand outright, which stalled the table for good because
+  // every retry was identical. Measured 17:35 UTC: 7 tournaments carried a
+  // fractional seat and exactly those 7 were stalled.
+  //
+  // The pot is now divided into INDIVISIBLE UNITS: cents for cash, whole chips
+  // for a tournament. unitCents is 1 in the cash case, which makes wholeUnits
+  // === totalCents and subUnitCents === 0, so the cash arithmetic below is
+  // identical to what it has always been - by construction, not by inspection.
+  const unitCents = Math.max(1, Math.round(chipUnit * 100));
+  const wholeUnits = Math.floor(totalCents / unitCents);
+  // Anything finer than one unit cannot be split, so it rides with the first
+  // winner clockwise of the button rather than being created or destroyed. It
+  // is zero for cash, and for a tournament only a legacy fractional stack going
+  // all-in can produce it. The awards therefore always re-sum to totalCents.
+  const subUnitCents = totalCents - wholeUnits * unitCents;
+  const shareUnits = Math.trunc(wholeUnits / roundWinners.length);
+  const remainderUnits = wholeUnits % roundWinners.length;
 
   // FIX 169: Sort by clockwise distance from dealer button for odd-chip allocation.
   // The player closest clockwise to the dealer gets the first odd chip.
@@ -1108,7 +1138,8 @@ function distributePot(
 
   sortedWinners.forEach((pw, i) => {
     const existing = globalWinners.find((w) => w.userId === pw.player.user_id);
-    const winAmt = (shareCents + (i < remainderCents ? 1 : 0)) / 100;
+    const winAmt =
+      ((shareUnits + (i < remainderUnits ? 1 : 0)) * unitCents + (i === 0 ? subUnitCents : 0)) / 100;
     // SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) record. For the
     // low half the winning "hand" is the qualifying low, whose name is its
     // own description ("Low: 8-6-4-3-2").

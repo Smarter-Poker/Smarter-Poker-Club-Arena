@@ -12,7 +12,14 @@
  * life was a human typing SQL during the 2026-08-31 audit. These pins are the
  * contract that keeps it watched.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+// The failure is an explicit fixture even when this checkout has live credentials.
+vi.mock('./supabase.js', () => ({
+  supabase: {
+    rpc: vi.fn(async () => ({ data: null, error: { message: 'audit fixture: unavailable' } })),
+  },
+}));
+import { supabase } from './supabase.js';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SpinMetrics, LAG_WINDOW_MINUTES, type SpinMetricsSnapshot } from './SpinMetrics.js';
@@ -140,7 +147,8 @@ describe('the engine exposes spin gauges', () => {
 
   it('a failed refresh keeps the last good snapshot rather than zeroing it', async () => {
     const m = seeded();
-    await m.refresh(); // no database in test: this fails
+    await m.refresh();
+    expect(supabase.rpc).toHaveBeenCalledWith('fn_spin_metrics', expect.any(Object));
     expect(m.get().fairnessDraws).toBe(2489);
     expect(m.get().revealP50Ms).toBe(4767);
     expect(m.get().fairnessRealisedE).toBeCloseTo(2.740056, 6);

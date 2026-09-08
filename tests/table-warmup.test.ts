@@ -181,3 +181,49 @@ it('refreshes seats without discarding a healthy warmed table subscription', asy
   expect(acquire).toHaveBeenCalledOnce();
   expect(facade.close).not.toHaveBeenCalled();
 });
+
+it('restarts an evicted warm connection immediately while reusing fresh seats', async () => {
+  getSeatedPlayers.mockResolvedValue(ROWS);
+  const first = fakeFacade();
+  acquire.mockReturnValueOnce(first);
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).toHaveBeenCalledTimes(1);
+  first.readyState = 3;
+  (first.onclose as () => void)();
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).toHaveBeenCalledTimes(2);
+  expect(getSeatedPlayers).toHaveBeenCalledTimes(1);
+  expect(warm.peekWarmSeats(T)).toEqual(ROWS);
+});
+
+it('retries a previously full mux when slots become available without rereading seats', async () => {
+  getSeatedPlayers.mockResolvedValue(ROWS);
+  acquire.mockReturnValueOnce(null);
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).toHaveBeenCalledTimes(2);
+  expect(getSeatedPlayers).toHaveBeenCalledTimes(1);
+});
+
+it('coalesces repeated intent while authentication is pending', async () => {
+  const { getFreshAccessToken } = await import('../src/lib/authToken');
+  let resolveToken!: (token: string) => void;
+  vi.mocked(getFreshAccessToken).mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolveToken = resolve;
+    })
+  );
+  getSeatedPlayers.mockResolvedValue(ROWS);
+  warm.warmTable(T);
+  warm.warmTable(T);
+  warm.warmTable(T);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).not.toHaveBeenCalled();
+  resolveToken('jwt-token');
+  await vi.advanceTimersByTimeAsync(1);
+  expect(acquire).toHaveBeenCalledTimes(1);
+});

@@ -24,7 +24,8 @@ describe('one tournament lifecycle generation owns every continuation', () => {
   });
 
   it('aborts first, stops dealers to unblock startup, then drains and releases ownership', () => {
-    const fence = sliceMethod(BASE, 'private applyStopFence()');
+    const fence = sliceMethod(BASE, 'private applyManagerMutationFence(');
+    const stopFence = sliceMethod(BASE, 'private applyStopFence()');
     const stop = sliceMethod(BASE, 'stop(): Promise<void>');
     const abortAt = fence.indexOf('this.lifecycleEpoch.abort();');
     const applyFenceAt = stop.indexOf('this.applyStopFence();');
@@ -35,6 +36,7 @@ describe('one tournament lifecycle generation owns every continuation', () => {
 
     expect(abortAt).toBeGreaterThan(0);
     expect(fence).not.toContain('await ');
+    expect(stopFence).toContain('return this.applyManagerMutationFence(true);');
     expect(applyFenceAt).toBeGreaterThan(0);
     expect(engineStopAt).toBeGreaterThan(applyFenceAt);
     expect(schedulerDrainAt).toBeGreaterThan(engineStopAt);
@@ -50,7 +52,6 @@ describe('one tournament lifecycle generation owns every continuation', () => {
     for (const mutation of [
       'update({ first_button_seat: seat })',
       'update({ level_started_at: new Date(this.blindTimerStartedAt).toISOString() })',
-      'addon_period_triggered: true',
     ]) {
       const mutationAt = BASE.indexOf(mutation);
       expect(mutationAt).toBeGreaterThan(0);
@@ -58,11 +59,29 @@ describe('one tournament lifecycle generation owns every continuation', () => {
         'void this.trackLifecycleJob('
       );
     }
+
+    // The add-on CAS is not detached: its caller awaits this whole method. It
+    // therefore owns an explicit generation token across both the possibly
+    // committed write response and the authoritative read-back.
+    const trigger = sliceMethod(BASE, 'triggerAddOnPeriod(): Promise<void>');
+    const token = trigger.indexOf('const lifecycle = this.captureLifecycleToken()');
+    const mutationAt = trigger.indexOf('addon_period_triggered: true', token);
+    const writeReceipt = trigger.indexOf('.select(projection)', mutationAt);
+    const readBack = trigger.indexOf('.select(projection)', writeReceipt + 1);
+    const fence = trigger.indexOf('if (!this.lifecycleIsCurrent(lifecycle)) return;', readBack);
+    expect(token).toBeGreaterThanOrEqual(0);
+    expect(mutationAt).toBeGreaterThan(token);
+    expect(writeReceipt).toBeGreaterThan(mutationAt);
+    expect(readBack).toBeGreaterThan(writeReceipt);
+    expect(fence).toBeGreaterThan(readBack);
+    expect(trigger).not.toContain('void this.trackLifecycleJob(');
+    expect(BASE).not.toContain('void this.triggerAddOnPeriod()');
   });
 
   it('never performs an unowned manager-map delete or overwrites after an awaited lease claim', () => {
     expect(SERVER).not.toContain('this.tournamentEngines.delete(');
-    expect(SERVER).toContain('return stopOwnedTournamentManager(');
+    expect(SERVER).toContain('const stopped = await stopOwnedTournamentManager(');
+    expect(SERVER).toContain('await releaseTournaments([{ tournamentId, leaseGeneration }])');
     expect(SERVER).toContain('return unregisterOwnedTournamentTableEngine(');
     expect(SERVER).toContain('if (this.tournamentEngines.has(tournament.id)) continue;');
     expect(SERVER.match(/finishTournamentManagerAdmission\(/g) ?? []).toHaveLength(2);
@@ -89,8 +108,16 @@ describe('one tournament lifecycle generation owns every continuation', () => {
   });
 
   it('does not self-deadlock when a scheduler finish initiates async teardown', () => {
-    expect(ELIMINATIONS).not.toContain('await this.stop();');
-    expect(ELIMINATIONS.match(/void this\.stop\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    const cleanup = sliceMethod(
+      ELIMINATIONS,
+      'cleanupCommittedTablesAndManager(): Promise<boolean>'
+    );
+    const enginesReleased = cleanup.indexOf('this.tableEngines.clear()');
+    const detachedStop = cleanup.indexOf('void this.stop().catch', enginesReleased);
+    expect(cleanup).not.toContain('await this.stop()');
+    expect(enginesReleased).toBeGreaterThanOrEqual(0);
+    expect(detachedStop).toBeGreaterThan(enginesReleased);
+    expect(cleanup.match(/void this\.stop\(\)\.catch/g) ?? []).toHaveLength(1);
   });
 
   it('lets the server fence manager mutations before its graceful dealer drain', () => {

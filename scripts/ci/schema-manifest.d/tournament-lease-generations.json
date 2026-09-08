@@ -1,0 +1,19 @@
+{
+  "_owner": "fix/live-table-realtime-continuity",
+  "_comment": "Branch declaration for exact tournament lease generations and lease-fenced launch begin/completion. Production deployment is not claimed by this fragment.",
+  "functions": [
+    "claim_tournament_lease",
+    "claim_tournament_lease_v2",
+    "heartbeat_tournament_leases_v3",
+    "release_tournament_leases_v2",
+    "fn_begin_tournament_launch_before_lease_generation",
+    "fn_complete_tournament_launch_before_lease_generation",
+    "fn_begin_tournament_launch_atomic",
+    "fn_complete_tournament_launch_atomic",
+    "trg_tournament_launch_receipt_is_immutable"
+  ],
+  "columns": {
+    "engine_tournament_leases": ["lease_generation", "protocol_version"],
+    "tournament_launch_receipts": ["lease_generation"]
+  }
+}

@@ -150,7 +150,7 @@ describe('the measured fan-out is replaced, not merely charted', () => {
     const commitAt = postHandTasks.indexOf('atomicCommit: {');
     const historyAt = postHandTasks.indexOf('v_handHistoryId = result.handId');
     const acceptedAt = postHandTasks.indexOf('authoritativeCommitSucceeded = true');
-    const failClosedAt = postHandTasks.indexOf('if (!authoritativeCommitSucceeded) return;');
+    const failClosedAt = postHandTasks.indexOf('if (!authoritativeCommitSucceeded) {');
     const callbackAt = postHandTasks.indexOf('this.handCompleteCallback(');
     expect(commitAt).toBeGreaterThan(-1);
     expect(historyAt).toBeGreaterThan(commitAt);
@@ -167,16 +167,17 @@ describe('the measured fan-out is replaced, not merely charted', () => {
 
   it('cannot wake eliminations or unlock the table after an authoritative commit failure', () => {
     const postHandTasks = sliceMethod(SETTLEMENT, 'protected async postHandTasks(');
-    const gateAt = postHandTasks.indexOf('if (!authoritativeCommitSucceeded) return;');
+    const gateAt = postHandTasks.indexOf('if (!authoritativeCommitSucceeded) {');
     const callbackAt = postHandTasks.indexOf('this.handCompleteCallback(');
     const unlockAt = postHandTasks.indexOf("type: 'table_unlocked'");
     expect(gateAt).toBeGreaterThan(-1);
     expect(callbackAt).toBeGreaterThan(gateAt);
     expect(unlockAt).toBeGreaterThan(callbackAt);
 
-    const semanticRefusal = sliceEnclosingBlock(postHandTasks, 'if (semantic)');
-    expect(semanticRefusal).toContain("this.setLoopPhase('settlement_fault_semantic')");
-    expect(semanticRefusal).toMatch(/while \(this\.running\)[\s\S]*?throw err;/);
+    const semanticRefusal = sliceEnclosingBlock(postHandTasks, 'const semantic =');
+    expect(semanticRefusal).toContain("'settlement_fault_semantic'");
+    expect(semanticRefusal).toContain("'authoritative_hand_semantic_refusal'");
+    expect(semanticRefusal).toContain('throw err;');
   });
 
   it('re-wakes the owning manager only when a queued knockout hand lands', () => {
@@ -191,9 +192,13 @@ describe('the measured fan-out is replaced, not merely charted', () => {
 
   it('wires every tournament engine construction and rebuild path', () => {
     const count = (source: string, needle: string) => source.split(needle).length - 1;
-    expect(count(BASE, 'new ServerTableEngine(')).toBe(5);
+    // Construction is centralized so every dealer inherits the manager's exact
+    // tournament lease generation and data-authority binding.
+    expect(count(BASE, 'new ServerTableEngine(')).toBe(2);
+    expect(count(BASE, 'this.createManagedTableEngine(')).toBe(5);
     expect(count(BASE, 'this.wireEliminationWake(')).toBe(5);
-    expect(count(MANAGER, 'new ServerTableEngine(')).toBe(1);
+    expect(count(MANAGER, 'new ServerTableEngine(')).toBe(0);
+    expect(count(MANAGER, 'this.createManagedTableEngine(')).toBe(1);
     expect(count(MANAGER, 'this.wireEliminationWake(')).toBe(1);
   });
 

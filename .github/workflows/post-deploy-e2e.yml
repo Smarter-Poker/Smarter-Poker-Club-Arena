@@ -110,7 +110,11 @@ jobs:
     # The old 20-minute ceiling cancelled the honesty/report steps just as the
     # sweep completed, discarding a real verdict. This remains bounded while
     # leaving enough room for first-attempt, zero-retry certification.
-    timeout-minutes: 42
+    # The live-table certificate now proves an actual disconnect/reconnect and
+    # a complete causal hand afterward for cash, MTT, Spin and SNG in serial
+    # mobile WebKit. Preserve a hard job ceiling, but budget the four real hand
+    # cycles rather than letting GitHub cancel the final format mid-verdict.
+    timeout-minutes: 50
 
     steps:
       - name: Checkout
@@ -319,6 +323,12 @@ jobs:
           MOBILE_FIT_STRICT: '1'
           E2E_REQUIRE_AUTH: '1'
           LIVE_SHA: ${{ steps.live.outputs.sha }}
+          # The live-table certificate is the one suite that must prove both
+          # artifacts. Club Arena can publish before the hourly engine window;
+          # a frontend-only green during that gap is not release proof.
+          LIVE_TABLE_REALTIME_CERTIFICATION: '1'
+          ENGINE_HEALTH_URL: https://engine.smarter.poker/health
+          EXPECTED_ENGINE_SHA: ${{ steps.live.outputs.sha }}
         # Every spec the css-beats gate cannot take, named explicitly for the
         # same reason that gate names its own: a spec not named in a job runs
         # in no job. If you add a spec that needs a login or a live URL, add it
@@ -398,6 +408,13 @@ jobs:
           run_suite lobby.json tests/e2e/club-lobby.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
           lobby_rc=$?; [ $lobby_rc -ne 0 ] && rc=$lobby_rc
 
+          # Real mobile Safari transport, one isolated browser and no retry. It
+          # proves an engine-resident table is moving before observation, stays
+          # causal through the next hand, and recovers one socket owner after a
+          # forced network loss. Run separately from the broad Chromium sweep.
+          run_suite live-table-realtime.json tests/e2e/production-live-table-realtime.spec.ts --project=webkit-live-table-realtime --reporter=line,json --workers=1 --retries=0
+          live_table_realtime_rc=$?; [ $live_table_realtime_rc -ne 0 ] && rc=$live_table_realtime_rc
+
           # The exact Shark Club Players route from the six-phase audit. This
           # is read-only, but gets an isolated real member from global-setup so
           # it proves auth handoff, roster RPCs, controls and 375px rendering.
@@ -442,7 +459,7 @@ jobs:
             --reporter=line,json --workers=2 --retries=0
           sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
 
-          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  daily missions accessibility exit=$daily_missions_accessibility_rc  daily missions settlement exit=$daily_missions_settlement_rc  sweep exit=$sweep_rc"
+          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  live table realtime exit=$live_table_realtime_rc  club members exit=$club_members_rc  customization realtime exit=$customization_realtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  daily missions accessibility exit=$daily_missions_accessibility_rc  daily missions settlement exit=$daily_missions_settlement_rc  sweep exit=$sweep_rc"
           exit $rc
 
       # THE RUN MUST NOT PASS BY NOT RUNNING.
@@ -459,6 +476,7 @@ jobs:
           e2e-report/cashier.json
           e2e-report/stats.json
           e2e-report/lobby.json
+          e2e-report/live-table-realtime.json
           e2e-report/club-members.json
           e2e-report/customization-realtime.json
           e2e-report/customization-commerce.json

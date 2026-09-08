@@ -23,7 +23,7 @@ describe('tournament table engines recover from their causal generation signal',
     expect(wire).toContain('this.tableIdForManagedEngine(engine)');
     expect(wire).toContain('this.trackLifecycleJob(recovery)');
 
-    const constructions = BASE.match(/new ServerTableEngine\(/g) ?? [];
+    const constructions = BASE.match(/this\.createManagedTableEngine\(/g) ?? [];
     const bindings = BASE.match(/this\.wireEliminationWake\(/g) ?? [];
     expect(bindings).toHaveLength(constructions.length);
   });
@@ -87,7 +87,7 @@ describe('tournament table engines recover from their causal generation signal',
   });
 
   it('cancels every causal retry before manager teardown can yield', () => {
-    const fence = sliceMethod(BASE, 'private applyStopFence()');
+    const fence = sliceMethod(BASE, 'private applyManagerMutationFence(');
     const stop = sliceMethod(BASE, 'stop(): Promise<void>');
     const abortAt = fence.indexOf('this.lifecycleEpoch.abort()');
     const clearAt = fence.indexOf('this.clearManagedTableEngineRecoveries()');

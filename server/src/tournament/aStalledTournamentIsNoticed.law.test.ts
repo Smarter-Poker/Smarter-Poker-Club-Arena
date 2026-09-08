@@ -108,26 +108,23 @@ describe('a stalled tournament is noticed', () => {
    */
   it('adopts an open tournament table that has live seats and no engine', () => {
     const base = read('src/tournament/TournamentManagerBase.ts');
+    const start = base.indexOf('private async resumeLifecycle(');
+    const resume = base.slice(start, base.indexOf('/**\n   * A RESTART MUST NOT LEAVE', start));
+    expect(resume).toContain(".eq('tournament_id', this.tournamentId)");
+    expect(resume).toContain(".in('status', ['running', 'waiting'])");
+    expect(resume).toContain('for (const table of tables)');
+    expect(resume).toContain('this.admitManagedTableEngine(table.id, engine)');
 
-    expect(base).toContain('protected async adoptEnginelessTables');
-    // Adopted before the map walk, or the walk sees the same nothing it saw
-    // for three hours.
-    const sweep = base.slice(base.indexOf('protected async reviveDeadTableEngines'));
-    const adopt = sweep.indexOf('await this.adoptEnginelessTables();');
-    const walk = sweep.indexOf('for (const [tableId, engine] of this.tableEngines)');
-    expect(adopt).toBeGreaterThan(-1);
-    expect(walk).toBeGreaterThan(adopt);
-
-    const method = base.slice(
-      base.indexOf('protected async adoptEnginelessTables'),
-      base.indexOf('protected async adoptEnginelessTables') + 4000
+    // After admission, a dead generation retains one exact table-id recovery
+    // obligation. The replacement re-reads that row and may not overwrite an
+    // incumbent generation.
+    const recoveryStart = base.indexOf('private async admitMissingManagedTableEngine(');
+    const recovery = base.slice(
+      recoveryStart,
+      base.indexOf('/** A manager is not torn down', recoveryStart)
     );
-    // Only felt that still holds a player, and only through the one
-    // registration path -- a second dealer on one table is its own outage.
-    expect(method).toContain(".is('left_at', null)");
-    expect(method).toContain('this.admitManagedTableEngine(tableId, engine)');
-    // Reads fail closed: an unreadable board adopts nothing.
-    expect(method).toContain('Tournament.adopt_scan_failed');
-    expect(method).toContain('Tournament.adopt_seat_read_failed');
+    expect(recovery).toContain(".eq('id', tableId)");
+    expect(recovery).toContain('this.admitManagedTableEngine(tableId, fresh)');
+    expect(recovery).toContain('this.gameServer.replaceTableEngine(tableId, engine, fresh)');
   });
 });

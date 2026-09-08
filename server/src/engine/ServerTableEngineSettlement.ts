@@ -39,6 +39,7 @@ import {
   logHandHistory,
   processBBJPayout,
   processMiniBBJPayout,
+  processHandPostCommitObligations,
   recordBBJNearMiss,
   resolveJackpotSiblingClubIds,
   completeHandSnapshot,
@@ -59,6 +60,7 @@ import {
 import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { INSTANCE_ID } from '../services/tableLease.js';
 
 /**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
@@ -1249,9 +1251,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // this method and every post-hand task are done reading this hand's
     // capture fields.
     const priorBarrier = this.postHandTasksPromise;
-    const postTasks = this.postHandTasks(players).catch((err) =>
-      reportError(err, 'ServerTableEnginethistableId.Posthand_error')
-    );
+    const postTasks = this.postHandTasks(players).catch((err) => {
+      reportError(err, 'ServerTableEnginethistableId.Posthand_error');
+      // A rejected settlement is not a completed hand. Publish the terminal
+      // fence synchronously so the dealing loop cannot clear this barrier and
+      // reload the pre-hand seats as if the write had succeeded.
+      this.killForRestart('post_hand_settlement_failed');
+      throw err;
+    });
     this.postHandTasksPromise = priorBarrier
       ? Promise.all([priorBarrier, postTasks]).then(() => undefined)
       : postTasks;
@@ -1424,6 +1431,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       moneyCritical: boolean,
       fn: () => Promise<void>
     ): Promise<void> => {
+      // A successor generation may acquire the table while any awaited I/O is
+      // suspended. Never begin another post-hand decision once this generation
+      // has lost either its process-map identity or its distributed proof.
+      if (!this.lifecycleCanMutate()) return;
       try {
         await fn();
       } catch (err) {
@@ -1534,8 +1545,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
        booking may name the hand before the row lands - and the row, whenever
        it lands, lands under exactly this id. */
     const v_handId = randomUUID();
+    // A response-body timeout may replay the exact RPC. Time is part of the
+    // accepted-hand payload hash, so freeze it once; recomputing Date.now()
+    // on retry turns a committed hand into a deterministic payload conflict.
+    const acceptedHandEndedAt = Date.now();
+    const acceptedHandStartedAt = snap.startedAt || acceptedHandEndedAt;
     let v_handHistoryId: string | null = null;
     let authoritativeCommitSucceeded = false;
+    const settlementLeaseAuthority = this.getEngineLeaseAuthority();
+    const durablePostCommitObligations = settlementLeaseAuthority?.verified === true;
     await runStep('hand_history', true, async () => {
       if (this.tableInfo) {
         const tableInfo = this.tableInfo;
@@ -1702,9 +1720,85 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 }))
               : undefined;
 
+        const leaseAuthority = settlementLeaseAuthority;
+        const contributionRecord = Object.fromEntries(snap.contributions.entries());
+        const returnedUncalledRecord = Object.fromEntries(snap.returnedUncalled.entries());
+        const insuranceRecords =
+          !this.isTournamentTable() && tableInfo.club_id
+            ? snap.insuranceSettlements.map((settlement) => ({
+                club_id: tableInfo.club_id,
+                player_id: settlement.playerId,
+                equity_percent: settlement.equity,
+                premium:
+                  settlement.kind === 'ev_cashout'
+                    ? (snap.cashoutRedirects.get(settlement.playerId) ?? 0)
+                    : settlement.premium,
+                insured_amount: settlement.insuredAmount,
+                payout: settlement.payout,
+                player_won: !settlement.won,
+                kind: settlement.kind,
+              }))
+            : [];
+        const acceptedPostCommitFacts = durablePostCommitObligations
+          ? {
+              contributions: contributionRecord,
+              returned_uncalled: returnedUncalledRecord,
+              insurance: insuranceRecords,
+            }
+          : undefined;
+        const postCommitObligations = durablePostCommitObligations
+          ? {
+              version: 1 as const,
+              time_banks: players.map((player) => ({
+                user_id: player.user_id,
+                uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, player.user_id),
+                seconds_remaining: this.timeBankEngine.getRemainingSeconds(
+                  this.tableId,
+                  player.user_id
+                ),
+              })),
+              rake:
+                !this.isTournamentTable() && snap.rake > 0 && tableInfo.club_id
+                  ? {
+                      club_id: tableInfo.club_id,
+                      amount: snap.rake,
+                      bbj: snap.bbjFee,
+                      pot: snap.potSize,
+                      num_players: snap.contributions.size,
+                      contributions: contributionRecord,
+                      returned_uncalled: returnedUncalledRecord,
+                      tournament_id: tableInfo.tournament_id || null,
+                      method: 'WEIGHTED_CONTRIBUTED',
+                    }
+                  : null,
+              bbj_contribution:
+                !this.isTournamentTable() && snap.bbjFee > 0 && tableInfo.club_id
+                  ? {
+                      club_id: tableInfo.club_id,
+                      amount: snap.bbjFee,
+                      big_blind: tableInfo.big_blind,
+                    }
+                  : null,
+              promo_playthrough:
+                !this.isTournamentTable() && tableInfo.club_id
+                  ? [...snap.contributions.entries()]
+                      .filter(([uid, amount]) => Boolean(uid) && amount > 0)
+                      .map(([uid, amount]) => ({
+                        club_id: tableInfo.club_id,
+                        user_id: uid,
+                        wagered: amount,
+                      }))
+                  : [],
+              insurance: insuranceRecords,
+              pending_addons: !this.isTournamentTable()
+                ? { enabled: true as const, max_buy_in: this.getMaxBuyIn() }
+                : null,
+            }
+          : undefined;
         const commitAuthoritativeHand = () =>
           logHandHistory({
             tableId: this.tableId,
+            handId: v_handId,
             bombAwardUnits,
             nitGame: tableInfo.nit_game === true,
             // THE FLOOR TRAVELS WITH THE HAND (2026-09-06). A horse at a
@@ -1732,8 +1826,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
             // rit_board_N pseudo-actions in `actions` stay for old readers.
             ritBoards: snap.ritExtraBoards,
-            startedAt: snap.startedAt || Date.now(),
-            endedAt: Date.now(),
+            startedAt: acceptedHandStartedAt,
+            endedAt: acceptedHandEndedAt,
             winners: snap.winners,
             // Per-board winners for any multi-board hand; NULL otherwise (see
             // handHistory.ts). This is the record that says which run went to
@@ -1820,77 +1914,94 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               rake: this.isTournamentTable() ? 0 : snap.rake,
               bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
               inflow: snap.insuranceNet,
+              ...(leaseAuthority?.verified
+                ? {
+                    leaseInstanceId: INSTANCE_ID,
+                    leaseGeneration: leaseAuthority.generation,
+                    postCommitObligations,
+                    acceptedPostCommitFacts,
+                  }
+                : {}),
+              assertLeaseAuthority: () => {
+                if (!this.hasCurrentEngineLeaseAuthority()) {
+                  throw new Error('atomic hand commit refused (lease_proof_expired)');
+                }
+              },
             },
           });
         let result: Awaited<ReturnType<typeof commitAuthoritativeHand>>;
-        let transportFailures = 0;
-        for (;;) {
-          try {
-            result = await commitAuthoritativeHand();
-            if (!result.settlementCommitted || !result.handId) {
-              throw new Error('atomic hand commit refused (missing_commit_receipt)');
-            }
-            break;
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            const semantic = message.includes('atomic hand commit refused');
-            reportError(
-              err,
-              semantic
-                ? 'ServerTableEngine.authoritative_hand_semantic_refusal'
-                : 'ServerTableEngine.authoritative_hand_transport_failure',
-              {
-                tableId: this.tableId,
-                handNumber: snap.handNumber,
-                transportFailures,
-              }
-            );
-
-            if (semantic) {
-              await raiseFinancialAlert(
-                'critical',
-                'ServerTableEngine.authoritative_hand_semantic_refusal',
-                `Table ${this.tableId} hand #${snap.handNumber} was refused by the atomic settlement contract; the table is quarantined before every downstream money step`,
-                { table_id: this.tableId, hand_number: snap.handNumber, error: message }
-              );
-              this.setLoopPhase('settlement_fault_semantic');
-              while (this.running) await this.sleep(1_000);
-              throw err;
-            }
-
-            transportFailures++;
-            if (transportFailures === 1 || transportFailures % 10 === 0) {
-              await raiseFinancialAlert(
-                'critical',
-                'ServerTableEngine.authoritative_hand_unreachable',
-                `Table ${this.tableId} hand #${snap.handNumber} cannot reach its atomic settlement; the same payload remains behind the dealing barrier`,
-                {
-                  table_id: this.tableId,
-                  hand_number: snap.handNumber,
-                  attempts: transportFailures,
-                  error: message,
-                }
-              );
-            }
-            if (!this.running) throw err;
-            this.setLoopPhase('settlement_retry_transport');
-            await this.sleep(Math.min(1_000 * 2 ** Math.min(transportFailures - 1, 5), 30_000));
+        try {
+          if (!this.hasCurrentEngineLeaseAuthority()) {
+            throw new Error('atomic hand commit refused (lease_proof_expired)');
           }
+          result = await commitAuthoritativeHand();
+          if (!result.settlementCommitted || !result.handId) {
+            throw new Error('atomic hand commit refused (missing_commit_receipt)');
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          const semantic = message.includes('atomic hand commit refused');
+          const alertCode = semantic
+            ? 'ServerTableEngine.authoritative_hand_semantic_refusal'
+            : 'ServerTableEngine.authoritative_hand_unreachable';
+          reportError(
+            err,
+            semantic
+              ? 'ServerTableEngine.authoritative_hand_semantic_refusal'
+              : 'ServerTableEngine.authoritative_hand_transport_failure',
+            { tableId: this.tableId, handNumber: snap.handNumber }
+          );
+
+          this.setLoopPhase(semantic ? 'settlement_fault_semantic' : 'settlement_fault_transport');
+          // logHandHistory already performs the bounded identical-response-loss
+          // replay. Exhausting it (or receiving a deterministic refusal) makes
+          // this generation terminal; resolving normally here would let the
+          // loop deal from seats for a hand the database never accepted.
+          this.killForRestart(
+            semantic ? 'authoritative_hand_semantic_refusal' : 'authoritative_hand_unreachable'
+          );
+          try {
+            await raiseFinancialAlert(
+              'critical',
+              alertCode,
+              semantic
+                ? `Table ${this.tableId} hand #${snap.handNumber} was refused by the atomic settlement contract; this engine generation was terminated before every downstream money step`
+                : `Table ${this.tableId} hand #${snap.handNumber} exhausted the bounded identical settlement replay; this engine generation was terminated with the same hand behind its causal barrier`,
+              { table_id: this.tableId, hand_number: snap.handNumber, error: message }
+            );
+          } catch (alertError) {
+            reportError(alertError, `${alertCode}.alert_failed`, {
+              tableId: this.tableId,
+              handNumber: snap.handNumber,
+            });
+          }
+          throw err;
         }
         v_handHistoryId = result.handId;
         authoritativeCommitSucceeded = true;
 
-        // Time-bank counters are non-money seat metadata.  They intentionally
-        // remain outside the accepted-hand transaction, but are written only
-        // after that transaction has proved success.
-        await persistTimeBanks(
-          this.tableId,
-          players.map((p) => ({
-            user_id: p.user_id,
-            time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
-            time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
-          }))
-        );
+        // The accepted transaction and its durable obligation envelope remain
+        // valid even if the response crossed our proof deadline. Everything
+        // below is reflection or a new decision and belongs to the successor.
+        if (!this.lifecycleCanMutate()) return;
+
+        // Protocol-2 hands carry time banks in the immutable post-commit
+        // envelope. The compatibility path retains the old direct write only
+        // for isolated harnesses and a rolling protocol-1 process.
+        if (!durablePostCommitObligations) {
+          await persistTimeBanks(
+            this.tableId,
+            players.map((p) => ({
+              user_id: p.user_id,
+              time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(
+                this.tableId,
+                p.user_id
+              ),
+              time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
+            }))
+          );
+          if (!this.lifecycleCanMutate()) return;
+        }
 
         // ── AWARD-UNIT LEDGER (2026-08-28, spec §16.2/§17) ──────────────────
         // One row per (pot layer, board, hi/lo side, winner) for every
@@ -2006,7 +2117,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // player is shown the wrong one. Emitting the real id at the moment it
         // exists removes the race; the lazy lookup stays only as a cold-start
         // fallback for players who joined mid-session.
-        if (v_handHistoryId) {
+        if (v_handHistoryId && this.lifecycleCanMutate()) {
           this.hub?.emitEvent(this.tableId, {
             type: 'hand_history_saved',
             table_id: this.tableId,
@@ -2017,7 +2128,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
 
         // ── ADDITIVE anti-cheat feed (#5): observe-only, fire-and-forget, flag-gated (default OFF) ──
-        if (this.integrityFeedEnabled) {
+        if (this.integrityFeedEnabled && this.lifecycleCanMutate()) {
           try {
             const feedRow: HandHistoryRow = {
               id: v_handHistoryId,
@@ -2049,7 +2160,116 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
     // runStep reports the failure, but it must not turn a failed authoritative
     // commit into permission to run later money mutations or unlock the table.
-    if (!authoritativeCommitSucceeded) return;
+    if (!authoritativeCommitSucceeded) {
+      this.setLoopPhase('settlement_fault_uncommitted');
+      this.killForRestart('authoritative_hand_commit_not_proved');
+      throw new Error(
+        `authoritative hand commit was not proved for ${this.tableId}#${snap.handNumber}`
+      );
+    }
+
+    /* The exact settlement committed an immutable post-commit envelope before
+       returning. Any process may finish that already-authorized work, including
+       a predecessor whose local proof expires while this request is in flight;
+       only the row-locked database function mutates durable state. Process-local
+       reflection remains fenced below. The projection worker is the crash and
+       lost-response successor because its outbox DELETE cannot commit until the
+       same envelope reports complete. */
+    let postCommitStateCanReflect = this.lifecycleCanMutate();
+    if (durablePostCommitObligations && v_handHistoryId) {
+      let obligationsApplied = false;
+      let lastObligationError: unknown = null;
+      let attempt = 0;
+      this.setLoopPhase('settlement_post_commit_obligations');
+      while (!obligationsApplied && this.lifecycleCanMutate()) {
+        attempt++;
+        try {
+          const outcome = await processHandPostCommitObligations(v_handHistoryId);
+          if (outcome.ok !== true) {
+            throw new Error(`post-commit obligations refused (${outcome.reason ?? 'unknown'})`);
+          }
+          obligationsApplied = true;
+        } catch (err) {
+          lastObligationError = err;
+          if (attempt === 1 || attempt % 10 === 0) {
+            reportError(err, 'ServerTableEngine.post_commit_obligations_pending', {
+              tableId: this.tableId,
+              handNumber: snap.handNumber,
+              handId: v_handHistoryId,
+              attempt,
+            });
+          }
+          if (attempt === 1) {
+            void raiseFinancialAlert(
+              'critical',
+              'ServerTableEngine.post_commit_obligations_pending',
+              `Hand ${this.tableId}#${snap.handNumber} committed, but its durable post-commit envelope remains behind the causal settlement barrier`,
+              {
+                table_id: this.tableId,
+                hand_number: snap.handNumber,
+                hand_id: v_handHistoryId,
+                error: err instanceof Error ? err.message : String(err),
+              }
+            ).catch((alertError) =>
+              reportError(
+                alertError,
+                'ServerTableEngine.post_commit_obligations_pending.alert_failed',
+                { tableId: this.tableId, handNumber: snap.handNumber }
+              )
+            );
+          }
+          if (this.lifecycleCanMutate()) {
+            this.markProgress();
+            await this.sleep(Math.min(150 * 2 ** Math.min(attempt - 1, 5), 5_000));
+          }
+        }
+      }
+      postCommitStateCanReflect = this.lifecycleCanMutate();
+
+      if (!obligationsApplied) {
+        // The exact outbox row remains authoritative. This predecessor lost
+        // its lifecycle proof; the event-driven successor may finish the DB
+        // envelope, but this process must reflect or schedule nothing else.
+        if (lastObligationError) {
+          reportError(lastObligationError, 'ServerTableEngine.post_commit_handoff', {
+            tableId: this.tableId,
+            handNumber: snap.handNumber,
+            handId: v_handHistoryId,
+          });
+        }
+        return;
+      } else if (postCommitStateCanReflect) {
+        /* Pending add-ons are applied inside the obligation transaction. Read
+           the resulting stacks rather than incrementing engine memory from a
+           response: a concurrent worker may have completed the row first, and
+           its replay receipt intentionally does not claim which process did it. */
+        const { data: persistedSeats, error: persistedSeatError } = await supabase
+          .from('table_seats')
+          .select('user_id,stack')
+          .eq('table_id', this.tableId)
+          .is('left_at', null);
+        if (!this.lifecycleCanMutate()) {
+          postCommitStateCanReflect = false;
+        } else if (persistedSeatError) {
+          reportError(persistedSeatError, 'ServerTableEngine.post_commit_stack_refresh_failed', {
+            tableId: this.tableId,
+            handNumber: snap.handNumber,
+          });
+          this.killForRestart('post_commit_stack_refresh_failed');
+          throw persistedSeatError;
+        } else {
+          const stackByUser = new Map(
+            (persistedSeats ?? []).map((seat) => [seat.user_id as string, Number(seat.stack)])
+          );
+          for (const player of players) {
+            const persisted = stackByUser.get(player.user_id);
+            if (persisted !== undefined && Number.isFinite(persisted)) player.stack = persisted;
+          }
+        }
+      }
+    }
+
+    if (!postCommitStateCanReflect || !this.lifecycleCanMutate()) return;
 
     // SETTLEMENT STEP 8b: Distribute rake — ATOMIC + IDEMPOTENT + RECOVERABLE.
     // RAKE-AUDIT 2026-07-24 [money]: replaced the separate, non-atomic
@@ -2063,7 +2283,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // UNION MODEL UNCHANGED: the union still holds 100% of cash rake; the weekly
     // settlement still returns 90% to clubs (nets 10%).
     await runStep('rake_distribution', true, async () => {
-      if (!this.isTournamentTable() && snap.rake > 0 && this.tableInfo?.club_id) {
+      if (
+        !durablePostCommitObligations &&
+        !this.isTournamentTable() &&
+        snap.rake > 0 &&
+        this.tableInfo?.club_id
+      ) {
         const contribsObj: Record<string, number> = {};
         for (const [uid, amt] of snap.contributions.entries()) {
           contribsObj[uid] = amt;
@@ -2078,6 +2303,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
         let rakeDistributed = false;
         for (let attempt = 0; attempt < 3 && !rakeDistributed; attempt++) {
+          if (!this.lifecycleCanMutate()) return;
           const { error: rdErr } = await supabase.rpc('atomic_distribute_rake', {
             p_table_id: this.tableId,
             p_club_id: this.tableInfo.club_id,
@@ -2095,6 +2321,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             p_returned_uncalled: returnedObj,
             p_rake_method: 'WEIGHTED_CONTRIBUTED',
           });
+          if (!this.lifecycleCanMutate()) return;
           if (!rdErr) {
             rakeDistributed = true;
           } else if (attempt === 2) {
@@ -2125,12 +2352,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               bigBlind: this.tableInfo?.big_blind ?? null,
               lastError: rdErr.message,
             });
+            if (!this.lifecycleCanMutate()) return;
           } else {
             await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+            if (!this.lifecycleCanMutate()) return;
           }
         }
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // SETTLEMENT STEP 8c: Log BBJ contribution
     // Round 44: pass the hand id so bbj_contributions.hand_id links to
@@ -2144,7 +2374,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // true, and was never the contribution's fault. Same hand, same id,
     // whenever its row arrives.
     await runStep('bbj_contribution', true, async () => {
-      if (!this.isTournamentTable() && snap.bbjFee > 0 && this.tableInfo?.club_id) {
+      if (
+        !durablePostCommitObligations &&
+        !this.isTournamentTable() &&
+        snap.bbjFee > 0 &&
+        this.tableInfo?.club_id
+      ) {
         // A5 FIX (2026-08-08): this return value used to be discarded, and
         // logBBJCollection swallowed every failure while logging 1 hand in 100.
         // That was not cosmetic. atomic_distribute_rake computes
@@ -2164,6 +2399,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.tableInfo.big_blind,
           v_handId
         );
+        if (!this.lifecycleCanMutate()) return;
         if (!bbjBanked) {
           await queueUnbankedFee('bbj_contribution', {
             tableId: this.tableId,
@@ -2179,9 +2415,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             bigBlind: this.tableInfo?.big_blind ?? null,
             lastError: 'logBBJCollection returned false',
           });
+          if (!this.lifecycleCanMutate()) return;
         }
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // SETTLEMENT STEP 12: rakeback input (durable rake_records) is now written
     // INSIDE atomic_distribute_rake (STEP 8b) — one atomic, idempotent,
@@ -2200,7 +2438,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // but never surface to the table (the wager is durably in rake_records above,
     // and the next hand's accrual is additive so nothing is lost permanently).
     await runStep('promo_playthrough', false, async () => {
-      if (!this.isTournamentTable() && this.tableInfo?.club_id) {
+      if (!durablePostCommitObligations && !this.isTournamentTable() && this.tableInfo?.club_id) {
         const promoClubId = this.tableInfo.club_id;
         for (const [uid, amt] of snap.contributions.entries()) {
           if (!uid || amt <= 0) continue;
@@ -2222,12 +2460,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // 3b. Bible V8 §4.19: Log insurance settlements (settled in HAND_COMPLETE handler)
     // Insurance premiums → union bank (or club bank for standalone)
     // Insurance payouts → from union bank (or club bank) to player
     await runStep('insurance_ledger', true, async () => {
       if (
+        !durablePostCommitObligations &&
         !this.isTournamentTable() &&
         this.tableInfo?.club_id &&
         snap.insuranceSettlements.length > 0
@@ -2253,9 +2493,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             playerWon: !settlement.won, // settlement.won = insurance paid out = player lost the hand
             kind: settlement.kind,
           });
+          if (!this.lifecycleCanMutate()) return;
         }
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     /* 3b2. THE MINI JACKPOT (BBJ phase 6 of 6). Runs BEFORE the main payout
        step so the ordering in the code reads the way the money does: a hand
@@ -2275,6 +2517,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         return;
       }
       const mini = snap.miniBbjHit;
+      if (!this.lifecycleCanMutate()) return;
       const outcome = await processMiniBBJPayout({
         tableId: this.tableId,
         clubId: this.tableInfo.club_id,
@@ -2291,6 +2534,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           winner_hand: mini.winnerHand?.name,
         },
       });
+      if (!this.lifecycleCanMutate()) return;
 
       if (outcome.status !== 'paid') {
         console.warn(
@@ -2346,6 +2590,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         updatedStacks: players.map((pl) => ({ userId: pl.user_id, stack: pl.stack })),
       });
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // 3c. BBJ Payout — if a BBJ hit was detected in HAND_COMPLETE, process the actual payout
     // Chips credited directly to players' table balances from union/club BBJ pool
@@ -2358,6 +2603,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       ) {
         const bbjHit = snap.bbjHit;
         const payoutConfig = snap.bbjPayoutConfig;
+        if (!this.lifecycleCanMutate()) return;
         const outcome = await processBBJPayout({
           tableId: this.tableId,
           clubId: this.tableInfo.club_id,
@@ -2374,6 +2620,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           seatedUserIds: players.map((p) => p.user_id),
           payoutTotalPercent: payoutConfig.bbjPayoutTotalPercent,
         });
+        if (!this.lifecycleCanMutate()) return;
 
         /* THE TABLE IS TOLD EVEN WHEN THE MONEY IS LATE (BBJ phase 2.2).
            A jackpot that cannot be paid this instant - the commonest cause
@@ -2502,6 +2749,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             const siblingClubs = new Set(
               await resolveJackpotSiblingClubIds(this.tableInfo.club_id)
             );
+            if (!this.lifecycleCanMutate()) return;
             const siblings = ServerTableEngineSettlement.liveCashTableIdsInClubs(
               siblingClubs,
               this.tableId
@@ -2543,6 +2791,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // Tournament chip mirroring is part of fn_ca_commit_hand_settlement.  A
     // separate post-commit mirror would reopen the split-brain window this
@@ -2560,7 +2809,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       user_id: p.user_id,
       stack: p.stack,
     }));
-    if (this.handCompleteCallback && finalStacks.some((player) => Number(player.stack) <= 0)) {
+    if (
+      this.lifecycleCanMutate() &&
+      this.handCompleteCallback &&
+      finalStacks.some((player) => Number(player.stack) <= 0)
+    ) {
       try {
         this.handCompleteCallback(this.tableId, finalStacks);
       } catch (err) {
@@ -2576,17 +2829,19 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // final stack. Add-ons are capped so stack + add-on <= max buy-in.
     // Any excess is refunded to the player's club wallet.
     await runStep('pending_addons', true, async () => {
-      if (!this.isTournamentTable()) {
+      if (!durablePostCommitObligations && !this.isTournamentTable()) {
         await this.processPendingAddOns(players);
+        if (!this.lifecycleCanMutate()) return;
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // 5. Auto-rebuy busted horses (cash games only)
     await runStep('horse_rebuys', false, async () => {
       if (!this.isTournamentTable() && !isMaintenanceFrozen()) {
         const bustHorses = players.filter((p) => p.is_horse && p.stack === 0);
         for (const horse of bustHorses) {
-          if (isMaintenanceFrozen()) return;
+          if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
           const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
 
           /**
@@ -2598,6 +2853,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            */
           if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            if (!this.lifecycleCanMutate()) return;
             this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking so the horse doesn't leave a ghost
             // entry in disconnect_states.
@@ -2630,7 +2886,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
             rebuysTaken: currentRebuys,
           });
-          if (isMaintenanceFrozen()) return;
+          if (isMaintenanceFrozen() || !this.lifecycleCanMutate()) return;
           const outcome =
             rebuyAmount > 0
               ? await autoRebuyHorse(
@@ -2641,6 +2897,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                   horseRebuyOperationId(this.tableId, horse.user_id, snap.handNumber)
                 )
               : 'refused';
+          if (!this.lifecycleCanMutate()) return;
           if (outcome === 'deferred') return;
           if (outcome === 'funded') {
             horse.stack = rebuyAmount;
@@ -2650,6 +2907,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             );
           } else {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            if (!this.lifecycleCanMutate()) return;
             this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking on insufficient-funds leave too.
             this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
@@ -2666,6 +2924,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // 5.7 CHIP CONTINUITY (Operation Table Stakes, Slice 0): the hand is
     // settled, add-ons and horse rebuys have landed, so every seated player's
@@ -2683,8 +2942,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             active: this.isContinuityActive(p.user_id),
           }))
         );
+        if (!this.lifecycleCanMutate()) return;
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // 5.5 Auto-Cashout successful horses (bankroll management)
     // Always wait until right before they are the Big Blind to leave.
@@ -2732,7 +2993,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // out the same stay clock. A refusal simply means "not this
           // orbit" - the target still stands and it tries again when the big
           // blind comes back around, exactly as a human would.
+          if (!this.lifecycleCanMutate()) return;
           const exit = await atomicCashoutVoluntary(horse.user_id, this.tableId, horse.seat_number);
+          if (!this.lifecycleCanMutate()) return;
           if (!exit.ok) {
             if (exit.code === 'LEAVE_LOCKED') {
               this.chipContinuity.noteRefusal(horse.user_id, exit.stayRemainingMs);
@@ -2757,10 +3020,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // 5.9 FIX 143: Bible V8 §7.12 — Apply deferred sit-outs now that the hand is over
     await runStep('deferred_sitouts', false, async () => {
-      if (this.pendingSitOut.size > 0) {
+      if (this.lifecycleCanMutate() && this.pendingSitOut.size > 0) {
         for (const userId of this.pendingSitOut) {
           this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
           console.log(`[ServerTableEngine:${this.tableId}] Deferred sit-out applied: ${userId}`);
@@ -2768,6 +3032,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         this.pendingSitOut.clear();
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // 6. Process leave-pending players (cash games only)
     await runStep('leave_pending', true, async () => {
@@ -2781,10 +3046,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const cashedOutIds = await processLeavePending(
           this.tableId,
           this.tableInfo?.club_id || '',
-          (lockedUserId, stayRemainingMs) =>
-            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+          (lockedUserId, stayRemainingMs) => {
+            if (this.lifecycleCanMutate()) {
+              this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs);
+            }
+          },
           this.forcedLeaves
         );
+        if (!this.lifecycleCanMutate()) return;
         for (const userId of cashedOutIds) {
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
           this.timeBankEngine.removePlayer(this.tableId, userId);
@@ -2801,8 +3070,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // to be announced, so nobody is moved off a hand they were not told
         // about.
         await this.executePendingSeatMoves({ announcedOnly: true });
+        if (!this.lifecycleCanMutate()) return;
       }
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // SETTLEMENT STEP 15: Unlock table — authoritative recount, ready for next hand
     await runStep('table_unlock', true, async () => {
@@ -2822,6 +3093,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         .select('*', { count: 'exact', head: true })
         .eq('table_id', this.tableId)
         .is('left_at', null);
+      if (!this.lifecycleCanMutate()) return;
       let finalCount: number | null = null;
       if (countErr || dbPlayerCount === null || dbPlayerCount === undefined) {
         reportError(
@@ -2833,6 +3105,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       } else {
         finalCount = dbPlayerCount;
         await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+        if (!this.lifecycleCanMutate()) return;
       }
 
       // Phase X5 (2026-04-28): emit table_unlocked event paired with the
@@ -2851,6 +3124,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         timestamp: Date.now(),
       });
     });
+    if (!this.lifecycleCanMutate()) return;
 
     // Settlement pipeline complete - table unlocked for next hand.
     // A HAND ENDED (2026-09-05): leavers cashed out, announced moves landed,

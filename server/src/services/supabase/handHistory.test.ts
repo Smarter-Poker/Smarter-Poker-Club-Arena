@@ -158,6 +158,7 @@ beforeEach(async () => {
 
 describe('logHandHistory - accepted-hand transaction', () => {
   const historyId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const leaseGeneration = 'bbbbbbbb-0000-4000-8000-000000000001';
   const atomicParams = (handNumber = GLOBAL_HAND + 500) => ({
     ...params(handNumber),
     atomicCommit: {
@@ -169,8 +170,60 @@ describe('logHandHistory - accepted-hand transaction', () => {
       bbj: 0,
       ref: `hand:${handNumber}`,
       inflow: 0,
+      leaseInstanceId: 'engine-instance-1',
+      leaseGeneration,
     },
   });
+  const obligationsParams = (handNumber = GLOBAL_HAND + 600) => {
+    const input = atomicParams(handNumber);
+    const assertLeaseAuthority = vi.fn();
+    return {
+      ...input,
+      atomicCommit: {
+        ...input.atomicCommit,
+        assertLeaseAuthority,
+        acceptedPostCommitFacts: {
+          contributions: { u1: 20, u2: 20 },
+          returned_uncalled: {},
+          insurance: [],
+        },
+        postCommitObligations: {
+          version: 1 as const,
+          time_banks: [
+            { user_id: 'u1', uses_remaining: 1, seconds_remaining: 25 },
+            { user_id: 'u2', uses_remaining: 0, seconds_remaining: 0 },
+          ],
+          rake: {
+            club_id: 'cccccccc-0000-4000-8000-000000000001',
+            amount: 2,
+            bbj: 0,
+            pot: 40,
+            num_players: 2,
+            contributions: { u1: 20, u2: 20 },
+            returned_uncalled: {},
+            tournament_id: null,
+            method: 'WEIGHTED_CONTRIBUTED',
+          },
+          bbj_contribution: null,
+          promo_playthrough: [
+            {
+              club_id: 'cccccccc-0000-4000-8000-000000000001',
+              user_id: 'u1',
+              wagered: 20,
+            },
+            {
+              club_id: 'cccccccc-0000-4000-8000-000000000001',
+              user_id: 'u2',
+              wagered: 20,
+            },
+          ],
+          insurance: [],
+          pending_addons: { enabled: true as const, max_buy_in: 200 },
+        },
+      },
+      assertLeaseAuthority,
+    };
+  };
 
   it('uses the one authoritative RPC and wakes projection only after its receipt is proved', async () => {
     atomicRpcResults = [
@@ -204,6 +257,8 @@ describe('logHandHistory - accepted-hand transaction', () => {
         p_bbj: 0,
         p_ref: `hand:${input.handNumber}`,
         p_inflow: 0,
+        p_instance_id: 'engine-instance-1',
+        p_lease_generation: leaseGeneration,
       },
     });
     expect(rpcCalls[0].args.p_hand_row).toMatchObject({
@@ -214,6 +269,75 @@ describe('logHandHistory - accepted-hand transaction', () => {
     expect(calls).toHaveLength(0);
     expect(handHistoryQueueDepth()).toBe(0);
     expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays one byte-identical obligations-aware request after a lost response', async () => {
+    vi.useFakeTimers();
+    try {
+      const input = obligationsParams();
+      atomicRpcResults = [
+        { data: null, error: { message: 'response body timed out after commit' } },
+        {
+          data: {
+            success: true,
+            atomic_hand_commit: true,
+            history_id: historyId,
+            replay: true,
+            post_commit_obligations: true,
+          },
+          error: null,
+        },
+      ];
+
+      const pending = logHandHistory(input);
+      await vi.advanceTimersByTimeAsync(250);
+      const result = await pending;
+
+      expect(result).toMatchObject({ handId: historyId, settlementCommitted: true });
+      expect(rpcCalls).toHaveLength(2);
+      expect(rpcCalls[1]).toEqual(rpcCalls[0]);
+      expect(rpcCalls[0].args).toMatchObject({
+        p_post_commit_obligations: input.atomicCommit.postCommitObligations,
+        p_hand_row: {
+          _accepted_post_commit_facts: input.atomicCommit.acceptedPostCommitFacts,
+        },
+      });
+      expect(input.assertLeaseAuthority).toHaveBeenCalledTimes(2);
+      expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refuses an obligations request with no independently accepted facts before any RPC', async () => {
+    const input = obligationsParams(GLOBAL_HAND + 601);
+    delete (input.atomicCommit as { acceptedPostCommitFacts?: unknown }).acceptedPostCommitFacts;
+
+    await expect(logHandHistory(input)).rejects.toThrow(
+      /atomic hand commit refused \(post_commit_facts_missing\)/
+    );
+    expect(rpcCalls).toHaveLength(0);
+    expect(mockWakeHandProjection).not.toHaveBeenCalled();
+  });
+
+  it('does not accept an ordinary hand receipt for the obligations-aware door', async () => {
+    atomicRpcResults = [
+      {
+        data: {
+          success: true,
+          atomic_hand_commit: true,
+          history_id: historyId,
+          replay: false,
+        },
+        error: null,
+      },
+    ];
+
+    await expect(logHandHistory(obligationsParams(GLOBAL_HAND + 602))).rejects.toThrow(
+      /atomic hand commit refused \(missing_post_commit_receipt\)/
+    );
+    expect(rpcCalls).toHaveLength(1);
+    expect(mockWakeHandProjection).not.toHaveBeenCalled();
   });
 
   it('fails closed on a semantic refusal without retry, history lookup, queue, or projection wake', async () => {
@@ -283,6 +407,21 @@ describe('logHandHistory - accepted-hand transaction', () => {
     expect(rpcCalls[0].args).toEqual(rpcCalls[1].args);
     expect(mockWakeHandProjection).toHaveBeenCalledTimes(1);
     expect(handHistoryQueueDepth()).toBe(0);
+  });
+
+  it('refuses incomplete or malformed generation authority before any RPC', async () => {
+    const incomplete = atomicParams(GLOBAL_HAND + 504);
+    delete (incomplete.atomicCommit as { leaseGeneration?: string }).leaseGeneration;
+    await expect(logHandHistory(incomplete)).rejects.toThrow(
+      /atomic hand commit refused \(incomplete_lease_authority\)/
+    );
+
+    const malformed = atomicParams(GLOBAL_HAND + 505);
+    malformed.atomicCommit.leaseGeneration = 'not-a-uuid';
+    await expect(logHandHistory(malformed)).rejects.toThrow(
+      /atomic hand commit refused \(invalid_lease_authority\)/
+    );
+    expect(rpcCalls).toHaveLength(0);
   });
 });
 

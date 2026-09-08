@@ -11,6 +11,9 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import { isMaintenanceFrozen } from '../../maintenance/freezeState.js';
+
+export type HorseAutoRebuyResult = 'funded' | 'refused' | 'deferred';
 
 /**
  * Auto-rebuy a horse from their Player Wallet atomically.
@@ -28,36 +31,55 @@ export async function autoRebuyHorse(
   tableId: string,
   userId: string,
   rebuyAmount: number,
-  clubId: string
-): Promise<boolean> {
+  clubId: string,
+  operationId: string
+): Promise<HorseAutoRebuyResult> {
   void clubId;
+  if (isMaintenanceFrozen()) return 'deferred';
   try {
     // Fund the horse rebuy from the TABLE's club treasury (fn_horse_fund_from
     // _treasury derives the club from the table). Horses no longer draw on a
     // globally-minted wallet — the chips come from the club's real bankroll and
     // the rebuy fails cleanly if the treasury is short (the horse busts, correct
     // conservation behavior). Real-player rebuys still use atomic_table_rebuy.
-    const { data, error } = await supabase.rpc('fn_horse_fund_from_treasury', {
-      p_table_id: tableId,
-      p_user_id: userId,
-      p_amount: rebuyAmount,
-    });
+    let lastFailure = '';
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      if (isMaintenanceFrozen()) return 'deferred';
+      const { data, error } = await supabase.rpc('fn_horse_fund_from_treasury', {
+        p_table_id: tableId,
+        p_user_id: userId,
+        p_amount: rebuyAmount,
+        p_op_id: operationId,
+      });
 
-    if (error || !data?.success) {
-      const msg = error?.message || data?.error || '';
-      if (!msg.includes('insufficient') && !msg.includes('no active seat')) {
-        reportError(
-          new Error(msg || 'horse treasury rebuy failed'),
-          'DB.horse_treasury_rebuy_failed'
-        );
+      const msg = String(error?.message || data?.error || '');
+      if (data?.success === true && !error) return 'funded';
+      if (
+        data?.deferred === true ||
+        /PLATFORM_FROZEN|scheduled maintenance/i.test(msg) ||
+        isMaintenanceFrozen()
+      ) {
+        return 'deferred';
       }
-      return false;
+
+      if (/insufficient|no active seat|positive amount required|table has no club/i.test(msg)) {
+        return 'refused';
+      }
+
+      lastFailure = msg || 'horse treasury rebuy response was not authoritative';
+      if (attempt === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
     }
 
-    return true;
+    /* A transport/unknown failure is not a financial refusal. The keyed call
+       may already have committed, so standing the horse up would erase the
+       only safe recovery path. Keep the seat and let the same bust key retry. */
+    reportError(new Error(lastFailure), 'DB.horse_treasury_rebuy_ambiguous');
+    return 'deferred';
   } catch (err: any) {
     reportError(err, 'DB.Unexpected_horse_treasury_rebuy');
-    return false;
+    return 'deferred';
   }
 }
 

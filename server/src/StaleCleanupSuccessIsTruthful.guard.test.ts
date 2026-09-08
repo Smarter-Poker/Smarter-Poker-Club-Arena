@@ -33,10 +33,13 @@ describe('startup stale-cleanup success reporting', () => {
     );
   });
 
-  it('does not disguise a failed RUNNING to COMPLETING claim as a benign CAS loss', () => {
-    expect(cleanup).toMatch(
-      /const \{ data: completingClaim, error: completingClaimError \} = await supabase[\s\S]*?if \(completingClaimError\) \{[\s\S]*?GameServer\.stale_tournament_claim_failed[\s\S]*?continue;[\s\S]*?if \(!completingClaim \|\| completingClaim\.length === 0\)/
-    );
+  it('never manufactures finish evidence from elapsed time', () => {
+    const staleStart = cleanup.indexOf('const twelveHoursAgo =');
+    const staleEnd = cleanup.indexOf('// 7. Recover stuck COMPLETING tournaments', staleStart);
+    const staleSweep = cleanup.slice(staleStart, staleEnd);
+    expect(staleSweep).toContain('GameServer.stale_tournament_left_for_resume');
+    expect(staleSweep).not.toMatch(/update\(\{\s*status:\s*'COMPLETING'/);
+    expect(staleSweep).not.toContain('recoverStuckCompletingTournaments(');
   });
 
   it('treats an orphan-table page-list error as a failed sweep', () => {

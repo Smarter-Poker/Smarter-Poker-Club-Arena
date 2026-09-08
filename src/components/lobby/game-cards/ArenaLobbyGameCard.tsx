@@ -208,7 +208,17 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
   const actions = useMemo(() => arenaGameCardActionsForEntry(entry, ctx), [entry, ctx]);
 
   return (
-    <div onFocus={() => onSelect?.(entry)}>
+    <div
+      onFocus={() => onSelect?.(entry)}
+      data-testid="arena-lobby-game-card"
+      data-id={entry.id}
+      data-kind={entry.kind}
+      data-status={entry.status}
+      data-live={entry.live ? 'true' : 'false'}
+      data-players={entry.players}
+      data-capacity={entry.capacity}
+      data-target={entry.game ? 'game' : 'table'}
+    >
       <ArenaGameCard data={data.card} actions={actions} presentation="mobile" selected={selected} />
     </div>
   );

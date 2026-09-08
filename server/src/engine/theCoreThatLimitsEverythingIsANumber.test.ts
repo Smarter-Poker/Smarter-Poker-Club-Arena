@@ -113,7 +113,7 @@ describe('the number leaves the process', () => {
     expect(SERVER).toContain('equityGovernor.startSampling();');
     expect(SERVER).toContain('equityGovernor.stopSampling();');
     const start = SERVER.indexOf('equityGovernor.startSampling();');
-    const stopFn = SERVER.indexOf('async stop(): Promise<void> {');
+    const stopFn = SERVER.indexOf('stop(): Promise<void> {');
     expect(start).toBeGreaterThan(0);
     expect(stopFn).toBeGreaterThan(0);
   });

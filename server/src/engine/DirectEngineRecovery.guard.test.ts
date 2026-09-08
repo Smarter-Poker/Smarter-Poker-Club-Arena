@@ -8,10 +8,16 @@ const GAME_SERVER = readFileSync(resolve(process.cwd(), 'src/GameServer.ts'), 'u
 const method = (name: string): string => sliceMethod(GAME_SERVER, name);
 
 describe('direct table-engine terminal recovery', () => {
+  it('never acquires a throwaway generation outside the serialized admission', () => {
+    const admission = method('private async performCashTableEngineAdmission(');
+    expect(GAME_SERVER).not.toContain('retryRefusedClaims');
+    expect(admission.match(/await claimTableLease\(/g) ?? []).toHaveLength(1);
+  });
+
   it('binds every GameServer-owned engine generation before publishing it', () => {
     const constructions = [...GAME_SERVER.matchAll(/new ServerTableEngine\(/g)];
     const bindings = GAME_SERVER.match(/this\.wireDirectTableEngineRecovery\(/g) ?? [];
-    expect(constructions).toHaveLength(2);
+    expect(constructions).toHaveLength(1);
     expect(bindings).toHaveLength(constructions.length);
 
     for (const construction of constructions) {
@@ -25,12 +31,12 @@ describe('direct table-engine terminal recovery', () => {
     }
   });
 
-  it('publishes a classified readiness promise for all three direct start paths', () => {
+  it('publishes one classified readiness promise for every direct start path', () => {
     const readiness = method('private trackDirectTableEngineReadiness(');
     expect(readiness).toContain('engine.ready.then<DirectTableAdmission>');
     expect(readiness).toContain('this.tableEngineStartPromises.set(tableId, tracked)');
     expect(readiness).toContain('this.tableEngineStartPromises.get(tableId) === tracked');
-    expect(GAME_SERVER.match(/this\.trackDirectTableEngineReadiness\(/g) ?? []).toHaveLength(2);
+    expect(GAME_SERVER.match(/this\.trackDirectTableEngineReadiness\(/g) ?? []).toHaveLength(1);
   });
 
   it('tears down and compare-deletes the failed generation before readmission', () => {
@@ -38,13 +44,16 @@ describe('direct table-engine terminal recovery', () => {
     const owns = recovery.indexOf('this.tableEngines.get(tableId) !== engine');
     const teardown = recovery.indexOf('await engine.stop()');
     const compareAgain = recovery.indexOf('this.tableEngines.get(tableId) !== engine', owns + 1);
+    const release = recovery.indexOf('await releaseTables([', compareAgain);
     const remove = recovery.indexOf('this.tableEngines.delete(tableId)');
     const readmit = recovery.indexOf('await this.ensureCashTableEngineAdmission(tableId)');
 
     expect(owns).toBeGreaterThan(-1);
     expect(teardown).toBeGreaterThan(owns);
     expect(compareAgain).toBeGreaterThan(teardown);
-    expect(remove).toBeGreaterThan(compareAgain);
+    expect(release).toBeGreaterThan(compareAgain);
+    expect(recovery).toContain('leaseGeneration: leaseAuthority.generation');
+    expect(remove).toBeGreaterThan(release);
     expect(readmit).toBeGreaterThan(remove);
     expect(recovery).toContain('if (this.tournamentOwnedTables.has(tableId)) return;');
     expect(recovery).toContain('if (deferReadmission)');
@@ -78,10 +87,13 @@ describe('direct table-engine terminal recovery', () => {
     expect(finish).not.toContain('releaseTables(');
 
     const admission = method('private async performCashTableEngineAdmission(');
-    expect(admission).toContain('await releaseTables([tableId])');
+    expect(admission).toContain('generation: lease.leaseGeneration');
     expect(admission).toContain('this.directAdmissionIsCurrent(generation)');
-    const claimAt = admission.indexOf('await claimTableLease(tableId)');
-    const releaseAt = admission.indexOf('await releaseTables([tableId])');
+    const claimAt = admission.indexOf('await claimTableLease(tableId, requestedLeaseGeneration)');
+    const releaseAt = admission.indexOf(
+      'await this.awaitDirectTableLeaseRelease(tableId)',
+      claimAt
+    );
     expect(claimAt).toBeGreaterThan(-1);
     expect(releaseAt).toBeGreaterThan(claimAt);
   });
@@ -107,16 +119,38 @@ describe('direct table-engine terminal recovery', () => {
     expect(admission).toContain('this.directTableAdmissionOperations.delete(tableId)');
   });
 
-  it('routes both construction sites into recovery and discovery through the same admission', () => {
-    for (const [signature, reason] of [
-      ['private async startTableEngineForTesting(', 'test_start_failed'],
-      ['private async performCashTableEngineAdmission(', 'direct_start_failed'],
-    ] as const) {
-      const constructionSite = method(signature);
-      expect(constructionSite).toContain(
-        `this.recoverDirectTableEngine(tableId, engine, '${reason}', true)`
-      );
-    }
+  it('reuses one caller generation for delayed retries and rotates after the causal admission ends', () => {
+    const admission = method('private async performCashTableEngineAdmission(');
+    const clear = method('private clearDirectTableRecovery(');
+    expect(GAME_SERVER).toContain(
+      'private directTableAdmissionLeaseGenerations = new Map<string, string>()'
+    );
+    expect(admission).toContain(
+      'this.directTableAdmissionLeaseGenerations.get(tableId) ?? randomUUID()'
+    );
+    expect(admission).toContain(
+      'this.directTableAdmissionLeaseGenerations.set(tableId, requestedLeaseGeneration)'
+    );
+    expect(admission).toContain('claimTableLease(tableId, requestedLeaseGeneration)');
+    const publish = admission.indexOf('this.tableEngines.set(tableId, engine)');
+    const consumed = admission.indexOf(
+      'this.directTableAdmissionLeaseGenerations.delete(tableId)',
+      publish
+    );
+    expect(publish).toBeGreaterThan(-1);
+    expect(consumed).toBeGreaterThan(publish);
+    expect(consumed).toBeLessThan(admission.indexOf('void engine', consumed));
+    expect(clear).toContain('this.directTableAdmissionLeaseGenerations.delete(tableId)');
+  });
+
+  it('routes test mode and discovery through the one exact cash admission', () => {
+    const testMode = method('private async startTableEngineForTesting(');
+    expect(testMode).toContain('await this.ensureCashTableEngineAdmission(tableId)');
+    expect(testMode).toContain('this.finishDirectTableAdmission(');
+    expect(testMode).not.toContain('new ServerTableEngine(');
+    expect(method('private async performCashTableEngineAdmission(')).toContain(
+      "this.recoverDirectTableEngine(tableId, engine, 'direct_start_failed', true)"
+    );
     expect(GAME_SERVER).toContain('this.ensureCashTableEngineAdmission(row.table_id)');
     expect(method('private async discoverCashTables()')).toContain('this.launchDiscoveryJob(');
     expect(GAME_SERVER).not.toContain('GameServer.E2E_test_table_engine_stop_error');
@@ -148,7 +182,7 @@ describe('direct table-engine terminal recovery', () => {
       expect(method(loop)).toContain('while (this.directAdmissionIsCurrent(generation))');
     }
 
-    const fenceAt = stopFence.indexOf('manager.fenceForServerShutdown()');
+    const fenceAt = stopFence.indexOf('manager.beginServerShutdownDrain()');
     const externalFenceAt = stopFence.indexOf('this.beginExternalShutdownOwnershipBarrier()');
     const teardownAt = stopFence.indexOf(
       'this.performStop(tournamentManagersAtFence, externalOwnership)'
@@ -174,6 +208,28 @@ describe('direct table-engine terminal recovery', () => {
     }
   });
 
+  it('runs one serialized ownership lifecycle independently of discovery', () => {
+    const boot = method('private async performStart(');
+    const renewalStart = boot.indexOf('this.runOwnershipLeaseRenewalLoop(generation)');
+    const cashDiscovery = boot.indexOf('this.discoverCashTables()', renewalStart);
+    const tournamentDiscovery = boot.indexOf('this.discoverTournaments()', renewalStart);
+    expect(renewalStart).toBeGreaterThan(-1);
+    expect(cashDiscovery).toBeGreaterThan(renewalStart);
+    expect(tournamentDiscovery).toBeGreaterThan(renewalStart);
+
+    const wrapper = method('private renewOwnedEngineLeaseProofs()');
+    expect(wrapper).toContain('const existing = this.ownershipLeaseRenewalOperation;');
+    expect(wrapper).toContain('if (existing) return existing;');
+    expect(wrapper).toContain('this.performOwnedEngineLeaseProofRenewal()');
+
+    const pass = method('private async performOwnedEngineLeaseProofRenewal()');
+    expect(pass).toContain('await Promise.allSettled([');
+    expect(pass).toContain('this.renewVerifiedCashTableLeaseProofs()');
+    expect(pass).toContain('this.renewVerifiedTournamentManagerLeaseProofs()');
+    expect(pass).not.toContain('discoverCashTables');
+    expect(pass).not.toContain('discoverTournaments');
+  });
+
   it('serializes boot and teardown and fences every boot await', () => {
     const start = method('start(): Promise<void>');
     const boot = method('private async performStart(');
@@ -185,7 +241,8 @@ describe('direct table-engine terminal recovery', () => {
     expect(stop).toContain('if (this.teardownPromise) return this.teardownPromise;');
     expect(stop).toContain('this.running = false;');
     expect(stop).toContain('this.lifecycleGeneration += 1;');
-    expect(stop).toContain('manager.fenceForServerShutdown()');
+    expect(stop).toContain('manager.beginServerShutdownDrain()');
+    expect(teardown).toContain('manager.fenceForServerShutdown()');
     expect(
       boot.match(/this\.directAdmissionIsCurrent\(generation\)/g)?.length ?? 0
     ).toBeGreaterThan(5);
@@ -201,7 +258,7 @@ describe('direct table-engine terminal recovery', () => {
     expect(teardown).toContain("reportError(error, 'GameServer.supporting_shutdown_failed'");
     expect(teardown).toContain('this.clockSkewTimer = null;');
     const externalFailureAt = teardown.indexOf("externalOwnershipResult.status === 'rejected'");
-    const releaseAt = teardown.indexOf('await releaseTables()');
+    const releaseAt = teardown.indexOf('await releaseTables(cashLeaseClaims)');
     expect(externalFailureAt).toBeGreaterThan(-1);
     expect(releaseAt).toBeGreaterThan(externalFailureAt);
   });
@@ -228,14 +285,23 @@ describe('direct table-engine terminal recovery', () => {
   it('constructs every tournament manager through one leased lifecycle admission', () => {
     expect(GAME_SERVER.match(/new TournamentManager\(/g) ?? []).toHaveLength(1);
     const admission = method('private async performTournamentManagerAdmission(');
-    const claimAt = admission.indexOf('await claimTournamentLease(tournamentId)');
+    const claimAt = admission.indexOf(
+      'await claimTournamentLease(tournamentId, requestedLeaseGeneration)'
+    );
     const staleAt = admission.indexOf('!this.directAdmissionIsCurrent(generation)', claimAt);
-    const releaseAt = admission.indexOf('await releaseTournaments([tournamentId])', staleAt);
-    const constructAt = admission.indexOf('new TournamentManager(tournamentId, this)', releaseAt);
+    const releaseAt = admission.indexOf(
+      'await this.awaitTournamentManagerLeaseRelease(tournamentId)',
+      staleAt
+    );
+    const constructAt = admission.indexOf('new TournamentManager(', releaseAt);
     expect(claimAt).toBeGreaterThan(-1);
     expect(staleAt).toBeGreaterThan(claimAt);
     expect(releaseAt).toBeGreaterThan(staleAt);
     expect(constructAt).toBeGreaterThan(releaseAt);
+    expect(admission.slice(constructAt, constructAt + 240)).toContain('lease.leaseGeneration');
+    expect(admission.slice(constructAt, constructAt + 240)).toContain(
+      'lease.proofDeadlineMonotonicMs'
+    );
     expect(method('private async discoverTournaments()')).not.toContain('new TournamentManager(');
     expect(method('private async discoverSeatFirstStarts()')).not.toContain(
       'new TournamentManager('
@@ -248,9 +314,10 @@ describe('direct table-engine terminal recovery', () => {
     expect(retry).not.toContain('setInterval(');
     expect(admission).toContain("lease.status === 'retryable_failure'");
     expect(admission).toContain('this.scheduleTournamentManagerAdmissionRetry(');
-    expect(
-      admission.match(/await releaseTournaments\(\[tournamentId\]\)/g)?.length ?? 0
-    ).toBeGreaterThanOrEqual(3);
+    expect(admission).toContain('this.tournamentManagerPendingLeaseReleases.set(');
+    const retirement = method('private async stopTournamentManagerIfOwned(');
+    expect(retirement).toContain('await releaseTournaments([{ tournamentId, leaseGeneration }])');
+    expect(retirement).toContain('this.tournamentManagerLeaseReleaseOperations.set(');
   });
 
   it('retains leadership and leases until every dealer and manager is stopped', () => {
@@ -262,8 +329,8 @@ describe('direct table-engine terminal recovery', () => {
     const engineStop = stop.indexOf('const engineStops = engines.map((engine) => engine.stop())');
     const managerStop = stop.indexOf('const managerStops = tournamentManagers.map(');
     const ownershipGate = stop.indexOf('if (ownershipFailures.length > 0)');
-    const tableRelease = stop.indexOf('await releaseTables();');
-    const tournamentRelease = stop.indexOf('await releaseTournaments();');
+    const tableRelease = stop.indexOf('await releaseTables(cashLeaseClaims)');
+    const tournamentRelease = stop.indexOf('await releaseTournaments(');
     const leadershipRelease = stop.indexOf('await releaseLeadership();');
 
     expect(firstProducerFence).toBeGreaterThan(-1);
@@ -274,6 +341,9 @@ describe('direct table-engine terminal recovery', () => {
     expect(managerStop).toBeGreaterThan(engineStop);
     expect(ownershipGate).toBeGreaterThan(managerStop);
     expect(tableRelease).toBeGreaterThan(ownershipGate);
+    expect(stop).toContain(
+      'cashLeaseClaimsByTable.set(engineTableIds[index], authority.generation)'
+    );
     expect(tournamentRelease).toBeGreaterThan(tableRelease);
     expect(leadershipRelease).toBeGreaterThan(tournamentRelease);
     expect(stop.indexOf('stopLeadershipRenewal()')).toBeGreaterThan(managerStop);
@@ -290,5 +360,37 @@ describe('direct table-engine terminal recovery', () => {
     ]) {
       expect(stop).toContain(`['${producer}',`);
     }
+  });
+
+  it('certifies exact distributed release before reporting shutdown success', () => {
+    const stopFence = method('stop(): Promise<void>');
+    const managerDrainFence = stopFence.indexOf('manager.beginServerShutdownDrain()');
+    const shutdownRenewal = stopFence.indexOf('this.startShutdownOwnershipLeaseRenewal()');
+    const teardownStart = stopFence.indexOf('this.performStop(');
+    expect(managerDrainFence).toBeGreaterThan(-1);
+    expect(shutdownRenewal).toBeGreaterThan(managerDrainFence);
+    expect(teardownStart).toBeGreaterThan(shutdownRenewal);
+
+    const teardown = method('private async performStop(');
+    const preDrainRenewal = teardown.indexOf('await this.renewOwnedEngineLeaseProofs()');
+    const stopShutdownRenewal = teardown.indexOf('await this.stopShutdownOwnershipLeaseRenewal()');
+    const finalManagerFence = teardown.indexOf('manager.fenceForServerShutdown()');
+    const cashRelease = teardown.indexOf('await releaseTables(cashLeaseClaims)');
+    const tournamentRelease = teardown.indexOf('await releaseTournaments(');
+    const distributedFailureGate = teardown.indexOf('if (distributedReleaseFailures.length > 0)');
+    const generationClear = teardown.indexOf('this.directTableAdmissionLeaseGenerations.clear()');
+    const leadershipRelease = teardown.indexOf('await releaseLeadership()');
+    const success = teardown.indexOf("console.log('[GameServer] Shutdown complete.')");
+
+    expect(preDrainRenewal).toBeGreaterThan(-1);
+    expect(stopShutdownRenewal).toBeGreaterThan(preDrainRenewal);
+    expect(finalManagerFence).toBeGreaterThan(stopShutdownRenewal);
+    expect(cashRelease).toBeGreaterThan(finalManagerFence);
+    expect(tournamentRelease).toBeGreaterThan(cashRelease);
+    expect(distributedFailureGate).toBeGreaterThan(tournamentRelease);
+    expect(teardown.slice(distributedFailureGate, generationClear)).toContain('throw error;');
+    expect(generationClear).toBeGreaterThan(distributedFailureGate);
+    expect(leadershipRelease).toBeGreaterThan(generationClear);
+    expect(success).toBeGreaterThan(leadershipRelease);
   });
 });

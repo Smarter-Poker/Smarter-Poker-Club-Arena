@@ -44,6 +44,28 @@ describe('the add-on window follows durable database truth', () => {
     expect(closeTimer).toBeGreaterThan(latch);
     expect(broadcast).toBeGreaterThan(closeTimer);
     expect(trigger).toMatch(/if \(!durableWindowProven\) this\.addOnPeriodTriggered = false/);
+    const lifecycle = trigger.indexOf('const lifecycle = this.captureLifecycleToken()');
+    const update = trigger.indexOf('.update({', lifecycle);
+    const writeReceipt = trigger.indexOf('.select(projection)', update);
+    const readback = trigger.indexOf('.select(projection)', writeReceipt + 1);
+    const postReadFence = trigger.indexOf(
+      'if (!this.lifecycleIsCurrent(lifecycle)) return;',
+      readback
+    );
+    expect(lifecycle).toBeGreaterThanOrEqual(0);
+    expect(update).toBeGreaterThan(lifecycle);
+    expect(writeReceipt).toBeGreaterThan(update);
+    expect(readback).toBeGreaterThan(writeReceipt);
+    expect(postReadFence).toBeGreaterThan(readback);
+  });
+
+  it('rejects an impossible requested deadline before attempting the compare-and-set', () => {
+    const deadline = trigger.indexOf('const requestedEndMs = fromStart');
+    const validation = trigger.indexOf('requestedEndMs <= requestedStartMs', deadline);
+    const update = trigger.indexOf('.update({', validation);
+    expect(deadline).toBeGreaterThanOrEqual(0);
+    expect(validation).toBeGreaterThan(deadline);
+    expect(update).toBeGreaterThan(validation);
   });
 
   it('adopts concurrent or expired windows without duplicate one-shot effects', () => {
@@ -65,9 +87,17 @@ describe('the add-on window follows durable database truth', () => {
 
   it('broadcast failures cannot suppress offering or durable closure', () => {
     const broadcastCatch = trigger.indexOf('TournamentManagerBase.addon_period_broadcast');
-    const offer = trigger.indexOf('await this.tryTournamentAddOns()');
+    const offerClock = trigger.indexOf(
+      'this.lastAddOnOfferAt = Date.now() - TournamentManagerBase.ADD_ON_RETRY_MS',
+      broadcastCatch
+    );
+    const offerWake = trigger.indexOf('this.requestEliminationSweep()', offerClock);
+    const retry = trigger.indexOf('this.scheduleAddOnRetry()', offerWake);
     expect(broadcastCatch).toBeGreaterThanOrEqual(0);
-    expect(offer).toBeGreaterThan(broadcastCatch);
+    expect(offerClock).toBeGreaterThan(broadcastCatch);
+    expect(offerWake).toBeGreaterThan(offerClock);
+    expect(retry).toBeGreaterThan(offerWake);
+    expect(trigger).not.toContain('this.tryTournamentAddOns(');
     expect(trigger).toMatch(/Math\.ceil\(\(endMs - Date\.now\(\)\) \/ 1000\)/);
     expect(trigger).toMatch(/durationSeconds,[\s\S]*?endsAt,/);
   });
@@ -83,9 +113,12 @@ describe('the add-on window follows durable database truth', () => {
 
     const reprice = finalTail.indexOf('this.recalculateEliminatedPrizes(finalPool)');
     const end = finalTail.indexOf("this.broadcast('ADDON_PERIOD_END'", reprice);
-    const clearClose = finalTail.indexOf('clearTimeout(this.addOnPeriodEndTimer)', end);
+    const clearClose = finalTail.indexOf(
+      'this.clearLifecycleTimeout(this.addOnPeriodEndTimer)',
+      end
+    );
     const clearThawRetry = finalTail.indexOf(
-      'clearTimeout(this.addOnResumeBroadcastRetryTimer)',
+      'this.clearLifecycleTimeout(this.addOnResumeBroadcastRetryTimer)',
       clearClose
     );
     expect(reprice).toBeGreaterThanOrEqual(0);

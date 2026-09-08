@@ -63,6 +63,43 @@ describe('the canonical winner is persisted at the claim boundary', () => {
     expect(result).toMatchObject({ ok: false, reason: 'canonical_winner_conflict' });
     expect(refused.rpc).toHaveBeenCalledTimes(1);
   });
+
+  it('resumes the immutable winner when a restarted process proposes a stale candidate', async () => {
+    const canonical = '33333333-3333-4333-8333-333333333333';
+    const c = client([
+      {
+        error: null,
+        data: {
+          ok: true,
+          winner_user_id: canonical,
+          finish_kind: 'normal',
+          status: 'COMPLETING',
+          resumed: true,
+          candidate_mismatch: true,
+        },
+      },
+    ]);
+    await expect(
+      claimTournamentFinish(c, TOURNAMENT, WINNER, 'restart', noDelay)
+    ).resolves.toMatchObject({ ok: true, winnerUserId: canonical, status: 'COMPLETING' });
+  });
+
+  it('rejects a mismatched winner unless the database explicitly proves a resume', async () => {
+    const c = client([
+      {
+        error: null,
+        data: {
+          ok: true,
+          winner_user_id: '33333333-3333-4333-8333-333333333333',
+          finish_kind: 'normal',
+          status: 'COMPLETING',
+        },
+      },
+    ]);
+    await expect(
+      claimTournamentFinish(c, TOURNAMENT, WINNER, 'test', noDelay)
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_claim_receipt' });
+  });
 });
 
 describe('COMPLETED is an exact database certificate', () => {

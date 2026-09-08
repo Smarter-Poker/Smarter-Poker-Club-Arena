@@ -313,30 +313,40 @@ END;
 $function$;
 
 -- Rolling-safe cutover without ACCESS EXCLUSIVE DDL on the hot hand table.
--- Old pods do not set the transaction-local marker and retain the exact live
--- projection behavior.  New atomic commits set it and each existing trigger
--- function exits before taking any projection locks.  The trigger catalog is
--- untouched until every old pod has drained.
+-- Old pods do not set the transaction-local marker and retain the existing
+-- stats projections; the Daily Missions trigger is already outbox-only and is
+-- safe for both generations. New atomic commits set the marker and every
+-- synchronous stats trigger exits before taking projection locks. The trigger
+-- catalog is untouched until every old pod has drained.
 CREATE OR REPLACE FUNCTION public.fn_enqueue_hand_daily_missions()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public','pg_temp'
 AS $function$
-DECLARE v_event jsonb;
+DECLARE
+  v_event jsonb;
+  v_uid uuid;
 BEGIN
-  IF coalesce(current_setting('app.atomic_hand_commit',true),'')='on' THEN RETURN NEW; END IF;
   IF jsonb_typeof(NEW.daily_mission_events)<>'array' THEN RETURN NEW; END IF;
   FOR v_event IN
     SELECT value FROM jsonb_array_elements(NEW.daily_mission_events)
      ORDER BY value->>'user_id',value::text
   LOOP
     BEGIN
-      PERFORM public.enqueue_daily_challenge_event(
-        (v_event->>'user_id')::uuid,'hand:'||NEW.id::text,
-        v_event->'amounts',coalesce(v_event->'magnitudes','{}'::jsonb),
+      v_uid := (v_event->>'user_id')::uuid;
+      IF v_uid IS NULL THEN CONTINUE; END IF;
+      INSERT INTO public.daily_challenge_event_outbox
+        (user_id,event_key,amounts,magnitudes,threshold_values,occurred_at)
+      VALUES (
+        v_uid,
+        'hand:'||NEW.id::text,
+        v_event->'amounts',
+        coalesce(v_event->'magnitudes','{}'::jsonb),
         coalesce(v_event->'values','{}'::jsonb),
-        coalesce(NEW.ended_at,NEW.created_at,now()));
+        coalesce(NEW.ended_at,NEW.created_at,now())
+      )
+      ON CONFLICT (user_id,event_key) DO NOTHING;
     EXCEPTION WHEN OTHERS THEN
       RAISE WARNING 'Daily Missions hand event % could not be queued: %',NEW.id,SQLERRM;
     END;
@@ -541,7 +551,6 @@ DECLARE
   v_date date;
   v_tourney boolean;
   v_bb numeric;
-  v_event jsonb;
 BEGIN
   IF NOT (current_user IN ('postgres','service_role')) THEN
     RAISE EXCEPTION 'fn_project_hand_side_effects is engine/service only';
@@ -720,23 +729,10 @@ BEGIN
     FROM public.ca_hand_player_facts_one(v_h.id,NULL) f
   ON CONFLICT (user_id,hand_id) DO NOTHING;
 
-  -- Projection 5: hand-authored Daily Mission events.  The nested function
-  -- first writes its own durable event row, so a mission/profile lock failure
-  -- cannot lose the event and is no longer able to cancel the hand.
-  IF jsonb_typeof(v_h.daily_mission_events)='array' THEN
-    FOR v_event IN
-      SELECT value FROM jsonb_array_elements(v_h.daily_mission_events)
-       ORDER BY value->>'user_id',value::text
-    LOOP
-      PERFORM public.enqueue_daily_challenge_event(
-        (v_event->>'user_id')::uuid,
-        'hand:'||v_h.id::text,
-        v_event->'amounts',
-        coalesce(v_event->'magnitudes','{}'::jsonb),
-        coalesce(v_event->'values','{}'::jsonb),
-        coalesce(v_h.ended_at,v_h.created_at,now()));
-    END LOOP;
-  END IF;
+  -- Daily Mission booking has its own durable outbox. The hand-history
+  -- trigger above only inserts those rows; it never takes a player/profile
+  -- lock, and this stats projector must not become a second synchronous
+  -- consumer. fn_drain_daily_challenge_event_outbox owns booking exactly once.
 
   DELETE FROM public.hand_projection_outbox o WHERE o.hand_id=v_h.id;
 
@@ -870,9 +866,16 @@ BEGIN
   BEGIN
 
     IF v_tournament_id IS NOT NULL THEN
-      PERFORM 1 FROM public.tournaments t WHERE t.id=v_tournament_id FOR UPDATE;
+      /* Every table in one tournament may settle a hand at the same time.
+         The parent row is a lifecycle boundary, not a per-hand mutex: SHARE
+         excludes manager UPDATE/DELETE writers while allowing independent
+         table settlements to overlap.  An UPDATE lock here serialized the
+         whole field behind the slowest table and surfaced to players as a
+         pause between streets/hands. */
+      PERFORM 1 FROM public.tournaments t WHERE t.id=v_tournament_id FOR SHARE;
       -- Manager money paths use tournament -> player -> seat.  Pre-lock both
-      -- sets in UUID order so the nested legacy settler cannot invert it.
+      -- player/seat sets in UUID order so the nested legacy settler cannot
+      -- invert them.  Different tables own disjoint active player rows.
       PERFORM 1
         FROM public.tournament_players tp
        WHERE tp.tournament_id=v_tournament_id
@@ -1535,9 +1538,22 @@ BEGIN
      WHERE t.tgrelid='public.hand_history'::regclass
        AND NOT t.tgisinternal
        AND t.tgname=ANY(v_names)
+       AND t.tgname<>'trg_enqueue_hand_daily_missions'
        AND position('app.atomic_hand_commit' IN pg_get_functiondef(t.tgfoid))=0
   ) THEN
     RAISE EXCEPTION 'rolling-safe hand projection trigger gate is incomplete: %',v_names;
+  END IF;
+  IF position('daily_challenge_event_outbox' IN pg_get_functiondef(
+       'public.fn_enqueue_hand_daily_missions()'::regprocedure))=0
+     OR position('ON CONFLICT' IN pg_get_functiondef(
+       'public.fn_enqueue_hand_daily_missions()'::regprocedure))=0
+     OR position('enqueue_daily_challenge_event' IN pg_get_functiondef(
+       'public.fn_enqueue_hand_daily_missions()'::regprocedure))>0
+     OR position('fn_lock_daily_mission_user' IN pg_get_functiondef(
+       'public.fn_enqueue_hand_daily_missions()'::regprocedure))>0
+     OR position('enqueue_daily_challenge_event' IN pg_get_functiondef(
+       'public.fn_project_hand_side_effects(uuid)'::regprocedure))>0 THEN
+    RAISE EXCEPTION 'accepted-hand Daily Missions work is not outbox-only';
   END IF;
   IF to_regprocedure('public.fn_ca_commit_hand_settlement(uuid,bigint,jsonb,numeric,numeric,text,numeric,jsonb,jsonb)') IS NULL
      OR to_regprocedure('public.fn_project_hand_side_effects(uuid)') IS NULL

@@ -49,9 +49,11 @@ describe('the canonical finish claim is durable and unforgeable', () => {
     );
   });
 
-  it('claims RUNNING with an exact one-row CAS and rejects winner conflicts', () => {
+  it('claims RUNNING with an exact one-row CAS and resumes only its immutable receipt', () => {
     const claim = functionBody('fn_claim_tournament_finish');
-    expect(claim).toContain("'canonical_winner_conflict'");
+    expect(claim).toContain("v_t.status = 'COMPLETING'");
+    expect(claim).toContain("'winner_user_id',v_receipt.winner_user_id");
+    expect(claim).toContain("'candidate_mismatch'");
     expect(claim).toContain("SET status = 'COMPLETING'");
     expect(claim).toContain("WHERE id = p_tournament_id AND status = 'RUNNING'");
     expect(claim).toContain('GET DIAGNOSTICS v_rows = ROW_COUNT');
@@ -119,22 +121,22 @@ describe('the only completion door is atomic, retryable and lock bounded', () =>
   it('certifies inside the status trigger with each domain RPC own old-state contract', () => {
     const guard = functionBody('fn_guard_tournament_completed_certificate');
     expect(guard).toContain("v_kind = 'final_table_deal'");
-    expect(guard).toContain("OLD.status IS DISTINCT FROM 'RUNNING'");
     expect(guard).toContain("OLD.status IS DISTINCT FROM 'COMPLETING'");
+    expect(guard).toContain("current_setting('app.atomic_final_table_deal_batch', true)");
     expect(guard).toContain("'atomic_final_table_deal'");
     expect(guard).toContain('public.fn_tournament_finish_readiness(NEW.id,v_winner)');
     expect(guard).toContain('SET certified_at = COALESCE(certified_at,now())');
     expect(CODE).toContain('CREATE TRIGGER zzzzzz_tournaments_financial_certificate');
   });
 
-  it('installs the hot-table trigger in its own 250 ms retryable transaction', () => {
+  it('installs the hot-table trigger inside the one lock-bounded migration transaction', () => {
     const trigger = CODE.indexOf('DROP TRIGGER IF EXISTS tournaments_z_financial_certificate');
-    const split = CODE.lastIndexOf('COMMIT;', trigger);
-    const restart = CODE.indexOf('BEGIN;', split);
-    const budget = CODE.indexOf("SET LOCAL lock_timeout = '250ms';", restart);
-    expect(split).toBeGreaterThan(CODE.indexOf('fn_certify_tournament_finish'));
-    expect(restart).toBeGreaterThan(split);
-    expect(budget).toBeGreaterThan(restart);
+    const begin = CODE.indexOf('BEGIN;');
+    const budget = CODE.indexOf("SET LOCAL lock_timeout = '250ms';", begin);
+    expect(CODE.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(CODE.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(begin).toBeGreaterThan(-1);
+    expect(budget).toBeGreaterThan(begin);
     expect(budget).toBeLessThan(trigger);
     expect(CODE).not.toContain('completion-state substitution is ambiguous');
   });

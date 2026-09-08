@@ -37,7 +37,10 @@ describe('the MTT add-on is one persisted deadline', () => {
   const deadlineRetry = sliceMethod(manager, 'requestAddOnDeadlineRetry(delayMs: number): void');
   const thawRetry = sliceMethod(manager, 'scheduleAddOnResumeBroadcastRetry(): void');
   const stop = sliceMethod(manager, 'stop(): Promise<void>');
-  const stopFence = sliceMethod(manager, 'applyStopFence(): Promise<void> | null');
+  const mutationFence = sliceMethod(
+    manager,
+    'applyManagerMutationFence(clearLeaseExpiry: boolean): Promise<void> | null'
+  );
 
   it('announces the exact persisted offer, price, chips, zero fee, and deadline', () => {
     expect(manager).toContain("message: 'The Add-On Period Has Begun'");
@@ -129,11 +132,11 @@ describe('the MTT add-on is one persisted deadline', () => {
       'if (this.addOnPeriodEndTimer) this.clearLifecycleTimeout(this.addOnPeriodEndTimer)'
     );
     expect(stop).toContain('this.applyStopFence()');
-    expect(stopFence).toContain('this.clearLifecycleTimers()');
-    expect(stopFence).toMatch(
+    expect(mutationFence).toContain('this.clearLifecycleTimers()');
+    expect(mutationFence).toMatch(
       /this\.addOnPeriodEndTimer,[\s\S]*?this\.addOnResumeBroadcastRetryTimer,/
     );
-    expect(stopFence).toMatch(
+    expect(mutationFence).toMatch(
       /this\.addOnPeriodEndTimer = null;[\s\S]*?this\.addOnResumeBroadcastRetryTimer = null;/
     );
   });

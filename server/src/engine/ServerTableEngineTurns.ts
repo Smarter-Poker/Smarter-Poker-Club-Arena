@@ -314,6 +314,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * Runs on the 10s heartbeat tick.
    */
   protected override runTableWatchdog(): void {
+    if (!this.lifecycleCanMutate()) return;
     const idleMs = this.msSinceProgress();
 
     // A table paused ON PURPOSE (hand-for-hand / FSM 'paused') is healthy no
@@ -561,7 +562,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * be reintroduced one call site at a time.
    */
   protected forceResolveSeat(seat: number, preferCheck: boolean): boolean {
-    if (!this.handController) return false;
+    if (!this.lifecycleCanMutate() || !this.handController) return false;
     const order: Array<'check' | 'fold'> = preferCheck ? ['check', 'fold'] : ['fold'];
     for (const a of order) {
       try {
@@ -651,7 +652,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     this.preciseTimer.startTimer(this.tableId, userId, totalDurationMs, () => {
       // === onExpiry callback — fires when DeadlineScheduler tick reaches deadline ===
-      if (!this.running || !this.handController) return;
+      if (!this.lifecycleCanMutate() || !this.handController) return;
 
       const state = this.handController.getState();
       if (state.currentPlayerSeat !== seat) return;
@@ -688,7 +689,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             // Seat identity is checked FIRST and is authoritative; the FSM is
             // advisory. A seat that is still the current player when its time
             // bank expires MUST be resolved, whatever the FSM says.
-            if (!this.running || !this.handController) return;
+            if (!this.lifecycleCanMutate() || !this.handController) return;
             const tbState = this.handController.getState();
             if (tbState.currentPlayerSeat !== seat) return;
             if (this.turnFSM.state === 'time_bank_active') {
@@ -897,6 +898,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   ): Promise<{ success: boolean; error?: string; armed?: boolean; message?: string }> {
     // CLAUDE.md §5.7: every one of these strings reaches the player as a toast,
     // so they are Title Case with no em dashes.
+    if (!this.lifecycleCanMutate()) {
+      return { success: false, error: 'Table Ownership Changed. Please Reconnect.' };
+    }
     if (!this.handController || !this.tableInfo) {
       return { success: false, error: 'No Active Hand At This Table' };
     }
@@ -980,7 +984,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       userId,
       () => {
         // This callback fires when the manual time bank expires
-        if (!this.running || !this.handController) return;
+        if (!this.lifecycleCanMutate() || !this.handController) return;
         const tbState = this.handController.getState();
         if (tbState.currentPlayerSeat !== player.seat) return;
 
@@ -1366,6 +1370,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     action: string,
     amount?: number
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
+    if (!this.lifecycleCanMutate()) {
+      return {
+        success: false,
+        error: 'Table ownership changed - reconnect',
+        code: 'TABLE_LEASE_EXPIRED',
+      };
+    }
     // Bible V8 §1.1.4: Serialize all actions — no parallel processing
     if (this.actionLock) {
       return { success: false, error: 'Action already being processed - try again' };
@@ -1975,7 +1986,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * existing try/catch + forceArmTurnTimer fallback for a synchronous throw.
    */
   protected async handleTurnChange(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
-    if (event.type !== 'TURN_CHANGE' || !this.handController) return;
+    if (event.type !== 'TURN_CHANGE' || !this.lifecycleCanMutate() || !this.handController) return;
 
     const seat = event.seat;
     const player = players.find((p) => p.seat_number === seat);
@@ -2046,7 +2057,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       const controllerAtBeat = this.handController;
       await this.sleep(this.preActionVisibleMs);
       // The hand can be replaced while we hold that beat.
-      if (!this.running || this.handController !== controllerAtBeat || !controllerAtBeat) return;
+      if (
+        !this.lifecycleCanMutate() ||
+        this.handController !== controllerAtBeat ||
+        !controllerAtBeat
+      )
+        return;
       {
         const st = controllerAtBeat.getState();
         if (st.currentPlayerSeat !== seat) return;
@@ -2450,7 +2466,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (secondLook.ok) {
       const deepTimer = setTimeout(() => {
         try {
-          if (!handControllerRef || handControllerRef !== this.handController || !this.running)
+          if (
+            !handControllerRef ||
+            handControllerRef !== this.handController ||
+            !this.lifecycleCanMutate()
+          )
             return;
           if (handControllerRef.getState().currentPlayerSeat !== seat) return;
           const t0 = perfNow();
@@ -2495,7 +2515,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
     this.horseActionTimer = setTimeout(() => {
       this.horseActionTimer = null;
-      if (!handControllerRef || !this.running) return;
+      if (!handControllerRef || !this.lifecycleCanMutate()) return;
 
       // AUDIT V2 FIX: if a NEW hand started, this.handController was replaced.
       // Without this identity check a stale think-timer could fire an action

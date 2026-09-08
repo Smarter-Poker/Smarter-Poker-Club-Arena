@@ -483,8 +483,15 @@ async function maybeRunSelfTune(generation: number): Promise<void> {
     }
     return;
   }
-  lastRunDate = today;
   await runSelfTune(today, () => lifecycleIsCurrent(generation));
+  if (!lifecycleIsCurrent(generation)) return;
+  // A returned worker promise is not completion evidence: runSelfTune reports
+  // failures and empty studies as { studied: 0, tuned: 0 }. Re-read the
+  // durable log before latching this process, so a failed night remains open
+  // for the stale-claim takeover on the next tick.
+  const completed = await alreadyTunedToday(today);
+  if (!lifecycleIsCurrent(generation)) return;
+  if (completed) lastRunDate = today;
 }
 
 function launchMaybeRunSelfTune(): void {

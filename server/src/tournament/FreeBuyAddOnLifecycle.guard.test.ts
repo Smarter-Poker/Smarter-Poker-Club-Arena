@@ -10,9 +10,19 @@ const manager = readFileSync(
 const freeBuy = readFileSync(join(process.cwd(), 'src/services/FreeBuy.ts'), 'utf8');
 
 describe('the Free Buy add-on is one durable lifecycle', () => {
-  const start = sliceMethod(manager, 'start(): Promise<void>');
-  const resume = sliceMethod(manager, 'resume(): Promise<void>');
-  const stop = sliceMethod(manager, 'stop(): void');
+  const start = sliceMethod(
+    manager,
+    'startLifecycle(lifecycle: TournamentLifecycleToken): Promise<void>'
+  );
+  const resume = sliceMethod(
+    manager,
+    'resumeLifecycle(lifecycle: TournamentLifecycleToken): Promise<void>'
+  );
+  const stop = sliceMethod(manager, 'stop(): Promise<void>');
+  const mutationFence = sliceMethod(
+    manager,
+    'applyManagerMutationFence(clearLeaseExpiry: boolean): Promise<void> | null'
+  );
   const trigger = sliceMethod(manager, 'triggerAddOnPeriod(): Promise<void>');
   const offer = sliceMethod(manager, 'tryTournamentAddOns(): Promise<void>');
   const breakStart = sliceMethod(manager, 'addOnBreakStartMs(endsAt: string | null | undefined)');
@@ -35,16 +45,21 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
   it('opens after seating but before the pre-seat deal hold is applied', () => {
     const seatsExist = start.indexOf('await this.createTablesAndSeatPlayers(tournament)');
     const freeBuyOpen = start.indexOf('await this.triggerAddOnPeriod()', seatsExist);
-    const advertisedDealHold = start.indexOf(
-      "const scheduledStartMs = Date.parse(String(tournament.start_time ?? ''))",
-      freeBuyOpen
-    );
+    const advertisedDealHold = start.indexOf('engine.holdDealingUntil(launchStartMs)', freeBuyOpen);
 
     expect(seatsExist).toBeGreaterThanOrEqual(0);
     expect(freeBuyOpen).toBeGreaterThan(seatsExist);
     expect(advertisedDealHold).toBeGreaterThan(freeBuyOpen);
     expect(start.slice(seatsExist, advertisedDealHold)).toMatch(
       /tournament\.addon_from_start && tournament\.add_on_available/
+    );
+    const durableProof = start.indexOf('if (!this.addOnPeriodTriggered)', freeBuyOpen);
+    const standDown = start.indexOf('this.running = false', durableProof);
+    expect(durableProof).toBeGreaterThan(freeBuyOpen);
+    expect(standDown).toBeGreaterThan(durableProof);
+    expect(standDown).toBeLessThan(advertisedDealHold);
+    expect(start.slice(freeBuyOpen, durableProof)).toContain(
+      'this.assertLifecycleCurrent(lifecycle)'
     );
   });
 
@@ -77,12 +92,13 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
       /breakStartMs <= Date\.now\(\)[\s\S]*?this\.beginAddOnBreak\(endMs\)/
     );
     expect(scheduleBreak).toMatch(
-      /setTimeout\([\s\S]*?this\.beginAddOnBreak\(endMs\)[\s\S]*?breakStartMs - Date\.now\(\)/
+      /this\.setLifecycleTimeout\([\s\S]*?this\.beginAddOnBreak\(endMs\)[\s\S]*?breakStartMs - Date\.now\(\)/
     );
+    expect(blankNonCode(scheduleBreak)).not.toMatch(/\bsetTimeout\(/);
   });
 
   it('restores an in-progress break after engines and a synchronized break are restored', () => {
-    const engineStart = resume.indexOf('.start()');
+    const engineStart = resume.indexOf('await this.drainTableEngineStartJobs()');
     const synchronizedBreakRestore = resume.indexOf('if (tournament.on_break)');
     const durablePair = resume.indexOf('const validAddOnDeadline');
     const addOnBreakRestore = resume.indexOf(
@@ -103,9 +119,14 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     expect(freeBuy).toContain('export const HORSE_ADDON_IMMEDIATE_RATE = 0.35');
     expect(manager).toContain("import { horseAddsOnImmediately } from '../services/FreeBuy.js'");
     expect(offer).toMatch(
-      /if \(Date\.now\(\) < breakStartMs\)[\s\S]*?horseRows = horseRows\.filter[\s\S]*?horseAddsOnImmediately\(horse\.id, this\.tournamentId\)/
+      /if \(Date\.now\(\) < breakStartMs\)[\s\S]*?eligibleHorseRows = eligibleHorseRows\.filter[\s\S]*?horseAddsOnImmediately\(horse\.id, this\.tournamentId\)/
     );
-    expect(beginBreak).toContain('await this.tryTournamentAddOns()');
+    expect(beginBreak).toContain(
+      'this.lastAddOnOfferAt = Date.now() - TournamentManagerBase.ADD_ON_RETRY_MS'
+    );
+    expect(beginBreak).toContain('this.requestEliminationSweep()');
+    expect(beginBreak).toContain('this.scheduleAddOnRetry()');
+    expect(blankNonCode(beginBreak)).not.toContain('this.tryTournamentAddOns(');
 
     const split = offer.indexOf('if (Date.now() < breakStartMs)');
     const purchase = offer.indexOf("p_rebuy_type: 'addon'", split);
@@ -141,7 +162,7 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
   it('bounds the detached restart replay and can retry END after the in-memory final latch is set', () => {
     expect(replay).toContain('this.addOnFinalTailReplayAttempts >= 3');
     expect(replay).toContain('const attempt = ++this.addOnFinalTailReplayAttempts');
-    expect(replay).toContain('this.addOnFinalTailReplayTimer = setTimeout');
+    expect(replay).toContain('this.addOnFinalTailReplayTimer = this.setLifecycleTimeout');
     expect(replay).toContain('await this.finishAddOnTail(finalPool)');
     expect(replay).toMatch(/catch \(error\)[\s\S]*?retry = true/);
     expect(replay).toContain('if (retry) this.scheduleFinalizedAddOnTailReplay(finalPool)');
@@ -155,7 +176,10 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     const reprice = finalTail.indexOf('this.recalculateEliminatedPrizes(finalPool)');
     const end = finalTail.indexOf("const delivered = await this.broadcast('ADDON_PERIOD_END', {})");
     const releaseBreak = finalTail.indexOf('await this.finishAddOnBreak()', end);
-    const clearClose = finalTail.indexOf('clearTimeout(this.addOnPeriodEndTimer)', releaseBreak);
+    const clearClose = finalTail.indexOf(
+      'this.clearLifecycleTimeout(this.addOnPeriodEndTimer)',
+      releaseBreak
+    );
     const failedReceipt = finalTail.indexOf('if (!delivered)', clearClose);
 
     expect(reprice).toBeGreaterThanOrEqual(0);
@@ -172,21 +196,44 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     const pause = sliceMethod(manager, 'pauseForBreak(breakDurationMs: number): Promise<void>');
     const resumeBreak = sliceMethod(manager, 'resumeFromBreak(): Promise<void>');
 
-    expect(pause).toContain('if (!this.running || this.onBreak) return');
+    expect(pause).toMatch(
+      /if \([\s\S]*?!lifecycle[\s\S]*?!this\.lifecycleIsCurrent\(lifecycle\)[\s\S]*?this\.onBreak[\s\S]*?\) return/
+    );
     expect(pause).toContain(
-      'const addOnBreakAlreadyOwnsPause = this.addOnBreakActive && this.addOnBreakOwnsPause'
+      'const addOnBreakAlreadyOwnsLevelClock = this.addOnBreakActive && this.addOnBreakOwnsLevelClock'
     );
     expect(pause).toContain('if (this.addOnBreakActive) this.addOnBreakOwnsPause = false');
-    expect(pause).toContain('if (!addOnBreakAlreadyOwnsPause) this.suspendLevelClock()');
+    expect(pause).toContain('if (!addOnBreakAlreadyOwnsLevelClock) this.suspendLevelClock()');
 
     expect(resumeBreak).toContain('const addOnBreakStillActive = this.addOnBreakActive');
-    expect(resumeBreak).toContain('if (addOnBreakStillActive) this.addOnBreakOwnsPause = true');
+    expect(resumeBreak).toMatch(
+      /if \(addOnBreakStillActive\) \{[\s\S]*?this\.addOnBreakOwnsPause = true;[\s\S]*?this\.addOnBreakOwnsLevelClock = true;/
+    );
     expect(resumeBreak).toMatch(/if \(!this\.handForHandActive && !addOnBreakStillActive\)/);
     expect(resumeBreak).toContain('if (!addOnBreakStillActive) {');
-    expect(finishBreak).toContain('if (!this.running || !ownsPause || this.onBreak) return');
+    expect(finishBreak).toContain('if (!this.running) return');
+    expect(finishBreak).toMatch(/if \(ownsPause && !this\.onBreak && !this\.handForHandActive\)/);
+    expect(finishBreak).toMatch(/if \(ownsLevelClock && !this\.onBreak\)/);
+  });
+
+  it('adopts a shifted add-on break while maintenance still owns every dealer', () => {
+    const frozen = beginBreak.indexOf('const maintenanceFrozen = isMaintenanceFrozen()');
+    const absoluteHold = beginBreak.indexOf('engine.holdDealingUntil(endMs)', frozen);
+    const frozenReturn = beginBreak.indexOf('if (maintenanceFrozen)', absoluteHold);
+    const broadcast = beginBreak.indexOf("this.broadcast('addon_break'", frozenReturn);
+    expect(frozen).toBeGreaterThanOrEqual(0);
+    expect(absoluteHold).toBeGreaterThan(frozen);
+    expect(frozenReturn).toBeGreaterThan(absoluteHold);
+    expect(broadcast).toBeGreaterThan(frozenReturn);
+    expect(beginBreak.slice(frozenReturn, broadcast)).toContain('return;');
+    expect(beginBreak).toMatch(
+      /if \(!this\.lifecycleIsCurrent\(lifecycle\) \|\| isMaintenanceFrozen\(\)\) return;/
+    );
   });
 
   it('clears every add-on timer and pause latch on stop', () => {
+    expect(stop).toContain('this.applyStopFence()');
+    expect(mutationFence).toContain('this.clearLifecycleTimers()');
     for (const timer of [
       'addOnPeriodEndTimer',
       'addOnResumeBroadcastRetryTimer',
@@ -194,10 +241,12 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
       'addOnBreakEndTimer',
       'addOnFinalTailReplayTimer',
     ]) {
-      expect(stop).toContain(`clearTimeout(this.${timer})`);
-      expect(stop).toContain(`this.${timer} = null`);
+      expect(mutationFence).toContain(`this.${timer},`);
+      expect(mutationFence).toContain(`this.${timer} = null`);
     }
-    expect(stop).toContain('this.addOnBreakActive = false');
-    expect(stop).toContain('this.addOnBreakOwnsPause = false');
+    expect(mutationFence).toContain('this.addOnBreakActive = false');
+    expect(mutationFence).toContain('this.addOnBreakEndsAtMs = 0');
+    expect(mutationFence).toContain('this.addOnBreakOwnsLevelClock = false');
+    expect(mutationFence).toContain('this.addOnBreakOwnsPause = false');
   });
 });

@@ -27,6 +27,9 @@ const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \
 const BASE = read('src/tournament/TournamentManagerBase.ts');
 const MANAGER = read('src/tournament/TournamentManager.ts');
 const DEALING = read('src/engine/ServerTableEngineDealing.ts');
+const CAPACITY_SQL = read(
+  '../supabase/migrations/20260907204500_late_registration_can_build_its_first_table.sql'
+);
 
 describe('the seat law is arithmetic, not preference', () => {
   it('every variant cap leaves enough cards for its own board', () => {
@@ -74,7 +77,9 @@ describe('tournament tables are built through the DECK ceiling', () => {
   });
 
   it('the expansion path caps too, so a new table is dealable as well', () => {
-    expect(code(MANAGER)).toContain('maxSeatsTheDeckAllows');
+    expect(code(MANAGER)).toContain("'fn_ensure_late_registration_capacity'");
+    expect(CAPACITY_SQL).toContain('floor((deck - 5 board cards) / hole cards)');
+    expect(CAPACITY_SQL).toMatch(/WHEN 'plo5' THEN 9\s*WHEN 'plo6' THEN 7/);
   });
 
   it('neither tournament path can reach the cash seat law any more', () => {
@@ -84,6 +89,7 @@ describe('tournament tables are built through the DECK ceiling', () => {
     expect(code(MANAGER)).not.toContain('clampSeatsForVariant');
     expect(code(BASE)).not.toContain('config/tableSeating');
     expect(code(MANAGER)).not.toContain('config/tableSeating');
+    expect(CAPACITY_SQL).not.toContain('clampSeatsForVariant');
   });
 });
 

@@ -12,9 +12,9 @@
  * 36 hours (2.2, item 3).
  *
  * This law pins the migration that re-pointed them and the later atomic
- * cutover that retired the applying reconciler. Active payer bodies settle
- * through fn_settle_tournament_obligation and none of them credits a wallet
- * on its own. It also pins the one-line fix to the settle
+ * cutover that removed the entire deferred reconciler graph. Active payer
+ * bodies settle through fn_settle_tournament_obligation and none of them
+ * credits a wallet on its own. It also pins the one-line fix to the settle
  * function's key (it must start with 'tourney:<tournament_id>:' so the club
  * wallet resolver credits the club the player bought in from) and the R3
  * logger's two properties: it watches AFTER INSERT and it can never refuse.
@@ -73,36 +73,33 @@ describe('every DB-side tournament payer settles through fn_settle_tournament_ob
     }
   );
 
-  it('legacy guarantee wrappers cannot distribute through applying reconcile', () => {
+  it('legacy guarantee wrappers are removed with the applying reconciler', () => {
     for (const name of ['fn_pay_backed_payout_shortfalls', 'fn_ca_backpay_guarantee_shortfalls']) {
       expect(bodyOf(PAYERS, name)).toMatch(/fn_tournament_payout_reconcile\([^)]*,\s*true\)/);
     }
-    const detector = bodyOf(CUTOVER, 'fn_tournament_payout_reconcile');
-    const guard = detector.indexOf('IF p_apply THEN');
-    const firstRead = detector.indexOf('SELECT id, prize_pool');
-    expect(detector.slice(guard, firstRead)).toMatch(
-      /RAISE EXCEPTION USING[\s\S]*?applying_reconcile_retired[\s\S]*?ERRCODE = '0A000'/
+    expect(CUTOVER).toMatch(
+      /DROP FUNCTION IF EXISTS public\.fn_pay_backed_payout_shortfalls\(boolean, integer\) RESTRICT;/
     );
-    expect(firstRead).toBeGreaterThan(guard);
+    expect(CUTOVER).toMatch(
+      /DROP FUNCTION IF EXISTS public\.fn_ca_backpay_guarantee_shortfalls\(boolean, integer\) RESTRICT;/
+    );
+    expect(CUTOVER).toMatch(
+      /DROP FUNCTION IF EXISTS public\.fn_tournament_payout_reconcile\(uuid, boolean\) RESTRICT;/
+    );
+    expect(CUTOVER).not.toMatch(
+      /CREATE OR REPLACE (?:FUNCTION|PROCEDURE) public\.(?:fn_tournament_payout_reconcile|fn_pay_backed_payout_shortfalls|fn_ca_backpay_guarantee_shortfalls|fn_tournament_payout_sweep|sp_ca_reconcile_backpaid_events|fn_backpay_hu_winner_shortfalls)\s*\(/
+    );
   });
 
-  it('the current reconciler contains no money or result-write path', () => {
-    const body = bodyOf(CUTOVER, 'fn_tournament_payout_reconcile');
-    expect(body).not.toMatch(/fn_settle_tournament_obligation\(/);
-    expect(body).not.toMatch(/fn_credit_and_log\(/);
-    expect(body).not.toMatch(/UPDATE\s+(?:public\.)?tournament_players/i);
+  it('the cutover proves that no deferred reconciliation routine remains installed', () => {
+    expect(CUTOVER).toMatch(
+      /FROM pg_proc p[\s\S]*?p\.proname IN \([\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'fn_pay_backed_payout_shortfalls'[\s\S]*?'fn_backpay_hu_winner_shortfalls'[\s\S]*?deferred tournament payout reconciliation routine remains installed/
+    );
   });
 
   it('retires the Heads-Up single-place backpay instead of looping on atomic refusals', () => {
-    const body = bodyOf(CUTOVER, 'fn_backpay_hu_winner_shortfalls');
-    expect(body).toContain('fn_hu_shortfall_candidates(');
-    expect(body).toContain("'money_path', 'none'");
-    expect(body).not.toMatch(/fn_rank_survivors\(/);
-    expect(body).not.toMatch(/fn_settle_tournament_obligation\(/);
-    expect(body).not.toMatch(/fn_credit_and_log\(/);
-    expect(body).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/i);
     expect(CUTOVER).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_backpay_hu_winner_shortfalls\(integer\)[\s\S]*?PUBLIC, anon, authenticated, service_role/
+      /DROP FUNCTION IF EXISTS public\.fn_backpay_hu_winner_shortfalls\(integer\) RESTRICT;/
     );
     const gameServer = read('server/src/GameServer.ts');
     expect(gameServer).not.toContain("'fn_backpay_hu_winner_shortfalls'");
@@ -142,7 +139,7 @@ describe('the settle key names the tournament so the wallet resolver picks the r
     expect(body).not.toContain("v_key := 'obl:' ||");
   });
 
-  it('the reconciler counts settle-path rows as prize-pool money whatever their source label', () => {
+  it('the historical reconciler counted settle-path rows before the cutover removed it', () => {
     expect(bodyOf(PAYERS, 'fn_tournament_payout_reconcile')).toContain(
       "tpo.idempotency_key LIKE 'tourney:%:obl:%'"
     );

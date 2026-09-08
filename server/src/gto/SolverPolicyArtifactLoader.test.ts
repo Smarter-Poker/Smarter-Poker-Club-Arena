@@ -572,6 +572,6 @@ describe('atomic artifact hydration', () => {
     expect(source('../engine/GtoCharts.ts')).toContain('hydrateChartPolicyArtifact');
     expect(source('../benchmark/HorseSolverAgreement.ts')).toContain('lookupChartPolicyAdvice');
     expect(source('../benchmark/HorseLeague.ts')).toContain('scoreSolverAgreement()');
-    expect(index).toContain('stopGtoChartLoader();');
+    expect(index).toContain("['GtoChartLoader', stopGtoChartLoader]");
   });
 });

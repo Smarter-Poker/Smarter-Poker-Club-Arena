@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const MIGRATION = readFileSync(
   join(
@@ -164,7 +165,7 @@ describe('late-registration capacity authority', () => {
     expect(expansion).not.toContain(".from('tables')");
     expect(expansion).not.toContain(".from('tournament_players')");
     expect(expansion).not.toContain("'fn_tournament_late_registration_open'");
-    expect(expansion).toContain('new ServerTableEngine(tableId)');
+    expect(expansion).toContain('this.createManagedTableEngine(tableId)');
     expect(expansion).toContain('TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE');
   });
 
@@ -273,16 +274,17 @@ describe('late-registration capacity authority', () => {
   });
 
   it('retires a legitimately broken table from the active hand-for-hand generation', () => {
-    const breakStart = MANAGER.indexOf('Breaking table ${bt.tableId.slice(0, 8)}');
-    const nextSection = MANAGER.indexOf('// ── STEP 2:', breakStart);
-    const successfulBreak = MANAGER.slice(breakStart, nextSection);
+    const successfulBreak = sliceMethod(
+      MANAGER,
+      'protected async closeBrokenTableAndReleaseEngine('
+    );
     const stopAt = successfulBreak.indexOf('await engine.stop()');
-    const retireAt = successfulBreak.indexOf('this.retireManagedTableFromHandForHand(bt.tableId)');
-    const deleteAt = successfulBreak.indexOf('this.tableEngines.delete(bt.tableId)');
+    const retireAt = successfulBreak.indexOf('this.retireManagedTableFromHandForHand(tableId)');
+    const deleteAt = successfulBreak.indexOf('this.tableEngines.delete(tableId)');
     expect(stopAt).toBeGreaterThan(-1);
-    expect(retireAt).toBeGreaterThan(stopAt);
-    expect(deleteAt).toBeGreaterThan(retireAt);
-    expect(MANAGER.match(/retireManagedTableFromHandForHand\(bt\.tableId\)/g)).toHaveLength(1);
+    expect(deleteAt).toBeGreaterThan(stopAt);
+    expect(retireAt).toBeGreaterThan(deleteAt);
+    expect(successfulBreak.match(/retireManagedTableFromHandForHand\(tableId\)/g)).toHaveLength(1);
   });
 
   it('arms start and resume once and consumes durable close receipts before wake ack', () => {
@@ -314,7 +316,7 @@ describe('late-registration capacity authority', () => {
     const start = ELIMINATIONS.indexOf('protected async recalculateEliminatedPrizes');
     const end = ELIMINATIONS.indexOf('protected tournamentFinished', start);
     const reprice = ELIMINATIONS.slice(start, end);
-    expect(reprice).toContain(".not('position', 'is', null)");
+    expect(reprice).toContain(".eq('status', 'eliminated')");
     expect(reprice).not.toContain(".gt('prize', 0)");
     expect(reprice).toContain('Promise<boolean>');
     expect(reprice).toContain('return complete');

@@ -86,6 +86,12 @@ import {
 } from './TournamentLifecycleEpoch.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { horseAddsOnImmediately } from '../services/FreeBuy.js';
+import { tournamentLeaseMonotonicNow } from '../services/tournamentLease.js';
+import { bindTournamentDataAuthorityMethods } from '../services/supabase/dataActorContext.js';
+import {
+  publicTournamentTableFormat,
+  type PublicLiveTableFormat,
+} from '../observability/liveTableFormat.js';
 
 /** How many places this payout structure pays, whichever shape it arrived in. */
 function countPaidPlaces(structure: unknown): number {
@@ -124,6 +130,7 @@ interface TournamentLaunchBeginResult {
   completed?: boolean;
   status?: string;
   reason?: string;
+  lease_generation?: string;
 }
 
 interface TournamentLaunchClaim {
@@ -140,11 +147,17 @@ interface TournamentLaunchCompleteResult {
   completed_at?: string;
   replay?: boolean;
   reason?: string;
+  lease_generation?: string;
 }
 
 export abstract class TournamentManagerBase {
   protected tournamentId: string;
   protected gameServer: GameServer;
+  /** Opaque database authority generation held for this manager's lifetime. */
+  protected readonly tournamentLeaseGeneration: string | null;
+  private tournamentLeaseProofDeadlineMonotonicMs: number | null;
+  private tournamentLeaseExpiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private tournamentLeaseAuthorityExpired = false;
   protected running: boolean = false;
   /**
    * Exact ownership of asynchronous manager work.
@@ -159,6 +172,8 @@ export abstract class TournamentManagerBase {
   private teardownPromise: Promise<void> | null = null;
   /** The synchronous half of stop may be applied before the graceful table drain. */
   private stopFenceApplied = false;
+  /** Manager callbacks are stopped while its lease remains live for hand drain. */
+  private shutdownDrainFenceApplied = false;
   private readonly lifecycleTimeouts = new Set<ReturnType<typeof setTimeout>>();
   private readonly lifecycleIntervals = new Set<ReturnType<typeof setInterval>>();
   /** Async work launched by lifecycle timers or table-engine starts. */
@@ -416,20 +431,190 @@ export abstract class TournamentManagerBase {
   protected broadcastChannel: any = null;
   protected broadcastReady: boolean = false;
 
-  constructor(tournamentId: string, gameServer: GameServer) {
+  constructor(
+    tournamentId: string,
+    gameServer: GameServer,
+    tournamentLeaseGeneration: string | null = null,
+    tournamentLeaseProofDeadlineMonotonicMs: number | null = null
+  ) {
     this.tournamentId = tournamentId;
     this.gameServer = gameServer;
+    this.tournamentLeaseGeneration = tournamentLeaseGeneration;
+    this.tournamentLeaseProofDeadlineMonotonicMs = tournamentLeaseProofDeadlineMonotonicMs;
+  }
+
+  /** Every dealer owned by this manager carries the same tournament fence. */
+  protected createManagedTableEngine(tableId: string): ServerTableEngine {
+    if (this.tournamentLeaseGeneration) {
+      const deadline = this.tournamentLeaseProofDeadlineMonotonicMs;
+      if (deadline === null || !Number.isFinite(deadline)) {
+        throw new Error(
+          `Tournament ${this.tournamentId} cannot create table ${tableId} without a current lease deadline`
+        );
+      }
+      const engine = new ServerTableEngine(tableId, {
+        scope: 'tournament',
+        verified: true,
+        generation: this.tournamentLeaseGeneration,
+        tournamentId: this.tournamentId,
+        proofDeadlineMonotonicMs: deadline,
+      });
+      return bindTournamentDataAuthorityMethods(
+        {
+          tournamentId: this.tournamentId,
+          leaseGeneration: this.tournamentLeaseGeneration,
+        },
+        engine
+      );
+    }
+    return new ServerTableEngine(tableId, {
+      scope: 'tournament',
+      verified: false,
+      generation: null,
+      tournamentId: this.tournamentId,
+      proofDeadlineMonotonicMs: null,
+    });
+  }
+
+  private tournamentLeaseAuthorityIsCurrent(): boolean {
+    /* A null generation exists only in isolated dependency-injected harnesses.
+       GameServer production admission requires an exact protocol-2 generation. */
+    if (!this.tournamentLeaseGeneration) return true;
+    return (
+      !this.tournamentLeaseAuthorityExpired &&
+      this.tournamentLeaseProofDeadlineMonotonicMs !== null &&
+      Number.isFinite(this.tournamentLeaseProofDeadlineMonotonicMs) &&
+      tournamentLeaseMonotonicNow() < this.tournamentLeaseProofDeadlineMonotonicMs
+    );
+  }
+
+  private clearTournamentLeaseExpiryTimer(): void {
+    if (!this.tournamentLeaseExpiryTimer) return;
+    clearTimeout(this.tournamentLeaseExpiryTimer);
+    this.tournamentLeaseExpiryTimer = null;
+  }
+
+  private armTournamentLeaseExpiryTimer(): void {
+    this.clearTournamentLeaseExpiryTimer();
+    if (!this.tournamentLeaseGeneration || this.tournamentLeaseAuthorityExpired) return;
+    const deadline = this.tournamentLeaseProofDeadlineMonotonicMs;
+    if (deadline === null || !Number.isFinite(deadline)) {
+      this.expireTournamentLeaseAuthority();
+      return;
+    }
+    const delayMs = deadline - tournamentLeaseMonotonicNow();
+    if (delayMs <= 0) {
+      this.expireTournamentLeaseAuthority();
+      return;
+    }
+    this.tournamentLeaseExpiryTimer = setTimeout(() => {
+      this.tournamentLeaseExpiryTimer = null;
+      /* A timer may fire slightly early. Re-read the monotonic clock instead
+         of converting an early wake into a false ownership loss. */
+      if (this.tournamentLeaseAuthorityIsCurrent()) {
+        this.armTournamentLeaseExpiryTimer();
+        return;
+      }
+      this.expireTournamentLeaseAuthority();
+    }, Math.ceil(delayMs));
+    this.tournamentLeaseExpiryTimer.unref?.();
+  }
+
+  private expireTournamentLeaseAuthority(): void {
+    if (!this.tournamentLeaseGeneration || this.tournamentLeaseAuthorityExpired) return;
+    this.fenceForTournamentLeaseLoss();
+    reportError(
+      new Error(
+        `Tournament ${this.tournamentId} lease generation ${this.tournamentLeaseGeneration} expired before it was renewed`
+      ),
+      'Tournament.lease_proof_expired'
+    );
+    const teardown = this.stop();
+    void teardown.catch((error) =>
+      reportError(error, 'Tournament.lease_expiry_stop_failed', {
+        tournamentId: this.tournamentId,
+      })
+    );
+  }
+
+  /**
+   * Extend authority only for the same, still-live manager generation. A late
+   * response cannot resurrect an expired lifecycle.
+   */
+  renewTournamentLeaseProof(leaseGeneration: string, proofDeadlineMonotonicMs: number): boolean {
+    if (
+      !this.tournamentLeaseGeneration ||
+      this.tournamentLeaseGeneration.toLowerCase() !== leaseGeneration.toLowerCase() ||
+      this.tournamentLeaseAuthorityExpired ||
+      this.stopFenceApplied ||
+      (!this.running && !this.shutdownDrainFenceApplied) ||
+      !Number.isFinite(proofDeadlineMonotonicMs) ||
+      tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs
+    ) {
+      return false;
+    }
+    /* The primary and shutdown lifecycle can briefly join the same in-flight
+       renewal. A late older response is still valid, but must never shorten a
+       newer conservative proof already installed on this generation. */
+    this.tournamentLeaseProofDeadlineMonotonicMs = Math.max(
+      this.tournamentLeaseProofDeadlineMonotonicMs ?? Number.NEGATIVE_INFINITY,
+      proofDeadlineMonotonicMs
+    );
+    const authority = {
+      scope: 'tournament' as const,
+      verified: true as const,
+      generation: this.tournamentLeaseGeneration,
+      tournamentId: this.tournamentId,
+      proofDeadlineMonotonicMs: this.tournamentLeaseProofDeadlineMonotonicMs,
+    };
+    for (const engine of this.tableEngines.values()) {
+      if (!engine.renewEngineLeaseProof(authority)) {
+        this.fenceForTournamentLeaseLoss();
+        return false;
+      }
+    }
+    this.armTournamentLeaseExpiryTimer();
+    return true;
+  }
+
+  /** Read-time fence used after every heartbeat, including UNKNOWN results. */
+  hasCurrentTournamentLeaseAuthority(): boolean {
+    if (this.tournamentLeaseAuthorityIsCurrent()) return true;
+    this.expireTournamentLeaseAuthority();
+    return false;
+  }
+
+  /** Invalidate all async work synchronously before physical teardown awaits. */
+  fenceForTournamentLeaseLoss(): void {
+    if (this.tournamentLeaseGeneration) this.tournamentLeaseAuthorityExpired = true;
+    this.clearTournamentLeaseExpiryTimer();
+    for (const engine of this.tableEngines.values()) {
+      engine.fenceForEngineLeaseLoss('tournament_lease_lost', false);
+    }
+    this.applyStopFence();
   }
 
   protected lifecycleIsCurrent(token = this.lifecycleEpoch.current()): boolean {
+    if (!this.tournamentLeaseAuthorityIsCurrent()) {
+      this.expireTournamentLeaseAuthority();
+      return false;
+    }
     return this.running && this.lifecycleEpoch.isCurrent(token);
   }
 
   protected captureLifecycleToken(): TournamentLifecycleToken | null {
+    if (!this.tournamentLeaseAuthorityIsCurrent()) {
+      this.expireTournamentLeaseAuthority();
+      return null;
+    }
     return this.lifecycleEpoch.current();
   }
 
   protected assertLifecycleCurrent(token: TournamentLifecycleToken): void {
+    if (!this.tournamentLeaseAuthorityIsCurrent()) {
+      this.expireTournamentLeaseAuthority();
+      throw new TournamentLifecycleAbortedError(token.generation);
+    }
     this.lifecycleEpoch.assertCurrent(token);
     if (!this.running) throw new TournamentLifecycleAbortedError(token.generation);
   }
@@ -648,7 +833,7 @@ export abstract class TournamentManagerBase {
       return;
     }
 
-    const fresh = new ServerTableEngine(tableId);
+    const fresh = this.createManagedTableEngine(tableId);
     fresh.setHub(tableStateHub);
     this.prepareManagedTableEngineForPlay(fresh);
     this.wireEliminationWake(fresh);
@@ -737,7 +922,7 @@ export abstract class TournamentManagerBase {
       return;
     }
 
-    const fresh = new ServerTableEngine(tableId);
+    const fresh = this.createManagedTableEngine(tableId);
     fresh.setHub(tableStateHub);
     this.prepareManagedTableEngineForPlay(fresh);
     this.wireEliminationWake(fresh);
@@ -994,7 +1179,34 @@ export abstract class TournamentManagerBase {
   }
 
   isRunning(): boolean {
+    if (!this.tournamentLeaseAuthorityIsCurrent()) {
+      this.expireTournamentLeaseAuthority();
+      return false;
+    }
     return this.running;
+  }
+
+  /** Generation GameServer must prove on every ownership heartbeat. */
+  getTournamentLeaseGeneration(): string | null {
+    return this.tournamentLeaseGeneration;
+  }
+
+  /**
+   * Safe category for public table-liveness certification.
+   *
+   * Only the product lane leaves this manager. The tournament row, ownership
+   * generation, players, money and cards remain private. A manager cannot own
+   * table engines before start() has loaded tournamentCache, so null describes
+   * an incomplete admission rather than guessing a format.
+   */
+  getPublicLiveTableFormat(): Exclude<PublicLiveTableFormat, 'cash'> | null {
+    return this.tournamentCache ? publicTournamentTableFormat(this.tournamentCache) : null;
+  }
+
+  /** Public club scope paired with the format label; never an ownership id. */
+  getPublicLiveTableClubId(): string | null {
+    const clubId = this.tournamentCache?.club_id;
+    return typeof clubId === 'string' && clubId.trim() ? clubId : null;
   }
 
   /**
@@ -2132,6 +2344,15 @@ export abstract class TournamentManagerBase {
     requestedLaunchId: string,
     requestedStartedAtIso: string | null
   ): Promise<TournamentLaunchClaim | null> {
+    if (!this.tournamentLeaseGeneration) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Launch has no verified lease generation`
+        ),
+        'Tournament.launch_lease_generation_missing'
+      );
+      return null;
+    }
     let lastFailure = 'the launch claim did not return a response';
 
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -2139,6 +2360,7 @@ export abstract class TournamentManagerBase {
         p_tournament_id: this.tournamentId,
         p_launch_id: requestedLaunchId,
         p_started_at: requestedStartedAtIso,
+        p_lease_generation: this.tournamentLeaseGeneration,
       });
       this.assertLifecycleCurrent(lifecycle);
 
@@ -2175,6 +2397,8 @@ export abstract class TournamentManagerBase {
       const exactReceipt =
         result.ok === true &&
         result.claimed === true &&
+        typeof result.lease_generation === 'string' &&
+        result.lease_generation.toLowerCase() === this.tournamentLeaseGeneration.toLowerCase() &&
         typeof result.replay === 'boolean' &&
         typeof result.completed === 'boolean' &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -2222,12 +2446,22 @@ export abstract class TournamentManagerBase {
     launchId: string,
     startedAtIso: string
   ): Promise<boolean> {
+    if (!this.tournamentLeaseGeneration) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Launch completion has no verified lease generation`
+        ),
+        'Tournament.launch_lease_generation_missing'
+      );
+      return false;
+    }
     let lastFailure = 'the launch completion did not return a response';
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       const { data, error } = await supabase.rpc('fn_complete_tournament_launch_atomic', {
         p_tournament_id: this.tournamentId,
         p_launch_id: launchId,
+        p_lease_generation: this.tournamentLeaseGeneration,
       });
       this.assertLifecycleCurrent(lifecycle);
 
@@ -2246,6 +2480,8 @@ export abstract class TournamentManagerBase {
         result.ok === true &&
         result.completed === true &&
         result.status === 'RUNNING' &&
+        typeof result.lease_generation === 'string' &&
+        result.lease_generation.toLowerCase() === this.tournamentLeaseGeneration.toLowerCase() &&
         this.launchTimestampMatches(result.started_at, startedAtIso) &&
         Number.isFinite(Date.parse(String(result.completed_at ?? '')));
       if (exactCompletion) return true;
@@ -2511,10 +2747,16 @@ export abstract class TournamentManagerBase {
 
   async start(): Promise<void> {
     if (this.teardownPromise) await this.teardownPromise;
+    if (!this.tournamentLeaseAuthorityIsCurrent()) {
+      this.expireTournamentLeaseAuthority();
+      return;
+    }
     if (this.lifecycleOperation) return this.lifecycleOperation;
     this.stopFenceApplied = false;
+    this.shutdownDrainFenceApplied = false;
     const lifecycle = this.lifecycleEpoch.begin();
     this.running = true;
+    this.armTournamentLeaseExpiryTimer();
     const operation = this.startLifecycle(lifecycle);
     this.lifecycleOperation = operation;
     try {
@@ -3912,10 +4154,16 @@ export abstract class TournamentManagerBase {
 
   async resume(): Promise<void> {
     if (this.teardownPromise) await this.teardownPromise;
+    if (!this.tournamentLeaseAuthorityIsCurrent()) {
+      this.expireTournamentLeaseAuthority();
+      return;
+    }
     if (this.lifecycleOperation) return this.lifecycleOperation;
     this.stopFenceApplied = false;
+    this.shutdownDrainFenceApplied = false;
     const lifecycle = this.lifecycleEpoch.begin();
     this.running = true;
+    this.armTournamentLeaseExpiryTimer();
     const operation = this.resumeLifecycle(lifecycle);
     this.lifecycleOperation = operation;
     try {
@@ -4026,7 +4274,7 @@ export abstract class TournamentManagerBase {
         }
       } else {
         for (const table of tables) {
-          const engine = new ServerTableEngine(table.id);
+          const engine = this.createManagedTableEngine(table.id);
           engine.setHub(tableStateHub); // Phase 1.1 PR-2
           this.wireEliminationWake(engine);
           this.tableEngines.set(table.id, engine);
@@ -4269,26 +4517,14 @@ export abstract class TournamentManagerBase {
     }
   }
 
-  /**
-   * Revoke this manager's mutation authority synchronously without stopping a
-   * hand in progress. GameServer uses this before its bounded between-hands
-   * drain so discovery cannot replace a manager whose dealers are being
-   * parked. The later stop() call performs the physical teardown.
-   */
-  fenceForServerShutdown(): void {
-    if (this.teardownPromise) return;
-    this.applyStopFence();
-  }
-
-  private applyStopFence(): Promise<void> | null {
+  private applyManagerMutationFence(clearLeaseExpiry: boolean): Promise<void> | null {
     const lifecycleOperation = this.lifecycleOperation;
-    if (this.stopFenceApplied) return lifecycleOperation;
-    this.stopFenceApplied = true;
     // The synchronous half is the ownership fence. No asynchronous boundary
     // may occur before the generation is invalidated and every delayed
     // callback is cancelled.
     this.running = false;
     this.lifecycleEpoch.abort();
+    if (clearLeaseExpiry) this.clearTournamentLeaseExpiryTimer();
     this.clearManagedTableEngineRecoveries();
     this.clearLifecycleTimers();
     if (this.blindTimer) {
@@ -4325,6 +4561,30 @@ export abstract class TournamentManagerBase {
       this.handForHandRePauseTimer = null;
     }
     return lifecycleOperation;
+  }
+
+  /**
+   * Revoke manager callbacks without revoking the exact tournament authority
+   * still needed by hands already in progress. GameServer keeps heartbeating
+   * this generation and its child engines until all tables park between hands.
+   */
+  beginServerShutdownDrain(): void {
+    if (this.teardownPromise || this.stopFenceApplied || this.shutdownDrainFenceApplied) return;
+    this.shutdownDrainFenceApplied = true;
+    this.applyManagerMutationFence(false);
+  }
+
+  /** Final shutdown fence, applied only after the between-hands drain. */
+  fenceForServerShutdown(): void {
+    if (this.teardownPromise) return;
+    this.applyStopFence();
+  }
+
+  private applyStopFence(): Promise<void> | null {
+    const lifecycleOperation = this.lifecycleOperation;
+    if (this.stopFenceApplied) return lifecycleOperation;
+    this.stopFenceApplied = true;
+    return this.applyManagerMutationFence(true);
   }
 
   stop(): Promise<void> {
@@ -5032,7 +5292,7 @@ export abstract class TournamentManagerBase {
 
     for (const t of existingTables ?? []) {
       if (this.tableEngines.has(t.id)) continue;
-      const engine = new ServerTableEngine(t.id);
+      const engine = this.createManagedTableEngine(t.id);
       engine.setHub(tableStateHub);
       this.wireEliminationWake(engine);
       this.tableEngines.set(t.id, engine);
@@ -5200,7 +5460,7 @@ export abstract class TournamentManagerBase {
         );
       }
 
-      const engine = new ServerTableEngine(table.id);
+      const engine = this.createManagedTableEngine(table.id);
       engine.setHub(tableStateHub); // Phase 1.1 PR-2
       this.wireEliminationWake(engine);
       this.tableEngines.set(table.id, engine);

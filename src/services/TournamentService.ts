@@ -28,6 +28,7 @@ import type { TournamentGameVariant } from '../config/tournamentVariants';
 import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
 import { gameManagementService } from './GameManagementService';
+import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
@@ -57,6 +58,7 @@ const REGISTER_REASON_TEXT: Record<string, string> = {
   misconfigured_bounty: 'This event is misconfigured, please tell the club owner',
   // The four-table cap, surfaced as a rule rather than a raw trigger message.
   table_limit_reached: 'You are already in four games. Leave one to join another.',
+  platform_frozen: PLATFORM_FROZEN_MESSAGE,
 };
 
 /**

@@ -2,14 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const results = vi.hoisted(() => ({
   tables: {
-    data: { club_id: 'club-1', restrict_observers: false } as Record<string, unknown> | null,
+    data: {
+      club_id: 'club-1',
+      union_id: null,
+      restrict_observers: false,
+    } as Record<string, unknown> | null,
     error: null as unknown,
   },
   table_seats: { data: null as Record<string, unknown> | null, error: null as unknown },
   club_members: {
-    data: { user_id: 'member-1' } as Record<string, unknown> | null,
+    data: [{ club_id: 'club-1' }] as Array<Record<string, unknown>>,
     error: null as unknown,
   },
+  scope: { data: ['club-1'] as unknown, error: null as unknown },
 }));
 
 vi.mock('./supabase.js', () => ({
@@ -20,8 +25,11 @@ vi.mock('./supabase.js', () => ({
         builder[method] = vi.fn(() => builder);
       }
       builder.maybeSingle = vi.fn(async () => results[table]);
+      builder.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve(results[table]).then(resolve);
       return builder;
     },
+    rpc: vi.fn(async () => results.scope),
   },
 }));
 
@@ -29,9 +37,13 @@ import { authorizeTableViewer } from './TableViewerAccess.js';
 
 describe('authorizeTableViewer', () => {
   beforeEach(() => {
-    results.tables = { data: { club_id: 'club-1', restrict_observers: false }, error: null };
+    results.tables = {
+      data: { club_id: 'club-1', union_id: null, restrict_observers: false },
+      error: null,
+    };
     results.table_seats = { data: null, error: null };
-    results.club_members = { data: { user_id: 'member-1' }, error: null };
+    results.club_members = { data: [{ club_id: 'club-1' }], error: null };
+    results.scope = { data: ['club-1'], error: null };
   });
 
   it('allows an active club member to observe', async () => {
@@ -44,7 +56,7 @@ describe('authorizeTableViewer', () => {
 
   it('allows a currently seated player even if membership changed', async () => {
     results.table_seats.data = { id: 'seat-1' };
-    results.club_members.data = null;
+    results.club_members.data = [];
     await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toMatchObject({
       allowed: true,
       reason: 'seated',
@@ -52,7 +64,7 @@ describe('authorizeTableViewer', () => {
   });
 
   it('denies a non-seated member when the table restricts observers', async () => {
-    results.tables.data = { club_id: 'club-1', restrict_observers: true };
+    results.tables.data = { club_id: 'club-1', union_id: null, restrict_observers: true };
 
     await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toEqual({
       allowed: false,
@@ -62,7 +74,7 @@ describe('authorizeTableViewer', () => {
   });
 
   it('allows a seated player when the table restricts observers', async () => {
-    results.tables.data = { club_id: 'club-1', restrict_observers: true };
+    results.tables.data = { club_id: 'club-1', union_id: null, restrict_observers: true };
     results.table_seats.data = { id: 'seat-1' };
 
     await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toMatchObject({
@@ -72,7 +84,7 @@ describe('authorizeTableViewer', () => {
   });
 
   it('denies a non-member and fails closed on lookup errors', async () => {
-    results.club_members.data = null;
+    results.club_members.data = [];
     await expect(authorizeTableViewer('table-1', 'outsider')).resolves.toMatchObject({
       allowed: false,
       reason: 'membership_required',
@@ -80,6 +92,62 @@ describe('authorizeTableViewer', () => {
 
     results.club_members.error = new Error('database unavailable');
     await expect(authorizeTableViewer('table-1', 'outsider')).resolves.toMatchObject({
+      allowed: false,
+      reason: 'check_failed',
+    });
+  });
+
+  it('allows a member-club player to observe a union-owned table', async () => {
+    results.tables.data = {
+      club_id: 'union-shell',
+      union_id: 'union-1',
+      restrict_observers: false,
+    };
+    results.scope.data = ['union-shell', 'club-1', 'club-2'];
+    results.club_members.data = [{ club_id: 'club-2' }];
+
+    await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toEqual({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'union-1',
+    });
+  });
+
+  it('recognizes a legacy union-shell table whose union_id was never stamped', async () => {
+    results.tables.data = {
+      club_id: 'union-shell',
+      union_id: null,
+      restrict_observers: false,
+    };
+    results.scope.data = ['union-shell', 'club-1'];
+    results.club_members.data = [{ club_id: 'club-1' }];
+
+    await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toMatchObject({
+      allowed: true,
+      reason: 'club_member',
+    });
+  });
+
+  it('recognizes a union-only table whose legacy club_id is null', async () => {
+    results.tables.data = {
+      club_id: null,
+      union_id: 'union-1',
+      restrict_observers: false,
+    };
+    results.scope.data = ['union-1', 'club-1'];
+    results.club_members.data = [{ club_id: 'club-1' }];
+
+    await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toEqual({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'union-1',
+    });
+  });
+
+  it('fails closed when authoritative union scope cannot be resolved', async () => {
+    results.scope.error = new Error('scope unavailable');
+
+    await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toMatchObject({
       allowed: false,
       reason: 'check_failed',
     });

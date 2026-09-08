@@ -18618,7 +18618,13 @@ export default function TablePage({
              Postgres by the freeze guard. Showing a player the raw refusal
              would read as something broken; the truth is a break they were
              told about, and a seat they can take in a few minutes. */
-          const frozenMsg = platformFrozenMessage(error);
+          /* Some entry RPCs return the ordinary refusal as structured JSON
+             (`{ ok: false, reason: 'platform_frozen' }`) while trigger-level
+             refusals arrive in PostgREST's `error`. Recognise both shapes so
+             the durable maintenance boundary never degrades into a generic
+             red error toast merely because it refused before reaching the
+             row trigger. */
+          const frozenMsg = platformFrozenMessage(error ?? res);
           if (frozenMsg) {
             toast?.info?.(frozenMsg);
             return;

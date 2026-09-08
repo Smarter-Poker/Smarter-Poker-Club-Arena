@@ -28,19 +28,16 @@
  * here could freeze the entire platform — the exact outcome it exists to
  * prevent. Two rules keep that from happening:
  *
- *   - Enforcement is OFF unless ENGINE_LEASE_ENFORCE === 'on'. Until then the
- *     module claims, heartbeats and LOGS conflicts, but `claimTable()` still
- *     answers true and `heartbeatTables()` still reports nothing lost. We get
- *     the evidence before we get the behaviour.
+ *   - Enforcement is unconditional. A runtime environment switch cannot
+ *     authorize a second dealer when the database did not prove ownership.
  *
  *   - With enforcement on, a claim RPC failure is `retryable_failure`, never a
  *     grant. Starting a second dealer because ownership could not be checked is
  *     a split-brain correctness failure, not a liveness recovery.
  *
- *   - The explicit enforcement-off escape hatch retains its historical
- *     fail-open behaviour. Its grants are marked `verified: false`, so callers
- *     and diagnostics never confuse an operator override with a database-
- *     confirmed lease.
+ *   - An unreadable or malformed ownership answer always fails closed. The
+ *     only safe recovery is an exact causal retry with the same requested
+ *     generation, never an unleased dealer.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -69,8 +66,27 @@ export const INSTANCE_VERSION: string =
 export const LEASE_STALE_SECONDS = 30;
 
 /**
- * Enforcement is ON BY DEFAULT as of 2026-08-20 (opt-OUT via
- * ENGINE_LEASE_ENFORCE=off, kept for emergencies).
+ * A verified dealer expires locally ten seconds before its database row is
+ * eligible for takeover. This is anchored before each RPC starts, so network
+ * latency and event-loop delay can only shorten authority, never extend it
+ * beyond the 30-second database boundary.
+ */
+export const TABLE_LEASE_PROOF_WINDOW_MS = 20_000;
+
+let monotonicNow: () => number = () => performance.now();
+
+export function tableLeaseMonotonicNow(): number {
+  return monotonicNow();
+}
+
+/** Test seam for deterministic event-loop-delay and expiry regressions. */
+export function _setTableLeaseMonotonicNowForTests(now?: () => number): void {
+  monotonicNow = now ?? (() => performance.now());
+}
+
+/**
+ * Enforcement is permanently ON as of 2026-09-08. The earlier environment
+ * opt-out recreated the split-brain condition this lease exists to prevent.
  *
  * The evidence phase this flag existed for is over, and it ended the hard
  * way: during the 23:48Z deploy overlap, two engine instances dealt table
@@ -88,7 +104,7 @@ export const LEASE_STALE_SECONDS = 30;
  * enforcement is on. A database blip is retried instead of creating an
  * unleased second dealer.
  */
-export const LEASE_ENFORCED: boolean = process.env.ENGINE_LEASE_ENFORCE !== 'off';
+export const LEASE_ENFORCED: true = true;
 
 export interface LeaseConflict {
   tableId: string;
@@ -98,11 +114,22 @@ export interface LeaseConflict {
 }
 
 export type TableLeaseClaimResult =
-  | { status: 'granted'; verified: boolean }
+  | {
+      status: 'granted';
+      verified: true;
+      leaseGeneration: string;
+      proofDeadlineMonotonicMs: number;
+    }
+  | {
+      status: 'acquired_but_proof_expired';
+      leaseGeneration: string;
+    }
   | { status: 'owned_elsewhere'; conflict: LeaseConflict }
   | {
       status: 'retryable_failure';
       reason: 'rpc_error' | 'rpc_threw' | 'malformed_response';
+      requestedGeneration: string;
+      mayHaveCommitted: boolean;
     };
 
 /**
@@ -113,6 +140,24 @@ export type TableLeaseClaimResult =
 const conflicts = new Map<string, LeaseConflict>();
 let claimErrors = 0;
 let heartbeatErrors = 0;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export interface TableLeaseHeartbeatClaim {
+  tableId: string;
+  leaseGeneration: string;
+}
+
+export type TableLeaseReleaseOutcome =
+  | { status: 'confirmed'; releasedCount: number; attempts: number }
+  | {
+      status: 'uncertain';
+      reason: 'invalid_claims' | 'rpc_error' | 'rpc_threw' | 'malformed_response';
+      detail: string;
+      attempts: number;
+    };
+
+const LEASE_RELEASE_MAX_ATTEMPTS = 2;
 
 export function recentLeaseConflicts(limit = 20): LeaseConflict[] {
   return [...conflicts.values()].sort((a, b) => b.at - a.at).slice(0, limit);
@@ -142,6 +187,8 @@ export function _resetLeaseState(): void {
 
 function unverifiedClaimResult(
   tableId: string,
+  requestedGeneration: string,
+  mayHaveCommitted: boolean,
   reason: 'rpc_error' | 'rpc_threw' | 'malformed_response',
   detail: string
 ): TableLeaseClaimResult {
@@ -149,35 +196,50 @@ function unverifiedClaimResult(
   if (claimErrors <= 3) {
     console.warn(
       `[lease] claim_table_lease ${reason} for ${tableId} (${detail}) - ` +
-        (LEASE_ENFORCED
-          ? 'refusing to deal until ownership can be proven'
-          : 'proceeding without a verified lease because enforcement is off')
+        'refusing to deal until ownership can be proven'
     );
   }
-  return LEASE_ENFORCED
-    ? { status: 'retryable_failure', reason }
-    : { status: 'granted', verified: false };
+  return { status: 'retryable_failure', reason, requestedGeneration, mayHaveCommitted };
 }
 
 /**
  * Try to take (or renew) one table lease without erasing why admission failed.
  *
- * A verified grant is the only success while enforcement is on. Transport/RPC
- * failures and malformed payloads are retryable: silence is not proof that no
- * other dealer owns the table. Enforcement off remains an explicit operator
- * escape hatch and returns an unverified grant while retaining diagnostics.
+ * A verified grant is the only success. Transport/RPC failures and malformed
+ * payloads are retryable: silence is not proof that no other dealer owns the
+ * table.
  */
-export async function claimTableLease(tableId: string): Promise<TableLeaseClaimResult> {
+export async function claimTableLease(
+  tableId: string,
+  requestedGeneration: string
+): Promise<TableLeaseClaimResult> {
+  if (!UUID_PATTERN.test(requestedGeneration)) {
+    return unverifiedClaimResult(
+      tableId,
+      requestedGeneration,
+      false,
+      'malformed_response',
+      'caller supplied an invalid requested generation'
+    );
+  }
+  const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('claim_table_lease', {
+    const { data, error } = await supabase.rpc('claim_table_lease_v2', {
       p_table_id: tableId,
       p_instance_id: INSTANCE_ID,
       p_version: INSTANCE_VERSION,
+      p_requested_generation: requestedGeneration,
       p_stale_seconds: LEASE_STALE_SECONDS,
     });
 
     if (error) {
-      return unverifiedClaimResult(tableId, 'rpc_error', String(error.message || 'unknown error'));
+      return unverifiedClaimResult(
+        tableId,
+        requestedGeneration.toLowerCase(),
+        true,
+        'rpc_error',
+        String(error.message || 'unknown error')
+      );
     }
 
     // The RPC RETURNS TABLE, so PostgREST hands back an array of one row.
@@ -189,6 +251,8 @@ export async function claimTableLease(tableId: string): Promise<TableLeaseClaimR
     ) {
       return unverifiedClaimResult(
         tableId,
+        requestedGeneration.toLowerCase(),
+        true,
         'malformed_response',
         'response did not contain one boolean granted discriminator'
       );
@@ -198,8 +262,42 @@ export async function claimTableLease(tableId: string): Promise<TableLeaseClaimR
       granted: boolean;
       holder?: unknown;
       holder_age_seconds?: unknown;
+      lease_generation?: unknown;
+      protocol_version?: unknown;
     };
-    if (leaseRow.granted) return { status: 'granted', verified: true };
+    if (leaseRow.granted) {
+      if (
+        typeof leaseRow.lease_generation !== 'string' ||
+        !UUID_PATTERN.test(leaseRow.lease_generation) ||
+        leaseRow.lease_generation.toLowerCase() !== requestedGeneration.toLowerCase() ||
+        leaseRow.protocol_version !== 2
+      ) {
+        return unverifiedClaimResult(
+          tableId,
+          requestedGeneration.toLowerCase(),
+          true,
+          'malformed_response',
+          'a granted response did not prove the exact requested protocol-2 generation'
+        );
+      }
+      if (tableLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
+        /* PostgreSQL already committed this exact generation. Returning an
+           ordinary retry would orphan a fresh invisible lease for 30 seconds.
+           The admission owner must exact-release it before choosing a new UUID. */
+        claimErrors++;
+        return {
+          status: 'acquired_but_proof_expired',
+          leaseGeneration: leaseRow.lease_generation.toLowerCase(),
+        };
+      }
+      conflicts.delete(tableId);
+      return {
+        status: 'granted',
+        verified: true,
+        leaseGeneration: leaseRow.lease_generation.toLowerCase(),
+        proofDeadlineMonotonicMs,
+      };
+    }
 
     const rawAge = leaseRow.holder_age_seconds;
     const numericAge = rawAge === null || rawAge === undefined ? null : Number(rawAge);
@@ -214,30 +312,40 @@ export async function claimTableLease(tableId: string): Promise<TableLeaseClaimR
     console.warn(
       `[lease] SPLIT-BRAIN: table ${tableId} is held by instance ${conflict.holder} ` +
         `(last heartbeat ${conflict.holderAgeSeconds}s ago). This instance is ${INSTANCE_ID}. ` +
-        (LEASE_ENFORCED
-          ? 'Refusing to deal it.'
-          : 'ENGINE_LEASE_ENFORCE is off, so dealing anyway - set it to "on" once these logs look right.')
+        'Refusing to deal it.'
     );
-    return LEASE_ENFORCED
-      ? { status: 'owned_elsewhere', conflict }
-      : { status: 'granted', verified: false };
+    return { status: 'owned_elsewhere', conflict };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    return unverifiedClaimResult(tableId, 'rpc_threw', detail);
+    return unverifiedClaimResult(
+      tableId,
+      requestedGeneration.toLowerCase(),
+      true,
+      'rpc_threw',
+      detail
+    );
   }
-}
-
-/**
- * Boolean compatibility adapter for the existing discovery call sites. New
- * admission code must use claimTableLease() so a transient ownership failure
- * remains retryable instead of being conflated with a foreign live owner.
- */
-export async function claimTable(tableId: string): Promise<boolean> {
-  return (await claimTableLease(tableId)).status === 'granted';
 }
 
 /** What the database says is true of one id we asked to renew. */
 export type LeaseState = 'kept' | 'taken' | 'stale' | 'missing';
+
+export interface TableLeaseHeartbeatProof {
+  tableId: string;
+  leaseGeneration: string;
+  proofDeadlineMonotonicMs: number;
+}
+
+export type TableLeaseHeartbeatOutcome =
+  | {
+      status: 'answered';
+      proofs: TableLeaseHeartbeatProof[];
+      lostTableIds: string[];
+    }
+  | {
+      status: 'uncertain';
+      reason: 'rpc_error' | 'rpc_threw';
+    };
 
 /** Counters behind the /health lease block, so the split is visible remotely. */
 let reclaimableHeartbeats = 0;
@@ -245,84 +353,135 @@ let reclaimableHeartbeats = 0;
 /**
  * Renew every lease this instance believes it holds.
  *
- * @returns the subset of `tableIds` genuinely TAKEN by another live engine,
- *          which must be torn down here. Empty on any error, because "we could
- *          not ask" must never be read as "we lost everything"; that inversion
- *          is how a fail-safe becomes an outage.
- *
- * ONLY 'taken' IS A TAKEOVER (2026-08-29). This used to subtract the renewed
- * ids from the requested ids and call the whole remainder a takeover. Three
- * different situations produce that remainder and only one of them is a
- * takeover — the other two are "there is no row for this table" and "the row's
- * holder has gone quiet", both of which we may simply re-claim.
- *
- * (missing) is not hypothetical: an operator can explicitly disable
- * enforcement, a legacy process may have started fail-open, or a row can be
- * removed after admission. The engine logged 596 supabase_timeouts in the hour
- * this distinction was introduced.
- *
- * The cost of the old guess was measured, not theorised: 204 teardowns in one
- * hour, "another engine instance has taken it over. Stopping it here." — while
- * eight of those exact table ids were, in the database at that moment, held by
- * THIS instance with a 2.8-second-old heartbeat. Live tables and live
- * tournaments were being stopped for a split-brain that did not exist.
+ * A transport failure is UNKNOWN: it extends nothing, and each engine keeps
+ * running only until its previously proven local deadline. A successful RPC
+ * must prove one exact `kept` row for every requested id. `taken`, `stale`,
+ * `missing`, duplicate, omitted, or malformed rows all mean the old engine no
+ * longer has a current proof and must fail-stop before a database takeover is
+ * possible. That is deliberately stricter than the pre-deadline behavior,
+ * which allowed an UNKNOWN heartbeat to keep a dealer alive forever.
  */
-export async function heartbeatTables(tableIds: string[]): Promise<string[]> {
-  if (tableIds.length === 0) return [];
+export async function heartbeatTables(
+  claims: TableLeaseHeartbeatClaim[]
+): Promise<TableLeaseHeartbeatOutcome> {
+  if (claims.length === 0) {
+    return { status: 'answered', proofs: [], lostTableIds: [] };
+  }
+  const tableIds = claims.map((claim) => claim.tableId);
+  const uniqueTableIds = new Set(tableIds);
+  if (
+    uniqueTableIds.size !== claims.length ||
+    claims.some((claim) => !UUID_PATTERN.test(claim.leaseGeneration))
+  ) {
+    heartbeatErrors++;
+    if (heartbeatErrors <= 3) {
+      console.warn('[lease] heartbeat refused malformed or duplicate generation claims');
+    }
+    return { status: 'answered', proofs: [], lostTableIds: tableIds };
+  }
+  const proofDeadlineMonotonicMs = tableLeaseMonotonicNow() + TABLE_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('heartbeat_table_leases_v2', {
+    const { data, error } = await supabase.rpc('heartbeat_table_leases_v3', {
       p_instance_id: INSTANCE_ID,
-      p_table_ids: tableIds,
+      p_claims: claims.map((claim) => ({
+        table_id: claim.tableId,
+        lease_generation: claim.leaseGeneration,
+      })),
       p_stale_seconds: LEASE_STALE_SECONDS,
     });
     if (error) {
       heartbeatErrors++;
       if (heartbeatErrors <= 3) {
-        console.warn(`[lease] heartbeat failed (${error.message}) - keeping every table`);
+        console.warn(
+          `[lease] heartbeat failed (${error.message}) - retaining only the prior proof window`
+        );
       }
-      return [];
+      return { status: 'uncertain', reason: 'rpc_error' };
     }
 
-    const rows = (data ?? []) as Array<{ table_id: string; state: LeaseState }>;
-    const stateOf = new Map(rows.map((r) => [r.table_id, r.state]));
-    const taken: string[] = [];
-    let reclaimable = 0;
+    const rawRows = Array.isArray(data) ? data : null;
+    const expectedIds = new Set(tableIds);
+    const rowsById = new Map<string, { state: LeaseState; leaseGeneration: unknown }>();
+    let malformed = rawRows === null || rawRows.length !== claims.length;
+    for (const candidate of rawRows ?? []) {
+      if (!candidate || typeof candidate !== 'object') {
+        malformed = true;
+        continue;
+      }
+      const row = candidate as {
+        table_id?: unknown;
+        state?: unknown;
+        lease_generation?: unknown;
+      };
+      if (
+        typeof row.table_id !== 'string' ||
+        !expectedIds.has(row.table_id) ||
+        !['kept', 'taken', 'stale', 'missing'].includes(String(row.state)) ||
+        rowsById.has(row.table_id)
+      ) {
+        malformed = true;
+        continue;
+      }
+      rowsById.set(row.table_id, {
+        state: row.state as LeaseState,
+        leaseGeneration: row.lease_generation,
+      });
+    }
 
-    for (const id of tableIds) {
-      // An id the function did not answer for cannot be proven taken, so it is
-      // treated as reclaimable. Silence is not evidence of a takeover — that
-      // conflation is the entire bug this replaced.
-      const state = stateOf.get(id) ?? 'missing';
-      if (state === 'kept') continue;
-      if (state === 'taken') {
-        taken.push(id);
-        conflicts.set(id, { tableId: id, holder: null, holderAgeSeconds: null, at: Date.now() });
+    if (malformed || rowsById.size !== claims.length) {
+      heartbeatErrors++;
+      if (heartbeatErrors <= 3) {
+        console.warn('[lease] heartbeat returned an incomplete or malformed ownership proof');
+      }
+      return { status: 'answered', proofs: [], lostTableIds: [...tableIds] };
+    }
+
+    const proofs: TableLeaseHeartbeatProof[] = [];
+    const lostTableIds: string[] = [];
+
+    for (const claim of claims) {
+      const row = rowsById.get(claim.tableId)!;
+      const exactGeneration =
+        typeof row.leaseGeneration === 'string' &&
+        row.leaseGeneration.toLowerCase() === claim.leaseGeneration.toLowerCase();
+      if (
+        row.state === 'kept' &&
+        exactGeneration &&
+        tableLeaseMonotonicNow() < proofDeadlineMonotonicMs
+      ) {
+        proofs.push({ ...claim, proofDeadlineMonotonicMs });
+        continue;
+      }
+
+      lostTableIds.push(claim.tableId);
+      if (row.state === 'taken' || (row.state === 'kept' && !exactGeneration)) {
+        conflicts.set(claim.tableId, {
+          tableId: claim.tableId,
+          holder: null,
+          holderAgeSeconds: null,
+          at: Date.now(),
+        });
         console.warn(
-          `[lease] table ${id} is held by another LIVE engine instance` +
-            (LEASE_ENFORCED ? '. Stopping it here.' : ' (enforcement off; still dealing).')
+          `[lease] table ${claim.tableId} no longer proves generation ${claim.leaseGeneration}` +
+            '. Stopping the previously verified dealer here.'
         );
         continue;
       }
-      // 'missing' or 'stale' — nobody took it. claimTable will put the row
-      // back on the next discovery tick; tearing the table down would be the
-      // false alarm, not the safety measure.
-      reclaimable++;
-    }
-
-    if (reclaimable > 0) {
-      reclaimableHeartbeats += reclaimable;
+      reclaimableHeartbeats++;
       console.warn(
-        `[lease] ${reclaimable} of ${tableIds.length} table leases were missing or stale, not taken - re-claiming, still dealing`
+        `[lease] table ${claim.tableId} no longer has a current ${row.state} ownership proof. Stopping it before re-admission.`
       );
     }
 
-    return LEASE_ENFORCED ? taken : [];
+    return { status: 'answered', proofs, lostTableIds };
   } catch (err) {
     heartbeatErrors++;
     if (heartbeatErrors <= 3) {
-      console.warn(`[lease] heartbeat threw (${(err as Error)?.message}) - keeping every table`);
+      console.warn(
+        `[lease] heartbeat threw (${(err as Error)?.message}) - retaining only the prior proof window`
+      );
     }
-    return [];
+    return { status: 'uncertain', reason: 'rpc_threw' };
   }
 }
 
@@ -332,57 +491,79 @@ export function reclaimableLeaseCount(): number {
 }
 
 /**
- * Hand back leases on the way out. Purely an optimisation: without it the
- * incoming container waits out LEASE_STALE_SECONDS on every table during a
- * rolling deploy. Never allowed to delay or fail a shutdown.
+ * Hand back exact leases on the way out. A confirmed zero is also proof: this
+ * generation was already absent and no successor was touched. An uncertain
+ * answer is intentionally returned to the lifecycle owner, because claiming a
+ * successful rolling handoff while fresh rows may remain creates a guaranteed
+ * 30-second table outage.
  */
-export async function releaseTables(tableIds?: string[]): Promise<void> {
-  try {
-    await supabase.rpc('release_table_leases', {
-      p_instance_id: INSTANCE_ID,
-      p_table_ids: tableIds ?? null,
-    });
-  } catch {
-    // Shutdown path — a failure here costs at most 30s of stale lease.
+export async function releaseTables(
+  claims: TableLeaseHeartbeatClaim[] = []
+): Promise<TableLeaseReleaseOutcome> {
+  if (claims.length === 0) {
+    return { status: 'confirmed', releasedCount: 0, attempts: 0 };
   }
-}
-
-/**
- * Re-attempt every claim this instance was refused, and forget the ones it
- * now holds.
- *
- * Why this exists (2026-08-17). `conflicts` is only ever written, never
- * cleared — there is no other `conflicts.delete` in this file. So a table
- * refused once stayed refused for the life of the process:
- *
- *   - With enforcement OFF, claimTable() still returns true, so GameServer
- *     starts the table anyway and puts it in `tableEngines`. The discovery
- *     loop then skips it forever (`if (this.tableEngines.has(id)) continue`),
- *     the claim is never retried, and the table deals with no lease row.
- *   - `conflictCount` on /health therefore latches. Observed right after the
- *     2026-08-17 cutover: 4 tables dealing with no lease and a conflict count
- *     pinned at 4 for the life of the container. That number is exactly the
- *     signal used to decide whether ENGINE_LEASE_ENFORCE can be switched on,
- *     so latching it makes the decision impossible to make.
- *
- * The refusals are almost always a cutover race — the outgoing container
- * still held a fresh lease when the incoming one asked, and released it
- * moments later. Asking again a few seconds on simply succeeds.
- *
- * A conflict is retired only by a VERIFIED grant. RPC errors, malformed
- * responses, and enforcement-off fail-open admissions are not proof that the
- * foreign owner is gone, so they retain the diagnostic row.
- *
- * @returns how many tables were reclaimed on this pass.
- */
-export async function retryRefusedClaims(): Promise<number> {
-  let reclaimed = 0;
-  for (const tableId of [...conflicts.keys()]) {
-    const result = await claimTableLease(tableId);
-    if (result.status === 'granted' && result.verified) {
-      conflicts.delete(tableId);
-      reclaimed++;
+  if (
+    new Set(claims.map((claim) => claim.tableId)).size !== claims.length ||
+    claims.some(
+      (claim) => !UUID_PATTERN.test(claim.tableId) || !UUID_PATTERN.test(claim.leaseGeneration)
+    )
+  ) {
+    return {
+      status: 'uncertain',
+      reason: 'invalid_claims',
+      detail: 'release requires unique table ids and one valid generation per table',
+      attempts: 0,
+    };
+  }
+  let lastFailure: Exclude<TableLeaseReleaseOutcome, { status: 'confirmed' }> = {
+    status: 'uncertain',
+    reason: 'rpc_threw',
+    detail: 'release did not run',
+    attempts: 0,
+  };
+  const payload = {
+    p_instance_id: INSTANCE_ID,
+    p_claims: claims.map((claim) => ({
+      table_id: claim.tableId,
+      lease_generation: claim.leaseGeneration,
+    })),
+  };
+  for (let attempt = 1; attempt <= LEASE_RELEASE_MAX_ATTEMPTS; attempt++) {
+    try {
+      const { data, error } = await supabase.rpc('release_table_leases_v2', payload);
+      if (error) {
+        lastFailure = {
+          status: 'uncertain',
+          reason: 'rpc_error',
+          detail: String(error.message || 'unknown release error'),
+          attempts: attempt,
+        };
+        continue;
+      }
+      if (
+        typeof data !== 'number' ||
+        !Number.isSafeInteger(data) ||
+        data < 0 ||
+        data > claims.length
+      ) {
+        lastFailure = {
+          status: 'uncertain',
+          reason: 'malformed_response',
+          detail: 'release did not return a bounded integer deletion count',
+          attempts: attempt,
+        };
+        continue;
+      }
+      return { status: 'confirmed', releasedCount: data, attempts: attempt };
+    } catch (error) {
+      lastFailure = {
+        status: 'uncertain',
+        reason: 'rpc_threw',
+        detail: error instanceof Error ? error.message : String(error),
+        attempts: attempt,
+      };
     }
   }
-  return reclaimed;
+  return lastFailure;
 }

@@ -96,6 +96,41 @@ import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
 
+export type EngineLeaseAuthority =
+  | {
+      scope: 'cash';
+      verified: true;
+      generation: string;
+      proofDeadlineMonotonicMs: number;
+    }
+  | {
+      scope: 'tournament';
+      verified: true;
+      generation: string;
+      tournamentId: string;
+      proofDeadlineMonotonicMs: number;
+    }
+  | {
+      scope: 'cash';
+      verified: false;
+      generation: null;
+      proofDeadlineMonotonicMs: null;
+    }
+  | {
+      scope: 'tournament';
+      verified: false;
+      generation: null;
+      tournamentId: string;
+      proofDeadlineMonotonicMs: null;
+    };
+
+let leaseMonotonicNow: () => number = () => performance.now();
+
+/** Test seam for a timer callback delayed beyond its monotonic authority. */
+export function _setEngineLeaseMonotonicNowForTests(now?: () => number): void {
+  leaseMonotonicNow = now ?? (() => performance.now());
+}
+
 export abstract class ServerTableEngineBase {
   protected tableId: string;
   protected running: boolean = false;
@@ -112,6 +147,18 @@ export abstract class ServerTableEngineBase {
   /** One causal hand-off from an asynchronously failed dealer to its owner. */
   private restartRequiredCallback: ((reason: string) => void) | null = null;
   private restartRequiredSignalled: boolean = false;
+  /**
+   * Distributed ownership proof carried by this exact dealer generation.
+   * `null` is reserved for isolated tests/legacy non-leased workers. Production
+   * cash and tournament admission always pass an explicit authority object.
+   */
+  private readonly engineLeaseScope: 'cash' | 'tournament' | null;
+  private readonly engineLeaseVerified: boolean;
+  private readonly engineLeaseGeneration: string | null;
+  private readonly engineLeaseTournamentId: string | null;
+  private engineLeaseProofDeadlineMonotonicMs: number | null;
+  private engineLeaseAuthorityExpired = false;
+  private engineLeaseExpiryTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * ═══ READY IS NOT DEALING (2026-09-05) ═══
    *
@@ -649,8 +696,160 @@ export abstract class ServerTableEngineBase {
     return claimed;
   }
 
-  /** Re-check generation identity after every start-up await. */
-  private lifecycleCanMutate(): boolean {
+  private engineLeaseAuthorityIsCurrent(): boolean {
+    /* An absent/unverified authority exists only for isolated dependency-
+       injected unit/E2E harnesses. GameServer and TournamentManager never
+       construct this shape in production. */
+    if (!this.engineLeaseScope || !this.engineLeaseVerified) return true;
+    return (
+      !this.engineLeaseAuthorityExpired &&
+      this.engineLeaseProofDeadlineMonotonicMs !== null &&
+      Number.isFinite(this.engineLeaseProofDeadlineMonotonicMs) &&
+      leaseMonotonicNow() < this.engineLeaseProofDeadlineMonotonicMs
+    );
+  }
+
+  private clearEngineLeaseExpiryTimer(): void {
+    if (!this.engineLeaseExpiryTimer) return;
+    clearTimeout(this.engineLeaseExpiryTimer);
+    this.engineLeaseExpiryTimer = null;
+  }
+
+  private armEngineLeaseExpiryTimer(): void {
+    this.clearEngineLeaseExpiryTimer();
+    if (!this.engineLeaseScope || !this.engineLeaseVerified || this.engineLeaseAuthorityExpired) {
+      return;
+    }
+    const deadline = this.engineLeaseProofDeadlineMonotonicMs;
+    if (deadline === null || !Number.isFinite(deadline)) {
+      this.expireEngineLeaseAuthority();
+      return;
+    }
+    const delayMs = deadline - leaseMonotonicNow();
+    if (delayMs <= 0) {
+      this.expireEngineLeaseAuthority();
+      return;
+    }
+    this.engineLeaseExpiryTimer = setTimeout(() => {
+      this.engineLeaseExpiryTimer = null;
+      /* Timers may wake early. Re-read the monotonic deadline rather than
+         converting scheduler jitter into a false ownership loss. */
+      if (this.engineLeaseAuthorityIsCurrent()) {
+        this.armEngineLeaseExpiryTimer();
+        return;
+      }
+      this.expireEngineLeaseAuthority();
+    }, Math.ceil(delayMs));
+    this.engineLeaseExpiryTimer.unref?.();
+  }
+
+  private expireEngineLeaseAuthority(): void {
+    if (!this.engineLeaseScope || !this.engineLeaseVerified || this.engineLeaseAuthorityExpired) {
+      return;
+    }
+    this.engineLeaseAuthorityExpired = true;
+    this.clearEngineLeaseExpiryTimer();
+    this.killForRestart(`${this.engineLeaseScope}_lease_proof_expired`);
+  }
+
+  /**
+   * Extend this exact dealer's proof. Scope and generation are immutable;
+   * heartbeat success may move only the conservative monotonic deadline.
+   */
+  renewEngineLeaseProof(authority: EngineLeaseAuthority): boolean {
+    if (
+      !this.engineLeaseScope ||
+      !this.engineLeaseVerified ||
+      !authority.verified ||
+      this.engineLeaseScope !== authority.scope ||
+      (this.engineLeaseGeneration ?? '').toLowerCase() !==
+        (authority.generation ?? '').toLowerCase() ||
+      (this.engineLeaseTournamentId ?? '').toLowerCase() !==
+        (authority.scope === 'tournament' ? authority.tournamentId : '').toLowerCase() ||
+      this.engineLeaseAuthorityExpired ||
+      !Number.isFinite(authority.proofDeadlineMonotonicMs) ||
+      leaseMonotonicNow() >= authority.proofDeadlineMonotonicMs
+    ) {
+      return false;
+    }
+    /* Concurrent renewal callers can complete out of order during a shutdown
+       handoff. Every accepted deadline is independently conservative, so keep
+       the greatest one and never let an older response shorten current proof. */
+    this.engineLeaseProofDeadlineMonotonicMs = Math.max(
+      this.engineLeaseProofDeadlineMonotonicMs ?? Number.NEGATIVE_INFINITY,
+      authority.proofDeadlineMonotonicMs
+    );
+    if (this.running) this.armEngineLeaseExpiryTimer();
+    return true;
+  }
+
+  /** Read-time fence catches an event loop that resumes before its timer runs. */
+  hasCurrentEngineLeaseAuthority(): boolean {
+    if (this.engineLeaseAuthorityIsCurrent()) return true;
+    this.expireEngineLeaseAuthority();
+    return false;
+  }
+
+  /** Diagnostics and future atomic-settlement fencing carry this exact scope. */
+  getEngineLeaseAuthority(): EngineLeaseAuthority | null {
+    if (!this.engineLeaseScope) return null;
+    if (!this.engineLeaseVerified) {
+      return this.engineLeaseScope === 'tournament' && this.engineLeaseTournamentId
+        ? {
+            scope: 'tournament',
+            verified: false,
+            generation: null,
+            tournamentId: this.engineLeaseTournamentId,
+            proofDeadlineMonotonicMs: null,
+          }
+        : {
+            scope: 'cash',
+            verified: false,
+            generation: null,
+            proofDeadlineMonotonicMs: null,
+          };
+    }
+    if (this.engineLeaseScope === 'tournament') {
+      if (
+        !this.engineLeaseGeneration ||
+        !this.engineLeaseTournamentId ||
+        this.engineLeaseProofDeadlineMonotonicMs === null
+      ) {
+        return null;
+      }
+      return {
+        scope: 'tournament',
+        verified: true,
+        generation: this.engineLeaseGeneration,
+        tournamentId: this.engineLeaseTournamentId,
+        proofDeadlineMonotonicMs: this.engineLeaseProofDeadlineMonotonicMs,
+      };
+    }
+    if (!this.engineLeaseGeneration || this.engineLeaseProofDeadlineMonotonicMs === null) {
+      return null;
+    }
+    return {
+      scope: 'cash',
+      verified: true,
+      generation: this.engineLeaseGeneration,
+      proofDeadlineMonotonicMs: this.engineLeaseProofDeadlineMonotonicMs,
+    };
+  }
+
+  /** Synchronous distributed fence; physical teardown remains owner-managed. */
+  fenceForEngineLeaseLoss(reason = 'distributed_lease_lost', notifyOwner = false): void {
+    if (this.engineLeaseVerified) this.engineLeaseAuthorityExpired = true;
+    this.clearEngineLeaseExpiryTimer();
+    if (this.terminal) return;
+    this.killForRestart(reason, notifyOwner);
+  }
+
+  /** Re-check process and distributed generation identity after every await. */
+  protected lifecycleCanMutate(): boolean {
+    if (!this.engineLeaseAuthorityIsCurrent()) {
+      this.expireEngineLeaseAuthority();
+      return false;
+    }
     return this.running && !this.terminal && this.isCurrentEngine();
   }
 
@@ -1457,8 +1656,14 @@ export abstract class ServerTableEngineBase {
   protected tableBreakEngine: TableBreakEngine;
   protected engineTelemetry: EngineTelemetry;
 
-  constructor(tableId: string) {
+  constructor(tableId: string, leaseAuthority: EngineLeaseAuthority | null = null) {
     this.tableId = tableId;
+    this.engineLeaseScope = leaseAuthority?.scope ?? null;
+    this.engineLeaseVerified = leaseAuthority?.verified ?? false;
+    this.engineLeaseGeneration = leaseAuthority?.generation ?? null;
+    this.engineLeaseTournamentId =
+      leaseAuthority?.scope === 'tournament' ? leaseAuthority.tournamentId : null;
+    this.engineLeaseProofDeadlineMonotonicMs = leaseAuthority?.proofDeadlineMonotonicMs ?? null;
     this.ready = new Promise<boolean>((resolve) => {
       this.settleReady = resolve;
     });
@@ -1471,6 +1676,7 @@ export abstract class ServerTableEngineBase {
       tableId,
       isCash: () => !!this.tableInfo && !this.isTournamentTable(),
       isFrozen: () => isMaintenanceFrozen(),
+      canMutate: () => this.lifecycleCanMutate(),
       evaluate: evaluateCashSessions,
       report: reportError,
     });
@@ -1977,10 +2183,15 @@ export abstract class ServerTableEngineBase {
       throw new Error(`Table engine ${this.tableId} is terminal and cannot be restarted`);
     }
     if (this.running) return;
+    if (!this.engineLeaseAuthorityIsCurrent()) {
+      this.expireEngineLeaseAuthority();
+      throw new Error(`Table engine ${this.tableId} has no current distributed lease proof`);
+    }
     if (!this.claimProcessOwnership()) {
       throw new Error(`Table engine ${this.tableId} already has another process-local generation`);
     }
     this.running = true;
+    this.armEngineLeaseExpiryTimer();
     console.log(`[ServerTableEngine:${this.tableId}] Starting...`);
 
     try {
@@ -2218,6 +2429,16 @@ export abstract class ServerTableEngineBase {
           await this.sleep(5000);
           continue;
         }
+        /* A cash table below its deal minimum never reaches dealingLoop(). A
+           bust rebuy can still be committed from the player's cashier while
+           the table waits here, so this boundary must run the same exact,
+           envelope-aware pending-row consumer before it decides there are too
+           few funded seats. The sweep flag starts true once per engine and is
+           raised again by every in-process add-on / observed bust rebuy. */
+        if (!this.isTournamentTable()) {
+          await this.processPendingAddOns(this.seatedPlayers);
+          if (!this.lifecycleCanMutate()) return;
+        }
         // BEFORE the sit-out restore, always: registering a player first would
         // block the adoption (restoreFsmStates never clobbers a live entry).
         this.adoptMovedPresence();
@@ -2352,6 +2573,7 @@ export abstract class ServerTableEngineBase {
     // the same turn observes it before teardown reaches its first await.
     this.terminal = true;
     this.running = false;
+    this.clearEngineLeaseExpiryTimer();
     this.releasePendingPauseWait();
     // A stop before `waiting` is a "never got there"; after it, a no-op.
     this.settleReady(false);
@@ -2698,6 +2920,9 @@ export abstract class ServerTableEngineBase {
   ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
     const { done, held } = await executePendingSeatMoves(this.tableId, opts);
+    // The SQL move is durable and idempotent, but this process's mirrors and
+    // broadcasts belong only to the exact engine generation that requested it.
+    if (!this.lifecycleCanMutate()) return [];
     // The first side of a swap to reach its boundary: held out of the deal
     // until the other table lands both chairs. Told once.
     for (const h of held) {
@@ -3141,6 +3366,7 @@ export abstract class ServerTableEngineBase {
     this.recordRecoveryEvent('watchdog_kill_rebuild', reason);
     this.terminal = true;
     this.running = false;
+    this.clearEngineLeaseExpiryTimer();
     this.releasePendingPauseWait();
     this.settleReady(false);
     this.heartbeatActive = false;
@@ -3197,6 +3423,10 @@ export abstract class ServerTableEngineBase {
   }
 
   isRunning(): boolean {
+    if (!this.engineLeaseAuthorityIsCurrent()) {
+      this.expireEngineLeaseAuthority();
+      return false;
+    }
     return this.running;
   }
 
@@ -5303,6 +5533,7 @@ export abstract class ServerTableEngineBase {
 
   // ── Implemented by ServerTableEngineSeating (layer 2/8) ──
   protected abstract resolveOrphanedAddOns(): Promise<void>;
+  protected abstract processPendingAddOns(players: SeatedPlayer[]): Promise<void>;
 
   // ── Implemented by ServerTableEngineTurns (layer 3/8) ──
   protected abstract clearTurnTimer(): void;

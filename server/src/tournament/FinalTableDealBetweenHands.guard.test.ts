@@ -32,7 +32,7 @@ describe('a final-table deal is settled only from a physically parked table', ()
   });
 
   it('parks before guarantee funding and re-proves after awaited reads before money', () => {
-    const check = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<void>');
+    const check = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
     const acquire = check.indexOf('acquireFinalTableDealPause()');
     const guarantee = check.indexOf("applyPrizeGuarantee('final_table_deal')");
     const firstReproof = check.indexOf('finalTableDealPauseIsStillAuthoritative()', guarantee);
@@ -49,7 +49,7 @@ describe('a final-table deal is settled only from a physically parked table', ()
 
   it('releases only the exact engine and every non-committed refusal releases the hold', () => {
     const release = sliceMethod(eliminations, 'releaseFinalTableDealPause(): void');
-    const check = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<void>');
+    const check = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
     expect(release).toContain('this.gameServer.getTableEngine(held.tableId) !== held.engine');
     expect(release).toContain('held.engine.resumeFromFinalTableDeal()');
     expect(check).toMatch(

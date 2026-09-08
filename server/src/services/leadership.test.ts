@@ -44,11 +44,11 @@ const load = async () => await import('./leadership.js');
 
 describe('a standby must NOT promote itself when it cannot reach the database', () => {
   /**
-   * "Always fail to leader" is wrong, and dangerously so, because claimTable()
-   * fails open too:
+   * "Always fail to leader" is wrong, and dangerously so. Before protocol-2
+   * enforcement, table admission could fail open too:
    *
    *   outage -> standby cannot reach the RPC -> promotes itself
-   *          -> claimTable() also answers true -> TWO engines on one table.
+   *          -> unverified table admission answers true -> TWO engines on one table.
    *
    * That is the corruption the leases exist to prevent, manufactured on every
    * outage. Live evidence it is not hypothetical: with the engine up 48

@@ -14,6 +14,23 @@ import { reportError } from '../services/errorReporter.js';
 import { randomUUID } from 'node:crypto';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { leaveLabel } from './ChipContinuity.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { INSTANCE_ID } from '../services/tableLease.js';
+
+type ExactPendingAddOnReceipt = {
+  ok?: boolean;
+  reason?: string;
+  table_id?: string;
+  lease_generation?: string;
+  resolved?: number;
+  rows?: Array<{
+    id?: string;
+    user_id?: string;
+    kind?: string;
+    applied?: number | string;
+    refunded?: number | string;
+  }>;
+};
 
 export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   /**
@@ -52,6 +69,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      */
     opId?: string
   ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }> {
+    if (isMaintenanceFrozen()) {
+      return { success: false, error: 'Scheduled maintenance is in progress' };
+    }
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) return { success: false, error: 'Player not seated' };
     if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
@@ -183,6 +203,127 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
     if (!this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0) return;
 
+    const authority = this.getEngineLeaseAuthority();
+    if (authority?.verified === true) {
+      /* Protocol 2 freezes mid-hand rows into an accepted hand's immutable
+         obligation envelope. A bust rebuy can also arrive while no hand is
+         running, though, and waiting for a future envelope would deadlock the
+         very hand its chips are needed to start.
+
+         The exact-generation RPC resolves only rows that are NOT frozen in an
+         accepted envelope. It shares that processor's per-table database
+         mutex and serializes with hand acceptance at the tables-row boundary,
+         so this is a disjoint pre-deal owner rather than a legacy second
+         consumer. Tournament reloads have their own atomic lifecycle. */
+      if (authority.scope !== 'cash') return;
+      const genAtStart = this.pendingAddOnSweepGen;
+      const beforeStack = new Map(players.map((player) => [player.user_id, Number(player.stack)]));
+      let receipt: ExactPendingAddOnReceipt | null = null;
+      let lastError: unknown = null;
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        if (!this.hasCurrentEngineLeaseAuthority()) return;
+        const { data, error } = await supabase.rpc('fn_ca_resolve_unbound_pending_addons', {
+          p_table_id: this.tableId,
+          p_max_buy_in: this.getMaxBuyIn(),
+          p_instance_id: INSTANCE_ID,
+          p_lease_generation: authority.generation,
+        });
+        if (!this.lifecycleCanMutate()) return;
+        if (!error) {
+          receipt = (data ?? null) as ExactPendingAddOnReceipt | null;
+          break;
+        }
+        lastError = error;
+        if (attempt === 1) await this.sleep(100);
+      }
+
+      if (!receipt) {
+        reportError(lastError, `ServerTableEngine.${this.tableId}.pending_addon_exact_failed`);
+        this.killForRestart('pending_addon_exact_unreachable');
+        throw lastError instanceof Error
+          ? lastError
+          : new Error('Exact pending add-on resolver did not return a receipt');
+      }
+      if (receipt.ok !== true) {
+        const reason = receipt.reason ?? 'malformed_receipt';
+        if (reason === 'lease_lost') {
+          this.fenceForEngineLeaseLoss('pending_addon_lease_lost', true);
+          return;
+        }
+        const error = new Error(`Exact pending add-on resolver refused (${reason})`);
+        reportError(error, `ServerTableEngine.${this.tableId}.pending_addon_exact_refused`);
+        this.killForRestart('pending_addon_exact_refused');
+        throw error;
+      }
+
+      const rows = Array.isArray(receipt.rows) ? receipt.rows : null;
+      if (
+        receipt.table_id !== this.tableId ||
+        receipt.lease_generation?.toLowerCase() !== authority.generation.toLowerCase() ||
+        !Number.isSafeInteger(Number(receipt.resolved)) ||
+        Number(receipt.resolved) !== rows?.length
+      ) {
+        const error = new Error('Exact pending add-on resolver returned a malformed receipt');
+        reportError(error, `ServerTableEngine.${this.tableId}.pending_addon_exact_malformed`);
+        this.killForRestart('pending_addon_exact_malformed');
+        throw error;
+      }
+
+      /* A committed response may have been lost before the identical retry.
+         Re-read absolute seat truth even when the replay resolves zero rows;
+         never infer a stack delta from which HTTP response happened to land. */
+      const { data: persistedSeats, error: persistedSeatError } = await supabase
+        .from('table_seats')
+        .select('user_id,stack')
+        .eq('table_id', this.tableId)
+        .is('left_at', null);
+      if (!this.lifecycleCanMutate()) return;
+      if (persistedSeatError) {
+        reportError(
+          persistedSeatError,
+          `ServerTableEngine.${this.tableId}.pending_addon_stack_refresh_failed`
+        );
+        this.killForRestart('pending_addon_stack_refresh_failed');
+        throw persistedSeatError;
+      }
+
+      const stackByUser = new Map(
+        (persistedSeats ?? []).map((seat) => [seat.user_id as string, Number(seat.stack)])
+      );
+      for (const player of players) {
+        const persisted = stackByUser.get(player.user_id);
+        if (persisted !== undefined && Number.isFinite(persisted)) player.stack = persisted;
+      }
+
+      let delivered = 0;
+      for (const row of rows ?? []) {
+        const applied = Number(row.applied ?? 0);
+        if (!(applied > 0) || !Number.isFinite(applied) || typeof row.user_id !== 'string') {
+          continue;
+        }
+        delivered++;
+        const player = players.find((candidate) => candidate.user_id === row.user_id);
+        this.hub?.emitEvent(this.tableId, {
+          type: 'add_on_applied',
+          table_id: this.tableId,
+          seat: player?.seat_number ?? null,
+          user_id: row.user_id,
+          amount: applied,
+          stack: stackByUser.get(row.user_id) ?? null,
+          kind: row.kind ?? 'addon',
+          timestamp: Date.now(),
+        });
+      }
+
+      this.pendingAddOns.clear();
+      if (this.pendingAddOnSweepGen === genAtStart) this.pendingAddOnSweepNeeded = false;
+      if (delivered > 0 || [...beforeStack].some(([id, stack]) => stackByUser.get(id) !== stack)) {
+        this.broadcastCurrentState();
+      }
+      return;
+    }
+
     /* CHIP STANDARD C3 (2026-09-02): rows now arrive from outside the engine
        (the browser's bust rebuy goes straight to atomic_table_rebuy). A sweep
        request that lands while THIS sweep's read is in flight must survive
@@ -196,6 +337,8 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       .select('id, user_id, amount, kind')
       .eq('table_id', this.tableId)
       .is('resolved_at', null);
+
+    if (!this.lifecycleCanMutate()) return;
 
     if (readErr) {
       // Leave the map and the ledger alone; retry on the next hand.
@@ -216,10 +359,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       amount: number;
       kind?: string | null;
     }>) {
+      if (!this.lifecycleCanMutate()) return;
       const { data, error: resolveErr } = await supabase.rpc('resolve_pending_addon', {
         p_pending_id: row.id,
         p_max_buy_in: maxBuyIn,
       });
+
+      if (!this.lifecycleCanMutate()) return;
 
       if (resolveErr) {
         // Row stays unresolved -> retried next hand / next start. No chips move.

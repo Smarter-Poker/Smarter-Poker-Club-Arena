@@ -1,154 +1,132 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- *  THE RECONCILER TRUSTS WHAT IT CAN PROVE (2026-08-31)
- * ═══════════════════════════════════════════════════════════════════════════
+ * THE RECONCILER CANNOT OUTLIVE ATOMIC SETTLEMENT.
  *
- * fn_tournament_payout_reconcile answers one question per finishing place:
- * "what has this player already been paid?" It used to answer it by summing
- * `wallet_transactions`. That is a LOG — written after the money moves, by a
- * separate statement — and it can be missing, or present for a credit that
- * never moved.
- *
- * Mid-Morning Turbo (6-Max NLH) 88a6aced, 2026-08-22, measured:
- *
- *   14:14:06  the credit MOVED (idempotency key `...:prize:{user}:4`, 36.90)
- *             and no wallet_transactions row was written for it
- *   14:29:55  the reconciler read 0.00 already paid and paid 36.90 AGAIN
- *
- * 73.80 for a place worth 36.90; the event disbursed 110% of its pool.
- * Morning Grinder (PLO) b687e4aa did the same on place 1 for 96.00 vs 48.00.
- *
- * `tournament_payouts.idempotency_key` is UNIQUE and its row is written inside
- * fn_credit_and_log only after the credit returned true, so one row exists if
- * and only if money moved once. The retained detector keeps using that
- * evidence, but applying mode is now retired and contains no payment path.
+ * The historical reconciler was once the only way to detect a missing place
+ * payment. Keeping even a non-paying observer left a callable, registrable and
+ * schedulable second interpretation of tournament entitlements. The atomic
+ * place batch is now both the proof and the only normal-place money door, so
+ * the full deferred reconciliation graph is removed in the same transaction.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 
-const MIGRATIONS = join(__dirname, '..', '..', '..', 'supabase', 'migrations');
+const ROOT = join(__dirname, '..', '..', '..');
+const MIGRATIONS = join(ROOT, 'supabase', 'migrations');
+const file = readdirSync(MIGRATIONS)
+  .filter((name) => name.endsWith('_tournament_places_settle_and_complete_atomically.sql'))
+  .sort()
+  .at(-1);
+if (!file) throw new Error('atomic tournament-place migration is missing');
 
-const migration = (needle: string): string => {
-  const file = readdirSync(MIGRATIONS).find((f) => f.includes(needle));
-  if (!file) throw new Error(`no migration matching "${needle}" - was it renamed?`);
-  return readFileSync(join(MIGRATIONS, file), 'utf8');
-};
+const SQL = readFileSync(join(MIGRATIONS, file), 'utf8')
+  .replace(/^\s*--.*$/gm, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '');
 
-/** Executable SQL only — `--` comment lines stripped. */
-const executable = (sql: string): string =>
-  sql
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('--'))
-    .join('\n');
+const ROUTINES = [
+  {
+    name: 'fn_tournament_payout_reconcile',
+    drop: 'DROP FUNCTION IF EXISTS public.fn_tournament_payout_reconcile(uuid, boolean) RESTRICT;',
+  },
+  {
+    name: 'fn_pay_backed_payout_shortfalls',
+    drop: 'DROP FUNCTION IF EXISTS public.fn_pay_backed_payout_shortfalls(boolean, integer) RESTRICT;',
+  },
+  {
+    name: 'fn_ca_backpay_guarantee_shortfalls',
+    drop: 'DROP FUNCTION IF EXISTS public.fn_ca_backpay_guarantee_shortfalls(boolean, integer) RESTRICT;',
+  },
+  {
+    name: 'fn_tournament_payout_sweep',
+    drop: 'DROP FUNCTION IF EXISTS public.fn_tournament_payout_sweep(integer, boolean, integer) RESTRICT;',
+  },
+  {
+    name: 'sp_ca_reconcile_backpaid_events',
+    drop: 'DROP PROCEDURE IF EXISTS public.sp_ca_reconcile_backpaid_events(boolean) RESTRICT;',
+  },
+  {
+    name: 'fn_backpay_hu_winner_shortfalls',
+    drop: 'DROP FUNCTION IF EXISTS public.fn_backpay_hu_winner_shortfalls(integer) RESTRICT;',
+  },
+] as const;
 
-const CUTOVER = executable(migration('tournament_places_settle_and_complete_atomically'));
-
-const functionBody = (sql: string, name: string): string => {
-  const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
-  if (start < 0) return '';
-  const end = sql.indexOf('$function$;', start);
-  return end < 0 ? sql.slice(start) : sql.slice(start, end);
-};
-
-const RECONCILER = () => functionBody(CUTOVER, 'fn_tournament_payout_reconcile');
-
-/**
- * Money the PRIZE POOL is meant to fund. Bounty money carries
- * `category = 'prize'` in the ledger while being funded from the bounty pool,
- * which is why the old ledger sum counted it and could call a player square
- * when the structure still owed them.
- */
-const PRIZE_POOL_SOURCES = [
-  'structure',
-  'reconcile',
-  'hu_shortfall',
-  'late_reg_adjustment',
-  'clawback',
-  'final_table_deal',
-  'spin_backpay',
-];
-
-const BOUNTY_POOL_SOURCES = ['bounty', 'own_bounty', 'mystery_bounty', 'mystery_bounty_residual'];
-
-describe('the reconciler asks the authoritative record, not the log', () => {
-  it('reads already-paid from tournament_payouts', () => {
-    const sql = RECONCILER();
-    expect(sql).toMatch(/FROM public\.tournament_payouts tpo/);
-    expect(sql).toMatch(/INTO v_paid[\s\S]{0,400}FROM public\.tournament_payouts tpo/);
+function activeSourceFiles(path: string): string[] {
+  if (statSync(path).isFile()) return [path];
+  return readdirSync(path, { withFileTypes: true }).flatMap((entry) => {
+    const child = join(path, entry.name);
+    if (entry.isDirectory()) return activeSourceFiles(child);
+    if (!entry.isFile()) return [];
+    if (!/\.(?:[cm]?[jt]sx?|sql|sh)$/.test(entry.name)) return [];
+    if (/\.(?:test|spec)\./.test(entry.name)) return [];
+    return [child];
   });
+}
 
-  it('counts only money the prize pool funds', () => {
-    const sql = RECONCILER();
-    for (const s of PRIZE_POOL_SOURCES) {
-      expect(sql, `${s} counts toward the structure`).toContain(`'${s}'`);
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*(?:--|#).*$/gm, '')
+    .replace(/\/\/.*$/gm, '');
+}
+
+describe('atomic tournament settlement retires every deferred reconciler', () => {
+  it('drops the complete function and procedure graph before the only commit', () => {
+    const commitAt = SQL.lastIndexOf('COMMIT;');
+    expect(SQL.match(/^BEGIN;$/gm) ?? []).toHaveLength(1);
+    expect(SQL.match(/^COMMIT;$/gm) ?? []).toHaveLength(1);
+    for (const routine of ROUTINES) {
+      const dropAt = SQL.indexOf(routine.drop);
+      expect(dropAt, `${routine.name} has no explicit RESTRICT drop`).toBeGreaterThan(-1);
+      expect(dropAt, `${routine.name} is dropped after COMMIT`).toBeLessThan(commitAt);
+
+      const compatibilityDefinitionAt = Math.max(
+        SQL.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${routine.name}(`),
+        SQL.lastIndexOf(`CREATE OR REPLACE PROCEDURE public.${routine.name}(`)
+      );
+      expect(
+        compatibilityDefinitionAt,
+        `${routine.name} remains declared as a dormant compatibility surface`
+      ).toBe(-1);
     }
   });
 
-  it('never counts bounty money as structure money already paid', () => {
-    // The whole point of the source filter. If one of these appears in the
-    // reconciler's IN list, a PKO player's bounty winnings start paying down
-    // what the prize pool owes them.
-    const inList = (RECONCILER().match(/tpo\.source IN \(([\s\S]*?)\)/) ?? [])[1] ?? '';
-    expect(inList.length, 'the source filter must exist at all').toBeGreaterThan(0);
-    for (const s of BOUNTY_POOL_SOURCES) {
-      expect(inList, `${s} must NOT count as structure money`).not.toContain(`'${s}'`);
+  it('fails the migration if any same-named overload survives', () => {
+    expect(SQL).toMatch(
+      /FROM pg_proc p[\s\S]*?JOIN pg_namespace n[\s\S]*?p\.proname IN \([\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'fn_pay_backed_payout_shortfalls'[\s\S]*?'fn_ca_backpay_guarantee_shortfalls'[\s\S]*?'fn_tournament_payout_sweep'[\s\S]*?'sp_ca_reconcile_backpaid_events'[\s\S]*?'fn_backpay_hu_winner_shortfalls'[\s\S]*?deferred tournament payout reconciliation routine remains installed/
+    );
+  });
+
+  it('removes registry, settlement-source and scheduler call paths', () => {
+    for (const routine of ROUTINES) {
+      expect(SQL).toContain(`'${routine.name}'`);
     }
-  });
-});
-
-describe('a missing record is not read as "nothing was paid"', () => {
-  it('keeps the ledger arm as an explicit fallback', () => {
-    const sql = RECONCILER();
-    expect(sql).toContain('v_has_record');
-    expect(sql).toMatch(/IF v_has_record THEN/);
-    expect(sql).toMatch(/ELSE[\s\S]{0,600}FROM wallet_transactions wt/);
-  });
-
-  it('says which source answered, so a reader can tell', () => {
-    const sql = RECONCILER();
-    expect(sql).toContain("'paid_from'");
-    expect(sql).toContain("'payout_record'");
-    expect(sql).toContain("'ledger_fallback'");
-  });
-});
-
-describe('the detector observes but cannot move money', () => {
-  const sql = () => RECONCILER();
-
-  it('still reports an overpayment rather than clawing it back', () => {
-    expect(sql()).toContain("'issue', 'overpaid'");
-    expect(sql()).toContain('automatic clawback is deliberately not done');
-  });
-
-  it('still refuses to guess when a place has no single finisher', () => {
-    expect(sql()).toContain("'no_finisher_recorded'");
-    expect(sql()).toContain("'duplicate_finishers'");
-  });
-
-  it('raises before its first read when applying mode is requested', () => {
-    const guard = sql().indexOf('IF p_apply THEN');
-    const firstRead = sql().indexOf('SELECT id, prize_pool');
-    expect(guard).toBeGreaterThan(-1);
-    expect(sql().slice(guard, firstRead)).toMatch(
-      /RAISE EXCEPTION USING[\s\S]*?applying_reconcile_retired[\s\S]*?ERRCODE = '0A000'/
+    expect(SQL).toMatch(
+      /DELETE FROM public\.ca_money_rpc_registry[\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'fn_backpay_hu_winner_shortfalls'/
     );
-    expect(firstRead).toBeGreaterThan(guard);
+    expect(SQL).toMatch(
+      /DELETE FROM public\.ca_settle_sources WHERE lower\(source\) = ANY\(\$1\)[\s\S]*?USING ARRAY\[[\s\S]*?'reconcile'[\s\S]*?'fn_backpay_hu_winner_shortfalls'/
+    );
+    expect(SQL).toMatch(
+      /cron\.unschedule\(j\.jobid\)[\s\S]*?j\.command ~\* '\(fn_tournament_payout_sweep\|fn_tournament_payout_reconcile[\s\S]*?fn_backpay_hu_winner_shortfalls\)'/
+    );
+    expect(SQL).not.toMatch(/cron\.schedule\s*\(/);
   });
 
-  it('contains no credit, obligation-settle or tournament-player write', () => {
-    expect(sql()).not.toMatch(/fn_credit_and_log\(/);
-    expect(sql()).not.toMatch(/fn_settle_tournament_obligation\(/);
-    expect(sql()).not.toMatch(/UPDATE\s+(?:public\.)?tournament_players/i);
-    expect(sql()).toContain("'money_path', 'none'");
-  });
+  it('has no executable engine, client or operator caller left behind', () => {
+    const files = [
+      ...activeSourceFiles(join(ROOT, 'server', 'src')),
+      ...activeSourceFiles(join(ROOT, 'src')),
+      ...activeSourceFiles(join(ROOT, 'scripts', 'dev')),
+      join(ROOT, 'scripts', 'verify-tournaments.mjs'),
+    ];
 
-  it('is not executable by browser or service roles', () => {
-    expect(CUTOVER).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_tournament_payout_reconcile\(uuid, boolean\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role/
-    );
-    expect(CUTOVER).toMatch(
-      /INSERT INTO public\.ca_money_rpc_registry \(proname, status, notes\)[\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'legacy'/
-    );
+    for (const path of files) {
+      const executable = withoutComments(readFileSync(path, 'utf8'));
+      for (const routine of ROUTINES) {
+        expect(executable, `${routine.name} remains callable from ${path}`).not.toMatch(
+          new RegExp(`['\"]${routine.name}['\"]`)
+        );
+      }
+    }
   });
 });

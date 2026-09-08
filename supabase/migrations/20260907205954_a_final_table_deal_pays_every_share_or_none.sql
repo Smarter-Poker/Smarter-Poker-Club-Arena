@@ -879,7 +879,7 @@ REVOKE ALL ON FUNCTION public.trg_atomic_final_table_deal_completion_guard()
    row lock serializes the canonical settler, a privileged direct writer must
    not be able to strand a prepared batch by changing RUNNING to another
    status. Once the batch has been marked settled, only the same transaction's
-   RUNNING -> COMPLETED transition is legal; the completion guard below then
+   COMPLETING -> COMPLETED transition is legal; the completion guard below
    independently verifies every paid share and result. */
 CREATE OR REPLACE FUNCTION public.trg_lock_atomic_final_table_deal_status()
 RETURNS trigger
@@ -898,10 +898,12 @@ BEGIN
 
   IF v_has_batch
      AND (v_settled_at IS NULL
-          OR OLD.status IS DISTINCT FROM 'RUNNING'
-          OR NEW.status IS DISTINCT FROM 'COMPLETED') THEN
+          OR OLD.status IS DISTINCT FROM 'COMPLETING'
+          OR NEW.status IS DISTINCT FROM 'COMPLETED'
+          OR current_setting('app.atomic_final_table_deal_batch', true)
+               IS DISTINCT FROM OLD.id::text) THEN
     RAISE EXCEPTION
-      'tournament % has an atomic final-table-deal batch; status may only advance from RUNNING to COMPLETED after full settlement',
+      'tournament % has an atomic final-table-deal batch; only its owning transaction may advance COMPLETING to COMPLETED after full settlement',
       OLD.id USING ERRCODE = 'check_violation';
   END IF;
 
@@ -1037,6 +1039,10 @@ BEGIN
          COALESCE(t.final_table_deal_enabled, false) AS final_table_deal_enabled,
          COALESCE(t.table_size, 9) AS table_size, t.payout_structure,
          t.variant, t.tournament_type, t.satellite_target_id, t.spin_multiplier,
+         COALESCE(t.is_bounty, false) AS is_bounty,
+         COALESCE(t.is_pko, false) AS is_pko,
+         COALESCE(t.is_mystery_bounty, false) AS is_mystery_bounty,
+         COALESCE(t.mystery_bounty_stage, 'pending') AS mystery_bounty_stage,
          COALESCE(t.bubble_protection, false) AS bubble_protection,
          round(COALESCE(t.buy_in_amount, 0), 2) AS buy_in_amount
     INTO v_t
@@ -1820,6 +1826,20 @@ BEGIN
     'plan', v_plan)::text);
 
   BEGIN
+    /* The format-owned transaction claims its terminal work before moving
+       any money. This is intentionally inside the exception subtransaction:
+       any failed prize, bounty or rake leg restores RUNNING together with
+       every balance. It also gives the rake contract the terminal-in-progress
+       status it requires without an application-side status writer. */
+    PERFORM set_config('app.atomic_final_table_deal_batch', p_tournament_id::text, true);
+    UPDATE public.tournaments
+       SET status = 'COMPLETING', updated_at = now()
+     WHERE id = p_tournament_id AND status = 'RUNNING';
+    IF NOT FOUND THEN
+      RAISE EXCEPTION USING MESSAGE = 'RUNNING claim was lost before deal settlement',
+                            ERRCODE = '40001';
+    END IF;
+
     IF v_bubble_needs_insert THEN
       INSERT INTO public.tournament_obligations
         (id, tournament_id, kind, place, user_id, amount_owed, amount_paid,
@@ -1942,8 +1962,6 @@ BEGIN
        v_bubble_source, v_bubble_owed, v_bubble_paid,
        v_leader, 'engine.atomicFinalTableDeal');
 
-    PERFORM set_config('app.atomic_final_table_deal_batch', p_tournament_id::text, true);
-
     IF v_bubble_required AND v_bubble_unpaid_cents > 0 THEN
       v_result := public.fn_settle_tournament_obligation_before_atomic_batch_gate(
         p_tournament_id, 'bubble_protection', NULL, v_bubble_user,
@@ -2053,8 +2071,6 @@ BEGIN
       END IF;
     END IF;
 
-    PERFORM set_config('app.atomic_final_table_deal_batch', '', true);
-
     IF abs(v_paid_this_call - v_total_unpaid_cents / 100.0) > 0.005 THEN
       RAISE EXCEPTION USING MESSAGE = format(
         'atomic final-table-deal payment total was incomplete: expected %s, moved %s',
@@ -2091,10 +2107,44 @@ BEGIN
         ERRCODE = '23514';
     END IF;
 
+    /* Completion certification requires every financial domain, so the deal
+       transaction owns those terminal legs too. Calling the existing guarded
+       functions here keeps their immutable receipts and rolls their wallet
+       effects back if any later readiness proof fails. */
+    IF v_t.is_bounty OR v_t.is_pko OR v_t.is_mystery_bounty THEN
+      IF public.fn_tournament_has_unsettled_bounties(p_tournament_id) THEN
+        RAISE EXCEPTION USING MESSAGE = 'pending bounty obligations block final-table deal completion',
+                              ERRCODE = '23514';
+      END IF;
+      IF v_t.is_mystery_bounty AND v_t.mystery_bounty_stage <> 'pending' THEN
+        v_result := public.fn_mystery_bounty_settle(p_tournament_id, v_leader);
+        IF NOT COALESCE((v_result->>'ok')::boolean, false)
+           OR NOT COALESCE((v_result->>'balanced')::boolean, false) THEN
+          RAISE EXCEPTION USING MESSAGE = format(
+            'atomic final-table-deal mystery bounty leg refused: %s', v_result::text),
+                                ERRCODE = '23514';
+        END IF;
+      END IF;
+      v_result := public.fn_finalize_bounty_pool(p_tournament_id, v_leader);
+      IF NOT COALESCE((v_result->>'ok')::boolean, false) THEN
+        RAISE EXCEPTION USING MESSAGE = format(
+          'atomic final-table-deal bounty pool leg refused: %s', v_result::text),
+                              ERRCODE = '23514';
+      END IF;
+    END IF;
+
+    v_result := public.fn_settle_tournament_rake(
+      p_tournament_id, 'engine.atomicFinalTableDeal');
+    IF NOT COALESCE((v_result->>'ok')::boolean, false) THEN
+      RAISE EXCEPTION USING MESSAGE = format(
+        'atomic final-table-deal rake leg refused: %s', v_result::text),
+                            ERRCODE = '23514';
+    END IF;
+
     UPDATE public.tournaments
        SET status = 'COMPLETED', ended_at = COALESCE(ended_at, clock_timestamp()),
            on_break = false, break_ends_at = NULL, updated_at = now()
-     WHERE id = p_tournament_id AND status = 'RUNNING';
+     WHERE id = p_tournament_id AND status = 'COMPLETING';
     IF NOT FOUND THEN
       RAISE EXCEPTION USING MESSAGE = 'RUNNING claim was lost before deal completion',
                             ERRCODE = '40001';

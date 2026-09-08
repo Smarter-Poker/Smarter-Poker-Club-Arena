@@ -98,6 +98,7 @@
  * seats are horses.
  */
 
+import { randomUUID } from 'node:crypto';
 import { setMaintenanceFrozen } from './freezeState.js';
 
 /**
@@ -143,13 +144,21 @@ export interface PersistedMaintenanceBreak {
   breakStartedAt: number | null;
   breakEndsAt: number | null;
   reason: string;
+  /** Opaque writer generation; rotated atomically whenever a process adopts. */
+  ownershipToken: string;
 }
 
 /** Durable side, so the tests can drive this without a database. */
 export interface MaintenanceBreakStore {
   load(): Promise<PersistedMaintenanceBreak | null>;
   save(state: PersistedMaintenanceBreak): Promise<void>;
-  clear(): Promise<void>;
+  /** Atomically replace an observed owner's token and return the current row. */
+  claim(
+    expectedOwnershipToken: string,
+    newOwnershipToken: string
+  ): Promise<PersistedMaintenanceBreak | null>;
+  /** Compare-and-delete only the exact state and writer generation this process owns. */
+  clear(expected: PersistedMaintenanceBreak): Promise<void>;
 }
 
 /**
@@ -347,6 +356,7 @@ export class MaintenanceBreak {
   private resumeWaves: ResumeWavesProgress | null = null;
   private breakEndsAt = 0;
   private reason = 'Scheduled Engine Maintenance';
+  private ownershipToken: string = randomUUID();
 
   private announceTimer: NodeJS.Timeout | null = null;
   private countdownTimer: NodeJS.Timeout | null = null;
@@ -475,6 +485,51 @@ export class MaintenanceBreak {
   static readonly RESTORE_ATTEMPTS = 3;
   static readonly RESTORE_RETRY_MS = 1500;
 
+  /**
+   * Rotate a persisted row to this exact process generation.
+   *
+   * A lost HTTP response may hide a committed token rotation, just as it may
+   * hide a committed save. Recover that ambiguity with one exact read-back:
+   * only the requested new token plus byte-for-byte unchanged semantic state
+   * proves this process owns the row. Anything else fails closed.
+   */
+  private async claimPersistedState(
+    saved: PersistedMaintenanceBreak
+  ): Promise<PersistedMaintenanceBreak | null> {
+    const newOwnershipToken = randomUUID();
+    const expected = { ...saved, ownershipToken: newOwnershipToken };
+    let claimError: unknown = null;
+
+    try {
+      const claimed = await this.deps.store.claim(saved.ownershipToken, newOwnershipToken);
+      if (claimed) {
+        if (!MaintenanceBreak.samePersistedState(claimed, expected)) {
+          throw new Error('maintenance_break_claim_changed_semantic_state');
+        }
+        this.ownershipToken = claimed.ownershipToken;
+        return claimed;
+      }
+    } catch (error) {
+      claimError = error;
+    }
+
+    try {
+      const stored = await this.deps.store.load();
+      if (MaintenanceBreak.samePersistedState(stored, expected)) {
+        console.warn(
+          '[MaintenanceBreak] ownership-claim response was lost, but exact durable state was verified'
+        );
+        this.ownershipToken = newOwnershipToken;
+        return stored;
+      }
+    } catch (readError) {
+      console.error('[MaintenanceBreak] ownership-claim read-back also failed', readError);
+    }
+
+    if (claimError) throw claimError;
+    return null;
+  }
+
   private async restoreFromStore(generation: number): Promise<void> {
     let saved: PersistedMaintenanceBreak | null = null;
     let lastErr: unknown = null;
@@ -590,15 +645,43 @@ export class MaintenanceBreak {
           MaintenanceBreak.ADOPTABLE_ROW_MAX_AGE_MS / 1000
         )}s adoption window, so it belongs to an hour that has already passed.`
       );
-      await this.safeClear();
+      const claimed = await this.claimPersistedState(saved);
+      if (!claimed) {
+        console.warn(
+          '[MaintenanceBreak] stale break ownership changed before cleanup; leaving the newer owner untouched'
+        );
+        return;
+      }
+      await this.safeClear(claimed);
       return;
     }
 
     if (remaining <= 1000) {
-      // Expired while we were down. Clear it so no browser keeps counting.
-      await this.safeClear();
+      // Expired while we were down. Own the exact row before clearing it so a
+      // retiring process cannot erase a replacement's state; if clear fails,
+      // retaining the claimed token lets this process replace it next hour.
+      const claimed = await this.claimPersistedState(saved);
+      if (!claimed) {
+        console.warn(
+          '[MaintenanceBreak] expired break ownership changed before cleanup; leaving the newer owner untouched'
+        );
+        return;
+      }
+      await this.safeClear(claimed);
       return;
     }
+
+    /* Semantic timestamps survive a process replacement and therefore cannot
+       distinguish the old cleaner from the new owner. Rotate one opaque token
+       under the database's exclusive maintenance boundary before parking or
+       broadcasting anything. Every later save/clear is a CAS on this token,
+       so the retiring process cannot erase or overwrite the adopted break. */
+    const claimed = await this.claimPersistedState(saved);
+    if (!claimed) {
+      throw new Error('maintenance_break_ownership_changed_before_adoption');
+    }
+    saved = claimed;
+    if (!this.lifecycleIsCurrent(generation)) return;
 
     this.reason = saved.reason;
     this.announcedAt = saved.announcedAt;
@@ -627,9 +710,24 @@ export class MaintenanceBreak {
     );
 
     this.parkEveryEngine();
-    this.broadcast('counting_down');
-    await this.persist();
+    /* A stored last_hand row has no countdown end. Upgrade it durably before
+       showing a countdown; a stored counting_down row already is that proof
+       and must not be rewritten merely because a new process adopted it. */
+    if (saved.phase === 'last_hand') {
+      const adopted = this.persistedState();
+      try {
+        await this.persist(adopted);
+      } catch (error) {
+        console.error(
+          '[MaintenanceBreak] could not durably upgrade the adopted last-hand row; cancelling the local break',
+          error
+        );
+        await this.cancelBreakAfterPersistenceFailure(false, adopted, saved);
+        return;
+      }
+    }
     if (!this.lifecycleIsCurrent(generation)) return;
+    this.broadcast('counting_down');
     this.armEndTimer();
   }
 
@@ -678,10 +776,15 @@ export class MaintenanceBreak {
       if (!this.lifecycleIsCurrent(generation)) return;
       this.launchLifecycleJob(
         (async () => {
-          await this.announceLastHand();
-          if (!this.lifecycleIsCurrent(generation)) return;
-          // Re-arm from the wall clock, never from this moment.
-          this.scheduleNextAnnouncement();
+          try {
+            await this.announceLastHand();
+          } finally {
+            if (this.lifecycleIsCurrent(generation)) {
+              // A storage failure cancels this break, but it must not cancel
+              // every future hour. Re-arm from the wall clock on both paths.
+              this.scheduleNextAnnouncement();
+            }
+          }
         })(),
         'announcement failed'
       );
@@ -746,6 +849,13 @@ export class MaintenanceBreak {
     this.phase = 'last_hand';
     this.announcedAt = this.now();
     this.breakEndsAt = 0;
+    /* Keep this process generation's token across locally-created breaks.
+       If the prior hour's exact clear committed but its response was lost, or
+       the clear genuinely failed, the durable expired row still belongs to
+       this process. Replacing the token here would make the next CAS save
+       reject its rightful owner forever. Only restoreFromStore rotates a
+       token, atomically, when a replacement process adopts somebody else's
+       live break. Semantic timestamps still fence every exact clear. */
     // The previous rollout's record has been readable on /health for an
     // hour; the next one starts from nothing.
     this.resumeWaves = null;
@@ -761,16 +871,35 @@ export class MaintenanceBreak {
         `${MaintenanceBreak.LAST_HAND_LEAD_MS / 60000} minute(s).`
     );
 
-    this.broadcast('last_hand');
-    await this.persist();
+    const declared = this.persistedState();
+    try {
+      await this.persist(declared);
+    } catch (error) {
+      await this.cancelBreakAfterPersistenceFailure(false, declared);
+      throw error;
+    }
     if (!this.lifecycleIsCurrent(generation)) return;
 
+    // The player-visible promise comes only after the database boundary is
+    // durable. A process kill after this frame can therefore be adopted.
+    this.broadcast('last_hand');
+
     if (this.countdownTimer) this.clearTimer(this.countdownTimer);
-    this.countdownTimer = this.setTimer(() => {
-      this.countdownTimer = null;
-      if (!this.lifecycleIsCurrent(generation)) return;
-      this.launchLifecycleJob(this.beginCountdown(), 'countdown failed to start');
-    }, MaintenanceBreak.LAST_HAND_LEAD_MS);
+    /* The database save is allowed to wait behind an entry transaction that
+       acquired the same maintenance boundary first. That wait proves the
+       entry belongs before the freeze; it must not move the player-visible
+       schedule. Both the SQL read side and the frame above derive the window
+       from announcedAt, so arm only the time still left until that same
+       absolute :55 boundary. */
+    const countdownAt = this.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
+    this.countdownTimer = this.setTimer(
+      () => {
+        this.countdownTimer = null;
+        if (!this.lifecycleIsCurrent(generation)) return;
+        this.launchLifecycleJob(this.beginCountdown(), 'countdown failed to start');
+      },
+      Math.max(0, countdownAt - this.now())
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -812,9 +941,21 @@ export class MaintenanceBreak {
       );
     }
 
+    const announced = this.persistedState();
+    /* announcedAt is the durable schedule authority. A delayed save or a
+       briefly delayed event loop may make this method execute after :55, but
+       neither is permission to extend the break past the promised :00. These
+       exact instants also match fn_entry_purchases_frozen and the last_hand
+       frame's resume_expected_at. */
+    const scheduledStartAt = this.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
+    const invokedAt = this.now();
     this.phase = 'counting_down';
-    this.breakStartedAt = this.now();
-    this.breakEndsAt = this.now() + MaintenanceBreak.BREAK_DURATION_MS;
+    /* beginCountdown is also the explicit/manual entry point. An intentional
+       early call starts its five minutes immediately; an on-time or late
+       scheduled call stays anchored to the already-promised boundary and can
+       never extend it. */
+    this.breakStartedAt = invokedAt < scheduledStartAt ? invokedAt : scheduledStartAt;
+    this.breakEndsAt = this.breakStartedAt + MaintenanceBreak.BREAK_DURATION_MS;
 
     console.log(
       `[MaintenanceBreak] ═══ BREAK STARTED ═══ ${
@@ -822,9 +963,16 @@ export class MaintenanceBreak {
       } minutes. Play resumes on the hour.`
     );
 
-    this.broadcast('counting_down');
-    await this.persist();
+    const countingDown = this.persistedState();
+    try {
+      await this.persist(countingDown);
+    } catch (error) {
+      await this.cancelBreakAfterPersistenceFailure(true, countingDown, announced);
+      throw error;
+    }
     if (!this.lifecycleIsCurrent(generation)) return;
+
+    this.broadcast('counting_down');
     this.armEndTimer();
   }
 
@@ -910,6 +1058,7 @@ export class MaintenanceBreak {
       tablesResumed: 0,
       thawOk,
     };
+    const completedState = this.persistedState();
     /**
      * THE BREAK IS OVER BEFORE THE FIRST TABLE WAKES (review fix, 2026-09-03).
      *
@@ -959,7 +1108,7 @@ export class MaintenanceBreak {
         }.`
     );
     this.broadcastEnded();
-    await this.safeClear();
+    await this.safeClear(completedState);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1301,29 +1450,90 @@ export class MaintenanceBreak {
   // Persistence
   // ─────────────────────────────────────────────────────────────────────────
 
-  private async persist(): Promise<void> {
-    if (this.phase === 'idle') return;
+  private persistedState(): PersistedMaintenanceBreak {
+    if (this.phase === 'idle') {
+      throw new Error('an idle maintenance break has no durable state');
+    }
+    return {
+      phase: this.phase,
+      announcedAt: this.announcedAt,
+      breakStartedAt: this.breakStartedAt > 0 ? this.breakStartedAt : null,
+      breakEndsAt: this.breakEndsAt > 0 ? this.breakEndsAt : null,
+      reason: this.reason,
+      ownershipToken: this.ownershipToken,
+    };
+  }
+
+  private static samePersistedState(
+    left: PersistedMaintenanceBreak | null,
+    right: PersistedMaintenanceBreak
+  ): boolean {
+    return (
+      left !== null &&
+      left.phase === right.phase &&
+      left.announcedAt === right.announcedAt &&
+      left.breakStartedAt === right.breakStartedAt &&
+      left.breakEndsAt === right.breakEndsAt &&
+      left.reason === right.reason &&
+      left.ownershipToken === right.ownershipToken
+    );
+  }
+
+  private async persist(state = this.persistedState()): Promise<void> {
     try {
-      await this.deps.store.save({
-        phase: this.phase,
-        announcedAt: this.announcedAt,
-        breakStartedAt: this.breakStartedAt > 0 ? this.breakStartedAt : null,
-        breakEndsAt: this.breakEndsAt > 0 ? this.breakEndsAt : null,
-        reason: this.reason,
-      });
-    } catch (err) {
-      // The break still runs in memory; only the cross-restart half is lost.
-      // Loud, because that half is the point of the feature.
-      console.error(
-        '[MaintenanceBreak] FAILED to persist the break. The restart will be visible to players.',
-        err
-      );
+      await this.deps.store.save(state);
+      return;
+    } catch (saveError) {
+      /* A timed-out HTTP response can hide a committed upsert. Read the row
+         once and accept only a byte-for-byte semantic match. This is receipt
+         recovery, not an unbounded retry: a missing, different, or unreadable
+         row means the promise was not durably made and the caller cancels. */
+      try {
+        const stored = await this.deps.store.load();
+        if (MaintenanceBreak.samePersistedState(stored, state)) {
+          console.warn(
+            '[MaintenanceBreak] persistence response was lost, but exact durable state was verified'
+          );
+          return;
+        }
+      } catch (readError) {
+        console.error('[MaintenanceBreak] persistence read-back also failed', readError);
+      }
+      throw saveError;
     }
   }
 
-  private async safeClear(): Promise<void> {
+  private async cancelBreakAfterPersistenceFailure(
+    wasVisible: boolean,
+    ...ownedStates: PersistedMaintenanceBreak[]
+  ): Promise<void> {
+    for (const timer of [this.countdownTimer, this.endTimer]) {
+      if (timer) this.clearTimer(timer);
+    }
+    this.countdownTimer = null;
+    this.endTimer = null;
+    this.resumeToken += 1;
+    for (const timer of this.resumeWaveTimers) this.clearTimer(timer);
+    this.resumeWaveTimers.clear();
+
+    this.phase = 'idle';
+    this.announcedAt = 0;
+    this.breakStartedAt = 0;
+    this.breakEndsAt = 0;
+    this.ending = false;
+    setMaintenanceFrozen(false);
+    this.resumeEveryEngine();
+    if (wasVisible) this.broadcastEnded();
+
+    // Compare-and-delete each state this process may have committed. The
+    // store implementation includes every field in the DELETE predicate, so
+    // a newer owner or phase can never be erased by this cleanup.
+    for (const state of ownedStates) await this.safeClear(state);
+  }
+
+  private async safeClear(expected: PersistedMaintenanceBreak): Promise<void> {
     try {
-      await this.deps.store.clear();
+      await this.deps.store.clear(expected);
     } catch (err) {
       console.error('[MaintenanceBreak] failed to clear the break row', err);
     }

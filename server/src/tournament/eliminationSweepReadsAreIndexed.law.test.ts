@@ -29,9 +29,21 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceBetween } from '../testHelpers/sourceWindow.js';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const src = readFileSync(join(__dirname, 'TournamentManagerEliminations.ts'), 'utf8');
+const migration = readFileSync(
+  join(
+    __dirname,
+    '../../../supabase/migrations/20260907180000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
+  ),
+  'utf8'
+);
+const rpcStart = migration.indexOf(
+  'CREATE OR REPLACE FUNCTION public.fn_sync_tournament_live_seat_chips('
+);
+const rpcEnd = migration.indexOf('CREATE OR REPLACE FUNCTION', rpcStart + 1);
+const rpc = migration.slice(rpcStart, rpcEnd);
 
 describe('LAW: the elimination sweep reads through indexes', () => {
   /**
@@ -41,20 +53,10 @@ describe('LAW: the elimination sweep reads through indexes', () => {
    * and indexed (idx_table_seats_live_user). The bug is an inner embed with NO
    * selective predicate on the outer table, which is what the sweep had.
    */
-  // Anchored on markers that exist in BOTH the fixed and the broken version, so
-  // that reintroducing the bug fails these assertions with their own message
-  // rather than throwing "marker not found" from the slicer.
-  const sweep = sliceBetween(src, 'const bestSeat = new Map', 'const seats = seatRows;');
-
-  /**
-   * Comments stripped, string literals kept. The doc block inside the sweep
-   * QUOTES the broken query shape in order to explain it, and a bare substring
-   * check matched that quotation - the assertion passed judgement on the
-   * documentation rather than on the code. Strings must survive the strip,
-   * because the thing being pinned lives inside a string literal
-   * (`.select('...tables!inner...')`).
-   */
-  const code = sweep.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const code = sliceMethod(
+    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, ''),
+    'private async runEliminationSweep(signal: AbortSignal)'
+  );
 
   it('does not read seats through an unfiltered tables!inner embed', () => {
     expect(
@@ -66,21 +68,20 @@ describe('LAW: the elimination sweep reads through indexes', () => {
   });
 
   it('reads tables by tournament_id and seats by table_id, both indexed', () => {
-    expect(sweep).toContain(".from('tables')");
-    expect(sweep).toContain(".eq('tournament_id', this.tournamentId)");
-    expect(sweep).toContain(".in('table_id', idsForChunk)");
+    expect(code).toContain("'fn_sync_tournament_live_seat_chips'");
+    expect(rpc).toMatch(
+      /FROM public\.tables t\s+JOIN public\.table_seats s ON s\.table_id=t\.id AND s\.left_at IS NULL\s+WHERE t\.tournament_id=p_tournament_id/
+    );
   });
 
-  it('pages the seat read on the primary key, never on user_id', () => {
-    expect(sweep).toContain(".order('id', { ascending: true })");
-    expect(
-      /\.order\('user_id'/.test(code),
-      'user_id is not unique in table_seats; paging on it can drop or duplicate a ' +
-        'seat across a page boundary, and this sweep decides who busts.'
-    ).toBe(false);
+  it('classifies duplicate seats in one database snapshot', () => {
+    expect(rpc).toContain('max(joined_at) AS latest_joined_at');
+    expect(rpc).toContain('latest_count<>1');
+    expect(rpc).toContain('v_ambiguous_user_ids');
   });
 
-  it('bounds the IN list so a 1,076-table field cannot build an unbounded query', () => {
-    expect(sweep).toContain('TABLE_ID_CHUNK');
+  it('never serializes a tournament-sized table-id list into a PostgREST URL', () => {
+    expect(code).not.toMatch(/\.in\('table_id',\s*idsForChunk\)/);
+    expect(rpc).not.toContain('.in(');
   });
 });

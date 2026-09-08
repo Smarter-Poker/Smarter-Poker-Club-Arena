@@ -29,29 +29,31 @@ describe('the finish boundary is owned by one database contract', () => {
   it('claims the canonical winner before any settlement and certifies only after rake', () => {
     const finish = sliceMethod(ELIM, 'protected async finishTournament(winnerId: string)');
     expect(finish).toContain('claimTournamentFinish(');
-    expect(finish).toContain('certifyTournamentFinish(');
+    expect(finish).toContain('settleTournamentPlacesAtomically(');
     expect(finish.indexOf('claimTournamentFinish(')).toBeLessThan(
-      finish.indexOf('this.tournamentFinished = true')
+      finish.indexOf('await this.settleTournamentRake(tournament)')
     );
     expect(finish.indexOf('await this.settleTournamentRake(tournament)')).toBeLessThan(
-      finish.indexOf('certifyTournamentFinish(')
+      finish.indexOf('settleTournamentPlacesAtomically(')
     );
-    expect(finish.indexOf('certifyTournamentFinish(')).toBeLessThan(
-      finish.indexOf("await this.broadcast('tournament_winner'")
+    expect(finish.indexOf('settleTournamentPlacesAtomically(')).toBeLessThan(
+      finish.lastIndexOf('await this.cleanupCommittedTournament()')
     );
     expect(finish).toContain('this.tournamentFinished = false;');
     expect(finish).not.toMatch(/\.from\('tournaments'\)[\s\S]*?status:\s*'COMPLETED'/);
   });
 
   it('the deal and every recovery tail use that same contract', () => {
-    const deal = sliceMethod(ELIM, 'private async settleFinalTableDeal()');
-    expect(deal).toContain('claimTournamentFinish(');
-    expect(deal).toContain('certifyTournamentFinish(');
-    expect(deal.indexOf('certifyTournamentFinish(')).toBeLessThan(
-      deal.indexOf('// Release the players and close the tables')
+    const dealCheck = sliceMethod(ELIM, 'protected async checkFinalTableDeal()');
+    const dealTail = sliceMethod(ELIM, 'private async settleFinalTableDeal(');
+    expect(dealCheck).toContain('settleFinalTableDealAtomically(');
+    expect(dealCheck.indexOf('settleFinalTableDealAtomically(')).toBeLessThan(
+      dealCheck.indexOf('return this.settleFinalTableDeal(deal)')
     );
-    expect(RECOVERY.match(/claimTournamentFinish\(/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(RECOVERY.match(/certifyTournamentFinish\(/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(dealTail).not.toContain('settleTournamentPlacesAtomically(');
+    expect(dealTail).not.toContain('claimTournamentFinish(');
+    expect(RECOVERY.match(/claimTournamentFinish\(/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(RECOVERY.match(/settleTournamentPlacesAtomically\(/g)?.length).toBeGreaterThanOrEqual(1);
     expect(RECOVERY).not.toMatch(/\.update\(\{\s*status:\s*'COMPLETED'/);
   });
 });

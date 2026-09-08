@@ -7,6 +7,8 @@
  * re-exported here so existing importers keep working.
  */
 
+import { randomUUID } from 'node:crypto';
+
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
 import { EngineTelemetry } from './engine/EngineTelemetry.js';
@@ -77,8 +79,10 @@ import {
   claimTournamentLease,
   heartbeatTournaments,
   releaseTournaments,
+  TOURNAMENT_LEASE_PROOF_WINDOW_MS,
   tournamentLeaseDiagnostics,
 } from './services/tournamentLease.js';
+import { bindTournamentDataAuthorityMethods } from './services/supabase/dataActorContext.js';
 // BUG 008 FIX: Periodic rakeback settler - flushes per-hand rake_records into rakeback_periods.
 import { RakebackSettlerService } from './services/RakebackSettlerService.js';
 import {
@@ -132,9 +136,9 @@ import {
   INSTANCE_ID,
   claimTableLease,
   heartbeatTables,
-  retryRefusedClaims,
   releaseTables,
   leaseDiagnostics,
+  TABLE_LEASE_PROOF_WINDOW_MS,
 } from './services/tableLease.js';
 
 export { TournamentManager };
@@ -145,6 +149,16 @@ export { TournamentManager };
 
 const TABLE_DISCOVERY_INTERVAL = 5000; // Check for new tables every 5 seconds
 const TOURNAMENT_DISCOVERY_INTERVAL = 5000; // Check for tournaments every 5 seconds
+/**
+ * Ownership renewal is a primary lifecycle, not part of table discovery.
+ * Start each pass at least four times inside the shorter conservative proof
+ * window. A slow pass subtracts its own elapsed time before sleeping, so a 15s
+ * PostgREST timeout is followed immediately rather than turning 15s + 5s into
+ * an accidental expiry at the exact 20s local boundary.
+ */
+const OWNERSHIP_LEASE_RENEWAL_CADENCE_MS = Math.floor(
+  Math.min(TABLE_LEASE_PROOF_WINDOW_MS, TOURNAMENT_LEASE_PROOF_WINDOW_MS) / 4
+);
 
 /**
  * The four materially different answers to a direct table admission attempt.
@@ -263,6 +277,10 @@ export class GameServer {
   /** One causal retry timer per table after a classified transient failure. */
   private directTableRecoveryTimers: Map<string, NodeJS.Timeout> = new Map();
   private directTableRecoveryAttempts: Map<string, number> = new Map();
+  /** One caller-selected protocol-2 generation reused by one causal admission retry. */
+  private directTableAdmissionLeaseGenerations = new Map<string, string>();
+  /** Exact acquired generations whose local proof expired before admission. */
+  private directTablePendingLeaseReleases = new Map<string, string>();
   /** Fences admissions that were awaiting I/O when this server generation stopped. */
   private lifecycleGeneration = 0;
   /**
@@ -273,11 +291,30 @@ export class GameServer {
   private discoveryJobs = new Set<Promise<void>>();
   /** Non-discovery async work launched by timers, subscriptions, or boot. */
   private serverLifecycleJobs = new Set<Promise<void>>();
+  /** Keeps exact table/tournament authority alive only through shutdown drain. */
+  private ownershipLeaseRenewalOperation: Promise<void> | null = null;
+  private shutdownOwnershipLeaseRenewalActive = false;
+  private shutdownOwnershipLeaseRenewalOperation: Promise<void> | null = null;
   /** One distributed claim + manager publication operation per tournament id. */
   private tournamentManagerAdmissionOperations = new Map<string, Promise<void>>();
   /** Exact causal lease/start retries; never a tournament-board reconciliation scan. */
   private tournamentManagerAdmissionRetryTimers = new Map<string, NodeJS.Timeout>();
   private tournamentManagerAdmissionRetryAttempts = new Map<string, number>();
+  /** One caller-selected database generation reused across this causal retry. */
+  private tournamentManagerAdmissionLeaseGenerations = new Map<string, string>();
+  /**
+   * Exact release is part of retiring a protocol-2 manager. A successor waits
+   * for this barrier before choosing a new generation, so a same-process
+   * admission cannot race the old manager's final teardown/release.
+   */
+  private tournamentManagerLeaseReleaseOperations = new Map<string, Promise<boolean>>();
+  /** Exact stopped-manager generations whose PostgREST release is still unproved. */
+  private tournamentManagerPendingLeaseReleases = new Map<string, string>();
+  /** Multiple failure signals join one exact manager retirement. */
+  private tournamentManagerRetirementOperations = new WeakMap<
+    TournamentManager,
+    Promise<boolean>
+  >();
 
   private launchDiscoveryJob(
     operation: Promise<unknown>,
@@ -330,8 +367,14 @@ export class GameServer {
   }
 
   private async drainTournamentManagerAdmissions(): Promise<void> {
-    while (this.tournamentManagerAdmissionOperations.size > 0) {
-      await Promise.allSettled([...this.tournamentManagerAdmissionOperations.values()]);
+    while (
+      this.tournamentManagerAdmissionOperations.size > 0 ||
+      this.tournamentManagerLeaseReleaseOperations.size > 0
+    ) {
+      await Promise.allSettled([
+        ...this.tournamentManagerAdmissionOperations.values(),
+        ...this.tournamentManagerLeaseReleaseOperations.values(),
+      ]);
     }
   }
 
@@ -351,6 +394,7 @@ export class GameServer {
         ...this.directTableAdmissionOperations.values(),
         ...this.directTableEngineRecoveryJobs,
         ...this.tournamentManagerAdmissionOperations.values(),
+        ...this.tournamentManagerLeaseReleaseOperations.values(),
       ];
       if (pending.length === 0) {
         // A settled promise's finally-handler may publish the next exact job.
@@ -361,7 +405,8 @@ export class GameServer {
           this.discoveryJobs.size === 0 &&
           this.directTableAdmissionOperations.size === 0 &&
           this.directTableEngineRecoveryJobs.size === 0 &&
-          this.tournamentManagerAdmissionOperations.size === 0
+          this.tournamentManagerAdmissionOperations.size === 0 &&
+          this.tournamentManagerLeaseReleaseOperations.size === 0
         ) {
           return;
         }
@@ -402,6 +447,277 @@ export class GameServer {
     for (const id of [...this.tournamentOwnedTables]) {
       if (!stillOwned.has(id)) this.tournamentOwnedTables.delete(id);
     }
+  }
+
+  /**
+   * Renew only cash dealers with a verified table lease. Tournament dealers
+   * inherit the parent tournament generation and are renewed by that manager.
+   */
+  private async renewVerifiedCashTableLeaseProofs(
+    candidateTableIds: Iterable<string> = this.tableEngines.keys()
+  ): Promise<Map<string, ServerTableEngine>> {
+    const candidates: Array<[string, ServerTableEngine]> = [];
+    const lostEngines = new Map<string, ServerTableEngine>();
+    for (const tableId of candidateTableIds) {
+      const engine = this.tableEngines.get(tableId);
+      if (!engine) continue;
+      const authority = engine.getEngineLeaseAuthority();
+      if (authority?.scope === 'cash' && authority.verified) {
+        /* A paused callback must not resurrect authority after its conservative
+           local proof already expired. Test the old proof before asking the DB
+           to move heartbeat_at; expiry is a loss, never a renewal attempt. */
+        if (!engine.hasCurrentEngineLeaseAuthority()) {
+          lostEngines.set(tableId, engine);
+          continue;
+        }
+        candidates.push([tableId, engine]);
+      }
+    }
+
+    const heartbeat = await heartbeatTables(
+      candidates.map(([tableId, engine]) => {
+        const authority = engine.getEngineLeaseAuthority();
+        if (!authority || authority.scope !== 'cash' || !authority.verified) {
+          throw new Error(`Cash lease authority disappeared before heartbeat for ${tableId}`);
+        }
+        return { tableId, leaseGeneration: authority.generation };
+      })
+    );
+    if (heartbeat.status === 'answered') {
+      for (const proof of heartbeat.proofs) {
+        const captured = candidates.find(([tableId]) => tableId === proof.tableId)?.[1];
+        if (!captured || this.tableEngines.get(proof.tableId) !== captured) continue;
+        const authority = captured.getEngineLeaseAuthority();
+        if (
+          !authority ||
+          authority.scope !== 'cash' ||
+          !authority.verified ||
+          !captured.renewEngineLeaseProof({
+            ...authority,
+            proofDeadlineMonotonicMs: proof.proofDeadlineMonotonicMs,
+          })
+        ) {
+          lostEngines.set(proof.tableId, captured);
+        }
+      }
+      for (const tableId of heartbeat.lostTableIds) {
+        const captured = candidates.find(([id]) => id === tableId)?.[1];
+        if (captured && this.tableEngines.get(tableId) === captured) {
+          lostEngines.set(tableId, captured);
+        }
+      }
+    }
+
+    /* UNKNOWN extends nothing. Re-read every exact captured engine so an
+       event-loop stall that crossed its deadline before the timer callback
+       ran becomes a synchronous loss in this sweep. */
+    for (const [tableId, engine] of candidates) {
+      if (this.tableEngines.get(tableId) === engine && !engine.hasCurrentEngineLeaseAuthority()) {
+        lostEngines.set(tableId, engine);
+      }
+    }
+    return lostEngines;
+  }
+
+  /**
+   * Renew the exact manager generations captured at the start of this pass.
+   * A manager admitted while the RPC is in flight is never judged using its
+   * predecessor's answer.
+   */
+  private async renewVerifiedTournamentManagerLeaseProofs(): Promise<
+    Map<string, TournamentManager>
+  > {
+    const candidates = new Map<string, { manager: TournamentManager; leaseGeneration: string }>();
+    const lostManagers = new Map<string, TournamentManager>();
+    for (const [tournamentId, manager] of this.tournamentEngines) {
+      const leaseGeneration = manager.getTournamentLeaseGeneration();
+      if (leaseGeneration) {
+        if (!manager.hasCurrentTournamentLeaseAuthority()) {
+          lostManagers.set(tournamentId, manager);
+          continue;
+        }
+        candidates.set(tournamentId, { manager, leaseGeneration });
+      } else {
+        // Production admission may never publish a generation-less manager.
+        lostManagers.set(tournamentId, manager);
+      }
+    }
+
+    const heartbeat = await heartbeatTournaments(
+      [...candidates].map(([tournamentId, candidate]) => ({
+        tournamentId,
+        leaseGeneration: candidate.leaseGeneration,
+      }))
+    );
+    if (heartbeat.status === 'answered') {
+      for (const proof of heartbeat.proofs) {
+        const captured = candidates.get(proof.tournamentId);
+        if (!captured || this.tournamentEngines.get(proof.tournamentId) !== captured.manager) {
+          continue;
+        }
+        if (
+          !captured.manager.renewTournamentLeaseProof(
+            proof.leaseGeneration,
+            proof.proofDeadlineMonotonicMs
+          )
+        ) {
+          lostManagers.set(proof.tournamentId, captured.manager);
+        }
+      }
+      for (const tournamentId of heartbeat.lostTournamentIds) {
+        const captured = candidates.get(tournamentId);
+        if (captured && this.tournamentEngines.get(tournamentId) === captured.manager) {
+          lostManagers.set(tournamentId, captured.manager);
+        }
+      }
+    }
+
+    /* UNKNOWN extends nothing. Check only the exact objects captured before the
+       RPC; a new manager may have been admitted with a fresh proof meanwhile. */
+    for (const [tournamentId, captured] of candidates) {
+      if (
+        this.tournamentEngines.get(tournamentId) === captured.manager &&
+        !captured.manager.hasCurrentTournamentLeaseAuthority()
+      ) {
+        lostManagers.set(tournamentId, captured.manager);
+      }
+    }
+    return lostManagers;
+  }
+
+  /**
+   * One serialized ownership pass for both lease scopes. Heartbeats run in
+   * parallel so the cash RPC cannot consume the tournament proof window (or
+   * vice versa). Every proven loss is fenced synchronously before any physical
+   * teardown awaits; teardown/release remains in its exact causal registry so
+   * this primary renewal lifecycle can begin its next pass on time.
+   */
+  private renewOwnedEngineLeaseProofs(): Promise<void> {
+    const existing = this.ownershipLeaseRenewalOperation;
+    if (existing) return existing;
+    const operation = this.performOwnedEngineLeaseProofRenewal();
+    let tracked!: Promise<void>;
+    tracked = operation.finally(() => {
+      if (this.ownershipLeaseRenewalOperation === tracked) {
+        this.ownershipLeaseRenewalOperation = null;
+      }
+    });
+    this.ownershipLeaseRenewalOperation = tracked;
+    return tracked;
+  }
+
+  private async performOwnedEngineLeaseProofRenewal(): Promise<void> {
+    const [cashResult, tournamentResult] = await Promise.allSettled([
+      this.renewVerifiedCashTableLeaseProofs(),
+      this.renewVerifiedTournamentManagerLeaseProofs(),
+    ]);
+
+    const lostTables =
+      cashResult.status === 'fulfilled' ? cashResult.value : new Map<string, ServerTableEngine>();
+    if (cashResult.status === 'rejected') {
+      reportError(cashResult.reason, 'GameServer.cash_lease_renewal_pass_failed');
+    }
+    const lostTournamentIds =
+      tournamentResult.status === 'fulfilled'
+        ? tournamentResult.value
+        : new Map<string, TournamentManager>();
+    if (tournamentResult.status === 'rejected') {
+      reportError(tournamentResult.reason, 'GameServer.tournament_lease_renewal_pass_failed');
+    }
+
+    const lostCashEngines: Array<[string, ServerTableEngine]> = [];
+    for (const [tableId, engine] of lostTables) {
+      if (this.tableEngines.get(tableId) !== engine || this.tournamentOwnedTables.has(tableId)) {
+        continue;
+      }
+      reportError(
+        new Error(`Lost the deal-lease on table ${tableId} to another engine instance`),
+        'GameServer.table_lease_lost'
+      );
+      engine.fenceForEngineLeaseLoss('cash_table_lease_lost', false);
+      lostCashEngines.push([tableId, engine]);
+    }
+
+    const lostManagers: Array<[string, TournamentManager]> = [];
+    for (const [tournamentId, manager] of lostTournamentIds) {
+      if (this.tournamentEngines.get(tournamentId) !== manager) continue;
+      reportError(
+        new Error(`Lost the tournament lease on ${tournamentId} to another engine instance`),
+        'GameServer.tournament_lease_lost'
+      );
+      manager.fenceForTournamentLeaseLoss();
+      lostManagers.push([tournamentId, manager]);
+    }
+
+    for (const [tableId, engine] of lostCashEngines) {
+      void this.recoverDirectTableEngine(tableId, engine, 'cash_table_lease_lost').catch((error) =>
+        reportError(error, 'GameServer.table_lease_lost_recovery_failed', { tableId })
+      );
+    }
+    for (const [tournamentId, manager] of lostManagers) {
+      this.launchServerLifecycleJob(
+        this.stopTournamentManagerIfOwned(
+          tournamentId,
+          manager,
+          'GameServer.tournament_lease_lost_stop_failed'
+        ),
+        'GameServer.tournament_lease_lost_retirement_failed',
+        { tournamentId }
+      );
+    }
+  }
+
+  /**
+   * Primary, serialized lease lifecycle. Discovery may spend its full timeout
+   * adopting or inspecting tables without delaying this loop. Cadence is based
+   * on pass start, not pass completion, so slow RPC time is charged against the
+   * next sleep rather than silently added to the authority gap.
+   */
+  private async runOwnershipLeaseRenewalLoop(generation: number): Promise<void> {
+    while (this.directAdmissionIsCurrent(generation)) {
+      const passStartedAt = performance.now();
+      try {
+        await this.renewOwnedEngineLeaseProofs();
+      } catch (error) {
+        // A programming or transport surprise cannot permanently remove the
+        // platform's primary ownership lifecycle. Existing local deadlines stay
+        // authoritative and the next serialized pass still runs.
+        reportError(error, 'GameServer.ownership_lease_renewal_pass_threw');
+      }
+      if (!this.directAdmissionIsCurrent(generation)) return;
+      const elapsedMs = Math.max(0, performance.now() - passStartedAt);
+      await this.sleep(Math.max(0, OWNERSHIP_LEASE_RENEWAL_CADENCE_MS - elapsedMs));
+    }
+  }
+
+  private startShutdownOwnershipLeaseRenewal(): void {
+    if (this.shutdownOwnershipLeaseRenewalOperation) return;
+    this.shutdownOwnershipLeaseRenewalActive = true;
+    let tracked!: Promise<void>;
+    tracked = this.runShutdownOwnershipLeaseRenewalLoop().finally(() => {
+      if (this.shutdownOwnershipLeaseRenewalOperation === tracked) {
+        this.shutdownOwnershipLeaseRenewalOperation = null;
+      }
+    });
+    this.shutdownOwnershipLeaseRenewalOperation = tracked;
+  }
+
+  private async runShutdownOwnershipLeaseRenewalLoop(): Promise<void> {
+    while (this.shutdownOwnershipLeaseRenewalActive) {
+      const passStartedAt = performance.now();
+      await this.renewOwnedEngineLeaseProofs().catch((error) =>
+        reportError(error, 'GameServer.shutdown_lease_renewal_pass_threw')
+      );
+      if (!this.shutdownOwnershipLeaseRenewalActive) return;
+      const elapsedMs = Math.max(0, performance.now() - passStartedAt);
+      await this.sleep(Math.max(0, OWNERSHIP_LEASE_RENEWAL_CADENCE_MS - elapsedMs));
+    }
+  }
+
+  private async stopShutdownOwnershipLeaseRenewal(): Promise<void> {
+    this.shutdownOwnershipLeaseRenewalActive = false;
+    const operation = this.shutdownOwnershipLeaseRenewalOperation;
+    if (operation) await operation;
   }
   /** Last orphaned-seat repair pass. See tournament/orphanedSeatRepair.ts. */
   private lastOrphanSeatSweepAt = 0;
@@ -471,6 +787,7 @@ export class GameServer {
     if (timer) clearTimeout(timer);
     this.directTableRecoveryTimers.delete(tableId);
     this.directTableRecoveryAttempts.delete(tableId);
+    this.directTableAdmissionLeaseGenerations.delete(tableId);
   }
 
   /**
@@ -606,6 +923,7 @@ export class GameServer {
     // generation callback. Never race that authority from the cash lane.
     if (this.tournamentOwnedTables.has(tableId)) return;
 
+    const leaseAuthority = engine.getEngineLeaseAuthority();
     try {
       await engine.stop();
     } catch (error) {
@@ -623,6 +941,23 @@ export class GameServer {
     }
     if (this.tableEngines.get(tableId) !== engine) return;
 
+    /* Keep the terminal object published until its exact database generation
+       is released. A concurrent admission therefore joins this recovery
+       instead of choosing a new UUID while the old same-instance row is still
+       live. Exact release cannot erase a later generation. */
+    if (leaseAuthority?.scope === 'cash' && leaseAuthority.verified) {
+      const release = await releaseTables([
+        { tableId, leaseGeneration: leaseAuthority.generation },
+      ]);
+      if (release.status !== 'confirmed') {
+        throw new Error(
+          `Cash lease release was not confirmed for ${tableId}/${leaseAuthority.generation}: ` +
+            `${release.reason} after ${release.attempts} attempt(s): ${release.detail}`
+        );
+      }
+    }
+    if (this.tableEngines.get(tableId) !== engine) return;
+
     this.tableEngines.delete(tableId);
     tableStateHub.dropTable(tableId);
     if (!this.running) return;
@@ -636,6 +971,31 @@ export class GameServer {
     }
     const outcome = await this.ensureCashTableEngineAdmission(tableId);
     this.finishDirectTableAdmission(tableId, reason, outcome);
+  }
+
+  /**
+   * Close an acquired-but-never-published cash generation before any new claim.
+   * This is a causal release barrier, not a delayed reconciliation scan: the
+   * exact table admission that observes it must prove deletion or fail closed.
+   */
+  private async awaitDirectTableLeaseRelease(tableId: string): Promise<void> {
+    for (;;) {
+      const leaseGeneration = this.directTablePendingLeaseReleases.get(tableId);
+      if (!leaseGeneration) return;
+      const outcome = await releaseTables([{ tableId, leaseGeneration }]);
+      if (outcome.status !== 'confirmed') {
+        throw new Error(
+          `Pending cash lease release remains unconfirmed for ${tableId}/${leaseGeneration}: ` +
+            `${outcome.reason} after ${outcome.attempts} attempt(s): ${outcome.detail}`
+        );
+      }
+      if (this.directTablePendingLeaseReleases.get(tableId) === leaseGeneration) {
+        this.directTablePendingLeaseReleases.delete(tableId);
+      }
+      if (this.directTableAdmissionLeaseGenerations.get(tableId) === leaseGeneration) {
+        this.directTableAdmissionLeaseGenerations.delete(tableId);
+      }
+    }
   }
   /**
    * When this process started. Used to keep boot from looking like death --
@@ -686,11 +1046,88 @@ export class GameServer {
   private async stopTournamentManagerIfOwned(
     tournamentId: string,
     manager: TournamentManager,
-    errorContext: string
+    errorContext: string,
+    releaseLease = true
   ): Promise<boolean> {
-    return stopOwnedTournamentManager(this.tournamentEngines, tournamentId, manager, (error) =>
-      reportError(error, errorContext)
-    );
+    const existing = this.tournamentManagerRetirementOperations.get(manager);
+    if (existing) return existing;
+
+    const leaseGeneration = releaseLease ? manager.getTournamentLeaseGeneration() : null;
+    let resolveReleaseBarrier: (confirmed: boolean) => void = () => undefined;
+    const releaseBarrier = leaseGeneration
+      ? new Promise<boolean>((resolve) => {
+          resolveReleaseBarrier = resolve;
+        })
+      : null;
+    if (releaseBarrier) {
+      /* Publish the barrier before stop() reaches its first await. The manager
+         may disappear from the local map during teardown, but no successor is
+         allowed to claim a distinct generation until exact release finishes. */
+      this.tournamentManagerLeaseReleaseOperations.set(tournamentId, releaseBarrier);
+    }
+
+    const operation = (async (): Promise<boolean> => {
+      let releaseConfirmed = leaseGeneration === null;
+      try {
+        const stopped = await stopOwnedTournamentManager(
+          this.tournamentEngines,
+          tournamentId,
+          manager,
+          (error) => reportError(error, errorContext)
+        );
+        if (stopped && leaseGeneration) {
+          this.tournamentManagerPendingLeaseReleases.set(tournamentId, leaseGeneration);
+          const release = await releaseTournaments([{ tournamentId, leaseGeneration }]);
+          if (release.status !== 'confirmed') {
+            throw new Error(
+              `Tournament lease release was not confirmed for ${tournamentId}/${leaseGeneration}: ` +
+                `${release.reason} after ${release.attempts} attempt(s): ${release.detail}`
+            );
+          }
+          releaseConfirmed = true;
+          if (this.tournamentManagerPendingLeaseReleases.get(tournamentId) === leaseGeneration) {
+            this.tournamentManagerPendingLeaseReleases.delete(tournamentId);
+          }
+        }
+        return stopped;
+      } finally {
+        if (
+          releaseBarrier &&
+          this.tournamentManagerLeaseReleaseOperations.get(tournamentId) === releaseBarrier
+        ) {
+          this.tournamentManagerLeaseReleaseOperations.delete(tournamentId);
+        }
+        if (releaseBarrier) resolveReleaseBarrier(releaseConfirmed);
+        this.tournamentManagerRetirementOperations.delete(manager);
+      }
+    })();
+    this.tournamentManagerRetirementOperations.set(manager, operation);
+    return operation;
+  }
+
+  private async awaitTournamentManagerLeaseRelease(tournamentId: string): Promise<void> {
+    for (;;) {
+      const release = this.tournamentManagerLeaseReleaseOperations.get(tournamentId);
+      if (release) {
+        await release;
+        continue;
+      }
+      const leaseGeneration = this.tournamentManagerPendingLeaseReleases.get(tournamentId);
+      if (!leaseGeneration) return;
+      const outcome = await releaseTournaments([{ tournamentId, leaseGeneration }]);
+      if (outcome.status !== 'confirmed') {
+        throw new Error(
+          `Pending tournament lease release remains unconfirmed for ${tournamentId}/${leaseGeneration}: ` +
+            `${outcome.reason} after ${outcome.attempts} attempt(s): ${outcome.detail}`
+        );
+      }
+      if (this.tournamentManagerPendingLeaseReleases.get(tournamentId) === leaseGeneration) {
+        this.tournamentManagerPendingLeaseReleases.delete(tournamentId);
+      }
+      if (this.tournamentManagerAdmissionLeaseGenerations.get(tournamentId) === leaseGeneration) {
+        this.tournamentManagerAdmissionLeaseGenerations.delete(tournamentId);
+      }
+    }
   }
 
   private clearTournamentManagerAdmissionRetry(tournamentId: string): void {
@@ -698,6 +1135,7 @@ export class GameServer {
     if (timer) clearTimeout(timer);
     this.tournamentManagerAdmissionRetryTimers.delete(tournamentId);
     this.tournamentManagerAdmissionRetryAttempts.delete(tournamentId);
+    this.tournamentManagerAdmissionLeaseGenerations.delete(tournamentId);
   }
 
   private scheduleTournamentManagerAdmissionRetry(
@@ -776,16 +1214,56 @@ export class GameServer {
     description: string,
     generation: number
   ): Promise<void> {
+    await this.awaitTournamentManagerLeaseRelease(tournamentId);
     if (!this.directAdmissionIsCurrent(generation) || this.tournamentEngines.has(tournamentId)) {
       return;
     }
 
-    const lease = await claimTournamentLease(tournamentId);
+    const requestedLeaseGeneration =
+      this.tournamentManagerAdmissionLeaseGenerations.get(tournamentId) ?? randomUUID();
+    this.tournamentManagerAdmissionLeaseGenerations.set(tournamentId, requestedLeaseGeneration);
+    const lease = await claimTournamentLease(tournamentId, requestedLeaseGeneration);
+    const uncertainLeaseGeneration =
+      lease.status === 'acquired_but_proof_expired'
+        ? lease.leaseGeneration
+        : lease.status === 'retryable_failure' && lease.mayHaveCommitted
+          ? lease.requestedGeneration
+          : null;
+    if (uncertainLeaseGeneration) {
+      /* An RPC error/throw is not proof the transaction rolled back. Publish
+         the exact requested generation before any lifecycle test or retry, and
+         synchronously attempt its CAS release. Shutdown drains this admission
+         and retains the pending claim if the release remains uncertain. */
+      this.tournamentManagerPendingLeaseReleases.set(tournamentId, uncertainLeaseGeneration);
+      try {
+        await this.awaitTournamentManagerLeaseRelease(tournamentId);
+      } catch (releaseError) {
+        reportError(releaseError, 'GameServer.uncertain_tournament_claim_release_unconfirmed', {
+          tournamentId,
+          leaseGeneration: uncertainLeaseGeneration,
+        });
+      }
+      if (this.directAdmissionIsCurrent(generation)) {
+        this.scheduleTournamentManagerAdmissionRetry(tournamentId, mode, description, generation);
+      }
+      return;
+    }
     if (!this.directAdmissionIsCurrent(generation)) {
       // This exact operation acquired the lease after shutdown had fenced the
       // generation. Return it before the admission promise settles so a deploy
       // never leaves a post-snapshot ownership grant behind.
-      if (lease.status === 'granted') await releaseTournaments([tournamentId]);
+      if (lease.status === 'granted') {
+        const staleGeneration = lease.leaseGeneration;
+        this.tournamentManagerPendingLeaseReleases.set(tournamentId, staleGeneration);
+        try {
+          await this.awaitTournamentManagerLeaseRelease(tournamentId);
+        } catch (releaseError) {
+          reportError(releaseError, 'GameServer.stale_tournament_admission_release_unconfirmed', {
+            tournamentId,
+            leaseGeneration: staleGeneration,
+          });
+        }
+      }
       return;
     }
     if (lease.status === 'retryable_failure') {
@@ -803,7 +1281,16 @@ export class GameServer {
     this.clearTournamentManagerAdmissionRetry(tournamentId);
 
     console.log(`[GameServer] ${description}`);
-    const manager = new TournamentManager(tournamentId, this);
+    const manager = new TournamentManager(
+      tournamentId,
+      this,
+      lease.leaseGeneration,
+      lease.proofDeadlineMonotonicMs
+    );
+    bindTournamentDataAuthorityMethods(
+      { tournamentId, leaseGeneration: lease.leaseGeneration },
+      manager
+    );
     this.tournamentEngines.set(tournamentId, manager);
     try {
       if (mode === 'resume') await manager.resume();
@@ -815,24 +1302,15 @@ export class GameServer {
           manager,
           'GameServer.stale_tournament_admission_cleanup_failed'
         );
-        if (!this.tournamentEngines.has(tournamentId)) {
-          await releaseTournaments([tournamentId]);
-        }
         return;
       }
       await this.finishTournamentManagerAdmission(tournamentId, manager, generation);
-      if (!this.tournamentEngines.has(tournamentId)) {
-        await releaseTournaments([tournamentId]);
-      }
     } catch (error) {
       await this.stopTournamentManagerIfOwned(
         tournamentId,
         manager,
         'GameServer.tournament_admission_cleanup_failed'
       );
-      if (!this.tournamentEngines.has(tournamentId)) {
-        await releaseTournaments([tournamentId]);
-      }
       this.scheduleTournamentManagerAdmissionRetry(tournamentId, mode, description, generation);
       throw error;
     }
@@ -1372,6 +1850,14 @@ export class GameServer {
       // exists only for a committed outbox row whose process/response died.
       this.startTournamentBountyObligationSubscription();
 
+      /* Ownership renewal is a primary lifecycle, independent of the much
+         heavier discovery/adoption/reaper loops. A blocked discovery RPC must
+         never consume the 20-second local authority proof of a healthy dealer. */
+      this.launchServerLifecycleJob(
+        this.runOwnershipLeaseRenewalLoop(generation),
+        'GameServer.ownership_lease_renewal_fatal_err'
+      );
+
       this.launchDiscoveryJob(
         this.discoverCashTables(),
         'GameServer.Cash_table_discovery_fatal_err'
@@ -1535,32 +2021,10 @@ export class GameServer {
    * is set so this stays out of the normal-operation hot path.
    */
   private async startTableEngineForTesting(tableId: string): Promise<void> {
-    if (this.tableEngines.has(tableId)) return;
-    const engine = new ServerTableEngine(tableId);
-    engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
-    this.wireDirectTableEngineRecovery(tableId, engine);
-    this.tableEngines.set(tableId, engine);
-    // A table built during a maintenance break must be born parked. Otherwise
-    // it is the one table on the platform dealing while every other felt sits
-    // on the break screen. No-ops when no break is running.
-    this.maintenanceBreak.adopt(tableId, engine);
-    const readiness = this.trackDirectTableEngineReadiness(tableId, engine);
-    // Mirror the discovery-loop start invocation so any errors get reported
-    // consistently and the engine cleanup path runs on failure.
-    void engine
-      .start()
-      .catch(async (err) => {
-        reportError(err, 'GameServer.E2E_test_table_engine_start_error');
-        await this.recoverDirectTableEngine(tableId, engine, 'test_start_failed', true);
-      })
-      .catch((recoveryError) => {
-        reportError(recoveryError, 'GameServer.E2E_test_table_engine_recovery_threw', {
-          tableId,
-        });
-        this.scheduleDirectTableRecovery(tableId, 'test_start_recovery_threw');
-      });
-    if ((await readiness) !== 'ready') {
-      throw new Error(`E2E test table ${tableId} did not reach authoritative readiness`);
+    const outcome = await this.ensureCashTableEngineAdmission(tableId);
+    this.finishDirectTableAdmission(tableId, 'test_table_admission_failed', outcome);
+    if (outcome !== 'ready') {
+      throw new Error(`E2E test table ${tableId} admission ended as ${outcome}`);
     }
   }
 
@@ -1608,15 +2072,17 @@ export class GameServer {
     this.lifecycleGeneration += 1;
     console.log('[GameServer] Shutting down...');
 
-    // Revoke every manager's mutation authority before the first shutdown
-    // await, but leave its current hand alone for the bounded graceful drain
-    // below. No discovery continuation can now mutate through an old manager
-    // while GameServer is preparing its final engine snapshot.
+    // Revoke every manager callback before the first shutdown await, but retain
+    // and renew its exact lease generation for hands already in progress. The
+    // final authority fence lands only after the bounded between-hands drain.
     const tournamentManagersAtFence = [...this.tournamentEngines.entries()];
-    for (const [, manager] of tournamentManagersAtFence) manager.fenceForServerShutdown();
+    for (const [, manager] of tournamentManagersAtFence) manager.beginServerShutdownDrain();
+    this.startShutdownOwnershipLeaseRenewal();
     const externalOwnership = this.beginExternalShutdownOwnershipBarrier();
 
-    const teardown = this.performStop(tournamentManagersAtFence, externalOwnership);
+    const teardown = this.performStop(tournamentManagersAtFence, externalOwnership).finally(() =>
+      this.stopShutdownOwnershipLeaseRenewal()
+    );
     this.teardownPromise = teardown;
     return teardown;
   }
@@ -1667,6 +2133,10 @@ export class GameServer {
     for (const timer of this.tournamentManagerAdmissionRetryTimers.values()) clearTimeout(timer);
     this.tournamentManagerAdmissionRetryTimers.clear();
     this.tournamentManagerAdmissionRetryAttempts.clear();
+    /* Admission UUIDs are potential committed authority, not disposable retry
+       bookkeeping. Keep them through the fixed-point admission drain; each
+       uncertain result publishes an exact pending release, and the final
+       shutdown certificate includes both maps. */
 
     // Stop services. Every shared-state producer is invoked before the first
     // await, so all lifecycle generations are fenced as one boundary. Their
@@ -1815,7 +2285,7 @@ export class GameServer {
     const tournamentManagers = [
       ...new Map([...tournamentManagersAtFence, ...this.tournamentEngines.entries()]).entries(),
     ];
-    for (const [, manager] of tournamentManagers) manager.fenceForServerShutdown();
+    for (const [, manager] of tournamentManagers) manager.beginServerShutdownDrain();
 
     /**
      * C19 FIX (2026-08-20): drain in-flight hands, then stop everything at once.
@@ -1838,11 +2308,23 @@ export class GameServer {
     const DRAIN_POLL_MS = 250;
     const engineTableIds = [...this.tableEngines.keys()];
     const engines = [...this.tableEngines.values()];
+    const cashLeaseClaimsByTable = new Map(this.directTablePendingLeaseReleases);
+    for (let index = 0; index < engines.length; index++) {
+      const engine = engines[index];
+      const authority = engine.getEngineLeaseAuthority();
+      if (authority?.scope === 'cash' && authority.verified) {
+        cashLeaseClaimsByTable.set(engineTableIds[index], authority.generation);
+      }
+    }
+    const cashLeaseClaims = [...cashLeaseClaimsByTable].map(([tableId, leaseGeneration]) => ({
+      tableId,
+      leaseGeneration,
+    }));
     if (engines.length > 0) {
       // Refresh the distributed fence immediately before the bounded drain.
       // Leadership renewal remains active until every manager and dealer is
       // stopped, so a standby cannot overlap this outgoing generation.
-      await heartbeatTables(engineTableIds);
+      await this.renewOwnedEngineLeaseProofs();
       for (const engine of engines) {
         try {
           // A drain is stopping the process: do not start another hand.
@@ -1864,8 +2346,15 @@ export class GameServer {
       );
       // The drain itself can consume most of the lease stale window. Renew at
       // its far edge so teardown still owns the database fence it relies on.
-      await heartbeatTables(engineTableIds);
+      await this.renewOwnedEngineLeaseProofs();
     }
+
+    /* No heartbeat may race the final fence or exact release. End and join the
+       shutdown-only renewal owner, then drain any lease-loss retirement it
+       launched before taking authority away from the parked tables. */
+    await this.stopShutdownOwnershipLeaseRenewal();
+    await this.drainOwnedLifecycleJobs();
+    for (const [, manager] of tournamentManagers) manager.fenceForServerShutdown();
 
     // Stop every dealer and manager in parallel. Manager stop is invoked
     // through the identity-CAS owner so a stale teardown can never remove a
@@ -1873,7 +2362,12 @@ export class GameServer {
     // process scheduler ownership has already been released.
     const engineStops = engines.map((engine) => engine.stop());
     const managerStops = tournamentManagers.map(([id, manager]) =>
-      this.stopTournamentManagerIfOwned(id, manager, 'GameServer.shutdown_manager_stop_failed')
+      this.stopTournamentManagerIfOwned(
+        id,
+        manager,
+        'GameServer.shutdown_manager_stop_failed',
+        false
+      )
     );
     const [engineStopResults, managerStopResults] = await Promise.all([
       Promise.allSettled(engineStops),
@@ -1962,8 +2456,51 @@ export class GameServer {
       throw error;
     }
 
-    await releaseTables();
-    await releaseTournaments();
+    const cashRelease = await releaseTables(cashLeaseClaims);
+    const distributedReleaseFailures: Error[] = [];
+    if (cashRelease.status !== 'confirmed') {
+      const error = new Error(
+        `Shutdown cash lease release was not confirmed: ${cashRelease.reason} after ` +
+          `${cashRelease.attempts} attempt(s): ${cashRelease.detail}`
+      );
+      distributedReleaseFailures.push(error);
+      reportError(error, 'GameServer.shutdown_cash_lease_release_unconfirmed');
+    }
+    const tournamentLeaseClaims = new Map(this.tournamentManagerPendingLeaseReleases);
+    for (const [tournamentId, manager] of tournamentManagers) {
+      const leaseGeneration = manager.getTournamentLeaseGeneration();
+      if (leaseGeneration) tournamentLeaseClaims.set(tournamentId, leaseGeneration);
+    }
+    const tournamentRelease = await releaseTournaments(
+      [...tournamentLeaseClaims].map(([tournamentId, leaseGeneration]) => ({
+        tournamentId,
+        leaseGeneration,
+      }))
+    );
+    if (tournamentRelease.status !== 'confirmed') {
+      const error = new Error(
+        `Shutdown tournament lease release was not confirmed: ${tournamentRelease.reason} after ` +
+          `${tournamentRelease.attempts} attempt(s): ${tournamentRelease.detail}`
+      );
+      distributedReleaseFailures.push(error);
+      reportError(error, 'GameServer.shutdown_tournament_lease_release_unconfirmed');
+    }
+    if (distributedReleaseFailures.length > 0) {
+      const error = new AggregateError(
+        distributedReleaseFailures,
+        `GameServer shutdown could not prove ${distributedReleaseFailures.length} exact distributed lease release(s)`
+      );
+      reportError(error, 'GameServer.shutdown_distributed_release_unproven');
+      await flushSentry();
+      /* Leadership deliberately remains held and no success line is emitted.
+         A supervisor may terminate this failed-stop process, after which the
+         30-second DB lease boundary remains the conservative handoff gate. */
+      throw error;
+    }
+    this.directTablePendingLeaseReleases.clear();
+    this.tournamentManagerPendingLeaseReleases.clear();
+    this.directTableAdmissionLeaseGenerations.clear();
+    this.tournamentManagerAdmissionLeaseGenerations.clear();
     stopLeadershipRenewal();
     await releaseLeadership();
 
@@ -2669,21 +3206,43 @@ export class GameServer {
   }
 
   private tableLivenessSnapshot() {
-    return [...this.tableEngines].map(([id, engine]) => ({
-      tableId: id,
-      seated: engine.seatedCount(),
-      dealable: engine.dealableCount(),
-      humans: engine.humansSeated(),
-      handCount: engine.getHandCount(),
-      msSinceProgress: engine.msSinceProgress(),
-      // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
-      // /health could say a table had made no progress for 96 seconds but not
-      // what it was doing for those 96 seconds, so a fleet-wide stall showed up
-      // as ninety identical unexplained numbers. This is the missing half.
-      loopPhase: engine.describeLoopPhase(),
-      paused: engine.isPausedByDesign(),
-      isTournament: engine.isTournament(),
-    }));
+    const tournamentDescriptorByTableId = new Map<
+      string,
+      { gameFormat: 'mtt' | 'spin' | 'sng'; clubId: string | null }
+    >();
+    for (const manager of this.tournamentEngines.values()) {
+      const gameFormat = manager.getPublicLiveTableFormat();
+      if (!gameFormat) continue;
+      const clubId = manager.getPublicLiveTableClubId();
+      for (const tableId of manager.getTableIds()) {
+        tournamentDescriptorByTableId.set(tableId, { gameFormat, clubId });
+      }
+    }
+
+    return [...this.tableEngines].map(([id, engine]) => {
+      const tournament = tournamentDescriptorByTableId.get(id);
+      return {
+        tableId: id,
+        // Public category and club scope only. The manager's row and lease
+        // generation never enter /health; null makes an incomplete tournament
+        // admission visible instead of guessing and letting the certificate
+        // select a table its isolated account cannot observe.
+        gameFormat: tournament?.gameFormat ?? (engine.isTournament() ? null : 'cash'),
+        clubId: tournament?.clubId ?? null,
+        seated: engine.seatedCount(),
+        dealable: engine.dealableCount(),
+        humans: engine.humansSeated(),
+        handCount: engine.getHandCount(),
+        msSinceProgress: engine.msSinceProgress(),
+        // 2026-08-22: where the dealing loop actually is, e.g. `load_seats+96s`.
+        // /health could say a table had made no progress for 96 seconds but not
+        // what it was doing for those 96 seconds, so a fleet-wide stall showed up
+        // as ninety identical unexplained numbers. This is the missing half.
+        loopPhase: engine.describeLoopPhase(),
+        paused: engine.isPausedByDesign(),
+        isTournament: engine.isTournament(),
+      };
+    });
   }
 
   // ═════════════════════════════════════════════════════════════════════════════
@@ -3919,68 +4478,10 @@ export class GameServer {
           continue;
         }
 
-        // ── Reclaim tables refused during a cutover (2026-08-17) ───────
-        // A claim refused while the outgoing container still held the
-        // lease used to latch for the life of the process: the table
-        // starts anyway (enforcement is off) and the loop below skips
-        // anything already in `tableEngines`. Retrying here converges
-        // ownership within one discovery tick and unlatches conflictCount.
-        await retryRefusedClaims();
-
-        // ── Lease renewal (2026-08-16) ──────────────────────────────────
-        // Runs before the start loop so a table we have just lost is torn down
-        // in the same tick that another instance takes it, rather than dealing
-        // one more hand against a table someone else now owns.
-        //
-        // heartbeatTables() returns [] on any error and [] whenever
-        // ENGINE_LEASE_ENFORCE is off, so this loop is inert until the
-        // conflict logs say the claim path behaves.
-        const lostTables = await heartbeatTables([...this.tableEngines.keys()]);
-
-        for (const id of lostTables) {
-          const engine = this.tableEngines.get(id);
-          if (!engine) continue;
-          reportError(
-            new Error(`Lost the deal-lease on table ${id} to another engine instance`),
-            'GameServer.table_lease_lost'
-          );
-          try {
-            await engine.stop();
-          } catch (stopError) {
-            reportError(stopError, 'GameServer.table_lease_lost_stop_failed', { tableId: id });
-            continue;
-          }
-          if (this.tableEngines.get(id) === engine) {
-            this.tableEngines.delete(id);
-            if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
-          }
-        }
-
-        /**
-         * Tournaments renew on the same cadence, but AFTER the table loop
-         * above: leaseEnforcementGuard pins the adjacency of
-         * heartbeatTables -> engine.stop() -> tableEngines.delete(), and
-         * splitting it would make that invariant unreadable. Handling tables
-         * completely and then tournaments is also simply the clearer order.
-         *
-         * Anything reported lost has been taken over by another instance and
-         * must stop here, or two managers run one tournament — the exact thing
-         * the lease exists to prevent.
-         */
-        const lostTournaments = await heartbeatTournaments([...this.tournamentEngines.keys()]);
-        for (const id of lostTournaments) {
-          const tm = this.tournamentEngines.get(id);
-          if (!tm) continue;
-          reportError(
-            new Error(`Lost the tournament lease on ${id} to another engine instance`),
-            'GameServer.tournament_lease_lost'
-          );
-          await this.stopTournamentManagerIfOwned(
-            id,
-            tm,
-            'GameServer.tournament_lease_lost_stop_failed'
-          );
-        }
+        /* Lease authority is renewed and loss-fenced by the dedicated primary
+           lifecycle started in performStart. Discovery deliberately performs
+           no ownership heartbeat: its heavier adoption/reaper work can consume
+           a full database timeout without delaying the next proof pass. */
 
         /**
          * C19 FIX (2026-08-20): stagger the starts.
@@ -4089,24 +4590,21 @@ export class GameServer {
         );
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
-            // running=false is not proof of teardown. A watchdog kill retains
-            // process ownership until this shared promise finishes, so never
-            // release the map slot (and admit a successor) before it resolves.
-            try {
-              await engine.stop();
-            } catch (stopError) {
-              reportError(stopError, 'GameServer.not_running_engine_teardown_failed', {
-                tableId: id,
-              });
-              continue;
+            /* TournamentManager owns its child's causal restart callback and
+               map replacement. Discovery must never delete that slot. A cash
+               generation instead joins the one teardown that stops it, proves
+               exact lease release, compare-deletes, and only then readmits. */
+            if (!this.tournamentOwnedTables.has(id)) {
+              void this.recoverDirectTableEngine(
+                id,
+                engine,
+                'not_running_generation_seen_by_discovery'
+              ).catch((recoveryError) =>
+                reportError(recoveryError, 'GameServer.not_running_engine_recovery_failed', {
+                  tableId: id,
+                })
+              );
             }
-            if (this.tableEngines.get(id) !== engine) continue;
-            this.tableEngines.delete(id);
-            // Leave the hub room alone for tournament tables: their
-            // TournamentManager rebuilds the engine and the same players stay
-            // connected throughout. dropTable() now preserves subscribers
-            // anyway, but skipping it avoids a spurious sequence reset.
-            if (!this.tournamentOwnedTables.has(id)) tableStateHub.dropTable(id);
             continue;
           }
           // 2026-08-15: the seat counts come from a cash-only RPC (its WHERE
@@ -4158,15 +4656,20 @@ export class GameServer {
               ),
               'GameServer.zombie_engine_rebuilt'
             );
-            try {
-              await engine.stop();
-            } catch (stopError) {
-              reportError(stopError, 'GameServer.zombie_engine_stop_failed', { tableId: id });
-              continue;
-            }
-            if (this.tableEngines.get(id) === engine) {
-              this.tableEngines.delete(id);
-              tableStateHub.dropTable(id);
+            if (this.tournamentOwnedTables.has(id)) {
+              /* Synchronously stop mutation and notify the exact owning manager;
+                 its identity-CAS replacement preserves the tournament lease. */
+              engine.fenceForEngineLeaseLoss('tournament_table_zombie', true);
+            } else {
+              // Stop mutation before the first teardown await, then retain the
+              // old map generation until its exact DB lease is released.
+              engine.fenceForEngineLeaseLoss('cash_table_zombie', false);
+              void this.recoverDirectTableEngine(id, engine, 'zombie_engine').catch(
+                (recoveryError) =>
+                  reportError(recoveryError, 'GameServer.zombie_engine_recovery_failed', {
+                    tableId: id,
+                  })
+              );
             }
           }
         }
@@ -6894,6 +7397,9 @@ export class GameServer {
       return 'retryable_failure';
     }
 
+    await this.awaitDirectTableLeaseRelease(tableId);
+    if (!this.directAdmissionIsCurrent(generation)) return 'not_wakeable';
+
     let table: Parameters<typeof isWakeableCashTable>[0];
     let error: { message: string } | null = null;
     try {
@@ -6925,21 +7431,80 @@ export class GameServer {
       return 'not_wakeable';
     }
 
-    const lease = await claimTableLease(tableId);
+    const requestedLeaseGeneration =
+      this.directTableAdmissionLeaseGenerations.get(tableId) ?? randomUUID();
+    this.directTableAdmissionLeaseGenerations.set(tableId, requestedLeaseGeneration);
+    const lease = await claimTableLease(tableId, requestedLeaseGeneration);
+    const uncertainLeaseGeneration =
+      lease.status === 'acquired_but_proof_expired'
+        ? lease.leaseGeneration
+        : lease.status === 'retryable_failure' && lease.mayHaveCommitted
+          ? lease.requestedGeneration
+          : null;
+    if (uncertainLeaseGeneration) {
+      this.directTablePendingLeaseReleases.set(tableId, uncertainLeaseGeneration);
+      try {
+        await this.awaitDirectTableLeaseRelease(tableId);
+      } catch (releaseError) {
+        reportError(releaseError, 'GameServer.uncertain_cash_claim_release_unconfirmed', {
+          tableId,
+          leaseGeneration: uncertainLeaseGeneration,
+        });
+      }
+      return 'retryable_failure';
+    }
     if (lease.status === 'retryable_failure') return 'retryable_failure';
     if (lease.status === 'owned_elsewhere') return 'owned_elsewhere';
+    if (lease.status !== 'granted') return 'retryable_failure';
+    const grantedLeaseGeneration = lease.leaseGeneration;
     if (!this.directAdmissionIsCurrent(generation)) {
       // Shutdown won while the lease RPC was in flight. Hand the exact lease
       // back before resolving so no post-snapshot dealer can escape stop().
-      await releaseTables([tableId]);
+      const staleGeneration = lease.leaseGeneration;
+      this.directTablePendingLeaseReleases.set(tableId, staleGeneration);
+      try {
+        await this.awaitDirectTableLeaseRelease(tableId);
+      } catch (releaseError) {
+        reportError(releaseError, 'GameServer.stale_cash_admission_release_unconfirmed', {
+          tableId,
+          leaseGeneration: staleGeneration,
+        });
+      }
       return 'not_wakeable';
     }
     // Another authorized connection may have completed the same wake while the
-    // lease call was in flight. Never construct a second dealer.
+    // lease call was in flight. Never construct a second dealer, and hand back
+    // the exact generation acquired by this losing admission before returning
+    // the incumbent. Otherwise a tournament-table publication race leaves an
+    // invisible protocol-2 row alive.
     const racedStart = this.tableEngineStartPromises.get(tableId);
-    if (racedStart) return racedStart;
+    if (racedStart) {
+      if (grantedLeaseGeneration) {
+        this.directTablePendingLeaseReleases.set(tableId, grantedLeaseGeneration);
+        try {
+          await this.awaitDirectTableLeaseRelease(tableId);
+        } catch (releaseError) {
+          reportError(releaseError, 'GameServer.raced_cash_start_release_unconfirmed', {
+            tableId,
+            leaseGeneration: grantedLeaseGeneration,
+          });
+        }
+      }
+      return racedStart;
+    }
     const racedEngine = this.tableEngines.get(tableId);
     if (racedEngine) {
+      if (grantedLeaseGeneration) {
+        this.directTablePendingLeaseReleases.set(tableId, grantedLeaseGeneration);
+        try {
+          await this.awaitDirectTableLeaseRelease(tableId);
+        } catch (releaseError) {
+          reportError(releaseError, 'GameServer.raced_cash_engine_release_unconfirmed', {
+            tableId,
+            leaseGeneration: grantedLeaseGeneration,
+          });
+        }
+      }
       if (racedEngine.isRunning()) return 'ready';
       void this.recoverDirectTableEngine(
         tableId,
@@ -6953,10 +7518,20 @@ export class GameServer {
       return 'retryable_failure';
     }
 
-    const engine = new ServerTableEngine(tableId);
+    const engine = new ServerTableEngine(tableId, {
+      scope: 'cash',
+      verified: true,
+      generation: lease.leaseGeneration,
+      proofDeadlineMonotonicMs: lease.proofDeadlineMonotonicMs,
+    });
     engine.setHub(tableStateHub);
     this.wireDirectTableEngineRecovery(tableId, engine);
     this.tableEngines.set(tableId, engine);
+    /* The caller UUID is retryable only until one dealer object consumes it.
+       A startup failure retires that object and its exact database generation;
+       its successor must choose a new UUID so delayed work from the retired
+       dealer can never become authoritative again after re-admission. */
+    this.directTableAdmissionLeaseGenerations.delete(tableId);
     // On-demand wake during a break: the player gets the break screen, not a
     // table that deals to them alone.
     this.maintenanceBreak.adopt(tableId, engine);

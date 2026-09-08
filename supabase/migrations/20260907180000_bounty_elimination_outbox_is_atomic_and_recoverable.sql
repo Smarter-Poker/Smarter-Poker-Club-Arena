@@ -4,12 +4,12 @@
 -- outbox row commit together. Recovery consumes that durable outbox only; it
 -- never infers or creates a money obligation from mutable historical rows.
 
--- This file intentionally uses several transaction boundaries. The tournament
--- tables below are continuously written, so every operation which needs an
--- ACCESS EXCLUSIVE lock gets a 250 ms, metadata-only window and commits before
--- any row rewrite or function compilation begins. Each boundary is independently
--- rerunnable: an unavailable lock fails the rollout quickly without leaving an
--- authority gap or holding an earlier table lock behind later work.
+-- The entire authority change is one transaction. This is both the financial
+-- boundary (no caller can observe half of the payout contract) and the schema
+-- cache boundary (PostgREST receives one coalesced reload notification). The
+-- short lock timeout makes a contended rollout fail before changing authority;
+-- deployment must drain engine writers because lock_timeout does not bound how
+-- long a lock is held after acquisition.
 BEGIN;
 SET LOCAL lock_timeout = '250ms';
 
@@ -56,15 +56,10 @@ ALTER TABLE public.tournament_bounty_obligations ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.tournament_bounty_obligations FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON TABLE public.tournament_bounty_obligations TO service_role;
 
-COMMIT;
-
 -- Ledger rows acknowledge an outbox by trigger, so browser DML on the ledger
 -- would be equivalent to browser authority to mark money paid. Existing live
 -- RLS currently has only SELECT, but raw DML grants make a future permissive
 -- policy an instant payout bypass. Make the privilege invariant intrinsic.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON TABLE public.tournament_bounties FROM PUBLIC, anon, authenticated, service_role;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
@@ -90,35 +85,19 @@ BEGIN
 END;
 $do$;
 
-COMMIT;
-
 -- A user may re-enter and be knocked out more than once.  The historical
 -- uniqueness keys used only (tournament,user), which made the second head
 -- impossible to pay.  Every new ledger/award row is instead tied to the
 -- immutable seat-generation outbox id.  Legacy writers retain their old
 -- uniqueness only while they have no outbox id.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 ALTER TABLE public.tournaments
   ADD COLUMN IF NOT EXISTS mystery_bounty_activation_generation bigint NOT NULL DEFAULT 0;
 
-COMMIT;
-
--- The data rewrite owns row locks only; it must never extend the preceding
--- ACCESS EXCLUSIVE schema window.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
+-- Normalize pre-existing active/complete rows before validating the invariant.
 UPDATE public.tournaments
    SET mystery_bounty_activation_generation=1
  WHERE mystery_bounty_stage IN ('active','complete')
    AND mystery_bounty_activation_generation=0;
-
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 
 DO $do$
 BEGIN
@@ -134,28 +113,13 @@ BEGIN
 END;
 $do$;
 
-COMMIT;
-
 -- VALIDATE takes SHARE UPDATE EXCLUSIVE rather than ACCESS EXCLUSIVE and can
 -- scan the existing rows without stopping tournament DML.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 ALTER TABLE public.tournaments
   VALIDATE CONSTRAINT tournaments_mystery_activation_generation_nonnegative;
 
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 ALTER TABLE public.tournament_bounties
   ADD COLUMN IF NOT EXISTS bounty_obligation_id uuid;
-
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 
 DO $do$
 BEGIN
@@ -173,21 +137,11 @@ BEGIN
 END;
 $do$;
 
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 ALTER TABLE public.tournament_bounties
   VALIDATE CONSTRAINT tournament_bounties_bounty_obligation_id_fkey;
 
-COMMIT;
-
--- Concurrent builds keep legacy payout inserts moving. A cancelled concurrent
--- build leaves an invalid shell; discard only that shell in a fail-fast DDL
--- window so a plain rerun can rebuild it.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
+-- A prior draft could have left an invalid concurrent-build shell. Remove only
+-- that invalid shell before building the transaction-owned replacement.
 DO $do$
 BEGIN
   IF EXISTS (
@@ -202,16 +156,9 @@ BEGIN
   END IF;
 END;
 $do$;
-COMMIT;
-
-SET lock_timeout = '250ms';
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_tourney_bounty_ko_legacy
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tourney_bounty_ko_legacy
   ON public.tournament_bounties(tournament_id, eliminated_player_id, collector_player_id)
   WHERE bounty_obligation_id IS NULL;
-RESET lock_timeout;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 DO $do$
 BEGIN
   IF EXISTS (
@@ -226,34 +173,14 @@ BEGIN
   END IF;
 END;
 $do$;
-COMMIT;
-
-SET lock_timeout = '250ms';
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_tourney_bounty_ko_generation
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tourney_bounty_ko_generation
   ON public.tournament_bounties(bounty_obligation_id, collector_player_id)
   WHERE bounty_obligation_id IS NOT NULL;
-RESET lock_timeout;
-
--- Do not remove the old uniqueness until both replacement indexes are valid.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
-DROP INDEX IF EXISTS public.uq_tourney_bounty_ko;
-
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 
 ALTER TABLE public.tournament_bounty_awards
   ADD COLUMN IF NOT EXISTS bounty_obligation_id uuid;
 ALTER TABLE public.tournament_bounty_awards
   ADD COLUMN IF NOT EXISTS activation_generation bigint;
-
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 
 DO $do$
 BEGIN
@@ -271,29 +198,14 @@ BEGIN
 END;
 $do$;
 
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 ALTER TABLE public.tournament_bounty_awards
   VALIDATE CONSTRAINT tournament_bounty_awards_bounty_obligation_id_fkey;
-
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 
 UPDATE public.tournament_bounty_awards a
    SET activation_generation=t.mystery_bounty_activation_generation
   FROM public.tournaments t
  WHERE t.id=a.tournament_id AND a.activation_generation IS NULL
    AND t.mystery_bounty_activation_generation>0;
-
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 
 DO $do$
 BEGIN
@@ -310,18 +222,9 @@ BEGIN
 END;
 $do$;
 
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 ALTER TABLE public.tournament_bounty_awards
   VALIDATE CONSTRAINT tournament_bounty_awards_bound_generation_present;
 
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 DO $do$
 BEGIN
   IF EXISTS (
@@ -336,16 +239,9 @@ BEGIN
   END IF;
 END;
 $do$;
-COMMIT;
-
-SET lock_timeout = '250ms';
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_tournament_bounty_award_legacy
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tournament_bounty_award_legacy
   ON public.tournament_bounty_awards(tournament_id, eliminated_user_id)
   WHERE bounty_obligation_id IS NULL;
-RESET lock_timeout;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 DO $do$
 BEGIN
   IF EXISTS (
@@ -360,24 +256,72 @@ BEGIN
   END IF;
 END;
 $do$;
-COMMIT;
-
-SET lock_timeout = '250ms';
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_tournament_bounty_award_generation
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tournament_bounty_award_generation
   ON public.tournament_bounty_awards(bounty_obligation_id)
   WHERE bounty_obligation_id IS NOT NULL;
-RESET lock_timeout;
 
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
+-- IF NOT EXISTS is safe only when a same-named object is proved to be the
+-- intended enforcement index. Refuse the migration before retiring either
+-- legacy uniqueness key if a prior draft left a valid but differently-shaped
+-- index under one of these names.
+DO $assert$
+DECLARE
+  v_expected record;
+BEGIN
+  FOR v_expected IN
+    SELECT * FROM (VALUES
+      ('uq_tourney_bounty_ko_legacy',
+       'public.tournament_bounties'::regclass,
+       ARRAY['tournament_id','eliminated_player_id','collector_player_id']::text[],
+       'bounty_obligation_id IS NULL'),
+      ('uq_tourney_bounty_ko_generation',
+       'public.tournament_bounties'::regclass,
+       ARRAY['bounty_obligation_id','collector_player_id']::text[],
+       'bounty_obligation_id IS NOT NULL'),
+      ('uq_tournament_bounty_award_legacy',
+       'public.tournament_bounty_awards'::regclass,
+       ARRAY['tournament_id','eliminated_user_id']::text[],
+       'bounty_obligation_id IS NULL'),
+      ('uq_tournament_bounty_award_generation',
+       'public.tournament_bounty_awards'::regclass,
+       ARRAY['bounty_obligation_id']::text[],
+       'bounty_obligation_id IS NOT NULL')
+    ) AS expected(index_name,table_oid,key_columns,predicate)
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1
+        FROM pg_index i
+        JOIN pg_class index_class ON index_class.oid=i.indexrelid
+        JOIN pg_namespace index_namespace ON index_namespace.oid=index_class.relnamespace
+        JOIN pg_am access_method ON access_method.oid=index_class.relam
+       WHERE index_namespace.nspname='public'
+         AND index_class.relname=v_expected.index_name
+         AND i.indrelid=v_expected.table_oid
+         AND i.indisunique
+         AND i.indisvalid
+         AND i.indisready
+         AND access_method.amname='btree'
+         AND i.indnkeyatts=cardinality(v_expected.key_columns)
+         AND i.indnatts=cardinality(v_expected.key_columns)
+         AND ARRAY(
+           SELECT pg_get_indexdef(i.indexrelid,key_position,true)
+             FROM generate_series(1,i.indnkeyatts::integer) key_position
+             ORDER BY key_position
+         )=v_expected.key_columns
+         AND pg_get_expr(i.indpred,i.indrelid,true)=v_expected.predicate
+    ) THEN
+      RAISE EXCEPTION 'replacement bounty index % does not match its required unique key and predicate',
+        v_expected.index_name;
+    END IF;
+  END LOOP;
+END;
+$assert$;
 
+-- Both replacement key families are now present and proved before either old
+-- uniqueness mechanism is retired.
+DROP INDEX IF EXISTS public.uq_tourney_bounty_ko;
 ALTER TABLE public.tournament_bounty_awards
   DROP CONSTRAINT IF EXISTS tournament_bounty_awards_tournament_id_eliminated_user_id_key;
-
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 
 CREATE TABLE IF NOT EXISTS public.tournament_bounty_completion_receipts (
   tournament_id uuid PRIMARY KEY REFERENCES public.tournaments(id) ON DELETE RESTRICT,
@@ -398,11 +342,6 @@ ALTER TABLE public.tournament_bounty_completion_receipts ENABLE ROW LEVEL SECURI
 REVOKE ALL ON TABLE public.tournament_bounty_completion_receipts FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT ON TABLE public.tournament_bounty_completion_receipts TO service_role;
 
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 CREATE TABLE IF NOT EXISTS public.tournament_final_table_deal_receipts (
   tournament_id uuid PRIMARY KEY REFERENCES public.tournaments(id) ON DELETE RESTRICT,
   payouts jsonb NOT NULL CHECK (jsonb_typeof(payouts)='array'),
@@ -416,14 +355,9 @@ ALTER TABLE public.tournament_final_table_deal_receipts ENABLE ROW LEVEL SECURIT
 REVOKE ALL ON TABLE public.tournament_final_table_deal_receipts FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT ON TABLE public.tournament_final_table_deal_receipts TO service_role;
 
-COMMIT;
-
 -- Mystery activation is a database-serialized phase change, not a timestamp
 -- comparison.  The monotonic generation is captured on every bounty debt and
 -- the immutable receipt proves which inventory the active phase opened.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 CREATE TABLE IF NOT EXISTS public.tournament_mystery_activation_receipts (
   tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE RESTRICT,
   activation_generation bigint NOT NULL CHECK (activation_generation > 0),
@@ -437,11 +371,6 @@ ALTER TABLE public.tournament_mystery_activation_receipts ENABLE ROW LEVEL SECUR
 REVOKE ALL ON TABLE public.tournament_mystery_activation_receipts
   FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT ON TABLE public.tournament_mystery_activation_receipts TO service_role;
-
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 
 INSERT INTO public.tournament_mystery_activation_receipts
   (tournament_id,activation_generation,activated_at,chest_count,pool_cents)
@@ -458,11 +387,6 @@ SELECT t.id,t.mystery_bounty_activation_generation,
    AND inventory.chest_count>0 AND inventory.pool_cents>0
 ON CONFLICT (tournament_id,activation_generation) DO NOTHING;
 
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 CREATE TABLE IF NOT EXISTS public.tournament_pko_settlement_watermarks (
   tournament_id uuid PRIMARY KEY REFERENCES public.tournaments(id) ON DELETE RESTRICT,
   last_settled_hand_number bigint NOT NULL CHECK (last_settled_hand_number >= 1000000),
@@ -474,15 +398,10 @@ REVOKE ALL ON TABLE public.tournament_pko_settlement_watermarks
   FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT ON TABLE public.tournament_pko_settlement_watermarks TO service_role;
 
-COMMIT;
-
 -- Durable, authenticated event bridge into the single engine process. Browser
 -- actions commit through their existing RLS/RPC authority; triggers/functions
 -- enqueue this row in the SAME transaction. Realtime is the immediate delivery
 -- path and the bounded pending-row drain is crash/lost-notification defense.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 CREATE TABLE IF NOT EXISTS public.tournament_manager_wakes (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   tournament_id uuid NOT NULL REFERENCES public.tournaments(id) ON DELETE RESTRICT,
@@ -520,13 +439,7 @@ GRANT SELECT ON TABLE public.tournament_manager_wakes TO service_role;
 REVOKE ALL ON SEQUENCE public.tournament_manager_wakes_id_seq
   FROM PUBLIC,anon,authenticated,service_role;
 
-COMMIT;
-
--- The wake functions are independently rerunnable and do not need to share the
--- later all-or-nothing financial authority switch.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
+-- Wake functions and grants share the same all-or-nothing authority switch.
 CREATE OR REPLACE FUNCTION public.fn_emit_tournament_manager_wake(
   p_tournament_id uuid,
   p_reason text
@@ -718,7 +631,7 @@ BEGIN
 END;
 $function$;
 
--- Never expose the SECURITY DEFINER defaults between transaction boundaries.
+-- Revoke SECURITY DEFINER defaults before the one transaction becomes visible.
 REVOKE ALL ON FUNCTION public.fn_emit_tournament_manager_wake(uuid,text)
   FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_emit_tournament_manager_wake(uuid,text)
@@ -732,22 +645,12 @@ REVOKE ALL ON FUNCTION public.fn_cast_tournament_deal_vote(uuid)
 GRANT EXECUTE ON FUNCTION public.fn_cast_tournament_deal_vote(uuid)
   TO authenticated;
 
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 DO $do$
 BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.tournament_manager_wakes;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END;
 $do$;
-
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
 
 DO $do$
 BEGIN
@@ -756,11 +659,6 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END;
 $do$;
 
-COMMIT;
-
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
 DO $do$
 BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.tournament_deal_votes;
@@ -768,14 +666,8 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END;
 $do$;
 
-COMMIT;
-
--- Everything from here through the final trigger switch is one atomic
--- financial-authority change. It compiles without hot table DDL; the required
--- ACCESS EXCLUSIVE trigger locks are acquired only at the very end.
-BEGIN;
-SET LOCAL lock_timeout = '250ms';
-
+-- The compiled financial functions below become visible with the schema,
+-- publications, grants, assertions, and trigger switch at the single COMMIT.
 -- No generic receipt backfill is attempted here. A partial historical deal
 -- cannot prove the complete participant set after some standings have already
 -- been stamped. The production preflight for this rollout must assert zero
@@ -3498,11 +3390,12 @@ BEGIN
 END;
 $assert$;
 
--- Acquire every hot relation only after all row rewrites, function compilation,
--- grants and invariant assertions have finished. The 250 ms transaction-local
--- timeout above makes this an immediate rollout refusal under contention. Once
--- acquired, the complete function/trigger authority switch commits together,
--- so neither old nor new callers can observe half of the financial contract.
+-- Acquire the explicit trigger-installation lock only after function compilation,
+-- grants and invariant assertions have finished. Existing-table DDL above already
+-- retains its own locks until COMMIT; the deployment precondition is therefore a
+-- drained writer estate, while the 250 ms timeout makes contention fail closed.
+-- The complete function/trigger authority switch becomes visible together, so
+-- neither old nor new callers can observe half of the financial contract.
 LOCK TABLE public.tournament_bounties,
   public.tournament_bounty_awards,
   public.tournament_players,

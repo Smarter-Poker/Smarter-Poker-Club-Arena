@@ -39,10 +39,10 @@
  *
  * A leadership check gates whether ANY table deals, so a bug here could stop
  * the platform outright. But "always fail to leader" is WRONG, and dangerously
- * so, because the table lease fails open too:
+ * so. Before protocol-2 enforcement, the table lease could also fail open:
  *
  *   database outage -> standby cannot reach the RPC -> it promotes itself
- *                   -> claimTable() also fails open and answers true
+ *                   -> an unverified table admission also answers true
  *                   -> TWO engines dealing the same table.
  *
  * That is the exact corruption the leases exist to prevent, and a fail-open

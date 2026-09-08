@@ -99,9 +99,11 @@ describe('the engine and ACL expose only the atomic doors', () => {
       finish.indexOf('settleTournamentRake(tournament)')
     );
     expect(finish.indexOf('settleTournamentRake(tournament)')).toBeLessThan(
-      finish.indexOf('processSatelliteAwards(tournament)')
+      finish.indexOf('settleSatelliteFinishAtomically(tournament)')
     );
-    expect(finish).toMatch(/if \(isSatelliteFinish && !\(await this\.processSatelliteAwards/);
+    expect(finish).toMatch(
+      /if \(isSatelliteFinish\) \{[\s\S]*?!\(await this\.settleSatelliteFinishAtomically\(tournament\)\)/
+    );
   });
 
   it('keeps browser roles out and gives service no table mutation grants', () => {

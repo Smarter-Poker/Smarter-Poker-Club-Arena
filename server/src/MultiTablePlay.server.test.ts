@@ -368,8 +368,18 @@ describe('satellite award current_players write', () => {
 
   it('shipped source pin: the satellite path recounts and the stale formula is gone', () => {
     const src = readFileSync(join(process.cwd(), 'src/tournament/TournamentManager.ts'), 'utf8');
-    expect(src).toContain("{ count: 'exact', head: true }");
-    expect(src).toContain('current_players: targetCount');
+    const atomic = readFileSync(
+      join(
+        process.cwd(),
+        '..',
+        'supabase/migrations/20260907205500_a_satellite_finish_pays_one_frozen_entitlement_plan.sql'
+      ),
+      'utf8'
+    );
+    expect(src).toContain("supabase.rpc('fn_settle_satellite_finish_atomic'");
+    expect(atomic).toMatch(
+      /UPDATE public\.tournaments target SET current_players=\(\s*SELECT count\(\*\) FROM public\.tournament_players tp\s*WHERE tp\.tournament_id=target\.id\)/
+    );
     // Strip comments first — the fix documents the old formula in prose, and a
     // naive substring check would match its own documentation.
     const code = src
@@ -380,5 +390,6 @@ describe('satellite award current_players write', () => {
       })
       .join('\n');
     expect(code).not.toContain('Number(target.current_players || 0) + awardCount');
+    expect(atomic).not.toContain('Number(target.current_players || 0) + awardCount');
   });
 });

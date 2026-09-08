@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/live-table-realtime-continuity",
+  "_comment": "Stage-A PostgREST request authority for exact tournament-manager lease generations. Headerless legacy traffic remains compatible until a separate post-deploy activation migration.",
+  "functions": ["fn_smarter_data_api_pre_request"]
+}

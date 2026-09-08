@@ -13,9 +13,10 @@
  *  (1) tournamentRecovery refuses to pay when NO surviving entrant is
  *      'playing' — nobody in that set has been dealt a card, so the chips sort
  *      that assigns places is arbitrary order, not a ranking;
- *  (2) GameServer's played-but-registering sweep treats zero 'playing' as a
- *      mislabelled game rather than a decided one, instead of letting 0 fall
- *      into the `<= 1` settle branch.
+ *  (2) the obsolete played-but-registering sweep no longer exists. Launch
+ *      setup is proven before its atomic receipt changes the row to RUNNING,
+ *      and only then may any dealer be admitted; there is no periodic relabel
+ *      path capable of inventing lifecycle truth.
  *
  * `registered` survivors remain payable whenever at least one player is
  * 'playing' — a genuine late registrant waiting on ensureLateRegSeated is owed
@@ -49,19 +50,10 @@ describe('a recovery may not invent a podium', () => {
     expect(src).toMatch(/r\.status === 'playing' \|\| r\.status === 'registered'/);
   });
 
-  it('the played-but-registering sweep does not settle a game with nobody playing', () => {
+  it('has no receipt-free played-but-registering reconciliation path', () => {
     const src = read('../GameServer.ts');
-    const sweepAt = src.indexOf('PLAYED-BUT-STILL-REGISTERING RECOVERY');
-    expect(sweepAt).toBeGreaterThan(-1);
-
-    const handAt = src.indexOf(
-      "recoverStuckCompletingTournaments('played-but-registering'",
-      sweepAt
-    );
-    expect(handAt).toBeGreaterThan(sweepAt);
-
-    const block = src.slice(sweepAt, handAt);
-    expect(block).toMatch(/if \(stillPlaying === 0\)/);
-    expect(block).toContain('GameServer.played_registering_zero_playing');
+    expect(src).not.toContain('const { data: playedButRegistering }');
+    expect(src).not.toContain('GameServer.played_registering_zero_playing');
+    expect(src).not.toContain('GameServer.played_registering_relabel_failed');
   });
 });

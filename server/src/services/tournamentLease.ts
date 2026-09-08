@@ -29,16 +29,11 @@
  * could stop every tournament on the platform — the outcome it exists to
  * prevent. Therefore:
  *
- *   - Enforcement is ON by default. Only the exact emergency override
- *     ENGINE_TOURNAMENT_LEASE_ENFORCE === 'off' restores the historical
- *     fail-open behaviour. An absent or misspelled setting must never silently
- *     permit two managers to own the same tournament.
- *   - With enforcement on, an RPC/transport failure is UNKNOWN, never proof
+ *   - Enforcement is unconditional. No production environment switch can
+ *     authorize a generation-less tournament manager.
+ *   - An RPC/transport failure is UNKNOWN, never proof
  *     that this process owns the tournament. A new manager stands down and
  *     retries the same causal admission rather than risking two managers.
- *   - The explicit enforcement-off escape hatch retains the historical
- *     fail-open behaviour, but marks the grant unverified so callers and
- *     diagnostics cannot confuse it with database-confirmed ownership.
  *
  * WITH ONE INSTANCE RUNNING, THIS CHANGES NOTHING: every claim is granted to
  * the only claimant. Its value is that the day a second instance starts, the
@@ -51,8 +46,26 @@ import { INSTANCE_ID, INSTANCE_VERSION } from './tableLease.js';
 /** Matches the table lease, and the RPC default. */
 export const TOURNAMENT_LEASE_STALE_SECONDS = 30;
 
-export const TOURNAMENT_LEASE_ENFORCED: boolean =
-  process.env.ENGINE_TOURNAMENT_LEASE_ENFORCE !== 'off';
+/**
+ * A local owner stops ten seconds before another database claimant may take
+ * over. The deadline is anchored to the monotonic instant BEFORE the RPC, so
+ * network latency can only shorten authority; it can never move the local
+ * deadline past the database heartbeat written during that request.
+ */
+export const TOURNAMENT_LEASE_PROOF_WINDOW_MS = 20_000;
+
+let monotonicNow: () => number = () => performance.now();
+
+export function tournamentLeaseMonotonicNow(): number {
+  return monotonicNow();
+}
+
+/** Test seam for deterministic expiry/event-loop-delay regressions. */
+export function _setTournamentLeaseMonotonicNowForTests(now?: () => number): void {
+  monotonicNow = now ?? (() => performance.now());
+}
+
+export const TOURNAMENT_LEASE_ENFORCED: true = true;
 
 export interface TournamentConflict {
   tournamentId: string;
@@ -63,21 +76,67 @@ export interface TournamentConflict {
 
 /** Ownership answer for one tournament-manager admission attempt. */
 export type TournamentLeaseClaimResult =
-  | { status: 'granted'; verified: boolean }
+  | {
+      status: 'granted';
+      verified: true;
+      leaseGeneration: string;
+      proofDeadlineMonotonicMs: number;
+    }
+  | {
+      status: 'acquired_but_proof_expired';
+      leaseGeneration: string;
+    }
   | { status: 'owned_elsewhere'; conflict: TournamentConflict }
   | {
       status: 'retryable_failure';
       reason: 'rpc_error' | 'rpc_threw' | 'malformed_response';
+      requestedGeneration: string;
+      mayHaveCommitted: boolean;
     };
 
 const conflicts = new Map<string, TournamentConflict>();
 let claimErrors = 0;
 let heartbeatErrors = 0;
-/** Missing/stale heartbeat results — leases nobody took. See heartbeatTournaments. */
+/** Legacy health counter: successful heartbeats that proved the row was gone. */
 let reclaimableHeartbeats = 0;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export interface TournamentLeaseHeartbeatClaim {
+  tournamentId: string;
+  leaseGeneration: string;
+}
+
+export type TournamentLeaseReleaseOutcome =
+  | { status: 'confirmed'; releasedCount: number; attempts: number }
+  | {
+      status: 'uncertain';
+      reason: 'invalid_claims' | 'rpc_error' | 'rpc_threw' | 'malformed_response';
+      detail: string;
+      attempts: number;
+    };
+
+const LEASE_RELEASE_MAX_ATTEMPTS = 2;
+
+export interface TournamentLeaseHeartbeatProof extends TournamentLeaseHeartbeatClaim {
+  proofDeadlineMonotonicMs: number;
+}
+
+export type TournamentLeaseHeartbeatOutcome =
+  | {
+      status: 'answered';
+      proofs: TournamentLeaseHeartbeatProof[];
+      lostTournamentIds: string[];
+    }
+  | {
+      status: 'uncertain';
+      reason: 'rpc_error' | 'rpc_threw';
+    };
 
 function unverifiedClaimResult(
   tournamentId: string,
+  requestedGeneration: string,
+  mayHaveCommitted: boolean,
   reason: 'rpc_error' | 'rpc_threw' | 'malformed_response',
   detail: string
 ): TournamentLeaseClaimResult {
@@ -85,14 +144,10 @@ function unverifiedClaimResult(
   if (claimErrors <= 3) {
     console.warn(
       `[tournament-lease] claim_tournament_lease ${reason} for ${tournamentId} (${detail}) - ` +
-        (TOURNAMENT_LEASE_ENFORCED
-          ? 'refusing to run a manager until ownership can be proven'
-          : 'proceeding without a verified lease because enforcement is off')
+        'refusing to run a manager until ownership can be proven'
     );
   }
-  return TOURNAMENT_LEASE_ENFORCED
-    ? { status: 'retryable_failure', reason }
-    : { status: 'granted', verified: false };
+  return { status: 'retryable_failure', reason, requestedGeneration, mayHaveCommitted };
 }
 
 /**
@@ -100,18 +155,32 @@ function unverifiedClaimResult(
  * failed. A verified database grant is the only success under enforcement.
  */
 export async function claimTournamentLease(
-  tournamentId: string
+  tournamentId: string,
+  requestedGeneration: string
 ): Promise<TournamentLeaseClaimResult> {
+  if (!UUID_PATTERN.test(requestedGeneration)) {
+    return unverifiedClaimResult(
+      tournamentId,
+      requestedGeneration,
+      false,
+      'malformed_response',
+      'caller supplied an invalid requested generation'
+    );
+  }
+  const proofDeadlineMonotonicMs = tournamentLeaseMonotonicNow() + TOURNAMENT_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('claim_tournament_lease', {
+    const { data, error } = await supabase.rpc('claim_tournament_lease_v2', {
       p_tournament_id: tournamentId,
       p_instance_id: INSTANCE_ID,
       p_version: INSTANCE_VERSION,
+      p_requested_generation: requestedGeneration,
       p_stale_seconds: TOURNAMENT_LEASE_STALE_SECONDS,
     });
     if (error) {
       return unverifiedClaimResult(
         tournamentId,
+        requestedGeneration.toLowerCase(),
+        true,
         'rpc_error',
         String(error.message || 'unknown error')
       );
@@ -128,6 +197,8 @@ export async function claimTournamentLease(
     ) {
       return unverifiedClaimResult(
         tournamentId,
+        requestedGeneration.toLowerCase(),
+        true,
         'malformed_response',
         'response did not contain one boolean granted discriminator'
       );
@@ -137,10 +208,38 @@ export async function claimTournamentLease(
       granted: boolean;
       holder?: unknown;
       holder_age_seconds?: unknown;
+      lease_generation?: unknown;
+      protocol_version?: unknown;
     };
     if (leaseRow.granted) {
+      if (
+        typeof leaseRow.lease_generation !== 'string' ||
+        !UUID_PATTERN.test(leaseRow.lease_generation) ||
+        leaseRow.lease_generation.toLowerCase() !== requestedGeneration.toLowerCase() ||
+        leaseRow.protocol_version !== 2
+      ) {
+        return unverifiedClaimResult(
+          tournamentId,
+          requestedGeneration.toLowerCase(),
+          true,
+          'malformed_response',
+          'a granted response did not prove the exact requested protocol-2 generation'
+        );
+      }
+      if (tournamentLeaseMonotonicNow() >= proofDeadlineMonotonicMs) {
+        claimErrors++;
+        return {
+          status: 'acquired_but_proof_expired',
+          leaseGeneration: leaseRow.lease_generation.toLowerCase(),
+        };
+      }
       conflicts.delete(tournamentId);
-      return { status: 'granted', verified: true };
+      return {
+        status: 'granted',
+        verified: true,
+        leaseGeneration: leaseRow.lease_generation.toLowerCase(),
+        proofDeadlineMonotonicMs,
+      };
     }
 
     const rawAge = leaseRow.holder_age_seconds;
@@ -153,99 +252,207 @@ export async function claimTournamentLease(
     };
     conflicts.set(tournamentId, conflict);
     console.warn(
-      `[tournament-lease] ${tournamentId} is held by ${conflict.holder}` +
-        (TOURNAMENT_LEASE_ENFORCED ? '. Standing down.' : ' (enforcement off; running it anyway).')
+      `[tournament-lease] ${tournamentId} is held by ${conflict.holder}. Standing down.`
     );
-    return TOURNAMENT_LEASE_ENFORCED
-      ? { status: 'owned_elsewhere', conflict }
-      : { status: 'granted', verified: false };
+    return { status: 'owned_elsewhere', conflict };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    return unverifiedClaimResult(tournamentId, 'rpc_threw', detail);
+    return unverifiedClaimResult(
+      tournamentId,
+      requestedGeneration.toLowerCase(),
+      true,
+      'rpc_threw',
+      detail
+    );
   }
-}
-
-/**
- * Boolean compatibility adapter for existing discovery. New admission code
- * should consume claimTournamentLease() so a transient ownership failure can
- * retain its exact causal retry instead of looking like a foreign owner.
- */
-export async function claimTournament(tournamentId: string): Promise<boolean> {
-  return (await claimTournamentLease(tournamentId)).status === 'granted';
 }
 
 /**
  * Renew every tournament lease this instance believes it holds.
  *
- * @returns the subset it has LOST. Empty on any error, because "we could not
- *          ask" must never be read as "we lost everything" — that inversion is
- *          how a fail-safe becomes an outage.
+ * A transport failure is typed UNKNOWN and does not extend authority. The
+ * manager continues only until its previously proven monotonic deadline. A
+ * successful response proves each exact generation and advances its deadline
+ * from the instant before this RPC began.
  */
-export async function heartbeatTournaments(tournamentIds: string[]): Promise<string[]> {
-  if (tournamentIds.length === 0) return [];
+export async function heartbeatTournaments(
+  claims: TournamentLeaseHeartbeatClaim[]
+): Promise<TournamentLeaseHeartbeatOutcome> {
+  if (claims.length === 0) {
+    return { status: 'answered', proofs: [], lostTournamentIds: [] };
+  }
+  const tournamentIds = claims.map((claim) => claim.tournamentId);
+  const proofDeadlineMonotonicMs = tournamentLeaseMonotonicNow() + TOURNAMENT_LEASE_PROOF_WINDOW_MS;
   try {
-    const { data, error } = await supabase.rpc('heartbeat_tournament_leases_v2', {
+    const { data, error } = await supabase.rpc('heartbeat_tournament_leases_v3', {
       p_instance_id: INSTANCE_ID,
-      p_tournament_ids: tournamentIds,
+      p_claims: claims.map((claim) => ({
+        tournament_id: claim.tournamentId,
+        lease_generation: claim.leaseGeneration,
+      })),
       p_stale_seconds: TOURNAMENT_LEASE_STALE_SECONDS,
     });
     if (error) {
       heartbeatErrors++;
       if (heartbeatErrors <= 3) {
-        console.warn(`[tournament-lease] heartbeat failed (${error.message}) - keeping every one`);
+        console.warn(
+          `[tournament-lease] heartbeat failed (${error.message}) - retaining only the prior proof window`
+        );
       }
-      return [];
+      return { status: 'uncertain', reason: 'rpc_error' };
     }
 
-    const rows = (data ?? []) as Array<{ tournament_id: string; state: string }>;
-    const stateOf = new Map(rows.map((r) => [r.tournament_id, r.state]));
-    const taken: string[] = [];
-    let reclaimable = 0;
-
-    for (const id of tournamentIds) {
-      // Silence is not evidence of a takeover. See tableLease.heartbeatTables.
-      const state = stateOf.get(id) ?? 'missing';
-      if (state === 'kept') continue;
-      if (state === 'taken') {
-        taken.push(id);
-        console.warn(
-          `[tournament-lease] ${id} is held by another LIVE instance` +
-            (TOURNAMENT_LEASE_ENFORCED ? '. Stopping it here.' : ' (enforcement off; continuing).')
-        );
+    const rawRows = Array.isArray(data) ? data : null;
+    const expectedIds = new Set(tournamentIds);
+    const rowsById = new Map<
+      string,
+      { state: 'kept' | 'taken' | 'stale' | 'missing'; leaseGeneration: unknown }
+    >();
+    let malformed = rawRows === null || rawRows.length !== claims.length;
+    for (const candidate of rawRows ?? []) {
+      if (!candidate || typeof candidate !== 'object') {
+        malformed = true;
         continue;
       }
-      reclaimable++;
+      const row = candidate as {
+        tournament_id?: unknown;
+        state?: unknown;
+        lease_generation?: unknown;
+      };
+      if (
+        typeof row.tournament_id !== 'string' ||
+        !expectedIds.has(row.tournament_id) ||
+        !['kept', 'taken', 'stale', 'missing'].includes(String(row.state)) ||
+        rowsById.has(row.tournament_id)
+      ) {
+        malformed = true;
+        continue;
+      }
+      rowsById.set(row.tournament_id, {
+        state: row.state as 'kept' | 'taken' | 'stale' | 'missing',
+        leaseGeneration: row.lease_generation,
+      });
     }
 
-    if (reclaimable > 0) {
-      reclaimableHeartbeats += reclaimable;
+    if (malformed || rowsById.size !== claims.length) {
+      heartbeatErrors++;
+      if (heartbeatErrors <= 3) {
+        console.warn(
+          '[tournament-lease] heartbeat returned an incomplete or malformed generation proof'
+        );
+      }
+      return { status: 'answered', proofs: [], lostTournamentIds: tournamentIds };
+    }
+
+    const proofs: TournamentLeaseHeartbeatProof[] = [];
+    const lostTournamentIds: string[] = [];
+    for (const claim of claims) {
+      const row = rowsById.get(claim.tournamentId)!;
+      const exactGeneration =
+        typeof row.leaseGeneration === 'string' &&
+        row.leaseGeneration.toLowerCase() === claim.leaseGeneration.toLowerCase();
+      if (
+        row.state === 'kept' &&
+        exactGeneration &&
+        tournamentLeaseMonotonicNow() < proofDeadlineMonotonicMs
+      ) {
+        proofs.push({ ...claim, proofDeadlineMonotonicMs });
+        continue;
+      }
+
+      lostTournamentIds.push(claim.tournamentId);
+      if (row.state === 'missing' || row.state === 'stale') reclaimableHeartbeats++;
       console.warn(
-        `[tournament-lease] ${reclaimable} of ${tournamentIds.length} leases were missing or stale, not taken - re-claiming, still running`
+        `[tournament-lease] ${claim.tournamentId} no longer proves lease generation ${claim.leaseGeneration}. Stopping it here.`
       );
     }
 
-    return TOURNAMENT_LEASE_ENFORCED ? taken : [];
+    return { status: 'answered', proofs, lostTournamentIds };
   } catch (err) {
     heartbeatErrors++;
     if (heartbeatErrors <= 3) {
       console.warn(
-        `[tournament-lease] heartbeat threw (${(err as Error)?.message}) - keeping every one`
+        `[tournament-lease] heartbeat threw (${(err as Error)?.message}) - retaining only the prior proof window`
       );
     }
-    return [];
+    return { status: 'uncertain', reason: 'rpc_threw' };
   }
 }
 
-/** Hand leases back on the way out, so a redeploy does not wait out 30s. */
-export async function releaseTournaments(tournamentIds?: string[]): Promise<void> {
-  try {
-    await supabase.rpc('release_tournament_leases', {
-      p_instance_id: INSTANCE_ID,
-      p_tournament_ids: tournamentIds ?? null,
-    });
-  } catch {
-    // Shutdown path: a failure here costs at most one stale window.
+/**
+ * Hand exact generations back on the way out. Confirmed zero means the exact
+ * row was already absent; uncertainty is returned so shutdown cannot issue a
+ * false success certificate and force the replacement to wait out 30 seconds.
+ */
+export async function releaseTournaments(
+  claims: TournamentLeaseHeartbeatClaim[] = []
+): Promise<TournamentLeaseReleaseOutcome> {
+  if (claims.length === 0) {
+    return { status: 'confirmed', releasedCount: 0, attempts: 0 };
   }
+  if (
+    new Set(claims.map((claim) => claim.tournamentId)).size !== claims.length ||
+    claims.some(
+      (claim) => !UUID_PATTERN.test(claim.tournamentId) || !UUID_PATTERN.test(claim.leaseGeneration)
+    )
+  ) {
+    return {
+      status: 'uncertain',
+      reason: 'invalid_claims',
+      detail: 'release requires unique tournament ids and one valid generation per tournament',
+      attempts: 0,
+    };
+  }
+  let lastFailure: Exclude<TournamentLeaseReleaseOutcome, { status: 'confirmed' }> = {
+    status: 'uncertain',
+    reason: 'rpc_threw',
+    detail: 'release did not run',
+    attempts: 0,
+  };
+  const payload = {
+    p_instance_id: INSTANCE_ID,
+    p_claims: claims.map((claim) => ({
+      tournament_id: claim.tournamentId,
+      lease_generation: claim.leaseGeneration,
+    })),
+  };
+  for (let attempt = 1; attempt <= LEASE_RELEASE_MAX_ATTEMPTS; attempt++) {
+    try {
+      const { data, error } = await supabase.rpc('release_tournament_leases_v2', payload);
+      if (error) {
+        lastFailure = {
+          status: 'uncertain',
+          reason: 'rpc_error',
+          detail: String(error.message || 'unknown release error'),
+          attempts: attempt,
+        };
+        continue;
+      }
+      if (
+        typeof data !== 'number' ||
+        !Number.isSafeInteger(data) ||
+        data < 0 ||
+        data > claims.length
+      ) {
+        lastFailure = {
+          status: 'uncertain',
+          reason: 'malformed_response',
+          detail: 'release did not return a bounded integer deletion count',
+          attempts: attempt,
+        };
+        continue;
+      }
+      return { status: 'confirmed', releasedCount: data, attempts: attempt };
+    } catch (error) {
+      lastFailure = {
+        status: 'uncertain',
+        reason: 'rpc_threw',
+        detail: error instanceof Error ? error.message : String(error),
+        attempts: attempt,
+      };
+    }
+  }
+  return lastFailure;
 }
 
 /** For /health, mirroring leaseDiagnostics(). */

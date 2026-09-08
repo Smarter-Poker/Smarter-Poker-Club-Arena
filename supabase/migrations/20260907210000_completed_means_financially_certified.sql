@@ -125,10 +125,6 @@ BEGIN
   SELECT * INTO v_receipt FROM public.tournament_finish_receipts
    WHERE tournament_id = p_tournament_id;
   IF FOUND THEN
-    IF v_receipt.winner_user_id IS DISTINCT FROM p_winner_user_id THEN
-      RETURN jsonb_build_object('ok',false,'reason','canonical_winner_conflict',
-        'winner_user_id',v_receipt.winner_user_id,'status',v_t.status);
-    END IF;
     IF v_receipt.finish_kind IS DISTINCT FROM v_kind THEN
       RETURN jsonb_build_object('ok',false,'reason','finish_kind_conflict',
         'finish_kind',v_receipt.finish_kind,'observed_kind',v_kind,'status',v_t.status);
@@ -140,6 +136,17 @@ BEGIN
         'winner_user_id',v_receipt.winner_user_id,'finish_kind',v_kind,
         'status',v_t.status,'already_completed',true);
     END IF;
+    IF v_t.status = 'COMPLETING' THEN
+      /* The immutable receipt outranks a stale process-local candidate after
+         restart. Returning its winner is not a new claim and moves no state;
+         it is the only safe way to resume an interrupted atomic settlement. */
+      RETURN jsonb_build_object('ok',true,'reason',NULL,
+        'winner_user_id',v_receipt.winner_user_id,'finish_kind',v_kind,
+        'status',v_t.status,'claimed',false,'resumed',true,
+        'candidate_mismatch',v_receipt.winner_user_id IS DISTINCT FROM p_winner_user_id);
+    END IF;
+    RETURN jsonb_build_object('ok',false,'reason','finish_receipt_status_conflict',
+      'winner_user_id',v_receipt.winner_user_id,'status',v_t.status);
   END IF;
 
   IF upper(COALESCE(v_t.status,'')) NOT IN ('RUNNING','COMPLETING') THEN
@@ -201,9 +208,11 @@ BEGIN
   END IF;
 
   IF v_t.status = 'RUNNING' THEN
+    PERFORM set_config('app.tournament_finish_claim', p_tournament_id::text, true);
     UPDATE public.tournaments SET status = 'COMPLETING'
      WHERE id = p_tournament_id AND status = 'RUNNING';
     GET DIAGNOSTICS v_rows = ROW_COUNT;
+    PERFORM set_config('app.tournament_finish_claim', '', true);
     IF v_rows <> 1 THEN
       RAISE EXCEPTION 'finish claim CAS changed % rows for tournament %',
         v_rows, p_tournament_id USING ERRCODE = '40001';
@@ -591,10 +600,12 @@ BEGIN
   v_kind := public.fn_tournament_finish_kind(NEW.id);
 
   IF v_kind = 'final_table_deal' THEN
-    -- The final-table-deal domain RPC owns RUNNING -> COMPLETED directly. Its
-    -- settled immutable batch is the canonical winner claim and exists only in
-    -- that same transaction before this trigger runs.
-    IF OLD.status IS DISTINCT FROM 'RUNNING' THEN
+    -- The final-table-deal domain RPC owns RUNNING -> COMPLETING -> COMPLETED
+    -- in one transaction. Its settled immutable batch is the canonical winner
+    -- claim and exists only in that same transaction before this trigger runs.
+    IF OLD.status IS DISTINCT FROM 'COMPLETING'
+       OR current_setting('app.atomic_final_table_deal_batch', true)
+            IS DISTINCT FROM NEW.id::text THEN
       RAISE EXCEPTION 'final-table-deal tournament % cannot complete from status %',
         NEW.id, OLD.status USING ERRCODE = 'check_violation';
     END IF;
@@ -656,6 +667,66 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+
+/* COMPLETING is ownership of the terminal transaction, not a generic recovery
+   label. Keep every caller behind the immutable claim RPC. Final-table deals
+   are the sole exception because their format-owned transaction crosses both
+   status edges in one database call and identifies itself with its local
+   transaction token. Without this entrance gate, any service application path
+   could strand a row in COMPLETING without the receipt that every restart and
+   completion proof now requires. */
+CREATE OR REPLACE FUNCTION public.fn_guard_tournament_completing_claim()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public','pg_temp'
+AS $function$
+DECLARE
+  v_kind text;
+  v_finish public.tournament_finish_receipts%ROWTYPE;
+BEGIN
+  IF NEW.status = 'COMPLETING' AND OLD.status IS DISTINCT FROM 'COMPLETING' THEN
+    IF OLD.status IS DISTINCT FROM 'RUNNING' THEN
+      RAISE EXCEPTION 'tournament % cannot claim completion from status %',
+        NEW.id, OLD.status USING ERRCODE = 'check_violation';
+    END IF;
+
+    v_kind := public.fn_tournament_finish_kind(NEW.id);
+    IF v_kind = 'final_table_deal' THEN
+      IF current_setting('app.atomic_final_table_deal_batch', true)
+           IS DISTINCT FROM NEW.id::text THEN
+        RAISE EXCEPTION 'final-table-deal tournament % has no atomic claim owner', NEW.id
+          USING ERRCODE = 'check_violation';
+      END IF;
+      RETURN NEW;
+    END IF;
+
+    SELECT * INTO v_finish
+      FROM public.tournament_finish_receipts f
+     WHERE f.tournament_id = NEW.id;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'tournament % cannot enter COMPLETING without an immutable finish claim',
+        NEW.id USING ERRCODE = 'check_violation';
+    END IF;
+    IF v_finish.finish_kind IS DISTINCT FROM v_kind THEN
+      RAISE EXCEPTION 'tournament % COMPLETING claim has format conflict', NEW.id
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF current_setting('app.tournament_finish_claim', true)
+         IS DISTINCT FROM NEW.id::text THEN
+      RAISE EXCEPTION 'tournament % COMPLETING claim has no RPC owner', NEW.id
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS aa_guard_tournament_completing_claim
+  ON public.tournaments;
+CREATE TRIGGER aa_guard_tournament_completing_claim
+BEFORE UPDATE OF status ON public.tournaments
+FOR EACH ROW EXECUTE FUNCTION public.fn_guard_tournament_completing_claim();
 
 CREATE OR REPLACE FUNCTION public.fn_certify_tournament_finish(
   p_tournament_id uuid,
@@ -728,6 +799,8 @@ REVOKE ALL ON FUNCTION public.fn_tournament_finish_kind(uuid)
 REVOKE ALL ON FUNCTION public.fn_tournament_finish_readiness(uuid,uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.fn_guard_tournament_completed_certificate()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_guard_tournament_completing_claim()
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.fn_claim_tournament_finish(uuid,uuid,text)
   FROM PUBLIC, anon, authenticated;

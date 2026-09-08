@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bankrollPolicyFor, bankrollTemperamentFor, rebuyDecision } from './HorseBankroll.js';
-import { atRebuyStopLoss, legacyRebuyAmount } from './HorseRebuyPolicy.js';
+import { atRebuyStopLoss, horseRebuyOperationId, legacyRebuyAmount } from './HorseRebuyPolicy.js';
 
 const read = (p: string) => readFileSync(join(process.cwd(), 'src', p), 'utf8');
 const POLICY = read('services/HorseRebuyPolicy.ts');
@@ -139,6 +139,14 @@ describe('rebuyDecision asks WHETHER before it asks how much', () => {
     expect(atRebuyStopLoss(nitId, bankrollPolicyFor(nitId).stopLossBuyIns)).toBe(true);
     expect(atRebuyStopLoss(gamId, bankrollPolicyFor(nitId).stopLossBuyIns)).toBe(false);
   });
+
+  it('names one bust identically across retries and replacement processes', () => {
+    const first = horseRebuyOperationId('table-a', 'horse-a', 91);
+    expect(first).toBe(horseRebuyOperationId('table-a', 'horse-a', 91));
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(first).not.toBe(horseRebuyOperationId('table-a', 'horse-a', 92));
+    expect(first).not.toBe(horseRebuyOperationId('table-a', 'horse-b', 91));
+  });
 });
 
 describe('WIRING - both engine sites ask, and a zero is a decision to leave', () => {
@@ -168,10 +176,11 @@ describe('WIRING - both engine sites ask, and a zero is a decision to leave', ()
       );
     });
 
-    it(`the ${name} site treats zero as a decision to leave`, () => {
-      // Not merely "the call appears": the funding call must be SHORT-CIRCUITED
-      // by it, or a zero decision still reloads the horse.
-      expect(SRC).toMatch(/const success =\s*rebuyAmount > 0 &&\s*\(await autoRebuyHorse\(/);
+    it(`the ${name} site distinguishes a refusal from a deferred transaction`, () => {
+      expect(SRC).toMatch(/const outcome =\s*rebuyAmount > 0\s*\?/);
+      expect(SRC).toMatch(/horseRebuyOperationId\(this\.tableId, horse\.user_id,/);
+      expect(SRC).toMatch(/if \(outcome === 'deferred'\) return;/);
+      expect(SRC).toMatch(/if \(outcome === 'funded'\) \{/);
     });
 
     it(`the ${name} site passes the table's own limits, not just the blind`, () => {

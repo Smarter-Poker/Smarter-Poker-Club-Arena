@@ -8,9 +8,9 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
-import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
+import type { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { reportError } from '../services/errorReporter.js';
 import { selectInChunks } from '../services/supabase/chunkedIn.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
@@ -35,6 +35,15 @@ interface LateRegistrationCapacityResult {
   remaining_deficit?: number;
   pending_table_ids?: string[];
   pending_table_count?: number;
+}
+
+interface TournamentTableCloseResult {
+  ok?: boolean;
+  reason?: string;
+  table_id?: string;
+  tournament_id?: string;
+  status?: string;
+  current_players?: number;
 }
 
 export class TournamentManager extends TournamentManagerEliminations {
@@ -112,6 +121,103 @@ export class TournamentManager extends TournamentManagerEliminations {
         })),
       };
     });
+  }
+
+  /**
+   * Complete one table-break retirement without losing the object that owns
+   * the unfinished work.  The database RPC serializes a close against live
+   * seat acquisition and returns the exact durable row.  Only after that
+   * receipt exists do we remove the same engine generation from GameServer,
+   * this manager, the hub, and hand-for-hand.
+   *
+   * Any refusal leaves both registries pointing at the stopped/quarantined
+   * engine.  The already-empty table is a deterministic break candidate on
+   * the next shared scheduler pass, so the exact operation is retried without
+   * a fleet sweep or a timer owned by this manager.
+   */
+  protected async closeBrokenTableAndReleaseEngine(
+    tableId: string,
+    engine: ServerTableEngine
+  ): Promise<boolean> {
+    if (this.tableEngines.get(tableId) !== engine) return false;
+
+    try {
+      await engine.stop();
+    } catch (error) {
+      if (!engine.hasReleasedProcessOwnership()) {
+        reportError(error, 'Tournament.broken_table_engine_stop_failed', {
+          tournamentId: this.tournamentId,
+          tableId,
+        });
+        return false;
+      }
+      // Ownership is already gone; a trailing cleanup diagnostic must not
+      // strand an empty table forever.
+      reportError(error, 'Tournament.broken_table_engine_stop_cleanup_failed', {
+        tournamentId: this.tournamentId,
+        tableId,
+      });
+    }
+    if (!this.eliminationMutationAllowed() || this.tableEngines.get(tableId) !== engine) {
+      return false;
+    }
+
+    const leaseGeneration = this.getTournamentLeaseGeneration();
+    if (!leaseGeneration) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] cannot close broken table ${tableId.slice(0, 8)} without exact protocol-2 authority`
+        ),
+        'Tournament.broken_table_close_unverified'
+      );
+      return false;
+    }
+
+    const { data, error } = await supabase.rpc('fn_close_empty_tournament_table', {
+      p_tournament_id: this.tournamentId,
+      p_table_id: tableId,
+      p_lease_generation: leaseGeneration,
+    });
+    if (!this.eliminationMutationAllowed() || this.tableEngines.get(tableId) !== engine) {
+      return false;
+    }
+    const receipt = data as TournamentTableCloseResult | null;
+    const closed =
+      !error &&
+      receipt?.ok === true &&
+      receipt.table_id === tableId &&
+      receipt.tournament_id === this.tournamentId &&
+      String(receipt.status).toLowerCase() === 'closed' &&
+      Number(receipt.current_players) === 0;
+    if (!closed) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] broken table ${tableId.slice(0, 8)} close was not durably proven (${error?.message ?? receipt?.reason ?? 'malformed receipt'})`
+        ),
+        'Tournament.broken_table_close_unproven'
+      );
+      return false;
+    }
+
+    if (!this.gameServer.unregisterTournamentTableEngine(tableId, engine)) {
+      const ownershipError = new Error(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] broken table ${tableId.slice(0, 8)} changed global engine generation before retirement CAS`
+      );
+      reportError(ownershipError, 'Tournament.broken_table_unregister_lost_ownership');
+      // An independent generation owns the process slot.  Fence this manager
+      // synchronously; stop() is intentionally detached because this method is
+      // itself running inside the scheduler that stop() must drain.
+      void this.stop().catch((stopError) =>
+        reportError(stopError, 'Tournament.broken_table_ownership_loss_cleanup_failed', {
+          tableId,
+        })
+      );
+      return false;
+    }
+
+    if (this.tableEngines.get(tableId) === engine) this.tableEngines.delete(tableId);
+    this.retireManagedTableFromHandForHand(tableId);
+    return true;
   }
 
   protected async checkTableBalance(): Promise<void> {
@@ -243,12 +349,15 @@ export class TournamentManager extends TournamentManagerEliminations {
         // The balancer says this table should close but cannot yet place its
         // full roster. That is outstanding work, not a balanced state. Keep a
         // single coalesced retry due without reviving the old per-manager poll.
-        if (breakMoves.length === 0 || breakMoves.length !== bt.playerCount) {
+        // An empty table is already fully moved and must proceed to the durable
+        // close. Treating its intentionally-empty move plan as failure left a
+        // table whose prior close response was lost stuck forever.
+        if (bt.playerCount > 0 && breakMoves.length !== bt.playerCount) {
           this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
           continue;
         }
 
-        if (breakMoves.length > 0 && breakMoves.length === bt.playerCount) {
+        if (breakMoves.length === bt.playerCount) {
           console.log(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Breaking table ${bt.tableId.slice(0, 8)} - moving ${breakMoves.length} players`
           );
@@ -283,7 +392,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           // a force-complete that paid 1st place to an already-eliminated
           // player. Close ONLY when every player actually arrived; otherwise
           // keep the table alive and let the next cycle retry the remainder.
-          if (movedCount < breakMoves.length) {
+          if (movedCount !== breakMoves.length) {
             console.warn(
               `[Tournament:${this.tournamentId.slice(0, 8)}] Table break of ${bt.tableId.slice(0, 8)} incomplete - ${movedCount}/${breakMoves.length} moved. Deferring close to next balance cycle.`
             );
@@ -292,21 +401,28 @@ export class TournamentManager extends TournamentManagerEliminations {
             break;
           }
 
-          // Close the broken table's engine
-          if (engine) {
-            await engine.stop();
-            if (!this.eliminationMutationAllowed()) return;
+          if (!engine) {
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] cannot retire broken table ${bt.tableId.slice(0, 8)} because its exact engine generation is missing`
+              ),
+              'Tournament.broken_table_engine_missing'
+            );
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            continue;
           }
-          // A fully broken table is no longer a participant in the current
-          // hand-for-hand generation. Retire it only after the dealer has
-          // stopped and only on this all-moves-landed branch; removing an
-          // expected table after a partial/failed break would let the next
-          // synchronized deal start while players still depend on that felt.
-          this.retireManagedTableFromHandForHand(bt.tableId);
-          this.tableEngines.delete(bt.tableId);
-          tableStateHub.dropTable(bt.tableId); // Phase 1.1 PR-2: release hub room
-          await supabase.from('tables').update({ status: 'closed' }).eq('id', bt.tableId);
+
+          const retired = await this.closeBrokenTableAndReleaseEngine(bt.tableId, engine);
           if (!this.eliminationMutationAllowed()) return;
+          if (!retired) {
+            // The stopped generation remains in both registries and in the
+            // hand-for-hand roster. The next scheduler pass sees the empty
+            // table and retries this exact durable close; no successor may
+            // overlap an unproved retirement.
+            this.breakOccurredThisCycle = true;
+            this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+            break;
+          }
 
           await this.broadcast('table_rebalance', {
             closedTableId: bt.tableId,
@@ -1142,7 +1258,7 @@ export class TournamentManager extends TournamentManagerEliminations {
       for (const tableId of pendingTableIds) {
         if (!this.eliminationMutationAllowed()) return false;
         if (!this.tableEngines.has(tableId)) {
-          const engine = new ServerTableEngine(tableId);
+          const engine = this.createManagedTableEngine(tableId);
           engine.setHub(tableStateHub); // Phase 1.1 PR-2
           this.wireEliminationWake(engine);
           this.tableEngines.set(tableId, engine);

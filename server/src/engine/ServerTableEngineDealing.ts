@@ -26,7 +26,7 @@ import {
   readClubChipBalances,
 } from '../services/supabase.js';
 import { cashMinBuyIn } from '../config/cashBuyIn.js';
-import { horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { horseRebuyAmount, horseRebuyOperationId } from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
@@ -51,6 +51,7 @@ import {
   handCompletionHoldMs,
   boardClearMs,
 } from '../config/handCompletionSpec.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 /**
  * The number of award groups the CLIENT will animate for this hand.
@@ -831,6 +832,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           this.announcePendingSeatMoves()
         );
+
+        /* The event loop may have resumed after the local lease deadline but
+           before its raw timeout callback got CPU. Re-prove authority at the
+           sole new-hand edge; a stale dealer cannot allocate a hand number,
+           move the button, post blinds, or deal one more card. */
+        if (!this.lifecycleCanMutate()) return;
 
         // Deal hand (self-transition: running → running for next hand)
         this.setLoopPhase('dealing');
@@ -3030,11 +3037,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   }
 
   protected async recoverBustedSeatedHorses(): Promise<void> {
+    if (isMaintenanceFrozen()) return;
     const bustHorses = this.seatedPlayers.filter((p) => p.is_horse && p.stack <= 0);
     if (bustHorses.length === 0) return;
 
     const now = Date.now();
     for (const horse of bustHorses) {
+      if (isMaintenanceFrozen()) return;
       const lastAttempt = this.bustRecoveryLastAttempt.get(horse.user_id) || 0;
       if (now - lastAttempt < 30000) continue;
       this.bustRecoveryLastAttempt.set(horse.user_id, now);
@@ -3092,15 +3101,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
         rebuysTaken: currentRebuys,
       });
-      const success =
-        rebuyAmount > 0 &&
-        (await autoRebuyHorse(
-          this.tableId,
-          horse.user_id,
-          rebuyAmount,
-          this.tableInfo?.club_id || ''
-        ));
-      if (success) {
+      if (isMaintenanceFrozen()) return;
+      const outcome =
+        rebuyAmount > 0
+          ? await autoRebuyHorse(
+              this.tableId,
+              horse.user_id,
+              rebuyAmount,
+              this.tableInfo?.club_id || '',
+              horseRebuyOperationId(this.tableId, horse.user_id, this.handCount)
+            )
+          : 'refused';
+      if (outcome === 'deferred') return;
+      if (outcome === 'funded') {
         horse.stack = rebuyAmount;
         this.horseRebuys.set(horse.user_id, currentRebuys + 1);
         this.bustRecoveryLastAttempt.delete(horse.user_id);

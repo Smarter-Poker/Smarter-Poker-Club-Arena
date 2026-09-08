@@ -2672,7 +2672,8 @@ BEGIN
                               'retryable', false);
   END IF;
 
-  SELECT t.id, t.club_id, t.name, t.status,
+  SELECT t.id, t.club_id, t.name, t.status, t.union_id,
+         COALESCE(t.is_private, false) AS is_private,
          round(COALESCE(t.prize_pool, 0), 2) AS pool,
          round(COALESCE(t.guaranteed_prize, 0), 2) AS guarantee,
          COALESCE(t.prize_pool_finalized, false) AS finalized
@@ -2712,8 +2713,8 @@ BEGIN
       /* Lock and snapshot the real bank before calling the legacy debit core.
          Its overlay row describes the movement; only the live before/after
          balance proves that movement happened exactly once. */
-      SELECT c.union_id, round(COALESCE(c.chip_treasury, 0), 2)
-        INTO v_union, v_club_bank_before
+      SELECT round(COALESCE(c.chip_treasury, 0), 2)
+        INTO v_club_bank_before
         FROM public.clubs c
        WHERE c.id = v_t.club_id
        FOR UPDATE;
@@ -2722,6 +2723,10 @@ BEGIN
                               ERRCODE = '23503';
       END IF;
 
+      /* Funding ownership was captured on the event. A later club union move
+         cannot redirect this liability, and a private event always belongs to
+         its host club even when that club is currently union-affiliated. */
+      v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END;
       IF v_union IS NOT NULL THEN
         SELECT round(COALESCE(uw.chip_balance, 0), 2)
           INTO v_bank_before
@@ -3611,528 +3616,9 @@ VALUES
 ON CONFLICT (proname) DO UPDATE
 SET status = EXCLUDED.status, notes = EXCLUDED.notes;
 
-/* Keep the existing detector only for its owner-run 30-day observation.
-   Applying mode raises before every table read or write, and application
-   credentials cannot call either this function or its sweep wrapper. */
-CREATE OR REPLACE FUNCTION public.fn_tournament_payout_reconcile(p_tournament_id uuid, p_apply boolean DEFAULT false)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  t                record;
-  v_struct         jsonb;
-  v_trimmed        jsonb;
-  v_field          int;
-  v_pool           numeric;
-  v_last_place     int;
-  v_total_bp       numeric;
-  v_pool_cents     numeric;
-  v_remaining      numeric;
-  v_cents          numeric;
-  v_expected       numeric;
-  v_paid           numeric;
-  v_paid_place     numeric;
-  v_paid_eff       numeric;
-  v_place_others   uuid[];
-  v_delta          numeric;
-  v_holder         uuid;
-  v_holders        int;
-  v_actions        jsonb := '[]'::jsonb;
-  v_issues         jsonb := '[]'::jsonb;
-  v_total_expected numeric := 0;
-  v_total_paid     numeric := 0;
-  v_total_topup    numeric := 0;
-  v_only_accepted  boolean;
-  v_was_accepted   boolean;
-  v_has_record     boolean;
-  r                record;
-BEGIN
-  /* The applying repair path is retired. Keep this function only as the
-     temporary non-paying observation named in the Band-Aids Register. Refuse
-     before reading tournament state so a caller cannot mistake p_apply=true
-     for a best-effort payment request. */
-  IF p_apply THEN
-    RAISE EXCEPTION USING
-      MESSAGE = 'applying_reconcile_retired',
-      DETAIL = 'Atomic tournament settlement replaced the applying reconciler',
-      ERRCODE = '0A000';
-  END IF;
-
-  SELECT id, prize_pool, payout_structure, status, variant, tournament_type, name
-    INTO t
-    FROM tournaments WHERE id = p_tournament_id;
-
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'tournament_not_found');
-  END IF;
-
-  IF COALESCE(t.variant, '') = 'satellite'
-     OR upper(COALESCE(t.tournament_type, '')) = 'SATELLITE' THEN
-    RETURN jsonb_build_object('ok', true, 'tournament_id', p_tournament_id,
-                              'skipped', 'satellite_awards_seats');
-  END IF;
-
-  IF COALESCE(t.status, '') <> 'COMPLETED' THEN
-    RETURN jsonb_build_object('ok', true, 'tournament_id', p_tournament_id,
-                              'skipped', 'not_completed', 'status', t.status);
-  END IF;
-
-  v_pool := round(COALESCE(t.prize_pool, 0), 2);
-
-  BEGIN
-    v_struct := CASE WHEN jsonb_typeof(t.payout_structure::jsonb) = 'array'
-                     THEN t.payout_structure::jsonb ELSE '[]'::jsonb END;
-  EXCEPTION WHEN OTHERS THEN
-    v_struct := '[]'::jsonb;
-  END;
-
-  IF v_pool <= 0 OR jsonb_array_length(v_struct) = 0 THEN
-    RETURN jsonb_build_object('ok', true, 'tournament_id', p_tournament_id,
-                              'skipped', 'no_pool_or_structure',
-                              'prize_pool', v_pool);
-  END IF;
-
-  /* Is there an authoritative record for this event at all? */
-  SELECT EXISTS (SELECT 1 FROM public.tournament_payouts tpo
-                  WHERE tpo.tournament_id = p_tournament_id)
-    INTO v_has_record;
-
-  SELECT count(*) INTO v_field
-    FROM tournament_players tp WHERE tp.tournament_id = p_tournament_id;
-
-  IF COALESCE(v_field, 0) >= 1 THEN
-    SELECT COALESCE(jsonb_agg(e ORDER BY (e->>'place')::int), '[]'::jsonb)
-      INTO v_trimmed
-      FROM jsonb_array_elements(v_struct) e
-     WHERE (e->>'place')::int <= v_field;
-
-    IF jsonb_array_length(v_trimmed) > 0
-       AND jsonb_array_length(v_trimmed) < jsonb_array_length(v_struct) THEN
-      v_struct := v_trimmed;
-    END IF;
-  END IF;
-
-  SELECT max((e->>'place')::int) INTO v_last_place
-    FROM jsonb_array_elements(v_struct) e;
-
-  SELECT COALESCE(SUM(round((e->>'percentage')::numeric * 100)), 0)
-    INTO v_total_bp
-    FROM jsonb_array_elements(v_struct) e;
-
-  IF v_total_bp <= 0 THEN
-    RETURN jsonb_build_object('ok', true, 'tournament_id', p_tournament_id,
-                              'skipped', 'structure_has_no_percentages');
-  END IF;
-
-  v_pool_cents := round(v_pool * 100);
-  v_remaining  := v_pool_cents;
-
-  FOR r IN
-    SELECT (e->>'place')::int                      AS place,
-           round((e->>'percentage')::numeric * 100) AS bp
-      FROM jsonb_array_elements(v_struct) e
-     ORDER BY (e->>'place')::int
-  LOOP
-    IF r.place = v_last_place THEN
-      v_cents := GREATEST(v_remaining, 0);
-    ELSE
-      v_cents := LEAST(v_remaining, round(v_pool_cents * r.bp / v_total_bp));
-      v_cents := GREATEST(v_cents, 0);
-    END IF;
-    v_remaining := v_remaining - v_cents;
-
-    v_expected := v_cents / 100.0;
-    v_total_expected := v_total_expected + v_expected;
-
-    SELECT count(*), (array_agg(tp.user_id ORDER BY tp.user_id))[1]
-      INTO v_holders, v_holder
-      FROM tournament_players tp
-     WHERE tp.tournament_id = p_tournament_id AND tp.position = r.place;
-
-    v_paid_place   := 0;
-    v_place_others := ARRAY[]::uuid[];
-
-    IF v_holders = 1 THEN
-      IF v_has_record THEN
-        /* THE AUTHORITATIVE ANSWER. One row per movement of money, keyed
-           uniquely, written only after the credit returned true. Bounty and
-           mystery-bounty money is excluded: it is funded from the bounty pool,
-           not from prize_pool, and counting it here used to make a player look
-           square when the structure still owed them.
-           2026-09-02: 'overlay_backpay' added. A guarantee overlay top-up IS
-           prize_pool money. While it was missing from this list the reconciler
-           could not see 1,703.00 chips of back-payment and paid 1,007.80 of it
-           a second time.
-           2026-09-02 (Lane A3): a row written by fn_settle_tournament_obligation
-           (idempotency_key 'obl:%') is prize-pool money whatever source label
-           the caller passed - the engine settles under 'engine.*' names. */
-        SELECT round(COALESCE(SUM(tpo.amount), 0), 2) INTO v_paid
-          FROM public.tournament_payouts tpo
-         WHERE tpo.tournament_id = p_tournament_id
-           AND tpo.user_id = v_holder
-           AND (tpo.source IN ('structure', 'reconcile', 'hu_shortfall',
-                               'late_reg_adjustment', 'clawback',
-                               'final_table_deal', 'spin_backpay',
-                               'overlay_backpay')
-                OR tpo.idempotency_key LIKE 'tourney:%:obl:%');
-
-        /* A PLACE IS PAID ONCE, NO MATTER WHO HOLDS IT (2026-09-02).
-           What this place has already cost, to ANYBODY. The obligation is per
-           place; reading only the current holder let a place that changed hands
-           after settlement be paid in full a second time -- 81 places, 49
-           events, 21,206.93 chips. */
-        SELECT round(COALESCE(SUM(tpo.amount), 0), 2),
-               COALESCE(array_agg(DISTINCT tpo.user_id)
-                        FILTER (WHERE tpo.user_id <> v_holder), ARRAY[]::uuid[])
-          INTO v_paid_place, v_place_others
-          FROM public.tournament_payouts tpo
-         WHERE tpo.tournament_id = p_tournament_id
-           AND tpo.position = r.place
-           AND (tpo.source IN ('structure', 'reconcile', 'hu_shortfall',
-                               'late_reg_adjustment', 'clawback',
-                               'final_table_deal', 'spin_backpay',
-                               'overlay_backpay')
-                OR tpo.idempotency_key LIKE 'tourney:%:obl:%');
-      ELSE
-        /* No record for this event. Fall back to the ledger exactly as before
-           rather than reading "no record" as "nothing was paid". */
-        SELECT round(COALESCE(SUM(
-                 CASE WHEN lower(wt.type) = 'debit' THEN -abs(wt.amount)
-                      ELSE wt.amount END
-               ), 0), 2) INTO v_paid
-          FROM wallet_transactions wt
-         WHERE wt.related_entity_id = p_tournament_id
-           AND wt.category = 'prize'
-           AND wt.user_id = v_holder;
-      END IF;
-    ELSE
-      v_paid := NULL;
-    END IF;
-
-    IF v_holders = 0 THEN
-      v_issues := v_issues || jsonb_build_object(
-        'place', r.place, 'issue', 'no_finisher_recorded',
-        'expected', v_expected,
-        'detail', 'prize is owed to nobody identifiable; needs a human decision');
-      CONTINUE;
-    END IF;
-
-    IF v_holders > 1 THEN
-      v_issues := v_issues || jsonb_build_object(
-        'place', r.place, 'issue', 'duplicate_finishers',
-        'holders', v_holders, 'expected', v_expected,
-        'detail', 'more than one player recorded in this place (double-pay defect)');
-      CONTINUE;
-    END IF;
-
-    /* The cap. A top-up settles what the PLACE still owes, not what this
-       particular player has yet to receive from it. */
-    v_paid_eff := GREATEST(COALESCE(v_paid, 0), COALESCE(v_paid_place, 0));
-
-    IF COALESCE(v_paid_place, 0) > COALESCE(v_paid, 0) + 0.005 THEN
-      v_issues := v_issues || jsonb_build_object(
-        'place', r.place, 'issue', 'place_paid_to_a_different_player',
-        'user_id', v_holder,
-        'paid_to_current_holder', COALESCE(v_paid, 0),
-        'paid_at_this_place', v_paid_place,
-        'other_recipients', to_jsonb(v_place_others),
-        'expected', v_expected,
-        'detail', 'this place was settled before the finishing order changed. '
-               || 'No automatic top-up: the place is already paid. Paying the '
-               || 'current holder as well is a deliberate decision (CLAUDE.md 10.9), '
-               || 'made with the earlier payment in view.');
-    END IF;
-
-    v_total_paid := v_total_paid + v_paid_eff;
-    v_delta := round(v_expected - v_paid_eff, 2);
-    IF v_delta > 0.005 THEN
-      v_total_topup := v_total_topup + v_delta;
-
-      v_actions := v_actions || jsonb_build_object(
-        'place', r.place, 'user_id', v_holder,
-        'expected', v_expected, 'already_paid', v_paid_eff, 'top_up', v_delta,
-        'applied', false,
-        'settled', NULL,
-        'obligation_id', NULL);
-
-    ELSIF v_delta < -0.005 THEN
-      v_issues := v_issues || jsonb_build_object(
-        'place', r.place, 'issue', 'overpaid', 'user_id', v_holder,
-        'expected', v_expected, 'already_paid', v_paid_eff, 'excess', -v_delta,
-        'detail', 'reported only; automatic clawback is deliberately not done');
-    END IF;
-
-  END LOOP;
-
-  IF jsonb_array_length(v_issues) > 0 THEN
-    v_only_accepted := NOT EXISTS (
-      SELECT 1 FROM jsonb_array_elements(v_issues) i
-       WHERE i->>'issue' NOT IN ('overpaid', 'no_finisher_recorded',
-                                 'place_paid_to_a_different_player')
-    );
-    v_was_accepted := EXISTS (
-      SELECT 1 FROM financial_alerts
-       WHERE source = 'fn_tournament_payout_reconcile'
-         AND resolved IS TRUE
-         AND context->>'tournament_id' = p_tournament_id::text
-         AND context ? 'resolution'
-    );
-
-    INSERT INTO financial_alerts (severity, source, message, context)
-    SELECT 'critical', 'fn_tournament_payout_reconcile',
-           'Tournament payout could not be fully reconciled: '
-             || COALESCE(t.name, p_tournament_id::text),
-           jsonb_build_object('tournament_id', p_tournament_id,
-                              'prize_pool', v_pool, 'issues', v_issues)
-     WHERE NOT EXISTS (
-       SELECT 1 FROM financial_alerts
-        WHERE source = 'fn_tournament_payout_reconcile'
-          AND resolved IS NOT TRUE
-          AND context->>'tournament_id' = p_tournament_id::text)
-       AND NOT (round(v_total_topup, 2) = 0 AND v_only_accepted AND v_was_accepted);
-  END IF;
-
-  RETURN jsonb_build_object(
-    'ok', true,
-    'tournament_id', p_tournament_id,
-    'name', t.name,
-    'prize_pool', v_pool,
-    'field_size', v_field,
-    'paid_places', jsonb_array_length(v_struct),
-    'total_expected', round(v_total_expected, 2),
-    'total_paid_to_known_holders', round(v_total_paid, 2),
-    'total_top_up', round(v_total_topup, 2),
-    'total_settled', 0,
-    'applied', false,
-    'paid_from', CASE WHEN v_has_record THEN 'payout_record' ELSE 'ledger_fallback' END,
-    'money_path', 'none',
-    'actions', v_actions,
-    'issues', v_issues,
-    'clean', (jsonb_array_length(v_actions) = 0 AND jsonb_array_length(v_issues) = 0));
-END;
-$function$;
-
-REVOKE ALL ON FUNCTION public.fn_tournament_payout_reconcile(uuid, boolean)
-  FROM PUBLIC, anon, authenticated, service_role;
-
-COMMENT ON FUNCTION public.fn_tournament_payout_reconcile(uuid, boolean) IS
-  'Temporary non-paying observation debt. Applying mode is retired and always raises applying_reconcile_retired before any table read or write, rolling back every legacy caller. Delete after 30 consecutive production days with zero reconcile-source payouts.';
-
-/* The backed-shortfall wrapper used to call the reconciler in applying mode
-   after scanning completed tournaments. Keep its owner-run dry observation,
-   but remove every payment branch and reject applying intent before the scan. */
-CREATE OR REPLACE FUNCTION public.fn_pay_backed_payout_shortfalls(
-  p_apply boolean DEFAULT false,
-  p_limit integer DEFAULT 500
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
-AS $function$
-DECLARE
-  r record;
-  v_payable numeric := 0;
-  v_payable_events integer := 0;
-  v_withheld numeric := 0;
-  v_withheld_events integer := 0;
-  v_refused integer := 0;
-  v_refused_chips numeric := 0;
-  v_alerts integer := 0;
-BEGIN
-  IF p_apply THEN
-    RAISE EXCEPTION USING
-      MESSAGE = 'applying_backed_shortfall_retired',
-      DETAIL = 'Atomic tournament settlement replaced the applying shortfall sweep',
-      ERRCODE = '0A000';
-  END IF;
-
-  FOR r IN
-    SELECT t.id, t.name, t.club_id, t.prize_pool,
-           COALESCE((public.fn_tournament_payout_reconcile(t.id, false)
-                     ->>'total_top_up')::numeric, 0) AS topup,
-           public.fn_tournament_conservation_delta(t.id) AS delta,
-           COALESCE((
-             SELECT sum(w.amount)
-               FROM public.wallet_transactions w
-              WHERE w.related_entity_id = t.id
-                AND w.type = 'credit' AND w.category = 'prize'
-           ), 0) AS wallet_prizes
-      FROM public.tournaments t
-     WHERE t.status = 'COMPLETED'
-       AND NOT (
-         COALESCE(t.variant, '') = 'satellite'
-         OR upper(COALESCE(t.tournament_type, '')) = 'SATELLITE'
-         OR t.satellite_target_id IS NOT NULL
-       )
-       AND COALESCE(t.variant, '') <> 'spin'
-       AND public.fn_tournament_conservation_delta(t.id) > 0.01
-     ORDER BY t.ended_at ASC NULLS LAST
-     LIMIT GREATEST(p_limit, 1)
-  LOOP
-    CONTINUE WHEN r.topup <= 0.005;
-
-    IF r.wallet_prizes + 0.01 >= COALESCE(r.prize_pool, 0)
-       AND COALESCE(r.prize_pool, 0) > 0 THEN
-      v_refused := v_refused + 1;
-      v_refused_chips := v_refused_chips + r.topup;
-      INSERT INTO public.financial_alerts (severity, source, message, context)
-      SELECT 'warning', 'fn_pay_backed_payout_shortfalls',
-             format('%s already paid %s of its %s pool to wallets, so the %s reported shortfall is evidence debt, not authorization to pay.',
-                    COALESCE(r.name, r.id::text), round(r.wallet_prizes, 2),
-                    round(COALESCE(r.prize_pool, 0), 2), round(r.topup, 2)),
-             jsonb_build_object(
-               'kind', 'refused_already_disbursed', 'tournament_id', r.id,
-               'club_id', r.club_id, 'wallet_prizes', round(r.wallet_prizes, 2),
-               'prize_pool', round(COALESCE(r.prize_pool, 0), 2),
-               'reported_top_up', round(r.topup, 2))
-       WHERE NOT EXISTS (
-         SELECT 1 FROM public.financial_alerts fa
-          WHERE fa.source = 'fn_pay_backed_payout_shortfalls'
-            AND fa.resolved IS NOT TRUE
-            AND fa.context->>'kind' = 'refused_already_disbursed'
-            AND fa.context->>'tournament_id' = r.id::text
-       );
-      IF FOUND THEN v_alerts := v_alerts + 1; END IF;
-      CONTINUE;
-    END IF;
-
-    IF r.delta < r.topup THEN
-      v_withheld := v_withheld + r.topup;
-      v_withheld_events := v_withheld_events + 1;
-      INSERT INTO public.financial_alerts (severity, source, message, context)
-      SELECT 'critical', 'fn_pay_backed_payout_shortfalls',
-             format('%s reports %s owed while its pool holds %s. The detector moved no money.',
-                    COALESCE(r.name, r.id::text), round(r.topup, 2), round(r.delta, 2)),
-             jsonb_build_object(
-               'kind', 'withheld_unfunded_pool', 'tournament_id', r.id,
-               'club_id', r.club_id, 'owed', round(r.topup, 2),
-               'pool_holds', round(r.delta, 2),
-               'funding_gap', round(r.topup - r.delta, 2),
-               'detail', 'non-paying observation; funding remains a human decision')
-       WHERE NOT EXISTS (
-         SELECT 1 FROM public.financial_alerts fa
-          WHERE fa.source = 'fn_pay_backed_payout_shortfalls'
-            AND fa.resolved IS NOT TRUE
-            AND fa.context->>'kind' = 'withheld_unfunded_pool'
-            AND fa.context->>'tournament_id' = r.id::text
-       );
-      IF FOUND THEN v_alerts := v_alerts + 1; END IF;
-      CONTINUE;
-    END IF;
-
-    v_payable := v_payable + r.topup;
-    v_payable_events := v_payable_events + 1;
-  END LOOP;
-
-  RETURN jsonb_build_object(
-    'ok', true, 'applied', false,
-    'events_paid', 0, 'chips_paid', 0,
-    'events_payable', v_payable_events, 'chips_payable', round(v_payable, 2),
-    'events_withheld_unfunded_pool', v_withheld_events,
-    'chips_withheld_unfunded_pool', round(v_withheld, 2),
-    'events_refused_already_disbursed', v_refused,
-    'chips_refused_already_disbursed', round(v_refused_chips, 2),
-    'alerts_raised', v_alerts, 'money_path', 'none');
-END;
-$function$;
-
-REVOKE ALL ON FUNCTION public.fn_pay_backed_payout_shortfalls(boolean, integer)
-  FROM PUBLIC, anon, authenticated, service_role;
-
-COMMENT ON FUNCTION public.fn_pay_backed_payout_shortfalls(boolean, integer) IS
-  'Temporary owner-run non-paying shortfall detector. Applying mode is retired and raises before scanning. Delete with the payout-reconcile observation debt.';
-
-/* The engine's five-minute Heads-Up backpay loop also paid one normal place
-   independently. The public obligation gate now correctly refuses that
-   shape, which would make the old loop rescan forever while reporting ok:true
-   with a nested refusal count. Retain only an owner-run read of the historical
-   candidate set. It cannot rank results, alter a pool, settle an obligation,
-   credit a wallet, update an alert or claim that any chips were paid. */
-CREATE OR REPLACE FUNCTION public.fn_backpay_hu_winner_shortfalls(
-  p_limit integer DEFAULT 100
-) RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $function$
-DECLARE
-  v_scanned integer := 0;
-  v_chips numeric := 0;
-  v_unranked integer := 0;
-BEGIN
-  SELECT count(*), round(COALESCE(sum(c.delta), 0), 2),
-         count(*) FILTER (WHERE EXISTS (
-           SELECT 1 FROM public.tournament_players tp
-            WHERE tp.tournament_id = c.tournament_id
-              AND tp.position IS NULL
-         ))
-    INTO v_scanned, v_chips, v_unranked
-    FROM public.fn_hu_shortfall_candidates(GREATEST(COALESCE(p_limit, 100), 1)) c;
-
-  RETURN jsonb_build_object(
-    'ok', true, 'applied', false,
-    'scanned', v_scanned, 'observed_chips', v_chips,
-    'unranked_events', v_unranked,
-    'paid', 0, 'chips', 0, 'money_path', 'none',
-    'reason', 'hu_backpay_retired_use_atomic_settlement');
-END;
-$function$;
-
-REVOKE ALL ON FUNCTION public.fn_backpay_hu_winner_shortfalls(integer)
-  FROM PUBLIC, anon, authenticated, service_role;
-
-COMMENT ON FUNCTION public.fn_backpay_hu_winner_shortfalls(integer) IS
-  'Legacy owner-run non-paying Heads-Up shortfall observation. The applying loop was retired when normal places moved behind complete atomic settlement.';
-
-/* This one-off procedure was another applying reconciler entry: it iterated
-   historical overlay backpays, swallowed each apply-retired exception and
-   committed between events. Preserve only an owner-run observation report.
-   Applying intent now aborts before its first read, and no application role
-   can invoke the procedure. */
-CREATE OR REPLACE PROCEDURE public.sp_ca_reconcile_backpaid_events(
-  p_apply boolean DEFAULT false
-)
-LANGUAGE plpgsql
-AS $procedure$
-DECLARE
-  r record;
-  v jsonb;
-  v_n integer := 0;
-  v_chips numeric := 0;
-BEGIN
-  IF p_apply THEN
-    RAISE EXCEPTION USING
-      MESSAGE = 'applying_backpaid_reconcile_retired',
-      DETAIL = 'Atomic tournament settlement replaced the applying backpay reconciler',
-      ERRCODE = '0A000';
-  END IF;
-
-  FOR r IN
-    SELECT DISTINCT p.tournament_id
-      FROM public.tournament_payouts p
-     WHERE p.source = 'overlay_backpay'
-       AND p.recorded_by = 'fn_ca_backpay_guarantee_shortfalls'
-  LOOP
-    v := public.fn_tournament_payout_reconcile(r.tournament_id, false);
-    IF COALESCE((v->>'total_top_up')::numeric, 0) > 0 THEN
-      v_n := v_n + 1;
-      v_chips := v_chips + (v->>'total_top_up')::numeric;
-    END IF;
-  END LOOP;
-
-  RAISE NOTICE 'events needing review: %, chips observed: %',
-               v_n, round(v_chips, 2);
-END;
-$procedure$;
-
-REVOKE ALL ON PROCEDURE public.sp_ca_reconcile_backpaid_events(boolean)
-  FROM PUBLIC, anon, authenticated, service_role;
-
-COMMENT ON PROCEDURE public.sp_ca_reconcile_backpaid_events(boolean) IS
-  'Legacy owner-run non-paying report for guarantee-backpay events. Applying mode is retired and raises before scanning.';
+/* Atomic place settlement is the root fix for normal-place payout gaps.
+   Do not retain a callable detector or repair wrapper beside that canonical
+   path: retire every legacy dispatch route and routine below. */
 
 DO $retire_applying_rpc_authority$
 BEGIN
@@ -4153,41 +3639,32 @@ BEGIN
   END IF;
   IF to_regclass('public.ca_settle_sources') IS NOT NULL THEN
     EXECUTE
-      'DELETE FROM public.ca_settle_sources WHERE lower(source) IN ($1, $2)'
-      USING 'reconcile', 'fn_tournament_payout_reconcile';
+      'DELETE FROM public.ca_settle_sources WHERE lower(source) = ANY($1)'
+      USING ARRAY[
+        'reconcile',
+        'fn_tournament_payout_reconcile',
+        'fn_pay_backed_payout_shortfalls',
+        'fn_ca_backpay_guarantee_shortfalls',
+        'fn_tournament_payout_sweep',
+        'sp_ca_reconcile_backpaid_events',
+        'fn_backpay_hu_winner_shortfalls'
+      ]::text[];
   END IF;
 END;
 $retire_applying_rpc_authority$;
 
-INSERT INTO public.ca_money_rpc_registry (proname, status, notes) VALUES
-  (
-    'fn_tournament_payout_reconcile',
-    'legacy',
-    'Temporary non-paying detector. Applying mode retired 2026-09-07; delete after 30 consecutive production days with zero reconcile-source payouts.'
-  ),
-  (
-    'fn_pay_backed_payout_shortfalls',
-    'legacy',
-    'Temporary non-paying wrapper around the payout detector. Applying mode retired 2026-09-07; delete with fn_tournament_payout_reconcile.'
-  ),
-  (
-    'fn_ca_backpay_guarantee_shortfalls',
-    'legacy',
-    'Legacy guarantee repair entry. Application EXECUTE revoked 2026-09-07; any applying call is transaction-fatally refused by the retired reconciler.'
-  ),
-  (
-    'sp_ca_reconcile_backpaid_events',
-    'legacy',
-    'Temporary owner-run non-paying report. Applying mode and application EXECUTE retired 2026-09-07.'
-  ),
-  (
-    'fn_backpay_hu_winner_shortfalls',
-    'legacy',
-    'Legacy owner-run non-paying observation. Engine applying loop and application EXECUTE retired 2026-09-07; normal Heads-Up places now use complete atomic settlement.'
-  )
-ON CONFLICT (proname) DO UPDATE
-  SET status = EXCLUDED.status,
-      notes = EXCLUDED.notes;
+/* A removed RPC must not remain discoverable as a dormant money path. The
+   historical payout and alert rows stay intact; only executable/dispatch
+   authority is retired. */
+DELETE FROM public.ca_money_rpc_registry
+ WHERE proname IN (
+   'fn_tournament_payout_reconcile',
+   'fn_pay_backed_payout_shortfalls',
+   'fn_ca_backpay_guarantee_shortfalls',
+   'fn_tournament_payout_sweep',
+   'sp_ca_reconcile_backpaid_events',
+   'fn_backpay_hu_winner_shortfalls'
+ );
 
 DO $retire_applying_sweep$
 BEGIN
@@ -4195,17 +3672,7 @@ BEGIN
     PERFORM cron.unschedule(j.jobid)
       FROM cron.job j
      WHERE j.jobname = 'ca-payout-sweep-hourly'
-        OR j.command ~* 'fn_tournament_payout_sweep[[:space:]]*\([^,]+,[[:space:]]*true([[:space:]]*,|[[:space:]]*\))'
-        OR j.command ~* 'fn_tournament_payout_sweep[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-        OR j.command ~* 'fn_tournament_payout_reconcile[[:space:]]*\([^,]+,[[:space:]]*true[[:space:]]*\)'
-        OR j.command ~* 'fn_tournament_payout_reconcile[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-        OR j.command ~* 'fn_pay_backed_payout_shortfalls[[:space:]]*\([[:space:]]*true([[:space:]]*,|[[:space:]]*\))'
-        OR j.command ~* 'fn_pay_backed_payout_shortfalls[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-        OR j.command ~* 'fn_ca_backpay_guarantee_shortfalls[[:space:]]*\([[:space:]]*true([[:space:]]*,|[[:space:]]*\))'
-        OR j.command ~* 'fn_ca_backpay_guarantee_shortfalls[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-        OR j.command ~* 'sp_ca_reconcile_backpaid_events[[:space:]]*\([[:space:]]*true[[:space:]]*\)'
-        OR j.command ~* 'sp_ca_reconcile_backpaid_events[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-        OR j.command ~* 'fn_backpay_hu_winner_shortfalls[[:space:]]*\(';
+        OR j.command ~* '(fn_tournament_payout_sweep|fn_tournament_payout_reconcile|fn_pay_backed_payout_shortfalls|fn_ca_backpay_guarantee_shortfalls|sp_ca_reconcile_backpaid_events|fn_backpay_hu_winner_shortfalls)';
   END IF;
 END;
 $retire_applying_sweep$;
@@ -4224,6 +3691,18 @@ BEGIN
   END IF;
 END;
 $retire_legacy_roster$;
+
+/* Retire the complete deferred-reconciliation call graph. RESTRICT is
+   deliberate: an unaccounted database dependency aborts this transaction
+   instead of being cascade-dropped or leaving a hidden caller behind. The
+   functions are dropped only after every textual pg_cron caller and registry
+   route has been removed, and none of these changes is visible before COMMIT. */
+DROP PROCEDURE IF EXISTS public.sp_ca_reconcile_backpaid_events(boolean) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_tournament_payout_sweep(integer, boolean, integer) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_pay_backed_payout_shortfalls(boolean, integer) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_ca_backpay_guarantee_shortfalls(boolean, integer) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_backpay_hu_winner_shortfalls(integer) RESTRICT;
+DROP FUNCTION IF EXISTS public.fn_tournament_payout_reconcile(uuid, boolean) RESTRICT;
 
 /* These two findings describe operational failures of the applying repair
    job itself: one pass hit a lock timeout and one older pass exhausted its
@@ -4244,10 +3723,6 @@ UPDATE public.financial_alerts
 DO $assert$
 DECLARE
   v_legacy_roster_has_job boolean := false;
-  v_legacy_observer_source text;
-  v_backed_observer_source text;
-  v_backpaid_observer_source text;
-  v_hu_observer_source text;
   v_single_obligation_source text;
   v_pool_freeze_source text;
   v_result_freeze_source text;
@@ -4528,114 +4003,45 @@ BEGIN
      OR position('guaranteed_prize' IN v_pool_freeze_source) = 0
      OR position('guaranteed_prize' IN v_registered_contract_source) = 0
      OR position('finalized_guarantee_is_below_published_floor' IN v_guarantee_source) = 0
+     OR position('t.union_id' IN v_guarantee_source) = 0
+     OR position('COALESCE(t.is_private, false)' IN v_guarantee_source) = 0
+     OR position('v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END'
+                 IN v_guarantee_source) = 0
+     OR position('SELECT c.union_id' IN v_guarantee_source) > 0
+     OR position('v_bank_row_found := FOUND' IN v_guarantee_source) = 0
      OR position('SET prize_pool_finalized = false' IN v_guarantee_source) > 0
      OR position('atomic_guarantee_funding' IN v_pool_freeze_source) > 0 THEN
     RAISE EXCEPTION 'finalized pool, guarantee or settlement contract can be repriced';
   END IF;
-  IF has_function_privilege('anon',
-       'public.fn_tournament_payout_reconcile(uuid,boolean)', 'EXECUTE')
-     OR has_function_privilege('authenticated',
-       'public.fn_tournament_payout_reconcile(uuid,boolean)', 'EXECUTE')
-     OR has_function_privilege('service_role',
-       'public.fn_tournament_payout_reconcile(uuid,boolean)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'legacy payout observation ACL boundary is not canonical';
+  IF EXISTS (
+    SELECT 1
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public'
+       AND p.proname IN (
+         'fn_tournament_payout_reconcile',
+         'fn_pay_backed_payout_shortfalls',
+         'fn_ca_backpay_guarantee_shortfalls',
+         'fn_tournament_payout_sweep',
+         'sp_ca_reconcile_backpaid_events',
+         'fn_backpay_hu_winner_shortfalls'
+       )
+  ) THEN
+    RAISE EXCEPTION 'a deferred tournament payout reconciliation routine remains installed';
   END IF;
-  SELECT pg_get_functiondef(
-           'public.fn_tournament_payout_reconcile(uuid,boolean)'::regprocedure)
-    INTO v_legacy_observer_source;
-  IF position('IF p_apply THEN' IN v_legacy_observer_source) = 0
-     OR position('applying_reconcile_retired' IN v_legacy_observer_source) = 0
-     OR position('IF p_apply THEN' IN v_legacy_observer_source)
-        > position('SELECT id, prize_pool' IN v_legacy_observer_source)
-     OR position('fn_settle_tournament_obligation(' IN v_legacy_observer_source) > 0
-     OR position('fn_credit_and_log(' IN v_legacy_observer_source) > 0
-     OR position('UPDATE tournament_players' IN v_legacy_observer_source) > 0 THEN
-    RAISE EXCEPTION 'legacy payout observation can still enter applying mode';
-  END IF;
-  IF NOT EXISTS (
+  IF EXISTS (
     SELECT 1
       FROM public.ca_money_rpc_registry
-     WHERE proname = 'fn_tournament_payout_reconcile'
-       AND status = 'legacy'
+     WHERE proname IN (
+       'fn_tournament_payout_reconcile',
+       'fn_pay_backed_payout_shortfalls',
+       'fn_ca_backpay_guarantee_shortfalls',
+       'fn_tournament_payout_sweep',
+       'sp_ca_reconcile_backpaid_events',
+       'fn_backpay_hu_winner_shortfalls'
+     )
   ) THEN
-    RAISE EXCEPTION 'legacy payout observation registry status is not canonical';
-  END IF;
-  IF has_function_privilege('anon',
-       'public.fn_pay_backed_payout_shortfalls(boolean,integer)', 'EXECUTE')
-     OR has_function_privilege('authenticated',
-       'public.fn_pay_backed_payout_shortfalls(boolean,integer)', 'EXECUTE')
-     OR has_function_privilege('service_role',
-       'public.fn_pay_backed_payout_shortfalls(boolean,integer)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'legacy backed-shortfall observer is application reachable';
-  END IF;
-  SELECT pg_get_functiondef(
-           'public.fn_pay_backed_payout_shortfalls(boolean,integer)'::regprocedure)
-    INTO v_backed_observer_source;
-  IF position('IF p_apply THEN' IN v_backed_observer_source) = 0
-     OR position('applying_backed_shortfall_retired' IN v_backed_observer_source) = 0
-     OR position('IF p_apply THEN' IN v_backed_observer_source)
-        > position('FOR r IN' IN v_backed_observer_source)
-     OR position('fn_tournament_payout_reconcile(t.id, true)' IN v_backed_observer_source) > 0
-     OR position('fn_settle_tournament_obligation(' IN v_backed_observer_source) > 0
-     OR position('fn_credit_and_log(' IN v_backed_observer_source) > 0
-     OR position('UPDATE tournament_players' IN v_backed_observer_source) > 0
-     OR position('''money_path'', ''none''' IN v_backed_observer_source) = 0 THEN
-    RAISE EXCEPTION 'legacy backed-shortfall observer can still pay';
-  END IF;
-  IF has_function_privilege('service_role',
-       'public.sp_ca_reconcile_backpaid_events(boolean)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'legacy backpaid-event procedure is application reachable';
-  END IF;
-  SELECT pg_get_functiondef(
-           'public.sp_ca_reconcile_backpaid_events(boolean)'::regprocedure)
-    INTO v_backpaid_observer_source;
-  IF position('IF p_apply THEN' IN v_backpaid_observer_source) = 0
-     OR position('applying_backpaid_reconcile_retired' IN v_backpaid_observer_source) = 0
-     OR position('IF p_apply THEN' IN v_backpaid_observer_source)
-        > position('FOR r IN' IN v_backpaid_observer_source)
-     OR position('fn_tournament_payout_reconcile(r.tournament_id, p_apply)'
-                  IN v_backpaid_observer_source) > 0
-     OR position('COMMIT' IN upper(v_backpaid_observer_source)) > 0 THEN
-    RAISE EXCEPTION 'legacy backpaid-event procedure can still apply or commit';
-  END IF;
-  IF to_regprocedure('public.fn_ca_backpay_guarantee_shortfalls(boolean,integer)')
-     IS NOT NULL AND has_function_privilege(
-       'service_role',
-       'public.fn_ca_backpay_guarantee_shortfalls(boolean,integer)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'legacy guarantee backpay remains application reachable';
-  END IF;
-  IF has_function_privilege('anon',
-       'public.fn_backpay_hu_winner_shortfalls(integer)', 'EXECUTE')
-     OR has_function_privilege('authenticated',
-       'public.fn_backpay_hu_winner_shortfalls(integer)', 'EXECUTE')
-     OR has_function_privilege('service_role',
-       'public.fn_backpay_hu_winner_shortfalls(integer)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'legacy Heads-Up backpay remains application reachable';
-  END IF;
-  SELECT pg_get_functiondef(
-           'public.fn_backpay_hu_winner_shortfalls(integer)'::regprocedure)
-    INTO v_hu_observer_source;
-  IF position('fn_hu_shortfall_candidates(' IN v_hu_observer_source) = 0
-     OR position('''money_path'', ''none''' IN v_hu_observer_source) = 0
-     OR position('fn_rank_survivors(' IN v_hu_observer_source) > 0
-     OR position('fn_settle_tournament_obligation(' IN v_hu_observer_source) > 0
-     OR position('fn_credit_and_log(' IN v_hu_observer_source) > 0
-     OR position('UPDATE ' IN upper(v_hu_observer_source)) > 0
-     OR position('INSERT ' IN upper(v_hu_observer_source)) > 0
-     OR position('DELETE ' IN upper(v_hu_observer_source)) > 0 THEN
-    RAISE EXCEPTION 'legacy Heads-Up observer can still repair or pay';
-  END IF;
-  IF (
-    SELECT count(*)
-      FROM public.ca_money_rpc_registry
-     WHERE proname IN ('fn_tournament_payout_reconcile',
-                       'fn_pay_backed_payout_shortfalls',
-                       'fn_ca_backpay_guarantee_shortfalls',
-                       'sp_ca_reconcile_backpaid_events',
-                       'fn_backpay_hu_winner_shortfalls')
-       AND status = 'legacy'
-  ) <> 5 THEN
-    RAISE EXCEPTION 'retired payout-repair registry statuses are not canonical';
+    RAISE EXCEPTION 'a retired tournament payout reconciliation route remains registered';
   END IF;
   IF has_table_privilege('anon', 'public.tournament_players', 'INSERT')
      OR has_table_privilege('anon', 'public.tournament_players', 'UPDATE')
@@ -4769,34 +4175,24 @@ BEGIN
     IF EXISTS (
       SELECT 1 FROM cron.job
        WHERE active
-         AND (
-           command ~* 'fn_tournament_payout_sweep[[:space:]]*\([^,]+,[[:space:]]*true([[:space:]]*,|[[:space:]]*\))'
-           OR command ~* 'fn_tournament_payout_sweep[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-           OR command ~* 'fn_tournament_payout_reconcile[[:space:]]*\([^,]+,[[:space:]]*true[[:space:]]*\)'
-           OR command ~* 'fn_tournament_payout_reconcile[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-           OR command ~* 'fn_pay_backed_payout_shortfalls[[:space:]]*\([[:space:]]*true([[:space:]]*,|[[:space:]]*\))'
-           OR command ~* 'fn_pay_backed_payout_shortfalls[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-           OR command ~* 'fn_ca_backpay_guarantee_shortfalls[[:space:]]*\([[:space:]]*true([[:space:]]*,|[[:space:]]*\))'
-           OR command ~* 'fn_ca_backpay_guarantee_shortfalls[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-           OR command ~* 'sp_ca_reconcile_backpaid_events[[:space:]]*\([[:space:]]*true[[:space:]]*\)'
-           OR command ~* 'sp_ca_reconcile_backpaid_events[^;]*p_apply[[:space:]]*=>[[:space:]]*true'
-           OR command ~* 'fn_backpay_hu_winner_shortfalls[[:space:]]*\('
-         )
+         AND command ~* '(fn_tournament_payout_sweep|fn_tournament_payout_reconcile|fn_pay_backed_payout_shortfalls|fn_ca_backpay_guarantee_shortfalls|sp_ca_reconcile_backpaid_events|fn_backpay_hu_winner_shortfalls)'
     ) THEN
-      RAISE EXCEPTION 'an applying tournament payout command is still scheduled';
+      RAISE EXCEPTION 'a deferred tournament payout reconciliation command is still scheduled';
     END IF;
-  END IF;
-  IF to_regprocedure('public.fn_tournament_payout_sweep(integer,boolean,integer)')
-     IS NOT NULL AND has_function_privilege(
-       'service_role',
-       'public.fn_tournament_payout_sweep(integer,boolean,integer)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'service_role can still invoke the payout sweep';
   END IF;
   IF to_regclass('public.ca_settle_sources') IS NOT NULL THEN
     EXECUTE
-      'SELECT EXISTS (SELECT 1 FROM public.ca_settle_sources WHERE lower(source) IN ($1, $2))'
+      'SELECT EXISTS (SELECT 1 FROM public.ca_settle_sources WHERE lower(source) = ANY($1))'
       INTO v_legacy_roster_has_job
-      USING 'reconcile', 'fn_tournament_payout_reconcile';
+      USING ARRAY[
+        'reconcile',
+        'fn_tournament_payout_reconcile',
+        'fn_pay_backed_payout_shortfalls',
+        'fn_ca_backpay_guarantee_shortfalls',
+        'fn_tournament_payout_sweep',
+        'sp_ca_reconcile_backpaid_events',
+        'fn_backpay_hu_winner_shortfalls'
+      ]::text[];
     IF v_legacy_roster_has_job THEN
       RAISE EXCEPTION 'retired reconcile sources can still settle obligations directly';
     END IF;

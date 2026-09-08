@@ -46,10 +46,10 @@ const stripComments = (source: string): string =>
 const ENGINE = stripComments(
   readFileSync(join(ROOT, 'server/src/tournament/TournamentManagerEliminations.ts'), 'utf8')
 );
-const CHECK_DEAL = sliceMethod(ENGINE, 'checkFinalTableDeal(): Promise<void>');
+const CHECK_DEAL = sliceMethod(ENGINE, 'checkFinalTableDeal(): Promise<boolean>');
 const DEAL_TAIL = sliceMethod(
   ENGINE,
-  'settleFinalTableDeal(deal: AtomicFinalTableDealResult): Promise<void>'
+  'settleFinalTableDeal(deal: AtomicFinalTableDealResult): Promise<boolean>'
 );
 const CLIENT = stripComments(
   readFileSync(join(ROOT, 'server/src/tournament/atomicFinalTableDeal.ts'), 'utf8')
@@ -367,7 +367,7 @@ describe('a final-table deal pays every share or none', () => {
       /CREATE TRIGGER zzzzy_lock_atomic_final_table_deal_status[\s\S]*?BEFORE UPDATE OF status ON public\.tournaments[\s\S]*?WHEN \(NEW\.status IS DISTINCT FROM OLD\.status\)/
     );
     expect(STATUS_LOCK).toMatch(
-      /tournament_final_table_deal_batches[\s\S]*?v_settled_at IS NULL[\s\S]*?OLD\.status IS DISTINCT FROM 'RUNNING'[\s\S]*?NEW\.status IS DISTINCT FROM 'COMPLETED'/
+      /tournament_final_table_deal_batches[\s\S]*?v_settled_at IS NULL[\s\S]*?OLD\.status IS DISTINCT FROM 'COMPLETING'[\s\S]*?NEW\.status IS DISTINCT FROM 'COMPLETED'[\s\S]*?app\.atomic_final_table_deal_batch/
     );
   });
 
@@ -454,10 +454,24 @@ describe('a final-table deal pays every share or none', () => {
     expect(CLIENT).toContain("'fn_settle_final_table_deal_atomic'");
     expect(CLIENT).not.toContain("'fn_final_table_deal'");
     expect(DEAL_TAIL).not.toMatch(/fn_settle_tournament_obligation|fn_final_table_deal/);
+    expect(DEAL_TAIL).not.toMatch(
+      /fn_finalize_bounty_pool|reconcileMysteryBounty|settleTournamentRake/
+    );
     expect(DEAL_TAIL).not.toMatch(/from\('tournaments'\)[\s\S]*?status:\s*'COMPLETED'/);
     expect(DEAL_TAIL).toMatch(/recordedPayoutCount === deal\.players/);
     expect(DEAL_TAIL).toMatch(
       /winnerRow\.user_id === deal\.chip_leader[\s\S]*?\? winnerRow\.user_id[\s\S]*?: null/
     );
+
+    const claim = SETTLE.indexOf("SET status = 'COMPLETING'");
+    const mystery = SETTLE.indexOf('public.fn_mystery_bounty_settle(', claim);
+    const bounty = SETTLE.indexOf('public.fn_finalize_bounty_pool(', mystery);
+    const rake = SETTLE.indexOf('public.fn_settle_tournament_rake(', bounty);
+    const terminal = SETTLE.indexOf("SET status = 'COMPLETED'", rake);
+    expect(claim).toBeGreaterThan(-1);
+    expect(mystery).toBeGreaterThan(claim);
+    expect(bounty).toBeGreaterThan(mystery);
+    expect(rake).toBeGreaterThan(bounty);
+    expect(terminal).toBeGreaterThan(rake);
   });
 });

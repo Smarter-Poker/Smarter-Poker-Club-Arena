@@ -31,6 +31,34 @@ export type HandProjectionDrainSummary = {
   failed: number;
 };
 
+export type HandPostCommitResult = {
+  ok?: boolean;
+  reason?: string;
+  already_completed?: boolean;
+  hand_id?: string;
+  hand_number?: number;
+  pending_addons?: number;
+};
+
+/**
+ * Consume the immutable work envelope attached to an accepted hand.
+ *
+ * This call deliberately carries no dealer lease: once the exact settlement
+ * transaction commits, completing its frozen obligations is authorized by the
+ * durable hand receipt, not by whichever process happens to resume it. The
+ * database row lock and completed receipt make concurrent live/worker calls
+ * converge exactly once.
+ */
+export async function processHandPostCommitObligations(
+  handId: string
+): Promise<HandPostCommitResult> {
+  const { data, error } = await supabase.rpc('fn_ca_process_hand_post_commit_obligations', {
+    p_hand_id: handId,
+  });
+  if (error) throw error;
+  return (data ?? {}) as HandPostCommitResult;
+}
+
 const DRAIN_PAGE = 100;
 const DRAIN_MAX = 1_000;
 const RETRY_BASE_MS = 250;

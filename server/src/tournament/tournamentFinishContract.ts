@@ -117,7 +117,12 @@ export async function claimTournamentFinish(
   }
   const canonical = typeof r.winner_user_id === 'string' ? r.winner_user_id : null;
   const status = typeof r.status === 'string' ? r.status : null;
-  if (canonical !== winnerUserId || !['COMPLETING', 'COMPLETED'].includes(status ?? '')) {
+  const resumedCanonical = r.resumed === true && status === 'COMPLETING';
+  if (
+    !canonical ||
+    (canonical !== winnerUserId && !resumedCanonical) ||
+    !['COMPLETING', 'COMPLETED'].includes(status ?? '')
+  ) {
     return failure('invalid_claim_receipt');
   }
   return {

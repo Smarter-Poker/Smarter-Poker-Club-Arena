@@ -15,8 +15,8 @@ function deferred<T>() {
 
 class BreakHarness extends TournamentManagerBase {
   breakDecision: Promise<boolean> = Promise.resolve(true);
-  readonly broadcastCall = vi.fn<(eventType: string, payload: unknown) => Promise<void>>(
-    async () => undefined
+  readonly broadcastCall = vi.fn<(eventType: string, payload: unknown) => Promise<boolean>>(
+    async () => true
   );
 
   constructor() {
@@ -48,7 +48,7 @@ class BreakHarness extends TournamentManagerBase {
     return this.breakDecision;
   }
 
-  protected override broadcast(eventType: string, payload: unknown): Promise<void> {
+  protected override broadcast(eventType: string, payload: unknown): Promise<boolean> {
     return this.broadcastCall(eventType, payload);
   }
 
@@ -110,7 +110,7 @@ describe('tournament break lifecycle fence', () => {
   });
 
   it('does not pause tables when the break broadcast returns after the fence', async () => {
-    const broadcast = deferred<void>();
+    const broadcast = deferred<boolean>();
     const manager = new BreakHarness();
     manager.activate();
     stubBreakPersistence();
@@ -121,7 +121,7 @@ describe('tournament break lifecycle fence', () => {
     const pausing = manager.pauseForBreak(300_000);
     await vi.waitFor(() => expect(manager.broadcastCall).toHaveBeenCalledOnce());
     manager.fence();
-    broadcast.resolve();
+    broadcast.resolve(true);
     await pausing;
 
     expect(engine.pauseAfterHand).not.toHaveBeenCalled();

@@ -1,0 +1,58 @@
+{
+  "_owner": "fix/live-table-realtime-continuity",
+  "_comment": "Branch declaration for the maintenance entry serialization, exact purchase receipts, bounded maintenance writers, and private pre-gate cores. Production deployment is not claimed by this fragment.",
+  "tables": ["entry_purchase_idempotency_receipts", "tournament_launch_receipts"],
+  "functions": [
+    "fn_entry_purchases_frozen",
+    "fn_maintenance_break_state",
+    "fn_serialize_engine_maintenance_break_write",
+    "fn_save_engine_maintenance_break",
+    "fn_claim_engine_maintenance_break",
+    "fn_clear_engine_maintenance_break",
+    "fn_serialize_entry_statement",
+    "fn_claim_entry_purchase_receipt",
+    "fn_record_entry_purchase_receipt",
+    "fn_release_entry_purchase_claim",
+    "trg_entry_purchase_receipt_is_immutable",
+    "fn_assert_cash_chip_purchase_table",
+    "fn_register_for_tournament_before_maintenance_announcement_gate",
+    "fn_register_horse_for_tournament_before_maintenance_gate",
+    "fn_take_seat_and_buy_in_before_maintenance_announcement_gate",
+    "fn_seat_horse_in_seat_first_game_before_maintenance_gate",
+    "fn_seat_late_registrant_before_maintenance_gate",
+    "fn_repair_seat_first_games_before_maintenance_gate",
+    "fn_cash_seat_move_execute_before_maintenance_gate",
+    "fn_cash_seat_swap_execute_before_maintenance_gate",
+    "fn_cash_seat_move_execute",
+    "fn_cash_seat_swap_execute",
+    "trg_freeze_finalized_tournament_prize_pool",
+    "trg_tournament_launch_receipt_is_immutable",
+    "fn_begin_tournament_launch_atomic",
+    "fn_complete_tournament_launch_atomic",
+    "fn_settle_satellite_finish_atomic_before_maintenance_gate",
+    "process_tournament_rebuy_before_maintenance_announcement_gate",
+    "atomic_table_buyin_before_maintenance_announcement_gate",
+    "atomic_table_rebuy_before_maintenance_announcement_gate",
+    "atomic_table_addon_before_maintenance_announcement_gate",
+    "fn_horse_fund_from_treasury_before_maintenance_gate",
+    "fn_horse_seat_from_treasury_before_maintenance_gate"
+  ],
+  "columns": {
+    "entry_purchase_idempotency_receipts": [
+      "key_domain",
+      "idempotency_key",
+      "request",
+      "response",
+      "claimed_at",
+      "completed_at"
+    ],
+    "engine_maintenance_break": ["ownership_token"],
+    "tournament_launch_receipts": [
+      "tournament_id",
+      "launch_id",
+      "started_at",
+      "claimed_at",
+      "completed_at"
+    ]
+  }
+}

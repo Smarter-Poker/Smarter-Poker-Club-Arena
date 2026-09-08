@@ -47,6 +47,9 @@ afterEach(() => {
 /** A table parked in the idle branch: one seated player, busted to 0. */
 function idleEngine() {
   const engine = new ServerTableEngine(TABLE) as any;
+  // dealingLoop is entered directly in this harness; model the exact
+  // process-owned generation that production start() establishes first.
+  engine.isCurrentEngine = () => true;
   const busted = {
     user_id: 'hero',
     seat_number: 1,
@@ -152,6 +155,8 @@ describe('pending add-ons are swept on an idle tick', () => {
 describe('processPendingAddOns resolves a busted player who is not in the hand', () => {
   it('resolves the ledger row even when the user is absent from `players`', async () => {
     const engine = new ServerTableEngine(TABLE) as any;
+    engine.running = true;
+    engine.isCurrentEngine = () => true;
     engine.tableInfo = { id: TABLE, tournament_id: null };
     engine.getMaxBuyIn = () => 1000;
     engine.broadcastCurrentState = vi.fn();

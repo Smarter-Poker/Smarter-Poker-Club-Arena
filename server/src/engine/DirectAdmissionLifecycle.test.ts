@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GameServer } from '../GameServer.js';
 
 type Admission = 'ready' | 'not_wakeable' | 'owned_elsewhere' | 'retryable_failure';
@@ -14,8 +14,12 @@ function bareServer(): any {
   server.tableEngines = new Map();
   server.tournamentOwnedTables = new Set();
   server.directTableAdmissionOperations = new Map<string, Promise<Admission>>();
+  server.directTableAdmissionLeaseGenerations = new Map<string, string>();
   server.directTableEngineRecoveryJobs = new Set<Promise<void>>();
   server.tournamentManagerAdmissionOperations = new Map<string, Promise<void>>();
+  server.tournamentManagerLeaseReleaseOperations = new Map<string, Promise<boolean>>();
+  server.tournamentManagerPendingLeaseReleases = new Map<string, string>();
+  server.ownershipLeaseRenewalOperation = null;
   server.discoveryJobs = new Set<Promise<void>>();
   server.serverLifecycleJobs = new Set<Promise<void>>();
   return server;
@@ -28,6 +32,10 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   });
   return { promise, resolve };
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('direct table admission lifecycle', () => {
   it('publishes one boot operation and rejects a second lifecycle generation', async () => {
@@ -144,6 +152,7 @@ describe('direct table admission lifecycle', () => {
     const server = bareServer();
     const teardownError = new Error('scheduler ownership still held');
     const engine = {
+      getEngineLeaseAuthority: vi.fn(() => null),
       stop: vi.fn().mockRejectedValue(teardownError),
       hasReleasedProcessOwnership: vi.fn(() => false),
     };
@@ -243,5 +252,52 @@ describe('direct table admission lifecycle', () => {
     server.tournamentManagerAdmissionOperations.clear();
     await draining;
     expect(admissionsDrained).toBe(true);
+  });
+
+  it('serializes primary and shutdown heartbeat callers through one ownership pass', async () => {
+    const server = bareServer();
+    const pass = deferred();
+    server.performOwnedEngineLeaseProofRenewal = vi.fn(() => pass.promise);
+
+    const primary = server.renewOwnedEngineLeaseProofs() as Promise<void>;
+    const shutdown = server.renewOwnedEngineLeaseProofs() as Promise<void>;
+    expect(shutdown).toBe(primary);
+    expect(server.performOwnedEngineLeaseProofRenewal).toHaveBeenCalledTimes(1);
+
+    pass.resolve();
+    await primary;
+    expect(server.ownershipLeaseRenewalOperation).toBeNull();
+
+    server.performOwnedEngineLeaseProofRenewal.mockResolvedValue(undefined);
+    await server.renewOwnedEngineLeaseProofs();
+    expect(server.performOwnedEngineLeaseProofRenewal).toHaveBeenCalledTimes(2);
+  });
+
+  it('renews ownership beyond the proof window while discovery remains blocked', async () => {
+    vi.useFakeTimers();
+    const server = bareServer();
+    const discovery = deferred();
+    const discoveryOperation = discovery.promise;
+    server.launchDiscoveryJob(discoveryOperation, 'test.blocked-discovery');
+    server.renewOwnedEngineLeaseProofs = vi.fn().mockResolvedValue(undefined);
+
+    const renewalLoop = server.runOwnershipLeaseRenewalLoop(7) as Promise<void>;
+    await vi.advanceTimersByTimeAsync(20_001);
+
+    expect(server.renewOwnedEngineLeaseProofs.mock.calls.length).toBeGreaterThanOrEqual(5);
+    let discoveryFinished = false;
+    void discoveryOperation.then(() => {
+      discoveryFinished = true;
+    });
+    await Promise.resolve();
+    expect(discoveryFinished).toBe(false);
+    expect(server.discoveryJobs.size).toBe(1);
+
+    server.running = false;
+    server.lifecycleGeneration = 8;
+    await vi.advanceTimersByTimeAsync(5_000);
+    await renewalLoop;
+    discovery.resolve();
+    await discoveryOperation;
   });
 });

@@ -102,11 +102,10 @@ describe('the controller is wired on the leader, beside the fleet', () => {
 
   it('starts right after the fleet on the leader path and stops with it', () => {
     const start = GAME_SERVER.indexOf('this.clusterController.start();');
-    const fleetStart = GAME_SERVER.indexOf(
-      "reportError(err, 'GameServer.horse_fleet_start_failed')"
-    );
+    const fleetStart = GAME_SERVER.indexOf("'GameServer.horse_fleet_start_failed'");
     expect(start).toBeGreaterThan(fleetStart);
-    expect(GAME_SERVER).toMatch(/this\.horseFleet\.stop\(\);\s*this\.clusterController\.stop\(\);/);
+    expect(GAME_SERVER).toContain("['HorseFleetManager', () => this.horseFleet.stop()]");
+    expect(GAME_SERVER).toContain("['ClusterController', () => this.clusterController.stop()]");
   });
 
   /* PIN MOVED 2026-09-05, WITH ITS MECHANISM. This read
@@ -500,8 +499,20 @@ describe('the fleet keeps its hands off cluster tables', () => {
   });
 
   it('discovery re-checks the map after its awaits, so a controller wake cannot double an engine', () => {
-    expect(GAME_SERVER).toMatch(
-      /if \(!\(await claimTable\(row\.table_id\)\)\) continue;[\s\S]{0,1200}this\.tableEngines\.has\(row\.table_id\) \|\|\s*this\.tableEngineStartPromises\.has\(row\.table_id\)/
+    const admission = GAME_SERVER.slice(
+      GAME_SERVER.indexOf('private async performCashTableEngineAdmission('),
+      GAME_SERVER.indexOf(
+        '/**\n   * Get a table engine by ID',
+        GAME_SERVER.indexOf('private async performCashTableEngineAdmission(')
+      )
+    );
+    expect(admission).toContain(
+      'const lease = await claimTableLease(tableId, requestedLeaseGeneration);'
+    );
+    expect(admission).toContain('const racedStart = this.tableEngineStartPromises.get(tableId);');
+    expect(admission).toContain('const racedEngine = this.tableEngines.get(tableId);');
+    expect(admission.indexOf('const racedStart')).toBeGreaterThan(
+      admission.indexOf('await claimTableLease(tableId, requestedLeaseGeneration)')
     );
   });
 });

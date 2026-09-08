@@ -9,8 +9,9 @@
  * commit, one immutable exact-cent plan, one settlement subtransaction, a
  * post-read after every child payment, and a database gate on COMPLETED. It
  * also pins the negative space: browser roles cannot enter the money door,
- * satellites and final-table deals keep their own contracts, and the applying
- * repair cron is retired rather than replaced.
+ * satellites and final-table deals keep their own contracts, and the entire
+ * deferred payout-reconciliation graph is removed rather than preserved as a
+ * dormant detector, cron, registry entry or callable wrapper.
  *
  * Registry: docs/laws.d/a-tournament-pays-every-place-or-none.md
  */
@@ -71,24 +72,20 @@ const REBUY_SEAT_CORE = sqlStatement(
   'CREATE OR REPLACE FUNCTION public.process_tournament_rebuy_before_one_minute_addon('
 );
 const REBUY_GATE = sqlStatement('CREATE OR REPLACE FUNCTION public.process_tournament_rebuy(');
-const LEGACY_OBSERVER = sqlStatement(
-  'CREATE OR REPLACE FUNCTION public.fn_tournament_payout_reconcile('
-);
 const SINGLE_OBLIGATION = sqlStatement(
   'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_obligation('
 );
 const COMPLETED_INSERT_GUARD = sqlStatement(
   'CREATE OR REPLACE FUNCTION public.trg_refuse_normal_tournament_completed_insert()'
 );
-const BACKED_OBSERVER = sqlStatement(
-  'CREATE OR REPLACE FUNCTION public.fn_pay_backed_payout_shortfalls('
-);
-const BACKPAID_OBSERVER = sqlStatement(
-  'CREATE OR REPLACE PROCEDURE public.sp_ca_reconcile_backpaid_events('
-);
-const HU_OBSERVER = sqlStatement(
-  'CREATE OR REPLACE FUNCTION public.fn_backpay_hu_winner_shortfalls('
-);
+const RETIRED_RECONCILIATION_ROUTINES = [
+  'fn_tournament_payout_reconcile',
+  'fn_pay_backed_payout_shortfalls',
+  'fn_ca_backpay_guarantee_shortfalls',
+  'fn_tournament_payout_sweep',
+  'sp_ca_reconcile_backpaid_events',
+  'fn_backpay_hu_winner_shortfalls',
+] as const;
 
 const stripTsComments = (source: string): string =>
   source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -102,16 +99,20 @@ const ENGINE = stripTsComments(
 const FINISH = sliceMethod(ENGINE, 'finishTournament(winnerId: string): Promise<void>');
 const ELIMINATE = sliceMethod(
   ENGINE,
-  'eliminatePlayer(userId: string, position: number): Promise<void>'
+  `eliminatePlayer(
+    userId: string,
+    position: number,
+    allowCompletingClaim = false
+  ): Promise<boolean>`
 );
 const REPRICE = sliceMethod(
   ENGINE,
-  'recalculateEliminatedPrizes(finalPrizePool: number): Promise<void>'
+  'recalculateEliminatedPrizes(finalPrizePool: number): Promise<boolean>'
 );
 const ENGINE_BASE = stripTsComments(
   readFileSync(join(ROOT, 'server/src/tournament/TournamentManagerBase.ts'), 'utf8')
 );
-const FINALIZE_AFTER_ADD_ON = sliceMethod(ENGINE_BASE, 'finalizeAfterAddOn(): Promise<void>');
+const FINALIZE_AFTER_ADD_ON = sliceMethod(ENGINE_BASE, 'finalizeAfterAddOn(): Promise<boolean>');
 const OPEN_ADD_ON = sliceMethod(ENGINE_BASE, 'triggerAddOnPeriod(): Promise<void>');
 const TABLE_PAGE = stripTsComments(readFileSync(join(ROOT, 'src/pages/TablePage.tsx'), 'utf8'));
 const ADD_ON_PRESENTER = TABLE_PAGE.slice(
@@ -413,6 +414,13 @@ describe('a tournament pays every place or none', () => {
     expect(GUARANTEE).toMatch(
       /IF v_bank_before \+ 0\.005 < v_overlay THEN[\s\S]*?guarantee bank holds/
     );
+    expect(GUARANTEE).toContain('t.union_id');
+    expect(GUARANTEE).toContain('COALESCE(t.is_private, false) AS is_private');
+    expect(GUARANTEE).toContain(
+      'v_union := CASE WHEN v_t.is_private THEN NULL ELSE v_t.union_id END'
+    );
+    expect(GUARANTEE).not.toContain('SELECT c.union_id');
+    expect(GUARANTEE).toContain('v_bank_row_found := FOUND');
     expect(GUARANTEE).toMatch(
       /INSERT INTO public\.chip_ledger[\s\S]*?'prize_liability'[\s\S]*?':guarantee_overlay'/
     );
@@ -675,14 +683,8 @@ describe('a tournament pays every place or none', () => {
     );
     expect(gameServer).not.toContain('fn_backpay_hu_winner_shortfalls');
     expect(gameServer).not.toContain('lastHuBackpayAt');
-    expect(HU_OBSERVER).toContain('fn_hu_shortfall_candidates(');
-    expect(HU_OBSERVER).toContain("'money_path', 'none'");
-    expect(HU_OBSERVER).not.toMatch(
-      /fn_rank_survivors|fn_settle_tournament_obligation|fn_credit_and_log/
-    );
-    expect(HU_OBSERVER).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/i);
     expect(executableSql).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_backpay_hu_winner_shortfalls\(integer\)[\s\S]*?PUBLIC, anon, authenticated, service_role/
+      /DROP FUNCTION IF EXISTS public\.fn_backpay_hu_winner_shortfalls\(integer\) RESTRICT;/
     );
   });
 
@@ -781,17 +783,22 @@ describe('a tournament pays every place or none', () => {
     expect(REPRICE).toMatch(/correctPrize - \(player\.prize \|\| 0\)/);
     expect(REPRICE).toMatch(/\.update\(\{ prize: correctPrize \}\)/);
 
-    const addOnFunding = FINALIZE_AFTER_ADD_ON.indexOf(
-      "this.applyPrizeGuarantee('addon_period_end')"
-    );
+    const addOnFunding = FINALIZE_AFTER_ADD_ON.indexOf("'fn_close_tournament_addon_period'");
     const addOnReprice = FINALIZE_AFTER_ADD_ON.indexOf(
-      'this.recalculateEliminatedPrizes(finalPool)',
+      "this.reconcileTournamentEntryWindow('engine.addon_period_reprice')",
       addOnFunding
     );
     expect(addOnFunding).toBeGreaterThan(-1);
     expect(addOnReprice).toBeGreaterThan(addOnFunding);
+    const durableCloseProof = FINALIZE_AFTER_ADD_ON.indexOf('if (error || result.ok !== true)');
+    const cachedFinalization = FINALIZE_AFTER_ADD_ON.indexOf(
+      'this.prizePoolFinalized = true',
+      durableCloseProof
+    );
+    expect(durableCloseProof).toBeGreaterThan(addOnFunding);
+    expect(cachedFinalization).toBeGreaterThan(durableCloseProof);
+    expect(addOnReprice).toBeGreaterThan(cachedFinalization);
     expect(FINALIZE_AFTER_ADD_ON).not.toMatch(/prize_pool_finalized\s*:\s*true/);
-    expect(FINALIZE_AFTER_ADD_ON).not.toMatch(/this\.prizePoolFinalized\s*=\s*true/);
     expect(FINALIZE_AFTER_ADD_ON).not.toMatch(/\.from\('tournaments'\)[\s\S]*?\.update\(/);
   });
 
@@ -819,64 +826,41 @@ describe('a tournament pays every place or none', () => {
     expect(RAKEBACK).not.toMatch(/runTournamentPayoutSweep|fn_tournament_payout_sweep/);
   });
 
-  it('keeps the legacy observation non-paying and rejects every applying caller', () => {
-    const guard = LEGACY_OBSERVER.indexOf('IF p_apply THEN');
-    const refusal = LEGACY_OBSERVER.indexOf("MESSAGE = 'applying_reconcile_retired'", guard);
-    const firstRead = LEGACY_OBSERVER.indexOf('SELECT id, prize_pool', guard);
-    const firstWrite = LEGACY_OBSERVER.search(
-      /\b(?:INSERT|UPDATE|DELETE)\s+(?:INTO\s+)?(?:public\.)?/
-    );
-    expect(guard).toBeGreaterThan(-1);
-    expect(refusal).toBeGreaterThan(guard);
-    expect(LEGACY_OBSERVER.slice(guard, firstRead)).toMatch(
-      /RAISE EXCEPTION USING[\s\S]*?ERRCODE = '0A000'/
-    );
-    expect(firstRead).toBeGreaterThan(refusal);
-    expect(firstWrite === -1 || firstWrite > refusal).toBe(true);
-    expect(LEGACY_OBSERVER).not.toMatch(/fn_settle_tournament_obligation\(/);
-    expect(LEGACY_OBSERVER).not.toMatch(/fn_credit_and_log\(/);
-    expect(LEGACY_OBSERVER).not.toMatch(/UPDATE\s+(?:public\.)?tournament_players/i);
-    expect(executableSql).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_tournament_payout_reconcile\(uuid, boolean\)[\s\S]*?FROM PUBLIC, anon, authenticated/
-    );
-    expect(executableSql).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_tournament_payout_reconcile\(uuid, boolean\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role/
-    );
-    expect(executableSql).toMatch(
-      /REVOKE ALL ON FUNCTION public\.fn_tournament_payout_sweep\(integer, boolean, integer\) FROM PUBLIC, anon, authenticated, service_role/
-    );
-    expect(executableSql).toMatch(
-      /DELETE FROM public\.ca_settle_sources WHERE lower\(source\) IN \(\$1, \$2\)[\s\S]*?USING 'reconcile', 'fn_tournament_payout_reconcile'/
-    );
-    expect(executableSql).toMatch(
-      /command ~\* 'fn_tournament_payout_sweep[\s\S]*?command ~\* 'fn_tournament_payout_reconcile/
-    );
-    expect(executableSql).toMatch(
-      /INSERT INTO public\.ca_money_rpc_registry \(proname, status, notes\)[\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'legacy'/
-    );
-    for (const [source, refusal] of [
-      [BACKED_OBSERVER, 'applying_backed_shortfall_retired'],
-      [BACKPAID_OBSERVER, 'applying_backpaid_reconcile_retired'],
-    ] as const) {
-      const applyGuard = source.indexOf('IF p_apply THEN');
-      const firstLoop = source.indexOf('FOR r IN');
-      expect(applyGuard).toBeGreaterThan(-1);
-      expect(source.indexOf(refusal, applyGuard)).toBeGreaterThan(applyGuard);
-      expect(firstLoop).toBeGreaterThan(applyGuard);
-      expect(source.slice(applyGuard, firstLoop)).toContain("ERRCODE = '0A000'");
+  it('drops the complete deferred reconciliation graph and every dispatch route', () => {
+    for (const name of RETIRED_RECONCILIATION_ROUTINES) {
+      expect(executableSql).toContain(`'${name}'`);
     }
-    expect(BACKED_OBSERVER).toContain("'money_path', 'none'");
-    expect(BACKED_OBSERVER).not.toMatch(/fn_settle_tournament_obligation\(|fn_credit_and_log\(/);
-    expect(BACKPAID_OBSERVER).not.toMatch(/p_apply\)|\bCOMMIT\b/);
-    expect(executableSql).toMatch(
-      /REVOKE ALL ON PROCEDURE public\.sp_ca_reconcile_backpaid_events\(boolean\)[\s\S]*?PUBLIC, anon, authenticated, service_role/
+    expect(executableSql).not.toMatch(
+      /CREATE OR REPLACE (?:FUNCTION|PROCEDURE) public\.(?:fn_tournament_payout_reconcile|fn_pay_backed_payout_shortfalls|fn_ca_backpay_guarantee_shortfalls|fn_tournament_payout_sweep|sp_ca_reconcile_backpaid_events|fn_backpay_hu_winner_shortfalls)\s*\(/
     );
-    for (const name of [
-      'fn_pay_backed_payout_shortfalls',
-      'fn_ca_backpay_guarantee_shortfalls',
-      'sp_ca_reconcile_backpaid_events',
+    expect(executableSql).toMatch(
+      /DROP PROCEDURE IF EXISTS public\.sp_ca_reconcile_backpaid_events\(boolean\) RESTRICT;/
+    );
+    for (const signature of [
+      'fn_tournament_payout_sweep\\(integer, boolean, integer\\)',
+      'fn_pay_backed_payout_shortfalls\\(boolean, integer\\)',
+      'fn_ca_backpay_guarantee_shortfalls\\(boolean, integer\\)',
+      'fn_backpay_hu_winner_shortfalls\\(integer\\)',
+      'fn_tournament_payout_reconcile\\(uuid, boolean\\)',
     ]) {
-      expect(executableSql).toMatch(new RegExp(`'${name}'[\\s\\S]*?'legacy'`));
+      expect(executableSql).toMatch(
+        new RegExp(`DROP FUNCTION IF EXISTS public\\.${signature} RESTRICT;`)
+      );
     }
+    expect(executableSql).toMatch(
+      /DELETE FROM public\.ca_money_rpc_registry[\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'fn_backpay_hu_winner_shortfalls'/
+    );
+    expect(executableSql).toMatch(
+      /DELETE FROM public\.ca_settle_sources WHERE lower\(source\) = ANY\(\$1\)[\s\S]*?USING ARRAY\[[\s\S]*?'reconcile'[\s\S]*?'fn_backpay_hu_winner_shortfalls'/
+    );
+    expect(executableSql).toMatch(
+      /cron\.unschedule\(j\.jobid\)[\s\S]*?j\.command ~\* '\(fn_tournament_payout_sweep\|fn_tournament_payout_reconcile[\s\S]*?fn_backpay_hu_winner_shortfalls\)'/
+    );
+    expect(executableSql).toMatch(
+      /FROM pg_proc p[\s\S]*?p\.proname IN \([\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'fn_backpay_hu_winner_shortfalls'[\s\S]*?deferred tournament payout reconciliation routine remains installed/
+    );
+    expect(executableSql).toMatch(
+      /FROM public\.ca_money_rpc_registry[\s\S]*?a retired tournament payout reconciliation route remains registered/
+    );
   });
 });

@@ -24,12 +24,24 @@ const eliminations = code(read('src/tournament/TournamentManagerEliminations.ts'
 const recovery = code(read('src/tournament/tournamentRecovery.ts'));
 const gameServer = code(read('src/GameServer.ts'));
 const managerBase = code(read('src/tournament/TournamentManagerBase.ts'));
+const finishCertificate = code(
+  read('../supabase/migrations/20260907210000_completed_means_financially_certified.sql')
+);
+
+const sqlFunction = (source: string, name: string): string => {
+  const start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
+  if (start < 0) throw new Error(`SQL function ${name} is missing`);
+  const bodyStart = source.indexOf('AS $function$', start);
+  const end = source.indexOf('$function$;', bodyStart);
+  if (bodyStart < 0 || end < 0) throw new Error(`SQL function ${name} has no complete body`);
+  return source.slice(start, end + '$function$;'.length);
+};
 
 describe('Bubble Protection has no application-layer prepayment path', () => {
   it('records the elimination and leaves Bubble money to the terminal atomic batch', () => {
     const eliminate = sliceMethod(
       eliminations,
-      'eliminatePlayer(userId: string, position: number): Promise<void>'
+      'eliminatePlayer(\n    userId: string,\n    position: number,\n    allowCompletingClaim = false\n  ): Promise<boolean>'
     );
     expect(eliminate).not.toMatch(
       /settleTournamentObligation|fn_settle_tournament_obligation|bubble_protection_paid/
@@ -49,12 +61,15 @@ describe('a committed tournament always reaches its non-money terminal cleanup',
     expect(finish.slice(0, settlement)).not.toMatch(/COMPLETE!/);
   });
 
-  it('treats a missed claim followed by durable COMPLETED as its committed receipt', () => {
-    const missedClaim = sliceMethod(finish, 'if (!claimResult)');
-    expect(missedClaim).toMatch(
-      /held\?\.status === 'COMPLETED'[\s\S]*?cleanupCommittedTournament\(\)[\s\S]*?return;/
+  it('treats a replayed immutable COMPLETED claim as cleanup-only work', () => {
+    const replay = sliceMethod(
+      finish,
+      "if (finishClaim.alreadyCompleted || finishClaim.status === 'COMPLETED')"
     );
-    expect(missedClaim).not.toMatch(/settleTournamentPlacesAtomically|settleTournamentObligation/);
+    expect(replay).toMatch(/cleanupCommittedTournament\(\)[\s\S]*?return;/);
+    expect(replay).not.toMatch(
+      /settleTournamentPlacesAtomically|settleSatelliteFinishAtomically|settleTournamentObligation|\.rpc\(/
+    );
   });
 
   it('checks durable COMPLETED after an apparently failed atomic call before alarming', () => {
@@ -170,10 +185,10 @@ describe('a committed tournament always reaches its non-money terminal cleanup',
 });
 
 describe('a committed final-table deal cannot be stranded by a lost receipt or tail exception', () => {
-  const checkDeal = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<void>');
+  const checkDeal = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
   const settleDeal = sliceMethod(
     eliminations,
-    'settleFinalTableDeal(deal: AtomicFinalTableDealResult): Promise<void>'
+    'settleFinalTableDeal(deal: AtomicFinalTableDealResult): Promise<boolean>'
   );
 
   it('services cleanup-only retries before either in-memory completion latch', () => {
@@ -240,12 +255,18 @@ describe('standalone recovery accepts durable completion after a lost receipt', 
   });
 
   it('checks every cleanup result before continuing or logging success', () => {
-    expect(
+    const assigned =
       recover.match(
         /const cleanupComplete = await closeRecoveredTournamentTablesAndSeats\(t\.id\)/g
-      )
-    ).toHaveLength(3);
-    expect(recover.match(/if \(!cleanupComplete\) \{/g)).toHaveLength(3);
+      ) ?? [];
+    const allCalls = recover.match(/closeRecoveredTournamentTablesAndSeats\(t\.id\)/g) ?? [];
+    const guarded =
+      recover.match(
+        /const cleanupComplete = await closeRecoveredTournamentTablesAndSeats\(t\.id\);\s*if \(!cleanupComplete\) \{/g
+      ) ?? [];
+    expect(assigned.length).toBeGreaterThan(0);
+    expect(assigned).toHaveLength(allCalls.length);
+    expect(guarded).toHaveLength(assigned.length);
     const successLog = recover.indexOf('atomically settled ${settlement.places} place(s)');
     const finalCheck = recover.lastIndexOf('if (!cleanupComplete)', successLog);
     expect(successLog).toBeGreaterThan(finalCheck);
@@ -275,43 +296,46 @@ describe('standalone recovery accepts durable completion after a lost receipt', 
   });
 });
 
-describe('standalone recovery cannot leave a live manager behind', () => {
-  it('stops and removes the exact seat-first manager only after claiming COMPLETING', () => {
+describe('the seat-first watchdog leaves terminal ownership with the tournament manager', () => {
+  it('never claims completion, chooses a winner or stops a manager from the outside', () => {
     const sweep = sliceMethod(gameServer, 'private async finishSeatFirstGamesThatAreOver()');
-    const claim = sweep.indexOf(".update({ status: 'COMPLETING' })");
-    const claimProof = sweep.indexOf('if (!claim || claim.length === 0)', claim);
-    const lookup = sweep.indexOf('this.tournamentEngines.get(id)', claimProof);
-    const stop = sweep.indexOf('claimedManager.stop()', lookup);
-    const stoppedProof = sweep.indexOf('claimedManager.isRunning()', stop);
-    const exactOwner = sweep.indexOf('this.tournamentEngines.get(id) === claimedManager', stop);
-    const remove = sweep.indexOf('this.tournamentEngines.delete(id)', exactOwner);
-    expect(claim).toBeGreaterThan(-1);
-    expect(claimProof).toBeGreaterThan(claim);
-    expect(lookup).toBeGreaterThan(-1);
-    expect(stop).toBeGreaterThan(lookup);
-    expect(stoppedProof).toBeGreaterThan(stop);
-    expect(exactOwner).toBeGreaterThan(stoppedProof);
-    expect(remove).toBeGreaterThan(exactOwner);
+    const decided = sweep.indexOf('if (liveStacks > 1) continue;');
+    const lookup = sweep.indexOf('this.tournamentEngines.get(id)', decided);
+    const wake = sweep.indexOf("requestEliminationSweep('seat_first_terminal_stack')", lookup);
+    const admit = sweep.indexOf('ensureTournamentManagerAdmission(', lookup);
+    expect(decided).toBeGreaterThanOrEqual(0);
+    expect(lookup).toBeGreaterThan(decided);
+    expect(wake).toBeGreaterThan(lookup);
+    expect(admit).toBeGreaterThan(lookup);
+    expect(sweep).not.toMatch(
+      /claimTournamentFinish|status:\s*'COMPLETING'|status:\s*'COMPLETED'|claimedManager\.stop|tournamentEngines\.delete/
+    );
   });
 
-  it('refuses to revive tables unless durable tournament status is RUNNING', () => {
-    const revive = sliceMethod(managerBase, 'protected async reviveDeadTableEngines()');
-    const statusRead = revive.indexOf(".select('status')");
-    const runningGate = revive.indexOf("durableTournament.status !== 'RUNNING'", statusRead);
-    const stop = revive.indexOf('this.stop()', runningGate);
-    const adopt = revive.indexOf('await this.adoptEnginelessTables()', stop);
-    const postAdoptGate = revive.indexOf('if (!this.running) return;', adopt);
-    const engineStop = revive.indexOf('await engine.stop()', postAdoptGate);
-    const postStopGate = revive.indexOf('if (!this.running) return;', engineStop);
-    const replacement = revive.indexOf('new ServerTableEngine(tableId)', postStopGate);
-    expect(statusRead).toBeGreaterThan(-1);
-    expect(runningGate).toBeGreaterThan(statusRead);
-    expect(stop).toBeGreaterThan(runningGate);
-    expect(adopt).toBeGreaterThan(stop);
-    expect(postAdoptGate).toBeGreaterThan(adopt);
-    expect(engineStop).toBeGreaterThan(postAdoptGate);
-    expect(postStopGate).toBeGreaterThan(engineStop);
-    expect(replacement).toBeGreaterThan(postStopGate);
+  it('replaces only the exact live dealer generation and inherits every pause first', () => {
+    const recoverEngine = sliceMethod(
+      managerBase,
+      'private async performManagedTableEngineRecovery('
+    );
+    const firstFence = recoverEngine.indexOf('this.tableEngines.get(tableId) !== engine');
+    const prepare = recoverEngine.indexOf('this.prepareManagedTableEngineForPlay(fresh)');
+    const replace = recoverEngine.indexOf(
+      'this.gameServer.replaceTableEngine(tableId, engine, fresh)'
+    );
+    const replacementFailure = recoverEngine.indexOf('if (!replaced)');
+    const stopCandidate = recoverEngine.indexOf('await fresh.stop()', replacementFailure);
+    const postAwaitFence = recoverEngine.indexOf(
+      'this.tableEngines.get(tableId) !== engine',
+      replace
+    );
+    const publish = recoverEngine.indexOf('this.tableEngines.set(tableId, fresh)', postAwaitFence);
+    expect(firstFence).toBeGreaterThanOrEqual(0);
+    expect(prepare).toBeGreaterThan(firstFence);
+    expect(replace).toBeGreaterThan(prepare);
+    expect(replacementFailure).toBeGreaterThan(replace);
+    expect(stopCandidate).toBeGreaterThan(replacementFailure);
+    expect(postAwaitFence).toBeGreaterThan(replace);
+    expect(publish).toBeGreaterThan(postAwaitFence);
   });
 });
 
@@ -371,27 +395,38 @@ describe('service-role tournament money still obeys the maintenance freeze', () 
   it('gates horse rebuys before the service-role RPC', () => {
     const rebuys = sliceMethod(eliminations, 'private async tryTournamentRebuys(');
     const freeze = rebuys.indexOf('if (isMaintenanceFrozen())');
+    const profileRead = rebuys.indexOf(".from('profiles')");
     const rpc = rebuys.indexOf("supabase.rpc('process_tournament_rebuy'");
     expect(freeze).toBeGreaterThanOrEqual(0);
+    expect(profileRead).toBeGreaterThan(freeze);
     expect(rpc).toBeGreaterThan(freeze);
     expect(rebuys.slice(freeze, rpc)).toMatch(/return \{ rebought, answered \};/);
-    expect(rebuys.slice(freeze, rpc)).toMatch(/rebuyDecisionGraceUntil\.set/);
+    expect(rebuys).not.toMatch(/rebuyDecisionGraceUntil|\.setTimeout\(|setTimeout\(/);
   });
 
   it('gates a normal finish before claiming or attempting atomic settlement', () => {
     const finish = sliceMethod(eliminations, 'finishTournament(winnerId: string): Promise<void>');
     const firstFreeze = finish.indexOf('if (isMaintenanceFrozen()) return;');
-    const claim = finish.indexOf(".update({ status: 'COMPLETING' }");
+    const claim = finish.indexOf('claimTournamentFinish(');
     const atomic = finish.indexOf('settleTournamentPlacesAtomically(');
     const lastFreeze = finish.lastIndexOf('if (isMaintenanceFrozen())');
     expect(firstFreeze).toBeGreaterThanOrEqual(0);
     expect(claim).toBeGreaterThan(firstFreeze);
     expect(lastFreeze).toBeGreaterThan(claim);
     expect(atomic).toBeGreaterThan(lastFreeze);
+    expect(finish).not.toMatch(/\.from\('tournaments'\)\s*\.update\(\{[\s\S]*?status:/);
+
+    const claimSql = sqlFunction(finishCertificate, 'fn_claim_tournament_finish(');
+    const receipt = claimSql.indexOf('INSERT INTO public.tournament_finish_receipts');
+    const ownerToken = claimSql.indexOf("set_config('app.tournament_finish_claim'", receipt);
+    const status = claimSql.indexOf("SET status = 'COMPLETING'", ownerToken);
+    expect(receipt).toBeGreaterThanOrEqual(0);
+    expect(ownerToken).toBeGreaterThan(receipt);
+    expect(status).toBeGreaterThan(ownerToken);
   });
 
   it('lets cleanup-only deal retries run while gating every new deal attempt', () => {
-    const checkDeal = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<void>');
+    const checkDeal = sliceMethod(eliminations, 'checkFinalTableDeal(): Promise<boolean>');
     const pending = checkDeal.indexOf('committedFinalTableDealCleanupPending');
     const cleanup = checkDeal.indexOf('cleanupCommittedFinalTableDeal()', pending);
     const firstFreeze = checkDeal.indexOf('isMaintenanceFrozen()', cleanup);
@@ -411,7 +446,7 @@ describe('service-role tournament money still obeys the maintenance freeze', () 
     const completedCleanup = recover.indexOf("status?: string }).status === 'COMPLETED'");
     const firstFreeze = recover.indexOf('if (isMaintenanceFrozen()) continue;', completedCleanup);
     const guarantee = recover.indexOf("'fn_apply_prize_guarantee'", firstFreeze);
-    const rake = recover.indexOf("'fn_settle_tournament_rake'", firstFreeze);
+    const rake = recover.indexOf("'fn_settle_tournament_rake'", guarantee);
     const atomic = recover.indexOf('settleTournamentPlacesAtomically(', firstFreeze);
     const lastFreeze = recover.lastIndexOf('if (isMaintenanceFrozen()) continue;', atomic);
     expect(completedCleanup).toBeGreaterThanOrEqual(0);

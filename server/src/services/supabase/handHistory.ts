@@ -26,6 +26,50 @@ export interface AtomicHandCommitInput {
   bbj: number;
   ref?: string | null;
   inflow?: number | null;
+  /**
+   * Exact protocol-2 database authority. Both fields are present together for
+   * verified cash and tournament engines; omitting both selects only the
+   * rolling-upgrade protocol-1 wrapper.
+   */
+  leaseInstanceId?: string;
+  leaseGeneration?: string;
+  /**
+   * Immutable work which must survive the exact dealer after the accepted
+   * hand transaction returns. Presence selects the 12-argument protocol-2
+   * RPC; the database hashes and stores it on the atomic hand receipt before
+   * either becomes visible.
+   */
+  postCommitObligations?: {
+    version: 1;
+    time_banks: Array<{
+      user_id: string;
+      uses_remaining: number;
+      seconds_remaining: number;
+    }>;
+    rake: Record<string, unknown> | null;
+    bbj_contribution: Record<string, unknown> | null;
+    promo_playthrough: Array<Record<string, unknown>>;
+    insurance: Array<Record<string, unknown>>;
+    pending_addons: { enabled: true; max_buy_in: number | null } | null;
+  };
+  /**
+   * Canonical facts independently carried by the accepted-hand payload. The
+   * 12-argument database door binds its obligation narrative to these values
+   * before storing either one. The extra JSON key is intentionally ignored by
+   * the hand_history row inserter but remains covered by the atomic hand hash.
+   */
+  acceptedPostCommitFacts?: {
+    contributions: Record<string, number>;
+    returned_uncalled: Record<string, number>;
+    insurance: Array<Record<string, unknown>>;
+  };
+  /**
+   * Local distributed-lease fence, invoked immediately before every retry of
+   * the authoritative PostgreSQL transaction. It is deliberately not part of
+   * the RPC payload's generation. Together they close both a persistent-
+   * UNKNOWN local retry and a stale continuation running after DB takeover.
+   */
+  assertLeaseAuthority?: () => void;
 }
 
 /**
@@ -608,6 +652,27 @@ async function insertHandHistoryRow(
       reason?: string;
       error?: unknown;
     };
+    const hasLeaseInstance = typeof atomicCommit.leaseInstanceId === 'string';
+    const hasLeaseGeneration = typeof atomicCommit.leaseGeneration === 'string';
+    const hasPostCommitObligations = atomicCommit.postCommitObligations !== undefined;
+    if (hasLeaseInstance !== hasLeaseGeneration) {
+      throw new Error('atomic hand commit refused (incomplete_lease_authority)');
+    }
+    if (
+      hasLeaseInstance &&
+      (atomicCommit.leaseInstanceId!.trim().length === 0 ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          atomicCommit.leaseGeneration!
+        ))
+    ) {
+      throw new Error('atomic hand commit refused (invalid_lease_authority)');
+    }
+    if (hasPostCommitObligations && !hasLeaseInstance) {
+      throw new Error('atomic hand commit refused (post_commit_requires_exact_lease)');
+    }
+    if (hasPostCommitObligations && !atomicCommit.acceptedPostCommitFacts) {
+      throw new Error('atomic hand commit refused (post_commit_facts_missing)');
+    }
     const payload = {
       p_table_id: row.table_id,
       p_hand_number: row.hand_number,
@@ -616,8 +681,22 @@ async function insertHandHistoryRow(
       p_bbj: atomicCommit.bbj,
       p_ref: atomicCommit.ref ?? null,
       p_inflow: atomicCommit.inflow ?? null,
-      p_hand_row: row,
+      p_hand_row: atomicCommit.acceptedPostCommitFacts
+        ? {
+            ...row,
+            _accepted_post_commit_facts: atomicCommit.acceptedPostCommitFacts,
+          }
+        : row,
       p_units: bombAwardUnits,
+      ...(hasLeaseInstance
+        ? {
+            p_instance_id: atomicCommit.leaseInstanceId!,
+            p_lease_generation: atomicCommit.leaseGeneration!,
+          }
+        : {}),
+      ...(hasPostCommitObligations
+        ? { p_post_commit_obligations: atomicCommit.postCommitObligations! }
+        : {}),
     };
     let lastError = 'no response';
 
@@ -626,9 +705,13 @@ async function insertHandHistoryRow(
     // committed hand.  There is no alternate writer and no per-seat fallback.
     for (let attempt = 1; attempt <= 5; attempt++) {
       try {
+        atomicCommit.assertLeaseAuthority?.();
         const { data, error } = await supabase.rpc('fn_ca_commit_hand_settlement', payload);
         const result = (data ?? {}) as AtomicCommitResult;
         if (!error && result.success === true && result.atomic_hand_commit === true) {
+          if (hasPostCommitObligations && result.post_commit_obligations !== true) {
+            throw new Error('atomic hand commit refused (missing_post_commit_receipt)');
+          }
           const historyId = typeof result.history_id === 'string' ? result.history_id : '';
           if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(historyId)) {
             throw new Error(

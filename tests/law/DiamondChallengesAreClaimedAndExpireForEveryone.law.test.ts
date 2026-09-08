@@ -23,6 +23,7 @@ const pick = (suffix: string) => {
   return fs.readFileSync(path.join(dir, f as string), 'utf8');
 };
 const ch = pick('_daily_challenges_claimed_for_horses_capped_by_the_line_and_e.sql');
+const onRealPath = pick('_the_horse_claim_is_on_the_path_the_engine_calls.sql');
 const flat = (s: string) => s.replace(/\s+/g, ' ');
 
 describe("the engine is the horse's input device for the Claim button", () => {
@@ -100,5 +101,34 @@ describe('the limits govern the claim, never the assignment (ruling 3 as amended
     expect(ch).toContain('Measured 2026-09-08');
     // negative control: a number with no measurement beside it is what this forbids
     expect(ch.slice(0, ch.indexOf('BEGIN;'))).toContain('above the measured peak');
+  });
+});
+
+describe('the claim is on the path the engine actually calls', () => {
+  it('the six-argument record_daily_challenge_event claims for a horse', () => {
+    // The first migration put the loop on the five-argument serialized body, which the engine
+    // never reaches: 733 challenges completed and 0 were claimed before anyone noticed. An
+    // overload count of one proves a function is unique, not that it is used.
+    expect(onRealPath).toContain('p_values jsonb, p_occurred_at timestamp with time zone');
+    expect(onRealPath).toContain(
+      'PERFORM public.claim_daily_challenge_serialized_body(p_user_id, v_claim.id, NULL);'
+    );
+    expect(onRealPath).toContain("'record_daily_challenge_event(6)'");
+  });
+  it('asserts at apply time that NO function completes a challenge without claiming for a horse', () => {
+    expect(onRealPath).toContain("p.prosrc LIKE '%completed = (u.progress%'");
+    expect(onRealPath).toContain("p.prosrc NOT LIKE '%claim_daily_challenge_serialized_body%'");
+    expect(onRealPath).toContain(
+      'these functions complete a challenge but never claim for a horse'
+    );
+  });
+  it('still never breaks the progress it just recorded', () => {
+    expect(onRealPath).toContain("'CH3:horse_claim_failed'");
+    const loop = onRealPath.slice(
+      onRealPath.indexOf(
+        'IF EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = p_user_id AND p.is_horse)'
+      )
+    );
+    expect(loop).toContain('EXCEPTION WHEN OTHERS THEN');
   });
 });

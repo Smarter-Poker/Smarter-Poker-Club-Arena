@@ -1,0 +1,62 @@
+{
+  "callsite-register.csv": {
+    "rows": 3834,
+    "sha256": "4f22dc80bcb99e20507a565524861be75af6ea519d4f0447a7e1163fc53b69b1"
+  },
+  "existing-repair-debt-register.csv": {
+    "rows": 32,
+    "sha256": "0fb382cbb4793d0663b2cf1ea218752884ad4d78aa01263a2fb3bad8f90a85e3"
+  },
+  "feature-backlog.csv": {
+    "rows": 109,
+    "sha256": "f9812a415557c8d8a2b587c51ab659a0eff93eaf38179f8dbb37fba9555eddc3"
+  },
+  "file-register.csv": {
+    "rows": 10617,
+    "sha256": "1106c72e610f78294ac01b42b4f531ba162646e7a2ec175ba68e2c14f50fa992"
+  },
+  "function-register.csv": {
+    "rows": 69497,
+    "sha256": "73dd8b3bc67faef7a0ad8f9c951e2fdbee50d0a0b502403931b940b1f9277a36"
+  },
+  "live-relation-register.csv": {
+    "rows": 179,
+    "sha256": "ffcd4a831c65c99022587fa98cd179162f9aca0b3b62b08ea87e0ecf8bb7dcec"
+  },
+  "live-rpc-register.csv": {
+    "rows": 467,
+    "sha256": "c3505ed9695beef608b7208d7a9f3f50d9f284a826c0e97752509f4709261cc4"
+  },
+  "live-trigger-register.csv": {
+    "rows": 365,
+    "sha256": "39825331d6618122c7886e25a938cf637ac9e0cf89e3dd654415fdf4c251d593"
+  },
+  "marker-candidates.csv": {
+    "rows": 41,
+    "sha256": "bf5ec8e12b86a838a1a7f0bab870b4d1f6c2c7b2de0e2cb3f6eda5d5a0d6ac6d"
+  },
+  "module-import-register.csv": {
+    "rows": 14891,
+    "sha256": "27575e9f8c46c90219e3d9308bdab15ae85f59963496ed31ecbf97e08f7cfe8d"
+  },
+  "page-and-tab-register.csv": {
+    "rows": 125,
+    "sha256": "3daeb98d7bcea1f1605eeaa1a940a9f3ceea0dda43c296b96c75244d506eddb7"
+  },
+  "route-register.csv": {
+    "rows": 168,
+    "sha256": "d6c29bf4b94506d7a91ba748c48a6f5021776d7efbe7312f745ff83f40c35062"
+  },
+  "server-dispatch-register.csv": {
+    "rows": 28,
+    "sha256": "1ace5d01c6c3310d352f25cf147e5c8542b6c8f109bf9360df7d75669b903317"
+  },
+  "sql-declaration-register.csv": {
+    "rows": 3481,
+    "sha256": "e99c3264da9c6b84e4ed94e583c468297417782e98017ab1ead7fa1a76474493"
+  },
+  "ui-control-register.csv": {
+    "rows": 3833,
+    "sha256": "71c121f8df2eb57920a6759f2b9f61858808f4337e348a45b2e0155308387db3"
+  }
+}

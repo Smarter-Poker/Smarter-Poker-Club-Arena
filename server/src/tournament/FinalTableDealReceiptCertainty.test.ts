@@ -114,7 +114,7 @@ describe('deal payout roster validation before any settlement', () => {
       { user_id: 'first', amount: 100 },
       { user_id: 'stranger', amount: 100 },
     ],
-    ...[null, '', 'bad', -1, Infinity, NaN, 0.001].map((amount) => [
+    ...[null, '', 'bad', '0x10', '1e2', -1, Infinity, NaN, 0.001, 0.0000000001].map((amount) => [
       { user_id: 'first', amount: 100 },
       { user_id: 'second', amount },
     ]),

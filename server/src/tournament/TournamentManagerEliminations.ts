@@ -3278,11 +3278,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           !expectedRecipients.has(p.user_id) ||
           seenRecipients.has(p.user_id) ||
           (typeof raw !== 'number' && typeof raw !== 'string') ||
-          (typeof raw === 'string' && raw.trim() === '') ||
+          (typeof raw === 'string' && !/^[0-9]+(?:[.][0-9]+)?$/.test(raw)) ||
           !Number.isFinite(amount) ||
           amount < 0 ||
           !Number.isSafeInteger(Math.round(cents)) ||
-          Math.abs(cents - Math.round(cents)) > 1e-7
+          Math.round(cents) / 100 !== amount
         )
           return false;
         seenRecipients.add(p.user_id);

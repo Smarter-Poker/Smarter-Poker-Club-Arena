@@ -138,6 +138,18 @@ const T = (
 
 const THROWABLES: Throwable[] = [
   T(
+    'rat_card',
+    'Cheating Rat',
+    'premium',
+    'fastball',
+    'thud',
+    'card_slap',
+    'light',
+    false,
+    '#929CA8',
+    0
+  ),
+  T(
     'party_face',
     'Party Face',
     'reactions',

@@ -28,6 +28,10 @@ let anonReadableDefiners: Verdict;
 let unrevokedClones: Verdict;
 let unscopedRosterDefiners: Verdict;
 let clonedFunctions: (sql: string) => string[];
+let effectiveGrants: (
+  sql: string,
+  name: string
+) => { public: boolean; anon: boolean; authenticated: boolean };
 
 beforeAll(async () => {
   // Computed specifier: the checker is a plain ESM script with no type
@@ -43,6 +47,7 @@ beforeAll(async () => {
   unrevokedClones = mod.unrevokedClones;
   unscopedRosterDefiners = mod.unscopedRosterDefiners;
   clonedFunctions = mod.clonedFunctions;
+  effectiveGrants = mod.effectiveGrants;
 });
 
 /** The shape that shipped nineteen times: no GRANT written at all, which
@@ -88,6 +93,21 @@ REVOKE ALL ON FUNCTION public.increment_member_count(uuid, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.increment_member_count(uuid, integer) TO authenticated;
 `;
     expect(unauthorisedWriters(halfFixed)).toEqual(['increment_member_count']);
+  });
+
+  it('models the live Supabase role-specific defaults before any explicit grant', () => {
+    const publicOnly =
+      OPEN_WRITER +
+      `
+REVOKE ALL ON FUNCTION public.increment_member_count(uuid, integer) FROM PUBLIC;
+`;
+
+    expect(effectiveGrants(publicOnly, 'increment_member_count')).toEqual({
+      public: false,
+      anon: true,
+      authenticated: true,
+    });
+    expect(unauthorisedWriters(publicOnly)).toEqual(['increment_member_count']);
   });
 });
 
@@ -213,6 +233,15 @@ describe('a new definer that answers a caller with no account', () => {
         'GRANT EXECUTE ON FUNCTION public.fn_closed(int) TO service_role;'
     );
     expect(anonReadableDefiners(sql)).toEqual([]);
+  });
+
+  it('still sees the live anon default after a PUBLIC-only revoke', () => {
+    const sql = fn(
+      'fn_default_acl_leak',
+      'REVOKE ALL ON FUNCTION public.fn_default_acl_leak(int) FROM PUBLIC;\n' +
+        'GRANT EXECUTE ON FUNCTION public.fn_default_acl_leak(int) TO service_role;'
+    );
+    expect(anonReadableDefiners(sql)).toEqual(['fn_default_acl_leak']);
   });
 
   it('passes a read kept for logged-in players: this rule guards the pre-login roles only', () => {

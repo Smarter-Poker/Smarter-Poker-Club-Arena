@@ -3827,14 +3827,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       .eq('status', 'playing')
       .neq('user_id', winnerId);
 
-    if (stillPlayingErr) {
+    if (stillPlayingErr || !Array.isArray(stillPlaying)) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] could not read unresolved players at finish: ${stillPlayingErr.message}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] could not read unresolved players at finish: ${stillPlayingErr?.message ?? 'invalid roster'}`
         ),
         'Tournament.unresolved_players_read_failed'
       );
-    } else if (stillPlaying && stillPlaying.length > 0) {
+      return;
+    } else if (stillPlaying.length > 0) {
       console.warn(
         `[Tournament:${this.tournamentId.slice(0, 8)}] finishing with ${stillPlaying.length} unresolved player(s) - assigning places 2..${stillPlaying.length + 1}`
       );
@@ -3843,13 +3844,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       // below it was taken — with a single unresolved player it ALWAYS wrote
       // place 2, occupied or not, paying a second 2nd-place prize. Same
       // free-place walk as the bust sweep.
-      const { data: finishTaken } = await supabase
+      const { data: finishTaken, error: finishTakenErr } = await supabase
         .from('tournament_players')
         .select('position')
         .eq('tournament_id', this.tournamentId)
         .not('position', 'is', null);
+      if (
+        finishTakenErr ||
+        !Array.isArray(finishTaken) ||
+        finishTaken.some((r) => !Number.isInteger(Number(r.position)) || Number(r.position) < 1) ||
+        new Set(finishTaken.map((r) => Number(r.position))).size !== finishTaken.length
+      ) {
+        reportError(
+          new Error(
+            'Cannot assign finishing places from an unreadable or inconsistent position list.'
+          ),
+          'Tournament.finish_positions_unconfirmed'
+        );
+        return;
+      }
       const finishTakenPositions = new Set<number>(
-        (finishTaken || [])
+        finishTaken
           .map((r) => Number((r as { position: unknown }).position))
           .filter((n) => Number.isFinite(n))
       );
@@ -3863,11 +3878,26 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             ),
             'TournamentManager.no_free_finishing_place_at_finish'
           );
-          break;
+          return;
         }
         await this.eliminatePlayer(ordered[i].user_id, finishNext);
         finishTakenPositions.add(finishNext);
         finishNext--;
+      }
+      // eliminatePlayer can return without claiming a stale bust or failed
+      // status write. Its return is not proof that the assigned player is out.
+      const { data: remainingPlayers, error: remainingPlayersErr } = await supabase
+        .from('tournament_players')
+        .select('user_id')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'playing')
+        .neq('user_id', winnerId);
+      if (remainingPlayersErr || !Array.isArray(remainingPlayers) || remainingPlayers.length > 0) {
+        reportError(
+          new Error('Tournament finish cannot confirm that every remaining player was resolved.'),
+          'Tournament.finish_players_unresolved'
+        );
+        return;
       }
     }
 
@@ -3877,18 +3907,19 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // as the 113 under-paid tournaments the comment above describes — and
     // fn_tournament_payout_reconcile would then read prize 0 for place 1 and
     // try to top the winner up to the full first prize a second time.
-    const { error: winnerStampErr } = await supabase
+    const { error: winnerStampErr, count: winnerStampCount } = await supabase
       .from('tournament_players')
-      .update({ status: 'winner', position: 1, prize: winnerPrize })
+      .update({ status: 'winner', position: 1, prize: winnerPrize }, { count: 'exact' })
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', winnerId);
-    if (winnerStampErr) {
+    if (winnerStampErr || winnerStampCount !== 1) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: winner row not stamped for ${winnerId.slice(0, 8)} (prize ${winnerPrize}): ${winnerStampErr.message}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: winner row not stamped for ${winnerId.slice(0, 8)} (prize ${winnerPrize}): ${winnerStampErr?.message ?? `affected rows: ${winnerStampCount ?? 'unknown'}`}`
         ),
         'Tournament.winner_row_stamp_failed'
       );
+      return;
     }
 
     // ── SATELLITE SEAT AWARDS ──
@@ -4015,38 +4046,44 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      * now also refuses to be hidden by this manager (managerHasOverstayed).
      */
     let completedErr: { message?: string; code?: string } | null = null;
+    let completedCount: number | null = null;
     for (let attempt = 1; attempt <= COMPLETED_FLIP_ATTEMPTS; attempt++) {
-      const { error } = await supabase
+      const { error, count } = await supabase
         .from('tournaments')
-        .update({
-          status: 'COMPLETED',
-          ended_at: new Date().toISOString(),
-          // 2026-08-20: clear the break flags on the way out. endBreak() is what
-          // normally resets them, and it never runs if the event finishes DURING
-          // a break -- leaving COMPLETED tournaments permanently flagged
-          // on_break=true (3 of them, one showing 1,231 minutes "on break").
-          // Harmless to play, since nothing resumes a COMPLETED event, but it
-          // makes a finished tournament read as stuck to anything inspecting
-          // these columns.
-          on_break: false,
-          break_ends_at: null,
-        })
+        .update(
+          {
+            status: 'COMPLETED',
+            ended_at: new Date().toISOString(),
+            // 2026-08-20: clear the break flags on the way out. endBreak() is what
+            // normally resets them, and it never runs if the event finishes DURING
+            // a break -- leaving COMPLETED tournaments permanently flagged
+            // on_break=true (3 of them, one showing 1,231 minutes "on break").
+            // Harmless to play, since nothing resumes a COMPLETED event, but it
+            // makes a finished tournament read as stuck to anything inspecting
+            // these columns.
+            on_break: false,
+            break_ends_at: null,
+          },
+          { count: 'exact' }
+        )
         .eq('id', this.tournamentId)
         .eq('status', 'COMPLETING'); // Guard: only COMPLETING → COMPLETED
       completedErr = error;
+      completedCount = count;
       if (!error || !isTransientFlipError(error)) break;
       console.warn(
         `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED attempt ${attempt} of ${COMPLETED_FLIP_ATTEMPTS} hit ${error.code ?? '?'} (${error.message}) - retrying`
       );
       await new Promise((r) => setTimeout(r, COMPLETED_FLIP_BACKOFF_MS * attempt));
     }
-    if (completedErr) {
+    if (completedErr || completedCount !== 1) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED failed: ${completedErr.message} - left for recoverStuckCompletingTournaments`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED failed: ${completedErr?.message ?? `affected rows: ${completedCount ?? 'unknown'}`} - left for recoverStuckCompletingTournaments`
         ),
         'Tournament.completed_transition_failed'
       );
+      return;
     }
 
     // PAYOUT-INTEGRITY 2026-08-20: final settlement check. Prizes are emitted

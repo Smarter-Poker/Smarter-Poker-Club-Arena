@@ -207,3 +207,14 @@ describe('decision context delivery', () => {
     }
   );
 });
+
+it('does not publish an actionable context during runout or showdown', () => {
+  const h = hand();
+  const s = (h as any).state;
+  const originalSeat = s.currentPlayerSeat;
+  s.currentPlayerSeat = -1;
+  expect(playerActionContext(h)).toBeNull();
+  s.currentPlayerSeat = originalSeat;
+  s.stage = 'showdown';
+  expect(playerActionContext(h)).toBeNull();
+});

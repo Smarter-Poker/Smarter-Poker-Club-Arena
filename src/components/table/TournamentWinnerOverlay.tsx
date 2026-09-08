@@ -43,18 +43,25 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         delay: Math.random() * 2.5,
       }));
       setParticles(newParticles);
+    } else {
+      setVisible(false);
     }
   }, [isWinner]);
 
   // Animate prize amount
   useEffect(() => {
-    if (!visible || prize <= 0) return;
+    setDisplayPrize(0);
+    if (!isWinner || !visible || prize <= 0) return;
+
+    let stopped = false;
+    let frameId = 0;
 
     const startTime = Date.now();
     const duration = 1500;
     const startValue = 0;
 
     const animate = () => {
+      if (stopped) return;
       const elapsed = Date.now() - startTime;
       const progress = Math.min(1, elapsed / duration);
 
@@ -65,13 +72,16 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
       setDisplayPrize(current);
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        frameId = requestAnimationFrame(animate);
       }
     };
 
-    const frameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frameId);
-  }, [visible, prize]);
+    frameId = requestAnimationFrame(animate);
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [isWinner, visible, prize]);
 
   const handleDismiss = useCallback(() => {
     setVisible(false);

@@ -20,7 +20,8 @@
  *
  * `tournament_payouts.idempotency_key` is UNIQUE and its row is written inside
  * fn_credit_and_log only after the credit returned true, so one row exists if
- * and only if money moved once. These pins keep the reconciler pointed at it.
+ * and only if money moved once. The retained detector keeps using that
+ * evidence, but applying mode is now retired and contains no payment path.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
@@ -41,7 +42,16 @@ const executable = (sql: string): string =>
     .filter((line) => !line.trimStart().startsWith('--'))
     .join('\n');
 
-const RECONCILER = () => executable(migration('the_reconciler_counts_payouts_not_ledger_rows'));
+const CUTOVER = executable(migration('tournament_places_settle_and_complete_atomically'));
+
+const functionBody = (sql: string, name: string): string => {
+  const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+  if (start < 0) return '';
+  const end = sql.indexOf('$function$;', start);
+  return end < 0 ? sql.slice(start) : sql.slice(start, end);
+};
+
+const RECONCILER = () => functionBody(CUTOVER, 'fn_tournament_payout_reconcile');
 
 /**
  * Money the PRIZE POOL is meant to fund. Bounty money carries
@@ -79,7 +89,7 @@ describe('the reconciler asks the authoritative record, not the log', () => {
     // The whole point of the source filter. If one of these appears in the
     // reconciler's IN list, a PKO player's bounty winnings start paying down
     // what the prize pool owes them.
-    const inList = (RECONCILER().match(/AND tpo\.source IN \(([\s\S]*?)\)/) ?? [])[1] ?? '';
+    const inList = (RECONCILER().match(/tpo\.source IN \(([\s\S]*?)\)/) ?? [])[1] ?? '';
     expect(inList.length, 'the source filter must exist at all').toBeGreaterThan(0);
     for (const s of BOUNTY_POOL_SOURCES) {
       expect(inList, `${s} must NOT count as structure money`).not.toContain(`'${s}'`);
@@ -103,7 +113,7 @@ describe('a missing record is not read as "nothing was paid"', () => {
   });
 });
 
-describe('the stance on money is unchanged', () => {
+describe('the detector observes but cannot move money', () => {
   const sql = () => RECONCILER();
 
   it('still reports an overpayment rather than clawing it back', () => {
@@ -116,20 +126,29 @@ describe('the stance on money is unchanged', () => {
     expect(sql()).toContain("'duplicate_finishers'");
   });
 
-  it('still tops up under the place-scoped reconcile key, which bounds it to once', () => {
-    // This is why the one measured case where the record reads LOWER than the
-    // ledger (0.31 chips) cannot double-pay: that place's reconcile key is
-    // already consumed, so fn_credit_and_log returns false and the shortfall
-    // is reported instead of paid.
-    expect(sql()).toMatch(/':reconcile'/);
-    expect(sql()).toContain("'top_up_refused_by_idempotency'");
+  it('raises before its first read when applying mode is requested', () => {
+    const guard = sql().indexOf('IF p_apply THEN');
+    const firstRead = sql().indexOf('SELECT id, prize_pool');
+    expect(guard).toBeGreaterThan(-1);
+    expect(sql().slice(guard, firstRead)).toMatch(
+      /RAISE EXCEPTION USING[\s\S]*?applying_reconcile_retired[\s\S]*?ERRCODE = '0A000'/
+    );
+    expect(firstRead).toBeGreaterThan(guard);
   });
 
-  it('is not executable by a browser role', () => {
-    expect(sql()).toContain(
-      'REVOKE ALL ON FUNCTION public.fn_tournament_payout_reconcile(uuid, boolean)'
+  it('contains no credit, obligation-settle or tournament-player write', () => {
+    expect(sql()).not.toMatch(/fn_credit_and_log\(/);
+    expect(sql()).not.toMatch(/fn_settle_tournament_obligation\(/);
+    expect(sql()).not.toMatch(/UPDATE\s+(?:public\.)?tournament_players/i);
+    expect(sql()).toContain("'money_path', 'none'");
+  });
+
+  it('is not executable by browser or service roles', () => {
+    expect(CUTOVER).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_tournament_payout_reconcile\(uuid, boolean\)[\s\S]*?FROM PUBLIC, anon, authenticated, service_role/
     );
-    expect(sql()).toContain('FROM PUBLIC, anon, authenticated');
-    expect(sql()).toContain('TO service_role');
+    expect(CUTOVER).toMatch(
+      /INSERT INTO public\.ca_money_rpc_registry \(proname, status, notes\)[\s\S]*?'fn_tournament_payout_reconcile'[\s\S]*?'legacy'/
+    );
   });
 });

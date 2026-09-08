@@ -117,13 +117,38 @@ describe('the SQL side matches: a rebuy needs no seat', () => {
       );
     expect(owning.length).toBeGreaterThan(0);
     const sql = fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8');
-    const predecessor = fs.readFileSync(
-      path.join(MIGRATIONS, '20260830212857_tournament_rebuy_needs_no_seat.sql'),
+    const maintenanceWrapper = sliceBetween(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.process_tournament_rebuy(',
+      'REVOKE ALL ON FUNCTION public.process_tournament_rebuy('
+    );
+    expect(maintenanceWrapper).toMatch(/pg_advisory_xact_lock_shared\(530090, 1\)/);
+    expect(maintenanceWrapper).toMatch(/fn_entry_purchases_frozen\(\)/);
+    expect(maintenanceWrapper).toMatch(
+      /process_tournament_rebuy_before_maintenance_announcement_gate/
+    );
+    expect(maintenanceWrapper).not.toMatch(/table_seats|seat_number|left_at/);
+
+    // The outer maintenance boundary deliberately delegates the already-
+    // audited lifecycle and seat contract instead of duplicating it. Follow
+    // that private core so this law continues to pin the distinction between
+    // a seatless rebuy and an add-on that must land on one live seat.
+    const lifecycleSql = fs.readFileSync(
+      path.join(MIGRATIONS, '20260907205918_tournament_places_settle_and_complete_atomically.sql'),
       'utf8'
     );
-    expect(predecessor).toMatch(/Only an ADD-ON demands a live seat/);
-    expect(sql).toMatch(/process_tournament_rebuy_before_bounty_guard_20260907/);
-    expect(sql).toMatch(/Bubble Protection Already Paid - This Result Cannot Be Resurrected/);
+    const lifecycleWrapper = sliceBetween(
+      lifecycleSql,
+      'CREATE OR REPLACE FUNCTION public.process_tournament_rebuy(',
+      'REVOKE ALL ON FUNCTION public.process_tournament_rebuy('
+    );
+    expect(lifecycleWrapper).toMatch(/IF p_rebuy_type = 'addon' THEN/);
+    expect(lifecycleWrapper).toMatch(/ELSIF p_rebuy_type IN \('rebuy', 'reentry'\) THEN/);
+    expect(lifecycleWrapper).not.toMatch(/table_seats|seat_number|left_at/);
+    expect(lifecycleWrapper).toMatch(/process_tournament_rebuy_before_one_minute_addon/);
+    expect(lifecycleWrapper).toMatch(
+      /IF COALESCE\(v_t\.prize_pool_finalized, false\) THEN[\s\S]*?chip purchases are closed/
+    );
   });
 
   it('opens each prompt once under row locks and reports database-time state', () => {

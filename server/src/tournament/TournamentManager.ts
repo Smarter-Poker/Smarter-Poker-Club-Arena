@@ -138,7 +138,7 @@ export class TournamentManager extends TournamentManagerEliminations {
        * This was `remaining <= finalTableSize` and nothing else, so nine
        * players sitting three-three-three across three felts were declared a
        * final table: everyone got the overlay, the deal poll (which shared
-       * the same shape) opened voting, and `fn_final_table_deal` would chop
+       * the same shape) opened voting, and `fn_settle_final_table_deal_atomic` would chop
        * the pool between nine players who were never at the same table.
        *
        * The count stays as the CHEAP first test — it is what keeps this off

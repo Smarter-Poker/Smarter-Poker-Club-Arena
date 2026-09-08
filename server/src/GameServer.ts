@@ -95,7 +95,6 @@ import {
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { startRakeSpecGuard, stopRakeSpecGuard } from './services/rakeSpecGuard.js';
 import { rakeSpecDriftState } from './config/rakeSpec.js';
-import { fetchAllRows } from './services/supabase/pagination.js';
 import {
   admitOwnedTableEngine,
   replaceOwnedTableEngine,
@@ -285,8 +284,7 @@ export class GameServer {
     errorContext: string,
     metadata?: Record<string, unknown>
   ): void {
-    let tracked!: Promise<void>;
-    tracked = operation
+    const tracked = operation
       .then(() => undefined)
       .catch((error) => reportError(error, errorContext, metadata))
       .finally(() => this.discoveryJobs.delete(tracked));
@@ -298,8 +296,7 @@ export class GameServer {
     errorContext: string,
     metadata?: Record<string, unknown>
   ): void {
-    let tracked!: Promise<void>;
-    tracked = operation
+    const tracked = operation
       .then(() => undefined)
       .catch((error) => reportError(error, errorContext, metadata))
       .finally(() => this.serverLifecycleJobs.delete(tracked));
@@ -583,8 +580,7 @@ export class GameServer {
       reason,
       deferReadmission
     );
-    let tracked!: Promise<void>;
-    tracked = operation.finally(() => {
+    const tracked = operation.finally(() => {
       // De-duplicate only while this exact recovery is live. Retaining a
       // rejected promise here made every later causal retry join the same old
       // rejection forever, so a transient teardown failure permanently
@@ -765,8 +761,7 @@ export class GameServer {
       description,
       generation
     );
-    let tracked!: Promise<void>;
-    tracked = operation.finally(() => {
+    const tracked = operation.finally(() => {
       if (this.tournamentManagerAdmissionOperations.get(tournamentId) === tracked) {
         this.tournamentManagerAdmissionOperations.delete(tournamentId);
       }
@@ -903,8 +898,6 @@ export class GameServer {
   private lastClosedTableReopenSweepAt = 0;
   /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
   private lastConservationAt = 0;
-  /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
-  private lastHuBackpayAt = 0;
   /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
   private lastNoHandResultCheckAt = 0;
   /** Last fn_payout_guarantee_check pass (2026-09-01 every-earner-is-paid). */
@@ -919,8 +912,6 @@ export class GameServer {
   private lastSpinExpireAt = 0;
   /** Last fn_requeue_unbanked_fees pass (2026-08-28 rake re-drive). */
   private lastFeeRequeueAt = 0;
-  /** Last fn_pay_backed_payout_shortfalls pass (2026-08-28 backed payouts). */
-  private lastBackedPayoutAt = 0;
   private running: boolean = false;
   /** One boot and one teardown per orchestrator instance; neither may outrun the other. */
   private startOperation: Promise<void> | null = null;
@@ -1104,6 +1095,22 @@ export class GameServer {
       console.log(
         `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s):`,
         JSON.stringify(summary.last?.shifted ?? null)
+      );
+
+      /* fn_thaw_platform has just moved every open add-on deadline. Managers
+         armed their timers from the pre-break value and clients are counting
+         down that same absolute instant, so both must adopt the committed row
+         before any table resumes. Managers without an active window return
+         without I/O; failures are isolated per event and their live timer
+         keeps re-reading the durable deadline. */
+      await Promise.all(
+        [...this.tournamentEngines.values()].map(async (manager) => {
+          try {
+            await manager.resyncAddOnPeriodAfterMaintenanceThaw();
+          } catch (error) {
+            reportError(error, 'GameServer.addon_period_thaw_resync_failed');
+          }
+        })
       );
     },
   });
@@ -2154,7 +2161,7 @@ export class GameServer {
     let totalHands = 0;
     // FIX 153: Aggregate telemetry from all table engines for health endpoint
     const tableMetrics: any[] = [];
-    for (const [tableId, engine] of this.tableEngines) {
+    for (const engine of this.tableEngines.values()) {
       totalHands += engine.getHandCount();
       const snapshot = engine.getTelemetrySnapshot();
       if (snapshot.tables.length > 0) {
@@ -2176,8 +2183,7 @@ export class GameServer {
     let actionCount = 0;
     let processingViolations = 0;
     let broadcastViolations = 0;
-    for (const [, engine] of this.tableEngines) {
-      const snap = engine.getTelemetrySnapshot();
+    for (const engine of this.tableEngines.values()) {
       // Performance summary is on the telemetry instance via engine
       const perf = engine.getPerformanceSummary();
       if (perf) {
@@ -3457,7 +3463,7 @@ export class GameServer {
              * asking; `created_at` remains the fallback for a row that somehow
              * never recorded one.
              */
-            const { data: staleTourneys } = await supabase
+            const { data: staleTourneys, error: staleTourneysError } = await supabase
               .from('tournaments')
               // payout_structure / variant / tournament_type / spin_multiplier
               // joined the list on 2026-09-06: the sweep now asks the SAME
@@ -3470,16 +3476,22 @@ export class GameServer {
               .or(
                 `started_at.lt.${twelveHoursAgo},and(started_at.is.null,created_at.lt.${twelveHoursAgo})`
               );
-            if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
-            for (const t of staleTourneys || []) {
-              if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
+            if (staleTourneysError) {
+              reportError(
+                new Error(
+                  `[GameServer] Stale-tournament sweep could not list RUNNING tournaments: ${staleTourneysError.message}`
+                ),
+                'GameServer.stale_tournament_list_failed'
+              );
+            }
+            const staleTournamentCandidates = staleTourneysError ? [] : staleTourneys || [];
+            for (const t of staleTournamentCandidates) {
               const { data: recentHands, error } = await supabase
                 .from('hand_history')
                 .select('id')
                 .eq('tournament_id', t.id)
                 .gte('created_at', recentActivityCutoff)
                 .limit(1);
-              if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
 
               if (error) {
                 console.log(
@@ -3549,7 +3561,6 @@ export class GameServer {
                     .select('id', { count: 'exact', head: true })
                     .eq('tournament_id', t.id),
                 ]);
-              if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
               if (liveErr || fieldErr || typeof liveCount !== 'number') {
                 console.log(
                   `[GameServer] Skipping settlement of tournament ${t.id.slice(0, 8)} - could not read its field (${liveErr?.message ?? fieldErr?.message ?? 'no count'}); left RUNNING.`
@@ -3571,28 +3582,24 @@ export class GameServer {
                 continue;
               }
 
-              const { data: completingClaim } = await supabase
-                .from('tournaments')
-                .update({ status: 'COMPLETING' })
-                .eq('id', t.id)
-                .eq('status', 'RUNNING')
-                .select('id');
-              if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
-
-              if (!completingClaim || completingClaim.length === 0) {
-                // Someone else moved it on — leave it alone.
-                continue;
-              }
-
-              await recoverStuckCompletingTournaments('startup-stale-12h-settle', t.id);
-              if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
-              console.log(
-                `[GameServer] Settled genuinely stalled tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no hands) - paid out and COMPLETED, not cancelled`
+              // Silence is not a terminal result. Completion is now entered
+              // only through fn_claim_tournament_finish, which proves one
+              // canonical survivor and writes the immutable claim in the same
+              // transaction. Leave this contest RUNNING so normal lease-backed
+              // discovery can resume its manager; never rank a live field by a
+              // timeout and never manufacture a COMPLETING recovery row.
+              reportError(
+                new Error(
+                  `[GameServer] ${t.name} (${t.id.slice(0, 8)}) has no recent hand after 12h; left RUNNING for lease-backed manager resumption because inactivity is not finish evidence.`
+                ),
+                'GameServer.stale_tournament_left_for_resume'
               );
             }
-            console.log(
-              `[GameServer] Stale-tournament sweep complete (${staleTourneys?.length || 0} reviewed)`
-            );
+            if (!staleTourneysError) {
+              console.log(
+                `[GameServer] Stale-tournament sweep complete (${staleTourneys?.length || 0} reviewed)`
+              );
+            }
 
             // 7. Recover stuck COMPLETING tournaments (crashed during finishTournament flow)
             // TOURNEY-AUDIT 2026-07-24 [CRITICAL]: the old path blind-flipped
@@ -3604,120 +3611,217 @@ export class GameServer {
             // is owed (positions by chip count, prizes per normalized payout
             // structure) before completing.
             await recoverStuckCompletingTournaments('startup-cleanup');
-            if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
 
             // 8. TOURNEY-AUDIT 2026-07-24 (sweep 4): close ORPHANED tournament tables.
             // A crashed/abandoned tournament left its tables status='running' forever
             // (finishTournament only closes tables in the in-memory engine map). Any
             // open table whose tournament is COMPLETED/CANCELLED gets closed here.
             try {
-              const { data: openTourneyTables } = await supabase
-                .from('tables')
-                .select('id, tournament_id')
-                .not('tournament_id', 'is', null)
-                .in('status', ['waiting', 'running', 'RUNNING'])
-                .limit(500);
-              if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
-              if (openTourneyTables && openTourneyTables.length > 0) {
-                const tourneyIds = [...new Set(openTourneyTables.map((t) => t.tournament_id))];
-                const { data: finished } = await supabase
-                  .from('tournaments')
-                  .select('id')
-                  .in('id', tourneyIds)
-                  .in('status', ['COMPLETED', 'CANCELLED']);
-                if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
-                const finishedSet = new Set((finished ?? []).map((t) => t.id));
-                const orphanRows = openTourneyTables
-                  .filter((t) => finishedSet.has(t.tournament_id))
-                  .map((t) => ({ tableId: String(t.id), tournamentId: String(t.tournament_id) }));
-                let closedOrphans = 0;
-                for (let i = 0; i < orphanRows.length; i += 100) {
-                  if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
-                  const batchRows = orphanRows.slice(i, i + 100);
+              const orphanPageSize = 500;
 
-                  /**
-                   * RE-READ THE TOURNAMENT IMMEDIATELY BEFORE THE WRITE
-                   * (2026-08-31). The finished set above was read once, before
-                   * the seat releases and the earlier batches; a tournament that
-                   * was re-opened, or a late-registration event that moved back
-                   * to RUNNING, would have been closed on the strength of a
-                   * stale read. `tablesASweepMayClose` is the rule in one place:
-                   * a SWEEP may only close a table whose tournament is already
-                   * COMPLETED or CANCELLED, and an unreadable status counts as
-                   * not-terminal, so the table is left open. See
-                   * services/tableCloseGuard.ts for the two outages behind it.
-                   */
-                  const { data: freshStatuses, error: freshErr } = await supabase
-                    .from('tournaments')
-                    .select('id, status')
-                    .in('id', [...new Set(batchRows.map((r) => r.tournamentId))]);
-                  if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
-                  if (freshErr) {
-                    reportError(
-                      new Error(
-                        `[GameServer] orphan sweep status re-read failed: ${freshErr.message}`
-                      ),
-                      'GameServer.orphan_status_reread_failed'
-                    );
-                    continue; // unreadable is UNKNOWN, and UNKNOWN never closes
-                  }
-                  const statusByTournament = new Map<string, string>(
-                    (freshStatuses ?? []).map((t) => [
-                      String((t as { id: string }).id),
-                      String((t as { status?: string }).status ?? ''),
-                    ])
-                  );
-                  const batch = tablesASweepMayClose(batchRows, statusByTournament);
-                  if (batch.length === 0) continue;
-
-                  /**
-                   * RELEASE THE SEATS, not just the table (audit 2026-08-21).
-                   *
-                   * TournamentManagerEliminations releases seats on the NORMAL
-                   * finish, but a tournament can reach COMPLETED/CANCELLED without
-                   * ever passing through it - a crashed engine, the stuck-COMPLETING
-                   * recovery, or the 12-hour idle sweep. Those paths landed here,
-                   * where the table was closed and `table_seats` was left untouched,
-                   * so seats kept leaking at a slower rate after the main fix. Two
-                   * had already reappeared within hours of it shipping.
-                   *
-                   * This is the catch-all: whatever route a tournament took to
-                   * finished, its players end up released. `left_at IS NULL` is what
-                   * the multi-table rebuild reads as "I am still playing here", so a
-                   * seat left open at a closed table follows the player around as a
-                   * dead tab until something clears it.
-                   */
-                  const { error: seatErr } = await supabase
-                    .from('table_seats')
-                    .update({ left_at: new Date().toISOString() })
-                    .in('table_id', batch)
-                    .is('left_at', null);
-                  if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
-                  if (seatErr) {
-                    reportError(
-                      new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
-                      'GameServer.orphan_seat_release_failed'
-                    );
-                  }
-
-                  await supabase
-                    .from('tables')
-                    .update({ status: 'closed', current_players: 0 })
-                    .in('id', batch);
-                  if (!this.directAdmissionIsCurrent(cleanupGeneration)) return;
-                  closedOrphans += batch.length;
+              /**
+               * Candidate from evidence, not history (2026-09-07).
+               *
+               * This sweep briefly keyset-paged every tournament table so it could
+               * still find an already-closed table with a leaked live seat. That
+               * made each engine boot scan the complete historical table estate and
+               * then rewrite every terminal row, even when `status='closed'` and
+               * `current_players=0` were already exact. The returned rows were then
+               * reported as repairs, so a clean restart looked like a large cleanup.
+               *
+               * The evidence set is the union of (a) tournament tables whose own
+               * terminal fields need work and (b) table ids on live seats. The
+               * second set preserves the closed-table/leaked-seat case without
+               * reading or writing unrelated history. Both reads are keyset-paged;
+               * a failure makes the whole sweep UNKNOWN and therefore closes
+               * nothing.
+               */
+              const orphanCandidates = new Map<string, { tableId: string; tournamentId: string }>();
+              let afterTableId: string | null = null;
+              while (true) {
+                let nonterminalTableQuery = supabase
+                  .from('tables')
+                  .select('id, tournament_id, status, current_players')
+                  .not('tournament_id', 'is', null)
+                  .or(
+                    'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
+                  )
+                  .order('id', { ascending: true })
+                  .limit(orphanPageSize);
+                if (afterTableId) {
+                  nonterminalTableQuery = nonterminalTableQuery.gt('id', afterTableId);
                 }
-                if (closedOrphans > 0) {
-                  console.log(
-                    `[GameServer] Closed ${closedOrphans} orphaned tournament tables and released their seats`
-                  );
+                const { data: nonterminalTables, error: openTableError } =
+                  await nonterminalTableQuery;
+                if (openTableError) {
+                  throw new Error(`orphan table list failed: ${openTableError.message}`);
                 }
+                if (!nonterminalTables || nonterminalTables.length === 0) break;
+                for (const table of nonterminalTables) {
+                  orphanCandidates.set(String(table.id), {
+                    tableId: String(table.id),
+                    tournamentId: String(table.tournament_id),
+                  });
+                }
+                afterTableId = String(nonterminalTables[nonterminalTables.length - 1].id);
+                if (nonterminalTables.length < orphanPageSize) break;
               }
+
+              let afterSeatId: string | null = null;
+              while (true) {
+                let liveSeatQuery = supabase
+                  .from('table_seats')
+                  .select('id, table_id')
+                  .is('left_at', null)
+                  .order('id', { ascending: true })
+                  .limit(orphanPageSize);
+                if (afterSeatId) liveSeatQuery = liveSeatQuery.gt('id', afterSeatId);
+                const { data: liveSeats, error: liveSeatListError } = await liveSeatQuery;
+                if (liveSeatListError) {
+                  throw new Error(`orphan live-seat list failed: ${liveSeatListError.message}`);
+                }
+                if (!liveSeats || liveSeats.length === 0) break;
+                afterSeatId = String(liveSeats[liveSeats.length - 1].id);
+
+                const liveSeatTableIds = [
+                  ...new Set(liveSeats.map((seat) => String(seat.table_id))),
+                ];
+                for (let i = 0; i < liveSeatTableIds.length; i += 100) {
+                  const { data: tournamentTables, error: liveSeatTableError } = await supabase
+                    .from('tables')
+                    .select('id, tournament_id, status, current_players')
+                    .in('id', liveSeatTableIds.slice(i, i + 100))
+                    .not('tournament_id', 'is', null);
+                  if (liveSeatTableError) {
+                    throw new Error(
+                      `orphan live-seat table lookup failed: ${liveSeatTableError.message}`
+                    );
+                  }
+                  for (const table of tournamentTables ?? []) {
+                    orphanCandidates.set(String(table.id), {
+                      tableId: String(table.id),
+                      tournamentId: String(table.tournament_id),
+                    });
+                  }
+                }
+                if (liveSeats.length < orphanPageSize) break;
+              }
+
+              const orphanRows = [...orphanCandidates.values()].sort((a, b) =>
+                a.tableId.localeCompare(b.tableId)
+              );
+              let closedOrphans = 0;
+              let releasedOrphanSeats = 0;
+              for (let i = 0; i < orphanRows.length; i += 100) {
+                const batchRows = orphanRows.slice(i, i + 100);
+
+                /**
+                 * RE-READ THE TOURNAMENT IMMEDIATELY BEFORE THE WRITE
+                 * (2026-08-31). The candidate evidence above can become stale;
+                 * `tablesASweepMayClose` is the rule in one place: a sweep may
+                 * only close a table whose tournament is already COMPLETED or
+                 * CANCELLED, and an unreadable status leaves the table alone.
+                 */
+                const { data: freshStatuses, error: freshErr } = await supabase
+                  .from('tournaments')
+                  .select('id, status')
+                  .in('id', [...new Set(batchRows.map((r) => r.tournamentId))]);
+                if (freshErr) {
+                  reportError(
+                    new Error(
+                      `[GameServer] orphan sweep status re-read failed: ${freshErr.message}`
+                    ),
+                    'GameServer.orphan_status_reread_failed'
+                  );
+                  continue; // unreadable is UNKNOWN, and UNKNOWN never closes
+                }
+                const statusByTournament = new Map<string, string>(
+                  (freshStatuses ?? []).map((t) => [
+                    String((t as { id: string }).id),
+                    String((t as { status?: string }).status ?? ''),
+                  ])
+                );
+                const batch = tablesASweepMayClose(batchRows, statusByTournament);
+                if (batch.length === 0) continue;
+
+                const { data: releasedSeats, error: seatErr } = await supabase
+                  .from('table_seats')
+                  .update({ left_at: new Date().toISOString() })
+                  .in('table_id', batch)
+                  .is('left_at', null)
+                  .select('id');
+                if (seatErr) {
+                  reportError(
+                    new Error(`[GameServer] orphan seat release failed: ${seatErr.message}`),
+                    'GameServer.orphan_seat_release_failed'
+                  );
+                  continue;
+                }
+                releasedOrphanSeats += releasedSeats?.length ?? 0;
+
+                // Do not turn a clean historical row into a write. The final
+                // read below proves both changed and already-correct candidates.
+                const { data: closedRows, error: closeError } = await supabase
+                  .from('tables')
+                  .update({ status: 'closed', current_players: 0 })
+                  .in('id', batch)
+                  .or(
+                    'status.neq.closed,status.is.null,current_players.neq.0,current_players.is.null'
+                  )
+                  .select('id');
+                if (closeError) {
+                  reportError(
+                    new Error(`[GameServer] orphan table close failed: ${closeError.message}`),
+                    'GameServer.orphan_table_close_failed'
+                  );
+                  continue;
+                }
+
+                const [seatProof, tableProof] = await Promise.all([
+                  supabase
+                    .from('table_seats')
+                    .select('id', { count: 'exact', head: true })
+                    .in('table_id', batch)
+                    .is('left_at', null),
+                  supabase.from('tables').select('id, status, current_players').in('id', batch),
+                ]);
+                if (seatProof.error || seatProof.count !== 0) {
+                  reportError(
+                    new Error(
+                      `[GameServer] orphan seat release proof failed: ${seatProof.error?.message ?? `${seatProof.count ?? 'unknown'} live seat(s) remain`}`
+                    ),
+                    'GameServer.orphan_seat_release_unproven'
+                  );
+                  continue;
+                }
+                const terminalTables = tableProof.data ?? [];
+                if (
+                  tableProof.error ||
+                  terminalTables.length !== batch.length ||
+                  terminalTables.some(
+                    (table) => table.status !== 'closed' || table.current_players !== 0
+                  )
+                ) {
+                  reportError(
+                    new Error(
+                      `[GameServer] orphan table close proof failed: ${tableProof.error?.message ?? `${terminalTables.length}/${batch.length} rows read back terminal`}`
+                    ),
+                    'GameServer.orphan_table_close_unproven'
+                  );
+                  continue;
+                }
+                closedOrphans += closedRows?.length ?? 0;
+              }
+
+              if (closedOrphans > 0 || releasedOrphanSeats > 0) {
+                console.log(
+                  `[GameServer] Reconciled ${closedOrphans} terminal tournament table state(s) and released ${releasedOrphanSeats} leaked seat(s)`
+                );
+              }
+              console.log('[GameServer] Stale data cleanup complete');
             } catch (orphanErr) {
               reportError(orphanErr, 'GameServer.orphan_table_sweep');
             }
-
-            console.log('[GameServer] Stale data cleanup complete');
           } catch (bgErr) {
             reportError(bgErr, 'GameServer.background_stale_cleanup_error');
           }
@@ -3896,15 +4000,6 @@ export class GameServer {
          */
         const ENGINE_START_STAGGER_MS = 40;
         let startedThisSweep = 0;
-        /**
-         * Read and clear BEFORE the loop, not after. The .catch that increments
-         * it is asynchronous, so failures from starts issued in this sweep may
-         * land after the loop has finished - they belong to the next sweep's
-         * verdict, and clearing here is what makes that happen instead of them
-         * being double-counted or lost.
-         */
-        const failuresSinceLastSweep = this.engineStartFailures;
-        this.engineStartFailures = 0;
         const budgetThisSweep = this.engineStartBudget;
         for (const row of (ready || []) as Array<{
           table_id: string;
@@ -4712,55 +4807,6 @@ export class GameServer {
           }
         }
 
-        // ── HEADS-UP SHORTFALL BACK-PAY + CONSERVATION SENTINEL (2026-08-27) ──
-        // Back-pay: every completed Heads-Up whose winner was paid one prize
-        // share instead of two (the createSNG pool overwrite, ~230,561 chips
-        // over 30 days) is repaid, evidence-based and idempotent
-        // (fn_credit_and_log key per tournament+winner). Self-draining: paid
-        // events fall out of the scan, so the backlog can only shrink.
-        //
-        // CORRECTED 2026-08-28: this used to say the backlog could only shrink
-        // "because of the cutoff date". That cutoff was a literal
-        // `ended_at < '2026-08-28T00:00:00Z'` inside the RPC, and on 2026-08-28
-        // it stopped matching anything at all - the sweep would have reported a
-        // clean paid:0 forever while new shortfalls piled up behind it. The
-        // window is a rolling 30 days now (with a 30-minute settling grace so
-        // an event still writing its prize credits is never back-paid
-        // mid-finalisation). What makes it drain is the idempotency key and the
-        // NOT EXISTS on the back-pay row, not a date that expires.
-        //
-        // ITS OWN TIMER (2026-08-27, phase 3d). This used to run inside a
-        // 60-second window that opened only when the RAKE sweep had just
-        // fired -- a piggyback on another job's clock. In production that
-        // meant it ran once on engine boot and then effectively never again:
-        // 100 winners repaid at 15:32 after a deploy, then nothing, with
-        // 8,600 events and ~211,000 chips still owed. Money owed to players
-        // must not depend on when a different sweep happens to tick, so this
-        // now keeps its own interval like every other periodic job here.
-        // 250 per pass drains the remaining backlog in about three hours
-        // instead of fourteen; the RPC is ~270ms and fully idempotent.
-        if (Date.now() - this.lastHuBackpayAt > 5 * 60 * 1000) {
-          this.lastHuBackpayAt = Date.now();
-          try {
-            const { data: bp, error: bpErr } = await supabase.rpc(
-              'fn_backpay_hu_winner_shortfalls',
-              { p_limit: 250 }
-            );
-            if (bpErr) {
-              reportError(
-                new Error(`[GameServer] HU shortfall back-pay failed: ${bpErr.message}`),
-                'GameServer.hu_backpay_failed'
-              );
-            } else if (Number(bp?.paid) > 0) {
-              console.log(
-                `[GameServer] HU shortfall back-pay: ${bp.paid} winner(s), ${bp.chips} chips (scanned ${bp.scanned})`
-              );
-            }
-          } catch (bpEx) {
-            reportError(bpEx, 'GameServer.hu_backpay_threw');
-          }
-        }
-
         // Conservation: per-event money in vs money out (prizes + bounties +
         // refunds + booked rake + funded overlay). Every 6 hours; anything
         // beyond tolerance files a deduped financial_alert. This is the
@@ -5083,140 +5129,14 @@ export class GameServer {
           }
         }
 
-        // ── BACKED PAYOUT SHORTFALLS (2026-08-28) ──
-        // Events that finished owing an identifiable finisher money AND still
-        // hold the chips to pay it. The rule is strict and lives in the RPC:
-        // pay only where fn_tournament_conservation_delta >= total_top_up, so
-        // an event can never be pushed into deficit to make a player whole,
-        // and refuse afterwards if conservation would go negative anyway.
-        // Spins and satellites are excluded - a Spin's pool is funded by the
-        // Reserve Pool rather than its own collections, and a satellite awards
-        // seats, so neither delta means what it means elsewhere.
-        //
-        // Wired here because the playbook's own wiring check caught it as dead
-        // code: it had been run by hand and had no caller. Everything else in
-        // this block learned the same lesson the hard way - a repair that
-        // depends on someone remembering to run it does not run.
-        if (Date.now() - this.lastBackedPayoutAt > 60 * 60 * 1000) {
-          this.lastBackedPayoutAt = Date.now();
-          try {
-            const { data: bp, error: bpErr } = await supabase.rpc(
-              'fn_pay_backed_payout_shortfalls',
-              { p_apply: true, p_limit: 500 }
-            );
-            if (bpErr) {
-              reportError(
-                new Error(`[GameServer] backed payout sweep failed: ${bpErr.message}`),
-                'GameServer.backed_payout_failed'
-              );
-            } else if (
-              Number(bp?.events_paid) > 0 ||
-              Number(bp?.events_withheld_unfunded_pool) > 0
-            ) {
-              console.log(
-                `[GameServer] Backed payout sweep: ${bp.events_paid} event(s) paid ${bp.chips_paid} chips, ` +
-                  `${bp.events_withheld_unfunded_pool} withheld (${bp.chips_withheld_unfunded_pool} chips, unfunded pools)`
-              );
-            }
-          } catch (bpEx) {
-            reportError(bpEx, 'GameServer.backed_payout_threw');
-          }
-        }
-
-        // ── PLAYED-BUT-STILL-REGISTERING RECOVERY (2026-08-23) ──
-        //
-        // The mirror of the stalled-RUNNING sweep below, for the failure at
-        // the OTHER end of the lifecycle: start() dealt the game but its
-        // REGISTERING -> RUNNING flip never landed (see the retry there). The
-        // row still says REGISTERING while its players hold positions and
-        // elimination stamps, so every other watchdog looks straight past it
-        // — COMPLETING sweeps read COMPLETING, the decided sweep reads
-        // RUNNING. Found live: 11 tournaments, 22-33 hours old, 570 chips
-        // debited against 48 paid out.
-        //
-        // The evidence a game actually dealt is an eliminated/winner/finished
-        // player row; registration alone never produces one. Given that, the
-        // row is relabelled to what it truly is: still contested -> RUNNING
-        // (the resume path above adopts it on the next pass); already decided
-        // -> COMPLETING, then through the SAME recovery that pays stuck
-        // finishers.
-        const { data: playedButRegistering } = await supabase
-          .from('tournaments')
-          .select('id, name, status')
-          .in('status', ['REGISTERING', 'ANNOUNCED'])
-          .lt('start_time', new Date(Date.now() - 10 * 60 * 1000).toISOString());
-        for (const t of playedButRegistering || []) {
-          const { count: playedCount, error: playedErr } = await supabase
-            .from('tournament_players')
-            .select('*', { count: 'exact', head: true })
-            .eq('tournament_id', t.id)
-            .in('status', ['eliminated', 'winner', 'finished']);
-          // Unreadable is UNKNOWN, never "it never dealt" — fail closed.
-          if (playedErr || !playedCount) continue;
-
-          const { count: stillPlaying, error: stillErr } = await supabase
-            .from('tournament_players')
-            .select('*', { count: 'exact', head: true })
-            .eq('tournament_id', t.id)
-            .eq('status', 'playing');
-          if (stillErr || stillPlaying === null || stillPlaying === undefined) continue;
-
-          console.warn(
-            `[GameServer] ${t.name} (${t.id.slice(0, 8)}) dealt but never left ${t.status} - ${playedCount} finished, ${stillPlaying} playing; relabelling`
-          );
-
-          if (stillPlaying > 1) {
-            // A live contest wearing the wrong label. Hand it to the resume
-            // path rather than settling a game that is still being played.
-            await supabase
-              .from('tournaments')
-              .update({ status: 'RUNNING', started_at: new Date().toISOString() })
-              .eq('id', t.id)
-              .in('status', ['REGISTERING', 'ANNOUNCED']);
-            continue;
-          }
-
-          /**
-           * ZERO PLAYING IS "NEVER DEALT", NOT "DECIDED" (2026-08-31).
-           *
-           * `stillPlaying > 1` sends a live contest back to RUNNING, and
-           * everything else fell through to COMPLETING — including ZERO. In a
-           * tournament that has not started nobody is 'playing': every entrant
-           * is 'registered'. So this settled events that had dealt nothing,
-           * and recoverStuckCompleting then paid the whole payout structure to
-           * registered entrants in arbitrary chip order. See the dfae9288 note
-           * in tournamentRecovery.ts — 20,880 chips to players who went on to
-           * finish 107th and 87th.
-           *
-           * A decided game has exactly one player left standing. Zero means
-           * the label is wrong for some other reason, and settling is a guess.
-           */
-          if (stillPlaying === 0) {
-            reportError(
-              new Error(
-                `[GameServer] ${t.name} (${t.id.slice(0, 8)}) is ${t.status} with ${playedCount} finished and NOBODY playing - that is not a decided game, it is a mislabelled one. Not settling; left ${t.status} for review.`
-              ),
-              'GameServer.played_registering_zero_playing'
-            );
-            continue;
-          }
-
-          const staleTm = this.tournamentEngines.get(t.id);
-          if (staleTm) {
-            await this.stopTournamentManagerIfOwned(
-              String(t.id),
-              staleTm,
-              'GameServer.played_registering_stop_engine'
-            );
-          }
-          // CAS so a concurrent legitimate transition is never clobbered.
-          await supabase
-            .from('tournaments')
-            .update({ status: 'COMPLETING' })
-            .eq('id', t.id)
-            .in('status', ['REGISTERING', 'ANNOUNCED']);
-          await recoverStuckCompletingTournaments('played-but-registering', t.id);
-        }
+        /* The former PLAYED-BUT-STILL-REGISTERING repair is intentionally
+           gone. It was compensating for start() dealing before its lifecycle
+           transition committed. Launch setup now completes through one
+           immutable receipt transaction and dealer admission happens only
+           afterwards, so that state is structurally impossible. Keeping a
+           periodic direct relabel would create a second, receipt-free door to
+           RUNNING and turn a fixed invariant back into reconciliation. A
+           production pre-deploy proof on 2026-09-07 found zero legacy rows. */
 
         // ── STALLED DECIDED-BUT-RUNNING RECOVERY (2026-08-21) ──
         // A tournament whose LAST elimination was processed but whose finish
@@ -5248,22 +5168,21 @@ export class GameServer {
           console.warn(
             `[GameServer] RUNNING tournament ${t.name} (${t.id.slice(0, 8)}) is decided (${playingCount} playing) - recovering the winner`
           );
-          const idleTm = this.tournamentEngines.get(t.id);
+          const idleTm = this.tournamentEngines.get(String(t.id));
           if (idleTm) {
-            await this.stopTournamentManagerIfOwned(
-              String(t.id),
-              idleTm,
-              'GameServer.stalled_decided_stop_engine'
+            idleTm.requestEliminationSweep('stalled_decided_survivor');
+          } else {
+            this.launchDiscoveryJob(
+              this.ensureTournamentManagerAdmission(
+                String(t.id),
+                'resume',
+                `Resuming decided tournament through its finish owner: ${t.name}`,
+                generation
+              ),
+              'GameServer.stalled_decided_resume_failed',
+              { tournamentId: String(t.id) }
             );
           }
-          // Conditional flip so a concurrent legitimate finish is never clobbered;
-          // recovery itself only acts on COMPLETING rows and dedupes payouts.
-          await supabase
-            .from('tournaments')
-            .update({ status: 'COMPLETING' })
-            .eq('id', t.id)
-            .eq('status', 'RUNNING');
-          await recoverStuckCompletingTournaments('stalled-running-decided', t.id);
         }
 
         // ── STARTED-BUT-NEVER-DEALT RECOVERY (2026-08-24) ──
@@ -5283,11 +5202,13 @@ export class GameServer {
         // never-dealt game has a full field. So the paid players sit at a
         // dead felt forever, buy-ins committed.
         //
-        // Recovery: hand the game back to the start gate. Stop any idle
-        // manager holding the map entry, flip RUNNING -> REGISTERING (CAS),
-        // and the discovery pass above re-adopts it - registrations and seats
-        // are intact, a drawn spin multiplier is kept, settlement is
-        // idempotent, createTablesAndSeatPlayers adopts the existing table.
+        // Recovery: preserve the durably completed RUNNING launch. Stop the
+        // exact idle manager generation holding the map entry; the ordinary
+        // RUNNING discovery path above then resumes it from its existing
+        // tables and seats on the next pass. Rewinding to REGISTERING used to
+        // erase the lifecycle truth. With an immutable completed launch
+        // receipt it also creates an impossible state that no start or resume
+        // path may legally adopt.
         //
         // Budgeted to 15 candidates a pass so a pathological backlog cannot
         // turn this sweep into its own outage; in steady state it is empty.
@@ -5371,7 +5292,7 @@ export class GameServer {
           if (liveSeats < stillPlaying) continue;
 
           console.warn(
-            `[GameServer] RUNNING ${t.name} (${t.id.slice(0, 8)}) has dealt nothing since ${t.started_at} - requeueing for a fresh start`
+            `[GameServer] RUNNING ${t.name} (${t.id.slice(0, 8)}) has dealt nothing since ${t.started_at} - releasing its idle manager for RUNNING resume`
           );
           const idleNeverDealtTm = this.tournamentEngines.get(t.id);
           if (idleNeverDealtTm) {
@@ -5381,12 +5302,10 @@ export class GameServer {
               'GameServer.never_dealt_stop_engine'
             );
           }
-          // CAS so a game that just dealt or finished is never clobbered.
-          await supabase
-            .from('tournaments')
-            .update({ status: 'REGISTERING' })
-            .eq('id', t.id)
-            .eq('status', 'RUNNING');
+          // Do not mutate durable lifecycle state here. A tournament that
+          // just dealt or completed is harmlessly left alone; a genuinely
+          // never-dealt RUNNING tournament is visible to normal resume as
+          // soon as the exact old manager has left the ownership map.
         }
       } catch (err) {
         reportError(err, 'GameServer.Tournament_discovery_error');
@@ -6573,22 +6492,21 @@ export class GameServer {
         const liveStacks = new Set((seats || []).map((s) => String(s.user_id))).size;
         if (liveStacks > 1) continue;
 
-        /* CAS: only the holder of RUNNING may move it on, so a live engine
-           finishing this game right now always wins and this becomes a
-           no-op. Same claim the 12-hour path uses. */
-        const { data: claim, error: claimErr } = await supabase
-          .from('tournaments')
-          .update({ status: 'COMPLETING' })
-          .eq('id', id)
-          .eq('status', 'RUNNING')
-          .select('id');
-        if (claimErr) throw claimErr;
-        if (!claim || claim.length === 0) continue; // somebody else has it
-
-        console.warn(
-          `[GameServer] Seat-first game ${id.slice(0, 8)} "${t.name}" is over but never finished (${liveStacks} live stack(s), no hand for >${Math.round(STUCK_NO_HAND_MS / 60000)}m) - settling and paying out`
-        );
-        await recoverStuckCompletingTournaments('seat-first-finish-sweep', id);
+        // A zero stack is an elimination event, not permission for an external
+        // watchdog to choose a winner. Wake (or adopt) the one manager whose
+        // bounded elimination transaction owns standings and the immutable
+        // RUNNING -> COMPLETING claim.
+        const claimedManager = this.tournamentEngines.get(id);
+        if (claimedManager) {
+          claimedManager.requestEliminationSweep('seat_first_terminal_stack');
+        } else {
+          await this.ensureTournamentManagerAdmission(
+            id,
+            'resume',
+            `Resuming seat-first terminal state: ${t.name}`,
+            this.lifecycleGeneration
+          );
+        }
       } catch (err) {
         reportError(err, 'GameServer.seat_first_finish_sweep_failed', { tournamentId: id });
       }
@@ -6845,6 +6763,72 @@ export class GameServer {
   }
 
   /**
+   * Release a terminal tournament manager's table engine after that exact
+   * instance has stopped and the caller has durably closed the table. A stale
+   * manager must never delete a replacement dealer that won the same map slot
+   * while its shutdown was awaiting I/O.
+   *
+   * Returning false means a different live instance owns the slot. A missing
+   * slot is already unregistered and is therefore an idempotent success.
+   */
+  unregisterTableEngine(tableId: string, engine: ServerTableEngine): boolean {
+    const current = this.tableEngines.get(tableId);
+    if (current === undefined) {
+      this.tournamentOwnedTables.delete(tableId);
+      tableStateHub.dropTable(tableId);
+      return true;
+    }
+    if (current !== engine) return false;
+    this.tableEngines.delete(tableId);
+    this.tournamentOwnedTables.delete(tableId);
+    tableStateHub.dropTable(tableId);
+    return true;
+  }
+
+  /**
+   * Stop whichever engine currently owns a tournament table, but only after a
+   * fresh database read proves that table is terminal. This closes the narrow
+   * race where a replacement takes GameServer's map slot while the tournament
+   * manager is awaiting its old engine's stop. The post-await unregister is
+   * still exact-instance guarded, so a second replacement can never be erased.
+   */
+  async stopClosedTournamentTableEngine(tableId: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('tables')
+      .select('status, tournament_id')
+      .eq('id', tableId)
+      .maybeSingle();
+    const row = data as { status?: string | null; tournament_id?: string | null } | null;
+    if (error || !row || row.status !== 'closed' || !row.tournament_id) {
+      reportError(
+        new Error(
+          `[GameServer] refused terminal engine stop for ${tableId}: ${error?.message ?? `status=${row?.status ?? 'missing'}, tournament=${row?.tournament_id ?? 'missing'}`}`
+        ),
+        'GameServer.terminal_table_engine_stop_unproven'
+      );
+      return false;
+    }
+
+    const current = this.tableEngines.get(tableId);
+    if (!current) {
+      // The desired map state already holds. Finish the two terminal ownership
+      // tails that no future engine-map reaper can discover once the slot is
+      // absent.
+      this.tournamentOwnedTables.delete(tableId);
+      tableStateHub.dropTable(tableId);
+      return true;
+    }
+
+    try {
+      await current.stop();
+    } catch (stopError) {
+      reportError(stopError, 'GameServer.terminal_table_engine_stop_failed', { tableId });
+      return false;
+    }
+    return this.unregisterTableEngine(tableId, current);
+  }
+
+  /**
    * Ensure one newly-created cash table has a live engine before an authorized
    * WebSocket viewer is admitted.
    *
@@ -6875,8 +6859,7 @@ export class GameServer {
 
     const generation = this.lifecycleGeneration;
     const operation = this.performCashTableEngineAdmission(tableId, generation);
-    let tracked!: Promise<DirectTableAdmission>;
-    tracked = operation.finally(() => {
+    const tracked = operation.finally(() => {
       if (this.directTableAdmissionOperations.get(tableId) === tracked) {
         this.directTableAdmissionOperations.delete(tableId);
       }

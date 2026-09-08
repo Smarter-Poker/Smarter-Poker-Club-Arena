@@ -28,6 +28,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { computePlacePrize } from './payoutMath.js';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -36,9 +37,25 @@ const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const ATOMIC_ELIMINATION = read(
   '../supabase/migrations/20260907180000_bounty_elimination_outbox_is_atomic_and_recoverable.sql'
 );
+const ATOMIC_FINAL_TABLE_DEAL = read(
+  '../supabase/migrations/20260907205954_a_final_table_deal_pays_every_share_or_none.sql'
+);
+const FINISH_CERTIFICATE = read(
+  '../supabase/migrations/20260907210000_completed_means_financially_certified.sql'
+);
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+/** Isolate one PL/pgSQL definition so an assertion cannot pass on a sibling function. */
+const sqlFunction = (src: string, name: string): string => {
+  const start = src.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
+  if (start < 0) throw new Error(`SQL function ${name} is missing`);
+  const bodyStart = src.indexOf('AS $function$', start);
+  const end = src.indexOf('$function$;', bodyStart);
+  if (bodyStart < 0 || end < 0) throw new Error(`SQL function ${name} has no complete body`);
+  return src.slice(start, end + '$function$;'.length);
+};
 
 // The 9-place structure carried by 410 live tournaments, verbatim.
 const NINE_PLACE = [
@@ -299,6 +316,17 @@ describe('finishing places must be distinct - in the rescue path too', () => {
     // 12 extra payments.
     expect(code(RECOVERY)).toMatch(/recoverStuckCompleting_position_collision/);
   });
+
+  it('proves there is no position collision before funding the guarantee', () => {
+    const recovery = sliceMethod(
+      code(RECOVERY),
+      'export async function recoverStuckCompletingTournaments('
+    );
+    const collision = recovery.indexOf('if (collisions.length > 0)');
+    const funding = recovery.indexOf("'fn_apply_prize_guarantee'");
+    expect(collision).toBeGreaterThan(-1);
+    expect(funding).toBeGreaterThan(collision);
+  });
 });
 
 /**
@@ -374,16 +402,80 @@ describe('a write that decides a payout is checked', () => {
     expect(code(ELIM)).toMatch(/final_table_deal_winner_stamp_failed/);
   });
 
-  it('a settled final-table deal that stays COMPLETING is reported, not swallowed', () => {
-    // The database certificate refuses the transition until every deal share,
-    // bounty and rake obligation is proven. The event remains COMPLETING and
-    // the durable deal-receipt recovery path can re-drive it.
-    expect(code(ELIM)).toMatch(/final_table_deal_financial_completion_failed/);
+  it('the final-table-deal domain transaction owns every payment and COMPLETED together', () => {
+    const atomic = sqlFunction(ATOMIC_FINAL_TABLE_DEAL, 'fn_settle_final_table_deal_atomic(');
+    const claim = atomic.indexOf("SET status = 'COMPLETING'");
+    const firstPayment = atomic.indexOf(
+      'fn_settle_tournament_obligation_before_atomic_batch_gate(',
+      claim
+    );
+    const proof = atomic.indexOf('fn_check_atomic_final_table_deal(p_tournament_id)', firstPayment);
+    const bounty = atomic.indexOf('fn_finalize_bounty_pool(p_tournament_id, v_leader)', proof);
+    const rake = atomic.indexOf('fn_settle_tournament_rake(', proof);
+    const complete = atomic.indexOf("SET status = 'COMPLETED'", rake);
+    const rollbackBoundary = atomic.indexOf('EXCEPTION WHEN OTHERS', complete);
+
+    expect(claim).toBeGreaterThanOrEqual(0);
+    expect(firstPayment).toBeGreaterThan(claim);
+    expect(proof).toBeGreaterThan(firstPayment);
+    expect(bounty).toBeGreaterThan(proof);
+    expect(rake).toBeGreaterThan(proof);
+    expect(complete).toBeGreaterThan(Math.max(bounty, rake));
+    expect(rollbackBoundary).toBeGreaterThan(complete);
+    expect(atomic).toMatch(/IF v_failure IS NOT NULL THEN[\s\S]*?'paid', 0, 'completed', false/);
   });
 
-  it('the rescue only claims to have recovered a tournament it actually completed', () => {
-    expect(code(RECOVERY)).toMatch(/if \(!completion\.ok \|\| !completion\.certified\)/);
-    expect(code(RECOVERY)).toMatch(/financial completion refused/);
+  it('COMPLETED is synchronously certified by the database, never by a runtime follow-up', () => {
+    const guard = sqlFunction(FINISH_CERTIFICATE, 'fn_guard_tournament_completed_certificate()');
+    const readiness = guard.indexOf('fn_tournament_finish_readiness(NEW.id,v_winner)');
+    const refusal = guard.indexOf(
+      "RAISE EXCEPTION 'tournament % is not financially certified",
+      readiness
+    );
+    const receipt = guard.indexOf('UPDATE public.tournament_finish_receipts', refusal);
+
+    expect(readiness).toBeGreaterThanOrEqual(0);
+    expect(refusal).toBeGreaterThan(readiness);
+    expect(receipt).toBeGreaterThan(refusal);
+    expect(FINISH_CERTIFICATE).toMatch(
+      /CREATE TRIGGER zzzzzz_tournaments_financial_certificate[\s\S]*?BEFORE UPDATE OF status[\s\S]*?WHEN \(NEW\.status = 'COMPLETED'/
+    );
+    expect(code(ELIM)).not.toMatch(/certifyTournamentFinish/);
+    expect(code(RECOVERY)).not.toMatch(/certifyTournamentFinish/);
+  });
+
+  it('a final-table deal requires atomic completion proof before its runtime tail', () => {
+    // The former server loop could pay some shares, fail another, and still
+    // write COMPLETED. The database RPC now owns shares + standings + terminal
+    // state, and the server refuses to continue on ok:true without completed.
+    const deal = sliceMethod(code(ELIM), 'protected async checkFinalTableDeal(');
+    const proof = deal.indexOf('if (!deal.ok || !deal.completed)');
+    const tail = deal.indexOf('return this.settleFinalTableDeal(deal)');
+
+    expect(deal).toMatch(/settleFinalTableDealAtomically\(supabase, this\.tournamentId\)/);
+    expect(proof).toBeGreaterThanOrEqual(0);
+    expect(tail).toBeGreaterThan(proof);
+  });
+
+  it('the rescue only claims success after the atomic settlement proves completion', () => {
+    const recovery = sliceMethod(
+      code(RECOVERY),
+      'export async function recoverStuckCompletingTournaments('
+    );
+    const proof = recovery.indexOf('if (!settlement.ok || !settlement.completed)');
+    const success = recovery.indexOf('[GameServer] Recovered stuck COMPLETING tournament');
+
+    expect(recovery).toMatch(/await settleTournamentPlacesAtomically\(/);
+    expect(recovery).toMatch(
+      /if \(!settlement\.ok \|\| !settlement\.completed\) \{[\s\S]*?throw new Error/
+    );
+    expect(
+      proof,
+      'the recovery path must reject a response without completion proof'
+    ).toBeGreaterThanOrEqual(0);
+    expect(success, 'the recovery path must retain an observable success report').toBeGreaterThan(
+      proof
+    );
   });
 });
 

@@ -397,6 +397,10 @@ export class EngineStateClient {
   //          onclose -> scheduleReconnect backoff ladder. This is the escape
   //          hatch that did not exist before.
   private lastInboundAt = 0;
+  /** Heartbeats prove transport liveness, not delivery of a requested snapshot. */
+  private pendingSnapshotSince: number | null = null;
+  /** Wake grace must not forgive resyncs that still have no snapshot reply. */
+  private unansweredSnapshotResyncs = 0;
   private watchdogTimer: number | null = null;
   /**
    * 2026-08-22: consecutive watchdog RESYNCs sent with NO inbound frame in
@@ -881,6 +885,7 @@ export class EngineStateClient {
       this.eventGapReportedForSeq = 0;
       this.seq = 0;
       this.snapshot = null;
+      this.pendingSnapshotSince ??= Date.now();
       // Still surface it: TablePage can show its reconnect chrome rather than
       // a silently frozen table while the rebuilt engine publishes.
       try {
@@ -1013,6 +1018,8 @@ export class EngineStateClient {
       if (this.snapshot && typeof msg.seq === 'number' && msg.seq < this.seq) return;
       this.snapshot = msg.state;
       this.seq = msg.seq;
+      this.pendingSnapshotSince = null;
+      this.unansweredSnapshotResyncs = 0;
       this.opts.onSnapshot(this.snapshot, this.seq);
       return;
     }
@@ -1081,9 +1088,13 @@ export class EngineStateClient {
      */
     this.seq = 0;
     this.snapshot = null;
+    this.pendingSnapshotSince = null;
+    this.unansweredSnapshotResyncs = 0;
   }
 
   private requestResync(): void {
+    // Repeated gaps and PINGs must not extend the first request's deadline.
+    if (this.ws?.readyState === 1) this.pendingSnapshotSince ??= Date.now();
     try {
       this.ws?.send(JSON.stringify({ type: 'RESYNC' }));
     } catch {
@@ -1097,6 +1108,7 @@ export class EngineStateClient {
    */
   private startWatchdog(): void {
     this.lastInboundAt = Date.now();
+    if (!this.snapshot) this.pendingSnapshotSince ??= Date.now();
     if (this.watchdogTimer !== null) return;
 
     this.watchdogTimer = window.setInterval(() => {
@@ -1110,8 +1122,12 @@ export class EngineStateClient {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
 
       const silentFor = Date.now() - this.lastInboundAt;
+      const snapshotWait =
+        this.pendingSnapshotSince === null ? 0 : Date.now() - this.pendingSnapshotSince;
 
       if (
+        this.unansweredSnapshotResyncs >= EngineStateClient.MAX_UNANSWERED_RESYNCS ||
+        snapshotWait >= EngineStateClient.STALE_HARD_MS ||
         silentFor >= EngineStateClient.STALE_HARD_MS ||
         // 2026-08-22: escalate on unanswered RESYNCs too. Tab switching used
         // to reset the silence clock on every wake, so a half-open socket
@@ -1120,14 +1136,15 @@ export class EngineStateClient {
         // dead link regardless of what the clock says.
         this.unansweredResyncs >= EngineStateClient.MAX_UNANSWERED_RESYNCS
       ) {
-        // The socket claims to be open but the server has said nothing —
-        // force it closed so onclose -> scheduleReconnect runs.
+        // Recover both a silent transport and a live transport that cannot
+        // deliver game state. PINGs cannot acknowledge a snapshot request.
         this.opts.onError({
-          reason: `engine silent for ${Math.round(silentFor / 1000)}s (${this.unansweredResyncs} unanswered resyncs) - forcing reconnect`,
+          reason: `engine silent for ${Math.round(silentFor / 1000)}s, snapshot pending ${Math.round(snapshotWait / 1000)}s (${this.unansweredResyncs} unanswered transport resyncs, ${this.unansweredSnapshotResyncs} unanswered snapshot resyncs) - forcing reconnect`,
         });
         beacon('stale');
         this.lastInboundAt = Date.now(); // don't re-fire while the close lands
         this.unansweredResyncs = 0;
+        this.unansweredSnapshotResyncs = 0;
         // 2026-08-22: announce the truth. This path used to leave status at
         // 'connected' (green dot on a dead table), and when close() left the
         // socket in CLOSING with onclose never firing, NO reconnect was ever
@@ -1146,10 +1163,14 @@ export class EngineStateClient {
         return;
       }
 
-      if (silentFor >= EngineStateClient.STALE_SOFT_MS) {
+      if (
+        silentFor >= EngineStateClient.STALE_SOFT_MS ||
+        snapshotWait >= EngineStateClient.STALE_SOFT_MS
+      ) {
         // Might just be dropped frames on a live socket — ask for a full
         // snapshot. A reply refreshes lastInboundAt and clears the condition.
         this.unansweredResyncs++;
+        if (snapshotWait >= EngineStateClient.STALE_SOFT_MS) this.unansweredSnapshotResyncs++;
         this.requestResync();
       }
     }, EngineStateClient.WATCHDOG_TICK_MS);
@@ -1170,6 +1191,12 @@ export class EngineStateClient {
           this.lastInboundAt,
           Date.now() - EngineStateClient.STALE_SOFT_MS
         );
+        if (this.pendingSnapshotSince !== null) {
+          this.pendingSnapshotSince = Math.max(
+            this.pendingSnapshotSince,
+            Date.now() - EngineStateClient.STALE_SOFT_MS
+          );
+        }
         if (this.status === 'connected') this.requestResync();
       };
       document.addEventListener('visibilitychange', this.onVisibility);

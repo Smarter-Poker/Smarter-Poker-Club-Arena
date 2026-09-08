@@ -16,6 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 /** Strip comments so a guard cannot pass on prose describing the old code. */
@@ -102,7 +103,7 @@ describe('no money path writes a ledger row it did not earn', () => {
   const REDEFINES =
     /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_tournament_payout_reconcile\s*\(/i;
 
-  it('the reconciler credits through fn_credit_and_log', () => {
+  const latestReconciler = (): { file: string; body: string } => {
     const files = fs
       .readdirSync(MIGRATIONS)
       .filter((f) => f.endsWith('.sql'))
@@ -113,14 +114,26 @@ describe('no money path writes a ledger row it did not earn', () => {
     );
     expect(owning.length, 'no migration defines the reconciler').toBeGreaterThan(0);
 
-    const latest = sql(fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8'));
-    expect(latest, `${owning[owning.length - 1]} must credit through fn_credit_and_log`).toMatch(
-      /fn_credit_and_log/
+    const file = owning[owning.length - 1];
+    const latest = sql(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'));
+    const start = latest.search(REDEFINES);
+    const end = latest.indexOf('$function$;', start);
+    return { file, body: end < 0 ? latest.slice(start) : latest.slice(start, end) };
+  };
+
+  it('the retired reconciler is a non-paying detector', () => {
+    const { file, body } = latestReconciler();
+    const guard = body.indexOf('IF p_apply THEN');
+    const firstRead = body.indexOf('SELECT id, prize_pool');
+    expect(guard, `${file} must reject applying mode`).toBeGreaterThan(-1);
+    expect(body.slice(guard, firstRead), `${file} must raise before reading money state`).toMatch(
+      /RAISE EXCEPTION USING[\s\S]*?applying_reconcile_retired[\s\S]*?ERRCODE = '0A000'/
     );
-    expect(
-      latest,
-      `${owning[owning.length - 1]} still uses the bare credit + unconditional log pair`
-    ).not.toMatch(/PERFORM credit_player_wallet\(/);
+    expect(firstRead).toBeGreaterThan(guard);
+    expect(body).not.toMatch(/fn_credit_and_log\(/);
+    expect(body).not.toMatch(/fn_settle_tournament_obligation\(/);
+    expect(body).not.toMatch(/UPDATE\s+(?:public\.)?tournament_players/i);
+    expect(body).not.toMatch(/PERFORM credit_player_wallet\(/);
   });
 
   it('the last-written reconciler keeps the exact-cent pricing', () => {
@@ -131,26 +144,19 @@ describe('no money path writes a ledger row it did not earn', () => {
      * reverted exactness. That is the regression this guard exists to catch:
      * whoever redefines the reconciler next must carry every fix forward.
      */
-    const files = fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .sort();
-    const owning = files.filter((f) =>
-      REDEFINES.test(sql(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
-    );
-    const latest = sql(fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8'));
+    const { body: latest } = latestReconciler();
 
     expect(latest, 'exact-cent pricing was dropped by a later redefinition').toMatch(
       /v_pool_cents/
     );
-    expect(latest, 'the prize stamp was dropped by a later redefinition').toMatch(
-      /SET prize = v_expected/
+    expect(latest, 'the detector regained a tournament-player write').not.toMatch(
+      /UPDATE\s+(?:public\.)?tournament_players/i
     );
   });
 });
 
 describe('the recovery watchdog cannot pay money it has no right to', () => {
-  it('tops up on its own obligation, not the one that already paid the place', () => {
+  it('records final entitlements, then settles the complete place set atomically', () => {
     /**
      * The ITM top-up used `tourney:{id}:prize:place:{N}` -- the key
      * eliminatePlayer already paid that place under. The comment said "recorded
@@ -161,28 +167,35 @@ describe('the recovery watchdog cannot pay money it has no right to', () => {
      * `prize = owed` -- a payment recorded that never happened, invisible to
      * every later pass.
      *
-     * 2026-08-29 fixed it with a `prizeadj` key carrying the AMOUNT. The chip
-     * standard (2026-09-02) replaced that with an obligation of its own kind:
-     * (tournament, 'late_reg_adjustment', N) is told the full amount OWED and
-     * the database pays only the unpaid part. The top-up must settle THAT
-     * kind, never 'place', and must pass `owed` (what is owed), not `diff`.
+     * Per-place recovery was still a split transaction: an early place could
+     * commit before a later place refused. Recovery now stamps the final
+     * entitlement only; the atomic helper prepares the complete obligation
+     * fingerprint and either settles every place plus COMPLETED or none.
      */
-    // RECOVERY is comment-stripped, so anchor on the step-3 loop's own guard.
-    const topUp = RECOVERY.slice(RECOVERY.indexOf("if (r.status !== 'eliminated' || !r.position)"));
-    expect(topUp).toMatch(/\{ kind: 'late_reg_adjustment', place: Number\(r\.position\) \}/);
-    expect(topUp).toMatch(/await credit\(\s*r\.user_id,\s*owed,/);
-    expect(topUp).not.toMatch(/prizeadj:/);
+    const recovery = sliceMethod(
+      RECOVERY,
+      'export async function recoverStuckCompletingTournaments('
+    );
+    expect(recovery).toMatch(/\.update\(\{ prize: owed \}\)/);
+    expect(recovery).toMatch(/await settleTournamentPlacesAtomically\(/);
+    expect(recovery).toMatch(/'engine\.recoverStuckCompleting'/);
+    expect(recovery).not.toMatch(/settleTournamentObligation\(/);
+    expect(recovery).not.toMatch(/fn_settle_tournament_obligation/);
   });
 
-  it('knows whether the credit actually moved chips', () => {
-    // The RPC's `paid` (chips moved by THIS call) is the only signal
-    // distinguishing "already done" from "just done", and the old boolean
-    // was thrown away. The wrapper must return it, and must THROW on a
-    // refusal rather than let the prize stamp below record a payment that
-    // was refused.
-    expect(RECOVERY).toMatch(/Promise<boolean>/);
-    expect(RECOVERY).toMatch(/return res\.paid > 0;/);
-    expect(RECOVERY).toMatch(/if \(!res\.ok\) \{\s*throw new Error/);
+  it('rejects a batch without completion proof before reporting recovery success', () => {
+    const recovery = sliceMethod(
+      RECOVERY,
+      'export async function recoverStuckCompletingTournaments('
+    );
+    const proof = recovery.indexOf('if (!settlement.ok || !settlement.completed)');
+    const success = recovery.indexOf('[GameServer] Recovered stuck COMPLETING tournament');
+
+    expect(recovery).toMatch(
+      /if \(!settlement\.ok \|\| !settlement\.completed\) \{[\s\S]*?throw new Error/
+    );
+    expect(proof).toBeGreaterThanOrEqual(0);
+    expect(success).toBeGreaterThan(proof);
   });
 
   it('refuses to pay structure cash on a satellite', () => {

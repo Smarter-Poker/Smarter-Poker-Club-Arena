@@ -132,10 +132,40 @@ function Rose({ uid, k }: { uid: string; k: string }) {
         strokeWidth="0.6"
         opacity="0.7"
       />
+      <path
+        d="M -9 17 L -11 14 M -13 18 L -15 16 M -12 18 L -11 21 M -16 19 L -16 21"
+        stroke="#aad16c"
+        strokeWidth="0.45"
+        opacity="0.65"
+      />
       {/* the sepals under the bloom */}
       <path d="M -8 5 C -5.5 11, 5.5 11, 8 5 C 4 8, -4 8, -8 5 Z" fill={STEM_GREEN} />
       {/* the bloom */}
-      <ellipse cx="0" cy="-2" rx="13" ry="12" fill={`url(#${g('bloom')})`} />
+      <path
+        d="M -12 3 C -16 -2 -12 -8 -9 -9 C -10 -14 -3 -16 1 -12 C 5 -16 12 -11 11 -7 C 17 -5 15 3 10 5 C 8 12 1 12 -2 8 C -8 11 -13 8 -12 3 Z"
+        fill={`url(#${g('bloom')})`}
+        stroke="#8d0a26"
+        strokeWidth="0.55"
+      />
+      <path
+        d="M -12 2 C -7 5 -3 3 -4 -2 C -2 5 6 7 11 2 C 9 10 2 11 -2 8 C -7 10 -11 7 -12 2 Z"
+        fill="#a90932"
+        opacity="0.7"
+      />
+      <path
+        d="M -8 -8 C -8 -3 -3 0 1 -2 C 1 -6 6 -8 10 -6 M -11 1 C -8 6 -3 7 1 5 M 3 7 C 8 7 11 3 12 0"
+        fill="none"
+        stroke="#ff9bad"
+        strokeWidth="0.8"
+        strokeLinecap="round"
+        opacity="0.72"
+      />
+      <path
+        d="M -6 -7 C -1 -10 6 -8 6 -3 C 3 1 -2 0 -2 -4 C 0 -6 3 -5 3 -3"
+        fill="none"
+        stroke="#60091f"
+        strokeWidth="1.1"
+      />
       {/* the outer petal edge, a lighter rim over the top of the bloom */}
       <path
         d="M -13 -3 C -13 -11, -6 -15, 0 -13 C 6 -15, 13 -11, 13 -3 C 9 -8.5, 4 -10.5, 0 -9.5 C -4 -10.5, -9 -8.5, -13 -3 Z"

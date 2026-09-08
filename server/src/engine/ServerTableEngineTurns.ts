@@ -113,8 +113,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    *
    * Instance field, not a static, so a test can drive pre-action ORDER without
    * spending its real-world seconds.
+   *
+   * Dan 2026-09-07: still never zero — the reasoning above still holds, a seat
+   * that never visibly takes its turn looks skipped — but 900ms was buying far
+   * more than "readable". 250ms is a beat: the spotlight lands, the eye
+   * registers it, the action follows. Everything above 250 was dead air, and
+   * with several pre-actions queued it compounded across a whole street.
    */
-  protected preActionVisibleMs = 900;
+  protected preActionVisibleMs = 250;
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // TURN TIMER MANAGEMENT
@@ -2389,9 +2395,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     } else {
       // Everything else must land inside the ordinary clock, with a small
       // margin so a genuine tank still acts rather than timing out.
-      thinkTimeMs = Math.round(
-        Math.max(250, Math.min(requested, Math.max(2000, actionTimeMs - 1200)))
-      );
+      //
+      // V35 SOFT CAP (2026-09-02): this was `Math.min(requested, cap)`, the
+      // mirror of the floor clamp fixed in HorseLogic's computeThinkTime, and
+      // it fingerprints the same way at the other end. TANK draws run to
+      // ~10.8s before shaping and past 14.8s at p95 after it, while the cap on
+      // a 15s clock is 13,800ms - so every one of those long tanks landed on
+      // EXACTLY 13800. A recurring exact maximum is as identifying as a
+      // recurring exact minimum, and it is concentrated in precisely the big
+      // river spots a suspicious opponent is already watching.
+      //
+      // A tank that wants more time than the clock allows now backs off the
+      // cap by a short exponential instead of sitting on it. Still inside the
+      // clock, still visibly a tank, no longer the same number every time.
+      const cap = Math.max(2000, actionTimeMs - 1200);
+      if (requested <= cap) {
+        thinkTimeMs = Math.round(Math.max(250, requested));
+      } else {
+        const u = Math.max(1e-6, 1 - Math.random());
+        const backoff = Math.min(-Math.log(u) * 900, Math.max(0, cap - 2500));
+        thinkTimeMs = Math.round(Math.max(250, cap - backoff));
+      }
     }
 
     const handControllerRef = this.handController;

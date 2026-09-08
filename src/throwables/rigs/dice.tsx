@@ -104,16 +104,30 @@ const SKIN_LINE = '#b97a4c';
 
 /** A single die, 20 units square, drawn around (0,0) with a light 3-D bevel
  *  and the given pip layout (fixed dot coordinates, never random). */
-function Die({ pips }: { pips: ReadonlyArray<readonly [number, number]> }) {
+function Die({ pips, uid }: { pips: ReadonlyArray<readonly [number, number]>; uid: string }) {
+  const face = `thr-dice-face-${uid}`;
   return (
     <g>
+      <defs>
+        <linearGradient id={face} x1="0" y1="0" x2="1" y2="1">
+          <stop stopColor="#ffffff" />
+          <stop offset="0.45" stopColor={DICE_WHITE} />
+          <stop offset="1" stopColor="#b8bfcb" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M -8 9 L 7 10 L 12 6 L 12 -8 L 9 -10 L 9 6 Z"
+        fill="#9099aa"
+        stroke="#687387"
+        strokeWidth="0.6"
+      />
       <rect
         x={-10}
         y={-10}
         width={20}
         height={20}
         rx={3}
-        fill={DICE_WHITE}
+        fill={`url(#${face})`}
         stroke={DICE_EDGE}
         strokeWidth="1.2"
       />
@@ -132,7 +146,16 @@ function Die({ pips }: { pips: ReadonlyArray<readonly [number, number]> }) {
         opacity="0.7"
       />
       {pips.map(([px, py], i) => (
-        <circle key={i} cx={px} cy={py} r={1.9} fill={PIP_BLACK} />
+        <g key={i}>
+          <circle cx={px} cy={py + 0.4} r={2.1} fill="#ffffff" opacity="0.85" />
+          <circle cx={px} cy={py} r={1.9} fill={PIP_BLACK} />
+          <path
+            d={`M ${px - 1.1} ${py - 0.6} Q ${px} ${py - 1.9} ${px + 1} ${py - 0.7}`}
+            fill="none"
+            stroke="#080c15"
+            strokeWidth="0.7"
+          />
+        </g>
       ))}
     </g>
   );
@@ -154,14 +177,14 @@ const PIPS_3: ReadonlyArray<readonly [number, number]> = [
 /** The pair, stuck together, drawn once for the projectile and once (static,
  *  half-hidden) at the base of the hand. The player's own tumble class spins
  *  the WHOLE box in flight - this component never rotates itself. */
-function DicePair() {
+function DicePair({ uid }: { uid: string }) {
   return (
     <g>
       <g transform="translate(-9 4) rotate(-6)">
-        <Die pips={PIPS_5} />
+        <Die pips={PIPS_5} uid={`${uid}5`} />
       </g>
       <g transform="translate(9 -3) rotate(8)">
-        <Die pips={PIPS_3} />
+        <Die pips={PIPS_3} uid={`${uid}3`} />
       </g>
     </g>
   );
@@ -171,7 +194,7 @@ function DicePair() {
  * A capsule finger/thumb: a rounded rect from the base up, with a small
  * crease near the tip. `h` is its length, `w` its width, both in units.
  */
-function Digit({ w, h }: { w: number; h: number }) {
+function Digit({ w, h, fill }: { w: number; h: number; fill: string }) {
   return (
     <g>
       <rect
@@ -180,7 +203,7 @@ function Digit({ w, h }: { w: number; h: number }) {
         width={w}
         height={h}
         rx={w / 2}
-        fill={SKIN}
+        fill={fill}
         stroke={SKIN_LINE}
         strokeWidth="0.8"
       />
@@ -226,26 +249,41 @@ function Hand({ uid }: { uid: string }) {
         stroke={SKIN_LINE}
         strokeWidth="1.2"
       />
+      <path
+        d="M -29 8 C -15 -4 14 -4 26 6 M -24 18 C -8 7 14 13 21 21 M -25 28 C -29 16 -22 6 -13 3"
+        fill="none"
+        stroke="#a86c50"
+        strokeWidth="1.3"
+        opacity="0.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M -18 31 C -6 26 7 28 13 31"
+        fill="none"
+        stroke="#ffdfb8"
+        strokeWidth="1.6"
+        opacity="0.65"
+      />
       {/* four fingers, fanned, tallest in the middle */}
       <g transform="translate(-24 -18) rotate(-14)">
-        <Digit w={11} h={46} />
+        <Digit fill={`url(#${g('palm')})`} w={11} h={46} />
       </g>
       <g transform="translate(-9 -20)">
-        <Digit w={12} h={58} />
+        <Digit fill={`url(#${g('palm')})`} w={12} h={58} />
       </g>
       <g transform="translate(7 -20) rotate(3)">
-        <Digit w={12} h={56} />
+        <Digit fill={`url(#${g('palm')})`} w={12} h={56} />
       </g>
       <g transform="translate(22 -17) rotate(15)">
-        <Digit w={10} h={42} />
+        <Digit fill={`url(#${g('palm')})`} w={10} h={42} />
       </g>
       {/* the thumb, low and to the side */}
       <g transform="translate(-36 18) rotate(-55)">
-        <Digit w={12} h={34} />
+        <Digit fill={`url(#${g('palm')})`} w={12} h={34} />
       </g>
       {/* the dice, cupped at the base, mostly under the palm's lower edge */}
       <g transform="translate(-2 30) scale(0.85)">
-        <DicePair />
+        <DicePair uid={uid} />
       </g>
       {/* a few knuckle creases for read at a glance */}
       <path
@@ -259,10 +297,10 @@ function Hand({ uid }: { uid: string }) {
   );
 }
 
-function Projectile() {
+function Projectile({ uid }: RigProps) {
   return (
     <svg viewBox={RIG_VIEWBOX} aria-hidden="true" focusable="false">
-      <DicePair />
+      <DicePair uid={uid} />
     </svg>
   );
 }

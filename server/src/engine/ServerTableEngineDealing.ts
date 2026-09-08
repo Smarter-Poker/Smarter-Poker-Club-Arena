@@ -195,7 +195,11 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // last-hand call, against 161 / 5 / 0 on the last build that parked
         // via hand-for-hand. Same shape as the start-up loop gate on the base
         // class, on purpose.
-        if (this.maintenancePaused || (this.handForHandPaused && this.holdBeforeNextHand)) {
+        if (
+          this.maintenancePaused ||
+          this.finalTableDealPaused ||
+          (this.handForHandPaused && this.holdBeforeNextHand)
+        ) {
           this.setLoopPhase('parked_for_pause');
           // 2026-09-04 (audit item 2): the last word on presence before the
           // process dies. Awaited, budgeted by the write itself (one upsert),
@@ -838,7 +842,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // is what makes areAllTablesParked() go true promptly, which is what
         // starts the five minutes. Same gate as the top of the loop — see
         // awaitPauseGate on the base class.
-        if ((this.handForHandPaused || this.maintenancePaused) && this.running) {
+        if (
+          (this.handForHandPaused || this.maintenancePaused || this.finalTableDealPaused) &&
+          this.running
+        ) {
           this.setLoopPhase('parked_for_pause');
           await this.awaitPauseGate();
         }
@@ -1399,6 +1406,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log
     this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
     this.currentHandBBJPayoutConfig = null;
+    this.currentHandMiniBBJHit = null;
+    this.currentHandMiniBBJTierId = null;
     // NOTE: rabbitHuntInFlight is deliberately NOT cleared here. It looks like
     // per-hand state and is not — it is a concurrency LOCK, taken immediately
     // before the billing RPC and released in that call's `finally`. Clearing it

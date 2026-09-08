@@ -10,14 +10,16 @@
  *
  * Both payout sites in TournamentManagerEliminations had the same fallback: if
  * `payout_structure` was missing, or had no place 1, award 100% of the prize
- * pool to the winner. For a winner-take-all event that is exactly right, and it
- * is a real safety net for an MTT whose structure failed to write.
+ * pool to the winner. It happened to produce the intended split for a genuine
+ * winner-take-all event, but it was still an unproved guess when an MTT's
+ * structure failed to write. That guess has now been removed: an unavailable
+ * payout contract leaves the tournament COMPLETING for repair.
  *
- * For a Spin at 10x or above it is a 20% overpay. Those tiers pay 80/20 and
- * 80/12/8, and places 2 and 3 are paid AT ELIMINATION — minutes before the
- * finish reads `payout_structure` again. If the column is unreadable on that
- * second read, the winner takes the whole pool on top of money already sent.
- * The pool pays out 120%.
+ * For a Spin at 10x or above it was a 20% overpay. Those tiers pay 80/20 and
+ * 80/12/8, and the retired path paid places 2 and 3 AT ELIMINATION — minutes
+ * before finish read `payout_structure` again. If the column was unreadable on
+ * that second read, the winner took the whole pool on top of money already
+ * sent. The pool paid out 120%.
  *
  * At the time of writing exposure was zero: every completed Spin had a
  * structure with a place 1. But the 80/20 and 80/12/8 splits had only just been
@@ -113,11 +115,10 @@ export function spinPayoutStructure(multiplier: number | null | undefined): Payo
 /**
  * The structure to actually pay by.
  *
- * Returns null only when there is genuinely nothing to go on — a non-Spin with
- * no usable column. Callers keep their own behaviour for that case (an MTT
- * still falls back to winner-take-all, which is the right net for an event
- * whose structure never wrote), but they must CAP it: see
- * `remainingPoolAfterAwards`.
+ * Returns null when the exact contract cannot be proved: either a Spin whose
+ * multiplier has no canonical tier, or a non-Spin with no usable stored
+ * structure. Callers must fail closed in both cases; they may not infer a
+ * winner-take-all ladder.
  */
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -307,8 +308,8 @@ export function payoutStructureForField(fieldSize: number): PayoutPlace[] {
  *
  *   1. Spin WITH a multiplier the ladder knows  ->  the tier, always.
  *   2. Spin whose multiplier is unknown to the ladder (not yet drawn, or a
- *      retired tier such as the old 500x)       ->  the stored column, which
- *      is the only thing left to go on.
+ *      retired tier such as the old 500x)       ->  null. The stored value may
+ *      be the creation-time placeholder, so it is not proof of a payout.
  *   3. Anything else                            ->  the stored column, then
  *      null. Unchanged, and deliberately so: an operator's MTT ladder still
  *      wins over anything derived.
@@ -323,8 +324,12 @@ export function resolvePayoutStructure(
   fieldSize?: number | null
 ): PayoutPlace[] | null {
   if (isSpinTournament(t)) {
+    /* A Spin's multiplier is the draw. If that draw is not durably persisted
+       or no longer maps to a canonical tier, the creation-time WTA placeholder
+       is not a payout contract. Returning null leaves the event COMPLETING
+       until the already-scheduled row repair restores the exact draw. */
     const tier = spinPayoutStructure(t?.spin_multiplier);
-    if (tier) return trimStructureToField(tier, fieldSize);
+    return tier ? trimStructureToField(tier, fieldSize) : null;
   }
   const stored = parsePayoutStructure(t?.payout_structure);
   if (stored) return trimStructureToField(stored, fieldSize);
@@ -355,11 +360,11 @@ export function spinStoredStructureIsStale(t: PayoutSubject | null | undefined):
 /**
  * How much of the pool is still unspent.
  *
- * The universal invariant behind all of the above: a prize pool cannot pay out
- * more than it holds. Whatever a fallback decides the winner is owed, it can
- * never exceed the pool minus what eliminated players were already paid. This
- * holds for every format, not just Spins — an MTT with a lost structure has the
- * identical exposure and had the identical missing guard.
+ * The arithmetic invariant behind the historical regression: a prize pool
+ * cannot pay out more than it holds. The atomic settlement path now refuses an
+ * unavailable structure instead of using this value as a guessed prize, but
+ * this helper still captures the maximum unspent amount for diagnostics and
+ * regression tests.
  */
 export function remainingPoolAfterAwards(prizePool: number, alreadyAwarded: number): number {
   const pool = Number.isFinite(prizePool) && prizePool > 0 ? prizePool : 0;

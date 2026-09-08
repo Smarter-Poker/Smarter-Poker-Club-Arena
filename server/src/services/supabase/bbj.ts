@@ -805,3 +805,142 @@ async function attemptBBJPayoutOnce(
     },
   };
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE MINI JACKPOT PAYOUT (BBJ build plan phase 6 of 6, Dan 2026-09-07)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A flat amount per stakes tier, out of `backup_balance` - the reserve that
+ * until now nothing spent - for a hand that came close to the main bar and did
+ * not meet it. `fn_bbj_mini_payout` does all of the money work in one
+ * transaction: it honours the same kill switch, shares the main's idempotency
+ * key so one hand can pay once, holds the reserve above its floor, and credits
+ * every recipient through `bbj_credit_one_recipient` - the same path, so a mini
+ * inherits phase 2.3's parked-share behaviour for free.
+ *
+ * DELIBERATELY THINNER THAN `processBBJPayout`. The main payout carries a
+ * write-ahead claim and a queue because it is the platform's largest single
+ * payment and losing one is unacceptable. A mini is a few hundred chips that
+ * recurs several times a day; a failed one is reported and dropped rather than
+ * queued, because a retry queue for it would be a repair job by another name
+ * (CLAUDE.md 10.12) and the reserve it comes from is not going anywhere.
+ */
+export async function processMiniBBJPayout(params: {
+  tableId: string;
+  clubId: string;
+  handNumber: number;
+  tierId: string;
+  loserUserId: string;
+  winnerUserId: string;
+  dealtInPlayerIds: string[];
+  seatedUserIds: string[];
+  metadata?: Record<string, unknown>;
+}): Promise<
+  | { status: 'paid'; total: number; loser: number; winner: number; perPlayer: number }
+  | { status: 'skipped'; reason: string }
+> {
+  const { data: club, error: clubErr } = await supabase
+    .from('clubs')
+    .select('union_id')
+    .eq('id', params.clubId)
+    .maybeSingle();
+  if (clubErr) return { status: 'skipped', reason: `clubs read failed: ${clubErr.message}` };
+  if (!club) return { status: 'skipped', reason: 'club_not_found' };
+
+  let poolQuery = supabase.from('bbj_pools').select('id').eq('status', 'active');
+  poolQuery = club.union_id
+    ? poolQuery.eq('union_id', club.union_id)
+    : poolQuery.eq('club_id', params.clubId);
+  const { data: pool, error: poolErr } = await poolQuery.maybeSingle();
+  if (poolErr) return { status: 'skipped', reason: `bbj_pools read failed: ${poolErr.message}` };
+  if (!pool) return { status: 'skipped', reason: 'no_active_pool' };
+
+  const { data: rows, error: rpcErr } = await supabase.rpc('fn_bbj_mini_payout', {
+    p_pool_id: pool.id,
+    p_table_id: params.tableId,
+    p_hand_number: params.handNumber,
+    p_tier_id: params.tierId,
+    p_loser_user_id: params.loserUserId,
+    p_winner_user_id: params.winnerUserId,
+    p_dealt_in_ids: params.dealtInPlayerIds,
+    p_seated_ids: params.seatedUserIds,
+    p_metadata: params.metadata ?? {},
+  });
+  if (rpcErr) return { status: 'skipped', reason: rpcErr.message };
+
+  const row = Array.isArray(rows) ? rows[0] : rows;
+  if (!row) return { status: 'skipped', reason: 'rpc_returned_nothing' };
+  if (row.already_paid) return { status: 'skipped', reason: 'already_paid' };
+  if (!row.applied) return { status: 'skipped', reason: row.refused || 'refused' };
+
+  return {
+    status: 'paid',
+    total: Number(row.total_payout),
+    loser: Number(row.loser_share),
+    winner: Number(row.winner_share),
+    perPlayer: Number(row.per_player_share),
+  };
+}
+
+/**
+ * WRITE DOWN THE JACKPOT THAT DID NOT FIRE, AND WHICH GATE REFUSED IT.
+ *
+ * Measured 2026-09-07: the main jackpot last paid on 2026-08-21 06:04:16 and
+ * has paid nothing in the seventeen days since, while `bbj_contributions` took
+ * the highest volume in the platform's history - 277,332 rows in the week of
+ * 08-31 against 175,939 in the week of 08-17, which produced NINE hits.
+ *
+ * Nothing in the database could say whether that was the rules working or the
+ * rules broken, because "no qualifying hand occurred" and "a qualifying hand
+ * occurred and something refused it" were the same observation.
+ * `detectBBJNearMiss` has computed the answer on every showdown since
+ * 2026-08-18 and sent it to a `console.log` and a hub event that expires in
+ * seconds. `bbj_hand_evidence_log` is written only by triggers on the payout
+ * path, so it is empty by construction exactly when nothing pays.
+ *
+ * This is CLAUDE.md 10.86 rule 1 - "I could not tell" is a distinct outcome and
+ * must have its own name - and rule 3 - a guard must have a reader. It is not a
+ * monitor standing in for a fix (10.12); it moves no money, gates nothing, and
+ * exists so the strictness of the rules is a question anyone can answer from
+ * rows.
+ *
+ * Fire-and-forget by construction: the caller does not await a failure and a
+ * throw here can never reach settlement. A jackpot must not be lost because its
+ * paperwork was.
+ */
+export async function recordBBJNearMiss(params: {
+  tableId: string;
+  clubId: string | null;
+  handNumber: number;
+  variant: string;
+  bigBlind: number | null;
+  potSize: number;
+  playersDealt: number;
+  userId?: string;
+  handName?: string;
+  reason?: string;
+  message?: string;
+}): Promise<void> {
+  const { error } = await supabase.from('bbj_near_misses').insert({
+    table_id: params.tableId,
+    club_id: params.clubId,
+    hand_number: params.handNumber,
+    variant: params.variant,
+    big_blind: params.bigBlind,
+    pot_size: params.potSize,
+    players_dealt: params.playersDealt,
+    user_id: params.userId ?? null,
+    hand_name: params.handName ?? null,
+    /* A near miss with no reason is a detector answering without knowing, which
+       is the thing 10.86 was written about. Say so rather than write a null. */
+    reason: params.reason ?? 'unspecified',
+    message: params.message ?? null,
+  });
+  if (error) {
+    reportError(error, 'bbj.near_miss_not_recorded', {
+      tableId: params.tableId,
+      handNumber: params.handNumber,
+    });
+  }
+}

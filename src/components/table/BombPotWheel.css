@@ -1,0 +1,180 @@
+/**
+ * BOMB POT WHEEL — styles.
+ *
+ * Every class and keyframe is prefixed `bpw`, for the reason SpinWheel.css
+ * states about its own `sw` prefix: @keyframes is a GLOBAL namespace, this app
+ * carries ~900 of them, and two definitions of one name resolve by load order,
+ * silently, for both consumers.
+ *
+ * PALETTE. Dan 2026-09-07, item 8: "WE DON'T USE YELLOW." The Spins disc is
+ * gold by design (it is showing money). This one is showing a countdown, so it
+ * takes the felt's own accent instead — the red of the table rail for the
+ * winning wedge, cool slate for the rest. It reads as part of the table rather
+ * than as a prize.
+ */
+
+.bpw {
+  position: fixed;
+  inset: 0;
+  z-index: 99996; /* one under SpinWheel: a real Spins draw outranks this */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  /* Never intercepts a tap. Unlike the Spins reveal this is purely
+     informational, and it appears between hands when a player may already be
+     reaching for a seat control or the cashier. */
+  pointer-events: none;
+}
+
+/* Scoped to one felt in the multi-table grid. */
+.bpw--contained {
+  position: absolute;
+}
+
+.bpw__dim {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at 50% 48%,
+    rgba(2, 4, 9, 0.32) 0%,
+    rgba(2, 4, 9, 0.58) 64%,
+    rgba(2, 4, 9, 0.72) 100%
+  );
+  animation: bpwDimIn 0.35s ease-out both;
+}
+
+.bpw__stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  animation: bpwPop 0.42s cubic-bezier(0.2, 1.2, 0.35, 1) both;
+}
+
+.bpw__title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(228, 236, 250, 0.82);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+}
+
+.bpw__disc {
+  width: min(46vw, 200px);
+  height: min(46vw, 200px);
+  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.7));
+}
+
+/* ── Wedges ──────────────────────────────────────────────────────────────── */
+
+.bpw__wedge {
+  fill: #1b2331;
+  stroke: rgba(6, 9, 14, 0.9);
+  stroke-width: 1.4;
+  transition:
+    fill 90ms linear,
+    opacity 260ms ease;
+}
+
+/* The chase light. Bright enough to read as travelling, not as selected. */
+.bpw__wedge.is-lit {
+  fill: #3c4d68;
+}
+
+/* The answer. Table red, the felt's own accent, held at full strength. */
+.bpw__wedge.is-winner {
+  fill: #b3202b;
+  stroke: rgba(255, 214, 214, 0.5);
+  stroke-width: 2;
+  animation: bpwWinnerPulse 0.9s ease-in-out 2;
+}
+
+.bpw__wedge.is-dimmed {
+  opacity: 0.32;
+}
+
+.bpw__peg {
+  fill: rgba(228, 236, 250, 0.45);
+}
+
+.bpw__label {
+  fill: rgba(236, 242, 252, 0.92);
+  font-size: 20px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(4, 7, 12, 0.75);
+  stroke-width: 3px;
+}
+
+.bpw__caption {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(236, 242, 252, 0.95);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.95);
+  min-height: 1.2em;
+}
+
+.bpw--result .bpw__caption {
+  animation: bpwCaptionIn 0.36s ease-out both;
+}
+
+/* ── Keyframes ───────────────────────────────────────────────────────────── */
+
+@keyframes bpwDimIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes bpwPop {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bpwWinnerPulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.45);
+  }
+}
+
+@keyframes bpwCaptionIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* A player who asks for less motion still gets the ANSWER — the chase is what
+   goes, not the information. Same rule as every other reveal in the app. */
+@media (prefers-reduced-motion: reduce) {
+  .bpw__dim,
+  .bpw__stage,
+  .bpw--result .bpw__caption {
+    animation: none;
+  }
+  .bpw__wedge.is-winner {
+    animation: none;
+  }
+}

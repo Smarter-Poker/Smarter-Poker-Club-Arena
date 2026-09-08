@@ -232,10 +232,10 @@ describe('A6: a headcount is not a final table', () => {
     expect(window).not.toMatch(/<= finalTableSize\)\s*\{\s*this\.isFinalTable = true/);
   });
 
-  it('the deal poll requires it too, before fn_final_table_deal can run', () => {
+  it('the deal poll requires it too, before atomic final-table settlement can run', () => {
     const fn = ELIM.slice(ELIM.indexOf('protected async checkFinalTableDeal('));
     const gate = fn.indexOf('countLiveTablesWithPlayers()');
-    const deal = fn.indexOf('fn_final_table_deal');
+    const deal = fn.indexOf('settleFinalTableDealAtomically(');
     expect(gate).toBeGreaterThan(-1);
     expect(deal).toBeGreaterThan(-1);
     expect(gate).toBeLessThan(deal);

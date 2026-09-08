@@ -31,7 +31,6 @@
 
 import { soundService, haptic } from './SoundService';
 import type { ThrowWeight } from './ThrowableService';
-import { reportError } from '../utils/errorReporter';
 
 type Wave = OscillatorType;
 
@@ -794,15 +793,17 @@ class ThrowableSoundServiceClass {
   //     loop's whole window is already behind the clock. Silently returning on
   //     any of those makes "the audio pipeline is fine" and "every cue is
   //     missing" the same observation (CLAUDE.md 10.86 rule 1). Each drop is
-  //     counted by reason and reported ONCE per reason per session, because a
-  //     table throwing eight items would otherwise report the same broken URL
-  //     eight times a second.
+  //     counted by reason in memory. Throwable failures do not send telemetry
+  //     (Dan's instruction, 2026-09-07).
 
-  private cueBytes = new Map<string, Promise<ArrayBuffer | null>>();
+  private cueBytes = new Map<string, Promise<{ bytes: ArrayBuffer; ext: 'webm' | 'm4a' } | null>>();
   private cueBuffers = new Map<string, Promise<AudioBuffer | null>>();
   private cuePlaceholdersPlayed = 0;
-  private cueDrops: Record<CueDropReason, number> = { no_buffer: 0, late: 0, window_passed: 0 };
-  private cueDropReported = new Set<string>();
+  private cueDrops: Record<CueDropReason, number> = {
+    no_buffer: 0,
+    late: 0,
+    window_passed: 0,
+  };
 
   /** How many cues fell back to a procedural recipe in this session. */
   get placeholderCuesPlayed(): number {
@@ -815,20 +816,9 @@ class ThrowableSoundServiceClass {
     return this.cueDrops;
   }
 
-  /** One report per reason per cue per session; the counter takes the rest. */
-  private dropCue(name: string, reason: CueDropReason) {
+  /** Local accounting only: no reporting, console output or network request. */
+  private dropCue(reason: CueDropReason) {
     this.cueDrops[reason] += 1;
-    const key = `${name}:${reason}`;
-    if (this.cueDropReported.has(key)) return;
-    this.cueDropReported.add(key);
-    try {
-      reportError(
-        new Error(`throwable cue '${name}' produced no sound (${reason})`),
-        'AnimationLaw.throw_cue_silent'
-      );
-    } catch {
-      /* telemetry must never break the table */
-    }
   }
 
   /** Start fetching the bytes for these cues now (rig modules call this at
@@ -841,7 +831,7 @@ class ThrowableSoundServiceClass {
         for (const ext of ['webm', 'm4a'] as const) {
           try {
             const res = await fetch(urlFor(name, ext));
-            if (res.ok) return await res.arrayBuffer();
+            if (res.ok) return { bytes: await res.arrayBuffer(), ext };
           } catch {
             /* try the other container */
           }
@@ -860,17 +850,36 @@ class ThrowableSoundServiceClass {
     if (cached) return cached;
     if (!this.cueBytes.has(name)) this.preloadCues([name], urlFor);
     const p = (async () => {
-      const bytes = await this.cueBytes.get(name)!;
-      if (!bytes || !this.ctx) return null;
+      const loaded = await this.cueBytes.get(name)!;
+      if (!loaded || !this.ctx) return null;
       try {
-        // decodeAudioData detaches the buffer; hand it a copy so a second
-        // context (a reload of the sound setting) can decode again.
-        return await this.ctx.decodeAudioData(bytes.slice(0));
+        // Decoding detaches its input; retain cached bytes for later use.
+        return await this.ctx.decodeAudioData(loaded.bytes.slice(0));
       } catch {
+        // A successful HTTP response does not imply codec support (Safari).
+        if (loaded.ext === 'webm') {
+          try {
+            const res = await fetch(urlFor(name, 'm4a'));
+            if (res.ok) {
+              const bytes = await res.arrayBuffer();
+              const decoded = await this.ctx.decodeAudioData(bytes.slice(0));
+              this.cueBytes.set(name, Promise.resolve({ bytes, ext: 'm4a' }));
+              return decoded;
+            }
+          } catch {
+            /* Both encodings failed; allow a later throw to retry. */
+          }
+        }
         return null;
       }
     })();
     this.cueBuffers.set(name, p);
+    void p.then((buffer) => {
+      if (!buffer && this.cueBuffers.get(name) === p) {
+        this.cueBuffers.delete(name);
+        this.cueBytes.delete(name);
+      }
+    });
     return p;
   }
 
@@ -902,6 +911,7 @@ class ThrowableSoundServiceClass {
     const ctx = this.ctx;
     const s = Math.min(4, Math.max(0.1, opts.speed || 1));
     const t0 = ctx.currentTime;
+    let cancelled = false;
     const sources: AudioBufferSourceNode[] = [];
     const timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -931,8 +941,8 @@ class ThrowableSoundServiceClass {
       void this.loadCue(cue.sample, opts.urlFor).then((buffer) => {
         // A context swapped underneath us (the sound setting was reloaded) is
         // a cancellation, not a drop: this throw's audio graph is simply gone.
-        if (!this.ctx || this.ctx !== ctx) return;
-        if (!buffer) return this.dropCue(cue.sample, 'no_buffer');
+        if (cancelled || !this.ctx || this.ctx !== ctx) return;
+        if (!buffer) return this.dropCue('no_buffer');
         try {
           this.setVoice(pan);
           const src = ctx.createBufferSource();
@@ -946,13 +956,13 @@ class ThrowableSoundServiceClass {
           if (cue.loopUntil !== undefined) {
             src.loop = true;
             const stopAt = t0 + ((opts.offsetMs + cue.loopUntil) / 1000) * s;
-            if (stopAt <= now) return this.dropCue(cue.sample, 'window_passed');
+            if (stopAt <= now) return this.dropCue('window_passed');
             src.start(Math.max(startAt, now));
             src.stop(stopAt);
           } else {
             // A decode that finished after its beat still plays (late is
             // better than silent), but never more than one beat late.
-            if (now - startAt > 0.25) return this.dropCue(cue.sample, 'late');
+            if (now - startAt > 0.25) return this.dropCue('late');
             src.start(Math.max(startAt, now));
           }
           sources.push(src);
@@ -963,6 +973,7 @@ class ThrowableSoundServiceClass {
     }
 
     return () => {
+      cancelled = true;
       for (const t of timers) clearTimeout(t);
       for (const src of sources) {
         try {

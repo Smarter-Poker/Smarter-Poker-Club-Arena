@@ -527,17 +527,51 @@ export class MaintenanceBreak {
     //
     // Every other timer in this file is wall-clock anchored — see
     // `msUntilNextAnnouncement`, which is scrupulous about it. This was the
-    // one path that was not. The end is now clamped to the next :00, so an
-    // adopted break can be SHORTER than five minutes (it stops when the break
-    // was always going to stop) but can never resume early.
-    const hourEnd = this.nextHourBoundary();
+    // one path that was not.
+    //
+    // ── ANCHOR TO THE ANNOUNCEMENT, NOT TO A CLOCK BOUNDARY (2026-09-07) ────
+    //
+    // The first version of this fix used "the next :00", and that introduced a
+    // WORSE bug than the one it fixed. `nextHourBoundary()` returned the
+    // FOLLOWING hour for any boot at exactly :00:00.000, and the staleness
+    // guard below admits rows up to eight minutes old — so a sixty-second-wide
+    // window sat immediately after the hour in which an adopted break would
+    // have parked the entire fleet for SIXTY MINUTES. Nothing would have caught
+    // it: `fn_platform_frozen` only arms when `break_ends_at` is inside fifteen
+    // minutes, so buy-ins would have flowed while nothing dealt; `fn_thaw_
+    // platform` refuses anything over 900s, so every in-flight deadline would
+    // have burned; and every fleet alarm is deliberately muted while
+    // `poker_maintenance_break_active == 1`.
+    //
+    // The announcement instant already carries everything needed and has no
+    // boundary case at all. §13's timeline is fixed: announce at :53, park at
+    // :55, resume at :00. So the end IS `announcedAt + LAST_HAND_LEAD_MS +
+    // BREAK_DURATION_MS`, which is the same derivation `recordOutcome` already
+    // uses. No hour arithmetic, no DST, no `<=` edge.
+    //
+    // THE CEILING IS THE WHOLE ANNOUNCE-TO-RESUME SPAN, NOT A BREAK.
+    // A first draft clamped to `now + BREAK_DURATION_MS` and reintroduced the
+    // early resume it was written to fix: an engine booting at 18:53:48 — the
+    // real incident — is BEFORE :55, so five minutes from boot lands at
+    // 18:58:48 and the fleet resumes 71 seconds early all over again. Tables
+    // are parked from the ANNOUNCEMENT, so a boot in that window legitimately
+    // holds for up to seven minutes. The ceiling that is actually true is the
+    // full :53 -> :00 span, which also bounds a future-dated `announcedAt`
+    // from a skewed clock.
     const isAdoptedLastHand = !(saved.phase === 'counting_down' && saved.breakEndsAt);
     // A `counting_down` row carries the wall-clock end the PREVIOUS engine
     // computed, and that is the instant the countdown on every screen is
     // pointing at, so it is taken as it stands — including the few seconds it
     // usually sits past the hour. Only the `last_hand` path, which has no end
     // of its own and used to invent one out of `now()`, is anchored here.
-    const endsAt = isAdoptedLastHand ? hourEnd : (saved.breakEndsAt as number);
+    const announcedEnd =
+      saved.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS;
+    const endsAt = isAdoptedLastHand
+      ? Math.min(
+          announcedEnd,
+          this.now() + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS
+        )
+      : (saved.breakEndsAt as number);
     const remaining = endsAt - this.now();
 
     // ── AND A STALE ROW CANNOT FREEZE THE PLATFORM HOURS LATER ─────────────
@@ -571,7 +605,18 @@ export class MaintenanceBreak {
     this.phase = 'counting_down';
     // The previous engine's start instant, so the thaw measures the WHOLE
     // freeze, not just the slice this process lived through.
-    this.breakStartedAt = saved.breakStartedAt ?? this.now();
+    //
+    // A `last_hand` row ALWAYS has `breakStartedAt === null` — `announceLastHand`
+    // persists it that way — so `?? this.now()` meant every adopted break
+    // measured its freeze from the BOOT instant, which is the same mistake the
+    // end had. An engine booting at :58 recorded two minutes where six and a
+    // half were held: `fn_thaw_platform` then handed back two, and every
+    // in-flight deadline lost the rest. It also put the row outside the
+    // scorecard's own `[:52, :58]` lookup, which reads as a thaw that never
+    // ran. The break started when it was always going to start: :55, which is
+    // `announcedAt + LAST_HAND_LEAD_MS`.
+    this.breakStartedAt =
+      saved.breakStartedAt ?? saved.announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS;
     this.breakEndsAt = endsAt;
     setMaintenanceFrozen(true);
 
@@ -673,24 +718,11 @@ export class MaintenanceBreak {
     return t - now;
   }
 
-  /**
-   * The next :00, on the same wall clock `msUntilNextAnnouncement` uses.
-   *
-   * A break that started at :55 is over at :00 — that is the instant every
-   * player's countdown is pointing at, and it is the only correct end for an
-   * ADOPTED break, whose own start instant is a boot time that means nothing
-   * to anybody watching. Exactly on the hour counts as this hour's boundary
-   * having passed, so a break adopted at :00:00.000 does not win itself a
-   * whole extra hour.
-   */
-  private nextHourBoundary(): number {
-    const now = this.now();
-    const next = new Date(now);
-    next.setMinutes(0, 0, 0);
-    let t = next.getTime();
-    if (t <= now) t += 60 * 60 * 1000;
-    return t;
-  }
+  // `nextHourBoundary()` lived here and is DELETED (2026-09-07). It computed
+  // "the next :00", which for a boot at exactly :00:00.000 meant the FOLLOWING
+  // hour — a sixty-minute fleet freeze inside a sixty-second window that the
+  // staleness guard happily admitted. The adopted break derives its end from
+  // `announcedAt` now, which has no boundary case; see restoreFromStore.
 
   // ─────────────────────────────────────────────────────────────────────────
   // Phase 1 - :53, last hand

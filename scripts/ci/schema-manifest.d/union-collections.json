@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/union-collections-ageing",
+  "functions": ["fn_union_invoice_outstanding", "fn_union_age_invoices"],
+  "columns": {
+    "settlement_invoices": ["overdue_at", "reminders_sent", "last_reminder_at"]
+  }
+}

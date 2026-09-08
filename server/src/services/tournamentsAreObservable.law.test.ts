@@ -15,7 +15,7 @@
  *
  * These pins are the contract that keeps that from being true again.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
@@ -24,6 +24,7 @@ import {
   TournamentMetrics,
   UNPAID_LOOKBACK_HOURS,
 } from './TournamentMetrics.js';
+import { supabase } from './supabase.js';
 
 const read = (p: string) => readFileSync(join(__dirname, p), 'utf8');
 
@@ -91,8 +92,18 @@ describe('the engine exposes tournament gauges', () => {
       seatFirstWaiting: 3,
       collectedAt: Date.now(),
     };
-    // The RPC will fail in test (no database); the snapshot must survive.
-    await m.refresh();
+    // Force the failure. Developer machines may carry a reachable Supabase
+    // configuration, so "the test has no database" is not a deterministic
+    // failure mode and can silently turn this into a live integration read.
+    const rpc = vi.spyOn(supabase, 'rpc').mockResolvedValueOnce({
+      data: null,
+      error: { message: 'forced metrics read failure' },
+    } as never);
+    try {
+      await m.refresh();
+    } finally {
+      rpc.mockRestore();
+    }
     expect(m.get().running).toBe(42);
     expect(m.get().registering).toBe(7);
   });
@@ -163,18 +174,14 @@ describe('the alert rules are wired and reference only real gauges', () => {
 });
 
 describe('a failed tournament payout escalates as money, not just as an error', () => {
-  it('both prize-credit failure paths raise a critical financial alert', () => {
+  it('the all-places atomic failure path raises a critical financial alert', () => {
     const src = read('../tournament/TournamentManagerEliminations.ts');
     expect(src).toContain("from '../services/financialAlerts.js'");
-    expect(src).toContain('Tournament.prize_credit_failed');
-    expect(src).toContain('Tournament.winner_prize_credit_failed');
+    expect(src).toContain('Tournament.atomic_place_settlement_failed');
 
     // Awaited, so the alert is on disk before the process can be recycled.
     expect(src).toMatch(
-      /await raiseFinancialAlert\(\s*'critical',\s*'Tournament\.prize_credit_failed'/
-    );
-    expect(src).toMatch(
-      /await raiseFinancialAlert\(\s*'critical',\s*'Tournament\.winner_prize_credit_failed'/
+      /await raiseFinancialAlert\(\s*'critical',\s*'Tournament\.atomic_place_settlement_failed'/
     );
   });
 });

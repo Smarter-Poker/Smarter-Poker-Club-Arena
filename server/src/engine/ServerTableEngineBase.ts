@@ -1054,6 +1054,15 @@ export abstract class ServerTableEngineBase {
   protected currentHandBBJHit: BBJDetectionResult | null = null;
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
   /**
+   * The MINI jackpot (BBJ phase 6): a flat amount out of the backup reserve
+   * for a hand that came close to the main bar. Held separately from
+   * currentHandBBJHit on purpose - the two pay from different banks through
+   * different RPCs, and merging them into one field is how a mini would come
+   * to be paid at main-jackpot size.
+   */
+  protected currentHandMiniBBJHit: BBJDetectionResult | null = null;
+  protected currentHandMiniBBJTierId: string | null = null;
+  /**
    * Rabbit hunt purchases currently mid-flight, by userId. Two taps that race
    * the RPC both pass the `revealed` check (that set is written only after the
    * charge returns), so without this they would both succeed and bill twice.
@@ -1254,6 +1263,17 @@ export abstract class ServerTableEngineBase {
    * is set.
    */
   protected maintenancePaused: boolean = false;
+
+  /**
+   * A unanimous final-table deal owns its own between-hands pause.
+   *
+   * This cannot reuse `handForHandPaused`: the bubble synchronizer is allowed
+   * to lift that flag every round. It cannot reuse `maintenancePaused`
+   * either: the platform break is allowed to lift only the pause it created.
+   * Keeping a third authority means a slow guarantee read or atomic deal call
+   * cannot race a new hand, and one resume path can never cancel another.
+   */
+  protected finalTableDealPaused: boolean = false;
 
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
@@ -2175,7 +2195,11 @@ export abstract class ServerTableEngineBase {
          * placed lower would be unreachable for exactly the tables that need
          * it most.
          */
-        if (this.maintenancePaused || (this.handForHandPaused && this.holdBeforeNextHand)) {
+        if (
+          this.maintenancePaused ||
+          this.finalTableDealPaused ||
+          (this.handForHandPaused && this.holdBeforeNextHand)
+        ) {
           this.setLoopPhase('parked_for_pause');
           await this.awaitPauseGate();
           if (!this.running) break;
@@ -3445,6 +3469,20 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * Stop before the next hand so a unanimous final-table deal is priced from
+   * a fully settled stack snapshot. The caller must wait for
+   * `isParkedForFinalTableDeal()` before moving money.
+   */
+  pauseForFinalTableDeal(maxWaitMs: number): void {
+    this.finalTableDealPaused = true;
+    this.holdBeforeNextHand = true;
+    if (maxWaitMs > 0) {
+      this.pauseMaxWaitMs = Math.max(this.pauseMaxWaitMs ?? 0, maxWaitMs);
+    }
+    if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+  }
+
+  /**
    * Write this table's presence FSM to engine_presence_parked so the next
    * boot (loadPresenceFromPark in start()) continues it rather than
    * resetting it. Called when the break is announced and when the loop
@@ -3487,8 +3525,30 @@ export abstract class ServerTableEngineBase {
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
   resumeFromMaintenance(): void {
     this.maintenancePaused = false;
-    if (this.handForHandPaused) return; // hand-for-hand still owns the table
+    if (this.handForHandPaused || this.finalTableDealPaused) return;
     this.releasePauseGate();
+  }
+
+  /** Lift only the final-table-deal authority. Other pause owners remain. */
+  resumeFromFinalTableDeal(): void {
+    this.finalTableDealPaused = false;
+    if (this.handForHandPaused || this.maintenancePaused) return;
+    this.releasePauseGate();
+  }
+
+  /**
+   * True only after the deal authority has actually parked this running
+   * engine between hands. Merely observing `handController === null` is not
+   * enough because the dealing loop may already be opening the next hand.
+   */
+  isParkedForFinalTableDeal(): boolean {
+    return (
+      this.running &&
+      this.finalTableDealPaused &&
+      this.handForHandResolve !== null &&
+      !this.hasSettlementInFlight() &&
+      this.isBetweenHands()
+    );
   }
 
   /** True while the scheduled maintenance break is holding this table. */
@@ -3583,7 +3643,7 @@ export abstract class ServerTableEngineBase {
     // during a break is immediately — and without this line it would deal a
     // hand inside the break and destroy the break's pause budget on the way
     // through. See the `maintenancePaused` field.
-    if (this.maintenancePaused) {
+    if (this.maintenancePaused || this.finalTableDealPaused) {
       this.pausedSinceMs = this.pausedSinceMs || Date.now();
       return;
     }
@@ -3643,7 +3703,11 @@ export abstract class ServerTableEngineBase {
    */
   protected async awaitPauseGate(): Promise<void> {
     // Either authority holds the gate; see the `maintenancePaused` field.
-    if ((!this.handForHandPaused && !this.maintenancePaused) || !this.running) return;
+    if (
+      (!this.handForHandPaused && !this.maintenancePaused && !this.finalTableDealPaused) ||
+      !this.running
+    )
+      return;
     // Bible V8 §3.1: Table FSM — running → paused. GUARDED: the FSM has no
     // waiting → paused edge, and this gate is now reachable from the idle
     // branches where the table sits in 'waiting'. An unguarded transition
@@ -3800,6 +3864,7 @@ export abstract class ServerTableEngineBase {
     return (
       this.handForHandPaused ||
       this.maintenancePaused ||
+      this.finalTableDealPaused ||
       this.dealHoldUntilMs > Date.now() ||
       this.tableFSM.state === 'paused'
     );

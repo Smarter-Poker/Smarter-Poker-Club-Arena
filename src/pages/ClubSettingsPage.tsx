@@ -12,6 +12,7 @@ import { ClubsService } from '../services/ClubsService';
 import { MembershipService } from '../services/MembershipService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import BBJThresholdPanel from '../components/bbj/BBJThresholdPanel';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -1750,6 +1751,21 @@ export default function ClubSettingsPage() {
               control, which is to say it had been used. */}
           </section>
         )}
+        {/* THE JACKPOT ANNOUNCEMENTS (BBJ phase 3.4, 2026-09-07).
+
+            NOT inside the `!inUnion` block above, deliberately. A union banks
+            one jackpot for all of its clubs, but each club notifies its OWN
+            members, so a club inside a union has a real decision to make here
+            even though the pool it watches is not its own.
+
+            Phase 3.4 shipped the table, the five-minute sender and the
+            crossing ledger, and no way for a club to set a number. The removed
+            BBJ Rake switch a few lines above is the same defect with the
+            halves swapped - a control with no reader - and its note says
+            showing it was worse than not offering it. A reader with no control
+            is the other half of that mistake. */}
+        {clubId && <BBJThresholdPanel clubId={clubId} canEdit={isOwner || isClubStaff(userRole)} />}
+
         {/* Spins — the owner's switch and the wallet behind it.
             Placed here, after Buy-In Limits, because it is the only other
             setting on this page that commits the club's own money. */}

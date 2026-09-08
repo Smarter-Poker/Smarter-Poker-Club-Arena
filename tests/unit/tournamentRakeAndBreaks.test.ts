@@ -89,8 +89,8 @@ describe('synchronized breaks run :55 -> :00', () => {
   it('the liveness sweep does not rebuild engines during a break', () => {
     const revive = sliceMethod(BASE, 'protected async reviveDeadTableEngines');
     // Paused is not dead: the sweep must bail out before the dead check.
-    expect(revive).toMatch(/if \(this\.onBreak\) return;/);
-    const guardAt = revive.indexOf('this.onBreak');
+    expect(revive).toMatch(/if \(this\.isOnBreak\(\)\) return;/);
+    const guardAt = revive.indexOf('this.isOnBreak()');
     const deadAt = revive.indexOf('msSinceProgress() > 180_000');
     expect(guardAt).toBeGreaterThan(-1);
     expect(deadAt).toBeGreaterThan(-1);
@@ -194,10 +194,7 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
   });
 
   it("the tournament manager's sweep also respects a by-design pause", () => {
-    const revive = BASE.slice(
-      BASE.indexOf('protected async reviveDeadTableEngines'),
-      BASE.indexOf('protected async reviveDeadTableEngines') + 2200
-    );
+    const revive = sliceMethod(BASE, 'protected async reviveDeadTableEngines');
     expect(revive).toMatch(/engine\.isPausedByDesign\(\)/);
     expect(revive).toMatch(/!parkedOnPurpose && engine\.msSinceProgress\(\) > 180_000/);
   });
@@ -640,11 +637,11 @@ describe('a paused table parks whatever it was doing', () => {
      * through, so the table self-resumed two minutes into a five minute break.
      */
     const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
-    expect(resume).toMatch(/if \(this\.maintenancePaused\)/);
+    expect(resume).toMatch(/if \(this\.maintenancePaused \|\| this\.finalTableDealPaused\)/);
     // The maintenance resume is the mirror image: it must not lift a
     // hand-for-hand pause it did not set.
     const maint = sliceMethod(ENGINE_BASE, 'resumeFromMaintenance()');
-    expect(maint).toMatch(/if \(this\.handForHandPaused\) return/);
+    expect(maint).toMatch(/if \(this\.handForHandPaused \|\| this\.finalTableDealPaused\) return/);
   });
 
   it('the park is what areAllTablesParked reads, so an idle table counts', () => {

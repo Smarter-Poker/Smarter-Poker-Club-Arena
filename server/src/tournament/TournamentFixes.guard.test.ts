@@ -28,7 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { sliceMethod, sliceCall } from '../testHelpers/sourceWindow.js';
+import { sliceMethod, sliceCall, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -38,11 +38,14 @@ const SETTLER = read('src/services/RakebackSettlerService.ts');
 const PAYOUT_MATH = read('src/tournament/payoutMath.ts');
 const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const MANAGER = read('src/tournament/TournamentManager.ts');
-const FINISH_MIGRATION_NAME = fs
+const PLACE_SETTLEMENT_MIGRATION_NAME = fs
   .readdirSync(path.join(process.cwd(), '..', 'supabase', 'migrations'))
-  .find((name) => name.includes('completed_means_financially_certified'));
-if (!FINISH_MIGRATION_NAME) throw new Error('financial completion migration is missing');
-const FINISH_MIGRATION = read(`../supabase/migrations/${FINISH_MIGRATION_NAME}`);
+  .find((name) => name.includes('tournament_places_settle_and_complete_atomically'));
+if (!PLACE_SETTLEMENT_MIGRATION_NAME)
+  throw new Error('atomic place settlement migration is missing');
+const PLACE_SETTLEMENT_MIGRATION = read(
+  `../supabase/migrations/${PLACE_SETTLEMENT_MIGRATION_NAME}`
+);
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
@@ -146,15 +149,51 @@ describe('one rounding rule, shared by every payout site', () => {
 });
 
 describe('every tournament settles against its own prize pool', () => {
-  it('the COMPLETED transition reconciles payouts', () => {
-    expect(code(ELIM)).toMatch(/certifyTournamentFinish/);
-    expect(code(FINISH_MIGRATION)).toMatch(/fn_tournament_payout_reconcile/);
+  it('normal completion pays every place and completes through one atomic boundary', () => {
+    const finish = sliceMethod(code(ELIM), 'finishTournament(winnerId: string): Promise<void>');
+    const normalSettlement = sliceEnclosingBlock(finish, 'settleTournamentPlacesAtomically(');
+
+    expect(normalSettlement).toMatch(/await settleTournamentPlacesAtomically\(/);
+    expect(normalSettlement).toMatch(/'engine\.finishTournament'/);
+    expect(normalSettlement).toMatch(
+      /if \(!settlement\.ok \|\| !settlement\.completed\) \{[\s\S]*?this\.tournamentFinished = false;[\s\S]*?return;/
+    );
   });
 
-  it('and clears the break flags on the way out', () => {
+  it('normal completion has no direct terminal write or post-hoc reconciler', () => {
+    const finish = sliceMethod(code(ELIM), 'finishTournament(winnerId: string): Promise<void>');
+
+    // Both normal and satellite finishes now enter COMPLETING through the
+    // immutable claim RPC and leave it only through their format-owned atomic
+    // domain transaction. The manager must never recreate either status edge.
+    expect(finish).toMatch(/claimTournamentFinish\(/);
+    expect(finish).toMatch(/settleTournamentPlacesAtomically\(/);
+    expect(finish).toMatch(/settleSatelliteFinishAtomically\(/);
+    expect(finish).not.toMatch(/\.from\('tournaments'\)\s*\.update\(\{[\s\S]*?status:/);
+    expect(finish).not.toMatch(/status:\s*'(?:COMPLETING|COMPLETED)'/);
+    expect(finish).not.toMatch(/settleTournamentObligation\(/);
+    expect(finish).not.toMatch(/fn_settle_tournament_obligation/);
+    expect(finish).not.toMatch(/fn_tournament_payout_reconcile/);
+
+    // The replacement is stronger than the deleted client write: SQL pays
+    // the frozen batch and performs the terminal CAS in one exception block.
+    const atomic = code(PLACE_SETTLEMENT_MIGRATION);
+    const settle = atomic.indexOf(
+      'CREATE OR REPLACE FUNCTION public.fn_settle_tournament_places_atomic('
+    );
+    const pay = atomic.indexOf('fn_settle_tournament_obligation_before_atomic_batch_gate(', settle);
+    const complete = atomic.indexOf("SET status = 'COMPLETED'", pay);
+    const rollback = atomic.indexOf('EXCEPTION WHEN OTHERS', complete);
+    expect(settle).toBeGreaterThanOrEqual(0);
+    expect(pay).toBeGreaterThan(settle);
+    expect(complete).toBeGreaterThan(pay);
+    expect(rollback).toBeGreaterThan(complete);
+  });
+
+  it('clears the break flags inside the same atomic completion boundary', () => {
     // Defect: endBreak() never runs if the event finishes DURING a break, so
     // COMPLETED tournaments sat flagged on_break=true forever.
-    expect(code(FINISH_MIGRATION)).toMatch(/on_break\s*=\s*false/);
+    expect(code(PLACE_SETTLEMENT_MIGRATION)).toMatch(/on_break\s*=\s*false/);
   });
 });
 
@@ -169,12 +208,22 @@ describe('rebuys and add-ons actually happen', () => {
 
   it('add-ons are offered when the window opens', () => {
     expect(code(BASE)).toMatch(/protected async tryTournamentAddOns/);
-    expect(code(BASE)).toMatch(/await this\.tryTournamentAddOns\(\)/);
+    const stage = sliceEnclosingBlock(
+      code(ELIM),
+      'if (this.addOnPeriodTriggered && !this.prizePoolFinalized)'
+    );
+    expect(stage).toMatch(/await this\.tryTournamentAddOns\(\)/);
   });
 
-  it('the add-on call sits inside triggerAddOnPeriod, not orphaned', () => {
+  it('the durable window queues bounded scheduler work instead of running a field loop inline', () => {
     const trigger = sliceMethod(code(BASE), 'triggerAddOnPeriod(): Promise<void>');
-    expect(trigger).toMatch(/tryTournamentAddOns\(\)/);
+    const durableProof = trigger.indexOf('durableWindowProven = true');
+    const wake = trigger.indexOf('this.requestEliminationSweep()', durableProof);
+    const retry = trigger.indexOf('this.scheduleAddOnRetry()', wake);
+    expect(durableProof).toBeGreaterThanOrEqual(0);
+    expect(wake).toBeGreaterThan(durableProof);
+    expect(retry).toBeGreaterThan(wake);
+    expect(trigger).not.toMatch(/tryTournamentAddOns\(\)/);
   });
 });
 
@@ -197,7 +246,6 @@ describe('the settler keeps running every sentinel it is meant to', () => {
   const sentinels = [
     'runUnionEcoRecord',
     'runUnionRakeRollupCatchup',
-    'runTournamentPayoutSweep',
     'runTournamentChipConservation',
   ];
   for (const s of sentinels) {
@@ -206,6 +254,12 @@ describe('the settler keeps running every sentinel it is meant to', () => {
       expect(code(SETTLER)).toMatch(new RegExp(`await this\\.${s}\\(`));
     });
   }
+
+  it('never applies the retired tournament payout sweep', () => {
+    const settler = code(SETTLER);
+    expect(settler).not.toMatch(/runTournamentPayoutSweep/);
+    expect(settler).not.toMatch(/fn_tournament_payout_sweep/);
+  });
 });
 
 describe('ESM: every relative import carries its .js extension', () => {
@@ -268,7 +322,17 @@ describe('add-ons must always award their chips to the stack', () => {
   });
 
   it('throttles the repeat offer so clustered event wakes do not hammer it', () => {
-    expect(code(ELIM)).toMatch(/lastAddOnOfferAt\s*>=\s*20_000|20_000\s*<=/);
+    const base = code(BASE);
+    const stage = sliceEnclosingBlock(
+      code(ELIM),
+      'if (this.addOnPeriodTriggered && !this.prizePoolFinalized)'
+    );
+    expect(base).toMatch(/static readonly ADD_ON_RETRY_MS = 20_000/);
+    expect(stage).toMatch(
+      /nowMs - this\.lastAddOnOfferAt >= TournamentManagerBase\.ADD_ON_RETRY_MS/
+    );
+    expect(stage).toMatch(/this\.scheduleAddOnRetry\(\)/);
+    expect(stage).not.toMatch(/20_000/);
   });
 
   it('only offers add-ons to players who currently hold a seat', () => {
@@ -600,13 +664,14 @@ describe('a tournament that started and never dealt is rescued whatever its vari
     expect(code(GAMESERVER)).not.toContain("in('variant', ['sng', 'spin'])");
   });
 
-  it('still finds the sweep by the CAS requeue that defines it', () => {
-    // Anchored on the DB effect, not on phrasing: RUNNING -> REGISTERING under
-    // a compare-and-set is the whole mechanism. If this disappears the sweep
-    // has been removed, whatever the surrounding prose says.
+  it('releases the exact idle manager without rewinding durable launch state', () => {
+    // A completed launch receipt and RUNNING are one immutable fact. Recovery
+    // relinquishes only the dead in-memory generation so ordinary RUNNING
+    // discovery resumes it; rewriting REGISTERING strands the receipt.
     const src = code(GAMESERVER);
     expect(src).toContain('const neverDealtCutoff');
-    expect(src).toContain("update({ status: 'REGISTERING' })");
+    expect(src).toContain("'GameServer.never_dealt_stop_engine'");
+    expect(src).not.toContain("update({ status: 'REGISTERING' })");
   });
 
   it('requeues only once every playing player holds a live seat', () => {

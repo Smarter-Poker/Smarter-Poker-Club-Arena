@@ -38,6 +38,16 @@ export interface BBJCelebrationProps {
   /** The viewing player's own share — personalizes the celebration (2026-08-18). */
   heroShare?: number;
   /**
+   * Which jackpot hit (BBJ phase 6, 2026-09-07). 'mini' is Dan's second tier -
+   * a flat amount out of the backup reserve for a hand that came close to the
+   * main bar. It gets the same celebration, titled honestly, because the money
+   * is real and a player who took the beat deserves the moment; calling it
+   * "BAD BEAT JACKPOT!" when the main pool did not move would be the screen
+   * telling them something that is not true. Optional and defaulting to 'main'
+   * so every existing caller is unchanged.
+   */
+  kind?: 'main' | 'mini';
+  /**
    * Audit 2026-08-25 (multi-table): false on a table the player is not looking
    * at. Up to four TablePages are mounted at once and the inactive ones are
    * hidden with `display: none`, which stops the overlay painting and does
@@ -134,6 +144,7 @@ export function BBJCelebration({
   tablePlayerCount,
   qualifyingLabel,
   heroShare = 0,
+  kind = 'main',
   soundsAllowed = true,
   onComplete,
 }: BBJCelebrationProps) {
@@ -414,7 +425,7 @@ export function BBJCelebration({
       style={{ opacity, transition: 'opacity 0.5s ease' }}
       role="dialog"
       aria-live="assertive"
-      aria-label={`Bad Beat Jackpot Hit. Total Payout ${Math.trunc(totalPayout).toLocaleString('en-US')}.`}
+      aria-label={`${kind === 'mini' ? 'Mini Bad Beat Jackpot' : 'Bad Beat Jackpot'} Hit. Total Payout ${Math.trunc(totalPayout).toLocaleString('en-US')}.`}
     >
       {/* Canvas layer for particles */}
       <canvas ref={canvasRef} className="bbj-canvas" />
@@ -440,8 +451,12 @@ export function BBJCelebration({
               where a heading belongs, and nothing user-facing carries an
               emoji. */}
           <div className="bbj-title-crown" aria-hidden="true" />
-          <h1 className="bbj-title-text">BAD BEAT JACKPOT!</h1>
-          <div className="bbj-title-subtitle">JACKPOT HIT!</div>
+          <h1 className="bbj-title-text">
+            {kind === 'mini' ? 'MINI BAD BEAT JACKPOT!' : 'BAD BEAT JACKPOT!'}
+          </h1>
+          <div className="bbj-title-subtitle">
+            {kind === 'mini' ? 'MINI JACKPOT HIT!' : 'JACKPOT HIT!'}
+          </div>
           {qualifyingLabel && <div className="bbj-title-qualifier">{qualifyingLabel}</div>}
         </div>
 

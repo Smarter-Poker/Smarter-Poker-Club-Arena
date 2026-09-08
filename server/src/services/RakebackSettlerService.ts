@@ -533,6 +533,10 @@ export class RakebackSettlerService {
         // no-ops mid-week, so a close that fails (or an engine outage spanning a
         // Monday) is retried within 30 minutes instead of 7 days.
         await this.runUnionWeeklyRakeback();
+        // Player rakeback, every cycle. See runRakebackDrain: settle_club_rakeback
+        // is bounded, so it must be drained in a loop rather than called once a
+        // week. Ordered after the union 90% because that is what funds it.
+        await this.runRakebackDrain();
         await this.runWeeklyFinancialClose();
         // SWEEP #6: post-tournament money-conservation sentinel. Scans every
         // tournament that reached COMPLETED since the last cycle and asserts the
@@ -569,15 +573,6 @@ export class RakebackSettlerService {
         // week) and that must never run while FOR UPDATE locks are held on
         // union_wallets and clubs.chip_treasury.
         await this.runUnionEcoRecord();
-        // PAYOUT-INTEGRITY 2026-08-20: continuous prize-pool reconciliation.
-        // TournamentManagerEliminations now reconciles each event at its
-        // COMPLETED transition, but that call lives in the same process that
-        // may itself be the thing having a bad day -- and a tournament whose
-        // finish path was disrupted is exactly the one that needs reconciling.
-        // This sweep is the independent second look: any completed event whose
-        // prizes do not add up is repaired (or, where the finisher was never
-        // recorded, alerted) within one settler cycle instead of never.
-        await this.runTournamentPayoutSweep();
         // PAYOUT-INTEGRITY 2026-08-20: a live tournament must hold exactly the
         // chips it issued. Nothing verified this before.
         await this.runTournamentChipConservation();
@@ -614,9 +609,8 @@ export class RakebackSettlerService {
    * Idempotent and cheap: bounded batch per cycle, advances the watermark to the
    * newest processed ended_at so each tournament is checked once.
    *
-   * THE WINDOW COLUMN WAS WRONG UNTIL 2026-08-31, in exactly the way the payout
-   * sweep's was until 2026-08-29 (see the long note on payoutSweepCycles, and
-   * `20260829125035_payout_sweep_window_means_finished_not_created`). This scan
+   * THE WINDOW COLUMN WAS WRONG UNTIL 2026-08-31, in exactly the way the retired
+   * payout sweep's was until 2026-08-29. This scan
    * filtered, ordered and watermarked on `tournaments.updated_at`, which NOTHING
    * maintains — no trigger, no engine write. Measured on 2026-08-31: 2,286 of
    * 2,286 tournaments created in 24 hours had `updated_at = created_at`, and
@@ -847,22 +841,6 @@ export class RakebackSettlerService {
    * stays reproducible. No-ops entirely unless a union has eco_enabled set.
    */
   /**
-   * PAYOUT-INTEGRITY sweep -- reconcile recently completed tournaments.
-   *
-   * Prizes are emitted incrementally (places 2..N as players bust, place 1 at
-   * finish), so before this existed nothing ever verified that a prize pool
-   * had actually been disbursed in full. Across all history that left 113 of
-   * 951 multi-place tournaments under-paid, 79 of them paying ONLY first
-   * place, while single-place Spins were 2,058 for 2,058 perfect.
-   *
-   * fn_tournament_payout_sweep is bounded by a lookback window and a row
-   * limit so it can never become the kind of unbounded scan that took the
-   * treasury sentinel offline. It tops up only places with exactly one
-   * recorded finisher, reports overpayment rather than clawing it back, and
-   * is idempotent (verified: first apply credits the shortfall, further
-   * applies credit nothing).
-   */
-  /**
    * Tournament chip conservation.
    *
    * Chips in play must equal
@@ -921,214 +899,6 @@ export class RakebackSettlerService {
       }
     } catch (err) {
       reportError(err, 'RakebackSettler.tournament_chip_conservation_threw');
-    }
-  }
-
-  /**
-   * ═══════════════════════════════════════════════════════════════════════
-   *  THE SWEEP COULD NEVER REACH ITS OWN BACKLOG
-   * ═══════════════════════════════════════════════════════════════════════
-   *
-   * This ran with `p_days: 1` — so 169 underpaid tournaments from May through
-   * August sat permanently outside the window. Nothing else looks at them: the
-   * per-event reconciliation happens at the COMPLETED transition, and this
-   * sweep exists precisely because that path is the one that can fail.
-   *
-   * WIDENING THE WINDOW ALONE ACHIEVES NOTHING, and that is the part worth
-   * writing down. `fn_tournament_payout_sweep(p_days, p_apply, p_limit)` applies
-   * `LIMIT GREATEST(p_limit, 1)` to the SCAN — not to the report. A 30-day
-   * window with a 200-row limit examines the 200 most recent events and stops,
-   * which is roughly what a 1-day window already did.
-   *
-   * So both numbers move together, or neither is worth moving.
-   *
-   * THE WINDOW COLUMN WAS ALSO WRONG, and was fixed on 2026-08-29 in
-   * `20260829125035_payout_sweep_window_means_finished_not_created`. The scan
-   * filtered and ordered on `tournaments.updated_at`, which NOTHING
-   * maintains — no trigger, no engine write — so it holds row-creation time.
-   * For a scheduled recurring event that is when it went on the calendar, so
-   * "the last 30 days" meant "scheduled in the last 30 days" and an event
-   * scheduled 31 days ago and finished yesterday was invisible. Measured
-   * across all 39,338 COMPLETED events: `updated_at >= ended_at` on ZERO of
-   * them. The 38 events carrying 11,238.80 of unpaid prize money, repaired
-   * that same morning, were every one of them outside a 30-day `updated_at`
-   * window and had never been asked. The window is measured on
-   * `coalesce(ended_at, started_at, updated_at)` now.
-   *
-   * And the RPC reports its own truncation (`candidates_matched`,
-   * `candidates_scanned`, `truncated`), so a limit that has quietly shrunk the
-   * window back down is visible below instead of being folklore in this
-   * comment.
-   *
-   * THE COST, AND WHY IT IS NOT PAID EVERY CYCLE. Measured: ~0.29ms per event,
-   * 2,000 events in 1.09s, and the full 30-day population is 35,042 events —
-   * about ten seconds. This RPC carries no client-side timeout and sits behind
-   * PostgREST's statement timeout, which is single-digit seconds unless the
-   * function raises its own; ten seconds is close enough to that edge to be a
-   * coin flip, and a cancelled statement returns an error rather than a partial
-   * repair. Paying it on all 48 cycles a day to re-scan a backlog that is empty
-   * after the first pass would also be pure waste.
-   *
-   * So the sweep runs NARROW every cycle and DEEP occasionally:
-   *
-   *   - narrow (2 days, 6,000 rows) catches yesterday's failures within 30
-   *     minutes, which is what this sweep is for day to day. Two days, not one,
-   *     because a one-day window on a 30-minute cycle has no overlap to spare
-   *     if a cycle is skipped, and 6,000 rather than a round 2,000 because the
-   *     limit binds the SCAN: a limit under the window's population silently
-   *     shrinks the window back down;
-   *   - deep (30 days, 40,000 rows) runs on the FIRST cycle after boot and then
-   *     every 24th cycle — about twice a day — which is what actually reaches
-   *     the 169 stale events;
-   *   - a deep pass that fails (statement timeout included) does NOT lose the
-   *     cycle: it is reported and the narrow pass runs anyway, so the routine
-   *     work still happens and the next deep attempt is 12 hours away rather
-   *     than never.
-   */
-  private payoutSweepCycles = 0;
-
-  private async runTournamentPayoutSweep(): Promise<void> {
-    const deepDue = this.payoutSweepCycles % RakebackSettlerService.PAYOUT_SWEEP_DEEP_EVERY === 0;
-    this.payoutSweepCycles++;
-
-    if (deepDue) {
-      // Its return value is the point: a deep pass that fails must fall
-      // through to the narrow one rather than costing the cycle its sweep.
-      const deepOk = await this.payoutSweepPass(
-        RakebackSettlerService.PAYOUT_SWEEP_DEEP_DAYS,
-        RakebackSettlerService.PAYOUT_SWEEP_DEEP_LIMIT,
-        'deep'
-      );
-      // A deep pass covers the narrow window by definition, so skip the second
-      // scan when it succeeded.
-      if (deepOk) return;
-    }
-    await this.payoutSweepPass(
-      RakebackSettlerService.PAYOUT_SWEEP_RECENT_DAYS,
-      RakebackSettlerService.PAYOUT_SWEEP_RECENT_LIMIT,
-      'recent'
-    );
-  }
-
-  /** Days back the every-cycle pass looks. Overlaps a skipped cycle. */
-  private static readonly PAYOUT_SWEEP_RECENT_DAYS = 2;
-  /**
-   * Rows the every-cycle pass will SCAN — and the limit is on the SCAN, so it
-   * has to EXCEED the window's population or the window is decorative.
-   * Measured 2026-08-27: 35,220 COMPLETED events in 30 days, ~1,174/day, so a
-   * 2-day window normally holds ~2,350. Five times that, ~1.7s of scan.
-   *
-   * 2026-09-01: RAISED 6,000 -> 20,000, because the window overtook the limit.
-   *
-   * The 2-day window now holds **6,959** events, not ~2,350 -- daily volume has
-   * roughly tripled since the figure above was measured. So the narrow pass was
-   * examining 6,000 of 6,959 and stopping, and by the reasoning in the comment
-   * directly above this one the window had become decorative again.
-   *
-   * This is not a silent miss -- the deep pass (30 days / 40,000, every 24th
-   * cycle) reaches the remainder within about twelve hours, which is why nobody
-   * noticed. It is still twelve hours of an underpaid player waiting on a pass
-   * that had the budget to reach them and did not.
-   *
-   * Measured against production 2026-09-01: the FULL 2-day window, all 6,959
-   * events, reconciles in **5.7 seconds** -- so the headroom costs about a
-   * second. The old comment's worry about PostgREST's single-digit statement
-   * timeout no longer applies either: the RPC sets its own
-   * `statement_timeout = 600s`, which overrides it for the duration of the call.
-   *
-   * 20,000 is ~3x the current population, the same multiple the original 6,000
-   * was chosen at. When the window overtakes this one too, the sweep now says
-   * so out loud (fn_tournament_payout_sweep raises a truncation alert on any
-   * applying pass) rather than leaving it to be rediscovered.
-   */
-  private static readonly PAYOUT_SWEEP_RECENT_LIMIT = 20000;
-  /** Days back the periodic pass looks — far enough to reach the May backlog. */
-  private static readonly PAYOUT_SWEEP_DEEP_DAYS = 30;
-  /**
-   * 2026-09-01: RAISED 40,000 -> 150,000, for the same reason the narrow limit
-   * was raised hours earlier, and caught by the same alert.
-   *
-   * The comment this replaces read "35,220 events live in a 30-day window;
-   * 40,000 covers it with headroom", measured 2026-08-27. Measured again today
-   * the window holds **48,093**, so the deep pass was scanning the newest
-   * 40,000 and stopping 8,093 short -- and the deep pass is the one thing that
-   * reaches an event after it ages out of the hourly 7-day pg_cron sweep. A
-   * deep pass that truncates is a safety net with a hole in the far corner,
-   * which is exactly where it is meant to catch.
-   *
-   * Nothing was missed in practice: every event is swept hourly by
-   * `ca-payout-sweep-hourly` (7 days / 40,000 against a 30,878 population)
-   * while it is fresh, so the unreached tail had already been reconciled many
-   * times over before it aged past the deep pass. The hole is in the
-   * guarantee, not yet in the money.
-   *
-   * 150,000 is ~3x the current population, the same multiple the other two
-   * limits were chosen at. The full 2-day window (6,959 events) reconciles in
-   * 5.7s, so a full 30-day pass is on the order of 40s against the RPC's own
-   * 600s statement timeout, twice a day.
-   */
-  private static readonly PAYOUT_SWEEP_DEEP_LIMIT = 150000;
-  /** Cycles between deep passes. 30-minute cycle, so ~twice a day. */
-  private static readonly PAYOUT_SWEEP_DEEP_EVERY = 24;
-
-  /** @returns true when the pass completed; false when the RPC failed. */
-  private async payoutSweepPass(days: number, limit: number, label: string): Promise<boolean> {
-    try {
-      const startedAt = Date.now();
-      const { data, error } = await supabase.rpc('fn_tournament_payout_sweep', {
-        p_days: days,
-        p_apply: true,
-        // MUST be passed explicitly. Omitting it defaults to 50 and silently
-        // turns any window into "the 50 most recently updated events".
-        p_limit: limit,
-      });
-      if (error) {
-        reportError(
-          new Error(
-            `fn_tournament_payout_sweep (${label}: ${days}d/${limit}) failed after ` +
-              `${Date.now() - startedAt}ms: ${error.message}`
-          ),
-          'RakebackSettler.tournament_payout_sweep_rpc'
-        );
-        return false;
-      }
-      /**
-       * A TRUNCATED PASS IS NOT A CLEAN PASS (2026-08-29). The limit binds the
-       * scan, so a limit below the window's population silently turns "look at
-       * 30 days" into "look at the N most recent events" — and reports zero
-       * findings for the events it never examined. That is the failure mode
-       * this whole sweep exists to prevent, one level up. Say it out loud.
-       */
-      const truncated = (data as { truncated?: boolean } | null)?.truncated === true;
-      if (truncated) {
-        const t = data as { candidates_matched?: number; candidates_scanned?: number } | null;
-        reportError(
-          new Error(
-            `fn_tournament_payout_sweep (${label}: ${days}d/${limit}) was TRUNCATED - ` +
-              `${t?.candidates_matched ?? '?'} completed event(s) in the window, only ` +
-              `${t?.candidates_scanned ?? '?'} examined. The rest were not checked and their ` +
-              `findings are not in this result. Raise the limit.`
-          ),
-          'RakebackSettler.tournament_payout_sweep_truncated'
-        );
-      }
-
-      const findings = Number(
-        (data as { tournaments_with_findings?: number } | null)?.tournaments_with_findings ?? 0
-      );
-      if (findings > 0) {
-        const payload = data as { total_top_up?: number; findings?: unknown } | null;
-        reportError(
-          new Error(
-            `TOURNAMENT PAYOUT (${label}: ${days}d/${limit}, ${Date.now() - startedAt}ms): ${findings} completed tournament(s) did not reconcile; topped up ${payload?.total_top_up ?? 0}. Details: ${JSON.stringify(payload?.findings ?? []).slice(0, 1500)}`
-          ),
-          'RakebackSettler.tournament_payout_unreconciled'
-        );
-      }
-      return true;
-    } catch (err) {
-      reportError(err, 'RakebackSettler.tournament_payout_sweep_threw');
-      return false;
     }
   }
 
@@ -1325,6 +1095,117 @@ export class RakebackSettlerService {
     }
   }
 
+  /**
+   * PLAYER RAKEBACK DRAIN - every cycle, not once a week (2026-09-07).
+   *
+   * settle_club_rakeback became BOUNDED on 2026-09-07: it settles at most 40
+   * periods and stops after ~4s of wall clock. It had to be - the unbounded
+   * version could not finish a 1,769-period backlog inside the 8s
+   * statement_timeout service_role carries, so it was cancelled every Monday
+   * and had settled nothing since 2026-08-20 while 443,513.92 sat owed to
+   * 1,005 players.
+   *
+   * A bound puts an obligation on the caller: DRAIN IN A LOOP. This used to be
+   * step 1 of runWeeklyFinancialClose, which sits behind a once-per-ISO-week
+   * gate and stamps the week closed whether or not anything drained - so one
+   * bounded pass per club would have paid 40 periods and then latched for
+   * seven days.
+   *
+   * So it moves here, for the reason the comment above runUnionWeeklyRakeback
+   * already gives: the RPC is idempotent and no-ops when nothing is due, so a
+   * club not finished this cycle is finished 30 minutes later instead of next
+   * Monday. It runs AFTER the union 90% lands, because player rakeback is
+   * funded from clubs.chip_treasury and the union payback is what fills it.
+   *
+   * It reads the response. supabaseRpc() discards `data`, and a refusal comes
+   * back as HTTP 200 with success:false - so a call that settles nothing
+   * because it was not authorised is invisible unless somebody looks.
+   */
+  private async runRakebackDrain(): Promise<void> {
+    const DEADLINE_MS = 60 * 1000; // one cycle spends at most a minute here
+    const MAX_PASSES_PER_CLUB = 40; // 40 passes x 40 periods = 1,600 per club
+    const started = Date.now();
+    let settled = 0;
+    let paid = 0;
+    let deferred = 0;
+    let errors = 0;
+    const reasons: Record<string, number> = {};
+
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: pendingClubs, error: readErr } = await supabase
+        .from('rakeback_periods')
+        .select('club_id')
+        .eq('status', 'pending')
+        .lt('period_end', today)
+        .limit(5000);
+      if (readErr) {
+        reportError(
+          new Error(`rakeback drain could not read pending clubs: ${readErr.message}`),
+          'RakebackSettler.rakeback_drain_read'
+        );
+        return;
+      }
+      const clubIds = [...new Set((pendingClubs ?? []).map((r) => r.club_id).filter(Boolean))];
+
+      for (const clubId of clubIds) {
+        for (let pass = 0; pass < MAX_PASSES_PER_CLUB; pass++) {
+          if (Date.now() - started > DEADLINE_MS) return;
+
+          const { data, error } = await supabase.rpc('settle_club_rakeback', {
+            p_club_id: clubId,
+          });
+          if (error) {
+            errors++;
+            reportError(
+              new Error(`settle_club_rakeback failed for club ${clubId}: ${JSON.stringify(error)}`),
+              'RakebackSettler.rakeback_drain'
+            );
+            break;
+          }
+          const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+          if (!r || r.success !== true) {
+            errors++;
+            reportError(
+              new Error(`settle_club_rakeback refused for club ${clubId}: ${JSON.stringify(r)}`),
+              'RakebackSettler.rakeback_drain_refused'
+            );
+            break;
+          }
+
+          const settledThisPass = Number(r.periods_settled ?? 0);
+          settled += settledThisPass;
+          paid += Number(r.total_payout ?? 0);
+          deferred += Number(r.deferred ?? 0);
+          errors += Number(r.errors ?? 0);
+          for (const [k, v] of Object.entries(
+            (r.deferred_reasons ?? {}) as Record<string, number>
+          )) {
+            reasons[k] = (reasons[k] ?? 0) + Number(v ?? 0);
+          }
+
+          // Drained, or this pass could move nothing. Either way stop asking:
+          // the batch orders least-refused first, so a pass that settles zero
+          // has already looked past everything it was going to skip.
+          if (Number(r.periods_remaining ?? 0) === 0) break;
+          if (settledThisPass === 0) break;
+        }
+      }
+    } catch (e) {
+      reportError(
+        new Error((e as { message?: string })?.message || String(e)),
+        'RakebackSettler.rakeback_drain_threw'
+      );
+    }
+
+    if (settled > 0 || deferred > 0 || errors > 0) {
+      console.log(
+        `[RakebackSettler] Player rakeback: ${settled} periods paid, ${paid.toFixed(2)} chips, ` +
+          `${deferred} deferred ${JSON.stringify(reasons)}, ${errors} errors`
+      );
+    }
+  }
+
   private async runWeeklyFinancialClose(): Promise<void> {
     const WEEKLY_KEY = 'weekly_financial_close';
     try {
@@ -1347,23 +1228,13 @@ export class RakebackSettlerService {
         `[RakebackSettler] Weekly financial close starting (week of ${currentWeekStart})`
       );
 
-      // 1. Pay out lapsed rakeback periods per club
-      const { data: pendingClubs } = await supabase
-        .from('rakeback_periods')
-        .select('club_id')
-        .eq('status', 'pending')
-        .lt('period_end', currentWeekStart)
-        .limit(5000);
-      const clubIds = [...new Set((pendingClubs ?? []).map((r) => r.club_id).filter(Boolean))];
-      for (const clubId of clubIds) {
-        const { error } = await this.supabaseRpc('settle_club_rakeback', { p_club_id: clubId });
-        if (error) {
-          reportError(
-            new Error(`settle_club_rakeback failed for club ${clubId}: ${JSON.stringify(error)}`),
-            'RakebackSettler.weekly_settle_club'
-          );
-        }
-      }
+      // 1. Player rakeback payout MOVED OUT of this weekly gate on 2026-09-07,
+      //    to runRakebackDrain(), which runs every cycle. settle_club_rakeback
+      //    is bounded now (40 periods / ~4s per call), so it has to be called
+      //    in a loop - and this method runs once per ISO week and stamps the
+      //    week closed at step 4 whether or not anything drained. One bounded
+      //    pass per club here would have paid 40 periods and latched for seven
+      //    days. See the header of runRakebackDrain.
 
       // 2. Weekly agent credit invoices
       {
@@ -1400,7 +1271,7 @@ export class RakebackSettlerService {
         { onConflict: 'daemon' }
       );
       console.log(
-        `[RakebackSettler] Weekly financial close done: ${clubIds.length} clubs settled, invoices generated, weekly counters reset`
+        '[RakebackSettler] Weekly financial close done: invoices generated, weekly counters reset'
       );
     } catch (e) {
       reportError(

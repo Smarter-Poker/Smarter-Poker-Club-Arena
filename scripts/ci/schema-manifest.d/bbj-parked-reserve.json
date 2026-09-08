@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/codex-audit/bbj-reserved-funding: migration 20260907203446 applied and fn_bbj_parked_reserve(uuid,text) verified in the live pg_proc catalog. Original funding and recovery rollback probe passed against installed definitions.",
+  "functions": ["fn_bbj_parked_reserve"]
+}

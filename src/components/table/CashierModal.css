@@ -292,7 +292,7 @@
 }
 
 .cashier-modal__preview-value--withdraw {
-  color: #ffb800;
+  color: var(--sp-warn);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -389,7 +389,7 @@
 }
 
 .cashier-modal__tx-type--withdraw {
-  color: #ffb800;
+  color: var(--sp-warn);
 }
 
 .cashier-modal__tx-time {

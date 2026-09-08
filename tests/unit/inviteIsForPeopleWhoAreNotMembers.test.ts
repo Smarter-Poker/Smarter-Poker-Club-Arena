@@ -54,7 +54,10 @@ describe('an existing member is never shown the invitation', () => {
     // its push semantics after the others were fixed.
     expect(CODE, 'the helper itself must exist').toMatch(/const enterClub = useCallback\(/);
     const calls = CODE.match(/enterClub\(/g) ?? [];
-    expect(calls.length, 'member redirect, pending redemption, and join').toBe(3);
+    expect(
+      calls.length,
+      'automatic Diamond entry, member redirect, pending redemption, and join'
+    ).toBe(4);
     expect(
       CODE.match(/navigate\(`\/clubs\//g) ?? [],
       'no direct club navigation may bypass enterClub'

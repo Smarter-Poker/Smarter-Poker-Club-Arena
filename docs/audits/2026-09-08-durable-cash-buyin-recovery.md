@@ -79,3 +79,13 @@ without conflicts. No guard override or history rewrite was used. Build commit
 behind-main=0. TypeScript and 106 targeted tests across six files passed on that
 integrated source. Existing PostgreSQL proof remains valid; the merge changed
 none of the cash receipt migration or probe files.
+
+## Covering Hook Follow-Up
+
+The first push was blocked by three covering tests (2,123 other assertions
+passed). The recovery effect was moved below pending-seat state, retaining the
+existing no-use-before-declaration ratchet unchanged. Two source pins were
+updated to the new flow: cash confirmation uses an authoritative balance refresh,
+and only seat-first confirmation/new cash confirmation clear the leave latch.
+The real callback tests explicitly prove new confirmation clears that latch and
+historical receipt recovery preserves it. No hook was bypassed.

@@ -4649,33 +4649,6 @@ export default function TablePage({
   const buyInScopeRef = useRef('');
   const restoredBuyInScopeRef = useRef<string | null>(null);
   buyInScopeRef.current = `${userId}:${tableId}`;
-  useEffect(() => {
-    const scope = `${userId}:${tableId}`;
-    if (restoredBuyInScopeRef.current !== null && restoredBuyInScopeRef.current !== scope) {
-      setShowBuyInModal(false);
-      setSelectedSeat(null);
-      setPendingSeat(null);
-    }
-    restoredBuyInScopeRef.current = scope;
-    buyInOperationRef.current = null;
-    buyInProcessingRef.current = false;
-    cashBuyInPendingRef.current = null;
-    setCashBuyInRecovery(null);
-    buyInIdempotencyKeyRef.current = null;
-    if (!userId || userId === 'guest' || !tableId) return;
-    try {
-      const pending = cashBuyInJournal.read(userId, tableId);
-      if (!pending) return;
-      cashBuyInPendingRef.current = pending;
-      buyInIdempotencyKeyRef.current = pending.payload.p_idempotency_key;
-      setCashBuyInRecovery(pending);
-      setSelectedSeat(pending.payload.p_seat_number);
-      setShowBuyInModal(true);
-    } catch (error) {
-      reportError(error, 'TablePage.cash_buyin_recovery_unreadable');
-      toast.error('Your Saved Buy-In Needs Verification Before Another Purchase.');
-    }
-  }, [userId, tableId]);
   // FIX 132: Persistent hero seat ref — set IMMEDIATELY on buy-in, never stale
   // Prevents race condition where tableState.heroSeat is 0 during DB query but user tries to sit again
   const heroSeatRef = useRef(0);
@@ -6374,6 +6347,33 @@ export default function TablePage({
   // its own state lets the placeholder survive until real data replaces it.
   // ─────────────────────────────────────────────────────────────────
   const [pendingSeat, setPendingSeat] = useState<number | null>(null);
+  useEffect(() => {
+    const scope = `${userId}:${tableId}`;
+    if (restoredBuyInScopeRef.current !== null && restoredBuyInScopeRef.current !== scope) {
+      setShowBuyInModal(false);
+      setSelectedSeat(null);
+      setPendingSeat(null);
+    }
+    restoredBuyInScopeRef.current = scope;
+    buyInOperationRef.current = null;
+    buyInProcessingRef.current = false;
+    cashBuyInPendingRef.current = null;
+    setCashBuyInRecovery(null);
+    buyInIdempotencyKeyRef.current = null;
+    if (!userId || userId === 'guest' || !tableId) return;
+    try {
+      const pending = cashBuyInJournal.read(userId, tableId);
+      if (!pending) return;
+      cashBuyInPendingRef.current = pending;
+      buyInIdempotencyKeyRef.current = pending.payload.p_idempotency_key;
+      setCashBuyInRecovery(pending);
+      setSelectedSeat(pending.payload.p_seat_number);
+      setShowBuyInModal(true);
+    } catch (error) {
+      reportError(error, 'TablePage.cash_buyin_recovery_unreadable');
+      toast.error('Your Saved Buy-In Needs Verification Before Another Purchase.');
+    }
+  }, [userId, tableId]);
   /**
    * Dan 2026-08-18: the stack the hero just bought in for. Between "buy-in
    * confirmed" and "dealt into a hand" the engine's players array does not

@@ -106,7 +106,9 @@ describe('cash buy-in callback recovery', () => {
   it('buys in without native randomUUID and without a preliminary seat read', async () => {
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(7) });
     const f = fixture();
+    f.d.leftSeatPendingRef.current = true;
     await f.handler(100, false);
+    expect(f.d.leftSeatPendingRef.current).toBe(false);
     expect(f.d.supabase.from).not.toHaveBeenCalled();
     expect(f.d.supabase.rpc).toHaveBeenCalledWith(
       'atomic_table_buyin',
@@ -237,6 +239,7 @@ it('retains an unknown request after the response deadline and ignores a late re
 
 it('recovers a committed receipt without restoring an old stack or subtracting the wallet again', async () => {
   const f = fixture();
+  f.d.leftSeatPendingRef.current = true;
   f.d.supabase.rpc.mockImplementation((name: string) => {
     if (name === 'atomic_table_buyin') return Promise.reject(new Error('response lost'));
     const p = f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId).payload;
@@ -266,6 +269,7 @@ it('recovers a committed receipt without restoring an old stack or subtracting t
   expect(f.d.requestEngineSnapshot).toHaveBeenCalledOnce();
   expect(f.state().heroSeat).toBe(0);
   expect(f.d.totalBuyInRef.current).toBe(0);
+  expect(f.d.leftSeatPendingRef.current).toBe(true);
 });
 
 it('keeps a late confirmation inside its original view and cannot clear a newer operation latch', async () => {

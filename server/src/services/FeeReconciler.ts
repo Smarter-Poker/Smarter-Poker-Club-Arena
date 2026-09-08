@@ -141,7 +141,10 @@ const RECONCILE_BATCH = 250;
  * Registered with bbj.ts below so processBBJPayout can call it without a
  * static import in the other direction (bbj.ts is imported by this module).
  */
-export async function queueUnpaidBBJPayout(params: BBJPayoutParams, note: string): Promise<void> {
+export async function queueUnpaidBBJPayout(
+  params: BBJPayoutParams,
+  note: string
+): Promise<boolean> {
   let handId: string | null = null;
   try {
     const { data: hh } = await supabase
@@ -177,21 +180,23 @@ export async function queueUnpaidBBJPayout(params: BBJPayoutParams, note: string
         `[BBJ] Claimed jackpot payout for table ${params.tableId} hand #${params.handNumber} ` +
           `(${params.dealtInPlayerIds.length} recipients): ${note}`
       );
-      return;
+      return true;
     }
     if (/duplicate|unique/i.test(error.message || '')) {
       /* WRITE-AHEAD MADE THIS THE ORDINARY PATH (phase 2.1). The claim is
          written before the first attempt, so a later call finds its own row.
          Refresh the note so the open row carries the CURRENT reason rather
          than "not yet attempted". */
-      await supabase
+      const { error: refreshError, count } = await supabase
         .from('pending_fee_distributions')
-        .update({ last_error: note.slice(0, 500) })
+        .update({ last_error: note.slice(0, 500) }, { count: 'exact' })
         .eq('table_id', params.tableId)
         .eq('hand_number', params.handNumber)
         .eq('kind', 'bbj_payout')
         .is('resolved_at', null);
-      return;
+      if (!refreshError && count === 1) return true;
+      queueError = refreshError?.message || 'No single open jackpot claim was confirmed';
+      break;
     }
     queueError = error.message || String(error);
     if (!TRANSIENT_DB_ERROR.test(queueError) || attempt === QUEUE_INSERT_ATTEMPTS) break;
@@ -202,10 +207,11 @@ export async function queueUnpaidBBJPayout(params: BBJPayoutParams, note: string
   reportError(
     new Error(
       `[BBJ] Could not queue the unpaid jackpot for table ${params.tableId} hand #${params.handNumber}: ` +
-        `${queueError}. The financial alert is now the only record of it.`
+        `${queueError}. Durable queue persistence is not confirmed.`
     ),
     'FeeReconciler.bbj_payout_queue_failed'
   );
+  return false;
 }
 
 /**

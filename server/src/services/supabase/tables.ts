@@ -441,7 +441,8 @@ export async function syncStacks(
       const verdict = await attemptStackWrite();
       // A refusal is the database's final word, not a transport failure: it has
       // already been reported above. Stop retrying it.
-      if (verdict.kind === 'landed' || verdict.kind === 'refused') return { done: true };
+      if (verdict.kind === 'landed') return { done: true };
+      if (verdict.kind === 'refused') return { done: true, refused: true };
       return { done: false, error: verdict.error };
     },
     onGiveUp: async (finalError, elapsedMs, attempts) => {

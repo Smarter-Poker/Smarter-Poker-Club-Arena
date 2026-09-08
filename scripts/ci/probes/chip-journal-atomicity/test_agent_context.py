@@ -59,6 +59,34 @@ def verify_agent_context(run):
         BEGIN PERFORM {call};EXCEPTION WHEN SQLSTATE '{fault}' THEN caught:=true;END;
         IF NOT caught OR s IS DISTINCT FROM {state} OR NOT ({correct}) THEN RAISE EXCEPTION 'Partial agent operation or leaked context';END IF;
        END $t$;ROLLBACK;""");count+=1
+  run("ALTER TABLE agents ADD COLUMN status text DEFAULT 'active'; CREATE FUNCTION fn_club_bank_role(uuid,uuid) RETURNS text LANGUAGE sql AS $$ SELECT role FROM club_members WHERE club_id=$1 AND user_id=$2 $$;")
+  run(Path(os.environ["SELF_STAKE_ORIGINAL"]).read_text() if os.environ.get("SELF_STAKE_ORIGINAL") else latest("fn_agent_wallet_self_stake"))
+  stake_seed=f"INSERT INTO clubs(id) VALUES('{C}');INSERT INTO club_members(id,user_id,club_id,role) VALUES('{I}','{I}','{C}','agent');INSERT INTO agents(club_id,user_id,agent_wallet_balance) VALUES('{C}','{I}',100);SELECT set_config('test.actor','{I}',true);"
+  stake=lambda amount="5",key=O:f"fn_agent_wallet_self_stake('{C}',{amount},NULL,{'NULL' if key is None else chr(39)+key+chr(39)})"
+  run("BEGIN;"+stake_seed+context+f"""DO $t$ DECLARE r jsonb;s jsonb;BEGIN
+   r:={stake()};
+   IF r->>'success' IS DISTINCT FROM 'true' OR NOT ({correct}) THEN RAISE EXCEPTION 'Self-stake leaks ledger context';END IF;
+   IF (SELECT agent_wallet_balance FROM agents)<>95 OR (SELECT chip_balance FROM club_members)<>105
+    OR (SELECT count(*) FROM chip_ledger)<>1 OR EXISTS(SELECT 1 FROM chip_ledger WHERE tournament_id IS NOT NULL) THEN RAISE EXCEPTION 'Incorrect self-stake accounting';END IF;
+   SELECT {state} INTO s;r:={stake()};
+   IF r->>'replayed' IS DISTINCT FROM 'true' OR s IS DISTINCT FROM {state} OR NOT ({correct}) THEN RAISE EXCEPTION 'Self-stake replay changed state';END IF;
+   END $t$;ROLLBACK;""")
+  stake_count=2
+  run("BEGIN;"+stake_seed.replace(",100);",",2);")+context+f"""DO $t$ DECLARE r jsonb;s jsonb;BEGIN SELECT {state} INTO s;
+   r:={stake()};IF r->>'success' IS DISTINCT FROM 'false' OR s IS DISTINCT FROM {state} OR NOT ({correct}) THEN RAISE EXCEPTION 'Refused self-stake changed state or context';END IF;
+   END $t$;ROLLBACK;""");stake_count+=1
+  for table in ["agents","club_members","chip_ledger","chip_transactions"]:
+   for fault in ["55P03","40P01","23514","23505","XX001"]:
+    run("BEGIN;"+stake_seed+context+f"""CREATE FUNCTION stake_fault() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN RAISE EXCEPTION 'injected' USING ERRCODE='{fault}';END $f$;
+     CREATE TRIGGER stake_fault BEFORE INSERT OR UPDATE ON {table} FOR EACH ROW EXECUTE FUNCTION stake_fault();
+     DO $t$ DECLARE s jsonb;caught boolean:=false;BEGIN SELECT {state} INTO s;
+      BEGIN PERFORM {stake()};EXCEPTION WHEN SQLSTATE '{fault}' THEN caught:=true;END;
+      IF NOT caught OR s IS DISTINCT FROM {state} OR NOT ({correct}) THEN RAISE EXCEPTION 'Partial self-stake or leaked context';END IF;
+     END $t$;ROLLBACK;""");stake_count+=1
+  for amount in ["NULL","0","-1","5.001","'NaN'::numeric","'Infinity'::numeric","'-Infinity'::numeric"]:
+   run("BEGIN;"+stake_seed+context+f"""DO $t$ DECLARE r jsonb;s jsonb;BEGIN SELECT {state} INTO s;r:={stake(amount)};
+    IF r->>'success' IS DISTINCT FROM 'false' OR s IS DISTINCT FROM {state} OR NOT ({correct}) THEN RAISE EXCEPTION 'Invalid self-stake changed state';END IF;END $t$;ROLLBACK;""");stake_count+=1
+  print(f"TOTAL self-stake ledger context: {stake_count} passing cases",flush=True)
   print(f"TOTAL agent ledger context: {count} passing cases",flush=True)
  finally:
   os.environ["PGDATABASE"]=original;run("DROP DATABASE agent_context_probe")

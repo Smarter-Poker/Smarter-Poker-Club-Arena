@@ -121,7 +121,7 @@ export async function getUserActiveClubCount(userId: string): Promise<number> {
   try {
     const { count, error } = await supabase
       .from('club_members')
-      .select('*', { count: 'exact', head: true })
+      .select('user_id', { count: 'exact', head: true })
       .eq('user_id', userId)
       .in('status', [...ACTIVE_STATUSES]);
 

@@ -1,5 +1,5 @@
 {
-  "entry_gz_kb": 159,
+  "entry_gz_kb": 161,
   "modules": [
     "src/App.tsx",
     "src/components/ConnectionStatusBar.tsx",
@@ -195,6 +195,7 @@
     "src/utils/clubCode.ts",
     "src/utils/clubIdResolver.ts",
     "src/utils/clubQuickLink.ts",
+    "src/utils/clubScopedPath.ts",
     "src/utils/colorContrast.ts",
     "src/utils/dailyMissionCompletion.ts",
     "src/utils/errorReporter.ts",

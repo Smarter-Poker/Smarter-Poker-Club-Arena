@@ -10,13 +10,14 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 - Licence: CC0-1.0
 - URL: https://opengameart.org/content/100-cc0-metal-and-wood-sfx
 
-| Cue               | Source file(s)                             |
-| ----------------- | ------------------------------------------ |
-| `boing_splat`     | `metal_spring_01.ogg`                      |
-| `can_rattle_rise` | `metal_sheet_02.ogg`, `metal_sheet_05.ogg` |
-| `egg_crack`       | `wood_cracking_01.ogg`                     |
-| `horseshoe_clank` | `metal_hit_02.ogg`, `metal_hit_04.ogg`     |
-| `lid_clank`       | `metal_close_01.ogg`                       |
+| Cue               | Source file(s)                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `boing_splat`     | `metal_spring_01.ogg`                                                              |
+| `can_rattle_rise` | `metal_sheet_02.ogg`, `metal_sheet_05.ogg`                                         |
+| `egg_crack`       | `wood_cracking_01.ogg`                                                             |
+| `horseshoe_clank` | `metal_hit_02.ogg`, `metal_hit_04.ogg`                                             |
+| `lid_clank`       | `metal_close_01.ogg`                                                               |
+| `pins_crash`      | `wood_hit_03.ogg`, `wood_hit_04.ogg`, `wood_falling_05.ogg`, `wood_falling_04.ogg` |
 
 ## OpenGameArt - 25 CC0 mud SFX (rubberduck)
 
@@ -75,6 +76,22 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | `poof_soft`       | `anoisesrc=d=0.75:c=pink:a=0.7:r=48000`                                                                    |
 | `swell_low`       | `aevalsrc='0.5*sin(2*PI*(70+38*t)*t)+0.28*sin(2*PI*(140+76*t)*t)':d=0.85:s=48000`                          |
 | `whoosh_low`      | `anoisesrc=d=0.4:c=brown:a=0.8:r=48000`                                                                    |
+| `alien_blip`      | `aevalsrc='sin(2*PI*(640*t+90*t*t)+2*sin(2*PI*23*t))*exp(-7*t)':d=0.28:s=48000`                            |
+| `scan_sweep`      | `aevalsrc='0.7*sin(2*PI*(360*t+720*t*t))+0.2*sin(2*PI*120*t)':d=0.8:s=48000`                               |
+| `servo_whir`      | `aevalsrc='0.5*sin(2*PI*96*t+3*sin(2*PI*2*t))+0.2*sin(2*PI*768*t)':d=1.4:s=48000`                          |
+| `zap_short`       | `anoisesrc=d=0.4:c=white:a=0.6:r=48000:seed=816`                                                           |
+| `power_down`      | `aevalsrc='sin(2*PI*(650*t-450*t*t))+0.2*sin(2*PI*87*t)':d=0.6:s=48000`                                    |
+| `duck_squeak`     | `aevalsrc=0.5*sin(2*PI*(900*t+350*t*t)+2*sin(2*PI*53*t)):s=48000:d=0.24`                                   |
+| `water_lap`       | `anoisesrc=color=pink:seed=724:sample_rate=48000:duration=1.6`                                             |
+| `raspberry_short` | `aevalsrc=0.5*sin(2*PI*145*t+1.5*sin(2*PI*32*t))*(0.6+0.4*sin(2*PI*24*t)):s=48000:d=0.65`                  |
+| `basket_swish`    | `anoisesrc=color=pink:seed=637:s=48000:d=0.28`                                                             |
+| `basket_bounce`   | `aevalsrc=sin(2*PI*(90*t-25*t*t))*exp(-20*t):s=48000:d=0.24`                                               |
+| `tennis_pop`      | `aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14`                                |
+| `tennis_pop_soft` | `aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14`                                |
+| `tennis_pop_last` | `aevalsrc=(sin(2*PI*240*t)+0.3*sin(2*PI*1200*t))*exp(-40*t):s=48000:d=0.14`                                |
+| `roll_rumble`     | `anoisesrc=color=brown:seed=546:s=48000:d=0.6`                                                             |
+| `steam_hiss`      | `anoisesrc=color=white:seed=213:s=48000:d=1.6`                                                             |
+| `magnet_hum`      | `aevalsrc=sin(2*PI*105*t+2*sin(2*PI*3*t)):s=48000:d=0.8`                                                   |
 
 ## Kenney - Interface Sounds (1.0)
 
@@ -106,6 +123,7 @@ Level: each cue's assembled mix is measured and peak-normalised to -1 dBFS, offs
 | `card_slap`             | `card-place-2.ogg`                                                                                                                                                              |
 | `cash_register_cascade` | `chips-handle-1.ogg`, `chips-collide-2.ogg`, `chips-stack-3.ogg`, `chips-handle-4.ogg`, `chips-collide-1.ogg`, `chips-stack-5.ogg`, `chips-handle-2.ogg`, `chips-collide-4.ogg` |
 | `dice_rattle`           | `dice-shake-1.ogg`, `dice-shake-3.ogg`                                                                                                                                          |
+| `chip_clatter`          | `chips-collide-2.ogg`, `chips-stack-3.ogg`, `chips-handle-4.ogg`                                                                                                                |
 
 ## OpenGameArt - 80 CC0 RPG SFX (rubberduck)
 

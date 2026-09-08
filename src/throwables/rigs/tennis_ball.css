@@ -1,0 +1,92 @@
+.thr-tennis_ball__ball {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-tennis_ball-ball calc(1s * var(--animation-speed, 1)) linear forwards;
+}
+@keyframes thr-tennis_ball-ball {
+  0% {
+    opacity: 1;
+    transform: translate(
+      calc(var(--thr-return-x, -1px) * 70),
+      calc(-30px + var(--thr-return-y, 0px) * 70)
+    );
+  }
+  20% {
+    transform: translate(0, -30px) scale(0.7, 1.15);
+  }
+  35% {
+    transform: translate(
+        calc(var(--thr-return-x, -1px) * 60),
+        calc(-30px + var(--thr-return-y, 0px) * 60)
+      )
+      scale(1);
+  }
+  50% {
+    transform: translate(0, -30px) scale(0.8, 1.1);
+  }
+  65% {
+    transform: translate(
+        calc(var(--thr-return-x, -1px) * 38),
+        calc(-30px + var(--thr-return-y, 0px) * 38)
+      )
+      scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(0, -30px) scale(0.9, 1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc(var(--thr-return-x, -1px) * 60),
+        calc(-30px + var(--thr-return-y, 0px) * 60)
+      )
+      scale(0.8);
+  }
+}
+.thr-tennis_ball__mark {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: thr-tennis_ball-mark calc(2.4s * var(--animation-speed, 1)) linear
+    calc(0.9s * var(--animation-speed, 1)) forwards;
+}
+@keyframes thr-tennis_ball-mark {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  8% {
+    opacity: 0.7;
+    transform: scale(0.7);
+  }
+  90% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-tennis_ball__ball {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translate(
+      calc(var(--thr-return-x, -1px) * 40),
+      calc(-30px + var(--thr-return-y, 0px) * 40)
+    ) !important;
+  }
+  .thr-tennis_ball__mark {
+    animation: none !important;
+    opacity: 0.7 !important;
+    transform: scale(0.7) !important;
+  }
+}
+
+.thr-tennis_ball__start {
+  transform: translate(
+    calc(var(--thr-return-x, -1px) * 70),
+    calc(-30px + var(--thr-return-y, 0px) * 70)
+  );
+}

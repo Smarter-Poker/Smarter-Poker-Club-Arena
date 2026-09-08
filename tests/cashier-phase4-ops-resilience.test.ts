@@ -336,7 +336,7 @@ describe('cashier Phase 4 operational resilience', () => {
     ).toBe(false);
   });
 
-  it('rejects stale, cross-scope, and incomplete recovery payloads', () => {
+  it('retains old unresolved intents and rejects cross-scope and incomplete payloads', () => {
     const storage = new MemoryStorage();
     const now = recovery.createdAt + 1_000;
     expect(writeCashierTransferRecovery(recovery, storage, now)).toBe(true);
@@ -355,7 +355,7 @@ describe('cashier Phase 4 operational resilience', () => {
         storage,
         recovery.createdAt + 24 * 60 * 60 * 1000 + 1
       )
-    ).toBeNull();
+    ).toEqual(expect.objectContaining({ submissionId: recovery.submissionId }));
 
     const incomplete = { ...recovery, opIds: {} };
     expect(writeCashierTransferRecovery(incomplete, storage, now)).toBe(false);
@@ -439,5 +439,42 @@ describe('cashier Phase 4 operational resilience', () => {
     expect(styles).toContain('.receiptRow');
     expect(styles).toContain('.receiptFacts');
     expect(styles).toMatch(/@media \(max-width: 560px\)[\s\S]+\.recoveryGrid/);
+  });
+});
+
+describe('unresolved transfer identities do not expire', () => {
+  it.each([1, 2, 3])('retains journal version %i after thirty days', (version) => {
+    const storage = new MemoryStorage();
+    const base = `${CASHIER_RECOVERY_PREFIX}:${recovery.userId}:${recovery.clubId}`;
+    if (version === 1) storage.setItem(base, JSON.stringify(recovery));
+    else if (version === 2)
+      storage.setItem(
+        base,
+        JSON.stringify({
+          version: 2,
+          userId: recovery.userId,
+          clubId: recovery.clubId,
+          recoveries: [recovery],
+        })
+      );
+    else expect(writeCashierTransferRecovery(recovery, storage, recovery.createdAt)).toBe(true);
+    const later = recovery.createdAt + 30 * 24 * 60 * 60 * 1000;
+    const restored = readCashierTransferRecovery(recovery.userId, recovery.clubId, storage, later);
+    expect(restored?.opIds).toEqual(recovery.opIds);
+    expect(restored?.submissionId).toBe(recovery.submissionId);
+    expect(writeCashierTransferRecovery(recovery, storage, later)).toBe(true);
+    expect(
+      writeCashierTransferRecovery({ ...recovery, amount: recovery.amount + 1 }, storage, later)
+    ).toBe(false);
+    clearCashierTransferRecovery(
+      recovery.userId,
+      recovery.clubId,
+      recovery.submissionId,
+      storage,
+      later
+    );
+    expect(readCashierTransferRecoveries(recovery.userId, recovery.clubId, storage, later)).toEqual(
+      []
+    );
   });
 });

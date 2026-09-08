@@ -9,11 +9,11 @@ after sitting unpaid since 03:05 the same morning.
 
 ## What the eleven actually were
 
-| what                                            | count | chips  |
-| ----------------------------------------------- | ----- | ------ |
-| CANCELLED, and the whole draw returned           | 9     | 514.00 |
-| paid an hour after the alert, incident never closed | 1 | 30.00  |
-| **genuinely unpaid**                             | **1** | **3.00** |
+| what                                                | count | chips    |
+| --------------------------------------------------- | ----- | -------- |
+| CANCELLED, and the whole draw returned              | 9     | 514.00   |
+| paid an hour after the alert, incident never closed | 1     | 30.00    |
+| **genuinely unpaid**                                | **1** | **3.00** |
 
 **The nine cancelled spins returned every chip.** `spin_reserve_ledger` shows
 `contribution +483.00`, `jackpot_draw −547.00`, `surplus_return +514.00`. The
@@ -79,7 +79,7 @@ suspended heads-up**: AceGhost 47.50 (2,000 of 3,000 chips), the other seat
 23.75 (1,000 of 3,000). Both credits are in `wallet_transactions`, timestamped
 identically, totalling exactly the 71.25 prize pool.
 
-The pool was paid in full. The obligation claims the *whole pool* for first
+The pool was paid in full. The obligation claims the _whole pool_ for first
 place because the reconciler that wrote it did not know about the deal. Paying
 it would have been a **71.25 double-payment** — and CLAUDE.md 10.9 says prefer
 the witness that was there. The engine recorded the deal as it happened and the

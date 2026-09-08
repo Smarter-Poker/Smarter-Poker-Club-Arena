@@ -1,0 +1,564 @@
+.thr-slot_machine__cabinet {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-cabinet calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-cabinet {
+  0.00000% {
+    opacity: 0;
+    transform: translateY(80px);
+  }
+  7.60739% {
+    opacity: 1;
+    transform: none;
+  }
+  12.40701% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+  16.00672% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-slot_machine__reel0 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-reel0 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-reel0 {
+  0.00000% {
+    opacity: 0;
+  }
+  8.80730% {
+    opacity: 1;
+  }
+  10.00720% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  12.40701% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  14.80682% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  17.20662% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  19.60643% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  22.00624% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  24.40605% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  26.80586% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  29.20566% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  31.60547% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  34.00528% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  36.40509% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  38.80490% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  41.20470% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  47.20422% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-slot_machine__reel1 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-reel1 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-reel1 {
+  0.00000% {
+    opacity: 0;
+  }
+  8.80730% {
+    opacity: 1;
+  }
+  10.00720% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  12.40701% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  14.80682% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  17.20662% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  19.60643% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  22.00624% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  24.40605% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  26.80586% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  29.20566% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  31.60547% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  34.00528% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  36.40509% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  38.80490% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  41.20470% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  52.00384% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-slot_machine__reel2 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-reel2 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-reel2 {
+  0.00000% {
+    opacity: 0;
+  }
+  8.80730% {
+    opacity: 1;
+  }
+  10.00720% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  12.40701% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  14.80682% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  17.20662% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  19.60643% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  22.00624% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  24.40605% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  26.80586% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  29.20566% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  31.60547% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  34.00528% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  36.40509% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  38.80490% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  41.20470% {
+    opacity: 1;
+    transform: translateY(8px);
+  }
+  56.80346% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.thr-slot_machine__coins0 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-coins0 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-coins0 {
+  0.00000% {
+    opacity: 0;
+  }
+  58.00336% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  58.02736% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  63.28294% {
+    opacity: 1;
+    transform: translate(-70px, -45px);
+  }
+  72.40221% {
+    opacity: 1;
+    transform: translate(-70px, 80px);
+  }
+  76.00192% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-slot_machine__coins1 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-coins1 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-coins1 {
+  0.00000% {
+    opacity: 0;
+  }
+  59.68323% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  59.70722% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  64.96280% {
+    opacity: 1;
+    transform: translate(-50px, -45px);
+  }
+  74.08207% {
+    opacity: 1;
+    transform: translate(-50px, 80px);
+  }
+  77.68179% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-slot_machine__coins2 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-coins2 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-coins2 {
+  0.00000% {
+    opacity: 0;
+  }
+  61.36309% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  61.38709% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  66.64267% {
+    opacity: 1;
+    transform: translate(-30px, -45px);
+  }
+  75.76194% {
+    opacity: 1;
+    transform: translate(-30px, 80px);
+  }
+  79.36165% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-slot_machine__coins3 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-coins3 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-coins3 {
+  0.00000% {
+    opacity: 0;
+  }
+  63.04296% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  63.06695% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  68.32253% {
+    opacity: 1;
+    transform: translate(-10px, -45px);
+  }
+  77.44180% {
+    opacity: 1;
+    transform: translate(-10px, 80px);
+  }
+  81.04152% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-slot_machine__coins4 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-coins4 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-coins4 {
+  0.00000% {
+    opacity: 0;
+  }
+  64.72282% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  64.74682% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  70.00240% {
+    opacity: 1;
+    transform: translate(10px, -45px);
+  }
+  79.12167% {
+    opacity: 1;
+    transform: translate(10px, 80px);
+  }
+  82.72138% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-slot_machine__coins5 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-coins5 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-coins5 {
+  0.00000% {
+    opacity: 0;
+  }
+  66.40269% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  66.42669% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  71.68227% {
+    opacity: 1;
+    transform: translate(30px, -45px);
+  }
+  80.80154% {
+    opacity: 1;
+    transform: translate(30px, 80px);
+  }
+  84.40125% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-slot_machine__coins6 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-coins6 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-coins6 {
+  0.00000% {
+    opacity: 0;
+  }
+  68.08255% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  68.10655% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  73.36213% {
+    opacity: 1;
+    transform: translate(50px, -45px);
+  }
+  82.48140% {
+    opacity: 1;
+    transform: translate(50px, 80px);
+  }
+  86.08111% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.thr-slot_machine__coins7 {
+  transform-origin: 0 0;
+  animation: thr-slot_machine-coins7 calc(4.167s * var(--animation-speed, 1)) linear both;
+}
+@keyframes thr-slot_machine-coins7 {
+  0.00000% {
+    opacity: 0;
+  }
+  69.76242% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  69.78642% {
+    opacity: 1;
+    transform: scale(0.2);
+  }
+  75.04200% {
+    opacity: 1;
+    transform: translate(70px, -45px);
+  }
+  84.16127% {
+    opacity: 1;
+    transform: translate(70px, 80px);
+  }
+  87.76098% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thr-slot_machine__cabinet {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-slot_machine__reel0 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-slot_machine__reel1 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-slot_machine__reel2 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1;
+  }
+  .thr-slot_machine__coins0 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-slot_machine__coins1 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-slot_machine__coins2 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-slot_machine__coins3 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-slot_machine__coins4 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-slot_machine__coins5 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-slot_machine__coins6 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+  .thr-slot_machine__coins7 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0;
+  }
+}

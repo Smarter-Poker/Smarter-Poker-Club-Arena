@@ -1,0 +1,10 @@
+{
+  "_owner": "agent/codex-diamond-phase-2/feature/diamond-arena-access",
+  "functions": [
+    "fn_poker_arena_context",
+    "fn_poker_can_read_games",
+    "fn_poker_guard_arena_structure",
+    "fn_poker_guard_chip_seat",
+    "fn_poker_reject_diamond_hierarchy"
+  ]
+}

@@ -6,6 +6,7 @@ const results = vi.hoisted(() => ({
   tables: {
     data: {
       club_id: 'club-1',
+      arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
       union_id: null,
       restrict_observers: false,
     } as Record<string, unknown> | null,
@@ -42,7 +43,12 @@ describe('authorizeTableViewer', () => {
   beforeEach(() => {
     queriedTables.mockClear();
     results.tables = {
-      data: { club_id: 'club-1', union_id: null, restrict_observers: false },
+      data: {
+        club_id: 'club-1',
+        arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
+        union_id: null,
+        restrict_observers: false,
+      },
       error: null,
     };
     results.table_seats = { data: null, error: null };
@@ -68,7 +74,12 @@ describe('authorizeTableViewer', () => {
   });
 
   it('denies a non-seated member when the table restricts observers', async () => {
-    results.tables.data = { club_id: 'club-1', union_id: null, restrict_observers: true };
+    results.tables.data = {
+      club_id: 'club-1',
+      arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
+      union_id: null,
+      restrict_observers: true,
+    };
 
     await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toEqual({
       allowed: false,
@@ -78,7 +89,12 @@ describe('authorizeTableViewer', () => {
   });
 
   it('allows a seated player when the table restricts observers', async () => {
-    results.tables.data = { club_id: 'club-1', union_id: null, restrict_observers: true };
+    results.tables.data = {
+      club_id: 'club-1',
+      arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
+      union_id: null,
+      restrict_observers: true,
+    };
     results.table_seats.data = { id: 'seat-1' };
 
     await expect(authorizeTableViewer('table-1', 'user-1')).resolves.toMatchObject({
@@ -104,6 +120,7 @@ describe('authorizeTableViewer', () => {
   it('allows a member-club player to observe a union-owned table', async () => {
     results.tables.data = {
       club_id: 'union-shell',
+      arena: { id: 'union-shell', asset: 'chips', is_platform: false, union_id: null },
       union_id: 'union-1',
       restrict_observers: false,
     };
@@ -120,6 +137,7 @@ describe('authorizeTableViewer', () => {
   it('recognizes a legacy union-shell table whose union_id was never stamped', async () => {
     results.tables.data = {
       club_id: 'union-shell',
+      arena: { id: 'union-shell', asset: 'chips', is_platform: false, union_id: null },
       union_id: null,
       restrict_observers: false,
     };
@@ -162,7 +180,12 @@ describe('seated reconnect access dependencies', () => {
   beforeEach(() => {
     queriedTables.mockClear();
     results.tables = {
-      data: { club_id: 'club-1', union_id: null, restrict_observers: true },
+      data: {
+        club_id: 'club-1',
+        arena: { id: 'club-1', asset: 'chips', is_platform: false, union_id: null },
+        union_id: null,
+        restrict_observers: true,
+      },
       error: null,
     };
     results.table_seats = { data: { id: 'seat-1' }, error: null };
@@ -193,5 +216,47 @@ describe('seated reconnect access dependencies', () => {
       allowed: false,
       reason: 'table_not_found',
     });
+  });
+});
+
+describe('Diamond Arena entitlement', () => {
+  beforeEach(() => {
+    queriedTables.mockClear();
+    results.tables = {
+      data: {
+        club_id: 'diamond',
+        restrict_observers: false,
+        arena: { id: 'diamond', asset: 'diamonds', is_platform: true, union_id: null },
+      },
+      error: null,
+    };
+    results.table_seats = { data: null, error: null };
+    results.club_members = { data: [], error: new Error('No private membership') };
+  });
+  it('allows a signed-in player without a membership row or hierarchy query', async () => {
+    expect(await authorizeTableViewer('table-1', 'player')).toEqual({
+      allowed: true,
+      reason: 'diamond_member',
+      clubId: 'diamond',
+    });
+    expect(queriedTables.mock.calls.flat()).not.toContain('club_members');
+  });
+  it('still enforces observer restrictions', async () => {
+    results.tables.data!.restrict_observers = true;
+    expect((await authorizeTableViewer('table-1', 'player')).reason).toBe('observers_restricted');
+  });
+  it.each([
+    { id: 'diamond', asset: 'unknown', is_platform: true, union_id: null },
+    { id: 'diamond', asset: 'diamonds', is_platform: false, union_id: null },
+    { id: 'diamond', asset: 'diamonds', is_platform: true, union_id: 'union' },
+    { id: 'other', asset: 'diamonds', is_platform: true, union_id: null },
+    null,
+  ])('rejects invalid or forged arena configuration even with a seat', async (arena) => {
+    results.tables.data!.arena = arena;
+    results.table_seats.data = { id: 'seat' };
+    expect((await authorizeTableViewer('table-1', 'player')).allowed).toBe(false);
+  });
+  it('does not authorize an empty identity', async () => {
+    expect((await authorizeTableViewer('table-1', '')).allowed).toBe(false);
   });
 });

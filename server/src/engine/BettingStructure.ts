@@ -29,8 +29,8 @@
  *    rule but is deliberately NOT implemented — a cap that changes when a third
  *    player folds is the kind of rule the fuzzer catches and players dispute.
  *  • A player who cannot cover a full bet may still go all in for less; that
- *    short all-in does not reopen betting (same rule as no-limit, enforced by
- *    HandController.canReopenBetting).
+ *    short all-in reopens betting when a previously acted player faces at
+ *    least half the street bet (HandController.canReopenBetting, TDA 47B).
  */
 
 import type { HandStage, ActionRecord, ActionType } from '../types.js';

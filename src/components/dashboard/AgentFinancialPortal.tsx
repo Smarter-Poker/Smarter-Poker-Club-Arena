@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { CreditService } from '../../services/CreditService';
@@ -8,6 +8,7 @@ import { FinancialChart } from '../charts/FinancialChart';
 import { masterBus } from '../../core/MasterBus';
 import { reportError } from '../../utils/errorReporter';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
+import { useAuthUser } from '../../hooks/useAuthUser';
 
 interface AgentPortalProps {
   agentId: string;
@@ -22,6 +23,10 @@ interface ChartData {
 export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuthUser();
+  const [walletOwnerId, setWalletOwnerId] = useState<string | null>(null);
+  const agentScope = useRef(agentId);
+  agentScope.current = agentId;
   const [wallet, setWallet] = useState({
     agentBal: 0,
     playerBal: 0,
@@ -31,6 +36,8 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   });
   const [commissionData, setCommissionData] = useState<ChartData[]>([]);
   const [isTransferring, setIsTransferring] = useState(false);
+  const transferInFlight = useRef(false);
+  const [agentClubId, setAgentClubId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -141,10 +148,12 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   };
 
   const fetchWalletData = async () => {
+    const scope = agentId;
+    setAgentClubId(null);
     try {
       const { data, error } = await supabase
         .from('agents')
-        .select('agent_wallet_balance, player_wallet_balance, promo_wallet_balance, credit_limit')
+        .select('user_id, club_id, agent_wallet_balance, promo_wallet_balance, credit_limit')
         .eq('id', agentId)
         .maybeSingle();
 
@@ -153,12 +162,24 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         return;
       }
 
+      const { data: member, error: memberError } = await supabase
+        .from('club_members')
+        .select('chip_balance')
+        .eq('club_id', data.club_id)
+        .eq('user_id', data.user_id)
+        .maybeSingle();
+      if (memberError || !member) throw memberError || new Error('Player Wallet Not Found');
+      if (scope !== agentScope.current) return;
+
       // Calculate Sunday Debt
       const calculatedDebt = await CreditService.calculateDebt(agentId);
 
+      if (scope !== agentScope.current) return;
+      setAgentClubId(data.club_id);
+      setWalletOwnerId(data.user_id);
       setWallet({
         agentBal: data.agent_wallet_balance || 0,
-        playerBal: data.player_wallet_balance || 0,
+        playerBal: Number(member.chip_balance) || 0,
         promoBal: data.promo_wallet_balance || 0,
         creditLimit: data.credit_limit || 0,
         debt: calculatedDebt.debtOwed,
@@ -169,13 +190,15 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   };
 
   const handleTransferToPlayer = async () => {
+    if (transferInFlight.current || !agentClubId || walletOwnerId !== user?.id) return;
     const amountStr = prompt('Amount To Transfer To Player Wallet?');
     const amount = Number(amountStr);
-    if (!amount || amount <= 0) return;
+    if (!Number.isFinite(amount) || amount <= 0) return;
 
+    transferInFlight.current = true;
     setIsTransferring(true);
     try {
-      const success = await WalletService.agentSelfTransfer(agentId, amount);
+      const success = await WalletService.agentSelfTransfer(agentClubId, amount);
       if (success) {
         await fetchWalletData(); // Refresh wallet data
       } else {
@@ -185,6 +208,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
       reportError(err, 'AgentFinancialPortal.Transfer_error');
       toast.error('Transfer failed: ' + (err as Error).message);
     } finally {
+      transferInFlight.current = false;
       setIsTransferring(false);
     }
   };
@@ -224,6 +248,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
           <div className="text-xs text-gray-500">For Playing At Tables</div>
           <button
             onClick={handleTransferToPlayer}
+            disabled={isTransferring || !agentClubId || walletOwnerId !== user?.id}
             className="mt-2 w-full py-1 text-xs bg-green-900 hover:bg-green-800 text-green-200 rounded"
           >
             LOAD FROM BIZ ➔

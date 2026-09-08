@@ -1,0 +1,634 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DAILY CLUB ARENA BONUS - the sheet
+
+   THE ARTWORK IS THE INTERFACE (#SmarterCasinoRealism). Nothing here is drawn
+   with borders, gradients or clipped rectangles. Every piece of hardware is
+   cut from the approved shark console, exactly as the selected-table panel
+   under the game cards is (PremiumGameLobbyPanel.css, Dan 2026-09-03), and
+   every icon is a painted render already in the Club Arena kit:
+
+     shark-panel-v1/top.png, mid.png, bottom.png   the console chassis - the
+                                                   crest cap, a seamless rail
+                                                   that repeats to any height,
+                                                   the bottom rail
+     shark-panel-v1/bay.png                        the plaque (label slot over
+                                                   an octagon well): readouts,
+                                                   the week, every reward tile
+     shark-panel-v1/button-primary.png             CLAIM (blue-lit chrome)
+     shark-panel-v1/button-secondary.png           CLAIMED / VIP ONLY (dark)
+     club-nav-shell.webp                           the close control
+     images/diamond-icon.png, game-card-icons/rabbit-hunt.png,
+     game-card-icons/mystery-bounty.png, images/global-header/vip.png and the
+     3D throwable renders                          the tile icons
+
+   Sizes are in cqw against the sheet so the phone and the desktop share one
+   scale, like the panel. Blue, white, black; brass only on the VIP tile.
+   Dan 2026-09-08: "ALL THE BUTTONS, FRAMES, ICONS ETC NEED THE PREMIUM, HIGH
+   DEF, DYNAMIC LOOK AND FEEL AS THEY ARE INSIDE THE REST OF THE CLUB ARENA".
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dbs,
+.dbs-overlay {
+  --dbs-blue: #168bff;
+  --dbs-sky: #5bb8ff;
+  --dbs-cyan: #65d9ff;
+  --dbs-green: #58e07c;
+  --dbs-brass: #d6ad52;
+  --dbs-steel: #7f8a97;
+  --dbs-chrome: #e4e7ec;
+  --dbs-font-label: Inter, 'Roboto Condensed', system-ui, sans-serif;
+  --dbs-font-value: 'Roboto Condensed', 'Rajdhani', system-ui, sans-serif;
+  --dbs-chrome-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%), 0 0.25cqw 0 #6d747c, 0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+  color: var(--dbs-chrome);
+  font-family: var(--dbs-font-label);
+  color-scheme: dark;
+}
+
+/* ── Backdrop ─────────────────────────────────────────────────────────── */
+
+.dbs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background:
+    radial-gradient(60% 45% at 50% 0%, rgb(22 139 255 / 18%), transparent 70%), rgb(2 4 7 / 88%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.dbs-overlay__center {
+  width: min(100%, 560px);
+  margin: auto 0;
+  display: flex;
+}
+
+/* ── The sheet: one console section that grows with its content ──────── */
+
+.dbs {
+  container-type: inline-size;
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 85%));
+}
+
+.dbs[data-mode='inline'] {
+  max-width: 640px;
+}
+
+.dbs__panel {
+  position: relative;
+  padding: 16cqw 7.2cqw 15cqw;
+  background:
+    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/top.png') top center / 100% auto
+      no-repeat,
+    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bottom.png') bottom center / 100%
+      auto no-repeat,
+    url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/mid.png') center / 100% auto
+      repeat-y;
+}
+
+/* The close control sits in the cap's rail, on the club nav shell. */
+.dbs__close {
+  position: absolute;
+  top: 6cqw;
+  right: 8.4cqw;
+  z-index: 3;
+  width: 8.4cqw;
+  height: 6.4cqw;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #dfe8ef;
+  font: 800 3.4cqw/1 var(--dbs-font-value);
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+  text-shadow: 0 2px 2px #000;
+  cursor: pointer;
+}
+
+.dbs__close:active {
+  filter: brightness(1.2);
+}
+
+.dbs__close:focus-visible,
+.dbs-btn:focus-visible {
+  outline: 2px solid #9be7ff;
+  outline-offset: -4px;
+}
+
+/* ── Title ────────────────────────────────────────────────────────────── */
+
+.dbs__head {
+  margin: 0 0 3.2cqw;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.dbs__eyebrow {
+  display: block;
+  margin-bottom: 1cqw;
+  color: var(--dbs-sky);
+  font: 800 2.4cqw/1 var(--dbs-font-label);
+  letter-spacing: 0.24em;
+  text-shadow: 0 0 8px rgb(49 168 255 / 55%);
+}
+
+.dbs__title {
+  margin: 0;
+  color: var(--dbs-chrome);
+  font: 800 5.4cqw/1 var(--dbs-font-value);
+  letter-spacing: 0.02em;
+  text-shadow: var(--dbs-chrome-shadow);
+}
+
+/* The body sits inside the rails; everything in it is sized against the sheet. */
+.dbs__body {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+
+/* ── Plaques: the card's bay, label slot over the well ────────────────── */
+
+.dbs-plaque {
+  position: relative;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 200 / 258;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 34% 49% 17%;
+  align-items: center;
+  justify-items: stretch;
+  padding: 0 7%;
+  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100%
+    100% no-repeat;
+}
+
+.dbs-plaque__label {
+  grid-row: 1;
+  align-self: end;
+  overflow: hidden;
+  padding-bottom: 12%;
+  color: var(--dbs-sky);
+  font: 700 2.5cqw/1 var(--dbs-font-label);
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+}
+
+.dbs-plaque__well {
+  grid-row: 2;
+  display: grid;
+  margin: 0;
+  padding: 0 7%;
+  align-content: center;
+  justify-items: center;
+  min-height: 0;
+  overflow: hidden;
+  text-align: center;
+}
+
+.dbs-plaque__value {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--dbs-chrome);
+  font: 800 5.2cqw/1 var(--dbs-font-value);
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: var(--dbs-chrome-shadow);
+}
+
+/* ── Readouts: streak, multiplier, reset, three across ────────────────── */
+
+.dbs__readouts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2cqw;
+  margin: 0 0 2.6cqw;
+}
+
+.dbs__readouts .dbs-plaque__value--lit {
+  color: #cfeeff;
+  text-shadow:
+    0 0 1.2cqw rgb(49 168 255 / 85%),
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+}
+
+.dbs__clock {
+  font-size: 4cqw;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The week: seven small plaques ────────────────────────────────────── */
+
+.dbs__week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.9cqw;
+  margin: 0 0 3.4cqw;
+  padding: 0;
+  list-style: none;
+}
+
+.dbs__week .dbs-plaque {
+  padding: 0 10%;
+}
+
+.dbs__week .dbs-plaque__label {
+  font-size: 1.9cqw;
+  letter-spacing: 0.1em;
+  color: var(--dbs-steel);
+  text-shadow: none;
+}
+
+.dbs__week .dbs-plaque__value {
+  font-size: 3.1cqw;
+  color: #8f98a3;
+}
+
+.dbs__day[data-state='done'] .dbs-plaque__label {
+  color: var(--dbs-green);
+  text-shadow: 0 0 6px rgb(50 210 122 / 60%);
+}
+
+.dbs__day[data-state='done'] .dbs-plaque__value {
+  color: #d6ffe1;
+  text-shadow:
+    0 0 1.2cqw rgb(50 210 122 / 85%),
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+}
+
+.dbs__day[data-state='today'] {
+  filter: brightness(1.18);
+  animation: dbs-today 2.4s ease-in-out infinite;
+}
+
+.dbs__day[data-state='today'] .dbs-plaque__label {
+  color: var(--dbs-sky);
+  text-shadow: 0 0 6px rgb(49 168 255 / 55%);
+}
+
+.dbs__day[data-state='today'] .dbs-plaque__value {
+  color: #cfeeff;
+  text-shadow:
+    0 0 1.2cqw rgb(49 168 255 / 85%),
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+}
+
+/* ── Reward tiles: a plaque with the reward printed in the well, its
+      button below, two to a row ─────────────────────────────────────── */
+
+.dbs__tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3cqw 2.4cqw;
+}
+
+.dbs-tile {
+  display: grid;
+  gap: 1cqw;
+  min-width: 0;
+}
+
+.dbs-tile .dbs-plaque__well {
+  gap: 0.7cqw;
+}
+
+.dbs-tile__icon {
+  display: grid;
+  place-items: center;
+  width: 40%;
+  aspect-ratio: 1;
+  min-height: 0;
+  filter: drop-shadow(0 1cqw 1.4cqw rgb(0 0 0 / 85%));
+}
+
+.dbs-tile__icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* The gem plate carries its own margin inside the render. */
+.dbs-tile[data-kind='diamonds']:not([data-vip]) .dbs-tile__icon img {
+  transform: scale(1.22);
+}
+
+/* The VIP crest is painted on black; screened onto the well it keeps only
+   its light, exactly as the global header shows it. */
+.dbs-tile[data-vip] .dbs-tile__icon img {
+  mix-blend-mode: screen;
+}
+
+/* The bank of seconds has no render in the kit: it is printed in the same
+   chrome as every value, the way the card prints its blinds. */
+.dbs-tile__icon--seconds {
+  display: block;
+  width: auto;
+  aspect-ratio: auto;
+  padding: 1.2cqw 0;
+  color: var(--dbs-chrome);
+  font: 800 6.6cqw/1 var(--dbs-font-value);
+  letter-spacing: -0.03em;
+  text-shadow: var(--dbs-chrome-shadow);
+}
+
+.dbs-tile__icon--seconds small {
+  margin-left: 0.12em;
+  font-size: 0.42em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dbs-tile .dbs-plaque__value {
+  font-size: 4.8cqw;
+}
+
+.dbs-tile[data-kind='diamonds'] .dbs-plaque__value {
+  color: #cfeeff;
+  text-shadow:
+    0 0 1.2cqw rgb(49 168 255 / 85%),
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+}
+
+.dbs-tile__sub {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--dbs-sky);
+  font: 700 2cqw/1.2 var(--dbs-font-label);
+  letter-spacing: 0.1em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+}
+
+.dbs-tile[data-vip] .dbs-plaque__label,
+.dbs-tile[data-vip] .dbs-tile__sub {
+  color: var(--dbs-brass);
+  text-shadow: 0 0 6px rgb(214 173 82 / 45%);
+}
+
+.dbs-tile[data-kind='mystery']:not([data-revealed]) .dbs-plaque__value {
+  animation: dbs-shimmer 1.8s ease-in-out infinite;
+}
+
+.dbs-tile[data-kind='mystery'][data-revealed] .dbs-plaque {
+  animation: dbs-reveal 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dbs-tile[data-state='claimed'] .dbs-plaque {
+  filter: brightness(0.82);
+}
+
+.dbs-tile[data-state='locked'] .dbs-plaque {
+  filter: brightness(0.62) saturate(0.7);
+}
+
+.dbs-tile[data-burst] .dbs-plaque {
+  animation: dbs-pop 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ── Buttons: the console's own faces ─────────────────────────────────── */
+
+.dbs-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 348 / 114;
+  padding: 0 6%;
+  border: 0;
+  border-radius: 0;
+  color: #fff;
+  font: 800 3.9cqw/1 var(--dbs-font-value);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-primary.png')
+    center / 100% 100% no-repeat;
+  text-shadow:
+    0 0 1cqw rgb(140 210 255 / 90%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%),
+    0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+  cursor: pointer;
+}
+
+.dbs-btn:active {
+  filter: brightness(1.15);
+}
+
+.dbs-btn:disabled {
+  cursor: default;
+}
+
+.dbs-btn--busy {
+  animation: dbs-busy 900ms ease-in-out infinite;
+}
+
+.dbs-btn--secondary {
+  color: #d6ffe1;
+  background-image: url('/hub/club-arena/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
+  text-shadow:
+    0 0 1cqw rgb(50 210 122 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  cursor: default;
+}
+
+.dbs-btn--secondary .cb-icon {
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 0.35em;
+  vertical-align: -0.1em;
+}
+
+.dbs-btn--locked {
+  color: var(--dbs-brass);
+  font-size: 3.2cqw;
+  text-shadow:
+    0 0 1cqw rgb(214 173 82 / 70%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.dbs-btn--wide {
+  width: min(100%, 62cqw);
+  margin: 0 auto;
+  font-size: 4.6cqw;
+}
+
+.dbs-tile__note {
+  color: #f0b08f;
+  font: 700 2.1cqw/1.2 var(--dbs-font-label);
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* Sparks on a successful claim: eight cyan motes leave the well. */
+.dbs-tile__sparks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.dbs-tile__sparks i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.2cqw;
+  height: 1.2cqw;
+  margin: -0.6cqw;
+  border-radius: 50%;
+  background: var(--dbs-cyan);
+  box-shadow: 0 0 8px var(--dbs-cyan);
+  transform: rotate(calc(var(--i) * 45deg)) translateY(0);
+  animation: dbs-spark 900ms ease-out forwards;
+}
+
+/* ── Footer: printed on the well under a blue rail ────────────────────── */
+
+.dbs__foot {
+  display: grid;
+  gap: 1.4cqw;
+  margin-top: 3.6cqw;
+}
+
+.dbs__foot p {
+  margin: 0;
+  padding: 2cqw 3cqw;
+  border-left: 0.6cqw solid var(--dbs-blue);
+  background: linear-gradient(90deg, rgb(22 139 255 / 14%), transparent 70%);
+  color: #d5dbe2;
+  font-size: 3cqw;
+  line-height: 1.35;
+}
+
+.dbs__foot b {
+  margin-right: 0.6em;
+  color: var(--dbs-sky);
+  font: 700 2.5cqw/1 var(--dbs-font-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+}
+
+/* ── Loading, refusal, ineligible ─────────────────────────────────────── */
+
+.dbs__state {
+  display: grid;
+  justify-items: center;
+  gap: 3cqw;
+  padding: 8cqw 2cqw;
+  text-align: center;
+}
+
+.dbs__state p {
+  margin: 0;
+  color: var(--dbs-chrome);
+  font: 800 4cqw/1.3 var(--dbs-font-value);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-shadow: var(--dbs-chrome-shadow);
+}
+
+.dbs__spinner {
+  width: 7cqw;
+  height: 7cqw;
+  border: 0.7cqw solid rgb(22 139 255 / 25%);
+  border-top-color: var(--dbs-cyan);
+  border-radius: 50%;
+  animation: dbs-spin 900ms linear infinite;
+}
+
+/* ── Motion ───────────────────────────────────────────────────────────── */
+
+@keyframes dbs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dbs-today {
+  50% {
+    filter: brightness(1.42);
+  }
+}
+
+@keyframes dbs-shimmer {
+  50% {
+    color: var(--dbs-cyan);
+    text-shadow:
+      0 0 22px rgb(101 217 255 / 85%),
+      0 0.45cqw 0 #050607;
+  }
+}
+
+@keyframes dbs-reveal {
+  0% {
+    transform: perspective(600px) rotateY(90deg);
+    filter: brightness(1.6);
+  }
+
+  100% {
+    transform: perspective(600px) rotateY(0);
+  }
+}
+
+@keyframes dbs-pop {
+  40% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes dbs-spark {
+  to {
+    transform: rotate(calc(var(--i) * 45deg)) translateY(-14cqw);
+    opacity: 0;
+  }
+}
+
+@keyframes dbs-busy {
+  50% {
+    filter: brightness(1.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dbs__day[data-state='today'],
+  .dbs-tile[data-kind='mystery']:not([data-revealed]) .dbs-plaque__value,
+  .dbs-tile[data-kind='mystery'][data-revealed] .dbs-plaque,
+  .dbs-btn--busy,
+  .dbs-tile[data-burst] .dbs-plaque,
+  .dbs-tile__sparks i {
+    animation: none;
+  }
+
+  .dbs-tile__sparks {
+    display: none;
+  }
+}

@@ -30,6 +30,8 @@ let cachedToken: string | null = null;
 /** Expiry in ms epoch, or null when the token has no exp claim. */
 let cachedExpiryMs: number | null = null;
 let initialized = false;
+// Auth events supersede any session read that was already in flight.
+let authGeneration = 0;
 
 function adoptToken(token: string | null): void {
   cachedToken = token;
@@ -56,14 +58,18 @@ export function initAuthTokenCache(): void {
   void import('./supabase')
     .then(({ supabase }) => {
       supabase.auth.onAuthStateChange((_event, session) => {
+        authGeneration++;
         adoptToken(session?.access_token ?? null);
       });
       // Also adopt whatever the SDK already holds (covers a refresh that
       // happened between our seed and the listener install).
+      const generation = authGeneration;
       void supabase.auth
         .getSession()
         .then(({ data }) => {
-          if (data.session?.access_token) adoptToken(data.session.access_token);
+          if (generation === authGeneration && data.session?.access_token) {
+            adoptToken(data.session.access_token);
+          }
         })
         .catch(() => {
           /* cache keeps the localStorage seed */
@@ -96,9 +102,11 @@ export async function getFreshAccessToken(): Promise<string | null> {
   const fast = getCachedAccessToken();
   if (fast) return fast;
 
+  const generation = authGeneration;
   try {
     const { supabase } = await import('./supabase');
     const { data } = await supabase.auth.getSession();
+    if (generation !== authGeneration) return getCachedAccessToken();
     const t = data.session?.access_token ?? null;
     if (t) {
       adoptToken(t);
@@ -107,5 +115,6 @@ export async function getFreshAccessToken(): Promise<string | null> {
   } catch {
     /* fall through to localStorage */
   }
+  if (generation !== authGeneration) return getCachedAccessToken();
   return readLocalSession()?.accessToken ?? null;
 }

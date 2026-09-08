@@ -73,12 +73,31 @@ describe('the second writer is audited against the register', () => {
 
   it('the script refuses to call nothing clean, and fails on what it finds', () => {
     expect(script).toMatch(/holds no route files - refusing to call that clean/);
+    // balanced braces: nested object keys never leak into the parameter list
+    expect(script).toMatch(/function objectBody\(/);
+    expect(script).toMatch(/function topLevelKeys\(/);
+    // a written exemption is reported, never counted as fine
+    expect(script).toMatch(/second-writer-exempt:/);
+    expect(script).toMatch(/exempt by annotation/);
+    // and the scanner is importable without running the audit
+    expect(script).toMatch(/import\.meta\.url === pathToFileURL\(process\.argv\[1\]\)\.href/);
     expect(script).toMatch(/refusing to treat an unreadable answer as a clean one/);
     expect(script).toMatch(/the answer carries no coverage/);
-    expect(script).toMatch(/sent \$\{allCalls\.length\} calls, the database counted/);
+    expect(script).toMatch(/sent \$\{sent\.length\} calls, the database counted/);
     expect(script).toMatch(/direct_balance_write/);
     expect(script).toMatch(/rest\/v1\/rpc\/fn_ca_second_writer_check/);
     expect(script).toMatch(/errors\.length > 0 \|\| allDirect\.length > 0/);
+    // severity is the database's word: a non-money mismatch is a warning there
+    const money = readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .find((f) => f.includes('the_second_writer_check_speaks_about_money_doors'));
+    expect(money, 'the money-scoped severity migration must not be deleted').toBeTruthy();
+    const msql = readFileSync(join(MIGRATIONS, money!), 'utf8');
+    expect(msql).toMatch(/v_money := \(v_status IS NOT NULL\) OR COALESCE\(v_writes, false\);/);
+    expect(msql).toMatch(/'kind', 'closed_door', 'severity', 'error', 'money', true/);
+    expect(msql).toMatch(/VERIFY FAILED: a non-money mismatch is not a warning/);
+    expect(msql).toMatch(/VERIFY FAILED: a money-door mismatch is not an error/);
     expect(script).toMatch(/process\.exit\(1\)/);
   });
 
@@ -86,9 +105,11 @@ describe('the second writer is audited against the register', () => {
     const job = wf.slice(wf.indexOf('second-writer:'), wf.indexOf('definer-exposure:'));
     expect(job).toMatch(/repository: Smarter-Poker\/Smarter-Poker-World-Hub/);
     expect(job).toMatch(/repositories: Smarter-Poker-World-Hub/);
+    // the whole server side, not one directory (phase 7 deep dive)
     expect(job).toMatch(
-      /node scripts\/ci\/audit-second-writer\.mjs --routes world-hub\/pages\/api\/club-arena/
+      /node scripts\/ci\/audit-second-writer\.mjs --routes world-hub\/pages\/api --routes world-hub\/src\/lib --routes world-hub\/lib/
     );
+    expect(job).toMatch(/sparse-checkout: \|\s+pages\/api\s+src\/lib\s+lib/);
     expect(job).toMatch(/Second writer: a World Hub route disagrees with the money-door register/);
     expect(job).toMatch(/if: failure\(\) && steps\.audit\.outcome == 'failure'/);
     expect(job).toMatch(/Close the alarm when both repos agree again/);

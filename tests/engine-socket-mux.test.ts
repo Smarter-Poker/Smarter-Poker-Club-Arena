@@ -487,3 +487,44 @@ describe('speculative tables yield to real table entry', () => {
     expect(receive).not.toHaveBeenCalled();
   });
 });
+
+describe('physical transport identity', () => {
+  it('reauthenticates an acquire instead of subscribing under the previous token', async () => {
+    engineSocketMux.acquireWarm('https://engine.example', T1, 'jwt-first');
+    const old = lastSocket();
+    old._open();
+    old._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const next = engineSocketMux.acquire('https://engine.example', T1, 'jwt-second');
+    await Promise.resolve();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(old.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(lastSocket().protocols).toEqual(['bearer', 'jwt-second']);
+    expect(next.readyState).toBe(FakeWebSocket.CONNECTING);
+    lastSocket()._open();
+    lastSocket()._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    expect(next.readyState).toBe(FakeWebSocket.OPEN);
+  });
+
+  it('replaces a prewarm that is still connecting with a different token', () => {
+    engineSocketMux.prewarm('https://engine.example', 'jwt-first');
+    const old = lastSocket();
+    engineSocketMux.prewarm('https://engine.example', 'jwt-second');
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(old.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(lastSocket().protocols).toEqual(['bearer', 'jwt-second']);
+  });
+
+  it('does not carry a subscription to a different engine origin', async () => {
+    engineSocketMux.acquire('https://engine.example', T1, 'jwt');
+    const old = lastSocket();
+    old._open();
+    old._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    const next = engineSocketMux.acquire('https://replacement.example', T1, 'jwt');
+    await Promise.resolve();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(lastSocket().url).toContain('replacement.example');
+    expect(next.readyState).toBe(FakeWebSocket.CONNECTING);
+    old._frame({ type: 'SUBSCRIBED', tableId: T1 });
+    expect(next.readyState).toBe(FakeWebSocket.CONNECTING);
+  });
+});

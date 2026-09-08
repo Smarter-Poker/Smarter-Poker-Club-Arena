@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { uuid } from '../../src/utils/uuid';
+import {
+  createCashBuyInJournal,
+  executeCashBuyIn,
+  sameCashBuyInIntent,
+} from '../../src/services/CashBuyInRecovery';
 
 // Execute the actual JSX callback, with only its external dependencies replaced.
 // This catches failures in the real ordering and cleanup, without moving chips.
@@ -16,14 +21,49 @@ const compiled = ts.transpile(`const handler = ${source.slice(start, end)}\n};`,
 function fixture() {
   let state: any = { players: Array(6).fill(null), heroSeat: 0, tableName: 'Test' };
   const ref = (current: any) => ({ current });
-  const dependencies = {
+  const local = new Map<string, string>();
+  const session = new Map<string, string>();
+  const storage = (map: Map<string, string>) => ({
+    getItem: (key: string) => map.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      map.set(key, value);
+    },
+    removeItem: (key: string) => {
+      map.delete(key);
+    },
+  });
+  const journal = createCashBuyInJournal(() => ({
+    local: storage(local),
+    session: storage(session),
+    lock: async <T>(_key: string, work: () => T) => work(),
+    createId: uuid,
+  }));
+  const dependencies: Record<string, any> = {
     uuid,
     buyInProcessingRef: ref(false),
     buyInIdempotencyKeyRef: ref(null),
+    cashBuyInRecovery: null,
+    cashBuyInPendingRef: ref(null),
+    buyInOperationRef: ref(null),
+    buyInScopeRef: ref('d0000000-0000-4000-8000-000000000001:b0000000-0000-4000-8000-000000000001'),
+    cashBuyInJournal: journal,
+    sameCashBuyInIntent,
+    executeCashBuyIn: (attempt: any, recovery: boolean, _rpc: unknown, current: () => boolean) =>
+      executeCashBuyIn(
+        attempt,
+        recovery,
+        (name, payload) => dependencies.supabase.rpc(name, payload),
+        current
+      ),
+    setCashBuyInRecovery: (attempt: any) => {
+      dependencies.cashBuyInRecovery = attempt;
+    },
+    retryAccountBalance: vi.fn(),
+    requestEngineSnapshot: vi.fn(),
     pendingSeatStackRef: ref(0),
     selectedSeat: 2,
-    userId: 'member',
-    tableId: 'table',
+    userId: 'd0000000-0000-4000-8000-000000000001',
+    tableId: 'b0000000-0000-4000-8000-000000000001',
     username: 'Member',
     heroAvatarUrl: '',
     setShowBuyInModal: vi.fn(),
@@ -34,7 +74,7 @@ function fixture() {
     leftSeatPendingRef: ref(false),
     setPendingSeat: vi.fn(),
     supabase: { rpc: vi.fn().mockResolvedValue({ data: null, error: null }), from: vi.fn() },
-    useUserStore: { getState: () => ({ currentClubId: 'club' }) },
+    useUserStore: { getState: () => ({ currentClubId: 'a0000000-0000-4000-8000-000000000001' }) },
     reportError: vi.fn(),
     toast: { error: vi.fn(), warning: vi.fn() },
     cashBuyInRefusalText: () => null,
@@ -51,18 +91,24 @@ function fixture() {
     setPostOrWaitOpen: vi.fn(),
     setSelectedSeat: vi.fn(),
   };
-  const handler = new Function(...Object.keys(dependencies), `${compiled}\nreturn handler;`)(
-    ...Object.values(dependencies)
-  );
+  const handler = (...args: any[]) =>
+    new Function(...Object.keys(dependencies), `${compiled}\nreturn handler;`)(
+      ...Object.values(dependencies)
+    )(...args);
   return { d: dependencies, handler, state: () => state };
 }
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 describe('cash buy-in callback recovery', () => {
   it('buys in without native randomUUID and without a preliminary seat read', async () => {
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(7) });
     const f = fixture();
+    f.d.leftSeatPendingRef.current = true;
     await f.handler(100, false);
+    expect(f.d.leftSeatPendingRef.current).toBe(false);
     expect(f.d.supabase.from).not.toHaveBeenCalled();
     expect(f.d.supabase.rpc).toHaveBeenCalledWith(
       'atomic_table_buyin',
@@ -98,7 +144,9 @@ describe('cash buy-in callback recovery', () => {
     f.d.HydraService.onRealPlayerJoined.mockImplementation(() => {
       throw new Error('hydra');
     });
-    f.d.sendAction.mockRejectedValue(new Error('socket offline'));
+    f.d.requestEngineSnapshot.mockImplementation(() => {
+      throw new Error('socket offline');
+    });
     await f.handler(100, false);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(f.state().heroSeat).toBe(2);
@@ -107,7 +155,8 @@ describe('cash buy-in callback recovery', () => {
     expect(f.d.masterBus.emit).toHaveBeenCalled();
     expect(f.d.setPostOrWaitOpen).toHaveBeenCalledWith(true);
     expect(f.d.buyInProcessingRef.current).toBe(false);
-    expect(f.d.applyBalanceDelta).toHaveBeenCalledTimes(1);
+    expect(f.d.applyBalanceDelta).not.toHaveBeenCalled();
+    expect(f.d.retryAccountBalance).toHaveBeenCalledOnce();
   });
 
   it('finishes confirmation even if the engine notification never settles', async () => {
@@ -141,6 +190,7 @@ describe('cash buy-in callback recovery', () => {
     const pending = f.handler(100, false);
     expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
     expect(f.d.buyInProcessingRef.current).toBe(true);
+    await vi.waitFor(() => expect(f.d.supabase.rpc).toHaveBeenCalledOnce());
     finish({ data: null, error: null });
     expect(await pending).toBe(true);
     expect(f.d.setShowBuyInModal).toHaveBeenCalledWith(false);
@@ -161,4 +211,118 @@ describe('cash buy-in callback recovery', () => {
     expect(f.d.buyInProcessingRef.current).toBe(false);
     expect(f.d.toast.error).toHaveBeenCalled();
   });
+});
+
+it('retains an unknown request after the response deadline and ignores a late result', async () => {
+  vi.useFakeTimers();
+  const f = fixture();
+  let finish!: (value: any) => void;
+  f.d.supabase.rpc.mockImplementation((name: string) =>
+    name === 'atomic_table_buyin'
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : Promise.resolve({ data: { status: 'unconfirmed' }, error: null })
+  );
+  const pending = f.handler(100, false);
+  await vi.advanceTimersByTimeAsync(15_001);
+  expect(await pending).toBe(false);
+  const saved = f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId);
+  expect(saved.payload.p_amount).toBe(100);
+  expect(f.d.buyInProcessingRef.current).toBe(false);
+  expect(f.state().heroSeat).toBe(0);
+  finish({ data: null, error: null });
+  await Promise.resolve();
+  expect(f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId)).toEqual(saved);
+  expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
+});
+
+it('recovers a committed receipt without restoring an old stack or subtracting the wallet again', async () => {
+  const f = fixture();
+  f.d.leftSeatPendingRef.current = true;
+  f.d.supabase.rpc.mockImplementation((name: string) => {
+    if (name === 'atomic_table_buyin') return Promise.reject(new Error('response lost'));
+    const p = f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId).payload;
+    return Promise.resolve({
+      error: null,
+      data: {
+        status: 'confirmed',
+        request: {
+          door: 'atomic_table_buyin',
+          user_id: p.p_user_id,
+          table_id: p.p_table_id,
+          seat_number: p.p_seat_number,
+          amount: p.p_amount,
+          auto_rebuy: p.p_auto_rebuy,
+          club_id: p.p_club_id,
+        },
+      },
+    });
+  });
+  expect(await f.handler(100, false)).toBe(true);
+  await Promise.resolve();
+  expect(
+    f.d.supabase.rpc.mock.calls.filter((call: any[]) => call[0] === 'atomic_table_buyin')
+  ).toHaveLength(1);
+  expect(f.d.applyBalanceDelta).not.toHaveBeenCalled();
+  expect(f.d.retryAccountBalance).toHaveBeenCalledOnce();
+  expect(f.d.requestEngineSnapshot).toHaveBeenCalledOnce();
+  expect(f.state().heroSeat).toBe(0);
+  expect(f.d.totalBuyInRef.current).toBe(0);
+  expect(f.d.leftSeatPendingRef.current).toBe(true);
+});
+
+it('keeps a late confirmation inside its original view and cannot clear a newer operation latch', async () => {
+  const f = fixture();
+  let finish!: (value: any) => void;
+  f.d.supabase.rpc.mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    })
+  );
+  const pending = f.handler(100, false);
+  await vi.waitFor(() => expect(f.d.supabase.rpc).toHaveBeenCalledOnce());
+  f.d.buyInScopeRef.current = 'another-view';
+  const replacement = Symbol('replacement');
+  f.d.buyInOperationRef.current = replacement;
+  finish({ data: null, error: null });
+  expect(await pending).toBe(false);
+  expect(f.d.buyInOperationRef.current).toBe(replacement);
+  expect(f.d.buyInProcessingRef.current).toBe(true);
+  expect(f.d.retryAccountBalance).not.toHaveBeenCalled();
+  expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
+  expect(f.state().heroSeat).toBe(0);
+});
+
+it('treats a successful retried mutation as recovery when the original may have completed late', async () => {
+  const f = fixture();
+  const saved = await f.d.cashBuyInJournal.reserve({
+    p_user_id: f.d.userId,
+    p_table_id: f.d.tableId,
+    p_seat_number: 2,
+    p_amount: 100,
+    p_auto_rebuy: false,
+    p_club_id: f.d.useUserStore.getState().currentClubId,
+  });
+  f.d.cashBuyInRecovery = saved.attempt;
+  f.d.cashBuyInPendingRef.current = saved.attempt;
+  f.d.leftSeatPendingRef.current = true;
+  f.d.supabase.rpc.mockImplementation((name: string) =>
+    Promise.resolve({
+      data: name === 'fn_ca_cash_buyin_receipt' ? { status: 'unconfirmed' } : null,
+      error: null,
+    })
+  );
+  // A receipt read can precede the original commit. The idempotent retry
+  // then returns the original success after waiting on that transaction.
+  expect(await f.handler(100, false)).toBe(true);
+  expect(f.d.supabase.rpc.mock.calls.map((call: any[]) => call[0])).toEqual([
+    'fn_ca_cash_buyin_receipt',
+    'atomic_table_buyin',
+  ]);
+  expect(f.d.supabase.rpc.mock.calls[1][1]).toEqual(saved.attempt.payload);
+  expect(f.state().heroSeat).toBe(0);
+  expect(f.d.totalBuyInRef.current).toBe(0);
+  expect(f.d.leftSeatPendingRef.current).toBe(true);
+  expect(f.d.retryAccountBalance).toHaveBeenCalledOnce();
 });

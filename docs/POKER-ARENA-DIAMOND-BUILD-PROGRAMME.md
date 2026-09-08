@@ -49,7 +49,7 @@ The existing HomePage loads memberships through ClubsService.getUserMemberships 
 
 ClubHomePage accepts clubIdOverride, which is a useful composition seam. It does not make the whole page currency-independent or authorize automatic membership.
 
-The existing router and Vite asset base use /hub/club-arena. Rename visible labels first and preserve working URLs; do not rename the repository, engine service, RPC namespace or deployment directory simply to match branding. A /hub/poker-arena alias can be added through the established route configuration with deep-link tests. /hub/diamond-arena should become a compatibility link selecting the Diamond skin inside the same shell, not another lobby application.
+The existing router and Vite asset base use /hub/club-arena. Rename visible labels first and preserve working URLs; do not rename the repository, engine service, RPC namespace or deployment directory simply to match branding. A /hub/poker-arena alias can be added through the established route configuration with deep-link tests. Remove /hub/diamond-arena and its legacy aliases; update incoming links to select the new Diamond skin inside Poker Arena.
 
 Current platform accounting migrations already created clubs.asset, clubs.is_platform and an arena identity. Their presence earns zero completion credit for this build. Inspect and safely reconcile them rather than creating a duplicate system arena or erasing records.
 

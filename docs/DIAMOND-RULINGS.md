@@ -66,3 +66,59 @@ The cap moved from the assignment to the claim, and the reason is measured: the 
 **Ruling 9 is built.** `bot_profiles.diamonds` - a dead column with no writer since 2026-03-10, holding 26,541 diamonds that were never part of supply - is dropped. Horse balances live in `profiles.diamonds` and follow them into the arena like anyone's.
 
 **The roadmap's delete list ran for the names that pass its own gate** (zero dead-store writes, zero balance-audit writers in seven days, zero references in either repo): `award_purchase_diamonds`, both `fn_credit_diamonds` overloads, `increment_diamonds`, `create_user_progress_on_signup` with `user_progress.diamonds`, and the one-argument `fn_purchase_time_banks` - safe now and not before, because the published bundle calls `_v2` with a per-attempt request id. Ten more names failed the gate and are listed in the migration header with the reason each one survived.
+
+## Ruling 21 (Dan, 2026-09-08, migration 20260908130203; docs/changelog/2026-09-08-only-a-user-budget-refuses.md)
+
+**Dan, verbatim: "THERE SHOULDN'T BE A PLATFORM BUDGET ON THINGS LIKE THIS, ONLY A USER BUDGET."**
+
+A per-user cap is a rule about one player and their own earning. A platform-wide
+monthly pot is a rule about **everybody else's** earning: it is a shared pool, so
+the players who arrive early spend it and the players who arrive late are refused
+for something they did nothing to deserve. That is not a cap, it is a race, and
+the player cannot see the clock.
+
+**This supersedes the enforcement half of rulings 17 and 18 for platform pots.**
+The budget numbers stay and are still worth measuring; what ends is their power
+to refuse anybody.
+
+### What stops
+
+1. **The per-engine monthly pot** (`diamond_reward_budgets`, read by
+   `fn_ca_diamond_earn_ledger`). `DR7:engine_over_budget` was scheduled to flip
+   to `refuse` on 2026-09-14. With the spend counter repaired the same morning,
+   `daily_missions` reads 127,305 against a 30,000 line - 4.2x - so the flip
+   would have refused **every daily-mission award for the rest of September**.
+   The rule row is deleted rather than deferred: a rule nothing consults reads as
+   armed while being unreachable (CLAUDE.md 10.86).
+
+2. **The platform-wide monthly pot** (`diamond_platform_budget`, read by
+   `award_diamonds_v2`). This one was live, and did something worse than refuse:
+
+   ```sql
+   v_award := LEAST(v_award::bigint, v_budget_left)::int;
+   ```
+
+   a **silent truncation**. A player owed 100 who arrived when the pot held 7 was
+   paid 7, flagged `capped`, with no way to learn the number had nothing to do
+   with anything they had done. The truncation, the `budget_exhausted` refusal
+   and the hot-row running total that fed them are all gone.
+
+### What remains, and is now the whole of the control
+
+- `diamond_engine_daily_caps` - per user, per engine, per day: daily_challenges
+  2,000, daily_missions 500, trivia 2,000, wheel 10,000, referrals 1,500,
+  catalog_v2 110, club_arena_daily 110. **`DR7:user_over_daily_cap` still flips
+  to refuse on 2026-09-14.**
+- `award_diamonds_v2`'s per-user daily allowance and its per-user **monthly**
+  allowance (4,500 VIP / 3,300 otherwise). A monthly limit on one player is a
+  user budget and is untouched.
+
+### What the budget columns are now
+
+A forecast. Both `budget_diamonds` columns carry a comment saying so, so nobody
+re-arms them by reading the name. The economy report still shows what each engine
+costs, and the velocity alarm still watches issuance against what players spend -
+neither can refuse a player.
+
+**If the aggregate needs to come down, the lever is the per-user daily cap**,
+which is one row per engine and identical for horses and humans.

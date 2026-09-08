@@ -14,6 +14,7 @@ const acquire = vi.fn();
 const prewarm = vi.fn();
 const isSubscribed = vi.fn(() => false);
 const getSeatedPlayers = vi.fn();
+const getToken = vi.fn();
 
 vi.mock('../src/utils/ChunkPreloader', () => ({ preloadRoute: vi.fn() }));
 
@@ -26,7 +27,7 @@ vi.mock('../src/services/EngineSocketMux', () => ({
   isMuxEnabled: () => true,
 }));
 vi.mock('../src/lib/authToken', () => ({
-  getFreshAccessToken: vi.fn(async () => 'jwt-token'),
+  getFreshAccessToken: getToken,
 }));
 vi.mock('../src/services/TableService', () => ({
   tableService: { getSeatedPlayers: (id: string) => getSeatedPlayers(id) },
@@ -52,6 +53,7 @@ beforeEach(async () => {
   acquire.mockReset().mockImplementation(() => fakeFacade());
   isSubscribed.mockReset().mockReturnValue(false);
   getSeatedPlayers.mockReset();
+  getToken.mockReset().mockResolvedValue('jwt-token');
   warm = await import('../src/services/tableWarmup');
 });
 afterEach(() => {
@@ -226,4 +228,43 @@ it('coalesces repeated intent while authentication is pending', async () => {
   resolveToken('jwt-token');
   await vi.advanceTimersByTimeAsync(1);
   expect(acquire).toHaveBeenCalledTimes(1);
+});
+
+describe('warm-up deadlines', () => {
+  it('releases a hung shared roster read and ignores its late rows', async () => {
+    let finish!: (rows: typeof ROWS) => void;
+    getSeatedPlayers.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    warm.warmTable(T);
+    const shared = warm.warmSeatsPromise(T);
+    const rejected = expect(shared).rejects.toThrow('Table preparation timed out');
+    await vi.advanceTimersByTimeAsync(5_001);
+    await rejected;
+    expect(warm.warmSeatsPromise(T)).toBeNull();
+    finish(ROWS);
+    await Promise.resolve();
+    expect(warm.peekWarmSeats(T)).toBeNull();
+  });
+
+  it('can retry a hung token request without accepting its late result', async () => {
+    let finish!: (token: string) => void;
+    getToken.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    getSeatedPlayers.mockResolvedValue(ROWS);
+    warm.warmTable(T);
+    await vi.advanceTimersByTimeAsync(15_001);
+    expect(acquire).not.toHaveBeenCalled();
+    warm.warmTable(T);
+    await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(1));
+    finish('late-token');
+    await Promise.resolve();
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(getToken).toHaveBeenCalledTimes(2);
+  });
 });

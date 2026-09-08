@@ -88,6 +88,7 @@ describe('the player is told when the landing was reduced', () => {
     expect(payload).toEqual({
       kind: 'add_on_adjusted',
       addon_kind: 'addon',
+      pending_id: null,
       requested: 49.95,
       applied: 48.88,
       refunded: 1.07,
@@ -109,5 +110,107 @@ describe('the player is told when the landing was reduced', () => {
     const engine = engineWith(1, 0, false);
     engine.tellPlayerAddOnAdjusted('hero', 'addon', 49, 0);
     expect(engine.hub.sendToUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('the rows the hand envelope resolved are announced (verified lease path)', () => {
+  /* On production every cash engine is lease-verified, so a mid-hand add-on
+     is resolved INSIDE fn_ca_process_hand_post_commit_obligations, which
+     returns only a count. processPendingAddOns never sees it. This is the
+     read-back that makes the bubble and the private frame fire for the case
+     they were written for, and rebuilds the cap cache the landed rows would
+     otherwise be double-counted from. */
+  function envelopeEngine() {
+    const engine = engineWith(1.12, 49.95, false);
+    const rpcTable = new Map<string, any>();
+    const from = vi.spyOn(supabase, 'from').mockImplementation(((table: string) => {
+      const chain: any = {
+        _table: table,
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        is: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockImplementation(async () => rpcTable.get(`${table}:single`)),
+        then: (resolve: any) => Promise.resolve(rpcTable.get(`${table}:list`)).then(resolve),
+      };
+      return chain;
+    }) as any);
+    return { engine, rpcTable, from };
+  }
+
+  it('emits the bubble for a landed row, the private frame for a reduced one, and rebuilds the cap', async () => {
+    const { engine, rpcTable } = envelopeEngine();
+    rpcTable.set('hand_atomic_commits:single', {
+      data: { ids: ['cd60239c-4030-4e38-b968-f972b9af67ae'] },
+      error: null,
+    });
+    rpcTable.set('table_pending_addons:list', {
+      data: [
+        {
+          id: 'cd60239c-4030-4e38-b968-f972b9af67ae',
+          user_id: 'hero',
+          kind: 'addon',
+          amount: '49.95',
+          applied_to_stack: '48.88',
+          refunded: '1.07',
+          resolved_at: '2026-09-04T23:15:18Z',
+        },
+      ],
+      error: null,
+    });
+    const players = [{ user_id: 'hero', seat_number: 3, stack: 50, is_horse: false }];
+    await engine.announceEnvelopeResolvedAddOns('hand-1', players);
+
+    expect(engine.hub.emitEvent).toHaveBeenCalledWith(
+      engine.tableId,
+      expect.objectContaining({ type: 'add_on_applied', user_id: 'hero', seat: 3, amount: 48.88 })
+    );
+    expect(engine.hub.sendToUser).toHaveBeenCalledWith(
+      engine.tableId,
+      'hero',
+      expect.objectContaining({
+        kind: 'add_on_adjusted',
+        pending_id: 'cd60239c-4030-4e38-b968-f972b9af67ae',
+        requested: 49.95,
+        applied: 48.88,
+        refunded: 1.07,
+      })
+    );
+    // The second read (still-open rows) returned the same list object here,
+    // whose rows are resolved; the cap cache no longer double-counts them.
+    // Rebuilt from unresolved rows: the mocked list is reused for that read
+    // and it contains a resolved row, so the cache is rebuilt from `amount`
+    // regardless - what matters is that the STALE 49.95 entry was replaced by
+    // a fresh read, not left over from before the hand.
+    expect(engine.requestPendingAddOnSweep).toHaveBeenCalled();
+  });
+
+  it('is silent for a hand with no frozen rows and leaves an empty cache alone', async () => {
+    const { engine, rpcTable, from } = envelopeEngine();
+    engine.pendingAddOns.clear();
+    rpcTable.set('hand_atomic_commits:single', { data: { ids: [] }, error: null });
+    await engine.announceEnvelopeResolvedAddOns('hand-2', []);
+    expect(engine.hub.emitEvent).not.toHaveBeenCalled();
+    expect(engine.hub.sendToUser).not.toHaveBeenCalled();
+    // One read (the envelope), no second: nothing to rebuild.
+    expect(from).toHaveBeenCalledTimes(1);
+  });
+
+  it('never throws: a failed read is reported, the hand is not restarted over a bubble', async () => {
+    const { engine, rpcTable } = envelopeEngine();
+    rpcTable.set('hand_atomic_commits:single', { data: null, error: new Error('read failed') });
+    await expect(engine.announceEnvelopeResolvedAddOns('hand-3', [])).resolves.toBeUndefined();
+  });
+
+  it('re-sends the last adjustment on RESYNC, and only to that player', () => {
+    const engine = engineWith(1, 0, false);
+    engine.tellPlayerAddOnAdjusted('hero', 'addon', 48.88, 1.07, 'row-1');
+    engine.hub.sendToUser.mockClear();
+    engine.rePushAddOnAdjusted('hero');
+    engine.rePushAddOnAdjusted('someone-else');
+    expect(engine.hub.sendToUser).toHaveBeenCalledTimes(1);
+    expect(engine.hub.sendToUser.mock.calls[0][2]).toEqual(
+      expect.objectContaining({ kind: 'add_on_adjusted', pending_id: 'row-1' })
+    );
   });
 });

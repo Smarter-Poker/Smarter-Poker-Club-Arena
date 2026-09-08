@@ -62,7 +62,10 @@ describe('LAW 1 - every caller passes a key', () => {
   it('the automatic top-up mints and sends one', () => {
     const block = sliceEnclosingBlock(TABLE_PAGE, 'autoTopUpInFlightRef.current = true');
     expect(block).toContain('autoTopUpKeyRef.current');
-    expect(block).toMatch(/handleAddChips\(topUpAmount,\s*autoTopUpKeyRef\.current\.key\)/);
+    // The key is the second argument; a third (`{ source: 'auto' }`, so the
+    // engine's "already at the maximum" refusal is a silent no-op for the
+    // automatic path, 2026-09-08) may follow it.
+    expect(block).toMatch(/handleAddChips\(topUpAmount,\s*autoTopUpKeyRef\.current\.key[,)]/);
   });
 
   it('the manual cashier mints and sends one', () => {

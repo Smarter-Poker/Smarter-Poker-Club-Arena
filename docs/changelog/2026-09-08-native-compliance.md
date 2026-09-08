@@ -87,3 +87,11 @@ somebody calls one day - and the method now refuses without a payment method.
 
 Pinned by `tests/unit/nativeCompliance.test.ts` and the updated
 `tests/unit/DiamondService.test.ts`.
+
+## Entry chunk (CI's "Entry Chunk Is A Reviewed List" gate)
+
+`src/lib/consent.ts` enters first paint (+1 module, +0 kB gz): `analytics.ts`
+is already in the entry and now asks it before loading PostHog. `AgeGate`,
+`ConsentPrompt` and their stylesheets do NOT: both are behind a dynamic
+import gated on the compile-time constant, so the web bundle carries neither
+(verified: the entry chunk names no AgeGate). Baseline updated in this commit.

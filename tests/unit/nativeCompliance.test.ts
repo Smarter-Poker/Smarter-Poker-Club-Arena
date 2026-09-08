@@ -16,8 +16,9 @@ import { ageOn, latestAdultBirthday, MINIMUM_AGE } from '../../src/components/le
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
+// Prettier wraps JSX text; every whitespace run is one \s+.
 const DAN_SENTENCE =
-  /Smarter\.Poker Does Not Sell, Redeem\s+Or Pay Out Chips And\s+Assigns Them No Monetary Value/;
+  /Smarter\.Poker\s+Does\s+Not\s+Sell,\s+Redeem\s+Or\s+Pay\s+Out\s+Chips\s+And\s+Assigns\s+Them\s+No\s+Monetary\s+Value/;
 
 describe('chips are described the one way Dan settled (2026-09-07), everywhere a reader sees it', () => {
   for (const f of [
@@ -98,7 +99,10 @@ describe('consent', () => {
     expect(setUser).not.toMatch(/email:\s*user\.email/);
     expect(sentry).toContain('replaysSessionSampleRate: IS_NATIVE_BUILD ? 0 : 0.1,');
     expect(sentry).toContain('replaysOnErrorSampleRate: IS_NATIVE_BUILD ? 0 : 1.0,');
-    expect(read('src/App.tsx')).toContain('{IS_NATIVE_BUILD && <ConsentPrompt />}');
+    expect(read('src/App.tsx')).toContain('{IS_NATIVE_BUILD && (');
+    expect(read('src/App.tsx')).toContain(
+      "lazyWithRetry(() => import('./components/legal/AgeGate'))"
+    );
     expect(read('src/pages/SettingsPage.tsx')).toContain('Share Usage Analytics');
   });
   it('the privacy policy names every service by name and purpose', () => {
@@ -112,7 +116,7 @@ describe('consent', () => {
     ]) {
       expect(p, name).toContain(`<strong>${name}:</strong>`);
     }
-    expect(p).toContain('It Does Not Carry\n            Your Email Address');
+    expect(p).toMatch(/It\s+Does\s+Not\s+Carry\s+Your\s+Email\s+Address/);
   });
 });
 

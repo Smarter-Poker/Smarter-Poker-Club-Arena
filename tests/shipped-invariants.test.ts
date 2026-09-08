@@ -737,3 +737,11 @@ it('weekly invoice payment acknowledges every cent and rejects malformed amounts
     has('tests/sql/union-statement-payment-rollback-probe.sql', 'FAIL one cent short marked paid')
   ).toBe(true);
 });
+
+
+it('guarantee funding rolls back when the matching journal cannot commit', () => {
+  const sql = read('supabase/migrations/20260907220945_guarantee_overlay_journal_and_bank_debit_are_atomic.sql');
+  expect(sql).toContain('IF v_attempt = 3 THEN RAISE; END IF;');
+  expect(sql).not.toContain('INSERT INTO public.ca_ledger_write_failures');
+  expect(has('scripts/ci/probes/guarantee-overlay-atomicity.sql', 'FAIL journal failure preserved bank debit or pool publication')).toBe(true);
+});

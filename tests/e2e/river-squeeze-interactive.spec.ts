@@ -74,8 +74,12 @@ async function rotationY(page: Page, selector: string): Promise<number> {
 }
 
 /** Step the sim to the river of scenario 2 with the squeeze presented. */
-async function openRiver(page: Page, opts: { watchHolds?: boolean; reduce?: boolean } = {}) {
-  const { watchHolds = false, reduce = false } = opts;
+async function openRiver(
+  page: Page,
+  opts: { watchHolds?: boolean; reduce?: boolean; manualClock?: boolean } = {}
+) {
+  const { watchHolds = false, reduce = false, manualClock = false } = opts;
+  if (manualClock) await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
   /* Emulated HERE rather than through `test.use`, which did not reliably
      reach the page in this project's config: the reduce run intermittently
      resolved the `all-in` profile, i.e. the test was not testing what it
@@ -114,6 +118,9 @@ async function openRiver(page: Page, opts: { watchHolds?: boolean; reduce?: bool
       });
       w.__obs.observe(document.body, { subtree: true, childList: true, attributes: true });
     });
+  // Pause before the river exists. Pointer work on a busy CI runner must
+  // not consume the separate automatic-reveal deadline during a drag test.
+  if (manualClock) await page.clock.pauseAt(new Date('2026-01-01T01:00:00Z'));
   await next.click();
   // The squeeze is the player's only once the hold has committed. Waiting on
   // it (rather than on the host merely existing) is what stops a pointerdown
@@ -127,6 +134,7 @@ async function openRiver(page: Page, opts: { watchHolds?: boolean; reduce?: bool
      a human reaction is ~200ms), so it is a robot-only race and this wait is
      the test behaving like a person rather than a defect being hidden. It is
      recorded in the changelog as a known window, not swept up. */
+  if (manualClock) await page.clock.runFor(200);
   await page.waitForTimeout(200);
 }
 
@@ -269,7 +277,7 @@ test.describe('the river squeeze, with a real mouse', () => {
   });
 
   test('a short drag springs it back face down', async ({ page }) => {
-    await openRiver(page);
+    await openRiver(page, { manualClock: true });
     const host = page.locator(HOST);
     await expect(host).toHaveCount(1, { timeout: 4000 });
     const box = (await host.boundingBox())!;

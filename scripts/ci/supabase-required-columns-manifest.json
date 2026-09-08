@@ -50,6 +50,13 @@
     "admin_audit_log": [
       "action"
     ],
+    "agent_commission_settlements": [
+      "club_id",
+      "user_id",
+      "period_start",
+      "period_end",
+      "amount"
+    ],
     "agent_commission_unsettled_rollup": [
       "club_id",
       "user_id"
@@ -209,12 +216,27 @@
       "day",
       "user_id"
     ],
+    "bbj_drill_arms": [
+      "table_id",
+      "club_id",
+      "pool_id",
+      "pool_balance_at_arm",
+      "armed_by"
+    ],
     "bbj_hand_evidence_log": [
       "kind"
     ],
     "bbj_ledger_deletions": [
       "source_table",
       "row_data"
+    ],
+    "bbj_mini_tiers": [
+      "tier_id",
+      "amount"
+    ],
+    "bbj_notify_thresholds": [
+      "club_id",
+      "amount"
     ],
     "bbj_payout_recipients": [
       "payout_id",
@@ -260,6 +282,18 @@
       "payout_loser_pct",
       "payout_winner_pct",
       "payout_table_pct"
+    ],
+    "bbj_threshold_crossings": [
+      "threshold_id",
+      "club_id",
+      "threshold_amount",
+      "balance_at_cross"
+    ],
+    "bbj_unclaimed_shares": [
+      "payout_id",
+      "user_id",
+      "amount",
+      "reason"
     ],
     "blacklists": [
       "user_id",
@@ -330,6 +364,14 @@
     "ca_break_scorecards": [
       "break_ended_at",
       "break_started_at"
+    ],
+    "ca_bridge_rate": [
+      "id",
+      "diamonds_per_chip",
+      "note"
+    ],
+    "ca_bridge_rate_history": [
+      "diamonds_per_chip"
     ],
     "ca_browser_definer_allowlist": [
       "proname",
@@ -412,6 +454,35 @@
       "direction_ratio",
       "both_cert"
     ],
+    "ca_currency_meter": [
+      "currency",
+      "outstanding",
+      "enforced"
+    ],
+    "ca_daily_bonus_calendar": [
+      "slot",
+      "kind",
+      "label"
+    ],
+    "ca_daily_bonus_calendar_history": [
+      "op"
+    ],
+    "ca_daily_bonus_claims": [
+      "user_id",
+      "bonus_date",
+      "slot",
+      "request_id",
+      "tile",
+      "granted",
+      "result"
+    ],
+    "ca_daily_bonus_days": [
+      "user_id",
+      "bonus_date",
+      "streak",
+      "cycle_day",
+      "tiles"
+    ],
     "ca_ddl_events": [
       "command_tag"
     ],
@@ -441,6 +512,10 @@
     ],
     "ca_diamond_journal_archive": [
       "id"
+    ],
+    "ca_diamond_rule_modes": [
+      "rule",
+      "flip_after"
     ],
     "ca_diamond_snapshots": [
       "profile_diamonds",
@@ -495,6 +570,14 @@
       "pool",
       "frozen_total"
     ],
+    "ca_frozen_pool_baseline_changes": [
+      "pool",
+      "amount",
+      "total_before",
+      "total_after",
+      "reason",
+      "authorized_by"
+    ],
     "ca_frozen_pool_deletions": [
       "deleted_balance"
     ],
@@ -532,6 +615,16 @@
       "ev_net_bb"
     ],
     "ca_hand_financial_facts": [
+      "hand_id"
+    ],
+    "ca_hand_flags": [
+      "hand_id",
+      "club_id",
+      "flagged_by",
+      "note"
+    ],
+    "ca_hand_notes": [
+      "user_id",
       "hand_id"
     ],
     "ca_hand_player_idx": [
@@ -605,6 +698,30 @@
     "ca_incident_recipients": [
       "user_id"
     ],
+    "ca_integrity_case_items": [
+      "case_id",
+      "item_type",
+      "snapshot_hash",
+      "added_by",
+      "op_id",
+      "payload_hash"
+    ],
+    "ca_integrity_cases": [
+      "subject_ids",
+      "kind",
+      "opened_by",
+      "open_op_id",
+      "open_payload_hash"
+    ],
+    "ca_integrity_sanctions": [
+      "case_id",
+      "subject_id",
+      "kind",
+      "state",
+      "payload_hash",
+      "proposed_by",
+      "op_id"
+    ],
     "ca_kill_switch_policy": [
       "detector",
       "threshold_chips"
@@ -613,6 +730,10 @@
       "account_type",
       "side",
       "backing"
+    ],
+    "ca_ledger_day_manifest_restatements": [
+      "day",
+      "reason"
     ],
     "ca_ledger_day_manifests": [
       "day",
@@ -817,6 +938,12 @@
       "spin_pools",
       "total"
     ],
+    "ca_test_account_audit_archive": [
+      "audit_id",
+      "actor_id",
+      "actor_email",
+      "audit_row"
+    ],
     "ca_tournament_conservation_samples": [
       "tournament_id",
       "drift",
@@ -885,7 +1012,8 @@
       "player_id",
       "from_table_id",
       "to_table_id",
-      "reason"
+      "reason",
+      "expires_at"
     ],
     "cashier_operations": [
       "user_id",
@@ -945,6 +1073,10 @@
       "from_type",
       "to_type",
       "amount"
+    ],
+    "chip_ledger_idem": [
+      "idempotency_key",
+      "leg_id"
     ],
     "chip_requests": [
       "club_id",
@@ -1580,6 +1712,12 @@
       "new_rate",
       "rate_type"
     ],
+    "competitive_quarantine": [
+      "entity_type",
+      "entity_id",
+      "reason_code",
+      "invariant_snapshot"
+    ],
     "content_asset_use": [
       "asset_key",
       "horse_id"
@@ -1594,6 +1732,10 @@
       "content_type",
       "scheduled_at"
     ],
+    "content_sources": [
+      "domain",
+      "name"
+    ],
     "content_stats": [
       "content_type"
     ],
@@ -1604,6 +1746,27 @@
       "category",
       "asset_id",
       "tier"
+    ],
+    "crash_rounds": [
+      "host_id",
+      "host_kind",
+      "club_id",
+      "user_id",
+      "bet_diamonds",
+      "bet_chips",
+      "diamonds_per_chip",
+      "commit_id",
+      "server_seed_hash",
+      "server_seed",
+      "client_seed",
+      "nonce",
+      "roll",
+      "crash_cents",
+      "cap_cents",
+      "growth_k",
+      "reserved_chips",
+      "chips_minted",
+      "diamonds_after"
     ],
     "credit_assignments": [
       "agent_id"
@@ -1649,11 +1812,6 @@
       "daemon",
       "high_water_mark"
     ],
-    "daily_bonus_rewards": [
-      "day",
-      "reward",
-      "reward_type"
-    ],
     "daily_challenge_catalog": [
       "id",
       "tier",
@@ -1679,11 +1837,18 @@
       "amounts",
       "occurred_at"
     ],
+    "daily_challenge_freeze_entitlements": [
+      "user_id",
+      "streak_run_id",
+      "entitlement_day",
+      "streak_started_on"
+    ],
     "daily_challenge_milestone_claims": [
       "user_id",
       "streak_started_on",
       "milestone_days",
-      "reward_diamonds"
+      "reward_diamonds",
+      "streak_run_id"
     ],
     "daily_challenge_milestones": [
       "days",
@@ -1695,6 +1860,14 @@
       "event_key",
       "amounts",
       "occurred_at"
+    ],
+    "daily_challenge_reroll_receipts": [
+      "user_id",
+      "request_id",
+      "challenge_row_id",
+      "expected_challenge_id",
+      "cost",
+      "result"
     ],
     "daily_mission_operations": [
       "user_id",
@@ -1755,6 +1928,26 @@
     "diamond_engine_daily_caps": [
       "engine"
     ],
+    "diamond_game_commits": [
+      "user_id",
+      "game",
+      "server_seed",
+      "server_seed_hash"
+    ],
+    "diamond_game_config_history": [
+      "host_id",
+      "game",
+      "after"
+    ],
+    "diamond_game_configs": [
+      "host_id",
+      "game",
+      "host_kind"
+    ],
+    "diamond_game_pools": [
+      "host_id",
+      "game"
+    ],
     "diamond_ledger": [
       "delta"
     ],
@@ -1810,6 +2003,13 @@
     ],
     "diamond_wallets": [
       "user_id"
+    ],
+    "digital_purchase_receipts": [
+      "user_id",
+      "request_id",
+      "purchase_kind",
+      "request_payload",
+      "result"
     ],
     "direct_messages": [
       "sender_id",
@@ -2195,6 +2395,10 @@
       "phrase_norm",
       "horse_id"
     ],
+    "horse_post_modes": [
+      "mode",
+      "description"
+    ],
     "horse_relationships": [
       "author_id",
       "target_author_id"
@@ -2243,6 +2447,16 @@
     "horse_tournament_daily": [
       "horse_user_id",
       "day"
+    ],
+    "iap_events": [
+      "event_id",
+      "event_type",
+      "raw"
+    ],
+    "iap_products": [
+      "product_id",
+      "kind",
+      "price_usd"
     ],
     "idempotency_keys": [
       "key",
@@ -2331,7 +2545,8 @@
       "user_id",
       "rank",
       "payout_amount",
-      "payout_currency"
+      "payout_currency",
+      "batch_id"
     ],
     "leaderboard_reward_program_versions": [
       "club_id",
@@ -2667,6 +2882,25 @@
     "orders": [
       "user_id"
     ],
+    "pa_coach_feedback": [
+      "user_id",
+      "feedback_type"
+    ],
+    "pa_coaching_goals": [
+      "user_id",
+      "title",
+      "metric",
+      "target_value"
+    ],
+    "pa_coaching_preferences": [
+      "user_id"
+    ],
+    "pa_data_lifecycle_receipts": [
+      "user_id",
+      "action",
+      "scope",
+      "receipt_fingerprint"
+    ],
     "pa_leak_audit_jobs": [
       "user_id"
     ],
@@ -2800,6 +3034,38 @@
     "player_stats_snapshots": [
       "user_id",
       "club_id"
+    ],
+    "plinko_drops": [
+      "host_id",
+      "host_kind",
+      "club_id",
+      "user_id",
+      "table_version",
+      "bet_diamonds",
+      "bet_chips",
+      "diamonds_per_chip",
+      "commit_id",
+      "server_seed_hash",
+      "server_seed",
+      "client_seed",
+      "nonce",
+      "hmac_hex",
+      "path_bits",
+      "slot",
+      "table_multiplier_cents",
+      "cap_multiplier_cents",
+      "multiplier_cents",
+      "payout_chips",
+      "chips_minted",
+      "pool_chips_minted_after",
+      "pool_chips_paid_after",
+      "diamonds_after"
+    ],
+    "plinko_tables": [
+      "version",
+      "name",
+      "multipliers_cents",
+      "max_multiplier_cents"
     ],
     "poker_events": [
       "event_uid",
@@ -2977,9 +3243,7 @@
     ],
     "push_subscriptions": [
       "user_id",
-      "endpoint",
-      "p256dh",
-      "auth"
+      "endpoint"
     ],
     "pwa_prompt_log": [
       "ip_address"
@@ -3559,6 +3823,12 @@
       "user_id",
       "throwable_id"
     ],
+    "throwable_use_receipts": [
+      "user_id",
+      "request_id",
+      "throwable_id",
+      "result"
+    ],
     "tilt_journal": [
       "user_id"
     ],
@@ -3796,6 +4066,27 @@
       "question_id",
       "answer_id"
     ],
+    "training_attempt_hands": [
+      "attempt_id",
+      "hand_ordinal",
+      "snapshot_key"
+    ],
+    "training_attempts": [
+      "user_id",
+      "client_nonce",
+      "game_id",
+      "level",
+      "session_kind",
+      "difficulty",
+      "expected_hands",
+      "config_hash",
+      "practice_only"
+    ],
+    "training_cache_audit_runs": [
+      "run_date",
+      "status",
+      "started_at"
+    ],
     "training_challenge_definitions": [
       "id",
       "name",
@@ -3858,13 +4149,38 @@
       "engine_type",
       "game_type",
       "level",
-      "question_data"
+      "question_data",
+      "canonical_policy",
+      "content_checksum",
+      "policy_checksum"
+    ],
+    "training_question_cache_quarantine": [
+      "original_id",
+      "question_id",
+      "game_id",
+      "source_classification",
+      "quarantine_reason",
+      "original_row"
+    ],
+    "training_question_events": [
+      "event_type",
+      "event_key",
+      "question_id",
+      "policy_checksum"
     ],
     "training_question_reports": [
       "user_id",
       "game_id",
       "question_id",
       "reason"
+    ],
+    "training_question_snapshots": [
+      "snapshot_key",
+      "source_question_id",
+      "game_id",
+      "level",
+      "content_digest",
+      "question_data"
     ],
     "training_scenarios": [
       "title"
@@ -3876,6 +4192,10 @@
     "training_spaced_repetition": [
       "user_id",
       "spot_signature"
+    ],
+    "training_streak_milestone_claims": [
+      "user_id",
+      "milestone_days"
     ],
     "training_streaks": [
       "user_id"
@@ -3912,6 +4232,13 @@
     ],
     "training_user_progress": [
       "user_id"
+    ],
+    "training_verified_leaderboard": [
+      "user_id",
+      "period_type",
+      "period_key",
+      "dimension_type",
+      "dimension_key"
     ],
     "transaction_idempotency_keys": [
       "key",
@@ -3952,6 +4279,11 @@
       "prize_id",
       "prize_type"
     ],
+    "trivia_pvp_active_seats": [
+      "match_id",
+      "side",
+      "user_id"
+    ],
     "trivia_pvp_matches": [
       "player1_id",
       "player2_id"
@@ -3959,6 +4291,19 @@
     "trivia_pvp_queue": [
       "user_id",
       "expires_at"
+    ],
+    "trivia_pvp_session_links": [
+      "match_id",
+      "side",
+      "user_id",
+      "session_id"
+    ],
+    "trivia_pvp_settlement_decisions": [
+      "match_id",
+      "decision_kind",
+      "reference_family",
+      "side_state",
+      "credit_plan"
     ],
     "trivia_pvp_stats": [
       "user_id"
@@ -4063,6 +4408,10 @@
       "eco_rate",
       "eco_amount"
     ],
+    "union_invoice_counters": [
+      "union_id",
+      "year"
+    ],
     "union_leave_requests": [
       "union_id",
       "club_id",
@@ -4078,6 +4427,13 @@
       "union_id",
       "club_id",
       "amount"
+    ],
+    "union_rake_basis_snapshot": [
+      "union_id",
+      "period_start",
+      "period_end",
+      "through",
+      "detail"
     ],
     "union_rake_ledger_checkpoint": [
       "union_id",
@@ -4150,9 +4506,6 @@
     "user_bonus_progress": [
       "user_id",
       "bonus_id"
-    ],
-    "user_bonuses": [
-      "user_id"
     ],
     "user_daily_challenges": [
       "user_id",
@@ -4393,6 +4746,22 @@
       "user_id",
       "name"
     ],
+    "video_reels_legacy_transition_rows": [
+      "surface",
+      "row_id",
+      "youtube_video_id",
+      "row_snapshot",
+      "captured_at",
+      "expires_at"
+    ],
+    "video_reels_legacy_transition_state": [
+      "transition_key",
+      "captured_at",
+      "expires_at"
+    ],
+    "video_reels_pipeline_controls": [
+      "control_key"
+    ],
     "video_watch_history": [
       "user_id",
       "video_id"
@@ -4491,6 +4860,64 @@
     "wallets": [
       "user_id",
       "wallet_type"
+    ],
+    "wheel_config_history": [
+      "host_id",
+      "after"
+    ],
+    "wheel_configs": [
+      "host_id",
+      "host_kind",
+      "segment_version"
+    ],
+    "wheel_pools": [
+      "host_id"
+    ],
+    "wheel_seed_commits": [
+      "user_id",
+      "server_seed",
+      "server_seed_hash"
+    ],
+    "wheel_segment_versions": [
+      "version",
+      "note",
+      "spin_price_diamonds"
+    ],
+    "wheel_segments": [
+      "version",
+      "ord",
+      "label",
+      "kind",
+      "amount",
+      "weight"
+    ],
+    "wheel_spins": [
+      "host_id",
+      "host_kind",
+      "club_id",
+      "user_id",
+      "segment_version",
+      "spin_price_diamonds",
+      "multiplier",
+      "diamonds_per_chip",
+      "commit_id",
+      "server_seed_hash",
+      "server_seed",
+      "client_seed",
+      "nonce",
+      "roll",
+      "weight_total",
+      "eligible_ords",
+      "outcome_ord",
+      "outcome_kind",
+      "outcome_amount",
+      "prize_value_chips",
+      "chips_minted",
+      "diamond_accrual",
+      "pool_chips_minted_after",
+      "pool_chips_paid_after",
+      "pool_diamond_float_after",
+      "diamonds_after"
     ],
     "wishlists": [
       "user_id",

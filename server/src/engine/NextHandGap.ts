@@ -43,6 +43,10 @@ export interface NextHandGapSnapshot {
   withRebuyPause: number;
   /** p50 of each phase's share, over the samples that visited it. */
   phaseP50Ms: Record<string, number>;
+  /** p90 by phase; percentiles from different samples must not be added. */
+  phaseP90Ms: Record<string, number>;
+  /** Five slowest non-rebuy gaps over the threshold, with their own phase timings. */
+  slowest: NextHandGapSample[];
   windowMs: number;
 }
 
@@ -82,9 +86,11 @@ export class NextHandGapRecorder {
       }
     }
     const phaseP50Ms: Record<string, number> = {};
+    const phaseP90Ms: Record<string, number> = {};
     for (const [phase, arr] of phaseValues) {
       arr.sort((a, b) => a - b);
       phaseP50Ms[phase] = Math.round(percentile(arr, 0.5) ?? 0);
+      phaseP90Ms[phase] = Math.round(percentile(arr, 0.9) ?? 0);
     }
     return {
       samples: this.samples.length,
@@ -96,6 +102,12 @@ export class NextHandGapRecorder {
       slackMs: NEXT_HAND_GAP_SLACK_MS,
       withRebuyPause: this.samples.length - plain.length,
       phaseP50Ms,
+      phaseP90Ms,
+      slowest: plain
+        .filter((s) => s.gapMs > this.restMs + NEXT_HAND_GAP_SLACK_MS)
+        .sort((a, b) => b.gapMs - a.gapMs)
+        .slice(0, 5)
+        .map((s) => ({ ...s, phases: { ...s.phases } })),
       windowMs: WINDOW_MS,
     };
   }

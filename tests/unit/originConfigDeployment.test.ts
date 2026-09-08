@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -14,6 +14,9 @@ function deploy(validationExit = 0, dryRun = false) {
   temporary.push(dir);
   const log = join(dir, 'calls');
   writeFileSync(log, '');
+  const staged = join(dir, 'staged');
+  const live = join(dir, 'live');
+  writeFileSync(live, 'previous live config', { mode: 0o644 });
   const executable = (name: string, body: string) =>
     writeFileSync(join(dir, name), '#!/usr/bin/env bash\n' + body, { mode: 0o755 });
   executable(
@@ -23,11 +26,18 @@ command="\${!#}"
 echo "ssh: $command" >> "$DEPLOY_TEST_LOG"
 case "$command" in
   cat*) echo '# previous live config';;
-  mktemp*) echo '/etc/caddy/Caddyfile.staged.ABC12345';;
+  mktemp*) touch "$DEPLOY_TEST_STAGED"; chmod 0600 "$DEPLOY_TEST_STAGED"; echo '/etc/caddy/Caddyfile.staged.ABC12345';;
+  chmod*|mv*)
+    remote_stage=/etc/caddy/Caddyfile.staged.ABC12345
+    remote_live=/etc/caddy/Caddyfile
+    command="\${command//$remote_stage/$DEPLOY_TEST_STAGED}"
+    command="\${command//$remote_live/$DEPLOY_TEST_LIVE}"
+    bash -c "$command";;
   'caddy validate'*) exit "$DEPLOY_TEST_VALIDATION_EXIT";;
 esac
 `
   );
+  executable('systemctl', 'echo systemctl >> "$DEPLOY_TEST_LOG"\n');
   executable('scp', 'echo "scp: $*" >> "$DEPLOY_TEST_LOG"\n');
   executable(
     'curl',
@@ -47,11 +57,13 @@ fi
       CA_ORIGIN_HOST: 'test-origin.invalid',
       CA_ORIGIN_SSH_KEY_PATH: join(dir, 'unused-test-key'),
       DEPLOY_TEST_LOG: log,
+      DEPLOY_TEST_STAGED: staged,
+      DEPLOY_TEST_LIVE: live,
       DEPLOY_TEST_VALIDATION_EXIT: String(validationExit),
       DRY_RUN: dryRun ? '1' : '0',
     },
   });
-  return { ...result, calls: readFileSync(log, 'utf8') };
+  return { ...result, calls: readFileSync(log, 'utf8'), liveMode: statSync(live).mode & 0o777 };
 }
 
 describe('origin config deployment', () => {
@@ -78,6 +90,7 @@ describe('origin config deployment', () => {
     expect(validated).toBeGreaterThan(0);
     expect(installed).toBeGreaterThan(validated);
     expect(reloaded).toBeGreaterThan(installed);
+    expect(result.liveMode).toBe(0o644);
   });
 
   it('keeps the dry run read-only', () => {

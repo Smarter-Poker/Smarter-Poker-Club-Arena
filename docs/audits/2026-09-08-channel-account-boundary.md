@@ -22,3 +22,9 @@ The session-revocation probe remains a separate open issue: the installed auth S
 getUser can remove its session on session_not_found before a caller can check an
 auth generation. Fixing that safely requires separating validation from shared
 session mutation, without introducing a second competing token refresher.
+
+## Release verification follow-up
+
+Merged current main, preserving the token-deadline and account-boundary regression suites together. The merge passed 49 focused tests, client TypeScript, a build with behind-main=0, and 178 pre-push covering tests.
+
+CI run 34186709546 then failed its unrelated short river-squeeze drag check twice: the host had already reached `released` and unmounted before the polling assertion expected `drag`. The test allowed real CI scheduling delay to consume the 2.55-second automatic-reveal window. The short-drag case now installs Playwright's clock before navigation and pauses it before the river mounts. Real pointer events and CSS spring-back are still checked. The separate automatic-reveal test retains real time and its existing deadline assertions. Test discovery passed; the CI browser run must verify execution before this release is accepted.

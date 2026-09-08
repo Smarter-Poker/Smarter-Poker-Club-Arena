@@ -55,6 +55,7 @@ export default function SuperAgentDashboard() {
   const [transferPlayerId, setTransferPlayerId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [isTransferring, setIsTransferring] = useState(false);
+  const transferInFlight = useRef(false);
   const [visibleStatCards, setVisibleStatCards] = useState(new Set<number>());
   const [visibleAgentRows, setVisibleAgentRows] = useState(new Set<number>());
   const [visiblePlayerRows, setVisiblePlayerRows] = useState(new Set<number>());
@@ -259,18 +260,23 @@ export default function SuperAgentDashboard() {
   };
 
   const handleTransfer = async () => {
-    if (!agent || !transferPlayerId || !transferAmount) return;
+    if (!agent || !transferPlayerId || !transferAmount || transferInFlight.current) return;
     const amount = parseFloat(transferAmount);
-    if (isNaN(amount) || amount <= 0) return;
+    if (!Number.isFinite(amount) || amount <= 0) return;
 
+    transferInFlight.current = true;
     setIsTransferring(true);
     try {
       // The sender is no longer a parameter: fn_agent_wallet_send derives it
       // from auth.uid(). This used to pass agent.id - the agents-table ROW id -
       // where a user id was expected, so the transfer could never have landed.
       await AgentService.transferToPlayer(transferPlayerId, clubId!, amount);
-      if (!isMounted.current) return;
+      if (!isMounted.current) {
+        transferInFlight.current = false;
+        return;
+      }
       setTransferPlayerId('');
+      setTransferAmount('');
       if (isMounted.current)
         toast.success(`Transferred ${amount.toLocaleString()} chips successfully`);
       loadDashboardData();
@@ -278,6 +284,7 @@ export default function SuperAgentDashboard() {
       reportError(error, 'SuperAgentDashboard.Transfer_failed');
       if (isMounted.current) toast.error('Transfer failed');
     }
+    transferInFlight.current = false;
     if (isMounted.current) setIsTransferring(false);
   };
 

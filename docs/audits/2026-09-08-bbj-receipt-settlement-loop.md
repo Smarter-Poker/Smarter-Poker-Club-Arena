@@ -17,3 +17,11 @@ Verification and deployment results will be appended after execution. The wider 
 - Existing BBJ routing (7), sequential receipt/allocation (28) and four concurrent replay/conflict cases passed. The complete isolated accounting suite exited 0, including cash-out, insurance, hand roster, ticket, rebuy and journal rollback checks.
 - The exact migration, including both production-definition hash guards and grants, applied successfully in a separate isolated database.
 - No production payment, seat, contribution, refund, or reconciliation function was invoked for testing. Production application and natural recovery sampling remain pending at commit time.
+
+## Production adoption
+
+PR 3839 merged as 4932f6f91ad9b08300cf20afbeb9576b6559770f. The reviewed migration was applied through Supabase at 17:32 UTC, recorded there as version 20260908173206. Function fingerprints are `917c59ef3aa4d21865edaf1bfec354bc` (receipt) and `016c5757cf739b66ef459045680c7f45` (legacy repair). The repository's reserved migration file remains 20260908171222.
+
+Natural settlement recovery reduced pending accepted hands from 341 at 17:31:28 to 42 at 17:32:52, then 35 at 17:35. The reported Madness table reduced from 11 pending receipts to one. No BBJ identity conflicts appeared in the first complete post-application log sample. No operator payment/reconciliation call was used to drive that result.
+
+The overall incident remains open. Database statement timeouts remained, and a separate unobserved table-stop rejection caused a fleet restart at 17:28 before this migration. Median-only timing is insufficient to claim all hand gaps are fixed.

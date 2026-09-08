@@ -3907,15 +3907,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // as the 113 under-paid tournaments the comment above describes — and
     // fn_tournament_payout_reconcile would then read prize 0 for place 1 and
     // try to top the winner up to the full first prize a second time.
-    const { error: winnerStampErr } = await supabase
+    const { error: winnerStampErr, count: winnerStampCount } = await supabase
       .from('tournament_players')
-      .update({ status: 'winner', position: 1, prize: winnerPrize })
+      .update({ status: 'winner', position: 1, prize: winnerPrize }, { count: 'exact' })
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', winnerId);
-    if (winnerStampErr) {
+    if (winnerStampErr || winnerStampCount !== 1) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: winner row not stamped for ${winnerId.slice(0, 8)} (prize ${winnerPrize}): ${winnerStampErr.message}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: winner row not stamped for ${winnerId.slice(0, 8)} (prize ${winnerPrize}): ${winnerStampErr?.message ?? `affected rows: ${winnerStampCount ?? 'unknown'}`}`
         ),
         'Tournament.winner_row_stamp_failed'
       );
@@ -4046,35 +4046,40 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      * now also refuses to be hidden by this manager (managerHasOverstayed).
      */
     let completedErr: { message?: string; code?: string } | null = null;
+    let completedCount: number | null = null;
     for (let attempt = 1; attempt <= COMPLETED_FLIP_ATTEMPTS; attempt++) {
-      const { error } = await supabase
+      const { error, count } = await supabase
         .from('tournaments')
-        .update({
-          status: 'COMPLETED',
-          ended_at: new Date().toISOString(),
-          // 2026-08-20: clear the break flags on the way out. endBreak() is what
-          // normally resets them, and it never runs if the event finishes DURING
-          // a break -- leaving COMPLETED tournaments permanently flagged
-          // on_break=true (3 of them, one showing 1,231 minutes "on break").
-          // Harmless to play, since nothing resumes a COMPLETED event, but it
-          // makes a finished tournament read as stuck to anything inspecting
-          // these columns.
-          on_break: false,
-          break_ends_at: null,
-        })
+        .update(
+          {
+            status: 'COMPLETED',
+            ended_at: new Date().toISOString(),
+            // 2026-08-20: clear the break flags on the way out. endBreak() is what
+            // normally resets them, and it never runs if the event finishes DURING
+            // a break -- leaving COMPLETED tournaments permanently flagged
+            // on_break=true (3 of them, one showing 1,231 minutes "on break").
+            // Harmless to play, since nothing resumes a COMPLETED event, but it
+            // makes a finished tournament read as stuck to anything inspecting
+            // these columns.
+            on_break: false,
+            break_ends_at: null,
+          },
+          { count: 'exact' }
+        )
         .eq('id', this.tournamentId)
         .eq('status', 'COMPLETING'); // Guard: only COMPLETING → COMPLETED
       completedErr = error;
+      completedCount = count;
       if (!error || !isTransientFlipError(error)) break;
       console.warn(
         `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED attempt ${attempt} of ${COMPLETED_FLIP_ATTEMPTS} hit ${error.code ?? '?'} (${error.message}) - retrying`
       );
       await new Promise((r) => setTimeout(r, COMPLETED_FLIP_BACKOFF_MS * attempt));
     }
-    if (completedErr) {
+    if (completedErr || completedCount !== 1) {
       reportError(
         new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED failed: ${completedErr.message} - left for recoverStuckCompletingTournaments`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETING -> COMPLETED failed: ${completedErr?.message ?? `affected rows: ${completedCount ?? 'unknown'}`} - left for recoverStuckCompletingTournaments`
         ),
         'Tournament.completed_transition_failed'
       );

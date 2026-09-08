@@ -20,9 +20,10 @@ async function run(
   awardRead?: { data: unknown; error: unknown },
   format: Record<string, unknown> = {},
   playerReads: Record<string, { data: unknown; error: unknown }> = {},
-  writeErrors: Record<string, unknown> = {}
+  writeErrors: Record<string, unknown> = {},
+  writeCounts: Record<string, number | null | undefined> = {}
 ) {
-  const updates: Array<{ table: string; value: any }> = [];
+  const updates: Array<{ table: string; value: any; options: any }> = [];
   const alerts = vi.fn(async () => undefined);
   const report = vi.fn();
   const price = vi.fn((pool: number) => pool);
@@ -42,14 +43,16 @@ async function run(
     from(table: string) {
       let columns = '';
       let value: any;
+      let options: any;
       const q: any = {
         select(c: string) {
           columns = c;
           return q;
         },
-        update(v: any) {
+        update(v: any, o: any) {
           value = v;
-          updates.push({ table, value });
+          options = o;
+          updates.push({ table, value, options });
           return q;
         },
         eq() {
@@ -92,7 +95,13 @@ async function run(
           }
           if (table === 'tournament_players' && columns === 'username')
             data = { username: 'Winner' };
-          return Promise.resolve({ data, error: null }).then(resolve, reject);
+          const count =
+            options?.count === 'exact'
+              ? value?.status in writeCounts
+                ? writeCounts[value.status]
+                : 1
+              : null;
+          return Promise.resolve({ data, error: null, count }).then(resolve, reject);
         },
       };
       return q;
@@ -349,5 +358,33 @@ describe('finish requires confirmed winner and completion writes', () => {
       expect.any(Error),
       'Tournament.completed_transition_failed'
     );
+  });
+});
+
+describe('finish writes require one confirmed affected row', () => {
+  it.each([0, null, undefined, 2])('does not complete after winner row count %s', async (count) => {
+    const r = await run(20, 0, undefined, undefined, {}, {}, {}, { winner: count });
+    expect(r.updates.some((x) => x.value.status === 'COMPLETED')).toBe(false);
+    expect(r.owner.broadcast).not.toHaveBeenCalled();
+    expect(r.report).toHaveBeenCalledWith(expect.any(Error), 'Tournament.winner_row_stamp_failed');
+  });
+  it.each([0, null, undefined, 2])(
+    'does not announce completion after event row count %s',
+    async (count) => {
+      const r = await run(20, 0, undefined, undefined, {}, {}, {}, { COMPLETED: count });
+      expect(r.owner.broadcast).not.toHaveBeenCalled();
+      expect(r.owner.cleanupBroadcastChannel).not.toHaveBeenCalled();
+      expect(r.report).toHaveBeenCalledWith(
+        expect.any(Error),
+        'Tournament.completed_transition_failed'
+      );
+    }
+  );
+  it('asks for exact counts on both writes before announcing a confirmed completion', async () => {
+    const r = await run(20, 0);
+    for (const status of ['winner', 'COMPLETED']) {
+      expect(r.updates.find((x) => x.value.status === status)?.options).toEqual({ count: 'exact' });
+    }
+    expect(r.owner.broadcast).toHaveBeenCalledWith('tournament_winner', expect.anything());
   });
 });

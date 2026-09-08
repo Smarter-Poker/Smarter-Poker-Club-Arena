@@ -17032,3 +17032,7 @@ Applied to production: satellite seat creation, source transfer, target counters
 ## 2026-09-08: Cashout Escrow And Receipt Atomicity
 
 Applied 20260908035339_cashout_escrow_ledger_atomicity.sql to production. Request, approve and release declare the actual escrow journal counterparty, serialize caller retries, validate replay payloads, and propagate receipt failures so the whole movement rolls back. 64 isolated PostgreSQL cases pass, including four concurrent sessions tests. Authenticated and service_role grants preserved; no historical balance changes. See docs/changelog/2026-09-08-cashout-escrow-atomicity.md.
+
+## 2026-09-08: Hand Settlement Roster And Replay Identity
+
+Applied 20260908042156_hand_settlement_roster_and_replay_identity.sql. Reproduced a duplicate-player request minting 5 chips while returning success; duplicate/malformed/mixed rosters now fail before writes. Seat locking uses UUID order and new successful receipts bind the economic payload. 17 new PostgreSQL cases and 34 existing source guard tests pass. Service-only grants preserved. See docs/changelog/2026-09-08-hand-settlement-roster.md.

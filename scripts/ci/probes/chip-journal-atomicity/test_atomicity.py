@@ -130,3 +130,9 @@ if mode=="fixed":
 if mode=="fixed":
  from test_cashout import verify_cashout
  verify_cashout(run)
+
+if mode=="fixed":
+ from test_hand import verify_hand
+ if os.environ.get("HAND_ORIGINAL_PROOF"):
+  verify_hand(run, os.environ["HAND_ORIGINAL_PROOF"])
+ verify_hand(run)

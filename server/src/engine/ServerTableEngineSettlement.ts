@@ -31,6 +31,7 @@ import {
   syncStacks,
   syncTournamentChips,
   updateTableStatus,
+  reconcileTableSeatCount,
   autoRebuyHorse,
   markSeatAsLeft,
   processLeavePending,
@@ -2869,34 +2870,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
     // SETTLEMENT STEP 15: Unlock table — authoritative recount, ready for next hand
     await runStep('table_unlock', true, async () => {
-      // PAYOUT-INTEGRITY 2026-08-28: this ran `dbPlayerCount ?? 0` on a count
-      // whose error was never destructured. It is the AUTHORITATIVE recount at
-      // the end of EVERY hand, so a single failed read wrote
-      // current_players = 0 on a live table, flipped it to 'waiting', and
-      // broadcast seated_count 0 to everyone sitting at it. TableService does
-      // the identical recount and checks the error first (TableService.ts:465);
-      // this path was the one without the guard.
-      //
-      // Same house rule as everywhere else in this engine: a count we could not
-      // read is UNKNOWN, not zero. Leave the table's status exactly as it is
-      // and let the next hand's recount settle it.
-      const { count: dbPlayerCount, error: countErr } = await supabase
-        .from('table_seats')
-        .select('*', { count: 'exact', head: true })
-        .eq('table_id', this.tableId)
-        .is('left_at', null);
-      let finalCount: number | null = null;
-      if (countErr || dbPlayerCount === null || dbPlayerCount === undefined) {
-        reportError(
-          new Error(
-            `[Table:${this.tableId.slice(0, 8)}] table_unlock: seat count unavailable (${countErr?.message ?? 'null count'}) - table status left unchanged`
-          ),
-          'ServerTableEngine.table_unlock_count_unavailable'
-        );
-      } else {
-        finalCount = dbPlayerCount;
-        await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
-      }
+      // Fresh authoritative recount, with no update request when the stored
+      // summary already agrees. Unavailable reads stay unknown, never zero.
+      const finalCount = await reconcileTableSeatCount(this.tableId);
 
       // Phase X5 (2026-04-28): emit table_unlocked event paired with the
       // table_locked emitted at the start of settlement. Bible V8 §1.16.

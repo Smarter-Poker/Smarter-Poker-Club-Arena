@@ -1,0 +1,5 @@
+# First expanded throwable: fish
+
+Fish expands the enabled catalogue to 49 items: 48 original IDs including the separate glove plus one of the 32 additions. Its premium atlas and standalone still feed three fingerprinted thumbnails and the shared atlas URL pipeline. The performance has a silent impact, diagonal rest and alternating flop poses, two timed sweeps, a temporary red mark, and a rotating slide with a final fade. The existing allowance RPC applies; fish is free-tier access, not unlimited usage. Dedicated recorded flop audio remains pending.
+
+71 focused tests and full TypeScript passed. All 13 preview frames were visually reviewed, with 15 normalized speed samples, no reduced-motion animations and no page errors. Inventory tests now accept actual local delivery files alongside the historical storage listing, and require rig/CSS/audio registration for the expanded item rather than inventing a legacy signature. There are 31 additions still without integrated rigs. This is not 100 percent acceptance.

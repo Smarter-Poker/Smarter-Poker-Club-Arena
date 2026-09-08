@@ -221,9 +221,22 @@ describe('a downline figure an upline is allowed to see', () => {
 });
 
 describe('the client asks the ledger', () => {
-  it('the dashboard reads commission rows from agent_commissions', () => {
-    expect(DASHBOARD).toMatch(/\.from\('agent_commissions'\)/);
+  it('the dashboard reads commission rows from the ledger, through the view that knows both payers', () => {
+    // THE PIN MOVED, THE LAW DID NOT (2026-09-08, phase 7). It used to require
+    // .from('agent_commissions') because this screen had been reading
+    // commission_records, a table that never held a row. That is still
+    // forbidden below. What changed is that reading the bare table is no longer
+    // the truth either: since 20260908025653 round 2 pays a whole period and
+    // records it in agent_commission_settlements instead of stamping settled_at
+    // on two million rows, so a row can be PAID with settled_at still null.
+    // v_agent_commissions is the reader that knows both mechanisms -
+    // settled_at is COALESCE(own stamp, the settlement's paid_at) and
+    // settled_via says which one paid it. Reading the table directly showed
+    // agents money they had already been paid as 'unclaimed'.
+    expect(DASHBOARD).toMatch(/\.from\('v_agent_commissions'\)/);
     expect(DASHBOARD).not.toMatch(/\.from\('commission_records'\)/);
+    // and it must actually use the flag it now asks for
+    expect(DASHBOARD).toMatch(/settled_via/);
   });
 
   it('the realtime listener is on a table that is actually published', () => {

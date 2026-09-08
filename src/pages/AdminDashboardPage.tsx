@@ -696,22 +696,28 @@ function SettlementsTab({ clubId }: { clubId: string }) {
         if (clErr) throw clErr;
         const r = res as { success?: boolean; error?: string } | null;
         if (r && r.success === false) throw new Error(r.error || 'Failed to close period');
-      } else if (actionName === 'pay' && extras.commissionId) {
-        // agent_commissions has no 'status' column — delete to acknowledge payment
-        const { error: payErr } = await supabase
-          .from('agent_commissions')
-          .delete()
-          .eq('id', extras.commissionId);
-        if (payErr) throw payErr;
-      } else if (actionName === 'pay_all' && cp) {
-        // agent_commissions has no period_id/status — delete all for this club in current period
-        const { error: paErr } = await supabase
-          .from('agent_commissions')
-          .delete()
-          .eq('club_id', uuid)
-          .gte('created_at', cp.start_at);
-        if (paErr) throw paErr;
       }
+      /* THERE IS NO 'pay' OR 'pay_all' HERE ANY MORE, AND DELETING WAS NEVER
+         PAYING. Both branches used to DELETE from agent_commissions to
+         "acknowledge payment": they moved no chips to any agent, and they
+         destroyed the ledger rows that every total, the nightly
+         reconciliation and fn_ca_currency_meter are computed from. pay_all
+         additionally deleted every agent's rows for the club since the period
+         start, not just the one on screen.
+
+         Neither ever worked. agent_commissions has RLS with SELECT-only
+         policies for authenticated and writes reserved to service_role, so the
+         DELETE matched zero rows and returned success - the button reported
+         payment, changed nothing, and the row was still there after the
+         refresh. 20260908035532 revoked the table-level write grants as well,
+         which would have turned that silent lie into a visible 403.
+
+         An agent is paid by exactly two paths, neither of which is a button on
+         this screen: fn_agent_claim_commission (the agent claims their own,
+         paid from the club bank) and fn_settle_round2_club_to_agents (the
+         union close). Both debit a real treasury and record the period they
+         covered. Wiring an admin-initiated payment to either one decides what
+         somebody is owed, so it is Dan's call, not a repair. */
       load();
     } catch (err: unknown) {
       if (isMounted.current) setError(safeErrorMessage(err));
@@ -804,18 +810,6 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       {/* Pending Commissions */}
       <h3 className="admin-section-title">
         <span>Pending Commissions</span>
-        {(data.pendingCommissions || []).length > 0 && (
-          <button
-            onClick={() =>
-              doAction('pay_all', { periodId: cp?.id != null ? String(cp.id) : undefined })
-            }
-            disabled={processing}
-            className="admin-btn admin-btn-ghost admin-btn-sm"
-            style={{ borderColor: '#31A24C', color: '#31A24C' }}
-          >
-            Mark All As Paid
-          </button>
-        )}
       </h3>
 
       {(data.pendingCommissions || []).length === 0 ? (
@@ -832,7 +826,6 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                 <th style={{ textAlign: 'right' }}>Source</th>
                 <th style={{ textAlign: 'center' }}>Rate</th>
                 <th style={{ textAlign: 'right' }}>Payout</th>
-                <th style={{ textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -845,15 +838,6 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                   </td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: '#F7C52A' }}>
                     {fmtChips(c.amount)}
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <button
-                      onClick={() => doAction('pay', { commissionId: c.id })}
-                      disabled={processing}
-                      className="admin-btn admin-btn-success admin-btn-sm"
-                    >
-                      Mark Paid
-                    </button>
                   </td>
                 </tr>
               ))}

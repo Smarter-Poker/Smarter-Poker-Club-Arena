@@ -172,7 +172,7 @@ describe('receipt recovery never silently creates another purchase', () => {
       .mockResolvedValueOnce({ data: null, error: null });
     expect(await executeCashBuyIn(attempt, true, rpc)).toEqual({
       kind: 'confirmed',
-      fromReceipt: false,
+      fromReceipt: true,
     });
     expect(rpc.mock.calls[1][0]).toBe('atomic_table_buyin');
     expect(rpc.mock.calls[1][1]).toEqual(attempt.payload);

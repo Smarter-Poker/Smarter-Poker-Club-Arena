@@ -293,3 +293,36 @@ it('keeps a late confirmation inside its original view and cannot clear a newer 
   expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
   expect(f.state().heroSeat).toBe(0);
 });
+
+it('treats a successful retried mutation as recovery when the original may have completed late', async () => {
+  const f = fixture();
+  const saved = await f.d.cashBuyInJournal.reserve({
+    p_user_id: f.d.userId,
+    p_table_id: f.d.tableId,
+    p_seat_number: 2,
+    p_amount: 100,
+    p_auto_rebuy: false,
+    p_club_id: f.d.useUserStore.getState().currentClubId,
+  });
+  f.d.cashBuyInRecovery = saved.attempt;
+  f.d.cashBuyInPendingRef.current = saved.attempt;
+  f.d.leftSeatPendingRef.current = true;
+  f.d.supabase.rpc.mockImplementation((name: string) =>
+    Promise.resolve({
+      data: name === 'fn_ca_cash_buyin_receipt' ? { status: 'unconfirmed' } : null,
+      error: null,
+    })
+  );
+  // A receipt read can precede the original commit. The idempotent retry
+  // then returns the original success after waiting on that transaction.
+  expect(await f.handler(100, false)).toBe(true);
+  expect(f.d.supabase.rpc.mock.calls.map((call: any[]) => call[0])).toEqual([
+    'fn_ca_cash_buyin_receipt',
+    'atomic_table_buyin',
+  ]);
+  expect(f.d.supabase.rpc.mock.calls[1][1]).toEqual(saved.attempt.payload);
+  expect(f.state().heroSeat).toBe(0);
+  expect(f.d.totalBuyInRef.current).toBe(0);
+  expect(f.d.leftSeatPendingRef.current).toBe(true);
+  expect(f.d.retryAccountBalance).toHaveBeenCalledOnce();
+});

@@ -342,7 +342,10 @@ export async function executeCashBuyIn(
       return { kind: 'rejected', error: data };
     // The canonical RPC returns void. A successful response confirms its
     // transaction; display parsing must not reinterpret it as a second purchase.
-    return { kind: 'confirmed', fromReceipt: false };
+    // A reviewed retry may wait behind the original transaction and replay
+    // its committed receipt even if the earlier read was unconfirmed. It must
+    // never repaint an old starting stack or undo a subsequent explicit leave.
+    return { kind: 'confirmed', fromReceipt: recovery };
   } catch (error) {
     // A single read can recover a lost response; it never moves chips. Its own
     // failure preserves the unresolved attempt instead of silently retrying.

@@ -89,3 +89,13 @@ updated to the new flow: cash confirmation uses an authoritative balance refresh
 and only seat-first confirmation/new cash confirmation clear the leave latch.
 The real callback tests explicitly prove new confirmation clears that latch and
 historical receipt recovery preserves it. No hook was bypassed.
+
+## Late Original Commit Race
+
+A further actual-callback regression fails against the first pushed head: the
+receipt read can return unconfirmed before the original transaction commits;
+then the same-key retry waits and replays that original success. A successful
+retried mutation must therefore use the recovery display path too. It cannot
+paint the old starting stack or clear a later explicit leave. The new case
+reproduced the old behavior before changing the executor to classify every
+reviewed retry confirmation as recovery.

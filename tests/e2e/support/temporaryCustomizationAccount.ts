@@ -56,10 +56,23 @@ async function withCleanupRetries<T>(operation: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 function serverHeaders(key: string, extra: Record<string, string> = {}): Record<string, string> {
+  const reserved = new Set([
+    'apikey',
+    'authorization',
+    'x-smarter-data-actor',
+    'x-smarter-data-protocol',
+    'x-smarter-tournament-id',
+    'x-smarter-tournament-lease-generation',
+  ]);
+  const requestHeaders = Object.fromEntries(
+    Object.entries(extra).filter(([name]) => !reserved.has(name.toLowerCase()))
+  );
   return {
+    ...requestHeaders,
     apikey: key,
     ...(key.startsWith('sb_secret_') ? {} : { Authorization: `Bearer ${key}` }),
-    ...extra,
+    'x-smarter-data-actor': 'service',
+    'x-smarter-data-protocol': '1',
   };
 }
 

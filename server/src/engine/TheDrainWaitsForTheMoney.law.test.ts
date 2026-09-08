@@ -63,28 +63,28 @@ describe('the drain waits for the money', () => {
   });
 });
 
-describe('the barrier names the right fault', () => {
+describe('the barrier transfers exact ownership on stop', () => {
   const dealing = read('ServerTableEngineDealing.ts');
 
   it('a shutdown is not filed as an abandoned settlement', () => {
     expect(dealing).toContain('if (!settled && !this.running) {');
     const shutdown = dealing.slice(
       dealing.indexOf('if (!settled && !this.running) {'),
-      dealing.indexOf('} else if (!settled) {')
+      dealing.indexOf('if (this.postHandTasksPromise === pending)')
     );
     expect(shutdown).not.toContain('raiseFinancialAlert');
     expect(shutdown).toContain('the drain owns it from here');
+    expect(shutdown).toContain('return;');
   });
 
-  it('the critical reports the time actually waited, never the cap as if it were waited', () => {
-    const abandoned = dealing.slice(
-      dealing.indexOf('} else if (!settled) {'),
+  it('neither time nor a terminal fence erases the in-flight writer marker', () => {
+    const wait = dealing.slice(
+      dealing.indexOf('while (!settled && this.running) {'),
       dealing.indexOf('if (this.postHandTasksPromise === pending)')
     );
-    expect(abandoned).toContain('settlement_barrier_abandoned');
-    // the message interpolates the measurement, not the constant
-    expect(abandoned).toContain('ran ${waited / 1000}s');
-    expect(abandoned).not.toMatch(/exceeded \$\{maxWaitMs \/ 1000\}s/);
-    expect(abandoned).toContain("reason: 'barrier_timeout'");
+    expect(wait).not.toContain('settlement_barrier_abandoned');
+    expect(wait).not.toContain('trackSettlementInFlight(null)');
+    expect(wait).not.toMatch(/waited\s*[>=]/);
+    expect(wait).toContain('return;');
   });
 });

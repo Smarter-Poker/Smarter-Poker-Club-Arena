@@ -26,7 +26,13 @@ function fakeRes() {
 
 describe('the router answers /health with a query string', () => {
   const gameServer = {
-    getStatus: () => ({ liveness: 'ok', probe: 'cache-busted' }),
+    getStatus: () => ({
+      liveness: 'ok',
+      status: 'ok',
+      dealerPrerequisitesReady: true,
+      liveHorseDecision: { phase: 'ready' },
+      probe: 'cache-busted',
+    }),
     getPrometheusMetrics: () => '',
   };
   const router = createRouter({ gameServer } as never);

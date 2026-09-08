@@ -58,23 +58,35 @@ export interface WsMetricsDeps {
 
 /** `GET /health` and `GET /` — Hetzner VPS health probe + SHA/status report. */
 export function handleHealth(res: ServerResponse, deps: HealthDeps): void {
-  const status = deps.gameServer.getStatus() as { liveness?: string };
+  const status = deps.gameServer.getStatus() as {
+    liveness?: string;
+    status?: string;
+    dealerPrerequisitesReady?: boolean;
+    liveHorseDecision?: { phase?: string };
+  };
   /**
-   * A STANDBY ANSWERS 503, ON PURPOSE (2026-08-23).
+   * ONLY A DEALER-READY LEADER ANSWERS 200 (2026-09-08).
    *
-   * Two different consumers read this endpoint and need different answers:
+   * Caddy uses this HTTP code to choose the process that receives table and
+   * socket traffic. The listener opens before leadership, worker hydration and
+   * table discovery complete. Advertising 200 during that interval routed a
+   * browser to a leader whose SUBSCRIBE was waiting on the unpublished dealer
+   * gate, so the browser's handshake expired and displayed a reconnect loop.
    *
-   *   Caddy   an active health check expects 2xx. 503 marks this upstream
-   *           down, so every request goes to the leader. That is the whole
-   *           failover mechanism -- no routing table, no proxy.
-   *   Docker  the container HEALTHCHECK exits non-zero only when liveness is
-   *           'dead'. 'standby' is not 'dead', so the container stays healthy
-   *           and alive, which it must be in order to take over.
+   * Docker reads the JSON body rather than the HTTP code and deliberately
+   * keeps a standby alive. Its separate 300-second startup grace also keeps a
+   * hydrating leader alive. This code therefore expresses routing readiness,
+   * while `liveness` remains the process-survival verdict.
    *
    * The body is unchanged either way, so anything reading the payload (the
    * deploy verifier, /metrics scrapers, an operator) sees the same fields.
    */
-  sendJSON(res, status?.liveness === 'standby' ? 503 : 200, status);
+  const dealerReady =
+    status?.liveness === 'ok' &&
+    status?.status === 'ok' &&
+    status?.dealerPrerequisitesReady === true &&
+    status?.liveHorseDecision?.phase === 'ready';
+  sendJSON(res, dealerReady ? 200 : 503, status);
 }
 
 /**

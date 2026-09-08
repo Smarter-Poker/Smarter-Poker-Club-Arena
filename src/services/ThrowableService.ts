@@ -167,7 +167,7 @@ const THROWABLES: Throwable[] = [
     'reactions',
     'fastball',
     'thud',
-    'pop_up',
+    'thinking_pop',
     'light',
     false,
     '#FFD93D',

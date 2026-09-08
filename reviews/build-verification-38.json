@@ -1,0 +1,14 @@
+{
+  "commit": "ee90152b480afdd5d99cd8bc9203a311d94cba10",
+  "fullClientFiles": 1188,
+  "fullClientTests": 16346,
+  "fullSuiteScope": "Picker, cutout and draft allowance changes before later main merges and chicken integration",
+  "laterRigTests": 25,
+  "typescript": "passed with chicken after latest main merge",
+  "productionBuild": "passed; clean; behind-main=0",
+  "thumbnailFiles": 141,
+  "thumbnailHashesAndBuiltBytesMatch": true,
+  "atlasFiles": 40,
+  "builtAtlasBytesMatch": true,
+  "published": false
+}

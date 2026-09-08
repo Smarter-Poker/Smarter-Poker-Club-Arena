@@ -11,6 +11,7 @@
 import { supabase, atomicCashout, atomicCashoutVoluntary } from '../services/supabase.js';
 import type { SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { pushFinancialUpdate } from '../services/financialPush.js';
 import { randomUUID } from 'node:crypto';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { leaveLabel } from './ChipContinuity.js';
@@ -328,6 +329,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         }
         delivered++;
         const player = players.find((candidate) => candidate.user_id === row.user_id);
+        // The capped remainder went back to the wallet: tell the wallet screen.
+        pushFinancialUpdate(row.user_id, {
+          clubId: this.tableInfo?.club_id ?? null,
+          tableId: this.tableId,
+          ledgerEntry:
+            refunded > 0 ? { direction: 'in', amount: refunded, kind: 'addon_refund' } : null,
+        });
         this.hub?.emitEvent(this.tableId, {
           type: 'add_on_applied',
           table_id: this.tableId,

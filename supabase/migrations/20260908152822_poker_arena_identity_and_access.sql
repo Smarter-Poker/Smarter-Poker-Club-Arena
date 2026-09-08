@@ -1,5 +1,4 @@
--- Phase 2: identity and entitlement only. No Diamond custody or gameplay is enabled.
--- Existing financial evidence is retained. No role/approval/guard bypass is used.
+-- Phase 2 access rollout. No Diamond custody or gameplay is enabled.
 SET lock_timeout = '5s';
 SET statement_timeout = '30s';
 
@@ -49,49 +48,13 @@ BEGIN
       AND EXISTS (SELECT 1 FROM public.profiles WHERE id=v_uid);
   END IF;
   IF v_club.asset IS DISTINCT FROM 'chips' OR v_club.is_platform THEN RETURN false; END IF;
-  RETURN EXISTS (SELECT 1 FROM public.club_members m WHERE m.club_id=p_club_id
-    AND m.user_id=v_uid AND m.status IN ('active','approved'))
-    OR (v_club.is_union AND EXISTS (
-      SELECT 1 FROM public.union_clubs uc JOIN public.club_members m ON m.club_id=uc.club_id
-      WHERE uc.union_id=p_club_id AND m.user_id=v_uid AND m.status IN ('active','approved')))
+  RETURN EXISTS (SELECT 1 FROM public.club_members m
+    WHERE m.club_id=ANY(public.fn_club_scope_ids(p_club_id))
+      AND m.user_id=v_uid AND m.status IN ('active','approved'))
     OR public.fn_union_oversees_club(p_club_id,v_uid);
 END $function$;
 REVOKE ALL ON FUNCTION public.fn_poker_can_read_games(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_poker_can_read_games(uuid) TO authenticated;
-
--- Existing permissive policies cannot grant an outsider access around this gate.
-CREATE POLICY poker_arena_table_access ON public.tables AS RESTRICTIVE FOR SELECT TO authenticated
-USING (club_id IS NULL OR public.fn_poker_can_read_games(club_id));
-CREATE POLICY poker_arena_tournament_access ON public.tournaments AS RESTRICTIVE FOR SELECT TO authenticated
-USING (club_id IS NULL OR public.fn_poker_can_read_games(club_id));
-CREATE POLICY poker_arena_table_guest_access ON public.tables AS RESTRICTIVE FOR SELECT TO anon
-USING (club_id IS NULL);
-CREATE POLICY poker_arena_tournament_guest_access ON public.tournaments AS RESTRICTIVE FOR SELECT TO anon
-USING (club_id IS NULL);
-CREATE POLICY poker_arena_diamond_tables ON public.tables FOR SELECT TO authenticated
-USING (EXISTS (SELECT 1 FROM public.clubs c WHERE c.id=tables.club_id AND c.asset='diamonds')
-  AND public.fn_poker_can_read_games(club_id));
-CREATE POLICY poker_arena_diamond_tournaments ON public.tournaments FOR SELECT TO authenticated
-USING (EXISTS (SELECT 1 FROM public.clubs c WHERE c.id=tournaments.club_id AND c.asset='diamonds')
-  AND public.fn_poker_can_read_games(club_id));
-
--- Preserve the legacy identity row, but it is not a private club membership or an owner grant.
--- Refuse this migration if any old wallet has an unresolved monetary balance.
-DO $preflight$
-BEGIN
-  IF EXISTS (SELECT 1 FROM public.club_members m JOIN public.clubs c ON c.id=m.club_id
-     WHERE c.asset='diamonds' AND (coalesce(m.chip_balance,0)<>0 OR coalesce(m.credit_used,0)<>0
-       OR coalesce(m.promo_balance,0)<>0 OR coalesce(m.held_chips,0)<>0)) THEN
-    RAISE EXCEPTION 'Reconcile Existing Diamond Arena Obligations Before Changing Identity';
-  END IF;
-END $preflight$;
-
-
-ALTER TABLE public.clubs ADD CONSTRAINT poker_arena_diamond_identity CHECK (
-  (asset='chips' AND NOT is_platform) OR
-  (asset='diamonds' AND is_platform AND union_id IS NULL AND NOT coalesce(is_union,false)
-    AND coalesce(chip_treasury,0)=0 AND coalesce(chip_pool,0)=0 AND coalesce(promo_balance,0)=0
-    AND coalesce(insurance_balance,0)=0));
 
 CREATE OR REPLACE FUNCTION public.fn_poker_guard_arena_structure()
 RETURNS trigger LANGUAGE plpgsql SET search_path = public, pg_temp AS $function$
@@ -112,11 +75,13 @@ BEGIN
      AND EXISTS (SELECT 1 FROM public.clubs WHERE id=OLD.club_id AND asset='diamonds') THEN
     RAISE EXCEPTION 'Diamond Participation Cannot Become A Chip Membership' USING ERRCODE='23514';
   END IF;
-  IF TG_TABLE_NAME IN ('tables','tournaments') AND TG_OP='UPDATE'
-     AND NEW.club_id IS DISTINCT FROM OLD.club_id
-     AND (EXISTS (SELECT 1 FROM public.clubs WHERE id=OLD.club_id AND asset IS DISTINCT FROM v_asset)
-       OR (OLD.club_id IS NULL AND OLD.union_id IS NOT NULL AND v_asset='diamonds')) THEN
-    RAISE EXCEPTION 'Game Asset Is Immutable' USING ERRCODE='23514';
+  -- Branch before resolving fields: membership rows do not have union_id.
+  IF TG_TABLE_NAME IN ('tables','tournaments') THEN
+    IF TG_OP='UPDATE' AND NEW.club_id IS DISTINCT FROM OLD.club_id
+       AND (EXISTS (SELECT 1 FROM public.clubs WHERE id=OLD.club_id AND asset IS DISTINCT FROM v_asset)
+         OR (OLD.club_id IS NULL AND OLD.union_id IS NOT NULL AND v_asset='diamonds')) THEN
+      RAISE EXCEPTION 'Game Asset Is Immutable' USING ERRCODE='23514';
+    END IF;
   END IF;
   IF v_asset='diamonds' THEN
     IF TG_TABLE_NAME='club_members' THEN
@@ -139,18 +104,6 @@ BEGIN
   RETURN NEW;
 END $function$;
 REVOKE ALL ON FUNCTION public.fn_poker_guard_arena_structure() FROM PUBLIC, anon, authenticated;
-CREATE TRIGGER poker_arena_identity_guard BEFORE INSERT OR UPDATE ON public.clubs
-FOR EACH ROW EXECUTE FUNCTION public.fn_poker_guard_arena_structure();
-CREATE TRIGGER poker_arena_membership_guard BEFORE INSERT OR UPDATE ON public.club_members
-FOR EACH ROW EXECUTE FUNCTION public.fn_poker_guard_arena_structure();
-CREATE TRIGGER poker_arena_union_guard BEFORE INSERT OR UPDATE ON public.union_clubs
-FOR EACH ROW EXECUTE FUNCTION public.fn_poker_guard_arena_structure();
-CREATE TRIGGER poker_arena_table_guard BEFORE INSERT OR UPDATE ON public.tables
-FOR EACH ROW EXECUTE FUNCTION public.fn_poker_guard_arena_structure();
-CREATE TRIGGER poker_arena_tournament_guard BEFORE INSERT OR UPDATE ON public.tournaments
-FOR EACH ROW EXECUTE FUNCTION public.fn_poker_guard_arena_structure();
-
--- No live Diamond seats exist. A generic chip buy-in may not bootstrap one.
 CREATE OR REPLACE FUNCTION public.fn_poker_guard_chip_seat()
 RETURNS trigger LANGUAGE plpgsql SET search_path = public, pg_temp AS $function$
 BEGIN
@@ -161,9 +114,15 @@ BEGIN
   RETURN NEW;
 END $function$;
 REVOKE ALL ON FUNCTION public.fn_poker_guard_chip_seat() FROM PUBLIC, anon, authenticated;
-CREATE TRIGGER poker_arena_chip_seat_guard BEFORE INSERT OR UPDATE OF table_id ON public.table_seats
-FOR EACH ROW EXECUTE FUNCTION public.fn_poker_guard_chip_seat();
-
+CREATE OR REPLACE FUNCTION public.fn_poker_reject_diamond_hierarchy()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public, pg_temp AS $function$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.clubs WHERE id=NEW.club_id AND asset='diamonds') THEN
+    RAISE EXCEPTION 'Diamond Arena Has No Agents Or Commissions' USING ERRCODE='23514';
+  END IF;
+  RETURN NEW;
+END $function$;
+REVOKE ALL ON FUNCTION public.fn_poker_reject_diamond_hierarchy() FROM PUBLIC, anon, authenticated;
 -- Club owner/agent permissions never confer Diamond management rights.
 DO $definition$
 DECLARE v_def text; v_next text; v_signature text;
@@ -179,28 +138,6 @@ $patch$);
     EXECUTE v_next;
   END LOOP;
 END $definition$;
-
-CREATE OR REPLACE FUNCTION public.fn_poker_reject_diamond_hierarchy()
-RETURNS trigger LANGUAGE plpgsql SET search_path = public, pg_temp AS $function$
-BEGIN
-  IF EXISTS (SELECT 1 FROM public.clubs WHERE id=NEW.club_id AND asset='diamonds') THEN
-    RAISE EXCEPTION 'Diamond Arena Has No Agents Or Commissions' USING ERRCODE='23514';
-  END IF;
-  RETURN NEW;
-END $function$;
-REVOKE ALL ON FUNCTION public.fn_poker_reject_diamond_hierarchy() FROM PUBLIC, anon, authenticated;
-DO $hierarchy$
-DECLARE v_table text;
-BEGIN
-  FOR v_table IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-    WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname IN (
-      'agents','club_agents','sub_agents','player_agent_assignments','agent_commissions',
-      'agent_commission_settlements','ca_club_commission_daily','rakeback_daily_state',
-      'rakeback_daily_user','rakeback_distributions','rakeback_period_payouts','rakeback_periods')
-  LOOP
-    EXECUTE format('CREATE TRIGGER poker_arena_no_hierarchy BEFORE INSERT OR UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.fn_poker_reject_diamond_hierarchy()',v_table);
-  END LOOP;
-END $hierarchy$;
 
 -- The aggregate lobby RPC must not expose member fields before entry authorization.
 -- Preserve its current chip implementation and signature, including invoker security.
@@ -226,7 +163,3 @@ $patch$);
  EXECUTE v_next;
 END $lobby$;
 
--- Data transition follows DDL so deferred counter triggers cannot block ALTER TABLE.
-UPDATE public.club_members m SET role='player', status='automatic', credit_limit=0,
-  agent_id=NULL, parent_agent_id=NULL
-FROM public.clubs c WHERE c.id=m.club_id AND c.asset='diamonds';

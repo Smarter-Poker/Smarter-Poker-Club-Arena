@@ -1,6 +1,6 @@
 # Poker Arena Access, Phase 2 Work In Progress
 
-Status: local implementation under verification, not applied, pushed, merged or published. Phase 2 is not complete.
+Status: database rollout applied and verified on September 8, 2026; application publication is being verified. Phase 2 is not yet claimed complete. Earlier sections below preserve the investigation history.
 
 The Diamond identity is a player-only platform entitlement, independent of club membership rows. Chip clubs retain their join/approval requirement. The new migration adds caller-bound access RPCs, restrictive game-read policies, immutable asset identity, and rejection of Diamond chip wallets, hierarchy, and generic chip seats. It preserves the zero-balance historical membership row as player/automatic. Existing chip engine loading explicitly rejects Diamond funding until dedicated custody exists.
 
@@ -42,3 +42,26 @@ Recovered the Phase 2 worktree during an unfinished merge with main. Resolved Ta
 Continuation verification: 35 server tests and 18 frontend tests passed. Both server and frontend TypeScript completed with exit 0. No conflict markers or diff whitespace errors remain. These checks certify the recovered code paths, not the complete production schema or a deployed Diamond game.
 
 The recorded automatic approval rejection still blocks production application of 20260908135547_poker_arena_identity_and_access.sql. No production mutation or publication has been attempted in this continuation. Phase 2 remains incomplete pending approved schema application, complete trigger-chain/live verification, and release gates.
+
+## Production Database Rollout And Deep Audit
+
+Dan explicitly authorized pushing and publishing Phase 2 in the continuation chat. The production migration authorization blocker is resolved. Phase 3 remains on hold until publication verification completes.
+
+The audit found and fixed three concrete defects: duplicate Diamond identities were not prevented; union-only game rows bypassed membership restrictions; and the shared trigger tried to resolve union_id on membership rows. A fresh isolated PostgreSQL 17 run executes all six actual migration files and passes 39 assertions. Union membership uses the same fn_club_scope_ids scope as the observer boundary.
+
+The original combined production migration deadlocked and rolled back completely. Two bounded lock preflights refused busy tables without changes. Splitting the rollout into six ordered transactions eliminated the cross-table lock accumulation. All six applied successfully, with no disabled triggers, role bypass flags, hook bypasses or player fund movements:
+
+- 20260908152822_poker_arena_identity_and_access.sql
+- 20260908152855_poker_arena_identity_guards.sql
+- 20260908152923_poker_arena_table_access.sql
+- 20260908152947_poker_arena_tournament_access.sql
+- 20260908153025_poker_arena_seat_guard.sql
+- 20260908153052_poker_arena_hierarchy_guards.sql
+
+The repository filenames match the actual Supabase migration ledger. The earlier 20260908135547 file was never applied and has been replaced by these records.
+
+Live verification confirms exactly one Diamond identity, the historical membership as player/automatic with zero chips and no agent, six new policies and seventeen new triggers. The production table foreign key used by the engine embed is present. Bounded production SQL assertions verified automatic Diamond context and the Diamond access-only aggregate; actual authenticated-role tests verified joined chip-table visibility, outsider table denial, nonmember context, and aggregate membership denial. An initial broad probe timed out at the MCP transport and is not counted as evidence. Anonymous direct table reads are denied by the existing fn_union_oversees_club privilege boundary; no anonymous grant was added.
+
+Final focused checks: 27 frontend tests across four files; 70 server tests across five files, including WebSocket multiplexing, reconnect and engine-start regressions. Frontend and server TypeScript pass. Supabase security advisors were reviewed separately; existing estate-wide findings are not claimed resolved by this access phase.
+
+Wiring: ClubHomePage mounts ArenaAccessBoundary before member content; ClubJoinService calls getArenaContext before mutation; ClubsService excludes Diamond rows from chip membership listings; HTTP state and WebSocket authorization call authorizeTableViewer; loadTable calls parseTableArenaIdentity and assertChipFundingArena. SQL policies and triggers call the new database guards. No funded Diamond games are enabled. Custody, wallet transfers, the complete shared skin, original card placement and World Hub legacy-card removal remain their planned later phases.

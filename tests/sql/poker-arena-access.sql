@@ -35,6 +35,11 @@ CREATE TABLE public.table_seats(id uuid PRIMARY KEY,table_id uuid REFERENCES tab
 CREATE TABLE public.agents(id uuid,club_id uuid);
 CREATE TABLE public.player_agent_assignments(id uuid,club_id uuid);
 CREATE TABLE public.agent_commissions(id uuid,club_id uuid);
+CREATE FUNCTION public.fn_club_scope_ids(p_club_id uuid) RETURNS uuid[] LANGUAGE sql STABLE SECURITY DEFINER AS $$
+ SELECT CASE WHEN coalesce((SELECT is_union FROM clubs WHERE id=p_club_id),false)
+ THEN ARRAY(SELECT p_club_id UNION SELECT id FROM clubs WHERE union_id=p_club_id UNION SELECT club_id FROM union_clubs WHERE union_id=p_club_id)
+ ELSE ARRAY[p_club_id] END
+$$;
 CREATE FUNCTION public.fn_union_oversees_club(uuid,uuid) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
 CREATE FUNCTION public.fn_can_create_games(p_club_id uuid,p_user_id uuid) RETURNS boolean LANGUAGE plpgsql AS $$
 BEGIN
@@ -71,7 +76,12 @@ INSERT INTO tables VALUES
  ('30000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001',null),
  ('30000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000002',null);
 INSERT INTO tournaments SELECT id,club_id,union_id FROM tables;
-\ir ../../supabase/migrations/20260908135547_poker_arena_identity_and_access.sql
+\ir ../../supabase/migrations/20260908152822_poker_arena_identity_and_access.sql
+\ir ../../supabase/migrations/20260908152855_poker_arena_identity_guards.sql
+\ir ../../supabase/migrations/20260908152923_poker_arena_table_access.sql
+\ir ../../supabase/migrations/20260908152947_poker_arena_tournament_access.sql
+\ir ../../supabase/migrations/20260908153025_poker_arena_seat_guard.sql
+\ir ../../supabase/migrations/20260908153052_poker_arena_hierarchy_guards.sql
 
 BEGIN;
 SELECT set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
@@ -136,3 +146,36 @@ DO $$ BEGIN
 END $$;
 ROLLBACK;
 \echo PHASE2_LOCAL_SQL_PASS_32_ASSERTIONS
+
+BEGIN;
+INSERT INTO clubs(id,club_id,slug,asset,is_platform,is_union) VALUES
+ ('20000000-0000-4000-8000-000000000003',10003,'union','chips',false,true);
+UPDATE clubs SET union_id='20000000-0000-4000-8000-000000000003' WHERE slug='shark';
+INSERT INTO tables VALUES ('30000000-0000-4000-8000-000000000003',null,'20000000-0000-4000-8000-000000000003');
+INSERT INTO tournaments SELECT id,club_id,union_id FROM tables WHERE id='30000000-0000-4000-8000-000000000003';
+DO $$ BEGIN
+ BEGIN
+  INSERT INTO clubs(id,club_id,slug,asset,is_platform) VALUES(gen_random_uuid(),10004,'duplicate-diamond','diamonds',true);
+  RAISE EXCEPTION 'Duplicate Diamond identity accepted';
+ EXCEPTION WHEN unique_violation THEN NULL; END;
+END $$;
+SELECT set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN
+ IF EXISTS(SELECT FROM tables WHERE union_id IS NOT NULL) OR EXISTS(SELECT FROM tournaments WHERE union_id IS NOT NULL) THEN RAISE EXCEPTION 'Outsider union data leaked'; END IF;
+END $$;
+RESET ROLE;
+SELECT set_config('request.jwt.claims','{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT FROM tables WHERE union_id IS NOT NULL) OR NOT EXISTS(SELECT FROM tournaments WHERE union_id IS NOT NULL) THEN RAISE EXCEPTION 'Member union access lost'; END IF;
+END $$;
+RESET ROLE;
+SELECT set_config('request.jwt.claims','{}',true);
+SET LOCAL ROLE anon;
+DO $$ BEGIN
+ IF EXISTS(SELECT FROM tables WHERE union_id IS NOT NULL) OR EXISTS(SELECT FROM tournaments WHERE union_id IS NOT NULL) THEN RAISE EXCEPTION 'Anonymous union data leaked'; END IF;
+END $$;
+RESET ROLE;
+ROLLBACK;
+\echo PHASE2_LOCAL_SQL_PASS_39_ASSERTIONS
